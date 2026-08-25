@@ -293,6 +293,16 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// is why the wpaCannotApply and rollback arms never touch it.
 			s.raiseFirmwareProfilePriority(ssid)
 			renewDHCPLease()
+			// The switch can land the box on a NEW address (another subnet's
+			// DHCP), and everything derived from the old one goes stale: the
+			// mDNS announcers keep answering with the boot address, the peer
+			// roster then re-adopts that stale self-announcement as a peer and
+			// dials it forever, and the per-IP REDIRECT rules pile up for both
+			// addresses (#697; only a cold boot healed all three). The refresh
+			// runs on its own goroutine and waits for the new lease itself.
+			if s.networkChangedFn != nil {
+				go s.networkChangedFn("live switch")
+			}
 		case wpaCannotApply:
 			// The conf could not be written live (read-only /etc and the
 			// bind-mount overlay both failed). The new creds are already on NAND,

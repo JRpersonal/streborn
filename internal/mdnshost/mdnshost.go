@@ -161,6 +161,15 @@ func (r *Responder) Name() string { return strings.TrimSuffix(r.fqdn, ".") }
 // already ends in ".local" produces "<name>.local.local".
 func (r *Responder) Label() string { return r.label }
 
+// Addr reports the address the responder currently hands out, so the network
+// refresh can tell a switch that kept the address (nothing to re-announce)
+// from one that moved it (#697).
+func (r *Responder) Addr() net.IP {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ip
+}
+
 // SetAddress updates the address handed out, for a speaker that changes network.
 func (r *Responder) SetAddress(ip net.IP) {
 	if ip == nil || ip.To4() == nil {

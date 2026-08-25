@@ -223,6 +223,22 @@ func (a *Announcer) reannounceLocked(reason, oldV, newV string) error {
 	return a.register()
 }
 
+// Reannounce tears the registration down and registers again with freshly
+// picked interfaces and addresses. UpdateFriendlyName/UpdateModel re-announce
+// only when their VALUE changes; this is the address-triggered entry point
+// for a live network move (#697): registration freezes the A records at
+// register time, so a speaker that changed subnet keeps announcing its old
+// address, and the roster then adopts that stale self-announcement as a peer,
+// until someone calls this.
+func (a *Announcer) Reannounce(reason string) error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.reannounceLocked(reason, "", "")
+}
+
 // UpdateFriendlyName updates the display name in the TXT record and
 // re-announces both service types. No-op if the name has not changed.
 func (a *Announcer) UpdateFriendlyName(name string) error {

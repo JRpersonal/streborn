@@ -172,11 +172,61 @@ func savePersistedPeersLocked(logger *slog.Logger) {
 // announcer, which is the same source the version envelope uses.
 var peerSelfNameFn func() string
 
+// peerSelfDeviceIDFn reports this speaker's own announced deviceID: the one
+// signal that survives BOTH an address change and a placeholder name. The
+// name-based self-purge below missed exactly that combination after a live
+// subnet move (#697): the box's own stale announcement came back with the old
+// IP and the "str-<ip>" placeholder, so the roster adopted the box as its own
+// peer and dialed the dead address every sweep. Wired at startup from the same
+// value the announcer puts into its TXT record, so the comparison is against
+// what the stale announcement actually carries.
+var peerSelfDeviceIDFn func() string
+
+func peerSelfDeviceID() string {
+	if peerSelfDeviceIDFn == nil {
+		return ""
+	}
+	return strings.TrimSpace(peerSelfDeviceIDFn())
+}
+
+// purgeSelfPeers drops every roster entry that is really this speaker (by
+// announced deviceID or display name), persists immediately, and forces the
+// next browse to run a fresh mDNS sweep. Called from the post-switch network
+// refresh: the entry for the address the box just left would otherwise be
+// re-dialed every sweep until its 12 h TTL.
+func purgeSelfPeers(logger *slog.Logger) {
+	selfDev := peerSelfDeviceID()
+	selfName := ""
+	if peerSelfNameFn != nil {
+		selfName = strings.TrimSpace(peerSelfNameFn())
+	}
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	removed := 0
+	for ip, e := range peersByIP {
+		if (selfDev != "" && e.deviceID == selfDev) ||
+			(selfName != "" && strings.EqualFold(e.name, selfName)) {
+			delete(peersByIP, ip)
+			removed++
+		}
+	}
+	if removed > 0 {
+		savePersistedPeersLocked(logger)
+		logger.Info("peers: dropped stale entries for this speaker itself", "removed", removed)
+	}
+	peersBrowseAt = time.Time{} // next browsePeers call sweeps fresh
+}
+
 func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 	if len(seeds) == 0 {
 		return
 	}
 	mine := ownIPv4s()
+	selfDev := peerSelfDeviceID()
+	selfName := ""
+	if peerSelfNameFn != nil {
+		selfName = strings.TrimSpace(peerSelfNameFn())
+	}
 	now := time.Now()
 	peersMu.Lock()
 	added := 0
@@ -185,11 +235,25 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		if ip == "" || mine[ip] {
 			continue
 		}
+		// A seed can be this box ITSELF at an address it no longer holds: right
+		// after a live network switch the app's roster still carries the old IP
+		// for a moment, and a seed re-created exactly the stale self-entry the
+		// switch refresh had just purged, with reachable forced true and no
+		// deviceID for the other guards to catch (#697). The identity check
+		// mirrors the browse path: announced deviceID first, display name as
+		// the fallback for apps that send no deviceID yet.
+		if (selfDev != "" && s.DeviceID == selfDev) ||
+			(selfName != "" && strings.EqualFold(strings.TrimSpace(s.Name), selfName)) {
+			continue
+		}
 		e := peersByIP[ip]
 		if e == nil {
 			e = &peerEntry{}
 			peersByIP[ip] = e
 			added++
+		}
+		if s.DeviceID != "" && e.deviceID == "" {
+			e.deviceID = s.DeviceID
 		}
 		// Same guard as the mDNS merge: a placeholder seed must never clobber a
 		// real name (#494 by the back door).
@@ -357,6 +421,16 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 						ip = a
 					}
 				}
+				// The current-address check cannot recognise our own STALE
+				// announcement: after a live subnet move the multicast caches
+				// (and our own frozen registration, until the re-announce
+				// lands) still carry the OLD address, which is no longer
+				// "mine", so the box adopted itself as a peer and dialed the
+				// dead address every sweep (#697). The announced deviceID is
+				// ours no matter which address the record carries.
+				if selfDev := peerSelfDeviceID(); selfDev != "" && inst.DeviceID == selfDev {
+					self = true
+				}
 				if self || ip == "" {
 					continue
 				}
@@ -463,6 +537,13 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		// until the entry aged out (seen live on an ST30, 2026-07-28). Our own
 		// name is the one signal that survives an address change.
 		if selfName != "" && strings.EqualFold(e.name, selfName) {
+			delete(peersByIP, ip)
+			continue
+		}
+		// And by deviceID, which also survives a PLACEHOLDER name: the stale
+		// self-entry after a live subnet move carried "str-<old-ip>" and sailed
+		// past the name check above (#697).
+		if selfDev := peerSelfDeviceID(); selfDev != "" && e.deviceID == selfDev {
 			delete(peersByIP, ip)
 			continue
 		}
