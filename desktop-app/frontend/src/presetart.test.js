@@ -121,6 +121,17 @@ describe('main.js persists no box-form art (#696)', () => {
     // store; the tile must not feed it to the <img> cascade as-is.
     expect(src).toContain('addCands(appArtFromBoxArt(p.art));');
   });
+  it('the tile renders through the validated hydration, not the raw cascade', () => {
+    // The raw data-fallbacks cascade cannot reject DuckDuckGo's grey "no
+    // icon" chevron (served as a real image on its 404), so a station with no
+    // logo anywhere wore the chevron on its key while the search row for the
+    // same station fell back to the letter tile (#696, EPIC CLASSICAL). The
+    // grid must build its radio tiles with logoImgTag, and nothing may
+    // produce a data-fallbacks img any more.
+    expect(src).toContain("logoImgTag({");
+    expect(src, 'a raw data-fallbacks producer is back in main.js')
+      .not.toContain('data-fallbacks="');
+  });
   it('the logo healer treats box-form art as needing a real re-lookup', () => {
     // A key whose stored art is only box-local renders artless everywhere but
     // the box itself, and a key still carrying the wrapper unwraps to a single

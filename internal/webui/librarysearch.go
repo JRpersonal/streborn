@@ -241,17 +241,31 @@ func (s *Server) searchOneServer(ctx context.Context, srv dlna.Server, q string)
 			res, err = narrow, nil
 		} else {
 			s.logger.Info("library search: Search action unavailable, walking the tree (bounded)",
-				"server", srv.FriendlyName, "err", err, "titleOnlyErr", nerr)
+				"server", srv.FriendlyName, "q", q, "err", err, "titleOnlyErr", nerr)
+		}
+	} else if len(res.Items) == 0 {
+		// A 200 with zero hits is not proof of absence either: the FRITZ!Box
+		// index answers "Fly FRITZ!" with zero and "Fly FRITZ" with one for
+		// the same track, and the widened boolean criteria has its own quirks
+		// per server. One narrow retry is a single cheap SOAP call next to the
+		// walk it can save.
+		if narrow, nerr := dlna.SearchTitleOnly(ctx, srv, q, librarySearchMax); nerr == nil && len(narrow.Items) > 0 {
+			res = narrow
 		}
 	}
 	if err == nil && len(res.Items) > 0 {
 		s.logger.Info("library search: server answered the Search action",
-			"server", srv.FriendlyName, "hits", len(res.Items), "total", res.TotalMatches)
+			"server", srv.FriendlyName, "q", q, "hits", len(res.Items), "total", res.TotalMatches)
 		return res.Items, res.TotalMatches > len(res.Items)
 	}
 	if err == nil {
+		// The query rides along because a bundle without it cannot separate
+		// "the server's index has no such tag" from a search quirk: #666's
+		// bundle carried three zero-hit walks and no way to tell which (the
+		// search matches TAGS, while the folder view the user compares against
+		// shows file names).
 		s.logger.Info("library search: Search answered nothing, walking the tree (bounded)",
-			"server", srv.FriendlyName)
+			"server", srv.FriendlyName, "q", q)
 	}
 	return s.walkOneServer(ctx, srv, q)
 }
@@ -400,6 +414,6 @@ func (s *Server) walkOneServer(ctx context.Context, srv dlna.Server, q string) (
 		partial = true
 	}
 	s.logger.Info("library search: bounded walk finished",
-		"server", srv.FriendlyName, "browses", browses, "hits", len(out), "partial", partial)
+		"server", srv.FriendlyName, "q", q, "browses", browses, "hits", len(out), "partial", partial)
 	return out, partial
 }

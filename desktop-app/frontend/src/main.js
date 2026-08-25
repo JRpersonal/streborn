@@ -5506,25 +5506,32 @@ function renderPresets() {
         p.art = adoptIcon;
         SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, adoptIcon, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
       }
-      const streamHost = extractHost(p.stream_url);
-      const hostsToTry = [];
-      if (streamHost) hostsToTry.push(streamHost);
-      const streamRoot = rootDomain(streamHost);
-      if (streamRoot && streamRoot !== streamHost) hostsToTry.push(streamRoot);
-      for (const h of hostsToTry) {
-        for (const svc of iconServicesFor(h)) {
-          if (!presetCandidates.includes(svc)) presetCandidates.push(svc);
-        }
+      // Render through the same Go-validated hydration the search and
+      // Recently-played tiles use (logoImgTag + ResolveStationLogo): the raw
+      // data-fallbacks cascade cannot reject DuckDuckGo's grey "no icon"
+      // chevron, which the icon service serves as a real image on its 404, so
+      // a station with no logo anywhere wore the chevron on its key while the
+      // search row for the same station correctly fell back to the letter
+      // tile (#696, EPIC CLASSICAL). Spotify keeps its self-contained glyph, a
+      // data URI that needs no resolution. The first DIRECT art candidate is
+      // handed over as the favicon to validate; icon-service entries stored in
+      // older chains are dropped here because the resolver rederives them from
+      // the hosts, status-checked.
+      let logo;
+      if (p.type === 'spotify') {
+        logo = `<img class="preset-logo" alt="" src="${escapeAttr(presetCandidates[0] || SPOTIFY_LOGO)}"/>`;
+      } else {
+        const directArt = presetCandidates.find(
+          (c) => /^https?:\/\//i.test(c) && !c.startsWith('https://icons.duckduckgo.com/')
+        ) || '';
+        logo = logoImgTag({
+          name: p.name,
+          favicon: directArt,
+          homepage: p.homepage || '',
+          url: p.stream_url || '',
+          url_resolved: p.stream_url || '',
+        }, 'preset-logo');
       }
-      // Terminal fallback: a locally generated monogram (data URI, always
-      // loads), appended last so a station with a missing or broken logo ends
-      // on a clean letter tile instead of a broken-image icon. Spotify keeps
-      // its own logo as the first candidate; the monogram only shows if even
-      // that fails.
-      presetCandidates.push(monogramDataUri(p.name));
-      const logo =
-        `<img class="preset-logo" alt="" src="${escapeAttr(presetCandidates[0])}"
-              data-fallbacks="${escapeAttr(presetCandidates.slice(1).join('|'))}"/>`;
       // The active tile mirrors the live now-playing bitrate even when the
       // stored preset bitrate is still 0 (preset saved before the bitrate
       // feature, or radio-browser had none). Persist it so the tile keeps
