@@ -27,6 +27,10 @@ type fakeCDS struct {
 	// searchHits is what the Search action answers with. Zero items with no
 	// fault is the FRITZ!Box shape that used to end the search.
 	searchHits []fakeTrack
+	// narrowHits, when set, is what a TITLE-ONLY Search (criteria without
+	// upnp:artist) answers: the #666 QNAP shape where the widened boolean
+	// criteria comes back empty while the narrow form hits.
+	narrowHits []fakeTrack
 	// searchFaults makes Search answer a SOAP fault, the Synology shape.
 	searchFaults bool
 	// children maps an object id to its children. Items are paged with the
@@ -74,6 +78,10 @@ func (f *fakeCDS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// UPnPError 501, what a server without SearchCaps answers.
 			w.WriteHeader(http.StatusInternalServerError)
 			io.WriteString(w, `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>501</errorCode></UPnPError></detail></s:Fault></s:Body></s:Envelope>`)
+			return
+		}
+		if f.narrowHits != nil && !strings.Contains(string(body), "upnp:artist") {
+			writeSOAP(w, "Search", didl(nil, f.narrowHits), len(f.narrowHits), len(f.narrowHits))
 			return
 		}
 		writeSOAP(w, "Search", didl(nil, f.searchHits), len(f.searchHits), len(f.searchHits))
@@ -202,6 +210,31 @@ func TestLibrarySearchFallsBackWhenSearchAnswersNothing(t *testing.T) {
 	items, _ := s.searchOneServer(context.Background(), srv, "symbol")
 	if len(items) != 1 || items[0].Title != "symbol" {
 		t.Fatalf("the deep, late track was not found: got %d items %+v", len(items), items)
+	}
+}
+
+// A widened Search that answers 200 with zero hits gets one narrow retry
+// before the walk is paid: per-server criteria quirks make the boolean form
+// answer empty where the title-only form hits (#666's QNAP walked three times
+// for nothing on a query its server could have answered). The walk must not
+// run at all when the retry hits.
+func TestLibrarySearchRetriesNarrowWhenWidenedAnswersNothing(t *testing.T) {
+	f := &fakeCDS{
+		narrowHits: []fakeTrack{{id: "n1", title: "symbol", artist: "Adrianne Lenker",
+			album: "abysskiss", url: "http://192.0.2.9/symbol.mp3"}},
+		children: map[string]fakeContainer{"0": {}},
+	}
+	s, srv := testSearchServer(t, f)
+	items, partial := s.searchOneServer(context.Background(), srv, "symbol")
+	if len(items) != 1 || items[0].Title != "symbol" {
+		t.Fatalf("narrow retry hit not returned: got %d items %+v", len(items), items)
+	}
+	if partial {
+		t.Fatalf("a full narrow answer must not be reported partial")
+	}
+	searches, browses := f.counts()
+	if searches != 2 || browses != 0 {
+		t.Fatalf("want exactly 2 searches (widened + narrow) and no walk, got searches=%d browses=%d", searches, browses)
 	}
 }
 
