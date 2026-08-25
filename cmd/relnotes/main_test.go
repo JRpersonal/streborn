@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -99,19 +101,59 @@ func TestParseNoteTrailers(t *testing.T) {
 	}
 }
 
-// A commit that declares its own entries has said what it wants said; listing
-// its subject as well produced near-duplicate lines in the user-facing notes.
-func TestTrailersReplaceTheSubject(t *testing.T) {
-	body := "Prose.\n\nRelease-Note: fix(app): the precise thing that changed\n"
-	got := parseNoteTrailers(body)
-	if len(got) != 1 || got[0].Summary != "The precise thing that changed" {
-		t.Fatalf("trailer parse: %+v", got)
+// Trailers ADD entries next to the subject, they do not replace it. The old
+// replace rule swallowed real entries three times in one day (2026-08-25): a
+// fix commit carrying a Release-Note trailer for a DIFFERENT change it also
+// made lost its own subject line silently. An exact restatement still folds to
+// one line via the dedup, and a chore commit still contributes only its
+// trailers because its subject is not a user-facing type.
+func TestSubjectAndTrailersBothListed(t *testing.T) {
+	run := func(t *testing.T, log string) []change {
+		t.Helper()
+		dir := t.TempDir()
+		git := func(args ...string) {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(),
+				"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+				"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+		git("init", "-q")
+		git("commit", "--allow-empty", "-q", "-m", log)
+		old, _ := os.Getwd()
+		_ = os.Chdir(dir)
+		defer func() { _ = os.Chdir(old) }()
+		got, err := collect("", "HEAD")
+		if err != nil {
+			t.Fatalf("collect: %v", err)
+		}
+		return got
 	}
-	// The replacement itself lives in collect(); this documents the contract so
-	// a future change that re-adds the subject fails a test rather than a reader.
-	if c, keep := parseSubject("feat(update): a broader restatement of the same thing"); !keep || c.Summary == got[0].Summary {
-		t.Log("subject and trailer are distinct texts, which is exactly why both being listed read as duplication")
-	}
+
+	t.Run("fix subject plus foreign trailer yields two lines", func(t *testing.T) {
+		got := run(t, "fix(app): the thing this commit is about\n\n"+
+			"Release-Note: fix(phone): the other thing it also changed\n")
+		if len(got) != 2 {
+			t.Fatalf("want subject AND trailer, got %d: %+v", len(got), got)
+		}
+	})
+	t.Run("exact restatement folds to one line", func(t *testing.T) {
+		got := run(t, "fix(app): the thing this commit is about\n\n"+
+			"Release-Note: fix(app): the thing this commit is about\n")
+		if len(got) != 1 {
+			t.Fatalf("want the restatement deduped, got %d: %+v", len(got), got)
+		}
+	})
+	t.Run("chore subject stays out, its trailers stay in", func(t *testing.T) {
+		got := run(t, "chore(relnotes): bookkeeping\n\n"+
+			"Release-Note: fix(app): the restored entry\n")
+		if len(got) != 1 || got[0].Summary != "The restored entry" {
+			t.Fatalf("want only the trailer, got %+v", got)
+		}
+	})
 }
 
 // Work announced and then reversed inside the same release window must not be

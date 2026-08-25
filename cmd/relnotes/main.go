@@ -152,12 +152,17 @@ func collect(start, end string) ([]change, error) {
 			continue
 		}
 		subject, body, _ := strings.Cut(rest, "\t")
-		// Trailers REPLACE the subject, they do not add to it. A commit that
-		// spells out its user-visible changes has already said what it wants
-		// said, and listing its subject as well produced pairs of near-identical
-		// lines, which reads as sloppiness in the one place users actually look.
-		// A commit that wants its subject listed too simply repeats it as a
-		// trailer.
+		// The subject is ALWAYS listed (when it is a user-facing type), and
+		// trailers ADD entries. Trailers used to REPLACE the subject, on the
+		// theory that a commit spelling out its changes had already said what
+		// it wants said; in practice that rule swallowed real entries three
+		// times in one day (2026-08-25): a commit fixing one thing and carrying
+		// a Release-Note trailer for a DIFFERENT change it also made lost its
+		// own subject line, silently. A commit that fixes one thing does not
+		// think of itself as "declaring entries". Exact repeats are folded by
+		// the type|scope|summary dedup below, so an author who restates the
+		// subject as a trailer still gets one line; an author who wants the
+		// subject GONE says so with a Release-Note-Drop.
 		// Withdrawals are read FIRST and unconditionally: a commit whose only
 		// purpose is to take back an entry carries no trailers of its own, and
 		// reading drops inside the trailer branch silently ignored exactly that
@@ -165,14 +170,10 @@ func collect(start, end string) ([]change, error) {
 		for _, d := range parseNoteDrops(body) {
 			dropped[strings.ToLower(d)] = true
 		}
-		trailers := parseNoteTrailers(body)
-		if len(trailers) == 0 {
-			if c, keep := parseSubject(subject); keep {
-				add(c, hash)
-			}
-			continue
+		if c, keep := parseSubject(subject); keep {
+			add(c, hash)
 		}
-		for _, c := range trailers {
+		for _, c := range parseNoteTrailers(body) {
 			add(c, hash)
 		}
 	}
