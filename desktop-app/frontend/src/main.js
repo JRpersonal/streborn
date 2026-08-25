@@ -3652,8 +3652,18 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
       } catch (engErr) {
         const m = String((engErr && engErr.message) || engErr || '');
         // Too full even counting the reclaimable old engine: retrying cannot
-        // help, only freeing space can. The agent update itself succeeded.
-        if (/insufficient nand|no space|507/i.test(m)) { engineTooFull = true; break; }
+        // help, only freeing space can. The agent update itself succeeded, so
+        // the intent is CLEARED: keeping it "so the app finishes the job next
+        // time" made the supervisor toast a permanent per-session nag on a
+        // speaker whose state cannot change by itself (Walter's CineMate,
+        // green "unvollständig" window on every update, 2026-08-25). This
+        // run's own result already names what to free, and once space exists
+        // the next update run delivers the engine anyway.
+        if (/insufficient nand|no space|507/i.test(m)) {
+          engineTooFull = true;
+          try { ClearUpdateIntent(box.host, box.port); } catch {}
+          break;
+        }
         try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
         // Mid-stream drop: the box rebooted or reset the stream. Loop straight
         // back: the top-of-loop settle gate does the waiting (reachable,
