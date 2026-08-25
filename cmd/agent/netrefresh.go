@@ -33,6 +33,11 @@ type netRefreshDeps struct {
 	// (mdnshost.Responder.SetAddress). nil when the responder never started;
 	// SetAddress itself no-ops and re-announces only on an actual change.
 	setMDNSHostAddr func(ip net.IP)
+	// currentMDNSAddr reports the address the responder hands out right now
+	// (mdnshost.Responder.Addr), nil when the responder never started. Used to
+	// recognise a confirmed switch that kept the address, where tearing down a
+	// working registration would only risk losing it.
+	currentMDNSAddr func() net.IP
 	// reannounce tears down and re-registers the service announcer with
 	// freshly picked interfaces and addresses (discovery.Announcer.Reannounce).
 	reannounce func(reason string) error
@@ -43,21 +48,55 @@ type netRefreshDeps struct {
 // asynchronous, so the first job is waiting for the lease to actually land.
 func refreshAfterNetworkChange(reason string, deps netRefreshDeps, logger *slog.Logger) {
 	logger = logger.With("comp", "netrefresh")
+	// Two-stage wait, both bounded, same goroutine: 45 s at a tight cadence
+	// for the common fast renew, then a slow tail for a DHCP server that
+	// answers late, which is exactly the network where live switches happen.
 	ip := waitForLeaseAfterSwitch(45*time.Second, 2*time.Second)
 	if ip == nil {
-		logger.Warn("network refresh: no LAN address after the switch, refreshing with what there is", "reason", reason)
-	} else {
-		logger.Info("network refresh: address settled", "reason", reason, "address", ip.String())
+		logger.Warn("network refresh: no LAN address yet, keeping a slow watch before touching anything", "reason", reason)
+		ip = waitForLeaseAfterSwitch(4*time.Minute, 5*time.Second)
 	}
-	if deps.setMDNSHostAddr != nil && ip != nil {
+	// The stale-self purge is address-independent and safe in every outcome.
+	purgeSelfPeers(logger)
+	if ip == nil {
+		// Never tear working state down while the box holds no address at all:
+		// a failed re-register would leave the box announcing NOTHING, which
+		// is strictly worse than the stale announcement (adversarial review of
+		// d842293), and deleting REDIRECT rules against an empty own-address
+		// set would drop them ALL. The pre-switch state stays; the wlan guard
+		// or a reboot handles a network that stays down this long.
+		logger.Warn("network refresh: still no LAN address, leaving mDNS and REDIRECT rules untouched", "reason", reason)
+		return
+	}
+	logger.Info("network refresh: address settled", "reason", reason, "address", ip.String())
+	// A confirmed switch that KEPT the address (same-subnet move, password
+	// correction) has nothing stale to re-announce, and a teardown at the most
+	// network-unstable moment risks ending unregistered for nothing.
+	if deps.currentMDNSAddr != nil {
+		if cur := deps.currentMDNSAddr(); cur != nil && cur.Equal(ip.To4()) {
+			logger.Info("network refresh: address unchanged, mDNS left as it is", "address", ip.String())
+			cleanupStaleRedirects(logger)
+			return
+		}
+	}
+	if deps.setMDNSHostAddr != nil {
 		deps.setMDNSHostAddr(ip)
 	}
 	if deps.reannounce != nil {
-		if err := deps.reannounce("network change: " + reason); err != nil {
-			logger.Warn("network refresh: mDNS re-announce failed", "err", err)
+		// Bounded retries: reannounce tears down before it registers, and a
+		// register at this moment can fail transiently (multicast join while
+		// the interface is still replumbing). One failure must not leave the
+		// box unannounced until the next rename or reboot.
+		for attempt, wait := range []time.Duration{0, 10 * time.Second, 30 * time.Second} {
+			time.Sleep(wait)
+			err := deps.reannounce("network change: " + reason)
+			if err == nil {
+				break
+			}
+			logger.Warn("network refresh: mDNS re-announce failed",
+				"attempt", attempt+1, "err", err)
 		}
 	}
-	purgeSelfPeers(logger)
 	cleanupStaleRedirects(logger)
 }
 

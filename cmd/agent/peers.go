@@ -222,6 +222,11 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		return
 	}
 	mine := ownIPv4s()
+	selfDev := peerSelfDeviceID()
+	selfName := ""
+	if peerSelfNameFn != nil {
+		selfName = strings.TrimSpace(peerSelfNameFn())
+	}
 	now := time.Now()
 	peersMu.Lock()
 	added := 0
@@ -230,11 +235,25 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		if ip == "" || mine[ip] {
 			continue
 		}
+		// A seed can be this box ITSELF at an address it no longer holds: right
+		// after a live network switch the app's roster still carries the old IP
+		// for a moment, and a seed re-created exactly the stale self-entry the
+		// switch refresh had just purged, with reachable forced true and no
+		// deviceID for the other guards to catch (#697). The identity check
+		// mirrors the browse path: announced deviceID first, display name as
+		// the fallback for apps that send no deviceID yet.
+		if (selfDev != "" && s.DeviceID == selfDev) ||
+			(selfName != "" && strings.EqualFold(strings.TrimSpace(s.Name), selfName)) {
+			continue
+		}
 		e := peersByIP[ip]
 		if e == nil {
 			e = &peerEntry{}
 			peersByIP[ip] = e
 			added++
+		}
+		if s.DeviceID != "" && e.deviceID == "" {
+			e.deviceID = s.DeviceID
 		}
 		// Same guard as the mDNS merge: a placeholder seed must never clobber a
 		// real name (#494 by the back door).

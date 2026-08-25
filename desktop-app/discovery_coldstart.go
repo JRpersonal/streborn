@@ -143,6 +143,12 @@ func (a *App) distributeKnownSpeakers() {
 		Name string `json:"name"`
 		Host string `json:"host"`
 		Port int    `json:"port"`
+		// DeviceID lets the receiving agent recognise a seed that is really
+		// itself at an address it no longer holds (#697): after a live network
+		// switch the app's roster can briefly still carry the box's old IP, and
+		// a seed without identity re-created exactly the stale self-entry the
+		// agent had just purged.
+		DeviceID string `json:"deviceID,omitempty"`
 	}
 	a.discMu.Lock()
 	var seeds []seed
@@ -169,7 +175,7 @@ func (a *App) distributeKnownSpeakers() {
 		if name == "" {
 			name = b.Name
 		}
-		s := seed{Name: name, Host: b.Host, Port: port}
+		s := seed{Name: name, Host: b.Host, Port: port, DeviceID: b.DeviceID}
 		seeds = append(seeds, s)
 		targets = append(targets, s)
 	}

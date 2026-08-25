@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // The stale-rule selector must delete exactly the streborn-shaped REDIRECT
@@ -46,6 +48,40 @@ func TestStaleRedirectDeleteArgs(t *testing.T) {
 	// cannot match it on a taigan kernel.
 	if strings.Contains(strings.Join(got[1], " "), "comment") {
 		t.Errorf("comment-less rule replayed with comment args: %v", got[1])
+	}
+}
+
+// A seed that is really this box itself at a previous address must be dropped:
+// after a live switch the app's roster can still carry the old IP, and a seed
+// re-created the stale self-entry the refresh had just purged, with reachable
+// forced true (#697, adversarial review of d842293). Both identity forms must
+// hold, the deviceID (new apps) and the display name (apps that send none).
+func TestSeedPeersDropsSelf(t *testing.T) {
+	prevDev, prevName := peerSelfDeviceIDFn, peerSelfNameFn
+	defer func() { peerSelfDeviceIDFn, peerSelfNameFn = prevDev, prevName }()
+	peerSelfDeviceIDFn = func() string { return "AABBCCDDEEFF" }
+	peerSelfNameFn = func() string { return "Küche" }
+	peersMu.Lock()
+	peersByIP = map[string]*peerEntry{}
+	peersMu.Unlock()
+
+	seedPeers([]webui.PeerSeed{
+		{Name: "str-192.168.178.174", Host: "192.168.178.174", Port: 8888, DeviceID: "AABBCCDDEEFF"}, // self by deviceID
+		{Name: "Küche", Host: "192.168.178.175", Port: 8888},                                         // self by name, legacy app
+		{Name: "Wohnzimmer", Host: "10.10.50.100", Port: 17008, DeviceID: "112233445566"},            // a real peer
+	}, slog.Default())
+
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	if len(peersByIP) != 1 {
+		t.Fatalf("want only the real peer adopted, got %d entries: %v", len(peersByIP), peersByIP)
+	}
+	e, ok := peersByIP["10.10.50.100"]
+	if !ok {
+		t.Fatalf("the real peer was not adopted")
+	}
+	if e.deviceID != "112233445566" {
+		t.Errorf("the seed's deviceID must be kept for the self-guards, got %q", e.deviceID)
 	}
 }
 

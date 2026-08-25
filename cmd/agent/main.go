@@ -1238,6 +1238,12 @@ func run() error {
 					mdnsHostResp.SetAddress(ip)
 				}
 			},
+			currentMDNSAddr: func() net.IP {
+				if mdnsHostResp == nil {
+					return nil
+				}
+				return mdnsHostResp.Addr()
+			},
 			reannounce: func(r string) error {
 				mdnsMu.Lock()
 				ann := mdnsAnnouncer

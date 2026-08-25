@@ -259,6 +259,10 @@ type PeerSeed struct {
 	Name string `json:"name"`
 	Host string `json:"host"`
 	Port int    `json:"port"`
+	// DeviceID identifies the seeded speaker independently of its address, so
+	// the agent can drop a seed that is really itself at a previous address
+	// (#697). Optional: apps predating it send none.
+	DeviceID string `json:"deviceID,omitempty"`
 }
 
 // WithPeerSeed registers the sink for externally pushed peers (POST
