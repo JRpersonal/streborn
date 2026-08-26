@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Zoeken naar app-updates",
   "banner.checkingForAppUpdate": "Zoeken…",
   "banner.appIsCurrent": "Je app is up-to-date.",
-  "spotify.audioKeyRefused": "Spotify heeft geweigerd deze nummers via ST Reborn af te spelen en sloeg de hele afspeellijst over zonder een noot te spelen. Dit gebeurt bij een gratis Spotify-account en bij sommige nieuwere Premium-accounts die Spotify niet meer toestaat voor opensource-spelers. De Spotify-ingang van de speaker zelf, die zonder (STR), speelt hetzelfde account gewoon af."
+  "spotify.audioKeyRefused": "Spotify heeft geweigerd deze nummers via ST Reborn af te spelen en sloeg de hele afspeellijst over zonder een noot te spelen. Dit gebeurt bij een gratis Spotify-account en bij sommige nieuwere Premium-accounts die Spotify niet meer toestaat voor opensource-spelers. De Spotify-ingang van de speaker zelf, die zonder (STR), speelt hetzelfde account gewoon af.",
+  "spotify.qualityTitle": "Streamingkwaliteit",
+  "spotify.qualityDesc": "Per speaker in te stellen. 320 kbps vereist Spotify Premium. Een wijziging tijdens het afspelen wordt toegepast zodra de speaker stopt.",
+  "spotify.qualityNoBoxes": "Geen STR-speakers gevonden.",
+  "spotify.qualityUnavailable": "Vereist een speaker-update",
+  "spotify.qualityPending": "Wordt toegepast zodra het afspelen stopt",
+  "spotify.qualitySet": "Kwaliteit gewijzigd",
+  "spotify.qualityFailed": "De speaker heeft de wijziging geweigerd"
 }

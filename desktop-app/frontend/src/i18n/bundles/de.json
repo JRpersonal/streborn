@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Nach App-Updates suchen",
   "banner.checkingForAppUpdate": "Suche…",
   "banner.appIsCurrent": "Deine App ist aktuell.",
-  "spotify.audioKeyRefused": "Spotify hat das Abspielen dieser Titel über ST Reborn verweigert. Die ganze Playlist wurde übersprungen, ohne dass ein Ton kam. Das passiert bei einem kostenlosen Spotify-Konto und bei manchen neueren Premium-Konten, die Spotify für quelloffene Abspieler gesperrt hat. Der Spotify-Eintrag des Lautsprechers ohne (STR) spielt dasselbe Konto weiterhin ab."
+  "spotify.audioKeyRefused": "Spotify hat das Abspielen dieser Titel über ST Reborn verweigert. Die ganze Playlist wurde übersprungen, ohne dass ein Ton kam. Das passiert bei einem kostenlosen Spotify-Konto und bei manchen neueren Premium-Konten, die Spotify für quelloffene Abspieler gesperrt hat. Der Spotify-Eintrag des Lautsprechers ohne (STR) spielt dasselbe Konto weiterhin ab.",
+  "spotify.qualityTitle": "Streaming-Qualität",
+  "spotify.qualityDesc": "Gilt je Lautsprecher. 320 kbps braucht Spotify Premium. Eine Änderung während der Wiedergabe wird übernommen, sobald die Box stoppt.",
+  "spotify.qualityNoBoxes": "Keine STR-Lautsprecher gefunden.",
+  "spotify.qualityUnavailable": "Braucht ein Lautsprecher-Update",
+  "spotify.qualityPending": "Wird nach Wiedergabe-Stopp übernommen",
+  "spotify.qualitySet": "Qualität geändert",
+  "spotify.qualityFailed": "Der Lautsprecher hat die Änderung abgelehnt"
 }

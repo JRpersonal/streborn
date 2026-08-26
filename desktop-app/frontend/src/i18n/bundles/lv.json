@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Meklēt lietotnes atjauninājumus",
   "banner.checkingForAppUpdate": "Meklē…",
   "banner.appIsCurrent": "Lietotne ir aktuāla.",
-  "spotify.audioKeyRefused": "Spotify atteicās atskaņot šos ierakstus caur ST Reborn un izlaida visu atskaņošanas sarakstu, neatskaņojot nevienu noti. Tā notiek ar bezmaksas Spotify kontu un ar dažiem jaunākiem Premium kontiem, kurus Spotify vairs neatļauj atvērtā pirmkoda atskaņotājiem. Paša skaļruņa Spotify ieraksts, tas bez (STR), to pašu kontu atskaņo joprojām."
+  "spotify.audioKeyRefused": "Spotify atteicās atskaņot šos ierakstus caur ST Reborn un izlaida visu atskaņošanas sarakstu, neatskaņojot nevienu noti. Tā notiek ar bezmaksas Spotify kontu un ar dažiem jaunākiem Premium kontiem, kurus Spotify vairs neatļauj atvērtā pirmkoda atskaņotājiem. Paša skaļruņa Spotify ieraksts, tas bez (STR), to pašu kontu atskaņo joprojām.",
+  "spotify.qualityTitle": "Straumēšanas kvalitāte",
+  "spotify.qualityDesc": "Iestatāma katram skaļrunim. 320 kbps nepieciešams Spotify Premium. Izmaiņa atskaņošanas laikā tiek piemērota, tiklīdz skaļrunis apstājas.",
+  "spotify.qualityNoBoxes": "STR skaļruņi nav atrasti.",
+  "spotify.qualityUnavailable": "Nepieciešams skaļruņa atjauninājums",
+  "spotify.qualityPending": "Tiks piemērots, kad atskaņošana apstāsies",
+  "spotify.qualitySet": "Kvalitāte nomainīta",
+  "spotify.qualityFailed": "Skaļrunis noraidīja izmaiņu"
 }

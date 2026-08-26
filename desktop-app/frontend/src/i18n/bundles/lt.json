@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Ieškoti programos naujinių",
   "banner.checkingForAppUpdate": "Ieškoma…",
   "banner.appIsCurrent": "Programa yra naujausia.",
-  "spotify.audioKeyRefused": "Spotify atsisakė groti šiuos kūrinius per ST Reborn ir peršoko visą grojaraštį, neišleidęs nė garso. Taip nutinka su nemokama Spotify paskyra ir su kai kuriomis naujesnėmis Premium paskyromis, kurių Spotify nebeleidžia atviro kodo grotuvams. Paties garsiakalbio Spotify įrašas, tas be (STR), tą pačią paskyrą groja toliau."
+  "spotify.audioKeyRefused": "Spotify atsisakė groti šiuos kūrinius per ST Reborn ir peršoko visą grojaraštį, neišleidęs nė garso. Taip nutinka su nemokama Spotify paskyra ir su kai kuriomis naujesnėmis Premium paskyromis, kurių Spotify nebeleidžia atviro kodo grotuvams. Paties garsiakalbio Spotify įrašas, tas be (STR), tą pačią paskyrą groja toliau.",
+  "spotify.qualityTitle": "Transliavimo kokybė",
+  "spotify.qualityDesc": "Nustatoma kiekvienai kolonėlei. 320 kbps reikia „Spotify Premium“. Pakeitimas grojant pritaikomas kolonėlei sustojus.",
+  "spotify.qualityNoBoxes": "STR kolonėlių nerasta.",
+  "spotify.qualityUnavailable": "Reikia kolonėlės atnaujinimo",
+  "spotify.qualityPending": "Pritaikoma sustabdžius grojimą",
+  "spotify.qualitySet": "Kokybė pakeista",
+  "spotify.qualityFailed": "Kolonėlė atmetė pakeitimą"
 }

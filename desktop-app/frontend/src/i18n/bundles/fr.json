@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Rechercher des mises à jour",
   "banner.checkingForAppUpdate": "Recherche…",
   "banner.appIsCurrent": "Votre application est à jour.",
-  "spotify.audioKeyRefused": "Spotify a refusé de lire ces titres via ST Reborn et a sauté toute la playlist sans jouer une seule note. Cela arrive avec un compte Spotify gratuit, et avec certains comptes Premium récents que Spotify n'autorise plus pour les lecteurs open source. L'entrée Spotify de l'enceinte elle-même, celle sans (STR), lit toujours le même compte."
+  "spotify.audioKeyRefused": "Spotify a refusé de lire ces titres via ST Reborn et a sauté toute la playlist sans jouer une seule note. Cela arrive avec un compte Spotify gratuit, et avec certains comptes Premium récents que Spotify n'autorise plus pour les lecteurs open source. L'entrée Spotify de l'enceinte elle-même, celle sans (STR), lit toujours le même compte.",
+  "spotify.qualityTitle": "Qualité de streaming",
+  "spotify.qualityDesc": "Réglable par enceinte. 320 kbps nécessite Spotify Premium. Un changement pendant la lecture est appliqué dès que l'enceinte s'arrête.",
+  "spotify.qualityNoBoxes": "Aucune enceinte STR trouvée.",
+  "spotify.qualityUnavailable": "Nécessite une mise à jour de l'enceinte",
+  "spotify.qualityPending": "Appliqué à l'arrêt de la lecture",
+  "spotify.qualitySet": "Qualité modifiée",
+  "spotify.qualityFailed": "L'enceinte a refusé le changement"
 }

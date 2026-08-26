@@ -108,6 +108,8 @@ export {
   StreamBitrate,
   StreamTitle,
   SpotifyBitrate,
+  SpotifyQuality,
+  SetSpotifyQuality,
   SpotifyNowPlaying,
   SaveSpotifyPreset,
   SaveLibraryPreset,

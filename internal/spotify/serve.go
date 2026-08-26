@@ -394,7 +394,14 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	// stable sink plays for minutes.
 	m.mu.Lock()
 	m.lastDetachAt = time.Now()
+	pendingBitr := m.bitrPending
 	m.mu.Unlock()
+	// A bitrate change made during playback waits for exactly this moment
+	// (#728). Event-driven on purpose: no standing ticker on every speaker
+	// for a change that happens once in a blue moon.
+	if pendingBitr {
+		go m.applyPendingBitrateAfterDetach()
+	}
 }
 
 // errSinkRetired is returned by a writer whose handler has gone. forward()

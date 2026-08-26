@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Sprawdź aktualizacje aplikacji",
   "banner.checkingForAppUpdate": "Sprawdzanie…",
   "banner.appIsCurrent": "Aplikacja jest aktualna.",
-  "spotify.audioKeyRefused": "Spotify odmówiło odtworzenia tych utworów przez ST Reborn i przewinęło całą playlistę, nie grając ani nuty. Zdarza się to przy darmowym koncie Spotify oraz przy niektórych nowszych kontach Premium, których Spotify nie dopuszcza już do odtwarzaczy o otwartym kodzie. Wejście Spotify samego głośnika, to bez (STR), nadal odtwarza to samo konto."
+  "spotify.audioKeyRefused": "Spotify odmówiło odtworzenia tych utworów przez ST Reborn i przewinęło całą playlistę, nie grając ani nuty. Zdarza się to przy darmowym koncie Spotify oraz przy niektórych nowszych kontach Premium, których Spotify nie dopuszcza już do odtwarzaczy o otwartym kodzie. Wejście Spotify samego głośnika, to bez (STR), nadal odtwarza to samo konto.",
+  "spotify.qualityTitle": "Jakość strumieniowania",
+  "spotify.qualityDesc": "Ustawiana dla każdego głośnika. 320 kbps wymaga Spotify Premium. Zmiana podczas odtwarzania zostanie zastosowana, gdy głośnik przestanie grać.",
+  "spotify.qualityNoBoxes": "Nie znaleziono głośników STR.",
+  "spotify.qualityUnavailable": "Wymaga aktualizacji głośnika",
+  "spotify.qualityPending": "Zostanie zastosowana po zatrzymaniu odtwarzania",
+  "spotify.qualitySet": "Zmieniono jakość",
+  "spotify.qualityFailed": "Głośnik odrzucił zmianę"
 }

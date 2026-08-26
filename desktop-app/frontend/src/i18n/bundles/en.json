@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "Check for app updates",
   "banner.checkingForAppUpdate": "Checking…",
   "banner.appIsCurrent": "Your app is up to date.",
-  "spotify.audioKeyRefused": "Spotify refused to play these tracks through ST Reborn. It skipped the whole playlist without playing a note. This happens with a free Spotify account, and with some newer Premium accounts that Spotify no longer allows open-source players to stream. Your speaker's own Spotify entry, the one without (STR), still plays the same account."
+  "spotify.audioKeyRefused": "Spotify refused to play these tracks through ST Reborn. It skipped the whole playlist without playing a note. This happens with a free Spotify account, and with some newer Premium accounts that Spotify no longer allows open-source players to stream. Your speaker's own Spotify entry, the one without (STR), still plays the same account.",
+  "spotify.qualityTitle": "Streaming quality",
+  "spotify.qualityDesc": "Set per speaker. 320 kbps needs Spotify Premium. A change made during playback is applied as soon as the speaker stops playing.",
+  "spotify.qualityNoBoxes": "No STR speakers found.",
+  "spotify.qualityUnavailable": "Needs a speaker update",
+  "spotify.qualityPending": "Applies when playback stops",
+  "spotify.qualitySet": "Quality changed",
+  "spotify.qualityFailed": "The speaker refused the change"
 }

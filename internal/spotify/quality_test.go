@@ -1,0 +1,248 @@
+package spotify
+
+import (
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func qualityTestManager(t *testing.T) (*Manager, string) {
+	t.Helper()
+	cfg := filepath.Join(t.TempDir(), "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return New("", cfg, "", nil, slog.New(slog.NewTextHandler(io.Discard, nil))), cfg
+}
+
+// A set bitrate must land in config.yml immediately and survive into a fresh
+// Manager on the same directory (agent restart, OTA binary swap).
+func TestSetBitratePersistsAndRewritesConfig(t *testing.T) {
+	m, cfg := qualityTestManager(t)
+	applied, err := m.SetBitrate(320)
+	if err != nil {
+		t.Fatalf("SetBitrate: %v", err)
+	}
+	if !applied {
+		t.Error("idle manager: want applied=true")
+	}
+	raw, err := os.ReadFile(filepath.Join(cfg, "config.yml"))
+	if err != nil {
+		t.Fatalf("config.yml not written: %v", err)
+	}
+	if !strings.Contains(string(raw), "bitrate: 320") {
+		t.Errorf("config.yml carries no bitrate 320:\n%s", raw)
+	}
+
+	m2 := New("", cfg, "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m2.mu.Lock()
+	got := m2.bitr
+	m2.mu.Unlock()
+	if got != 320 {
+		t.Errorf("fresh manager bitr = %d, want 320", got)
+	}
+}
+
+func TestSetBitrateRejectsInvalid(t *testing.T) {
+	m, _ := qualityTestManager(t)
+	if _, err := m.SetBitrate(200); err == nil {
+		t.Error("bitrate 200: want error, got nil")
+	}
+	m.mu.Lock()
+	got := m.bitr
+	m.mu.Unlock()
+	if got != defaultBitrate {
+		t.Errorf("rejected value must not stick, bitr = %d", got)
+	}
+}
+
+// A change during playback stores everything but defers the engine restart:
+// playback is never cut (same rule as the device-name watcher).
+func TestSetBitrateWhileStreamingDefers(t *testing.T) {
+	m, _ := qualityTestManager(t)
+	m.mu.Lock()
+	m.sink = io.Discard
+	m.mu.Unlock()
+	applied, err := m.SetBitrate(320)
+	if err != nil {
+		t.Fatalf("SetBitrate: %v", err)
+	}
+	if applied {
+		t.Error("streaming manager: want applied=false")
+	}
+	m.mu.Lock()
+	pending := m.bitrPending
+	m.mu.Unlock()
+	if !pending {
+		t.Error("want bitrPending=true so the idle watcher restarts the engine")
+	}
+}
+
+// A corrupt or absent preference file must mean the default, never a refusal
+// to start.
+func TestLoadBitrateFallsBackToDefault(t *testing.T) {
+	dir := t.TempDir()
+	if got := loadBitrate(filepath.Join(dir, "absent.txt")); got != defaultBitrate {
+		t.Errorf("absent file: %d, want %d", got, defaultBitrate)
+	}
+	p := filepath.Join(dir, "bad.txt")
+	if err := os.WriteFile(p, []byte("kaputt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadBitrate(p); got != defaultBitrate {
+		t.Errorf("corrupt file: %d, want %d", got, defaultBitrate)
+	}
+	if err := os.WriteFile(p, []byte("192\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadBitrate(p); got != defaultBitrate {
+		t.Errorf("invalid value: %d, want %d", got, defaultBitrate)
+	}
+}
+
+// A bitrate change must drop the cached late-joiner Ogg headers: they carry
+// the old bitrate's Vorbis codebooks, and replayed in front of new-bitrate
+// audio the box renders noise (live on the Portable, 2026-08-26).
+func TestSetBitrateInvalidatesHeaderCache(t *testing.T) {
+	m, cfg := qualityTestManager(t)
+	hdr := filepath.Join(cfg, "stream-headers.ogg")
+	if err := os.WriteFile(hdr, []byte("old-160-headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.headerPages = []byte("old-160-headers")
+	m.hdrPersisted = true
+	m.mu.Unlock()
+
+	if _, err := m.SetBitrate(320); err != nil {
+		t.Fatalf("SetBitrate: %v", err)
+	}
+	m.mu.Lock()
+	pages, persisted := m.headerPages, m.hdrPersisted
+	m.mu.Unlock()
+	if len(pages) != 0 || persisted {
+		t.Errorf("header cache survived the bitrate change: pages=%d persisted=%v", len(pages), persisted)
+	}
+	if _, err := os.Stat(hdr); !os.IsNotExist(err) {
+		t.Errorf("persisted header file survived the bitrate change: %v", err)
+	}
+}
+
+// The deferred apply fires on detach (watchDeviceName is disabled, so nothing
+// else would ever perform it): after the grace, an idle manager restarts and
+// clears the flag; a re-attached one leaves everything pending.
+func TestDeferredBitrateAppliesOnDetach(t *testing.T) {
+	oldGrace := pendingBitrateGrace
+	pendingBitrateGrace = 10 * time.Millisecond
+	defer func() { pendingBitrateGrace = oldGrace }()
+
+	m, _ := qualityTestManager(t)
+	m.mu.Lock()
+	m.sink = io.Discard
+	m.mu.Unlock()
+	if applied, err := m.SetBitrate(320); err != nil || applied {
+		t.Fatalf("SetBitrate = %v, %v; want deferred", applied, err)
+	}
+
+	// Re-attached before the grace ran out: stays pending.
+	m.applyPendingBitrateAfterDetach()
+	m.mu.Lock()
+	pending := m.bitrPending
+	m.mu.Unlock()
+	if !pending {
+		t.Fatal("apply ran despite an attached sink")
+	}
+
+	// Genuinely detached: applies and clears the flag.
+	m.mu.Lock()
+	m.sink = nil
+	m.mu.Unlock()
+	m.applyPendingBitrateAfterDetach()
+	m.mu.Lock()
+	pending = m.bitrPending
+	m.mu.Unlock()
+	if pending {
+		t.Fatal("deferred change was not applied after a real detach")
+	}
+}
+
+// A persisted header set from another bitrate must not be loaded at start;
+// one without a marker (pre-marker agent) is discarded too.
+func TestHeaderCacheLoadChecksBitrateMarker(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hdr := filepath.Join(cfg, "stream-headers.ogg")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// No marker: discard.
+	if err := os.WriteFile(hdr, []byte("headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New("", cfg, "", nil, logger)
+	if len(m.headerPages) != 0 {
+		t.Error("marker-less header set was loaded")
+	}
+	if _, err := os.Stat(hdr); !os.IsNotExist(err) {
+		t.Error("marker-less header set was not removed")
+	}
+
+	// Matching marker: load.
+	if err := os.WriteFile(hdr, []byte("headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hdr+".kbps", []byte("160"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = New("", cfg, "", nil, logger)
+	if string(m.headerPages) != "headers" || !m.hdrPersisted {
+		t.Error("matching header set was not loaded")
+	}
+
+	// Mismatched marker (preference now 320): discard.
+	if err := os.WriteFile(filepath.Join(dir, "sp-bitrate.txt"), []byte("320\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hdr, []byte("headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = New("", cfg, "", nil, logger)
+	if len(m.headerPages) != 0 {
+		t.Error("160-marked header set was loaded into a 320 manager")
+	}
+}
+
+func TestServeQualityRoundTrip(t *testing.T) {
+	m, _ := qualityTestManager(t)
+
+	w := httptest.NewRecorder()
+	m.ServeQuality(w, httptest.NewRequest("GET", "/spotify/quality", nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"bitrate":160`) {
+		t.Fatalf("GET = %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	m.ServeQuality(w, httptest.NewRequest("POST", "/spotify/quality", strings.NewReader(`{"bitrate":320}`)))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"applied":true`) {
+		t.Fatalf("POST = %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	m.ServeQuality(w, httptest.NewRequest("GET", "/spotify/quality", nil))
+	if !strings.Contains(w.Body.String(), `"bitrate":320`) {
+		t.Fatalf("GET after POST = %s", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	m.ServeQuality(w, httptest.NewRequest("POST", "/spotify/quality", strings.NewReader(`{"bitrate":123}`)))
+	if w.Code != 400 {
+		t.Errorf("invalid POST = %d, want 400", w.Code)
+	}
+}

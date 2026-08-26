@@ -1322,5 +1322,12 @@
   "banner.checkForAppUpdate": "アプリの更新を確認",
   "banner.checkingForAppUpdate": "確認中…",
   "banner.appIsCurrent": "アプリは最新です。",
-  "spotify.audioKeyRefused": "Spotify が ST Reborn 経由でのこれらの曲の再生を拒否し、一度も音が鳴らないままプレイリストをすべてスキップしました。無料の Spotify アカウント、および Spotify がオープンソースのプレーヤーに許可しなくなった一部の新しい Premium アカウントで起こります。(STR) の付かないスピーカー自身の Spotify では、同じアカウントが今までどおり再生できます。"
+  "spotify.audioKeyRefused": "Spotify が ST Reborn 経由でのこれらの曲の再生を拒否し、一度も音が鳴らないままプレイリストをすべてスキップしました。無料の Spotify アカウント、および Spotify がオープンソースのプレーヤーに許可しなくなった一部の新しい Premium アカウントで起こります。(STR) の付かないスピーカー自身の Spotify では、同じアカウントが今までどおり再生できます。",
+  "spotify.qualityTitle": "ストリーミング品質",
+  "spotify.qualityDesc": "スピーカーごとに設定します。320 kbps には Spotify Premium が必要です。再生中の変更は、スピーカーが停止した時点で適用されます。",
+  "spotify.qualityNoBoxes": "STR スピーカーが見つかりません。",
+  "spotify.qualityUnavailable": "スピーカーの更新が必要です",
+  "spotify.qualityPending": "再生停止時に適用されます",
+  "spotify.qualitySet": "品質を変更しました",
+  "spotify.qualityFailed": "スピーカーが変更を拒否しました"
 }

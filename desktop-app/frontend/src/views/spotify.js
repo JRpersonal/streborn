@@ -7,7 +7,7 @@
 
 import { $, escapeHtml, showToast, showError } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { BrowserOpenURL, SyncSpotifyLogin } from '../api.js';
+import { BrowserOpenURL, SyncSpotifyLogin, SpotifyQuality, SetSpotifyQuality } from '../api.js';
 
 let deps = { switchView: () => {}, strBoxes: () => [] };
 export function initSpotifyView(d) {
@@ -17,7 +17,13 @@ export function initSpotifyView(d) {
 // renderSpotifyAlpha paints the Spotify Beta info view (once).
 export function renderSpotifyAlpha() {
   const root = $('view-spotify');
-  if (!root || root.dataset.rendered === '1') return;
+  if (!root) return;
+  if (root.dataset.rendered === '1') {
+    // The static info is painted once, but the per-speaker quality rows read
+    // live state, so they refresh on every visit.
+    refreshQualityList();
+    return;
+  }
   root.dataset.rendered = '1';
   root.innerHTML = `
     <div class="alpha-stage">
@@ -49,6 +55,9 @@ export function renderSpotifyAlpha() {
         <li>${escapeHtml(t('spotify.limit2'))}</li>
         <li>${escapeHtml(t('spotify.limit3'))}</li>
       </ul>
+      <h3>${escapeHtml(t('spotify.qualityTitle'))}</h3>
+      <p>${escapeHtml(t('spotify.qualityDesc'))}</p>
+      <div id="spotifyQualityList"></div>
       <h3>${escapeHtml(t('spotify.syncTitle'))}</h3>
       <p>${escapeHtml(t('spotify.syncDesc'))}</p>
       <button class="btn btn-primary" id="spotifySyncBtn">${escapeHtml(t('spotify.syncBtn'))}</button>
@@ -98,4 +107,49 @@ export function renderSpotifyAlpha() {
     e.preventDefault();
     try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/78'); } catch {}
   };
+  refreshQualityList();
+}
+
+// refreshQualityList paints one row per STR speaker with its configured
+// engine bitrate (#728). Speakers whose agent predates /spotify/quality (or
+// is unreachable) show a hint instead of a selector. 320 kbps only reaches
+// Premium accounts, which is why the option says so.
+async function refreshQualityList() {
+  const root = $('spotifyQualityList');
+  if (!root) return;
+  const boxes = (deps.strBoxes ? deps.strBoxes() : []) || [];
+  if (!boxes.length) {
+    root.innerHTML = `<p class="muted small">${escapeHtml(t('spotify.qualityNoBoxes'))}</p>`;
+    return;
+  }
+  const states = await Promise.allSettled(boxes.map(b => SpotifyQuality(b.host, b.port)));
+  root.innerHTML = boxes.map((b, i) => {
+    const st = states[i].status === 'fulfilled' ? states[i].value : null;
+    if (!st || !st.ok) {
+      return `<div class="quality-row"><span>${escapeHtml(b.name)}</span>` +
+        `<span class="muted small">${escapeHtml(t('spotify.qualityUnavailable'))}</span></div>`;
+    }
+    const high = st.bitrate === 320;
+    return `<div class="quality-row"><span>${escapeHtml(b.name)}</span>` +
+      `<select class="quality-select" data-host="${escapeHtml(b.host)}" data-port="${b.port}">` +
+      `<option value="160"${high ? '' : ' selected'}>160 kbps</option>` +
+      `<option value="320"${high ? ' selected' : ''}>320 kbps (Premium)</option>` +
+      `</select>` +
+      (st.pending ? `<span class="muted small">${escapeHtml(t('spotify.qualityPending'))}</span>` : '') +
+      `</div>`;
+  }).join('');
+  root.querySelectorAll('select.quality-select').forEach(sel => {
+    sel.onchange = async () => {
+      sel.disabled = true;
+      try {
+        const res = await SetSpotifyQuality(sel.dataset.host, parseInt(sel.dataset.port, 10), parseInt(sel.value, 10));
+        if (res && res.ok) showToast(res.applied ? t('spotify.qualitySet') : t('spotify.qualityPending'));
+        else showError(t('spotify.qualityFailed'));
+      } catch (e) {
+        showError(String(e));
+      } finally {
+        sel.disabled = false;
+      }
+    };
+  });
 }
