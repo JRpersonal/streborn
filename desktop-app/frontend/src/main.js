@@ -4004,7 +4004,11 @@ async function doBoxUpdate(targetBox) {
           break;
         case 'confirmed':
           stopTick();
-          showToast(t('update.doneToast'));
+          // Not "update done": the Spotify-engine half may still follow (the
+          // grey Updating button stays for it), and calling the whole update
+          // done here while the card visibly kept working confused a reporter
+          // (#672). The single final "done" comes when the flow resolves.
+          showToast(t('update.agentDoneToast'));
           break;
         case 'engineQueued': stopTick(); setStatus(t('updateAll.phase.engineQueued')); break;
         case 'engineUploading':
@@ -4022,10 +4026,10 @@ async function doBoxUpdate(targetBox) {
     const confirmedVer = (result && result.version) || null;
     const confirmed = !!confirmedVer;
     if (result && result.outcome === 'done') {
-      // The update itself was announced when the speaker was confirmed. Only an
-      // engine that was actually (re)delivered is worth a second toast; one that
-      // was already current is not news.
-      if (result.engineDelivered) showToast(t('update.spotifyDoneToast'));
+      // THE done moment: everything, engine half included, is finished. One
+      // toast, here and only here (#672); the confirm phase above announced
+      // only the speaker-software half.
+      showToast(result.engineDelivered ? t('update.spotifyDoneToast') : t('update.doneToast'));
     } else if (result && result.outcome === 'partial') {
       // Agent updated, Spotify engine outstanding.
       if (result.engineTooFull) {
