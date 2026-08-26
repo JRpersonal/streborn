@@ -357,6 +357,11 @@ type Server struct {
 	// mirrorKickPending is true between scheduling a kick and sending it, so a
 	// burst of plays produces one reconcile rather than one per play.
 	mirrorKickPending atomic.Bool
+	// defaultFormMu/lastDefaultFormAt rate-limit the play-triggered re-form of
+	// the persisted default group (zones_default_group.go), so preset zapping
+	// does not drive the firmware with back-to-back setZone rounds.
+	defaultFormMu     sync.Mutex
+	lastDefaultFormAt time.Time
 
 	// wedge tracks the "box accepts transport pushes but never plays" state
 	// that only a power-cycle clears; streamActivityFn (the stream proxy's

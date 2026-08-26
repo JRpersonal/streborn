@@ -1707,15 +1707,19 @@ func (s *Server) PeriodicZoneReconcile() {
 		return
 	}
 	time.Sleep(45 * time.Second) // let the box finish booting
-	s.reconcileZoneOnce()
+	s.reconcileZoneOnce(false)
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
+			s.reconcileZoneOnce(false)
 		case <-s.mirrorKick:
+			// A play kick: the master just started music, which is the one
+			// moment the persisted group re-forms with full force (members
+			// woken, zone re-asserted). The tick above stays hands-off.
+			s.reconcileZoneOnce(true)
 		}
-		s.reconcileZoneOnce()
 	}
 }
 
@@ -1761,24 +1765,13 @@ func (s *Server) kickMirrorAfterPlay() {
 	}()
 }
 
-func (s *Server) reconcileZoneOnce() {
+func (s *Server) reconcileZoneOnce(playKick bool) {
 	z, ok := s.zones.Get()
 	if !ok {
 		return // standalone
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if z.Mirror() {
-		// Re-form the mirror group, guarded (best-effort): the master must be
-		// actively playing the mirrored stream, and a slave is only (re)pointed
-		// when it is idle, dropped off the mirror, or on a stale master stream.
-		// A standby or otherwise-busy speaker is left alone — the unguarded
-		// version of this path hijacked a slave's Spotify playback with the
-		// master's persisted last station every 5 minutes (#342). Not gated by
-		// the native opt-in below; the guards make it safe on their own.
-		s.mirrorToSlaves(ctx, z, true)
-		return
-	}
 	if z.Stereo {
 		// A left/right stereo pair is a firmware-native group, not a multiroom
 		// zone. Re-asserting it with the zone API (/setZone) would use the wrong
@@ -1786,10 +1779,35 @@ func (s *Server) reconcileZoneOnce() {
 		// stereo pair alone; the firmware persists it across reboot/standby itself.
 		return
 	}
+	if z.Mirror() {
+		if playKick {
+			// The master just started music: the stored members come along,
+			// standby ones included (the default-group design, 2026-08-26).
+			// The wake runs before the mirror pass so a just-woken member is
+			// re-pointed in the same round instead of at the next tick.
+			s.wakeStoredMembersForPlay(z)
+		}
+		// Re-form the mirror group, guarded (best-effort): the master must be
+		// actively playing the mirrored stream, and a slave is only (re)pointed
+		// when it is idle, dropped off the mirror, or on a stale master stream.
+		// A busy speaker is left alone — the unguarded version of this path
+		// hijacked a slave's Spotify playback with the master's persisted last
+		// station every 5 minutes (#342). Not gated by the native opt-in below;
+		// the guards make it safe on their own.
+		s.mirrorToSlaves(ctx, z, true)
+		return
+	}
+	if playKick {
+		// Native default group: the play kick is the trigger the periodic
+		// re-assert never had a safe answer for. Member classification keeps
+		// deliberately-solo speakers out (zones_default_group.go).
+		s.formDefaultGroupOnPlay(z)
+		return
+	}
 	if !s.zoneReconcileEnabled() {
-		// Native re-assert is opt-in (default OFF): re-asserting setZone whenever a
-		// member is missing dragged solo speakers back into the group, and on 0.8.x
-		// native zones do not distribute anyway. See zoneReconcileEnabled.
+		// The periodic native re-assert stays opt-in (default OFF): on a tick
+		// there is no user intent to lean on, and re-asserting whenever a
+		// member is missing dragged solo speakers back. See zoneReconcileEnabled.
 		return
 	}
 	// Native: only re-assert when the live zone does not already match.

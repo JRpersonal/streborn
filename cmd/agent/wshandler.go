@@ -136,6 +136,11 @@ type presetWsHandler struct {
 	// oscillates UPNP<->STANDBY does not switch the speaker back on (#197). Wired to
 	// webui.HandleEnterStandby, which is zone-guarded and debounced. nil-safe.
 	onEnterStandby func()
+	// onSourcePlaying fires when the box switches to a streaming source (any
+	// music start, hardware key and Spotify Connect included). Wired to
+	// webui.KickDefaultGroup so a persisted default group re-forms the moment
+	// its master starts music (#70). nil-safe; the webui side debounces.
+	onSourcePlaying func()
 	// recentlyPoweredOff reports whether STR saw this box drop UPNP->STANDBY within
 	// the bounce window. The hardware-preset recall verify (verifyPlayURL) checks it
 	// so it does NOT re-push the stream when the user powered the box off mid-recall
@@ -935,6 +940,15 @@ func (h *presetWsHandler) logStandbyRaceSignature() {
 func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
 	if h.onEnterStandby != nil {
 		h.onEnterStandby()
+	}
+}
+
+// OnSourcePlaying reacts to the box switching onto a streaming source: the
+// moment a persisted default group re-forms around its master (#70). boxws
+// calls this via an optional interface, so only handlers that wire it react.
+func (h *presetWsHandler) OnSourcePlaying(_ context.Context, _ string) {
+	if h.onSourcePlaying != nil {
+		h.onSourcePlaying()
 	}
 }
 

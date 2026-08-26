@@ -110,6 +110,16 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if src == "AUX" {
 					c.handler.OnSourceAux(ctx)
 				}
+				// A switch to a streaming source is the "this speaker started
+				// music" moment the persisted default group re-forms on (#70):
+				// it fires for hardware-key and Spotify Connect starts, which
+				// never pass through the agent's own play path. Optional
+				// interface, same pattern as OnSourceRejected.
+				if isStreamingSource(src) {
+					if h, ok := c.handler.(interface{ OnSourcePlaying(context.Context, string) }); ok {
+						h.OnSourcePlaying(ctx, src)
+					}
+				}
 				// A native radio station the box abandons on its own. Measured on
 				// a SoundTouch 20 (2nd gen, v0.9.30): every one of twelve native
 				// presses ended LOCAL_INTERNET_RADIO -> INVALID_SOURCE within a
@@ -689,4 +699,18 @@ func (c *Client) logUnrecognizedFrame(data []byte) {
 	if len(summary) > 0 {
 		c.logger.Info("box ws unrecognized frames so far", summary...)
 	}
+}
+
+// isStreamingSource says whether a source change means "this speaker started
+// music that a group can carry". Deliberately an allowlist of the streaming
+// sources: physical inputs (AUX, BLUETOOTH, TV) stay out, because a zone
+// cannot distribute them and forming one would wake other speakers for
+// nothing.
+func isStreamingSource(src string) bool {
+	switch src {
+	case "UPNP", "LOCAL_INTERNET_RADIO", "SPOTIFY", "STORED_MUSIC",
+		"STORED_MUSIC_MEDIA_RENDERER", "DEEZER", "PANDORA", "AMAZON", "TUNEIN":
+		return true
+	}
+	return false
 }
