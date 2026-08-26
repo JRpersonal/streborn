@@ -1744,8 +1744,13 @@ func (s *Server) kickMirrorAfterPlay() {
 	if s.zones == nil || s.mirrorKick == nil {
 		return
 	}
-	if z, ok := s.zones.Get(); !ok || !z.Mirror() {
-		return // standalone, or a native zone / stereo pair: not our business
+	if z, ok := s.zones.Get(); !ok || z.Stereo {
+		// Standalone, or a stereo pair (the firmware persists a pair itself).
+		// Native zones pass since the default group (#70): the play kick is
+		// their re-form trigger too, routed in reconcileZoneOnce. The first
+		// live test (2026-08-26, .59 master) died on the old !z.Mirror() gate
+		// here: the members stayed in standby because the kick never left.
+		return
 	}
 	// One pending kick at a time. Skipping a play that lands inside the window
 	// loses nothing: the round reads the speaker's live state when it runs, so
