@@ -254,6 +254,8 @@ export function renderMultiroom(fetchLive) {
        <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
          <div class="seg">${modeBtn('native', t('multiroom.modeNative'))}${modeBtn('mirror', t('multiroom.modeMirror'))}</div>
          <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></div>
+       <div class="zone-field"><label class="zone-permanent"><input type="checkbox" id="zonePermanent"${state.zonePermanent ? ' checked' : ''}/> ${escapeHtml(t('multiroom.permanentLabel'))}</label>
+         <span class="muted small">${escapeHtml(t('multiroom.permanentHelp'))}</span></div>
        <div class="zone-name-note muted small">${escapeHtml(t('multiroom.groupNameNote'))}</div>
        <div class="zone-actions">
          <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
@@ -327,6 +329,8 @@ export function renderMultiroom(fetchLive) {
     btn.onclick = () => { state.zoneMode = btn.dataset.mode; renderMultiroom(); };
   });
   if (enough) {
+    const perm = $('zonePermanent');
+    if (perm) perm.onchange = () => { state.zonePermanent = perm.checked; };
     $('zoneCreate').onclick = () => doFormZone(strBoxes);
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
   }
@@ -430,6 +434,9 @@ async function doFormZone(strBoxes) {
     const res = await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
       slaves, stereo: false, mode,
+      // Opt-in: the group re-forms (and wakes its members) whenever the
+      // master starts music (#70).
+      permanent: !!state.zonePermanent,
     });
     // Real feedback: mirror reports back {ok,mode}; native returns the live
     // zone, so verify the firmware actually took the members.

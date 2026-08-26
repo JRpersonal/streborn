@@ -144,6 +144,11 @@ const defaultGroupFormCooldown = 30 * time.Second
 // deliberately elsewhere, then one native setZone when the live zone does not
 // already carry every qualifying member.
 func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
+	if !z.Permanent {
+		// Opt-in (Jens, 2026-08-26): a group formed without the permanent
+		// choice keeps the old behaviour, nothing re-forms or wakes on play.
+		return
+	}
 	s.defaultFormMu.Lock()
 	if time.Since(s.lastDefaultFormAt) < defaultGroupFormCooldown {
 		s.defaultFormMu.Unlock()
@@ -220,6 +225,9 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 // follows then re-points the just-woken members in the same round. Members
 // that are awake, busy or unreachable are left exactly as they are.
 func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
+	if !z.Permanent {
+		return // opt-in, see formDefaultGroupOnPlay
+	}
 	s.defaultFormMu.Lock()
 	if time.Since(s.lastDefaultFormAt) < defaultGroupFormCooldown {
 		s.defaultFormMu.Unlock()

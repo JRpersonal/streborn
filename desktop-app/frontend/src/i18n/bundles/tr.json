@@ -1172,6 +1172,8 @@
   "multiroom.formedPartial": "Grup etkin, ama {{total}} hoparlörden yalnızca {{joined}} tanesi katıldığını onayladı. Diğerlerinin açık ve erişilebilir olduğunu kontrol et, Yenile'ye bas ya da Ayna modunu dene, sonra bana logları gönder.",
   "multiroom.groupMasterTitle": "Grup ana hoparlörü (grubun çaldığı hoparlör)",
   "multiroom.notReady": "Bu hoparlörler hâlâ başlatılıyordu ve katılmadılar: {{names}}. Birazdan tekrar gruplamayı dene.",
+  "multiroom.permanentLabel": "Bu grubu kalıcı tut",
+  "multiroom.permanentHelp": "Ana hoparlör müziğe başladığında grup hoparlörlerini uyandırır ve grubu kendiliğinden yeniden kurar; bekleme veya yeniden başlatma sonrasında da. Başka bir şey çalan hoparlör dışarıda kalır.",
   "preset.boxNativeHint": "hoparlörde çalmak için dokun",
   "preset.boxRecallFailed": "Bu hoparlör preseti başlatılamadı: {{err}}",
   "preset.lossBody": "Hoparlörünün {{slots}} tuşlarında {{service}} vardı. STR henüz {{service}} çalamıyor, bu yüzden hoparlör bu presetleri attı. {{service}} desteği planlanıyor. İnternet radyosu ve Spotify presetlerin etkilenmedi.",

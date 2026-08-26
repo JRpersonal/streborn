@@ -1172,6 +1172,8 @@
   "multiroom.formedPartial": "Grupo activo, pero solo {{joined}} de {{total}} altavoces confirmaron que se unieron. Comprueba que los demás estén encendidos y accesibles, pulsa Actualizar o prueba el modo Mirror, y luego envíame los registros.",
   "multiroom.groupMasterTitle": "Altavoz principal del grupo (desde el que suena el grupo)",
   "multiroom.notReady": "Estos altavoces aún se estaban iniciando y no se unieron: {{names}}. Vuelve a agruparlos en un momento.",
+  "multiroom.permanentLabel": "Mantener este grupo de forma permanente",
+  "multiroom.permanentHelp": "Cuando el altavoz principal inicia música, despierta los altavoces del grupo y vuelve a formar el grupo por sí solo, incluso tras el modo de espera o un reinicio. Un altavoz ocupado reproduciendo otra cosa queda fuera.",
   "preset.boxNativeHint": "toca para reproducir en el altavoz",
   "preset.boxRecallFailed": "No se pudo iniciar este preset del altavoz: {{err}}",
   "preset.lossBody": "Tu altavoz tenía {{service}} en las teclas {{slots}}. STR aún no puede reproducir {{service}}, así que el altavoz descartó estos presets. La compatibilidad con {{service}} está prevista. Tus presets de radio por internet y de Spotify no se ven afectados.",

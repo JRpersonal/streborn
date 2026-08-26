@@ -230,6 +230,9 @@ type zoneFormReq struct {
 	// Mode is "native" (firmware /setZone) or "mirror" (each slave's box pulls
 	// the master's stream via UPnP). Empty defaults to native.
 	Mode string `json:"mode"`
+	// Permanent opts the group into the play-triggered re-form with member
+	// wake (#70). Off by default (opt-in, Jens 2026-08-26).
+	Permanent bool `json:"permanent"`
 }
 
 // handleZoneForm creates (or replaces) a group with this box as master (#70 beta).
@@ -459,7 +462,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 
 	// Persist first so a transient drive error still leaves the group on record
 	// for the reconcile loop to retry. Only the master persists.
-	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name}
+	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name, Permanent: req.Permanent}
 	for _, m := range slaves {
 		z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
 	}

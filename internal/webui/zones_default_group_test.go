@@ -81,14 +81,25 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	z := zones.Zone{
-		Master:   "MASTER01",
-		MasterIP: "10.0.0.1",
+		Master:    "MASTER01",
+		MasterIP:  "10.0.0.1",
+		Permanent: true,
 		Slaves: []zones.Member{
 			{DeviceID: "SLEEPY", IP: "10.0.0.2"},
 			{DeviceID: "SOLO", IP: "10.0.0.3"},
 			{DeviceID: "IDLE", IP: "10.0.0.4"},
 		},
 	}
+
+	// Opt-in: without Permanent the play trigger must do NOTHING, wake
+	// included (Jens, 2026-08-26).
+	optOut := z
+	optOut.Permanent = false
+	s.formDefaultGroupOnPlay(optOut)
+	if len(woken) != 0 || setCalls != 0 {
+		t.Fatalf("non-permanent group acted on play: woken=%v setCalls=%d", woken, setCalls)
+	}
+
 	s.formDefaultGroupOnPlay(z)
 
 	if !woken["10.0.0.2"] {
@@ -140,7 +151,7 @@ func TestFormDefaultGroupSkipsWhenComplete(t *testing.T) {
 	}
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	s.lastDefaultFormAt = time.Time{}
-	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1",
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true,
 		Slaves: []zones.Member{{DeviceID: "S1", IP: "10.0.0.2"}}}
 	s.formDefaultGroupOnPlay(z)
 	if called {
