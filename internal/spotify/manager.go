@@ -59,7 +59,11 @@ type Manager struct {
 	fallback   string // device name used until the box's friendly name is known
 	apiAddr    string // host:port of go-librespot's HTTP API
 	logger     *slog.Logger
-	bitr       int            // 96/160/320
+	bitr       int            // 96/160/320 (persisted preference, see quality.go)
+	// bitrPending: a bitrate change arrived while the box was streaming; the
+	// config is written, only the engine restart is owed. watchDeviceName's
+	// next idle tick performs it.
+	bitrPending bool
 	client     *http.Client   // short ops: pause/resume/volume/info
 	playClient *http.Client   // /player/play: a cold playlist load can take >5s
 	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
@@ -336,7 +340,7 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		credStore:  filepath.Join(filepath.Dir(configDir), "sp-accounts"),
 		apiAddr:    "127.0.0.1:3678",
 		logger:     logger,
-		bitr:       160,
+		bitr:       loadBitrate(bitratePath(configDir)),
 		client:     &http.Client{Timeout: 5 * time.Second},
 		playClient: &http.Client{Timeout: 25 * time.Second},
 		hdrPath:    filepath.Join(configDir, "stream-headers.ogg"),

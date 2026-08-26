@@ -1321,5 +1321,12 @@
   "banner.checkForAppUpdate": "檢查應用程式更新",
   "banner.checkingForAppUpdate": "檢查中…",
   "banner.appIsCurrent": "你的應用程式已是最新版本。",
-  "spotify.audioKeyRefused": "Spotify 拒絕透過 ST Reborn 播放這些曲目，整份播放清單一首都沒播就跳過了。免費的 Spotify 帳號會這樣，某些較新的 Premium 帳號也會，因為 Spotify 不再讓開放原始碼的播放器串流。喇叭自己那個 Spotify 項目，也就是沒有 (STR) 的那個，一樣可以播放同一個帳號。"
+  "spotify.audioKeyRefused": "Spotify 拒絕透過 ST Reborn 播放這些曲目，整份播放清單一首都沒播就跳過了。免費的 Spotify 帳號會這樣，某些較新的 Premium 帳號也會，因為 Spotify 不再讓開放原始碼的播放器串流。喇叭自己那個 Spotify 項目，也就是沒有 (STR) 的那個，一樣可以播放同一個帳號。",
+  "spotify.qualityTitle": "串流品質",
+  "spotify.qualityDesc": "按嗇叭個別設定。320 kbps 需要 Spotify Premium。播放中所做的變更會在嗇叭停止播放後套用。",
+  "spotify.qualityNoBoxes": "找不到 STR 嗇叭。",
+  "spotify.qualityUnavailable": "需要更新嗇叭",
+  "spotify.qualityPending": "停止播放後套用",
+  "spotify.qualitySet": "已變更品質",
+  "spotify.qualityFailed": "嗇叭拒絕了變更"
 }

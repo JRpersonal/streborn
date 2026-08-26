@@ -223,11 +223,15 @@ export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:s
 
 export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
+export function SetSpotifyQuality(arg1:string,arg2:number,arg3:number):Promise<main.SpotifyQualityState>;
+
 export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
 
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
 export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
+
+export function SpotifyQuality(arg1:string,arg2:number):Promise<main.SpotifyQualityState>;
 
 export function StartQueue(arg1:string,arg2:number,arg3:string):Promise<void>;
 

@@ -262,10 +262,13 @@ func (m *Manager) watchDeviceName(ctx context.Context) {
 		name, vol := m.boxNameAndVolume(ctx)
 		m.mu.Lock()
 		changed := name != m.name
+		// A bitrate change that arrived mid-playback also waits here for the
+		// next idle tick (quality.go): same restart, same never-cut rule.
+		pending := m.bitrPending
 		streaming := m.sink != nil
 		restart := m.runCancel
 		m.mu.Unlock()
-		if !changed || streaming {
+		if (!changed && !pending) || streaming {
 			continue
 		}
 		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
@@ -275,8 +278,9 @@ func (m *Manager) watchDeviceName(ctx context.Context) {
 		}
 		m.mu.Lock()
 		m.name = name
+		m.bitrPending = false
 		m.mu.Unlock()
-		m.logger.Info("spotify: device name changed, restarting go-librespot", "name", name)
+		m.logger.Info("spotify: config changed, restarting go-librespot", "name", name, "bitratePending", pending)
 		if restart != nil {
 			restart()
 		}

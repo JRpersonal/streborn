@@ -1321,5 +1321,12 @@
   "banner.checkForAppUpdate": "البحث عن تحديثات التطبيق",
   "banner.checkingForAppUpdate": "جارٍ البحث…",
   "banner.appIsCurrent": "تطبيقك محدَّث.",
-  "spotify.audioKeyRefused": "رفض Spotify تشغيل هذه المقاطع عبر ST Reborn، فتخطّى قائمة التشغيل بالكامل دون أن يصدر أي صوت. يحدث ذلك مع حساب Spotify المجاني، ومع بعض حسابات Premium الأحدث التي لم يعد Spotify يسمح للمشغّلات مفتوحة المصدر ببثّها. أما إدخال Spotify الخاص بالسمّاعة نفسها، الذي بدون (STR)، فما زال يشغّل الحساب نفسه."
+  "spotify.audioKeyRefused": "رفض Spotify تشغيل هذه المقاطع عبر ST Reborn، فتخطّى قائمة التشغيل بالكامل دون أن يصدر أي صوت. يحدث ذلك مع حساب Spotify المجاني، ومع بعض حسابات Premium الأحدث التي لم يعد Spotify يسمح للمشغّلات مفتوحة المصدر ببثّها. أما إدخال Spotify الخاص بالسمّاعة نفسها، الذي بدون (STR)، فما زال يشغّل الحساب نفسه.",
+  "spotify.qualityTitle": "جودة البث",
+  "spotify.qualityDesc": "تُضبط لكل سمّاعة. تتطلب 320 كيلوبت/ث اشتراك Spotify Premium. التغيير أثناء التشغيل يُطبَّق فور توقف السمّاعة.",
+  "spotify.qualityNoBoxes": "لم يتم العثور على سمّاعات STR.",
+  "spotify.qualityUnavailable": "يتطلب تحديث السمّاعة",
+  "spotify.qualityPending": "يُطبَّق عند توقف التشغيل",
+  "spotify.qualitySet": "تم تغيير الجودة",
+  "spotify.qualityFailed": "رفضت السمّاعة التغيير"
 }

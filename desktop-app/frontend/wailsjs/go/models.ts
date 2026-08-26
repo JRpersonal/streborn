@@ -476,6 +476,24 @@ export namespace main {
 	        this.audioKeyRefused = source["audioKeyRefused"];
 	    }
 	}
+	export class SpotifyQualityState {
+	    ok: boolean;
+	    bitrate: number;
+	    pending: boolean;
+	    applied: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpotifyQualityState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.bitrate = source["bitrate"];
+	        this.pending = source["pending"];
+	        this.applied = source["applied"];
+	    }
+	}
 	export class SpotifySyncTarget {
 	    host: string;
 	    port: number;

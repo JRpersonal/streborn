@@ -1321,5 +1321,12 @@
   "banner.checkForAppUpdate": "Buscar actualizaciones de la app",
   "banner.checkingForAppUpdate": "Buscando…",
   "banner.appIsCurrent": "Tu aplicación está actualizada.",
-  "spotify.audioKeyRefused": "Spotify se ha negado a reproducir estas canciones a través de ST Reborn y ha saltado toda la lista sin sonar ni una nota. Ocurre con una cuenta gratuita de Spotify y con algunas cuentas Premium nuevas que Spotify ya no permite reproducir a los reproductores de código abierto. La entrada de Spotify del propio altavoz, la que no lleva (STR), sigue reproduciendo la misma cuenta."
+  "spotify.audioKeyRefused": "Spotify se ha negado a reproducir estas canciones a través de ST Reborn y ha saltado toda la lista sin sonar ni una nota. Ocurre con una cuenta gratuita de Spotify y con algunas cuentas Premium nuevas que Spotify ya no permite reproducir a los reproductores de código abierto. La entrada de Spotify del propio altavoz, la que no lleva (STR), sigue reproduciendo la misma cuenta.",
+  "spotify.qualityTitle": "Calidad de streaming",
+  "spotify.qualityDesc": "Se ajusta por altavoz. 320 kbps requiere Spotify Premium. Un cambio durante la reproducción se aplica en cuanto el altavoz se detiene.",
+  "spotify.qualityNoBoxes": "No se encontraron altavoces STR.",
+  "spotify.qualityUnavailable": "Necesita una actualización del altavoz",
+  "spotify.qualityPending": "Se aplica cuando se detiene la reproducción",
+  "spotify.qualitySet": "Calidad cambiada",
+  "spotify.qualityFailed": "El altavoz rechazó el cambio"
 }

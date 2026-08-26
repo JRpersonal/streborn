@@ -1321,5 +1321,12 @@
   "banner.checkForAppUpdate": "Uygulama güncellemelerini denetle",
   "banner.checkingForAppUpdate": "Denetleniyor…",
   "banner.appIsCurrent": "Uygulamanız güncel.",
-  "spotify.audioKeyRefused": "Spotify bu parçaları ST Reborn üzerinden çalmayı reddetti ve tek bir nota bile çalmadan bütün çalma listesini atladı. Bu, ücretsiz bir Spotify hesabında ve Spotify'ın artık açık kaynak oynatıcılara izin vermediği bazı yeni Premium hesaplarda olur. Hoparlörün kendi Spotify girişi, yani (STR) yazmayan, aynı hesabı çalmaya devam eder."
+  "spotify.audioKeyRefused": "Spotify bu parçaları ST Reborn üzerinden çalmayı reddetti ve tek bir nota bile çalmadan bütün çalma listesini atladı. Bu, ücretsiz bir Spotify hesabında ve Spotify'ın artık açık kaynak oynatıcılara izin vermediği bazı yeni Premium hesaplarda olur. Hoparlörün kendi Spotify girişi, yani (STR) yazmayan, aynı hesabı çalmaya devam eder.",
+  "spotify.qualityTitle": "Akış kalitesi",
+  "spotify.qualityDesc": "Hoparlör başına ayarlanır. 320 kbps için Spotify Premium gerekir. Çalma sırasında yapılan değişiklik, hoparlör durduğunda uygulanır.",
+  "spotify.qualityNoBoxes": "STR hoparlörü bulunamadı.",
+  "spotify.qualityUnavailable": "Hoparlör güncellemesi gerekiyor",
+  "spotify.qualityPending": "Çalma durunca uygulanır",
+  "spotify.qualitySet": "Kalite değiştirildi",
+  "spotify.qualityFailed": "Hoparlör değişikliği reddetti"
 }
