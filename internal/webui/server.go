@@ -238,6 +238,9 @@ type Server struct {
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
 	spotifyInfo http.HandlerFunc
+	// spotifyQuality answers GET/POST /spotify/quality: the engine's
+	// preferred streaming bitrate (#728). nil when not configured.
+	spotifyQuality http.HandlerFunc
 	// spotifyReload restarts the supervised go-librespot so it re-execs from its
 	// (just-overwritten) binary path, activating a freshly OTA-delivered engine
 	// WITHOUT a box reboot. Called from handleAgentSidecar after the sidecar
@@ -830,6 +833,9 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if s.spotifyInfo != nil {
 		mux.HandleFunc("/spotify/info", s.spotifyInfo)
+	}
+	if s.spotifyQuality != nil {
+		mux.HandleFunc("/spotify/quality", s.spotifyQuality)
 	}
 	if s.spotifyExportCred != nil || s.spotifyImportCred != nil {
 		mux.HandleFunc("/spotify/credential", s.handleSpotifyCredential)

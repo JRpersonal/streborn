@@ -44,6 +44,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,7 +61,11 @@ type Manager struct {
 	fallback   string // device name used until the box's friendly name is known
 	apiAddr    string // host:port of go-librespot's HTTP API
 	logger     *slog.Logger
-	bitr       int            // 96/160/320
+	bitr       int            // 96/160/320 (persisted preference, see quality.go)
+	// bitrPending: a bitrate change arrived while the box was streaming; the
+	// config is written, only the engine restart is owed. The box's next
+	// detach from the Ogg stream performs it (applyPendingBitrateAfterDetach).
+	bitrPending bool
 	client     *http.Client   // short ops: pause/resume/volume/info
 	playClient *http.Client   // /player/play: a cold playlist load can take >5s
 	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
@@ -336,7 +342,7 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		credStore:  filepath.Join(filepath.Dir(configDir), "sp-accounts"),
 		apiAddr:    "127.0.0.1:3678",
 		logger:     logger,
-		bitr:       160,
+		bitr:       loadBitrate(bitratePath(configDir)),
 		client:     &http.Client{Timeout: 5 * time.Second},
 		playClient: &http.Client{Timeout: 25 * time.Second},
 		hdrPath:    filepath.Join(configDir, "stream-headers.ogg"),
@@ -348,9 +354,19 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 	// Warm the Ogg header cache from the last session so the very first box
 	// attach after a cold boot gets valid Ogg (buffers) instead of nothing
 	// (the "service unavailable" flash). Best-effort; absent on a fresh install.
+	// Only when the set was captured at the CURRENT bitrate: Vorbis codebooks
+	// differ per profile, and a mismatched replay decodes to noise (live on
+	// the Portable, 2026-08-26). A set without a marker (pre-marker agent) is
+	// discarded once and re-persisted with one on the next play.
 	if b, err := os.ReadFile(m.hdrPath); err == nil && len(b) > 0 {
-		m.headerPages = b
-		m.hdrPersisted = true
+		if kb, kerr := os.ReadFile(m.hdrPath + ".kbps"); kerr == nil &&
+			strings.TrimSpace(string(kb)) == strconv.Itoa(m.bitr) {
+			m.headerPages = b
+			m.hdrPersisted = true
+		} else {
+			_ = os.Remove(m.hdrPath)
+			_ = os.Remove(m.hdrPath + ".kbps")
+		}
 	}
 	return m
 }

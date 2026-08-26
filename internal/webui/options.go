@@ -208,6 +208,12 @@ func WithSpotifyInfo(h http.HandlerFunc) Option {
 	return func(s *Server) { s.spotifyInfo = h }
 }
 
+// WithSpotifyQuality registers the handler for GET/POST /spotify/quality:
+// the engine's preferred streaming bitrate, per speaker (#728).
+func WithSpotifyQuality(h http.HandlerFunc) Option {
+	return func(s *Server) { s.spotifyQuality = h }
+}
+
 // WithSpotifyReload injects the Spotify manager's live engine reload, called
 // after an OTA sidecar write (handleAgentSidecar) so a freshly delivered
 // go-librespot is hot-swapped in place without a box reboot. The function
