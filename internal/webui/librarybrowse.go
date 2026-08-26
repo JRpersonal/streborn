@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/dlna"
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 const (
@@ -26,6 +27,9 @@ const (
 	// container time out at 15 s), so this is deliberately looser than the
 	// search's per-server share; it is one user tap, not a fan-out.
 	libraryBrowseTimeout = 20 * time.Second
+	// libraryUnicastProbe bounds the direct unicast M-SEARCH at the address
+	// the firmware's discovery cache names (#726). One host, one answer.
+	libraryUnicastProbe = 3 * time.Second
 )
 
 // handleLibraryServers lists the registered media servers for the phone page.
@@ -61,7 +65,7 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 	}
 	found, err := dlna.DiscoverServers(ctx, librarySearchDiscovery)
 	if err != nil {
-		return dlna.Server{}, false
+		s.logger.Info("library resolve: discovery failed", "err", err)
 	}
 	s.rememberMediaServerLocations(found)
 	for _, srv := range found {
@@ -69,6 +73,55 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 			return srv, true
 		}
 	}
+	// The multicast round came back without this server. On networks whose AP
+	// or router filters multicast between Wi-Fi and wire, the agent's own
+	// M-SEARCH (or its answers) never crosses, while the desktop app on the
+	// wire sees the server fine (#726). The firmware keeps its own discovery
+	// cache fed by the server's NOTIFY announcements; a unicast search at the
+	// address it names passes every multicast filter.
+	return s.resolveViaBoxCache(ctx, key, len(found))
+}
+
+// resolveViaBoxCache asks the speaker's own /listMediaServers cache where the
+// server was last seen and probes that address with a unicast M-SEARCH. Every
+// exit logs its reason: this path only runs when the phone page is about to
+// show "server not answering", and a silent miss here cannot be told apart
+// from a server that is genuinely off (#726).
+func (s *Server) resolveViaBoxCache(ctx context.Context, key string, discovered int) (dlna.Server, bool) {
+	if s.boxHost == "" {
+		return dlna.Server{}, false
+	}
+	known, err := boxapi.New(s.boxHost).ListMediaServers(ctx)
+	if err != nil {
+		s.logger.Warn("library resolve: server unresolved and the speaker's own list could not be read",
+			"discovered", discovered, "err", err)
+		return dlna.Server{}, false
+	}
+	ip := ""
+	for _, m := range known {
+		if udnKey(m.ID) == key {
+			ip = m.IP
+			break
+		}
+	}
+	if ip == "" {
+		s.logger.Warn("library resolve: server unresolved, the speaker's own discovery does not see it either",
+			"discovered", discovered, "boxKnows", len(known))
+		return dlna.Server{}, false
+	}
+	found, err := dlna.SearchHost(ctx, ip, libraryUnicastProbe)
+	if err != nil {
+		s.logger.Warn("library resolve: unicast probe failed", "ip", ip, "err", err)
+		return dlna.Server{}, false
+	}
+	s.rememberMediaServerLocations(found)
+	for _, srv := range found {
+		if udnKey(srv.UDN) == key {
+			s.logger.Info("library resolve: server found via the speaker's discovery cache and a unicast probe", "ip", ip)
+			return srv, true
+		}
+	}
+	s.logger.Warn("library resolve: unicast probe answered, but not with this server", "ip", ip, "answers", len(found))
 	return dlna.Server{}, false
 }
 

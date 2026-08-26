@@ -131,6 +131,12 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 			srv, ok = s.recallMediaServer(ctx, key)
 		}
 		if !ok {
+			// Same last resort the browse path takes: the firmware's own
+			// discovery cache plus a unicast probe, for networks that filter
+			// the agent's multicast round (#726).
+			srv, ok = s.resolveViaBoxCache(ctx, key, len(found))
+		}
+		if !ok {
 			missing = append(missing, reg.Name)
 			continue
 		}
