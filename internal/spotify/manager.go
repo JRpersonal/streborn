@@ -63,8 +63,8 @@ type Manager struct {
 	logger     *slog.Logger
 	bitr       int            // 96/160/320 (persisted preference, see quality.go)
 	// bitrPending: a bitrate change arrived while the box was streaming; the
-	// config is written, only the engine restart is owed. watchDeviceName's
-	// next idle tick performs it.
+	// config is written, only the engine restart is owed. The box's next
+	// detach from the Ogg stream performs it (applyPendingBitrateAfterDetach).
 	bitrPending bool
 	client     *http.Client   // short ops: pause/resume/volume/info
 	playClient *http.Client   // /player/play: a cold playlist load can take >5s

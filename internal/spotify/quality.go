@@ -19,11 +19,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // defaultBitrate is what runs without a stored preference, the value every
 // speaker has effectively had since the sidecar shipped.
 const defaultBitrate = 160
+
+// pendingBitrateGrace is how long a deferred bitrate change waits after a
+// detach before restarting the engine, so transient detach/re-attach cycles
+// (re-pushes, network blips) do not trigger it. A variable only for the test.
+var pendingBitrateGrace = 10 * time.Second
 
 func validBitrate(kbps int) bool {
 	return kbps == 96 || kbps == 160 || kbps == 320
@@ -51,8 +57,9 @@ func loadBitrate(path string) int {
 
 // SetBitrate persists the preference, rewrites config.yml and restarts the
 // engine when idle. Returns applied=false when a stream is live: the config is
-// already written, and watchDeviceName's next idle tick does the restart (the
-// pending flag below is its trigger).
+// already written, and the box's next detach from the Ogg stream performs the
+// restart (applyPendingBitrateAfterDetach; watchDeviceName would have been the
+// natural place, but it is deliberately disabled, see engine.go).
 func (m *Manager) SetBitrate(kbps int) (applied bool, err error) {
 	if !validBitrate(kbps) {
 		return false, fmt.Errorf("bitrate must be 96, 160 or 320, got %d", kbps)
@@ -92,6 +99,31 @@ func (m *Manager) SetBitrate(kbps int) (applied bool, err error) {
 		restart()
 	}
 	return true, nil
+}
+
+// applyPendingBitrateAfterDetach performs a deferred bitrate change once the
+// box has left the Ogg stream. The 10 s grace keeps it out of transient
+// detach/re-attach cycles (re-pushes, network blips): if the box is back on
+// the stream by then, nothing happens and the next real detach tries again.
+func (m *Manager) applyPendingBitrateAfterDetach() {
+	time.Sleep(pendingBitrateGrace)
+	m.mu.Lock()
+	ok := m.bitrPending && m.sink == nil
+	if ok {
+		m.bitrPending = false
+	}
+	kbps := m.bitr
+	restart := m.runCancel
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	// config.yml already carries the new bitrate (SetBitrate wrote it).
+	m.invalidateHeaderCache()
+	m.logger.Info("spotify: applying deferred bitrate change, restarting go-librespot", "kbps", kbps)
+	if restart != nil {
+		restart()
+	}
 }
 
 // invalidateHeaderCache drops the late-joiner Ogg header set, in memory and on

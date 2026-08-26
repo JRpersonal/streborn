@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func qualityTestManager(t *testing.T) (*Manager, string) {
@@ -129,6 +130,44 @@ func TestSetBitrateInvalidatesHeaderCache(t *testing.T) {
 	}
 	if _, err := os.Stat(hdr); !os.IsNotExist(err) {
 		t.Errorf("persisted header file survived the bitrate change: %v", err)
+	}
+}
+
+// The deferred apply fires on detach (watchDeviceName is disabled, so nothing
+// else would ever perform it): after the grace, an idle manager restarts and
+// clears the flag; a re-attached one leaves everything pending.
+func TestDeferredBitrateAppliesOnDetach(t *testing.T) {
+	oldGrace := pendingBitrateGrace
+	pendingBitrateGrace = 10 * time.Millisecond
+	defer func() { pendingBitrateGrace = oldGrace }()
+
+	m, _ := qualityTestManager(t)
+	m.mu.Lock()
+	m.sink = io.Discard
+	m.mu.Unlock()
+	if applied, err := m.SetBitrate(320); err != nil || applied {
+		t.Fatalf("SetBitrate = %v, %v; want deferred", applied, err)
+	}
+
+	// Re-attached before the grace ran out: stays pending.
+	m.applyPendingBitrateAfterDetach()
+	m.mu.Lock()
+	pending := m.bitrPending
+	m.mu.Unlock()
+	if !pending {
+		t.Fatal("apply ran despite an attached sink")
+	}
+
+	// Genuinely detached: applies and clears the flag.
+	m.mu.Lock()
+	m.sink = nil
+	m.mu.Unlock()
+	m.applyPendingBitrateAfterDetach()
+	m.mu.Lock()
+	pending = m.bitrPending
+	m.mu.Unlock()
+	if pending {
+		t.Fatal("deferred change was not applied after a real detach")
 	}
 }
 
