@@ -83,11 +83,34 @@ func (m *Manager) SetBitrate(kbps int) (applied bool, err error) {
 		m.logger.Info("spotify: bitrate change stored, engine restart waits for playback to stop", "kbps", kbps)
 		return false, nil
 	}
+	// The cached Ogg headers carry the OLD bitrate's Vorbis codebooks. Served
+	// to the next attach in front of new-bitrate audio they decode to noise
+	// (live on the Portable, 2026-08-26), so they go before the restart does.
+	m.invalidateHeaderCache()
 	m.logger.Info("spotify: bitrate changed, restarting go-librespot", "kbps", kbps)
 	if restart != nil {
 		restart()
 	}
 	return true, nil
+}
+
+// invalidateHeaderCache drops the late-joiner Ogg header set, in memory and on
+// NAND. Header pages are interchangeable within one bitrate profile but NOT
+// across bitrates: replaying a 160 kbps header set in front of 320 kbps audio
+// configures the box's decoder with the wrong codebooks and it renders noise.
+// Called at the moment of a bitrate-change restart; the next stream's own
+// headers re-fill the cache (and hdrPersisted re-arms the one-shot NAND write).
+func (m *Manager) invalidateHeaderCache() {
+	m.mu.Lock()
+	m.headerPages = nil
+	m.hdrPersisted = false
+	m.mu.Unlock()
+	if err := os.Remove(m.hdrPath); err != nil && !os.IsNotExist(err) {
+		m.logger.Warn("spotify: could not remove the persisted header set", "err", err)
+	}
+	if err := os.Remove(m.hdrPath + ".kbps"); err != nil && !os.IsNotExist(err) {
+		m.logger.Warn("spotify: could not remove the header bitrate marker", "err", err)
+	}
 }
 
 // ServeQuality answers GET and POST /spotify/quality.

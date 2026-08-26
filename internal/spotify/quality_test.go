@@ -104,6 +104,82 @@ func TestLoadBitrateFallsBackToDefault(t *testing.T) {
 	}
 }
 
+// A bitrate change must drop the cached late-joiner Ogg headers: they carry
+// the old bitrate's Vorbis codebooks, and replayed in front of new-bitrate
+// audio the box renders noise (live on the Portable, 2026-08-26).
+func TestSetBitrateInvalidatesHeaderCache(t *testing.T) {
+	m, cfg := qualityTestManager(t)
+	hdr := filepath.Join(cfg, "stream-headers.ogg")
+	if err := os.WriteFile(hdr, []byte("old-160-headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.headerPages = []byte("old-160-headers")
+	m.hdrPersisted = true
+	m.mu.Unlock()
+
+	if _, err := m.SetBitrate(320); err != nil {
+		t.Fatalf("SetBitrate: %v", err)
+	}
+	m.mu.Lock()
+	pages, persisted := m.headerPages, m.hdrPersisted
+	m.mu.Unlock()
+	if len(pages) != 0 || persisted {
+		t.Errorf("header cache survived the bitrate change: pages=%d persisted=%v", len(pages), persisted)
+	}
+	if _, err := os.Stat(hdr); !os.IsNotExist(err) {
+		t.Errorf("persisted header file survived the bitrate change: %v", err)
+	}
+}
+
+// A persisted header set from another bitrate must not be loaded at start;
+// one without a marker (pre-marker agent) is discarded too.
+func TestHeaderCacheLoadChecksBitrateMarker(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hdr := filepath.Join(cfg, "stream-headers.ogg")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// No marker: discard.
+	if err := os.WriteFile(hdr, []byte("headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New("", cfg, "", nil, logger)
+	if len(m.headerPages) != 0 {
+		t.Error("marker-less header set was loaded")
+	}
+	if _, err := os.Stat(hdr); !os.IsNotExist(err) {
+		t.Error("marker-less header set was not removed")
+	}
+
+	// Matching marker: load.
+	if err := os.WriteFile(hdr, []byte("headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hdr+".kbps", []byte("160"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = New("", cfg, "", nil, logger)
+	if string(m.headerPages) != "headers" || !m.hdrPersisted {
+		t.Error("matching header set was not loaded")
+	}
+
+	// Mismatched marker (preference now 320): discard.
+	if err := os.WriteFile(filepath.Join(dir, "sp-bitrate.txt"), []byte("320\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hdr, []byte("headers"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = New("", cfg, "", nil, logger)
+	if len(m.headerPages) != 0 {
+		t.Error("160-marked header set was loaded into a 320 manager")
+	}
+}
+
 func TestServeQualityRoundTrip(t *testing.T) {
 	m, _ := qualityTestManager(t)
 

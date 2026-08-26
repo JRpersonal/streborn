@@ -44,6 +44,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -352,9 +354,19 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 	// Warm the Ogg header cache from the last session so the very first box
 	// attach after a cold boot gets valid Ogg (buffers) instead of nothing
 	// (the "service unavailable" flash). Best-effort; absent on a fresh install.
+	// Only when the set was captured at the CURRENT bitrate: Vorbis codebooks
+	// differ per profile, and a mismatched replay decodes to noise (live on
+	// the Portable, 2026-08-26). A set without a marker (pre-marker agent) is
+	// discarded once and re-persisted with one on the next play.
 	if b, err := os.ReadFile(m.hdrPath); err == nil && len(b) > 0 {
-		m.headerPages = b
-		m.hdrPersisted = true
+		if kb, kerr := os.ReadFile(m.hdrPath + ".kbps"); kerr == nil &&
+			strings.TrimSpace(string(kb)) == strconv.Itoa(m.bitr) {
+			m.headerPages = b
+			m.hdrPersisted = true
+		} else {
+			_ = os.Remove(m.hdrPath)
+			_ = os.Remove(m.hdrPath + ".kbps")
+		}
 	}
 	return m
 }

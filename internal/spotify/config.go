@@ -280,6 +280,12 @@ func (m *Manager) watchDeviceName(ctx context.Context) {
 		m.name = name
 		m.bitrPending = false
 		m.mu.Unlock()
+		if pending {
+			// The deferred bitrate change is about to take effect: the cached
+			// headers still carry the old bitrate's codebooks (see
+			// invalidateHeaderCache).
+			m.invalidateHeaderCache()
+		}
 		m.logger.Info("spotify: config changed, restarting go-librespot", "name", name, "bitratePending", pending)
 		if restart != nil {
 			restart()
