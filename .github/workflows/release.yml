@@ -1769,10 +1769,20 @@ jobs:
       # with it /api/update-check.php) served the previous release for an hour
       # and the app told users they were up to date (#734). Verify a run
       # actually started; if none does, fall back to a direct
-      # workflow_dispatch of the deploy, and only fail when THAT does not
-      # start either. The PAT already has access to the website repo (the
-      # dispatch above needs it), which covers run listing and workflow
-      # dispatch there.
+      # workflow_dispatch of the deploy.
+      #
+      # This verification is BEST EFFORT and must never fail an already
+      # published release. The Notify step above (repository_dispatch) is the
+      # thing that actually starts the website build, and it ran before this
+      # step. Reading the website repo's runs and dispatching its workflow
+      # need the `actions` permission there, which WEBSITE_DISPATCH_PAT does
+      # NOT carry (it is scoped for repository_dispatch only). When the API
+      # answers 403, that means "cannot verify", not "no build started", so we
+      # warn and exit 0 rather than turning a good release red (#734 follow-up,
+      # v0.9.61: the release published fine but this step failed on 403).
+      # To restore real verification, give the PAT read+write `actions` on
+      # streborn-website; then the 403 path stops firing and the check below
+      # does its job.
       - name: Verify the website build started
         if: |
           startsWith(github.ref, 'refs/tags/') ||
@@ -1782,24 +1792,48 @@ jobs:
         run: |
           set -u
           since=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          # Echoes a run count, or "NOACCESS" when the token cannot read the
+          # website repo's Actions API (403), or "0" on a transient error.
+          # Wrapping the gh call in `if` keeps `set -e` from killing the step
+          # when the call fails (e.g. 403); the branch inspects why.
           saw_run() {
-            gh run list --repo JRpersonal/streborn-website \
+            local out
+            if out=$(gh run list --repo JRpersonal/streborn-website \
               --workflow website-deploy.yml --limit 5 \
-              --json createdAt --jq "[.[] | select(.createdAt > \"$since\")] | length"
+              --json createdAt --jq "[.[] | select(.createdAt > \"$since\")] | length" 2>/tmp/saw_err); then
+              echo "${out:-0}"
+            elif grep -qiE '403|not accessible|Resource not accessible' /tmp/saw_err; then
+              echo NOACCESS
+            else
+              echo 0
+            fi
           }
           for i in $(seq 1 12); do
             sleep 10
-            n=$(saw_run || echo 0)
+            n=$(saw_run)
+            if [ "$n" = "NOACCESS" ]; then
+              echo "::warning::cannot verify the website build: WEBSITE_DISPATCH_PAT lacks 'actions' read on streborn-website (403). The repository_dispatch in the Notify step already fired; grant the PAT actions read+write there to re-enable verification."
+              exit 0
+            fi
             if [ "${n:-0}" -gt 0 ]; then
               echo "website build started ($n run(s) since $since)"
               exit 0
             fi
           done
           echo "::warning::the dispatch produced no website run in 2 minutes, falling back to a direct workflow_dispatch"
-          gh workflow run website-deploy.yml --repo JRpersonal/streborn-website
+          if ! gh workflow run website-deploy.yml --repo JRpersonal/streborn-website 2>/tmp/wf_err; then
+            if grep -qiE '403|not accessible|Resource not accessible' /tmp/wf_err; then
+              echo "::warning::cannot dispatch the website deploy: WEBSITE_DISPATCH_PAT lacks 'actions' write on streborn-website (403). The Notify step already dispatched; grant the PAT actions read+write to re-enable the fallback."
+              exit 0
+            fi
+          fi
           for i in $(seq 1 12); do
             sleep 10
-            n=$(saw_run || echo 0)
+            n=$(saw_run)
+            if [ "$n" = "NOACCESS" ]; then
+              echo "::warning::cannot verify the website build (403); the Notify step already dispatched. Grant the PAT actions read+write on streborn-website."
+              exit 0
+            fi
             if [ "${n:-0}" -gt 0 ]; then
               echo "website build started via the fallback"
               exit 0
