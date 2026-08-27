@@ -2597,3 +2597,31 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 /* A speaker that is not answering reads differently from one that is simply
    not in the group: the first is a fault, the second is a state. */
 .zone-live.zone-live-noanswer { color: var(--c-faint); font-style: italic; }
+
+/* ---------- SiriusXM ---------- */
+.sirius-wrap { max-width: 1100px; margin: 0 auto; }
+.sirius-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:10px; }
+.sirius-header h2 { margin:0 0 4px; }
+.sirius-header p { margin:0; }
+.sirius-status { display:flex; align-items:center; gap:7px; font-size:13px; color:var(--c-muted); white-space:nowrap; }
+.sirius-dot { width:9px; height:9px; border-radius:50%; background:var(--c-muted); display:inline-block; }
+.cardish { background:var(--c-surface); border:1px solid var(--c-surface-2); border-radius:8px; padding:14px; margin-bottom:10px; }
+.sirius-login h3, .sirius-list h3 { margin:0 0 10px; }
+.sirius-fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+.sirius-fields label { display:flex; flex-direction:column; gap:5px; color:var(--c-muted); font-size:12px; }
+.sirius-fields input, .sirius-list-head input { width:100%; box-sizing:border-box; background:var(--c-bg); border:1px solid var(--c-border); color:var(--c-text); border-radius:5px; padding:8px 9px; font-size:13px; }
+.sirius-fields input:focus, .sirius-list-head input:focus { outline:none; border-color:var(--brand); }
+.sirius-actions { display:flex; gap:7px; }
+.sirius-list-head { display:flex; align-items:center; gap:10px; justify-content:space-between; margin-bottom:8px; }
+.sirius-list-head input { max-width:330px; }
+.sirius-station-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-top:1px solid var(--c-surface-2); }
+.sirius-station-main { min-width:0; }
+.sirius-station-name { font-size:14px; color:var(--c-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sirius-station-id { margin-top:2px; }
+.sirius-station-actions { display:flex; gap:6px; flex:0 0 auto; }
+.sirius-wrap code { font-size:11px; }
+@media (max-width:700px) { .sirius-fields { grid-template-columns:1fr; } .sirius-list-head { align-items:stretch; flex-direction:column; } .sirius-list-head input { max-width:none; } }
+
+/* Native SiriusXM */
+.sirius-native-note{display:flex;align-items:center;gap:10px;margin:10px 0 14px}
+.sirius-native-badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;background:var(--accent,#4b7bec);color:#fff}

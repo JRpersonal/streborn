@@ -336,6 +336,7 @@ import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from
 import { renderMultiroom, initMultiroomView } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
+import { renderSiriusXM, initSiriusXMView } from './views/siriusxm.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // App-wide accessibility prefs (text size + theme). Applied to <html> before
 // the skeleton renders so the first paint already reflects the chosen size and
@@ -399,6 +400,7 @@ initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxS
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
+initSiriusXMView({ effectivePlayTarget, showSlotPicker });
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
@@ -536,6 +538,7 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
     <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
+    <button class="tab-btn" data-view="siriusxm">SiriusXM<span class="beta-pill">Beta</span></button>
     <button class="tab-btn" data-view="podcasts">${escapeHtml(t('nav.podcasts'))}<span class="beta-pill planned-pill">${escapeHtml(t('common.planned'))}</span></button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
@@ -553,6 +556,7 @@ document.querySelector('#app').innerHTML = `
   <div id="view-multiroom" class="view hidden"></div>
   <div id="view-spotify" class="view hidden"></div>
   <div id="view-podcasts" class="view hidden"></div>
+  <div id="view-siriusxm" class="view hidden"></div>
 
   <div class="modal hidden" id="pickModal">
     <div class="modal-content">
@@ -747,6 +751,7 @@ function switchView(view) {
   $('view-multiroom').classList.toggle('hidden', view !== 'multiroom');
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   $('view-podcasts').classList.toggle('hidden', view !== 'podcasts');
+  $('view-siriusxm').classList.toggle('hidden', view !== 'siriusxm');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
   // decide.
@@ -792,6 +797,7 @@ function switchView(view) {
   if (view === 'multiroom') renderMultiroom(true);
   if (view === 'spotify') renderSpotifyAlpha();
   if (view === 'podcasts') renderPodcasts();
+  if (view === 'siriusxm') renderSiriusXM();
 }
 
 

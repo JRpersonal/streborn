@@ -191,6 +191,8 @@ export function SaveFolderPreset(arg1:string,arg2:number,arg3:number,arg4:string
 
 export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 
+export function SaveSiriusXMConfig(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
 export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
 
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
@@ -225,11 +227,23 @@ export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise
 
 export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
 
+export function SiriusXMConfig():Promise<Record<string, string>>;
+
+export function SiriusXMPlay(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
+
+export function SiriusXMStations():Promise<Array<Record<string, string>>>;
+
+export function SiriusXMStatus():Promise<main.siriusXMState>;
+
+export function SiriusXMURL(arg1:string,arg2:string):Promise<string>;
+
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
 export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
 
 export function StartQueue(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function StartSiriusXM():Promise<void>;
 
 export function Status(arg1:string,arg2:number):Promise<string>;
 
@@ -238,6 +252,8 @@ export function StickConfigs(arg1:string):Promise<sticksetup.StickConfigs>;
 export function StickVersion(arg1:string):Promise<string>;
 
 export function Stop(arg1:string,arg2:number):Promise<void>;
+
+export function StopSiriusXM():Promise<void>;
 
 export function StreamBitrate(arg1:string,arg2:number):Promise<number>;
 

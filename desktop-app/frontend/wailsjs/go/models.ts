@@ -644,6 +644,32 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class siriusXMState {
+	    sxm_running: boolean;
+	    relay_running: boolean;
+	    sxm_script?: string;
+	    relay_script?: string;
+	    hls_url: string;
+	    relay_url: string;
+	    native: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new siriusXMState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sxm_running = source["sxm_running"];
+	        this.relay_running = source["relay_running"];
+	        this.sxm_script = source["sxm_script"];
+	        this.relay_script = source["relay_script"];
+	        this.hls_url = source["hls_url"];
+	        this.relay_url = source["relay_url"];
+	        this.native = source["native"];
+	        this.error = source["error"];
+	    }
+	}
 
 }
 

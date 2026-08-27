@@ -374,6 +374,10 @@ export function SaveLibraryPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8
   return window['go']['main']['App']['SaveLibraryPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 }
 
+export function SaveSiriusXMConfig(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveSiriusXMConfig'](arg1, arg2, arg3, arg4);
+}
+
 export function SaveSpotifyPreset(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SaveSpotifyPreset'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
@@ -442,6 +446,26 @@ export function SetWebhooks(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SetWebhooks'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
+export function SiriusXMConfig() {
+  return window['go']['main']['App']['SiriusXMConfig']();
+}
+
+export function SiriusXMPlay(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SiriusXMPlay'](arg1, arg2, arg3, arg4);
+}
+
+export function SiriusXMStations() {
+  return window['go']['main']['App']['SiriusXMStations']();
+}
+
+export function SiriusXMStatus() {
+  return window['go']['main']['App']['SiriusXMStatus']();
+}
+
+export function SiriusXMURL(arg1, arg2) {
+  return window['go']['main']['App']['SiriusXMURL'](arg1, arg2);
+}
+
 export function SpotifyBitrate(arg1, arg2) {
   return window['go']['main']['App']['SpotifyBitrate'](arg1, arg2);
 }
@@ -452,6 +476,10 @@ export function SpotifyNowPlaying(arg1, arg2) {
 
 export function StartQueue(arg1, arg2, arg3) {
   return window['go']['main']['App']['StartQueue'](arg1, arg2, arg3);
+}
+
+export function StartSiriusXM() {
+  return window['go']['main']['App']['StartSiriusXM']();
 }
 
 export function Status(arg1, arg2) {
@@ -468,6 +496,10 @@ export function StickVersion(arg1) {
 
 export function Stop(arg1, arg2) {
   return window['go']['main']['App']['Stop'](arg1, arg2);
+}
+
+export function StopSiriusXM() {
+  return window['go']['main']['App']['StopSiriusXM']();
 }
 
 export function StreamBitrate(arg1, arg2) {
