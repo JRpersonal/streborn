@@ -279,7 +279,10 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	// expired by the time we get here; using it for the HTTP
 	// fetches would have every fetch fail with deadline exceeded.
 	// Parent ctx is still alive (caller's overall budget).
-	fctx, fcancel := context.WithTimeout(ctx, 8*time.Second)
+	// 12s (was 8s): the whole set of description fetches runs in parallel under
+	// this one deadline, so a slow NAS (WD Twonky, #733) is the one that needs
+	// the headroom; the fast ones still return in well under a second.
+	fctx, fcancel := context.WithTimeout(ctx, 12*time.Second)
 	defer fcancel()
 
 	type result struct {
@@ -433,9 +436,15 @@ func fetchDeviceDescription(ctx context.Context, location string) (Server, error
 	if err != nil {
 		return Server{}, err
 	}
-	// 6s (was 4s): a NAS can serve its device.xml slowly. Without logging,
-	// a fetch failure made a NAS that DID answer SSDP vanish with no trace (#110).
-	client := &http.Client{Timeout: 6 * time.Second}
+	// The per-fetch deadline comes from ctx, so a caller can give a known-slow
+	// server (a WD Twonky answers its device.xml far slower than a FRITZ!Box,
+	// #733) more room than a bulk discovery sweep grants each candidate. A
+	// hard-coded 6s client timeout used to cut the Twonky off with
+	// "context deadline exceeded" while faster servers on the same LAN came
+	// through, so its native STORED_MUSIC source worked but the phone browse
+	// reported it offline. The 20s ceiling only guards a caller that passed a
+	// deadline-less ctx; every real caller sets one.
+	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		Logger.Warn("dlna: device description fetch failed", "location", location, "err", err.Error())
