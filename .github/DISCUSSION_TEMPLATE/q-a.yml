@@ -1,0 +1,28 @@
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask away. If your question is about a speaker that misbehaves, one thing
+        helps most.
+
+        ### A diagnostic file answers most questions  ·  Eine Diagnosedatei klärt die meisten Fragen
+
+        It carries your speaker model, firmware, and the agent log, with **no
+        passwords and no account data**.
+
+        **Desktop app (Windows / macOS / Linux):** the **Save diagnostic logs**
+        button (deutsch: **Diagnose-Log speichern**) at the very bottom of the app.
+
+        **Phone page** (`http://<speaker-ip>:8888` in your browser):
+        **More → Report a problem → Save diagnostic file**
+        (deutsch: **Mehr → Problem melden → Diagnosedatei speichern**).
+
+        Then drag the saved file into your post.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: In your own language is fine. Include your speaker model if it is about a specific box.
+    validations:
+      required: true
