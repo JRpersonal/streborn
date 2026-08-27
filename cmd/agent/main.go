@@ -742,6 +742,7 @@ func run() error {
 		webui.WithSpotifySuppressActivate(spotifyMgr.SuppressActivate),
 		webui.WithSpotifyExpectReattach(spotifyMgr.ExpectReattach),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
+		webui.WithSpotifyQuality(spotifyMgr.ServeQuality),
 		webui.WithSpotifyReload(spotifyMgr.ReloadBinary),
 		webui.WithSpotifyStop(spotifyMgr.StopEngine),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),

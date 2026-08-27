@@ -442,6 +442,10 @@ export function SetResumeOnPowerOn(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetResumeOnPowerOn'](arg1, arg2, arg3);
 }
 
+export function SetSpotifyQuality(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetSpotifyQuality'](arg1, arg2, arg3);
+}
+
 export function SetWebhooks(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SetWebhooks'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
@@ -472,6 +476,10 @@ export function SpotifyBitrate(arg1, arg2) {
 
 export function SpotifyNowPlaying(arg1, arg2) {
   return window['go']['main']['App']['SpotifyNowPlaying'](arg1, arg2);
+}
+
+export function SpotifyQuality(arg1, arg2) {
+  return window['go']['main']['App']['SpotifyQuality'](arg1, arg2);
 }
 
 export function StartQueue(arg1, arg2, arg3) {

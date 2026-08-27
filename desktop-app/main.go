@@ -93,6 +93,13 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		// Without this, production builds suppress the webview's context menu
+		// entirely (wails gates it on debug || this option), so right-click
+		// paste/copy in text fields was dead for users (Hermann, Win11,
+		// 2026-08-26; reproduced locally). With it, the wails runtime still
+		// limits the menu to editable fields and selected text, which is the
+		// behaviour we want: no browser menu on the app chrome.
+		EnableDefaultContextMenu: true,
 		// Pin the WebView2 profile to a stable path so localStorage (favorites,
 		// language, last speaker, search country, cached boxes, setup region)
 		// survives updates instead of resetting with every versioned executable.

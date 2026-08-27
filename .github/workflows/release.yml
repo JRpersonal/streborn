@@ -1764,3 +1764,46 @@ jobs:
               "build": "${{ needs.build-agent.outputs.build_stamp }}",
               "commit": "${{ github.sha }}"
             }
+      # repository_dispatch is fire-and-forget: GitHub accepted the v0.9.60
+      # dispatch with 204 and no website run ever appeared, so the site (and
+      # with it /api/update-check.php) served the previous release for an hour
+      # and the app told users they were up to date (#734). Verify a run
+      # actually started; if none does, fall back to a direct
+      # workflow_dispatch of the deploy, and only fail when THAT does not
+      # start either. The PAT already has access to the website repo (the
+      # dispatch above needs it), which covers run listing and workflow
+      # dispatch there.
+      - name: Verify the website build started
+        if: |
+          startsWith(github.ref, 'refs/tags/') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_PAT }}
+        run: |
+          set -u
+          since=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          saw_run() {
+            gh run list --repo JRpersonal/streborn-website \
+              --workflow website-deploy.yml --limit 5 \
+              --json createdAt --jq "[.[] | select(.createdAt > \"$since\")] | length"
+          }
+          for i in $(seq 1 12); do
+            sleep 10
+            n=$(saw_run || echo 0)
+            if [ "${n:-0}" -gt 0 ]; then
+              echo "website build started ($n run(s) since $since)"
+              exit 0
+            fi
+          done
+          echo "::warning::the dispatch produced no website run in 2 minutes, falling back to a direct workflow_dispatch"
+          gh workflow run website-deploy.yml --repo JRpersonal/streborn-website
+          for i in $(seq 1 12); do
+            sleep 10
+            n=$(saw_run || echo 0)
+            if [ "${n:-0}" -gt 0 ]; then
+              echo "website build started via the fallback"
+              exit 0
+            fi
+          done
+          echo "::error::no website build started; run it by hand: gh workflow run website-deploy.yml --repo JRpersonal/streborn-website"
+          exit 1

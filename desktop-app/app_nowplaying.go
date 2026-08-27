@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -140,4 +141,60 @@ func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return out
+}
+
+// SpotifyQualityState is the engine's streaming-quality preference as the UI
+// needs it: the configured bitrate, and whether a change is still waiting for
+// an engine restart (a change never interrupts running playback, #728).
+type SpotifyQualityState struct {
+	OK      bool `json:"ok"`
+	Bitrate int  `json:"bitrate"`
+	Pending bool `json:"pending"`
+	Applied bool `json:"applied"`
+}
+
+// SpotifyQuality reads the speaker's configured Spotify streaming bitrate
+// (GET /spotify/quality). OK=false when the agent is unreachable or predates
+// the endpoint.
+func (a *App) SpotifyQuality(host string, port int) SpotifyQualityState {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/spotify/quality", "", "")
+	if err != nil {
+		return SpotifyQualityState{}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return SpotifyQualityState{}
+	}
+	var out struct {
+		Bitrate int  `json:"bitrate"`
+		Pending bool `json:"pending"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return SpotifyQualityState{}
+	}
+	return SpotifyQualityState{OK: true, Bitrate: out.Bitrate, Pending: out.Pending}
+}
+
+// SetSpotifyQuality sets the speaker's Spotify streaming bitrate
+// (POST /spotify/quality). Applied=false means the speaker stored the choice
+// and applies it once playback stops.
+func (a *App) SetSpotifyQuality(host string, port int, kbps int) SpotifyQualityState {
+	body := fmt.Sprintf(`{"bitrate":%d}`, kbps)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/spotify/quality", "application/json", body)
+	if err != nil {
+		return SpotifyQualityState{}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return SpotifyQualityState{}
+	}
+	var out struct {
+		OK      bool `json:"ok"`
+		Bitrate int  `json:"bitrate"`
+		Applied bool `json:"applied"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return SpotifyQualityState{}
+	}
+	return SpotifyQualityState{OK: out.OK, Bitrate: out.Bitrate, Pending: !out.Applied, Applied: out.Applied}
 }

@@ -473,6 +473,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			if persist {
 				m.hdrPersisted = true
 			}
+			hdrKbps := m.bitr
 			m.mu.Unlock()
 			capturing = false
 			if persist {
@@ -480,6 +481,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 				// Once only (guarded above), so no per-track flash wear.
 				if err := os.WriteFile(m.hdrPath, hdr, 0o644); err != nil {
 					m.logger.Debug("spotify: persist stream headers failed", "err", err)
+				}
+				// The set is only valid for the bitrate it was captured at
+				// (Vorbis codebooks differ per profile; a mismatched replay
+				// decodes to noise). The marker lets the next boot reject a
+				// stale set after a quality change.
+				if err := os.WriteFile(m.hdrPath+".kbps", []byte(strconv.Itoa(hdrKbps)), 0o644); err != nil {
+					m.logger.Debug("spotify: persist header bitrate marker failed", "err", err)
 				}
 			}
 		case capturing:

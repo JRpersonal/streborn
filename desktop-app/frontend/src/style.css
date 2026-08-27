@@ -893,6 +893,16 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 }
 .alpha-checklist li { margin: 6px 0; }
 
+/* Spotify per-speaker streaming quality (#728) */
+.quality-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+.quality-row > span:first-child { min-width: 160px; }
+
 /* ---------- Library view ---------- */
 .library-header h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .library-sub { color: var(--c-muted); font-size: 13px; margin-bottom: 16px; }
