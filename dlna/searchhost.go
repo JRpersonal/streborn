@@ -77,9 +77,11 @@ func SearchHost(ctx context.Context, host string, timeout time.Duration) ([]Serv
 		return nil, nil
 	}
 
-	// Fresh budget for the description fetches; dctx is spent on the read
-	// window, same split DiscoverServers makes.
-	fctx, fcancel := context.WithTimeout(ctx, 8*time.Second)
+	// Fresh, generous budget for the description fetch. This path is the
+	// targeted fallback for ONE server the multicast round already missed, and
+	// on a slow WD Twonky that miss is exactly the too-short-timeout it exists
+	// to recover (#733), so it gets 15s where the bulk sweep shares 12s.
+	fctx, fcancel := context.WithTimeout(ctx, 15*time.Second)
 	defer fcancel()
 	out := make([]Server, 0, len(locations))
 	seen := map[string]struct{}{}

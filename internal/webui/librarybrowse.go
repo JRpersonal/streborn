@@ -25,8 +25,10 @@ const (
 	// libraryBrowseTimeout bounds one page fetch, resolution included. A slow
 	// NAS answering a first page can take a while (the #666 QNAP let one
 	// container time out at 15 s), so this is deliberately looser than the
-	// search's per-server share; it is one user tap, not a fan-out.
-	libraryBrowseTimeout = 20 * time.Second
+	// search's per-server share; it is one user tap, not a fan-out. 35s, not
+	// 20: resolving a slow WD Twonky through the unicast fallback can itself
+	// take up to ~18 s now (#733), and the Browse SOAP still has to follow.
+	libraryBrowseTimeout = 35 * time.Second
 	// libraryUnicastProbe bounds the direct unicast M-SEARCH at the address
 	// the firmware's discovery cache names (#726). One host, one answer.
 	libraryUnicastProbe = 3 * time.Second
