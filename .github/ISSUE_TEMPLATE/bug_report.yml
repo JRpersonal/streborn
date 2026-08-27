@@ -1,0 +1,65 @@
+name: Bug report
+description: Something is broken or misbehaving on your speaker or in the app.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. One thing settles almost every report, so please read this first.
+
+        ### Please attach a diagnostic file  ·  Bitte häng eine Diagnosedatei an
+
+        It carries your speaker model, firmware, and the agent log, and it is
+        what lets the maintainer find the cause instead of guessing. It contains
+        **no passwords and no account data**.
+
+        **In the desktop app (Windows / macOS / Linux):**
+        the **Save diagnostic logs** button (deutsch: **Diagnose-Log speichern**)
+        at the very bottom of the app.
+
+        **On the phone page** (the `http://<speaker-ip>:8888` page in your browser):
+        open **More → Report a problem → Save diagnostic file**
+        (deutsch: **Mehr → Problem melden → Diagnosedatei speichern**).
+
+        Then drag the saved file into this issue. A report with a diagnostic is
+        answered far faster than one without.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What goes wrong, and what did you expect instead? In your own language is fine.
+      placeholder: e.g. Preset 3 flashes on the display, then the speaker turns itself off after a few seconds.
+    validations:
+      required: true
+  - type: dropdown
+    id: model
+    attributes:
+      label: Speaker model
+      options:
+        - SoundTouch 10
+        - SoundTouch 20
+        - SoundTouch 30
+        - SoundTouch 300
+        - SoundTouch Portable
+        - Wave SoundTouch
+        - CineMate / soundbar
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: STR version
+      description: Shown at the top of the desktop app window. If you are not sure, leave it blank, the diagnostic contains it.
+      placeholder: e.g. v0.9.60
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce (optional)
+      description: If you can trigger it on purpose, the steps help. If it just happens, skip this.
+  - type: checkboxes
+    id: diagnostic
+    attributes:
+      label: Diagnostic
+      options:
+        - label: I attached a diagnostic file (or I will add it in a comment right after opening this).

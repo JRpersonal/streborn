@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question, setup help, or "is this expected?"
+    url: https://github.com/JRpersonal/streborn/discussions/new?category=q-a
+    about: Not sure it is a bug? Ask in Q&A. Attaching a diagnostic (Save diagnostic logs in the app, or More → Report a problem → Save diagnostic file on the phone page) still helps.
+  - name: Feature idea or request
+    url: https://github.com/JRpersonal/streborn/discussions/new?category=ideas
+    about: Suggest a feature or vote on one. Ideas are collected and prioritised on the backlog.
+  - name: Which speaker models work
+    url: https://github.com/JRpersonal/streborn/blob/main/docs/MODELS.md
+    about: Current hardware support state per SoundTouch model.
