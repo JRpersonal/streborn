@@ -120,6 +120,32 @@ the desktop app falls back to a configured external path.
 - **No emoji** in code, commits, or PR descriptions unless the
   change is specifically about UI emoji.
 
+## Adding a streaming service or account integration
+
+Learned from real submissions; read this before writing a Spotify-sized
+feature so the work lands rather than stalls.
+
+- **A third-party streaming engine is a sidecar, not embedded code.** STR
+  drives Spotify through go-librespot as a separate process over a localhost
+  HTTP API and merely aggregates it: the agent stays MIT, and the engine is
+  built, attested, and licensed on its own. A new service that needs a
+  reimplemented client (SiriusXM, Amazon, YouTube, ...) belongs in its own
+  repository the same way, with STR talking to it over a small local API, not
+  as thousands of lines of networking and crypto pasted into this tree. That
+  keeps the upkeep of a moving third-party API, and its legal exposure, where
+  the code lives. Propose the API shape in a Discussion first.
+- **Terms of service.** If a service's terms forbid non-official clients, say
+  so in the proposal and explain how comparable open-source projects handle
+  it. The maintainer has to weigh that before anything ships, so surface it
+  early rather than burying it in a finished PR.
+- **Credentials never touch disk in plaintext.** A saved password or token
+  goes into the OS credential store (DPAPI on Windows, Keychain on macOS,
+  libsecret / Secret Service on Linux), not a JSON file, not even at `0600`.
+- **LAN-facing listeners bind an address, not `0.0.0.0`.** Anything a speaker
+  pulls from binds the machine's own LAN IP with a guard so only the speaker
+  reaches it. An open `0.0.0.0` audio or control endpoint is an
+  unauthenticated hole in the user's network.
+
 ## PR checklist
 
 Tick these in your PR description:
@@ -132,6 +158,10 @@ Tick these in your PR description:
       serial numbers were added.
 - [ ] If a new dependency was added, it is on a current, supported
       version.
+- [ ] New UI strings are in **all** `i18n/bundles/` locales (English
+      and German by hand), not only `en.json`.
+- [ ] Any saved credential goes to the OS credential store, not a
+      plaintext file, and no new listener binds `0.0.0.0`.
 
 ## Licensing
 
