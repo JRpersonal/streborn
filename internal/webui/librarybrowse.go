@@ -136,6 +136,15 @@ func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.
 	if len(found) > 0 {
 		s.logger.Info("library resolve: fresh discovery saw servers but none matched the registered UDN",
 			"want", key, "discovered", len(found))
+		// A registered server whose UDN no longer matches any live one is the
+		// UUID-regeneration case: WD/Twonky servers mint a new UPnP UUID on a
+		// restart or reconfigure, so a strict UDN resolve can never find them
+		// again even though the server is right there and other apps browse it
+		// fine (#733, #726). Recover it by its friendly NAME when exactly one
+		// discovered server carries the registered name.
+		if srv, ok := s.rematchByName(key, found); ok {
+			return srv, true
+		}
 	}
 	// The multicast round came back without this server. On networks whose AP
 	// or router filters multicast between Wi-Fi and wire, the agent's own
@@ -173,8 +182,12 @@ func (s *Server) resolveViaPeers(ctx context.Context, udn string) (dlna.Server, 
 	tryPeer := func(p PeerLink) (dlna.Server, bool) {
 		loc, ip := s.askPeerLocate(ctx, p.URL, udn)
 		if loc != "" {
-			if srv, err := dlna.DescribeServer(ctx, loc); err == nil && srv.CDSControlURL != "" && udnKey(srv.UDN) == key {
-				s.rememberMediaServerLocations([]dlna.Server{srv})
+			// A peer names one specific device-description URL, so a name match is
+			// safe here: it is the address a sibling that CAN see the server just
+			// resolved. serverMatchesKey also accepts a UUID-regenerated server by
+			// its registered name (#733), the same tolerance recall uses.
+			if srv, err := dlna.DescribeServer(ctx, loc); err == nil && srv.CDSControlURL != "" && s.serverMatchesKey(srv, key) {
+				s.rememberMediaServerLocationAs(key, srv.Location)
 				s.logger.Info("library resolve: found via a peer agent's location", "peer", p.Name)
 				return srv, true
 			}
@@ -182,8 +195,8 @@ func (s *Server) resolveViaPeers(ctx context.Context, udn string) (dlna.Server, 
 		if ip != "" {
 			if found, err := dlna.SearchHost(ctx, ip, libraryUnicastProbe); err == nil {
 				for _, srv := range found {
-					if udnKey(srv.UDN) == key {
-						s.rememberMediaServerLocations(found)
+					if s.serverMatchesKey(srv, key) {
+						s.rememberMediaServerLocationAs(key, srv.Location)
 						s.logger.Info("library resolve: found via a peer agent's ip", "peer", p.Name, "ip", ip)
 						return srv, true
 					}

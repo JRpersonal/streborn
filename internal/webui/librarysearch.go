@@ -205,6 +205,77 @@ func (s *Server) rememberMediaServerLocations(found []dlna.Server) {
 	}
 }
 
+// rememberMediaServerLocationAs stores a device-description URL under a SPECIFIC
+// key rather than the server's own UDN. Used when a UUID-regenerating server
+// (WD/Twonky) was recovered by name: the registration, the phone and the app all
+// still know it under its ORIGINAL UDN, so recall has to find it under that key
+// even though the live server now advertises a different one (#733).
+func (s *Server) rememberMediaServerLocationAs(key, loc string) {
+	if key == "" || loc == "" {
+		return
+	}
+	s.mediaLocMu.Lock()
+	if s.mediaLoc == nil {
+		s.mediaLoc = make(map[string]string)
+	}
+	s.mediaLoc[key] = loc
+	s.mediaLocMu.Unlock()
+}
+
+// registeredName returns the friendly name the user registered a server under,
+// looked up by its normalised UDN key, or "" when no registered server matches.
+func (s *Server) registeredName(key string) string {
+	if s.mediaServers == nil {
+		return ""
+	}
+	for _, reg := range s.mediaServers.List() {
+		if udnKey(reg.ID) == key {
+			return strings.TrimSpace(reg.Name)
+		}
+	}
+	return ""
+}
+
+// serverMatchesKey reports whether a described server IS the one registered under
+// key: its UDN still matches, or (for a UUID-regenerating server) it carries the
+// registered friendly name. The name path is deliberately used only where the
+// candidate is a SINGLE server at a specific address (recall, a peer-named
+// location), so a name collision cannot silently pick the wrong one; the
+// multi-candidate discovery scan uses rematchByName's stricter unique-match rule.
+func (s *Server) serverMatchesKey(srv dlna.Server, key string) bool {
+	if udnKey(srv.UDN) == key {
+		return true
+	}
+	name := s.registeredName(key)
+	return name != "" && strings.EqualFold(strings.TrimSpace(srv.FriendlyName), name)
+}
+
+// rematchByName recovers a registered server whose UDN CHANGED by finding the one
+// discovered server that carries its registered name, and remembers that server's
+// address under the ORIGINAL key so recall reaches it next time. It requires an
+// EXACT single name match: zero or several servers sharing the name are left
+// unresolved rather than risk hijacking the wrong device.
+func (s *Server) rematchByName(key string, found []dlna.Server) (dlna.Server, bool) {
+	name := s.registeredName(key)
+	if name == "" {
+		return dlna.Server{}, false
+	}
+	var match dlna.Server
+	n := 0
+	for _, srv := range found {
+		if srv.CDSControlURL != "" && strings.EqualFold(strings.TrimSpace(srv.FriendlyName), name) {
+			match, n = srv, n+1
+		}
+	}
+	if n != 1 {
+		return dlna.Server{}, false
+	}
+	s.rememberMediaServerLocationAs(key, match.Location)
+	s.logger.Info("library resolve: matched a registered server by name after its UDN changed",
+		"name", name, "oldKey", key, "newUDN", udnKey(match.UDN))
+	return match, true
+}
+
 // recallMediaServer re-probes the last known address of a registered server
 // that this search's discovery round did not see. The UDN of the answer is
 // checked, because DHCP can have handed that address to something else.
@@ -218,7 +289,14 @@ func (s *Server) recallMediaServer(ctx context.Context, key string) (dlna.Server
 	pctx, cancel := context.WithTimeout(ctx, libraryRecallTimeout)
 	defer cancel()
 	srv, err := dlna.DescribeServer(pctx, loc)
-	if err != nil || srv.CDSControlURL == "" || udnKey(srv.UDN) != key {
+	if err != nil || srv.CDSControlURL == "" {
+		return dlna.Server{}, false
+	}
+	// The UDN check stops a DHCP-reassigned address that now serves a DIFFERENT
+	// device from being accepted. A UUID-regenerating server (WD/Twonky) fails
+	// that check at its OWN unchanged address, so fall back to the registered
+	// name: same address, same name, new UUID is still the same server (#733).
+	if !s.serverMatchesKey(srv, key) {
 		return dlna.Server{}, false
 	}
 	s.logger.Info("library search: discovery missed a registered server, re-probed its last known address",

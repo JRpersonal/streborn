@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 )
 
@@ -117,5 +118,57 @@ func TestResolveViaPeersAsksDimmedPeers(t *testing.T) {
 	}
 	if atomic.LoadInt32(&asked) == 0 {
 		t.Fatal("a DIMMED peer must still be asked for the server (#726); the reachable-only guard regressed the peer-assist")
+	}
+}
+
+// A server registered under one UDN that later advertises a DIFFERENT UDN (WD and
+// Twonky regenerate their UPnP UUID on a restart/reconfigure) must still be found
+// by its friendly name, or a strict UDN resolve loses it forever even though it
+// is right there (#733). rematchByName recovers it, but only on a UNIQUE name.
+func TestRematchByNameRecoversUUIDRegeneratingServer(t *testing.T) {
+	store, err := mediaservers.Load(filepath.Join(t.TempDir(), "ms.json"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	// Registered under the OLD udn, name "Twonky".
+	_ = store.Add(mediaservers.Server{ID: "OLD-UDN-1111", Name: "Twonky"})
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), mediaServers: store}
+	key := udnKey("OLD-UDN-1111")
+
+	// Discovery now sees the same server under a NEW udn, plus an unrelated one.
+	found := []dlna.Server{
+		{UDN: "uuid:NEW-UDN-9999", FriendlyName: "Twonky", Location: "http://192.0.2.50:9000/desc.xml", CDSControlURL: "http://192.0.2.50:9000/ctl"},
+		{UDN: "uuid:OTHER-2222", FriendlyName: "Backupserver", Location: "http://192.0.2.51:8200/desc.xml", CDSControlURL: "http://192.0.2.51:8200/ctl"},
+	}
+	got, ok := s.rematchByName(key, found)
+	if !ok || got.CDSControlURL != "http://192.0.2.50:9000/ctl" {
+		t.Fatalf("expected to recover the renamed-UUID server, got ok=%v srv=%+v", ok, got)
+	}
+	// It must remember the address under the ORIGINAL key so recall reaches it.
+	s.mediaLocMu.Lock()
+	loc := s.mediaLoc[key]
+	s.mediaLocMu.Unlock()
+	if loc != "http://192.0.2.50:9000/desc.xml" {
+		t.Fatalf("location not remembered under the original key, got %q", loc)
+	}
+
+	// Ambiguous: two servers share the name -> refuse rather than guess.
+	found2 := []dlna.Server{
+		{UDN: "uuid:A", FriendlyName: "Twonky", Location: "http://a/d", CDSControlURL: "http://a/c"},
+		{UDN: "uuid:B", FriendlyName: "Twonky", Location: "http://b/d", CDSControlURL: "http://b/c"},
+	}
+	if _, ok := s.rematchByName(key, found2); ok {
+		t.Fatal("two servers sharing the name must NOT be matched")
+	}
+
+	// serverMatchesKey: UDN match or registered-name match, nothing else.
+	if !s.serverMatchesKey(dlna.Server{UDN: "uuid:OLD-UDN-1111"}, key) {
+		t.Fatal("exact UDN must match")
+	}
+	if !s.serverMatchesKey(dlna.Server{UDN: "uuid:NEW", FriendlyName: "twonky"}, key) {
+		t.Fatal("registered name (case-insensitive) must match")
+	}
+	if s.serverMatchesKey(dlna.Server{UDN: "uuid:NEW", FriendlyName: "Something else"}, key) {
+		t.Fatal("a different name and UDN must NOT match")
 	}
 }
