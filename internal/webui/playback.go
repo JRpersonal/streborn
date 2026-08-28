@@ -726,6 +726,14 @@ func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage s
 	s.recentMu.Lock()
 	switch source {
 	case "radio":
+		if key != s.recentRadioCard.key {
+			// New station: the box's now-playing (ICY) text can still be the old
+			// station's last song for a beat after the switch, so carry that
+			// title over and suppress it as the first track under the new card
+			// (#755). A re-point to the SAME station keeps the guard untouched.
+			s.recentRadioStaleTrack = s.recentRadioLastTrack
+			s.recentRadioLastTrack = ""
+		}
 		s.recentRadioCard = recentCardCtx{key: key, name: name, art: art, url: url, homepage: homepage}
 	case "spotify":
 		// A fresh card resets the de-dup so the playlist's first song is recorded
@@ -777,8 +785,17 @@ func (s *Server) recentNoteRadioTrack(track string) {
 	}
 	s.recentMu.Lock()
 	c := s.recentRadioCard
+	// The first ICY title after a station change that still equals the previous
+	// station's last song is a lagged carry-over from the box, not this
+	// station's song, so drop it (#755). The guard stays armed (a repeated stale
+	// title is dropped too) until a different title arrives, which spends it.
+	stale := c.key != "" && s.recentRadioLastTrack == "" && track == s.recentRadioStaleTrack
+	if !stale {
+		s.recentRadioLastTrack = track
+		s.recentRadioStaleTrack = ""
+	}
 	s.recentMu.Unlock()
-	if c.key == "" {
+	if c.key == "" || stale {
 		return
 	}
 	s.recent.Add(recent.Entry{Source: "radio", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track, Homepage: c.homepage})
