@@ -2890,11 +2890,13 @@ async function loadRecent() {
     sub.textContent = [e.track, e.account].filter(Boolean).join(' \u00b7 ');
     nm.appendChild(sub);
     row.appendChild(nm);
-    /* Replay only what this page can honestly start: a radio card carries a
-       stream URL the /api/play path accepts. Spotify needs the engine recall
-       (a preset), and a NAS track without its mime would fall into the radio
-       proxy and loop, so those rows are history, not buttons. */
-    if (e.source === 'radio' && e.cardURL && e.cardURL.indexOf('http') === 0) {
+    /* Replay what this page can honestly start: a radio card carries a stream
+       URL the /api/play path accepts, and a media-server (upnp) card carries its
+       NAS HTTP location, which replays through the very same mime-less path the
+       desktop app already uses for these cards (true parity, so no new server
+       behaviour). Spotify needs the engine recall (a preset), so those rows stay
+       history, not buttons. */
+    if ((e.source === 'radio' || e.source === 'upnp') && e.cardURL && e.cardURL.indexOf('http') === 0) {
       var b = document.createElement('button');
       b.className = 'btn'; b.type = 'button';
       b.setAttribute('aria-label', T.play + ': ' + (e.cardName || ''));
