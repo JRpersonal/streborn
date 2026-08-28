@@ -251,6 +251,7 @@ import {
   pairMemberBoxes,
   balanceSourceBox,
 } from './groups.js';
+import { pairDisplayName } from './stereoNames.js';
 
 // Pure decisions of the search flow (URL-paste detection, the synthetic
 // play-this-URL card, the relaxed-filters hint) live in searchflow.js so
@@ -2517,7 +2518,7 @@ function renderBoxSelect() {
       const pairIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1"></rect><rect x="14" y="3" width="7" height="18" rx="1"></rect></svg>';
       const zoneIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
       const groupLabel = groupName
-        ? `<span class="box-group-label" title="${escapeAttr(isPair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: groupName }))}">${isPair ? pairIcon : zoneIcon} ${escapeHtml(isPair ? t('multiroom.stereoHeading') : groupName)}</span>`
+        ? `<span class="box-group-label" title="${escapeAttr(isPair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: groupName }))}">${isPair ? pairIcon : zoneIcon} ${escapeHtml(isPair ? (pairDisplayName(livePair, renderBoxSelect) || t('multiroom.stereoHeading')) : groupName)}</span>`
         : '';
       html += `<div class="box-group box-group-c${colorOf[m]}">${groupLabel}${members.map(pill).join('')}</div>`;
     }

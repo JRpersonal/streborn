@@ -330,6 +330,34 @@ export function stereoPairOf(zoneLive) {
   return null;
 }
 
+// stereoPairKey turns a live pair into a stable, order-independent key for the
+// app-side pair-name store (stereoNames.js): both member deviceIDs uppercased,
+// sorted, joined with "+". The SORTED SET is deliberate, not the master alone,
+// so the name survives an L/R swap or a re-pair that picks the other box as
+// master. The key computed when the pair is FORMED (from the picked left/right
+// boxes) equals the key computed from the LIVE pair at display time because the
+// desktop normalizes every BoxInfo.DeviceID to the box's own firmware /info
+// deviceID (the SCM MAC), so both sides use the same identity even on two-chip
+// chassis where mDNS reports a different id.
+//
+// Returns "" when fewer than two member deviceIDs are present (a transient
+// /getGroup that carries an id/master but no members). We deliberately do NOT
+// fall back to the master alone: that would compute a DIFFERENT key than the
+// full "A+B" the name is stored under, so a lookup would miss (blanking the
+// label) and a save would strand the name under a bare-master key that a later
+// pair sharing that master could pick up. "" instead means "cannot identify
+// this pair right now", so the label falls back to the default heading and a
+// save is a no-op until both members are reported again. Pure: no binding
+// import, so groups.test.js can cover it.
+export function stereoPairKey(pair) {
+  if (!pair) return '';
+  const ids = (pair.members || [])
+    .map((m) => String((m && m.deviceID) || '').toUpperCase())
+    .filter(Boolean)
+    .sort();
+  return ids.length >= 2 ? ids.join('+') : '';
+}
+
 // pairMemberBoxes maps a live pair onto discovered boxes, in LEFT/RIGHT order
 // (unknown roles keep their reported order). Matches by deviceID first and by
 // IP second: on two-chip chassis the firmware's deviceID differs from the
