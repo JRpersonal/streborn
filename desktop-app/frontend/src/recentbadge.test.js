@@ -44,4 +44,20 @@ describe('cardIsPlaying box scoping', () => {
     expect(cardIsPlaying(radioCard('192.0.2.11:8888', 'X'))).toBe(true);
     expect(cardIsPlaying(radioCard('192.0.2.10:8888', 'X'))).toBe(false);
   });
+
+  it('badges only the newest of several same-station cards (#761)', () => {
+    // A station played several times sits in history as several same-name
+    // cards; cardIsPlaying (name-matched) is true for every one of them, so the
+    // render must pick a single card. It uses the first match, and cards are
+    // newest-first, so exactly one card, the running session, lights up.
+    const cards = [
+      radioCard('DEV-A', 'Exclusively Rush'), // newest
+      radioCard('DEV-A', 'KLove'),
+      radioCard('DEV-A', 'Exclusively Rush'),
+      radioCard('DEV-A', 'Exclusively Rush'), // oldest
+    ];
+    expect(cards.map(cardIsPlaying).filter(Boolean).length).toBe(3);
+    const playingIdx = cards.findIndex(cardIsPlaying);
+    expect(playingIdx).toBe(0);
+  });
 });
