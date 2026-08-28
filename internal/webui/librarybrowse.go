@@ -25,13 +25,28 @@ const (
 	// libraryBrowseTimeout bounds one page fetch, resolution included. A slow
 	// NAS answering a first page can take a while (the #666 QNAP let one
 	// container time out at 15 s), so this is deliberately looser than the
-	// search's per-server share; it is one user tap, not a fan-out. 35s, not
-	// 20: resolving a slow WD Twonky through the unicast fallback can itself
-	// take up to ~18 s now (#733), and the Browse SOAP still has to follow.
-	libraryBrowseTimeout = 35 * time.Second
-	// libraryUnicastProbe bounds the direct unicast M-SEARCH at the address
-	// the firmware's discovery cache names (#726). One host, one answer.
-	libraryUnicastProbe = 3 * time.Second
+	// search's per-server share; it is one user tap, not a fan-out. 55s: the
+	// resolution chain below can, in its worst case (recall miss, then a fresh
+	// discovery, then the box-cache probe) spend recall + browse-discovery +
+	// unicast-probe describing a pathologically slow WD Twonky before the
+	// Browse SOAP even starts (#733). The common case still returns in a couple
+	// of seconds; this only keeps the tap from failing outright on that NAS.
+	libraryBrowseTimeout = 55 * time.Second
+	// libraryBrowseDiscovery bounds the fresh SSDP round the browse path runs
+	// when recall misses. It is deliberately far looser than the search's
+	// shared librarySearchDiscovery (5 s): a browse tap resolves ONE server and
+	// the user is waiting, so it can afford to let a slow server's device
+	// description actually complete. 15s covers dlna.DiscoverServers' own 12 s
+	// per-device fetch plus the SSDP listen window. #733: UlrichSzy's WD Twonky
+	// WAS seen by the fresh SSDP round, but the old 5 s budget was too short to
+	// describe it, so resolution fell through to the box cache and failed there.
+	libraryBrowseDiscovery = 15 * time.Second
+	// libraryUnicastProbe bounds the direct unicast M-SEARCH at the address the
+	// firmware's discovery cache names (#726). One host, but the answer still
+	// carries a device description that a slow WD Twonky serves slowly, so this
+	// has to be wide enough to let dlna.SearchHost's own 15 s describe finish
+	// (#733); the old 3 s guaranteed a miss on that NAS.
+	libraryUnicastProbe = 18 * time.Second
 )
 
 // handleLibraryServers lists the registered media servers for the phone page.
@@ -65,7 +80,7 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 	if srv, ok := s.recallMediaServer(ctx, key); ok {
 		return srv, true
 	}
-	found, err := dlna.DiscoverServers(ctx, librarySearchDiscovery)
+	found, err := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
 	if err != nil {
 		s.logger.Info("library resolve: discovery failed", "err", err)
 	}
@@ -74,6 +89,15 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 		if udnKey(srv.UDN) == key {
 			return srv, true
 		}
+	}
+	// Forensic (#733): the fresh round returned servers but none carried the
+	// registered UDN. That separates "the slow NAS still could not be described
+	// in time" (found is short or empty) from "the server now advertises a
+	// different UDN" (found is non-empty without this key) in the next bundle,
+	// so a persistent miss points at the real cause instead of a guess.
+	if len(found) > 0 {
+		s.logger.Info("library resolve: fresh discovery saw servers but none matched the registered UDN",
+			"want", key, "discovered", len(found))
 	}
 	// The multicast round came back without this server. On networks whose AP
 	// or router filters multicast between Wi-Fi and wire, the agent's own
