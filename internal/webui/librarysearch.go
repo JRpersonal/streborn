@@ -205,6 +205,18 @@ func (s *Server) rememberMediaServerLocations(found []dlna.Server) {
 	}
 }
 
+// forgetMediaServerLocation drops the stored last-known address for a server so
+// recallMediaServer stops handing it back. Used when a Browse against the
+// recalled address failed, i.e. the address is stale even though it still
+// described with a matching UDN (#733/#726: a moved server keeps answering its
+// old device.xml). The next resolve then goes fresh and re-learns the current
+// address.
+func (s *Server) forgetMediaServerLocation(key string) {
+	s.mediaLocMu.Lock()
+	defer s.mediaLocMu.Unlock()
+	delete(s.mediaLoc, key)
+}
+
 // recallMediaServer re-probes the last known address of a registered server
 // that this search's discovery round did not see. The UDN of the answer is
 // checked, because DHCP can have handed that address to something else.
