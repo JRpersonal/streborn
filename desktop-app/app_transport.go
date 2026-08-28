@@ -316,6 +316,13 @@ const (
 // advice, which is the same sentence for every speaker, is shared.
 const (
 	notReachableAdvice = "Most often this is a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks: allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi (not a guest network). If it still fails, bring the speaker onto Wi-Fi with the Bose SoundTouch app, then reboot it with the STR stick plugged in and try again."
+	// isolationAdvice replaces the generic one when the facts show the speaker is
+	// on THIS PC's subnet yet answers nothing and does not even reply to a ping.
+	// A PC firewall cannot stop an outbound ping, so that pattern is not a
+	// firewall at all but a Wi-Fi that keeps its clients apart (a guest network,
+	// or client/AP isolation in the router). Leading with the firewall sent
+	// users chasing the wrong thing (Jens, #763).
+	isolationAdvice = "The speaker shows up in the list because it announces itself, but it answers on no port and your PC cannot even reach it with a ping while both are on the same network. That is the fingerprint of a Wi-Fi that keeps devices apart from each other, not a firewall on your PC: usually a guest network, or client isolation (sometimes called AP isolation) switched on in the router. Put the PC and the speaker on the same normal Wi-Fi, not a guest network, turn off client/AP isolation in the router, then refresh the speaker list and try again."
 
 	installWindowClosedAdvice = "Bose only opens the install access while the speaker boots with the STR stick plugged in. Power the speaker off, insert the STR stick, power it back on, then install."
 
