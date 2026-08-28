@@ -503,6 +503,15 @@ type Server struct {
 	recentMu          sync.Mutex
 	recentRadioCard   recentCardCtx
 	recentSpotifyCard recentCardCtx
+	// recentRadioLastTrack is the last ICY title recorded under the CURRENT
+	// radio card, and recentRadioStaleTrack is the PREVIOUS card's last title,
+	// carried across a station change so the first ICY title after the switch is
+	// suppressed when the box's now-playing text still lags on the old song
+	// (#755: KLove's "This is Our God" showed under Exclusively Rush because its
+	// ICY arrived a beat after the station change). Spotify already had this
+	// de-dup; radio did not.
+	recentRadioLastTrack  string
+	recentRadioStaleTrack string
 	// recentQueueCard remembers the DLNA folder currently playing as an
 	// auto-advancing queue, so each track the queue pushes is recorded under one
 	// "library" card (#220: folder plays were never added to Recently played).
