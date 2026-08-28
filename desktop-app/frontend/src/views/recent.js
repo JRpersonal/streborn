@@ -234,7 +234,7 @@ export function cardIsPlaying(c) {
   return !!(c.url && loc && loc === c.url);
 }
 
-function recentCardHTML(c, i) {
+function recentCardHTML(c, i, nowPlaying) {
   const isRadio = c.source !== 'spotify';
   const webUrl = cardWebURL(c);
   // Always show which box played it (Jens) plus the source, Spotify account and,
@@ -267,7 +267,8 @@ function recentCardHTML(c, i) {
   }
   // Remove-this-card button (Brice): drops the card from the box's history.
   actions += `<button class="btn btn-mini rc-del" id="recDel${i}" title="${escapeAttr(t('recent.removeCard'))}">&times;</button>`;
-  const nowPlaying = cardIsPlaying(c);
+  // nowPlaying is decided by the caller (the newest matching card only, #761),
+  // not per-card, so a station in history several times lights up once.
   // "Now playing" badge, reusing the preset tile's own state label so the wording
   // matches the preset card exactly (and is already translated in every bundle).
   const nowBadge = nowPlaying
@@ -367,7 +368,14 @@ async function refreshRecentList() {
     listEl.innerHTML = `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
     return;
   }
-  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i)).join('');
+  // Only ONE card wears the now-playing badge: the NEWEST card of the current
+  // source. A station played several times sits in history as several cards
+  // with the same name, and cardIsPlaying (name-matched for radio) is true for
+  // every one of them, so all three lit up green (#761). Cards are newest-first,
+  // so the first match is the running session, the one that holds the current
+  // song.
+  const playingIdx = cards.findIndex(cardIsPlaying);
+  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
   cards.forEach((c, i) => wireCard(c, i));
 }
 
