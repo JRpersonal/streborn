@@ -10,8 +10,12 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/dlna"
@@ -31,7 +35,17 @@ const (
 	// unicast-probe describing a pathologically slow WD Twonky before the
 	// Browse SOAP even starts (#733). The common case still returns in a couple
 	// of seconds; this only keeps the tap from failing outright on that NAS.
-	libraryBrowseTimeout = 55 * time.Second
+	// 70s, not 55: the chain can now end in a peer round (below), where a box
+	// that cannot see the server itself borrows the address from a sibling that
+	// can (#726). That peer round only runs after the local paths miss, and for
+	// the box it helps those local paths fail fast (empty firmware cache), so
+	// the realistic total stays well under this ceiling.
+	libraryBrowseTimeout = 70 * time.Second
+	// libraryPeerLocateTimeout bounds one query to a peer STR agent's
+	// /api/library/locate. Wide enough to let the peer run its own fresh
+	// discovery if it has not cached the server yet, since the whole point is
+	// that SOME box on the LAN can reach the server even when this one cannot.
+	libraryPeerLocateTimeout = 12 * time.Second
 	// libraryBrowseDiscovery bounds the fresh SSDP round the browse path runs
 	// when recall misses. It is deliberately far looser than the search's
 	// shared librarySearchDiscovery (5 s): a browse tap resolves ONE server and
@@ -125,7 +139,145 @@ func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.
 	// wire sees the server fine (#726). The firmware keeps its own discovery
 	// cache fed by the server's NOTIFY announcements; a unicast search at the
 	// address it names passes every multicast filter.
-	return s.resolveViaBoxCache(ctx, key, len(found))
+	if srv, ok := s.resolveViaBoxCache(ctx, key, len(found)); ok {
+		return srv, true
+	}
+	// Last resort: ask the other STR agents on the LAN. A box whose own network
+	// filters the server's multicast AND whose firmware cache is empty (a
+	// SoundTouch Wireless Link Adapter behind a mesh node saw zero servers while
+	// its siblings had the same server registered, #726) can still browse it by
+	// borrowing the address from a sibling that can reach it, then describing it
+	// directly.
+	return s.resolveViaPeers(ctx, udn)
+}
+
+// resolveViaPeers asks the other STR agents on the LAN where a registered media
+// server is, then reaches it directly. This closes the gap where ONE box cannot
+// discover a server its siblings can: a fixed-IP NAS is perfectly reachable by
+// unicast, the box just never learns its address because the multicast never
+// crosses to it (#726). The desktop app is not always running, so the fleet
+// itself has to carry the knowledge.
+func (s *Server) resolveViaPeers(ctx context.Context, udn string) (dlna.Server, bool) {
+	if s.peersFn == nil {
+		return dlna.Server{}, false
+	}
+	key := udnKey(udn)
+	tried := 0
+	for _, p := range s.peersFn(ctx) {
+		if !p.Reachable || p.URL == "" {
+			continue
+		}
+		if tried >= 3 { // a small fleet answers on the first reachable sibling
+			break
+		}
+		tried++
+		loc, ip := s.askPeerLocate(ctx, p.URL, udn)
+		if loc != "" {
+			if srv, err := dlna.DescribeServer(ctx, loc); err == nil && srv.CDSControlURL != "" && udnKey(srv.UDN) == key {
+				s.rememberMediaServerLocations([]dlna.Server{srv})
+				s.logger.Info("library resolve: found via a peer agent's location", "peer", p.Name)
+				return srv, true
+			}
+		}
+		if ip != "" {
+			if found, err := dlna.SearchHost(ctx, ip, libraryUnicastProbe); err == nil {
+				for _, srv := range found {
+					if udnKey(srv.UDN) == key {
+						s.rememberMediaServerLocations(found)
+						s.logger.Info("library resolve: found via a peer agent's ip", "peer", p.Name, "ip", ip)
+						return srv, true
+					}
+				}
+			}
+		}
+	}
+	return dlna.Server{}, false
+}
+
+// askPeerLocate queries one peer agent's /api/library/locate for where it knows
+// the server. Returns the device-description location and/or an IP, empty on any
+// failure (a peer that does not know the server, an older build without the
+// endpoint, or one briefly unreachable).
+func (s *Server) askPeerLocate(ctx context.Context, peerURL, udn string) (string, string) {
+	u := strings.TrimRight(peerURL, "/") + "/api/library/locate?udn=" + url.QueryEscape(udn)
+	pctx, cancel := context.WithTimeout(ctx, libraryPeerLocateTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(pctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", ""
+	}
+	var out libraryLocateResult
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
+		return "", ""
+	}
+	return out.Location, out.IP
+}
+
+// libraryLocateResult is what /api/library/locate answers a peer with.
+type libraryLocateResult struct {
+	UDN      string `json:"udn"`
+	Location string `json:"location,omitempty"`
+	IP       string `json:"ip,omitempty"`
+}
+
+// handleLibraryLocate answers a peer STR agent asking where a REGISTERED media
+// server is, so a box that cannot discover the server on its own network can
+// borrow the address (#726). LAN peers only, registered servers only: this must
+// not turn a speaker into a locator for arbitrary UPnP devices. Answers from the
+// cached location first, then a bounded fresh discovery, since this box is only
+// asked because it might be the one that CAN reach the server.
+func (s *Server) handleLibraryLocate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "LAN only", http.StatusForbidden)
+		return
+	}
+	udn := r.URL.Query().Get("udn")
+	if udn == "" || s.mediaServers == nil {
+		writeJSON(w, http.StatusOK, libraryLocateResult{})
+		return
+	}
+	key := udnKey(udn)
+	registered := false
+	for _, reg := range s.mediaServers.List() {
+		if udnKey(reg.ID) == key {
+			registered = true
+			break
+		}
+	}
+	if !registered {
+		writeJSON(w, http.StatusOK, libraryLocateResult{})
+		return
+	}
+	s.mediaLocMu.Lock()
+	loc := s.mediaLoc[key]
+	s.mediaLocMu.Unlock()
+	if loc != "" {
+		writeJSON(w, http.StatusOK, libraryLocateResult{UDN: udn, Location: loc})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), libraryBrowseDiscovery)
+	defer cancel()
+	found, _ := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
+	s.rememberMediaServerLocations(found)
+	for _, srv := range found {
+		if udnKey(srv.UDN) == key && srv.Location != "" {
+			writeJSON(w, http.StatusOK, libraryLocateResult{UDN: udn, Location: srv.Location})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, libraryLocateResult{})
 }
 
 // resolveViaBoxCache asks the speaker's own /listMediaServers cache where the
