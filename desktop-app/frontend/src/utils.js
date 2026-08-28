@@ -493,6 +493,28 @@ export function orionStationPayload(loc) {
   }
 }
 
+// nativeSlotStale decides whether a preset tile the active-slot number points
+// at should still light up while the speaker plays a NATIVE radio descriptor.
+// The speaker keeps playing the station it recalled even after the box's own
+// preset list is re-synced (edited from the Bose remote / ST Remote), so a slot
+// can come to hold a DIFFERENT station than the one still coming out of the
+// speaker. Matching by slot number alone then lights the freshly-changed tile
+// even though the audio is another station (#758: "preset key should not stay
+// selected ... when the key's new station no longer matches what is playing").
+//
+// It suppresses ONLY when the playing station's identity is positively known
+// (its name or its stream URL) AND that identity does not match the preset's
+// current content. When the descriptor yields no usable identity we cannot
+// judge and keep the historical behavior (leave the tile lit), so a valid
+// native play never goes dark.
+export function nativeSlotStale({ presetName, presetUrl, playingName, playingUrl }) {
+  const haveIdentity = !!playingUrl || !!playingName;
+  if (!haveIdentity) return false;
+  if (playingUrl && presetUrl && presetUrl === playingUrl) return false;
+  if (playingName && presetName && presetName === playingName) return false;
+  return true;
+}
+
 // balanceLabel renders a stereo-balance reading (-7..+7, 0 = centred) as the
 // localized label the three balance displays share.
 export function balanceLabel(v) {
