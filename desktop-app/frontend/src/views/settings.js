@@ -35,7 +35,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // as one combined error; reconstructing "how many still copied" from that
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
-import { balanceSourceBox, stereoPairOf } from '../groups.js';
+import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -338,7 +338,8 @@ export async function loadBoxSettings() {
       renderBoxSettings(s, state.settingsBox);
       // Read-only, and only present on a stereo pair, so it is filled after the
       // markup exists rather than being part of it.
-      refreshBoxBalanceRow(state.settingsBox, stereoPairOf(state.zoneLive || {}), state.boxes)
+      refreshBoxBalanceRow(state.settingsBox,
+        stereoPairsOf(state.zoneLive || {}).find(p => inStereoPair(state.settingsBox, p)) || null, state.boxes)
         .catch(() => {});
       return;
     } catch (e) {

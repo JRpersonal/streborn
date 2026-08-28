@@ -247,8 +247,8 @@ import {
   sameBoxIdentity,
   parsePlayRejection,
   resolveBoxByRef,
-  stereoPairOf,
   stereoPairsOf,
+  inStereoPair,
   pairMemberBoxes,
   balanceSourceBox,
 } from './groups.js';
@@ -6477,7 +6477,11 @@ async function refreshBalance() {
   if (!el) return;
   const selected = state.currentBox;
   if (!selected || selected.kind === 'stock') { el.classList.add('hidden'); return; }
-  const box = balanceSourceBox(selected, stereoPairOf(state.zoneLive || {}), state.boxes) || selected;
+  // Resolve the pair that CONTAINS the selected box, not just the first: either
+  // half of any pair must show that pair's balance (#70), which was only true
+  // for the first pair while stereoPairOf returned it alone.
+  const balPair = stereoPairsOf(state.zoneLive || {}).find(p => inStereoPair(selected, p)) || null;
+  const box = balanceSourceBox(selected, balPair, state.boxes) || selected;
   if (box.kind === 'stock') { el.classList.add('hidden'); return; }
   const v = await readBoxBalance(box);
   if (v === null) { el.classList.add('hidden'); return; }

@@ -214,30 +214,33 @@ export function renderMultiroom(fetchLive) {
   // ones and every repaint put them back there ("die Lautsprecherauswahl
   // springt immer auf den nicht gepaarten Lautsprecher", field 2026-08-04).
   const livePairs = stereoPairsOf(state.zoneLive);
-  const livePair = livePairs[0] || null;
+  // The controls act on the live pair that CONTAINS whichever speaker is
+  // selected, so a household with two pairs can reach the second one: picking
+  // one of its members snaps the whole pair in. Default is the first live pair,
+  // which keeps the controls on a real pair rather than an unpaired speaker
+  // (the 2026-08-04 fix), and forming a NEW pair (no live match) leaves the raw
+  // selection alone via pairPick below.
+  const selUp = (id) => String(id || '').toUpperCase();
+  const pairHasSel = (p) => (p.members || []).some(m => {
+    const id = selUp(m && m.deviceID);
+    return id && (id === selUp(state.stereoLeft) || id === selUp(state.stereoRight));
+  });
+  const livePair = livePairs.find(pairHasSel) || livePairs[0] || null;
   const liveBoxes = pairMemberBoxes(livePair, strBoxes).map(x => x.box).filter(Boolean);
   const stillThere = (id) => id && pairCands.some(b => b.deviceID === id);
-  // A remembered selection that names a LIVE pair wins, so a user holding the
-  // dropdowns on a SECOND live pair is not snapped back to the first on every
-  // poll repaint. When the remembered pick is NOT a live pair, snap to the live
-  // one (the 2026-08-04 fix: controls must not sit on an unpaired speaker).
-  const remKey = stereoPairKey({ members: [{ deviceID: state.stereoLeft }, { deviceID: state.stereoRight }] });
-  const remIsLive = !!remKey && livePairs.some(p => stereoPairKey(p) === remKey);
   const pairPick = [0, 1].map(i => {
-    const remembered = i === 0 ? state.stereoLeft : state.stereoRight;
-    if (remIsLive && stillThere(remembered)) return remembered;
     if (liveBoxes[i]) return liveBoxes[i].deviceID;
+    const remembered = i === 0 ? state.stereoLeft : state.stereoRight;
     if (stillThere(remembered)) return remembered;
     return pairCands[i] ? pairCands[i].deviceID : '';
   });
   state.stereoLeft = pairPick[0];
   state.stereoRight = pairPick[1];
-  // The pair the dropdowns describe: match the L/R selection against the live
-  // pairs (stereoPairKey normalizes case+order, so a swapped L/R still matches).
-  // Everything below (status, name, balance, save, dissolve) tracks THIS pair,
-  // so a household with two pairs renames/undoes whichever one is selected.
+  // The pair the dropdowns describe: the live pair whose members match the L/R
+  // selection (stereoPairKey normalizes case+order). null while forming a NEW
+  // pair, so the rename/dissolve controls never act on the wrong existing pair.
   const formingPair = livePairs.find(p =>
-    stereoPairKey(p) === stereoPairKey({ members: [{ deviceID: pairPick[0] }, { deviceID: pairPick[1] }] })) || livePairs[0] || null;
+    stereoPairKey(p) === stereoPairKey({ members: [{ deviceID: pairPick[0] }, { deviceID: pairPick[1] }] })) || null;
   const pairOpts = (sel) => pairCands
     .map(b => `<option value="${escapeAttr(b.deviceID)}"${b.deviceID === pairPick[sel] ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
     .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
