@@ -1218,10 +1218,31 @@ async function togglePower() {
 }
 // setSource selects an input and keeps that button highlighted until another is chosen.
 async function setSource(s, btn, account) {
+  var prevActive = document.querySelector('#inputs .btn.active');
   document.querySelectorAll('#inputs .btn').forEach(function(e){ e.classList.remove('active'); });
   if (btn) btn.classList.add('active');
-  await api('/api/box/source','PUT',{source:s, sourceAccount: account || ''});
+  var ok = await api('/api/box/source','PUT',{source:s, sourceAccount: account || ''});
+  if (ok === null) {
+    // The box refused the switch (an input this model does not have, e.g. an
+    // ST20 variant with no Bluetooth answers 409 source_unavailable) or is
+    // unreachable: api() returns null for both. Restore the prior highlight and
+    // say so, rather than leaving a button lit for an input that never engaged.
+    if (btn) btn.classList.remove('active');
+    if (prevActive) prevActive.classList.add('active');
+    flashInputNote(T.musicLibFailed);
+    return;
+  }
   setTimeout(refreshStatus, 1200);
+}
+// flashInputNote briefly shows a short message in the Input label, then restores
+// it. Reuses the existing label so the phone page needs no separate toast layer.
+var inputNoteTimer = null;
+function flashInputNote(msg) {
+  var el = document.getElementById('lblInput');
+  if (!el) return;
+  el.textContent = msg;
+  if (inputNoteTimer) clearTimeout(inputNoteTimer);
+  inputNoteTimer = setTimeout(function(){ el.textContent = T.input; }, 2600);
 }
 
 // STR's own sources and the firmware's bookkeeping entries are not inputs a
