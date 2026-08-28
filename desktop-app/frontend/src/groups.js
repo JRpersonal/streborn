@@ -307,27 +307,44 @@ export function resetZoneLivePoll() {
 // usually not a paired one, so undo was sent to an uninvolved speaker twice in
 // a row while the pair stayed up (field, 2026-08-04).
 
-// stereoPairOf returns the live firmware stereo pair as
-// {id, master, members:[{deviceID, ip, role}]}, or null when no speaker
-// reports one. Any member's self-report describes the whole pair, so the
-// first one found wins.
-export function stereoPairOf(zoneLive) {
+// stereoPairsOf returns EVERY distinct live firmware stereo pair as
+// [{id, master, members:[{deviceID, ip, role}]}], in first-seen order. Both
+// halves of one pair self-report the same group, so entries are deduped on
+// stereoPairKey (the sorted member set); a transient record that carries an id
+// but not yet two members has no such key, so it is bucketed under 'id:'+id
+// instead, which keeps two distinct in-formation pairs from collapsing under
+// the same empty key. A household with two pairs (field: Buero + Wohnwagen)
+// gets both, so the picker and the multi-room view can frame and name each.
+export function stereoPairsOf(zoneLive) {
+  const out = [];
+  const seen = new Set();
   for (const key of Object.keys(zoneLive || {})) {
     const st = (zoneLive[key] || {}).stereo;
-    if (st && ((st.members || []).length || st.id)) {
-      return {
-        id: st.id || '',
-        // The agent names this field masterDeviceID. Reading only st.master
-        // left pair.master empty on every pair, so "ask the pair's MASTER for
-        // the balance" silently asked whichever half happened to be selected,
-        // which is the bug that was supposed to be fixed (#70). Both spellings
-        // are accepted so an older agent keeps working.
-        master: String(st.masterDeviceID || st.master || '').toUpperCase(),
-        members: st.members || [],
-      };
-    }
+    if (!st || !((st.members || []).length || st.id)) continue;
+    const rec = {
+      id: st.id || '',
+      // The agent names this field masterDeviceID. Reading only st.master
+      // left pair.master empty on every pair, so "ask the pair's MASTER for
+      // the balance" silently asked whichever half happened to be selected,
+      // which is the bug that was supposed to be fixed (#70). Both spellings
+      // are accepted so an older agent keeps working.
+      master: String(st.masterDeviceID || st.master || '').toUpperCase(),
+      members: st.members || [],
+    };
+    const k = stereoPairKey(rec) || (rec.id ? 'id:' + rec.id : '');
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(rec);
   }
-  return null;
+  return out;
+}
+
+// stereoPairOf returns the FIRST live stereo pair, or null. Kept as a thin
+// wrapper over stereoPairsOf so the callers that only need one (the balance
+// source box, the undo fallback) and the existing tests keep their exact
+// first-pair/null contract.
+export function stereoPairOf(zoneLive) {
+  return stereoPairsOf(zoneLive)[0] || null;
 }
 
 // stereoPairKey turns a live pair into a stable, order-independent key for the

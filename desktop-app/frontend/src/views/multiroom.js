@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairOf, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName } from '../stereoNames.js';
 
@@ -213,17 +213,31 @@ export function renderMultiroom(fetchLive) {
   // SoundTouch 10s the controls sat on two speakers that were not the paired
   // ones and every repaint put them back there ("die Lautsprecherauswahl
   // springt immer auf den nicht gepaarten Lautsprecher", field 2026-08-04).
-  const livePair = stereoPairOf(state.zoneLive);
+  const livePairs = stereoPairsOf(state.zoneLive);
+  const livePair = livePairs[0] || null;
   const liveBoxes = pairMemberBoxes(livePair, strBoxes).map(x => x.box).filter(Boolean);
   const stillThere = (id) => id && pairCands.some(b => b.deviceID === id);
+  // A remembered selection that names a LIVE pair wins, so a user holding the
+  // dropdowns on a SECOND live pair is not snapped back to the first on every
+  // poll repaint. When the remembered pick is NOT a live pair, snap to the live
+  // one (the 2026-08-04 fix: controls must not sit on an unpaired speaker).
+  const remKey = stereoPairKey({ members: [{ deviceID: state.stereoLeft }, { deviceID: state.stereoRight }] });
+  const remIsLive = !!remKey && livePairs.some(p => stereoPairKey(p) === remKey);
   const pairPick = [0, 1].map(i => {
-    if (liveBoxes[i]) return liveBoxes[i].deviceID;
     const remembered = i === 0 ? state.stereoLeft : state.stereoRight;
+    if (remIsLive && stillThere(remembered)) return remembered;
+    if (liveBoxes[i]) return liveBoxes[i].deviceID;
     if (stillThere(remembered)) return remembered;
     return pairCands[i] ? pairCands[i].deviceID : '';
   });
   state.stereoLeft = pairPick[0];
   state.stereoRight = pairPick[1];
+  // The pair the dropdowns describe: match the L/R selection against the live
+  // pairs (stereoPairKey normalizes case+order, so a swapped L/R still matches).
+  // Everything below (status, name, balance, save, dissolve) tracks THIS pair,
+  // so a household with two pairs renames/undoes whichever one is selected.
+  const formingPair = livePairs.find(p =>
+    stereoPairKey(p) === stereoPairKey({ members: [{ deviceID: pairPick[0] }, { deviceID: pairPick[1] }] })) || livePairs[0] || null;
   const pairOpts = (sel) => pairCands
     .map(b => `<option value="${escapeAttr(b.deviceID)}"${b.deviceID === pairPick[sel] ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
     .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
@@ -231,16 +245,16 @@ export function renderMultiroom(fetchLive) {
   // Say whether a pair exists at all. Until now the section gave no sign
   // either way, so a user could not tell a dissolve that did nothing from one
   // that worked.
-  const pairStatus = livePair
+  const pairStatus = formingPair
     ? `<div class="muted small">${escapeHtml(t('multiroom.stereoCurrent', {
-        names: pairMemberBoxes(livePair, strBoxes)
+        names: pairMemberBoxes(formingPair, strBoxes)
           .map(x => x.box ? zoneLabel(x.box) : (x.member.ip || x.member.deviceID)).join(' + '),
       }))}</div>`
     : `<div class="muted small">${escapeHtml(t('multiroom.stereoNoPair'))}</div>`;
 
   // The pair's own display name, kept app-side (stereoNames.js). Prefilled from
-  // the store for an existing pair; the async lookup repaints once it lands.
-  const pairName = livePair ? (pairDisplayName(livePair, () => renderMultiroom(false)) || '') : '';
+  // the store for the SELECTED pair; the async lookup repaints once it lands.
+  const pairName = formingPair ? (pairDisplayName(formingPair, () => renderMultiroom(false)) || '') : '';
 
   // The pair's balance belongs here, where the pair is made and undone, and
   // nowhere near a volume slider: it is a READ-OUT, not a control. The firmware
@@ -248,7 +262,7 @@ export function renderMultiroom(fetchLive) {
   // the speaker was woken), so shown beside a slider it reads as a control that
   // is broken. An owner said exactly that: "steht neben dem Lautstaerkeregler
   // und hat auch keinen Effekt" (2026-08-09), and #70 asked twice where it was.
-  const pairBalance = livePair
+  const pairBalance = formingPair
     ? `<div class="muted small" id="pairBalance" hidden></div>`
     : '';
 
@@ -283,14 +297,14 @@ export function renderMultiroom(fetchLive) {
          <input id="stereoName" type="text" maxlength="40" placeholder="${escapeAttr(t('multiroom.stereoNamePlaceholder'))}" value="${escapeAttr(state.stereoName != null ? state.stereoName : pairName)}"${pairDis}></label>
        <div class="zone-actions">
          <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button>
-         ${livePair ? `<button id="stereoNameSave" class="btn btn-mini">${escapeHtml(t('multiroom.stereoNameSaveBtn'))}</button>` : ''}
+         ${formingPair ? `<button id="stereoNameSave" class="btn btn-mini">${escapeHtml(t('multiroom.stereoNameSaveBtn'))}</button>` : ''}
          <button id="stereoDissolve" class="btn btn-mini"${pairDis}>${escapeHtml(t('multiroom.stereoDissolveBtn'))}</button>
        </div>
        <div id="stereoResult">${state.stereoMsg || ''}</div>
      </div>`;
 
   // Read-only, filled after the markup exists, and only when a pair does.
-  if (livePair) fillPairBalance(livePair, strBoxes).catch(() => {});
+  if (formingPair) fillPairBalance(formingPair, strBoxes).catch(() => {});
 
   const issueLink = $('multiroomIssueLink');
   if (issueLink) issueLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {} };
@@ -343,8 +357,11 @@ export function renderMultiroom(fetchLive) {
     // Remember the user's choice so the next repaint (they happen on every
     // live-zone poll) does not throw it away.
     const left = $('stereoLeft'), right = $('stereoRight');
-    if (left) left.onchange = () => { state.stereoLeft = left.value; };
-    if (right) right.onchange = () => { state.stereoRight = right.value; };
+    // Dropping the in-progress name on a selection change re-seeds the single
+    // Name field from the newly selected pair's stored name, so typing for one
+    // pair never leaks onto another.
+    if (left) left.onchange = () => { state.stereoLeft = left.value; delete state.stereoName; renderMultiroom(false); };
+    if (right) right.onchange = () => { state.stereoRight = right.value; delete state.stereoName; renderMultiroom(false); };
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
     // Keep the typed name across the automatic live-poll repaints (which rebuild
     // this markup wholesale), the same way the L/R selects persist to state.
@@ -356,7 +373,7 @@ export function renderMultiroom(fetchLive) {
     // the freshly stored name.
     const ns = $('stereoNameSave');
     if (ns) ns.onclick = async () => {
-      try { await setPairName(livePair, $('stereoName').value); } catch {}
+      try { await setPairName(formingPair, $('stereoName').value); } catch {}
       delete state.stereoName;
       renderMultiroom(false);
     };
@@ -538,7 +555,12 @@ async function doFormZone(strBoxes) {
 // harmless (a speaker not in a pair answers "nothing to undo" and is left
 // alone) and it is the only way a one-sided leftover can be cleared at all.
 async function doDissolveStereo(pairCands) {
-  const pair = stereoPairOf(state.zoneLive);
+  // Undo the pair the user has SELECTED in the dropdowns, not just the first
+  // live one, so a household with two pairs dissolves the right one.
+  const livePairs = stereoPairsOf(state.zoneLive);
+  const pair = livePairs.find(p =>
+    stereoPairKey(p) === stereoPairKey({ members: [{ deviceID: state.stereoLeft }, { deviceID: state.stereoRight }] }))
+    || livePairs[0] || null;
   const targets = stereoUndoTargets(pair, state.boxes || []);
   if (!targets.length) {
     const guess = pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);

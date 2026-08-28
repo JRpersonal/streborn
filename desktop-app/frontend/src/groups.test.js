@@ -18,6 +18,7 @@ import {
   fetchZoneLive,
   resetZoneLivePoll,
   stereoPairOf,
+  stereoPairsOf,
   stereoPairKey,
   pairMemberBoxes,
   inStereoPair,
@@ -495,6 +496,59 @@ describe('balanceSourceBox', () => {
 
   it('falls back to the selected speaker when the master is not discovered', () => {
     expect(balanceSourceBox(right, pair, [right])).toBe(right);
+  });
+});
+
+describe('stereoPairsOf', () => {
+  const pairEntry = {
+    stereo: {
+      id: 'str-grp-AAA', master: 'AAA',
+      members: [
+        { deviceID: 'BBB', ip: '192.0.2.32', role: 'RIGHT' },
+        { deviceID: 'AAA', ip: '192.0.2.19', role: 'LEFT' },
+      ],
+    },
+  };
+  const pairEntry2 = {
+    stereo: {
+      id: 'str-grp-CCC', master: 'CCC',
+      members: [
+        { deviceID: 'CCC', ip: '192.0.2.40', role: 'LEFT' },
+        { deviceID: 'DDD', ip: '192.0.2.41', role: 'RIGHT' },
+      ],
+    },
+  };
+
+  it('returns [] when nothing reports a pair', () => {
+    expect(stereoPairsOf({})).toEqual([]);
+    expect(stereoPairsOf(null)).toEqual([]);
+    expect(stereoPairsOf({ AAA: { members: [] }, BBB: { members: [] } })).toEqual([]);
+  });
+
+  it('dedupes the two self-reports of one pair into a single entry', () => {
+    const got = stereoPairsOf({ AAA: pairEntry, BBB: pairEntry });
+    expect(got).toHaveLength(1);
+    expect(got[0].master).toBe('AAA');
+  });
+
+  it('returns two distinct pairs, in first-seen order', () => {
+    const got = stereoPairsOf({ AAA: pairEntry, CCC: pairEntry2 });
+    expect(got).toHaveLength(2);
+    expect(got.map(p => p.master)).toEqual(['AAA', 'CCC']);
+  });
+
+  it('[0] equals stereoPairOf for a multi-pair map', () => {
+    const zl = { AAA: pairEntry, CCC: pairEntry2 };
+    expect(stereoPairsOf(zl)[0]).toEqual(stereoPairOf(zl));
+  });
+
+  it('keeps two transient (<2-member) records apart via their ids', () => {
+    const got = stereoPairsOf({
+      A: { stereo: { id: 'x', members: [] } },
+      B: { stereo: { id: 'y', members: [] } },
+    });
+    expect(got).toHaveLength(2);
+    expect(got.map(p => p.id).sort()).toEqual(['x', 'y']);
   });
 });
 
