@@ -562,6 +562,10 @@ func run() error {
 	// instead of the real CDN URL, Bose gets http://127.0.0.1:8888/stream/<slot>
 	// and the stick agent reconnects internally on drops.
 	streamProxySrv := streamproxy.New(store, logger.With("comp", "streamproxy"))
+	// Radio dropout forensics: how often the current station forces a reconnect
+	// and why (eof vs read-fail), so an intermittent-gap report is diagnosed from
+	// the bundle instead of guessed.
+	webui.RegisterDebugSection("radio_stream_health", streamProxySrv.HealthSnapshot)
 
 	// Spotify preset audio plane (#78, P1): the agent supervises
 	// go-librespot and serves its live audio (PCM wrapped as a WAV

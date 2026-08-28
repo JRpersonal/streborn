@@ -7,7 +7,7 @@
 // (discussion #555, with the speaker reporting LOCAL_INTERNET_RADIO +
 // PLAY_STATE + the station name, i.e. playing perfectly well).
 import { describe, it, expect } from 'vitest';
-import { activeSlotFromLocation, slotFromOrionStation } from './utils.js';
+import { activeSlotFromLocation, slotFromOrionStation, nativeSlotStale } from './utils.js';
 
 // Builds the descriptor exactly as the agent writes it: unpadded base64url.
 function orion(payload) {
@@ -67,5 +67,49 @@ describe('activeSlotFromLocation', () => {
 describe('slotFromOrionStation', () => {
   it('ignores a location that is not a station descriptor', () => {
     expect(slotFromOrionStation('http://127.0.0.1:8888/stream/3')).toBe(null);
+  });
+});
+
+// A native descriptor keeps playing the recalled station even after the box's
+// own preset list is re-synced (edited from the Bose remote / ST Remote), so a
+// slot can come to hold a different station than the audio. The slot number
+// then still points at that slot, and the tile must not stay lit (#758).
+describe('nativeSlotStale', () => {
+  it('keeps a matching slot lit (url matches)', () => {
+    expect(nativeSlotStale({
+      presetName: 'Klove', presetUrl: 'http://cdn/a.mp3',
+      playingName: 'Klove', playingUrl: 'http://cdn/a.mp3',
+    })).toBe(false);
+  });
+
+  it('keeps a matching slot lit when only the name matches', () => {
+    // The stored URL can be normalised differently from the descriptor form;
+    // an identical station name is enough to treat the slot as the live one.
+    expect(nativeSlotStale({
+      presetName: 'Essentially Rush', presetUrl: 'http://cdn/rush',
+      playingName: 'Essentially Rush', playingUrl: 'http://other/rush2',
+    })).toBe(false);
+  });
+
+  it('suppresses a slot whose station changed under the live audio (#758)', () => {
+    // Key 6 was Rush and is still playing; the list re-synced key 6 to Klove.
+    expect(nativeSlotStale({
+      presetName: 'Klove', presetUrl: 'http://cdn/klove',
+      playingName: 'Essentially Rush', playingUrl: 'http://cdn/rush',
+    })).toBe(true);
+  });
+
+  it('does not judge when the descriptor yields no identity (stays lit)', () => {
+    expect(nativeSlotStale({
+      presetName: 'Klove', presetUrl: 'http://cdn/klove',
+      playingName: '', playingUrl: '',
+    })).toBe(false);
+  });
+
+  it('falls back to the url when the playing name is missing', () => {
+    expect(nativeSlotStale({
+      presetName: 'Klove', presetUrl: 'http://cdn/klove',
+      playingName: '', playingUrl: 'http://cdn/rush',
+    })).toBe(true);
   });
 });

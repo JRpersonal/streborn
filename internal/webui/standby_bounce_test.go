@@ -182,6 +182,53 @@ func TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch(t *testing.T) {
 	}
 }
 
+// TestHandleEnterStandby_QuickOffDuringLoginGiveupLatches guards #517: the user
+// powers a box ON via a preset (which the box refuses with 1036 NOT_LOGGED_IN,
+// stamping a recent login error) and powers it straight OFF again. The adjacent
+// power press makes this a real power-off, so the login-give-up exemption must
+// NOT swallow it: both stop latches must arm so the recall-retry wake stands
+// down instead of turning the speaker back on.
+func TestHandleEnterStandby_QuickOffDuringLoginGiveupLatches(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
+	s.standbyStopMu.Unlock()
+	s.NoteBoxLoginError()                                        // 1036 just landed
+	s.SetUserActivityFn(func() time.Time { return time.Now() }) // fresh adjacent power press
+
+	s.HandleEnterStandby()
+
+	if !s.standbyStoppedRecently() {
+		t.Fatal("a power press during a login-give-up window must still arm the standby-bounce window (#517)")
+	}
+	if !s.userStoppedRecently() {
+		t.Fatal("a power press during a login-give-up window must still arm the user-stop (#517)")
+	}
+}
+
+// TestHandleEnterStandby_LoginGiveupWithoutKeyStaysExempt is the other half of
+// #517: with a recent 1036 and NO accompanying key press, the drop is the box
+// giving up on its own failed self-activation. The exemption must still fire so
+// the verify loop keeps recovery armed; nothing may latch or clear here.
+func TestHandleEnterStandby_LoginGiveupWithoutKeyStaysExempt(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
+	s.standbyStopMu.Unlock()
+	s.NoteBoxLoginError()
+	s.SetUserActivityFn(func() time.Time { return time.Time{} }) // no key signal
+
+	s.HandleEnterStandby()
+
+	if s.standbyStoppedRecently() || s.userStoppedRecently() {
+		t.Fatal("a keyless login give-up must stay exempt and leave the latches unarmed (#517)")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if rec.count() != 0 {
+		t.Fatalf("a keyless login give-up must not clear the transport, got %v", rec.list())
+	}
+}
+
 // TestHandleEnterStandby_NoActivitySignalStaysConservative: firmware that never
 // emits userActivityUpdate gives the discriminator no signal (zero lastKey), so
 // every drop must keep the conservative #197 handling: latch + clear.

@@ -144,6 +144,20 @@ type Server struct {
 	// backpressure regression test can shrink it; New sets the production
 	// value.
 	upstreamStallAfter time.Duration
+
+	// radio stream health: cross-reconnect counters behind the
+	// radio_stream_health debug section and one consolidated WARN per upstream
+	// disconnect. The per-handler reconnect attempt counter resets on every
+	// fresh box connection, so a reporter chasing intermittent dropouts (a CDN
+	// that expires its token every couple of minutes, or a flaky box uplink)
+	// cannot see the rate from the log alone. These persist across reconnects
+	// and reset only when the station itself changes.
+	healthMu             sync.Mutex
+	reconnectCount       int64
+	lastDisconnectReason string
+	lastGapMs            int64
+	healthURL            string
+	forwardedBytes       int64
 }
 
 // SetOnDisconnect registers a callback invoked whenever the box closes a
@@ -887,6 +901,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				// how often a station forces a reconnect.
 				s.logger.Info("stream proxy upstream EOF, will reconnect", "url", url,
 					"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
+				s.noteReconnect(url, "eof", connBytes, time.Since(connStart), s.audioGap())
 				return true, nil
 			}
 			// Network-level read error mid-stream: this is the dropout cause for
@@ -894,6 +909,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			// much it delivered, so the bundle pins the drop without a capture.
 			s.logger.Warn("stream proxy upstream read fail, will reconnect", "url", url, "err", readErr,
 				"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
+			s.noteReconnect(url, "read-fail", connBytes, time.Since(connStart), s.audioGap())
 			return true, readErr
 		}
 	}

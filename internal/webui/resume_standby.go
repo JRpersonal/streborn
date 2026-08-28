@@ -1090,18 +1090,6 @@ func (s *Server) HandleEnterStandby() {
 	// spontaneous and wake the box right back up. A fresh user-stop always
 	// means deliberate: keep the conservative handling.
 	deliberateStop := s.userStoppedRecently()
-	// A standby right after a NOT_LOGGED_IN rejection is the box giving up on its
-	// own failed source self-activation, not a user power-off (see
-	// loginGiveupStandbyWindow). Latching the deliberate-stop signals and clearing
-	// the transport here stood the recall-verify loop down before the forced
-	// re-login landed, so the first hardware press after a standby-cleared login
-	// played nothing (Portable 2026-07-23). Leave the transport and latches alone
-	// so the verify loop can wake the box and re-push once the re-login completes.
-	// A real user power-off carries no recent 1036, so it is unaffected.
-	if !deliberateStop && s.loginErrorRecentWithin(loginGiveupStandbyWindow) {
-		s.logger.Info("standby bounce: box dropped to standby right after a NOT_LOGGED_IN rejection, treating as a login give-up, not a user power-off (recovery stays armed)")
-		return
-	}
 	recallActive := !playStart.IsZero() && now.Sub(playStart) < userPlayGuardWindow
 	// A key press only reads as "the user powered the box off mid-recall" when
 	// it is BOTH newer than the press that started the recall (outside the
@@ -1112,6 +1100,28 @@ func (s *Server) HandleEnterStandby() {
 	// recovery off mid-recall (#252).
 	newKeySinceRecall := lastKey.After(playStart.Add(userPlayActivityEpsilon))
 	keyAdjacentToFlip := !lastKey.IsZero() && now.Sub(lastKey) <= powerKeyAdjacencyWindow
+	// A standby right after a NOT_LOGGED_IN rejection is the box giving up on its
+	// own failed source self-activation, not a user power-off (see
+	// loginGiveupStandbyWindow). Latching the deliberate-stop signals and clearing
+	// the transport here stood the recall-verify loop down before the forced
+	// re-login landed, so the first hardware press after a standby-cleared login
+	// played nothing (Portable 2026-07-23). Leave the transport and latches alone
+	// so the verify loop can wake the box and re-push once the re-login completes.
+	// A real user power-off carries no recent 1036, so it is unaffected.
+	//
+	// EXCEPT when a user power press accompanies the flip (#517: quick on -> quick
+	// off re-powered the box because this exemption fired before the key was
+	// examined and never armed the stop latches, and the recall-retry wake then
+	// turned the speaker back on). A genuine login give-up drops to STANDBY on its
+	// own with no adjacent key, so gating on the same power-press signal used below
+	// keeps the give-up recovery armed while letting a real power-off fall through
+	// to noteStandbyStop(). On firmware that emits no key press this is vacuously
+	// the old behavior (still exempt), the documented conservative fall-through.
+	userPowerPress := newKeySinceRecall && keyAdjacentToFlip
+	if !deliberateStop && !userPowerPress && s.loginErrorRecentWithin(loginGiveupStandbyWindow) {
+		s.logger.Info("standby bounce: box dropped to standby right after a NOT_LOGGED_IN rejection, treating as a login give-up, not a user power-off (recovery stays armed)")
+		return
+	}
 	// A flip right after STR's OWN transport push, with no key press SINCE that
 	// push, is the firmware rejecting/settling OUR command - not a user
 	// power-off, even when a key press sits just before the push (field case:
@@ -1771,7 +1781,12 @@ func (s *Server) HandleStreamTitle(title string) {
 		s.lastICYTitle = title
 		s.lastPlayMu.Unlock()
 	}
-	if !s.displayTrackEnabled() || s.renderer == nil || title == "" {
+	enabled := s.displayTrackEnabled()
+	if !enabled || s.renderer == nil || title == "" {
+		// Log the silent skip so a "title missing on model X" report shows which
+		// leg was taken (feature off vs no renderer vs empty title) instead of
+		// leaving every skip invisible in the bundle.
+		s.logger.Info("display title not pushed", "enabled", enabled, "haveRenderer", s.renderer != nil, "title", title)
 		return
 	}
 	// Rate-limit: re-buffering the box on every StreamTitle flip (song <-> promo)
@@ -1780,6 +1795,7 @@ func (s *Server) HandleStreamTitle(title string) {
 	throttled := !s.lastDisplayPush.IsZero() && time.Since(s.lastDisplayPush) < minDisplayPushInterval
 	s.lastPlayMu.Unlock()
 	if throttled {
+		s.logger.Debug("display title push throttled", "title", title)
 		return
 	}
 	s.pushDisplayTitle(title)
@@ -1798,12 +1814,14 @@ func (s *Server) setDisplayText(shown string) {
 	lp := s.lastPlay
 	if lp == nil {
 		s.lastPlayMu.Unlock()
+		s.logger.Info("display push skipped: no active stream", "shown", shown)
 		return
 	}
 	boxURL, art, mime := lp.boxURL, lp.art, lp.mime
 	s.lastDisplayPush = time.Now()
 	s.lastPlayMu.Unlock()
 	if boxURL == "" {
+		s.logger.Info("display push skipped: empty box URL", "shown", shown)
 		return
 	}
 	// Serialise against other box commands (re-push, play) so a title update
@@ -1822,7 +1840,10 @@ func (s *Server) setDisplayText(shown string) {
 		s.logger.Warn("display push failed", "err", err, "shown", shown)
 		return
 	}
-	s.logger.Info("display push", "shown", shown)
+	// boxURL + mime prove the exact write reached the box, so a "sent but not
+	// shown" firmware case (title pushed, home-cinema display ignores dc:title)
+	// is distinguishable from "never sent" in the bundle.
+	s.logger.Info("display push", "shown", shown, "boxURL", boxURL, "mime", mime)
 }
 
 // pushDisplayTitle re-issues the now-playing metadata so the configured display
@@ -1831,6 +1852,9 @@ func (s *Server) setDisplayText(shown string) {
 // pushes once immediately.
 func (s *Server) pushDisplayTitle(rawTitle string) {
 	shown := s.displayTrackText(rawTitle)
+	// raw vs shown reveals when the artist/title/both transform emptied a title
+	// the box would otherwise have shown.
+	s.logger.Info("display title computed", "raw", rawTitle, "mode", s.displayTrackMode(), "shown", shown)
 	if shown == "" {
 		return
 	}

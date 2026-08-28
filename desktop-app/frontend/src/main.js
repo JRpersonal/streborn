@@ -226,6 +226,7 @@ import {
   noticeDismissed,
   activeSlotFromLocation,
   orionStationPayload,
+  nativeSlotStale,
   clearNoticeDismissal,
   balanceLabel,
   shouldAdoptPresetArt,
@@ -5455,19 +5456,26 @@ function renderPresets() {
   // real stream URL of the source slot. That lets us mark sibling
   // slots with the same station as active too. Otherwise only the
   // single slot named in /stream/<n> would light up.
+  // The station the speaker is ACTUALLY playing, decoded from the native ORION
+  // descriptor (null for Spotify or a bare /stream/<n> proxy). While the box's
+  // own preset list is re-synced under a stale recall, this is the only reliable
+  // identity of the live audio, so a slot whose stored station has since changed
+  // can be told apart from the one still coming out of the speaker (#758).
+  const orionNow = orionStationPayload(state.nowLocation);
+  const playingURL = orionNow && orionNow.streamUrl ? decodeProxyUrl(orionNow.streamUrl) : '';
+  const playingName = orionNow && typeof orionNow.name === 'string' ? orionNow.name : '';
   let activeStreamURL = null;
   if (activeSlot !== null) {
     const ap = state.presets.find(x => x.slot === activeSlot);
     if (ap) activeStreamURL = ap.stream_url;
-  } else {
+  } else if (playingURL) {
     // A native preset whose descriptor carries the RAW proxy form rather than a
     // per-slot one: the slot lookup finds nothing, and the location is the
     // descriptor rather than a URL, so neither of the matches above can fire
     // and no tile lit up while the speaker was plainly playing one of them.
     // The real station URL is inside the descriptor, and that does match what
     // the key holds.
-    const orion = orionStationPayload(state.nowLocation);
-    if (orion && orion.streamUrl) activeStreamURL = decodeProxyUrl(orion.streamUrl);
+    activeStreamURL = playingURL;
   }
   for (let i = 1; i <= 6; i++) {
     const p = state.presets.find(x => x.slot === i);
@@ -5475,7 +5483,7 @@ function renderPresets() {
     // (e.g. a Deezer playlist set on the speaker). Show it so the user sees and
     // can recall it, instead of a misleading "empty" tile.
     const bp = !p ? (state.boxPresets || []).find(x => x.slot === i) : null;
-    const isActive = p && state.nowLocation && (
+    const baseActive = p && state.nowLocation && (
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
       (activeStreamURL && p.stream_url === activeStreamURL) ||
@@ -5484,6 +5492,17 @@ function renderPresets() {
       // location. Never match on the preset name (see nowSpotifySlot note above).
       (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot)
     );
+    // While a native descriptor is playing, drop a slot whose stored station no
+    // longer matches the live audio: a preset list re-synced from the box remote
+    // must not leave the freshly-changed tile lit as "playing" (#758). Only bites
+    // when the speaker plays native radio (orionNow set) and the identity is
+    // known and differs; otherwise baseActive stands unchanged.
+    const isActive = baseActive && !(orionNow && nativeSlotStale({
+      presetName: p && p.name,
+      presetUrl: p && p.stream_url,
+      playingName,
+      playingUrl: playingURL,
+    }));
     const hasErr = !!state.presetErrors[i];
     const div = document.createElement('div');
     div.className = 'preset' + (p || bp ? '' : ' empty') + (isActive ? ' playing' : '') + (hasErr ? ' error' : '') + (bp ? ' box-native' : '');
