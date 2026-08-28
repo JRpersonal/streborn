@@ -259,6 +259,7 @@ func formatFailureReport(r failureReport) string {
 	}
 
 	advice = dropContradictedBlame(advice)
+	advice = applyIsolationDiagnosis(advice, r)
 	if len(advice) > 0 {
 		section(&b, "what to try")
 		for i, p := range advice {
@@ -293,6 +294,30 @@ func formatFailureReport(r failureReport) string {
 // Only that pair. The install preflight's not-reachable paragraph also
 // mentions firewalls, but it is only ever printed when :22, :8090 AND :8091
 // were all silent, which is not a case this contradiction can reach.
+// applyIsolationDiagnosis leads the advice with the client-isolation cause and
+// drops the generic firewall paragraph when the facts fit it: the speaker sits
+// on THIS PC's subnet (it was discovered and shares the subnet) yet a ping to
+// it, which no PC firewall can block, gets no answer. That is a Wi-Fi keeping
+// its clients apart, not a firewall, and pointing at the firewall sent users
+// chasing the wrong thing (Jens, #763). Only fires on the not-reachable phase,
+// i.e. when :22, :8090 and :8091 were all silent.
+func applyIsolationDiagnosis(advice []string, r failureReport) []string {
+	f := r.Facts
+	isolated := strings.Contains(r.Phase, "not-reachable") &&
+		f.SubnetKnown && f.SameSubnet && f.PingRan && !f.PingAlive
+	if !isolated {
+		return advice
+	}
+	out := []string{isolationAdvice}
+	for _, p := range advice {
+		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func dropContradictedBlame(advice []string) []string {
 	answered := false
 	for _, p := range advice {
