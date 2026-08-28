@@ -1724,6 +1724,13 @@ async function refreshStatus() {
   const proxySrc = upSrc === 'UPNP' || upSrc === 'LOCAL_INTERNET_RADIO';
   const song = (playing && proxySrc) ? await currentSong() : '';
   setNow(bigName, song || human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
+  // Keep the Recently-played list current when the song or station changes from
+  // ANY source (a hardware button, the desktop app, or an ICY song change), not
+  // only after a play from this page (#761). The box records each play itself;
+  // the page just re-reads its ring when the now-playing line moves. No extra
+  // polling: this rides the status cadence that already runs.
+  var nowSig = bigName + '|' + song;
+  if (playing && nowSig !== lastRecentSig) { lastRecentSig = nowSig; try { loadRecent(); } catch (e) {} }
   tp.playing = (state === 'PLAY_STATE' || state === 'BUFFERING_STATE');
   var key = name + '|' + src;
   if (key !== tp.key) { tp.key = key; tp.sec = 0; tp.dur = 0; tp.at = 0; }
@@ -1734,6 +1741,9 @@ async function refreshStatus() {
 // cadence and interpolated forward in between, so the bar moves like a clock.
 // Radio reports no length: then only the elapsed time is shown, with no bar.
 var tp = { sec: 0, dur: 0, at: 0, key: '', busy: false, playing: false };
+// Last now-playing signature the Recently list was refreshed for (#761), so a
+// song/station change re-reads the ring exactly once.
+var lastRecentSig = '';
 function fmtClock(sec) {
   sec = Math.max(0, Math.floor(sec));
   return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
