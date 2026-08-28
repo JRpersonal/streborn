@@ -447,16 +447,16 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div class="card">
 <div class="label" id="lblPlayback">Playback</div>
 <div class="row c2" style="margin-bottom:8px">
-<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="gap:6px" aria-label="Previous" title="Previous"><span aria-hidden="true" style="font-size:19px">&#9198;&#65039;</span><span id="btnPrevLbl">Previous</span></button>
-<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:6px" aria-label="Next" title="Next"><span id="btnNextLbl">Next</span><span aria-hidden="true" style="font-size:19px">&#9197;&#65039;</span></button>
+<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Previous" title="Previous"><span aria-hidden="true" style="font-size:19px">&#9198;&#65039;</span><span id="btnPrevLbl">Previous</span></button>
+<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Next" title="Next"><span aria-hidden="true" style="font-size:19px">&#9197;&#65039;</span><span id="btnNextLbl">Next</span></button>
 </div>
 <div class="row c2" style="margin-top:8px;margin-bottom:8px">
-<button class="btn" id="btnShuffle" onclick="toggleShuffle()" style="gap:6px" aria-pressed="false" aria-label="Shuffle" title="Shuffle"><span aria-hidden="true" style="font-size:17px">&#128256;</span><span id="btnShuffleLbl">Shuffle</span></button>
-<button class="btn" id="btnRepeat" onclick="cycleRepeat()" style="gap:6px" aria-pressed="false" aria-label="Repeat" title="Repeat"><span aria-hidden="true" style="font-size:17px">&#128257;</span><span id="btnRepeatLbl">Repeat</span><span id="btnRepeatOne" style="font-weight:700" hidden>1</span></button>
+<button class="btn" id="btnShuffle" onclick="toggleShuffle()" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-pressed="false" aria-label="Shuffle" title="Shuffle"><span aria-hidden="true" style="font-size:17px">&#128256;</span><span id="btnShuffleLbl">Shuffle</span></button>
+<button class="btn" id="btnRepeat" onclick="cycleRepeat()" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-pressed="false" aria-label="Repeat" title="Repeat"><span aria-hidden="true" style="font-size:17px">&#128257;</span><span id="btnRepeatLbl">Repeat</span><span id="btnRepeatOne" style="font-weight:700" hidden>1</span></button>
 </div>
 <div class="row c2" style="margin-top:8px">
-<button class="btn" id="btnPause" onclick="togglePlayPause(this)" style="gap:6px" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true" style="font-size:19px">&#9208;&#65039;</span><span id="btnPauseLbl">Pause</span></button>
-<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" style="gap:6px" aria-label="Stop" title="Stop"><span aria-hidden="true" style="font-size:19px">&#9209;&#65039;</span><span id="btnStopLbl">Stop</span></button>
+<button class="btn" id="btnPause" onclick="togglePlayPause(this)" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true" style="font-size:19px">&#9208;&#65039;</span><span id="btnPauseLbl">Pause</span></button>
+<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Stop" title="Stop"><span aria-hidden="true" style="font-size:19px">&#9209;&#65039;</span><span id="btnStopLbl">Stop</span></button>
 </div>
 </div>
 
