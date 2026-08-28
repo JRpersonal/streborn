@@ -25,13 +25,28 @@ const (
 	// libraryBrowseTimeout bounds one page fetch, resolution included. A slow
 	// NAS answering a first page can take a while (the #666 QNAP let one
 	// container time out at 15 s), so this is deliberately looser than the
-	// search's per-server share; it is one user tap, not a fan-out. 35s, not
-	// 20: resolving a slow WD Twonky through the unicast fallback can itself
-	// take up to ~18 s now (#733), and the Browse SOAP still has to follow.
-	libraryBrowseTimeout = 35 * time.Second
-	// libraryUnicastProbe bounds the direct unicast M-SEARCH at the address
-	// the firmware's discovery cache names (#726). One host, one answer.
-	libraryUnicastProbe = 3 * time.Second
+	// search's per-server share; it is one user tap, not a fan-out. 55s: the
+	// resolution chain below can, in its worst case (recall miss, then a fresh
+	// discovery, then the box-cache probe) spend recall + browse-discovery +
+	// unicast-probe describing a pathologically slow WD Twonky before the
+	// Browse SOAP even starts (#733). The common case still returns in a couple
+	// of seconds; this only keeps the tap from failing outright on that NAS.
+	libraryBrowseTimeout = 55 * time.Second
+	// libraryBrowseDiscovery bounds the fresh SSDP round the browse path runs
+	// when recall misses. It is deliberately far looser than the search's
+	// shared librarySearchDiscovery (5 s): a browse tap resolves ONE server and
+	// the user is waiting, so it can afford to let a slow server's device
+	// description actually complete. 15s covers dlna.DiscoverServers' own 12 s
+	// per-device fetch plus the SSDP listen window. #733: UlrichSzy's WD Twonky
+	// WAS seen by the fresh SSDP round, but the old 5 s budget was too short to
+	// describe it, so resolution fell through to the box cache and failed there.
+	libraryBrowseDiscovery = 15 * time.Second
+	// libraryUnicastProbe bounds the direct unicast M-SEARCH at the address the
+	// firmware's discovery cache names (#726). One host, but the answer still
+	// carries a device description that a slow WD Twonky serves slowly, so this
+	// has to be wide enough to let dlna.SearchHost's own 15 s describe finish
+	// (#733); the old 3 s guaranteed a miss on that NAS.
+	libraryUnicastProbe = 18 * time.Second
 )
 
 // handleLibraryServers lists the registered media servers for the phone page.
@@ -60,12 +75,32 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 // SSDP round only when that fails. The search flow does it the other way
 // around because it resolves EVERY server at once; a browse tap resolves one,
 // and the user is waiting.
+//
+// The recall shortcut is only a HINT, not a promise. A server that got a new
+// DHCP lease can still answer its OLD address's device description (the box's
+// own discovery cache, or a lingering second interface, keeps it alive) with a
+// matching UDN, so recall "succeeds" and hands back a control URL that the
+// Browse SOAP then cannot reach. That regressed the moment the per-fetch
+// timeout grew (#739): the stale address, which used to time out and fall
+// through to a fresh round, now describes in time and shadows it (#733, #726).
+// So the browse handler treats a Browse failure as a signal to re-resolve
+// FRESH (recall skipped) and retry once; see handleLibraryBrowse.
 func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Server, bool) {
 	key := udnKey(udn)
 	if srv, ok := s.recallMediaServer(ctx, key); ok {
 		return srv, true
 	}
-	found, err := dlna.DiscoverServers(ctx, librarySearchDiscovery)
+	return s.resolveMediaServerFresh(ctx, udn)
+}
+
+// resolveMediaServerFresh resolves a server WITHOUT the recall shortcut: a fresh
+// SSDP round, then the box's own discovery cache. It also drops any stored
+// last-known location for the key first, so a stale address that a failed
+// Browse just exposed cannot be recalled again on the retry or the next tap.
+func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, bool) {
+	key := udnKey(udn)
+	s.forgetMediaServerLocation(key)
+	found, err := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
 	if err != nil {
 		s.logger.Info("library resolve: discovery failed", "err", err)
 	}
@@ -74,6 +109,15 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 		if udnKey(srv.UDN) == key {
 			return srv, true
 		}
+	}
+	// Forensic (#733): the fresh round returned servers but none carried the
+	// registered UDN. That separates "the slow NAS still could not be described
+	// in time" (found is short or empty) from "the server now advertises a
+	// different UDN" (found is non-empty without this key) in the next bundle,
+	// so a persistent miss points at the real cause instead of a guess.
+	if len(found) > 0 {
+		s.logger.Info("library resolve: fresh discovery saw servers but none matched the registered UDN",
+			"want", key, "discovered", len(found))
 	}
 	// The multicast round came back without this server. On networks whose AP
 	// or router filters multicast between Wi-Fi and wire, the agent's own
@@ -171,6 +215,21 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := dlna.Browse(ctx, srv, id, start, libraryBrowsePage)
+	if err != nil {
+		// The resolved address may be stale: recall can hand back an OLD address
+		// that still answers its device.xml with a matching UDN but whose
+		// control URL is dead (a moved server, #733/#726). A Browse failure is
+		// the signal that the address is wrong, so re-resolve FRESH (recall
+		// skipped, stored location dropped) and retry once at the current
+		// address before giving up.
+		if fresh, ok2 := s.resolveMediaServerFresh(ctx, udn); ok2 && fresh.CDSControlURL != srv.CDSControlURL {
+			s.logger.Info("library browse: retrying at a freshly resolved address",
+				"server", fresh.FriendlyName, "wasControl", srv.CDSControlURL, "nowControl", fresh.CDSControlURL)
+			if res2, err2 := dlna.Browse(ctx, fresh, id, start, libraryBrowsePage); err2 == nil {
+				res, err = res2, nil
+			}
+		}
+	}
 	if err != nil {
 		s.logger.Info("library browse: container could not be read",
 			"server", srv.FriendlyName, "container", id, "start", start, "err", err)
