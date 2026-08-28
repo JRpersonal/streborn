@@ -293,14 +293,29 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		}
 	})
 
-	t.Run("native zone is left to the firmware", func(t *testing.T) {
+	// Since the default group (#70) a native zone is kicked exactly like a
+	// mirror one: the play kick is its re-form trigger. Verified missing on
+	// hardware first (2026-08-26): the old gate here kept the members asleep.
+	t.Run("native zone is kicked for the default-group re-form", func(t *testing.T) {
 		native := mirror
 		native.Mode = "native"
 		s := newServer(t, &native)
 		s.kickMirrorAfterPlay()
 		select {
 		case <-s.mirrorKick:
-			t.Error("reconcile requested for a native zone; the firmware owns that one")
+		case <-time.After(9 * time.Second):
+			t.Error("no reconcile requested; the default group would never re-form on play")
+		}
+	})
+
+	t.Run("a stereo pair is not kicked", func(t *testing.T) {
+		pair := mirror
+		pair.Stereo = true
+		s := newServer(t, &pair)
+		s.kickMirrorAfterPlay()
+		select {
+		case <-s.mirrorKick:
+			t.Error("reconcile requested for a stereo pair; the firmware persists that itself")
 		case <-time.After(9 * time.Second):
 		}
 	})

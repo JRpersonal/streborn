@@ -875,6 +875,10 @@ func run() error {
 		// (#197). Zone-guarded and debounced in the webui.
 		onEnterStandby: webuiSrv.HandleEnterStandby,
 		onStandbyExit:  webuiSrv.RunDeferredResume,
+		// Any music start on this box re-forms its persisted default group and
+		// wakes the stored members (#70): hardware keys and Spotify Connect
+		// starts reach the agent only through this gabbo signal.
+		onSourcePlaying: webuiSrv.KickDefaultGroup,
 		// Let the hardware-recall verify stand down when the user powered the box
 		// off mid-recall, so it does not re-push the stream into a power-off (#197).
 		// The absolute variant is preferred: the rolling 6s window could expire

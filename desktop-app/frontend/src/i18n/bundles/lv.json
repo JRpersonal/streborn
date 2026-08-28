@@ -1175,6 +1175,8 @@
   "multiroom.formedPartial": "Grupa ir aktīva, taču tikai {{joined}} no {{total}} skaļruņiem apstiprināja pievienošanos. Pārbaudi, vai pārējie ir ieslēgti un sasniedzami, nospied Atsvaidzināt vai izmēģini Mirror režīmu, tad atsūti man žurnālus.",
   "multiroom.groupMasterTitle": "Grupas galvenais (skaļrunis, no kura atskaņo grupa)",
   "multiroom.notReady": "Šie skaļruņi vēl startēja un nepievienojās: {{names}}. Pamēģini tos sagrupēt vēlreiz pēc brīža.",
+  "multiroom.permanentLabel": "Paturēt šo grupu pastāvīgi",
+  "multiroom.permanentHelp": "Kad galvenais skaļrunis sāk mūziku, tas pamodina grupas skaļruņus un pats no jauna izveido grupu, arī pēc gaidstāves vai restarta. Skaļrunis, kas atskaņo ko citu, paliek ārpus grupas.",
   "preset.boxNativeHint": "pieskaries, lai atskaņotu skaļrunī",
   "preset.boxRecallFailed": "Neizdevās palaist šo skaļruņa iestatījumu: {{err}}",
   "preset.lossBody": "Tavam skaļrunim bija {{service}} uz taustiņiem {{slots}}. STR vēl nevar atskaņot {{service}}, tāpēc skaļrunis šos iestatījumus atmeta. {{service}} atbalsts ir plānots. Tavi interneta radio un Spotify iestatījumi netiek skarti.",

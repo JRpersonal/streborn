@@ -47,6 +47,10 @@ type Zone struct {
 	Mode string `json:"mode,omitempty"`
 	// Name is an optional user label for the group.
 	Name string `json:"name,omitempty"`
+	// Permanent opts this group into the play-triggered re-form (#70): when
+	// its master starts music, standby members are woken and the zone is
+	// re-asserted. Off by default; the user chooses it when forming the group.
+	Permanent bool `json:"permanent,omitempty"`
 }
 
 // Mirror reports whether this zone uses the per-agent mirror path.

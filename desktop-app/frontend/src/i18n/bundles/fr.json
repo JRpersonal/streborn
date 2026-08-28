@@ -1175,6 +1175,8 @@
   "multiroom.formedPartial": "Groupe actif, mais seulement {{joined}} sur {{total}} enceintes ont confirmé leur participation. Vérifie que les autres sont allumées et joignables, appuie sur Actualiser ou essaie le mode Mirror, puis envoie-moi les journaux.",
   "multiroom.groupMasterTitle": "Enceinte principale du groupe (celle qui diffuse pour le groupe)",
   "multiroom.notReady": "Ces enceintes étaient encore en train de démarrer et n'ont pas rejoint : {{names}}. Réessaie de les grouper dans un instant.",
+  "multiroom.permanentLabel": "Conserver ce groupe en permanence",
+  "multiroom.permanentHelp": "Quand l'enceinte principale lance la musique, elle réveille les enceintes du groupe et reforme le groupe toute seule, même après une veille ou un redémarrage. Une enceinte occupée à jouer autre chose reste à l'écart.",
   "preset.boxNativeHint": "appuie pour lire sur l'enceinte",
   "preset.boxRecallFailed": "Impossible de lancer ce préréglage de l'enceinte : {{err}}",
   "preset.lossBody": "Ton enceinte avait {{service}} sur les touches {{slots}}. STR ne peut pas encore lire {{service}}, l'enceinte a donc abandonné ces préréglages. La prise en charge de {{service}} est prévue. Tes préréglages de radio internet et Spotify ne sont pas affectés.",

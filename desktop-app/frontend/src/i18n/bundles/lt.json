@@ -1175,6 +1175,8 @@
   "multiroom.formedPartial": "Grupė aktyvi, bet prisijungimą patvirtino tik {{joined}} iš {{total}} garsiakalbių. Patikrink, ar kiti įjungti ir pasiekiami, spustelėk Atnaujinti arba pabandyk Mirror režimą, tada atsiųsk žurnalus.",
   "multiroom.groupMasterTitle": "Grupės pagrindinis (garsiakalbis, iš kurio groja grupė)",
   "multiroom.notReady": "Šie garsiakalbiai dar buvo paleidžiami ir neprisijungė: {{names}}. Pabandyk juos sugrupuoti dar kartą po akimirkos.",
+  "multiroom.permanentLabel": "Išlaikyti šią grupę nuolat",
+  "multiroom.permanentHelp": "Kai pagrindinė kolonėlė paleidžia muziką, ji pažadina grupės kolonėles ir pati iš naujo suformuoja grupę, taip pat po budėjimo režimo ar paleidimo iš naujo. Kolonėlė, grojanti ką nors kita, lieka nuošalyje.",
   "preset.boxNativeHint": "spustelėk, kad grotų garsiakalbyje",
   "preset.boxRecallFailed": "Nepavyko paleisti šio garsiakalbio nustatymo: {{err}}",
   "preset.lossBody": "Tavo garsiakalbis turėjo {{service}} mygtukuose {{slots}}. STR kol kas negali groti {{service}}, todėl garsiakalbis šiuos nustatymus pašalino. {{service}} palaikymas planuojamas. Tavo interneto radijo ir Spotify nustatymai nepaliesti.",

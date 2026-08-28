@@ -146,6 +146,8 @@
   "multiroom.formedNone": "The main speaker accepted the request but reports no group members yet. Try Mirror mode, hit Refresh, or update the speakers, then send logs.",
   "multiroom.formedPartial": "Group active, but only {{joined}} of {{total}} speakers confirmed they joined. Check the others are on and reachable, hit Refresh, or try Mirror mode, then send logs.",
   "multiroom.notReady": "These speakers were still starting and did not join: {{names}}. Try grouping them again in a moment.",
+  "multiroom.permanentLabel": "Keep this group permanently",
+  "multiroom.permanentHelp": "When the main speaker starts music, it wakes the group speakers and re-forms the group by itself, even after standby or a restart. A speaker that is busy playing something else stays out.",
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Pair the speaker once in the Spotify mobile app, then send any Spotify track to it from your phone.",
   "spotify.bullet1": "Use the speaker as a Spotify Connect target.",

@@ -146,6 +146,8 @@
   "multiroom.formedNone": "Der Haupt-Lautsprecher hat die Anfrage angenommen, meldet aber noch keine Gruppenmitglieder. Probier den Mirror-Modus, drück Aktualisieren oder update die Lautsprecher, und schick mir die Logs.",
   "multiroom.formedPartial": "Gruppe aktiv, aber nur {{joined}} von {{total}} Lautsprechern haben den Beitritt bestätigt. Prüfe, ob die anderen an und erreichbar sind, drück Aktualisieren oder probier den Mirror-Modus, und schick mir die Logs.",
   "multiroom.notReady": "Diese Lautsprecher waren noch am Starten und sind nicht beigetreten: {{names}}. Versuch es gleich noch einmal.",
+  "multiroom.permanentLabel": "Gruppe dauerhaft halten",
+  "multiroom.permanentHelp": "Startet der Hauptlautsprecher Musik, weckt er die Gruppen-Lautsprecher und bildet die Gruppe von selbst neu, auch nach Standby oder Neustart. Ein Lautsprecher, der gerade etwas anderes spielt, bleibt außen vor.",
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Lautsprecher einmal in der Spotify-App koppeln, danach beliebige Spotify-Tracks vom Handy aus dorthin senden.",
   "spotify.bullet1": "Lautsprecher als Spotify-Connect-Ziel nutzen.",

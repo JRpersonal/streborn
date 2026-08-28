@@ -630,6 +630,7 @@ export namespace main {
 	    name: string;
 	    stereo: boolean;
 	    mode: string;
+	    permanent: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ZoneSpec(source);
@@ -642,6 +643,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.stereo = source["stereo"];
 	        this.mode = source["mode"];
+	        this.permanent = source["permanent"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

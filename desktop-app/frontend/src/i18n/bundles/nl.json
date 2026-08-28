@@ -1175,6 +1175,8 @@
   "multiroom.formedPartial": "Groep actief, maar slechts {{joined}} van {{total}} luidsprekers bevestigden dat ze meedoen. Controleer of de andere aan en bereikbaar zijn, klik op Vernieuwen of probeer de Mirror-modus, en stuur me dan de logs.",
   "multiroom.groupMasterTitle": "Groepshoofd (de luidspreker waar de groep van afspeelt)",
   "multiroom.notReady": "Deze luidsprekers waren nog aan het opstarten en deden niet mee: {{names}}. Probeer ze zo nog eens te groeperen.",
+  "multiroom.permanentLabel": "Deze groep permanent houden",
+  "multiroom.permanentHelp": "Wanneer de hoofdspeaker muziek start, wekt hij de groepsspeakers en vormt hij de groep vanzelf opnieuw, ook na stand-by of een herstart. Een speaker die iets anders afspeelt, blijft erbuiten.",
   "preset.boxNativeHint": "tik om af te spelen op de luidspreker",
   "preset.boxRecallFailed": "Kon dit luidspreker-preset niet starten: {{err}}",
   "preset.lossBody": "Je luidspreker had {{service}} op presettoetsen {{slots}}. STR kan {{service}} nog niet afspelen, dus de luidspreker heeft deze presets verwijderd. Ondersteuning voor {{service}} is gepland. Je internetradio- en Spotify-presets blijven ongewijzigd.",
