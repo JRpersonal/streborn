@@ -75,11 +75,31 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 // SSDP round only when that fails. The search flow does it the other way
 // around because it resolves EVERY server at once; a browse tap resolves one,
 // and the user is waiting.
+//
+// The recall shortcut is only a HINT, not a promise. A server that got a new
+// DHCP lease can still answer its OLD address's device description (the box's
+// own discovery cache, or a lingering second interface, keeps it alive) with a
+// matching UDN, so recall "succeeds" and hands back a control URL that the
+// Browse SOAP then cannot reach. That regressed the moment the per-fetch
+// timeout grew (#739): the stale address, which used to time out and fall
+// through to a fresh round, now describes in time and shadows it (#733, #726).
+// So the browse handler treats a Browse failure as a signal to re-resolve
+// FRESH (recall skipped) and retry once; see handleLibraryBrowse.
 func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Server, bool) {
 	key := udnKey(udn)
 	if srv, ok := s.recallMediaServer(ctx, key); ok {
 		return srv, true
 	}
+	return s.resolveMediaServerFresh(ctx, udn)
+}
+
+// resolveMediaServerFresh resolves a server WITHOUT the recall shortcut: a fresh
+// SSDP round, then the box's own discovery cache. It also drops any stored
+// last-known location for the key first, so a stale address that a failed
+// Browse just exposed cannot be recalled again on the retry or the next tap.
+func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, bool) {
+	key := udnKey(udn)
+	s.forgetMediaServerLocation(key)
 	found, err := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
 	if err != nil {
 		s.logger.Info("library resolve: discovery failed", "err", err)
@@ -195,6 +215,21 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := dlna.Browse(ctx, srv, id, start, libraryBrowsePage)
+	if err != nil {
+		// The resolved address may be stale: recall can hand back an OLD address
+		// that still answers its device.xml with a matching UDN but whose
+		// control URL is dead (a moved server, #733/#726). A Browse failure is
+		// the signal that the address is wrong, so re-resolve FRESH (recall
+		// skipped, stored location dropped) and retry once at the current
+		// address before giving up.
+		if fresh, ok2 := s.resolveMediaServerFresh(ctx, udn); ok2 && fresh.CDSControlURL != srv.CDSControlURL {
+			s.logger.Info("library browse: retrying at a freshly resolved address",
+				"server", fresh.FriendlyName, "wasControl", srv.CDSControlURL, "nowControl", fresh.CDSControlURL)
+			if res2, err2 := dlna.Browse(ctx, fresh, id, start, libraryBrowsePage); err2 == nil {
+				res, err = res2, nil
+			}
+		}
+	}
 	if err != nil {
 		s.logger.Info("library browse: container could not be read",
 			"server", srv.FriendlyName, "container", id, "start", start, "err", err)
