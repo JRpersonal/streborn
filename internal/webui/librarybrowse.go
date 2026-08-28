@@ -108,12 +108,16 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 }
 
 // resolveMediaServerFresh resolves a server WITHOUT the recall shortcut: a fresh
-// SSDP round, then the box's own discovery cache. It also drops any stored
-// last-known location for the key first, so a stale address that a failed
-// Browse just exposed cannot be recalled again on the retry or the next tap.
+// SSDP round, then the box's own discovery cache, then the fleet. It does NOT
+// drop the stored last-known location first: on a subnet where the box cannot
+// self-discover the server (multicast filtered, firmware cache empty, #726) that
+// stored address is the ONLY one the box can reach, and a transient Browse error
+// must not destroy it. rememberMediaServerLocations below OVERWRITES the stored
+// location when the fresh round actually finds the server at a NEW address (the
+// genuinely-moved-server case #749 targeted), so a real move is still corrected
+// without wiping the one reachable address when discovery comes back empty.
 func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, bool) {
 	key := udnKey(udn)
-	s.forgetMediaServerLocation(key)
 	found, err := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
 	if err != nil {
 		s.logger.Info("library resolve: discovery failed", "err", err)
@@ -162,15 +166,11 @@ func (s *Server) resolveViaPeers(ctx context.Context, udn string) (dlna.Server, 
 		return dlna.Server{}, false
 	}
 	key := udnKey(udn)
-	tried := 0
-	for _, p := range s.peersFn(ctx) {
-		if !p.Reachable || p.URL == "" {
-			continue
-		}
-		if tried >= 3 { // a small fleet answers on the first reachable sibling
-			break
-		}
-		tried++
+	peers := s.peersFn(ctx)
+
+	// tryPeer asks one peer where the server is and reaches it directly. ok is
+	// true only when it actually described the registered server.
+	tryPeer := func(p PeerLink) (dlna.Server, bool) {
 		loc, ip := s.askPeerLocate(ctx, p.URL, udn)
 		if loc != "" {
 			if srv, err := dlna.DescribeServer(ctx, loc); err == nil && srv.CDSControlURL != "" && udnKey(srv.UDN) == key {
@@ -190,6 +190,50 @@ func (s *Server) resolveViaPeers(ctx context.Context, udn string) (dlna.Server, 
 				}
 			}
 		}
+		return dlna.Server{}, false
+	}
+
+	// Ask reachable peers first, then dimmed ones, with SEPARATE budgets. A
+	// dimmed peer is still worth asking: the box reaches a sibling on another
+	// segment by routed unicast, and /api/library/locate is exactly that unicast
+	// GET; the roster dims a sibling only because its mDNS sightings went stale
+	// (peerDimAfter), not because it is unreachable. #726: the ST-10 that CAN see
+	// the server sat dimmed on the ST-20's roster and the old reachable-only
+	// guard skipped it, so the peer-assist never fired. Peers are name-sorted, so
+	// one shared cap would let earlier-sorted useless peers starve the one useful
+	// dimmed sibling; a per-class cap guarantees the dimmed set its own turn.
+	reachTried, dimTried := 0, 0
+	for _, p := range peers {
+		if p.URL == "" || !p.Reachable {
+			continue
+		}
+		if reachTried >= 3 { // a small fleet answers on the first reachable sibling
+			break
+		}
+		reachTried++
+		if srv, ok := tryPeer(p); ok {
+			return srv, true
+		}
+	}
+	for _, p := range peers {
+		if p.URL == "" || p.Reachable {
+			continue
+		}
+		if dimTried >= 3 {
+			break
+		}
+		dimTried++
+		if srv, ok := tryPeer(p); ok {
+			return srv, true
+		}
+	}
+	// Silent before (#726: the bundle showed zero peer lines even though this
+	// ran, because every peer was dimmed and skipped). Log which branch we hit so
+	// the next bundle proves the path taken.
+	if reachTried == 0 && dimTried == 0 {
+		s.logger.Info("library resolve: no peer agents available to ask for the server", "peers", len(peers))
+	} else {
+		s.logger.Info("library resolve: asked peers for the server but none could locate it", "reachAsked", reachTried, "dimAsked", dimTried)
 	}
 	return dlna.Server{}, false
 }
@@ -372,8 +416,10 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		// that still answers its device.xml with a matching UDN but whose
 		// control URL is dead (a moved server, #733/#726). A Browse failure is
 		// the signal that the address is wrong, so re-resolve FRESH (recall
-		// skipped, stored location dropped) and retry once at the current
-		// address before giving up.
+		// skipped) and retry once at the current address before giving up. The
+		// fresh round only REPLACES the stored address when it positively finds
+		// the server elsewhere, so a fresh miss leaves the reachable address
+		// intact (#749 no longer wipes it).
 		if fresh, ok2 := s.resolveMediaServerFresh(ctx, udn); ok2 && fresh.CDSControlURL != srv.CDSControlURL {
 			s.logger.Info("library browse: retrying at a freshly resolved address",
 				"server", fresh.FriendlyName, "wasControl", srv.CDSControlURL, "nowControl", fresh.CDSControlURL)
