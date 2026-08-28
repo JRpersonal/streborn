@@ -330,6 +330,26 @@ export function stereoPairOf(zoneLive) {
   return null;
 }
 
+// stereoPairKey turns a live pair into a stable, order-independent key for the
+// app-side pair-name store (stereoNames.js): both member deviceIDs uppercased,
+// sorted, joined with "+". The SORTED SET is deliberate, not the master alone,
+// so the name survives an L/R swap or a re-pair that picks the other box as
+// master. Stereo pairs are SoundTouch-10-only (single-chip rhino), so the
+// discovery deviceID equals the firmware deviceID and the key computed when the
+// pair is formed matches the key computed from the live pair at display time.
+// Falls back to the master when a transient read reports fewer than two member
+// deviceIDs, so the key stays stable instead of flickering. Pure: no binding
+// import, so groups.test.js can cover it.
+export function stereoPairKey(pair) {
+  if (!pair) return '';
+  const ids = (pair.members || [])
+    .map((m) => String((m && m.deviceID) || '').toUpperCase())
+    .filter(Boolean)
+    .sort();
+  if (ids.length >= 2) return ids.join('+');
+  return String((pair && pair.master) || '').toUpperCase();
+}
+
 // pairMemberBoxes maps a live pair onto discovered boxes, in LEFT/RIGHT order
 // (unknown roles keep their reported order). Matches by deviceID first and by
 // IP second: on two-chip chassis the firmware's deviceID differs from the

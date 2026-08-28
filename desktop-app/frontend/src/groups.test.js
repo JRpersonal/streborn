@@ -18,6 +18,7 @@ import {
   fetchZoneLive,
   resetZoneLivePoll,
   stereoPairOf,
+  stereoPairKey,
   pairMemberBoxes,
   inStereoPair,
   stereoUndoTargets,
@@ -42,6 +43,28 @@ function liveMap() {
     [boxB.deviceID]: { master: master.deviceID, senderIP: master.host, members },
   };
 }
+
+describe('stereoPairKey', () => {
+  it('is the sorted set of member deviceIDs, joined with +', () => {
+    const pair = { master: 'AA11', members: [{ deviceID: 'BB22' }, { deviceID: 'AA11' }] };
+    expect(stereoPairKey(pair)).toBe('AA11+BB22');
+  });
+  it('is identical after an L/R swap (same two members, roles flipped)', () => {
+    const a = { master: 'AA11', members: [{ deviceID: 'AA11', role: 'LEFT' }, { deviceID: 'BB22', role: 'RIGHT' }] };
+    const b = { master: 'BB22', members: [{ deviceID: 'BB22', role: 'LEFT' }, { deviceID: 'AA11', role: 'RIGHT' }] };
+    expect(stereoPairKey(a)).toBe(stereoPairKey(b));
+  });
+  it('uppercases deviceIDs so casing never splits the key', () => {
+    expect(stereoPairKey({ members: [{ deviceID: 'aa11' }, { deviceID: 'bb22' }] })).toBe('AA11+BB22');
+  });
+  it('falls back to the master when fewer than two member deviceIDs are present', () => {
+    expect(stereoPairKey({ master: 'aa11', members: [{ deviceID: '' }] })).toBe('AA11');
+    expect(stereoPairKey({ master: 'aa11', members: [] })).toBe('AA11');
+  });
+  it('returns "" for a null pair', () => {
+    expect(stereoPairKey(null)).toBe('');
+  });
+});
 
 describe('stereoUndoTargets', () => {
   const pair = {

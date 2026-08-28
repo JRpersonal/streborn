@@ -99,6 +99,8 @@ export {
   RevealUpdateFile,
   GetAppFlag,
   SetAppFlag,
+  GetStereoPairName,
+  SetStereoPairName,
   RescuedSpeakerCount,
   GetWebhooks,
   SetWebhooks,

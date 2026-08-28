@@ -186,6 +186,10 @@ export function GetResumeOnPowerOn(arg1, arg2) {
   return window['go']['main']['App']['GetResumeOnPowerOn'](arg1, arg2);
 }
 
+export function GetStereoPairName(arg1) {
+  return window['go']['main']['App']['GetStereoPairName'](arg1);
+}
+
 export function GetWebhooks(arg1, arg2) {
   return window['go']['main']['App']['GetWebhooks'](arg1, arg2);
 }
@@ -440,6 +444,10 @@ export function SetResumeOnPowerOn(arg1, arg2, arg3) {
 
 export function SetSpotifyQuality(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetSpotifyQuality'](arg1, arg2, arg3);
+}
+
+export function SetStereoPairName(arg1, arg2) {
+  return window['go']['main']['App']['SetStereoPairName'](arg1, arg2);
 }
 
 export function SetWebhooks(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {

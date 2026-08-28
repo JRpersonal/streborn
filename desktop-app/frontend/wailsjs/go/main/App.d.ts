@@ -97,6 +97,8 @@ export function GetQueue(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function GetResumeOnPowerOn(arg1:string,arg2:number):Promise<Record<string, boolean>>;
 
+export function GetStereoPairName(arg1:string):Promise<string>;
+
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function GetZoneState(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -224,6 +226,8 @@ export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:s
 export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetSpotifyQuality(arg1:string,arg2:number,arg3:number):Promise<main.SpotifyQualityState>;
+
+export function SetStereoPairName(arg1:string,arg2:string):Promise<void>;
 
 export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
 
