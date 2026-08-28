@@ -1,12 +1,15 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/mediaservers"
@@ -81,5 +84,38 @@ func TestPhoneRemoteRecentBrowseAndRememberedGroup(t *testing.T) {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("phone page is missing %q", want)
 		}
+	}
+}
+
+// A box on a segment where it cannot self-discover the media server borrows the
+// address from a sibling. The sibling that CAN see the server is often DIMMED on
+// the roster (its mDNS sightings went stale), not unreachable, and the old
+// reachable-only guard skipped it, so the peer-assist never fired and the phone
+// browse got no answer (#726, v0.9.62 regression). resolveViaPeers must ask a
+// dimmed peer too.
+func TestResolveViaPeersAsksDimmedPeers(t *testing.T) {
+	var asked int32
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/library/locate") {
+			atomic.AddInt32(&asked, 1)
+		}
+		// Empty location: resolveViaPeers then finds nothing and returns false.
+		// The point of the test is that the dimmed peer was ASKED at all.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"udn":"","location":"","ip":""}`)
+	}))
+	defer peer.Close()
+
+	s := &Server{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		peersFn: func(context.Context) []PeerLink {
+			return []PeerLink{{Name: "sibling", URL: peer.URL, Reachable: false}} // DIMMED
+		},
+	}
+	if _, ok := s.resolveViaPeers(context.Background(), "uuid:AAAA-BBBB"); ok {
+		t.Fatal("an empty locate reply must not resolve a server")
+	}
+	if atomic.LoadInt32(&asked) == 0 {
+		t.Fatal("a DIMMED peer must still be asked for the server (#726); the reachable-only guard regressed the peer-assist")
 	}
 }
