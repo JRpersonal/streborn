@@ -773,6 +773,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/library/search", s.handleLibrarySearch)
 	mux.HandleFunc("/api/library/servers", s.handleLibraryServers)
 	mux.HandleFunc("/api/library/browse", s.handleLibraryBrowse)
+	mux.HandleFunc("/api/library/locate", s.handleLibraryLocate)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
 	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)
