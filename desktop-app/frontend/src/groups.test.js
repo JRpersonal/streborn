@@ -57,9 +57,12 @@ describe('stereoPairKey', () => {
   it('uppercases deviceIDs so casing never splits the key', () => {
     expect(stereoPairKey({ members: [{ deviceID: 'aa11' }, { deviceID: 'bb22' }] })).toBe('AA11+BB22');
   });
-  it('falls back to the master when fewer than two member deviceIDs are present', () => {
-    expect(stereoPairKey({ master: 'aa11', members: [{ deviceID: '' }] })).toBe('AA11');
-    expect(stereoPairKey({ master: 'aa11', members: [] })).toBe('AA11');
+  it('returns "" (not a bare master) when fewer than two member deviceIDs are present', () => {
+    // A master-only fallback would compute a different key than the stored
+    // "A+B", blanking the label and stranding a saved name; "" means
+    // "cannot identify the pair right now" instead.
+    expect(stereoPairKey({ master: 'aa11', members: [{ deviceID: '' }] })).toBe('');
+    expect(stereoPairKey({ master: 'aa11', members: [] })).toBe('');
   });
   it('returns "" for a null pair', () => {
     expect(stereoPairKey(null)).toBe('');

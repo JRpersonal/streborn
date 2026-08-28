@@ -280,7 +280,7 @@ export function renderMultiroom(fetchLive) {
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
          <select id="stereoRight"${pairDis}>${pairOpts(1)}</select></label>
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoName'))}</span>
-         <input id="stereoName" type="text" maxlength="40" placeholder="${escapeAttr(t('multiroom.stereoNamePlaceholder'))}" value="${escapeAttr(pairName)}"${pairDis}></label>
+         <input id="stereoName" type="text" maxlength="40" placeholder="${escapeAttr(t('multiroom.stereoNamePlaceholder'))}" value="${escapeAttr(state.stereoName != null ? state.stereoName : pairName)}"${pairDis}></label>
        <div class="zone-actions">
          <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button>
          ${livePair ? `<button id="stereoNameSave" class="btn btn-mini">${escapeHtml(t('multiroom.stereoNameSaveBtn'))}</button>` : ''}
@@ -346,12 +346,18 @@ export function renderMultiroom(fetchLive) {
     if (left) left.onchange = () => { state.stereoLeft = left.value; };
     if (right) right.onchange = () => { state.stereoRight = right.value; };
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
+    // Keep the typed name across the automatic live-poll repaints (which rebuild
+    // this markup wholesale), the same way the L/R selects persist to state.
+    const nm = $('stereoName');
+    if (nm) nm.oninput = () => { state.stereoName = nm.value; };
     // Rename an existing pair: STR stores the name app-side, keyed on the pair's
     // member deviceIDs, so it survives an update. A blank name clears it back to
-    // the default heading.
+    // the default heading. Clear the in-progress state so the field re-seeds from
+    // the freshly stored name.
     const ns = $('stereoNameSave');
     if (ns) ns.onclick = async () => {
       try { await setPairName(livePair, $('stereoName').value); } catch {}
+      delete state.stereoName;
       renderMultiroom(false);
     };
     // A pair could be created but never undone: the button to make one sat
@@ -419,13 +425,16 @@ async function doFormStereo(pairCands) {
       }
     } else {
       state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`;
-      // Persist the user-given name app-side, keyed on the two members. ST10
-      // single-chip, so these discovery deviceIDs match the live pair's.
+      // Persist the user-given name app-side, keyed on the two members. The
+      // desktop normalizes these deviceIDs to the firmware /info id, so the key
+      // matches the one the live pair reports at display time.
       if (wantName.trim()) {
         try {
           await setPairName({ members: [{ deviceID: left.deviceID }, { deviceID: right.deviceID }] }, wantName);
         } catch {}
       }
+      // Drop the in-progress name so the field re-seeds from the stored value.
+      delete state.stereoName;
     }
   } catch (e) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
