@@ -134,6 +134,17 @@ func parseVersionParts(v string) []int {
 //
 //	{"version":"v0.6.6","build":"...","downloadUrl":"https://st-reborn.de/download/windows","notes":"..."}
 func (a *App) CheckAppUpdate() (result map[string]string, err error) {
+	// A failed check must be visible in the log. Somebody on whose machine
+	// this request always fails (firewall, AV proxy, DNS) otherwise presses
+	// the manual check for weeks, sees nothing, and reads the silence as "no
+	// update exists"; the exported log is the only place the real reason can
+	// surface. Declared before the recover defer so it runs after it and
+	// also logs a recovered panic.
+	defer func() {
+		if err != nil && a.logger != nil {
+			a.logger.Warn("app update check failed", "err", err)
+		}
+	}()
 	// The update check is best-effort and must never take the app down.
 	// Any unforeseen panic (a malformed response that trips a code path,
 	// a nil deref, etc.) is recovered here and reported as a plain error,

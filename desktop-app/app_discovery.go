@@ -100,6 +100,15 @@ type BoxInfo struct {
 	// started, for the "last seen ..." tooltip; only meaningful while Offline.
 	Offline         bool `json:"offline,omitempty"`
 	OfflineSinceSec int  `json:"offlineSinceSec,omitempty"`
+	// OTAPending marks a box inside the post-OTA discovery pin window: STR is
+	// mid-update on it, so the frontend must not flag "update available" while
+	// the agent restarts and cannot answer its real version yet. This replaces
+	// the old behaviour of stamping the APP's version onto the record, which
+	// falsified the displayed version of a box the update never reached (#775:
+	// unreachable speakers showed the target v0.9.65, boxNeedsUpdate went
+	// false fleet-wide, and a retry toasted "already up to date"). Transient,
+	// never persisted to the discovery cache.
+	OTAPending bool `json:"otaPending,omitempty"`
 	// BoxHealth is the agent's wedged-control verdict ("ok" or "wedged"): a
 	// wedged box accepts transport pushes but never plays, and only a
 	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
@@ -436,6 +445,19 @@ func (a *App) notePostOTA(host string) {
 	a.logger.Info("post-OTA: pinning box as STR through its reboot", "host", host, "grace", otaRebootGrace.String())
 }
 
+// clearPostOTA drops the post-OTA pin for host again. Called when the update
+// attempt FAILED before anything reached the box: the pin's premise (agent
+// restarting on the new binary) is false then, and leaving it live kept the
+// box annotated as mid-update for the whole grace window (#775).
+func (a *App) clearPostOTA(host string) {
+	if host == "" {
+		return
+	}
+	a.discMu.Lock()
+	delete(a.otaPinned, host)
+	a.discMu.Unlock()
+}
+
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
 // cycle, then re-adds any cached box this cycle missed but which was
 // seen within discoveryStickyTTL (keeping its last-known record, NOT
@@ -568,13 +590,20 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			}
 		}
 		b.Kind = "str"
-		// The box is coming up on the app's embedded agent, so report that
-		// version to stop a spurious "update available" flag from looping while
-		// the agent is still restarting and cannot answer its real version.
-		b.Version = appVersion
-		b.Build = appBuild
-		seen[host] = b
+		// Cache the record with the STR kind but WITHOUT any version claim,
+		// and annotate only the served copy. The old code stamped the APP's
+		// version (plus build) here and persisted it, which falsified the
+		// displayed version of a box the update never reached and outlived
+		// the pin through the cache (#775: unreachable speakers showed the
+		// target version, boxNeedsUpdate went false fleet-wide, a retry
+		// toasted "already up to date"). The anti-flap purpose (no spurious
+		// "update available" while the agent restarts) now rides on the
+		// transient OTAPending flag, which the frontend's boxNeedsUpdate
+		// honours; the version shown stays the box's last confirmed
+		// self-report. Same annotate-only pattern as Offline below.
 		a.discCache[host] = discEntry{box: b, seen: now}
+		b.OTAPending = true
+		seen[host] = b
 	}
 
 	// STR identity memory (deviceID-keyed, survives an IP change). The pins above

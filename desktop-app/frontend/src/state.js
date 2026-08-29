@@ -165,7 +165,7 @@ function isRoutableHost(h) {
 // fills it in a moment later anyway.
 const TRANSIENT_BOX_FIELDS = ['storm1036', 'storm1036SinceSec', 'recallRefusal',
   'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'updateAvailable',
-  'noWifi', 'wedged'];
+  'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'otaPending'];
 
 function withoutTransientState(b) {
   const out = { ...b };

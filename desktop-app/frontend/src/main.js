@@ -994,6 +994,11 @@ async function renderFooter() {
     };
   }
   renderDonateSidebar();
+  // The quiet version line with its "check for updates" link is on screen
+  // from the start. It used to appear only once the first scheduled check
+  // completed 8 s in, so the control materialized out of nowhere and at
+  // least one user never spotted it at all.
+  try { renderAppUpdateCheckLink($('appUpdateBanner'), ''); } catch {}
   // Defer the update check out of the critical startup path: the window
   // and discovery come up first, and the network call (a reported suspect
   // for a macOS start crash) only fires once the app is already running,
@@ -1194,8 +1199,12 @@ async function checkAppUpdate(manual) {
     };
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
-    // A check that could not run must not swallow the control that triggers it.
-    try { renderAppUpdateCheckLink(banner, ''); } catch {}
+    // A check that could not run must not swallow the control that triggers
+    // it, and a person who pressed it is owed the failure: with the link
+    // quietly resetting, a machine on which the request always fails (AV
+    // proxy, firewall, DNS) looks exactly like "no update exists", and one
+    // user pressed through several releases believing that.
+    try { renderAppUpdateCheckLink(banner, manual ? t('banner.appCheckFailed') : ''); } catch {}
   }
 }
 
@@ -2449,7 +2458,10 @@ function renderBoxSelect() {
       const stockTitle = off ? offTitle : t('speaker.stockTooltip');
       return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
-    const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
+    // An offline tile keeps showing the last CONFIRMED self-report, marked
+    // stale: a fresh-looking version on an unreachable box is how #775's
+    // falsified v-numbers stayed believable for twenty minutes.
+    const ver = b.version ? `<span class="box-ver${b.offline ? ' box-ver-stale' : ''}" title="${escapeAttr(t(b.offline ? 'speaker.staleVersionTitle' : 'speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
     // Red dot when this speaker's agent is older than the app's embedded
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
@@ -3021,6 +3033,11 @@ function speakerUpdateCardMuted() {
 
 function boxNeedsUpdate(b) {
   if (!b || b.kind === 'stock' || !b.version) return false;
+  // Mid-update (post-OTA pin window): the agent restarts and cannot answer its
+  // real version, so no update flag. This transient flag replaced the old
+  // stamp of the APP version onto the record, which falsified the roster and
+  // made a retry claim "already up to date" after an all-failed run (#775).
+  if (b.otaPending) return false;
   const appVer   = state.appInfo && state.appInfo.version;
   const appBuild = state.appInfo && state.appInfo.build;
   if (!appVer) return false;
@@ -4189,7 +4206,10 @@ async function updateAllBoxes(onStart) {
 
 // runUpdateAllBoxes is the body; updateAllBoxes above is the guard around it.
 async function runUpdateAllBoxes(onStart) {
-  const candidates = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && !otaStuck(b));
+  // Offline speakers are excluded up front: probing them burns the pre-flight
+  // budget, and counting them as "nothing to do" is how an all-offline fleet
+  // produced "already up to date" (#775).
+  const candidates = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && !b.offline && !otaStuck(b));
   // Everything from here to the confirmation is network work: one version read
   // per speaker, then a stick check and a Wi-Fi read per update target. On a
   // busy LAN, or right after start while discovery is still sweeping, that is
@@ -4214,7 +4234,14 @@ async function runUpdateAllBoxes(onStart) {
     rows.push({ box: b, needsUpdate, engineMissing });
   }
   const { updateTargets, engineTargets, targets } = splitUpdateTargets(rows);
-  if (targets.length === 0) { hideToast(); showToast(t('updateAll.noneToUpdate')); return false; }
+  if (targets.length === 0) {
+    hideToast();
+    // "Already up to date" is only an honest claim when reachable speakers
+    // were actually inspected; a fleet that is offline gets the truth (#775).
+    const anyOnline = (state.boxes || []).some(b => b && b.kind !== 'stock' && !b.offline);
+    showToast(anyOnline ? t('updateAll.noneToUpdate') : t('speakerUpdate.notReachable'));
+    return false;
+  }
   // Hosts that only need the engine put back, not a whole agent update.
   const engineOnly = new Set(engineTargets.map(b => b.host));
 
@@ -4488,7 +4515,17 @@ async function runUpdateAllBoxes(onStart) {
   try { await discoverBoxes(); checkBoxUpdate(); if (state.view === 'settings') loadBoxSettings(); } catch { /* boxes still rebooting */ }
   checkSshBanner();
   const c = counts();
-  showToast(t('updateAll.doneToast', { done: c.done, deferred: c.defer, failed: c.fail }));
+  // A batch with failures or unconfirmed boxes must not lead with "Done": the
+  // #775 run had every update fail and still read like a success. Timeouts
+  // (the version poll expired without the box confirming) are reported as
+  // unconfirmed, not as deferred work.
+  let unconfirmed = 0;
+  for (const r of rowState.values()) if (r.outcome === 'timeout') unconfirmed++;
+  if (c.fail > 0 || unconfirmed > 0) {
+    showToast(t('updateAll.problemToast', { failed: c.fail, unconfirmed, done: c.done, deferred: c.defer - unconfirmed }));
+  } else {
+    showToast(t('updateAll.doneToast', { done: c.done, deferred: c.defer, failed: c.fail }));
+  }
   return true;
 }
 

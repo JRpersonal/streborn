@@ -1336,5 +1336,8 @@
   "spotify.qualitySet": "已變更品質",
   "spotify.qualityFailed": "嗇叭拒絕了變更",
   "setup.wlanNoPass": "未輸入 Wi-Fi 密碼，因此 Wi-Fi 設定未寫入隨身碟。喇叭將保留目前的 Wi-Fi。若要讓隨身碟設定 Wi-Fi，請同時輸入 SSID 和密碼。",
-  "setup.stickReadOnly": "Mac 以唯讀方式掛載了這個隨身碟。這通常是因為上次未退出就直接拔除。請開啟「磁碟工具程式」對隨身碟執行「修理工具」，或在那裡重新格式化為 MS-DOS (FAT)，之後就能寫入。"
+  "setup.stickReadOnly": "Mac 以唯讀方式掛載了這個隨身碟。這通常是因為上次未退出就直接拔除。請開啟「磁碟工具程式」對隨身碟執行「修理工具」，或在那裡重新格式化為 MS-DOS (FAT)，之後就能寫入。",
+  "updateAll.problemToast": "{{failed}} 個失敗、{{unconfirmed}} 個未確認、{{done}} 個已更新、{{deferred}} 個延後。",
+  "speaker.staleVersionTitle": "最後確認的版本。目前無法連線到喇叭，此數值可能已過時。",
+  "banner.appCheckFailed": "檢查未能完成。st-reborn.de 上仍可下載。"
 }

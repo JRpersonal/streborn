@@ -1336,5 +1336,8 @@
   "spotify.qualitySet": "Calidad cambiada",
   "spotify.qualityFailed": "El altavoz rechazó el cambio",
   "setup.wlanNoPass": "No se introdujo contraseña de Wi-Fi, así que los datos de Wi-Fi no se escribieron en el USB. El altavoz conserva su Wi-Fi actual. Introduce SSID y contraseña si el USB debe configurar la Wi-Fi.",
-  "setup.stickReadOnly": "El Mac montó este USB en modo de solo lectura. Suele ocurrir cuando se desconectó sin expulsarlo. Abre Utilidad de Discos y ejecuta Primera Ayuda en el USB, o formatéalo allí como MS-DOS (FAT); después se podrá escribir."
+  "setup.stickReadOnly": "El Mac montó este USB en modo de solo lectura. Suele ocurrir cuando se desconectó sin expulsarlo. Abre Utilidad de Discos y ejecuta Primera Ayuda en el USB, o formatéalo allí como MS-DOS (FAT); después se podrá escribir.",
+  "updateAll.problemToast": "{{failed}} fallidos, {{unconfirmed}} sin confirmar, {{done}} actualizados, {{deferred}} aplazados.",
+  "speaker.staleVersionTitle": "Última versión confirmada. El altavoz no está accesible ahora mismo, este dato puede estar desactualizado.",
+  "banner.appCheckFailed": "La comprobación no se pudo completar. Las descargas siguen disponibles en st-reborn.de."
 }
