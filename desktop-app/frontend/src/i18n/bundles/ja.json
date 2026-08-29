@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. USBメモリを選ぶ",
   "setup.searchAgain": "再検索",
   "setup.searchingSticks": "USBメモリを検索中...",
-  "setup.formatToggleLabel": "先にメモリをフォーマット (FAT32、データ消去)。新品のメモリに推奨。Windowsは管理者権限を要求します。",
+  "setup.formatToggleLabel": "先にUSBメモリーをフォーマット（FAT32、データは消去されます）。新しいメモリーに推奨。",
   "setup.step2Heading": "2. スピーカー名 <small>(任意)</small>",
   "setup.step2Help": "自由に入力するか部屋を選びます。スピーカーIDが自動で付加されます。",
   "setup.namePlaceholder": "例: リビング",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "バックアップを復元",
   "settingsView.backupExportDone": "{{favs}} 件のお気に入りと {{speakers}} 台のスピーカーの {{presets}} 件のプリセットを保存しました。",
   "settingsView.backupImportDone": "{{speakers}} 台のスピーカーに {{presets}} 件のプリセットを復元し、{{favs}} 件のお気に入りを追加しました。",
-  "settingsView.backupNotReached": "対象外: {{names}}。これらのスピーカーの電源を入れて、もう一度お試しください。"
+  "settingsView.backupNotReached": "対象外: {{names}}。これらのスピーカーの電源を入れて、もう一度お試しください。",
+  "setup.stickMacPrivacy": "macOS がこのアプリの USB メモリーへのアクセスをブロックしています。システム設定の「プライバシーとセキュリティ」の「ファイルとフォルダ」を開き、ST Reborn にリムーバブルボリュームへのアクセスを許可してください。その後、USB メモリーを挿し直してください。",
+  "update.engineMissing": "{{name}} は新しいバージョンで動作していますが、前回のアップデートの Spotify コンポーネントがまだありません。スピーカー設定を開いてもう一度アップデートを実行してください。再起動なしで配信されます。",
+  "setup.formatToggleWinHint": "Windows では管理者権限の確認が表示されます。"
 }

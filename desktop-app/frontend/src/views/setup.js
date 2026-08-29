@@ -210,7 +210,7 @@ function mountSetupShell() {
       <div id="drivesList">${escapeHtml(t('setup.searchingSticks'))}</div>
       <label class="format-toggle">
         <input type="checkbox" id="setupFormat" />
-        <span>${t('setup.formatToggleLabel')}</span>
+        <span>${t('setup.formatToggleLabel')}${/win/i.test(navigator.platform || '') ? ' ' + t('setup.formatToggleWinHint') : ''}</span>
       </label>
     </div>
     <div class="setup-section" id="nameSection">
@@ -1162,12 +1162,17 @@ async function updateDrivePanels() {
   // (schmutziges FAT32 nach Abziehen ohne Auswerfen, #775) und bekommt eine
   // Anleitung statt des ratlosen "vielleicht schreibgeschuetzt".
   const readOnly = chk && chk.reason === 'read-only';
+  // 'macos-privacy': macOS refuses the app access to removable volumes (TCC
+  // consent denied or never granted). Every stick fails identically then, so
+  // the message has to point at System Settings, not at another stick.
+  const macPrivacy = chk && chk.reason === 'macos-privacy';
   const notWritable = chk && chk.reason === 'not-writable';
-  if (tooSmall || readOnly || notWritable) {
+  if (tooSmall || readOnly || macPrivacy || notWritable) {
     const gb = (chk.totalBytes / 1e9).toFixed(1);
     upd.innerHTML = `<b>${escapeHtml(
       tooSmall ? t('setup.stickTooSmall', { gb })
         : readOnly ? t('setup.stickReadOnly')
+        : macPrivacy ? t('setup.stickMacPrivacy')
         : t('setup.stickNotWritable')
     )}</b>`;
     upd.classList.remove('hidden');
@@ -1282,8 +1287,11 @@ async function doSetup() {
       $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('setup.stickTooSmall', { gb: (chk.totalBytes / 1e9).toFixed(1) }))}</div>`;
       return;
     }
-    if (chk && (chk.reason === 'not-writable' || chk.reason === 'read-only')) {
-      $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t(chk.reason === 'read-only' ? 'setup.stickReadOnly' : 'setup.stickNotWritable'))}</div>`;
+    if (chk && (chk.reason === 'not-writable' || chk.reason === 'read-only' || chk.reason === 'macos-privacy')) {
+      $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t(
+        chk.reason === 'read-only' ? 'setup.stickReadOnly'
+          : chk.reason === 'macos-privacy' ? 'setup.stickMacPrivacy'
+          : 'setup.stickNotWritable'))}</div>`;
       return;
     }
   } catch {}

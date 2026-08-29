@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. اختيار ذاكرة USB",
   "setup.searchAgain": "البحث مجدّدًا",
   "setup.searchingSticks": "جارٍ البحث عن ذاكرات USB...",
-  "setup.formatToggleLabel": "تهيئة الذاكرة أولًا (FAT32، يمحو البيانات). يُنصح به للذاكرات الجديدة. يطلب Windows صلاحيات المسؤول.",
+  "setup.formatToggleLabel": "تهيئة الذاكرة أولاً (FAT32، يمحو البيانات). موصى به للذواكر الجديدة.",
   "setup.step2Heading": "2. اسم السمّاعة <small>(اختياري)</small>",
   "setup.step2Help": "اكتب اسمك الخاص أو اختر غرفة. يُضاف معرّف سمّاعة تلقائيًا.",
   "setup.namePlaceholder": "مثل غرفة المعيشة",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "استعادة النسخة",
   "settingsView.backupExportDone": "تم الحفظ: {{favs}} من المفضلة و{{presets}} من الإعدادات المسبقة من {{speakers}} من مكبرات الصوت.",
   "settingsView.backupImportDone": "تمت الاستعادة: {{presets}} من الإعدادات المسبقة على {{speakers}} من مكبرات الصوت، وأُضيف {{favs}} من المفضلة.",
-  "settingsView.backupNotReached": "غير مشمول: {{names}}. شغّل مكبرات الصوت هذه وحاول مرة أخرى."
+  "settingsView.backupNotReached": "غير مشمول: {{names}}. شغّل مكبرات الصوت هذه وحاول مرة أخرى.",
+  "setup.stickMacPrivacy": "يمنع نظام macOS وصول التطبيق إلى ذواكر USB. افتح إعدادات النظام، الخصوصية والأمان، الملفات والمجلدات، واسمح لـ ST Reborn بالوصول إلى وحدات التخزين القابلة للإزالة. ثم انزع الذاكرة وأعد توصيلها.",
+  "update.engineMissing": "يعمل {{name}} بالإصدار الجديد، لكن مكوّن Spotify من التحديث الأخير لا يزال مفقودًا. افتح إعدادات مكبر الصوت وشغّل التحديث مرة أخرى؛ يتم تسليمه دون إعادة تشغيل.",
+  "setup.formatToggleWinHint": "سيطلب Windows صلاحيات المسؤول."
 }

@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. USB belleği seçin",
   "setup.searchAgain": "Yeniden ara",
   "setup.searchingSticks": "USB bellekleri aranıyor...",
-  "setup.formatToggleLabel": "Önce belleği biçimlendir (FAT32, verileri siler). Yeni bellekler için önerilir. Windows yönetici hakları isteyecek.",
+  "setup.formatToggleLabel": "Önce belleği biçimlendir (FAT32, verileri siler). Yeni bellekler için önerilir.",
   "setup.step2Heading": "2. Hoparlör adı <small>(isteğe bağlı)</small>",
   "setup.step2Help": "Kendi adınızı girin veya bir oda seçin. Hoparlör kimliği otomatik eklenir.",
   "setup.namePlaceholder": "örn. Oturma odası",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Yedeği geri yükle",
   "settingsView.backupExportDone": "Kaydedildi: {{favs}} favori ve {{speakers}} hoparlörden {{presets}} ön ayar.",
   "settingsView.backupImportDone": "Geri yüklendi: {{speakers}} hoparlörde {{presets}} ön ayar, {{favs}} favori eklendi.",
-  "settingsView.backupNotReached": "Dahil edilmedi: {{names}}. Bu hoparlörleri açıp yeniden deneyin."
+  "settingsView.backupNotReached": "Dahil edilmedi: {{names}}. Bu hoparlörleri açıp yeniden deneyin.",
+  "setup.stickMacPrivacy": "macOS uygulamanın USB belleklere erişimini engelliyor. Sistem Ayarları, Gizlilik ve Güvenlik, Dosyalar ve Klasörler bölümünü açın ve ST Reborn için çıkarılabilir birimlere erişime izin verin. Ardından belleği çıkarıp yeniden takın.",
+  "update.engineMissing": "{{name}} yeni sürümde çalışıyor, ancak son güncellemenin Spotify bileşeni hâlâ eksik. Hoparlör ayarlarını açıp güncellemeyi bir kez daha çalıştırın; yeniden başlatma olmadan yüklenir.",
+  "setup.formatToggleWinHint": "Windows yönetici izni ister."
 }

@@ -112,9 +112,16 @@ func saveUpdateIntentsTo(path string, list []updateIntent) error {
 }
 
 // upsertIntent records or refreshes what a speaker should be running.
+//
+// Keyed on the HOST alone, deliberately. The update flow probes both agent
+// ports on a two-chassis box (:8888 and :17008), so a failed attempt could
+// record the speaker under one port and the later successful run clear it
+// under the other: the leftover then flagged a fully current speaker as
+// "unfinished" on every app start (field report, 2026-08-29). One IP is one
+// speaker; the port is kept as information, never as identity.
 func upsertIntent(list []updateIntent, in updateIntent) []updateIntent {
 	for i := range list {
-		if list[i].Host == in.Host && list[i].Port == in.Port {
+		if list[i].Host == in.Host {
 			in.Attempts = list[i].Attempts
 			list[i] = in
 			return list
@@ -124,9 +131,10 @@ func upsertIntent(list []updateIntent, in updateIntent) []updateIntent {
 }
 
 func removeIntent(list []updateIntent, host string, port int) []updateIntent {
+	_ = port // one IP is one speaker; see upsertIntent
 	out := list[:0]
 	for _, in := range list {
-		if in.Host == host && in.Port == port {
+		if in.Host == host {
 			continue
 		}
 		out = append(out, in)
@@ -135,8 +143,9 @@ func removeIntent(list []updateIntent, host string, port int) []updateIntent {
 }
 
 func findIntent(list []updateIntent, host string, port int) (updateIntent, bool) {
+	_ = port // one IP is one speaker; see upsertIntent
 	for _, in := range list {
-		if in.Host == host && in.Port == port {
+		if in.Host == host {
 			return in, true
 		}
 	}
@@ -156,7 +165,13 @@ const (
 // reconcileIntent compares a speaker's reported state against its intent.
 // Pure, so the decision table is testable without a speaker.
 func reconcileIntent(in updateIntent, actualVersion string, engineState string, now time.Time) intentAction {
-	agentDone := actualVersion != "" && actualVersion == in.TargetVersion
+	// AT LEAST the target counts as done, not string equality. A speaker that
+	// runs PAST the recorded target is never "unfinished": a stale record from
+	// an aborted attempt (recorded for v0.9.65, speaker later updated straight
+	// to v0.9.67) otherwise flags the speaker on every app start, forever,
+	// because the flag path never clears (field report, 2026-08-29: "Update
+	// for Bose 1 is unfinished" on a fleet that was fully current).
+	agentDone := actualVersion != "" && !versionLess(actualVersion, in.TargetVersion)
 	engineOK := !in.WantEngine || engineState == "present"
 	switch {
 	case agentDone && engineOK:

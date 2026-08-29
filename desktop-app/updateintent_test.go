@@ -27,6 +27,11 @@ func TestReconcileIntent(t *testing.T) {
 		{"cut short, still fresh", fresh, "v1.2.2", "missing", intentResumeAgent},
 		{"cut short, long ago", old, "v1.2.2", "missing", intentFlagOnly},
 		{"unreadable version, still fresh", fresh, "", "present", intentResumeAgent},
+		// A speaker running PAST the recorded target is done, not unfinished:
+		// a stale record from an aborted attempt (target v1.2.3, speaker later
+		// updated straight to v1.3.0) must clear instead of flagging the
+		// speaker on every app start (field report, 2026-08-29).
+		{"speaker overtook a stale target", old, "v1.3.0", "present", intentNothing},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -63,5 +68,27 @@ func TestUpdateIntentRoundTrip(t *testing.T) {
 	}
 	if got := loadUpdateIntentsFrom(p); len(got) != 0 {
 		t.Errorf("a stale record must be dropped on load, got %d", len(got))
+	}
+}
+
+
+// One IP is one speaker: an intent recorded under one agent port must be
+// found and cleared under the other, or a failed attempt on a two-chassis
+// box leaves a leftover that flags a fully current speaker forever
+// (field report, 2026-08-29).
+func TestIntentKeyedByHostAlone(t *testing.T) {
+	list := upsertIntent(nil, updateIntent{Host: "192.0.2.5", Port: 8888, TargetVersion: "v1", StartedAt: time.Now()})
+	list = upsertIntent(list, updateIntent{Host: "192.0.2.5", Port: 17008, TargetVersion: "v2", StartedAt: time.Now()})
+	if len(list) != 1 {
+		t.Fatalf("two ports of one host produced %d records, want 1", len(list))
+	}
+	if list[0].TargetVersion != "v2" {
+		t.Fatalf("the refresh under the other port did not win: target = %q", list[0].TargetVersion)
+	}
+	if _, ok := findIntent(list, "192.0.2.5", 8888); !ok {
+		t.Fatal("the record must be found under either port")
+	}
+	if left := removeIntent(list, "192.0.2.5", 8888); len(left) != 0 {
+		t.Fatalf("clearing under the other port left %d records, want 0", len(left))
 	}
 }

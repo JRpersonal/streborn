@@ -983,7 +983,7 @@
   "setup.step1Heading": "1. Pick USB stick",
   "setup.searchAgain": "Search again",
   "setup.searchingSticks": "Looking for USB sticks...",
-  "setup.formatToggleLabel": "Format stick first (FAT32, erases data). Recommended for new sticks. Windows asks for admin rights.",
+  "setup.formatToggleLabel": "Format stick first (FAT32, erases data). Recommended for new sticks.",
   "setup.step2Heading": "2. Speaker name <small>(optional)</small>",
   "setup.step2Help": "Type your own or pick a room. A speaker ID is appended automatically.",
   "setup.namePlaceholder": "e.g. Living Room",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Restore backup",
   "settingsView.backupExportDone": "Backed up: {{favs}} favorites and {{presets}} presets from {{speakers}} speakers.",
   "settingsView.backupImportDone": "Restored: {{presets}} presets on {{speakers}} speakers, {{favs}} favorites added.",
-  "settingsView.backupNotReached": "Not included: {{names}}. Switch these speakers on and try again for them."
+  "settingsView.backupNotReached": "Not included: {{names}}. Switch these speakers on and try again for them.",
+  "setup.stickMacPrivacy": "macOS is blocking this app from accessing USB sticks. Open System Settings, Privacy and Security, Files and Folders, and allow ST Reborn to access removable volumes. Then unplug the stick and plug it back in.",
+  "update.engineMissing": "{{name}} runs the new version, but the Spotify component from the last update is still missing. Open the speaker settings and run the update once more there; it is delivered without a restart.",
+  "setup.formatToggleWinHint": "Windows asks for admin rights."
 }

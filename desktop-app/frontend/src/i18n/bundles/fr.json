@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. Choisir la clé USB",
   "setup.searchAgain": "Rechercher à nouveau",
   "setup.searchingSticks": "Recherche de clés USB...",
-  "setup.formatToggleLabel": "Formater d'abord la clé (FAT32, efface les données). Recommandé pour les clés neuves. Windows demande les droits administrateur.",
+  "setup.formatToggleLabel": "Formater la clé d’abord (FAT32, efface les données). Recommandé pour les clés neuves.",
   "setup.step2Heading": "2. Nom de l'enceinte <small>(facultatif)</small>",
   "setup.step2Help": "Saisissez le vôtre ou choisissez une pièce. Un identifiant d'enceinte est ajouté automatiquement.",
   "setup.namePlaceholder": "ex. Salon",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Restaurer la sauvegarde",
   "settingsView.backupExportDone": "Sauvegardé : {{favs}} favoris et {{presets}} présélections de {{speakers}} enceintes.",
   "settingsView.backupImportDone": "Restauré : {{presets}} présélections sur {{speakers}} enceintes, {{favs}} favoris ajoutés.",
-  "settingsView.backupNotReached": "Non inclus : {{names}}. Allumez ces enceintes et réessayez pour elles."
+  "settingsView.backupNotReached": "Non inclus : {{names}}. Allumez ces enceintes et réessayez pour elles.",
+  "setup.stickMacPrivacy": "macOS bloque l’accès de l’application aux clés USB. Ouvrez Réglages Système, Confidentialité et sécurité, Fichiers et dossiers, et autorisez ST Reborn à accéder aux volumes amovibles. Débranchez ensuite la clé et rebranchez-la.",
+  "update.engineMissing": "{{name}} est à jour, mais le composant Spotify de la dernière mise à jour manque encore. Ouvrez les réglages de l’enceinte et relancez la mise à jour ; il est livré sans redémarrage.",
+  "setup.formatToggleWinHint": "Windows demandera des droits d’administrateur."
 }
