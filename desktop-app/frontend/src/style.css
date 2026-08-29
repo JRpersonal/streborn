@@ -672,6 +672,8 @@ body {
 }
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: var(--c-surface-3); color: var(--c-muted); font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
+/* Offline: die Version ist der letzte bestaetigte Stand, kein Live-Wert (#775). */
+.box-ver-stale { opacity: 0.55; font-style: italic; }
 .box-model { color: var(--c-muted); font-size: 11px; font-weight: 500; margin-left: 8px; }
 /* Multiroom group frame (#70): speakers sharing a live zone are clustered and
    wrapped in a colored border so the group reads as one block on the music tab.

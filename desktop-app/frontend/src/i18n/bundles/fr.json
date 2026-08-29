@@ -1336,5 +1336,7 @@
   "spotify.qualitySet": "Qualité modifiée",
   "spotify.qualityFailed": "L'enceinte a refusé le changement",
   "setup.wlanNoPass": "Aucun mot de passe Wi-Fi saisi, les réglages Wi-Fi n'ont donc pas été écrits sur la clé. L'enceinte garde son Wi-Fi actuel. Saisissez SSID et mot de passe si la clé doit configurer le Wi-Fi.",
-  "setup.stickReadOnly": "Le Mac a monté cette clé en lecture seule. Cela arrive généralement quand elle a été débranchée sans éjection. Ouvrez Utilitaire de disque et lancez SOS sur la clé, ou reformatez-la en MS-DOS (FAT) ; elle sera ensuite inscriptible."
+  "setup.stickReadOnly": "Le Mac a monté cette clé en lecture seule. Cela arrive généralement quand elle a été débranchée sans éjection. Ouvrez Utilitaire de disque et lancez SOS sur la clé, ou reformatez-la en MS-DOS (FAT) ; elle sera ensuite inscriptible.",
+  "updateAll.problemToast": "{{failed}} en échec, {{unconfirmed}} non confirmés, {{done}} mis à jour, {{deferred}} reportés.",
+  "speaker.staleVersionTitle": "Dernière version confirmée. L'enceinte est injoignable pour le moment, cette valeur peut être dépassée."
 }

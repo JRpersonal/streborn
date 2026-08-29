@@ -1336,5 +1336,7 @@
   "spotify.qualitySet": "Kvalitāte nomainīta",
   "spotify.qualityFailed": "Skaļrunis noraidīja izmaiņu",
   "setup.wlanNoPass": "Wi-Fi parole nav ievadīta, tāpēc Wi-Fi iestatījumi netika ierakstīti zibatmiņā. Skaļrunis paliek pašreizējā tīklā. Ievadiet SSID un paroli, ja zibatmiņai jāiestata Wi-Fi.",
-  "setup.stickReadOnly": "Mac šo zibatmiņu pievienoja tikai lasīšanai. Tā parasti notiek, ja tā izvilkta bez izstumšanas. Atveriet Disk Utility un palaidiet First Aid vai formatējiet to tur kā MS-DOS (FAT); pēc tam rakstīšana darbosies."
+  "setup.stickReadOnly": "Mac šo zibatmiņu pievienoja tikai lasīšanai. Tā parasti notiek, ja tā izvilkta bez izstumšanas. Atveriet Disk Utility un palaidiet First Aid vai formatējiet to tur kā MS-DOS (FAT); pēc tam rakstīšana darbosies.",
+  "updateAll.problemToast": "{{failed}} neizdevās, {{unconfirmed}} neapstiprināti, {{done}} atjaunināti, {{deferred}} atlikti.",
+  "speaker.staleVersionTitle": "Pēdējā apstiprinātā versija. Skaļrunis pašlaik nav sasniedzams, vērtība var būt novecojusi."
 }

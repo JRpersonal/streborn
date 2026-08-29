@@ -365,3 +365,33 @@ func TestLineValue(t *testing.T) {
 		t.Errorf("lineValue MISSING = %q, want empty", got)
 	}
 }
+
+// The pin must never CLAIM a version. It used to stamp the app's own version
+// (and build) onto the pinned record and persist that into the discovery
+// cache, so a box whose update never ran displayed the target version, the
+// fleet stopped flagging updates, and a retry toasted "already up to date"
+// (#775). The record now carries the transient OTAPending marker instead, and
+// the cached copy stays clean of it.
+func TestPostOTAPinDoesNotStampVersion(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{
+			"192.168.0.10": {box: BoxInfo{Host: "192.168.0.10", Kind: "str", Version: "v0.9.60"}, seen: time.Now()},
+		},
+		otaPinned: map[string]time.Time{"192.168.0.10": time.Now()},
+	}
+	seen := map[string]BoxInfo{} // box mid-reboot, invisible this cycle
+	a.mergeDiscoveryCache(seen)
+	b := seen["192.168.0.10"]
+	if b.Version != "v0.9.60" {
+		t.Errorf("Version = %q, want the box's last confirmed v0.9.60, never the app's own version", b.Version)
+	}
+	if !b.OTAPending {
+		t.Errorf("the served record must carry OTAPending while the pin is live")
+	}
+	if a.discCache["192.168.0.10"].box.OTAPending {
+		t.Errorf("the cached record must stay clean of the transient OTAPending annotation")
+	}
+	if got := a.discCache["192.168.0.10"].box.Version; got != "v0.9.60" {
+		t.Errorf("cached Version = %q, want untouched v0.9.60", got)
+	}
+}

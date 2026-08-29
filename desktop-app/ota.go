@@ -307,6 +307,10 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		switch {
 		case err != nil:
 			a.recordOTA(host, "outcome: reported failure: "+err.Error())
+			// The attempt failed before anything landed on the box, so the
+			// post-OTA pin's premise is gone; keeping it would annotate the
+			// box as mid-update for the full grace window (#775).
+			a.clearPostOTA(host)
 		case outcomeNote != "":
 			a.recordOTA(host, "outcome: "+outcomeNote)
 		default:
