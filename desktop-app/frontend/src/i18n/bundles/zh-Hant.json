@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} 個失敗、{{unconfirmed}} 個未確認、{{done}} 個已更新、{{deferred}} 個延後。",
   "speaker.staleVersionTitle": "最後確認的版本。目前無法連線到喇叭，此數值可能已過時。",
   "banner.appCheckFailed": "檢查未能完成。st-reborn.de 上仍可下載。",
-  "multiroom.stereoOffline": "無法連線：{{names}}。請開啟喇叭後再試一次。"
+  "multiroom.stereoOffline": "無法連線：{{names}}。請開啟喇叭後再試一次。",
+  "settingsView.backupHeading": "備份",
+  "settingsView.backupHelp": "將你的最愛與所有喇叭的預設按鍵儲存到一個檔案，例如在變更設定之前。還原時會把儲存的預設寫回對應的喇叭並加入最愛；現有的最愛會保留。",
+  "settingsView.backupExportBtn": "儲存備份",
+  "settingsView.backupImportBtn": "還原備份",
+  "settingsView.backupExportDone": "已備份：{{favs}} 個最愛，以及 {{speakers}} 台喇叭的 {{presets}} 個預設。",
+  "settingsView.backupImportDone": "已還原：{{speakers}} 台喇叭上的 {{presets}} 個預設，並加入 {{favs}} 個最愛。",
+  "settingsView.backupNotReached": "未包含：{{names}}。請開啟這些喇叭後再試一次。"
 }

@@ -130,6 +130,10 @@ export function EnsureSpotifyEngine(arg1, arg2) {
   return window['go']['main']['App']['EnsureSpotifyEngine'](arg1, arg2);
 }
 
+export function ExportBackup(arg1) {
+  return window['go']['main']['App']['ExportBackup'](arg1);
+}
+
 export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
 }
@@ -196,6 +200,10 @@ export function GetWebhooks(arg1, arg2) {
 
 export function GetZoneState(arg1, arg2) {
   return window['go']['main']['App']['GetZoneState'](arg1, arg2);
+}
+
+export function ImportBackup() {
+  return window['go']['main']['App']['ImportBackup']();
 }
 
 export function InstallSTROnBox(arg1, arg2) {

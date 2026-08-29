@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} 件失敗、{{unconfirmed}} 件未確認、{{done}} 件更新、{{deferred}} 件保留。",
   "speaker.staleVersionTitle": "最後に確認できたバージョンです。スピーカーに現在接続できないため、古い可能性があります。",
   "banner.appCheckFailed": "確認できませんでした。st-reborn.de から引き続きダウンロードできます。",
-  "multiroom.stereoOffline": "{{names}} に接続できません。スピーカーの電源を入れて、もう一度お試しください。"
+  "multiroom.stereoOffline": "{{names}} に接続できません。スピーカーの電源を入れて、もう一度お試しください。",
+  "settingsView.backupHeading": "バックアップ",
+  "settingsView.backupHelp": "お気に入りと各スピーカーのプリセットキーを1つのファイルに保存します。復元すると、保存したプリセットが対応するスピーカーに書き戻され、お気に入りが追加されます。既存のお気に入りはそのまま残ります。",
+  "settingsView.backupExportBtn": "バックアップを保存",
+  "settingsView.backupImportBtn": "バックアップを復元",
+  "settingsView.backupExportDone": "{{favs}} 件のお気に入りと {{speakers}} 台のスピーカーの {{presets}} 件のプリセットを保存しました。",
+  "settingsView.backupImportDone": "{{speakers}} 台のスピーカーに {{presets}} 件のプリセットを復元し、{{favs}} 件のお気に入りを追加しました。",
+  "settingsView.backupNotReached": "対象外: {{names}}。これらのスピーカーの電源を入れて、もう一度お試しください。"
 }

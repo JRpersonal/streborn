@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} nepavyko, {{unconfirmed}} nepatvirtinta, {{done}} atnaujinta, {{deferred}} atidėta.",
   "speaker.staleVersionTitle": "Paskutinė patvirtinta versija. Kolonėlė šiuo metu nepasiekiama, reikšmė gali būti pasenusi.",
   "banner.appCheckFailed": "Patikrinti nepavyko. Atsisiuntimai ir toliau pasiekiami st-reborn.de.",
-  "multiroom.stereoOffline": "Nepasiekiama: {{names}}. Įjunkite garsiakalbį ir bandykite dar kartą."
+  "multiroom.stereoOffline": "Nepasiekiama: {{names}}. Įjunkite garsiakalbį ir bandykite dar kartą.",
+  "settingsView.backupHeading": "Atsarginė kopija",
+  "settingsView.backupHelp": "Įrašo jūsų mėgstamiausias stotis ir visų garsiakalbių išankstinių nustatymų mygtukus į vieną failą. Atkuriant įrašyti nustatymai grąžinami į atitinkamus garsiakalbius, o mėgstamiausios papildomos; esamos lieka.",
+  "settingsView.backupExportBtn": "Įrašyti kopiją",
+  "settingsView.backupImportBtn": "Atkurti kopiją",
+  "settingsView.backupExportDone": "Įrašyta: {{favs}} mėgstamiausių ir {{presets}} nustatymų iš {{speakers}} garsiakalbių.",
+  "settingsView.backupImportDone": "Atkurta: {{presets}} nustatymų {{speakers}} garsiakalbiuose, pridėta {{favs}} mėgstamiausių.",
+  "settingsView.backupNotReached": "Neįtraukta: {{names}}. Įjunkite šiuos garsiakalbius ir bandykite dar kartą."
 }

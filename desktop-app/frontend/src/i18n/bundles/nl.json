@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} mislukt, {{unconfirmed}} onbevestigd, {{done}} bijgewerkt, {{deferred}} uitgesteld.",
   "speaker.staleVersionTitle": "Laatst bevestigde versie. De speaker is nu niet bereikbaar, dit kan verouderd zijn.",
   "banner.appCheckFailed": "De controle is niet gelukt. Downloads blijven beschikbaar op st-reborn.de.",
-  "multiroom.stereoOffline": "Niet bereikbaar: {{names}}. Zet de speaker aan en probeer het opnieuw."
+  "multiroom.stereoOffline": "Niet bereikbaar: {{names}}. Zet de speaker aan en probeer het opnieuw.",
+  "settingsView.backupHeading": "Back-up",
+  "settingsView.backupHelp": "Bewaart je favorieten en de presettoetsen van elke speaker in één bestand, bijvoorbeeld voordat je iets verandert. Bij herstellen worden de bewaarde presets naar de juiste speakers geschreven en de favorieten toegevoegd; bestaande favorieten blijven staan.",
+  "settingsView.backupExportBtn": "Back-up opslaan",
+  "settingsView.backupImportBtn": "Back-up herstellen",
+  "settingsView.backupExportDone": "Opgeslagen: {{favs}} favorieten en {{presets}} presets van {{speakers}} speakers.",
+  "settingsView.backupImportDone": "Hersteld: {{presets}} presets op {{speakers}} speakers, {{favs}} favorieten toegevoegd.",
+  "settingsView.backupNotReached": "Niet meegenomen: {{names}}. Zet deze speakers aan en probeer het opnieuw."
 }

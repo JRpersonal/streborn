@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} fallidos, {{unconfirmed}} sin confirmar, {{done}} actualizados, {{deferred}} aplazados.",
   "speaker.staleVersionTitle": "Última versión confirmada. El altavoz no está accesible ahora mismo, este dato puede estar desactualizado.",
   "banner.appCheckFailed": "La comprobación no se pudo completar. Las descargas siguen disponibles en st-reborn.de.",
-  "multiroom.stereoOffline": "No accesible: {{names}}. Enciende el altavoz e inténtalo de nuevo."
+  "multiroom.stereoOffline": "No accesible: {{names}}. Enciende el altavoz e inténtalo de nuevo.",
+  "settingsView.backupHeading": "Copia de seguridad",
+  "settingsView.backupHelp": "Guarda tus favoritos y las teclas de preajuste de cada altavoz en un archivo, por ejemplo antes de hacer cambios. Al restaurar, los preajustes guardados se escriben en los altavoces correspondientes y se añaden los favoritos; los existentes se conservan.",
+  "settingsView.backupExportBtn": "Guardar copia",
+  "settingsView.backupImportBtn": "Restaurar copia",
+  "settingsView.backupExportDone": "Guardado: {{favs}} favoritos y {{presets}} preajustes de {{speakers}} altavoces.",
+  "settingsView.backupImportDone": "Restaurado: {{presets}} preajustes en {{speakers}} altavoces, {{favs}} favoritos añadidos.",
+  "settingsView.backupNotReached": "No incluidos: {{names}}. Enciende estos altavoces y vuelve a intentarlo."
 }
