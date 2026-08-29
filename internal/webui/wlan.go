@@ -108,6 +108,14 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		// wpa_supplicant probes for the SSID directly instead of waiting for a
 		// beacon that never carries it.
 		Hidden bool `json:"hidden"`
+		// Open declares the target a genuinely OPEN network (no password). An
+		// empty password alone is NOT accepted as that declaration any more:
+		// the install wizard used to hand an SSID with an empty password
+		// through (the SSID gets prefilled, reading the stored password can
+		// fail silently), the box switched to an open-network profile and
+		// dropped off the protected home Wi-Fi right after a successful OTA
+		// install (field report 2026-08-29).
+		Open bool `json:"open"`
 	}
 	if !decodeJSONRequest(w, r, 2048, &req) {
 		return
@@ -117,8 +125,15 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ssid must not be empty", http.StatusBadRequest)
 		return
 	}
-	// WPA requires a PSK of at least 8 characters; an empty password means an
-	// open network (key_mgmt=NONE in buildWPAConfig).
+	// WPA requires a PSK of at least 8 characters; an empty password is only
+	// accepted for an EXPLICITLY declared open network (see req.Open above),
+	// because applied against a protected Wi-Fi it kicks the box off the
+	// network. This also covers older app versions that still send the empty
+	// password: they get a clear refusal instead of a stranded speaker.
+	if req.Password == "" && !req.Open {
+		http.Error(w, "password is empty; refusing to switch the speaker to an open-network profile. For a genuinely open Wi-Fi send \"open\": true.", http.StatusBadRequest)
+		return
+	}
 	if req.Password != "" && len(req.Password) < 8 {
 		http.Error(w, "password too short (at least 8 characters)", http.StatusBadRequest)
 		return
