@@ -1338,5 +1338,6 @@
   "setup.wlanNoPass": "Geen wifi-wachtwoord ingevoerd, dus de wifi-gegevens zijn niet naar de stick geschreven. De speaker behoudt zijn huidige wifi. Vul SSID en wachtwoord in als de stick de wifi moet instellen.",
   "setup.stickReadOnly": "De Mac heeft deze stick alleen-lezen gekoppeld. Dat gebeurt meestal als hij zonder uitwerpen is losgetrokken. Open Schijfhulpprogramma en voer EHBO uit op de stick, of formatteer hem daar opnieuw als MS-DOS (FAT); daarna is hij beschrijfbaar.",
   "updateAll.problemToast": "{{failed}} mislukt, {{unconfirmed}} onbevestigd, {{done}} bijgewerkt, {{deferred}} uitgesteld.",
-  "speaker.staleVersionTitle": "Laatst bevestigde versie. De speaker is nu niet bereikbaar, dit kan verouderd zijn."
+  "speaker.staleVersionTitle": "Laatst bevestigde versie. De speaker is nu niet bereikbaar, dit kan verouderd zijn.",
+  "banner.appCheckFailed": "De controle is niet gelukt. Downloads blijven beschikbaar op st-reborn.de."
 }

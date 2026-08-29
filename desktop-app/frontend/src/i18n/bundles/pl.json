@@ -1338,5 +1338,6 @@
   "setup.wlanNoPass": "Nie podano hasła Wi-Fi, więc dane Wi-Fi nie zostały zapisane na nośniku. Głośnik zachowuje obecną sieć. Podaj SSID i hasło, jeśli nośnik ma skonfigurować Wi-Fi.",
   "setup.stickReadOnly": "Mac zamontował ten nośnik tylko do odczytu. Zwykle dzieje się tak, gdy wyjęto go bez wysunięcia. Otwórz Narzędzie dyskowe i uruchom Pierwszą pomoc dla nośnika albo sformatuj go tam jako MS-DOS (FAT); potem zapis będzie działał.",
   "updateAll.problemToast": "{{failed}} nieudanych, {{unconfirmed}} niepotwierdzonych, {{done}} zaktualizowanych, {{deferred}} odłożonych.",
-  "speaker.staleVersionTitle": "Ostatnia potwierdzona wersja. Głośnik jest teraz nieosiągalny, wartość może być nieaktualna."
+  "speaker.staleVersionTitle": "Ostatnia potwierdzona wersja. Głośnik jest teraz nieosiągalny, wartość może być nieaktualna.",
+  "banner.appCheckFailed": "Sprawdzanie nie powiodło się. Pliki do pobrania są nadal dostępne na st-reborn.de."
 }

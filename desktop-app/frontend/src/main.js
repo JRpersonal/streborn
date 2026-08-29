@@ -994,6 +994,11 @@ async function renderFooter() {
     };
   }
   renderDonateSidebar();
+  // The quiet version line with its "check for updates" link is on screen
+  // from the start. It used to appear only once the first scheduled check
+  // completed 8 s in, so the control materialized out of nowhere and at
+  // least one user never spotted it at all.
+  try { renderAppUpdateCheckLink($('appUpdateBanner'), ''); } catch {}
   // Defer the update check out of the critical startup path: the window
   // and discovery come up first, and the network call (a reported suspect
   // for a macOS start crash) only fires once the app is already running,
@@ -1194,8 +1199,12 @@ async function checkAppUpdate(manual) {
     };
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
-    // A check that could not run must not swallow the control that triggers it.
-    try { renderAppUpdateCheckLink(banner, ''); } catch {}
+    // A check that could not run must not swallow the control that triggers
+    // it, and a person who pressed it is owed the failure: with the link
+    // quietly resetting, a machine on which the request always fails (AV
+    // proxy, firewall, DNS) looks exactly like "no update exists", and one
+    // user pressed through several releases believing that.
+    try { renderAppUpdateCheckLink(banner, manual ? t('banner.appCheckFailed') : ''); } catch {}
   }
 }
 
