@@ -30,6 +30,13 @@ type MediaServer struct {
 	Manufacturer string `json:"manufacturer"`
 	ModelName    string `json:"modelName"`
 	FriendlyName string `json:"friendlyName"`
+	// Location is the device-description URL the firmware's own discovery
+	// recorded (e.g. "http://192.0.2.131:9000/dev0/desc.xml"). It is the
+	// address a server that never answers M-SEARCH (Twonky, #733) can still be
+	// described at directly: the firmware keeps hearing its NOTIFY
+	// announcements, so this URL stays fresh while STR's own probes see
+	// nothing.
+	Location string `json:"location"`
 	// Registered is filled in by callers that also read /sources; the box's own
 	// media-server list says nothing about whether a server is usable yet.
 	Registered bool `json:"registered"`
@@ -56,6 +63,7 @@ func (c *Client) ListMediaServers(ctx context.Context) ([]MediaServer, error) {
 			Manufacturer string `xml:"manufacturer,attr"`
 			ModelName    string `xml:"model_name,attr"`
 			FriendlyName string `xml:"friendly_name,attr"`
+			Location     string `xml:"location,attr"`
 		} `xml:"media_server"`
 	}
 	if err := c.getXML(ctx, "/listMediaServers", &raw); err != nil {
@@ -69,6 +77,7 @@ func (c *Client) ListMediaServers(ctx context.Context) ([]MediaServer, error) {
 		out = append(out, MediaServer{
 			ID: s.ID, IP: s.IP, Manufacturer: s.Manufacturer,
 			ModelName: s.ModelName, FriendlyName: s.FriendlyName,
+			Location: s.Location,
 		})
 	}
 	return out, nil

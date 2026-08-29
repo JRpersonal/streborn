@@ -393,17 +393,36 @@ func (s *Server) resolveViaBoxCache(ctx context.Context, key string, discovered 
 			"discovered", discovered, "err", err)
 		return dlna.Server{}, false
 	}
-	ip := ""
+	ip, boxLoc := "", ""
 	for _, m := range known {
 		if udnKey(m.ID) == key {
-			ip = m.IP
+			ip, boxLoc = m.IP, strings.TrimSpace(m.Location)
 			break
 		}
 	}
-	if ip == "" {
+	if ip == "" && boxLoc == "" {
 		s.logger.Warn("library resolve: server unresolved, the speaker's own discovery does not see it either",
 			"discovered", discovered, "boxKnows", len(known))
 		return dlna.Server{}, false
+	}
+	// The firmware's list carries the device-description URL its own discovery
+	// recorded, and that is the decisive path for a server that never answers
+	// M-SEARCH at all: Twonky ignores the unicast probe below while its HTTP
+	// side serves the description fine, which is exactly why the #733 box could
+	// browse WD-02 natively (firmware cache, NOTIFY-fed) while every probe STR
+	// sent came back empty. Ask that URL directly before probing.
+	if boxLoc != "" {
+		pctx, cancel := context.WithTimeout(ctx, libraryRecallTimeout)
+		srv, err := dlna.DescribeServer(pctx, boxLoc)
+		cancel()
+		if err == nil && srv.CDSControlURL != "" && s.serverMatchesKey(srv, key) {
+			s.rememberMediaServerLocationAs(key, srv.Location)
+			s.logger.Info("library resolve: described the server at the speaker's own cached location",
+				"location", boxLoc)
+			return srv, true
+		}
+		s.logger.Info("library resolve: the speaker's cached location did not describe the server",
+			"location", boxLoc, "err", err)
 	}
 	found, err := dlna.SearchHost(ctx, ip, libraryUnicastProbe)
 	if err != nil {
