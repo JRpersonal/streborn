@@ -1335,5 +1335,6 @@
   "spotify.qualityPending": "Pritaikoma sustabdžius grojimą",
   "spotify.qualitySet": "Kokybė pakeista",
   "spotify.qualityFailed": "Kolonėlė atmetė pakeitimą",
-  "setup.wlanNoPass": "Neįvestas Wi-Fi slaptažodis, todėl Wi-Fi nustatymai į atmintinę neįrašyti. Kolonėlė lieka dabartiniame tinkle. Įveskite SSID ir slaptažodį, jei atmintinė turi sukonfigūruoti Wi-Fi."
+  "setup.wlanNoPass": "Neįvestas Wi-Fi slaptažodis, todėl Wi-Fi nustatymai į atmintinę neįrašyti. Kolonėlė lieka dabartiniame tinkle. Įveskite SSID ir slaptažodį, jei atmintinė turi sukonfigūruoti Wi-Fi.",
+  "setup.stickReadOnly": "Mac prijungė šią atmintinę tik skaitymui. Taip dažniausiai nutinka, kai ji ištraukiama neatjungus saugiai. Atidarykite Disk Utility ir paleiskite First Aid arba suformatuokite ją ten kaip MS-DOS (FAT); po to įrašymas veiks."
 }

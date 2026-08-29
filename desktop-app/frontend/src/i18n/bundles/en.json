@@ -1335,5 +1335,6 @@
   "spotify.qualityPending": "Applies when playback stops",
   "spotify.qualitySet": "Quality changed",
   "spotify.qualityFailed": "The speaker refused the change",
-  "setup.wlanNoPass": "No Wi-Fi password entered, so the Wi-Fi settings were not written to the stick. The speaker keeps its current Wi-Fi. Enter both SSID and password if the stick should set up the Wi-Fi."
+  "setup.wlanNoPass": "No Wi-Fi password entered, so the Wi-Fi settings were not written to the stick. The speaker keeps its current Wi-Fi. Enter both SSID and password if the stick should set up the Wi-Fi.",
+  "setup.stickReadOnly": "The Mac mounted this stick read-only. That usually happens when it was unplugged without ejecting. Open Disk Utility and run First Aid on the stick, or reformat it there as MS-DOS (FAT); after that it can be written."
 }

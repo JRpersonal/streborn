@@ -1335,5 +1335,6 @@
   "spotify.qualityPending": "Wird nach Wiedergabe-Stopp übernommen",
   "spotify.qualitySet": "Qualität geändert",
   "spotify.qualityFailed": "Der Lautsprecher hat die Änderung abgelehnt",
-  "setup.wlanNoPass": "Kein WLAN-Passwort eingegeben, darum wurden die WLAN-Daten nicht auf den Stick geschrieben. Der Lautsprecher behält sein bisheriges WLAN. Trage SSID und Passwort ein, wenn der Stick das WLAN einrichten soll."
+  "setup.wlanNoPass": "Kein WLAN-Passwort eingegeben, darum wurden die WLAN-Daten nicht auf den Stick geschrieben. Der Lautsprecher behält sein bisheriges WLAN. Trage SSID und Passwort ein, wenn der Stick das WLAN einrichten soll.",
+  "setup.stickReadOnly": "Der Mac hat diesen Stick nur lesbar eingebunden. Das passiert meist, wenn er zuvor ohne Auswerfen abgezogen wurde. Öffne das Festplattendienstprogramm und lass \"Erste Hilfe\" über den Stick laufen oder formatiere ihn dort neu als MS-DOS (FAT), danach lässt er sich beschreiben."
 }

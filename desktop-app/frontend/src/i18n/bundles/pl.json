@@ -1335,5 +1335,6 @@
   "spotify.qualityPending": "Zostanie zastosowana po zatrzymaniu odtwarzania",
   "spotify.qualitySet": "Zmieniono jakość",
   "spotify.qualityFailed": "Głośnik odrzucił zmianę",
-  "setup.wlanNoPass": "Nie podano hasła Wi-Fi, więc dane Wi-Fi nie zostały zapisane na nośniku. Głośnik zachowuje obecną sieć. Podaj SSID i hasło, jeśli nośnik ma skonfigurować Wi-Fi."
+  "setup.wlanNoPass": "Nie podano hasła Wi-Fi, więc dane Wi-Fi nie zostały zapisane na nośniku. Głośnik zachowuje obecną sieć. Podaj SSID i hasło, jeśli nośnik ma skonfigurować Wi-Fi.",
+  "setup.stickReadOnly": "Mac zamontował ten nośnik tylko do odczytu. Zwykle dzieje się tak, gdy wyjęto go bez wysunięcia. Otwórz Narzędzie dyskowe i uruchom Pierwszą pomoc dla nośnika albo sformatuj go tam jako MS-DOS (FAT); potem zapis będzie działał."
 }
