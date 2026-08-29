@@ -631,33 +631,62 @@ func (m *Manager) maybeActivate() {
 	go cb(context.Background())
 }
 
+// armRepoint applies the shared re-point debounces (activate callback wired,
+// not within maybeActivate's window, not suppressed) and, when the re-point
+// may fire, stamps them and returns the callback to run. Nil means stand down.
+//
+// It also keeps the engine playing across the re-point, exactly as
+// SetRecalling does for a preset recall. The UPnP push the callback performs
+// makes the box tear its current Ogg fetch down and open a new one; for the
+// ~1 s in between there is no sink, and without this the drain takes its "no
+// consumer" branch and PAUSES go-librespot. The box then re-attaches to a
+// paused engine, gets the previous track's headers and no audio, and the Bose
+// transport gives up 30 s later with AUDIO_ERROR_BAD_URL. That is the
+// "Spotify stops after about half an hour" report: half an hour is simply how
+// long an album runs before Spotify moves to the next context and triggers
+// this path (field bundle 2026-07-27, seven boxes, every occurrence). PR #454
+// closed the identical hole for hardware presets and missed this one.
+func (m *Manager) armRepoint() func(context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cb := m.onActivate
+	if cb == nil || time.Since(m.lastActivate) < 5*time.Second ||
+		time.Now().Before(m.suppressActivateUntil) {
+		return nil
+	}
+	m.lastActivate = time.Now()
+	if t := m.lastActivate.Add(30 * time.Second); t.After(m.engineHotUntil) {
+		m.engineHotUntil = t
+	}
+	return cb
+}
+
+// repointForForeignSkip drops the box's buffered tail after a skip that came
+// from the Spotify app itself (noteTrackBoundaryCut). It requires an attached
+// sink on top of the shared debounces: a paused or detached box must not be
+// forced back into playing by the push this triggers.
+func (m *Manager) repointForForeignSkip() {
+	m.mu.Lock()
+	attached := m.sink != nil
+	m.mu.Unlock()
+	if !attached {
+		return
+	}
+	cb := m.armRepoint()
+	if cb == nil {
+		return
+	}
+	go cb(context.Background())
+}
+
 // repointBox re-points the box at the Spotify stream even if it is already
 // attached, so a playlist switch from the app flushes the box buffer and plays
 // the new stream promptly. Debounced and shares lastActivate with maybeActivate.
 func (m *Manager) repointBox(from, to string) {
-	m.mu.Lock()
-	cb := m.onActivate
-	if cb == nil || time.Since(m.lastActivate) < 5*time.Second ||
-		time.Now().Before(m.suppressActivateUntil) {
-		m.mu.Unlock()
+	cb := m.armRepoint()
+	if cb == nil {
 		return
 	}
-	m.lastActivate = time.Now()
-	// Keep the engine playing across the re-point, exactly as SetRecalling does
-	// for a preset recall. The UPnP push below makes the box tear its current
-	// Ogg fetch down and open a new one; for the ~1 s in between there is no
-	// sink, and without this the drain takes its "no consumer" branch and
-	// PAUSES go-librespot. The box then re-attaches to a paused engine, gets
-	// the previous track's headers and no audio, and the Bose transport gives
-	// up 30 s later with AUDIO_ERROR_BAD_URL. That is the "Spotify stops after
-	// about half an hour" report: half an hour is simply how long an album
-	// runs before Spotify moves to the next context and triggers this path
-	// (field bundle 2026-07-27, seven boxes, every occurrence). PR #454 closed
-	// the identical hole for hardware presets and missed this one.
-	if t := m.lastActivate.Add(30 * time.Second); t.After(m.engineHotUntil) {
-		m.engineHotUntil = t
-	}
-	m.mu.Unlock()
 	// Name both contexts. This re-point tears the box's Ogg fetch down and
 	// opens a new one, which the listener hears as the next song arriving
 	// abruptly, so the first question about it is always "switched from what

@@ -455,6 +455,11 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			m.logger.Info("spotify: track boundary (BOS)",
 				"track", trackNum+1, "prevTrackKB", trackBody/1024,
 				"prevMaxGran", maxGran, "forwardedKB", forwarded/1024)
+			// App-skip detector: a boundary that cuts the previous track
+			// clearly short, with no STR skip or recall cut armed, came from
+			// the Spotify app itself; re-point the box so it drops the old
+			// track's buffered tail (see durQueueMs in Manager).
+			m.noteTrackBoundaryCut(maxGran, trackBody)
 			// A fresh logical stream means the engine is demonstrably
 			// delivering audio: that is the recovery signal the delayed
 			// auto-advance checks before skipping (see handleEnginePlaybackEnd).
@@ -631,8 +636,41 @@ const (
 	keyRefusalRunTrips = 5
 )
 
+// parseLoadedTrackDurMs pulls the millisecond duration out of a lowercased
+// go-librespot "loaded track" line (`... duration: 236400ms, ...`). Zero when
+// the line carries none.
+func parseLoadedTrackDurMs(lc string) int64 {
+	i := strings.Index(lc, "duration: ")
+	if i < 0 {
+		return 0
+	}
+	var ms int64
+	for _, r := range lc[i+len("duration: "):] {
+		if r < '0' || r > '9' {
+			break
+		}
+		ms = ms*10 + int64(r-'0')
+	}
+	return ms
+}
+
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
+	// "loaded track" carries the duration the app-skip detector needs (see
+	// durQueueMs). The prefetch line names a duration too, but describes a
+	// track that may never play, so it must not enter the queue.
+	if strings.Contains(lc, `msg="loaded track`) {
+		if ms := parseLoadedTrackDurMs(lc); ms > 0 {
+			m.mu.Lock()
+			m.durQueueMs = append(m.durQueueMs, ms)
+			// Bounded: a load that never produces a boundary (aborted play)
+			// must not let the queue drift away from the stream for good.
+			if len(m.durQueueMs) > 4 {
+				m.durQueueMs = m.durQueueMs[len(m.durQueueMs)-4:]
+			}
+			m.mu.Unlock()
+		}
+	}
 	if strings.Contains(lc, "free") && (strings.Contains(lc, "not support") || strings.Contains(lc, "premium")) {
 		m.mu.Lock()
 		already := m.sawFreeAccountLog

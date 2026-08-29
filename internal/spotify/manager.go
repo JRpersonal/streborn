@@ -277,6 +277,17 @@ type Manager struct {
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
 	// plays the new playlist promptly instead of finishing the old buffer.
 	lastContext string
+	// durQueueMs / streamTrackDurMs feed the app-skip detector: every engine
+	// "loaded track" line queues that track's duration, and each BOS shifts
+	// the queue so streamTrackDurMs names the duration of the track whose
+	// pages are currently being forwarded. A BOS arriving while the forwarded
+	// granule is clearly short of that duration is a mid-track cut the agent
+	// did not issue (the Spotify app's own Next/Prev), and the box must drop
+	// its buffered tail like the STR skip paths do; without that, an app skip
+	// only became audible once the box had drained its whole pacing buffer,
+	// which a listener clocked at over 20 seconds (field, 2026-08-29).
+	durQueueMs       []int64
+	streamTrackDurMs int64
 	// pendingRepointFrom/To hold a context change announced by will_play that
 	// has not been acted on yet.
 	//
