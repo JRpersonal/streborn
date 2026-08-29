@@ -161,7 +161,7 @@ func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
 	if bundles == 0 {
 		t.Fatal("could not find any locale bundle in indexHTML")
 	}
-	for _, key := range []string{"pairSum", "unpair", "sleepFail", "libOffline", "libPartial"} {
+	for _, key := range []string{"pairSum", "unpair", "sleepFail", "libOffline", "libPartial", "brSeen"} {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestPickPlayableRes guards the #139 fix: a DLNA server (Synology) that lists a
@@ -120,6 +121,68 @@ func TestDescribeServer(t *testing.T) {
 	}
 	if _, err := DescribeServer(context.Background(), srv.URL+"/missing.xml"); err == nil {
 		t.Error("404 description: want error, got nil")
+	}
+}
+
+// TestFindServerExitsEarlyOnMatch guards the #733 latency fix: a browse tap
+// must not sit out the full SSDP listen window when the server it resolves is
+// already describable. The server is seeded through the NOTIFY cache (the
+// discovery input that needs no live SSDP on the test host); FindServer must
+// return it long before the window closes.
+func TestFindServerExitsEarlyOnMatch(t *testing.T) {
+	const xml = `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+    <friendlyName>Early Exit NAS</friendlyName>
+    <UDN>uuid:early-exit-1</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+        <controlURL>/ctl/ContentDir</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/xml")
+		_, _ = w.Write([]byte(xml))
+	}))
+	defer srv.Close()
+
+	usn := "uuid:early-exit-1::urn:schemas-upnp-org:device:MediaServer:1"
+	alive := notifyPacket(
+		"CACHE-CONTROL: max-age=1800",
+		"LOCATION: "+srv.URL+"/rootDesc.xml",
+		"NT: urn:schemas-upnp-org:device:MediaServer:1",
+		"NTS: ssdp:alive",
+		"USN: "+usn,
+	)
+	if got := announces.handlePacket(alive, time.Now()); got != "alive" {
+		t.Fatalf("seeding the announce cache: action = %q", got)
+	}
+	defer announces.handlePacket(notifyPacket(
+		"NT: urn:schemas-upnp-org:device:MediaServer:1",
+		"NTS: ssdp:byebye",
+		"USN: "+usn,
+	), time.Now())
+
+	window := 10 * time.Second
+	begin := time.Now()
+	match, ok, _, err := FindServer(context.Background(), window, func(s Server) bool {
+		return s.UDN == "uuid:early-exit-1"
+	})
+	took := time.Since(begin)
+	if err != nil {
+		t.Fatalf("FindServer: %v", err)
+	}
+	if !ok || match.UDN != "uuid:early-exit-1" || match.FriendlyName != "Early Exit NAS" {
+		t.Fatalf("match = %+v ok = %v, want the seeded server", match, ok)
+	}
+	// Generous bound for a loaded CI host; the point is "well before the
+	// window closes", not a benchmark.
+	if took >= window/2 {
+		t.Errorf("FindServer took %v with a %v window: the early exit did not fire", took, window)
 	}
 }
 

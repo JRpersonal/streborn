@@ -46,6 +46,21 @@ const (
 	// discovery if it has not cached the server yet, since the whole point is
 	// that SOME box on the LAN can reach the server even when this one cannot.
 	libraryPeerLocateTimeout = 12 * time.Second
+	// libraryLocateBudget bounds the whole /api/library/locate handler when it
+	// has no cached location and must run a fresh discovery for the asking
+	// peer. Strictly smaller than libraryPeerLocateTimeout, or the answer
+	// always arrives after the caller hung up; strictly larger than
+	// libraryLocateDiscovery, or the description fetches start with the budget
+	// already consumed. Both mismatches were live in the #733 bundle: every
+	// peer's description fetch died with "context canceled" and the caller was
+	// gone at 12 s while the peer still listened at 15 s.
+	libraryLocateBudget = 10 * time.Second
+	// libraryLocateDiscovery is the SSDP listen window inside that budget,
+	// deliberately shorter than libraryBrowseDiscovery: a locate answers a
+	// WAITING sibling, and FindServer exits the moment the server is
+	// described, so the full window is only paid when the server is dark on
+	// this box too.
+	libraryLocateDiscovery = 6 * time.Second
 	// libraryBrowseDiscovery bounds the fresh SSDP round the browse path runs
 	// when recall misses. It is deliberately far looser than the search's
 	// shared librarySearchDiscovery (5 s): a browse tap resolves ONE server and
@@ -99,10 +114,10 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 // through to a fresh round, now describes in time and shadows it (#733, #726).
 // So the browse handler treats a Browse failure as a signal to re-resolve
 // FRESH (recall skipped) and retry once; see handleLibraryBrowse.
-func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Server, bool) {
+func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Server, []dlna.Server, bool) {
 	key := udnKey(udn)
 	if srv, ok := s.recallMediaServer(ctx, key); ok {
-		return srv, true
+		return srv, nil, true
 	}
 	return s.resolveMediaServerFresh(ctx, udn)
 }
@@ -116,17 +131,22 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 // location when the fresh round actually finds the server at a NEW address (the
 // genuinely-moved-server case #749 targeted), so a real move is still corrected
 // without wiping the one reachable address when discovery comes back empty.
-func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, bool) {
+func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, []dlna.Server, bool) {
 	key := udnKey(udn)
-	found, err := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
+	// Early exit on the strict UDN match only: FindServer returns the moment
+	// the registered server is described (the healthy case pays one or two
+	// seconds, not the full listen window), while the name rematch below needs
+	// the FULL set for its unique-match rule and so only runs when the window
+	// completed without the UDN.
+	srv, ok, found, err := dlna.FindServer(ctx, libraryBrowseDiscovery, func(c dlna.Server) bool {
+		return udnKey(c.UDN) == key
+	})
 	if err != nil {
 		s.logger.Info("library resolve: discovery failed", "err", err)
 	}
 	s.rememberMediaServerLocations(found)
-	for _, srv := range found {
-		if udnKey(srv.UDN) == key {
-			return srv, true
-		}
+	if ok {
+		return srv, found, true
 	}
 	// Forensic (#733): the fresh round returned servers but none carried the
 	// registered UDN. That separates "the slow NAS still could not be described
@@ -143,8 +163,17 @@ func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.
 		// fine (#733, #726). Recover it by its friendly NAME when exactly one
 		// discovered server carries the registered name.
 		if srv, ok := s.rematchByName(key, found); ok {
-			return srv, true
+			return srv, found, true
 		}
+		// The rematch miss used to be silent, and the #733 bundle could not
+		// say WHICH servers the round saw; the desktop log had to fill that
+		// in. Name what is live, so a box-only bundle answers it.
+		names := make([]string, 0, len(found))
+		for _, c := range found {
+			names = append(names, c.FriendlyName)
+		}
+		s.logger.Warn("library resolve: registered server absent and no unique name match among the live servers",
+			"registered", s.registeredName(key), "want", key, "seen", strings.Join(names, ", "))
 	}
 	// The multicast round came back without this server. On networks whose AP
 	// or router filters multicast between Wi-Fi and wire, the agent's own
@@ -153,7 +182,7 @@ func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.
 	// cache fed by the server's NOTIFY announcements; a unicast search at the
 	// address it names passes every multicast filter.
 	if srv, ok := s.resolveViaBoxCache(ctx, key, len(found)); ok {
-		return srv, true
+		return srv, found, true
 	}
 	// Last resort: ask the other STR agents on the LAN. A box whose own network
 	// filters the server's multicast AND whose firmware cache is empty (a
@@ -161,7 +190,8 @@ func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.
 	// its siblings had the same server registered, #726) can still browse it by
 	// borrowing the address from a sibling that can reach it, then describing it
 	// directly.
-	return s.resolveViaPeers(ctx, udn)
+	psrv, pok := s.resolveViaPeers(ctx, udn)
+	return psrv, found, pok
 }
 
 // resolveViaPeers asks the other STR agents on the LAN where a registered media
@@ -324,15 +354,26 @@ func (s *Server) handleLibraryLocate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, libraryLocateResult{UDN: udn, Location: loc})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), libraryBrowseDiscovery)
+	// Budget arithmetic (#733, measured on both peers in the bundle): the old
+	// code handed the SSDP listen window the WHOLE handler budget, so every
+	// description fetch started already cancelled, and the caller hung up at
+	// 12 s while this handler still listened at 15 s. The window now sits
+	// inside a strictly larger handler budget, which sits inside the caller's
+	// strictly larger timeout, and FindServer answers early when it can.
+	ctx, cancel := context.WithTimeout(r.Context(), libraryLocateBudget)
 	defer cancel()
-	found, _ := dlna.DiscoverServers(ctx, libraryBrowseDiscovery)
+	srv, ok, found, _ := dlna.FindServer(ctx, libraryLocateDiscovery, func(c dlna.Server) bool {
+		return udnKey(c.UDN) == key
+	})
 	s.rememberMediaServerLocations(found)
-	for _, srv := range found {
-		if udnKey(srv.UDN) == key && srv.Location != "" {
-			writeJSON(w, http.StatusOK, libraryLocateResult{UDN: udn, Location: srv.Location})
-			return
-		}
+	if !ok {
+		// A UUID-regenerating server (#733) is recoverable by its unique
+		// registered name here too, the same rule the local resolve applies.
+		srv, ok = s.rematchByName(key, found)
+	}
+	if ok && srv.Location != "" {
+		writeJSON(w, http.StatusOK, libraryLocateResult{UDN: udn, Location: srv.Location})
+		return
 	}
 	writeJSON(w, http.StatusOK, libraryLocateResult{})
 }
@@ -380,6 +421,22 @@ func (s *Server) resolveViaBoxCache(ctx context.Context, key string, discovered 
 	return dlna.Server{}, false
 }
 
+// libraryOfflineReply builds the browse "offline" answer. seen carries the
+// names of the servers that DID answer the fresh round, so the phone can say
+// what is reachable instead of a bare failure. The #733 bundle needed the
+// desktop log to learn that the network had a live WD-01 and three FritzBox
+// servers while the browsed WD-02 was dark; with the names in the reply the
+// user reads that off their own screen.
+func (s *Server) libraryOfflineReply(key string, live []dlna.Server) map[string]any {
+	seen := make([]string, 0, len(live))
+	for _, srv := range live {
+		if n := strings.TrimSpace(srv.FriendlyName); n != "" {
+			seen = append(seen, n)
+		}
+	}
+	return map[string]any{"offline": true, "server": s.registeredName(key), "seen": seen}
+}
+
 // handleLibraryBrowse serves one page of one container of one registered
 // server: GET /api/library/browse?udn=<id>&id=<container>&start=<n>.
 // Container id "" means the server root ("0").
@@ -418,9 +475,9 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), libraryBrowseTimeout)
 	defer cancel()
-	srv, ok := s.resolveMediaServer(ctx, udn)
+	srv, live, ok := s.resolveMediaServer(ctx, udn)
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{"offline": true})
+		writeJSON(w, http.StatusOK, s.libraryOfflineReply(udnKey(udn), live))
 		return
 	}
 	res, err := dlna.Browse(ctx, srv, id, start, libraryBrowsePage)
@@ -433,7 +490,9 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		// fresh round only REPLACES the stored address when it positively finds
 		// the server elsewhere, so a fresh miss leaves the reachable address
 		// intact (#749 no longer wipes it).
-		if fresh, ok2 := s.resolveMediaServerFresh(ctx, udn); ok2 && fresh.CDSControlURL != srv.CDSControlURL {
+		fresh, freshLive, ok2 := s.resolveMediaServerFresh(ctx, udn)
+		live = freshLive
+		if ok2 && fresh.CDSControlURL != srv.CDSControlURL {
 			s.logger.Info("library browse: retrying at a freshly resolved address",
 				"server", fresh.FriendlyName, "wasControl", srv.CDSControlURL, "nowControl", fresh.CDSControlURL)
 			if res2, err2 := dlna.Browse(ctx, fresh, id, start, libraryBrowsePage); err2 == nil {
@@ -444,7 +503,7 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Info("library browse: container could not be read",
 			"server", srv.FriendlyName, "container", id, "start", start, "err", err)
-		writeJSON(w, http.StatusOK, map[string]any{"offline": true})
+		writeJSON(w, http.StatusOK, s.libraryOfflineReply(udnKey(udn), live))
 		return
 	}
 
