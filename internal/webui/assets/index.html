@@ -983,6 +983,24 @@ var grpVol = { base: {}, at: null, want: {}, sentAt: 0 };
 var GRP_VOL_SETTLE_MS = 1500;
 function grpVolSettling() { return Date.now() - grpVol.sentAt < GRP_VOL_SETTLE_MS; }
 
+// grpVolAwaitingConfirm reports whether our own writes are out but some member
+// has not yet reported the requested level back. Any whole step counts (>= 1):
+// the first guard used > 1, which excluded exactly the single-step case, so a
+// one-step change was adopted away as "confirmed" while the member still
+// reported the old level, and the slider visibly sprang back (#726, still
+// reproducible on v0.9.67). Bounded by the confirm window so a write that
+// genuinely never lands resurfaces the truth after 8 s.
+var GRP_VOL_CONFIRM_MS = 8000;
+function grpVolAwaitingConfirm() {
+  if (!Object.keys(grpVol.want).length) return false;
+  if (Date.now() - grpVol.sentAt >= GRP_VOL_CONFIRM_MS) return false;
+  return (zone.members || []).some(function(m){
+    var want = grpVol.want[m.ip];
+    return typeof want === 'number' && typeof m.volume === 'number' &&
+           m.volume >= 0 && Math.abs(m.volume - want) >= 1;
+  });
+}
+
 // grpVolChangedElsewhere reports whether a member sits at a level we did not
 // ask for, which is the only reason to throw the captured balance away. A
 // member we never wrote to does not count: it has no requested value to
@@ -2402,8 +2420,14 @@ async function loadZone() {
   // offset from a moved baseline and gave away most of the travel: dragging to
   // 53 across five speakers arrived at 39 (live 2026-08-15). While our writes
   // are still settling, this refresh knows less than we do.
-  if (grpVol.at !== null && memberDragging === null && !grpVolSettling() && grpVolChangedElsewhere()) {
+  if (grpVol.at !== null && memberDragging === null && !grpVolSettling() && !grpVolAwaitingConfirm() && grpVolChangedElsewhere()) {
     grpVol.at = null;
+    grpVol.want = {};
+  }
+  // Every member reached what we asked for: the change is confirmed. Clearing
+  // the request re-arms the changed-elsewhere detection for the next real
+  // foreign change instead of leaving a stale want around for 8 s.
+  if (Object.keys(grpVol.want).length && !grpVolSettling() && !grpVolAwaitingConfirm() && !grpVolChangedElsewhere()) {
     grpVol.want = {};
   }
   var shown = (typeof z.loudest === 'number' && z.loudest >= 0) ? z.loudest : z.average;
@@ -2418,14 +2442,7 @@ async function loadZone() {
   // to stick (#726 follow-up, 2026-08-29). Hold the sent value until the
   // members confirm what we asked for, bounded at 8 s so a genuinely failed
   // write still resurfaces the truth.
-  var GRP_VOL_CONFIRM_MS = 8000;
-  var grpWantPending = Object.keys(grpVol.want).length > 0 &&
-      (Date.now() - grpVol.sentAt) < GRP_VOL_CONFIRM_MS &&
-      (zone.members || []).some(function(m){
-        var want = grpVol.want[m.ip];
-        return typeof want === 'number' && typeof m.volume === 'number' &&
-               m.volume >= 0 && Math.abs(m.volume - want) > 1;
-      });
+  var grpWantPending = grpVolAwaitingConfirm();
   if (volScope !== 'one' && typeof shown === 'number' && shown >= 0 && !grpVolSettling() && !grpWantPending) {
     var el = document.getElementById('vol');
     if (el) { el.value = shown; document.getElementById('volval').textContent = shown; volLast = shown; }
