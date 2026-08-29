@@ -23,6 +23,7 @@ import {
   pairMemberBoxes,
   inStereoPair,
   stereoUndoTargets,
+  stereoSelectionPick,
 } from './groups.js';
 
 // Placeholder LAN (192.0.2.0/24, RFC 5737) and deviceIDs only.
@@ -570,5 +571,33 @@ describe('stereoPairOf master field', () => {
   it('still accepts the older master spelling', () => {
     const zoneLive = { A: { stereo: { id: 'x', master: 'cc', members: [] } } };
     expect(stereoPairOf(zoneLive).master).toBe('CC');
+  });
+});
+
+// stereoSelectionPick: a still-valid user pick must beat the live pair, or
+// forming a SECOND pair is impossible (every click reverted, field report
+// 2026-08-29); the live pair stays the default for untouched slots
+// (2026-08-04 behaviour), candidates are the last resort.
+describe('stereoSelectionPick', () => {
+  const candIDs = ['A', 'B', 'C', 'D'];
+  const liveIDs = ['A', 'B']; // the existing pair
+
+  it('first paint without a remembered pick sits on the live pair', () => {
+    expect(stereoSelectionPick({ left: '', right: '', liveIDs, candIDs })).toEqual(['A', 'B']);
+  });
+
+  it('a fresh pick of an unpaired speaker sticks while a pair is live', () => {
+    // She picked C on the left; the right still holds B from the default.
+    expect(stereoSelectionPick({ left: 'C', right: 'B', liveIDs, candIDs })).toEqual(['C', 'B']);
+    // Then D on the right: the new pair C+D survives the repaint.
+    expect(stereoSelectionPick({ left: 'C', right: 'D', liveIDs, candIDs })).toEqual(['C', 'D']);
+  });
+
+  it('a stale pick (speaker gone) falls back to the live pair slot', () => {
+    expect(stereoSelectionPick({ left: 'GONE', right: 'D', liveIDs, candIDs })).toEqual(['A', 'D']);
+  });
+
+  it('no live pair and nothing remembered falls back to the first candidates', () => {
+    expect(stereoSelectionPick({ left: '', right: '', liveIDs: [], candIDs })).toEqual(['A', 'B']);
   });
 });

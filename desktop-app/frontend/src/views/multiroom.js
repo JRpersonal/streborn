@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName } from '../stereoNames.js';
 
@@ -214,25 +214,22 @@ export function renderMultiroom(fetchLive) {
   // ones and every repaint put them back there ("die Lautsprecherauswahl
   // springt immer auf den nicht gepaarten Lautsprecher", field 2026-08-04).
   const livePairs = stereoPairsOf(state.zoneLive);
-  // The controls act on the live pair that CONTAINS whichever speaker is
-  // selected, so a household with two pairs can reach the second one: picking
-  // one of its members snaps the whole pair in. Default is the first live pair,
-  // which keeps the controls on a real pair rather than an unpaired speaker
-  // (the 2026-08-04 fix), and forming a NEW pair (no live match) leaves the raw
-  // selection alone via pairPick below.
-  const selUp = (id) => String(id || '').toUpperCase();
-  const pairHasSel = (p) => (p.members || []).some(m => {
-    const id = selUp(m && m.deviceID);
-    return id && (id === selUp(state.stereoLeft) || id === selUp(state.stereoRight));
-  });
-  const livePair = livePairs.find(pairHasSel) || livePairs[0] || null;
-  const liveBoxes = pairMemberBoxes(livePair, strBoxes).map(x => x.box).filter(Boolean);
-  const stillThere = (id) => id && pairCands.some(b => b.deviceID === id);
-  const pairPick = [0, 1].map(i => {
-    if (liveBoxes[i]) return liveBoxes[i].deviceID;
-    const remembered = i === 0 ? state.stereoLeft : state.stereoRight;
-    if (stillThere(remembered)) return remembered;
-    return pairCands[i] ? pairCands[i].deviceID : '';
+  // Which two speakers the dropdowns show: a still-valid USER pick wins per
+  // slot, the first live pair only fills what the user has not chosen (the
+  // 2026-08-04 "sit on a real pair by default" behaviour, first paint has no
+  // remembered pick), and the first candidates are the last resort. The old
+  // order put the live pair FIRST, which reverted every dropdown change on
+  // the spot: the untouched second select still matched the existing pair,
+  // the whole pair snapped back in, and forming a NEW pair while any pair
+  // existed was impossible (field report 2026-08-29). Reaching a second
+  // existing pair by picking one of its members (the 1e0eb40 intent) now
+  // lives in the onchange handlers below, keyed on the FRESH pick alone.
+  const liveBoxes = pairMemberBoxes(livePairs[0] || null, strBoxes).map(x => x.box).filter(Boolean);
+  const pairPick = stereoSelectionPick({
+    left: state.stereoLeft,
+    right: state.stereoRight,
+    liveIDs: liveBoxes.map(b => b.deviceID),
+    candIDs: pairCands.map(b => b.deviceID),
   });
   state.stereoLeft = pairPick[0];
   state.stereoRight = pairPick[1];
@@ -367,8 +364,24 @@ export function renderMultiroom(fetchLive) {
     // Dropping the in-progress name on a selection change re-seeds the single
     // Name field from the newly selected pair's stored name, so typing for one
     // pair never leaks onto another.
-    if (left) left.onchange = () => { state.stereoLeft = left.value; delete state.stereoName; renderMultiroom(false); };
-    if (right) right.onchange = () => { state.stereoRight = right.value; delete state.stereoName; renderMultiroom(false); };
+    //
+    // snapPair keys ONLY on the freshly picked id: picking a member of an
+    // existing pair loads both of its members (so rename/dissolve reach a
+    // second pair, the 1e0eb40 intent), while picking an unpaired speaker
+    // sticks and lets a NEW pair be formed next to the existing one (field
+    // report 2026-08-29). The old render-time snap matched against BOTH
+    // selects, so the untouched side re-attached the old pair on every click.
+    const selUpper = (id) => String(id || '').toUpperCase();
+    const snapPair = (pickedId) => {
+      const p = livePairs.find(pr => (pr.members || []).some(m => selUpper(m && m.deviceID) === selUpper(pickedId)));
+      const mb = p ? pairMemberBoxes(p, strBoxes).map(x => x.box).filter(Boolean) : [];
+      if (mb.length === 2) {
+        state.stereoLeft = mb[0].deviceID;
+        state.stereoRight = mb[1].deviceID;
+      }
+    };
+    if (left) left.onchange = () => { state.stereoLeft = left.value; snapPair(left.value); delete state.stereoName; renderMultiroom(false); };
+    if (right) right.onchange = () => { state.stereoRight = right.value; snapPair(right.value); delete state.stereoName; renderMultiroom(false); };
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
     // Keep the typed name across the automatic live-poll repaints (which rebuild
     // this markup wholesale), the same way the L/R selects persist to state.

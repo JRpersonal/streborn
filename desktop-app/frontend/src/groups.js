@@ -449,3 +449,23 @@ export function balanceSourceBox(selected, pair, boxes) {
     .find(b => b && String(b.deviceID || '').toUpperCase() === String(pair.master || '').toUpperCase());
   return master || selected;
 }
+
+// stereoSelectionPick decides which two speakers the stereo dropdowns show.
+// Priority per slot: a still-valid USER pick wins; the live pair only fills
+// slots the user has not (or no longer validly) chosen; the first candidates
+// are the last resort. The old order put the live pair first, and that
+// reverted every dropdown change on the spot: with any pair live, the
+// UNTOUCHED second select still matched that pair, the whole pair snapped
+// back in, and forming a NEW pair while one existed was impossible (field
+// report 2026-08-29: "haelt an dem alten fest und aendert die Auswahl
+// nicht"). The 2026-08-04 default (controls sit on a real pair, not an
+// unpaired speaker) is preserved: on first paint nothing is remembered and
+// the live slots win.
+export function stereoSelectionPick({ left, right, liveIDs, candIDs }) {
+  const still = (id) => !!id && candIDs.includes(id);
+  return [left, right].map((remembered, i) => {
+    if (still(remembered)) return remembered;
+    if (liveIDs[i]) return liveIDs[i];
+    return candIDs[i] || '';
+  });
+}
