@@ -1339,5 +1339,6 @@
   "setup.stickReadOnly": "The Mac mounted this stick read-only. That usually happens when it was unplugged without ejecting. Open Disk Utility and run First Aid on the stick, or reformat it there as MS-DOS (FAT); after that it can be written.",
   "updateAll.problemToast": "{{failed}} failed, {{unconfirmed}} unconfirmed, {{done}} updated, {{deferred}} deferred.",
   "speaker.staleVersionTitle": "Last confirmed version. The speaker is not reachable right now, so this may be out of date.",
-  "banner.appCheckFailed": "The check did not go through. Downloads are still available on st-reborn.de."
+  "banner.appCheckFailed": "The check did not go through. Downloads are still available on st-reborn.de.",
+  "multiroom.stereoOffline": "Not reachable: {{names}}. Switch the speaker on and try again."
 }

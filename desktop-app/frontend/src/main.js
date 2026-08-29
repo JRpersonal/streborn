@@ -5286,8 +5286,24 @@ async function runGroupMemberToggle(edits) {
       // that moment was enrolled asleep and stayed silent, and doing them in
       // sequence would add every speaker's wake time to the wait before the
       // group even starts forming.
-      const wakeTargets = next.filter(m => m.box);
-      const wakeOnce = (list) => Promise.allSettled(list.map(m => WakeBox(m.box.host, m.box.port)))
+      // ... except a member the app itself lists as offline: it cannot be
+      // woken, and with the port fallback a dead address costs up to two 6 s
+      // transport timeouts PER ROUND, so one unplugged speaker held every
+      // group edit for over 20 seconds before the zone even started forming
+      // (field, 2026-08-29). FormZone's preflight still drops an unreachable
+      // member cleanly (notReady), so skipping its wake loses nothing.
+      const wakeTargets = next.filter(m => m.box && !m.box.offline);
+      // Bounded per speaker: a box that neither answers nor refuses (agent
+      // wedged, just unplugged, offline flag not set yet) must not hold the
+      // whole batch for the full transport timeouts either. A wake slower
+      // than this window counts as failed and gets the one retry below;
+      // enrolment continues either way.
+      const WAKE_WAIT_MS = 4000;
+      const wakeOne = (m) => Promise.race([
+        WakeBox(m.box.host, m.box.port),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('wake window elapsed')), WAKE_WAIT_MS)),
+      ]);
+      const wakeOnce = (list) => Promise.allSettled(list.map(wakeOne))
         .then(rs => list.filter((_, i) => rs[i].status === 'rejected'));
       const failed = await wakeOnce(wakeTargets);
       if (failed.length) {

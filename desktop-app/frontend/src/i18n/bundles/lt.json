@@ -1339,5 +1339,6 @@
   "setup.stickReadOnly": "Mac prijungė šią atmintinę tik skaitymui. Taip dažniausiai nutinka, kai ji ištraukiama neatjungus saugiai. Atidarykite Disk Utility ir paleiskite First Aid arba suformatuokite ją ten kaip MS-DOS (FAT); po to įrašymas veiks.",
   "updateAll.problemToast": "{{failed}} nepavyko, {{unconfirmed}} nepatvirtinta, {{done}} atnaujinta, {{deferred}} atidėta.",
   "speaker.staleVersionTitle": "Paskutinė patvirtinta versija. Kolonėlė šiuo metu nepasiekiama, reikšmė gali būti pasenusi.",
-  "banner.appCheckFailed": "Patikrinti nepavyko. Atsisiuntimai ir toliau pasiekiami st-reborn.de."
+  "banner.appCheckFailed": "Patikrinti nepavyko. Atsisiuntimai ir toliau pasiekiami st-reborn.de.",
+  "multiroom.stereoOffline": "Nepasiekiama: {{names}}. Įjunkite garsiakalbį ir bandykite dar kartą."
 }
