@@ -70,10 +70,10 @@ type Server struct {
 	IconURL string
 }
 
-// DiscoverServers sends an SSDP M-SEARCH for MediaServer devices,
-// collects unique responses for the given timeout, then resolves
-// each device description in parallel and returns the populated
-// Server list. Honors ctx for cancellation.
+// DiscoverServers sends an SSDP M-SEARCH for MediaServer devices, collects
+// unique responses for the given timeout, resolving each device description
+// in parallel as the answers arrive, and returns the populated Server list
+// once the listen window closes. Honors ctx for cancellation.
 //
 // Implementation notes:
 //   - Multi-NIC: enumerates all non-loopback IPv4 interfaces with an
@@ -97,6 +97,29 @@ type Server struct {
 var Logger *slog.Logger = slog.Default()
 
 func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, error) {
+	found, _, err := discoverServers(ctx, timeout, nil)
+	return found, err
+}
+
+// FindServer runs the same sweep as DiscoverServers but resolves device
+// descriptions AS the SSDP answers arrive and returns the moment match says
+// yes, instead of sitting out the full listen window first. A browse tap that
+// resolves ONE registered server gets its answer in the one or two seconds
+// that server actually needs; before, the full listen window was paid on every
+// first browse after an agent restart, healthy servers included (#733). The
+// full window is still paid when the server never answers, which is exactly
+// the case that needs the evidence: the returned list then carries every
+// server that IS live, for the name rematch and for telling the user what was
+// reachable instead.
+func FindServer(ctx context.Context, timeout time.Duration, match func(Server) bool) (Server, bool, []Server, error) {
+	found, m, err := discoverServers(ctx, timeout, match)
+	if m != nil {
+		return *m, true, found, err
+	}
+	return Server{}, false, found, err
+}
+
+func discoverServers(ctx context.Context, timeout time.Duration, match func(Server) bool) ([]Server, *Server, error) {
 	if timeout <= 0 {
 		timeout = defaultDiscover
 	}
@@ -105,7 +128,7 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 
 	mcAddr, err := net.ResolveUDPAddr("udp4", ssdpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("ssdp resolve: %w", err)
+		return nil, nil, fmt.Errorf("ssdp resolve: %w", err)
 	}
 
 	mkMsg := func(st, host string) []byte {
@@ -134,6 +157,43 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 
 	locationsMu := sync.Mutex{}
 	locations := map[string]struct{}{}
+
+	// Describe as they arrive: every NEW location spawns its description fetch
+	// immediately instead of after the listen window closes, so a match can end
+	// the sweep early and a full sweep overlaps fetch time with listen time.
+	// fparent bounds the whole fetch fleet and is cancelled on early exit.
+	fparent, fcancel := context.WithCancel(ctx)
+	defer fcancel()
+	type result struct {
+		s   Server
+		err error
+	}
+	resCh := make(chan result, 256)
+	var pending sync.WaitGroup
+	enqueue := func(loc string) bool { // reports whether loc was new
+		locationsMu.Lock()
+		if _, dup := locations[loc]; dup {
+			locationsMu.Unlock()
+			return false
+		}
+		locations[loc] = struct{}{}
+		locationsMu.Unlock()
+		pending.Add(1)
+		go func() {
+			defer pending.Done()
+			// Per-fetch deadline instead of the old one shared 12 s window
+			// after the listen phase: a slow NAS (WD Twonky, #733) keeps its
+			// headroom, the fast ones answer in well under a second.
+			fctx, c := context.WithTimeout(fparent, 12*time.Second)
+			defer c()
+			s, err := fetchDeviceDescription(fctx, loc)
+			select {
+			case resCh <- result{s: s, err: err}:
+			case <-fparent.Done():
+			}
+		}()
+		return true
+	}
 
 	// collect reads SSDP responses on conn until the discovery deadline and
 	// records each unique LOCATION. Shared by the per-interface multicast probes
@@ -167,12 +227,9 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 			// were silently dropped here despite serving a valid MediaServer
 			// device.xml. The real gate is the post-fetch CDSControlURL check (#110).
 			Logger.Info("dlna: SSDP response", "src", raddr.String(), "st", st, "location", loc)
-			locationsMu.Lock()
-			if _, dup := locations[loc]; !dup {
-				locations[loc] = struct{}{}
+			if enqueue(loc) {
 				localHits++
 			}
-			locationsMu.Unlock()
 		}
 		Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits)
 	}
@@ -250,18 +307,15 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 		}
 		collect(conn, "loopback")
 	}()
-	ifaceWg.Wait()
 
-	// Merge everything the passive NOTIFY listener has heard. This is
-	// what actually finds a media server running on the same PC as the
-	// app (see announce.go, #341); it also catches servers that were
-	// too slow to answer this particular M-SEARCH window. Includes
-	// expired-but-retained announcements: the description fetch below
-	// filters the ones that are genuinely gone.
+	// Merge everything the passive NOTIFY listener has heard, UP FRONT: these
+	// addresses are known now, and describing them immediately is what lets a
+	// same-host or M-SEARCH-deaf server (announce.go, #341) satisfy an early
+	// match too. Includes expired-but-retained announcements: the description
+	// fetch filters the ones that are genuinely gone.
 	announced := 0
 	for _, loc := range announces.candidateLocations(time.Now()) {
-		if _, dup := locations[loc]; !dup {
-			locations[loc] = struct{}{}
+		if enqueue(loc) {
 			announced++
 		}
 	}
@@ -269,38 +323,21 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 		Logger.Info("dlna: merged NOTIFY announcements", "newLocations", announced)
 	}
 
-	Logger.Info("dlna: SSDP M-SEARCH done", "totalLocations", len(locations))
-	if len(locations) == 0 {
-		return nil, nil
-	}
+	// Close resCh once the listen window is over and every spawned fetch has
+	// reported, so the loop below has a definite end.
+	go func() {
+		ifaceWg.Wait()
+		locationsMu.Lock()
+		total := len(locations)
+		locationsMu.Unlock()
+		Logger.Info("dlna: SSDP M-SEARCH done", "totalLocations", total)
+		pending.Wait()
+		close(resCh)
+	}()
 
-	// Separate context for the description fetches. The discovery
-	// context (dctx) is consumed by the SSDP read loop and may be
-	// expired by the time we get here; using it for the HTTP
-	// fetches would have every fetch fail with deadline exceeded.
-	// Parent ctx is still alive (caller's overall budget).
-	// 12s (was 8s): the whole set of description fetches runs in parallel under
-	// this one deadline, so a slow NAS (WD Twonky, #733) is the one that needs
-	// the headroom; the fast ones still return in well under a second.
-	fctx, fcancel := context.WithTimeout(ctx, 12*time.Second)
-	defer fcancel()
-
-	type result struct {
-		s   Server
-		err error
-	}
-	results := make(chan result, len(locations))
-	for loc := range locations {
-		go func(loc string) {
-			s, err := fetchDeviceDescription(fctx, loc)
-			results <- result{s: s, err: err}
-		}(loc)
-	}
-
-	out := make([]Server, 0, len(locations))
+	out := make([]Server, 0, 8)
 	seen := map[string]struct{}{}
-	for i := 0; i < len(locations); i++ {
-		r := <-results
+	for r := range resCh {
 		if r.err != nil || r.s.UDN == "" || r.s.CDSControlURL == "" {
 			continue
 		}
@@ -309,8 +346,15 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 		}
 		seen[r.s.UDN] = struct{}{}
 		out = append(out, r.s)
+		if match != nil && match(r.s) {
+			m := r.s
+			Logger.Info("dlna: discovery matched early", "server", m.FriendlyName, "described", len(out))
+			cancel()
+			fcancel()
+			return out, &m, nil
+		}
 	}
-	return out, nil
+	return out, nil, nil
 }
 
 // ifaceIPv4 pairs an eligible interface with one of its routable IPv4

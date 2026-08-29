@@ -172,3 +172,52 @@ func TestRematchByNameRecoversUUIDRegeneratingServer(t *testing.T) {
 		t.Fatal("a different name and UDN must NOT match")
 	}
 }
+
+// A failed browse must say which servers DID answer, or the user cannot tell a
+// dark NAS from a broken STR. The #733 bundle had a live WD-01 and three
+// FritzBox servers on the network while the browsed WD-02 was off; only the
+// desktop log could say so, the phone showed a bare "did not answer".
+func TestLibraryOfflineReplyNamesLiveServers(t *testing.T) {
+	store, err := mediaservers.Load(filepath.Join(t.TempDir(), "ms.json"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	_ = store.Add(mediaservers.Server{ID: "DARK-UDN-1", Name: "WD-02"})
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), mediaServers: store}
+
+	live := []dlna.Server{
+		{UDN: "uuid:live-1", FriendlyName: "WD-01"},
+		{UDN: "uuid:live-2", FriendlyName: "  "}, // blank names must be dropped
+		{UDN: "uuid:live-3", FriendlyName: "DUST132 Mediaserver"},
+	}
+	reply := s.libraryOfflineReply(udnKey("DARK-UDN-1"), live)
+	if reply["offline"] != true {
+		t.Fatalf("offline flag lost: %+v", reply)
+	}
+	if reply["server"] != "WD-02" {
+		t.Errorf("the registered name must identify WHO did not answer, got %v", reply["server"])
+	}
+	seen, ok := reply["seen"].([]string)
+	if !ok || len(seen) != 2 || seen[0] != "WD-01" || seen[1] != "DUST132 Mediaserver" {
+		t.Errorf("seen = %v, want the two live server names", reply["seen"])
+	}
+}
+
+// The phone page must render that seen-list, not drop it.
+func TestPhoneRemoteBrowseOfflineNamesLiveServers(t *testing.T) {
+	i := strings.Index(indexHTML, "async function browseOpen(")
+	if i < 0 {
+		t.Fatal("the phone remote has no library browser")
+	}
+	fn := indexHTML[i:]
+	if end := strings.Index(fn, "async function "); end > 0 {
+		if next := strings.Index(fn[1:], "async function "); next > 0 {
+			fn = fn[:next+1]
+		}
+	}
+	for _, want := range []string{"r.seen", "T.brSeen", "r.server"} {
+		if !strings.Contains(fn, want) {
+			t.Errorf("browseOpen drops %q, so an offline server shows a bare failure instead of what IS reachable", want)
+		}
+	}
+}

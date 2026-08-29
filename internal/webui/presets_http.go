@@ -319,10 +319,25 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				cancel()
 			}
 		}
+		// Every accepted write is logged with WHO wrote it. The #758 bundle
+		// showed a slot rewritten six times in twenty minutes (a phone save
+		// fighting a desktop self-heal) and could not name a single writer,
+		// because a successful PUT left no trace; silent success paths are
+		// forensic holes.
+		prevName := ""
+		for _, old := range s.presets.All() {
+			if old.Slot == slot {
+				prevName = old.Name
+				break
+			}
+		}
 		if err := s.presets.SetSlot(p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.logger.Info("preset write accepted",
+			"slot", slot, "was", prevName, "now", p.Name, "type", p.Type,
+			"stream", p.StreamURL, "from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
 		// Sync to the box so hardware buttons know the correct slot.
 		// Bose gets the stream proxy URL, not the real CDN.
 		// This way the stream survives token expiry.
@@ -344,6 +359,9 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Same forensic line as the PUT: a vanished preset must name its deleter.
+		s.logger.Info("preset delete accepted",
+			"slot", slot, "from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
 		// Drop it from the box-preset snapshot right away and tombstone the slot so
 		// a trailing gabbo presetsUpdated does not resurface it as a foreign (UPNP)
 		// entry the user then "cannot delete" (reported after an app restart).

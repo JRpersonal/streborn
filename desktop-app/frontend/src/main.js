@@ -4560,6 +4560,43 @@ async function refreshPresetsIfChanged() {
   loadBoxPresets();
 }
 
+// setPresetIfUnchanged persists a METADATA self-heal (a measured bitrate, a
+// healed logo) for a slot, but only after re-reading the store and proving the
+// slot still holds the station the patch was computed for. The cached preset
+// list can be up to PRESET_RECHECK_MS behind, and a fire-and-forget SetPreset
+// built from that cache silently reverts a save another client made in
+// between: the #758 reporter saved a station from the phone page and this app
+// wrote the previous station back over it six seconds later, every time, for
+// six rounds. A metadata write must never decide WHICH station a key holds,
+// so on any mismatch it adopts the fresh list and walks away.
+async function setPresetIfUnchanged(box, cached, patch) {
+  let fresh;
+  try {
+    fresh = await GetPresets(box.host, box.port) || [];
+  } catch { return false; }
+  if (state.currentBox !== box) return false;
+  const live = fresh.find(x => x.slot === cached.slot);
+  const held = live && live.type !== 'spotify' &&
+    live.stream_url === cached.stream_url && live.name === cached.name;
+  if (!held) {
+    // The slot changed under us (or the read raced a save): show reality
+    // instead of overwriting it. Same transient-empty guard the pollers use.
+    if (fresh.length > 0 || state.presets.length === 0) {
+      state.presets = fresh;
+      _lastPresetCheck = Date.now();
+      renderPresets();
+    }
+    return false;
+  }
+  try {
+    await SetPreset(box.host, box.port, live.slot, live.name, live.stream_url,
+      patch.art !== undefined ? patch.art : (live.art || ''),
+      patch.bitrate !== undefined ? patch.bitrate : (live.bitrate || 0),
+      live.homepage || '', live.codec || '');
+    return true;
+  } catch { return false; }
+}
+
 async function loadPresets(retry = 0) {
   if (!state.currentBox) return;
   // Drop another box's box-native presets the moment we switch, so a Deezer tile
@@ -4782,10 +4819,11 @@ async function healPresetLogos() {
         const logo = stationLogoChain(pick);
         if (!logo) return;
         // Radio-only: SetPreset sends type=radio with no uri, so never persist
-        // onto a Spotify preset or its URI is lost.
+        // onto a Spotify preset or its URI is lost. Guarded: the heal must not
+        // revert a slot another client re-saved meanwhile (#758).
         if (p.type === 'spotify') return;
         p.art = logo;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
+        await setPresetIfUnchanged(state.currentBox, p, { art: logo });
       } catch {}
     }));
   } finally {
@@ -5549,9 +5587,11 @@ function renderPresets() {
         // Same gate refreshStatus uses to decide whether a late-arriving logo
         // is worth a redraw, so the two cannot drift apart.
         addCands(adoptIcon);
-        // Auto-persist so the preset has its logo on the next load.
+        // Auto-persist so the preset has its logo on the next load. Guarded:
+        // skipped when the slot changed on the box since this list was loaded,
+        // so the adopt never reverts a save from another client (#758).
         p.art = adoptIcon;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, adoptIcon, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
+        setPresetIfUnchanged(state.currentBox, p, { art: adoptIcon });
       }
       // Render through the same Go-validated hydration the search and
       // Recently-played tiles use (logoImgTag + ResolveStationLogo): the raw
@@ -5590,7 +5630,8 @@ function renderPresets() {
         // SetPreset is radio-only and would overwrite the Spotify URI.
         if ((p.bitrate || 0) !== state.nowBitrate && p.type !== 'spotify') {
           p.bitrate = state.nowBitrate;
-          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate, p.homepage || '', p.codec || '').catch(() => {});
+          // Guarded: never rewrite a slot another client changed meanwhile (#758).
+          setPresetIfUnchanged(state.currentBox, p, { bitrate: state.nowBitrate });
         }
       }
       // A key shows what is SAVED on it: a short, static name, plus the markers
@@ -6202,13 +6243,26 @@ function scheduleLiveBitrate() {
         const p = isSpotify
           ? state.presets.find(x => x.type === 'spotify' && x.name === state.nowName)
           : (() => { const s = activeSlotFromLocation(state.nowLocation); return s !== null ? state.presets.find(x => x.slot === s) : null; })();
-        if (p && p.bitrate !== br) {
+        // The slot lookup goes by NUMBER, so after a sync replaced the slot's
+        // station the rate measured from the still-playing OLD stream must not
+        // be stamped onto the NEW station (#758: a Jazz-stream reading written
+        // onto the freshly-saved key). Same identity check the tile uses.
+        const orionNow = orionStationPayload(state.nowLocation);
+        const stale = !isSpotify && p && orionNow && nativeSlotStale({
+          presetName: p.name,
+          presetUrl: p.stream_url,
+          playingName: typeof orionNow.name === 'string' ? orionNow.name : '',
+          playingUrl: orionNow.streamUrl ? decodeProxyUrl(orionNow.streamUrl) : '',
+        });
+        if (p && !stale && p.bitrate !== br) {
           p.bitrate = br;
           // Persist for radio only. SetPreset is radio-only (type=radio, no
           // uri), so persisting a Spotify preset would wipe its URI. The
           // Spotify rate stays live via state.nowBitrate + /spotify/info.
+          // Guarded: the write is skipped when the slot changed on the box
+          // since this list was loaded (#758).
           if (!isSpotify) {
-            SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br, p.homepage || '', p.codec || '').catch(() => {});
+            setPresetIfUnchanged(box, p, { bitrate: br });
           }
         }
         renderPresets();
