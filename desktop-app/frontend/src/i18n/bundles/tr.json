@@ -1335,5 +1335,6 @@
   "spotify.qualityPending": "Çalma durunca uygulanır",
   "spotify.qualitySet": "Kalite değiştirildi",
   "spotify.qualityFailed": "Hoparlör değişikliği reddetti",
-  "setup.wlanNoPass": "Wi-Fi şifresi girilmediği için Wi-Fi ayarları belleğe yazılmadı. Hoparlör mevcut Wi-Fi ağında kalır. Belleğin Wi-Fi kurmasını istiyorsanız SSID ve şifreyi birlikte girin."
+  "setup.wlanNoPass": "Wi-Fi şifresi girilmediği için Wi-Fi ayarları belleğe yazılmadı. Hoparlör mevcut Wi-Fi ağında kalır. Belleğin Wi-Fi kurmasını istiyorsanız SSID ve şifreyi birlikte girin.",
+  "setup.stickReadOnly": "Mac bu belleği salt okunur bağladı. Bu genellikle bellek çıkarma işlemi yapılmadan çekildiğinde olur. Disk İzlencesi'ni açıp bellekte İlk Yardım çalıştırın veya orada MS-DOS (FAT) olarak yeniden biçimlendirin; sonrasında yazılabilir."
 }

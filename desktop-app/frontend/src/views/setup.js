@@ -1158,11 +1158,17 @@ async function updateDrivePanels() {
   let chk = null;
   try { chk = await CheckStick(drive.path); } catch {}
   const tooSmall = chk && chk.reason === 'too-small' && !drive.hasStick;
+  // 'read-only' ist der DIAGNOSTIZIERTE Fall des macOS-Read-only-Mounts
+  // (schmutziges FAT32 nach Abziehen ohne Auswerfen, #775) und bekommt eine
+  // Anleitung statt des ratlosen "vielleicht schreibgeschuetzt".
+  const readOnly = chk && chk.reason === 'read-only';
   const notWritable = chk && chk.reason === 'not-writable';
-  if (tooSmall || notWritable) {
+  if (tooSmall || readOnly || notWritable) {
     const gb = (chk.totalBytes / 1e9).toFixed(1);
     upd.innerHTML = `<b>${escapeHtml(
-      tooSmall ? t('setup.stickTooSmall', { gb }) : t('setup.stickNotWritable')
+      tooSmall ? t('setup.stickTooSmall', { gb })
+        : readOnly ? t('setup.stickReadOnly')
+        : t('setup.stickNotWritable')
     )}</b>`;
     upd.classList.remove('hidden');
     warn.classList.add('hidden');
@@ -1276,8 +1282,8 @@ async function doSetup() {
       $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('setup.stickTooSmall', { gb: (chk.totalBytes / 1e9).toFixed(1) }))}</div>`;
       return;
     }
-    if (chk && chk.reason === 'not-writable') {
-      $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('setup.stickNotWritable'))}</div>`;
+    if (chk && (chk.reason === 'not-writable' || chk.reason === 'read-only')) {
+      $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t(chk.reason === 'read-only' ? 'setup.stickReadOnly' : 'setup.stickNotWritable'))}</div>`;
       return;
     }
   } catch {}

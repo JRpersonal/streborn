@@ -1335,5 +1335,6 @@
   "spotify.qualityPending": "再生停止時に適用されます",
   "spotify.qualitySet": "品質を変更しました",
   "spotify.qualityFailed": "スピーカーが変更を拒否しました",
-  "setup.wlanNoPass": "Wi-Fiパスワードが未入力のため、Wi-Fi設定はUSBメモリーに書き込まれませんでした。スピーカーは現在のWi-Fiを維持します。USBでWi-Fiを設定する場合は、SSIDとパスワードの両方を入力してください。"
+  "setup.wlanNoPass": "Wi-Fiパスワードが未入力のため、Wi-Fi設定はUSBメモリーに書き込まれませんでした。スピーカーは現在のWi-Fiを維持します。USBでWi-Fiを設定する場合は、SSIDとパスワードの両方を入力してください。",
+  "setup.stickReadOnly": "MacがこのUSBメモリーを読み取り専用でマウントしました。取り出し操作をせずに抜いた場合によく起こります。ディスクユーティリティでFirst Aidを実行するか、MS-DOS (FAT)で再フォーマットすると、書き込めるようになります。"
 }

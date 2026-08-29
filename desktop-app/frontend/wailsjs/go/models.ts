@@ -787,6 +787,7 @@ export namespace sticksetup {
 	    bigEnough: boolean;
 	    writable: boolean;
 	    reason: string;
+	    detail?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StickCheck(source);
@@ -802,6 +803,7 @@ export namespace sticksetup {
 	        this.bigEnough = source["bigEnough"];
 	        this.writable = source["writable"];
 	        this.reason = source["reason"];
+	        this.detail = source["detail"];
 	    }
 	}
 	export class StickConfigs {

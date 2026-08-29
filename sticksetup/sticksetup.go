@@ -90,11 +90,16 @@ type StickCheck struct {
 	BigEnough  bool   `json:"bigEnough"`  // TotalBytes >= MinStickBytes
 	Writable   bool   `json:"writable"`   // a probe write succeeded
 	// Reason is a stable machine-readable code the frontend maps to a localized
-	// message: "" (ok), "gone", "too-small", "not-writable", "not-fat32".
-	// Order of precedence is intentional: an unfixable problem (gone, too-small,
-	// not-writable) wins over the fixable "not-fat32" (which the app offers to
-	// format away).
+	// message: "" (ok), "gone", "too-small", "read-only", "not-writable",
+	// "not-fat32". Order of precedence is intentional: an unfixable problem
+	// (gone, too-small) wins, then the DIAGNOSED read-only mount (macOS mounts
+	// a dirty FAT32 volume read-only; #775 hit this as an unexplained "may be
+	// write-protected or faulty" on two sticks), then the generic not-writable,
+	// then the fixable "not-fat32" (which the app offers to format away).
 	Reason string `json:"reason"`
+	// Detail carries the raw error of a failed write probe for the log and the
+	// failure report. Not localized, not shown as the primary message.
+	Detail string `json:"detail,omitempty"`
 }
 
 // CheckStick evaluates the volume at path against the install requirements:
@@ -119,10 +124,20 @@ func CheckStick(path string) StickCheck {
 	c.TotalBytes = found.TotalBytes
 	c.IsFAT32 = strings.EqualFold(found.Filesystem, "FAT32")
 	c.BigEnough = found.TotalBytes >= MinStickBytes
-	c.Writable = stickWritable(path)
+	var werr error
+	c.Writable, werr = stickWritable(path)
+	if werr != nil {
+		c.Detail = werr.Error()
+		// The naked probe failure was undiagnosable from the outside ("may be
+		// write-protected or faulty", #775). Log the real error so a bundle
+		// answers it.
+		Logger.Warn("CheckStick: write probe failed", "path", path, "err", werr, "readOnlyMount", mountReadOnly(path))
+	}
 	switch {
 	case !c.BigEnough:
 		c.Reason = "too-small"
+	case !c.Writable && mountReadOnly(path):
+		c.Reason = "read-only"
 	case !c.Writable:
 		c.Reason = "not-writable"
 	case !c.IsFAT32:
@@ -134,16 +149,16 @@ func CheckStick(path string) StickCheck {
 }
 
 // stickWritable reports whether a small file can be created and removed under
-// path. Catches a physically write-protected stick (lock switch) or a flaky
-// reader before the agent write begins. Best-effort: any error means "not
-// writable".
-func stickWritable(path string) bool {
+// path, and the underlying error when it cannot. Catches a physically
+// write-protected stick (lock switch), a read-only mount (macOS + dirty
+// FAT32, #775) or a flaky reader before the agent write begins.
+func stickWritable(path string) (bool, error) {
 	probe := filepath.Join(path, ".str-write-test.tmp")
 	if err := os.WriteFile(probe, []byte("str"), 0o644); err != nil {
-		return false
+		return false, err
 	}
 	_ = os.Remove(probe)
-	return true
+	return true, nil
 }
 
 // WLANConfig describes a WLAN configuration written to the stick. The
