@@ -137,6 +137,13 @@ function mountSettingsShell() {
     const box = state.boxes.find(b => b.deviceID === id);
     if (box) {
       state.settingsBox = box;
+      // A switch starts the new speaker's story from zero: the previous
+      // speaker's reconnect countdown (and its pending retry timer) must not
+      // keep running against the one just picked.
+      if (state.settingsReconnect && state.settingsReconnect.timer) {
+        clearTimeout(state.settingsReconnect.timer);
+      }
+      state.settingsReconnect = null;
       loadBoxSettings();
       // Lock-step with the music tab (and the Setup target picker).
       if (deps.speakerPicked) deps.speakerPicked(box);
@@ -307,8 +314,19 @@ export async function loadBoxSettings() {
     if (go) go.onclick = () => deps.switchView('setup');
     return;
   }
-  // If content is already rendered, do not overwrite it. The user
-  // should keep seeing the previous values while we fetch fresh data.
+  // The pane may still show ANOTHER speaker's settings: the user just
+  // switched in the dropdown. Keeping those visible while the new fetch runs
+  // made an unreachable or slow speaker look fully configured, every value
+  // on screen belonged to the previous box and nothing said so (field,
+  // 2026-08-29). A switch therefore blanks the pane down to the loading hint
+  // until the new speaker has actually answered; only a re-fetch of the SAME
+  // speaker keeps its current values on screen.
+  if (body.dataset.renderedBoxId && body.dataset.renderedBoxId !== state.settingsBox.deviceID) {
+    delete body.dataset.renderedBoxId;
+    body.innerHTML = '';
+  }
+  // If this speaker's content is already rendered, do not overwrite it. The
+  // user should keep seeing the previous values while we fetch fresh data.
   // Otherwise show a hint.
   const hasContent = body.querySelector('.settings-section');
   if (!hasContent) {
@@ -338,6 +356,9 @@ export async function loadBoxSettings() {
       }
       state.settingsReconnect = null;
       renderBoxSettings(s, state.settingsBox);
+      // Stamp whose settings the pane now shows, so the next dropdown
+      // switch can tell "this speaker's values" from "the previous one's".
+      body.dataset.renderedBoxId = state.settingsBox.deviceID;
       // Read-only, and only present on a stereo pair, so it is filled after the
       // markup exists rather than being part of it.
       refreshBoxBalanceRow(state.settingsBox,
