@@ -69,6 +69,8 @@ export function EnableBoxMediaServer(arg1:string,arg2:number,arg3:string,arg4:st
 
 export function EnsureSpotifyEngine(arg1:string,arg2:number):Promise<string>;
 
+export function ExportBackup(arg1:string):Promise<Record<string, any>>;
+
 export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
 
 export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;
@@ -102,6 +104,8 @@ export function GetStereoPairName(arg1:string):Promise<string>;
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function GetZoneState(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function ImportBackup():Promise<Record<string, any>>;
 
 export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 

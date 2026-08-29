@@ -73,6 +73,8 @@ export {
   DisableBoxMediaServer,
   CurrentWiFi,
   CheckAppUpdate,
+  ExportBackup,
+  ImportBackup,
   ResolveStationLogo,
   BoxSettings,
   SetBoxName,

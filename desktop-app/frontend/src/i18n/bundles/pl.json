@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} nieudanych, {{unconfirmed}} niepotwierdzonych, {{done}} zaktualizowanych, {{deferred}} odłożonych.",
   "speaker.staleVersionTitle": "Ostatnia potwierdzona wersja. Głośnik jest teraz nieosiągalny, wartość może być nieaktualna.",
   "banner.appCheckFailed": "Sprawdzanie nie powiodło się. Pliki do pobrania są nadal dostępne na st-reborn.de.",
-  "multiroom.stereoOffline": "Nieosiągalne: {{names}}. Włącz głośnik i spróbuj ponownie."
+  "multiroom.stereoOffline": "Nieosiągalne: {{names}}. Włącz głośnik i spróbuj ponownie.",
+  "settingsView.backupHeading": "Kopia zapasowa",
+  "settingsView.backupHelp": "Zapisuje ulubione oraz przyciski presetów wszystkich głośników do jednego pliku, na przykład przed zmianami. Przy przywracaniu zapisane presety trafiają na odpowiednie głośniki, a ulubione są dodawane; istniejące ulubione zostają.",
+  "settingsView.backupExportBtn": "Zapisz kopię",
+  "settingsView.backupImportBtn": "Przywróć kopię",
+  "settingsView.backupExportDone": "Zapisano: {{favs}} ulubionych i {{presets}} presetów z {{speakers}} głośników.",
+  "settingsView.backupImportDone": "Przywrócono: {{presets}} presetów na {{speakers}} głośnikach, dodano {{favs}} ulubionych.",
+  "settingsView.backupNotReached": "Pominięto: {{names}}. Włącz te głośniki i spróbuj ponownie."
 }

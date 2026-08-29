@@ -43,6 +43,8 @@ import {
   RebootBox,
   SetPreset,
   SyncBoxPresets,
+  ExportBackup,
+  ImportBackup,
   RestoreBoxSnapshot,
   SaveDiagnosticBundle,
   BrowserOpenURL,
@@ -485,6 +487,7 @@ function groupSettingsSections() {
     [t('settingsView.regionHeading')]: 'network',
     [t('settingsView.sourcesHeading')]: 'info',
     [t('settingsView.actionsHeading')]: 'actions',
+    [t('settingsView.backupHeading')]: 'actions',
     [t('settingsView.speakerInfoHeading')]: 'info',
   };
   const buckets = {};
@@ -1165,6 +1168,15 @@ function renderBoxSettings(s, box) {
         <p class="muted small">${escapeHtml(t('settingsView.removeSTRHelp'))}</p>
       </div>
     </div>
+    <div class="settings-section" id="backupSection">
+      <h3>${escapeHtml(t('settingsView.backupHeading'))}</h3>
+      ${helpBlock(t('settingsView.backupHelp'), 'p', 'muted small')}
+      <div class="setting-row">
+        <button class="btn btn-mini" id="backupExportBtn">${escapeHtml(t('settingsView.backupExportBtn'))}</button>
+        <button class="btn btn-mini" id="backupImportBtn">${escapeHtml(t('settingsView.backupImportBtn'))}</button>
+      </div>
+      <div id="backupResult" class="muted small" style="margin-top:8px"></div>
+    </div>
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.restoreHeading'))} <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span></summary>
       ${helpBlock(t('settingsView.restoreHelp'), 'p', 'muted small')}
@@ -1507,6 +1519,62 @@ function renderBoxSettings(s, box) {
       } catch (e) { showError(e); }
     };
   })();
+
+  // Backup and restore (#778): favorites + every speaker's presets into one
+  // JSON file, and back. The heavy lifting is Go-side (ExportBackup /
+  // ImportBackup own the dialogs, the preset reads and the restore writes);
+  // this wiring only contributes the favorites, which live in the frontend's
+  // localStorage, and renders the outcome.
+  const bkExport = $('backupExportBtn');
+  if (bkExport) {
+    bkExport.onclick = async () => {
+      const out = $('backupResult');
+      bkExport.disabled = true;
+      if (out) out.innerHTML = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
+      try {
+        const favs = deps.favStationsJSON ? deps.favStationsJSON() : '[]';
+        const r = await ExportBackup(favs);
+        if (out) {
+          if (r && r.canceled) { out.innerHTML = ''; }
+          else {
+            out.innerHTML = `<div class="setup-ok">${escapeHtml(t('settingsView.backupExportDone', {
+              favs: (r && r.favorites) || 0, speakers: (r && r.speakers) || 0, presets: (r && r.presets) || 0,
+            }))}</div>` + ((r && r.skipped && r.skipped.length)
+              ? `<div class="setup-warn">${escapeHtml(t('settingsView.backupNotReached', { names: r.skipped.join(', ') }))}</div>` : '');
+          }
+        }
+      } catch (e) {
+        if (out) out.innerHTML = `<div class="setup-err">${escapeHtml(String(e))}</div>`;
+      }
+      bkExport.disabled = false;
+    };
+  }
+  const bkImport = $('backupImportBtn');
+  if (bkImport) {
+    bkImport.onclick = async () => {
+      const out = $('backupResult');
+      bkImport.disabled = true;
+      if (out) out.innerHTML = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
+      try {
+        const r = await ImportBackup();
+        if (r && r.canceled) { if (out) out.innerHTML = ''; }
+        else {
+          const merged = (deps.mergeFavStations && r && typeof r.favorites === 'string' && r.favorites)
+            ? deps.mergeFavStations(r.favorites) : { added: 0 };
+          if (out) {
+            out.innerHTML = `<div class="setup-ok">${escapeHtml(t('settingsView.backupImportDone', {
+              favs: merged.added || 0, presets: (r && r.presets) || 0, speakers: (r && r.speakers) || 0,
+            }))}</div>` + ((r && r.missed && r.missed.length)
+              ? `<div class="setup-warn">${escapeHtml(t('settingsView.backupNotReached', { names: r.missed.join(', ') }))}</div>` : '');
+          }
+          deps.loadPresets && deps.loadPresets();
+        }
+      } catch (e) {
+        if (out) out.innerHTML = `<div class="setup-err">${escapeHtml(String(e))}</div>`;
+      }
+      bkImport.disabled = false;
+    };
+  }
 
   // Hardware key sync handler.
   const syncBtn = $('boxSyncPresetsBtn');

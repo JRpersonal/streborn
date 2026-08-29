@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} fehlgeschlagen, {{unconfirmed}} unbestätigt, {{done}} aktualisiert, {{deferred}} zurückgestellt.",
   "speaker.staleVersionTitle": "Letzte bestätigte Version. Der Lautsprecher ist gerade nicht erreichbar, der Wert kann veraltet sein.",
   "banner.appCheckFailed": "Die Prüfung hat nicht geklappt. Downloads gibt es weiterhin auf st-reborn.de.",
-  "multiroom.stereoOffline": "Nicht erreichbar: {{names}}. Schalte den Lautsprecher ein und versuch es noch einmal."
+  "multiroom.stereoOffline": "Nicht erreichbar: {{names}}. Schalte den Lautsprecher ein und versuch es noch einmal.",
+  "settingsView.backupHeading": "Sicherung",
+  "settingsView.backupHelp": "Sichert deine Favoriten und die Preset-Tasten aller Lautsprecher in eine Datei, zum Beispiel bevor du etwas umbaust. Beim Wiederherstellen werden die gesicherten Presets auf die passenden Lautsprecher geschrieben und die Favoriten ergänzt, vorhandene Favoriten bleiben erhalten.",
+  "settingsView.backupExportBtn": "Sicherung speichern",
+  "settingsView.backupImportBtn": "Sicherung wiederherstellen",
+  "settingsView.backupExportDone": "Gesichert: {{favs}} Favoriten und {{presets}} Presets von {{speakers}} Lautsprechern.",
+  "settingsView.backupImportDone": "Wiederhergestellt: {{presets}} Presets auf {{speakers}} Lautsprechern, {{favs}} Favoriten ergänzt.",
+  "settingsView.backupNotReached": "Nicht dabei: {{names}}. Schalte diese Lautsprecher ein und versuch es dort noch einmal."
 }

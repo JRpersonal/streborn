@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} failed, {{unconfirmed}} unconfirmed, {{done}} updated, {{deferred}} deferred.",
   "speaker.staleVersionTitle": "Last confirmed version. The speaker is not reachable right now, so this may be out of date.",
   "banner.appCheckFailed": "The check did not go through. Downloads are still available on st-reborn.de.",
-  "multiroom.stereoOffline": "Not reachable: {{names}}. Switch the speaker on and try again."
+  "multiroom.stereoOffline": "Not reachable: {{names}}. Switch the speaker on and try again.",
+  "settingsView.backupHeading": "Backup",
+  "settingsView.backupHelp": "Saves your favorites and the preset keys of every speaker into one file, for example before you change things around. Restoring writes the saved presets back onto the matching speakers and adds the favorites; existing favorites are kept.",
+  "settingsView.backupExportBtn": "Save backup",
+  "settingsView.backupImportBtn": "Restore backup",
+  "settingsView.backupExportDone": "Backed up: {{favs}} favorites and {{presets}} presets from {{speakers}} speakers.",
+  "settingsView.backupImportDone": "Restored: {{presets}} presets on {{speakers}} speakers, {{favs}} favorites added.",
+  "settingsView.backupNotReached": "Not included: {{names}}. Switch these speakers on and try again for them."
 }

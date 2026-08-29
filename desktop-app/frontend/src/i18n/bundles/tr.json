@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} başarısız, {{unconfirmed}} doğrulanmadı, {{done}} güncellendi, {{deferred}} ertelendi.",
   "speaker.staleVersionTitle": "Son doğrulanan sürüm. Hoparlöre şu anda ulaşılamıyor, bu değer güncel olmayabilir.",
   "banner.appCheckFailed": "Denetim tamamlanamadı. İndirmeler st-reborn.de üzerinde sunulmaya devam ediyor.",
-  "multiroom.stereoOffline": "Ulaşılamıyor: {{names}}. Hoparlörü açıp yeniden deneyin."
+  "multiroom.stereoOffline": "Ulaşılamıyor: {{names}}. Hoparlörü açıp yeniden deneyin.",
+  "settingsView.backupHeading": "Yedekleme",
+  "settingsView.backupHelp": "Favorilerinizi ve tüm hoparlörlerin ön ayar tuşlarını tek bir dosyaya kaydeder. Geri yüklerken kayıtlı ön ayarlar eşleşen hoparlörlere yazılır ve favoriler eklenir; mevcut favoriler korunur.",
+  "settingsView.backupExportBtn": "Yedeği kaydet",
+  "settingsView.backupImportBtn": "Yedeği geri yükle",
+  "settingsView.backupExportDone": "Kaydedildi: {{favs}} favori ve {{speakers}} hoparlörden {{presets}} ön ayar.",
+  "settingsView.backupImportDone": "Geri yüklendi: {{speakers}} hoparlörde {{presets}} ön ayar, {{favs}} favori eklendi.",
+  "settingsView.backupNotReached": "Dahil edilmedi: {{names}}. Bu hoparlörleri açıp yeniden deneyin."
 }

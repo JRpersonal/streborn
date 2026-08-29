@@ -398,7 +398,7 @@ initSpotifyView({
     .filter(b => b && b.kind !== 'stock' && b.deviceID && b.host)
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
-initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
+initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
@@ -7196,6 +7196,32 @@ function favMinimal(s) {
   };
 }
 function favId(s) { return s && (s.stationuuid || (s.name + '|' + (s.url || ''))); }
+// favStationsJSON / mergeFavStations are the backup hooks (#778): export hands
+// the raw store to the backup file, import merges the file's list back in.
+// Merging (not replacing) is deliberate: restoring onto a damaged install adds
+// everything back, and restoring an old file onto a healthy one cannot delete
+// the stars added since.
+function favStationsJSON() {
+  try { return localStorage.getItem(FAV_KEY) || '[]'; } catch { return '[]'; }
+}
+function mergeFavStations(json) {
+  let incoming = [];
+  try { incoming = JSON.parse(json) || []; } catch { /* not a list: nothing to merge */ }
+  if (!Array.isArray(incoming)) incoming = [];
+  const arr = loadFavStore();
+  const have = new Set(arr.map(favId));
+  let added = 0;
+  for (const s of incoming) {
+    const id = favId(s);
+    if (!id || have.has(id)) continue;
+    arr.push(favMinimal(s));
+    have.add(id);
+    added++;
+  }
+  if (added) saveFavStore(arr);
+  updateFavModeBtn();
+  return { added, total: arr.length };
+}
 function isFav(s) {
   const id = favId(s);
   return !!id && loadFavStore().some(x => favId(x) === id);

@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} en échec, {{unconfirmed}} non confirmés, {{done}} mis à jour, {{deferred}} reportés.",
   "speaker.staleVersionTitle": "Dernière version confirmée. L'enceinte est injoignable pour le moment, cette valeur peut être dépassée.",
   "banner.appCheckFailed": "La vérification a échoué. Les téléchargements restent disponibles sur st-reborn.de.",
-  "multiroom.stereoOffline": "Injoignable : {{names}}. Allumez l’enceinte et réessayez."
+  "multiroom.stereoOffline": "Injoignable : {{names}}. Allumez l’enceinte et réessayez.",
+  "settingsView.backupHeading": "Sauvegarde",
+  "settingsView.backupHelp": "Enregistre vos favoris et les touches de présélection de chaque enceinte dans un fichier, par exemple avant un changement. La restauration réécrit les présélections sur les enceintes correspondantes et ajoute les favoris ; les favoris existants sont conservés.",
+  "settingsView.backupExportBtn": "Enregistrer la sauvegarde",
+  "settingsView.backupImportBtn": "Restaurer la sauvegarde",
+  "settingsView.backupExportDone": "Sauvegardé : {{favs}} favoris et {{presets}} présélections de {{speakers}} enceintes.",
+  "settingsView.backupImportDone": "Restauré : {{presets}} présélections sur {{speakers}} enceintes, {{favs}} favoris ajoutés.",
+  "settingsView.backupNotReached": "Non inclus : {{names}}. Allumez ces enceintes et réessayez pour elles."
 }

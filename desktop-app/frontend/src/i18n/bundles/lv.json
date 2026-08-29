@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} neizdevās, {{unconfirmed}} neapstiprināti, {{done}} atjaunināti, {{deferred}} atlikti.",
   "speaker.staleVersionTitle": "Pēdējā apstiprinātā versija. Skaļrunis pašlaik nav sasniedzams, vērtība var būt novecojusi.",
   "banner.appCheckFailed": "Pārbaude neizdevās. Lejupielādes joprojām pieejamas vietnē st-reborn.de.",
-  "multiroom.stereoOffline": "Nav sasniedzams: {{names}}. Ieslēdziet skaļruni un mēģiniet vēlreiz."
+  "multiroom.stereoOffline": "Nav sasniedzams: {{names}}. Ieslēdziet skaļruni un mēģiniet vēlreiz.",
+  "settingsView.backupHeading": "Rezerves kopija",
+  "settingsView.backupHelp": "Saglabā jūsu izlasi un visu skaļruņu iepriekšnoteikto staciju taustiņus vienā failā. Atjaunojot saglabātie iestatījumi tiek ierakstīti atbilstošajos skaļruņos un izlase tiek papildināta; esošā izlase paliek.",
+  "settingsView.backupExportBtn": "Saglabāt kopiju",
+  "settingsView.backupImportBtn": "Atjaunot kopiju",
+  "settingsView.backupExportDone": "Saglabāts: {{favs}} izlases ieraksti un {{presets}} iestatījumi no {{speakers}} skaļruņiem.",
+  "settingsView.backupImportDone": "Atjaunots: {{presets}} iestatījumi {{speakers}} skaļruņos, pievienoti {{favs}} izlases ieraksti.",
+  "settingsView.backupNotReached": "Nav iekļauts: {{names}}. Ieslēdziet šos skaļruņus un mēģiniet vēlreiz."
 }

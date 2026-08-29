@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} فشل، {{unconfirmed}} غير مؤكد، {{done}} تم تحديثه، {{deferred}} مؤجل.",
   "speaker.staleVersionTitle": "آخر إصدار مؤكد. مكبر الصوت غير متاح حالياً، وقد تكون هذه القيمة قديمة.",
   "banner.appCheckFailed": "تعذّر إتمام الفحص. لا تزال التنزيلات متاحة على st-reborn.de.",
-  "multiroom.stereoOffline": "تعذّر الوصول: {{names}}. شغّل مكبّر الصوت وحاول مرة أخرى."
+  "multiroom.stereoOffline": "تعذّر الوصول: {{names}}. شغّل مكبّر الصوت وحاول مرة أخرى.",
+  "settingsView.backupHeading": "النسخ الاحتياطي",
+  "settingsView.backupHelp": "يحفظ المفضلة وأزرار الإعدادات المسبقة لكل مكبرات الصوت في ملف واحد. عند الاستعادة تُكتب الإعدادات المسبقة المحفوظة على مكبرات الصوت المطابقة وتُضاف المفضلة؛ وتبقى المفضلة الحالية كما هي.",
+  "settingsView.backupExportBtn": "حفظ النسخة",
+  "settingsView.backupImportBtn": "استعادة النسخة",
+  "settingsView.backupExportDone": "تم الحفظ: {{favs}} من المفضلة و{{presets}} من الإعدادات المسبقة من {{speakers}} من مكبرات الصوت.",
+  "settingsView.backupImportDone": "تمت الاستعادة: {{presets}} من الإعدادات المسبقة على {{speakers}} من مكبرات الصوت، وأُضيف {{favs}} من المفضلة.",
+  "settingsView.backupNotReached": "غير مشمول: {{names}}. شغّل مكبرات الصوت هذه وحاول مرة أخرى."
 }

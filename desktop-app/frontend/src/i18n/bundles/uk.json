@@ -1340,5 +1340,12 @@
   "updateAll.problemToast": "{{failed}} невдало, {{unconfirmed}} не підтверджено, {{done}} оновлено, {{deferred}} відкладено.",
   "speaker.staleVersionTitle": "Остання підтверджена версія. Колонка зараз недоступна, значення може бути застарілим.",
   "banner.appCheckFailed": "Перевірка не вдалася. Завантаження, як і раніше, доступні на st-reborn.de.",
-  "multiroom.stereoOffline": "Недоступно: {{names}}. Увімкніть колонку та спробуйте ще раз."
+  "multiroom.stereoOffline": "Недоступно: {{names}}. Увімкніть колонку та спробуйте ще раз.",
+  "settingsView.backupHeading": "Резервна копія",
+  "settingsView.backupHelp": "Зберігає ваші улюблені станції та кнопки пресетів усіх колонок в один файл, наприклад перед змінами. Під час відновлення збережені пресети записуються на відповідні колонки, а улюблені додаються; наявні улюблені зберігаються.",
+  "settingsView.backupExportBtn": "Зберегти копію",
+  "settingsView.backupImportBtn": "Відновити копію",
+  "settingsView.backupExportDone": "Збережено: {{favs}} улюблених і {{presets}} пресетів із {{speakers}} колонок.",
+  "settingsView.backupImportDone": "Відновлено: {{presets}} пресетів на {{speakers}} колонках, додано {{favs}} улюблених.",
+  "settingsView.backupNotReached": "Не включено: {{names}}. Увімкніть ці колонки та спробуйте ще раз."
 }
