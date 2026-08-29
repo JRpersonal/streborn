@@ -2409,7 +2409,24 @@ async function loadZone() {
   var shown = (typeof z.loudest === 'number' && z.loudest >= 0) ? z.loudest : z.average;
   // Same reason: pulling the thumb back to a pre-write level mid-gesture is
   // what the finger feels as the slider fighting back.
-  if (volScope !== 'one' && typeof shown === 'number' && shown >= 0 && !grpVolSettling()) {
+  //
+  // And beyond the fixed settle window: a refresh whose members still REPORT
+  // pre-write levels must not move the slider either. The 1.5 s window was
+  // shorter than one slow member's report, so a single +1 step visibly sprang
+  // back, volLast took the old value, and the next identical press was
+  // swallowed by the volLast dedupe: the user had to step TWICE for one step
+  // to stick (#726 follow-up, 2026-08-29). Hold the sent value until the
+  // members confirm what we asked for, bounded at 8 s so a genuinely failed
+  // write still resurfaces the truth.
+  var GRP_VOL_CONFIRM_MS = 8000;
+  var grpWantPending = Object.keys(grpVol.want).length > 0 &&
+      (Date.now() - grpVol.sentAt) < GRP_VOL_CONFIRM_MS &&
+      (zone.members || []).some(function(m){
+        var want = grpVol.want[m.ip];
+        return typeof want === 'number' && typeof m.volume === 'number' &&
+               m.volume >= 0 && Math.abs(m.volume - want) > 1;
+      });
+  if (volScope !== 'one' && typeof shown === 'number' && shown >= 0 && !grpVolSettling() && !grpWantPending) {
     var el = document.getElementById('vol');
     if (el) { el.value = shown; document.getElementById('volval').textContent = shown; volLast = shown; }
   }

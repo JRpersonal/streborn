@@ -169,6 +169,24 @@ func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
 	}
 }
 
+// A group-volume refresh that still reports pre-write member levels must not
+// pull the slider back: the fixed settle window was shorter than one slow
+// member's report, the slider sprang back after a single +1 step, and the
+// volLast dedupe then swallowed the next identical press, so one step took two
+// (#726 follow-up, 2026-08-29). The adopt condition must be gated on the
+// members actually confirming the wanted levels.
+func TestPhoneRemoteGroupVolumeHoldsSentValue(t *testing.T) {
+	for _, want := range []string{"GRP_VOL_CONFIRM_MS", "grpWantPending"} {
+		if !strings.Contains(indexHTML, want) {
+			t.Fatalf("phone page is missing %q", want)
+		}
+	}
+	i := strings.Index(indexHTML, "!grpVolSettling() && !grpWantPending")
+	if i < 0 {
+		t.Error("the group slider adopt is not gated on the members confirming the sent levels")
+	}
+}
+
 // TestPhoneRemoteSleepArmingIsNotSelfCancelling guards the defect that made the
 // sleep timer unusable from the day it shipped: press() adds .active as a
 // 600 ms tap flash, and the click handler read .active as "this choice is
