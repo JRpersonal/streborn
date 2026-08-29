@@ -2453,9 +2453,16 @@ function searchMsg(text, bad) {
   el.className = 'msg' + (bad ? ' bad' : '');
 }
 
+/* searchToken drops a radio answer the user has already searched past, the
+   same guard the library search below has had since #666 (libToken). Without
+   it a SLOW first query could answer after a second one and repaint the rows
+   under the user's finger, so the tap saved a station from the other list
+   (#758: a preset save landing on a station the user never picked). */
+var searchToken = 0;
 async function searchStations() {
   var q = (document.getElementById('q').value || '').trim();
   if (!q) return;
+  var token = ++searchToken;
   document.getElementById('results').innerHTML = '';
   searchMsg(T.searching, false);
   searchLibrary(q); // media servers, in parallel with the radio directory
@@ -2463,13 +2470,16 @@ async function searchStations() {
   for (var i = 0; i < RB_MIRRORS.length; i++) {
     try {
       var r = await fetch(RB_MIRRORS[i] + path, { headers: { 'Accept': 'application/json' } });
+      if (token !== searchToken) return; // a newer search is already on screen
       if (!r.ok) continue;
       var list = await r.json();
+      if (token !== searchToken) return;
       lastResults = Array.isArray(list) ? list : [];
       renderResults();
       return;
     } catch (e) { /* try the next mirror */ }
   }
+  if (token !== searchToken) return;
   searchMsg(T.netFail, true);
 }
 
