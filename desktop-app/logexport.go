@@ -782,8 +782,10 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	// JSON rather than XML, so it needs the equivalent pass.
 	s.BoxSnapshot = anonymizeBoxSnapshotJSON(s.BoxSnapshot)
 	s.STRStatus = anonymizeText(s.STRStatus)
-	// The zone JSON carries member IPs and device IDs.
-	s.STRZone = anonymizeText(s.STRZone)
+	// The zone JSON carries member IPs and device IDs, and speaker/pair names
+	// under plain "name" keys that the friendlyName-keyed scrub deliberately
+	// skips; those need the structured pass or they ship in the clear.
+	s.STRZone = anonymizeZoneJSON(s.STRZone)
 	// /api/agent/version carries the user-chosen friendlyName ("Bose Wit"), which
 	// was previously copied into the bundle verbatim. Round-trip the parsed map
 	// through scrubPII so friendlyName (and any device ID it grows) is hashed like
@@ -892,6 +894,49 @@ func hashAccountFields(v any) any {
 // from a text blob using the same shared pass (scrubPII) as the app log. Used
 // for box-side logs we pull over SSH and the /api/debug state so the user can
 // safely attach them to a public GitHub issue.
+// anonymizeZoneJSON hashes the speaker and pair names in the zone JSON. The
+// zone's name fields live under plain "name" keys (remembered[].name,
+// stereo.name), which the friendlyName-keyed scrub deliberately skips so it
+// does not over-scrub radio or preset names, and so a household's speaker
+// names shipped in the clear (found in a 2026-08-29 bundle: a real practice
+// name in remembered[].name). In the ZONE document every "name" IS a speaker
+// or pair name, so hashing them all over-scrubs nothing. Falls back to the
+// plain text pass when the JSON does not parse.
+func anonymizeZoneJSON(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return s
+	}
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err == nil {
+		hashZoneNames(v)
+		if b, err := json.Marshal(v); err == nil {
+			s = string(b)
+		}
+	}
+	return anonymizeText(s)
+}
+
+// hashZoneNames walks a decoded zone document and replaces every non-empty
+// string under a "name" key with its NAME# hash, in place.
+func hashZoneNames(v any) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, val := range t {
+			if k == "name" {
+				if str, ok := val.(string); ok && str != "" {
+					t[k] = "NAME#" + hashShort(str)
+				}
+				continue
+			}
+			hashZoneNames(val)
+		}
+	case []any:
+		for _, item := range t {
+			hashZoneNames(item)
+		}
+	}
+}
+
 func anonymizeText(s string) string {
 	return scrubPII(s)
 }
