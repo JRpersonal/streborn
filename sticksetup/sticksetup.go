@@ -362,6 +362,17 @@ func WriteWLANConfig(targetPath string, cfg WLANConfig) error {
 	if cfg.SSID == "" {
 		return fmt.Errorf("SSID must not be empty")
 	}
+	// An SSID with an EMPTY password provisions an OPEN network profile on the
+	// box, and applied against a protected home Wi-Fi that kicks the speaker
+	// off the network right after an otherwise successful install (field
+	// report 2026-08-29: install fine, speaker gone from the WLAN; the wizard
+	// prefills the SSID but reading the stored password can fail, leaving the
+	// field empty). Refuse loudly; a stale wlan.conf from an earlier attempt
+	// is removed so the stick cannot carry the trap either way.
+	if strings.TrimSpace(cfg.Password) == "" {
+		_ = os.Remove(filepath.Join(targetPath, "wlan.conf"))
+		return fmt.Errorf("Wi-Fi password is empty; refusing to write wlan.conf (an empty password would switch the speaker to an open-network profile and drop it off a protected Wi-Fi)")
+	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err

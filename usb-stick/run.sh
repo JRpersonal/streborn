@@ -1654,6 +1654,21 @@ elif [ -r "$WLAN_CREDS_NAND" ]; then
         setup_log "wlan-creds: app apply-pending marker present -> active provision this boot (#184)"
     fi
 fi
+# GUARD: an SSID with an EMPTY password provisions an OPEN-network profile,
+# and applied against a protected home Wi-Fi that kicks the box off the
+# network right after an otherwise clean install (field report 2026-08-29:
+# install fine, speaker gone from the WLAN; the wizard prefilled the SSID but
+# the password field stayed empty). The app refuses to write such a wlan.conf
+# since the same day, but old sticks and old NAND creds can still carry the
+# trap, so the box refuses it too: skip provisioning entirely and keep
+# whatever Wi-Fi the box already has. Open home networks lose the seed, which
+# is the safe direction; the Bose app path still onboards those.
+if [ -n "$SSID" ] && [ -z "$PASS" ]; then
+    setup_log "wlan provisioning REFUSED: SSID present (name_length=${#SSID}, src=$WLAN_SOURCE) but password empty - an open-network profile would kick the box off a protected Wi-Fi; keeping the current network"
+    SSID=""
+    HIDDEN=""
+    WLAN_SOURCE=""
+fi
 # Wireless-interface detection. Two real cases on SoundTouch hardware
 # (every model has Wi-Fi — the Portable has ONLY Wi-Fi, no RJ45):
 #

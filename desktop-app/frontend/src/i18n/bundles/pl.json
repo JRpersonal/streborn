@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Wymaga aktualizacji głośnika",
   "spotify.qualityPending": "Zostanie zastosowana po zatrzymaniu odtwarzania",
   "spotify.qualitySet": "Zmieniono jakość",
-  "spotify.qualityFailed": "Głośnik odrzucił zmianę"
+  "spotify.qualityFailed": "Głośnik odrzucił zmianę",
+  "setup.wlanNoPass": "Nie podano hasła Wi-Fi, więc dane Wi-Fi nie zostały zapisane na nośniku. Głośnik zachowuje obecną sieć. Podaj SSID i hasło, jeśli nośnik ma skonfigurować Wi-Fi."
 }

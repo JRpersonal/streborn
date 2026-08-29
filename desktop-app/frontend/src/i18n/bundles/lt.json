@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Reikia kolonėlės atnaujinimo",
   "spotify.qualityPending": "Pritaikoma sustabdžius grojimą",
   "spotify.qualitySet": "Kokybė pakeista",
-  "spotify.qualityFailed": "Kolonėlė atmetė pakeitimą"
+  "spotify.qualityFailed": "Kolonėlė atmetė pakeitimą",
+  "setup.wlanNoPass": "Neįvestas Wi-Fi slaptažodis, todėl Wi-Fi nustatymai į atmintinę neįrašyti. Kolonėlė lieka dabartiniame tinkle. Įveskite SSID ir slaptažodį, jei atmintinė turi sukonfigūruoti Wi-Fi."
 }

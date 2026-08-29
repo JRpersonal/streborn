@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Nécessite une mise à jour de l'enceinte",
   "spotify.qualityPending": "Appliqué à l'arrêt de la lecture",
   "spotify.qualitySet": "Qualité modifiée",
-  "spotify.qualityFailed": "L'enceinte a refusé le changement"
+  "spotify.qualityFailed": "L'enceinte a refusé le changement",
+  "setup.wlanNoPass": "Aucun mot de passe Wi-Fi saisi, les réglages Wi-Fi n'ont donc pas été écrits sur la clé. L'enceinte garde son Wi-Fi actuel. Saisissez SSID et mot de passe si la clé doit configurer le Wi-Fi."
 }

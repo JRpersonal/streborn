@@ -1369,7 +1369,17 @@ async function doSetup() {
     }
     const ssid = $('wlanSsid').value.trim();
     const pass = $('wlanPass').value;
-    if (ssid) {
+    if (ssid && !pass) {
+      // Eine SSID ohne Passwort wuerde die Box auf ein OFFENES Netz
+      // umstellen und sie aus einem geschuetzten Heim-WLAN werfen (Feldfall
+      // 2026-08-29: Installation erfolgreich, Lautsprecher danach nicht mehr
+      // im WLAN). Die SSID wird vorbefuellt, das Passwort-Auslesen kann
+      // scheitern, also ist das leere Feld ein realistischer Zustand. Nicht
+      // schreiben, deutlich sagen warum; das Go-Backend lehnt denselben Fall
+      // zusaetzlich ab und run.sh auf der Box ignoriert Alt-Sticks mit
+      // leerem Passwort.
+      html += `<div class="setup-warn">${escapeHtml(t('setup.wlanNoPass'))}</div>`;
+    } else if (ssid) {
       try {
         await WriteWLANConfig(drive.path, ssid, pass);
         html += `<div class="setup-ok">${escapeHtml(t('setup.wlanSaved', { ssid }))}</div>`;
