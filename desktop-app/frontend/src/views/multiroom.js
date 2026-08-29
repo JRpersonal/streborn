@@ -594,10 +594,25 @@ async function doDissolveStereo(pairCands) {
     renderMultiroom(false);
     return;
   }
+  // A target the app lists as offline gets no DELETE: the call cannot clear
+  // anything on a speaker that is not there, it just burns the transport
+  // timeouts and surfaces a raw dial error (field, 2026-08-29: the no-pair
+  // fallback aimed at an unplugged speaker and the panel showed connectex
+  // noise). Say which speaker is out instead; the reachable half of a pair
+  // is still asked below and clears its side.
+  const offline = targets.filter(b => b.offline);
+  const reachable = targets.filter(b => !b.offline);
+  if (!reachable.length) {
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoOffline', {
+      names: offline.map(b => zoneLabel(b)).join(', '),
+    }))}</div>`;
+    renderMultiroom(false);
+    return;
+  }
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   let dissolved = false;
   let failure = null;
-  for (const box of targets) {
+  for (const box of reachable) {
     try {
       // The stereo-intent endpoint: it also dissolves a firmware pair the agent
       // has no persisted record of (agent reinstalled, pair formed elsewhere),
@@ -614,7 +629,12 @@ async function doDissolveStereo(pairCands) {
     }
   }
   if (dissolved) {
-    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
+    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`
+      // The skipped offline half keeps its side of the pair until it is back;
+      // name it so a later "the pair is still there" has its explanation.
+      + (offline.length ? `<div class="setup-warn">${escapeHtml(t('multiroom.stereoOffline', {
+          names: offline.map(b => zoneLabel(b)).join(', '),
+        }))}</div>` : '');
     showToast(t('multiroom.stereoDissolved'));
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;

@@ -1339,5 +1339,6 @@
   "setup.stickReadOnly": "Mac zamontował ten nośnik tylko do odczytu. Zwykle dzieje się tak, gdy wyjęto go bez wysunięcia. Otwórz Narzędzie dyskowe i uruchom Pierwszą pomoc dla nośnika albo sformatuj go tam jako MS-DOS (FAT); potem zapis będzie działał.",
   "updateAll.problemToast": "{{failed}} nieudanych, {{unconfirmed}} niepotwierdzonych, {{done}} zaktualizowanych, {{deferred}} odłożonych.",
   "speaker.staleVersionTitle": "Ostatnia potwierdzona wersja. Głośnik jest teraz nieosiągalny, wartość może być nieaktualna.",
-  "banner.appCheckFailed": "Sprawdzanie nie powiodło się. Pliki do pobrania są nadal dostępne na st-reborn.de."
+  "banner.appCheckFailed": "Sprawdzanie nie powiodło się. Pliki do pobrania są nadal dostępne na st-reborn.de.",
+  "multiroom.stereoOffline": "Nieosiągalne: {{names}}. Włącz głośnik i spróbuj ponownie."
 }

@@ -1339,5 +1339,6 @@
   "setup.stickReadOnly": "Mac šo zibatmiņu pievienoja tikai lasīšanai. Tā parasti notiek, ja tā izvilkta bez izstumšanas. Atveriet Disk Utility un palaidiet First Aid vai formatējiet to tur kā MS-DOS (FAT); pēc tam rakstīšana darbosies.",
   "updateAll.problemToast": "{{failed}} neizdevās, {{unconfirmed}} neapstiprināti, {{done}} atjaunināti, {{deferred}} atlikti.",
   "speaker.staleVersionTitle": "Pēdējā apstiprinātā versija. Skaļrunis pašlaik nav sasniedzams, vērtība var būt novecojusi.",
-  "banner.appCheckFailed": "Pārbaude neizdevās. Lejupielādes joprojām pieejamas vietnē st-reborn.de."
+  "banner.appCheckFailed": "Pārbaude neizdevās. Lejupielādes joprojām pieejamas vietnē st-reborn.de.",
+  "multiroom.stereoOffline": "Nav sasniedzams: {{names}}. Ieslēdziet skaļruni un mēģiniet vēlreiz."
 }

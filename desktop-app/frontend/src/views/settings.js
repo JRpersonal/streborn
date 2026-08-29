@@ -595,16 +595,23 @@ async function fillMusicLib(box) {
       if (msg) msg.innerHTML = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
       let ok = 0;
       const failed = [];
-      for (const b of [box, ...otherBoxes]) {
-        try {
-          await EnableBoxMediaServer(b.host, b.port, srv.id, srv.friendlyName || '');
-          ok++;
-        } catch {
-          // Named, not swallowed: a speaker that was asleep or off is exactly
-          // the one the user needs to know about, and the rest still succeed.
-          failed.push(getBoxLabel(b));
-        }
-      }
+      // A speaker the app lists as offline goes straight onto the not-reached
+      // list without a network attempt: asking it anyway cost the full
+      // transport timeouts mid-loop, and one unplugged box held this spinner
+      // for over 20 seconds (field, 2026-08-29). The reachable ones are asked
+      // in parallel for the same reason: the wait is the slowest answer, not
+      // the sum of all of them.
+      const targets = [box, ...otherBoxes];
+      targets.filter(b => b.offline).forEach(b => failed.push(getBoxLabel(b)));
+      const live = targets.filter(b => !b.offline);
+      const results = await Promise.allSettled(
+        live.map(b => EnableBoxMediaServer(b.host, b.port, srv.id, srv.friendlyName || '')));
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') ok++;
+        // Named, not swallowed: a speaker that was asleep or off is exactly
+        // the one the user needs to know about, and the rest still succeed.
+        else failed.push(getBoxLabel(live[i]));
+      });
       if (msg) {
         msg.innerHTML = failed.length
           ? `<div class="setup-warn">${escapeHtml(t('settingsView.musicLibAllPartial', { ok, failed: failed.join(', ') }))}</div>`

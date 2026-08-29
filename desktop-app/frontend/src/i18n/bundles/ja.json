@@ -1339,5 +1339,6 @@
   "setup.stickReadOnly": "MacがこのUSBメモリーを読み取り専用でマウントしました。取り出し操作をせずに抜いた場合によく起こります。ディスクユーティリティでFirst Aidを実行するか、MS-DOS (FAT)で再フォーマットすると、書き込めるようになります。",
   "updateAll.problemToast": "{{failed}} 件失敗、{{unconfirmed}} 件未確認、{{done}} 件更新、{{deferred}} 件保留。",
   "speaker.staleVersionTitle": "最後に確認できたバージョンです。スピーカーに現在接続できないため、古い可能性があります。",
-  "banner.appCheckFailed": "確認できませんでした。st-reborn.de から引き続きダウンロードできます。"
+  "banner.appCheckFailed": "確認できませんでした。st-reborn.de から引き続きダウンロードできます。",
+  "multiroom.stereoOffline": "{{names}} に接続できません。スピーカーの電源を入れて、もう一度お試しください。"
 }
