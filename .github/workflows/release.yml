@@ -1841,3 +1841,38 @@ jobs:
           done
           echo "::error::no website build started; run it by hand: gh workflow run website-deploy.yml --repo JRpersonal/streborn-website"
           exit 1
+
+  # Der #734-Dauerbrenner sass NACH dem Dispatch: der Website Build holte
+  # releases/latest (das direkt nach dem Publish noch den Vorgaenger liefern
+  # kann) statt des dispatchten Tags, und niemand pruefte, was live ankommt.
+  # Seit 2026-08-29 pinnt der Website Build den Payload Tag und prueft seine
+  # Live-Version selbst; dieser Job ist das Ende-zu-Ende-Netz ohne PAT: er
+  # wartet, bis st-reborn.de wirklich die neue Version ausliefert, und wird
+  # sonst ROT. Ein roter Job neben einem gruenen Release ist Absicht: das
+  # Release ist da, der Handoff zur Webseite nicht.
+  verify-website-live:
+    runs-on: ubuntu-latest
+    needs: [build-agent, release]
+    if: |
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+    timeout-minutes: 35
+    steps:
+      - name: Warten bis st-reborn.de die neue Version ausliefert
+        env:
+          TAG: ${{ needs.build-agent.outputs.version }}
+        run: |
+          set -u
+          echo "erwarte $TAG auf https://st-reborn.de/api/update.json"
+          for i in $(seq 1 60); do
+            live=$(curl -sS --max-time 15 "https://st-reborn.de/api/update.json?relverify=$(date +%s)" \
+              | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            if [ "$live" = "$TAG" ]; then
+              echo "Website liefert $TAG (nach etwa $((i*30)) Sekunden)"
+              exit 0
+            fi
+            echo "Versuch $i/60: live='$live', warte 30s"
+            sleep 30
+          done
+          echo "::error::st-reborn.de liefert nach 30 Minuten immer noch nicht $TAG. Handoff pruefen: gh run list --repo JRpersonal/streborn-website"
+          exit 1
