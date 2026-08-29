@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Потрібне оновлення колонки",
   "spotify.qualityPending": "Застосується після зупинки відтворення",
   "spotify.qualitySet": "Якість змінено",
-  "spotify.qualityFailed": "Колонка відхилила зміну"
+  "spotify.qualityFailed": "Колонка відхилила зміну",
+  "setup.wlanNoPass": "Пароль Wi-Fi не введено, тому налаштування Wi-Fi не записано на флешку. Колонка залишається у своїй поточній мережі. Введіть SSID і пароль, якщо флешка має налаштувати Wi-Fi."
 }

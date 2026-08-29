@@ -928,18 +928,25 @@ async function startNetworkInstall(box) {
   const tzForBox = ($('netBoxTz') && $('netBoxTz').value) || '';
   const format24ForBox = detectClockFormat24();
   // Wi-Fi to write onto the box after install so it stays reachable once the
-  // Ethernet cable is pulled. Empty SSID => skip the write (box stays wired). A
-  // non-empty SSID needs an open net (empty pass) or a >=8 char WPA passphrase
-  // (the agent's handleBoxWLAN guard); a bad password does NOT block the install,
-  // it just skips the Wi-Fi write, so the user is never stuck on a typo.
+  // Ethernet cable is pulled. Empty SSID => skip the write (box stays wired).
+  // Eine SSID mit LEEREM Passwort wurde hier frueher als offenes Netz
+  // durchgereicht und per force:true auf die Box angewendet; gegen ein
+  // geschuetztes Heim-WLAN wirft das die Box direkt nach der erfolgreichen
+  // OTA-Installation aus dem Netz (Feldfall 2026-08-29: SSID vorbefuellt,
+  // Passwort-Auslesen leise gescheitert). Ohne Passwort wird deshalb NICHTS
+  // geschrieben und der Hinweis unten sagt es klar; ein zu kurzes Passwort
+  // ueberspringt den Schritt weiterhin, statt die Installation zu blocken.
   const ssid = ($('netWlanSsid') && $('netWlanSsid').value.trim()) || '';
   const pass = ($('netWlanPass') && $('netWlanPass').value) || '';
   // Hidden networks never show up in the speaker's site survey, so the flag
   // is passed through to the agent, which then skips its visibility preflight
   // and provisions with scan_ssid=1.
   const hidden = !!($('netWlanHidden') && $('netWlanHidden').checked);
-  const wifiForBox = (ssid && (pass === '' || pass.length >= 8)) ? { ssid, pass, hidden } : null;
-  const lead = `<div class="setup-ok">${escapeHtml(t('setup.netInstallOn', { name }))}</div>`;
+  const wifiForBox = (ssid && pass.length >= 8) ? { ssid, pass, hidden } : null;
+  let lead = `<div class="setup-ok">${escapeHtml(t('setup.netInstallOn', { name }))}</div>`;
+  if (ssid && !pass) {
+    lead += `<div class="setup-warn">${escapeHtml(t('setup.wlanNoPass'))}</div>`;
+  }
   try {
     await waitForBoxAfterSetup({ ssid: '', pass: '', html: lead, knownBox: box, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox });
   } finally {
@@ -1369,7 +1376,17 @@ async function doSetup() {
     }
     const ssid = $('wlanSsid').value.trim();
     const pass = $('wlanPass').value;
-    if (ssid) {
+    if (ssid && !pass) {
+      // Eine SSID ohne Passwort wuerde die Box auf ein OFFENES Netz
+      // umstellen und sie aus einem geschuetzten Heim-WLAN werfen (Feldfall
+      // 2026-08-29: Installation erfolgreich, Lautsprecher danach nicht mehr
+      // im WLAN). Die SSID wird vorbefuellt, das Passwort-Auslesen kann
+      // scheitern, also ist das leere Feld ein realistischer Zustand. Nicht
+      // schreiben, deutlich sagen warum; das Go-Backend lehnt denselben Fall
+      // zusaetzlich ab und run.sh auf der Box ignoriert Alt-Sticks mit
+      // leerem Passwort.
+      html += `<div class="setup-warn">${escapeHtml(t('setup.wlanNoPass'))}</div>`;
+    } else if (ssid) {
       try {
         await WriteWLANConfig(drive.path, ssid, pass);
         html += `<div class="setup-ok">${escapeHtml(t('setup.wlanSaved', { ssid }))}</div>`;

@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Hoparlör güncellemesi gerekiyor",
   "spotify.qualityPending": "Çalma durunca uygulanır",
   "spotify.qualitySet": "Kalite değiştirildi",
-  "spotify.qualityFailed": "Hoparlör değişikliği reddetti"
+  "spotify.qualityFailed": "Hoparlör değişikliği reddetti",
+  "setup.wlanNoPass": "Wi-Fi şifresi girilmediği için Wi-Fi ayarları belleğe yazılmadı. Hoparlör mevcut Wi-Fi ağında kalır. Belleğin Wi-Fi kurmasını istiyorsanız SSID ve şifreyi birlikte girin."
 }

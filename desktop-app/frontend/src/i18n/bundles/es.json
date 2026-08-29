@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Necesita una actualización del altavoz",
   "spotify.qualityPending": "Se aplica cuando se detiene la reproducción",
   "spotify.qualitySet": "Calidad cambiada",
-  "spotify.qualityFailed": "El altavoz rechazó el cambio"
+  "spotify.qualityFailed": "El altavoz rechazó el cambio",
+  "setup.wlanNoPass": "No se introdujo contraseña de Wi-Fi, así que los datos de Wi-Fi no se escribieron en el USB. El altavoz conserva su Wi-Fi actual. Introduce SSID y contraseña si el USB debe configurar la Wi-Fi."
 }

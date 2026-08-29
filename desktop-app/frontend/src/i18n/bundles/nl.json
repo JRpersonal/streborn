@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Vereist een speaker-update",
   "spotify.qualityPending": "Wordt toegepast zodra het afspelen stopt",
   "spotify.qualitySet": "Kwaliteit gewijzigd",
-  "spotify.qualityFailed": "De speaker heeft de wijziging geweigerd"
+  "spotify.qualityFailed": "De speaker heeft de wijziging geweigerd",
+  "setup.wlanNoPass": "Geen wifi-wachtwoord ingevoerd, dus de wifi-gegevens zijn niet naar de stick geschreven. De speaker behoudt zijn huidige wifi. Vul SSID en wachtwoord in als de stick de wifi moet instellen."
 }

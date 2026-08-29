@@ -1334,5 +1334,6 @@
   "spotify.qualityUnavailable": "Nepieciešams skaļruņa atjauninājums",
   "spotify.qualityPending": "Tiks piemērots, kad atskaņošana apstāsies",
   "spotify.qualitySet": "Kvalitāte nomainīta",
-  "spotify.qualityFailed": "Skaļrunis noraidīja izmaiņu"
+  "spotify.qualityFailed": "Skaļrunis noraidīja izmaiņu",
+  "setup.wlanNoPass": "Wi-Fi parole nav ievadīta, tāpēc Wi-Fi iestatījumi netika ierakstīti zibatmiņā. Skaļrunis paliek pašreizējā tīklā. Ievadiet SSID un paroli, ja zibatmiņai jāiestata Wi-Fi."
 }
