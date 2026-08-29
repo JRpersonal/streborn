@@ -276,6 +276,47 @@ func (m *Manager) ArmRecallCut() {
 	m.mu.Unlock()
 }
 
+// cutShortOfDuration reports whether a track whose pages ended at prevGran
+// samples was cut clearly short of its known duration. The 5 s slack covers
+// the fraction-of-a-second disagreement between the final granule and the
+// advertised duration on a natural end, and a skip within the last seconds of
+// a song is heard as the natural transition anyway.
+func cutShortOfDuration(prevGran, prevBody, durMs int64) bool {
+	if prevBody == 0 || prevGran <= 0 || durMs <= 0 {
+		return false
+	}
+	return prevGran*1000/vorbisRate < durMs-5000
+}
+
+// noteTrackBoundaryCut runs the app-skip detector at a track boundary: it
+// shifts the duration queue (see durQueueMs in Manager) and, when the ended
+// track was cut mid-play while NO STR-issued cut was armed, stamps the skip
+// boundary and re-points the box so its buffered tail of the old track is
+// dropped. STR's own skip and recall paths arm the cut first, so they never
+// trip this; a boundary with no known duration (agent restarted mid-play) is
+// conservatively treated as natural.
+func (m *Manager) noteTrackBoundaryCut(prevGran, prevBody int64) {
+	m.mu.Lock()
+	endedMs := m.streamTrackDurMs
+	if len(m.durQueueMs) > 0 {
+		m.streamTrackDurMs = m.durQueueMs[0]
+		m.durQueueMs = m.durQueueMs[1:]
+	} else {
+		m.streamTrackDurMs = 0
+	}
+	armed := time.Now().Before(m.skipCutUntil)
+	m.mu.Unlock()
+	if armed || !cutShortOfDuration(prevGran, prevBody, endedMs) {
+		return
+	}
+	m.logger.Info("spotify: mid-track boundary without an STR skip (Spotify-app skip), re-pointing the box to drop its buffered tail",
+		"playedSec", prevGran/vorbisRate, "durationSec", endedMs/1000)
+	// Stamp the boundary like an STR skip would, so the webui's soft-skip
+	// bookkeeping (LastSkipBoundary consumers) sees a consistent timeline.
+	m.noteSkipBoundary()
+	m.repointForForeignSkip()
+}
+
 // skipCutArmed reports whether an armed user skip is awaiting its track
 // boundary; clearSkipCut disarms it the moment that boundary arrives, so the
 // new track's pages are never mistaken for stale ones.
