@@ -95,3 +95,41 @@ func TestAddRejectsEmptyID(t *testing.T) {
 		t.Error("an entry without an id must be rejected")
 	}
 }
+
+// The resolved device-description address survives a reboot (#726: without it
+// every agent restart paid the whole discovery chain again, about a minute on
+// a box that cannot hear the server's announcements), and re-enabling the
+// server must not wipe it.
+func TestLocationPersistsAcrossReloadAndReenable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ms.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := s.Add(Server{ID: "AAAA", Name: "NAS"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := s.SetLocation("AAAA", "http://192.0.2.7:50001/desc.xml"); err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	// Unknown id: ignored, no error, no write.
+	if err := s.SetLocation("NOPE", "http://x/"); err != nil {
+		t.Fatalf("unknown id must be a no-op, got %v", err)
+	}
+
+	re, err := Load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	list := re.List()
+	if len(list) != 1 || list[0].Location != "http://192.0.2.7:50001/desc.xml" {
+		t.Fatalf("location lost across reload: %+v", list)
+	}
+	// A re-enable (same id, changed name, no location) keeps the address.
+	if err := re.Add(Server{ID: "AAAA", Name: "NAS umbenannt"}); err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+	if got := re.List()[0].Location; got != "http://192.0.2.7:50001/desc.xml" {
+		t.Fatalf("re-enable wiped the location: %q", got)
+	}
+}

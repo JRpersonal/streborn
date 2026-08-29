@@ -173,6 +173,45 @@ func TestRematchByNameRecoversUUIDRegeneratingServer(t *testing.T) {
 	}
 }
 
+// After an agent restart the in-memory location map is empty; the persisted
+// store address must seed the recall so the first browse goes straight to the
+// server instead of paying the whole discovery chain (#726: about a minute on
+// a box that cannot hear the server's announcements).
+func TestRecallSeedsFromPersistedLocation(t *testing.T) {
+	const xml = `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+    <friendlyName>NETHomeData</friendlyName>
+    <UDN>uuid:SEED-1</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+        <controlURL>/ctl</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/xml")
+		_, _ = io.WriteString(w, xml)
+	}))
+	defer srv.Close()
+
+	store, err := mediaservers.Load(filepath.Join(t.TempDir(), "ms.json"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	_ = store.Add(mediaservers.Server{ID: "SEED-1", Name: "NETHomeData"})
+	_ = store.SetLocation("SEED-1", srv.URL+"/desc.xml")
+
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), mediaServers: store}
+	got, ok := s.recallMediaServer(context.Background(), udnKey("SEED-1"))
+	if !ok || got.FriendlyName != "NETHomeData" {
+		t.Fatalf("recall did not resolve from the persisted location: ok=%v srv=%+v", ok, got)
+	}
+}
+
 // A failed browse must say which servers DID answer, or the user cannot tell a
 // dark NAS from a broken STR. The #733 bundle had a live WD-01 and three
 // FritzBox servers on the network while the browsed WD-02 was off; only the
