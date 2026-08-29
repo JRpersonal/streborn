@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. Atlasiet USB zibatmiņu",
   "setup.searchAgain": "Meklēt vēlreiz",
   "setup.searchingSticks": "Tiek meklētas USB zibatmiņas...",
-  "setup.formatToggleLabel": "Vispirms formatēt zibatmiņu (FAT32, dzēš datus). Ieteicams jaunām zibatmiņām. Windows pieprasīs administratora tiesības.",
+  "setup.formatToggleLabel": "Vispirms formatēt zibatmiņu (FAT32, dzēš datus). Ieteicams jaunām zibatmiņām.",
   "setup.step2Heading": "2. Skaļruņa nosaukums <small>(neobligāti)</small>",
   "setup.step2Help": "Ievadiet savu nosaukumu vai atlasiet istabu. Skaļruņa ID tiek pievienots automātiski.",
   "setup.namePlaceholder": "piem. Dzīvojamā istaba",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Atjaunot kopiju",
   "settingsView.backupExportDone": "Saglabāts: {{favs}} izlases ieraksti un {{presets}} iestatījumi no {{speakers}} skaļruņiem.",
   "settingsView.backupImportDone": "Atjaunots: {{presets}} iestatījumi {{speakers}} skaļruņos, pievienoti {{favs}} izlases ieraksti.",
-  "settingsView.backupNotReached": "Nav iekļauts: {{names}}. Ieslēdziet šos skaļruņus un mēģiniet vēlreiz."
+  "settingsView.backupNotReached": "Nav iekļauts: {{names}}. Ieslēdziet šos skaļruņus un mēģiniet vēlreiz.",
+  "setup.stickMacPrivacy": "macOS bloķē lietotnes piekļuvi USB zibatmiņām. Atveriet Sistēmas iestatījumus, Privātums un drošība, Faili un mapes, un atļaujiet ST Reborn piekļuvi noņemamajiem sējumiem. Pēc tam atvienojiet zibatmiņu un pievienojiet to vēlreiz.",
+  "update.engineMissing": "{{name}} darbojas ar jauno versiju, bet joprojām trūkst Spotify komponenta no pēdējā atjauninājuma. Atveriet skaļruņa iestatījumus un palaidiet atjauninājumu vēlreiz; tas tiek piegādāts bez restarta.",
+  "setup.formatToggleWinHint": "Windows prasīs administratora tiesības."
 }

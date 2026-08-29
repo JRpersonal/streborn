@@ -2269,6 +2269,14 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
 .format-toggle input { accent-color: var(--brand); margin-top: 2px; }
 .format-warn { background: #3a1a1a; border: 1px solid #8a3a3a; color: #f88; padding: 10px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; display: flex; gap: 10px; align-items: center; }
 .format-warn b { color: #fcc; }
+/* Both of these hardcoded their dark-theme colours, so in the light theme the
+   warning sat as a near-black box and the Playground pill as a dark chip on a
+   white page: legible only barely, and visibly foreign (field screenshots,
+   2026-08-29). Light equivalents keep the same meaning at readable contrast. */
+html.a11y-light .format-warn { background: #fdecec; border-color: #e0a3a3; color: #a03232; }
+html.a11y-light .format-warn b { color: #7c2020; }
+html.a11y-light .warn-icon-inline { color: #c05050; }
+html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; background: #faf3df; }
 .warn-icon-inline { font-size: 22px; color: #f88; }
 
 /* ---------- Footer ---------- */

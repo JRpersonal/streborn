@@ -983,7 +983,7 @@
   "setup.step1Heading": "1. USB-Stick auswählen",
   "setup.searchAgain": "Neu suchen",
   "setup.searchingSticks": "Suche nach USB-Sticks ...",
-  "setup.formatToggleLabel": "Stick zuerst formatieren (FAT32, löscht Daten). Empfohlen für neue Sticks. Windows fragt nach Admin-Rechten.",
+  "setup.formatToggleLabel": "Stick zuerst formatieren (FAT32, löscht Daten). Empfohlen für neue Sticks.",
   "setup.step2Heading": "2. Lautsprecher-Name <small>(optional)</small>",
   "setup.step2Help": "Eigener Name oder Raum wählen. Lautsprecher-ID wird automatisch angehängt.",
   "setup.namePlaceholder": "z.B. Wohnzimmer",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Sicherung wiederherstellen",
   "settingsView.backupExportDone": "Gesichert: {{favs}} Favoriten und {{presets}} Presets von {{speakers}} Lautsprechern.",
   "settingsView.backupImportDone": "Wiederhergestellt: {{presets}} Presets auf {{speakers}} Lautsprechern, {{favs}} Favoriten ergänzt.",
-  "settingsView.backupNotReached": "Nicht dabei: {{names}}. Schalte diese Lautsprecher ein und versuch es dort noch einmal."
+  "settingsView.backupNotReached": "Nicht dabei: {{names}}. Schalte diese Lautsprecher ein und versuch es dort noch einmal.",
+  "setup.stickMacPrivacy": "macOS blockiert den Zugriff der App auf USB-Sticks. Öffne Systemeinstellungen, Datenschutz und Sicherheit, Dateien und Ordner, und erlaube ST Reborn dort den Zugriff auf Wechseldatenträger. Steck den Stick danach einmal ab und wieder an.",
+  "update.engineMissing": "{{name}} läuft auf der neuen Version, aber der Spotify-Baustein vom letzten Update fehlt noch. Öffne die Lautsprecher-Einstellungen und starte das Update dort noch einmal, er wird ohne Neustart nachgeliefert.",
+  "setup.formatToggleWinHint": "Windows fragt dabei nach Administratorrechten."
 }

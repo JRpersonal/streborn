@@ -7,6 +7,7 @@ package sticksetup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
@@ -138,6 +140,16 @@ func CheckStick(path string) StickCheck {
 		c.Reason = "too-small"
 	case !c.Writable && mountReadOnly(path):
 		c.Reason = "read-only"
+	case !c.Writable && isMacPrivacyDenial(werr):
+		// macOS gates app access to removable volumes behind a per-app
+		// privacy consent (TCC). A denied or never-granted consent fails
+		// every file operation with EPERM while the volume itself mounts
+		// read-write, which the old message blamed on the stick's lock
+		// switch. A field log (2026-08-29) showed exactly this: FAT32,
+		// readOnlyMount=false, "operation not permitted" on the probe, and
+		// weeks of stick swapping that could never have helped. The way out
+		// is System Settings, not another stick.
+		c.Reason = "macos-privacy"
 	case !c.Writable:
 		c.Reason = "not-writable"
 	case !c.IsFAT32:
@@ -152,6 +164,17 @@ func CheckStick(path string) StickCheck {
 // path, and the underlying error when it cannot. Catches a physically
 // write-protected stick (lock switch), a read-only mount (macOS + dirty
 // FAT32, #775) or a flaky reader before the agent write begins.
+// isMacPrivacyDenial recognizes macOS's TCC refusal on removable volumes:
+// EPERM ("operation not permitted") on a volume under /Volumes that is NOT
+// mounted read-only. Plain permission problems return EACCES ("permission
+// denied") instead, so they keep their generic message.
+func isMacPrivacyDenial(err error) bool {
+	if err == nil || runtime.GOOS != "darwin" {
+		return false
+	}
+	return errors.Is(err, syscall.EPERM)
+}
+
 func stickWritable(path string) (bool, error) {
 	probe := filepath.Join(path, ".str-write-test.tmp")
 	if err := os.WriteFile(probe, []byte("str"), 0o644); err != nil {

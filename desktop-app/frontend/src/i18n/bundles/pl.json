@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. Wybierz pendrive USB",
   "setup.searchAgain": "Szukaj ponownie",
   "setup.searchingSticks": "Szukanie pendrive'ów USB...",
-  "setup.formatToggleLabel": "Najpierw sformatuj pendrive (FAT32, usuwa dane). Zalecane dla nowych pendrive'ów. Windows poprosi o uprawnienia administratora.",
+  "setup.formatToggleLabel": "Najpierw sformatuj nośnik (FAT32, kasuje dane). Zalecane dla nowych nośników.",
   "setup.step2Heading": "2. Nazwa głośnika <small>(opcjonalnie)</small>",
   "setup.step2Help": "Wpisz własną nazwę lub wybierz pomieszczenie. Identyfikator głośnika zostanie dodany automatycznie.",
   "setup.namePlaceholder": "np. Salon",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Przywróć kopię",
   "settingsView.backupExportDone": "Zapisano: {{favs}} ulubionych i {{presets}} presetów z {{speakers}} głośników.",
   "settingsView.backupImportDone": "Przywrócono: {{presets}} presetów na {{speakers}} głośnikach, dodano {{favs}} ulubionych.",
-  "settingsView.backupNotReached": "Pominięto: {{names}}. Włącz te głośniki i spróbuj ponownie."
+  "settingsView.backupNotReached": "Pominięto: {{names}}. Włącz te głośniki i spróbuj ponownie.",
+  "setup.stickMacPrivacy": "macOS blokuje aplikacji dostęp do nośników USB. Otwórz Ustawienia systemowe, Prywatność i bezpieczeństwo, Pliki i foldery, i zezwól ST Reborn na dostęp do woluminów wymiennych. Potem odłącz nośnik i podłącz go ponownie.",
+  "update.engineMissing": "{{name}} działa na nowej wersji, ale wciąż brakuje komponentu Spotify z ostatniej aktualizacji. Otwórz ustawienia głośnika i uruchom aktualizację jeszcze raz; zostanie dostarczony bez restartu.",
+  "setup.formatToggleWinHint": "Windows poprosi o uprawnienia administratora."
 }

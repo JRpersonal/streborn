@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. USB-stick kiezen",
   "setup.searchAgain": "Opnieuw zoeken",
   "setup.searchingSticks": "Zoeken naar USB-sticks...",
-  "setup.formatToggleLabel": "Stick eerst formatteren (FAT32, wist gegevens). Aanbevolen voor nieuwe sticks. Windows vraagt om beheerdersrechten.",
+  "setup.formatToggleLabel": "Stick eerst formatteren (FAT32, wist gegevens). Aanbevolen voor nieuwe sticks.",
   "setup.step2Heading": "2. Speakernaam <small>(optioneel)</small>",
   "setup.step2Help": "Typ je eigen naam of kies een ruimte. Er wordt automatisch een speaker-ID toegevoegd.",
   "setup.namePlaceholder": "bijv. Woonkamer",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Back-up herstellen",
   "settingsView.backupExportDone": "Opgeslagen: {{favs}} favorieten en {{presets}} presets van {{speakers}} speakers.",
   "settingsView.backupImportDone": "Hersteld: {{presets}} presets op {{speakers}} speakers, {{favs}} favorieten toegevoegd.",
-  "settingsView.backupNotReached": "Niet meegenomen: {{names}}. Zet deze speakers aan en probeer het opnieuw."
+  "settingsView.backupNotReached": "Niet meegenomen: {{names}}. Zet deze speakers aan en probeer het opnieuw.",
+  "setup.stickMacPrivacy": "macOS blokkeert de toegang van de app tot USB-sticks. Open Systeeminstellingen, Privacy en beveiliging, Bestanden en mappen, en geef ST Reborn toegang tot verwisselbare volumes. Koppel de stick daarna los en sluit hem weer aan.",
+  "update.engineMissing": "{{name}} draait op de nieuwe versie, maar het Spotify-onderdeel van de laatste update ontbreekt nog. Open de speakerinstellingen en start de update daar nog een keer; het wordt zonder herstart geleverd.",
+  "setup.formatToggleWinHint": "Windows vraagt om beheerdersrechten."
 }

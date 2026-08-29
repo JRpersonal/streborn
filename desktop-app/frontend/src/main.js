@@ -3114,8 +3114,12 @@ async function superviseUpdateIntent(box) {
   if (!pending || !pending.action) return;
   supervisedIntent.add(key);
   // One line, once per speaker per session, pointing at the button the user
-  // would press anyway. No push, no reboot, no surprise.
-  showToast(t('update.leftUnfinished', { name: pending.name || getBoxLabel(box) }));
+  // would press anyway. No push, no reboot, no surprise. The engine case gets
+  // its own words: "the update is unfinished" on a speaker whose version tile
+  // looks current read as nonsense (field, 2026-08-29), when the truth was
+  // simply a missing Spotify component the next update click delivers.
+  const intentKey = pending.action === 'engine' ? 'update.engineMissing' : 'update.leftUnfinished';
+  showToast(t(intentKey, { name: pending.name || getBoxLabel(box) }));
 }
 
 // installSpotifyEngineVisible delivers the Spotify engine (go-librespot) to a box

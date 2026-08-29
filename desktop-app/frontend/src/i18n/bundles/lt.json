@@ -901,7 +901,7 @@
   "setup.step1Heading": "1. Pasirinkite USB atmintinę",
   "setup.searchAgain": "Ieškoti iš naujo",
   "setup.searchingSticks": "Ieškoma USB atmintinių...",
-  "setup.formatToggleLabel": "Pirmiausia suformatuoti atmintinę (FAT32, ištrina duomenis). Rekomenduojama naujoms atmintinėms. Windows paprašys administratoriaus teisių.",
+  "setup.formatToggleLabel": "Pirmiausia suformatuoti atmintinę (FAT32, ištrina duomenis). Rekomenduojama naujoms atmintinėms.",
   "setup.step2Heading": "2. Garsiakalbio pavadinimas <small>(neprivaloma)</small>",
   "setup.step2Help": "Įveskite savo pavadinimą arba pasirinkite kambarį. Garsiakalbio ID pridedamas automatiškai.",
   "setup.namePlaceholder": "pvz. Svetainė",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "Atkurti kopiją",
   "settingsView.backupExportDone": "Įrašyta: {{favs}} mėgstamiausių ir {{presets}} nustatymų iš {{speakers}} garsiakalbių.",
   "settingsView.backupImportDone": "Atkurta: {{presets}} nustatymų {{speakers}} garsiakalbiuose, pridėta {{favs}} mėgstamiausių.",
-  "settingsView.backupNotReached": "Neįtraukta: {{names}}. Įjunkite šiuos garsiakalbius ir bandykite dar kartą."
+  "settingsView.backupNotReached": "Neįtraukta: {{names}}. Įjunkite šiuos garsiakalbius ir bandykite dar kartą.",
+  "setup.stickMacPrivacy": "macOS blokuoja programos prieigą prie USB atmintinių. Atidarykite Sistemos nustatymus, Privatumas ir sauga, Failai ir aplankai, ir leiskite ST Reborn pasiekti keičiamuosius tomus. Tada ištraukite atmintinę ir įkiškite iš naujo.",
+  "update.engineMissing": "{{name}} veikia su nauja versija, bet vis dar trūksta Spotify komponento iš paskutinio atnaujinimo. Atidarykite garsiakalbio nustatymus ir paleiskite atnaujinimą dar kartą; jis įdiegiamas be perkrovimo.",
+  "setup.formatToggleWinHint": "Windows paprašys administratoriaus teisių."
 }

@@ -983,7 +983,7 @@
   "setup.step1Heading": "1. 選擇 USB 隨身碟",
   "setup.searchAgain": "重新搜尋",
   "setup.searchingSticks": "正在搜尋 USB 隨身碟...",
-  "setup.formatToggleLabel": "先格式化隨身碟（FAT32，會清除資料）。新的隨身碟建議這樣做。Windows 會要求管理員權限。",
+  "setup.formatToggleLabel": "先格式化隨身碟（FAT32，會清除資料）。建議用於新的隨身碟。",
   "setup.step2Heading": "2. 喇叭名稱 <small>（選填）</small>",
   "setup.step2Help": "自己輸入或選一個房間。喇叭 ID 會自動加在後面。",
   "setup.namePlaceholder": "例如 客廳",
@@ -1347,5 +1347,8 @@
   "settingsView.backupImportBtn": "還原備份",
   "settingsView.backupExportDone": "已備份：{{favs}} 個最愛，以及 {{speakers}} 台喇叭的 {{presets}} 個預設。",
   "settingsView.backupImportDone": "已還原：{{speakers}} 台喇叭上的 {{presets}} 個預設，並加入 {{favs}} 個最愛。",
-  "settingsView.backupNotReached": "未包含：{{names}}。請開啟這些喇叭後再試一次。"
+  "settingsView.backupNotReached": "未包含：{{names}}。請開啟這些喇叭後再試一次。",
+  "setup.stickMacPrivacy": "macOS 正在阻擋這個應用程式存取 USB 隨身碟。請開啟「系統設定」、「隱私權與安全性」、「檔案與檔案夾」，允許 ST Reborn 存取可移除卷宗。然後拔下隨身碟再重新插入。",
+  "update.engineMissing": "{{name}} 已在新版本上運作，但上次更新的 Spotify 元件仍缺少。請開啟喇叭設定並再次執行更新；元件會在不重新啟動的情況下送達。",
+  "setup.formatToggleWinHint": "Windows 會要求系統管理員權限。"
 }
