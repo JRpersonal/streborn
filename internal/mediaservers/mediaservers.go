@@ -33,6 +33,13 @@ type Server struct {
 	// reboot uses the same label the user saw, and so the box can be told the
 	// display name when the source is removed again.
 	Name string `json:"name,omitempty"`
+	// Location is the device-description URL this server was last actually
+	// DESCRIBED at. It survives the agent's restarts, so the first browse
+	// after a reboot goes straight to the server instead of paying the whole
+	// discovery chain. #726 measured that chain at about a minute on a box
+	// that cannot hear the server's announcements; with the persisted address
+	// the recall probe answers in a second or two.
+	Location string `json:"location,omitempty"`
 }
 
 // Store is the persisted set of enabled servers.
@@ -106,11 +113,37 @@ func (s *Store) Add(srv Server) error {
 		return fmt.Errorf("media server has no id")
 	}
 	s.mu.Lock()
-	if cur, ok := s.servers[srv.ID]; ok && cur.Name == srv.Name {
+	if cur, ok := s.servers[srv.ID]; ok {
+		if cur.Name == srv.Name {
+			s.mu.Unlock()
+			return nil
+		}
+		// A re-enable never knows the resolved address; keep the one on file.
+		if srv.Location == "" {
+			srv.Location = cur.Location
+		}
+	}
+	s.servers[srv.ID] = srv
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// SetLocation remembers the device-description URL a server was last described
+// at (see Server.Location). Persists only on a CHANGE, so steady-state resolves
+// cost no NAND writes; an id that is not enabled is ignored.
+func (s *Store) SetLocation(id, loc string) error {
+	id, loc = strings.TrimSpace(id), strings.TrimSpace(loc)
+	if id == "" || loc == "" {
+		return nil
+	}
+	s.mu.Lock()
+	cur, ok := s.servers[id]
+	if !ok || cur.Location == loc {
 		s.mu.Unlock()
 		return nil
 	}
-	s.servers[srv.ID] = srv
+	cur.Location = loc
+	s.servers[id] = cur
 	s.mu.Unlock()
 	return s.Save()
 }

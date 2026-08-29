@@ -193,7 +193,6 @@ func udnKey(udn string) string {
 // can still reach the server directly (see recallMediaServer).
 func (s *Server) rememberMediaServerLocations(found []dlna.Server) {
 	s.mediaLocMu.Lock()
-	defer s.mediaLocMu.Unlock()
 	if s.mediaLoc == nil {
 		s.mediaLoc = make(map[string]string, len(found))
 	}
@@ -203,6 +202,46 @@ func (s *Server) rememberMediaServerLocations(found []dlna.Server) {
 		}
 		s.mediaLoc[udnKey(srv.UDN)] = srv.Location
 	}
+	s.mediaLocMu.Unlock()
+	for _, srv := range found {
+		if srv.Location != "" {
+			s.persistMediaServerLocation(udnKey(srv.UDN), srv.Location)
+		}
+	}
+}
+
+// persistMediaServerLocation writes a resolved address into the media-server
+// store when the key belongs to a REGISTERED server, so it survives the agent's
+// restarts (#726: the in-memory map alone meant every reboot paid the whole
+// discovery chain again, about a minute on a box that cannot hear the server).
+// The store only writes on a change, so the steady state costs no NAND writes.
+func (s *Server) persistMediaServerLocation(key, loc string) {
+	if s.mediaServers == nil || loc == "" {
+		return
+	}
+	for _, reg := range s.mediaServers.List() {
+		if udnKey(reg.ID) == key {
+			if err := s.mediaServers.SetLocation(reg.ID, loc); err != nil {
+				s.logger.Warn("library resolve: could not persist the server's address", "err", err)
+			}
+			return
+		}
+	}
+}
+
+// storedMediaServerLocation returns the persisted last-known address for a
+// registered server, "" when none is on file. The reboot-surviving seed for
+// recallMediaServer.
+func (s *Server) storedMediaServerLocation(key string) string {
+	if s.mediaServers == nil {
+		return ""
+	}
+	for _, reg := range s.mediaServers.List() {
+		if udnKey(reg.ID) == key {
+			return strings.TrimSpace(reg.Location)
+		}
+	}
+	return ""
 }
 
 // rememberMediaServerLocationAs stores a device-description URL under a SPECIFIC
@@ -220,6 +259,7 @@ func (s *Server) rememberMediaServerLocationAs(key, loc string) {
 	}
 	s.mediaLoc[key] = loc
 	s.mediaLocMu.Unlock()
+	s.persistMediaServerLocation(key, loc)
 }
 
 // registeredName returns the friendly name the user registered a server under,
@@ -283,6 +323,11 @@ func (s *Server) recallMediaServer(ctx context.Context, key string) (dlna.Server
 	s.mediaLocMu.Lock()
 	loc := s.mediaLoc[key]
 	s.mediaLocMu.Unlock()
+	if loc == "" {
+		// The in-memory map is empty after every agent restart; the store
+		// carries the last address across reboots (#726).
+		loc = s.storedMediaServerLocation(key)
+	}
 	if loc == "" {
 		return dlna.Server{}, false
 	}

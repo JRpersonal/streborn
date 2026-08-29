@@ -133,6 +133,20 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 // without wiping the one reachable address when discovery comes back empty.
 func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, []dlna.Server, bool) {
 	key := udnKey(udn)
+	// The speaker's own discovery cache first, and only its CHEAP half: one
+	// boxapi GET plus one description fetch, a second or two. The firmware
+	// hears NOTIFY announcements continuously and keeps its list across the
+	// agent's restarts, so for a server that answers no probes (Twonky, #733)
+	// or a box that cannot hear the multicast at all (#726) this is the fast
+	// path. The old order ran it AFTER the full SSDP window and the peer
+	// rounds, which #726 measured as about a minute to the first browse after
+	// a reboot. The expensive unicast probe stays behind the SSDP round.
+	if ip, boxLoc, known := s.boxCacheEntry(ctx, key); known && boxLoc != "" {
+		if srv, ok := s.describeAt(ctx, key, boxLoc, "the speaker's own cached location"); ok {
+			return srv, nil, true
+		}
+		_ = ip
+	}
 	// Early exit on the strict UDN match only: FindServer returns the moment
 	// the registered server is described (the healthy case pays one or two
 	// seconds, not the full listen window), while the name rematch below needs
@@ -383,47 +397,56 @@ func (s *Server) handleLibraryLocate(w http.ResponseWriter, r *http.Request) {
 // exit logs its reason: this path only runs when the phone page is about to
 // show "server not answering", and a silent miss here cannot be told apart
 // from a server that is genuinely off (#726).
-func (s *Server) resolveViaBoxCache(ctx context.Context, key string, discovered int) (dlna.Server, bool) {
+// boxCacheEntry reads the speaker's own /listMediaServers cache and returns
+// the registered server's entry (last seen IP and device-description URL).
+// known=false when the box does not currently list it.
+func (s *Server) boxCacheEntry(ctx context.Context, key string) (ip, loc string, known bool) {
 	if s.boxHost == "" {
-		return dlna.Server{}, false
+		return "", "", false
 	}
-	known, err := boxapi.New(s.boxHost).ListMediaServers(ctx)
+	list, err := boxapi.New(s.boxHost).ListMediaServers(ctx)
 	if err != nil {
-		s.logger.Warn("library resolve: server unresolved and the speaker's own list could not be read",
-			"discovered", discovered, "err", err)
-		return dlna.Server{}, false
+		s.logger.Info("library resolve: the speaker's own server list could not be read", "err", err)
+		return "", "", false
 	}
-	ip, boxLoc := "", ""
-	for _, m := range known {
+	for _, m := range list {
 		if udnKey(m.ID) == key {
-			ip, boxLoc = m.IP, strings.TrimSpace(m.Location)
-			break
+			return m.IP, strings.TrimSpace(m.Location), true
 		}
 	}
-	if ip == "" && boxLoc == "" {
+	return "", "", false
+}
+
+// describeAt fetches the device description at loc and accepts it when it IS
+// the registered server (UDN, or registered name for a UUID-regenerated one).
+// The accepted address is remembered for recall. via names the source for the
+// log line.
+func (s *Server) describeAt(ctx context.Context, key, loc, via string) (dlna.Server, bool) {
+	pctx, cancel := context.WithTimeout(ctx, libraryRecallTimeout)
+	srv, err := dlna.DescribeServer(pctx, loc)
+	cancel()
+	if err == nil && srv.CDSControlURL != "" && s.serverMatchesKey(srv, key) {
+		s.rememberMediaServerLocationAs(key, srv.Location)
+		s.logger.Info("library resolve: described the server at "+via, "location", loc)
+		return srv, true
+	}
+	s.logger.Info("library resolve: "+via+" did not describe the server", "location", loc, "err", err)
+	return dlna.Server{}, false
+}
+
+func (s *Server) resolveViaBoxCache(ctx context.Context, key string, discovered int) (dlna.Server, bool) {
+	ip, _, known := s.boxCacheEntry(ctx, key)
+	if !known {
 		s.logger.Warn("library resolve: server unresolved, the speaker's own discovery does not see it either",
-			"discovered", discovered, "boxKnows", len(known))
+			"discovered", discovered)
 		return dlna.Server{}, false
 	}
-	// The firmware's list carries the device-description URL its own discovery
-	// recorded, and that is the decisive path for a server that never answers
-	// M-SEARCH at all: Twonky ignores the unicast probe below while its HTTP
-	// side serves the description fine, which is exactly why the #733 box could
-	// browse WD-02 natively (firmware cache, NOTIFY-fed) while every probe STR
-	// sent came back empty. Ask that URL directly before probing.
-	if boxLoc != "" {
-		pctx, cancel := context.WithTimeout(ctx, libraryRecallTimeout)
-		srv, err := dlna.DescribeServer(pctx, boxLoc)
-		cancel()
-		if err == nil && srv.CDSControlURL != "" && s.serverMatchesKey(srv, key) {
-			s.rememberMediaServerLocationAs(key, srv.Location)
-			s.logger.Info("library resolve: described the server at the speaker's own cached location",
-				"location", boxLoc)
-			return srv, true
-		}
-		s.logger.Info("library resolve: the speaker's cached location did not describe the server",
-			"location", boxLoc, "err", err)
+	if ip == "" {
+		return dlna.Server{}, false
 	}
+	// The cheap location describe already ran at the START of the fresh chain
+	// (see resolveMediaServerFresh); what is left here is the unicast probe at
+	// the address the firmware names.
 	found, err := dlna.SearchHost(ctx, ip, libraryUnicastProbe)
 	if err != nil {
 		s.logger.Warn("library resolve: unicast probe failed", "ip", ip, "err", err)
