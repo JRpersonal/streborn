@@ -189,6 +189,49 @@ func TestAMirrorGroupSurvivesAnEmptyZoneRead(t *testing.T) {
 	}
 }
 
+// A PERMANENT (native default) group must survive the empty /getZone that
+// standby and reboot always produce. The whole point of the opt-in is that the
+// group re-forms on the master's next play (#70), and the play-reform reads this
+// document; if standby drops it, the reform has nothing to act on and the master
+// plays alone. Live regression: Portable master, put into standby, then a radio
+// started on it, played solo because the document had already been cleared
+// (2026-08-30). Even the ordinary two denials must not drop a permanent group.
+func TestAPermanentGroupSurvivesAnEmptyZoneRead(t *testing.T) {
+	doc := nativeDoc()
+	doc.Permanent = true
+	s, st := staleDocServer(t, "192.0.2.10", doc, true)
+	withSpeakers(t, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-MASTER"})
+
+	for i := 0; i < 3; i++ {
+		if !s.boxInZone() {
+			t.Fatal("a permanent group must keep its document across the standby that dissolves the firmware zone")
+		}
+	}
+	if !storedGroup(t, st) {
+		t.Fatal("the permanent group document was dropped, so the play-triggered re-form has nothing to rebuild from")
+	}
+}
+
+// The regression boundary: a NON-permanent native group is still dropped after
+// two denials, so power-on resume for the ordinary case is unchanged. This is
+// the exact case TestSecondEmptyZoneReadDropsTheStaleGroupDocument covers, made
+// explicit next to the permanent case so the boundary is not accidentally moved.
+func TestANonPermanentNativeGroupIsStillDropped(t *testing.T) {
+	doc := nativeDoc() // Permanent defaults to false
+	s, st := staleDocServer(t, "192.0.2.10", doc, true)
+	withSpeakers(t, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-MASTER"})
+
+	if !s.boxInZone() || !storedGroup(t, st) {
+		t.Fatal("the first empty read must change nothing")
+	}
+	if s.boxInZone() {
+		t.Fatal("an ordinary native group must stand down after the speaker denies it twice, or power-on resume never runs")
+	}
+	if storedGroup(t, st) {
+		t.Fatal("an ordinary native group must be dropped after two denials, so other readers stop believing in it")
+	}
+}
+
 // Unchanged: no document, the speaker says no zone, the speaker resumes.
 func TestAStandaloneSpeakerStillResumes(t *testing.T) {
 	s, _ := staleDocServer(t, "192.0.2.10", zones.Zone{}, false)
