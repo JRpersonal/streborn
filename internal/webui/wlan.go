@@ -59,9 +59,8 @@ var (
 // had typed a network in: the app offered the computer's own known networks,
 // the user picked one, and the speaker then said it could not see it. That is
 // the wrong way round. Asking the speaker first means the user only ever sees
-// what is actually reachable, and the "SoundTouch only supports 2.4 GHz"
-// explanation stops being something they have to know: a 5 GHz network simply
-// is not in the list.
+// what is actually reachable, so a network the speaker's radio cannot pick up
+// never gets offered in the first place.
 //
 // Only on request. The survey puts the radio into a scan for about five
 // seconds, so it must stay tied to the user pressing refresh rather than
@@ -140,10 +139,10 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pre-flight: confirm the box can actually SEE the target network before the
-	// switch. SoundTouch speakers are 2.4 GHz only, so pointing one at a 5 GHz-only
-	// network strands it (it leaves the current network, cannot join the new one,
-	// and then needs a Bose-app re-pair). The box's own site survey only lists the
-	// bands it supports, so an invisible SSID is the clean signal to refuse; the
+	// switch. Pointing a box at a network its own scan cannot see risks stranding
+	// it (it leaves the current network, cannot join the new one, and then needs a
+	// Bose-app re-pair). The box's own site survey is the clean signal, so an
+	// invisible SSID is the reason to refuse; the
 	// `force` flag lets the user override a momentarily-missed but real network,
 	// and `hidden` implies the same skip: a hidden SSID is invisible to the
 	// survey BY DESIGN, so refusing on invisibility would refuse every hidden
@@ -160,9 +159,8 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 			// the absence of evidence, and refusing on it told a user the
 			// opposite of the truth. A speaker on ethernet with no Wi-Fi
 			// configured scans and finds nothing at all, and the refusal then
-			// said "the speaker cannot see Vodafone-0674, SoundTouch only
-			// supports 2.4 GHz. Networks the speaker sees: -" while listing
-			// nothing. He was trying to correct a mistyped password on a
+			// wrongly claimed the target network was unreachable while listing
+			// nothing at all. He was trying to correct a mistyped password on a
 			// cabled ST20, which is exactly when this has to work (mail,
 			// 2026-08-15).
 			s.logger.Info("WLAN switch preflight: the speaker reported no networks at all, cannot verify, proceeding")
@@ -177,7 +175,7 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 			if !visible {
 				s.logger.Info("WLAN switch refused: target SSID not visible to the speaker", "ssid", req.SSID, "visible", ssids)
 				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-					"error":   "The speaker can't see that network. SoundTouch speakers only support 2.4 GHz Wi-Fi, so a 5 GHz network will not work. Pick a network the speaker can see, or switch anyway.",
+					"error":   "The speaker can't see that network in its own scan, so it may not be able to join it. Pick a network the speaker can see, or switch anyway.",
 					"code":    "ssid-not-visible",
 					"ssid":    req.SSID,
 					"visible": ssids,

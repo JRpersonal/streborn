@@ -2560,10 +2560,9 @@ function wireWlanSwitch(box) {
   //
   // These are different lists, and only the speaker's decides whether a switch
   // can work. Offering the computer's known networks meant a user picked one,
-  // committed, and only then learned the speaker could not see it, which is
-  // where the "SoundTouch only supports 2.4 GHz" explanation came from. A
-  // 5 GHz network is simply not in the speaker's list, so the rule does not
-  // have to be taught at all.
+  // committed, and only then learned the speaker could not see it. A network
+  // the speaker's own radio cannot pick up is simply not in its list, so the
+  // switch is refused on that fact alone, with no claim about why.
   //
   // The computer's list stays as the fallback for a speaker that cannot
   // survey, and typing a name by hand still works for a hidden network.
@@ -2636,9 +2635,8 @@ function wireWlanSwitch(box) {
       if (!r.ok) {
         const body = await r.text();
         // The agent's visibility preflight (422 ssid-not-visible) refused the
-        // switch because the speaker's own scan cannot see the target SSID
-        // (typically a 5 GHz-only network; the speakers are 2.4 GHz only).
-        // Explain it and offer a localized "switch anyway" that re-PUTs with
+        // switch because the speaker's own scan cannot see the target SSID.
+        // Surface it and offer a localized "switch anyway" that re-PUTs with
         // force:true instead of surfacing the raw JSON error.
         let refuse = null;
         if (r.status === 422) { try { refuse = JSON.parse(body); } catch {} }

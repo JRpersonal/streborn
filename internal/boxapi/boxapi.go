@@ -842,8 +842,8 @@ func (c *Client) url(path string) string {
 }
 
 // SiteSurvey kicks the box radio into a ~5 s scan via /performWirelessSiteSurvey
-// and returns the SSIDs the box can actually SEE. SoundTouch speakers are 2.4 GHz
-// only, so a 5 GHz-only network never appears here. STR uses this as a pre-flight
+// and returns the SSIDs the box can actually SEE. A network the box's own radio
+// cannot pick up never appears here. STR uses this as a pre-flight
 // before a Wi-Fi change so it never strands the box on a network it cannot join
 // (the box would otherwise leave its current network and fail to join the new
 // one, forcing a Bose-app re-pair).

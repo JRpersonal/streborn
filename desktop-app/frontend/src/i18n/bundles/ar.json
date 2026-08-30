@@ -764,7 +764,7 @@
   "settingsView.wlanHiddenToggle": "شبكة مخفية (لا تبثّ اسمها)",
   "settingsView.wlanHiddenHint": "حدّد هذا الخيار إذا كانت الشبكة لا تظهر في البحث. تبحث السمّاعة عنها عندئذ بالاسم.",
   "settingsView.wlanNotVisibleTitle": "السمّاعة لا ترى هذه الشبكة",
-  "settingsView.wlanNotVisibleBody": "لا تجد السمّاعة <b>{{ssid}}</b> أثناء البحث. سمّاعات SoundTouch تدعم فقط شبكات Wi-Fi بتردد 2.4 GHz. الشبكات التي تراها السمّاعة: {{visible}}. هل تريد التبديل رغم ذلك؟",
+  "settingsView.wlanNotVisibleBody": "لا تجد السمّاعة <b>{{ssid}}</b> في بحثها الخاص، لذا قد لا تتمكن من الاتصال بها. الشبكات التي تراها السمّاعة: {{visible}}. هل تريد التبديل رغم ذلك؟",
   "settingsView.wlanForceBtn": "التبديل رغم ذلك",
   "settingsView.wlanSsidEmpty": "يجب ألّا يكون SSID فارغًا",
   "settingsView.wlanSwitchedToast": "تم تغيير Wi-Fi. تحصل السمّاعة على IP جديد، أعد البحث في القائمة بعد لحظة.",
