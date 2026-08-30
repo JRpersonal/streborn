@@ -1595,11 +1595,21 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
       await sleep(3000); continue;
     }
 
-    // Already runs STR.
+    // Already runs STR. Continue must NOT re-enter the stick wait: the
+    // message promises "you'll be offered an update", and the wait loop it
+    // used to hand off into ignores STR speakers by design, so the button
+    // greyed out and the screen sat unchanged through a silent five-minute
+    // poll (field report + log, 2026-08-30). Hand over to the speaker view,
+    // where the update offer actually lives.
     if (cand && cand.kind === 'str') {
       lastSeenState = 'str';
       setStatus('setup-ok', t('setup.awaitAlreadyStr'));
-      arm(t('setup.awaitContinueBtn'), handoff);
+      arm(t('setup.awaitContinueBtn'), () => {
+        aborted = true;
+        stopTicker();
+        state.currentBox = cand;
+        deps.switchView('box');
+      });
       ready = true; break;
     }
 
