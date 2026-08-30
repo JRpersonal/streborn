@@ -5,29 +5,28 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. One thing settles almost every report, so please read this first.
+        Thanks for reporting. **Please attach a diagnostic file — almost every report can only be solved with one.** It contains **no passwords and no account data**, and a report with a diagnostic gets answered far faster than one without.
 
-        ### Please attach a diagnostic file  ·  Bitte häng eine Diagnosedatei an
+        *Danke für deine Meldung. **Bitte häng eine Diagnosedatei an — fast jede Meldung lässt sich nur damit lösen.** Sie enthält **keine Passwörter und keine Kontodaten**, und eine Meldung mit Diagnose wird deutlich schneller beantwortet.*
 
-        It carries your speaker model, firmware, and the agent log, and it is
-        what lets the maintainer find the cause instead of guessing. It contains
-        **no passwords and no account data**.
+        ### How to save it — So erstellst du sie
 
-        **In the desktop app (Windows / macOS / Linux):**
-        the **Save diagnostic logs** button (deutsch: **Diagnose-Log speichern**)
-        at the very bottom of the app.
+        **From the desktop app / In der Computer-App (Windows, macOS, Linux):**
+        1. Open the STR app. — *Öffne die STR-App.*
+        2. At the very **bottom of the window**, click **Save diagnostic logs**. — *Klick ganz **unten im Fenster** auf **Diagnose-Log speichern**.*
+        3. Drag the saved zip file into this issue. — *Zieh die gespeicherte Zip-Datei hier in die Meldung.*
 
-        **On the phone page** (the `http://<speaker-ip>:8888` page in your browser):
-        open **More → Report a problem → Save diagnostic file**
-        (deutsch: **Mehr → Problem melden → Diagnosedatei speichern**).
+        **From the phone page / Auf der Handy-Seite** (scan the QR code in the desktop app, or open `http://<speaker-ip>:8888` — port `17008` on some models — in the phone browser):
+        1. Open the **More** tab. — *Öffne den Reiter **Mehr**.*
+        2. Tap **Report a problem → Save diagnostic file**. — *Tipp auf **Problem melden → Diagnosedatei speichern**.*
+        3. Attach the saved file here. — *Häng die gespeicherte Datei hier an.*
 
-        Then drag the saved file into this issue. A report with a diagnostic is
-        answered far faster than one without.
+        Save it **right after the problem happened**, then the log carries the failure itself. — *Am besten **direkt nachdem der Fehler aufgetreten ist**, dann steckt der Fehler selbst im Log.*
   - type: textarea
     id: what
     attributes:
       label: What happens
-      description: What goes wrong, and what did you expect instead? In your own language is fine.
+      description: What goes wrong, and what did you expect instead? In your own language is fine. — Was geht schief, und was hättest du erwartet? Deutsch ist völlig okay.
       placeholder: e.g. Preset 3 flashes on the display, then the speaker turns itself off after a few seconds.
     validations:
       required: true
@@ -50,8 +49,8 @@ body:
     id: version
     attributes:
       label: STR version
-      description: Shown at the top of the desktop app window. If you are not sure, leave it blank, the diagnostic contains it.
-      placeholder: e.g. v0.9.60
+      description: Shown at the very bottom of the desktop app window, next to "Check for app updates". If you are not sure, leave it blank, the diagnostic contains it.
+      placeholder: e.g. v0.9.67
   - type: textarea
     id: steps
     attributes:
@@ -60,6 +59,8 @@ body:
   - type: checkboxes
     id: diagnostic
     attributes:
-      label: Diagnostic
+      label: Diagnostic file — Diagnosedatei
+      description: The how-to is at the top of this form. — Die Anleitung steht oben in diesem Formular.
       options:
-        - label: I attached a diagnostic file (or I will add it in a comment right after opening this).
+        - label: I attached a diagnostic file, or I wrote above why I cannot. — Ich habe eine Diagnosedatei angehängt, oder oben geschrieben, warum ich das nicht kann.
+          required: true
