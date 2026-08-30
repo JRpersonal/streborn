@@ -168,6 +168,7 @@
   "spotify.works3": "The remote's next and previous track keys skip the song.",
   "spotify.works4": "Several household accounts: a preset recalls under the account that saved it.",
   "spotify.limitsTitle": "Still rough (beta)",
+  "spotify.notesTitle": "Good to know",
   "spotify.limit1": "The display may show \"Spotify\" instead of the playlist title, and a hardware press can briefly flash \"service unavailable\" before playback starts.",
   "spotify.limit2": "Switching between two accounts restarts playback for a few seconds and works best when the other account's app is not actively connected.",
   "spotify.limit3": "Thumbs up/down on the remote are not supported.",

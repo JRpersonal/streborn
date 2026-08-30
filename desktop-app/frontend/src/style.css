@@ -2011,6 +2011,48 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .setup-help li { margin: 4px 0; line-height: 1.4; }
 .zone-controls { max-width: 40rem; display: flex; flex-direction: column; gap: 12px; }
 .zone-field { display: flex; flex-direction: column; gap: 6px; }
+
+/* Multi-room intro: a plain confident header, no beta pill (Jens 2026-08-30). */
+.zone-intro { max-width: 44rem; margin-bottom: 16px; }
+.zone-intro h2 { margin: 0 0 6px; }
+.zone-intro p { margin: 0 0 8px; color: var(--c-text-2); line-height: 1.5; }
+
+/* Permanent-group card: the headline multi-room feature, given a real panel
+   instead of a checkbox buried in the controls (Jens 2026-08-30). It highlights
+   with the same --brand accent the selected zone cards use, so "on" reads at a
+   glance. The whole panel is the label, so a click anywhere toggles it. */
+.zone-permanent-card {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 13px 15px; border: 1px solid var(--c-border); border-radius: 10px;
+  background: var(--c-surface-2); cursor: pointer;
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+.zone-permanent-card:hover { border-color: var(--c-border-2); }
+.zone-permanent-card.on { border-color: var(--brand); background: var(--brand-bg); box-shadow: 0 0 0 1px var(--brand) inset; }
+.zone-permanent-card input[type="checkbox"] { margin-top: 2px; flex: 0 0 auto; width: 17px; height: 17px; cursor: pointer; }
+.zone-permanent-body { display: flex; flex-direction: column; gap: 3px; }
+.zone-permanent-title { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.zone-permanent-icon { font-size: 15px; }
+
+/* Stereo pair as two channel cards that fill with the speaker names once the
+   pair exists (Jens 2026-08-30). Filled + highlighted when the selected pair is
+   actually live; a dash while a new pair is still being picked. */
+.stereo-cards { display: flex; gap: 12px; margin: 4px 0 6px; }
+.stereo-card {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px; border: 1px solid var(--c-border); border-radius: 8px;
+  background: var(--c-surface-2);
+}
+.stereo-card.on { border-color: var(--brand); background: var(--brand-bg); box-shadow: 0 0 0 1px var(--brand) inset; }
+.stereo-card-ch {
+  align-self: flex-start; font-weight: 700; font-size: 11px; line-height: 1;
+  padding: 3px 6px; border-radius: 5px; background: var(--c-surface-3); color: var(--c-text-2);
+}
+.stereo-card.on .stereo-card-ch { background: var(--brand); color: var(--brand-text); }
+.stereo-card-label { font-size: 11px; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.4px; }
+.stereo-card-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stereo-card-name.empty { color: var(--c-faint); font-weight: 400; }
+
 .zone-field > span { font-weight: 600; }
 .zone-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 .zone-pick-hint { margin: 0 0 10px; padding: 0; }

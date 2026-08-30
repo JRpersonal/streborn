@@ -159,6 +159,7 @@
   "spotify.works3": "Las teclas de pista siguiente y anterior del mando saltan la canción.",
   "spotify.works4": "Varias cuentas del hogar: un preajuste se recupera con la cuenta que lo guardó.",
   "spotify.limitsTitle": "Aún sin pulir (beta)",
+  "spotify.notesTitle": "Conviene saber",
   "spotify.limit1": "La pantalla puede mostrar \"Spotify\" en lugar del título de la lista, y una pulsación de hardware puede mostrar brevemente \"servicio no disponible\" antes de que empiece la reproducción.",
   "spotify.limit2": "Cambiar entre dos cuentas reinicia la reproducción durante unos segundos y funciona mejor cuando la aplicación de la otra cuenta no está conectada activamente.",
   "spotify.limit3": "Los pulgares arriba/abajo del mando no son compatibles.",

@@ -103,11 +103,11 @@ export function renderMultiroom(fetchLive) {
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
-  const beta =
-    `<div class="setup-help" style="margin-bottom:14px">` +
-    `<b>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></b>` +
-    `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.betaNote'))}</div>` +
-    `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.feedbackPre'))} ` +
+  const intro =
+    `<div class="zone-intro">` +
+    `<h2>${escapeHtml(t('multiroom.heading'))}</h2>` +
+    `<p>${escapeHtml(t('multiroom.intro1'))}</p>` +
+    `<div class="muted small">${escapeHtml(t('multiroom.feedbackPre'))} ` +
     `<a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a> &middot; ` +
     `<a href="#" id="multiroomEmail">str@sichtbar-app.de</a></div></div>`;
 
@@ -269,6 +269,25 @@ export function renderMultiroom(fetchLive) {
   // the store for the SELECTED pair; the async lookup repaints once it lands.
   const pairName = formingPair ? (pairDisplayName(formingPair, () => renderMultiroom(false)) || '') : '';
 
+  // Two channel cards that show the picked speakers by name and fill in with the
+  // --brand highlight the moment the selected pair is actually live (Jens
+  // 2026-08-30). They mirror the dropdowns below, so the pair reads at a glance:
+  // "Living room is Left, Kitchen is Right", lit up when the pair exists.
+  const stereoBoxById = (id) => strBoxes.find(b => (b.deviceID || '').toUpperCase() === String(id || '').toUpperCase());
+  const stereoChannelCard = (ch, roleLabel, box) => {
+    const nm = box ? zoneLabel(box) : '—';
+    return `<div class="stereo-card${formingPair ? ' on' : ''}">` +
+      `<span class="stereo-card-ch">${ch}</span>` +
+      `<span class="stereo-card-label">${escapeHtml(roleLabel)}</span>` +
+      `<span class="stereo-card-name${box ? '' : ' empty'}">${escapeHtml(nm)}</span></div>`;
+  };
+  const stereoCardsHtml = canPair
+    ? `<div class="stereo-cards">` +
+        stereoChannelCard('L', t('multiroom.stereoLeft'), stereoBoxById(pairPick[0])) +
+        stereoChannelCard('R', t('multiroom.stereoRight'), stereoBoxById(pairPick[1])) +
+      `</div>`
+    : '';
+
   // The pair's balance belongs here, where the pair is made and undone, and
   // nowhere near a volume slider: it is a READ-OUT, not a control. The firmware
   // accepts no balance write that sticks (every attempt hung the endpoint until
@@ -279,16 +298,21 @@ export function renderMultiroom(fetchLive) {
     ? `<div class="muted small" id="pairBalance" hidden></div>`
     : '';
 
-  root.innerHTML = beta + topbar + previewNote + updateWarn +
+  root.innerHTML = intro + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
      ${pairBalance}
      <div class="zone-controls">
+       <label class="zone-permanent-card${state.zonePermanent ? ' on' : ''}">
+         <input type="checkbox" id="zonePermanent"${state.zonePermanent ? ' checked' : ''}/>
+         <span class="zone-permanent-body">
+           <span class="zone-permanent-title"><span class="zone-permanent-icon" aria-hidden="true">&#128257;</span>${escapeHtml(t('multiroom.permanentLabel'))}</span>
+           <span class="muted small">${escapeHtml(t('multiroom.permanentHelp'))}</span>
+         </span>
+       </label>
        <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
          <div class="seg">${modeBtn('native', t('multiroom.modeNative'))}${modeBtn('mirror', t('multiroom.modeMirror'))}</div>
          <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></div>
-       <div class="zone-field"><label class="zone-permanent"><input type="checkbox" id="zonePermanent"${state.zonePermanent ? ' checked' : ''}/> ${escapeHtml(t('multiroom.permanentLabel'))}</label>
-         <span class="muted small">${escapeHtml(t('multiroom.permanentHelp'))}</span></div>
        <div class="zone-name-note muted small">${escapeHtml(t('multiroom.groupNameNote'))}</div>
        <div class="zone-actions">
          <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
@@ -300,10 +324,11 @@ export function renderMultiroom(fetchLive) {
 
      <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
 
-       <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></b>
+       <b>${escapeHtml(t('multiroom.stereoHeading'))}</b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
        ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
        ${canPair ? pairStatus : ''}
+       ${stereoCardsHtml}
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
          <select id="stereoLeft"${pairDis}>${pairOpts(0)}</select></label>
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
@@ -366,7 +391,11 @@ export function renderMultiroom(fetchLive) {
   });
   if (enough) {
     const perm = $('zonePermanent');
-    if (perm) perm.onchange = () => { state.zonePermanent = perm.checked; };
+    if (perm) perm.onchange = () => {
+      state.zonePermanent = perm.checked;
+      const card = perm.closest('.zone-permanent-card');
+      if (card) card.classList.toggle('on', perm.checked);
+    };
     $('zoneCreate').onclick = () => doFormZone(strBoxes);
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
   }

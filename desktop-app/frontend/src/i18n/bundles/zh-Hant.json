@@ -168,6 +168,7 @@
   "spotify.works3": "遙控器的上一首和下一首按鍵可以切歌。",
   "spotify.works4": "家裡有好幾個帳號也沒問題：預設會用當初儲存它的那個帳號播放。",
   "spotify.limitsTitle": "還很粗糙（Beta）",
+  "spotify.notesTitle": "值得留意",
   "spotify.limit1": "顯示幕可能只顯示「Spotify」而不是播放清單名稱，按實體按鍵時也可能先閃一下「service unavailable」才開始播放。",
   "spotify.limit2": "在兩個帳號之間切換時，播放會停幾秒再重新開始；另一個帳號的 app 沒有正在連線時最順。",
   "spotify.limit3": "不支援遙控器上的喜歡和不喜歡按鍵。",

@@ -27,7 +27,7 @@ export function renderSpotifyAlpha() {
   root.dataset.rendered = '1';
   root.innerHTML = `
     <div class="alpha-stage">
-      <h2>${escapeHtml(t('spotify.heading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h2>
+      <h2>${escapeHtml(t('spotify.heading'))}</h2>
       <p>${escapeHtml(t('spotify.nativeIntro'))}</p>
       <ol class="alpha-checklist">
         <li>${escapeHtml(t('spotify.nativeStep1'))}</li>
@@ -49,7 +49,7 @@ export function renderSpotifyAlpha() {
         <li>${escapeHtml(t('spotify.works3'))}</li>
         <li>${escapeHtml(t('spotify.works4'))}</li>
       </ul>
-      <h3>${escapeHtml(t('spotify.limitsTitle'))}</h3>
+      <h3>${escapeHtml(t('spotify.notesTitle'))}</h3>
       <ul class="spotify-status">
         <li>${escapeHtml(t('spotify.limit1'))}</li>
         <li>${escapeHtml(t('spotify.limit2'))}</li>

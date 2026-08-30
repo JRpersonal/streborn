@@ -159,6 +159,7 @@
   "spotify.works3": "Les touches titre suivant et précédent de la télécommande sautent le morceau.",
   "spotify.works4": "Plusieurs comptes du foyer : un préréglage relance sous le compte qui l'a enregistré.",
   "spotify.limitsTitle": "Encore approximatif (bêta)",
+  "spotify.notesTitle": "Bon à savoir",
   "spotify.limit1": "L'écran peut afficher « Spotify » au lieu du titre de la playlist, et un appui matériel peut brièvement faire clignoter « service indisponible » avant le début de la lecture.",
   "spotify.limit2": "Basculer entre deux comptes relance la lecture pendant quelques secondes et fonctionne mieux quand l'application de l'autre compte n'est pas activement connectée.",
   "spotify.limit3": "Les pouces haut/bas de la télécommande ne sont pas pris en charge.",
