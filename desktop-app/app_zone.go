@@ -139,6 +139,29 @@ func (a *App) ensureZoneMembersReady(ips []string) memberReadiness {
 	return res
 }
 
+// boxInStereoPair reports whether the agent at host reports a live stereo
+// pair for its box (the zone GET carries the firmware group as `stereo`).
+// Best-effort: an unreachable or old agent answers false, so the guard can
+// never block a fleet it cannot assess.
+func (a *App) boxInStereoPair(host string, port int) bool {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/zone", "", "")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var out struct {
+		Stereo json.RawMessage `json:"stereo"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&out) != nil {
+		return false
+	}
+	s := strings.TrimSpace(string(out.Stereo))
+	return s != "" && s != "null"
+}
+
 // FormZone forms (or replaces) a multiroom zone with masterHost as the master and
 // the given slaves (#70 beta). POSTed to the master's agent, which drives the
 // native Bose /setZone and persists it so the zone auto-reforms after a reboot.
@@ -195,6 +218,43 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	spec.Slaves = readySlaves
 	if len(spec.Slaves) == 0 {
 		return map[string]any{"ok": false, "notReady": notReady}, nil
+	}
+	// Stereo-pair guard (#792), for NATIVE zones only. Three log-proven
+	// failure shapes from one 12-speaker household (2026-08-30): an
+	// individual pair member enrolled as a zone slave serves two masters and
+	// plays audibly out of sync with its own pair; and a zone stacked on a
+	// pair master never starts the firmware's audio distribution at all (the
+	// master fetches the stream but never renders, dying in a repeating
+	// 60-second 3103 AUDIO_ERROR_TIMEOUT loop) - measured identically when
+	// the Bose app formed the same shape, so this is firmware behavior, not
+	// an STR bug to fix by trying harder. Each participant's own agent is
+	// asked; members that are half of a pair are dropped and reported.
+	if !spec.Stereo {
+		if a.boxInStereoPair(masterHost, masterPort) {
+			a.logger.Warn("FormZone: refused, master is half of a live stereo pair (zone-on-pair starves audio, #792)", "master", spec.Master.DeviceID)
+			return map[string]any{"ok": false, "inPair": []string{spec.Master.IP}, "error": "master is half of a stereo pair; dissolve the pair before grouping"}, nil
+		}
+		inPair := make([]string, 0)
+		keep := make([]ZoneMember, 0, len(spec.Slaves))
+		for _, sl := range spec.Slaves {
+			if sl.IP != "" && a.boxInStereoPair(sl.IP, 0) {
+				a.logger.Warn("FormZone: dropping slave, it is half of a live stereo pair (#792)", "ip", sl.IP)
+				inPair = append(inPair, sl.IP)
+				continue
+			}
+			keep = append(keep, sl)
+		}
+		spec.Slaves = keep
+		if len(spec.Slaves) == 0 {
+			return map[string]any{"ok": false, "notReady": notReady, "inPair": inPair, "error": "every remaining member is half of a stereo pair; dissolve the pair before grouping"}, nil
+		}
+		if len(inPair) > 0 {
+			defer func() {
+				if result != nil {
+					result["inPair"] = inPair
+				}
+			}()
+		}
 	}
 	b, err := json.Marshal(spec)
 	if err != nil {

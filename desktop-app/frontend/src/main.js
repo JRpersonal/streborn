@@ -5254,6 +5254,17 @@ async function runGroupMemberToggle(edits) {
     .map(([h]) => (state.boxes || []).find(b => b.host === h))
     .filter(Boolean);
   if (targets.length === 0) return;
+  // A live stereo pair's halves are not groupable (#792): the picker-side
+  // exclusion lives in the multiroom grid, this is the same rule for the
+  // player's group chips. Say it instead of failing later with a generic
+  // error after the zone budget.
+  const pairIDs = new Set(
+    stereoPairsOf(state.zoneLive || {}).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
+  const inPair = targets.filter(tgt => pairIDs.has(String(tgt.deviceID || '').toUpperCase()));
+  if (inPair.length) {
+    showError(t('multiroom.pairNotGroupable'));
+    if (inPair.length === targets.length) return;
+  }
   const members = groupMembersOf(box, state.zoneLive, state.boxes);
   // Apply every toggle to one membership list, so the speakers join or leave
   // together instead of one zone form per click.

@@ -1353,5 +1353,6 @@
   "setup.formatToggleWinHint": "Windows asks for admin rights.",
   "common.saving": "Saving…",
   "setup.targetEmptyBoseApp": "Speaker not on any Wi-Fi yet? Put it on your Wi-Fi first with the original Bose SoundTouch app, via “Add speaker”. That still works, locally and without a Bose account. Once it is on your home network it shows up here on its own. The card for new or factory-reset speakers below has the links to the Bose app.",
-  "setup.targetEmptySetupMode": "If even the Bose app cannot find the speaker, put it into setup mode: on the speaker, hold preset key 1 and volume-down together for about 10 seconds until it restarts (on the models with number keys, i.e. SoundTouch 10, 20, 30 and Portable). It then broadcasts its own “Bose SoundTouch” network for a few minutes, where the Bose app finds it for adding. The stored preset keys are lost in the process."
+  "setup.targetEmptySetupMode": "If even the Bose app cannot find the speaker, put it into setup mode: on the speaker, hold preset key 1 and volume-down together for about 10 seconds until it restarts (on the models with number keys, i.e. SoundTouch 10, 20, 30 and Portable). It then broadcasts its own “Bose SoundTouch” network for a few minutes, where the Bose app finds it for adding. The stored preset keys are lost in the process.",
+  "multiroom.pairNotGroupable": "A stereo pair cannot be part of a group right now; the speaker firmware never starts the audio distribution then. Dissolve the pair, group the speakers individually, and re-create the pair afterwards."
 }

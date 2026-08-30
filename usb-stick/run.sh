@@ -1687,6 +1687,24 @@ if [ -n "$SSID" ] && [ -z "$PASS" ]; then
     HIDDEN=""
     WLAN_SOURCE=""
 fi
+# EARLY priority demotion on a NETWORK SWITCH. assert_profile_priority used to
+# run only in a provisioning run's winner path, AFTER a successful join - but
+# on a router swap the join can be blocked by exactly what it would fix: the
+# firmware still ranks the DEAD old profile highest (#697 measured the end
+# state) and keeps courting a network that no longer exists. Chicken and egg.
+# So when the user explicitly provisions a NEW network from a stick, every
+# profile that is not the wanted SSID is demoted to priority 0 up front (the
+# wanted one is raised where it already exists). Gated on a fresh stick
+# wlan.conf/wlan.ssid - the replay and hands-off boots stay untouched, so an
+# ordinary boot still never rewrites the firmware's store.
+case "$WLAN_SOURCE" in
+    "stick wlan.ssid"|"stick wlan.conf")
+        if [ -n "$SSID" ]; then
+            setup_log "early priority demotion: stick provisions '$SSID' - outranking it over any stored profiles BEFORE the join attempts (router-switch safety, see #697)"
+            assert_profile_priority
+        fi
+        ;;
+esac
 # Wireless-interface detection. Two real cases on SoundTouch hardware
 # (every model has Wi-Fi — the Portable has ONLY Wi-Fi, no RJ45):
 #

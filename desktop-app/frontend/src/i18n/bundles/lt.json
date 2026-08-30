@@ -1353,5 +1353,6 @@
   "setup.formatToggleWinHint": "Windows paprašys administratoriaus teisių.",
   "common.saving": "Įrašoma…",
   "setup.targetEmptyBoseApp": "Garsiakalbis dar neprijungtas prie jokio Wi-Fi? Pirmiausia prijunkite jį prie Wi-Fi originalia „Bose SoundTouch“ programa per „Pridėti garsiakalbį“. Tai vis dar veikia lokaliai ir be Bose paskyros. Vos atsidūręs namų tinkle, jis čia atsiras pats. Kortelėje naujiems ar atstatytiems garsiakalbiams žemiau rasite Bose programos nuorodas.",
-  "setup.targetEmptySetupMode": "Jei net „Bose“ programa garsiakalbio neranda, perjunkite jį į sąrankos režimą: ant garsiakalbio kartu laikykite 1 mygtuką ir garsumo mažinimą apie 10 sekundžių, kol jis persikraus (modeliuose su skaitmenų mygtukais: SoundTouch 10, 20, 30 ir Portable). Tada kelias minutes jis transliuoja savo „Bose SoundTouch“ tinklą, kuriame „Bose“ programa jį suras. Išsaugoti nustatymų mygtukai prarandami."
+  "setup.targetEmptySetupMode": "Jei net „Bose“ programa garsiakalbio neranda, perjunkite jį į sąrankos režimą: ant garsiakalbio kartu laikykite 1 mygtuką ir garsumo mažinimą apie 10 sekundžių, kol jis persikraus (modeliuose su skaitmenų mygtukais: SoundTouch 10, 20, 30 ir Portable). Tada kelias minutes jis transliuoja savo „Bose SoundTouch“ tinklą, kuriame „Bose“ programa jį suras. Išsaugoti nustatymų mygtukai prarandami.",
+  "multiroom.pairNotGroupable": "Stereopora šiuo metu negali būti grupės dalis; garsiakalbių programinė įranga tada nepaleidžia garso paskirstymo. Išardykite porą, sugrupuokite garsiakalbius atskirai ir po to sukurkite porą iš naujo."
 }
