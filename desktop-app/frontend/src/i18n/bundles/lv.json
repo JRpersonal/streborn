@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "Nav iekļauts: {{names}}. Ieslēdziet šos skaļruņus un mēģiniet vēlreiz.",
   "setup.stickMacPrivacy": "macOS bloķē lietotnes piekļuvi USB zibatmiņām. Atveriet Sistēmas iestatījumus, Privātums un drošība, Faili un mapes, un atļaujiet ST Reborn piekļuvi noņemamajiem sējumiem. Pēc tam atvienojiet zibatmiņu un pievienojiet to vēlreiz.",
   "update.engineMissing": "{{name}} darbojas ar jauno versiju, bet joprojām trūkst Spotify komponenta no pēdējā atjauninājuma. Atveriet skaļruņa iestatījumus un palaidiet atjauninājumu vēlreiz; tas tiek piegādāts bez restarta.",
-  "setup.formatToggleWinHint": "Windows prasīs administratora tiesības."
+  "setup.formatToggleWinHint": "Windows prasīs administratora tiesības.",
+  "common.saving": "Saglabā…"
 }

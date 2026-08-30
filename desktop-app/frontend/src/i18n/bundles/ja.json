@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "対象外: {{names}}。これらのスピーカーの電源を入れて、もう一度お試しください。",
   "setup.stickMacPrivacy": "macOS がこのアプリの USB メモリーへのアクセスをブロックしています。システム設定の「プライバシーとセキュリティ」の「ファイルとフォルダ」を開き、ST Reborn にリムーバブルボリュームへのアクセスを許可してください。その後、USB メモリーを挿し直してください。",
   "update.engineMissing": "{{name}} は新しいバージョンで動作していますが、前回のアップデートの Spotify コンポーネントがまだありません。スピーカー設定を開いてもう一度アップデートを実行してください。再起動なしで配信されます。",
-  "setup.formatToggleWinHint": "Windows では管理者権限の確認が表示されます。"
+  "setup.formatToggleWinHint": "Windows では管理者権限の確認が表示されます。",
+  "common.saving": "保存中…"
 }

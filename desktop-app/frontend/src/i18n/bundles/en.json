@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "Not included: {{names}}. Switch these speakers on and try again for them.",
   "setup.stickMacPrivacy": "macOS is blocking this app from accessing USB sticks. Open System Settings, Privacy and Security, Files and Folders, and allow ST Reborn to access removable volumes. Then unplug the stick and plug it back in.",
   "update.engineMissing": "{{name}} runs the new version, but the Spotify component from the last update is still missing. Open the speaker settings and run the update once more there; it is delivered without a restart.",
-  "setup.formatToggleWinHint": "Windows asks for admin rights."
+  "setup.formatToggleWinHint": "Windows asks for admin rights.",
+  "common.saving": "Saving…"
 }

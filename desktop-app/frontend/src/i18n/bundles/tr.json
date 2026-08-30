@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "Dahil edilmedi: {{names}}. Bu hoparlörleri açıp yeniden deneyin.",
   "setup.stickMacPrivacy": "macOS uygulamanın USB belleklere erişimini engelliyor. Sistem Ayarları, Gizlilik ve Güvenlik, Dosyalar ve Klasörler bölümünü açın ve ST Reborn için çıkarılabilir birimlere erişime izin verin. Ardından belleği çıkarıp yeniden takın.",
   "update.engineMissing": "{{name}} yeni sürümde çalışıyor, ancak son güncellemenin Spotify bileşeni hâlâ eksik. Hoparlör ayarlarını açıp güncellemeyi bir kez daha çalıştırın; yeniden başlatma olmadan yüklenir.",
-  "setup.formatToggleWinHint": "Windows yönetici izni ister."
+  "setup.formatToggleWinHint": "Windows yönetici izni ister.",
+  "common.saving": "Kaydediliyor…"
 }

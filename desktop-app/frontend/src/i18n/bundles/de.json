@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "Nicht dabei: {{names}}. Schalte diese Lautsprecher ein und versuch es dort noch einmal.",
   "setup.stickMacPrivacy": "macOS blockiert den Zugriff der App auf USB-Sticks. Öffne Systemeinstellungen, Datenschutz und Sicherheit, Dateien und Ordner, und erlaube ST Reborn dort den Zugriff auf Wechseldatenträger. Steck den Stick danach einmal ab und wieder an.",
   "update.engineMissing": "{{name}} läuft auf der neuen Version, aber der Spotify-Baustein vom letzten Update fehlt noch. Öffne die Lautsprecher-Einstellungen und starte das Update dort noch einmal, er wird ohne Neustart nachgeliefert.",
-  "setup.formatToggleWinHint": "Windows fragt dabei nach Administratorrechten."
+  "setup.formatToggleWinHint": "Windows fragt dabei nach Administratorrechten.",
+  "common.saving": "Speichere…"
 }

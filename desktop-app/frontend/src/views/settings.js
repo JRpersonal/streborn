@@ -197,6 +197,28 @@ function ensureWithUID(desired, ownBox) {
   return collides ? `${trimmed} ${suffix}` : trimmed;
 }
 
+// withButtonPending runs an async box write behind its button. The button
+// flips to a working state the instant it is pressed and comes back when the
+// write has succeeded or failed. Without this, a save toward a speaker that
+// stopped answering looked like a dead click for the full transport timeouts
+// (10+ seconds, field 2026-08-30: a rename showed no state at all until the
+// raw timeout error appeared), and even a healthy save gave no sign between
+// the press and the toast.
+async function withButtonPending(btn, fn) {
+  if (!btn || btn.disabled) return;
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.classList.add('working');
+  btn.textContent = t('common.saving');
+  try {
+    await fn();
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('working');
+    btn.textContent = prev;
+  }
+}
+
 function renderSettingsBoxSelect() {
   const sel = $('settingsBoxSelect');
   if (!state.boxes.length) {
@@ -1885,14 +1907,14 @@ function renderBoxSettings(s, box) {
     })();
   }
   if (langSave) {
-    langSave.onclick = async () => {
+    langSave.onclick = () => withButtonPending(langSave, async () => {
       const v = langSel.value;
       try {
         await SetBoxLanguage(boseHost, parseInt(v, 10) || 0);
         showToast(t('settingsView.langSavedToast', { v: boseLangLabel(v) }));
         langCurrent.textContent = boseLangLabel(v);
       } catch (e) { showError(e); }
-    };
+    });
   }
 
   // Clock display (BETA): GET /clockDisplay to see current state,
@@ -1962,8 +1984,8 @@ function renderBoxSettings(s, box) {
         await refreshClock();
       } catch (e) { showError(e); }
     };
-    if (clockOn) clockOn.onclick = () => { paintClock(true); postClock(true); };
-    if (clockOff) clockOff.onclick = () => { paintClock(false); postClock(false); };
+    if (clockOn) clockOn.onclick = () => { paintClock(true); withButtonPending(clockOn, () => postClock(true)); };
+    if (clockOff) clockOff.onclick = () => { paintClock(false); withButtonPending(clockOff, () => postClock(false)); };
     // Send the 12/24h format to the box immediately on dropdown change,
     // keeping the current on/off state (no need to click "On" again).
     if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
@@ -2440,7 +2462,7 @@ function renderBoxSettings(s, box) {
         const el = $('currentAppRegion'); if (el) el.textContent = t('settingsView.langUnreachable');
       }
     }).catch(() => { const el = $('currentAppRegion'); if (el) el.textContent = t('settingsView.langUnreachable'); });
-    $('appRegionSave').onclick = async () => {
+    $('appRegionSave').onclick = () => withButtonPending($('appRegionSave'), async () => {
       const cc = regSel.value;
       try {
         const r = await boxFetch(box, '/api/region', {
@@ -2459,12 +2481,12 @@ function renderBoxSettings(s, box) {
         updateCurrentDisplay(data.country);
         showToast(t('settingsView.regionSavedToast', { name: (COUNTRIES.find(c => c.cc === cc) || {}).name || cc }));
       } catch (e) { showError(e); }
-    };
+    });
   }
 
   // Wire handlers. All operations explicitly target settingsBox
   // (not currentBox).
-  $('boxNameSave').onclick = async () => {
+  $('boxNameSave').onclick = () => withButtonPending($('boxNameSave'), async () => {
     const desired = $('boxNameInput').value.trim();
     if (!desired) return;
     const finalName = ensureWithUID(desired, box);
@@ -2486,7 +2508,7 @@ function renderBoxSettings(s, box) {
       renderSettingsBoxSelect();
       deps.renderBoxSelect();
     } catch (e) { showError(e); }
-  };
+  });
   $('boxVolume').oninput = () => {
     $('boxVolumeVal').textContent = $('boxVolume').value;
     throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
@@ -2592,7 +2614,7 @@ function wireWlanSwitch(box) {
     if (i.type === 'password') { i.type = 'text'; b.innerHTML = '&#128064;'; }
     else { i.type = 'password'; b.innerHTML = '&#128065;'; }
   };
-  $('boxWlanSave').onclick = async () => {
+  $('boxWlanSave').onclick = () => withButtonPending($('boxWlanSave'), async () => {
     const ssid = $('boxWlanSSID').value.trim();
     const pass = $('boxWlanPass').value;
     // Hidden networks never appear in the speaker's site survey, so the flag
@@ -2655,7 +2677,7 @@ function wireWlanSwitch(box) {
       // delay for the BCO reboot so the rediscover lands after it is back up.
       setTimeout(deps.discoverBoxes, info.mechanism === 'bco' ? 90000 : 12000);
     } catch (e) { showError(e); }
-  };
+  });
 }
 
 // wireCombobox binds to an <input> + <button toggle> + <ul list>

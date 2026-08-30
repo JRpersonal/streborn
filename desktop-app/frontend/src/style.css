@@ -2617,3 +2617,8 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 /* A speaker that is not answering reads differently from one that is simply
    not in the group: the first is a fault, the second is a state. */
 .zone-live.zone-live-noanswer { color: var(--c-faint); font-style: italic; }
+
+/* A button mid-write (withButtonPending): dimmed and gently pulsing, so the
+   press visibly took even while a slow speaker keeps the request waiting. */
+.btn.working { opacity: 0.65; cursor: progress; animation: btn-working 1.1s ease-in-out infinite; }
+@keyframes btn-working { 50% { opacity: 0.35; } }
