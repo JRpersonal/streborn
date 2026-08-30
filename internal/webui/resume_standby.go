@@ -644,6 +644,19 @@ func (s *Server) boxInZone() bool {
 	if hasDoc && (doc.Stereo || doc.Mirror()) {
 		return true
 	}
+	// A PERMANENT group is a firmware zone, unlike the two above, but the user
+	// opted it in to outlive the standby/reboot that dissolves that zone, so it can
+	// re-form on the master's next play (#70). An empty /getZone is therefore the
+	// EXPECTED resting state of a permanent group, not evidence to forget it by.
+	// Dropping the document here would delete the only thing the play-reform
+	// (kickMirrorAfterPlay -> formDefaultGroupOnPlay) has to rebuild from, so the
+	// group would never come back. Live: Portable master, standby then radio,
+	// played alone because the standby had already cleared the document
+	// (2026-08-30). A non-permanent native group still falls through to the clear
+	// below, so power-on resume for the ordinary case is unchanged.
+	if hasDoc && doc.Permanent {
+		return true
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	z, err := fetchZone(ctx, s.boxHost)
