@@ -2482,7 +2482,7 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .hs-ios { background: linear-gradient(165deg, #5b6b8c, #2d3550 62%, #1d2236); }
 .hs-and { background: linear-gradient(165deg, #3f5a4b, #233528 60%, #18241b); }
 .hs-time { color: rgba(255, 255, 255, .92); font-size: 9px; font-weight: 600; text-align: center; }
-.hs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; flex: 1; align-content: start; padding: 0 6px; }
+.hs-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; flex: 1; align-content: start; padding: 0 6px; }
 .hs-app { display: block; position: relative; }
 /* The ring wraps a box around the icon ALONE, so it frames the icon at any
    size and never reaches down into the name beneath it (Jens 2026-08-30). */
@@ -2498,9 +2498,12 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .hs-ico-missing { background: rgba(255, 255, 255, .16); }
 .hs-name {
   display: block; margin-top: 5px; font-size: 7px; line-height: 1.1;
-  color: rgba(255, 255, 255, .9); text-align: center;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: rgba(255, 255, 255, .9); text-align: center; white-space: nowrap;
 }
+/* The name is centered under its icon and free to spill into the empty gaps on
+   either side (the neighbours are blank tiles), so it shows in full without
+   being clipped to the narrow cell. */
+.hs-app { overflow: visible; }
 /* The one tile that is the point of the picture gets a ring around it. The
    ring is pinned to the icon's own height so it does not swallow the name
    underneath, which is half of what the sketch is showing. */
@@ -2510,7 +2513,7 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 }
 .hs-icobox.hs-ring.rnd::after { border-radius: 50%; }
 .hs-dock {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
   background: rgba(255, 255, 255, .14); border-radius: 12px; padding: 6px;
 }
 .hs-pill { height: 3px; width: 52px; border-radius: 99px; background: rgba(255, 255, 255, .55); margin: 0 auto; }
