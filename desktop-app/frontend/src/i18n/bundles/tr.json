@@ -1352,5 +1352,6 @@
   "update.engineMissing": "{{name}} yeni sürümde çalışıyor, ancak son güncellemenin Spotify bileşeni hâlâ eksik. Hoparlör ayarlarını açıp güncellemeyi bir kez daha çalıştırın; yeniden başlatma olmadan yüklenir.",
   "setup.formatToggleWinHint": "Windows yönetici izni ister.",
   "common.saving": "Kaydediliyor…",
-  "setup.targetEmptyBoseApp": "Hoparlörünüz henüz hiçbir Wi-Fi ağında değil mi? Önce orijinal Bose SoundTouch uygulamasındaki “Hoparlör ekle” ile Wi-Fi ağınıza bağlayın. Bu hâlâ çalışır, yerel olarak ve Bose hesabı olmadan. Ev ağınıza girdiği anda burada kendiliğinden görünür. Aşağıdaki yeni veya sıfırlanmış hoparlör kartında Bose uygulamasının bağlantıları var."
+  "setup.targetEmptyBoseApp": "Hoparlörünüz henüz hiçbir Wi-Fi ağında değil mi? Önce orijinal Bose SoundTouch uygulamasındaki “Hoparlör ekle” ile Wi-Fi ağınıza bağlayın. Bu hâlâ çalışır, yerel olarak ve Bose hesabı olmadan. Ev ağınıza girdiği anda burada kendiliğinden görünür. Aşağıdaki yeni veya sıfırlanmış hoparlör kartında Bose uygulamasının bağlantıları var.",
+  "setup.targetEmptySetupMode": "Bose uygulaması bile hoparlörü bulamıyorsa, onu kurulum moduna alın: hoparlörde 1 tuşu ile ses kısma tuşunu birlikte yaklaşık 10 saniye, yeniden başlayana kadar basılı tutun (rakam tuşlu modellerde: SoundTouch 10, 20, 30 ve Portable). Ardından birkaç dakika boyunca kendi “Bose SoundTouch” ağını yayınlar ve Bose uygulaması onu eklemek için bulur. Kayıtlı ön ayar tuşları bu sırada silinir."
 }

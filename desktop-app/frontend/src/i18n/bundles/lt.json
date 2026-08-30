@@ -1352,5 +1352,6 @@
   "update.engineMissing": "{{name}} veikia su nauja versija, bet vis dar trūksta Spotify komponento iš paskutinio atnaujinimo. Atidarykite garsiakalbio nustatymus ir paleiskite atnaujinimą dar kartą; jis įdiegiamas be perkrovimo.",
   "setup.formatToggleWinHint": "Windows paprašys administratoriaus teisių.",
   "common.saving": "Įrašoma…",
-  "setup.targetEmptyBoseApp": "Garsiakalbis dar neprijungtas prie jokio Wi-Fi? Pirmiausia prijunkite jį prie Wi-Fi originalia „Bose SoundTouch“ programa per „Pridėti garsiakalbį“. Tai vis dar veikia lokaliai ir be Bose paskyros. Vos atsidūręs namų tinkle, jis čia atsiras pats. Kortelėje naujiems ar atstatytiems garsiakalbiams žemiau rasite Bose programos nuorodas."
+  "setup.targetEmptyBoseApp": "Garsiakalbis dar neprijungtas prie jokio Wi-Fi? Pirmiausia prijunkite jį prie Wi-Fi originalia „Bose SoundTouch“ programa per „Pridėti garsiakalbį“. Tai vis dar veikia lokaliai ir be Bose paskyros. Vos atsidūręs namų tinkle, jis čia atsiras pats. Kortelėje naujiems ar atstatytiems garsiakalbiams žemiau rasite Bose programos nuorodas.",
+  "setup.targetEmptySetupMode": "Jei net „Bose“ programa garsiakalbio neranda, perjunkite jį į sąrankos režimą: ant garsiakalbio kartu laikykite 1 mygtuką ir garsumo mažinimą apie 10 sekundžių, kol jis persikraus (modeliuose su skaitmenų mygtukais: SoundTouch 10, 20, 30 ir Portable). Tada kelias minutes jis transliuoja savo „Bose SoundTouch“ tinklą, kuriame „Bose“ programa jį suras. Išsaugoti nustatymų mygtukai prarandami."
 }
