@@ -393,7 +393,7 @@ export async function renderRecent() {
   const selectedBoxes = recentSelectedBoxes();
   const selectedKey = (!state.recentAllBoxes && selectedBoxes.length === 1)
     ? recentBoxKey(selectedBoxes[0]) : '';
-  let html = `<div class="recent-head"><h2 class="recent-title">${escapeHtml(t('recent.title'))}</h2>`;
+  let html = `<div class="recent-head"><h2 class="recent-title">${escapeHtml(t('recent.title'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h2>`;
   if (multi) {
     const opts = `<option value="__all__"${state.recentAllBoxes ? ' selected' : ''}>${escapeHtml(t('recent.allBoxes'))}</option>`
       + boxesList.map((b) => {

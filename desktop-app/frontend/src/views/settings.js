@@ -1032,7 +1032,7 @@ function renderBoxSettings(s, box) {
     </details>
 
     <details class="settings-section settings-expert">
-      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <div class="setting-row">
         <select id="webhookTarget" style="flex:1;">
@@ -1119,7 +1119,7 @@ function renderBoxSettings(s, box) {
         ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
         : '';
       return `<details class="settings-section settings-expert">
-      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.copyPresetsHelp'))}
       <div class="setting-row">
         <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
@@ -1212,7 +1212,7 @@ function renderBoxSettings(s, box) {
       </div>
     </div>
     <div class="settings-section" id="backupSection">
-      <h3>${escapeHtml(t('settingsView.backupHeading'))}</h3>
+      <h3>${escapeHtml(t('settingsView.backupHeading'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
       ${helpBlock(t('settingsView.backupHelp'), 'p', 'muted small')}
       <div class="setting-row">
         <button class="btn btn-mini" id="backupExportBtn">${escapeHtml(t('settingsView.backupExportBtn'))}</button>
@@ -2834,8 +2834,9 @@ function phoneHomeScreenBlock() {
               <div class="hs hs-ios">
                 <div class="hs-time">9:41</div>
                 <div class="hs-grid">
-                ${dummy('')}${dummy('')}${dummy('')}
-                  <span class="hs-app hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                ${dummy('')}${dummy('')}
+                  <span class="hs-app"><span class="hs-icobox hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /></span><span class="hs-name">ST Reborn</span></span>
+                ${dummy('')}
                 </div>
                 <div class="hs-dock">${dummy('')}${dummy('')}${dummy('')}${dummy('')}</div>
               </div>
@@ -2859,7 +2860,7 @@ function phoneHomeScreenBlock() {
                 <div class="hs-time">9:41</div>
                 <div class="hs-grid">
                 ${dummy('rnd')}${dummy('rnd')}
-                  <span class="hs-app hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                  <span class="hs-app"><span class="hs-icobox hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /></span><span class="hs-name">ST Reborn</span></span>
                 ${dummy('rnd')}
                 </div>
                 <div class="hs-pill"></div>
@@ -2935,6 +2936,12 @@ function physicalInputAccount(src) {
   const acc = String((src && src.sourceAccount) || '').trim();
   if (!acc) return '';
   if (/^ACCT#/i.test(acc) || /UserName$/i.test(acc)) return '';
+  // A STORED_MUSIC account is the media server's UUID (e.g.
+  // 00113251-28ed-...-1100/0), a service identifier, not a physical socket.
+  // Left in, it printed one raw "STORED_MUSIC (uuid/0)" pill per server;
+  // suppress it so those collapse into one clean "Media server" pill (the
+  // Music library section below names the individual servers).
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(acc)) return '';
   return acc;
 }
 

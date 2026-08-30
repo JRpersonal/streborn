@@ -469,3 +469,46 @@ export function stereoSelectionPick({ left, right, liveIDs, candIDs }) {
     return candIDs[i] || '';
   });
 }
+
+// zoneOrPairMaster returns the master KEY (uppercase deviceID) a box currently
+// belongs to, counting both native zones AND stereo pairs, or "" when the box
+// is on its own. Shared so the speaker picker and the multi-room page agree on
+// which speakers form which group.
+export function zoneOrPairMaster(box, zoneLive, boxes) {
+  if (!box || box.kind === 'stock') return '';
+  const native = masterOf(box.deviceID, zoneLive);
+  if (native) return native;
+  const up = (s) => String(s || '').toUpperCase();
+  for (const p of stereoPairsOf(zoneLive)) {
+    const bxs = pairMemberBoxes(p, boxes).map((x) => x.box).filter(Boolean);
+    if (!bxs.some((b) => b.host === box.host)) continue;
+    const mb = bxs.find((b) => up(b.deviceID) === up(p.master)) || bxs[0] || null;
+    return mb ? up(mb.deviceID) : '';
+  }
+  return '';
+}
+
+// groupColorMap assigns each live group and stereo pair (a master with two or
+// more discovered members) a stable colour slot 1..4, hashed from its master
+// key with linear probing into the next free slot. This is the EXACT scheme
+// renderBoxSelect uses, so a group frame on the multi-room page carries the same
+// colour it has in the speaker picker. Returns { [MASTER_KEY_UPPER]: slot }.
+export function groupColorMap(zoneLive, boxes) {
+  const memberCount = {};
+  (boxes || []).forEach((b) => {
+    const m = zoneOrPairMaster(b, zoneLive, boxes);
+    if (m) memberCount[m] = (memberCount[m] || 0) + 1;
+  });
+  const groups = Object.keys(memberCount).filter((m) => memberCount[m] >= 2).sort();
+  const colorOf = {};
+  const taken = new Set();
+  for (const m of groups) {
+    let h = 0;
+    for (let i = 0; i < m.length; i++) h = (h * 31 + m.charCodeAt(i)) >>> 0;
+    let slot = h % 4;
+    for (let k = 0; k < 4 && taken.has(slot); k++) slot = (slot + 1) % 4;
+    taken.add(slot);
+    colorOf[m] = slot + 1;
+  }
+  return colorOf;
+}
