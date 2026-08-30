@@ -1189,6 +1189,8 @@
   "multiroom.notReady": "Te głośniki jeszcze się uruchamiały i nie dołączyły: {{names}}. Spróbuj zgrupować je ponownie za chwilę.",
   "multiroom.permanentLabel": "Zachowaj tę grupę na stałe",
   "multiroom.permanentHelp": "Gdy główny głośnik zaczyna grać, budzi głośniki grupy i sam odtwarza grupę, także po trybie czuwania lub restarcie. Głośnik zajęty odtwarzaniem czegoś innego pozostaje poza grupą.",
+  "multiroom.permanentHelpMasterOnly": "Gdy {{master}} zaczyna grać, budzi głośniki, które dodasz do tej grupy, i sam odtwarza grupę, nawet po czuwaniu lub restarcie.",
+  "multiroom.permanentHelpConcrete": "Gdy {{master}} zaczyna grać, z przycisku presetu lub inaczej, budzi {{members}} i sam odtwarza grupę, nawet po czuwaniu lub restarcie. Głośnik zajęty czymś innym pozostaje poza grupą.",
   "preset.boxNativeHint": "dotknij, aby odtworzyć na głośniku",
   "preset.boxRecallFailed": "Nie udało się uruchomić tego presetu głośnika: {{err}}",
   "preset.lossBody": "Twój głośnik miał {{service}} na przyciskach presetów {{slots}}. STR nie potrafi jeszcze odtwarzać {{service}}, więc głośnik usunął te presety. Obsługa {{service}} jest planowana. Twoje presety radia internetowego i Spotify pozostają bez zmian.",

@@ -1189,6 +1189,8 @@
   "multiroom.notReady": "Šie skaļruņi vēl startēja un nepievienojās: {{names}}. Pamēģini tos sagrupēt vēlreiz pēc brīža.",
   "multiroom.permanentLabel": "Paturēt šo grupu pastāvīgi",
   "multiroom.permanentHelp": "Kad galvenais skaļrunis sāk mūziku, tas pamodina grupas skaļruņus un pats no jauna izveido grupu, arī pēc gaidstāves vai restarta. Skaļrunis, kas atskaņo ko citu, paliek ārpus grupas.",
+  "multiroom.permanentHelpMasterOnly": "Kad {{master}} sāk atskaņot, tas pamodina skaļruņus, ko pievienojat šai grupai, un pats atkal izveido grupu, pat pēc gaidstāves vai restartēšanas.",
+  "multiroom.permanentHelpConcrete": "Kad {{master}} sāk atskaņot, ar iestatījuma pogu vai citādi, tas pamodina {{members}} un pats atkal izveido grupu, pat pēc gaidstāves vai restartēšanas. Skaļrunis, kas atskaņo ko citu, paliek malā.",
   "preset.boxNativeHint": "pieskaries, lai atskaņotu skaļrunī",
   "preset.boxRecallFailed": "Neizdevās palaist šo skaļruņa iestatījumu: {{err}}",
   "preset.lossBody": "Tavam skaļrunim bija {{service}} uz taustiņiem {{slots}}. STR vēl nevar atskaņot {{service}}, tāpēc skaļrunis šos iestatījumus atmeta. {{service}} atbalsts ir plānots. Tavi interneta radio un Spotify iestatījumi netiek skarti.",

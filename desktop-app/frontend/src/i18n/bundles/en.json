@@ -152,6 +152,8 @@
   "multiroom.notReady": "These speakers were still starting and did not join: {{names}}. Try grouping them again in a moment.",
   "multiroom.permanentLabel": "Keep this group permanently",
   "multiroom.permanentHelp": "When the main speaker starts music, it wakes the group speakers and re-forms the group by itself, even after standby or a restart. A speaker that is busy playing something else stays out.",
+  "multiroom.permanentHelpMasterOnly": "When {{master}} starts playing, it wakes the speakers you add to this group and re-forms the group by itself, even after standby or a restart.",
+  "multiroom.permanentHelpConcrete": "When {{master}} starts playing, from a preset key or otherwise, it wakes {{members}} and re-forms the group by itself, even after standby or a restart. A speaker busy playing something else stays out.",
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Pair the speaker once in the Spotify mobile app, then send any Spotify track to it from your phone.",
   "spotify.bullet1": "Use the speaker as a Spotify Connect target.",

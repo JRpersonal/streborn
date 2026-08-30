@@ -1189,6 +1189,8 @@
   "multiroom.notReady": "Estos altavoces aún se estaban iniciando y no se unieron: {{names}}. Vuelve a agruparlos en un momento.",
   "multiroom.permanentLabel": "Mantener este grupo de forma permanente",
   "multiroom.permanentHelp": "Cuando el altavoz principal inicia música, despierta los altavoces del grupo y vuelve a formar el grupo por sí solo, incluso tras el modo de espera o un reinicio. Un altavoz ocupado reproduciendo otra cosa queda fuera.",
+  "multiroom.permanentHelpMasterOnly": "Cuando {{master}} empieza a sonar, despierta los altavoces que añadas a este grupo y vuelve a formar el grupo por sí solo, incluso tras el modo de espera o un reinicio.",
+  "multiroom.permanentHelpConcrete": "Cuando {{master}} empieza a sonar, por una tecla de preajuste o de otro modo, despierta a {{members}} y vuelve a formar el grupo por sí solo, incluso tras el modo de espera o un reinicio. Un altavoz ocupado con otra cosa queda fuera.",
   "preset.boxNativeHint": "toca para reproducir en el altavoz",
   "preset.boxRecallFailed": "No se pudo iniciar este preset del altavoz: {{err}}",
   "preset.lossBody": "Tu altavoz tenía {{service}} en las teclas {{slots}}. STR aún no puede reproducir {{service}}, así que el altavoz descartó estos presets. La compatibilidad con {{service}} está prevista. Tus presets de radio por internet y de Spotify no se ven afectados.",

@@ -152,6 +152,8 @@
   "multiroom.notReady": "這些喇叭還在啟動，所以沒有加入：{{names}}。過一會兒再建一次群組。",
   "multiroom.permanentLabel": "永久保留此群組",
   "multiroom.permanentHelp": "當主嗇叭開始播放音樂時，會自動換醒群組嗇叭並重新組成群組，即使在待機或重啟之後也一樣。正在播放其他內容的嗇叭則不會加入。",
+  "multiroom.permanentHelpMasterOnly": "當 {{master}} 開始播放時，它會喚醒你加入這個群組的喇叭，並自動重新組成群組，即使在待機或重新啟動後也一樣。",
+  "multiroom.permanentHelpConcrete": "當 {{master}} 開始播放時，不論是按預設鍵還是其他方式，它會喚醒 {{members}} 並自動重新組成群組，即使在待機或重新啟動後也一樣。正在播放其他內容的喇叭則不加入。",
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "先在手機的 Spotify app 裡把喇叭配對一次，之後就能從手機把任何 Spotify 曲目送過去。",
   "spotify.bullet1": "把喇叭當成 Spotify Connect 的播放裝置。",

@@ -316,6 +316,23 @@ export function renderMultiroom(fetchLive) {
       `</div>`
     : '';
 
+  // The "keep permanently" help is written for the group the user is building
+  // right now (Jens 2026-08-30): it names the chosen main speaker and the
+  // members currently ticked, so it reads as "press a preset on Wohnzimmer and
+  // Kueche + Buero come along", not an abstract rule. Falls back to naming just
+  // the main speaker until members are picked, and to the generic line if there
+  // is no main yet.
+  const permMasterBox = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  const permMasterName = permMasterBox ? zoneLabel(permMasterBox) : '';
+  const permMemberNames = strBoxes
+    .filter(b => b.deviceID !== state.zoneMaster && state.zoneSlaves && state.zoneSlaves[b.deviceID])
+    .map(b => zoneLabel(b));
+  const permanentHelpText = permMasterName
+    ? (permMemberNames.length
+        ? t('multiroom.permanentHelpConcrete', { master: permMasterName, members: permMemberNames.join(', ') })
+        : t('multiroom.permanentHelpMasterOnly', { master: permMasterName }))
+    : t('multiroom.permanentHelp');
+
   // The pair's balance belongs here, where the pair is made and undone, and
   // nowhere near a volume slider: it is a READ-OUT, not a control. The firmware
   // accepts no balance write that sticks (every attempt hung the endpoint until
@@ -335,7 +352,7 @@ export function renderMultiroom(fetchLive) {
          <input type="checkbox" id="zonePermanent"${state.zonePermanent ? ' checked' : ''}/>
          <span class="zone-permanent-body">
            <span class="zone-permanent-title"><span class="zone-permanent-icon" aria-hidden="true">&#128257;</span>${escapeHtml(t('multiroom.permanentLabel'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></span>
-           <span class="muted small">${escapeHtml(t('multiroom.permanentHelp'))}</span>
+           <span class="muted small">${escapeHtml(permanentHelpText)}</span>
          </span>
        </label>
        <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
