@@ -1352,5 +1352,6 @@
   "update.engineMissing": "{{name}} działa na nowej wersji, ale wciąż brakuje komponentu Spotify z ostatniej aktualizacji. Otwórz ustawienia głośnika i uruchom aktualizację jeszcze raz; zostanie dostarczony bez restartu.",
   "setup.formatToggleWinHint": "Windows poprosi o uprawnienia administratora.",
   "common.saving": "Zapisywanie…",
-  "setup.targetEmptyBoseApp": "Głośnik nie jest jeszcze w żadnej sieci Wi-Fi? Najpierw podłącz go do Wi-Fi oryginalną aplikacją Bose SoundTouch, przez „Dodaj głośnik”. To nadal działa, lokalnie i bez konta Bose. Gdy tylko znajdzie się w sieci domowej, pojawi się tutaj sam. Karta dla nowych lub zresetowanych głośników poniżej zawiera linki do aplikacji Bose."
+  "setup.targetEmptyBoseApp": "Głośnik nie jest jeszcze w żadnej sieci Wi-Fi? Najpierw podłącz go do Wi-Fi oryginalną aplikacją Bose SoundTouch, przez „Dodaj głośnik”. To nadal działa, lokalnie i bez konta Bose. Gdy tylko znajdzie się w sieci domowej, pojawi się tutaj sam. Karta dla nowych lub zresetowanych głośników poniżej zawiera linki do aplikacji Bose.",
+  "setup.targetEmptySetupMode": "Jeśli nawet aplikacja Bose nie znajduje głośnika, przełącz go w tryb konfiguracji: przytrzymaj na głośniku przycisk 1 i ściszanie jednocześnie przez około 10 sekund, aż się zrestartuje (w modelach z przyciskami numerycznymi: SoundTouch 10, 20, 30 i Portable). Potem przez kilka minut nadaje własną sieć „Bose SoundTouch”, w której aplikacja Bose znajdzie go do dodania. Zapisane przyciski presetów zostaną utracone."
 }

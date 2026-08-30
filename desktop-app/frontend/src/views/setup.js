@@ -445,6 +445,12 @@ export function renderSetupTargetPicker() {
     // unless the app says it right here. A field mail (2026-08-30) burned ten
     // stick attempts across four speakers that were never on the network.
     cards += `<div class="setup-warn setup-target-empty-hint">${escapeHtml(t('setup.targetEmptyBoseApp'))}</div>`;
+    // ... and the way back INTO the Bose app for a speaker that still holds a
+    // dead Wi-Fi (router replaced): the hardware combo that puts it into its
+    // setup network. Verified live: key 1 + volume-down clears pairing and
+    // presets, opens the setup AP for a few minutes, and leaves the STR
+    // install untouched (reset-layers, 2026-05-24).
+    cards += `<div class="muted small setup-target-empty-reset">${escapeHtml(t('setup.targetEmptySetupMode'))}</div>`;
   }
   // boxIdentLine builds the sublabel pieces (model, serial, host)
   // that help users distinguish two or three identical speakers on
@@ -487,6 +493,7 @@ export function renderSetupTargetPicker() {
   cards += cardHTML('factory-reset', '', t('setup.targetCardKindFactory'), '', t('setup.targetCardBadgeFactory'));
   if (isSelected('factory-reset', '')) {
     cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.targetCardFactoryHelp'))}</div>`;
+    cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.targetEmptySetupMode'))}</div>`;
     // Wi-Fi onboarding happens in the official Bose SoundTouch app (its local
     // setup still works after the cloud shutdown); once the speaker is on the
     // LAN, STR's network install takes over and no stick is needed. The app has

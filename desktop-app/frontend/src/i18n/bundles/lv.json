@@ -1352,5 +1352,6 @@
   "update.engineMissing": "{{name}} darbojas ar jauno versiju, bet joprojām trūkst Spotify komponenta no pēdējā atjauninājuma. Atveriet skaļruņa iestatījumus un palaidiet atjauninājumu vēlreiz; tas tiek piegādāts bez restarta.",
   "setup.formatToggleWinHint": "Windows prasīs administratora tiesības.",
   "common.saving": "Saglabā…",
-  "setup.targetEmptyBoseApp": "Skaļrunis vēl nav nevienā Wi-Fi tīklā? Vispirms pievienojiet to Wi-Fi ar oriģinālo Bose SoundTouch lietotni, izmantojot “Pievienot skaļruni”. Tas joprojām darbojas lokāli un bez Bose konta. Tiklīdz tas būs jūsu mājas tīklā, tas šeit parādīsies pats. Kartītē jauniem vai atiestatītiem skaļruņiem zemāk ir saites uz Bose lietotni."
+  "setup.targetEmptyBoseApp": "Skaļrunis vēl nav nevienā Wi-Fi tīklā? Vispirms pievienojiet to Wi-Fi ar oriģinālo Bose SoundTouch lietotni, izmantojot “Pievienot skaļruni”. Tas joprojām darbojas lokāli un bez Bose konta. Tiklīdz tas būs jūsu mājas tīklā, tas šeit parādīsies pats. Kartītē jauniem vai atiestatītiem skaļruņiem zemāk ir saites uz Bose lietotni.",
+  "setup.targetEmptySetupMode": "Ja pat Bose lietotne skaļruni neatrod, pārslēdziet to iestatīšanas režīmā: uz skaļruņa vienlaikus turiet 1. taustiņu un skaļuma samazināšanu apmēram 10 sekundes, līdz tas restartējas (modeļiem ar ciparu taustiņiem: SoundTouch 10, 20, 30 un Portable). Pēc tam tas dažas minūtes raida savu “Bose SoundTouch” tīklu, kurā Bose lietotne to atradīs pievienošanai. Saglabātie iestatījumu taustiņi tiek zaudēti."
 }
