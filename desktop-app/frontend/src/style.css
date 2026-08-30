@@ -835,6 +835,15 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   letter-spacing: 0.4px;
   vertical-align: middle;
 }
+/* STR-only badge: marks a feature the Bose app never had, added by ST Reborn
+   (Jens 2026-08-30). Positive brand accent, not the amber/red of the status
+   pills, and a title that spells out what it means. */
+.str-badge {
+  display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 6px;
+  background: var(--brand-bg); color: var(--brand); border: 1px solid var(--brand);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+  vertical-align: middle; white-space: nowrap; cursor: help;
+}
 /* Alpha pill: same shape, redder accent to signal that this is more
  * experimental than BETA and may not work at all yet. */
 /* The stage pills carried colours chosen against a dark page and never
@@ -892,6 +901,13 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .alpha-checklist {
   margin: 16px 0;
   padding-left: 22px;
+}
+/* Spotify "(STR)" entry hint: a small callout so the important "pick the
+   (STR) entry" instruction does not read as one more line of body text. */
+.spotify-str-hint {
+  margin: 14px 0; padding: 10px 13px; border-radius: 8px;
+  border-left: 3px solid var(--brand); background: var(--c-surface-2);
+  font-size: 13px; line-height: 1.5;
 }
 .alpha-checklist li { margin: 6px 0; }
 
@@ -2033,6 +2049,16 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-permanent-body { display: flex; flex-direction: column; gap: 3px; }
 .zone-permanent-title { font-weight: 600; display: flex; align-items: center; gap: 7px; }
 .zone-permanent-icon { font-size: 15px; }
+
+/* Live groups and stereo pairs, framed in the same colours the Music-tab
+   speaker picker uses (.box-group / .box-group-cN), so an existing group reads
+   the same on both pages (Jens 2026-08-30). Read-only status strip. */
+.zone-frames { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 16px; }
+.zone-frames .box-group { align-items: center; }
+.zone-frame-chip {
+  display: inline-block; padding: 4px 9px; border-radius: 6px;
+  background: var(--c-surface-2); color: var(--c-text); font-size: 12px; font-weight: 500;
+}
 
 /* Stereo pair as two channel cards that fill with the speaker names once the
    pair exists (Jens 2026-08-30). Filled + highlighted when the selected pair is

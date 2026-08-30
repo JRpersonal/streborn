@@ -1032,7 +1032,7 @@ function renderBoxSettings(s, box) {
     </details>
 
     <details class="settings-section settings-expert">
-      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <div class="setting-row">
         <select id="webhookTarget" style="flex:1;">
@@ -1119,7 +1119,7 @@ function renderBoxSettings(s, box) {
         ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
         : '';
       return `<details class="settings-section settings-expert">
-      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.copyPresetsHelp'))}
       <div class="setting-row">
         <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
@@ -1212,7 +1212,7 @@ function renderBoxSettings(s, box) {
       </div>
     </div>
     <div class="settings-section" id="backupSection">
-      <h3>${escapeHtml(t('settingsView.backupHeading'))}</h3>
+      <h3>${escapeHtml(t('settingsView.backupHeading'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
       ${helpBlock(t('settingsView.backupHelp'), 'p', 'muted small')}
       <div class="setting-row">
         <button class="btn btn-mini" id="backupExportBtn">${escapeHtml(t('settingsView.backupExportBtn'))}</button>

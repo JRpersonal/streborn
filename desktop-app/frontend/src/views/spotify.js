@@ -5,7 +5,7 @@
 // does not) with two links; switchView is injected so the "update" link can
 // jump to the speaker settings tab without importing back into main.js.
 
-import { $, escapeHtml, showToast, showError } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showToast, showError } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { BrowserOpenURL, SyncSpotifyLogin, SpotifyQuality, SetSpotifyQuality } from '../api.js';
 
@@ -35,6 +35,7 @@ export function renderSpotifyAlpha() {
         <li>${escapeHtml(t('spotify.nativeStep3'))}</li>
       </ol>
       <p class="muted small">${escapeHtml(t('spotify.versionNote'))} <a href="#" id="spotifyUpdateLink">${escapeHtml(t('spotify.updateLink'))}</a></p>
+      <div class="spotify-str-hint">${escapeHtml(t('spotify.dualConnectNote'))}</div>
       <h3>${escapeHtml(t('spotify.presetsTitle'))}</h3>
       <p>${escapeHtml(t('spotify.presetsIntro'))}</p>
       <ol class="alpha-checklist">
@@ -55,10 +56,10 @@ export function renderSpotifyAlpha() {
         <li>${escapeHtml(t('spotify.limit2'))}</li>
         <li>${escapeHtml(t('spotify.limit3'))}</li>
       </ul>
-      <h3>${escapeHtml(t('spotify.qualityTitle'))}</h3>
+      <h3>${escapeHtml(t('spotify.qualityTitle'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
       <p>${escapeHtml(t('spotify.qualityDesc'))}</p>
       <div id="spotifyQualityList"></div>
-      <h3>${escapeHtml(t('spotify.syncTitle'))}</h3>
+      <h3>${escapeHtml(t('spotify.syncTitle'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
       <p>${escapeHtml(t('spotify.syncDesc'))}</p>
       <button class="btn btn-primary" id="spotifySyncBtn">${escapeHtml(t('spotify.syncBtn'))}</button>
       <p class="muted small">${escapeHtml(t('spotify.nativeNote'))}</p>

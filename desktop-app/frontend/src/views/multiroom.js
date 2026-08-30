@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName } from '../stereoNames.js';
 
@@ -106,10 +106,38 @@ export function renderMultiroom(fetchLive) {
   const intro =
     `<div class="zone-intro">` +
     `<h2>${escapeHtml(t('multiroom.heading'))}</h2>` +
-    `<p>${escapeHtml(t('multiroom.intro1'))}</p>` +
-    `<div class="muted small">${escapeHtml(t('multiroom.feedbackPre'))} ` +
-    `<a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a> &middot; ` +
-    `<a href="#" id="multiroomEmail">str@sichtbar-app.de</a></div></div>`;
+    `<p>${escapeHtml(t('multiroom.intro1'))}</p></div>`;
+
+  // The live groups and stereo pairs, framed in the exact colours the speaker
+  // picker on the Music tab uses (groupColorMap is the shared scheme), so an
+  // existing group reads the same on both pages (Jens 2026-08-30). Read-only
+  // status; the controls below are what change it. colorMap is also used to tint
+  // the stereo channel cards, so this is computed once here.
+  const colorMap = groupColorMap(state.zoneLive, strBoxes);
+  const livePairsTop = stereoPairsOf(state.zoneLive);
+  const pairForMasterKey = (mk) => livePairsTop.find(p => {
+    const bxs = pairMemberBoxes(p, strBoxes).map(x => x.box).filter(Boolean);
+    const mb = bxs.find(b => (b.deviceID || '').toUpperCase() === (p.master || '').toUpperCase()) || bxs[0] || null;
+    return mb && (mb.deviceID || '').toUpperCase() === mk;
+  }) || null;
+  const frameKeys = Object.keys(colorMap).sort();
+  const liveFramesHtml = frameKeys.length
+    ? `<div class="zone-frames">` + frameKeys.map(mk => {
+        const members = strBoxes
+          .filter(b => zoneOrPairMaster(b, state.zoneLive, strBoxes) === mk)
+          .sort((a, b) => (((b.deviceID || '').toUpperCase() === mk ? 1 : 0) - ((a.deviceID || '').toUpperCase() === mk ? 1 : 0)));
+        const pair = pairForMasterKey(mk);
+        const masterBox = strBoxes.find(b => (b.deviceID || '').toUpperCase() === mk);
+        const label = pair
+          ? (pairDisplayName(pair, () => renderMultiroom(false)) || t('multiroom.stereoHeading'))
+          : (masterBox ? zoneLabel(masterBox) : mk);
+        const chips = members.map(b =>
+          `<span class="zone-frame-chip">${escapeHtml(zoneLabel(b))}</span>`).join('');
+        return `<div class="box-group box-group-c${colorMap[mk]}">` +
+          `<span class="box-group-label">${escapeHtml((pair ? t('multiroom.stereoLabelPrefix') : t('multiroom.groupLabelPrefix')) + ' ' + label)}</span>` +
+          chips + `</div>`;
+      }).join('') + `</div>`
+    : '';
 
   const topbar = `<div class="zone-topbar"><button id="zoneRefresh" class="btn btn-mini">${escapeHtml(t('common.refresh'))}</button></div>`;
   const previewNote = enough ? '' :
@@ -298,7 +326,7 @@ export function renderMultiroom(fetchLive) {
     ? `<div class="muted small" id="pairBalance" hidden></div>`
     : '';
 
-  root.innerHTML = intro + topbar + previewNote + updateWarn +
+  root.innerHTML = intro + liveFramesHtml + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
      ${pairBalance}
@@ -306,7 +334,7 @@ export function renderMultiroom(fetchLive) {
        <label class="zone-permanent-card${state.zonePermanent ? ' on' : ''}">
          <input type="checkbox" id="zonePermanent"${state.zonePermanent ? ' checked' : ''}/>
          <span class="zone-permanent-body">
-           <span class="zone-permanent-title"><span class="zone-permanent-icon" aria-hidden="true">&#128257;</span>${escapeHtml(t('multiroom.permanentLabel'))}</span>
+           <span class="zone-permanent-title"><span class="zone-permanent-icon" aria-hidden="true">&#128257;</span>${escapeHtml(t('multiroom.permanentLabel'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></span>
            <span class="muted small">${escapeHtml(t('multiroom.permanentHelp'))}</span>
          </span>
        </label>
@@ -346,10 +374,6 @@ export function renderMultiroom(fetchLive) {
   // Read-only, filled after the markup exists, and only when a pair does.
   if (formingPair) fillPairBalance(formingPair, strBoxes).catch(() => {});
 
-  const issueLink = $('multiroomIssueLink');
-  if (issueLink) issueLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {} };
-  const email = $('multiroomEmail');
-  if (email) email.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('mailto:str@sichtbar-app.de'); } catch {} };
   const refreshBtn = $('zoneRefresh');
   if (refreshBtn) refreshBtn.onclick = async () => {
     refreshBtn.disabled = true;
