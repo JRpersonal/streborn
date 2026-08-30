@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Amazon Alexa-integratie",
   "setupAPPush.stickStillNeeded": "Deze stap stuurt alleen de wifinaam en het wachtwoord naar de speaker, STR wordt niet geïnstalleerd. Zodra de speaker op je wifi zit, verschijnt hij in de speakerlijst en installeer je STR daar via je netwerk.",
   "spotify.nativeIntro": "Spotify Connect werkt native op je speaker. Er is niets in te stellen in deze app: het gebruikt de ingebouwde Spotify van je speaker.",
+  "spotify.playTitle": "Afspelen vanaf Spotify",
   "spotify.nativeStep1": "Open de Spotify-app op een telefoon of computer op dezelfde wifi als de speaker.",
   "spotify.nativeStep2": "Tik op het pictogram “Verbinden met een apparaat” (speaker) en kies deze speaker.",
   "spotify.nativeStep3": "Speel af. Elk Spotify-account werkt; wie als laatste verbindt, heeft de bediening. Geen login nodig in deze app.",

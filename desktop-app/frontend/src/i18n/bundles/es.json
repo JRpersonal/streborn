@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Integración con Amazon Alexa",
   "setupAPPush.stickStillNeeded": "Este paso solo envía el nombre y la contraseña de la Wi-Fi al altavoz, no instala STR. En cuanto el altavoz esté en tu Wi-Fi aparecerá en la lista de altavoces, y desde ahí instalas STR a través de tu red.",
   "spotify.nativeIntro": "Spotify Connect funciona de forma nativa en tu altavoz. No hay nada que configurar en esta aplicación: usa el Spotify integrado de tu altavoz.",
+  "spotify.playTitle": "Reproducir desde Spotify",
   "spotify.nativeStep1": "Abre la aplicación de Spotify en un teléfono u ordenador que esté en el mismo Wi-Fi que el altavoz.",
   "spotify.nativeStep2": "Toca el icono de “Conectar a un dispositivo” (altavoz) y elige este altavoz.",
   "spotify.nativeStep3": "Reproduce. Funciona con cualquier cuenta de Spotify; quien se conecte el último la controla. No hace falta iniciar sesión en esta aplicación.",

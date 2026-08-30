@@ -1219,6 +1219,7 @@
   "source.hint.alexa": "Amazon Alexa Integration",
   "setupAPPush.stickStillNeeded": "Dieser Schritt überträgt nur WLAN-Name und Passwort an den Lautsprecher, STR wird dabei nicht installiert. Sobald der Lautsprecher im WLAN ist, taucht er in der Lautsprecher-Liste auf, und du installierst STR von dort über dein Netzwerk.",
   "spotify.nativeIntro": "Spotify Connect funktioniert nativ auf deinem Lautsprecher. In dieser App musst du nichts einrichten: es nutzt das eingebaute Spotify des Lautsprechers.",
+  "spotify.playTitle": "Von Spotify abspielen",
   "spotify.nativeStep1": "Öffne die Spotify-App auf Handy oder PC im selben WLAN wie der Lautsprecher.",
   "spotify.nativeStep2": "Tippe auf das „Mit einem Gerät verbinden\"-Symbol (Lautsprecher) und wähle diesen Lautsprecher.",
   "spotify.nativeStep3": "Abspielen. Jeder Spotify-Account funktioniert; wer zuletzt verbindet, steuert. Kein Login in dieser App nötig.",

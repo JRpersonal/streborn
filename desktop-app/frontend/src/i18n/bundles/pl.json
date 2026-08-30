@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Integracja z Amazon Alexa",
   "setupAPPush.stickStillNeeded": "Ten krok wysyła do głośnika tylko nazwę i hasło Wi-Fi, nie instaluje STR. Gdy głośnik będzie w Twojej sieci Wi-Fi, pojawi się na liście głośników i stamtąd zainstalujesz STR przez swoją sieć.",
   "spotify.nativeIntro": "Spotify Connect działa natywnie na Twoim głośniku. W tej aplikacji nie ma nic do skonfigurowania: korzysta z wbudowanego Spotify głośnika.",
+  "spotify.playTitle": "Odtwarzaj ze Spotify",
   "spotify.nativeStep1": "Otwórz aplikację Spotify na telefonie lub komputerze w tej samej sieci Wi-Fi co głośnik.",
   "spotify.nativeStep2": "Dotknij ikony „Połącz z urządzeniem” (głośnik) i wybierz ten głośnik.",
   "spotify.nativeStep3": "Odtwarzaj. Działa dowolne konto Spotify; steruje nim ten, kto połączył się jako ostatni. W tej aplikacji nie trzeba się logować.",

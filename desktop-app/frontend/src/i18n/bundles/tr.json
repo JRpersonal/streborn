@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Amazon Alexa entegrasyonu",
   "setupAPPush.stickStillNeeded": "Bu adım hoparlöre yalnızca Wi-Fi adını ve parolasını gönderir, STR'yi kurmaz. Hoparlör Wi-Fi ağınıza bağlandığında hoparlör listesinde görünür ve STR'yi oradan ağınız üzerinden kurarsınız.",
   "spotify.nativeIntro": "Spotify Connect hoparlörünüzde yerel olarak çalışır. Bu uygulamada ayarlanacak bir şey yok: hoparlörünüzün yerleşik Spotify'ını kullanır.",
+  "spotify.playTitle": "Spotify'dan çal",
   "spotify.nativeStep1": "Hoparlörle aynı Wi-Fi'deki bir telefon veya bilgisayarda Spotify uygulamasını açın.",
   "spotify.nativeStep2": "“Bir cihaza bağlan” (hoparlör) simgesine dokunun ve bu hoparlörü seçin.",
   "spotify.nativeStep3": "Çalın. Herhangi bir Spotify hesabı çalışır; en son bağlanan onu kontrol eder. Bu uygulamada giriş gerekmez.",

@@ -25,45 +25,68 @@ export function renderSpotifyAlpha() {
     return;
   }
   root.dataset.rendered = '1';
+  const badge = `<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span>`;
   root.innerHTML = `
-    <div class="alpha-stage">
-      <h2>${escapeHtml(t('spotify.heading'))}</h2>
-      <p>${escapeHtml(t('spotify.nativeIntro'))}</p>
-      <ol class="alpha-checklist">
-        <li>${escapeHtml(t('spotify.nativeStep1'))}</li>
-        <li>${escapeHtml(t('spotify.nativeStep2'))}</li>
-        <li>${escapeHtml(t('spotify.nativeStep3'))}</li>
-      </ol>
-      <p class="muted small">${escapeHtml(t('spotify.versionNote'))} <a href="#" id="spotifyUpdateLink">${escapeHtml(t('spotify.updateLink'))}</a></p>
-      <div class="spotify-str-hint">${escapeHtml(t('spotify.dualConnectNote'))}</div>
-      <h3>${escapeHtml(t('spotify.presetsTitle'))}</h3>
-      <p>${escapeHtml(t('spotify.presetsIntro'))}</p>
-      <ol class="alpha-checklist">
-        <li>${escapeHtml(t('spotify.presetsStep1'))}</li>
-        <li>${escapeHtml(t('spotify.presetsStep2'))}</li>
-        <li>${escapeHtml(t('spotify.presetsStep3'))}</li>
-      </ol>
-      <h3>${escapeHtml(t('spotify.worksTitle'))}</h3>
-      <ul class="spotify-status">
-        <li>${escapeHtml(t('spotify.works1'))}</li>
-        <li>${escapeHtml(t('spotify.works2'))}</li>
-        <li>${escapeHtml(t('spotify.works3'))}</li>
-        <li>${escapeHtml(t('spotify.works4'))}</li>
-      </ul>
-      <h3>${escapeHtml(t('spotify.notesTitle'))}</h3>
-      <ul class="spotify-status">
-        <li>${escapeHtml(t('spotify.limit1'))}</li>
-        <li>${escapeHtml(t('spotify.limit2'))}</li>
-        <li>${escapeHtml(t('spotify.limit3'))}</li>
-      </ul>
-      <h3>${escapeHtml(t('spotify.qualityTitle'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
-      <p>${escapeHtml(t('spotify.qualityDesc'))}</p>
-      <div id="spotifyQualityList"></div>
-      <h3>${escapeHtml(t('spotify.syncTitle'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
-      <p>${escapeHtml(t('spotify.syncDesc'))}</p>
-      <button class="btn btn-primary" id="spotifySyncBtn">${escapeHtml(t('spotify.syncBtn'))}</button>
-      <p class="muted small">${escapeHtml(t('spotify.nativeNote'))}</p>
-      <p>${escapeHtml(t('spotify.feedbackNote'))} <a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
+    <div class="spotify-page">
+      <header class="spotify-hero">
+        <h2>${escapeHtml(t('spotify.heading'))}</h2>
+        <p class="spotify-lead">${escapeHtml(t('spotify.nativeIntro'))}</p>
+      </header>
+
+      <section class="sp-card">
+        <h3 class="sp-card-title">${escapeHtml(t('spotify.playTitle'))}</h3>
+        <ol class="sp-steps">
+          <li>${escapeHtml(t('spotify.nativeStep1'))}</li>
+          <li>${escapeHtml(t('spotify.nativeStep2'))}</li>
+          <li>${escapeHtml(t('spotify.nativeStep3'))}</li>
+        </ol>
+        <div class="spotify-str-hint">${escapeHtml(t('spotify.dualConnectNote'))}</div>
+        <p class="muted small sp-version">${escapeHtml(t('spotify.versionNote'))} <a href="#" id="spotifyUpdateLink">${escapeHtml(t('spotify.updateLink'))}</a></p>
+      </section>
+
+      <section class="sp-card">
+        <h3 class="sp-card-title">${escapeHtml(t('spotify.presetsTitle'))}</h3>
+        <p>${escapeHtml(t('spotify.presetsIntro'))}</p>
+        <ol class="sp-steps">
+          <li>${escapeHtml(t('spotify.presetsStep1'))}</li>
+          <li>${escapeHtml(t('spotify.presetsStep2'))}</li>
+          <li>${escapeHtml(t('spotify.presetsStep3'))}</li>
+        </ol>
+      </section>
+
+      <section class="sp-card sp-tools">
+        <div class="sp-tool">
+          <h3 class="sp-card-title">${escapeHtml(t('spotify.qualityTitle'))}${badge}</h3>
+          <p class="muted small">${escapeHtml(t('spotify.qualityDesc'))}</p>
+          <div id="spotifyQualityList"></div>
+        </div>
+        <div class="sp-tool">
+          <h3 class="sp-card-title">${escapeHtml(t('spotify.syncTitle'))}${badge}</h3>
+          <p class="muted small">${escapeHtml(t('spotify.syncDesc'))}</p>
+          <button class="btn btn-primary" id="spotifySyncBtn">${escapeHtml(t('spotify.syncBtn'))}</button>
+        </div>
+      </section>
+
+      <details class="sp-details">
+        <summary>${escapeHtml(t('spotify.worksTitle'))}</summary>
+        <ul class="spotify-status">
+          <li>${escapeHtml(t('spotify.works1'))}</li>
+          <li>${escapeHtml(t('spotify.works2'))}</li>
+          <li>${escapeHtml(t('spotify.works3'))}</li>
+          <li>${escapeHtml(t('spotify.works4'))}</li>
+        </ul>
+      </details>
+      <details class="sp-details">
+        <summary>${escapeHtml(t('spotify.notesTitle'))}</summary>
+        <ul class="spotify-status">
+          <li>${escapeHtml(t('spotify.limit1'))}</li>
+          <li>${escapeHtml(t('spotify.limit2'))}</li>
+          <li>${escapeHtml(t('spotify.limit3'))}</li>
+        </ul>
+      </details>
+
+      <p class="muted small sp-foot">${escapeHtml(t('spotify.nativeNote'))}</p>
+      <p class="sp-foot sp-feedback">${escapeHtml(t('spotify.feedbackNote'))} <a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
     </div>
   `;
   const sync = $('spotifySyncBtn');

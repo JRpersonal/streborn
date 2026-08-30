@@ -1219,6 +1219,7 @@
   "source.hint.alexa": "Amazon Alexa 整合",
   "setupAPPush.stickStillNeeded": "這一步只會把 Wi-Fi 名稱和密碼傳給喇叭，不會安裝 STR。喇叭連上你的 Wi-Fi 之後就會出現在喇叭清單裡，你再從那裡透過你的網路安裝 STR。",
   "spotify.nativeIntro": "Spotify Connect 在你的喇叭上原生就能用。這個應用程式裡不用設定任何東西：它用的是喇叭內建的 Spotify。",
+  "spotify.playTitle": "從 Spotify 播放",
   "spotify.nativeStep1": "在和喇叭連同一個 Wi-Fi 的手機或電腦上打開 Spotify 應用程式。",
   "spotify.nativeStep2": "點一下「連接裝置」（喇叭）圖示，選擇這台喇叭。",
   "spotify.nativeStep3": "開始播放。任何 Spotify 帳號都可以；最後連上的人就是控制的人。這個應用程式裡不需要登入。",

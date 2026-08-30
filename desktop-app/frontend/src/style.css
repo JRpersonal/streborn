@@ -909,6 +909,26 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   border-left: 3px solid var(--brand); background: var(--c-surface-2);
   font-size: 13px; line-height: 1.5;
 }
+
+/* Spotify page: card-chunked so the long info flow does not read as one wall
+   (Jens 2026-08-30). Primary steps in cards, the reference lists collapsed. */
+.spotify-page { max-width: 720px; margin: 24px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 16px; color: var(--c-text); }
+.spotify-hero h2 { margin: 0 0 6px; }
+.spotify-lead { margin: 0; color: var(--c-text-2); font-size: 15px; line-height: 1.5; }
+.sp-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 16px 18px; }
+.sp-card-title { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sp-card > p { margin: 0 0 10px; line-height: 1.5; }
+.sp-steps { margin: 4px 0 0; padding-left: 20px; }
+.sp-steps li { margin: 7px 0; line-height: 1.5; }
+.sp-version { margin: 12px 0 0; }
+.sp-tools { display: flex; flex-direction: column; gap: 22px; }
+.sp-tool > *:last-child { margin-bottom: 0; }
+.sp-tool p { margin: 0 0 10px; }
+.sp-details { border: 1px solid var(--c-border); border-radius: 10px; padding: 2px 14px; background: var(--c-surface); }
+.sp-details > summary { cursor: pointer; padding: 11px 0; font-weight: 600; font-size: 14px; list-style-position: inside; }
+.sp-details .spotify-status { margin: 2px 0 12px; }
+.sp-foot { color: var(--c-text-2); font-size: 13px; line-height: 1.5; margin: 0; }
+.sp-feedback { margin-top: 2px; }
 .alpha-checklist li { margin: 6px 0; }
 
 /* Spotify per-speaker streaming quality (#728) */
@@ -2453,7 +2473,8 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .hs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; flex: 1; align-content: start; }
 .hs-app { display: block; position: relative; }
 .hs-ico {
-  display: block; width: 26px; height: 26px; border-radius: 7px;
+  display: block; width: 100%; height: auto; aspect-ratio: 1; max-width: 26px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .18);
   object-fit: cover;
 }
@@ -2468,7 +2489,7 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
    ring is pinned to the icon's own height so it does not swallow the name
    underneath, which is half of what the sketch is showing. */
 .hs-ring::after {
-  content: ""; position: absolute; inset: -4px -4px auto -4px; height: 26px;
+  content: ""; position: absolute; inset: -4px -4px auto -4px; aspect-ratio: 1; height: auto;
   border-radius: 11px; outline: 2px solid #ffd9a0;
 }
 .hs-ring.rnd::after { border-radius: 50%; }

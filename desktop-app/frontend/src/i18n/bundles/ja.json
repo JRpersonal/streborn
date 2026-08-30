@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Amazon Alexa連携",
   "setupAPPush.stickStillNeeded": "この手順はスピーカーに Wi-Fi の名前とパスワードを送るだけで、STR はインストールしません。スピーカーが Wi-Fi に接続されるとスピーカー一覧に表示され、そこからネットワーク経由で STR をインストールします。",
   "spotify.nativeIntro": "Spotify Connectはお使いのスピーカーでネイティブに動作します。このアプリで設定するものはありません: スピーカー内蔵のSpotifyを使用します。",
+  "spotify.playTitle": "Spotify から再生",
   "spotify.nativeStep1": "スピーカーと同じWi-FiにつないだスマホまたはパソコンでSpotifyアプリを開きます。",
   "spotify.nativeStep2": "「デバイスに接続」(スピーカー) アイコンをタップし、このスピーカーを選びます。",
   "spotify.nativeStep3": "再生します。どのSpotifyアカウントでも使えます。最後に接続した人が操作します。このアプリでのログインは不要です。",

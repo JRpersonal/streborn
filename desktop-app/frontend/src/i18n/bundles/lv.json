@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Amazon Alexa integrācija",
   "setupAPPush.stickStillNeeded": "Šis solis tikai nosūta skaļrunim Wi-Fi nosaukumu un paroli, tas neinstalē STR. Tiklīdz skaļrunis būs jūsu Wi-Fi tīklā, tas parādīsies skaļruņu sarakstā, un no turienes jūs instalēsiet STR caur savu tīklu.",
   "spotify.nativeIntro": "Spotify Connect jūsu skaļrunī darbojas natīvi. Šajā lietotnē nav nekas jāiestata: tas izmanto jūsu skaļruņa iebūvēto Spotify.",
+  "spotify.playTitle": "Atskaņot no Spotify",
   "spotify.nativeStep1": "Atveriet Spotify lietotni telefonā vai datorā, kas ir tajā pašā Wi-Fi kā skaļrunis.",
   "spotify.nativeStep2": "Pieskarieties ikonai “Pievienoties ierīcei” (skaļrunis) un atlasiet šo skaļruni.",
   "spotify.nativeStep3": "Atskaņojiet. Darbojas jebkurš Spotify konts; vada tas, kurš pievienojas pēdējais. Šajā lietotnē pieteikšanās nav vajadzīga.",

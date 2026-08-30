@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Intégration Amazon Alexa",
   "setupAPPush.stickStillNeeded": "Cette étape envoie uniquement le nom et le mot de passe du Wi-Fi à l'enceinte, elle n'installe pas STR. Dès que l'enceinte est sur votre Wi-Fi, elle apparaît dans la liste des enceintes, et vous y installez STR via votre réseau.",
   "spotify.nativeIntro": "Spotify Connect fonctionne nativement sur votre enceinte. Il n'y a rien à configurer dans cette application : elle utilise le Spotify intégré de votre enceinte.",
+  "spotify.playTitle": "Lire depuis Spotify",
   "spotify.nativeStep1": "Ouvrez l'application Spotify sur un téléphone ou un ordinateur connecté au même Wi-Fi que l'enceinte.",
   "spotify.nativeStep2": "Touchez l'icône « Connexion à un appareil » (enceinte) et choisissez cette enceinte.",
   "spotify.nativeStep3": "Lancez la lecture. N'importe quel compte Spotify fonctionne ; la dernière personne connectée garde le contrôle. Aucune connexion requise dans cette application.",

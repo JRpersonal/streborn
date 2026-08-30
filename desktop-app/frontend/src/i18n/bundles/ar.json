@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "تكامل Amazon Alexa",
   "setupAPPush.stickStillNeeded": "هذه الخطوة ترسل اسم شبكة Wi-Fi وكلمة المرور إلى السمّاعة فقط، ولا تثبّت STR. بمجرد اتصال السمّاعة بشبكتك تظهر في قائمة السمّاعات، ومن هناك تثبّت STR عبر شبكتك.",
   "spotify.nativeIntro": "يعمل Spotify Connect بشكل أصلي على سمّاعتك. لا شيء لإعداده في هذا التطبيق: يستخدم Spotify المدمج في سمّاعتك.",
+  "spotify.playTitle": "التشغيل من Spotify",
   "spotify.nativeStep1": "افتح تطبيق Spotify على هاتف أو حاسوب على Wi-Fi نفسه للسمّاعة.",
   "spotify.nativeStep2": "انقر أيقونة «الاتصال بجهاز» (السمّاعة) واختر هذه السمّاعة.",
   "spotify.nativeStep3": "شغّل. أي حساب Spotify يعمل؛ ومَن يتّصل أخيرًا يتحكّم به. لا حاجة لتسجيل دخول في هذا التطبيق.",

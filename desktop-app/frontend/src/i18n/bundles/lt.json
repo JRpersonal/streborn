@@ -1136,6 +1136,7 @@
   "source.hint.alexa": "Amazon Alexa integracija",
   "setupAPPush.stickStillNeeded": "Šis veiksmas tik nusiunčia garsiakalbiui Wi-Fi pavadinimą ir slaptažodį, STR neįdiegia. Kai garsiakalbis prisijungs prie jūsų Wi-Fi, jis atsiras garsiakalbių sąraše, ir iš ten įdiegsite STR per savo tinklą.",
   "spotify.nativeIntro": "Spotify Connect veikia natyviai jūsų garsiakalbyje. Šioje programoje nieko nustatyti nereikia: ji naudoja garsiakalbyje įdiegtą Spotify.",
+  "spotify.playTitle": "Groti iš „Spotify\"",
   "spotify.nativeStep1": "Atverkite Spotify programą telefone ar kompiuteryje, prijungtame prie to paties Wi-Fi kaip garsiakalbis.",
   "spotify.nativeStep2": "Bakstelėkite “Prisijungti prie įrenginio” (garsiakalbio) piktogramą ir pasirinkite šį garsiakalbį.",
   "spotify.nativeStep3": "Grokite. Tinka bet kuri Spotify paskyra; valdo tas, kuris prisijungia paskutinis. Šioje programoje prisijungti nereikia.",
