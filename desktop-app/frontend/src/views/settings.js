@@ -2834,8 +2834,9 @@ function phoneHomeScreenBlock() {
               <div class="hs hs-ios">
                 <div class="hs-time">9:41</div>
                 <div class="hs-grid">
-                ${dummy('')}${dummy('')}${dummy('')}
-                  <span class="hs-app hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                ${dummy('')}${dummy('')}
+                  <span class="hs-app"><span class="hs-icobox hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /></span><span class="hs-name">ST Reborn</span></span>
+                ${dummy('')}
                 </div>
                 <div class="hs-dock">${dummy('')}${dummy('')}${dummy('')}${dummy('')}</div>
               </div>
@@ -2859,7 +2860,7 @@ function phoneHomeScreenBlock() {
                 <div class="hs-time">9:41</div>
                 <div class="hs-grid">
                 ${dummy('rnd')}${dummy('rnd')}
-                  <span class="hs-app hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                  <span class="hs-app"><span class="hs-icobox hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /></span><span class="hs-name">ST Reborn</span></span>
                 ${dummy('rnd')}
                 </div>
                 <div class="hs-pill"></div>

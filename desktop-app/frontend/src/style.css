@@ -2456,8 +2456,8 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 /* Home-screen sketches. Deliberately small and flat: they exist to show that
    the icon lands among ordinary apps, not to imitate a phone. */
 .phone-shots { display: flex; gap: 12px; flex-wrap: wrap; }
-.phone-shot { margin: 10px 0 0; width: 132px; display: flex; flex-direction: column; gap: 6px; }
-.phone-shot figcaption { font-size: 11px; color: var(--c-muted); line-height: 1.35; }
+.phone-shot { margin: 12px auto 0; width: 132px; display: flex; flex-direction: column; gap: 6px; }
+.phone-shot figcaption { font-size: 11px; color: var(--c-muted); line-height: 1.35; text-align: center; }
 /* The sketch should read as a phone at a glance, not as a coloured box: a tall
    portrait shape, a dark bezel around a rounded screen, and the one detail
    each platform is known by, a notch on the iPhone and a punch hole on the
@@ -2482,8 +2482,11 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .hs-ios { background: linear-gradient(165deg, #5b6b8c, #2d3550 62%, #1d2236); }
 .hs-and { background: linear-gradient(165deg, #3f5a4b, #233528 60%, #18241b); }
 .hs-time { color: rgba(255, 255, 255, .92); font-size: 9px; font-weight: 600; text-align: center; }
-.hs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; flex: 1; align-content: start; }
+.hs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; flex: 1; align-content: start; padding: 0 6px; }
 .hs-app { display: block; position: relative; }
+/* The ring wraps a box around the icon ALONE, so it frames the icon at any
+   size and never reaches down into the name beneath it (Jens 2026-08-30). */
+.hs-icobox { display: block; position: relative; }
 .hs-ico {
   display: block; width: 100%; height: auto; aspect-ratio: 1; max-width: 26px;
   border-radius: 7px;
@@ -2494,17 +2497,18 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .hs-real { background: none; border-color: rgba(255, 255, 255, .35); }
 .hs-ico-missing { background: rgba(255, 255, 255, .16); }
 .hs-name {
-  display: block; margin-top: 3px; font-size: 7px; line-height: 1.1;
+  display: block; margin-top: 5px; font-size: 7px; line-height: 1.1;
   color: rgba(255, 255, 255, .9); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* The one tile that is the point of the picture gets a ring around it. The
    ring is pinned to the icon's own height so it does not swallow the name
    underneath, which is half of what the sketch is showing. */
-.hs-ring::after {
-  content: ""; position: absolute; inset: -4px -4px auto -4px; aspect-ratio: 1; height: auto;
-  border-radius: 11px; outline: 2px solid #ffd9a0;
+.hs-icobox.hs-ring::after {
+  content: ""; position: absolute; inset: -3px;
+  border-radius: 9px; outline: 2px solid #ffd9a0;
 }
-.hs-ring.rnd::after { border-radius: 50%; }
+.hs-icobox.hs-ring.rnd::after { border-radius: 50%; }
 .hs-dock {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
   background: rgba(255, 255, 255, .14); border-radius: 12px; padding: 6px;
