@@ -353,6 +353,14 @@ function mountSetupShell() {
 function powerCycleAdviceHtml(box) {
   const m = String((box && box.model) || '').toLowerCase().replace(/[\s_]+/g, '');
   const v = String((box && box.variant) || '').toLowerCase();
+  // The SoundTouch 300 is not a "still stuck?" case: after an install or agent
+  // OTA it ALWAYS sits in the alternating-yellow blink state, unreachable,
+  // until it is unplugged once. As a muted tip people skipped it and thought
+  // the soundbar was bricked (Michal 2026-07, Richard 2026-08-30), so for the
+  // 300 this is a mandatory red step, not advice.
+  if (m.includes('300')) {
+    return `<div class="setup-warn setup-powercycle">${escapeHtml(t('update.st300PowerCycle'))}</div>`;
+  }
   const isPortable = m.includes('portable') || v === 'taigan';
   const key = isPortable ? 'setup.powerCyclePortable' : 'setup.powerCycleAdvice';
   return `<div class="setup-powercycle muted small">${escapeHtml(t(key))}</div>`;
