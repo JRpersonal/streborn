@@ -1353,5 +1353,6 @@
   "setup.formatToggleWinHint": "Windows 會要求系統管理員權限。",
   "common.saving": "儲存中…",
   "setup.targetEmptyBoseApp": "喇叭還沒連上任何 Wi-Fi 嗎？請先用原廠 Bose SoundTouch 應用程式的「新增喇叭」把它連上你的 Wi-Fi。這個功能仍然可用，在本地執行且不需要 Bose 帳號。一旦連上家用網路，它就會自動出現在這裡。下方「全新或已重設喇叭」卡片裡有 Bose 應用程式的連結。",
-  "setup.targetEmptySetupMode": "如果連 Bose 應用程式也找不到喇叭，請把它切換到設定模式：在喇叭上同時按住預設鍵 1 和音量減，約 10 秒直到它重新啟動（適用於有數字鍵的機型：SoundTouch 10、20、30 和 Portable）。之後幾分鐘內它會發出自己的「Bose SoundTouch」網路，Bose 應用程式即可在其中找到並加入它。已儲存的預設按鍵會因此遺失。"
+  "setup.targetEmptySetupMode": "如果連 Bose 應用程式也找不到喇叭，請把它切換到設定模式：在喇叭上同時按住預設鍵 1 和音量減，約 10 秒直到它重新啟動（適用於有數字鍵的機型：SoundTouch 10、20、30 和 Portable）。之後幾分鐘內它會發出自己的「Bose SoundTouch」網路，Bose 應用程式即可在其中找到並加入它。已儲存的預設按鍵會因此遺失。",
+  "multiroom.pairNotGroupable": "立體聲配對目前無法加入群組；喇叭韌體在這種情況下不會啟動音訊分配。請先解除配對，將喇叭個別加入群組，之後再重新建立配對。"
 }

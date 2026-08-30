@@ -145,8 +145,19 @@ export function renderMultiroom(fetchLive) {
     return `<div class="zone-live">&#9675; ${escapeHtml(t('multiroom.liveStandalone'))}</div>`;
   };
 
-  const cards = strBoxes.length
-    ? strBoxes.map(b => {
+  // A live stereo pair stays OUT of the zone grid (#792): enrolling one
+  // half serves two masters and plays out of sync with its own pair, and a
+  // zone stacked on the pair's master never starts the firmware's audio
+  // distribution (log-proven, 12-speaker household 2026-08-30). Until pairs
+  // can join as one unit, the honest offer is: dissolve the pair, group,
+  // re-pair afterwards - and the grid says so instead of hiding boxes
+  // silently.
+  const groupablePairIDs = new Set(
+    stereoPairsOf(state.zoneLive).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
+  const zoneBoxes = strBoxes.filter(b => !groupablePairIDs.has(String(b.deviceID || '').toUpperCase()));
+  const pairHiddenCount = strBoxes.length - zoneBoxes.length;
+  const cards = zoneBoxes.length
+    ? zoneBoxes.map(b => {
         const isMaster = b.deviceID === state.zoneMaster;
         const selected = !isMaster && !!state.zoneSlaves[b.deviceID];
         const outdated = deps.boxNeedsUpdate(b);
@@ -168,7 +179,9 @@ export function renderMultiroom(fetchLive) {
             <div class="zone-card-foot">${foot}${upd}</div>
           </div>`;
       }).join('')
-    : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
+      + (pairHiddenCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>` : '')
+    : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`
+      + (pairHiddenCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>` : '');
   const dis = enough ? '' : ' disabled';
   const modeBtn = (m, lbl) => `<button class="seg-btn${state.zoneMode === m ? ' active' : ''}" data-mode="${m}">${escapeHtml(lbl)}</button>`;
 
