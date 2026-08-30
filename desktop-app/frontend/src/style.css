@@ -1795,20 +1795,32 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .sources-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 7px;
+  margin: 8px 0 10px;
 }
+/* Every source is a neutral chip led by a status dot, so the list reads at a
+   glance without a wall of filled colour: green = active/available, the brand
+   colour = revived by STR, grey = not available (Jens 2026-08-30). */
 .source-pill {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 12px;
-  background: var(--c-surface);
-  border: 1px solid var(--c-surface-3);
-  color: var(--c-muted);
+  font-size: 11.5px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
-.source-pill small { color: var(--c-faint); font-size: 9px; margin-left: 4px; }
-.source-pill.src-ok { background: var(--brand-bg); border-color: var(--brand); color: var(--brand-text); }
-.source-pill.src-ok small { color: var(--brand-text-mid); }
+.source-pill::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--c-faint); flex: 0 0 auto;
+}
+.source-pill small { color: var(--c-text-2); font-size: 10px; margin-left: 2px; }
+.source-pill.src-ok::before { background: #3fb950; }
+.source-pill.src-via-str::before { background: var(--brand); }
+.source-pill.src-unav { color: var(--c-muted); }
+.source-pill.src-unav::before { background: var(--c-faint); }
 
 /* ---------- Setup View ---------- */
 #view-setup h2 { margin: 0 0 8px 0; color: var(--brand); }

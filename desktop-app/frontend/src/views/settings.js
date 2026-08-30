@@ -2935,6 +2935,12 @@ function physicalInputAccount(src) {
   const acc = String((src && src.sourceAccount) || '').trim();
   if (!acc) return '';
   if (/^ACCT#/i.test(acc) || /UserName$/i.test(acc)) return '';
+  // A STORED_MUSIC account is the media server's UUID (e.g.
+  // 00113251-28ed-...-1100/0), a service identifier, not a physical socket.
+  // Left in, it printed one raw "STORED_MUSIC (uuid/0)" pill per server;
+  // suppress it so those collapse into one clean "Media server" pill (the
+  // Music library section below names the individual servers).
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(acc)) return '';
   return acc;
 }
 
