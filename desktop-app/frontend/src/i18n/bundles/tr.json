@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS uygulamanın USB belleklere erişimini engelliyor. Sistem Ayarları, Gizlilik ve Güvenlik, Dosyalar ve Klasörler bölümünü açın ve ST Reborn için çıkarılabilir birimlere erişime izin verin. Ardından belleği çıkarıp yeniden takın.",
   "update.engineMissing": "{{name}} yeni sürümde çalışıyor, ancak son güncellemenin Spotify bileşeni hâlâ eksik. Hoparlör ayarlarını açıp güncellemeyi bir kez daha çalıştırın; yeniden başlatma olmadan yüklenir.",
   "setup.formatToggleWinHint": "Windows yönetici izni ister.",
-  "common.saving": "Kaydediliyor…"
+  "common.saving": "Kaydediliyor…",
+  "setup.targetEmptyBoseApp": "Hoparlörünüz henüz hiçbir Wi-Fi ağında değil mi? Önce orijinal Bose SoundTouch uygulamasındaki “Hoparlör ekle” ile Wi-Fi ağınıza bağlayın. Bu hâlâ çalışır, yerel olarak ve Bose hesabı olmadan. Ev ağınıza girdiği anda burada kendiliğinden görünür. Aşağıdaki yeni veya sıfırlanmış hoparlör kartında Bose uygulamasının bağlantıları var."
 }

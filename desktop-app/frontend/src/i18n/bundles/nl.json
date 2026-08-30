@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS blokkeert de toegang van de app tot USB-sticks. Open Systeeminstellingen, Privacy en beveiliging, Bestanden en mappen, en geef ST Reborn toegang tot verwisselbare volumes. Koppel de stick daarna los en sluit hem weer aan.",
   "update.engineMissing": "{{name}} draait op de nieuwe versie, maar het Spotify-onderdeel van de laatste update ontbreekt nog. Open de speakerinstellingen en start de update daar nog een keer; het wordt zonder herstart geleverd.",
   "setup.formatToggleWinHint": "Windows vraagt om beheerdersrechten.",
-  "common.saving": "Opslaan…"
+  "common.saving": "Opslaan…",
+  "setup.targetEmptyBoseApp": "Staat je speaker nog op geen enkel wifi-netwerk? Zet hem dan eerst met de originele Bose SoundTouch-app op je wifi, via “Speaker toevoegen”. Dat werkt nog steeds, lokaal en zonder Bose-account. Zodra hij op je thuisnetwerk staat, verschijnt hij hier vanzelf. De kaart voor nieuwe of gereset speakers hieronder bevat de links naar de Bose-app."
 }

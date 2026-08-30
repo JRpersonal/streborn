@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS blockiert den Zugriff der App auf USB-Sticks. Öffne Systemeinstellungen, Datenschutz und Sicherheit, Dateien und Ordner, und erlaube ST Reborn dort den Zugriff auf Wechseldatenträger. Steck den Stick danach einmal ab und wieder an.",
   "update.engineMissing": "{{name}} läuft auf der neuen Version, aber der Spotify-Baustein vom letzten Update fehlt noch. Öffne die Lautsprecher-Einstellungen und starte das Update dort noch einmal, er wird ohne Neustart nachgeliefert.",
   "setup.formatToggleWinHint": "Windows fragt dabei nach Administratorrechten.",
-  "common.saving": "Speichere…"
+  "common.saving": "Speichere…",
+  "setup.targetEmptyBoseApp": "Dein Lautsprecher ist noch in keinem WLAN? Dann bring ihn zuerst mit der originalen Bose SoundTouch App ins WLAN, über „Lautsprecher hinzufügen“. Das funktioniert weiterhin, lokal und ohne Bose-Konto. Sobald er im Heimnetz ist, taucht er hier von selbst auf. Die Links zur Bose App zeigt dir die Karte für neue oder zurückgesetzte Lautsprecher weiter unten."
 }

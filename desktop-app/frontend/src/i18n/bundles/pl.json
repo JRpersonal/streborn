@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS blokuje aplikacji dostęp do nośników USB. Otwórz Ustawienia systemowe, Prywatność i bezpieczeństwo, Pliki i foldery, i zezwól ST Reborn na dostęp do woluminów wymiennych. Potem odłącz nośnik i podłącz go ponownie.",
   "update.engineMissing": "{{name}} działa na nowej wersji, ale wciąż brakuje komponentu Spotify z ostatniej aktualizacji. Otwórz ustawienia głośnika i uruchom aktualizację jeszcze raz; zostanie dostarczony bez restartu.",
   "setup.formatToggleWinHint": "Windows poprosi o uprawnienia administratora.",
-  "common.saving": "Zapisywanie…"
+  "common.saving": "Zapisywanie…",
+  "setup.targetEmptyBoseApp": "Głośnik nie jest jeszcze w żadnej sieci Wi-Fi? Najpierw podłącz go do Wi-Fi oryginalną aplikacją Bose SoundTouch, przez „Dodaj głośnik”. To nadal działa, lokalnie i bez konta Bose. Gdy tylko znajdzie się w sieci domowej, pojawi się tutaj sam. Karta dla nowych lub zresetowanych głośników poniżej zawiera linki do aplikacji Bose."
 }

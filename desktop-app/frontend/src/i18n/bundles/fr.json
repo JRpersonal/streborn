@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS bloque l’accès de l’application aux clés USB. Ouvrez Réglages Système, Confidentialité et sécurité, Fichiers et dossiers, et autorisez ST Reborn à accéder aux volumes amovibles. Débranchez ensuite la clé et rebranchez-la.",
   "update.engineMissing": "{{name}} est à jour, mais le composant Spotify de la dernière mise à jour manque encore. Ouvrez les réglages de l’enceinte et relancez la mise à jour ; il est livré sans redémarrage.",
   "setup.formatToggleWinHint": "Windows demandera des droits d’administrateur.",
-  "common.saving": "Enregistrement…"
+  "common.saving": "Enregistrement…",
+  "setup.targetEmptyBoseApp": "Votre enceinte n’est encore sur aucun Wi-Fi ? Connectez-la d’abord à votre Wi-Fi avec l’application Bose SoundTouch d’origine, via « Ajouter une enceinte ». Cela fonctionne toujours, localement et sans compte Bose. Une fois sur votre réseau, elle apparaît ici toute seule. La carte pour enceintes neuves ou réinitialisées, plus bas, contient les liens vers l’application Bose."
 }

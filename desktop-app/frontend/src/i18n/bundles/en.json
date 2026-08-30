@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS is blocking this app from accessing USB sticks. Open System Settings, Privacy and Security, Files and Folders, and allow ST Reborn to access removable volumes. Then unplug the stick and plug it back in.",
   "update.engineMissing": "{{name}} runs the new version, but the Spotify component from the last update is still missing. Open the speaker settings and run the update once more there; it is delivered without a restart.",
   "setup.formatToggleWinHint": "Windows asks for admin rights.",
-  "common.saving": "Saving…"
+  "common.saving": "Saving…",
+  "setup.targetEmptyBoseApp": "Speaker not on any Wi-Fi yet? Put it on your Wi-Fi first with the original Bose SoundTouch app, via “Add speaker”. That still works, locally and without a Bose account. Once it is on your home network it shows up here on its own. The card for new or factory-reset speakers below has the links to the Bose app."
 }

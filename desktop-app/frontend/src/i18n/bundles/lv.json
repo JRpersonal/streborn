@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS bloķē lietotnes piekļuvi USB zibatmiņām. Atveriet Sistēmas iestatījumus, Privātums un drošība, Faili un mapes, un atļaujiet ST Reborn piekļuvi noņemamajiem sējumiem. Pēc tam atvienojiet zibatmiņu un pievienojiet to vēlreiz.",
   "update.engineMissing": "{{name}} darbojas ar jauno versiju, bet joprojām trūkst Spotify komponenta no pēdējā atjauninājuma. Atveriet skaļruņa iestatījumus un palaidiet atjauninājumu vēlreiz; tas tiek piegādāts bez restarta.",
   "setup.formatToggleWinHint": "Windows prasīs administratora tiesības.",
-  "common.saving": "Saglabā…"
+  "common.saving": "Saglabā…",
+  "setup.targetEmptyBoseApp": "Skaļrunis vēl nav nevienā Wi-Fi tīklā? Vispirms pievienojiet to Wi-Fi ar oriģinālo Bose SoundTouch lietotni, izmantojot “Pievienot skaļruni”. Tas joprojām darbojas lokāli un bez Bose konta. Tiklīdz tas būs jūsu mājas tīklā, tas šeit parādīsies pats. Kartītē jauniem vai atiestatītiem skaļruņiem zemāk ir saites uz Bose lietotni."
 }
