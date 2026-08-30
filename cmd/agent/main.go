@@ -769,7 +769,7 @@ func run() error {
 			}
 			margeSrv.SetStoredMusicSources(out)
 		}),
-		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup),
+		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup, margeSrv.RenameGroup),
 		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
 

@@ -32,6 +32,7 @@ export {
   RemoveConflictingMod,
   WakeBox,
   SyncBoxPresets,
+  PushStereoPairNameToBox,
   BoxPresets,
   BoxSnapshot,
   RestoreBoxSnapshot,

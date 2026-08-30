@@ -151,6 +151,26 @@ func (s *Server) persistGroupLocked() {
 	}
 }
 
+// RenameGroup updates the stored stereo pair's display name and persists it.
+// The Bose app shows and edits exactly this record (its own rename arrives
+// here through the firmware), so writing STR's pair name here is what makes
+// one name appear in both apps instead of a bare "Stereo pair (L+R)"
+// (field report, 2026-08-30). The canonical flag is untouched: a rename does
+// not change who authored the pair document.
+func (s *Server) RenameGroup(name string) error {
+	name = strings.TrimSpace(name)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.group == nil {
+		return fmt.Errorf("no stereo pair stored")
+	}
+	s.group.Name = name
+	s.persistGroupLocked()
+	s.logger.Info("marge group: renamed", slog.String("comp", "marge"),
+		slog.String("groupId", s.group.ID), slog.String("name", name))
+	return nil
+}
+
 // GroupSnapshot returns the current group document and whether it is the
 // canonical (STR-installed) record. ok is false when no pair is stored.
 func (s *Server) GroupSnapshot() (xmlDoc string, canonical bool, ok bool) {

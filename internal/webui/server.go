@@ -216,9 +216,10 @@ type Server struct {
 	// from its own point of view and the RIGHT box stores itself as master).
 	// The desktop app relays the document to the partner because agent-to-
 	// agent HTTP is blocked between series-I boxes. nil until wired.
-	margeGroupGet   func() (xmlDoc string, canonical bool, ok bool)
-	margeGroupSet   func(xmlDoc string) error
-	margeGroupClear func(reason string)
+	margeGroupGet    func() (xmlDoc string, canonical bool, ok bool)
+	margeGroupSet    func(xmlDoc string) error
+	margeGroupClear  func(reason string)
+	margeGroupRename func(name string) error
 	// margeForward registers (or clears) a developer machine the box's cloud
 	// conversation is relayed to. nil disables the endpoint. See margelab.go.
 	margeForward func(target string) error
@@ -800,6 +801,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/zone/volume", s.handleZoneVolume)
 	mux.HandleFunc("/api/box/sleep", s.handleSleep)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
+	mux.HandleFunc("/api/box/zone/stereo-name", s.handleStereoName)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)

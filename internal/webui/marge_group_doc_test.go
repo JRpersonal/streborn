@@ -17,7 +17,7 @@ func newMargeGroupServer() (*Server, *marge.Server) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ms := marge.New(logger)
 	s := &Server{logger: logger}
-	WithMargeGroups(ms.GroupSnapshot, ms.SetCanonicalGroup, ms.ClearGroup)(s)
+	WithMargeGroups(ms.GroupSnapshot, ms.SetCanonicalGroup, ms.ClearGroup, ms.RenameGroup)(s)
 	return s, ms
 }
 

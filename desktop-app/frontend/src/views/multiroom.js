@@ -8,7 +8,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
+import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
@@ -393,7 +393,16 @@ export function renderMultiroom(fetchLive) {
     // the freshly stored name.
     const ns = $('stereoNameSave');
     if (ns) ns.onclick = async () => {
-      try { await setPairName(formingPair, $('stereoName').value); } catch {}
+      const newName = $('stereoName').value;
+      try { await setPairName(formingPair, newName); } catch {}
+      // Push the name into BOTH members' firmware pair records too: that is
+      // the record the Bose app reads and edits, so the rename shows up there
+      // as well (field report, 2026-08-30). Best effort per member; the
+      // app-side store above already carries the STR display.
+      try {
+        const members = pairMemberBoxes(formingPair, strBoxes).map(x => x.box).filter(Boolean);
+        await Promise.allSettled(members.map(b => PushStereoPairNameToBox(b.host, b.port, newName.trim())));
+      } catch {}
       delete state.stereoName;
       renderMultiroom(false);
     };
@@ -443,7 +452,9 @@ async function doFormStereo(pairCands) {
     const res = await FormZone(left.host, left.port, {
       master: { deviceID: left.deviceID, ip: left.host },
       slaves: [{ deviceID: right.deviceID, ip: right.host }],
-      name: '', stereo: true,
+      // The typed name goes into the firmware pair document from the start,
+      // so the Bose app shows it too instead of "Stereo pair (L+R)".
+      name: wantName.trim(), stereo: true,
     });
     // The agent answers 200 with ok:false when the firmware silently dropped a
     // member (incomplete pair) - and FormZone answers ok:false with notReady
