@@ -3720,6 +3720,28 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   return { outcome: 'done', version: confirmedVer };
 }
 
+// showSt300PowerCycleNotice puts the SoundTouch 300 power-cycle instruction on
+// screen until the user dismisses it. After an install or agent OTA the 300
+// always sits blinking and unreachable until it is unplugged once; a toast
+// vanished before people read it and they thought the soundbar was dead
+// (Jens 2026-08-30), so this one step gets a modal, reusing the failure-report
+// overlay host.
+function showSt300PowerCycleNotice() {
+  const host = $('updateFailureReport');
+  if (!host) { showToast(t('update.st300PowerCycle')); return; }
+  host.innerHTML = `
+    <div class="failreport-inner">
+      <div class="failreport-title">${escapeHtml(t('update.st300NoticeTitle'))}</div>
+      <p>${escapeHtml(t('update.st300PowerCycle'))}</p>
+      <div class="failreport-actions">
+        <button class="btn btn-primary btn-mini" id="st300NoticeClose">${escapeHtml(t('common.close'))}</button>
+      </div>
+    </div>`;
+  host.classList.remove('hidden');
+  const c = $('st300NoticeClose');
+  if (c) c.onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
+}
+
 // showUpdateFailureReport offers the user a copyable account of an update that
 // did not reach its goal, gathered while the evidence is still there.
 //
@@ -4098,8 +4120,9 @@ async function doBoxUpdate(targetBox) {
     }
     // The SoundTouch 300 drops into its blinking update-pending state after an
     // OTA and needs a manual power-cycle to finish; the agent cannot clear it, so
-    // tell the user (#ST300 blink, Michal + Jens 2026-07-16).
-    if ((targetBox.model || '').includes('300')) showToast(t('update.st300PowerCycle'));
+    // tell the user (#ST300 blink, Michal + Jens 2026-07-16). As a modal, not a
+    // toast: it stays up until read (Jens 2026-08-30).
+    if ((targetBox.model || '').includes('300')) showSt300PowerCycleNotice();
     // Refresh app state regardless of confirmation so the user sees current
     // truth (either updated or still in OTA). This is BEST-EFFORT and must never
     // surface as "Update failed": the box is typically still mid-reboot here, so
@@ -4529,6 +4552,13 @@ async function runUpdateAllBoxes(onStart) {
     showToast(t('updateAll.problemToast', { failed: c.fail, unconfirmed, done: c.done, deferred: c.defer - unconfirmed }));
   } else {
     showToast(t('updateAll.doneToast', { done: c.done, deferred: c.defer, failed: c.fail }));
+  }
+  // Any SoundTouch 300 that got this far is now blinking and unreachable until
+  // someone unplugs it once. The row already says so, but the row scrolls away
+  // with the panel, so the instruction also gets the stays-until-dismissed
+  // treatment (Jens 2026-08-30).
+  if (targets.some(b => (b.model || '').includes('300') && ((rowState.get(b.host) || {}).outcome !== 'failed'))) {
+    showSt300PowerCycleNotice();
   }
   return true;
 }
