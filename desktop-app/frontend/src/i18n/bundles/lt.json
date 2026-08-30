@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "Neįtraukta: {{names}}. Įjunkite šiuos garsiakalbius ir bandykite dar kartą.",
   "setup.stickMacPrivacy": "macOS blokuoja programos prieigą prie USB atmintinių. Atidarykite Sistemos nustatymus, Privatumas ir sauga, Failai ir aplankai, ir leiskite ST Reborn pasiekti keičiamuosius tomus. Tada ištraukite atmintinę ir įkiškite iš naujo.",
   "update.engineMissing": "{{name}} veikia su nauja versija, bet vis dar trūksta Spotify komponento iš paskutinio atnaujinimo. Atidarykite garsiakalbio nustatymus ir paleiskite atnaujinimą dar kartą; jis įdiegiamas be perkrovimo.",
-  "setup.formatToggleWinHint": "Windows paprašys administratoriaus teisių."
+  "setup.formatToggleWinHint": "Windows paprašys administratoriaus teisių.",
+  "common.saving": "Įrašoma…"
 }

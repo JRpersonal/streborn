@@ -1350,5 +1350,6 @@
   "settingsView.backupNotReached": "Niet meegenomen: {{names}}. Zet deze speakers aan en probeer het opnieuw.",
   "setup.stickMacPrivacy": "macOS blokkeert de toegang van de app tot USB-sticks. Open Systeeminstellingen, Privacy en beveiliging, Bestanden en mappen, en geef ST Reborn toegang tot verwisselbare volumes. Koppel de stick daarna los en sluit hem weer aan.",
   "update.engineMissing": "{{name}} draait op de nieuwe versie, maar het Spotify-onderdeel van de laatste update ontbreekt nog. Open de speakerinstellingen en start de update daar nog een keer; het wordt zonder herstart geleverd.",
-  "setup.formatToggleWinHint": "Windows vraagt om beheerdersrechten."
+  "setup.formatToggleWinHint": "Windows vraagt om beheerdersrechten.",
+  "common.saving": "Opslaan…"
 }
