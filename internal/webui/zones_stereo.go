@@ -49,6 +49,33 @@ func (s *Server) handleBoxZone(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleStereoName renames the stored stereo pair (POST {"name": "..."}). The
+// name lives in the marge group record, which is the same place the Bose app
+// reads and edits, so one rename shows up in STR and the Bose app alike. The
+// desktop app calls this on BOTH members (their marges each hold the pair
+// document; agent-to-agent HTTP is blocked between series-I boxes).
+func (s *Server) handleStereoName(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.margeGroupRename == nil {
+		http.Error(w, "stereo rename not wired", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4*1024)).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.margeGroupRename(req.Name); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)

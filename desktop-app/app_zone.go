@@ -326,6 +326,25 @@ func (a *App) relayStereoPairClear(out map[string]any) {
 // to the firmware's /getGroup teardown when the caller explicitly asked for a
 // pair to be undone (?stereo=1), so a plain multiroom dissolve can never
 // destroy a stereo pair as a side effect.
+// SetStereoPairName writes the pair's display name onto one member's agent,
+// which stores it in the marge group record: the very record the Bose app
+// reads and edits, so one rename shows the same name in STR and in the Bose
+// app instead of a bare "Stereo pair (L+R)" (field report, 2026-08-30). The
+// frontend calls this for BOTH members, because each member's marge holds its
+// own copy of the pair document.
+func (a *App) PushStereoPairNameToBox(host string, port int, name string) error {
+	body, _ := json.Marshal(map[string]string{"name": name})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/zone/stereo-name", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
 func (a *App) DissolveStereoPair(host string, port int) error {
 	resp, err := a.boxDoTimeout(host, port, http.MethodDelete, "/api/box/zone?stereo=1", "", "", zoneCallTimeout)
 	if err != nil {

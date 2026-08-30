@@ -137,6 +137,8 @@ export function Prev(arg1:string,arg2:number):Promise<void>;
 
 export function ProbeSetupAP():Promise<main.BoxInfo|boolean>;
 
+export function PushStereoPairNameToBox(arg1:string,arg2:number,arg3:string):Promise<void>;
+
 export function PushWLANToBox(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.SetupAPPushResult>;
 
 export function QueueNext(arg1:string,arg2:number):Promise<void>;
