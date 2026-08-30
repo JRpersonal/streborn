@@ -439,6 +439,12 @@ export function renderSetupTargetPicker() {
   let cards = '';
   if (stockBoxes.length === 0 && strBoxes.length === 0) {
     cards += `<div class="muted small setup-target-empty">${escapeHtml(t('setup.targetEmpty'))}</div>`;
+    // The single most common reason for an empty list: the speaker is not on
+    // any Wi-Fi yet. That first step belongs to the ORIGINAL Bose app (its
+    // local setup still works after the shutdown), and nobody can know that
+    // unless the app says it right here. A field mail (2026-08-30) burned ten
+    // stick attempts across four speakers that were never on the network.
+    cards += `<div class="setup-warn setup-target-empty-hint">${escapeHtml(t('setup.targetEmptyBoseApp'))}</div>`;
   }
   // boxIdentLine builds the sublabel pieces (model, serial, host)
   // that help users distinguish two or three identical speakers on

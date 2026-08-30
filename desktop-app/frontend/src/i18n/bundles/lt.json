@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS blokuoja programos prieigą prie USB atmintinių. Atidarykite Sistemos nustatymus, Privatumas ir sauga, Failai ir aplankai, ir leiskite ST Reborn pasiekti keičiamuosius tomus. Tada ištraukite atmintinę ir įkiškite iš naujo.",
   "update.engineMissing": "{{name}} veikia su nauja versija, bet vis dar trūksta Spotify komponento iš paskutinio atnaujinimo. Atidarykite garsiakalbio nustatymus ir paleiskite atnaujinimą dar kartą; jis įdiegiamas be perkrovimo.",
   "setup.formatToggleWinHint": "Windows paprašys administratoriaus teisių.",
-  "common.saving": "Įrašoma…"
+  "common.saving": "Įrašoma…",
+  "setup.targetEmptyBoseApp": "Garsiakalbis dar neprijungtas prie jokio Wi-Fi? Pirmiausia prijunkite jį prie Wi-Fi originalia „Bose SoundTouch“ programa per „Pridėti garsiakalbį“. Tai vis dar veikia lokaliai ir be Bose paskyros. Vos atsidūręs namų tinkle, jis čia atsiras pats. Kortelėje naujiems ar atstatytiems garsiakalbiams žemiau rasite Bose programos nuorodas."
 }

@@ -1035,7 +1035,15 @@ _es_ssid=""; _es_pass=""
 # wlan-creds replay on every normal boot, which meant STR re-programmed the
 # Wi-Fi coprocessor of boxes that were already perfectly online - the prime
 # suspect for unexplained Wi-Fi losses and orange network icons (#270).
-if [ -f "$STICK/wlan.conf" ]; then
+if [ -f "$STICK/wlan.ssid" ] && [ -f "$STICK/wlan.pass" ]; then
+    # Raw sidecar files, written by the same app run that wrote this stick:
+    # exact bytes, no JSON escaping. The sed parse below misread every value
+    # json.Marshal had escaped (ampersands became a literal &, a quote
+    # cut the capture short), so a password with such a character never
+    # joined any Wi-Fi (field, 2026-08-30).
+    _es_ssid=$(head -c 256 "$STICK/wlan.ssid" | tr -d '\r\n')
+    _es_pass=$(head -c 256 "$STICK/wlan.pass" | tr -d '\r\n')
+elif [ -f "$STICK/wlan.conf" ]; then
     _es_ssid=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
     _es_pass=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
 fi
@@ -1628,7 +1636,17 @@ persist_wlan_creds() {
         setup_log "wlan-creds persisted to NAND for next-boot replay"
     fi
 }
-if [ -f "$WLAN_CONF" ]; then
+if [ -f "$STICK/wlan.ssid" ] && [ -f "$STICK/wlan.pass" ]; then
+    # Raw sidecar files first: exact bytes from the app, immune to the JSON
+    # escaping that made the sed parse below misread special characters
+    # (see the early one-shot above for the full story).
+    SSID=$(head -c 256 "$STICK/wlan.ssid" | tr -d '\r\n')
+    PASS=$(head -c 256 "$STICK/wlan.pass" | tr -d '\r\n')
+    case "$(cat "$WLAN_CONF" 2>/dev/null)" in
+        *'"hidden":true'*|*'"hidden": true'*) HIDDEN=1 ;;
+    esac
+    WLAN_SOURCE="stick wlan.ssid"
+elif [ -f "$WLAN_CONF" ]; then
     SSID=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     PASS=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     # Forward-compatible: a stick provisioned for a hidden network may carry

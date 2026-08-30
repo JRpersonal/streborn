@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS 正在阻擋這個應用程式存取 USB 隨身碟。請開啟「系統設定」、「隱私權與安全性」、「檔案與檔案夾」，允許 ST Reborn 存取可移除卷宗。然後拔下隨身碟再重新插入。",
   "update.engineMissing": "{{name}} 已在新版本上運作，但上次更新的 Spotify 元件仍缺少。請開啟喇叭設定並再次執行更新；元件會在不重新啟動的情況下送達。",
   "setup.formatToggleWinHint": "Windows 會要求系統管理員權限。",
-  "common.saving": "儲存中…"
+  "common.saving": "儲存中…",
+  "setup.targetEmptyBoseApp": "喇叭還沒連上任何 Wi-Fi 嗎？請先用原廠 Bose SoundTouch 應用程式的「新增喇叭」把它連上你的 Wi-Fi。這個功能仍然可用，在本地執行且不需要 Bose 帳號。一旦連上家用網路，它就會自動出現在這裡。下方「全新或已重設喇叭」卡片裡有 Bose 應用程式的連結。"
 }

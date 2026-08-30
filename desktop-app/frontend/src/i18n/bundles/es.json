@@ -1351,5 +1351,6 @@
   "setup.stickMacPrivacy": "macOS está bloqueando el acceso de la aplicación a los USB. Abre Ajustes del Sistema, Privacidad y seguridad, Archivos y carpetas, y permite a ST Reborn el acceso a volúmenes extraíbles. Después desconecta el USB y vuelve a conectarlo.",
   "update.engineMissing": "{{name}} tiene la nueva versión, pero aún falta el componente de Spotify de la última actualización. Abre los ajustes del altavoz y ejecuta la actualización otra vez; se instala sin reinicio.",
   "setup.formatToggleWinHint": "Windows pedirá derechos de administrador.",
-  "common.saving": "Guardando…"
+  "common.saving": "Guardando…",
+  "setup.targetEmptyBoseApp": "¿Tu altavoz aún no está en ninguna red Wi-Fi? Conéctalo primero a tu Wi-Fi con la aplicación Bose SoundTouch original, mediante “Añadir altavoz”. Eso sigue funcionando, localmente y sin cuenta Bose. En cuanto esté en tu red doméstica aparecerá aquí solo. La tarjeta para altavoces nuevos o restablecidos, más abajo, tiene los enlaces a la aplicación de Bose."
 }

@@ -409,14 +409,37 @@ func WriteWLANConfig(targetPath string, cfg WLANConfig) error {
 	// is removed so the stick cannot carry the trap either way.
 	if strings.TrimSpace(cfg.Password) == "" {
 		_ = os.Remove(filepath.Join(targetPath, "wlan.conf"))
+		_ = os.Remove(filepath.Join(targetPath, "wlan.ssid"))
+		_ = os.Remove(filepath.Join(targetPath, "wlan.pass"))
 		return fmt.Errorf("Wi-Fi password is empty; refusing to write wlan.conf (an empty password would switch the speaker to an open-network profile and drop it off a protected Wi-Fi)")
 	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
+	// Newlines cannot occur in a real SSID or WPA passphrase and would break
+	// every consumer downstream, so refuse them outright.
+	if strings.ContainsAny(cfg.SSID+cfg.Password, "\r\n") {
+		return fmt.Errorf("SSID or password contains a line break")
+	}
+	// json.Marshal HTML-escapes ampersands and angle brackets to unicode escapes., and the stick's sed
+	// parser read those escapes LITERALLY: a password containing an ampersand
+	// was provisioned with the literal six-character escape and the speaker never
+	// joined (stick field reports, 2026-08-30). Write without HTML escaping,
+	// and additionally write the two values as raw single-line sidecar files
+	// the stick's run.sh prefers: those are immune to JSON escaping entirely
+	// (quotes and backslashes included). The same stick carries the run.sh
+	// that reads them, so the pair can never drift apart.
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(targetPath, "wlan.ssid"), []byte(cfg.SSID)); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(targetPath, "wlan.pass"), []byte(cfg.Password)); err != nil {
 		return err
 	}
 	dst := filepath.Join(targetPath, "wlan.conf")
-	return writeFile(dst, data)
+	return writeFile(dst, []byte(strings.TrimRight(buf.String(), "\n")))
 }
 
 // RegionConfig holds the country code (ISO 3166-1 alpha-2) the user
