@@ -764,7 +764,7 @@
   "settingsView.wlanHiddenToggle": "Slēpts tīkls (neizplata savu nosaukumu)",
   "settingsView.wlanHiddenHint": "Atzīmējiet, ja tīkls neparādās meklēšanā. Skaļrunis to meklēs pēc nosaukuma.",
   "settingsView.wlanNotVisibleTitle": "Skaļrunis neredz šo tīklu",
-  "settingsView.wlanNotVisibleBody": "Skaļrunis skenējot neatrod <b>{{ssid}}</b>. SoundTouch skaļruņi atbalsta tikai 2,4 GHz Wi-Fi. Tīkli, ko skaļrunis redz: {{visible}}. Tomēr pārslēgt?",
+  "settingsView.wlanNotVisibleBody": "Skaļrunis savā skenēšanā neatrod <b>{{ssid}}</b>, tāpēc, iespējams, nevarēs tam pievienoties. Tīkli, ko skaļrunis redz: {{visible}}. Tomēr pārslēgt?",
   "settingsView.wlanForceBtn": "Tomēr pārslēgt",
   "settingsView.wlanSsidEmpty": "SSID nevar būt tukšs",
   "settingsView.wlanSwitchedToast": "Wi-Fi mainīts. Skaļrunis saņems jaunu IP, drīz skenējiet sarakstu vēlreiz.",

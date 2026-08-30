@@ -764,7 +764,7 @@
   "settingsView.wlanHiddenToggle": "Réseau masqué (le nom n'est pas diffusé)",
   "settingsView.wlanHiddenHint": "Cochez cette case si le réseau n'apparaît pas dans les recherches. L'enceinte le cherchera alors par son nom.",
   "settingsView.wlanNotVisibleTitle": "L'enceinte ne voit pas ce réseau",
-  "settingsView.wlanNotVisibleBody": "L'enceinte ne trouve pas <b>{{ssid}}</b> lors de sa recherche. Les enceintes SoundTouch ne prennent en charge que le Wi-Fi 2,4 GHz. Réseaux visibles par l'enceinte : {{visible}}. Basculer quand même ?",
+  "settingsView.wlanNotVisibleBody": "L'enceinte ne trouve pas <b>{{ssid}}</b> dans sa propre recherche, elle ne pourra donc peut-être pas s'y connecter. Réseaux visibles par l'enceinte : {{visible}}. Basculer quand même ?",
   "settingsView.wlanForceBtn": "Basculer quand même",
   "settingsView.wlanSsidEmpty": "Le SSID ne doit pas être vide",
   "settingsView.wlanSwitchedToast": "Wi-Fi changé. L'enceinte reçoit une nouvelle IP, recherchez la liste à nouveau dans un instant.",

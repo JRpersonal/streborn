@@ -830,7 +830,7 @@
   "settingsView.wlanHiddenToggle": "隱藏網路（不廣播名稱）",
   "settingsView.wlanHiddenHint": "如果這個網路在掃描中沒出現，請勾選這裡。喇叭就會直接用名稱去找它。",
   "settingsView.wlanNotVisibleTitle": "喇叭看不到這個網路",
-  "settingsView.wlanNotVisibleBody": "喇叭掃描時找不到 <b>{{ssid}}</b>。SoundTouch 喇叭只支援 2.4 GHz 的 Wi-Fi。喇叭看得到的網路：{{visible}}。還是要切換嗎？",
+  "settingsView.wlanNotVisibleBody": "喇叭在自己的掃描中找不到 <b>{{ssid}}</b>，因此可能無法連上。喇叭看得到的網路：{{visible}}。還是要切換嗎？",
   "settingsView.wlanForceBtn": "還是要切換",
   "settingsView.wlanSsidEmpty": "SSID 不能空白",
   "settingsView.wlanSwitchedToast": "Wi-Fi 已切換。喇叭正在取得新的 IP，過一會兒再重新搜尋清單。",

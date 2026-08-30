@@ -830,7 +830,7 @@
   "settingsView.wlanHiddenToggle": "Verstecktes Netzwerk (Name wird nicht ausgestrahlt)",
   "settingsView.wlanHiddenHint": "Ankreuzen, wenn das WLAN in Scans nicht auftaucht. Der Lautsprecher sucht es dann gezielt über den Namen.",
   "settingsView.wlanNotVisibleTitle": "Lautsprecher sieht dieses Netzwerk nicht",
-  "settingsView.wlanNotVisibleBody": "Der Lautsprecher findet <b>{{ssid}}</b> bei der Suche nicht. SoundTouch-Lautsprecher unterstützen nur 2,4-GHz-WLAN. Netzwerke, die der Lautsprecher sieht: {{visible}}. Trotzdem wechseln?",
+  "settingsView.wlanNotVisibleBody": "Der Lautsprecher findet <b>{{ssid}}</b> bei seiner eigenen Suche nicht, er kann sich also möglicherweise nicht damit verbinden. Netzwerke, die der Lautsprecher sieht: {{visible}}. Trotzdem wechseln?",
   "settingsView.wlanForceBtn": "Trotzdem wechseln",
   "settingsView.wlanSsidEmpty": "SSID darf nicht leer sein",
   "settingsView.wlanSwitchedToast": "WLAN umgeschaltet. Lautsprecher bekommt eine neue IP, gleich Liste neu suchen.",

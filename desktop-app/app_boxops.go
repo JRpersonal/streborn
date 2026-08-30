@@ -298,7 +298,7 @@ var hostHasLinkLocalIPv4 = func() bool {
 // This is the list that decides whether a switch can work, and it is not the
 // list the computer sees. The app used to offer the computer's own known
 // networks and only find out afterwards that the speaker could not see the
-// chosen one, which is how users met the "SoundTouch only supports 2.4 GHz"
+// chosen one, which is how users met the "the speaker can't see that network"
 // refusal at the worst possible moment: after committing.
 //
 // Best effort by design. A speaker that cannot survey returns an empty list
