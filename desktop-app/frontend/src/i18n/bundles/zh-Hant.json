@@ -202,6 +202,7 @@
   "library.folderQueued": "正在播放資料夾（{{n}} 首曲目）",
   "library.assignFolderTitle": "要把這個資料夾存到哪個預設鍵？",
   "library.folderPresetSaved": "資料夾已存到預設 {{n}}：{{name}}",
+  "library.folderPresetSavedCapped": "資料夾已存到預設 {{n}}：{{name}}。因為很大，已存 {{total}} 首中的前 {{kept}} 首。",
   "library.addServerManual": "手動新增伺服器",
   "library.addServerPlaceholder": "IP 位址或網址，例如 192.168.1.20 或 http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "新增",

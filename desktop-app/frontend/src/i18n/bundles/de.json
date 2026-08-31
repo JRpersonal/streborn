@@ -202,6 +202,7 @@
   "library.folderQueued": "Ordner wird abgespielt ({{n}} Titel)",
   "library.assignFolderTitle": "Auf welche Preset-Taste den Ordner speichern?",
   "library.folderPresetSaved": "Ordner auf Preset {{n}} gespeichert: {{name}}",
+  "library.folderPresetSavedCapped": "Ordner auf Preset {{n}} gespeichert: {{name}}. Er war groß, daher wurden die ersten {{kept}} von {{total}} Titeln gespeichert.",
   "library.addServerManual": "Server manuell hinzufügen",
   "library.addServerPlaceholder": "IP-Adresse oder URL, z. B. 192.168.1.20 oder http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Hinzufügen",

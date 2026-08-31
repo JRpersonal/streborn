@@ -191,6 +191,7 @@
   "library.folderQueued": "Klasör çalınıyor ({{n}} parça)",
   "library.assignFolderTitle": "Klasör hangi ön ayar tuşuna kaydedilsin?",
   "library.folderPresetSaved": "Klasör ön ayar {{n}} olarak kaydedildi: {{name}}",
+  "library.folderPresetSavedCapped": "Klasör ön ayar {{n}} olarak kaydedildi: {{name}}. Büyük olduğundan {{total}} parçanın ilk {{kept}} tanesi kaydedildi.",
   "library.addServerManual": "Sunucuyu elle ekle",
   "library.addServerPlaceholder": "IP adresi veya URL, örn. 192.168.1.20 veya http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Ekle",

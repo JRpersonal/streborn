@@ -191,6 +191,7 @@
   "library.folderQueued": "Odtwarzanie folderu ({{n}} utworów)",
   "library.assignFolderTitle": "Na którym przycisku zapisać folder?",
   "library.folderPresetSaved": "Folder zapisany w zaprogramowanym {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "Folder zapisany w zaprogramowanym {{n}}: {{name}}. Był duży, więc zapisano pierwsze {{kept}} z {{total}} utworów.",
   "library.addServerManual": "Dodaj serwer ręcznie",
   "library.addServerPlaceholder": "Adres IP lub URL, np. 192.168.1.20 lub http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Dodaj",

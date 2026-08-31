@@ -109,6 +109,13 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				})
 				return
 			}
+			// A whole-library folder can carry thousands of tracks; the store caps
+			// the persisted list at presets.MaxQueueItems so one preset cannot fill
+			// the box's flash and strand the next OTA (juelo's 2600-track preset,
+			// 2026-08-31). Log the trim; SetSlot below does the actual capping.
+			if n := len(p.Items); n > presets.MaxQueueItems {
+				s.logger.Info("queue preset capped to fit NAND", "slot", slot, "requested", n, "kept", presets.MaxQueueItems)
+			}
 			if err := s.presets.SetSlot(p); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

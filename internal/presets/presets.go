@@ -81,6 +81,25 @@ type PresetItem struct {
 	DurationSec int    `json:"duration_sec,omitempty"`
 }
 
+// MaxQueueItems bounds how many tracks a queue preset (Type=="queue") stores on
+// the speaker. Saving a whole media-server library as a single preset (a 2600-
+// track queue was ~777 KB in presets.json plus its .bak, ~1.5 MB together) left
+// the box so tight on flash that the next agent OTA could not fit its atomic
+// write and the speaker came up without the agent (2026-08-31). 1000 tracks keep
+// the store well under ~300 KB while still giving a large shuffle pool; recall
+// plays whatever subset is stored (presetItemsToQueue accepts any length).
+const MaxQueueItems = 1000
+
+// capQueueItems trims a preset's Items to MaxQueueItems and reports whether it
+// changed anything. Only queue presets carry Items; every other type is a no-op.
+func capQueueItems(p *Preset) bool {
+	if len(p.Items) > MaxQueueItems {
+		p.Items = p.Items[:MaxQueueItems]
+		return true
+	}
+	return false
+}
+
 // rawPreset is the disk format helper. Accepts multiple alias fields.
 type rawPreset struct {
 	Slot      int          `json:"slot"`
@@ -135,6 +154,7 @@ func Load(path string) (*Store, error) {
 	if len(b) > 0 {
 		if data, perr := parse(b); perr == nil {
 			s.data = data
+			s.healOverCap()
 			return s, nil
 		}
 		// Primary present but corrupt: fall through to the backup.
@@ -144,8 +164,11 @@ func Load(path string) (*Store, error) {
 		if data, perr := parse(bb); perr == nil && len(data) > 0 {
 			s.data = data
 			// Restore the primary durably so the box is whole again and
-			// GET /api/presets stops returning empty. Best-effort.
-			_ = atomicfile.WriteFile(path, bb, 0o644)
+			// GET /api/presets stops returning empty. healOverCap's re-save
+			// (below) does the write when it trims; otherwise restore here.
+			if !s.healOverCap() {
+				_ = atomicfile.WriteFile(path, bb, 0o644)
+			}
 			return s, nil
 		}
 	}
@@ -215,6 +238,26 @@ func normalize(in []rawPreset) []Preset {
 	return out
 }
 
+// healOverCap trims any queue preset that exceeds MaxQueueItems (a store written
+// before the cap existed, e.g. a whole-library queue preset) and, when it trimmed
+// anything, rewrites presets.json + .bak so the speaker reclaims the flash on the
+// next agent start. Returns whether it actually wrote. Called from Load before the
+// Store is shared, so it needs no lock; pathless-safe (a Store with no path keeps
+// the trimmed data in memory and reports false).
+func (s *Store) healOverCap() bool {
+	changed := false
+	for i := range s.data {
+		if capQueueItems(&s.data[i]) {
+			changed = true
+		}
+	}
+	if changed && s.path != "" {
+		_ = s.Save()
+		return true
+	}
+	return false
+}
+
 // All returns a copy of all presets.
 func (s *Store) All() []Preset {
 	s.mu.RLock()
@@ -237,8 +280,11 @@ func (s *Store) Get(slot int) (Preset, bool) {
 }
 
 // SetSlot adds a preset or replaces the existing one for the same slot.
-// Persists immediately.
+// Persists immediately. A queue preset is trimmed to MaxQueueItems here so the
+// cap is enforced on every write path (the HTTP save, the copy-presets flow, any
+// future client), not only in the frontend.
 func (s *Store) SetSlot(p Preset) error {
+	capQueueItems(&p)
 	s.mu.Lock()
 	replaced := false
 	for i, existing := range s.data {
