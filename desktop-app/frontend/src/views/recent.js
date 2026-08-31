@@ -359,7 +359,10 @@ function stopRecentAutoRefresh() {
 // refreshRecentList re-fetches and repaints only the card list (not the header /
 // scope chips), so the auto-refresh does not disturb the controls. /api/recent
 // is a cheap in-RAM read on the box; this only runs while the tab is visible.
-async function refreshRecentList() {
+// Exported so main.js's status poll can repaint it the instant the speaker's
+// source changes from another controller, instead of waiting for the 30 s timer
+// (#810).
+export async function refreshRecentList() {
   if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
   const cards = await loadRecentCards();
   const listEl = $('recentList');
