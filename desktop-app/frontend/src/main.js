@@ -5480,7 +5480,17 @@ function renderGroupControl() {
   const isMember = !!box && box.host !== sel.host;
   // Chips are every other STR speaker relative to the MASTER (not the selection),
   // so the selected follower itself appears as an in-group chip that can be removed.
-  const others = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.host !== box.host);
+  // A live stereo pair's two halves are excluded here: a pair cannot join a group
+  // as a unit yet, so offering its halves only produced a "not groupable" error on
+  // click and left them cluttering the +N row (reported on the music tab,
+  // 2026-08-31). This is the same exclusion the Multi-room grid applies, via the
+  // shared stereoPairsOf helper; the click-time guard in runGroupMemberToggle stays
+  // as a defensive fallback for a pair that forms while the row is stale.
+  const pairMemberIDs = new Set(
+    stereoPairsOf(state.zoneLive || {}).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
+  const others = (state.boxes || []).filter(b =>
+    b && b.kind !== 'stock' && b.host && b.host !== box.host
+    && !pairMemberIDs.has(String(b.deviceID || '').toUpperCase()));
   if (others.length === 0) { cont.innerHTML = ''; return; }
   const slaves = currentGroupSlaves();
   // The tick must come from the SAME list the click acts on. It used to be
