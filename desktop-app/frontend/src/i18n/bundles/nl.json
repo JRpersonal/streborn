@@ -1,5 +1,4 @@
 {
-  "common.beta": "BÈTA",
   "common.strOnly": "Alleen in STR",
   "common.strOnlyHint": "Zat niet in de Bose-app. ST Reborn voegt dit toe.",
   "updateAll.button": "Alles bijwerken ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "Live status vanuit de desktop-app.",
   "multiroom.feedbackPrompt": "Binnenkort beschikbaar. Opmerkingen en ideeën welkom in het tracking-issue.",
   "multiroom.issueLink": "Issue #70 openen",
-  "multiroom.betaNote": "Experimentele bèta. Heb je twee of meer speakers met ST Reborn, probeer ze dan te groeperen: kies een hoofdspeaker, speel daar iets op af en voeg dan de andere toe. Gebruik daarna Logs opslaan onderaan het venster en stuur ze, zodat ik kan zien wat de speakers deden.",
   "multiroom.needTwo": "Je hebt minstens twee speakers met ST Reborn nodig om een groep te maken.",
   "multiroom.masterLabel": "Hoofdspeaker (speelt de bron af)",
   "multiroom.slavesLabel": "Groeperen met",
@@ -162,7 +160,6 @@
   "spotify.works2": "Sla afspeellijsten op de software- en hardware-voorkeuzetoetsen op; een voorkeuze speelt geshuffeld af, vanaf het begin, onder zijn eigen account.",
   "spotify.works3": "Met de toetsen voor volgend en vorig nummer op de afstandsbediening sla je het nummer over.",
   "spotify.works4": "Meerdere accounts in huis: een voorkeuze speelt af onder het account dat hem heeft opgeslagen.",
-  "spotify.limitsTitle": "Nog ruw (bèta)",
   "spotify.notesTitle": "Goed om te weten",
   "spotify.limit1": "Het display kan \"Spotify\" tonen in plaats van de titel van de afspeellijst, en bij een hardware-druk kan kort \"service niet beschikbaar\" verschijnen voordat het afspelen begint.",
   "spotify.limit2": "Wisselen tussen twee accounts herstart het afspelen een paar seconden en werkt het best als de app van het andere account niet actief verbonden is.",

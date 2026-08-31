@@ -1,5 +1,4 @@
 {
-  "common.beta": "Beta",
   "common.strOnly": "Nur in STR",
   "common.strOnlyHint": "In der Bose-App gab es das nicht. ST Reborn fügt es hinzu.",
   "updateAll.button": "Alle aktualisieren ({{count}})",
@@ -95,7 +94,6 @@
   "multiroom.bullet3": "Live-Status aus der Desktop-App.",
   "multiroom.feedbackPrompt": "Kommt bald. Anregungen ins Tracking-Issue.",
   "multiroom.issueLink": "Issue #70 öffnen",
-  "multiroom.betaNote": "Experimentelle Beta. Wenn du zwei oder mehr Lautsprecher mit ST Reborn hast, probier eine Gruppe: einen Haupt-Lautsprecher wählen, dort etwas abspielen, dann die anderen hinzufügen. Nutze danach bitte Logs speichern unten im Fenster und schick sie mir, damit ich sehe, was die Lautsprecher gemacht haben.",
   "multiroom.needTwo": "Du brauchst mindestens zwei Lautsprecher mit ST Reborn, um eine Gruppe zu bilden.",
   "multiroom.masterLabel": "Haupt-Lautsprecher (spielt die Quelle)",
   "multiroom.slavesLabel": "Gruppieren mit",
@@ -173,7 +171,6 @@
   "spotify.works2": "Playlists auf Soft- und Hardware-Preset-Tasten speichern; ein Preset startet gemischt, von Anfang, mit eigenem Account.",
   "spotify.works3": "Die Tasten Nächster/Vorheriger Titel der Fernbedienung überspringen den Titel.",
   "spotify.works4": "Mehrere Haushalts-Accounts: ein Preset spielt mit dem Account, der ihn gespeichert hat.",
-  "spotify.limitsTitle": "Noch holprig (Beta)",
   "spotify.notesTitle": "Gut zu wissen",
   "spotify.limit1": "Im Display steht eventuell „Spotify\" statt des Playlist-Titels, und beim Hardware-Druck blitzt kurz „Dienst nicht verfügbar\" auf, bevor die Wiedergabe startet.",
   "spotify.limit2": "Ein Wechsel zwischen zwei Accounts startet die Wiedergabe für ein paar Sekunden neu und klappt am besten, wenn die App des anderen Accounts nicht aktiv verbunden ist.",
