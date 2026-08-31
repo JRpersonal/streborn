@@ -141,7 +141,8 @@ reaches the box, which run.sh detects automatically.
 
 ## Adding another model
 
-1. Run the platform analysis (see `RUNBOOK-analyse.md`).
+1. Run the platform analysis (see the "How to read a new bundle"
+   section of [`MODEL-VARIANTS.md`](MODEL-VARIANTS.md)).
 2. Check CPU + module type. If not ARMv7l, a new cross-compile target in
    the Makefile and CI is needed.
 3. Same platform: add a row here plus an asset alias in

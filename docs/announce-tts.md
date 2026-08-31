@@ -3,8 +3,9 @@
 STR can play a short spoken announcement on a speaker, interrupting whatever is
 playing and resuming it afterwards (the cloud-free replacement for the firmware's
 `/speaker` notification endpoint, which is dead post-shutdown). It is exposed both
-in the desktop app (Speaker Settings, the **Announcements (beta)** section) and as
-an HTTP endpoint for home automation.
+in the desktop app (Speaker Settings, the **Announcements** section, one of the
+advanced options carrying the "Playground" badge) and as an HTTP endpoint for
+home automation.
 
 ## How it works
 

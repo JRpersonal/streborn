@@ -71,7 +71,11 @@ Costs accepted with go-librespot:
   it over UPnP. Bose lists WAV as a supported format, but the live-WAV
   path is the **one on-box unknown to validate** (de-risk: stream any WAV
   to the box's UPnP before trusting the full chain). If it fails, fall
-  back to librespot-org + Ogg and revisit control.
+  back to librespot-org + Ogg and revisit control. (Resolved in the end:
+  rather than stream WAV, go-librespot was patched to emit **raw Ogg
+  passthrough** (`.github/patches/go-librespot-passthrough.patch`,
+  `audio_output_pipe_passthrough`), so the box decodes Ogg natively and no
+  PCM/WAV is ever served, see "Where the engine comes from" below.)
 - **cgo build.** go-librespot decodes Vorbis/FLAC through C (libogg,
   libvorbis, flac), so unlike librespot's pure-Rust static musl it needs a
   cgo cross build. Handled once in CI (`.github/workflows/go-librespot.yml`,
@@ -79,10 +83,11 @@ Costs accepted with go-librespot:
   box's glibc 2.15). One-time CI cost vs. an ongoing on-box token plane.
 
 Implementation landed (commit pivoting the manager): `internal/spotify`
-supervises go-librespot (config: pipe -> /dev/stdout PCM, local API on,
-zeroconf + persist credentials), `ServeWAV` streams the audio, `Play`
-drives recall; `cmd/agent` + `internal/webui` route both hardware and
-software Spotify preset presses to `Play(uri)` + `/spotify/stream`.
+supervises go-librespot (config: pipe -> /dev/stdout raw Ogg passthrough
+via the STR patch, local API on, zeroconf + persist credentials),
+`ServeOgg` streams the audio, `Play` drives recall; `cmd/agent` +
+`internal/webui` route both hardware and software Spotify preset presses
+to `Play(uri)` + `/spotify/stream.ogg`.
 
 ### Where the engine comes from (build it from `master`, nothing else)
 

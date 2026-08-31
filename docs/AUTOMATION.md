@@ -33,7 +33,8 @@ curl -s -X POST http://192.0.2.66:17008/api/play \
 ```
 
 Or, in the desktop app, use **Speaker settings -> Play a custom URL from a
-preset (Expert)** to put the URL on a preset key. Pressing that key (on the
+preset** (one of the advanced options under the "Playground" badge) to put the
+URL on a preset key. Pressing that key (on the
 speaker or in the app) plays it, and a script can trigger the same preset with:
 
 ```sh
@@ -78,8 +79,10 @@ curl -s "http://$SPEAKER:8091/AVTransport/Control" \
 - **Replaces the current source, no auto-resume.** UPnP playback takes over the
   speaker and does not return to the previous station afterwards. The old
   interrupt-and-resume behaviour belonged to the `:8090/speaker` notification
-  endpoint, which is dead. (A resume-aware TTS/announcement path through STR is
-  tracked separately.)
+  endpoint, which is dead. For a resume-aware alternative, STR ships a separate
+  announcement path (`POST :17008/api/announce`) that snapshots the current
+  now-playing and volume, plays the clip, then restores them — see
+  [`docs/announce-tts.md`](announce-tts.md).
 - **State.** A raw UPnP push is most reliable when the speaker is idle /
   `INVALID_SOURCE`; from some active sources the firmware can ignore it. STR
   handles the wake/state itself.

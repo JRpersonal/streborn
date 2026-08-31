@@ -42,15 +42,19 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 
 - Discovery of speakers running STR over mDNS, list view in the desktop app. Speakers without STR show up too, marked "ready for STR", and can be installed in-app.
 - Playback control: play / pause / stop / volume / bass / source switch (AUX, Bluetooth, Standby) via the speaker's existing UPnP AVTransport endpoint on port 8091. I never route audio through the dead Bose cloud.
+- Phone remote: every speaker serves its own remote in the browser. Scan the QR code in the desktop app's speaker settings, add the page to your phone's home screen, and control that speaker, group it, and browse stations and your library from Android or iPhone, with no app store and no account.
 - Radio search via radio-browser.info, queried directly by the desktop app (no API key); only the final stream URL goes to the speaker. HLS-only stations (BBC and co.) are converted on the fly by the agent's stream proxy. On a blocked or dead stream the app automatically tries another listing of the same station.
-- Six preset slots, persisted by the agent on the speaker. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo). Existing non-STR presets (e.g. Deezer) are left untouched.
-- Spotify Connect (beta): a supervised go-librespot sidecar on the speaker. Spotify playlists, albums, and tracks save to preset slots and the hardware buttons, with multi-account switching and live now-playing. The raw Ogg stream is decoded by the speaker, never by the dead cloud.
+- Six preset slots, persisted by the agent on the speaker. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo). Existing non-STR presets (e.g. Deezer) are left untouched. Presets copy from one speaker to the others in one step.
+- Spotify Connect: a supervised go-librespot sidecar on the speaker. Spotify playlists, albums, and tracks save to preset slots and the hardware buttons, with multi-account switching and live now-playing. The raw Ogg stream is decoded by the speaker, never by the dead cloud. Streaming quality is set per speaker (160 or 320 kbps), and one click copies a Spotify login to every speaker so saved Spotify presets play on all of them.
 - Local media library: browse media servers on your home network over DLNA / UPnP AV (SSDP discovery, ContentDirectory browse), including FRITZ!Box, Synology, Plex and miniDLNA, and save any track as a preset. Lossless files (FLAC) play directly; the agent's stream proxy feeds the box.
-- Multiroom zones and stereo pairs (beta): group several speakers to play in sync, or pair two as a left/right stereo pair. Groups persist on the speaker and reform automatically after a reboot, standby cycle, or Wi-Fi outage.
-- Smart-home triggers (webhooks): turn a remote-control key, the power button, or an AUX change into a user-configured HTTP call, so a press can drive Home Assistant, ioBroker, Node-RED, or anything with an HTTP endpoint.
+- Multiroom zones and stereo pairs: group several speakers to play in sync, or pair two as a left/right stereo pair. Groups persist on the speaker and reform automatically after a reboot, standby cycle, or Wi-Fi outage.
+- Smart-home triggers (webhooks): turn a remote-control key, the power button, or an AUX change into a user-configured HTTP call, UDP packet, or Wake-on-LAN magic packet, so a press can drive Home Assistant, ioBroker, Node-RED, wake a PC, or anything reachable on the network.
 - OTA agent updates from the desktop app, with an SSH fallback and a pre-reboot stick refresh so the update cannot be reverted by the boot sync. Build stamp comparison catches version drift.
 - WLAN reconfigure from the desktop app. I rewrite `/etc/wpa_supplicant.conf` in full because appending breaks Wi-Fi.
 - Setup wizard for the install, including preset region, friendly name, box language, and Wi-Fi credentials. The network install is the normal path; the USB stick route (with a bundled FAT32 formatting helper) remains available as a fallback.
+- Backup and restore: save your favourites and every speaker's preset keys to one file, and restore them, for example before you rebuild.
+- Sleep timer: switch a speaker, or a whole group, off by itself after a set time, from the phone remote.
+- Voice control via a local hub: I do not add my own cloud skill, but a hub you run at home (Home Assistant) can talk to the speakers on your network and expose them to Alexa, so you can switch them and start presets by voice. See [`docs/ALEXA.md`](./docs/ALEXA.md).
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
 
 ### In the works
