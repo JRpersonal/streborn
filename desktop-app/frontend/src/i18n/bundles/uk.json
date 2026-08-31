@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Лише в STR",
-  "common.strOnlyHint": "Цього не було в застосунку Bose. ST Reborn це додає.",
+  "common.strOnly": "Нове завдяки STR",
+  "common.strOnlyHint": "Застосунок Bose ніколи не міг. ST Reborn може.",
   "updateAll.button": "Оновити всі ({{count}})",
   "updateAll.title": "Оновити всі колонки",
   "updateAll.summary": "{{done}} готово, {{deferred}} відкладено, {{failed}} помилок із {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Мультирум",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Подкасти",
+  "nav.newFeatureDot": "Нова функція STR, погляньте",
   "common.planned": "Заплановано",
   "podcasts.title": "Подкасти на вашій колонці",
   "podcasts.lead": "Плануємо підтримку подкастів: переглядайте та слухайте подкасти на колонці й закріпіть подкаст за кнопкою пресету, щоб натискання відтворювало найновіший епізод.",

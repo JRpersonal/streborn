@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Tik STR",
-  "common.strOnlyHint": "Bose programoje to nebuvo. ST Reborn tai prideda.",
+  "common.strOnly": "Nauja su STR",
+  "common.strOnlyHint": "Bose programėlė niekada negalėjo. ST Reborn gali.",
   "updateAll.button": "Atnaujinti visus ({{count}})",
   "updateAll.title": "Atnaujinti visas kolonėles",
   "updateAll.summary": "{{done}} atlikta, {{deferred}} atidėta, {{failed}} nepavyko iš {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Tinklalaidės",
+  "nav.newFeatureDot": "Nauja STR funkcija, pažiūrėk",
   "common.planned": "Planuojama",
   "podcasts.title": "Tinklalaidės jūsų kolonėlėje",
   "podcasts.lead": "Planuojame tinklalaidžių palaikymą: naršykite ir klausykitės tinklalaidžių kolonėlėje, o priskyrę tinklalaidę išankstinio nustatymo mygtukui, paspaudimu paleisite naujausią epizodą.",

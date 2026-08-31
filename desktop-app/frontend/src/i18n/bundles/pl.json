@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Tylko w STR",
-  "common.strOnlyHint": "Nie było tego w aplikacji Bose. ST Reborn to dodaje.",
+  "common.strOnly": "Nowość dzięki STR",
+  "common.strOnlyHint": "Aplikacja Bose nigdy nie potrafiła. ST Reborn tak.",
   "updateAll.button": "Zaktualizuj wszystkie ({{count}})",
   "updateAll.title": "Zaktualizuj wszystkie głośniki",
   "updateAll.summary": "{{done}} gotowe, {{deferred}} odłożone, {{failed}} nieudane z {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasty",
+  "nav.newFeatureDot": "Nowa funkcja STR, zobacz",
   "common.planned": "Planowane",
   "podcasts.title": "Podcasty na Twoim głośniku",
   "podcasts.lead": "Planujemy obsługę podcastów: przeglądaj i odtwarzaj podcasty na głośniku oraz przypisz podcast do przycisku presetu, aby naciśnięcie odtwarzało najnowszy odcinek.",

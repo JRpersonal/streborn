@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Solo en STR",
-  "common.strOnlyHint": "No estaba en la app de Bose. ST Reborn lo añade.",
+  "common.strOnly": "Nuevo con STR",
+  "common.strOnlyHint": "La app de Bose nunca pudo. ST Reborn sí.",
   "updateAll.button": "Actualizar todos ({{count}})",
   "updateAll.title": "Actualizar todos los altavoces",
   "updateAll.summary": "{{done}} listos, {{deferred}} pendientes, {{failed}} fallidos de {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multisala",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
+  "nav.newFeatureDot": "Nueva función de STR, échale un vistazo",
   "common.planned": "Previsto",
   "podcasts.title": "Podcasts en tu altavoz",
   "podcasts.lead": "Estamos planeando la compatibilidad con podcasts: explora y reproduce podcasts en el altavoz y asigna un podcast a un botón de preset para que una pulsación reproduzca el último episodio.",

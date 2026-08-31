@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "STR 專屬",
-  "common.strOnlyHint": "Bose App 沒有的功能，由 ST Reborn 新增。",
+  "common.strOnly": "STR 新增",
+  "common.strOnlyHint": "Bose App 從來做不到。ST Reborn 可以。",
   "updateAll.button": "全部更新 ({{count}})",
   "updateAll.title": "更新所有喇叭",
   "updateAll.summary": "共 {{total}} 台：{{done}} 台完成、{{deferred}} 台稍後、{{failed}} 台失敗",
@@ -62,6 +62,7 @@
   "nav.multiroom": "多房間",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcast",
+  "nav.newFeatureDot": "STR 新功能，看看吧",
   "common.planned": "規劃中",
   "podcasts.title": "在喇叭上聽 Podcast",
   "podcasts.lead": "我們正在規劃 Podcast 支援：瀏覽 Podcast 並用喇叭串流，也可以把一個 Podcast 放到預設鍵上，按一下就播最新一集。",

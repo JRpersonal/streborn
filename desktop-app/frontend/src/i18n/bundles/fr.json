@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Uniquement dans STR",
-  "common.strOnlyHint": "Absent de l'app Bose. ST Reborn l'ajoute.",
+  "common.strOnly": "Nouveau avec STR",
+  "common.strOnlyHint": "L'appli Bose n'a jamais pu. ST Reborn, oui.",
   "updateAll.button": "Tout mettre à jour ({{count}})",
   "updateAll.title": "Mettre à jour toutes les enceintes",
   "updateAll.summary": "{{done}} terminé, {{deferred}} reporté, {{failed}} échoué sur {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
+  "nav.newFeatureDot": "Nouvelle fonction STR, jette un œil",
   "common.planned": "Prévu",
   "podcasts.title": "Podcasts sur votre enceinte",
   "podcasts.lead": "La prise en charge des podcasts est prévue : parcourez et écoutez des podcasts sur l'enceinte, et associez un podcast à un bouton de préréglage pour qu'un appui lance le dernier épisode.",
