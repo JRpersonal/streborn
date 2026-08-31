@@ -1,5 +1,4 @@
 {
-  "common.beta": "BÊTA",
   "common.strOnly": "Uniquement dans STR",
   "common.strOnlyHint": "Absent de l'app Bose. ST Reborn l'ajoute.",
   "updateAll.button": "Tout mettre à jour ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "État en direct depuis l'application de bureau.",
   "multiroom.feedbackPrompt": "Bientôt disponible. Commentaires et idées bienvenus sur le ticket de suivi.",
   "multiroom.issueLink": "Ouvrir le ticket #70",
-  "multiroom.betaNote": "Bêta expérimentale. Si tu as deux enceintes ou plus sous ST Reborn, essaie de les grouper : choisis une enceinte principale, lance une lecture dessus, puis ajoute les autres. Utilise ensuite « Enregistrer les journaux » en bas de la fenêtre et envoie-les-moi pour que je voie ce qu'ont fait les enceintes.",
   "multiroom.needTwo": "Il te faut au moins deux enceintes sous ST Reborn pour former un groupe.",
   "multiroom.masterLabel": "Enceinte principale (diffuse la source)",
   "multiroom.slavesLabel": "Grouper avec",
@@ -162,7 +160,6 @@
   "spotify.works2": "Enregistrer des playlists sur les touches de préréglage logicielles et matérielles ; un préréglage relance en mode aléatoire, depuis le début, sous son propre compte.",
   "spotify.works3": "Les touches titre suivant et précédent de la télécommande sautent le morceau.",
   "spotify.works4": "Plusieurs comptes du foyer : un préréglage relance sous le compte qui l'a enregistré.",
-  "spotify.limitsTitle": "Encore approximatif (bêta)",
   "spotify.notesTitle": "Bon à savoir",
   "spotify.limit1": "L'écran peut afficher « Spotify » au lieu du titre de la playlist, et un appui matériel peut brièvement faire clignoter « service indisponible » avant le début de la lecture.",
   "spotify.limit2": "Basculer entre deux comptes relance la lecture pendant quelques secondes et fonctionne mieux quand l'application de l'autre compte n'est pas activement connectée.",

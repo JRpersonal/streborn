@@ -537,8 +537,8 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="recent">${escapeHtml(t('nav.recent'))}</button>
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
-    <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
-    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
+    <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}</button>
+    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}</button>
     <button class="tab-btn" data-view="podcasts">${escapeHtml(t('nav.podcasts'))}<span class="beta-pill planned-pill">${escapeHtml(t('common.planned'))}</span></button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">

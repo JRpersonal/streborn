@@ -1,5 +1,4 @@
 {
-  "common.beta": "BETA",
   "common.strOnly": "Yalnızca STR'de",
   "common.strOnlyHint": "Bose uygulamasında yoktu. ST Reborn bunu ekler.",
   "updateAll.button": "Tümünü güncelle ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "Masaüstü uygulamasından canlı durum.",
   "multiroom.feedbackPrompt": "Yakında. Yorumlar ve fikirler takip başlığında memnuniyetle karşılanır.",
   "multiroom.issueLink": "Sorun #70'i aç",
-  "multiroom.betaNote": "Deneysel beta. ST Reborn çalıştıran iki veya daha fazla hoparlörünüz varsa, onları gruplamayı deneyin: bir ana hoparlör seçin, üzerinde bir şey çalmaya başlayın, sonra diğerlerini ekleyin. Ardından lütfen pencerenin altındaki \"Save logs\"u kullanın ve günlükleri gönderin ki hoparlörlerin ne yaptığını görebileyim.",
   "multiroom.needTwo": "Bir grup oluşturmak için ST Reborn çalıştıran en az iki hoparlöre ihtiyacınız var.",
   "multiroom.masterLabel": "Ana hoparlör (kaynağı çalar)",
   "multiroom.slavesLabel": "Şunlarla grupla",
@@ -162,7 +160,6 @@
   "spotify.works2": "Çalma listelerini yazılım ve donanım ön ayar tuşlarına kaydedin; bir ön ayar, kendi hesabıyla, baştan ve karışık olarak yeniden çalınır.",
   "spotify.works3": "Uzaktan kumandanın sonraki ve önceki parça tuşları şarkıyı atlar.",
   "spotify.works4": "Birden fazla ev hesabı: bir ön ayar, onu kaydeden hesapla yeniden çalınır.",
-  "spotify.limitsTitle": "Hâlâ pürüzlü (beta)",
   "spotify.notesTitle": "Bilinmesi iyi olur",
   "spotify.limit1": "Ekran, çalma listesi başlığı yerine \"Spotify\" gösterebilir ve bir donanım tuşuna basınca çalma başlamadan önce kısa süre \"hizmet kullanılamıyor\" yanıp sönebilir.",
   "spotify.limit2": "İki hesap arasında geçiş, çalmayı birkaç saniyeliğine yeniden başlatır ve diğer hesabın uygulaması etkin olarak bağlı değilken en iyi çalışır.",

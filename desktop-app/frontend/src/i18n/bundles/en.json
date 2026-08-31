@@ -1,5 +1,4 @@
 {
-  "common.beta": "Beta",
   "common.strOnly": "Only in STR",
   "common.strOnlyHint": "Not in the Bose app. ST Reborn adds this.",
   "updateAll.button": "Update all ({{count}})",
@@ -95,7 +94,6 @@
   "multiroom.bullet3": "Live status from the desktop app.",
   "multiroom.feedbackPrompt": "Coming soon. Comments and ideas welcome on the tracking issue.",
   "multiroom.issueLink": "Open issue #70",
-  "multiroom.betaNote": "Experimental beta. If you have two or more speakers running ST Reborn, try grouping them: pick a main speaker, start playing something on it, then add the others. Afterwards please use Save logs at the bottom of the window and send them so I can see what the speakers did.",
   "multiroom.needTwo": "You need at least two speakers running ST Reborn to make a group.",
   "multiroom.masterLabel": "Main speaker (plays the source)",
   "multiroom.slavesLabel": "Group with",
@@ -173,7 +171,6 @@
   "spotify.works2": "Save playlists to the soft and hardware preset keys; a preset recalls shuffled, from the start, under its own account.",
   "spotify.works3": "The remote's next and previous track keys skip the song.",
   "spotify.works4": "Several household accounts: a preset recalls under the account that saved it.",
-  "spotify.limitsTitle": "Still rough (beta)",
   "spotify.notesTitle": "Good to know",
   "spotify.limit1": "The display may show \"Spotify\" instead of the playlist title, and a hardware press can briefly flash \"service unavailable\" before playback starts.",
   "spotify.limit2": "Switching between two accounts restarts playback for a few seconds and works best when the other account's app is not actively connected.",

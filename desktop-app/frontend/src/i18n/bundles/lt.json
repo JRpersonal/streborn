@@ -1,5 +1,4 @@
 {
-  "common.beta": "BETA",
   "common.strOnly": "Tik STR",
   "common.strOnlyHint": "Bose programoje to nebuvo. ST Reborn tai prideda.",
   "updateAll.button": "Atnaujinti visus ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "Tiesioginė būsena iš darbalaukio programos.",
   "multiroom.feedbackPrompt": "Netrukus. Pastabos ir idėjos laukiamos sekimo gijoje.",
   "multiroom.issueLink": "Atverti problemą #70",
-  "multiroom.betaNote": "Eksperimentinė beta versija. Jei turite du ar daugiau garsiakalbių su ST Reborn, pabandykite juos sugrupuoti: pasirinkite pagrindinį garsiakalbį, paleiskite jame ką nors groti, tada pridėkite kitus. Po to lango apačioje paspauskite Išsaugoti žurnalus ir atsiųskite juos man, kad matyčiau, ką garsiakalbiai darė.",
   "multiroom.needTwo": "Grupei sudaryti reikia bent dviejų garsiakalbių su ST Reborn.",
   "multiroom.masterLabel": "Pagrindinis garsiakalbis (groja šaltinį)",
   "multiroom.slavesLabel": "Grupuoti su",
@@ -162,7 +160,6 @@
   "spotify.works2": "Išsaugokite grojaraščius programiniuose ir aparatiniuose parinkčių mygtukuose; parinktis paleidžiama maišyta, nuo pradžios, su savo paskyra.",
   "spotify.works3": "Pulto kitos ir ankstesnės dainos mygtukai praleidžia dainą.",
   "spotify.works4": "Kelios namų ūkio paskyros: parinktis paleidžiama su ją išsaugojusia paskyra.",
-  "spotify.limitsTitle": "Dar tobulinama (beta)",
   "spotify.notesTitle": "Verta žinoti",
   "spotify.limit1": "Ekrane gali būti rodoma \"Spotify\", o ne grojaraščio pavadinimas, o aparatinis paspaudimas prieš pradedant grojimą gali trumpam parodyti \"paslauga nepasiekiama\".",
   "spotify.limit2": "Perjungimas tarp dviejų paskyrų kelioms sekundėms iš naujo paleidžia grojimą ir geriausiai veikia, kai kitos paskyros programa nėra aktyviai prisijungusi.",

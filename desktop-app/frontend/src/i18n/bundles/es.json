@@ -1,5 +1,4 @@
 {
-  "common.beta": "BETA",
   "common.strOnly": "Solo en STR",
   "common.strOnlyHint": "No estaba en la app de Bose. ST Reborn lo añade.",
   "updateAll.button": "Actualizar todos ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "Estado en directo desde la aplicación de escritorio.",
   "multiroom.feedbackPrompt": "Próximamente. Se agradecen comentarios e ideas en el ticket de seguimiento.",
   "multiroom.issueLink": "Abrir ticket #70",
-  "multiroom.betaNote": "Beta experimental. Si tienes dos o más altavoces con ST Reborn, prueba a agruparlos: elige un altavoz principal, pon algo a reproducir en él y luego añade los demás. Después usa «Save logs» en la parte inferior de la ventana y envíamelos para que pueda ver qué hicieron los altavoces.",
   "multiroom.needTwo": "Necesitas al menos dos altavoces con ST Reborn para crear un grupo.",
   "multiroom.masterLabel": "Altavoz principal (reproduce la fuente)",
   "multiroom.slavesLabel": "Agrupar con",
@@ -162,7 +160,6 @@
   "spotify.works2": "Guarda listas de reproducción en las teclas de preajuste por software y por hardware; un preajuste se recupera en modo aleatorio, desde el principio y con su propia cuenta.",
   "spotify.works3": "Las teclas de pista siguiente y anterior del mando saltan la canción.",
   "spotify.works4": "Varias cuentas del hogar: un preajuste se recupera con la cuenta que lo guardó.",
-  "spotify.limitsTitle": "Aún sin pulir (beta)",
   "spotify.notesTitle": "Conviene saber",
   "spotify.limit1": "La pantalla puede mostrar \"Spotify\" en lugar del título de la lista, y una pulsación de hardware puede mostrar brevemente \"servicio no disponible\" antes de que empiece la reproducción.",
   "spotify.limit2": "Cambiar entre dos cuentas reinicia la reproducción durante unos segundos y funciona mejor cuando la aplicación de la otra cuenta no está conectada activamente.",

@@ -1,5 +1,4 @@
 {
-  "common.beta": "BETA",
   "common.strOnly": "Tylko w STR",
   "common.strOnlyHint": "Nie było tego w aplikacji Bose. ST Reborn to dodaje.",
   "updateAll.button": "Zaktualizuj wszystkie ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "Status na żywo z aplikacji desktopowej.",
   "multiroom.feedbackPrompt": "Wkrótce dostępne. Uwagi i pomysły mile widziane w zgłoszeniu śledzącym.",
   "multiroom.issueLink": "Otwórz zgłoszenie #70",
-  "multiroom.betaNote": "Eksperymentalna beta. Jeśli masz dwa lub więcej głośników z ST Reborn, spróbuj je zgrupować: wybierz główny głośnik, uruchom na nim coś, a potem dodaj pozostałe. Następnie użyj proszę funkcji \"Save logs\" na dole okna i prześlij mi logi, żebym mógł zobaczyć, co zrobiły głośniki.",
   "multiroom.needTwo": "Potrzebujesz co najmniej dwóch głośników z ST Reborn, aby utworzyć grupę.",
   "multiroom.masterLabel": "Główny głośnik (odtwarza źródło)",
   "multiroom.slavesLabel": "Zgrupuj z",
@@ -162,7 +160,6 @@
   "spotify.works2": "Zapisuj playlisty na programowych i sprzętowych przyciskach; zaprogramowana playlista jest przywracana w trybie losowym, od początku, na własnym koncie.",
   "spotify.works3": "Przyciski następnego i poprzedniego utworu na pilocie pomijają utwór.",
   "spotify.works4": "Kilka kont domowych: zaprogramowana playlista jest przywracana na koncie, które ją zapisało.",
-  "spotify.limitsTitle": "Wciąż dopracowywane (beta)",
   "spotify.notesTitle": "Warto wiedzieć",
   "spotify.limit1": "Wyświetlacz może pokazywać \"Spotify\" zamiast tytułu playlisty, a naciśnięcie przycisku sprzętowego może na chwilę wyświetlić \"usługa niedostępna\", zanim odtwarzanie się rozpocznie.",
   "spotify.limit2": "Przełączanie między dwoma kontami na kilka sekund wstrzymuje odtwarzanie i działa najlepiej, gdy aplikacja drugiego konta nie jest aktywnie połączona.",

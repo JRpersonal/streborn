@@ -1,5 +1,4 @@
 {
-  "common.beta": "BETA",
   "common.strOnly": "Tikai STR",
   "common.strOnlyHint": "Bose lietotnē tā nebija. ST Reborn to pievieno.",
   "updateAll.button": "Atjaunināt visus ({{count}})",
@@ -91,7 +90,6 @@
   "multiroom.bullet3": "Tiešais statuss no darbvirsmas lietotnes.",
   "multiroom.feedbackPrompt": "Drīzumā. Komentāri un idejas ir laipni gaidītas izsekošanas pavedienā.",
   "multiroom.issueLink": "Atvērt problēmu #70",
-  "multiroom.betaNote": "Eksperimentāla beta versija. Ja jums ir divi vai vairāki skaļruņi ar ST Reborn, izmēģiniet to grupēšanu: izvēlieties galveno skaļruni, sāciet tajā kaut ko atskaņot, pēc tam pievienojiet pārējos. Pēc tam, lūdzu, izmantojiet Save logs loga apakšā un atsūtiet tos, lai es varētu redzēt, ko skaļruņi darīja.",
   "multiroom.needTwo": "Lai izveidotu grupu, vajadzīgi vismaz divi skaļruņi ar ST Reborn.",
   "multiroom.masterLabel": "Galvenais skaļrunis (atskaņo avotu)",
   "multiroom.slavesLabel": "Grupēt ar",
@@ -162,7 +160,6 @@
   "spotify.works2": "Saglabājiet atskaņošanas sarakstus programmatūras un aparatūras iestatījumu pogās; iestatījums atsākas sajaukts, no sākuma, ar savu kontu.",
   "spotify.works3": "Tālvadības nākamās un iepriekšējās dziesmas taustiņi izlaiž dziesmu.",
   "spotify.works4": "Vairāki mājsaimniecības konti: iestatījums atsākas ar to kontu, kas to saglabāja.",
-  "spotify.limitsTitle": "Vēl neapstrādāts (beta)",
   "spotify.notesTitle": "Noderīgi zināt",
   "spotify.limit1": "Ekrānā atskaņošanas saraksta nosaukuma vietā var tikt rādīts \"Spotify\", un aparatūras nospiešana var uz brīdi parādīt \"pakalpojums nav pieejams\", pirms sākas atskaņošana.",
   "spotify.limit2": "Pārslēgšanās starp diviem kontiem uz dažām sekundēm restartē atskaņošanu un vislabāk darbojas, kad otra konta lietotne nav aktīvi savienota.",
