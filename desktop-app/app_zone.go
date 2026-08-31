@@ -34,6 +34,14 @@ type ZoneSpec struct {
 	// Permanent opts the group into the play-triggered re-form with member
 	// wake (#70): when the master starts music, the group comes along.
 	Permanent bool `json:"permanent"`
+	// DefineOnly persists a permanent group as a TEMPLATE without forming the
+	// live firmware zone: no wake, no /setZone, no stream re-push. It exists
+	// because forming a group has to wake the master, and a woken master resumes
+	// its last source, so "create a permanent group" used to start playback in
+	// every room the moment it was created (2026-08-31). A permanent group forms
+	// itself on the next play (formDefaultGroupOnPlay), so defining it should be
+	// silent. Only meaningful together with Permanent.
+	DefineOnly bool `json:"defineOnly"`
 }
 
 // GetZoneState reads the live multiroom zone the speaker reports
