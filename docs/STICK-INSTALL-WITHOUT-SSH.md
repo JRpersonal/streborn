@@ -1,6 +1,6 @@
 # Proposal: first install over the stick boot path instead of app SSH
 
-Status: Track 1 (gated in-app auto-install) shipped; Track 2 (true no-SSH first-boot bootstrap) still open, hardware experiment pending. Tracked in a GitHub issue.
+Status: Track 1 (gated in-app auto-install) shipped. The stick-free :17000 network install has also shipped and is now the primary first-install channel (see `docs/MODELS.md`); it removes the USB stick, opening SSH by cloud-URL injection over :17000. Track 2 proper (a truly SSH-free first-boot bootstrap) is still open, hardware experiment pending. Tracked in a GitHub issue.
 
 ## Problem
 
@@ -108,18 +108,23 @@ For a box that is on the LAN (Bose :8090 answers) but never opened SSH
 because it did not read the stick at boot, the installer now tries the
 legacy Bose telnet diagnostic console on **TCP 17000** to enable
 `remote_services` without a stick boot, then continues the normal SSH
-install. This targets the **SoundTouch 300** (it does not auto-read the
-stick at boot) and stubborn **ST30** units. It is experimental and
-best-effort: if :17000 does not open SSH the installer falls back to the
-existing "boot with the stick" guidance, so nothing regresses.
+install. This began as a probe for the **SoundTouch 300** (it does not
+auto-read the stick at boot) and stubborn **ST30** units, and has since
+become the primary first-install channel for every speaker reachable on
+the LAN (see `docs/MODELS.md`); the stick is now the fallback. If :17000
+does not open SSH the installer falls back to the existing "boot with the
+stick" guidance, so nothing regresses.
 
-Caveat: Bose **removed the `remote_services` command on firmware 27.x**
-(community RE writeups and `deborahgu/soundcork` #309), so on current
-firmware this likely does nothing; it is mainly a live probe. The install
-logs the :17000 banner and the console's reply to `help` /
-`remote_services on` / `local_services on` into the desktop app log, so a
-real SoundTouch 300 test (Save logs) tells us exactly what that firmware's
-console still exposes, without the user needing a terminal.
+Note: the shipping technique does not rely on the `remote_services on` TAP
+command Bose **removed on firmware 27.x** (community RE writeups and
+`deborahgu/soundcork` #309). Instead it injects a shell payload into the
+box's cloud URLs over :17000 (`envswitch boseurls set` / `sys
+configuration`, plus a seeded throwaway marge account so the box runs its
+check); the firmware executes it on the next marge check, which touches the
+`remote_services` marker and starts sshd. This is confirmed live on FW
+27.0.6, on the SoundTouch 300 (`ginger`) and the Portable (`taigan`). The
+install still logs the :17000 banner and console replies into the desktop
+app log for diagnostics.
 
 ## Sub-questions from the original proposal, answered
 
@@ -127,11 +132,12 @@ console still exposes, without the user needing a terminal.
   `setup.log` to the stick every 25 s, and the agent answers on :8888
   once up. The app can read both without SSH.
 - **Security:** an automatic/boot-path install changes nothing about the
-  current SSH exposure. Pre-1.0, `run.sh` (`ensure_sshd_running`) keeps
-  sshd running on every boot as a deliberate debug-visibility choice (so
-  diagnostics and repair work when the agent is down); the planned v1.0
-  hardening flips this to opt-in via a stick marker. Track 1 and Track 2
-  are both neutral to that window.
+  current SSH exposure. The pre-1.0 SSH hardening has shipped: `run.sh`
+  (`ensure_sshd_running`) no longer force-starts sshd on every boot. It is
+  now opt-in via the `/mnt/nv/streborn/enable-ssh` NAND marker; by default
+  SSH follows Bose's own gate (open while the STR stick is inserted for
+  install/recovery/diagnostics, closed on a stickless steady-state boot).
+  Track 1 and Track 2 are both neutral to that window.
 - **Fallback:** keep the manual SSH install as an expert path in case the
   automatic path does not engage.
 

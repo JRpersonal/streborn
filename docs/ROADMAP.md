@@ -37,8 +37,8 @@ i18n, switch the default UI to English.
 | Phase | Scope | Status |
 |-------|-------|--------|
 | A | Extract leaf modules (`state`, `utils`, `localization`, `logos`, `api`) out of `main.js`. All comments and identifiers English. | **done** — merged via [#40](https://github.com/JRpersonal/streborn/pull/40) |
-| B | Extract view modules + shared services along the existing section-comment seams (see the refactoring backlog below for the concrete module cut). After this `main.js` shrinks to the DOM skeleton + router + bootstrap (~600 lines; the old ~150-line estimate predates the feature growth). | in progress — 7 view modules extracted to `src/views/` (library, multiroom, podcasts, recent, settings, setup, spotify) plus service modules (`api`, `groups`, `searchflow`, `share`); `main.js` still holds 6967 lines, so finishing the cut remains the highest-leverage refactor in the repo |
-| C | i18n system: minimal `t()` helper plus `en` and `de` bundles in `desktop-app/frontend/src/i18n/`. Locale detected from `navigator.language`, with explicit override stored in `localStorage`. **Default is English** per the global-audience rule; German remains a first-class supported locale but is no longer the implicit fallback. | **done** — shipped in #46 and grown to 12 locale bundles (incl. Arabic). All bundles are complete (key-for-key with `en.json`); the completeness gap was closed in #514. |
+| B | Extract view modules + shared services along the existing section-comment seams (see the refactoring backlog below for the concrete module cut). After this `main.js` shrinks to the DOM skeleton + router + bootstrap (~600 lines; the old ~150-line estimate predates the feature growth). | in progress — 7 view modules extracted to `src/views/` (library, multiroom, podcasts, recent, settings, setup, spotify) plus service modules (`api`, `groups`, `searchflow`, `share`); `main.js` still holds over 8000 lines (it has grown with the features, not shrunk), so finishing the cut remains the highest-leverage refactor in the repo |
+| C | i18n system: minimal `t()` helper plus `en` and `de` bundles in `desktop-app/frontend/src/i18n/`. Locale detected from `navigator.language`, with explicit override stored in `localStorage`. **Default is English** per the global-audience rule; German remains a first-class supported locale but is no longer the implicit fallback. | **done** — shipped in #46 and grown to 13 locale bundles (incl. Arabic). All bundles are complete (key-for-key with `en.json`); the completeness gap was closed in #514. |
 | D | Translate the remaining inline German comments and the few mixed-language handler strings still sitting in `main.js` (and any view module that ends up holding them after Phase B). Closes the CLAUDE.md "all code/comments/identifiers in English" rule. | mostly done via the #46 i18n sweep; ~a dozen German comments remain in `main.js` (and the older on-stick scripts are still German, tracked in the backlog below) — finish when Phase B touches those regions |
 
 Why this is on the roadmap rather than just done: Phase A alone
@@ -89,8 +89,7 @@ Each item is a single reviewable PR; line numbers as of v0.7.21.
    `internal/streamproxy/streamproxy.go`.
 9. Frontend Phase B (see table above): cut `main.js` along its
    existing section comments into ~9 view modules + 6 services;
-   pre-step: decompose the 910-line `renderBoxSettings`. Delete the
-   dead `checkBoxUpdate` (its banner element no longer exists).
+   pre-step: decompose the 910-line `renderBoxSettings`.
 
 **Guardrails (CI, small):**
 
@@ -214,14 +213,21 @@ Tracked as a GitHub issue under the `enhancement` label.
 Settings → Remove STR, with a stick-present safeguard; removes
 `/mnt/nv/streborn/` and the boot override). Only level 1 (reset STR
 data only) is still open. Both shipped levels currently ride the
-pre-1.0 SSH channel; before the v1.0 SSH hardening lands they must
-migrate to a dedicated agent reset endpoint (see the requirement
-above), after which SSH becomes opt-in.
+SSH channel. SSH is already opt-in since v0.8.1 (sshd is closed by
+default on a stickless box and must be opened first), so the
+remaining v1.0 goal is to migrate these reset paths to a dedicated
+agent reset endpoint (see the requirement above) that needs no root
+SSH at all.
 
 ### Other ideas (loose)
 
-- Android version of the same PWA, with the same feasibility caveats
-  except Android allows arbitrary CA install slightly more easily.
+- Android phone remote: a small **native Android app** is the chosen
+  direction (Jens, 2026-08-21; #538), deliberately not scheduled yet.
+  Unlike iOS Safari, Chrome installs a page as a real app only from a
+  trusted HTTPS origin, so the same PWA served over LAN HTTP lands as a
+  browser shortcut, not an installable app; the browser workarounds (a
+  public cert for a LAN IP, or a user-installed root CA) each trade a
+  real security property for a cosmetic one.
 - Multi-room grouping: **shipped as alpha** since the v0.7.x line
   ([#70](https://github.com/JRpersonal/streborn/issues/70)) — native
   `/setZone` plus a per-agent mirror fallback, NAND-persisted zones

@@ -131,7 +131,7 @@ ioBroker, Node-RED, or any HTTP endpoint on the LAN.
 |---|---|---|
 | Stick agent language | Go 1.25+ (module `github.com/JRpersonal/streborn`) | Static single binary cross-compiles to `linux/arm/v7` from any host. No runtime on the speaker beyond BusyBox. |
 | Desktop backend | Go via Wails v2 (`github.com/wailsapp/wails/v2`); own module, imports the shared top-level packages `discovery/`, `dlna/`, `radiobrowser/`, `sticksetup/`, `wifiprofiles/` | Same language as the agent. Go forbids importing the agent module's `internal/`, which is why the shared packages are top-level. |
-| Desktop frontend | Vite 8 + vanilla JS (no framework), i18n layer with 12 locales (EN, DE, ES, FR, JA, LT, LV, NL, PL, TR, UK, AR), including right-to-left layout for Arabic | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
+| Desktop frontend | Vite 8 + vanilla JS (no framework), i18n layer with 13 locales (EN, DE, ES, FR, JA, LT, LV, NL, PL, TR, UK, AR, ZH-Hant), including right-to-left layout for Arabic | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
 | mDNS | `github.com/grandcat/zeroconf` | Pure Go, dual stack, works on all three desktop OSes and on the speaker. |
 | WebSocket | `github.com/gorilla/websocket` | Reuses the gabbo subprotocol the Bose firmware expects on `:8080`. |
 | Radio source | `radio-browser.info` HTTP API | Free, no key, community-maintained. Replaces the dead Bose TuneIn integration. The stream proxy also reads the live ICY `StreamTitle` so the app can show the current track. |
