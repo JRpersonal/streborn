@@ -119,9 +119,20 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		// household read that as the group being gone (mail report,
 		// 2026-08-25). Only the desktop's own store, no probes.
 		Remembered []rememberedMember `json:"remembered,omitempty"`
+		// RememberedPermanent flags that the remembered group is a PERMANENT
+		// template (defineOnly), so the app can show it as a standing group that
+		// forms on the next play and offer to dissolve it - a define-only group is
+		// never live until played, so without this it had no UI presence at all
+		// (Jens, 2026-08-31: not visible, no way to dissolve).
+		RememberedPermanent bool `json:"rememberedPermanent,omitempty"`
 	}{Zone: z}
 	if len(z.Members) == 0 {
 		out.Remembered = s.rememberedZoneMembers()
+		if s.zones != nil {
+			if doc, ok := s.zones.Get(); ok && doc.Permanent && !doc.Stereo {
+				out.RememberedPermanent = true
+			}
+		}
 	}
 	// The pair read gets its own SHORT budget, never the zone's. The firmware's
 	// /getGroup HANGS on scm/BCO chassis — no refusal, just silence (12 s and
@@ -260,6 +271,13 @@ type zoneFormReq struct {
 	// Permanent opts the group into the play-triggered re-form with member
 	// wake (#70). Off by default (opt-in, Jens 2026-08-26).
 	Permanent bool `json:"permanent"`
+	// DefineOnly persists a permanent group as a template only: no wake, no
+	// /setZone, no stream re-push. Forming a group wakes the master, and a woken
+	// master resumes its last source, so creating a permanent group used to start
+	// playback in every room (2026-08-31). The group forms itself on the next
+	// play (formDefaultGroupOnPlay), so defining it is silent. Only honoured with
+	// Permanent set.
+	DefineOnly bool `json:"defineOnly"`
 }
 
 // handleZoneForm creates (or replaces) a group with this box as master (#70 beta).
@@ -384,6 +402,34 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		s.logger.Info("zone: corrected a member's deviceID from its own firmware /info (the caller had the chassis wlan0/SMSC MAC, not the SoundTouch ID)",
 			"ip", slaves[i].IP, "supplied", slaves[i].DeviceID, "firmware", real)
 		slaves[i].DeviceID = real
+	}
+
+	// Defining a permanent group persists the TEMPLATE only and stops here: no
+	// wake, no /setZone, no stream re-push. Forming the live zone below has to
+	// wake the master, and a woken master resumes its last source, so creating a
+	// permanent group used to start playback in every room the moment it was made
+	// (Jens, 2026-08-31: "beim Erstellen einer Gruppe faengt die Gruppe an zu
+	// spielen"). The permanent group forms itself on the next play
+	// (formDefaultGroupOnPlay), so defining it must be silent. Member deviceIDs
+	// were just resolved above, so the stored template is correct for that
+	// play-time formation. Native only; the app never sends DefineOnly with Stereo.
+	if req.DefineOnly && !req.Stereo {
+		z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name, Permanent: true}
+		for _, m := range slaves {
+			z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
+		}
+		if s.zones != nil {
+			if err := s.zones.Set(z); err != nil {
+				s.logger.Warn("zone: permanent template persist failed", "err", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			s.forgetZoneDocDoubt()
+		}
+		s.logger.Info("zone: permanent group defined (template saved, not formed live)",
+			"master", master.DeviceID, "slaves", len(slaves))
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native", "permanent": true, "defined": true})
+		return
 	}
 
 	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a

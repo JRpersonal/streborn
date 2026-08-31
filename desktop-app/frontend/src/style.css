@@ -703,6 +703,10 @@ body {
 .box-group-c2 { --bg-color: var(--group-c2); }
 .box-group-c3 { --bg-color: var(--group-c3); }
 .box-group-c4 { --bg-color: var(--group-c4); }
+/* A stored permanent group that is not live yet (define-only): dashed to read as
+   "set up, forms on play" rather than a live group. No colour slot. */
+.box-group-permanent { --bg-color: var(--c-muted); border-style: dashed; }
+.zone-permanent-pending { flex-basis: 100%; margin: 2px 2px 0; }
 /* Star on the group's master speaker pill. */
 .box-group-master { color: var(--brand); margin-right: 4px; font-size: 12px; }
 /* Group name header on the multiroom frame — full width so the pills wrap
