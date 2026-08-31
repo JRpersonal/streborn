@@ -173,6 +173,19 @@ the shared version stamp.
 - Empty stubs mean `agentbin.Available()` correctly returns `false`
   on dev builds, so the desktop app falls back to a configured
   external path instead of writing zero bytes onto the stick.
+- **`desktop-app/agentbin/go-librespot-armv7l`** is the third
+  `go:embed` target: the go-librespot Spotify engine the desktop app
+  pushes to the box after an OTA. It follows the same tracked-stub
+  pattern, but only CI fills it (the ~16 MB binary comes from the
+  `go-librespot.yml` workflow, not a local cross-compile), so
+  `agent-embed` does NOT rebuild it. Consequence: a fleet roll from a
+  **dev build** updates each box's agent, the agent OTA drops the
+  engine to fit, and the dev app has no engine to push back, so every
+  box ends up with Spotify missing. Run **`make engine-embed`** once
+  before `make wails-build` / `make wails-dev` to pull the latest
+  release's engine into the slot for a fleet-capable dev build; it is a
+  tracked stub, so `git checkout -- desktop-app/agentbin/go-librespot-armv7l`
+  before committing (the str-release triage restores it too).
 
 ## Runtime quirks worth remembering
 
