@@ -139,6 +139,26 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		}
 	}
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
+		// #683: a box that STR already fully removed has rebooted back to stock, so
+		// there is no STR agent left to open SSH and a stock box keeps :22 closed.
+		// Pressing Remove a second time then failed HERE with the raw "exit status
+		// 255" SSH error, when the honest answer is that STR is already gone. Tell
+		// that case apart from a genuinely unreachable or wedged box: a live stock
+		// speaker still answers the Bose API on :8090 while NEITHER STR agent port
+		// (:8888 sm2, :17008 BCO) is open. A wedged STR box keeps its agent port
+		// open, so it never reaches this branch; a powered-off box answers nothing,
+		// so it keeps the reachability error rather than a false "already removed".
+		boseUp := tcpReachable(host, 8090, 2*time.Second)
+		strAgentUp := tcpReachable(host, 8888, 1500*time.Millisecond) || tcpReachable(host, 17008, 1500*time.Millisecond)
+		if boseUp && !strAgentUp {
+			a.forgetSTRDeviceByHost(host)
+			res.Step = "already-stock"
+			res.OK = true
+			res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
+				"so there was nothing to remove and nothing else is needed."
+			a.logger.Info("uninstall_str: speaker is already stock, nothing to remove", "host", host)
+			return res
+		}
 		res.Log = hello
 		res.Message = "Could not open install access (SSH) to the speaker to remove STR: " + classifySSHError(hello, helloErr)
 		return res
