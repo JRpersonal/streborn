@@ -75,6 +75,11 @@ const libState = {
 // or choke the DOM. Past the cap the folder search narrows what is shown.
 const LIB_PAGE = 200;
 const LIB_MAX = 2500;
+// Max tracks a queue preset stores. The full list is serialized into presets.json
+// on the box, so a whole-library folder can leave it too tight on flash for the
+// next agent update (juelo, 2026-08-31). Keep in sync with presets.MaxQueueItems
+// (internal/presets/presets.go), which enforces the same cap box-side.
+const MAX_QUEUE_PRESET_ITEMS = 1000;
 
 // The media server the user last browsed. Stored in the app rather than on a
 // speaker: it is a preference of this person at this computer, and the
@@ -502,6 +507,15 @@ function librarySaveFolderAsPreset() {
     showError(t('library.errorNoURL'));
     return;
   }
+  // Cap how many tracks a queue preset stores: the whole list is serialized into
+  // presets.json on the box, and a whole-library folder (2600 tracks was ~1.5 MB
+  // with the backup) can leave the box too tight on flash for its next agent
+  // update. The box store enforces the same MAX_QUEUE_PRESET_ITEMS as a safety
+  // net; capping here lets us tell the user their large folder was trimmed.
+  const totalItems = items.length;
+  const queueItems = totalItems > MAX_QUEUE_PRESET_ITEMS
+    ? items.slice(0, MAX_QUEUE_PRESET_ITEMS)
+    : items;
   // Name the preset after the open folder (last breadcrumb), falling back to the
   // media server name, so the tile and the box display show something meaningful.
   const stack = libState.stack || [];
@@ -520,11 +534,15 @@ function librarySaveFolderAsPreset() {
         type: 'queue',
         shuffle: !!libState.shuffle,
         source,
-        items,
+        items: queueItems,
       };
       try {
         await SaveFolderPreset(state.currentBox.host, state.currentBox.port, i, JSON.stringify(payload));
-        showToast(t('library.folderPresetSaved', { n: i, name }));
+        if (queueItems.length < totalItems) {
+          showToast(t('library.folderPresetSavedCapped', { n: i, name, kept: queueItems.length, total: totalItems }));
+        } else {
+          showToast(t('library.folderPresetSaved', { n: i, name }));
+        }
       } catch (e) {
         showError(`SaveFolderPreset: ${e}`);
       }

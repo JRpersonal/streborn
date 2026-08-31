@@ -191,6 +191,7 @@
   "library.folderQueued": "Відтворення теки ({{n}} треків)",
   "library.assignFolderTitle": "На яку кнопку пресета зберегти теку?",
   "library.folderPresetSaved": "Теку збережено в пресет {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "Теку збережено в пресет {{n}}: {{name}}. Вона була велика, тож збережено перші {{kept}} із {{total}} треків.",
   "library.addServerManual": "Додати сервер вручну",
   "library.addServerPlaceholder": "IP-адреса або URL, напр. 192.168.1.20 або http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Додати",

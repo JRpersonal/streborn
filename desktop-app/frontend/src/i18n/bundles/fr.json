@@ -191,6 +191,7 @@
   "library.folderQueued": "Lecture du dossier ({{n}} pistes)",
   "library.assignFolderTitle": "Enregistrer le dossier sur quelle touche de préréglage ?",
   "library.folderPresetSaved": "Dossier enregistré dans le préréglage {{n}} : {{name}}",
+  "library.folderPresetSavedCapped": "Dossier enregistré dans le préréglage {{n}} : {{name}}. Il était volumineux, donc les {{kept}} premières pistes sur {{total}} ont été enregistrées.",
   "library.addServerManual": "Ajouter un serveur manuellement",
   "library.addServerPlaceholder": "Adresse IP ou URL, p. ex. 192.168.1.20 ou http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Ajouter",

@@ -191,6 +191,7 @@
   "library.folderQueued": "Reproduciendo carpeta ({{n}} pistas)",
   "library.assignFolderTitle": "¿En qué tecla de preajuste guardar la carpeta?",
   "library.folderPresetSaved": "Carpeta guardada en el preajuste {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "Carpeta guardada en el preajuste {{n}}: {{name}}. Era grande, así que se guardaron las primeras {{kept}} de {{total}} pistas.",
   "library.addServerManual": "Añadir un servidor manualmente",
   "library.addServerPlaceholder": "Dirección IP o URL, p. ej. 192.168.1.20 o http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Añadir",

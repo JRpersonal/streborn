@@ -191,6 +191,7 @@
   "library.folderQueued": "Atskaņo mapi ({{n}} ieraksti)",
   "library.assignFolderTitle": "Kurā pogā saglabāt mapi?",
   "library.folderPresetSaved": "Mape saglabāta iestatījumā {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "Mape saglabāta iestatījumā {{n}}: {{name}}. Tā bija liela, tāpēc tika saglabāti pirmie {{kept}} no {{total}} celiņiem.",
   "library.addServerManual": "Pievienot serveri manuāli",
   "library.addServerPlaceholder": "IP adrese vai URL, piem., 192.168.1.20 vai http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Pievienot",

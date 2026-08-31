@@ -1,9 +1,11 @@
 package presets
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -105,6 +107,84 @@ func TestSaveLoadSpotifyRoundtrip(t *testing.T) {
 	}
 	if got.Type != "spotify" || got.URI != want.URI || got.Account != want.Account || got.Name != want.Name {
 		t.Errorf("round trip lost fields: %+v", got)
+	}
+}
+
+// makeItems builds n distinct queue items for the cap tests.
+func makeItems(n int) []PresetItem {
+	out := make([]PresetItem, n)
+	for i := range out {
+		out[i] = PresetItem{URL: "http://nas/" + strconv.Itoa(i) + ".mp3"}
+	}
+	return out
+}
+
+// A queue preset larger than MaxQueueItems must be trimmed on save, so one saved
+// library folder cannot fill the box's flash and strand the next OTA. The kept
+// slice must be the FIRST MaxQueueItems items, and other preset types untouched.
+func TestSetSlotCapsQueueItems(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	items := makeItems(MaxQueueItems + 600)
+	if err := s.SetSlot(Preset{Slot: 3, Name: "Whole Library", Type: "queue", Items: items}); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	got, _ := s.Get(3)
+	if len(got.Items) != MaxQueueItems {
+		t.Fatalf("queue not capped: kept %d, want %d", len(got.Items), MaxQueueItems)
+	}
+	if got.Items[0].URL != "http://nas/0.mp3" || got.Items[MaxQueueItems-1].URL != "http://nas/"+strconv.Itoa(MaxQueueItems-1)+".mp3" {
+		t.Errorf("cap dropped the wrong end: first=%s last=%s", got.Items[0].URL, got.Items[MaxQueueItems-1].URL)
+	}
+	// A radio preset carries no Items and must be unaffected.
+	if err := s.SetSlot(Preset{Slot: 1, Name: "NDR2", Type: "radio", StreamURL: "http://x/ndr2.mp3"}); err != nil {
+		t.Fatalf("SetSlot radio: %v", err)
+	}
+	if r, _ := s.Get(1); len(r.Items) != 0 {
+		t.Errorf("radio preset gained items: %+v", r.Items)
+	}
+}
+
+// A presets.json written before the cap existed (a whole-library queue preset)
+// must be trimmed on Load and the smaller file rewritten, so the box reclaims the
+// flash on the next agent start without the user re-saving anything.
+func TestLoadHealsOverCapQueue(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "presets.json")
+	// Seed an over-cap store directly on disk via a first Store that skips the cap
+	// (write the raw JSON so the fixture mirrors a pre-cap file).
+	big := struct {
+		Presets []Preset `json:"presets"`
+	}{Presets: []Preset{{Slot: 3, Name: "All Music", Type: "queue", Items: makeItems(MaxQueueItems + 1600)}}}
+	raw, _ := json.MarshalIndent(big, "", "  ")
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sizeBefore := len(raw)
+
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, ok := s.Get(3)
+	if !ok || len(got.Items) != MaxQueueItems {
+		t.Fatalf("over-cap queue not healed on load: kept %d, want %d (ok=%v)", len(got.Items), MaxQueueItems, ok)
+	}
+	// The on-disk file must have shrunk (the heal re-saved the trimmed store).
+	b, _ := os.ReadFile(path)
+	if len(b) >= sizeBefore {
+		t.Errorf("healed file not rewritten smaller: before=%d after=%d", sizeBefore, len(b))
+	}
+	// A fresh Load must now be a no-op heal (already at the cap).
+	s2, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(reload): %v", err)
+	}
+	if g2, _ := s2.Get(3); len(g2.Items) != MaxQueueItems {
+		t.Errorf("second load changed the count: %d", len(g2.Items))
 	}
 }
 

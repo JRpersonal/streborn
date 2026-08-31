@@ -191,6 +191,7 @@
   "library.folderQueued": "Grojamas aplankas ({{n}} kūrinių)",
   "library.assignFolderTitle": "Į kurį mygtuką išsaugoti aplanką?",
   "library.folderPresetSaved": "Aplankas išsaugotas parinktyje {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "Aplankas išsaugotas parinktyje {{n}}: {{name}}. Jis buvo didelis, todėl išsaugoti pirmi {{kept}} iš {{total}} takelių.",
   "library.addServerManual": "Pridėti serverį rankiniu būdu",
   "library.addServerPlaceholder": "IP adresas arba URL, pvz., 192.168.1.20 arba http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Pridėti",

@@ -191,6 +191,7 @@
   "library.folderQueued": "フォルダを再生中（{{n}} 曲）",
   "library.assignFolderTitle": "フォルダをどのプリセットキーに保存しますか?",
   "library.folderPresetSaved": "フォルダをプリセット {{n}} に保存しました: {{name}}",
+  "library.folderPresetSavedCapped": "フォルダをプリセット {{n}} に保存しました: {{name}}。大きかったため、{{total}} 曲のうち最初の {{kept}} 曲を保存しました。",
   "library.addServerManual": "サーバーを手動で追加",
   "library.addServerPlaceholder": "IPアドレスまたはURL（例: 192.168.1.20 または http://192.168.1.20:8200/rootDesc.xml）",
   "library.addServerBtn": "追加",

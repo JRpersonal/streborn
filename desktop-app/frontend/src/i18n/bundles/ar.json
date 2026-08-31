@@ -191,6 +191,7 @@
   "library.folderQueued": "تشغيل المجلد ({{n}} مقطعًا)",
   "library.assignFolderTitle": "حفظ المجلد على أي زر إعداد مسبق؟",
   "library.folderPresetSaved": "تم حفظ المجلد في الإعداد المسبق {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "تم حفظ المجلد في الإعداد المسبق {{n}}: {{name}}. كان كبيرًا، لذا تم حفظ أول {{kept}} من {{total}} مقطعًا.",
   "library.addServerManual": "إضافة خادم يدويًا",
   "library.addServerPlaceholder": "عنوان IP أو رابط URL، مثل 192.168.1.20 أو http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "إضافة",

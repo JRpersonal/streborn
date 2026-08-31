@@ -202,6 +202,7 @@
   "library.folderQueued": "Playing folder ({{n}} tracks)",
   "library.assignFolderTitle": "Save folder to which preset key?",
   "library.folderPresetSaved": "Folder saved to preset {{n}}: {{name}}",
+  "library.folderPresetSavedCapped": "Folder saved to preset {{n}}: {{name}}. It was large, so the first {{kept}} of {{total}} tracks were saved.",
   "library.addServerManual": "Add a server manually",
   "library.addServerPlaceholder": "IP address or URL, e.g. 192.168.1.20 or http://192.168.1.20:8200/rootDesc.xml",
   "library.addServerBtn": "Add",
