@@ -149,6 +149,7 @@
   "multiroom.formedPartial": "Group active, but only {{joined}} of {{total}} speakers confirmed they joined. Check the others are on and reachable, hit Refresh, or try Mirror mode, then send logs.",
   "multiroom.notReady": "These speakers were still starting and did not join: {{names}}. Try grouping them again in a moment.",
   "multiroom.permanentLabel": "Keep this group permanently",
+  "multiroom.permanentSaved": "Permanent group saved. It forms itself the next time {{master}} plays something.",
   "multiroom.permanentHelp": "When the main speaker starts music, it wakes the group speakers and re-forms the group by itself, even after standby or a restart. A speaker that is busy playing something else stays out.",
   "multiroom.permanentHelpMasterOnly": "When {{master}} starts playing, it wakes the speakers you add to this group and re-forms the group by itself, even after standby or a restart.",
   "multiroom.permanentHelpConcrete": "When {{master}} starts playing, from a preset key or otherwise, it wakes {{members}} and re-forms the group by itself, even after standby or a restart. A speaker busy playing something else stays out.",

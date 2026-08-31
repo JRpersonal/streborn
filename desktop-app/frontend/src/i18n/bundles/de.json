@@ -149,6 +149,7 @@
   "multiroom.formedPartial": "Gruppe aktiv, aber nur {{joined}} von {{total}} Lautsprechern haben den Beitritt bestätigt. Prüfe, ob die anderen an und erreichbar sind, drück Aktualisieren oder probier den Mirror-Modus, und schick mir die Logs.",
   "multiroom.notReady": "Diese Lautsprecher waren noch am Starten und sind nicht beigetreten: {{names}}. Versuch es gleich noch einmal.",
   "multiroom.permanentLabel": "Gruppe dauerhaft halten",
+  "multiroom.permanentSaved": "Dauergruppe gespeichert. Sie bildet sich von selbst, sobald {{master}} das nächste Mal etwas abspielt.",
   "multiroom.permanentHelp": "Startet der Hauptlautsprecher Musik, weckt er die Gruppen-Lautsprecher und bildet die Gruppe von selbst neu, auch nach Standby oder Neustart. Ein Lautsprecher, der gerade etwas anderes spielt, bleibt außen vor.",
   "multiroom.permanentHelpMasterOnly": "Sobald {{master}} etwas abspielt, weckt er die Lautsprecher, die du dieser Gruppe hinzufügst, und bildet die Gruppe von selbst wieder, auch nach Standby oder Neustart.",
   "multiroom.permanentHelpConcrete": "Sobald {{master}} etwas abspielt, ob per Preset-Taste oder anders, weckt er {{members}} und bildet die Gruppe von selbst wieder, auch nach Standby oder Neustart. Ein Lautsprecher, der gerade etwas anderes spielt, bleibt außen vor.",

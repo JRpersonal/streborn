@@ -260,6 +260,13 @@ type zoneFormReq struct {
 	// Permanent opts the group into the play-triggered re-form with member
 	// wake (#70). Off by default (opt-in, Jens 2026-08-26).
 	Permanent bool `json:"permanent"`
+	// DefineOnly persists a permanent group as a template only: no wake, no
+	// /setZone, no stream re-push. Forming a group wakes the master, and a woken
+	// master resumes its last source, so creating a permanent group used to start
+	// playback in every room (2026-08-31). The group forms itself on the next
+	// play (formDefaultGroupOnPlay), so defining it is silent. Only honoured with
+	// Permanent set.
+	DefineOnly bool `json:"defineOnly"`
 }
 
 // handleZoneForm creates (or replaces) a group with this box as master (#70 beta).
@@ -384,6 +391,34 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		s.logger.Info("zone: corrected a member's deviceID from its own firmware /info (the caller had the chassis wlan0/SMSC MAC, not the SoundTouch ID)",
 			"ip", slaves[i].IP, "supplied", slaves[i].DeviceID, "firmware", real)
 		slaves[i].DeviceID = real
+	}
+
+	// Defining a permanent group persists the TEMPLATE only and stops here: no
+	// wake, no /setZone, no stream re-push. Forming the live zone below has to
+	// wake the master, and a woken master resumes its last source, so creating a
+	// permanent group used to start playback in every room the moment it was made
+	// (Jens, 2026-08-31: "beim Erstellen einer Gruppe faengt die Gruppe an zu
+	// spielen"). The permanent group forms itself on the next play
+	// (formDefaultGroupOnPlay), so defining it must be silent. Member deviceIDs
+	// were just resolved above, so the stored template is correct for that
+	// play-time formation. Native only; the app never sends DefineOnly with Stereo.
+	if req.DefineOnly && !req.Stereo {
+		z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name, Permanent: true}
+		for _, m := range slaves {
+			z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
+		}
+		if s.zones != nil {
+			if err := s.zones.Set(z); err != nil {
+				s.logger.Warn("zone: permanent template persist failed", "err", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			s.forgetZoneDocDoubt()
+		}
+		s.logger.Info("zone: permanent group defined (template saved, not formed live)",
+			"master", master.DeviceID, "slaves", len(slaves))
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native", "permanent": true, "defined": true})
+		return
 	}
 
 	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a

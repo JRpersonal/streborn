@@ -586,6 +586,33 @@ async function doFormZone(strBoxes) {
     return;
   }
   const mode = state.zoneMode || 'native';
+  // A permanent group is a template that forms itself when the master next plays
+  // (see permanentHelp). Defining it must NOT wake the master or start audio:
+  // waking a standby master makes the firmware resume its last source, and the
+  // fresh zone then blasted it into every room (2026-08-31). So persist the
+  // template only - no WakeBox, no live /setZone - and let it go live on the next
+  // play. The ad-hoc (non-permanent) path below still wakes and forms right away.
+  if (state.zonePermanent) {
+    $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+    try {
+      const res = await FormZone(master.host, master.port, {
+        master: { deviceID: master.deviceID, ip: master.host },
+        slaves, stereo: false, mode, permanent: true, defineOnly: true,
+      });
+      if (res && res.ok === false) {
+        const names = [...(res.notReady || []), ...(res.inPair || [])]
+          .map(ip => { const b = strBoxes.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
+          .join(', ');
+        state.zoneMsg = `<div class="setup-warn">${escapeHtml(res.error ? String(res.error) : t('multiroom.notReady', { names }))}</div>`;
+      } else {
+        state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.permanentSaved', { master: zoneLabel(master) }))}</div>`;
+      }
+    } catch (e) {
+      state.zoneMsg = `<div class="setup-warn">${escapeHtml(String(e))}</div>`;
+    }
+    renderMultiroom(false);
+    return;
+  }
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
     // Wake the master and every selected member before enrolling them (#70): a box

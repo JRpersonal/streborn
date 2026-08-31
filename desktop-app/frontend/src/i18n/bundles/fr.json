@@ -1186,6 +1186,7 @@
   "multiroom.groupMasterTitle": "Enceinte principale du groupe (celle qui diffuse pour le groupe)",
   "multiroom.notReady": "Ces enceintes étaient encore en train de démarrer et n'ont pas rejoint : {{names}}. Réessaie de les grouper dans un instant.",
   "multiroom.permanentLabel": "Conserver ce groupe en permanence",
+  "multiroom.permanentSaved": "Groupe permanent enregistré. Il se forme tout seul la prochaine fois que {{master}} joue quelque chose.",
   "multiroom.permanentHelp": "Quand l'enceinte principale lance la musique, elle réveille les enceintes du groupe et reforme le groupe toute seule, même après une veille ou un redémarrage. Une enceinte occupée à jouer autre chose reste à l'écart.",
   "multiroom.permanentHelpMasterOnly": "Quand {{master}} se met à jouer, elle réveille les enceintes que vous ajoutez à ce groupe et reforme le groupe toute seule, même après une veille ou un redémarrage.",
   "multiroom.permanentHelpConcrete": "Quand {{master}} se met à jouer, via une touche de préréglage ou autrement, elle réveille {{members}} et reforme le groupe toute seule, même après une veille ou un redémarrage. Une enceinte occupée à autre chose reste à l'écart.",

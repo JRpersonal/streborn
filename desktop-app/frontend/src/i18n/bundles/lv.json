@@ -1186,6 +1186,7 @@
   "multiroom.groupMasterTitle": "Grupas galvenais (skaļrunis, no kura atskaņo grupa)",
   "multiroom.notReady": "Šie skaļruņi vēl startēja un nepievienojās: {{names}}. Pamēģini tos sagrupēt vēlreiz pēc brīža.",
   "multiroom.permanentLabel": "Paturēt šo grupu pastāvīgi",
+  "multiroom.permanentSaved": "Pastāvīgā grupa saglabāta. Tā izveidosies pati, kad {{master}} nākamreiz kaut ko atskaņos.",
   "multiroom.permanentHelp": "Kad galvenais skaļrunis sāk mūziku, tas pamodina grupas skaļruņus un pats no jauna izveido grupu, arī pēc gaidstāves vai restarta. Skaļrunis, kas atskaņo ko citu, paliek ārpus grupas.",
   "multiroom.permanentHelpMasterOnly": "Kad {{master}} sāk atskaņot, tas pamodina skaļruņus, ko pievienojat šai grupai, un pats atkal izveido grupu, pat pēc gaidstāves vai restartēšanas.",
   "multiroom.permanentHelpConcrete": "Kad {{master}} sāk atskaņot, ar iestatījuma pogu vai citādi, tas pamodina {{members}} un pats atkal izveido grupu, pat pēc gaidstāves vai restartēšanas. Skaļrunis, kas atskaņo ko citu, paliek malā.",
