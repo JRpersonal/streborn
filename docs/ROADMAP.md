@@ -228,17 +228,17 @@ SSH at all.
   browser shortcut, not an installable app; the browser workarounds (a
   public cert for a LAN IP, or a user-installed root CA) each trade a
   real security property for a cosmetic one.
-- Multi-room grouping: **shipped as alpha** since the v0.7.x line
+- Multi-room grouping: **shipped** since the v0.7.x line
   ([#70](https://github.com/JRpersonal/streborn/issues/70)) — native
   `/setZone` plus a per-agent mirror fallback, NAND-persisted zones
-  with auto-reform, stereo pairs. Remaining: promote out of alpha
-  after broader hardware feedback.
-- Spotify Connect: **shipped as beta** since the v0.7.x line
+  with auto-reform, an opt-in permanent group, and stereo pairs.
+  Ongoing: stability hardening from broader hardware feedback.
+- Spotify Connect: **shipped** since the v0.7.x line
   ([#78](https://github.com/JRpersonal/streborn/issues/78)) via a
   supervised go-librespot sidecar with Ogg passthrough, per-slot
-  stream URLs, Spotify presets and multi-account. Remaining: promote
-  out of beta (stability), native multi-account upstream (fork issue
-  #1), upstreaming the passthrough patch (devgianlu PR #316).
+  stream URLs, Spotify presets, per-speaker quality and multi-account.
+  Ongoing: stability hardening, native multi-account upstream (fork
+  issue #1), upstreaming the passthrough patch (devgianlu PR #316).
 - Additional streaming providers, tracked in
   [#103](https://github.com/JRpersonal/streborn/issues/103). STR plays
   radio and Spotify today; SoundCloud, Amazon Music and **Deezer** are

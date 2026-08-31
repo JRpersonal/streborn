@@ -208,7 +208,7 @@ coordinated review per `.github/CODEOWNERS`.
   boundary.
 - STR does not authenticate clients of the agent web UI. Any device
   on the LAN that can reach the agent (`:8888`, or `:17008` on
-  SMSC-chassis boxes) can edit presets and trigger playback.
+  whitelisted/BCO-chassis boxes) can edit presets and trigger playback.
 - STR does not sandbox the desktop application. It runs with the
   privileges of the user who launched it.
 - STR does not attempt to verify the integrity of the stock speaker
