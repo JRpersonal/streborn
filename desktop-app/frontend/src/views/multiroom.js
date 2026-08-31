@@ -139,6 +139,31 @@ export function renderMultiroom(fetchLive) {
       }).join('') + `</div>`
     : '';
 
+  // A PERMANENT group that is defined but not currently live (define-only): the
+  // master reports it via `remembered` + `rememberedPermanent`. It has no live
+  // zone, so the live frames above never show it - which left a just-created
+  // permanent group invisible and impossible to dissolve (Jens, 2026-08-31).
+  // Render it here as a standing group with an Ungroup button; it forms on the
+  // master's next play. Skip a master that is currently live (shown above).
+  const storedFramesInner = strBoxes.map(master => {
+    const zl = state.zoneLive[master.deviceID] || {};
+    const remembered = Array.isArray(zl.remembered) ? zl.remembered : [];
+    if (!zl.rememberedPermanent || remembered.length === 0) return '';
+    if (frameKeys.includes(String(master.deviceID || '').toUpperCase())) return '';
+    const memberChips = remembered.map(m => {
+      const b = strBoxes.find(x => x.host === m.ip);
+      return `<span class="zone-frame-chip">${escapeHtml(b ? zoneLabel(b) : (m.name || m.ip))}</span>`;
+    }).join('');
+    return `<div class="box-group box-group-permanent">` +
+      `<span class="box-group-label">${escapeHtml(t('multiroom.permanentGroupTitle'))}` +
+      `<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></span>` +
+      `<span class="zone-frame-chip">${escapeHtml(zoneLabel(master))}</span>` + memberChips +
+      `<div class="muted small zone-permanent-pending">${escapeHtml(t('multiroom.permanentPending', { master: zoneLabel(master) }))}</div>` +
+      `<button class="btn btn-mini btn-warning" data-perm-dissolve="${master.host}" data-perm-port="${master.port}">${escapeHtml(t('multiroom.ungroupBtn'))}</button>` +
+      `</div>`;
+  }).filter(Boolean).join('');
+  const storedFramesHtml = storedFramesInner ? `<div class="zone-frames">${storedFramesInner}</div>` : '';
+
   const topbar = `<div class="zone-topbar"><button id="zoneRefresh" class="btn btn-mini">${escapeHtml(t('common.refresh'))}</button></div>`;
   const previewNote = enough ? '' :
     `<div class="setup-warn small" style="margin-bottom:10px">${escapeHtml(t('multiroom.previewNote'))}</div>`;
@@ -343,7 +368,7 @@ export function renderMultiroom(fetchLive) {
     ? `<div class="muted small" id="pairBalance" hidden></div>`
     : '';
 
-  root.innerHTML = intro + liveFramesHtml + topbar + previewNote + updateWarn +
+  root.innerHTML = intro + liveFramesHtml + storedFramesHtml + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
      ${pairBalance}
@@ -440,6 +465,24 @@ export function renderMultiroom(fetchLive) {
     $('zoneCreate').onclick = () => doFormZone(strBoxes);
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
   }
+
+  // Dissolve a stored PERMANENT group (define-only) from its own frame. Its
+  // master holds the document, so DELETE /api/box/zone on the master clears it
+  // (handleZoneDissolve calls zones.Clear). The frame then vanishes on the
+  // re-fetch, which is the confirmation.
+  root.querySelectorAll('[data-perm-dissolve]').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const host = btn.getAttribute('data-perm-dissolve');
+      const port = parseInt(btn.getAttribute('data-perm-port'), 10) || 0;
+      try {
+        await DissolveZone(host, port);
+      } catch (e) {
+        state.zoneMsg = `<div class="setup-warn">${escapeHtml(String(e))}</div>`;
+      }
+      renderMultiroom(true);
+    };
+  });
   if (canPair) {
     // Remember the user's choice so the next repaint (they happen on every
     // live-zone poll) does not throw it away.

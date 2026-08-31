@@ -1187,6 +1187,8 @@
   "multiroom.notReady": "Šie garsiakalbiai dar buvo paleidžiami ir neprisijungė: {{names}}. Pabandyk juos sugrupuoti dar kartą po akimirkos.",
   "multiroom.permanentLabel": "Išlaikyti šią grupę nuolat",
   "multiroom.permanentSaved": "Nuolatinė grupė išsaugota. Ji susiformuos savaime, kai {{master}} kitą kartą ką nors gros.",
+  "multiroom.permanentGroupTitle": "Nuolatinė grupė",
+  "multiroom.permanentPending": "Susiformuoja, kai {{master}} kitą kartą ką nors gros.",
   "multiroom.permanentHelp": "Kai pagrindinė kolonėlė paleidžia muziką, ji pažadina grupės kolonėles ir pati iš naujo suformuoja grupę, taip pat po budėjimo režimo ar paleidimo iš naujo. Kolonėlė, grojanti ką nors kita, lieka nuošalyje.",
   "multiroom.permanentHelpMasterOnly": "Kai {{master}} pradeda groti, ji pažadina kolonėles, kurias pridedate prie šios grupės, ir pati vėl suformuoja grupę, net po budėjimo ar paleidimo iš naujo.",
   "multiroom.permanentHelpConcrete": "Kai {{master}} pradeda groti, iš preseto mygtuko ar kitaip, ji pažadina {{members}} ir pati vėl suformuoja grupę, net po budėjimo ar paleidimo iš naujo. Kita kolonėlė, grojanti kažką kita, lieka nuošalyje.",

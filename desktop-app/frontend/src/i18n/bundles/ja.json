@@ -1187,6 +1187,8 @@
   "multiroom.notReady": "これらのスピーカーはまだ起動中で参加できませんでした: {{names}}。少し待ってからもう一度グループ化してください。",
   "multiroom.permanentLabel": "このグループを常に維持する",
   "multiroom.permanentSaved": "常設グループを保存しました。次に {{master}} で何かを再生すると自動でグループが組まれます。",
+  "multiroom.permanentGroupTitle": "常設グループ",
+  "multiroom.permanentPending": "次に {{master}} で何かを再生すると組まれます。",
   "multiroom.permanentHelp": "メインスピーカーが音楽を再生すると、グループのスピーカーを起こしてグループを自動的に再形成します。スタンバイや再起動の後でも同様です。別のものを再生中のスピーカーは対象外のままです。",
   "multiroom.permanentHelpMasterOnly": "{{master}} が再生を始めると、このグループに追加したスピーカーを起こし、グループを自動的に再構成します。スタンバイや再起動の後でも同様です。",
   "multiroom.permanentHelpConcrete": "{{master}} が再生を始めると、プリセットキーからでもそれ以外でも、{{members}} を起こしてグループを自動的に再構成します。スタンバイや再起動の後でも同様です。別のものを再生中のスピーカーは対象外です。",
