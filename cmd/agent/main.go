@@ -503,6 +503,10 @@ func run() error {
 		}()
 	}
 	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
+	// net_reachability captures the "plays radio but unreachable" fault: the
+	// cheap carrier/IP/gateway-ARP snapshot the health tick watches, plus the
+	// on-demand INPUT chain, routes, ARP table and listeners for a bundle.
+	webui.RegisterDebugSection("net_reachability", netReachabilityDebugSection)
 	// dns_status makes the #487 fault class visible in one glance: a bundle
 	// with an empty nameserver list explains dead radio, a stuck clock, an
 	// unpaired box and a crash-looping Spotify engine all at once.
@@ -1168,6 +1172,7 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		logResourceHealth(logger)
+		checkNetworkReachability(logger)
 		health := time.NewTicker(5 * time.Minute)
 		defer health.Stop()
 		// The guard polls far more often than the heartbeat log: a runaway can
@@ -1180,6 +1185,7 @@ func run() error {
 				return
 			case <-health.C:
 				logResourceHealth(logger)
+				checkNetworkReachability(logger)
 			case <-guard.C:
 				memoryGuardCheck(logger, spotifyMgr, *boxHost)
 			}
