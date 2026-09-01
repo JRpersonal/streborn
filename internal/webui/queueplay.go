@@ -174,7 +174,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 		if card.art == "" {
 			card.art = it.Art
 		}
-		s.recentNoteQueueCard(card.key, card.name, card.art, card.url)
+		s.recentNoteQueueCard(card.key, card.name, card.art, card.url, it.Mime)
 	} else {
 		s.recentClearQueueCard()
 	}
