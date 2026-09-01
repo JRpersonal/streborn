@@ -182,6 +182,18 @@ func (s *Server) GroupSnapshot() (xmlDoc string, canonical bool, ok bool) {
 	return renderGroupXML(s.group), s.groupCanonical, true
 }
 
+// GroupName returns the stored stereo pair's display name, or "" if no pair is
+// stored. The phone remote reads this (via the agent's zone-volume endpoint) to
+// show a pair under its own name instead of a member box name (#775).
+func (s *Server) GroupName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.group == nil {
+		return ""
+	}
+	return s.group.Name
+}
+
 // SetCanonicalGroup installs the canonical pair document (from the pairing
 // flow on this box, or relayed from the master's agent via the desktop app for
 // the partner). From now on firmware posts that disagree on the master are

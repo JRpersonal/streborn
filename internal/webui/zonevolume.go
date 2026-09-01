@@ -242,10 +242,19 @@ func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 	// actually is, which is what a group slider should read when the speakers
 	// are deliberately at different levels. A slider showing the average of 40
 	// and 10 reads 25, and nothing in the room is playing at 25.
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"grouped": true, "stereo": stereo, "members": members,
 		"average": avg, "loudest": loudest,
-	})
+	}
+	// A stereo pair carries its own display name in the marge group record (shared
+	// with the Bose app). Hand it to the phone remote so it can show the pair
+	// under that name instead of one member's box name (#775).
+	if stereo && s.margeGroupName != nil {
+		if nm := s.margeGroupName(); nm != "" {
+			resp["stereoName"] = nm
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // groupView is the ONE answer to "which speakers is this one grouped with".

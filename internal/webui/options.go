@@ -380,12 +380,13 @@ func WithSpotifyCanRecall(f func(ctx context.Context) bool) Option {
 // WithMargeGroups bridges the marge stereo-pair record (get/set/clear) so the
 // pairing and dissolve flows keep BOTH members' marges on one canonical pair
 // document, and /api/marge/group lets the desktop app relay it to the partner.
-func WithMargeGroups(get func() (string, bool, bool), set func(string) error, clear func(string), rename func(string) error) Option {
+func WithMargeGroups(get func() (string, bool, bool), set func(string) error, clear func(string), rename func(string) error, name func() string) Option {
 	return func(s *Server) {
 		s.margeGroupGet = get
 		s.margeGroupSet = set
 		s.margeGroupClear = clear
 		s.margeGroupRename = rename
+		s.margeGroupName = name
 	}
 }
 

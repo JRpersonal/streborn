@@ -1436,9 +1436,8 @@ async function loadSettings() {
   // own source list is authoritative; an empty/missing list changes nothing.
   if (Array.isArray(s.sources)) renderInputs(s.sources);
   if (s.info && s.info.name) {
-    var dn = document.getElementById('devName');
-    if (dn && dn.textContent !== s.info.name) { dn.textContent = s.info.name; renderDevMenu(); }
-    document.getElementById('dev').title = s.info.name;
+    lastBoxName = s.info.name;
+    updateTopName();
   }
   if (s.volume && typeof s.volume.actual === 'number') {
     volLast = s.volume.actual;
@@ -2211,7 +2210,21 @@ function dismissCoach() {
    quietly changes meaning cannot say which. It is hidden entirely while the
    speaker plays alone, so a single-speaker home never meets it.
    =========================================================================== */
-var zone = { grouped:false, stereo:false, members:[], master:false, masterName:'' };
+var zone = { grouped:false, stereo:false, pairName:'', members:[], master:false, masterName:'' };
+var lastBoxName = '';
+// updateTopName shows the STEREO PAIR's own name at the top of the page (next to
+// the power button) when this speaker is half of a named pair, instead of its
+// single box name, so the phone reads the pair as one speaker the way the Bose
+// app does (#775). The pair name rides in on the zone poll (stereoName); the box
+// name comes from the status poll. Either poll calls this, so whichever lands
+// first paints and the other only confirms.
+function updateTopName() {
+  var nm = (zone.stereo && zone.pairName) ? zone.pairName : lastBoxName;
+  if (!nm) return;
+  var dn = document.getElementById('devName');
+  if (dn && dn.textContent !== nm) { dn.textContent = nm; renderDevMenu(); }
+  var dev = document.getElementById('dev'); if (dev) dev.title = nm;
+}
 // Which speakers the volume slider moves. Starts on the whole group whenever
 // one exists: somebody who has grouped speakers is listening to the group, so
 // the volume control should move what they are listening to. It only stays on
@@ -2373,14 +2386,17 @@ async function loadZone() {
   var card = document.getElementById('groupCard');
   var tab = document.getElementById('tabSpeakers'), dot = document.getElementById('tabDot');
   if (!z || !z.grouped) {
-    zone = { grouped:false, stereo:false, members:[], master:false, masterName:'' };
+    zone = { grouped:false, stereo:false, pairName:'', members:[], master:false, masterName:'' };
     if (card) card.style.display = 'none';
     if (dot) dot.hidden = true;
+    updateTopName();
     applyScopeUI();
     return;
   }
   zone.grouped = true;
   zone.stereo = !!z.stereo;
+  zone.pairName = z.stereoName || '';
+  updateTopName();
   zone.members = z.members || [];
   var self = zone.members.filter(function(m){ return m.isSelf; })[0];
   zone.master = !!(self && self.isMaster);
@@ -2397,7 +2413,7 @@ async function loadZone() {
   // scope row already makes this distinction, which is why only the card was
   // still saying it.
   var sum = document.getElementById('groupSum');
-  if (sum) sum.textContent = zone.stereo ? T.pairSum : fmt(T.grpSum, { n: zone.members.length });
+  if (sum) sum.textContent = zone.stereo ? (zone.pairName || T.pairSum) : fmt(T.grpSum, { n: zone.members.length });
   var lbl = document.getElementById('lblGroup');
   if (lbl) lbl.textContent = zone.stereo ? T.scPair : T.grp;
   var lblUn = document.getElementById('lblUngroup');

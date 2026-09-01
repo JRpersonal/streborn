@@ -127,11 +127,17 @@ func TestPhoneRemoteNamesAStereoPairAsAPair(t *testing.T) {
 	for _, want := range []string{
 		"lbl.textContent = zone.stereo ? T.scPair : T.grp",
 		"lblUn.textContent = zone.stereo ? T.unpair : T.ungroup",
-		"sum.textContent = zone.stereo ? T.pairSum : fmt(T.grpSum",
+		"sum.textContent = zone.stereo ? (zone.pairName || T.pairSum) : fmt(T.grpSum",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("the Speakers card does not switch to pair wording: missing %q", want)
 		}
+	}
+	// #775: the pair now shows under its OWN name (read from the zone poll's
+	// stereoName) instead of a generic "Stereo pair", both on the card and at the
+	// top of the page next to the power button.
+	if !strings.Contains(indexHTML, "zone.pairName = z.stereoName") {
+		t.Error("the phone does not read the stereo pair's own name (stereoName)")
 	}
 	// The scope hint sits above the slider and described a pair as a group too.
 	if !strings.Contains(indexHTML, "hint.textContent = zone.stereo ? T.pairSum : fmt(T.grpSum") {
