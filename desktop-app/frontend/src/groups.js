@@ -463,11 +463,21 @@ export function balanceSourceBox(selected, pair, boxes) {
 // the live slots win.
 export function stereoSelectionPick({ left, right, liveIDs, candIDs }) {
   const still = (id) => !!id && candIDs.includes(id);
-  return [left, right].map((remembered, i) => {
-    if (still(remembered)) return remembered;
-    if (liveIDs[i]) return liveIDs[i];
-    return candIDs[i] || '';
+  const picks = [];
+  [left, right].forEach((remembered, i) => {
+    // The two channels must never resolve to the SAME speaker (#775). A stale
+    // remembered pick for one channel would otherwise collide with the live pair
+    // member filling the other, showing "Grace right / Grace right" in the L and
+    // R slots and a bottom card that reads "no stereo pair" while the real pair
+    // sits up top. So each channel skips whatever the first one already took.
+    const taken = picks[0];
+    let pick = '';
+    if (still(remembered) && remembered !== taken) pick = remembered;
+    else if (liveIDs[i] && liveIDs[i] !== taken) pick = liveIDs[i];
+    else pick = candIDs.find((c) => c && c !== taken) || '';
+    picks.push(pick);
   });
+  return picks;
 }
 
 // zoneOrPairMaster returns the master KEY (uppercase deviceID) a box currently
