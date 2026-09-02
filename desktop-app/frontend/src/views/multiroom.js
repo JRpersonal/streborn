@@ -61,6 +61,48 @@ function liveZoneMaster(strBoxes) {
   return null;
 }
 
+// A success notice is transient: it confirms the action just taken and then
+// has to get out of the way. state.stereoMsg used to be set and never cleared,
+// so the green "pair created" confirmation stayed on screen forever and ended
+// up sitting above a status that had since changed and contradicted it - the
+// screenshot in #821 showed "Stereo pair created ..." right over "No stereo
+// pair on these speakers right now." Only the green confirmations auto-clear;
+// errors and warnings stay until the next action, since the user still has to
+// act on them. The token guards a newer message from being wiped by an older
+// timer, and the identity check makes sure we only clear the message we set.
+let stereoMsgToken = 0;
+function flashStereoMsg(html) {
+  state.stereoMsg = html;
+  const mine = ++stereoMsgToken;
+  setTimeout(() => {
+    if (stereoMsgToken === mine && state.stereoMsg === html) {
+      state.stereoMsg = '';
+      if (state.view === 'multiroom') renderMultiroom(false);
+    }
+  }, 8000);
+}
+
+// Live pair/zone status has to track changes made ELSEWHERE - the phone page,
+// the Bose app, a second PC - while this screen sits open. renderMultiroom
+// fetches every speaker's live zone once on entry and then never again, so an
+// external unpair used to show as stale here until the user left the tab and
+// came back (#821: "The Multimode screen needs to reflect the pairing status
+// without requiring the user to go to another screen and come back."). A gentle
+// interval, running ONLY while this is the visible view, re-polls and repaints.
+// It self-stops the moment the view changes, and switchView clears it too, so
+// it can never outlive the tab or stack a second timer.
+let liveTimer = null;
+function startMultiroomLive() {
+  if (liveTimer) return;
+  liveTimer = setInterval(() => {
+    if (state.view !== 'multiroom') { stopMultiroomLive(); return; }
+    refreshZoneLive();
+  }, 5000);
+}
+export function stopMultiroomLive() {
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+}
+
 // renderMultiroom paints the Multi-Room view. fetchLive triggers a non-blocking
 // parallel poll of every speaker's live zone after paint (skipped on repaints).
 export function renderMultiroom(fetchLive) {
@@ -497,7 +539,12 @@ export function renderMultiroom(fetchLive) {
   }
 
   // Live status: parallel, non-blocking, after paint. Never blocks the tab.
+  // The one-shot fetch keeps entry snappy; startMultiroomLive then keeps the
+  // pair/zone status current against changes made elsewhere while this screen
+  // stays open (#821). Guarded, so the repeated renderMultiroom(true) from the
+  // form/dissolve handlers never stacks a second interval.
   if (fetchLive && strBoxes.length) setTimeout(() => refreshZoneLive(), 0);
+  if (strBoxes.length && state.view === 'multiroom') startMultiroomLive();
 }
 
 // refreshZoneLive queries every speaker's live zone through the shared
@@ -555,7 +602,7 @@ async function doFormStereo(pairCands) {
         state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err }))}</div>`;
       }
     } else {
-      state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`;
+      flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`);
       // Persist the user-given name app-side, keyed on the two members. The
       // desktop normalizes these deviceIDs to the firmware /info id, so the key
       // matches the one the live pair reports at display time.
@@ -723,12 +770,17 @@ async function doDissolveStereo(pairCands) {
     }
   }
   if (dissolved) {
-    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`
+    const okHtml = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
+    if (offline.length) {
       // The skipped offline half keeps its side of the pair until it is back;
-      // name it so a later "the pair is still there" has its explanation.
-      + (offline.length ? `<div class="setup-warn">${escapeHtml(t('multiroom.stereoOffline', {
+      // name it so a later "the pair is still there" has its explanation. This
+      // carries an actionable warning, so it stays put rather than auto-clearing.
+      state.stereoMsg = okHtml + `<div class="setup-warn">${escapeHtml(t('multiroom.stereoOffline', {
           names: offline.map(b => zoneLabel(b)).join(', '),
-        }))}</div>` : '');
+        }))}</div>`;
+    } else {
+      flashStereoMsg(okHtml);
+    }
     showToast(t('multiroom.stereoDissolved'));
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
