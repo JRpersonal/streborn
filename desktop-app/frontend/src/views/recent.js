@@ -18,6 +18,8 @@ import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLab
 import { t } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, BrowserOpenURL, ClearRecent, DeleteRecentCard } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
+import { stereoPairsOf } from '../groups.js';
+import { pairDisplayName } from '../stereoNames.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -57,6 +59,26 @@ function recentSelectedBoxes() {
   }
   if (state.currentBox) return [state.currentBox];
   return all.length ? [all[0]] : [];
+}
+
+// recentBoxDisplayLabel is the speaker name shown on a played card. When the
+// speaker is half of a live firmware stereo pair, the pair's own STR name is
+// shown instead of the single box name (#775), so the history reads as one
+// speaker exactly like the multi-room view names it. The name is kept app-side
+// (stereoNames.js); its first lookup is async, so pairDisplayName repaints the
+// list once the name lands. Falls back to the plain box label when the box is
+// not paired or the pair has no stored name.
+function recentBoxDisplayLabel(b) {
+  const dev = String(b.deviceID || '').toUpperCase();
+  if (dev) {
+    const pair = stereoPairsOf(state.zoneLive || {}).find((p) =>
+      (p.members || []).some((m) => String(m.deviceID || '').toUpperCase() === dev));
+    if (pair) {
+      const nm = pairDisplayName(pair, () => refreshRecentList());
+      if (nm) return nm;
+    }
+  }
+  return getBoxLabel(b);
 }
 
 // cardStation projects a recent card into the radio-station shape the search-row
@@ -131,7 +153,8 @@ async function loadRecentCards() {
     const boxKey = recentBoxKey(b);
     // friendlyName first: the backend always fills Name with a "str-<IP>" fallback,
     // so b.name is never empty. This matches the box switcher and the rest of the app.
-    const boxName = getBoxLabel(b);
+    // A stereo pair shows its own STR name here instead of the single box (#775).
+    const boxName = recentBoxDisplayLabel(b);
     let list = [];
     try { list = await RecentPlayed(b.host, b.port) || []; } catch { list = []; }
     // Map Spotify playlist URI -> preset slot on this box. A match means the box
@@ -359,7 +382,10 @@ function stopRecentAutoRefresh() {
 // refreshRecentList re-fetches and repaints only the card list (not the header /
 // scope chips), so the auto-refresh does not disturb the controls. /api/recent
 // is a cheap in-RAM read on the box; this only runs while the tab is visible.
-async function refreshRecentList() {
+// Exported so main.js's status poll can repaint it the instant the speaker's
+// source changes from another controller, instead of waiting for the 30 s timer
+// (#810).
+export async function refreshRecentList() {
   if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
   const cards = await loadRecentCards();
   const listEl = $('recentList');
