@@ -220,6 +220,9 @@ type Server struct {
 	margeGroupSet    func(xmlDoc string) error
 	margeGroupClear  func(reason string)
 	margeGroupRename func(name string) error
+	// margeGroupName returns the stored pair's display name so the phone remote
+	// can show a pair under its own name instead of a member box name (#775).
+	margeGroupName func() string
 	// margeForward registers (or clears) a developer machine the box's cloud
 	// conversation is relayed to. nil disables the endpoint. See margelab.go.
 	margeForward func(target string) error
