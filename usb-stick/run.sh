@@ -3413,6 +3413,24 @@ fi
 INPUT_ACCEPT_PORTS="8888 9080 8081 8443"
 iptables_install_streborn_fw() {
     rc_total=0
+    healed=0
+    # ICMP first: a healthy STR box must always answer ping, even behind Bose's
+    # port-whitelist firewall. This is also the diagnostic tell for the "plays
+    # radio but is unreachable" failure (#... field reports on ST10 and ST30):
+    # in that state the box keeps streaming (an ESTABLISHED outbound connection)
+    # while EVERY inbound packet is dropped, ping and Bose's own :8090 included,
+    # which is a whole-INPUT blackhole, not a closed port. Keeping ICMP up here
+    # means a box that has gone silent to ping is one whose watchdog itself has
+    # stopped, which tells that failure apart from a mere port flush.
+    if iptables -w -C INPUT -p icmp \
+        -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+        : # already present
+    elif iptables -w -I INPUT 1 -p icmp \
+        -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+        healed=$((healed + 1))
+    else
+        rc_total=$((rc_total + 1))
+    fi
     for port in $INPUT_ACCEPT_PORTS; do
         if iptables -w -C INPUT -p tcp --dport "$port" \
             -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
@@ -3421,10 +3439,20 @@ iptables_install_streborn_fw() {
         if iptables -w -I INPUT 1 -p tcp --dport "$port" \
             -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
             setup_log "iptables INPUT ACCEPT tcp/$port installed at uptime=$(uptime_s)s"
+            healed=$((healed + 1))
         else
             rc_total=$((rc_total + 1))
         fi
     done
+    # A (re)install AFTER the first pass means our rules were flushed out from
+    # under us since the last check. Log it as a distinct, grep-able self-heal
+    # event so the NAND log shows how often and when the flush happens (the
+    # root-cause evidence for the unreachable-while-playing reports); the
+    # reinstall above is already the recovery for the next 30 s window.
+    if [ "$healed" -gt 0 ] && [ "${STR_FW_PRIMED:-0}" = "1" ]; then
+        setup_log "iptables INPUT self-heal: reinstalled $healed streborn-fw rule(s) after a chain flush at uptime=$(uptime_s)s"
+    fi
+    STR_FW_PRIMED=1
     return $rc_total
 }
 (
