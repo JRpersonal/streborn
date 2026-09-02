@@ -719,6 +719,7 @@
   "settingsView.airplayOptConfirmBody": "تغيير تحسين AirPlay يعيد تشغيل السمّاعة لتطبيق الإعداد (تمامًا كتطبيق Bose). ستكون غير متاحة لوهلة. هل تتابع؟",
   "settingsView.airplayOptSavedToast": "تم الحفظ. السمّاعة قيد إعادة التشغيل لتطبيقه.",
   "settingsView.expertBadge": "ساحة تجارب",
+  "settingsView.expertDiscussLink": "شارك أفكارك وحلولك",
   "settingsView.webhookHeading": "أزرار الإعجاب عن بُعد ← Webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "متن الطلب (لـ POST)، اختياري",

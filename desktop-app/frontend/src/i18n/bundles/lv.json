@@ -719,6 +719,7 @@
   "settingsView.airplayOptConfirmBody": "AirPlay optimizācijas maiņa restartē skaļruni, lai pielietotu iestatījumu (tāpat kā Bose lietotne). Tas uz brīdi nebūs pieejams. Turpināt?",
   "settingsView.airplayOptSavedToast": "Saglabāts. Skaļrunis tiek restartēts, lai pielietotu.",
   "settingsView.expertBadge": "Smilšu kaste",
+  "settingsView.expertDiscussLink": "Dalieties ar idejām un risinājumiem",
   "settingsView.webhookHeading": "Tālvadības īkšķi → tīmekļa āķis",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Pieprasījuma saturs (priekš POST), neobligāti",
