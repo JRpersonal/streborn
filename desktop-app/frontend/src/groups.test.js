@@ -600,4 +600,14 @@ describe('stereoSelectionPick', () => {
   it('no live pair and nothing remembered falls back to the first candidates', () => {
     expect(stereoSelectionPick({ left: '', right: '', liveIDs: [], candIDs })).toEqual(['A', 'B']);
   });
+
+  it('never resolves both channels to the SAME speaker (#775)', () => {
+    // The remembered left is the live pair's RIGHT member, and the right channel
+    // would otherwise fall back to that same live member, showing "B / B" in the
+    // L and R slots and a bottom card that reads "no pair" while the real pair
+    // sits up top. The two channels must stay distinct.
+    const got = stereoSelectionPick({ left: 'B', right: '', liveIDs, candIDs });
+    expect(got[0]).not.toEqual(got[1]);
+    expect(got).toEqual(['B', 'A']);
+  });
 });
