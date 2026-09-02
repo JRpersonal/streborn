@@ -362,6 +362,26 @@ async function libraryGoTo(depth) {
   await libraryBrowseCurrent();
 }
 
+// Some DLNA servers omit the MIME on a browse result. Without one, a single
+// track was played with an empty MIME, and the box-side /play handler then filed
+// it under "radio" instead of "upnp" (its only discriminator is a non-empty
+// MIME). On replay from Recently played a radio-typed card takes the streaming
+// route and loops forever on a finite file (#817: folders were fixed in #818,
+// single tracks still looped). Inferring the MIME from the file extension keeps
+// the track typed as a library file, so it plays direct and replays cleanly.
+// Only known audio extensions map; an unknown one stays empty rather than risk a
+// wrong label the box would reject (#139).
+const AUDIO_MIME_BY_EXT = {
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac',
+  flac: 'audio/flac', wav: 'audio/wav', wave: 'audio/wav', ogg: 'audio/ogg',
+  oga: 'audio/ogg', opus: 'audio/opus', wma: 'audio/x-ms-wma',
+  aif: 'audio/aiff', aiff: 'audio/aiff', alac: 'audio/mp4',
+};
+function guessAudioMime(url) {
+  const m = String(url || '').toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/);
+  return (m && AUDIO_MIME_BY_EXT[m[1]]) || '';
+}
+
 async function libraryPlay(item) {
   if (!state.currentBox) {
     showToast(t('library.toastNoBox') || t('common.pickBox'));
@@ -378,7 +398,8 @@ async function libraryPlay(item) {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
     await PlayURL(target.host, target.port,
-      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '', '');
+      item.streamURL, item.title || '', item.albumArtURL || '', '',
+      item.mimeType || guessAudioMime(item.streamURL), '', '');
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;
