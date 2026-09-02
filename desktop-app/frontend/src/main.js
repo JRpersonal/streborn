@@ -336,7 +336,7 @@ import {
 // file stops growing.
 import { renderRecent, initRecentView, refreshRecentList } from './views/recent.js';
 import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
-import { renderMultiroom, initMultiroomView } from './views/multiroom.js';
+import { renderMultiroom, initMultiroomView, stopMultiroomLive } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
@@ -748,6 +748,9 @@ function switchView(view) {
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-setup').classList.toggle('hidden', view !== 'setup');
   $('view-multiroom').classList.toggle('hidden', view !== 'multiroom');
+  // The Multiroom view runs an active-only live poll (multiroom.js); stop it the
+  // moment we leave so it never keeps polling boxes from behind another tab.
+  if (view !== 'multiroom') stopMultiroomLive();
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   $('view-podcasts').classList.toggle('hidden', view !== 'podcasts');
   // Global SSH banner: the Setup tab has no speaker context, so hide
