@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // SetOnTitle registers a callback invoked when the live ICY StreamTitle of
@@ -34,6 +35,7 @@ func (s *Server) CurrentTitle() string {
 func (s *Server) setTitle(url, title string) {
 	title = strings.TrimRight(title, "\x00")
 	title = strings.TrimSpace(title)
+	title = titleToUTF8(title)
 	s.titleMu.Lock()
 	changed := title != s.curTitle || url != s.curTitleURL
 	s.curTitle = title
@@ -47,6 +49,27 @@ func (s *Server) setTitle(url, title string) {
 	if fire {
 		cb(title)
 	}
+}
+
+// titleToUTF8 normalises an ICY StreamTitle to valid UTF-8. Shoutcast/Icecast
+// stations often send the title in Latin-1 (ISO-8859-1), not UTF-8, so an umlaut
+// in a track or artist ("Fürstenfeld", "Böhse Onkelz") arrives as a lone high
+// byte. Left as-is it is invalid UTF-8, and json.Marshal to the app then replaces
+// it with U+FFFD, so the song shows up garbled as "F�rstenfeld". This is the same
+// fix the box names get in boxapi.ensureUTF8: a title that is already valid UTF-8
+// is returned unchanged, otherwise the bytes are read as Latin-1 (a 1:1 map to the
+// first 256 code points, so ASCII is untouched and only high bytes are widened)
+// and re-encoded as UTF-8.
+func titleToUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	b := []byte(s)
+	out := make([]byte, 0, len(b)+8)
+	for _, c := range b {
+		out = utf8.AppendRune(out, rune(c))
+	}
+	return string(out)
 }
 
 // clearTitleForNewURL drops a stale title when the proxied stream changes, so
