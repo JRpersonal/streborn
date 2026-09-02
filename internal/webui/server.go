@@ -585,7 +585,7 @@ type BoxPreset struct {
 // track callbacks (radio ICY title, Spotify track change) can hang their tracks
 // under it (#135). homepage is the station website, carried so each ICY-title
 // track entry keeps the "website" link target.
-type recentCardCtx struct{ key, name, art, url, account, homepage string }
+type recentCardCtx struct{ key, name, art, url, account, homepage, mime string }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and

@@ -184,7 +184,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 				s.logger.Info("play request: started natively, the speaker fetches the stream itself",
 					"title", req.Title, "url", req.URL)
 				s.setLastPlay(playURL, req.Title, req.Icon, mime)
-				s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage)
+				s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage, "")
 				writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
 				return
 			} else {
@@ -210,9 +210,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
 	if req.Mime != "" {
-		s.recentNoteCard("upnp", req.URL, req.Title, req.Icon, req.URL, "", "")
+		s.recentNoteCard("upnp", req.URL, req.Title, req.Icon, req.URL, "", "", mime)
 	} else {
-		s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage)
+		s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage, "")
 	}
 	// radio-browser click-tracking moved app-side (the app fires RadioClick
 	// when it starts playback) so the box no longer needs the radiobrowser pkg.
@@ -406,7 +406,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		gen := s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
-		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "") // #135
+		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "", "") // #135
 		// normalizeSpotifyURI on recall heals presets that stored an ephemeral
 		// station context before the save-side unwrap existed.
 		uri, name, art, account, shuffle := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle
@@ -487,7 +487,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			gen := s.setLastPlay(directURL, p.Name, p.Art, mime)
-			s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "") // #135
+			s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "", mime) // #135
 			name, art := p.Name, p.Art
 			go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
 				_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
@@ -513,7 +513,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			// and skipping it would silently cost the user their "switch on and
 			// the last station comes back" behaviour.
 			s.setLastPlay(playURL, p.Name, p.Art, upnp.MimeForCodecOrURL(p.Codec, p.StreamURL))
-			s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
+			s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage, "") // #135
 			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 			return
 		} else {
@@ -546,7 +546,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gen := s.setLastPlay(playURL, p.Name, p.Art, mime)
-	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage, "") // #135
 	name, art := p.Name, p.Art
 	go s.verifyRecall(gen, recallStart, playURL, func(ctx context.Context, _ bool) {
 		if mime != "" {
@@ -718,11 +718,11 @@ func (s *Server) SetTransportCommandHook(fn func()) {
 // recentNoteCard records a user-chosen source (radio station, Spotify playlist,
 // NAS file) as the start of a Recently-played card. For radio and Spotify it also
 // remembers the card so the live track callbacks can hang tracks under it.
-func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage string) {
+func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage, mime string) {
 	if s.recent == nil || key == "" {
 		return
 	}
-	s.recent.Add(recent.Entry{Source: source, CardKey: key, CardName: name, CardArt: art, CardURL: url, Account: account, Homepage: homepage})
+	s.recent.Add(recent.Entry{Source: source, CardKey: key, CardName: name, CardArt: art, CardURL: url, Account: account, Homepage: homepage, Mime: mime})
 	s.recentMu.Lock()
 	switch source {
 	case "radio":
@@ -747,11 +747,11 @@ func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage s
 // the start of a "library" (upnp) Recently-played card, and remembers it so each
 // track the queue pushes is hung under it (like radio ICY tracks under a station).
 // The replay target is the first track's URL; clicking the card re-plays it.
-func (s *Server) recentNoteQueueCard(key, name, art, url string) {
+func (s *Server) recentNoteQueueCard(key, name, art, url, mime string) {
 	s.recentMu.Lock()
-	s.recentQueueCard = recentCardCtx{key: key, name: name, art: art, url: url}
+	s.recentQueueCard = recentCardCtx{key: key, name: name, art: art, url: url, mime: mime}
 	s.recentMu.Unlock()
-	s.recentNoteCard("upnp", key, name, art, url, "", "")
+	s.recentNoteCard("upnp", key, name, art, url, "", "", mime)
 }
 
 // recentNoteQueueTrack hangs the track the play-queue just started under the
@@ -766,7 +766,7 @@ func (s *Server) recentNoteQueueTrack(track string) {
 	if c.key == "" {
 		return
 	}
-	s.recent.Add(recent.Entry{Source: "upnp", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track})
+	s.recent.Add(recent.Entry{Source: "upnp", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track, Mime: c.mime})
 }
 
 // recentClearQueueCard forgets the active folder card so later tracks (a single
@@ -829,10 +829,10 @@ func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
 // the renderer, bypassing the webui play handlers.
 func (s *Server) NoteRecentPreset(p presets.Preset) {
 	if p.Type == "spotify" {
-		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "")
+		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "", "")
 		return
 	}
-	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage)
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage, "")
 }
 
 // handleRecent serves this box's recently-played ring (#135), oldest-first. The

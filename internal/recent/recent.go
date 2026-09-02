@@ -51,6 +51,7 @@ type Entry struct {
 	CardName string `json:"cardName"`           // station / playlist / folder name
 	CardArt  string `json:"cardArt,omitempty"`  // logo / cover URL
 	CardURL  string `json:"cardURL,omitempty"`  // replay target: stream URL / spotify URI / NAS location
+	Mime     string `json:"mime,omitempty"`     // network-library file MIME, so a replay from history plays direct, not through the radio stream proxy (#817)
 	Track    string `json:"track,omitempty"`    // song / track title; empty for stations without ICY
 	Account  string `json:"account,omitempty"`  // sourceAccount (e.g. which Spotify account)
 	Homepage string `json:"homepage,omitempty"` // station website, for the "website" link (radio)

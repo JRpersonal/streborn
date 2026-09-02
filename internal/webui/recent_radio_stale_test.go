@@ -13,11 +13,11 @@ func TestRecentRadioStaleTitleSuppressed(t *testing.T) {
 	s := &Server{recent: recent.New()}
 
 	// Station A plays a song.
-	s.recentNoteCard("radio", "klove", "KLove", "", "http://klove", "", "")
+	s.recentNoteCard("radio", "klove", "KLove", "", "http://klove", "", "", "")
 	s.recentNoteRadioTrack("Phil Wickham - This is Our God")
 
 	// Switch to station B. Its first ICY title is still A's last song (lagged).
-	s.recentNoteCard("radio", "rush", "Exclusively Rush", "", "http://rush", "", "")
+	s.recentNoteCard("radio", "rush", "Exclusively Rush", "", "http://rush", "", "", "")
 	s.recentNoteRadioTrack("Phil Wickham - This is Our God") // stale: must be dropped
 	s.recentNoteRadioTrack("AC/DC - Thunderstruck")          // B's real song
 

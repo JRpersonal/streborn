@@ -16,7 +16,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, BrowserOpenURL, ClearRecent, DeleteRecentCard } from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
@@ -133,7 +133,7 @@ function groupRecentCards(entries) {
     cards.push({
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
       source: e.source, cardKey: e.cardKey, name: e.cardName,
-      art: e.cardArt, url: e.cardURL, account: e.account, ts: e.ts,
+      art: e.cardArt, url: e.cardURL, mime: e.mime, account: e.account, ts: e.ts,
       homepage: e.homepage || '', playSlot,
       tracks: e.track ? [{ track: e.track, ts: e.ts }] : [],
       _seen: seen,
@@ -322,6 +322,15 @@ function wireCard(c, i) {
         if (c.source === 'spotify') {
           // Token present (matched a preset slot): recall it, same as a preset.
           await PlaySlot(c.box.host, c.box.port, c.playSlot);
+          showToast(t('recent.playing', { name: c.name || '' }));
+        } else if (c.source === 'upnp') {
+          // A network-library (NAS) track must replay the DIRECT library way, not
+          // the radio path. The radio path runs the file through the stream proxy
+          // built for endless radio, which loops forever on a finite file (#817);
+          // PlayURL with the stored MIME makes the box play it straight instead.
+          const box = c.box || state.currentBox;
+          const art = (c.art || '').split('|')[0].trim();
+          await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '');
           showToast(t('recent.playing', { name: c.name || '' }));
         } else {
           await deps.playStation(cardStation(c));
