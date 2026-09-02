@@ -1440,9 +1440,17 @@ async function loadSettings() {
     updateTopName();
   }
   if (s.volume && typeof s.volume.actual === 'number') {
-    volLast = s.volume.actual;
-    var el = document.getElementById('vol'); el.value = s.volume.actual;
-    document.getElementById('volval').textContent = s.volume.actual;
+    // Do not let a status poll snap the slider back to a stale reading in the
+    // moment right after the user changed it. The box may not have applied the
+    // new level yet, so overwriting here made a tap appear to jump back to the
+    // old value (#726). Hold off until the send has settled (the same window the
+    // group path uses), then trust the box again; a change made on the box
+    // itself is picked up on the next poll after the window.
+    if (Date.now() - volSentAt >= GRP_VOL_SETTLE_MS) {
+      volLast = s.volume.actual;
+      var el = document.getElementById('vol'); el.value = s.volume.actual;
+      document.getElementById('volval').textContent = s.volume.actual;
+    }
   }
   if (s.bass && s.bass.available && typeof s.bass.actual === 'number') {
     var b = document.getElementById('bass');
