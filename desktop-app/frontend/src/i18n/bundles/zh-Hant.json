@@ -780,6 +780,7 @@
   "settingsView.airplayOptConfirmBody": "變更 AirPlay 最佳化後，喇叭要重新啟動才能套用這個設定（和 Bose 應用程式一樣），期間會短暫無法使用。要繼續嗎？",
   "settingsView.airplayOptSavedToast": "已儲存。喇叭正在重新啟動來套用設定。",
   "settingsView.expertBadge": "實驗場",
+  "settingsView.expertDiscussLink": "分享你的想法和解決方案",
   "settingsView.urlPresetHeading": "用預設鍵播放自訂網址",
   "settingsView.urlPresetHelp": "把一段音訊網址指派到預設鍵：可以是音效檔（例如 MP3），也可以是持續的串流，例如你自己網路上的 Icecast 電台。不管是在喇叭上還是在應用程式裡按下這個鍵，都會播放它。網址必須在你的網路上連得到；http 和 https 都可以（STR 會把串流轉送給喇叭）。MP3 播放最穩定，有些 OGG 串流可能不行。按下之後會取代目前正在播放的內容。更好的做法：把這個電台加到 radio-browser.info，這樣所有人搜尋時都找得到，而不是只在這一個按鍵上。",
   "settingsView.urlPresetNamePlaceholder": "名稱（例如門鈴）",

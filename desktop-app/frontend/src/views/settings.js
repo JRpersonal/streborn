@@ -794,6 +794,26 @@ function helpBlock(text, tag = 'small', cls = 'muted small expert-intro') {
       </details>`;
 }
 
+// Each Playground (Spielwiese) section links to its own "Show and tell" thread
+// so owners can swap setups and ideas for that one feature, building a small
+// community around the experimental features (2026-09-02). data-url is opened by
+// the .expert-disc-link handler in renderBoxSettings, the same BrowserOpenURL
+// pattern the firmware-banner links use.
+const EXPERT_DISCUSS = {
+  announce: 'https://github.com/JRpersonal/streborn/discussions/826',
+  webhook: 'https://github.com/JRpersonal/streborn/discussions/827',
+  voice: 'https://github.com/JRpersonal/streborn/discussions/828',
+  copyPresets: 'https://github.com/JRpersonal/streborn/discussions/829',
+  urlPreset: 'https://github.com/JRpersonal/streborn/discussions/830',
+};
+function discussLink(key) {
+  const url = EXPERT_DISCUSS[key];
+  if (!url) return '';
+  return `<div class="expert-disc-row" style="margin-top:10px">`
+    + `<a href="#" class="expert-disc-link" data-url="${escapeAttr(url)}" style="font-size:0.9em">`
+    + `&#128172; ${escapeHtml(t('settingsView.expertDiscussLink'))}</a></div>`;
+}
+
 function renderBoxSettings(s, box) {
   const info = s.info || {};
   const vol = s.volume || {};
@@ -1029,6 +1049,7 @@ function renderBoxSettings(s, box) {
           <button class="btn btn-mini" id="announceCopy">${escapeHtml(t('settingsView.announceCopy'))}</button>
         </div>
       </details>
+      ${discussLink('announce')}
     </details>
 
     <details class="settings-section settings-expert">
@@ -1091,6 +1112,7 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini" id="webhookTestBtn">${escapeHtml(t('settingsView.webhookTestBtn'))}</button>
         <button class="btn btn-mini btn-primary" id="webhookSaveBtn">${escapeHtml(t('common.save'))}</button>
       </div>
+      ${discussLink('webhook')}
     </details>
 
     <details class="settings-section settings-expert">
@@ -1099,6 +1121,7 @@ function renderBoxSettings(s, box) {
       <div class="setting-row">
         <button class="btn btn-mini" id="voiceGuideBtn">${escapeHtml(t('settingsView.voiceGuideBtn'))}</button>
       </div>
+      ${discussLink('voice')}
     </details>
 
     ${(() => {
@@ -1125,6 +1148,7 @@ function renderBoxSettings(s, box) {
         <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
         <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t('settingsView.copyPresetsBtn'))}</button>
       </div>
+      ${discussLink('copyPresets')}
     </details>`;
     })()}
 
@@ -1141,6 +1165,7 @@ function renderBoxSettings(s, box) {
         <input type="text" id="urlPresetUrl" autocomplete="off" placeholder="${escapeAttr(t('settingsView.urlPresetUrlPlaceholder'))}" />
         <button class="btn btn-mini btn-primary" id="urlPresetSaveBtn">${escapeHtml(t('common.save'))}</button>
       </div>
+      ${discussLink('urlPreset')}
     </details>
 
     <div class="settings-section">
@@ -1340,6 +1365,11 @@ function renderBoxSettings(s, box) {
   {
     const vg = $('voiceGuideBtn');
     if (vg) vg.onclick = () => { try { BrowserOpenURL(VOICE_GUIDE_URL); } catch {} };
+  }
+  // Playground discussion links: every expert section links to its own
+  // "Show and tell" thread. One handler for all of them, driven by data-url.
+  for (const el of document.querySelectorAll('.expert-disc-link')) {
+    el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
   }
 
   // Status block: software version + USB stick mount.

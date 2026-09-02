@@ -719,6 +719,7 @@
   "settingsView.airplayOptConfirmBody": "AirPlay optimizasyonunu değiştirmek ayarı uygulamak için hoparlörü yeniden başlatır (Bose uygulaması gibi). Kısa süre erişilemez olur. Devam edilsin mi?",
   "settingsView.airplayOptSavedToast": "Kaydedildi. Hoparlör uygulamak için yeniden başlatılıyor.",
   "settingsView.expertBadge": "Oyun alanı",
+  "settingsView.expertDiscussLink": "Fikirlerinizi ve çözümlerinizi paylaşın",
   "settingsView.webhookHeading": "Uzaktan kumanda beğeni tuşları → webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "İstek gövdesi (POST için), isteğe bağlı",

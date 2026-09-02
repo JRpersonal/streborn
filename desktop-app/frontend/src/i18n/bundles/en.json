@@ -780,6 +780,7 @@
   "settingsView.airplayOptConfirmBody": "Changing AirPlay optimization restarts the speaker so it can apply the setting (the same as the Bose app). It will be briefly unavailable. Continue?",
   "settingsView.airplayOptSavedToast": "Saved. The speaker is restarting to apply it.",
   "settingsView.expertBadge": "Playground",
+  "settingsView.expertDiscussLink": "Share your ideas and solutions",
   "settingsView.urlPresetHeading": "Play a custom URL from a preset",
   "settingsView.urlPresetHelp": "Assign an audio URL to a preset key: a sound file (for example an MP3) or a continuous stream, such as an Icecast station on your own network. Pressing the key, on the speaker or in the app, plays it. The URL must be reachable on your network; both http and https work (STR relays the stream to the speaker). MP3 plays most reliably; some OGG streams may not. Pressing it replaces what is currently playing. Even better: add the station to radio-browser.info instead, so it shows up in search for everyone, not just on this one button.",
   "settingsView.urlPresetNamePlaceholder": "Name (for example Doorbell)",
