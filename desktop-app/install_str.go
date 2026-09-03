@@ -90,6 +90,20 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		a.recordOTA(host, "install: FAILED step="+res.Step+" code="+res.Code)
 	default:
 		a.recordOTA(host, "install: OK (step="+res.Step+")")
+		// Pin the box as STR through its post-install reboot, exactly as the OTA
+		// path does (notePostOTA). Install ends by rebooting the box, and its
+		// stock Bose :8090 answers before the STR agent binds its port, so the
+		// first discovery cycle after a reinstall would classify it "stock /
+		// Ready for STR"; with an earlier uninstall having cleared the deviceID
+		// identity memory, nothing corrects it until an mDNS or probeSTR sighting
+		// eventually lands, so a freshly reinstalled box was offered for reinstall
+		// for 30+ minutes (#825). This case is reached ONLY when installSTROnBox
+		// returned err==nil AND res.OK==true, which every success path sets only
+		// after waitForAgent confirmed the agent is up, so the pin never fires on
+		// a failed or agent-not-up install. The pin is IP-keyed and bounded to
+		// otaRebootGrace (4 min), so a box that genuinely cannot be reached as STR
+		// self-corrects rather than being masked durably.
+		a.notePostOTA(host)
 	}
 	return res, err
 }
