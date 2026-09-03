@@ -817,6 +817,12 @@ func run() error {
 	// /api/stream-status, so the app can name the real cause instead of
 	// blaming the station and cycling radio-browser alternates.
 	streamProxySrv.SetBoxStateFn(webuiSrv.BoxStateHint)
+	// Queue presets register on the box as a native /stream/<slot> station but
+	// carry no single stored StreamURL. When the box self-activates that station
+	// (a hardware source switch), this lets the proxy resolve the play queue's
+	// current track and briefly hold for it, instead of 404-ing into the old
+	// station (the ST20 folder-preset race).
+	streamProxySrv.SetQueueLiveURLFn(webuiSrv.QueueLiveURL)
 
 	// ICY radio text: the proxy parses the live StreamTitle out of the
 	// stream; push it to the box display by re-issuing the current stream URI

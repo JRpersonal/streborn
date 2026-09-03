@@ -190,12 +190,28 @@ func (s *Server) handleZonePurge(w http.ResponseWriter, r *http.Request) {
 	cleared := false
 	if s.zones != nil {
 		if z, ok := s.zones.Get(); ok && zoneReferences(z, req.DeviceID, req.IP) {
-			if err := s.zones.Clear(); err != nil {
-				s.logger.Warn("zone purge: clear store failed", "err", err)
-			} else {
-				cleared = true
-				s.logger.Info("zone purge: cleared persisted zone on request of a dissolving peer",
+			switch {
+			case z.Permanent:
+				// A PERMANENT group is the user's explicit, durable choice, and its
+				// document is the only thing the play-reform (formDefaultGroupOnPlay)
+				// rebuilds from. A near-simultaneous fleet OTA reboots every member at
+				// once, so a peer that is merely between boots (or a #342
+				// dissolve/retry storm) can POST a purge that references this master
+				// while nothing was actually torn down. Clearing here would wipe the
+				// group with nothing to re-assert it, exactly the loss boxInZone's
+				// permanent exemption prevents on the standby path (577301b). The
+				// user's own dissolve on the master still clears it directly
+				// (handleZoneDissolve), so the opt-out is unaffected.
+				s.logger.Info("zone purge: keeping the permanent group; a peer's dissolve must not drop the user's durable choice",
 					"peerDeviceID", req.DeviceID, "peerIP", req.IP)
+			default:
+				if err := s.zones.Clear(); err != nil {
+					s.logger.Warn("zone purge: clear store failed", "err", err)
+				} else {
+					cleared = true
+					s.logger.Info("zone purge: cleared persisted zone on request of a dissolving peer",
+						"peerDeviceID", req.DeviceID, "peerIP", req.IP)
+				}
 			}
 		}
 	}

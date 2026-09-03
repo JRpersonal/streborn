@@ -54,6 +54,10 @@ func (s *Server) ResumeLastPlay() {
 		s.logger.Warn("wake resume: standing down, the last automatic resumes each ended in a reboot before playback stabilised (crash-loop guard, #381); press a preset key or start playback from the app to re-enable")
 		return
 	}
+	if s.resumeSuppressedPostOTA() {
+		s.logger.Info("wake resume: box was just rebooted for an agent update, not resuming (post-OTA suppression)")
+		return
+	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
 	// Split the two no-resume reasons so a diagnostic shows which one hit, and
@@ -254,6 +258,10 @@ func (s *Server) RecoverAfterReconnect() {
 		s.logger.Warn("reconnect recovery: standing down, the last automatic resumes each ended in a reboot before playback stabilised (crash-loop guard, #381); press a preset key or start playback from the app to re-enable")
 		return
 	}
+	if s.resumeSuppressedPostOTA() {
+		s.logger.Info("reconnect recovery: box was just rebooted for an agent update, not resuming (post-OTA suppression)")
+		return
+	}
 	// A deliberate user stop must survive a WS reconnect: without this guard a
 	// reconnect resumed the last stream the user had stopped.
 	if s.userStoppedRecently() {
@@ -435,6 +443,42 @@ func reconnectResumeWindow(stuckSelectionLocation string) time.Duration {
 // defaultResumeOnPowerOnPath is the NAND flag file for the per-box power-on
 // resume opt-out. Absent or "1" means on (the default), "0" means off.
 const defaultResumeOnPowerOnPath = "/mnt/nv/streborn/resume-on-power-on"
+
+// otaRebootMarkerPath is written by the agent-update handler right before it
+// reboots the box for an update, and consumed once at the next agent start. Its
+// presence means the reboot that just happened was OUR maintenance OTA, not a
+// genuine power outage, so the automatic power-on resume stands down briefly:
+// blasting the room right after the user pressed Update is surprising. A power
+// outage cannot write the marker, so the legitimate post-outage resume is
+// untouched. var (not const) so a test can point it at a temp path.
+var otaRebootMarkerPath = "/mnt/nv/streborn/ota-reboot"
+
+// postOTAResumeSuppressWindow is how long after an OTA reboot the automatic
+// resume stays down. It only has to outlast the post-boot RecoverAfterReconnect
+// (which fires within seconds of the gabbo WS connecting); a real user power
+// press later still resumes.
+const postOTAResumeSuppressWindow = 5 * time.Minute
+
+// consumeOTARebootMarker runs once at agent start. If the last reboot was our
+// OTA it arms a short suppression window and DELETES the marker, so it only ever
+// affects the boot right after the update. The window is measured from now
+// (agent start), never the marker's stored wall-clock time: these boxes have no
+// battery RTC and boot in 2015 until NTP corrects them.
+func (s *Server) consumeOTARebootMarker() {
+	if _, err := os.Stat(otaRebootMarkerPath); err != nil {
+		return
+	}
+	_ = os.Remove(otaRebootMarkerPath)
+	s.postOTAResumeSuppressUntil = time.Now().Add(postOTAResumeSuppressWindow)
+	s.logger.Info("power-on resume: last reboot was a maintenance OTA, standing down the automatic resume briefly",
+		"forSec", int(postOTAResumeSuppressWindow.Seconds()))
+}
+
+// resumeSuppressedPostOTA reports whether we are still inside the post-OTA
+// suppression window. Read-only after New(), so no lock is needed.
+func (s *Server) resumeSuppressedPostOTA() bool {
+	return !s.postOTAResumeSuppressUntil.IsZero() && time.Now().Before(s.postOTAResumeSuppressUntil)
+}
 
 // defaultDisplayTrackPath is the NAND flag file for the per-box "show the live
 // radio track on the speaker display" opt-in. Absent or "0" means off (the
@@ -1501,6 +1545,10 @@ func (s *Server) RunDeferredResume() {
 	}
 	if !spontaneousResumeEnabled() || s.autoResumeBlocked() {
 		s.logger.Info("deferred resume: auto-resume disabled or blocked, standing down")
+		return
+	}
+	if s.resumeSuppressedPostOTA() {
+		s.logger.Info("deferred resume: box was just rebooted for an agent update, not resuming (post-OTA suppression)")
 		return
 	}
 	if s.userStoppedRecently() || s.standbyStoppedRecently() || s.boxInZone() {

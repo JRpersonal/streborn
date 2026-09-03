@@ -348,6 +348,10 @@ type Server struct {
 	// standby (in-RAM only lost the station and the box fell back to its native
 	// "Preset not assigned", #119 Klaus). Empty disables persistence (tests).
 	lastPlayPath string
+	// postOTAResumeSuppressUntil arms the post-OTA resume suppression: set once
+	// in New() by consumeOTARebootMarker() when the last reboot was our own
+	// maintenance OTA, read-only afterwards (no lock). See resume_standby.go.
+	postOTAResumeSuppressUntil time.Time
 
 	// mirrorSkips remembers, per zone member, why the last mirror reconcile
 	// tick skipped it, so the skip is logged at INFO only on a state change
@@ -561,6 +565,13 @@ type Server struct {
 	queueGen        int
 	queueTrackStart time.Time
 	queueTrackDur   time.Duration
+	// queueRecallSlot binds the active play queue to the preset slot it was
+	// recalled from; queueRecallAt marks when. QueueLiveURL uses them so the
+	// box-native /stream/<slot> fetch of a queue preset serves the right queue's
+	// current track, and only holds while a recall is genuinely in flight.
+	// Guarded by queueMu.
+	queueRecallSlot int
+	queueRecallAt   time.Time
 	// baseCtx is the server-lifetime context (set in Run), the parent for the
 	// long-lived queue watcher so it outlives the request that started the queue.
 	baseCtx context.Context
@@ -710,6 +721,10 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 		o(s)
 	}
 	s.loadLastPlay()
+	// If STR itself rebooted the box for an update, stand the automatic power-on
+	// resume down briefly so it does not blast the room right after the update
+	// (a genuine power outage leaves no marker and resumes as before).
+	s.consumeOTARebootMarker()
 	return s
 }
 

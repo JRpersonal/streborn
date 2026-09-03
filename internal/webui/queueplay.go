@@ -36,6 +36,42 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 	return out
 }
 
+// queueRecallInFlight bounds how long after a recall was armed the streamproxy
+// may hold a box-native /stream/<slot> fetch waiting for the first track. It
+// covers the gap between arming and the queue's first push; a queue that plays
+// on keeps serving via queue.current() with recalling=false afterwards.
+const queueRecallInFlight = 5 * time.Second
+
+// armQueueRecall binds the play queue that is about to start to the preset slot
+// it was recalled from, so a racing box-native /stream/<slot> fetch of a queue
+// preset (whose stored StreamURL is empty) can hold for the first track instead
+// of 404-ing into the previous station. See QueueLiveURL.
+func (s *Server) armQueueRecall(slot int) {
+	s.queueMu.Lock()
+	s.queueRecallSlot = slot
+	s.queueRecallAt = time.Now()
+	s.queueMu.Unlock()
+}
+
+// QueueLiveURL resolves the current track URL for a queue preset the box has
+// natively activated as /stream/<slot> (empty stored StreamURL). recalling=true
+// tells the streamproxy it may keep holding: a recall for this slot is still in
+// its landing window. Returns ("", false) for a slot that is not the active
+// queue's, so a fetch for one slot never serves another slot's queue.
+func (s *Server) QueueLiveURL(slot int) (url string, recalling bool) {
+	s.queueMu.Lock()
+	bound := s.queueRecallSlot
+	inFlight := bound == slot && !s.queueRecallAt.IsZero() && time.Since(s.queueRecallAt) < queueRecallInFlight
+	s.queueMu.Unlock()
+	if bound != slot {
+		return "", false
+	}
+	if it, ok := s.queue.current(); ok {
+		return it.URL, inFlight
+	}
+	return "", inFlight
+}
+
 // RecallSlot handles a hardware preset-button press for a queue preset: if the
 // slot holds a saved DLNA folder it starts the play-queue and returns true.
 // Otherwise it returns false and the caller falls back to the existing
@@ -53,6 +89,10 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	if len(items) == 0 {
 		return false
 	}
+	// Bind this slot as the in-flight queue recall BEFORE the queue starts, so a
+	// box-native /stream/<slot> fetch that races ahead of the first track load can
+	// hold for it (the ST20 source-switch race) instead of 404-ing into silence.
+	s.armQueueRecall(slot)
 	// Supersede any still-running hardware verify at claim time: startQueue's
 	// own setLastPlay only bumps the generation once the first push SUCCEEDS,
 	// and until then a stale verify loop from an earlier press would keep
