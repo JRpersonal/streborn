@@ -565,6 +565,13 @@ type Server struct {
 	queueGen        int
 	queueTrackStart time.Time
 	queueTrackDur   time.Duration
+	// queueRecallSlot binds the active play queue to the preset slot it was
+	// recalled from; queueRecallAt marks when. QueueLiveURL uses them so the
+	// box-native /stream/<slot> fetch of a queue preset serves the right queue's
+	// current track, and only holds while a recall is genuinely in flight.
+	// Guarded by queueMu.
+	queueRecallSlot int
+	queueRecallAt   time.Time
 	// baseCtx is the server-lifetime context (set in Run), the parent for the
 	// long-lived queue watcher so it outlives the request that started the queue.
 	baseCtx context.Context

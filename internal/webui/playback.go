@@ -271,6 +271,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+		// Bind the slot before the queue starts so a box-native /stream/<slot>
+		// fetch racing this app-initiated recall can hold for the first track
+		// (mirrors the hardware RecallSlot path).
+		s.armQueueRecall(slot)
 		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
 		if err := s.startQueueLocked(playCtx, items, 0, p.Shuffle, repeatOff, card); err != nil {
 			if isGroupedRejection(err) {

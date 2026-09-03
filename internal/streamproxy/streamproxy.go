@@ -88,6 +88,11 @@ type Server struct {
 	// from a station problem. nil-safe.
 	boxStateFn func() string
 
+	// queueLiveURLFn resolves the CURRENT track URL for a queue preset the box
+	// natively activated as /stream/<slot>, plus whether a queue (re)call for
+	// that slot is still landing. Wired to webui.QueueLiveURL. nil-safe.
+	queueLiveURLFn func(slot int) (url string, recalling bool)
+
 	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
 	// reach the public internet. It lets /api/stream-status tell "this one
 	// station is unreachable" apart from "the speaker has no internet at all"
@@ -163,6 +168,44 @@ type Server struct {
 // SetOnDisconnect registers a callback invoked whenever the box closes a
 // proxied stream (raw or slot). Set once at wiring time.
 func (s *Server) SetOnDisconnect(fn func(upstreamErr error)) { s.onDisconnect = fn }
+
+// SetQueueLiveURLFn wires the queue-preset live-track resolver (see queueLiveURLFn).
+func (s *Server) SetQueueLiveURLFn(fn func(slot int) (string, bool)) { s.queueLiveURLFn = fn }
+
+const (
+	queueRecallHold  = 3 * time.Second        // max hold while a queue recall is in flight
+	queueRecallGrace = 750 * time.Millisecond // idle/spurious fetch bails after this
+	queueRecallPoll  = 100 * time.Millisecond
+)
+
+// awaitQueueLiveURL resolves a queue preset's current track for slot, holding up
+// to queueRecallHold while a (re)call is in flight. Returns "" fast for an idle
+// slot (after queueRecallGrace) so a spurious native fetch never hangs the full
+// budget, and immediately on ctx cancel (the box dropped the connection).
+func (s *Server) awaitQueueLiveURL(ctx context.Context, slot int) string {
+	if s.queueLiveURLFn == nil {
+		return ""
+	}
+	start := time.Now()
+	deadline := start.Add(queueRecallHold)
+	for {
+		url, recalling := s.queueLiveURLFn(slot)
+		if url != "" {
+			return url
+		}
+		if recalling && time.Now().After(deadline) {
+			return ""
+		}
+		if !recalling && time.Since(start) >= queueRecallGrace {
+			return ""
+		}
+		select {
+		case <-time.After(queueRecallPoll):
+		case <-ctx.Done():
+			return ""
+		}
+	}
+}
 
 func New(store *presets.Store, logger *slog.Logger) *Server {
 	// The SSRF guard (loopback/link-local/metadata blocked after DNS
@@ -400,16 +443,28 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := s.store.Get(slot)
-	if !ok || p.StreamURL == "" {
+	streamURL := p.StreamURL
+	if ok && streamURL == "" && p.Type == "queue" {
+		// A queue preset carries no single StreamURL: its tracks live in the play
+		// queue the webui owns, and its box-native /stream/<slot> station must
+		// serve the CURRENT track. The box self-activates that station and can
+		// pull /stream/<slot> BEFORE RecallSlot has loaded the first track (a
+		// fresh boot wins; a radio->folder source switch loses, the ST20). Hold
+		// BRIEFLY for the live track instead of 404-ing into silence, which
+		// strands the box on the old station. Only for a queue preset; a
+		// non-queue empty slot still 404s at once.
+		streamURL = s.awaitQueueLiveURL(r.Context(), slot)
+	}
+	if !ok || streamURL == "" {
 		// Log before 404ing: the box fetching a slot the store cannot serve is
 		// exactly the "preset button does nothing" symptom, and this used to be
 		// the only branch in the recall chain with no trace at all (#252).
 		s.logger.Warn("stream proxy: box fetched a slot with no playable preset",
-			"slot", slot, "found", ok)
+			"slot", slot, "found", ok, "queue", ok && p.Type == "queue")
 		http.Error(w, "no preset", http.StatusNotFound)
 		return
 	}
-	p.StreamURL = s.resolvePresetURL(slot, p.StreamURL)
+	p.StreamURL = s.resolvePresetURL(slot, streamURL)
 	s.noteSlotFetch(slot)
 	defer s.noteSlotFetchDone(slot)
 	s.logger.Info("stream proxy start", append([]any{"slot", slot, "name", p.Name}, requestFacts(r)...)...)
@@ -464,10 +519,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		// Fetch the current URL — the user might have changed the preset in
 		// the meantime.
 		cur, ok := s.store.Get(slot)
-		if !ok || cur.StreamURL == "" {
+		if !ok {
 			return
 		}
-		curURL := s.resolvePresetURL(slot, cur.StreamURL)
+		curStream := cur.StreamURL
+		if curStream == "" && cur.Type == "queue" {
+			// A queue preset has no per-track URL in the store; keep serving the
+			// track this fetch resolved above rather than 404-ing on reconnect.
+			curStream = streamURL
+		}
+		if curStream == "" {
+			return
+		}
+		curURL := s.resolvePresetURL(slot, curStream)
 		boseAlive, err := s.streamOne(r.Context(), w, r, curURL, !headersSent)
 		lastErr = err
 		if errors.Is(err, errPlaylistIsHLS) && !headersSent {
