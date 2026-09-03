@@ -24,6 +24,7 @@ package dnsboot
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -63,7 +64,13 @@ func DefaultGateway() string {
 		return ""
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
+	return defaultGatewayFrom(f)
+}
+
+// defaultGatewayFrom parses a /proc/net/route table and returns the IPv4
+// default gateway in dotted quad notation, or "" when there is none.
+func defaultGatewayFrom(r io.Reader) string {
+	sc := bufio.NewScanner(r)
 	first := true
 	for sc.Scan() {
 		if first { // header line

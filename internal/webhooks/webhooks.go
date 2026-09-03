@@ -352,15 +352,12 @@ func fireUDP(a Action) (int, error) {
 // sent. The speaker is on the LAN, so it is the right place to emit it (#187).
 func fireWOL(a Action) (int, error) {
 	mac, err := net.ParseMAC(strings.TrimSpace(a.MAC))
-	if err != nil || len(mac) != 6 {
+	if err != nil {
 		return 0, fmt.Errorf("wol: invalid MAC %q", a.MAC)
 	}
-	packet := make([]byte, 0, 102)
-	for i := 0; i < 6; i++ {
-		packet = append(packet, 0xFF)
-	}
-	for i := 0; i < 16; i++ {
-		packet = append(packet, mac...)
+	packet, err := buildMagicPacket(mac)
+	if err != nil {
+		return 0, fmt.Errorf("wol: invalid MAC %q", a.MAC)
 	}
 	host := a.Host
 	if host == "" {
@@ -371,6 +368,24 @@ func fireWOL(a Action) (int, error) {
 		port = 9
 	}
 	return sendUDPPacket(host, port, packet)
+}
+
+// buildMagicPacket builds the 102-byte Wake-on-LAN magic packet: 6 bytes of
+// 0xFF followed by the 6-byte MAC repeated 16 times. A MAC that is not exactly
+// 6 bytes is rejected (net.ParseMAC also accepts 8- and 20-byte forms, which
+// have no WoL meaning).
+func buildMagicPacket(mac net.HardwareAddr) ([]byte, error) {
+	if len(mac) != 6 {
+		return nil, fmt.Errorf("wol: MAC must be 6 bytes, got %d", len(mac))
+	}
+	packet := make([]byte, 0, 102)
+	for i := 0; i < 6; i++ {
+		packet = append(packet, 0xFF)
+	}
+	for i := 0; i < 16; i++ {
+		packet = append(packet, mac...)
+	}
+	return packet, nil
 }
 
 // decodePayload turns the configured payload string into bytes per enc:
