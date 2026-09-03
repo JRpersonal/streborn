@@ -6,7 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
