@@ -672,8 +672,10 @@ body {
 }
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: var(--c-surface-3); color: var(--c-muted); font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
-/* Offline: die Version ist der letzte bestaetigte Stand, kein Live-Wert (#775). */
-.box-ver-stale { opacity: 0.55; font-style: italic; }
+/* Offline: die Version ist der letzte bestaetigte Stand, kein Live-Wert (#775).
+   0.55 faded the greyed version almost to nothing on a light theme (#833); 0.82
+   keeps the "not a live value" cue while staying readable. */
+.box-ver-stale { opacity: 0.82; font-style: italic; }
 .box-model { color: var(--c-muted); font-size: 11px; font-weight: 500; margin-left: 8px; }
 /* Multiroom group frame (#70): speakers sharing a live zone are clustered and
    wrapped in a colored border so the group reads as one block on the music tab.
@@ -797,7 +799,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   margin-left: 8px;
   padding: 1px 6px;
   border-radius: 8px;
-  background: rgba(204, 0, 0, 0.18);
+  /* A red tint behind red-ish text was too low-contrast, worst on the muted
+     default palette (#833). A neutral surface chip keeps the red "needs
+     install" cue legible in every theme (light, dark, high-contrast). */
+  background: var(--c-surface-3);
   color: var(--signal-red);
   font-size: 10px;
   font-weight: 600;

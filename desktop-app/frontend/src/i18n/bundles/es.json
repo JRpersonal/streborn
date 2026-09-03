@@ -309,6 +309,7 @@
   "preset.noCurrentStation": "No hay ninguna emisora sonando ahora, así que mantener pulsado no tiene efecto.",
   "preset.copiedToKey": "Copiado a la tecla {{n}}: {{name}}",
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
+  "preset.alreadyOnKey": "Esta emisora ya está en la tecla {{n}}.",
   "preset.sourceBadge": "de {{source}}",
   "preset.saveFailed": "Error al guardar: {{err}}",
   "play.errNoInternet": "¿sin internet?",

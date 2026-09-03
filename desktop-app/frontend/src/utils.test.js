@@ -9,49 +9,34 @@ const freshPlay = { url: 'http://radio.example.com/stream', at: NOW - 5_000 };
 const stalePlay = { url: 'http://radio.example.com/stream', at: NOW - FRESH_MS - 1 };
 
 describe('savePresetCase', () => {
-  it('classifies Spotify locations first, whatever the slot says', () => {
+  const orionLoc = '/station?data=native-descriptor-caller-decodes-it';
+
+  it('classifies Spotify locations first, whatever the slot or app record says', () => {
     expect(savePresetCase('http://192.0.2.1:8888/spotify/stream-3.ogg', 3, freshPlay, NOW, FRESH_MS)).toBe('spotify');
     expect(savePresetCase('/playback/container/c3BvdGlmeQ==', null, null, NOW, FRESH_MS)).toBe('spotify');
   });
-  it('prefers the app`s own fresh play record over a proxy-slot copy (#252)', () => {
-    expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, freshPlay, NOW, FRESH_MS)).toBe('app-play');
+
+  // A fresh app play is authoritative for EVERY location shape (#836): the app
+  // knows which station the user just picked, even when the box's now-playing
+  // still lags on it (native preset switch #530, wake-resume race #252). Saving
+  // the box's stale report captured an already-saved station and the dedup then
+  // wiped the key it was on, so presets vanished one after another.
+  it('prefers the app`s own fresh play record, whatever the box reports', () => {
+    expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, freshPlay, NOW, FRESH_MS)).toBe('app-play'); // proxy slot
+    expect(savePresetCase('http://radio.example.com/live.mp3', null, freshPlay, NOW, FRESH_MS)).toBe('app-play'); // non-proxy
+    expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS)).toBe('app-play'); // native, no slot in location
   });
-  it('copies the source preset when the app record is stale or absent', () => {
+
+  it('copies the source preset when a proxy slot plays and the app record is stale or absent', () => {
     expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, stalePlay, NOW, FRESH_MS)).toBe('copy-slot');
     expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, null, NOW, FRESH_MS)).toBe('copy-slot');
     expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, { at: NOW }, NOW, FRESH_MS)).toBe('copy-slot'); // no url
   });
-  it('saves the box-reported now-playing for non-proxy streams', () => {
-    expect(savePresetCase('http://radio.example.com/live.mp3', null, freshPlay, NOW, FRESH_MS)).toBe('direct');
-    expect(savePresetCase('', null, null, NOW, FRESH_MS)).toBe('direct');
-  });
 
-  // #696: a NATIVE ad-hoc play reports the ORION descriptor, which carries no
-  // slot, so sourceSlot is null and the old decision fell to 'direct'. That
-  // path saved the descriptor's box-loopback art-proxy URL as the key's
-  // artwork (dead from the user's machine, so the tile ended on the grey
-  // chevron), even though the app had started the station seconds earlier
-  // and holds its full logo chain. When the box report resolves to the SAME
-  // URL the app played (the caller passes it as nowStreamUrl), the app's
-  // record must win.
-  describe('native ad-hoc play, no slot in the location (#696)', () => {
-    const orionLoc = '/station?data=irrelevant-here-the-caller-decodes-it';
-    it('prefers the fresh app record when the box plays exactly that URL', () => {
-      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS, freshPlay.url)).toBe('app-play');
-    });
-    it('still trusts the box report when it plays something else', () => {
-      // No wake-resume race to excuse a mismatch here (unlike #252's proxy
-      // branch): a station started from a hardware key or another client
-      // must be saved as the box reports it.
-      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS, 'http://other.example.com/live')).toBe('direct');
-    });
-    it('still trusts the box report when the app record has gone stale', () => {
-      expect(savePresetCase(orionLoc, null, stalePlay, NOW, FRESH_MS, stalePlay.url)).toBe('direct');
-    });
-    it('falls back to direct when the caller cannot resolve the box URL', () => {
-      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS, '')).toBe('direct');
-      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS)).toBe('direct');
-    });
+  it('saves the box-reported now-playing when there is no fresh app record and no slot', () => {
+    expect(savePresetCase('http://radio.example.com/live.mp3', null, stalePlay, NOW, FRESH_MS)).toBe('direct');
+    expect(savePresetCase(orionLoc, null, stalePlay, NOW, FRESH_MS)).toBe('direct');
+    expect(savePresetCase('', null, null, NOW, FRESH_MS)).toBe('direct');
   });
 });
 

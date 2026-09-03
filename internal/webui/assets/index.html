@@ -1439,13 +1439,21 @@ async function loadSettings() {
     lastBoxName = s.info.name;
     updateTopName();
   }
-  if (s.volume && typeof s.volume.actual === 'number') {
+  if (s.volume && typeof s.volume.actual === 'number' && (volScope === 'one' || !zone.grouped)) {
     // Do not let a status poll snap the slider back to a stale reading in the
     // moment right after the user changed it. The box may not have applied the
     // new level yet, so overwriting here made a tap appear to jump back to the
     // old value (#726). Hold off until the send has settled (the same window the
     // group path uses), then trust the box again; a change made on the box
     // itself is picked up on the next poll after the window.
+    //
+    // s.volume.actual is THIS speaker's own level. When the group slider drives
+    // the whole zone (grouped and not scoped to one speaker), this poll must not
+    // touch it: the master's own report lags the members' ramp, worst on an
+    // scm/BCO box whose getGroup hangs, so it sprang the group slider back a
+    // second after each step even with the group-adopt fix (#726, abschuss's
+    // Kueche). The group slider is owned by the zone-volume adopt in loadZone,
+    // which is gated on the members confirming the sent levels.
     if (Date.now() - volSentAt >= GRP_VOL_SETTLE_MS) {
       volLast = s.volume.actual;
       var el = document.getElementById('vol'); el.value = s.volume.actual;
