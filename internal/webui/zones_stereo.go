@@ -1897,10 +1897,26 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	var master boxapi.ZoneMember
 	var slaves []boxapi.ZoneMember
 	stereo := false
+	wantStereo := r.URL.Query().Get("stereo") == "1"
 	// Prefer the persisted membership; fall back to the live zone so a dissolve
 	// still works after an agent restart.
 	if s.zones != nil {
 		if z, ok := s.zones.Get(); ok {
+			// A STR-formed stereo pair persists Stereo=true. A plain Ungroup
+			// (no ?stereo=1) must NEVER take a pair apart: that is what "Undo
+			// stereo pair" (?stereo=1) is for, and the design contract is that a
+			// plain multiroom dissolve keeps its no-op semantics for a pair.
+			// Honouring the persisted Stereo flag here regardless of intent was
+			// the bug that let Ungroup unpair a stereo pair (#843): the ?stereo=1
+			// gate below is only reached with an empty store, so a persisted pair
+			// slipped straight through to the RemoveGroup teardown.
+			if z.Stereo && !wantStereo {
+				// Leave the pair persisted and untouched; report nothing-to-do so
+				// the app can say there was no group to ungroup.
+				s.logger.Info("zone: plain dissolve left a stereo pair intact (use undo-stereo-pair)", "master", z.Master)
+				writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nothing": true, "stereoPairKept": true})
+				return
+			}
 			master = boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
 			stereo = z.Stereo
 			for _, m := range z.Slaves {
@@ -1926,7 +1942,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// by the app's undo-stereo-pair button): a plain multiroom dissolve that
 	// happens to hit a box in a firmware pair must keep its pre-existing
 	// no-op semantics instead of silently destroying the pair.
-	if !stereo && master.DeviceID == "" && r.URL.Query().Get("stereo") == "1" {
+	if !stereo && master.DeviceID == "" && wantStereo {
 		if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
 			// A firmware-native stereo pair with no persisted zone: dissolve it
 			// as a pair. The members are partitioned relative to THIS box, not
@@ -2076,8 +2092,14 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	}
 	// The teardown above only reaches members the MASTER registered. One it
 	// never registered still got audio and would play on in an empty room, so
-	// silence any that are demonstrably still on the group's stream.
-	s.stopStragglers(ctx, masterLocation, slaves)
+	// silence any that are demonstrably still on the group's stream. A mirror
+	// group has no firmware zone at all, so the loop above did nothing and this
+	// is the ONLY thing that stops the followers: pass the master's mirror-proxy
+	// host:port (masterIP:17008), the address every mirror slave pulls from, so a
+	// follower on that stream is recognised even though its URL never equals the
+	// master's own loopback location.
+	mirrorHostPort := hostPortOf(s.mirrorURLForSlaves(ctx, masterLocation, master.IP))
+	s.stopStragglers(ctx, masterLocation, mirrorHostPort, slaves)
 	if s.zones != nil {
 		if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
