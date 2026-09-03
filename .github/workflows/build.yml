@@ -198,11 +198,9 @@ jobs:
   # time instead of on the next push to main. The embedded shellcheck
   # pass is disabled (-shellcheck=): inline `run:` shell is not held to
   # the dedicated shellcheck job's standard, and workflow-syntax errors
-  # are what this job is for. The -ignore silences the one known
-  # finding: release.yml's self-hosted signing runner uses the custom
-  # label "signing", which actionlint cannot know about without an
-  # actionlint.yaml config. The regex is space-free because the docker
-  # action splits `args` on whitespace.
+  # are what this job is for. The release job's custom self-hosted runner
+  # label "signing" is declared in .github/actionlint.yaml so it is not
+  # flagged as unknown.
   actionlint:
     name: actionlint (workflows)
     runs-on: ubuntu-latest
@@ -214,7 +212,7 @@ jobs:
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
-          args: -color -shellcheck= -ignore=label..signing..is.unknown
+          args: -color -shellcheck=
 
   govulncheck:
     name: govulncheck
