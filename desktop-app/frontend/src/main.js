@@ -5223,8 +5223,21 @@ async function loadGroupMemberVolumes(members) {
   // levels our own writes had already changed, which is how a drag gave away
   // most of its travel.
   if (groupPanelBusy()) return;
+  // Position the group slider at the members' ACTUAL level (the loudest member)
+  // and anchor there. The slider is relative, so if it sits at 0 while the
+  // members are at 29 it can only ADD an offset, never subtract, and the group
+  // cannot be turned down at all (screenshot 2026-09-03: group slider 0, members
+  // 29, and every box had to be lowered by hand). Anchoring from the loudest
+  // member means dragging the slider down lowers every speaker.
+  const levels = Object.values(groupVol.members).filter(v => typeof v === 'number' && v >= 0);
+  const rep = levels.length ? Math.max(...levels) : null;
   const slider = $('groupVolume');
-  captureGroupBaseline(slider ? parseInt(slider.value, 10) : 0);
+  if (slider && rep !== null && document.activeElement !== slider) {
+    slider.value = String(rep);
+    captureGroupBaseline(rep);
+  } else {
+    captureGroupBaseline(slider ? parseInt(slider.value, 10) : 0);
+  }
 }
 
 // toggleGroupMember adds/removes the speaker at host to/from the group led by

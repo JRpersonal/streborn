@@ -99,7 +99,7 @@ func TestStragglerOnTheGroupStreamIsStopped(t *testing.T) {
 	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": straggler})
 
 	s := newDissolveServer()
-	s.stopStragglers(context.Background(), groupURL,
+	s.stopStragglers(context.Background(), groupURL, "",
 		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
 
 	if got := straggler.stops(); got != 1 {
@@ -115,7 +115,7 @@ func TestAMemberPlayingSomethingElseIsLeftAlone(t *testing.T) {
 	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": other})
 
 	s := newDissolveServer()
-	s.stopStragglers(context.Background(), "http://192.0.2.10:8888/stream/2",
+	s.stopStragglers(context.Background(), "http://192.0.2.10:8888/stream/2", "",
 		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
 
 	if got := other.stops(); got != 0 {
@@ -130,7 +130,7 @@ func TestAnAlreadySilentMemberIsNotTouched(t *testing.T) {
 	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": quiet})
 
 	s := newDissolveServer()
-	s.stopStragglers(context.Background(), "http://192.0.2.10:8888/stream/2",
+	s.stopStragglers(context.Background(), "http://192.0.2.10:8888/stream/2", "",
 		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
 
 	if got := quiet.stops(); got != 0 {
@@ -146,7 +146,7 @@ func TestNoMasterLocationDisablesTheSweep(t *testing.T) {
 	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": playing})
 
 	s := newDissolveServer()
-	s.stopStragglers(context.Background(), "", []boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
+	s.stopStragglers(context.Background(), "", "", []boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
 
 	if got := playing.stops(); got != 0 {
 		t.Errorf("the sweep ran without a master location and stopped %d speaker(s)", got)
@@ -160,10 +160,50 @@ func TestTheMasterItselfIsNeverStopped(t *testing.T) {
 	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.10": self})
 
 	s := newDissolveServer()
-	s.stopStragglers(context.Background(), "http://192.0.2.10:8888/stream/2",
+	s.stopStragglers(context.Background(), "http://192.0.2.10:8888/stream/2", "",
 		[]boxapi.ZoneMember{{DeviceID: "SELF", IP: "192.0.2.10"}})
 
 	if got := self.stops(); got != 0 {
 		t.Errorf("the master was stopped %d time(s)", got)
+	}
+}
+
+// A MIRROR follower never reports the master's own loopback location: the master
+// plays 127.0.0.1:8888/stream/N while the slave was pointed at
+// masterIP:17008/stream/N. The old exact-string compare left it playing after a
+// "dissolve" (the group kept going). It must be stopped when its host:port
+// matches the master's mirror proxy, even though the full URL differs.
+func TestMirrorFollowerOnMasterProxyIsStopped(t *testing.T) {
+	const masterLoc = "http://127.0.0.1:8888/stream/2"     // what the master reports
+	const mirrorHostPort = "192.0.2.10:17008"              // master's mirror proxy
+	const followerLoc = "http://192.0.2.10:17008/stream/2" // what the slave pulls
+	follower := newFakeSpeaker("UPNP", "PLAY_STATE", followerLoc)
+	defer follower.srv.Close()
+	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": follower})
+
+	s := newDissolveServer()
+	s.stopStragglers(context.Background(), masterLoc, mirrorHostPort,
+		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
+
+	if got := follower.stops(); got != 1 {
+		t.Errorf("mirror follower stop keys = %d, want 1 (it kept playing the group stream)", got)
+	}
+}
+
+// A speaker on a DIFFERENT proxy host:port than the master's mirror proxy moved
+// on to its own thing and must be left alone even with a mirror reference set.
+func TestMirrorSweepLeavesAForeignProxyAlone(t *testing.T) {
+	const masterLoc = "http://127.0.0.1:8888/stream/2"
+	const mirrorHostPort = "192.0.2.10:17008"
+	other := newFakeSpeaker("UPNP", "PLAY_STATE", "http://192.0.2.99:17008/stream/7")
+	defer other.srv.Close()
+	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": other})
+
+	s := newDissolveServer()
+	s.stopStragglers(context.Background(), masterLoc, mirrorHostPort,
+		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
+
+	if got := other.stops(); got != 0 {
+		t.Errorf("a speaker on a foreign proxy was stopped %d time(s)", got)
 	}
 }

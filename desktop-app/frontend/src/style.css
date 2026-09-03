@@ -715,6 +715,10 @@ body {
    pay for it twice. */
 .box-group-label { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--bg-color, var(--c-muted)); margin: 0 2px 1px; }
 .box-group-label svg { flex: 0 0 auto; }
+/* Per-frame dismiss (x): dissolve exactly this group/pair from where it is shown (#843). */
+.zone-frames .box-group { position: relative; padding-right: 22px; }
+.box-group-x { position: absolute; top: 3px; right: 4px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 1px 4px; border-radius: 4px; }
+.box-group-x:hover { color: var(--c-text); background: var(--c-border); }
 /* Small speaker icon on a tile whose speaker is currently playing. */
 /* Green, matching the "playing" status bar (--signal-green), so the icon means
    the same thing on a tile as in the status. */
