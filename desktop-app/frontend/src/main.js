@@ -5948,6 +5948,17 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
 // what the user hears, so the box report wins again.
 const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 
+// showPresetSaveError turns a failed preset save into the right message. The
+// agent refuses (409 already-on-slot) a save whose station already sits on
+// another key rather than silently deleting that key (#836); that is a friendly
+// "already on key N" note, not an error.
+function showPresetSaveError(err) {
+  const s = String(err);
+  const m = /already-on-slot/.test(s) && s.match(/"slot":\s*(\d+)/);
+  if (m) { showToast(t('preset.alreadyOnKey', { n: m[1] })); return; }
+  showError(t('preset.saveFailed', { err: s }));
+}
+
 // saveCurrentToSlot saves the currently playing station onto the
 // given slot (overwrites whatever was there before). Uses the
 // now_playing data state.nowLocation + state.nowName plus the last
@@ -5966,19 +5977,10 @@ async function saveCurrentToSlot(slot) {
   // Which save path applies is a pure decision (savePresetCase in utils.js,
   // unit-tested): spotify / app-play / copy-slot / direct.
   const sourceSlot = activeSlotFromLocation(state.nowLocation);
-  // What the box report actually resolves to: a NATIVE ad-hoc play reports
-  // the ORION descriptor (no slot in it, so sourceSlot is null) and a
-  // non-native one the /stream/raw wrapper; both unwrap to the exact URL the
-  // app handed to PlayURL. Passing it lets savePresetCase tell "the box is
-  // playing what the app just started" (save the app's own record, with the
-  // station's real logo chain) from "someone started something else". Without
-  // it every hold-save of an app-started native play fell to 'direct' and
-  // persisted the descriptor's box-loopback art-proxy URL as the key's
-  // artwork, dead from this machine, so the tile ended on the grey chevron
-  // (#696).
-  const nowOrion = orionStationPayload(state.nowLocation);
-  const nowStreamUrl = decodeProxyUrl((nowOrion && nowOrion.streamUrl) || state.nowLocation);
-  const saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, nowStreamUrl);
+  // A fresh app play is authoritative regardless of what the box reports right
+  // now (native-switch lag / wake-resume race, #836). savePresetCase decides;
+  // the 'app-play' branch below saves state.lastAppPlay with its real logo chain.
+  const saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS);
 
   // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
   // Spotify preset (type=spotify with the playlist URI), not a radio link to
@@ -6040,7 +6042,7 @@ async function saveCurrentToSlot(slot) {
       if (/spotify-uri-unplayable|replayable playlist/i.test(msg)) {
         showError(t('preset.spotifyNotSaveable'));
       } else {
-        showError(t('preset.saveFailed', { err: msg }));
+        showPresetSaveError(err);
       }
       return;
     }
@@ -6079,7 +6081,7 @@ async function saveCurrentToSlot(slot) {
           VoteStation(state.currentBox.host, state.currentBox.port, app.uuid).catch(() => {});
         }
       } catch (err) {
-        showError(t('preset.saveFailed', { err: String(err) }));
+        showPresetSaveError(err);
       }
       return;
     }
@@ -6094,7 +6096,7 @@ async function saveCurrentToSlot(slot) {
         await loadPresets();
         return;
       } catch (err) {
-        showError(t('preset.saveFailed', { err: String(err) }));
+        showPresetSaveError(err);
         return;
       }
     }
@@ -6145,7 +6147,7 @@ async function saveCurrentToSlot(slot) {
       showToast(t('preset.savedToKey', { n: slot, name: oname }));
       await loadPresets();
     } catch (err) {
-      showError(t('preset.saveFailed', { err: String(err) }));
+      showPresetSaveError(err);
     }
     return;
   }
@@ -6171,7 +6173,7 @@ async function saveCurrentToSlot(slot) {
       VoteStation(state.currentBox.host, state.currentBox.port, state.nowUUID).catch(() => {});
     }
   } catch (err) {
-    showError(t('preset.saveFailed', { err: String(err) }));
+    showPresetSaveError(err);
   }
 }
 

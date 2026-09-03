@@ -309,6 +309,7 @@
   "preset.noCurrentStation": "لا توجد محطة قيد التشغيل الآن، لذا لا أثر للضغط المطوّل.",
   "preset.copiedToKey": "نُسخ إلى الزر {{n}}: {{name}}",
   "preset.savedToKey": "حُفظ في الزر {{n}}: {{name}}",
+  "preset.alreadyOnKey": "هذه المحطة موجودة بالفعل على الزر {{n}}.",
   "preset.sourceBadge": "من {{source}}",
   "preset.saveFailed": "فشل الحفظ: {{err}}",
   "play.errNoInternet": "لا يوجد إنترنت؟",

@@ -334,6 +334,7 @@
   "preset.noCurrentStation": "Kein Sender läuft gerade, daher hat Long Press keinen Effekt.",
   "preset.copiedToKey": "Auf Taste {{n}} kopiert: {{name}}",
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
+  "preset.alreadyOnKey": "Dieser Sender liegt schon auf Taste {{n}}.",
   "preset.sourceBadge": "von {{source}}",
   "preset.onSpeaker": "Auf dem Lautsprecher",
   "preset.boxNativeHint": "antippen zum Abspielen auf dem Lautsprecher",
