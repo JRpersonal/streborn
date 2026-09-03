@@ -281,7 +281,7 @@ func formatFAT32Impl(path, label string) error {
 		if msg != "" {
 			return fmt.Errorf("format failed (PowerShell): %s", msg)
 		}
-		return fmt.Errorf("format failed: %v", runErr)
+		return fmt.Errorf("format failed: %w", runErr)
 	}
 
 	if status != "" {
@@ -348,7 +348,7 @@ func ejectImpl(path string) error {
 		0,
 	)
 	if h == 0 || h == ^uintptr(0) {
-		return fmt.Errorf("CreateFile %s: %v", drivePath, lastErr)
+		return fmt.Errorf("CreateFile %s: %w", drivePath, lastErr)
 	}
 	defer closeHandle.Call(h)
 
@@ -365,12 +365,12 @@ func ejectImpl(path string) error {
 		time.Sleep(200 * time.Millisecond)
 	}
 	if lockErr != nil {
-		return fmt.Errorf("lock volume: %v", lockErr)
+		return fmt.Errorf("lock volume: %w", lockErr)
 	}
 
 	// Dismount the filesystem
 	if r, _, e := deviceIoControl.Call(h, fsctlDismountVolume, 0, 0, 0, 0, uintptr(unsafe.Pointer(&bytesReturned)), 0); r == 0 {
-		return fmt.Errorf("dismount: %v", e)
+		return fmt.Errorf("dismount: %w", e)
 	}
 
 	// Enable media removal (PREVENT_MEDIA_REMOVAL = 0 = false)
@@ -379,7 +379,7 @@ func ejectImpl(path string) error {
 
 	// Eject — the actual "Safe to Remove" hardware trigger
 	if r, _, e := deviceIoControl.Call(h, ioctlStorageEjectMedia, 0, 0, 0, 0, uintptr(unsafe.Pointer(&bytesReturned)), 0); r == 0 {
-		return fmt.Errorf("eject media: %v", e)
+		return fmt.Errorf("eject media: %w", e)
 	}
 	return nil
 }

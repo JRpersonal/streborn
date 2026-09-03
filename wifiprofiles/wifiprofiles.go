@@ -149,7 +149,7 @@ func currentSSIDLinux() string {
 func listWindows() ([]Profile, error) {
 	out, err := run("netsh", "wlan", "show", "profiles")
 	if err != nil {
-		return nil, fmt.Errorf("netsh: %v", err)
+		return nil, fmt.Errorf("netsh: %w", err)
 	}
 	// Tolerant parser: any line with `:` where the LEFT key is not
 	// obviously an adapter header and the rest is not empty. Works on DE,
@@ -191,7 +191,7 @@ func listWindows() ([]Profile, error) {
 func tryPasswordWindows(ssid string) (string, error) {
 	out, err := run("netsh", "wlan", "show", "profile", "name="+ssid, "key=clear")
 	if err != nil {
-		return "", fmt.Errorf("netsh: %v", err)
+		return "", fmt.Errorf("netsh: %w", err)
 	}
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
@@ -285,7 +285,7 @@ func listLinux() ([]Profile, error) {
 	cmd := exec.Command("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("nmcli: %v", err)
+		return nil, fmt.Errorf("nmcli: %w", err)
 	}
 	var profiles []Profile
 	for _, line := range strings.Split(string(out), "\n") {

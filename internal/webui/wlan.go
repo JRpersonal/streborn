@@ -644,7 +644,7 @@ func writeWPAConfAt(confPath, tmpPath, content string) (string, error) {
 		return "", terr
 	}
 	if berr := exec.Command("mount", "--bind", tmpPath, confPath).Run(); berr != nil {
-		return "", fmt.Errorf("direct write (%w) and bind-mount (%v) both failed", directErr, berr)
+		return "", fmt.Errorf("direct write (%w) and bind-mount (%w) both failed", directErr, berr)
 	}
 	return "bind", nil
 }

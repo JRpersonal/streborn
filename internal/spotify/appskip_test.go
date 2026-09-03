@@ -27,9 +27,9 @@ func TestCutShortOfDuration(t *testing.T) {
 	full := int64(236400) // ms
 	fullGran := full * vorbisRate / 1000
 	cases := []struct {
-		name string
+		name            string
 		gran, body, dur int64
-		want bool
+		want            bool
 	}{
 		// A natural end's granule matches the duration within fractions of a
 		// second (live 2026-08-29: 11855256 samples vs 268826 ms).

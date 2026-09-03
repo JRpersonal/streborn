@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -411,7 +412,8 @@ func isExpectedRSTOnSetupAP(err error) bool {
 			return true
 		}
 	}
-	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
 		return true
 	}
 	return false

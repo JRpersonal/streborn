@@ -56,19 +56,19 @@ import (
 // (as a live WAV stream) to at most one HTTP consumer (the speaker),
 // plus drives playback through go-librespot's local HTTP API.
 type Manager struct {
-	binPath    string
-	configDir  string
-	fallback   string // device name used until the box's friendly name is known
-	apiAddr    string // host:port of go-librespot's HTTP API
-	logger     *slog.Logger
-	bitr       int            // 96/160/320 (persisted preference, see quality.go)
+	binPath   string
+	configDir string
+	fallback  string // device name used until the box's friendly name is known
+	apiAddr   string // host:port of go-librespot's HTTP API
+	logger    *slog.Logger
+	bitr      int // 96/160/320 (persisted preference, see quality.go)
 	// bitrPending: a bitrate change arrived while the box was streaming; the
 	// config is written, only the engine restart is owed. The box's next
 	// detach from the Ogg stream performs it (applyPendingBitrateAfterDetach).
 	bitrPending bool
-	client     *http.Client   // short ops: pause/resume/volume/info
-	playClient *http.Client   // /player/play: a cold playlist load can take >5s
-	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
+	client      *http.Client   // short ops: pause/resume/volume/info
+	playClient  *http.Client   // /player/play: a cold playlist load can take >5s
+	box         *boxapi.Client // box REST: friendly name (device_name) + volume bridge
 
 	// groupSlaveIPsFn returns the LAN IPs of the multiroom followers this box
 	// leads (empty when standalone). A Spotify Connect volume change targets the

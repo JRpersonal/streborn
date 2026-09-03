@@ -74,7 +74,7 @@ func volumeLengthFromHandle(h uintptr) (uint64, error) {
 		0,
 	)
 	if r == 0 {
-		return 0, fmt.Errorf("IOCTL_DISK_GET_LENGTH_INFO: %v", e)
+		return 0, fmt.Errorf("IOCTL_DISK_GET_LENGTH_INFO: %w", e)
 	}
 	if length <= 0 {
 		return 0, fmt.Errorf("IOCTL_DISK_GET_LENGTH_INFO returned %d", length)
@@ -112,7 +112,7 @@ func openLockDismount(letter string) (uintptr, error) {
 		0, openExisting, 0, 0,
 	)
 	if h == 0 || h == ^uintptr(0) {
-		return 0, fmt.Errorf("CreateFile: %v", lastWinErr)
+		return 0, fmt.Errorf("CreateFile: %w", lastWinErr)
 	}
 
 	var bytesReturned uint32
@@ -133,7 +133,7 @@ func openLockDismount(letter string) (uintptr, error) {
 	if r, _, e := deviceIoControl.Call(h, fsctlDismountVol, 0, 0, 0, 0,
 		uintptr(unsafe.Pointer(&bytesReturned)), 0); r == 0 {
 		closeHandle.Call(h)
-		return 0, fmt.Errorf("dismount: %v", e)
+		return 0, fmt.Errorf("dismount: %w", e)
 	}
 	return h, nil
 }

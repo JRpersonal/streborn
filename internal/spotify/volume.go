@@ -541,7 +541,7 @@ func (m *Manager) setFollowerVolume(ctx context.Context, ip string, pct int) err
 	}
 	// No reachable STR agent on the follower: drive the Bose port directly.
 	if err := boxapi.New(ip).SetVolume(ctx, pct); err != nil {
-		return fmt.Errorf("%w (agent fallback: %v)", err, lastErr)
+		return fmt.Errorf("%w (agent fallback: %w)", err, lastErr)
 	}
 	return nil
 }

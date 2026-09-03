@@ -195,7 +195,7 @@ func setJoinerVolume(ctx context.Context, addr netip.Addr, pct int) error {
 	// No reachable STR agent on the member (a stock speaker, or one still
 	// starting): drive the Bose port directly rather than give up.
 	if err := boxapi.New(host).SetVolume(ctx, pct); err != nil {
-		return fmt.Errorf("%w (agent fallback: %v)", err, lastErr)
+		return fmt.Errorf("%w (agent fallback: %w)", err, lastErr)
 	}
 	return nil
 }

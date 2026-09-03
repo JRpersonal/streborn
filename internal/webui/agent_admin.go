@@ -926,7 +926,7 @@ func classifyNANDWriteErr(step string, err error, dir string, need int64, engine
 		engineReclaim = "reclaim not needed, statfs predicted room"
 	}
 	_, avail, _ := diskFree(dir)
-	return fmt.Errorf("%w: the write was actually attempted and the filesystem refused it (%s: %v): need %dKB, statfs free %dKB after reclaim (%s; engine stop=%v; statfs predicted full=%v) [NAND %s]",
+	return fmt.Errorf("%w: the write was actually attempted and the filesystem refused it (%s: %w): need %dKB, statfs free %dKB after reclaim (%s; engine stop=%v; statfs predicted full=%v) [NAND %s]",
 		errInsufficientNAND, step, err, need/1024, avail/1024, engineReclaim, engineStopped, predictedFull, nandReportLine())
 }
 

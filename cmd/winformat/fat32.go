@@ -83,7 +83,7 @@ func fat32QuickFormat(h uintptr, totalBytes uint64, clusterSize uint32, label st
 			uintptr(unsafe.Pointer(&newPos)), 0)
 		_ = setFilePointer // possibly later for a 32-bit fallback
 		if r == 0 {
-			return fmt.Errorf("SetFilePointerEx to %d: %v", offset, e)
+			return fmt.Errorf("SetFilePointerEx to %d: %w", offset, e)
 		}
 		return nil
 	}
@@ -98,7 +98,7 @@ func fat32QuickFormat(h uintptr, totalBytes uint64, clusterSize uint32, label st
 			uintptr(unsafe.Pointer(&written)),
 			0)
 		if r == 0 {
-			return fmt.Errorf("WriteFile at offset %d: %v", offset, e)
+			return fmt.Errorf("WriteFile at offset %d: %w", offset, e)
 		}
 		if written != uint32(len(data)) {
 			return fmt.Errorf("WriteFile at offset %d: wrote %d of %d", offset, written, len(data))
