@@ -3511,8 +3511,49 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
     if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
   } catch { /* pre-OTA version unknown: fall back to the appBuild match */ }
   phase('uploading');
+  // Serialize only the BYTE push, not the box's whole reboot. UpdateBoxAgent
+  // does not return when the bytes land: the box replies, then reboots ~1.5 s
+  // later, and that reboot usually eats the reply, so the call then sits on a
+  // dead connection for up to ~107 s before its reply window times out (#466).
+  // Holding the upload gate for all of that keeps the next box from starting its
+  // push long after this box's bytes were delivered and it is already rebooting
+  // on its own, the serial-restart stall makeUploadGate exists to kill. So
+  // release the gate the moment the upload bytes are on the wire
+  // (box:update:progress pct>=100, the same signal the overlay uses to flip a
+  // row to "restarting") and await the real UpdateBoxAgent result OUTSIDE the
+  // gate. A box that never streams pct>=100 (a fast failure, or a chassis that
+  // does not emit progress) falls back to releasing when the call settles,
+  // exactly the old behavior, never worse. The single-box path (gate=null) has
+  // nothing to queue behind, so it runs the call directly.
+  let updatePromise;
+  if (gate) {
+    await new Promise((begun) => {
+      gate.run(() => new Promise((release) => {
+        let done = false, offProg = null;
+        const free = () => {
+          if (done) return;
+          done = true;
+          if (offProg) { try { offProg(); } catch {} }
+          release();
+        };
+        offProg = EventsOn('box:update:progress', (p) => {
+          if (p && p.host === box.host && p.pct != null && p.pct >= 100) free();
+        });
+        // try/catch so a (near-impossible) synchronous throw from the binding
+        // still lets begun() fire and the gate release, never stranding the run.
+        try { updatePromise = UpdateBoxAgent(box.host, box.port); }
+        catch (e) { updatePromise = Promise.reject(e); }
+        begun();
+        // Fallback: release on settle if pct>=100 never arrives, and give
+        // updatePromise a handler so no unhandledrejection can fire.
+        updatePromise.then(free, free);
+      })).catch(() => {});
+    });
+  } else {
+    updatePromise = UpdateBoxAgent(box.host, box.port);
+  }
   try {
-    await gated(() => UpdateBoxAgent(box.host, box.port));
+    await updatePromise;
   } catch (e) {
     // A timeout-class rejection ("deadline exceeded ... while reading body",
     // common on a slow link or with an HTTP-inspecting suite like Norton) does
