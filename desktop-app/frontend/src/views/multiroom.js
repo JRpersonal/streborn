@@ -6,7 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
@@ -868,12 +868,14 @@ async function doDissolveStereo(pairCands) {
     } else {
       flashStereoMsg(okHtml);
     }
-    showToast(t('multiroom.stereoDissolved'));
+    // One confirmation, not two. This used to ALSO fire a toast with the same
+    // text, so undoing a pair showed the line twice at once, the same doubled
+    // confirmation #843 flagged for Ungroup. The inline flash (or the persistent
+    // offline warning above) is the single confirmation.
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
   } else {
     state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
-    showToast(t('multiroom.stereoNothingToUndo'));
   }
   renderMultiroom(true);
 }
