@@ -418,6 +418,16 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 				// sync cannot revert this update (#381). Delaying our exit is
 				// safe: the swap helper waits for this PID.
 				refreshStickAgentBinary(body, s.logger)
+				// Same OTA-reboot marker as the normal reboot path, but fsync'd:
+				// os.Exit skips buffered flushes and the swap helper reboots the
+				// box right after us, so the marker must be on NAND before we go.
+				if f, werr := os.OpenFile(otaRebootMarkerPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); werr == nil {
+					_, _ = f.WriteString(time.Now().UTC().Format(time.RFC3339) + "\n")
+					_ = f.Sync()
+					_ = f.Close()
+				} else {
+					s.logger.Warn("could not write OTA-reboot marker (ram-staged); post-OTA resume may fire", "err", werr)
+				}
 				s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
 				os.Exit(0)
 			}()
@@ -478,6 +488,14 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		// desktop app's SSH stick refresh covers this only when SSH is open;
 		// this on-box write needs nothing. The reboot waits for it.
 		refreshStickAgentBinary(body, s.logger)
+		// Mark this reboot as OUR maintenance OTA so the agent that comes back up
+		// does not immediately blast the room with the automatic power-on resume
+		// (consumed once at the next start, resume_standby.go). A genuine power
+		// outage leaves no marker and resumes as before. Written before the sync
+		// below so it is flushed to NAND with everything else.
+		if werr := os.WriteFile(otaRebootMarkerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); werr != nil {
+			s.logger.Warn("could not write OTA-reboot marker; post-OTA resume may fire", "err", werr)
+		}
 		// Unconditional flush before the reboot. refreshStickAgentBinary syncs
 		// only when a stick is mounted; on a stickless box (the #381 field
 		// case) nothing else flushed this path before v0.9.7. Every other
