@@ -70,6 +70,14 @@ function liveZoneMaster(strBoxes) {
 // errors and warnings stay until the next action, since the user still has to
 // act on them. The token guards a newer message from being wiped by an older
 // timer, and the identity check makes sure we only clear the message we set.
+// Cached stereo-pair balance readout. Without it the balance div was rendered
+// `hidden` on every one of the 5s live repaints and revealed async after a box
+// read, so the Multi-Room panel jumped a line each time (#821). Cache the text
+// keyed on the pair master and render it in place, so the div keeps its height
+// across repaints; a different pair does not show the previous one's value.
+let pairBalanceText = '';
+let pairBalanceMaster = '';
+
 let stereoMsgToken = 0;
 function flashStereoMsg(html) {
   state.stereoMsg = html;
@@ -381,8 +389,10 @@ export function renderMultiroom(fetchLive) {
   // the speaker was woken), so shown beside a slider it reads as a control that
   // is broken. An owner said exactly that: "steht neben dem Lautstaerkeregler
   // und hat auch keinen Effekt" (2026-08-09), and #70 asked twice where it was.
+  const fpMaster = formingPair ? String(formingPair.master || '').toUpperCase() : '';
+  const showBal = !!(formingPair && pairBalanceText && fpMaster === pairBalanceMaster);
   const pairBalance = formingPair
-    ? `<div class="muted small" id="pairBalance" hidden></div>`
+    ? `<div class="muted small" id="pairBalance"${showBal ? '' : ' hidden'}>${showBal ? escapeHtml(pairBalanceText) : ''}</div>`
     : '';
 
   root.innerHTML = intro + liveFramesHtml + topbar + previewNote + updateWarn +
@@ -845,6 +855,8 @@ async function fillPairBalance(pair, boxes) {
   if (!src || src.kind === 'stock') return;
   const v = await readBoxBalance(src);
   if (v === null) return;
-  el.textContent = balanceLabel(v) + '. ' + t('controls.balanceTitle');
+  pairBalanceText = balanceLabel(v) + '. ' + t('controls.balanceTitle');
+  pairBalanceMaster = String(pair.master || '').toUpperCase();
+  el.textContent = pairBalanceText;
   el.hidden = false;
 }
