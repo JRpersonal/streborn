@@ -118,6 +118,23 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		}
 	}
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
+		// Fast path (#683 follow-up): a box STR already removed is back to stock and
+		// answers the Bose API on :8090 with NEITHER STR agent port open (:8888 sm2,
+		// :17008 BCO). Recognise that here, BEFORE the :17000 stick-free unlock
+		// below, so pressing Remove again on an already-stock speaker returns at
+		// once. Without this the second Remove ran the whole unlock-then-SSH dance
+		// first and took as long as a real removal (shorty310, 2026-09-03).
+		if tcpReachable(host, 8090, 2*time.Second) &&
+			!tcpReachable(host, 8888, 1500*time.Millisecond) &&
+			!tcpReachable(host, 17008, 1500*time.Millisecond) {
+			a.forgetSTRDeviceByHost(host)
+			res.Step = "already-stock"
+			res.OK = true
+			res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
+				"so there was nothing to remove and nothing else is needed."
+			a.logger.Info("uninstall_str: speaker is already stock, nothing to remove (fast path)", "host", host)
+			return res
+		}
 		// FALLBACK: the STR agent was not reachable (e.g. a wedged box). Try the
 		// stick-free :17000 unlock like the installer, and restore stock cloud URLs
 		// on EVERY exit so a failed attempt never leaves the box dialing the unlock

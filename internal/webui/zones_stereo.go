@@ -502,6 +502,22 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		s.forgetZoneDocDoubt()
 	}
 
+	// A PERMANENT group whose master is idle must not be woken and formed now.
+	// Waking a standby speaker (sys power) resumes its last station, so creating
+	// a permanent group started music on the speakers (reported live 2026-09-03).
+	// The document is persisted above; formDefaultGroupOnPlay wires the firmware
+	// zone, waking the members, the next time the master actually plays. A master
+	// that is already playing falls through and forms live so the group hears the
+	// current stream at once.
+	if req.Permanent {
+		if standby, busy := s.boxPlayState(); standby || !busy {
+			s.logger.Info("zone: permanent group stored, forming deferred to the next play (master idle, not waking it)",
+				"master", master.DeviceID, "slaves", len(slaves), "mode", mode)
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": mode, "deferred": true})
+			return
+		}
+	}
+
 	if mode == "mirror" {
 		// Deliberate user action: push unconditionally (reconcile=false), the
 		// user just asked for exactly this group.

@@ -70,6 +70,14 @@ function liveZoneMaster(strBoxes) {
 // errors and warnings stay until the next action, since the user still has to
 // act on them. The token guards a newer message from being wiped by an older
 // timer, and the identity check makes sure we only clear the message we set.
+// Cached stereo-pair balance readout. Without it the balance div was rendered
+// `hidden` on every one of the 5s live repaints and revealed async after a box
+// read, so the Multi-Room panel jumped a line each time (#821). Cache the text
+// keyed on the pair master and render it in place, so the div keeps its height
+// across repaints; a different pair does not show the previous one's value.
+let pairBalanceText = '';
+let pairBalanceMaster = '';
+
 let stereoMsgToken = 0;
 function flashStereoMsg(html) {
   state.stereoMsg = html;
@@ -381,8 +389,10 @@ export function renderMultiroom(fetchLive) {
   // the speaker was woken), so shown beside a slider it reads as a control that
   // is broken. An owner said exactly that: "steht neben dem Lautstaerkeregler
   // und hat auch keinen Effekt" (2026-08-09), and #70 asked twice where it was.
+  const fpMaster = formingPair ? String(formingPair.master || '').toUpperCase() : '';
+  const showBal = !!(formingPair && pairBalanceText && fpMaster === pairBalanceMaster);
   const pairBalance = formingPair
-    ? `<div class="muted small" id="pairBalance" hidden></div>`
+    ? `<div class="muted small" id="pairBalance"${showBal ? '' : ' hidden'}>${showBal ? escapeHtml(pairBalanceText) : ''}</div>`
     : '';
 
   root.innerHTML = intro + liveFramesHtml + topbar + previewNote + updateWarn +
@@ -647,8 +657,16 @@ async function doFormZone(strBoxes) {
     // Wake the master and every selected member before enrolling them (#70): a box
     // switched off at the speaker still answers STR but would join the zone silent.
     // Waking an already-awake box is a fast no-op.
+    //
+    // NOT for a permanent group, though: waking a standby speaker resumes its
+    // last station, so waking to create a permanent group started music on the
+    // speakers. A permanent group is not formed now anyway, it is stored and the
+    // box forms it (waking the members) the next time the master plays, so the
+    // boxes are left exactly as they are.
     const slaveBoxes = strBoxes.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
-    await Promise.allSettled([master, ...slaveBoxes].map(b => WakeBox(b.host, b.port)));
+    if (!state.zonePermanent) {
+      await Promise.allSettled([master, ...slaveBoxes].map(b => WakeBox(b.host, b.port)));
+    }
     const res = await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
       slaves, stereo: false, mode,
@@ -837,6 +855,8 @@ async function fillPairBalance(pair, boxes) {
   if (!src || src.kind === 'stock') return;
   const v = await readBoxBalance(src);
   if (v === null) return;
-  el.textContent = balanceLabel(v) + '. ' + t('controls.balanceTitle');
+  pairBalanceText = balanceLabel(v) + '. ' + t('controls.balanceTitle');
+  pairBalanceMaster = String(pair.master || '').toUpperCase();
+  el.textContent = pairBalanceText;
   el.hidden = false;
 }

@@ -323,6 +323,14 @@ const (
 	// or client/AP isolation in the router). Leading with the firewall sent
 	// users chasing the wrong thing (Jens, #763).
 	isolationAdvice = "The speaker shows up in the list because it announces itself, but it answers on no port and your PC cannot even reach it with a ping while both are on the same network. That is the fingerprint of a Wi-Fi that keeps devices apart from each other, not a firewall on your PC: usually a guest network, or client isolation (sometimes called AP isolation) switched on in the router. Put the PC and the speaker on the same normal Wi-Fi, not a guest network, turn off client/AP isolation in the router, then refresh the speaker list and try again."
+	// agentNotUpAdvice replaces the network-blame advice when the app's own log
+	// proves it reached the speaker this run (an SSH login, a staged install):
+	// none of that survives a firewall, a wrong subnet or client isolation, so
+	// the network is fine and blaming it sends the user chasing a problem that is
+	// not theirs (Klaus, 2026-09-03: the app SSH'd in and ran the installer, then
+	// the report told him to change his Wi-Fi). What went wrong is the speaker not
+	// coming back after the install rebooted it.
+	agentNotUpAdvice = "ST Reborn reached your speaker and ran the install over the network, so your Wi-Fi, firewall and network are fine. The speaker just did not come back on the network after the install rebooted it. First pull any USB stick out of the speaker: a stick left in can keep an ST30 or Portable off the network even while it still plays. Then power-cycle the speaker, unplug it for about 30 seconds, plug it back in, and wait about 3 minutes before you refresh the speaker list. If it still does not appear, use \"Save diagnostic logs\" and send the file in."
 
 	installWindowClosedAdvice = "Bose only opens the install access while the speaker boots with the STR stick plugged in. Power the speaker off, insert the STR stick, power it back on, then install."
 

@@ -259,6 +259,7 @@ func formatFailureReport(r failureReport) string {
 	}
 
 	advice = dropContradictedBlame(advice)
+	advice = applyReachedThisSession(advice, r)
 	advice = applyIsolationDiagnosis(advice, r)
 	if len(advice) > 0 {
 		section(&b, "what to try")
@@ -301,10 +302,47 @@ func formatFailureReport(r failureReport) string {
 // its clients apart, not a firewall, and pointing at the firewall sent users
 // chasing the wrong thing (Jens, #763). Only fires on the not-reachable phase,
 // i.e. when :22, :8090 and :8091 were all silent.
+// reachedThisSession reports whether the app's own log proves it reached the
+// speaker earlier in the SAME run: an SSH login or a staged install. A firewall,
+// a wrong subnet or client isolation would all have blocked that, so any of
+// these markers makes the "not reachable / firewall / guest Wi-Fi / isolation"
+// advice a false lead. Only strong SSH-install evidence counts: a bare
+// "agent-not-up" can also mean the install never reached the box at all (wrong
+// subnet), which IS a network problem and must keep the network advice.
+func reachedThisSession(r failureReport) bool {
+	blob := r.History + "\n" + r.Facts.LogTail
+	for _, s := range []string{"ssh ok", "repair_ssh", "SSH-staged install ran", "install_str: ssh"} {
+		if strings.Contains(blob, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// applyReachedThisSession swaps the network-blame advice for the agent-did-not-
+// come-back advice when the app provably reached the speaker this run (see
+// reachedThisSession). It drops the firewall, not-reachable and isolation
+// paragraphs so the report cannot both tell the user their network ran the
+// install and that their network is the problem.
+func applyReachedThisSession(advice []string, r failureReport) []string {
+	if !reachedThisSession(r) {
+		return advice
+	}
+	out := []string{agentNotUpAdvice}
+	for _, p := range advice {
+		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func applyIsolationDiagnosis(advice []string, r failureReport) []string {
 	f := r.Facts
 	isolated := strings.Contains(r.Phase, "not-reachable") &&
-		f.SubnetKnown && f.SameSubnet && f.PingRan && !f.PingAlive
+		f.SubnetKnown && f.SameSubnet && f.PingRan && !f.PingAlive &&
+		!reachedThisSession(r)
 	if !isolated {
 		return advice
 	}
