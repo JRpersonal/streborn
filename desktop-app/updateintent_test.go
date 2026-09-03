@@ -71,7 +71,6 @@ func TestUpdateIntentRoundTrip(t *testing.T) {
 	}
 }
 
-
 // One IP is one speaker: an intent recorded under one agent port must be
 // found and cleared under the other, or a failed attempt on a two-chassis
 // box leaves a leftover that flags a fully current speaker forever

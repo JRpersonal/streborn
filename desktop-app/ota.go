@@ -393,7 +393,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 				outcomeNote = "UNCONFIRMED: box answered neither HTTP nor SSH; nothing was uploaded, deferred to the version poll — this line is NOT a success"
 				return nil
 			}
-			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
+			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %w)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
 		return nil
@@ -447,9 +447,9 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// one thing that always works — a one-time USB-stick update — rather
 			// than a raw "status 507".
 			if strings.Contains(err.Error(), "507") || strings.Contains(strings.ToLower(err.Error()), "insufficient nand") {
-				return fmt.Errorf("the speaker's storage is full and it is on an older STR version that cannot free space over the network. Update this speaker once from a USB stick (that cleans up the storage and installs the current version); after that, updates manage the space themselves. Details: %v", err)
+				return fmt.Errorf("the speaker's storage is full and it is on an older STR version that cannot free space over the network. Update this speaker once from a USB stick (that cleans up the storage and installs the current version); after that, updates manage the space themselves. Details: %w", err)
 			}
-			return fmt.Errorf("HTTP OTA failed (%v) and the SSH fallback also failed: %w", err, sshErr)
+			return fmt.Errorf("HTTP OTA failed (%w) and the SSH fallback also failed: %w", err, sshErr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
@@ -1356,7 +1356,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 		}
 		if !opened {
 			if hello, err := sshHandshake(host, 2); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
-				return fmt.Errorf("ssh handshake failed: %v (%s)", err, strings.TrimSpace(hello))
+				return fmt.Errorf("ssh handshake failed: %w (%s)", err, strings.TrimSpace(hello))
 			}
 		}
 	}
@@ -1384,7 +1384,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 		"sync && echo STR_UPLOADED_$(wc -c < /mnt/nv/streborn/bin/streborn-armv7l.new)", needKB)
 	out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second)
 	if err != nil {
-		return fmt.Errorf("ssh upload (%d bytes) failed: %v (%s)", len(bin), err, strings.TrimSpace(out))
+		return fmt.Errorf("ssh upload (%d bytes) failed: %w (%s)", len(bin), err, strings.TrimSpace(out))
 	}
 	// The session can end "successfully" while the file never landed (stream cut,
 	// ENOSPC, or a reboot racing the write — live 2026-07-31: verify found no .new
@@ -1414,7 +1414,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 		hex.EncodeToString(sum[:]), hex.EncodeToString(md5sum[:]), len(bin), len(bin))
 	sentinel := fmt.Sprintf("OK_%d", len(bin))
 	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		return fmt.Errorf("ssh content-verify or rename failed: %v (%s)", err, strings.TrimSpace(out))
+		return fmt.Errorf("ssh content-verify or rename failed: %w (%s)", err, strings.TrimSpace(out))
 	}
 	// Always reboot after the binary swap. Jens 2026-06-01: an OTA that
 	// only SIGTERMs the agent and relies on run.sh's watchdog respawn

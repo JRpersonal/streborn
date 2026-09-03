@@ -38,6 +38,32 @@ jobs:
       - name: go test
         run: go test ./... -count=1
 
+  # The race detector, scoped to the packages where goroutines actually
+  # share state (stream proxying, webui zone-verify fan-out, marge
+  # emulation, radiobrowser failover). The plain `test` job keeps
+  # covering everything; -race is an order of magnitude slower, so it
+  # only runs where it can find something.
+  race:
+    name: Race detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "stable"
+          cache: true
+      # Scoped to the packages that are green under the detector today.
+      # internal/webui is deliberately NOT here yet: it has pre-existing
+      # test-only seam races (a t.Cleanup restoring a package-level test seam
+      # while the production goroutine it spawned still reads it, e.g.
+      # resume_settle_test.go / watchResume). Clean those up, then add
+      # ./internal/webui/... here. (The zone_verify_test.go counter race is
+      # already fixed.)
+      - name: go test -race
+        run: go test -race -count=1 ./internal/streamproxy/... ./internal/marge/... ./radiobrowser/...
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
@@ -145,7 +171,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/rc.local
+          shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/rc.local setup/run.sh
 
       # CI's own shell, held to a stricter standard than the on-box scripts.
       # These run on a GitHub runner with real bash, not the speaker's BusyBox,
@@ -163,9 +189,30 @@ jobs:
       - name: busybox ash parse gate
         run: |
           sudo apt-get update && sudo apt-get install -y busybox-static
-          for f in usb-stick/*.sh usb-stick/rc.local; do
+          for f in usb-stick/*.sh usb-stick/rc.local setup/run.sh; do
             busybox sh -n "$f" && echo "ok: $f"
           done
+
+  # Lint the workflow files themselves: expression typos, dangling
+  # needs/outputs references and invalid runner labels surface at PR
+  # time instead of on the next push to main. The embedded shellcheck
+  # pass is disabled (-shellcheck=): inline `run:` shell is not held to
+  # the dedicated shellcheck job's standard, and workflow-syntax errors
+  # are what this job is for. The release job's custom self-hosted runner
+  # label "signing" is declared in .github/actionlint.yaml so it is not
+  # flagged as unknown.
+  actionlint:
+    name: actionlint (workflows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Digest-pinned to match the SHA-pinned actions above.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: -color -shellcheck=
 
   govulncheck:
     name: govulncheck
@@ -185,6 +232,11 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan
+        run: govulncheck ./...
+      # The desktop app is a second Go module (see desktop-go above);
+      # `govulncheck ./...` from the root never descends into it.
+      - name: Scan (desktop-app)
+        working-directory: desktop-app
         run: govulncheck ./...
 
   # Vite build for the Wails frontend. Catches broken template

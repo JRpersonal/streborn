@@ -7,11 +7,11 @@ import (
 
 func TestParseVersionParts(t *testing.T) {
 	cases := map[string][]int{
-		"v0.7.21":                 []int{0, 7, 21},
-		"0.7.21":                  []int{0, 7, 21},
-		" v1.2.3 ":                []int{1, 2, 3},
-		"v0.7.21-3-gabc123-dirty": []int{0, 7, 21}, // git-describe suffix stops at first non-digit
-		"v0.7":                    []int{0, 7},
+		"v0.7.21":                 {0, 7, 21},
+		"0.7.21":                  {0, 7, 21},
+		" v1.2.3 ":                {1, 2, 3},
+		"v0.7.21-3-gabc123-dirty": {0, 7, 21}, // git-describe suffix stops at first non-digit
+		"v0.7":                    {0, 7},
 		"":                        nil,
 		"vdev":                    nil, // no leading digits
 	}

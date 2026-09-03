@@ -29,6 +29,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -143,7 +144,8 @@ func (t *tapConn) drain(maxWindow time.Duration) string {
 			sb.Write(buf[:n])
 		}
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
 				if sb.Len() > 0 && strings.HasSuffix(strings.TrimSpace(sb.String()), "->") {
 					break
 				}

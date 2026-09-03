@@ -6,6 +6,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -922,7 +923,7 @@ func (s *Server) Run(ctx context.Context) error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return fmt.Errorf("webui server: %w", err)

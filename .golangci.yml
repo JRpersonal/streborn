@@ -1,11 +1,10 @@
 version: "2"
 
-# Conservative starting set: govet, ineffassign, staticcheck are
-# enforced now. errcheck and unused are temporarily disabled because
-# the existing codebase has accumulated a backlog of `_ = resp.Body.Close()`
-# omissions and a handful of intentionally unused helpers reserved for
-# upcoming Marge endpoints. Track in a single follow-up cleanup PR
-# and re-enable here once the backlog is at zero.
+# Conservative, curated set. govet, ineffassign, staticcheck, errorlint are
+# enforced. errcheck and unused stay disabled for now: the codebase has a
+# backlog of `_ = resp.Body.Close()` omissions and a few intentionally unused
+# helpers reserved for upcoming Marge endpoints. errcheck is tracked as its own
+# mechanical sweep PR; re-enable it (and unused) here once that is at zero.
 
 linters:
   default: none
@@ -13,6 +12,20 @@ linters:
     - govet
     - ineffassign
     - staticcheck
+    - errorlint
+  exclusions:
+    rules:
+      # Tests legitimately compare against sentinel errors and format for
+      # readability; errorlint's wrap rules add noise there without catching a
+      # real production wrapping bug.
+      - path: _test\.go
+        linters:
+          - errorlint
+
+# gofmt is the one deterministic, zero-maintenance format gate.
+formatters:
+  enable:
+    - gofmt
 
 run:
   timeout: 5m

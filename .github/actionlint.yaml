@@ -1,0 +1,9 @@
+# actionlint configuration.
+#
+# The release signing job runs on a self-hosted Windows runner labelled
+# "signing" (the machine that holds the Certum SimplySign session). Declare the
+# custom label so actionlint does not flag `runs-on: [self-hosted, windows,
+# signing]` as an unknown label.
+self-hosted-runner:
+  labels:
+    - signing

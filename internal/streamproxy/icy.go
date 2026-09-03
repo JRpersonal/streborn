@@ -6,6 +6,7 @@ package streamproxy
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -261,9 +262,16 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	writeJSONString(w, "title", s.CurrentTitle())
 }
 
-// writeJSONString emits {"<key>":"<value>"} with value JSON-escaped, so a
-// StreamTitle containing quotes or backslashes cannot break the response.
+// writeJSONString emits {"<key>":"<value>"} with value JSON-escaped via
+// encoding/json, so a StreamTitle containing quotes, backslashes, or raw
+// control characters (a garbled or hostile ICY metadata block) cannot break
+// the response. The hand-rolled replacer used before covered only \ " \n \r
+// \t and leaked the remaining U+0000..U+001F bytes into the output as-is,
+// which is invalid JSON and blanked the live title in the app.
 func writeJSONString(w io.Writer, key, value string) {
-	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
-	fmt.Fprintf(w, `{%q:"%s"}`, key, esc.Replace(value))
+	// json.Marshal of a string cannot fail; invalid UTF-8 is replaced with
+	// U+FFFD, the same policy the rest of the app applies.
+	k, _ := json.Marshal(key)
+	v, _ := json.Marshal(value)
+	fmt.Fprintf(w, "{%s:%s}", k, v)
 }

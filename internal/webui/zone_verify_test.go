@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -122,9 +123,12 @@ func TestVerifyFollowersJoined(t *testing.T) {
 	t.Run("cancelled context stops polling promptly", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		calls := 0
+		// Atomic: the followers are polled from one goroutine each, so this
+		// shared counter is the only cross-goroutine write in the test
+		// (production writes distinct results[i]).
+		var calls atomic.Int32
 		fetch := func(_ context.Context, _ string) (boxapi.Zone, error) {
-			calls++
+			calls.Add(1)
 			return boxapi.Zone{}, nil
 		}
 		slaves := []boxapi.ZoneMember{
@@ -135,8 +139,8 @@ func TestVerifyFollowersJoined(t *testing.T) {
 		if len(missing) != 2 {
 			t.Errorf("missing = %v, want both followers (nothing was confirmed)", missing)
 		}
-		if calls > 2 {
-			t.Errorf("fetch called %d times on a cancelled context, want at most one per follower", calls)
+		if n := calls.Load(); n > 2 {
+			t.Errorf("fetch called %d times on a cancelled context, want at most one per follower", n)
 		}
 	})
 }

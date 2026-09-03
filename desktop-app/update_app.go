@@ -30,6 +30,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -647,7 +648,7 @@ func extractLargestFile(tgz, dst string) error {
 	var bestSize int64
 	for {
 		h, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -673,7 +674,7 @@ func extractLargestFile(tgz, dst string) error {
 	tr2 := tar.NewReader(gz2)
 	for {
 		h, err := tr2.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

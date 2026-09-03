@@ -128,7 +128,7 @@ func formatFAT32Impl(path, label string) error {
 		}
 		cmd := exec.Command("diskutil", "eraseDisk", "MS-DOS", label, "MBRFormat", whole)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("diskutil eraseDisk %s: %v: %s", whole, err, string(out))
+			return fmt.Errorf("diskutil eraseDisk %s: %w: %s", whole, err, string(out))
 		}
 		return nil
 	case "linux":
@@ -167,7 +167,7 @@ func linuxFormatFAT32(path, label string) error {
 		if _, lookErr := exec.LookPath("mkfs.vfat"); lookErr != nil {
 			return fmt.Errorf("mkfs.vfat is not installed. Install dosfstools (Fedora: sudo dnf install dosfstools; Debian/Ubuntu: sudo apt install dosfstools), then try again")
 		}
-		return fmt.Errorf("mkfs.vfat %s: %v: %s", dev, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("mkfs.vfat %s: %w: %s", dev, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -177,7 +177,7 @@ func linuxFormatFAT32(path, label string) error {
 func linuxBackingDevice(path string) (string, error) {
 	out, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "--target", path).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("could not resolve the stick's device via findmnt: %v", err)
+		return "", fmt.Errorf("could not resolve the stick's device via findmnt: %w", err)
 	}
 	dev := strings.TrimSpace(string(out))
 	if !strings.HasPrefix(dev, "/dev/") {
@@ -271,7 +271,7 @@ func macParentWholeDisk(volumePath string) (string, error) {
 	cmd := exec.Command("diskutil", "info", "-plist", volumePath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("diskutil info %s: %v: %s", volumePath, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("diskutil info %s: %w: %s", volumePath, err, strings.TrimSpace(string(out)))
 	}
 	// Look for: <key>ParentWholeDisk</key>\n\t<string>disk4</string>
 	idx := strings.Index(string(out), "<key>ParentWholeDisk</key>")
@@ -303,14 +303,14 @@ func ejectImpl(path string) error {
 	case "darwin":
 		cmd := exec.Command("diskutil", "eject", path)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("diskutil eject: %v: %s", err, string(out))
+			return fmt.Errorf("diskutil eject: %w: %s", err, string(out))
 		}
 		return nil
 	default:
 		// Linux: just umount, that is mostly what the user wants
 		cmd := exec.Command("umount", path)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("umount: %v: %s", err, string(out))
+			return fmt.Errorf("umount: %w: %s", err, string(out))
 		}
 		return nil
 	}

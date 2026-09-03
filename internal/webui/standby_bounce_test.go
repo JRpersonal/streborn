@@ -193,7 +193,7 @@ func TestHandleEnterStandby_QuickOffDuringLoginGiveupLatches(t *testing.T) {
 	s.standbyStopMu.Lock()
 	s.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
 	s.standbyStopMu.Unlock()
-	s.NoteBoxLoginError()                                        // 1036 just landed
+	s.NoteBoxLoginError()                                       // 1036 just landed
 	s.SetUserActivityFn(func() time.Time { return time.Now() }) // fresh adjacent power press
 
 	s.HandleEnterStandby()

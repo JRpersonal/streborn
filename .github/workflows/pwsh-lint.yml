@@ -1,0 +1,49 @@
+name: pwsh-lint
+
+# Parse-gate for the live PowerShell scripts (tools/ and setup/).
+# PSScriptAnalyzer at Error severity catches syntax errors and
+# outright broken constructs before they reach a user's machine;
+# style-level findings are deliberately out of scope here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwsh-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: PSScriptAnalyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Invoke-ScriptAnalyzer (Error severity)
+        shell: pwsh
+        run: |
+          $findings = @()
+          foreach ($dir in 'tools', 'setup') {
+            if (Test-Path $dir) {
+              $findings += @(Invoke-ScriptAnalyzer -Path $dir -Recurse -Severity Error)
+            } else {
+              Write-Host "Skipping missing directory: $dir"
+            }
+          }
+          if ($findings.Count -gt 0) {
+            $findings | Format-Table -AutoSize | Out-String | Write-Host
+            Write-Host "PSScriptAnalyzer found $($findings.Count) Error-severity finding(s)."
+            exit 1
+          }
+          Write-Host 'No Error-severity findings.'
