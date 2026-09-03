@@ -90,6 +90,36 @@ function flashStereoMsg(html) {
   }, 8000);
 }
 
+// The zone (multiroom group) confirmation is transient too. It used to be
+// written to state.zoneMsg and never cleared, and a second Ungroup press also
+// fired a toast, so the same "Group dissolved" line showed twice at once and
+// then sat in the panel forever, still there after leaving the tab and coming
+// back (#843). Flash it exactly like the stereo one: one confirmation, no toast
+// duplicate, gone after a few seconds. Only green confirmations auto-clear;
+// errors stay until the next action because the user still has to act on them.
+let zoneMsgToken = 0;
+function flashZoneMsg(html) {
+  state.zoneMsg = html;
+  const mine = ++zoneMsgToken;
+  setTimeout(() => {
+    if (zoneMsgToken === mine && state.zoneMsg === html) {
+      state.zoneMsg = '';
+      if (state.view === 'multiroom') renderMultiroom(false);
+    }
+  }, 8000);
+}
+
+// pairMemberIds is the set of every deviceID that belongs to a live stereo pair,
+// uppercased. Ungroup uses it to refuse to act on a pair (a pair is not a
+// multiroom group; it has its own "Undo stereo pair").
+function pairMemberIds(zoneLive) {
+  return new Set(
+    stereoPairsOf(zoneLive).flatMap(p =>
+      (p.members || []).map(m => String((m && m.deviceID) || '').toUpperCase())
+        .concat(p.master ? [String(p.master).toUpperCase()] : []))
+      .filter(Boolean));
+}
+
 // Live pair/zone status has to track changes made ELSEWHERE - the phone page,
 // the Bose app, a second PC - while this screen sits open. renderMultiroom
 // fetches every speaker's live zone once on entry and then never again, so an
@@ -183,7 +213,14 @@ export function renderMultiroom(fetchLive) {
           : (masterBox ? zoneLabel(masterBox) : mk);
         const chips = members.map(b =>
           `<span class="zone-frame-chip">${escapeHtml(zoneLabel(b))}</span>`).join('');
-        return `<div class="box-group box-group-c${colorMap[mk]}">` +
+        // A dismiss control per frame: the honest place to take THIS group apart,
+        // where the user is looking at it, instead of the one shared Ungroup
+        // button that could only reach whichever group liveZoneMaster happened to
+        // pick (asked for by Jens; audit finding). A pair frame undoes the pair,
+        // a group frame dissolves the group.
+        const xTip = pair ? t('multiroom.undoPairTip') : t('multiroom.dissolveGroupTip');
+        const xBtn = `<button class="box-group-x" data-dissolve="${escapeAttr(mk)}" data-dissolve-kind="${pair ? 'pair' : 'zone'}" title="${escapeAttr(xTip)}" aria-label="${escapeAttr(xTip)}">&times;</button>`;
+        return `<div class="box-group box-group-c${colorMap[mk]}">` + xBtn +
           `<span class="box-group-label">${escapeHtml((pair ? t('multiroom.stereoLabelPrefix') : t('multiroom.groupLabelPrefix')) + ' ' + label)}</span>` +
           chips + `</div>`;
       }).join('') + `</div>`
@@ -440,8 +477,14 @@ export function renderMultiroom(fetchLive) {
        <div id="stereoResult">${state.stereoMsg || ''}</div>
      </div>`;
 
-  // Read-only, filled after the markup exists, and only when a pair does.
-  if (formingPair) fillPairBalance(formingPair, strBoxes).catch(() => {});
+  // Read-only, filled after the markup exists, and only when a pair does. Skip
+  // the async re-read entirely once the value is already cached for THIS pair
+  // (showBal): the row is then rendered synchronously above at its full height,
+  // so a post-paint readBoxBalance + el.hidden=false on every 5s repaint only
+  // reflowed the "bottom half from the balance row down" for nothing (#840,
+  // stereo-pair-only jitter). The read runs once, when the pair first appears or
+  // its master changes; a genuine balance change still shows on the next entry.
+  if (formingPair && !showBal) fillPairBalance(formingPair, strBoxes).catch(() => {});
 
   const refreshBtn = $('zoneRefresh');
   if (refreshBtn) refreshBtn.onclick = async () => {
@@ -449,6 +492,23 @@ export function renderMultiroom(fetchLive) {
     try { await deps.discoverBoxes(); } catch {}
     renderMultiroom(true);
   };
+
+  // Per-frame dismiss: dissolve exactly the group/pair whose frame carries the x.
+  root.querySelectorAll('.box-group-x').forEach(x => {
+    x.onclick = (e) => {
+      e.stopPropagation();
+      const mk = String(x.dataset.dissolve || '').toUpperCase();
+      if (x.dataset.dissolveKind === 'pair') {
+        const pair = stereoPairsOf(state.zoneLive).find(p =>
+          String(p.master || '').toUpperCase() === mk ||
+          (p.members || []).some(m => String((m && m.deviceID) || '').toUpperCase() === mk));
+        doDissolveStereoPair(pair, strBoxes);
+      } else {
+        const mb = strBoxes.find(b => String(b.deviceID || '').toUpperCase() === mk);
+        doDissolveZoneAt(mb);
+      }
+    };
+  });
 
   // Card interactions: the "set as main" button promotes to master; a tap on
   // the rest of a non-master card toggles it in/out of the group. These repaint
@@ -818,27 +878,73 @@ async function doDissolveStereo(pairCands) {
   renderMultiroom(true);
 }
 
+// The shared Ungroup button at the bottom. It dissolves the LIVE group, not
+// whatever the star happens to sit on: dissolving through an uninvolved speaker
+// did nothing and still reported success, so the group played on. A stereo pair
+// is NOT a multiroom group and Ungroup must never take one apart (#843): that is
+// what "Undo stereo pair" is for, and the per-frame x also handles a pair. If
+// the only thing this button could reach is a pair, or nothing leads a group at
+// all, say there is nothing to ungroup instead of dissolving the pair or
+// claiming success on an empty action.
 async function doDissolveZone(strBoxes) {
-  // Send it to the speaker that leads the LIVE group, not to whichever one the
-  // star happens to sit on. Dissolving through an uninvolved speaker did
-  // nothing and still reported success, so the group played on.
-  // liveZoneMaster hands back the speaker itself, and it prefers the selected
-  // one when that one really does lead. Only when nothing leads does the star
-  // decide, and then there is nothing live to disagree with.
   const master = liveZoneMaster(strBoxes) || strBoxes.find(b => b.deviceID === state.zoneMaster);
+  const pairs = pairMemberIds(state.zoneLive);
+  if (!master || pairs.has(String(master.deviceID || '').toUpperCase())) {
+    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`);
+    renderMultiroom(false);
+    return;
+  }
+  await doDissolveZoneAt(master);
+}
+
+// doDissolveZoneAt dissolves the group led by a SPECIFIC master box. Shared by
+// the bottom Ungroup button and the per-frame x, so both take the group apart
+// the same way and confirm the same way: one flashed confirmation, no toast
+// duplicate, and it clears itself instead of sitting in the panel forever.
+async function doDissolveZoneAt(master) {
   if (!master) return;
   try {
-    const res = await DissolveZone(master.host, master.port);
-    // The speaker says whether the group is really gone. It reports the members
-    // it could not remove, and whether it could read the result at all.
-    if (res && res.ok === false) {
-      state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`;
-    } else {
-      state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`;
-      showToast(t('multiroom.zoneDissolved'));
-    }
+    await DissolveZone(master.host, master.port);
+    flashZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`);
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+  renderMultiroom(true);
+}
+
+// doDissolveStereoPair undoes ONE specific live pair (the per-frame x), sending
+// the undo to every reachable member because a one-sided leftover only clears
+// when the half that still holds the pair is asked (the same reason
+// doDissolveStereo asks both halves).
+async function doDissolveStereoPair(pair, boxes) {
+  if (!pair) {
+    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`);
+    renderMultiroom(false);
+    return;
+  }
+  const targets = stereoUndoTargets(pair, boxes || []);
+  const reachable = targets.filter(b => !b.offline);
+  if (!reachable.length) {
+    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`);
+    renderMultiroom(false);
+    return;
+  }
+  let dissolved = false;
+  let failure = null;
+  for (const box of reachable) {
+    try {
+      await DissolveStereoPair(box.host, box.port);
+      dissolved = true;
+    } catch (e) {
+      if (!String((e && e.message) || e || '').includes('stereo-not-paired')) failure = e;
+    }
+  }
+  if (dissolved) {
+    flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`);
+  } else if (failure) {
+    state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
+  } else {
+    flashStereoMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`);
   }
   renderMultiroom(true);
 }
