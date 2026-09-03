@@ -116,35 +116,31 @@ export function sleep(ms) {
 // savePresetCase is the pure decision behind saveCurrentToSlot: which save
 // path applies to the currently playing location.
 //   'spotify'   playing via the Spotify engine — save a real Spotify preset.
-//   'app-play'  a proxy slot is playing but the app itself started an ad-hoc
-//               station within freshMs — trust the app's own record (an
-//               agent-side wake resume racing the play can leave the box
-//               briefly reporting the PREVIOUS preset, #252).
-//   'copy-slot' a proxy slot is playing (hardware key / other soft slot) —
-//               copy the source preset one to one.
-//   'direct'    a non-proxy stream — save the box-reported now-playing.
+//   'app-play'  the app itself started a station within freshMs — trust the
+//               app's own record of WHICH station that was.
+//   'copy-slot' a proxy slot is playing (hardware key / other soft slot) with
+//               no fresh app record — copy that source preset one to one.
+//   'direct'    a non-proxy stream with no fresh app record — save the
+//               box-reported now-playing.
 // sourceSlot is activeSlotFromLocation(nowLocation), passed in so the caller
 // computes it once; null means "not a proxy location".
-// nowStreamUrl is the real upstream URL the box report resolves to (the
-// caller unwraps the ORION descriptor and the /stream/raw proxy; '' when
-// unknown). It exists because a NATIVE ad-hoc play has no slot: the box
-// reports the descriptor, sourceSlot is null, and this function used to fall
-// through to 'direct' even when the app itself had started the station
-// seconds earlier. 'direct' then persisted the descriptor's box-loopback
-// art-proxy URL as the key's artwork, which is dead from the user's machine,
-// so every hold-saved key lost its logo to the grey-chevron fallback (#696,
-// six ST10 keys, MacBook). Unlike the proxy branch above, the app record is
-// trusted here ONLY when it matches what the box actually plays: there is no
-// wake-resume race to excuse a mismatch (#252's reason does not apply), so a
-// station someone started elsewhere still saves from the box report.
-export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs, nowStreamUrl) {
+//
+// A fresh app play wins outright, for EVERY location shape. The app knows
+// exactly which station the user just picked, and the box's now-playing cannot
+// be trusted to agree at save time: a native preset switch (#530) reports the
+// PREVIOUS station for a moment, and a wake-resume can race the play (#252).
+// The old rule only trusted the app record when the box already echoed the same
+// URL, so on that lag it fell to 'direct'/'copy-slot' and saved the previously
+// playing station instead. That station was usually already on another key, the
+// agent dedup then removed it from there, and the user's presets vanished one
+// after another (#836). The trade-off Jens chose: if you app-play a station and
+// manually switch to a different one within freshMs before hold-saving, the
+// save takes the app's station, not the manual one.
+export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs) {
   if (/\/spotify\/stream|\/playback\/container/.test(nowLocation || '')) return 'spotify';
   const fresh = !!(lastAppPlay && lastAppPlay.url && nowMs - lastAppPlay.at < freshMs);
-  if (sourceSlot !== null && sourceSlot !== undefined) {
-    if (fresh) return 'app-play';
-    return 'copy-slot';
-  }
-  if (fresh && nowStreamUrl && lastAppPlay.url === nowStreamUrl) return 'app-play';
+  if (fresh) return 'app-play';
+  if (sourceSlot !== null && sourceSlot !== undefined) return 'copy-slot';
   return 'direct';
 }
 

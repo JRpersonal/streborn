@@ -305,10 +305,16 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			}
 			cancel()
 		}
-		// Dedup: a given playlist/station lives on at most ONE preset. Saving it
-		// here removes it from any other slot first (matched by Spotify URI, or
-		// by stream URL for radio), so the same content cannot occupy two
-		// buttons (user request; also avoids two Spotify presets colliding).
+		// A given playlist/station lives on at most ONE key. If the station being
+		// saved is already on ANOTHER slot, REFUSE rather than deleting that slot.
+		// The old behaviour silently removed the other slot, and that is what wiped
+		// a user's keys one after another (#836): a hold-save that captured an
+		// already-saved station (the box's now-playing lagged the native switch,
+		// so the app saved the previously playing station) deleted the key that
+		// station was on. Refusing is loss-free; the frontend turns this 409 into a
+		// "Sender liegt schon auf Taste N" note. A same-slot re-save (metadata
+		// self-heal, or overwriting the key with itself) is skipped, so it is never
+		// blocked.
 		for _, other := range s.presets.All() {
 			if other.Slot == slot {
 				continue
@@ -318,13 +324,15 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			if !dup {
 				continue
 			}
-			_ = s.presets.RemoveSlot(other.Slot)
-			s.logger.Info("preset dedup: removed duplicate from other slot", "kept", slot, "removed", other.Slot)
-			if s.boxHost != "" {
-				rmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = boxcli.RemovePreset(rmCtx, s.boxHost, other.Slot)
-				cancel()
-			}
+			s.logger.Info("preset save refused: this station is already on another slot",
+				"slot", slot, "existingSlot", other.Slot, "name", other.Name,
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"code": "already-on-slot",
+				"slot": other.Slot,
+				"name": other.Name,
+			})
+			return
 		}
 		// Every accepted write is logged with WHO wrote it. The #758 bundle
 		// showed a slot rewritten six times in twenty minutes (a phone save

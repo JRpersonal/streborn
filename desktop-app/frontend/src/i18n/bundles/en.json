@@ -334,6 +334,7 @@
   "preset.noCurrentStation": "No station is playing right now, so long press has no effect.",
   "preset.copiedToKey": "Copied to key {{n}}: {{name}}",
   "preset.savedToKey": "Saved to key {{n}}: {{name}}",
+  "preset.alreadyOnKey": "This station is already on key {{n}}.",
   "preset.sourceBadge": "from {{source}}",
   "preset.onSpeaker": "On the speaker",
   "preset.boxNativeHint": "tap to play on the speaker",

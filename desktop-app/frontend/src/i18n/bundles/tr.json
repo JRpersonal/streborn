@@ -309,6 +309,7 @@
   "preset.noCurrentStation": "Şu anda çalan bir istasyon yok, bu yüzden basılı tutmanın etkisi yok.",
   "preset.copiedToKey": "{{n}} tuşuna kopyalandı: {{name}}",
   "preset.savedToKey": "{{n}} tuşuna kaydedildi: {{name}}",
+  "preset.alreadyOnKey": "Bu istasyon zaten {{n}} tuşunda kayıtlı.",
   "preset.sourceBadge": "kaynak: {{source}}",
   "preset.saveFailed": "Kaydedilemedi: {{err}}",
   "play.errNoInternet": "internet yok mu?",

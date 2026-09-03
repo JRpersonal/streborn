@@ -334,6 +334,7 @@
   "preset.noCurrentStation": "現在沒有電台在播放，所以長按沒有作用。",
   "preset.copiedToKey": "已複製到預設鍵 {{n}}：{{name}}",
   "preset.savedToKey": "已存到預設鍵 {{n}}：{{name}}",
+  "preset.alreadyOnKey": "此電台已設定在按鍵 {{n}}。",
   "preset.sourceBadge": "來自 {{source}}",
   "preset.onSpeaker": "喇叭上的預設",
   "preset.boxNativeHint": "點一下就在喇叭上播放",

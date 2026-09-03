@@ -193,6 +193,19 @@ func TestPhoneRemoteGroupVolumeHoldsSentValue(t *testing.T) {
 	}
 }
 
+// The v0.9.71 group-adopt gate fixed only ONE of the two slider-adopt paths.
+// The status poll adopts this speaker's OWN s.volume.actual, and when the group
+// slider drives a whole zone that master-only reading lags the members' ramp
+// (worst on an scm/BCO box whose getGroup hangs), so it sprang the group slider
+// back a second after each step even after the fix (#726, abschuss's Kueche).
+// The status-poll adopt must be scoped like volSend: only when controlling one
+// speaker (volScope === 'one') or when not grouped.
+func TestPhoneRemoteStatusPollDoesNotSpringTheGroupSlider(t *testing.T) {
+	if !strings.Contains(indexHTML, "typeof s.volume.actual === 'number' && (volScope === 'one' || !zone.grouped)") {
+		t.Error("the status-poll volume adopt is not scoped away from the group slider; it will spring a grouped speaker's slider back (#726)")
+	}
+}
+
 // TestPhoneRemoteSleepArmingIsNotSelfCancelling guards the defect that made the
 // sleep timer unusable from the day it shipped: press() adds .active as a
 // 600 ms tap flash, and the click handler read .active as "this choice is
