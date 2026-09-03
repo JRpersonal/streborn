@@ -647,8 +647,16 @@ async function doFormZone(strBoxes) {
     // Wake the master and every selected member before enrolling them (#70): a box
     // switched off at the speaker still answers STR but would join the zone silent.
     // Waking an already-awake box is a fast no-op.
+    //
+    // NOT for a permanent group, though: waking a standby speaker resumes its
+    // last station, so waking to create a permanent group started music on the
+    // speakers. A permanent group is not formed now anyway, it is stored and the
+    // box forms it (waking the members) the next time the master plays, so the
+    // boxes are left exactly as they are.
     const slaveBoxes = strBoxes.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
-    await Promise.allSettled([master, ...slaveBoxes].map(b => WakeBox(b.host, b.port)));
+    if (!state.zonePermanent) {
+      await Promise.allSettled([master, ...slaveBoxes].map(b => WakeBox(b.host, b.port)));
+    }
     const res = await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
       slaves, stereo: false, mode,
