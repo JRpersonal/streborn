@@ -554,7 +554,16 @@ export function renderMultiroom(fetchLive) {
 // repaint (which used to leave stale badges).
 async function refreshZoneLive() {
   const ran = await fetchZoneLive(state.boxes, { maxAgeMs: 0, minBoxes: 1 });
-  if (ran) renderMultiroom(false);
+  if (!ran) return;
+  // Do not repaint while the user is typing the pair name. The repaint rebuilds
+  // the input, which drops focus mid-word and swallows the keystrokes, so the
+  // box beeps and nothing lands in the field (#775). The live poll waits a
+  // cycle; the value is already mirrored into state.stereoName by its oninput,
+  // so nothing is lost, and the next poll after they click away still picks up
+  // any change made elsewhere.
+  const active = document.activeElement;
+  if (active && active.id === 'stereoName') return;
+  renderMultiroom(false);
 }
 
 // doFormStereo creates a real left/right stereo pair on two SoundTouch 10s
