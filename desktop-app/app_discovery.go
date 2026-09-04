@@ -332,7 +332,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		var wg sync.WaitGroup
 		for _, h := range hosts {
 			if ip := net.ParseIP(h); ip == nil || ip.IsLoopback() ||
-				(ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4()) {
+				(ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4()) || isLocalSubnetBroadcast(ip) {
 				continue
 			}
 			host := h
