@@ -237,7 +237,7 @@ func probeKnownSpeakers(ctx context.Context, logger *slog.Logger, hits chan<- Bo
 		// real address anyway, so probing it only produces a second, dead entry
 		// in the list (2026-08-23 report: one speaker listed twice, once on
 		// 169.254, blocking Update All).
-		if ip := net.ParseIP(host); ip != nil && ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4() {
+		if ip := net.ParseIP(host); ip != nil && ((ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4()) || isLocalSubnetBroadcast(ip)) {
 			continue
 		}
 		wg.Add(1)
