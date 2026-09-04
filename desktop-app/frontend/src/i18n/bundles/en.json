@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Only in STR",
-  "common.strOnlyHint": "Not in the Bose app. ST Reborn adds this.",
+  "common.strOnly": "New with STR",
+  "common.strOnlyHint": "The Bose app never could. ST Reborn does.",
   "updateAll.button": "Update all ({{count}})",
   "updateAll.title": "Update all speakers",
   "updateAll.summary": "{{done}} done, {{deferred}} deferred, {{failed}} failed of {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multi-room",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
+  "nav.newFeatureDot": "New STR feature, take a look",
   "common.planned": "Planned",
   "podcasts.title": "Podcasts on your speaker",
   "podcasts.lead": "We are planning podcast support: browse and stream podcasts on the box, and subscribe a podcast to a preset button so a press plays the latest episode.",

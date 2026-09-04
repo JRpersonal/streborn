@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Yalnızca STR'de",
-  "common.strOnlyHint": "Bose uygulamasında yoktu. ST Reborn bunu ekler.",
+  "common.strOnly": "STR ile yeni",
+  "common.strOnlyHint": "Bose uygulaması bunu hiç yapamadı. ST Reborn yapıyor.",
   "updateAll.button": "Tümünü güncelle ({{count}})",
   "updateAll.title": "Tüm hoparlörleri güncelle",
   "updateAll.summary": "{{total}} hoparlörden {{done}} tamam, {{deferred}} ertelendi, {{failed}} başarısız",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcast'ler",
+  "nav.newFeatureDot": "Yeni STR özelliği, göz at",
   "common.planned": "Planlanıyor",
   "podcasts.title": "Hoparlörünüzde podcastʼler",
   "podcasts.lead": "Podcast desteğini planlıyoruz: hoparlörde podcastʼlere göz atın ve dinleyin, bir podcastʼi ön ayar düğmesine atayın; böylece bir basışla en son bölüm çalsın.",

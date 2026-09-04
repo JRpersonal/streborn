@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "في STR فقط",
-  "common.strOnlyHint": "لم يكن في تطبيق Bose. يضيفه ST Reborn.",
+  "common.strOnly": "جديد مع STR",
+  "common.strOnlyHint": "لم يستطع تطبيق Bose ذلك قط. ST Reborn يستطيع.",
   "updateAll.button": "تحديث الكل ({{count}})",
   "updateAll.title": "تحديث جميع مكبرات الصوت",
   "updateAll.summary": "{{done}} مكتمل، {{deferred}} مؤجل، {{failed}} فشل من {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "تعدّد الغرف",
   "nav.spotify": "Spotify",
   "nav.podcasts": "البودكاست",
+  "nav.newFeatureDot": "ميزة STR جديدة، ألقِ نظرة",
   "common.planned": "مُخطط له",
   "podcasts.title": "البودكاست على مكبر الصوت",
   "podcasts.lead": "نخطط لدعم البودكاست: تصفّح البودكاست وتشغيله على الجهاز، وربط بودكاست بزر إعداد مسبق ليشغّل الضغط أحدث حلقة.",

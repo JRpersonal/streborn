@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Tikai STR",
-  "common.strOnlyHint": "Bose lietotnē tā nebija. ST Reborn to pievieno.",
+  "common.strOnly": "Jauns ar STR",
+  "common.strOnlyHint": "Bose lietotne to nekad nevarēja. ST Reborn var.",
   "updateAll.button": "Atjaunināt visus ({{count}})",
   "updateAll.title": "Atjaunināt visus skaļruņus",
   "updateAll.summary": "{{done}} pabeigti, {{deferred}} atlikti, {{failed}} neizdevās no {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podkāsti",
+  "nav.newFeatureDot": "Jauna STR funkcija, apskaties",
   "common.planned": "Plānots",
   "podcasts.title": "Podkāsti jūsu skaļrunī",
   "podcasts.lead": "Plānojam podkāstu atbalstu: pārlūkojiet un atskaņojiet podkāstus skaļrunī un piesaistiet podkāstu iestatījuma pogai, lai nospiežot atskaņotu jaunāko epizodi.",

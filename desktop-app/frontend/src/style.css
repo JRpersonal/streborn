@@ -830,6 +830,16 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   user-select: all;
 }
 
+/* Blue "new feature over here" dot on a nav tab (Jens 2026-08-31): points the
+   user to a new STR-exclusive feature and clears once the tab is opened. The
+   gentle pulse draws the eye toward the hidden feature. */
+.nav-newdot { display:inline-block; width:7px; height:7px; margin-left:5px; border-radius:50%; background:#2f80ff; vertical-align:middle; animation:navDotPulse 2s ease-out infinite; }
+@keyframes navDotPulse {
+  0%   { box-shadow:0 0 0 0 rgba(47,128,255,.55); }
+  70%  { box-shadow:0 0 0 5px rgba(47,128,255,0); }
+  100% { box-shadow:0 0 0 0 rgba(47,128,255,0); }
+}
+
 /* ---------- Beta pill (used on the Library tab and elsewhere) ---------- */
 .beta-pill {
   display: inline-block;

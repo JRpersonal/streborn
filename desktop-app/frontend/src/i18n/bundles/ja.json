@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "STR だけの機能",
-  "common.strOnlyHint": "Bose アプリにはなかった機能です。ST Reborn が追加します。",
+  "common.strOnly": "STRで新登場",
+  "common.strOnlyHint": "Boseアプリにはできなかったこと。ST Rebornならできます。",
   "updateAll.button": "すべて更新 ({{count}})",
   "updateAll.title": "すべてのスピーカーを更新",
   "updateAll.summary": "{{total}} 台中 {{done}} 完了、{{deferred}} 保留、{{failed}} 失敗",
@@ -62,6 +62,7 @@
   "nav.multiroom": "マルチルーム",
   "nav.spotify": "Spotify",
   "nav.podcasts": "ポッドキャスト",
+  "nav.newFeatureDot": "STRの新機能。タップしてみてください",
   "common.planned": "予定",
   "podcasts.title": "スピーカーでポッドキャスト",
   "podcasts.lead": "ポッドキャスト対応を計画中です。スピーカーでポッドキャストを閲覧・再生し、プリセットボタンにポッドキャストを登録すれば、押すだけで最新エピソードを再生できます。",

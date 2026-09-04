@@ -1,6 +1,6 @@
 {
-  "common.strOnly": "Alleen in STR",
-  "common.strOnlyHint": "Zat niet in de Bose-app. ST Reborn voegt dit toe.",
+  "common.strOnly": "Nieuw met STR",
+  "common.strOnlyHint": "De Bose-app kon dit nooit. ST Reborn wel.",
   "updateAll.button": "Alles bijwerken ({{count}})",
   "updateAll.title": "Alle speakers bijwerken",
   "updateAll.summary": "{{done}} klaar, {{deferred}} uitgesteld, {{failed}} mislukt van {{total}}",
@@ -62,6 +62,7 @@
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
+  "nav.newFeatureDot": "Nieuwe STR-functie, kijk eens",
   "common.planned": "Gepland",
   "podcasts.title": "Podcasts op je speaker",
   "podcasts.lead": "We plannen podcastondersteuning: blader door podcasts en speel ze af op de speaker, en koppel een podcast aan een presetknop zodat een druk de nieuwste aflevering afspeelt.",

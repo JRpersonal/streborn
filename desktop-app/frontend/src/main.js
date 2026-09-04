@@ -737,11 +737,56 @@ const TAGLINES = {
   if (sEl) sEl.textContent = SUPPORTED_LINE[lang] || SUPPORTED_LINE.en;
 })();
 
+// --- New-feature discovery dots (Jens 2026-08-31) ------------------------
+// A small blue dot on a nav tab points the user to a new STR-exclusive feature
+// they have not opened yet; it clears the moment they open that tab. Per viewer
+// (localStorage), so once found it stays gone. Add an entry when you ship a new
+// exclusive feature and drop it a few releases later once it is no longer "new".
+const NEW_FEATURES = [
+  { id: '2026-08-permanent-group', view: 'multiroom' },
+  { id: '2026-08-copy-presets', view: 'settings' },
+  { id: '2026-08-recently-played', view: 'recent' },
+];
+const SEEN_FEATURES_KEY = 'str.seenFeatures';
+function seenFeatureSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_FEATURES_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function markViewFeaturesSeen(view) {
+  const seen = seenFeatureSet();
+  let changed = false;
+  for (const f of NEW_FEATURES) {
+    if (f.view === view && !seen.has(f.id)) { seen.add(f.id); changed = true; }
+  }
+  if (changed) { try { localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify([...seen])); } catch {} }
+}
+// renderNavDots paints/removes the blue dot on each nav tab from the seen set.
+// Idempotent, so it is safe to call on every box refresh and every view switch.
+function renderNavDots() {
+  const seen = seenFeatureSet();
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const want = NEW_FEATURES.some(f => f.view === btn.dataset.view && !seen.has(f.id));
+    const dot = btn.querySelector('.nav-newdot');
+    if (want && !dot) {
+      const s = document.createElement('span');
+      s.className = 'nav-newdot';
+      s.setAttribute('aria-label', t('nav.newFeatureDot'));
+      s.title = t('nav.newFeatureDot');
+      btn.appendChild(s);
+    } else if (!want && dot) {
+      dot.remove();
+    }
+  });
+}
+
 function switchView(view) {
   state.view = view;
   document.querySelectorAll('.tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
+  // Opening a tab counts as finding its new exclusive features: clear their dots.
+  markViewFeaturesSeen(view);
+  renderNavDots();
   $('view-box').classList.toggle('hidden', view !== 'box');
   $('view-library').classList.toggle('hidden', view !== 'library');
   $('view-recent').classList.toggle('hidden', view !== 'recent');
@@ -1884,6 +1929,9 @@ function applyBoxList(list) {
   // Mark which speakers are currently playing (small speaker icon on their tile).
   refreshBoxPlaying();
   updateSettingsTabBadge();
+  // localStorage is reliably restored by this first box refresh (see below), so
+  // paint the new-feature discovery dots here; a module-load call runs too early.
+  renderNavDots();
   // Re-evaluate the Favorites entry on every box-list refresh. This is the first
   // point after boot where localStorage is reliably restored in the WebView, so
   // a favorites list saved in a previous session reliably brings the button back
