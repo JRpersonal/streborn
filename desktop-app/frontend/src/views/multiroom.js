@@ -904,8 +904,18 @@ async function doDissolveZone(strBoxes) {
 async function doDissolveZoneAt(master) {
   if (!master) return;
   try {
-    await DissolveZone(master.host, master.port);
-    flashZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`);
+    // Trust the speaker's verdict, do not treat every 200 as success. nothing:
+    // there was no group to take apart (Ungroup on a groupless box used to show
+    // a green "Group dissolved", #843); ok:false: the firmware did not empty the
+    // group; otherwise it is really gone.
+    const res = await DissolveZone(master.host, master.port);
+    if (res && res.nothing) {
+      flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`);
+    } else if (res && res.ok === false) {
+      state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`;
+    } else {
+      flashZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`);
+    }
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }

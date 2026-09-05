@@ -327,19 +327,25 @@ func (a *App) relayStereoGroupDoc(out map[string]any) {
 // DissolveZone tears down the multiroom zone led by masterHost (#70 beta).
 // Logged with the outcome: group bugs reported from the field were previously
 // undiagnosable because the app log never said which zone operations ran.
-func (a *App) DissolveZone(masterHost string, masterPort int) error {
+// DissolveZone returns the agent's own verdict so the UI can tell the three
+// outcomes apart instead of treating every HTTP 200 as success: a real dissolve
+// (ok:true), an incomplete one (ok:false, remaining), and a no-op where there
+// was nothing to dissolve (nothing:true). The last is why pressing Ungroup with
+// no group used to show a green "Group dissolved" (#843): the app discarded this
+// body and assumed success.
+func (a *App) DissolveZone(masterHost string, masterPort int) (map[string]any, error) {
 	// Same budget as forming: dissolving also wakes the members first, and a
 	// timeout here is what leaves a half-dissolved group behind (#442).
 	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodDelete, "/api/box/zone", "", "", zoneCallTimeout)
 	if err != nil {
 		a.logger.Info("zone: dissolve failed", "master", masterHost, "err", err)
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		herr := readHTTPError(resp)
 		a.logger.Info("zone: dissolve rejected", "master", masterHost, "err", herr)
-		return herr
+		return nil, herr
 	}
 	// A dissolved stereo pair must also drop the partner's marge pair record;
 	// the agent tries directly and reports whether the app needs to relay the
@@ -347,8 +353,8 @@ func (a *App) DissolveZone(masterHost string, masterPort int) error {
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	a.relayStereoPairClear(out)
-	a.logger.Info("zone: dissolved", "master", masterHost)
-	return nil
+	a.logger.Info("zone: dissolved", "master", masterHost, "nothing", out["nothing"], "ok", out["ok"])
+	return out, nil
 }
 
 // relayStereoPairClear relays the pair-record DELETE to the partner's agent
