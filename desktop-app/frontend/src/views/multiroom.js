@@ -736,7 +736,18 @@ async function doFormZone(strBoxes) {
     });
     // Real feedback: mirror reports back {ok,mode}; native returns the live
     // zone, so verify the firmware actually took the members.
-    if (mode === 'mirror') {
+    if (res && res.ok === false) {
+      // The agent refused the form outright (it answers ok:false with a reason),
+      // e.g. the master or a member is half of a stereo pair, which cannot join a
+      // group (#792). This must NOT fall through to the count below: with no
+      // verified/missing fields the fallback assumed slaves.length joined and
+      // showed a green "Group active" for a group that was never formed (#775).
+      const inPair = Array.isArray(res.inPair) && res.inPair.length;
+      const msg = inPair
+        ? t('multiroom.pairNotGroupable')
+        : ((res.error && String(res.error)) || t('multiroom.formedNone'));
+      state.zoneMsg = `<div class="setup-err">${escapeHtml(msg)}</div>`;
+    } else if (mode === 'mirror') {
       state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: slaves.length }))}</div>`;
     } else {
       // Trust the followers' own zone self-report, not the master's optimistic
