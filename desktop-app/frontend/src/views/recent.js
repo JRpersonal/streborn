@@ -14,9 +14,9 @@
 // rendering happen here in the app (App-First, keep the box light).
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard } from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
@@ -394,8 +394,30 @@ function stopRecentAutoRefresh() {
 // Exported so main.js's status poll can repaint it the instant the speaker's
 // source changes from another controller, instead of waiting for the 30 s timer
 // (#810).
+// syncCurrentNowPlaying refreshes state.nowLocation/nowName from the scoped box
+// so the "now playing" mark tracks the speaker while this tab is open. The
+// box-view status poll (main.js refreshStatus) returns early on any non-box
+// view, so on the Recently-played tab nothing updated now-playing and a station
+// changed from another controller (the phone ST Remote) left the badge on the
+// old card until the user switched screens (#810; the earlier repaint-in-
+// refreshStatus fix was unreachable because that function is box-view only).
+// Parse mirrors refreshStatus. Current-box only, since the mark is scoped to it.
+async function syncCurrentNowPlaying() {
+  const box = state.currentBox;
+  if (!box) return;
+  try {
+    const xml = await Status(box.host, box.port);
+    if (state.view !== 'recent') return;
+    if (Date.now() < (state.optimisticUntil || 0)) return; // let a fresh local click settle first
+    state.nowName = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
+    state.nowLocation = decodeXmlEntities((xml.match(/location="([^"]+)"/) || [])[1] || '');
+    state.nowSource = (xml.match(/source="([^"]+)"/) || [])[1] || '';
+  } catch { /* box busy or rebooting: keep the last known mark */ }
+}
+
 export async function refreshRecentList() {
   if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
+  await syncCurrentNowPlaying();
   const cards = await loadRecentCards();
   const listEl = $('recentList');
   if (!listEl || state.view !== 'recent') { stopRecentAutoRefresh(); return; } // navigated away mid-fetch

@@ -6,7 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
@@ -220,8 +220,13 @@ export function renderMultiroom(fetchLive) {
         // a group frame dissolves the group.
         const xTip = pair ? t('multiroom.undoPairTip') : t('multiroom.dissolveGroupTip');
         const xBtn = `<button class="box-group-x" data-dissolve="${escapeAttr(mk)}" data-dissolve-kind="${pair ? 'pair' : 'zone'}" title="${escapeAttr(xTip)}" aria-label="${escapeAttr(xTip)}">&times;</button>`;
+        // #775: mark a pair with the two-speaker icon and show the user's own
+        // name as-is, instead of prepending the word "Stereo" to it. Matches how
+        // the music tab already labels the same frame (main.js groupLabel).
+        const frameIcon = pair ? STEREO_ICON : GROUP_ICON;
+        const frameTip = pair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: label });
         return `<div class="box-group box-group-c${colorMap[mk]}">` + xBtn +
-          `<span class="box-group-label">${escapeHtml((pair ? t('multiroom.stereoLabelPrefix') : t('multiroom.groupLabelPrefix')) + ' ' + label)}</span>` +
+          `<span class="box-group-label" title="${escapeAttr(frameTip)}">${frameIcon} ${escapeHtml(label)}</span>` +
           chips + `</div>`;
       }).join('') + `</div>`
     : '';
@@ -868,12 +873,15 @@ async function doDissolveStereo(pairCands) {
     } else {
       flashStereoMsg(okHtml);
     }
-    showToast(t('multiroom.stereoDissolved'));
+    // No toast on top of the inline confirmation: the two said the same thing and
+    // overlapped (#843 problem 2). The inline message sits in the stereo panel
+    // right where the Undo button is, so it is already in view after the click.
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
   } else {
+    // Inline only: the transient toast duplicated this same "nothing to undo"
+    // text and the two overlapped (#851).
     state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
-    showToast(t('multiroom.stereoNothingToUndo'));
   }
   renderMultiroom(true);
 }
