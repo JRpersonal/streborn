@@ -22,6 +22,7 @@ package webui
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -40,6 +41,10 @@ const (
 	// never associates at all, which is the stand-down case anyway.
 	wlanGuardSettleBudget = 150 * time.Second
 	wlanGuardPoll         = 5 * time.Second
+	// wlanReinitRecheckBudget is how long to wait for association AFTER a chip
+	// re-init, before giving up for this boot (#853). Shorter than the first
+	// settle wait: a chip that just came up clean associates in a few seconds.
+	wlanReinitRecheckBudget = 60 * time.Second
 	// wlanGuardAttempts bounds the correction. Three live switches is already
 	// generous: the runtime switch itself escalates internally (reconfigure,
 	// restart, add_network) before it reports failure.
@@ -119,17 +124,44 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	if !strings.HasPrefix(bootReason, "box-boot") {
 		return
 	}
-	tgt, ok := readWlanTarget()
-	if !ok {
-		return
-	}
 	iface, mech := detectWlanMechanism()
+	tgt, hasTarget := readWlanTarget()
+
+	// A warm reboot does not power-cycle the TI wl18xx radio, so its firmware
+	// re-download (via the slow deprecated user-helper) can fail and the box
+	// comes up unassociated, blinking white, until the owner pulls the plug
+	// (#853, confirmed on rhino ST10 + Lifestyle; the software recovery was
+	// verified live on hardware 2026-09-05). Recovering a box that booted with
+	// NO association is a different job from moving one off the WRONG network,
+	// and it must run with or without a stored wlan target: a chip that never
+	// came up has no network to be on the wrong one of. So it comes first.
 	if mech != "wpa" {
-		s.wlanGuardWeakVerify(tgt, iface)
+		if hasTarget {
+			s.wlanGuardWeakVerify(tgt, iface)
+		}
 		return
 	}
 
 	cur, assoc := waitAssociationSettled(ctx, iface, wlanGuardSettleBudget)
+	reinited := false
+	if !assoc {
+		if s.recoverUnassociatedRadio(iface) {
+			reinited = true
+			cur, assoc = waitAssociationSettled(ctx, iface, wlanReinitRecheckBudget)
+		}
+	}
+
+	// One line per boot so a bundle shows the guard ran and what it found, even
+	// on the common no-target box where the correction below never fires (#853).
+	s.logger.Info("wlan guard: boot association check",
+		"iface", iface, "assoc", assoc, "gotTag", ssidTag(cur),
+		"hasTarget", hasTarget, "radioReinit", reinited)
+
+	// Everything below is about network SELECTION, which only makes sense with a
+	// target the user chose.
+	if !hasTarget {
+		return
+	}
 	visible, surveyOK := s.targetInSurvey(ctx, tgt.SSID)
 	action, reason := guardDecision(assoc, cur, tgt.SSID, visible, tgt.BootsFailed)
 
@@ -310,6 +342,62 @@ func (s *Server) wlanGuardWeakVerify(tgt wlanTarget, iface string) {
 
 // waitAssociationSettled polls until wpa_supplicant reports an association or
 // the budget runs out, and returns the SSID it settled on.
+// wlcoreSDIODriver is the sysfs path of the TI wl18xx SDIO driver on the rhino
+// (sm2) chassis. Powering the chip down and up through its unbind/bind is the
+// software equivalent of a cold power-cycle: the wlcore_sdio probe re-toggles
+// the chip's enable line and re-downloads its firmware.
+const wlcoreSDIODriver = "/sys/bus/sdio/drivers/wl1271_sdio"
+
+// reinitWLANRadio power-cycles the Wi-Fi chip in software by unbinding and
+// rebinding its SDIO device (#853). Returns true if it acted. A no-op on any
+// chassis that does not expose this driver, so it is safe to call blindly. Bound
+// devices look like "mmc0:0001:2"; there is normally exactly one.
+func reinitWLANRadio(logger *slog.Logger) bool {
+	ents, err := os.ReadDir(wlcoreSDIODriver)
+	if err != nil {
+		return false // not this chassis / driver not present
+	}
+	var devs []string
+	for _, e := range ents {
+		n := e.Name()
+		if strings.HasPrefix(n, "mmc") && strings.Count(n, ":") == 2 {
+			devs = append(devs, n)
+		}
+	}
+	if len(devs) == 0 {
+		return false
+	}
+	acted := false
+	for _, d := range devs {
+		if err := os.WriteFile(wlcoreSDIODriver+"/unbind", []byte(d), 0o200); err != nil {
+			logger.Warn("wlan reinit: unbind failed", "dev", d, "err", err)
+			continue
+		}
+		time.Sleep(3 * time.Second) // let the chip fully power down
+		if err := os.WriteFile(wlcoreSDIODriver+"/bind", []byte(d), 0o200); err != nil {
+			logger.Warn("wlan reinit: rebind failed after unbind", "dev", d, "err", err)
+			continue
+		}
+		logger.Info("wlan reinit: power-cycled the Wi-Fi chip via SDIO unbind/rebind", "dev", d)
+		acted = true
+	}
+	return acted
+}
+
+// recoverUnassociatedRadio is the boot recovery for a box that came up with no
+// Wi-Fi association at all (#853): power-cycle the chip in software so it can
+// re-download its firmware and let wpa_supplicant re-associate from its existing
+// config. One-shot per boot, never touched on a healthy (already-associated)
+// boot, so a working box takes no radio churn.
+func (s *Server) recoverUnassociatedRadio(iface string) bool {
+	s.logger.Warn("wlan guard: box booted with no Wi-Fi association, power-cycling the radio to recover it (#853)", "iface", iface)
+	if !reinitWLANRadio(s.logger) {
+		s.logger.Info("wlan guard: no software radio power-cycle available on this chassis; leaving recovery to the boot watchdog", "iface", iface)
+		return false
+	}
+	return true
+}
+
 func waitAssociationSettled(ctx context.Context, iface string, budget time.Duration) (ssid string, associated bool) {
 	deadline := time.Now().Add(budget)
 	for {
