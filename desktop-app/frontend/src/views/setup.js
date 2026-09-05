@@ -477,9 +477,14 @@ export function renderSetupTargetPicker() {
   };
   for (const b of stockBoxes) {
     const label = b.friendlyName || b.name || b.host;
+    // "first install" is informational, not a warning: the amber badge-warn
+    // chip drew a contrast complaint twice (#692, #833) and reads as an alarm
+    // for a normal stock speaker. The neutral .stc-badge base (--c-text on
+    // --c-surface-3) is high-contrast in every theme and is what the #833 fix
+    // intended before it landed on the wrong element.
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindStock')),
-      t('setup.targetCardBadgeStock'), 'badge-warn');
+      t('setup.targetCardBadgeStock'), '');
     // Soundbars / home-cinema systems / adapters ('limited') install fine but
     // have no hardware preset buttons 1-6; say so honestly under the card.
     if (boxModelSupport(b.model) === 'limited') {
@@ -1776,7 +1781,11 @@ function installHelpHtml(code, isNetwork) {
 //
 // Credentials are kept only in this closure and never persisted.
 async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox }) {
-  const baseHtml = html;
+  // baseHtml is the "Installing STR over the network on X..." progress lead,
+  // prepended to every render so the user keeps the context while it works. It
+  // must be cleared once the install finishes, or the "Installing..." line sits
+  // stuck above the "STR is installed and running" result (#852).
+  let baseHtml = html;
   const setupResult = $('setupResult');
   if (!setupResult) return;
   const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
@@ -2417,6 +2426,9 @@ async function verifyInstalledState(box, onState) {
   }
   const failDetails = Object.values(failReasons)
     .map(f => `<div class="setup-warn-detail muted small">${escapeHtml(f.label)}: ${escapeHtml(f.reason)}</div>`).join('');
+  // Install is finished: drop the "Installing..." progress lead so the result
+  // stands on its own instead of sitting under a stuck progress line (#852).
+  baseHtml = '';
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
          engineNote +
          (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +

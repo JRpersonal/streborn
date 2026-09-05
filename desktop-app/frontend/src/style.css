@@ -673,9 +673,11 @@ body {
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: var(--c-surface-3); color: var(--c-muted); font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
 /* Offline: die Version ist der letzte bestaetigte Stand, kein Live-Wert (#775).
-   0.55 faded the greyed version almost to nothing on a light theme (#833); 0.82
-   keeps the "not a live value" cue while staying readable. */
-.box-ver-stale { opacity: 0.82; font-style: italic; }
+   Any opacity here dims --c-muted below AA on the near-white light card, which
+   is why 0.55 and then 0.82 both still read as faded (#833, twice). The "not a
+   live value" cue is carried by the italic alone now; the color stays at the
+   AA-compliant --c-muted so the version is actually readable. */
+.box-ver-stale { font-style: italic; }
 .box-model { color: var(--c-muted); font-size: 11px; font-weight: 500; margin-left: 8px; }
 /* Multiroom group frame (#70): speakers sharing a live zone are clustered and
    wrapped in a colored border so the group reads as one block on the music tab.

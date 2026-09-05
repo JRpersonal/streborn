@@ -54,7 +54,7 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 - Setup wizard for the install, including preset region, friendly name, box language, and Wi-Fi credentials. The network install is the normal path; the USB stick route (with a bundled FAT32 formatting helper) remains available as a fallback.
 - Backup and restore: save your favourites and every speaker's preset keys to one file, and restore them, for example before you rebuild.
 - Sleep timer: switch a speaker, or a whole group, off by itself after a set time, from the phone remote.
-- Voice control via a local hub: I do not add my own cloud skill, but a hub you run at home (Home Assistant) can talk to the speakers on your network and expose them to Alexa, so you can switch them and start presets by voice. See [`docs/ALEXA.md`](./docs/ALEXA.md).
+- Home Assistant and other automation: STR keeps the speaker's local control API (`:8090`) and UPnP media renderer (`:8091`) alive, so a hub you run at home can control the speakers, send audio or TTS to them, and, via Alexa or Google, do voice control. STR adds its own local REST API on top. No cloud skill of my own. See [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md).
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
 
 ### In the works

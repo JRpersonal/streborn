@@ -232,6 +232,8 @@ import {
   shouldAdoptPresetArt,
   appArtFromBoxArt,
   artCarriesBoxForm,
+  STEREO_ICON,
+  GROUP_ICON,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -334,7 +336,7 @@ import {
 // pulls state/utils/i18n/api from the shared modules; only the slot-picker modal
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
-import { renderRecent, initRecentView, refreshRecentList } from './views/recent.js';
+import { renderRecent, initRecentView } from './views/recent.js';
 import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
@@ -2544,8 +2546,8 @@ function renderBoxSelect() {
       // "group led by X", which is not what it is.
       const framePair = pairByKey.get(m) || null;
       const isPair = !!framePair;
-      const pairIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1"></rect><rect x="14" y="3" width="7" height="18" rx="1"></rect></svg>';
-      const zoneIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
+      const pairIcon = STEREO_ICON;
+      const zoneIcon = GROUP_ICON;
       const groupLabel = groupName
         ? `<span class="box-group-label" title="${escapeAttr(isPair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: groupName }))}">${isPair ? pairIcon : zoneIcon} ${escapeHtml(isPair ? (pairDisplayName(framePair, renderBoxSelect) || t('multiroom.stereoHeading')) : groupName)}</span>`
         : '';
@@ -6871,16 +6873,12 @@ async function refreshStatus() {
     // its reading so the bar does not stutter on an unrelated status change.
     const trackKey = newLoc + '|' + newName;
     if (trackKey !== trackPos.key) resetTrackProgress(trackKey);
-    // #810: the Recently played list marks the current source from
-    // state.nowName / nowLocation, but only repaints on its own 30 s timer or on
-    // re-entry, so a station change made from another controller (the phone ST
-    // Remote) left the "now playing" badge on the old card until then. Repaint it
-    // here on an actual source change so the mark tracks the speaker at once.
-    const recentSourceChanged = state.nowLocation !== newLoc || state.nowName !== newName;
+    // #810: the Recently-played view now refreshes now-playing itself (recent.js
+    // syncCurrentNowPlaying), because refreshStatus returns early on any non-box
+    // view, so an "if (state.view === 'recent')" branch here was unreachable.
     state.nowPlayState = ps;
     state.nowLocation = newLoc;
     state.nowName = newName;
-    if (recentSourceChanged && state.view === 'recent') refreshRecentList();
     // Live Spotify track metadata for the now-playing line: poll the agent's
     // /spotify/info (throttled) while a Spotify stream is active so the desktop
     // shows the current song + artist, not just the playlist/preset name.
