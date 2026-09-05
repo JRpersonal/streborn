@@ -143,11 +143,19 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	}
 
 	cur, assoc := waitAssociationSettled(ctx, iface, wlanGuardSettleBudget)
+	reinited := false
 	if !assoc {
 		if s.recoverUnassociatedRadio(iface) {
+			reinited = true
 			cur, assoc = waitAssociationSettled(ctx, iface, wlanReinitRecheckBudget)
 		}
 	}
+
+	// One line per boot so a bundle shows the guard ran and what it found, even
+	// on the common no-target box where the correction below never fires (#853).
+	s.logger.Info("wlan guard: boot association check",
+		"iface", iface, "assoc", assoc, "gotTag", ssidTag(cur),
+		"hasTarget", hasTarget, "radioReinit", reinited)
 
 	// Everything below is about network SELECTION, which only makes sense with a
 	// target the user chose.
