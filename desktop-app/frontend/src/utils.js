@@ -18,6 +18,15 @@ export function escapeHtml(s) {
 
 export function escapeAttr(s) { return escapeHtml(s); }
 
+// Group marks shared by the Multi-Room view and the music-tab group frames, so
+// both screens label a stereo pair the same way. #775 (shorty310): the
+// Multi-Room frame used to prepend the word "Stereo" to a user's pair name
+// ("Stereo Grace Left + Grace Right"), while the music tab already showed just
+// the two-speaker mark and the name. STEREO_ICON marks a firmware stereo pair
+// (two channel boxes), GROUP_ICON a multiroom zone (people listening together).
+export const STEREO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1"></rect><rect x="14" y="3" width="7" height="18" rx="1"></rect></svg>';
+export const GROUP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
+
 // getBoxLabel returns a speaker's display name: its friendly name, else the agent
 // name (the backend always fills this with a "str-<ip>" fallback), else the host.
 // One place for the label that several views repeated inline.
