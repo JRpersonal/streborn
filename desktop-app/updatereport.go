@@ -132,6 +132,7 @@ func adviceParagraphs() []string {
 	return []string{
 		firewallAdvice,
 		answeredNotSTRAdvice,
+		noLocalRouteAdvice,
 		notReachableAdvice,
 		installWindowClosedAdvice,
 		controlUnresponsiveAdvice,

@@ -619,12 +619,41 @@ func (s *Server) readUploadedELF(w http.ResponseWriter, r *http.Request, logger 
 		http.Error(w, "binary too small", http.StatusBadRequest)
 		return nil, false
 	}
-	// ELF magic check.
-	if body[0] != 0x7f || body[1] != 'E' || body[2] != 'L' || body[3] != 'F' {
-		http.Error(w, "not an ELF binary", http.StatusBadRequest)
+	if msg, ok := validSoftfloatARMELF(body); !ok {
+		http.Error(w, msg, http.StatusBadRequest)
 		return nil, false
 	}
 	return body, true
+}
+
+// validSoftfloatARMELF checks that body is a 32-bit little-endian softfloat ARM
+// ELF, the only shape the speakers can run (#302). The magic alone let anything
+// ELF-shaped through: softfloat is pinned at BUILD time (Makefile GOARM=5) but
+// nothing validated it at WRITE time, so a mis-built hard-float or wrong-arch
+// embed would flash, pass the flash verify, reboot, and then SIGILL on every
+// start, crash-looping the agent on a stickless box with no way back. This is
+// the last gate before flash. Real GOARM=5 binaries (the agent AND the
+// go-librespot engine) are EM_ARM, 32-bit LE, with the hard-float ABI flag
+// clear (e_flags 0x05000002), so a correct build always passes. Callers pass a
+// body already length-checked (>= 1024), so the fixed header offsets are safe.
+func validSoftfloatARMELF(body []byte) (msg string, ok bool) {
+	if len(body) < 40 {
+		return "binary too small to be an ELF", false
+	}
+	if body[0] != 0x7f || body[1] != 'E' || body[2] != 'L' || body[3] != 'F' {
+		return "not an ELF binary", false
+	}
+	if body[4] != 1 /*ELFCLASS32*/ || body[5] != 1 /*ELFDATA2LSB*/ {
+		return "not a 32-bit little-endian ARM binary", false
+	}
+	if eMachine := int(body[18]) | int(body[19])<<8; eMachine != 40 /*EM_ARM*/ {
+		return "wrong architecture; STR speakers need an ARM (GOARM=5) build", false
+	}
+	eFlags := uint32(body[36]) | uint32(body[37])<<8 | uint32(body[38])<<16 | uint32(body[39])<<24
+	if eFlags&0x400 != 0 /*EF_ARM_ABI_FLOAT_HARD*/ {
+		return "hard-float ARM binary refused; STR speakers need a softfloat (GOARM=5) build", false
+	}
+	return "", true
 }
 
 // uploadProgressReader logs a large upload's progress every few MB so the
