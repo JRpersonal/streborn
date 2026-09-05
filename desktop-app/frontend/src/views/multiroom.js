@@ -736,7 +736,18 @@ async function doFormZone(strBoxes) {
     });
     // Real feedback: mirror reports back {ok,mode}; native returns the live
     // zone, so verify the firmware actually took the members.
-    if (mode === 'mirror') {
+    if (res && res.ok === false) {
+      // The agent refused the form outright (it answers ok:false with a reason),
+      // e.g. the master or a member is half of a stereo pair, which cannot join a
+      // group (#792). This must NOT fall through to the count below: with no
+      // verified/missing fields the fallback assumed slaves.length joined and
+      // showed a green "Group active" for a group that was never formed (#775).
+      const inPair = Array.isArray(res.inPair) && res.inPair.length;
+      const msg = inPair
+        ? t('multiroom.pairNotGroupable')
+        : ((res.error && String(res.error)) || t('multiroom.formedNone'));
+      state.zoneMsg = `<div class="setup-err">${escapeHtml(msg)}</div>`;
+    } else if (mode === 'mirror') {
       state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: slaves.length }))}</div>`;
     } else {
       // Trust the followers' own zone self-report, not the master's optimistic
@@ -904,8 +915,18 @@ async function doDissolveZone(strBoxes) {
 async function doDissolveZoneAt(master) {
   if (!master) return;
   try {
-    await DissolveZone(master.host, master.port);
-    flashZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`);
+    // Trust the speaker's verdict, do not treat every 200 as success. nothing:
+    // there was no group to take apart (Ungroup on a groupless box used to show
+    // a green "Group dissolved", #843); ok:false: the firmware did not empty the
+    // group; otherwise it is really gone.
+    const res = await DissolveZone(master.host, master.port);
+    if (res && res.nothing) {
+      flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`);
+    } else if (res && res.ok === false) {
+      state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`;
+    } else {
+      flashZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`);
+    }
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }

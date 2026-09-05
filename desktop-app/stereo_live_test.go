@@ -131,7 +131,7 @@ func TestLiveStereoPairRoundTrip(t *testing.T) {
 		// undo-pair button uses (also covers the ?stereo=1 escalation wiring).
 		var derr error
 		if round == 1 {
-			derr = a.DissolveZone(left, 8888)
+			_, derr = a.DissolveZone(left, 8888)
 		} else {
 			derr = a.DissolveStereoPair(left, 8888)
 		}
