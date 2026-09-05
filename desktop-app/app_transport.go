@@ -290,7 +290,27 @@ func reachabilityHint(err error) error {
 	if answeredNotSTR(err) {
 		return fmt.Errorf("%w\n\n%s", err, answeredNotSTRAdvice)
 	}
+	// EADDRNOTAVAIL ("can't assign requested address") is the PC failing to open a
+	// LOCAL socket for the connection, not the speaker refusing it, so the
+	// firewall/same-Wi-Fi advice sends the user hunting in the wrong place. It
+	// shows up when a VPN has captured the routing table or the adapter STR is
+	// using has no address on the speaker's network, and it fails identically for
+	// EVERY host (field 2026-09-05: a Mac hit it against the speaker, the router
+	// and a media server alike, while it still received their multicast).
+	if noLocalRoute(err) {
+		return fmt.Errorf("%w\n\n%s", err, noLocalRouteAdvice)
+	}
 	return fmt.Errorf("%w\n\n%s", err, firewallAdvice)
+}
+
+// noLocalRoute reports the EADDRNOTAVAIL family: the OS could not assign a local
+// source address for the outbound connection. macOS/Linux phrase it "can't/cannot
+// assign requested address"; Windows (WSAEADDRNOTAVAIL) as "requested address is
+// not valid in its context".
+func noLocalRoute(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "assign requested address") ||
+		strings.Contains(msg, "address is not valid in its context")
 }
 
 // The two closing paragraphs a user reads under a failed update. They are
@@ -301,6 +321,8 @@ const (
 	firewallAdvice = "The app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network"
 
 	answeredNotSTRAdvice = "The speaker answered, so this is not your firewall and not a Wi-Fi problem: something on the speaker replied to every request. What answered was not ST Reborn, which is what a speaker looks like while it is still starting up, or when its ST Reborn software did not come up at all. Unplug the speaker for ten seconds, plug it back in, wait about three minutes until it is fully up, and try the update again"
+
+	noLocalRouteAdvice = "This PC could not open a network connection to the speaker's address, and it failed the same way for every device on the network, so this is your PC's own networking, not the speaker and not its firewall. The usual cause is a VPN capturing all your traffic, or the network adapter ST Reborn is using having no address on the speaker's network. Disconnect the VPN (or exclude your local network from it), make sure this PC is on the same Wi-Fi as the speaker with a normal address, then try again"
 )
 
 // The advice paragraphs the install preflight can end on. They used to be
