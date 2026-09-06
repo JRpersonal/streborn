@@ -36,6 +36,9 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
 import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
+// Group keys (#863): the thumbs keys that carry a saved group are marked on
+// the remote key map; the document itself is edited on the Multi-Room tab.
+import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR } from '../boxstate.js';
 import {
@@ -69,6 +72,7 @@ import {
   GetAirplayOpt,
   SetAirplayOpt,
   GetWebhooks,
+  GetGroupKeys,
   SaveWebhookConfig,
   TestWebhook,
   TestWebhookAction,
@@ -941,8 +945,26 @@ function remoteSvg() {
     key('prev', 16, 302, 80, 46, '&#9198;'), key('next', 104, 302, 80, 46, '&#9197;'),
     key('thumbsDown', 16, 358, 80, 46, '&#128078;'), key('thumbsUp', 104, 358, 80, 46, '&#128077;'),
   ].join('');
+  // A "G" in the corner of a thumbs key that carries a saved group (#863).
+  // Hidden until the speaker's group keys are read; paintRemote shows it.
+  const gmark = (id, x, y) =>
+    `<text class="rc-gmark" data-gmark="${id}" x="${x}" y="${y}" style="display:none">G</text>`;
+  const marks = gmark('thumbsDown', 84, 372) + gmark('thumbsUp', 172, 372);
   return `<svg class="rc-svg" viewBox="0 0 200 428" role="img" aria-label="remote">`
-    + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}</svg>`;
+    + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
+}
+
+// openWebhookKeyMap takes the user to the remote key map in the webhook
+// section of THIS speaker's settings: the Multi-Room tab links here so a
+// thumbs key that was just bound to a group is seen marked on the remote.
+// The section renders asynchronously after the tab switch, so the intent is
+// parked and consumed once the key map has been wired and painted.
+let pendingKeyMapOpen = false;
+export function openWebhookKeyMap(box) {
+  if (!box) return;
+  state.settingsBox = box;
+  pendingKeyMapOpen = true;
+  deps.switchView('settings');
 }
 
 function discussLink(key) {
@@ -1191,7 +1213,7 @@ function renderBoxSettings(s, box) {
       ${discussLink('announce')}
     </details>
 
-    <details class="settings-section settings-expert">
+    <details class="settings-section settings-expert" id="webhookSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
@@ -1199,7 +1221,7 @@ function renderBoxSettings(s, box) {
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
-          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}</small>
+          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}</small>
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteNoVol'))}</small>
         </div>
       </div>
@@ -2407,6 +2429,10 @@ function renderBoxSettings(s, box) {
     // would wipe the other keys). buttons keys: preset1..preset6, aux, power,
     // and the trace keys thumbsUp, thumbsDown, prev, next, playPause.
     let cfg = { thumb: {}, buttons: {} };
+    // The thumbs keys that carry a saved group on THIS speaker (#863), key id
+    // -> template name. A bound key is drawn with the "G" marker and its mode
+    // note says the group wins over the webhook.
+    let gkBindings = {};
     let prevTarget = whTarget.value || 'thumbsUp';
     const presetIds = new Set(['preset1', 'preset2', 'preset3', 'preset4', 'preset5', 'preset6']);
     // Keys the speaker's own key trace identifies (agent internal/boxlog):
@@ -2448,10 +2474,13 @@ function renderBoxSettings(s, box) {
       paintWh(a.enabled === true);
       whMode.value = a.mode === 'replace' ? 'replace' : 'additional';
       whMode.style.display = isModeTarget(tg) ? '' : 'none';
-      whModeNote.textContent = isModeTarget(tg)
+      const modeNote = isModeTarget(tg)
         ? t('settingsView.webhookModePresetNote')
         : (traceKeyIds.has(tg) ? t('settingsView.webhookModeKeyNote')
           : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote')));
+      whModeNote.textContent = gkBindings[tg]
+        ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote
+        : modeNote;
       syncType();
       paintRemote(tg);
     };
@@ -2468,6 +2497,10 @@ function renderBoxSettings(s, box) {
         const on = configured(cfg.buttons && cfg.buttons[k]) || ((k === 'thumbsUp' || k === 'thumbsDown') && thumbShared);
         el.classList.toggle('rc-on', on);
         el.classList.toggle('rc-sel', k === selected || (selected === 'thumb' && (k === 'thumbsUp' || k === 'thumbsDown')));
+        el.classList.toggle('rc-group', !!gkBindings[k]);
+      });
+      document.querySelectorAll('.rc-gmark[data-gmark]').forEach((m) => {
+        m.style.display = gkBindings[m.getAttribute('data-gmark')] ? '' : 'none';
       });
     };
     document.querySelectorAll('.rc-keyg[data-key]').forEach((g) => {
@@ -2506,11 +2539,23 @@ function renderBoxSettings(s, box) {
       }
     };
     (async () => {
-      try {
-        const w = await GetWebhooks(box.host, box.port);
-        cfg = { thumb: (w && w.thumb) || {}, buttons: (w && w.buttons) || {} };
-      } catch { cfg = { thumb: {}, buttons: {} }; }
+      // Both reads in parallel: the group keys only decorate the map, so an
+      // older agent without /api/groupkeys (404) simply shows no marker.
+      const [w, g] = await Promise.allSettled([GetWebhooks(box.host, box.port), GetGroupKeys(box.host, box.port)]);
+      const wv = w.status === 'fulfilled' ? w.value : null;
+      cfg = { thumb: (wv && wv.thumb) || {}, buttons: (wv && wv.buttons) || {} };
+      gkBindings = normalizeDoc(g.status === 'fulfilled' ? g.value : null).bindings;
       loadInto(prevTarget);
+      // Arrived from the Multi-Room tab's "show on the key map" link: open the
+      // section and bring the remote into view, once, now that it is painted.
+      if (pendingKeyMapOpen) {
+        pendingKeyMapOpen = false;
+        const sec = $('webhookSection');
+        if (sec) {
+          sec.open = true;
+          try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
+        }
+      }
     })();
     whTarget.onchange = () => { captureInto(prevTarget); prevTarget = whTarget.value; loadInto(whTarget.value); };
     whOn.onclick = () => paintWh(true);

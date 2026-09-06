@@ -8,7 +8,11 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
+import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
+// Group keys (#863): a saved group on a thumbs key of one speaker's remote.
+// The pure document helpers live in groupkeys.js; this view only paints and
+// writes the document of the speaker whose remote is used.
+import { normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, storedPermanentGroupsOf } from '../groups.js';
@@ -462,6 +466,10 @@ export function renderMultiroom(fetchLive) {
     ? `<div class="muted small" id="pairBalance"${showBal ? '' : ' hidden'}>${showBal ? escapeHtml(pairBalanceText) : ''}</div>`
     : '';
 
+  // Group keys (#863): painted from the cached document of the chosen remote
+  // speaker; the fetch runs after paint (see the end of this function).
+  const groupKeysHtml = renderGroupKeysSection(strBoxes);
+
   root.innerHTML = intro + liveFramesHtml + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
@@ -503,7 +511,8 @@ export function renderMultiroom(fetchLive) {
          <button id="stereoDissolve" class="btn btn-mini"${pairDis}>${escapeHtml(t('multiroom.stereoDissolveBtn'))}</button>
        </div>
        <div id="stereoResult">${state.stereoMsg || ''}</div>
-     </div>`;
+     </div>
+     ${groupKeysHtml}`;
 
   // Read-only, filled after the markup exists, and only when a pair does. Skip
   // the async re-read entirely once the value is already cached for THIS pair
@@ -518,6 +527,7 @@ export function renderMultiroom(fetchLive) {
   if (refreshBtn) refreshBtn.onclick = async () => {
     refreshBtn.disabled = true;
     try { await deps.discoverBoxes(); } catch {}
+    gk.host = ''; // re-read the group keys too (a failed read is retried here)
     renderMultiroom(true);
   };
 
@@ -642,6 +652,7 @@ export function renderMultiroom(fetchLive) {
     // the zone section already offers, applied to the speakers chosen above.
     $('stereoDissolve').onclick = () => doDissolveStereo(pairCands);
   }
+  wireGroupKeys(strBoxes);
 
   // Live status: parallel, non-blocking, after paint. Never blocks the tab.
   // The one-shot fetch keeps entry snappy; startMultiroomLive then keeps the
@@ -667,8 +678,196 @@ async function refreshZoneLive() {
   // so nothing is lost, and the next poll after they click away still picks up
   // any change made elsewhere.
   const active = document.activeElement;
-  if (active && active.id === 'stereoName') return;
+  if (active && (active.id === 'stereoName' || active.id === 'gkName')) return;
   renderMultiroom(false);
+}
+
+// ---- Group keys (#863) -------------------------------------------------
+//
+// One speaker's document at a time: the speaker whose remote is used
+// ("Remote of"). Every change (a template saved, a key picked, a template
+// removed) is written to THAT speaker at once, because a write is a user
+// action and the speaker stores nothing on a key press. The document is
+// fetched once per chosen speaker and kept here across the 5 s repaints.
+const gk = {
+  remoteID: '',   // deviceID of the chosen remote speaker
+  host: '',       // host the cached document/webhooks belong to
+  doc: null,      // normalized document, null until fetched
+  webhooks: null, // that speaker's webhook config, for the conflict warning
+  loading: false,
+  error: '',
+  unsupported: false, // the speaker's agent predates /api/groupkeys
+  name: '',       // the template name being typed
+  msg: '',        // last save/load outcome (HTML)
+  busy: false,    // a save in flight
+};
+
+// gkRemoteBox is the speaker whose remote the section edits: the user's
+// pick, else the main speaker of the group being composed, else the first.
+function gkRemoteBox(strBoxes) {
+  return strBoxes.find(b => b.deviceID === gk.remoteID)
+    || strBoxes.find(b => b.deviceID === state.zoneMaster)
+    || strBoxes[0] || null;
+}
+
+// gkComposedTemplate builds the template "Save the current group" would
+// store: the composed selection (main + ticked members, permanent per the
+// checkbox) when members are ticked, else the main speaker's stored
+// permanent group. Returns null when neither exists.
+function gkComposedTemplate(strBoxes, name) {
+  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  if (!master) return null;
+  const sel = state.zoneSlaves || {};
+  const members = strBoxes.filter(b => b.deviceID !== master.deviceID && sel[b.deviceID]);
+  if (members.length) {
+    return templateFromBoxes({ name, master, members, permanent: !!state.zonePermanent, label: zoneLabel });
+  }
+  const stored = storedPermanentGroupsOf(state.zoneLive, strBoxes)
+    .find(g => g.masterBox && g.masterBox.deviceID === master.deviceID);
+  return stored ? templateFromStored(stored, name, zoneLabel) : null;
+}
+
+function renderGroupKeysSection(strBoxes) {
+  const remote = gkRemoteBox(strBoxes);
+  if (remote && gk.remoteID !== remote.deviceID) gk.remoteID = remote.deviceID;
+  const doc = (remote && gk.host === remote.host && gk.doc) ? gk.doc : null;
+  const remoteName = remote ? zoneLabel(remote) : '';
+  const opts = strBoxes.map(b =>
+    `<option value="${escapeAttr(b.deviceID)}"${remote && b.deviceID === remote.deviceID ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`).join('');
+  const keyOpts = (sel) => [['', t('multiroom.groupKeysKeyNone')], ['thumbsUp', t('multiroom.groupKeysKeyUp')], ['thumbsDown', t('multiroom.groupKeysKeyDown')]]
+    .map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('');
+  let list = '';
+  if (!remote) {
+    list = `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
+  } else if (gk.host === remote.host && gk.unsupported) {
+    list = `<div class="setup-warn small">${escapeHtml(t('multiroom.groupKeysNeedsUpdate', { name: remoteName }))}</div>`;
+  } else if (gk.host === remote.host && gk.error) {
+    list = `<div class="setup-err small">${escapeHtml(t('multiroom.groupKeysLoadFailed', { name: remoteName, err: gk.error }))}</div>`;
+  } else if (!doc) {
+    list = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
+  } else if (!doc.templates.length) {
+    list = `<div class="muted small">${escapeHtml(t('multiroom.groupKeysNone'))}</div>`;
+  } else {
+    list = `<div class="gk-list">` + doc.templates.map(tp => {
+      const key = keyOf(doc, tp.name);
+      const perm = tp.permanent
+        ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>` : '';
+      const warn = key && webhookOnKey(gk.webhooks, key)
+        ? `<small class="gk-warn setup-warn small">${escapeHtml(t('multiroom.groupKeysWebhookWarn', { name: remoteName }))}</small>` : '';
+      return `<div class="gk-row">` +
+        `<span class="gk-row-name">${escapeHtml(tp.name)}${perm}</span>` +
+        `<span class="gk-row-members muted small">${escapeHtml(describeTemplate(tp, strBoxes, zoneLabel))}</span>` +
+        `<label class="zone-field"><span>${escapeHtml(t('multiroom.groupKeysKeyLabel'))}</span>` +
+        `<select class="gk-key" data-gk="${escapeAttr(tp.name)}"${gk.busy ? ' disabled' : ''}>${keyOpts(key)}</select></label>` +
+        `<button class="btn btn-mini gk-remove" data-gk="${escapeAttr(tp.name)}"${gk.busy ? ' disabled' : ''}>${escapeHtml(t('multiroom.groupKeysRemove'))}</button>` +
+        warn + `</div>`;
+    }).join('') + `</div>`;
+  }
+  const canSave = !!(remote && doc && !gk.busy);
+  return `<div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
+       <b>${escapeHtml(t('multiroom.groupKeysHeading'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></b>
+       <div class="muted small">${escapeHtml(t('multiroom.groupKeysIntro'))}</div>
+       <label class="zone-field"><span>${escapeHtml(t('multiroom.groupKeysRemoteOf'))}</span>
+         <select id="gkRemote"${remote ? '' : ' disabled'}>${opts || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`}</select></label>
+       <div class="muted small">${escapeHtml(t('multiroom.groupKeysRemoteHelp'))}</div>
+       ${list}
+       <div class="zone-actions" style="align-items:center">
+         <input id="gkName" type="text" maxlength="60" placeholder="${escapeAttr(t('multiroom.groupKeysNamePlaceholder'))}" value="${escapeAttr(gk.name)}"${canSave ? '' : ' disabled'} style="flex:1 1 180px">
+         <button id="gkSave" class="btn btn-mini"${canSave ? '' : ' disabled'}>${escapeHtml(t('multiroom.groupKeysSaveCurrent'))}</button>
+       </div>
+       <div class="muted small">${escapeHtml(t('multiroom.groupKeysSaveHelp'))}</div>
+       <div id="gkResult">${gk.msg || ''}</div>
+       <div class="muted small" style="margin-top:8px">${escapeHtml(t('multiroom.groupKeysHint'))}</div>
+       <div class="zone-actions"><button id="gkKeyMap" class="btn btn-mini"${remote ? '' : ' disabled'}>${escapeHtml(t('multiroom.groupKeysOpenKeyMap'))}</button></div>
+     </div>`;
+}
+
+function wireGroupKeys(strBoxes) {
+  const remote = gkRemoteBox(strBoxes);
+  const sel = $('gkRemote');
+  if (sel) sel.onchange = () => {
+    gk.remoteID = sel.value;
+    gk.host = '';
+    gk.doc = null;
+    gk.msg = '';
+    renderMultiroom(false);
+  };
+  const nm = $('gkName');
+  if (nm) nm.oninput = () => { gk.name = nm.value; };
+  const save = $('gkSave');
+  if (save) save.onclick = () => {
+    if (!remote || !gk.doc) return;
+    const tpl = gkComposedTemplate(strBoxes, gk.name);
+    const why = validateTemplate(tpl, gk.doc);
+    if (why) {
+      gk.msg = `<div class="setup-warn">${escapeHtml(t(why))}</div>`;
+      renderMultiroom(false);
+      return;
+    }
+    gk.name = '';
+    saveGroupKeys(remote, withTemplate(gk.doc, tpl));
+  };
+  document.querySelectorAll('.gk-key').forEach(s => {
+    s.onchange = () => {
+      if (!remote || !gk.doc) return;
+      saveGroupKeys(remote, bindKey(gk.doc, s.dataset.gk, s.value));
+    };
+  });
+  document.querySelectorAll('.gk-remove').forEach(b => {
+    b.onclick = () => {
+      if (!remote || !gk.doc) return;
+      saveGroupKeys(remote, withoutTemplate(gk.doc, b.dataset.gk));
+    };
+  });
+  const km = $('gkKeyMap');
+  if (km) km.onclick = () => { if (remote && deps.openWebhookKeyMap) deps.openWebhookKeyMap(remote); };
+  // Fetch the chosen speaker's document once; the repaints reuse it. A failed
+  // read is kept (with its reason) until the speaker is re-picked or the
+  // tab's Refresh is used, so a dead speaker is not asked every 5 s.
+  if (remote && gk.host !== remote.host && !gk.loading) loadGroupKeys(remote);
+}
+
+async function loadGroupKeys(box) {
+  gk.loading = true;
+  gk.host = box.host;
+  gk.doc = null;
+  gk.error = '';
+  gk.unsupported = false;
+  gk.webhooks = null;
+  const [d, w] = await Promise.allSettled([GetGroupKeys(box.host, box.port), GetWebhooks(box.host, box.port)]);
+  gk.loading = false;
+  if (gk.host !== box.host) return; // the user picked another speaker meanwhile
+  if (d.status === 'fulfilled') {
+    gk.doc = normalizeDoc(d.value);
+  } else {
+    const err = String(d.reason || '');
+    // An agent that predates the endpoint answers its index page (HTML) or
+    // a 404 here; both read as "update that speaker", not as a fault.
+    gk.unsupported = /invalid character|404|not found/i.test(err);
+    gk.error = err;
+  }
+  gk.webhooks = w.status === 'fulfilled' ? w.value : null;
+  if (state.view === 'multiroom') renderMultiroom(false);
+}
+
+let gkMsgToken = 0;
+async function saveGroupKeys(box, doc) {
+  gk.busy = true;
+  renderMultiroom(false);
+  try {
+    await SaveGroupKeys(box.host, box.port, doc);
+    gk.doc = normalizeDoc(doc);
+    gk.msg = `<div class="setup-ok">${escapeHtml(t('multiroom.groupKeysSaved', { name: zoneLabel(box) }))}</div>`;
+    const mine = ++gkMsgToken;
+    setTimeout(() => {
+      if (gkMsgToken === mine) { gk.msg = ''; if (state.view === 'multiroom') renderMultiroom(false); }
+    }, 6000);
+  } catch (e) {
+    gk.msg = `<div class="setup-err">${escapeHtml(t('multiroom.groupKeysSaveFailed', { err: String(e) }))}</div>`;
+  } finally {
+    gk.busy = false;
+  }
+  if (state.view === 'multiroom') renderMultiroom(false);
 }
 
 // doFormStereo creates a real left/right stereo pair on two SoundTouch 10s

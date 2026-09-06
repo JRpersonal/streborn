@@ -100,6 +100,18 @@ func adoptPeerEntryLocked(ip, deviceID string) *peerEntry {
 	return e
 }
 
+// peerWebPort returns the agent port a listed peer answered on last, or 0
+// when it is unknown or the address is not in the roster. The group-key
+// toggle uses it as the first port to try for the main speaker's agent.
+func peerWebPort(ip string) int {
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	if e := peersByIP[ip]; e != nil {
+		return e.port
+	}
+	return 0
+}
+
 // loadPersistedPeers seeds peersByIP from NAND at agent start. Entries come
 // back dimmed (reachable=false); the browse sweep's fallback probe promotes
 // the ones that actually answer within about a minute.

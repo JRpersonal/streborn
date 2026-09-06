@@ -360,6 +360,7 @@ import {
   initSettingsView,
   throttledSetVolume,
   throttledSetBass,
+  openWebhookKeyMap,
 } from './views/settings.js';
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
@@ -393,7 +394,7 @@ function openSpeakerSettings(box) {
   switchView('settings');
 }
 
-initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, switchView, openSpeakerSettings });
+initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, switchView, openSpeakerSettings, openWebhookKeyMap });
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.

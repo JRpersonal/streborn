@@ -91,6 +91,8 @@ export function GetClockFormat24(arg1:string):Promise<boolean>;
 
 export function GetDisplayTrack(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function GetGroupKeys(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function GetLogFilePath():Promise<string>;
 
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
@@ -196,6 +198,8 @@ export function RevealUpdateFile(arg1:string):Promise<void>;
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 
 export function SaveFolderPreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
+
+export function SaveGroupKeys(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
 export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 

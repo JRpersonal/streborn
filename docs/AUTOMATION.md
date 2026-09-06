@@ -140,6 +140,63 @@ The old bare-frame heuristic stays as the fallback for a speaker whose trace
 is silent. The diagnostic bundle's `box_keys` section shows whether the trace
 is live and the last presses the speaker decoded.
 
+## Group keys (a saved group on a thumbs key)
+
+A multiroom group can be saved as a template and put on the Thumbs up or
+Thumbs down key of one speaker's remote (issue #863). One press forms the
+group, the next press dissolves it. The Multi-Room tab of the app is where
+templates are saved and bound; the Settings tab's remote key map marks a bound
+thumbs key with a "G".
+
+**What is stored, and where.** A template is a name, the main speaker, the
+members (deviceID + last known address) and the permanent flag. Templates and
+the key bindings (`thumbsUp` / `thumbsDown` -> template name) live in
+`/mnt/nv/streborn/group-keys.json` on the speaker whose remote is pressed,
+because a remote press is only seen by the speaker it points at. The file is
+written only when the app saves it (`PUT /api/groupkeys`, LAN only;
+`GET /api/groupkeys` reads it back). A press writes nothing to NAND.
+
+**What a press does.** The agent reads the main speaker's live zone from that
+speaker's agent (`GET /api/box/zone`) and decides:
+
+| Live state on the main speaker | Press |
+|---|---|
+| The template's group is live (same main speaker, every template member in the zone; extra members allowed) | dissolve it (`DELETE /api/box/zone`) |
+| The other key's template is live on a different main speaker | dissolve that one there, then form this one |
+| Anything else (standalone, or a different membership on the same main speaker) | form the template (`POST /api/box/zone`, same body the app sends) |
+
+When the main speaker was idle before the form, the press also brings its
+last station back (`POST /api/box/power {"on":true}`, the same power-on
+resume the phone remote uses), so the press ends in music. A permanent
+template's form is only stored while the main speaker is idle; that resume is
+the play that makes the existing play-triggered re-form wire the zone and wake
+the stored members.
+
+The calls go to the main speaker's agent over the LAN (`:17008`, then
+`:8888`, the roster's last known port first), or over loopback when the
+speaker that saw the press is the main speaker itself. So a press on a member
+speaker's remote works too: the member forwards the form or dissolve to the
+main speaker's agent, the same call the app makes.
+
+Dissolving goes through the same path as the app's Ungroup, so it also clears
+the main speaker's stored permanent group; the template itself stays on the
+remote's speaker, and the next press forms it again with its permanent flag.
+
+**Rules.** A key carries one action: a thumbs key bound to a group does not
+fire its webhook. Presses that land while a form or dissolve for that key is
+still running are ignored, and so is a second press within 3 s. The 2 s
+webhook rule for the other keys stays as it is.
+
+**Limits of the first cut.** No feedback layer: nothing is shown on the
+display and nothing is spoken; the members joining or going quiet is the
+confirmation. Members in standby are not woken by the form itself; the
+existing play-triggered re-form wakes them once music starts on the main
+speaker. A template names speakers by their id and last address; when the
+main speaker cannot be reached, the press is logged (`group key: press
+failed`, at most one WARN per minute per key) and nothing changes. The
+diagnostic bundle's `group_keys` section shows the templates, the bindings,
+the last action and the last error.
+
 ## The dead endpoint (for reference)
 
 `POST :8090/speaker` was the documented notification API:
