@@ -765,6 +765,11 @@ function switchView(view) {
     checkSshBanner();
   }
   if (view === 'setup') {
+    // A finished install's status lines stayed in the panel for good: leave
+    // the tab, come back, and the old "installing..." lines were still there
+    // (shorty310, discussion #852). The panel is cleared on every entry unless
+    // an install is actually running, whose live status must stay visible.
+    if (!installRunActive()) { const r = $('setupResult'); if (r) r.innerHTML = ''; }
     refreshDrives();
     // Re-render the target picker on every entry into the Setup
     // tab. The list may have changed (newly powered speaker,
@@ -1833,6 +1838,19 @@ setInterval(async () => {
   } catch { /* transient network trouble: the next tick retries */ }
 }, 60000);
 
+// While the music tab is on screen, keep its group frames and the group
+// volume in step with what the speakers do on their own. A permanent group
+// re-forms on the master's play without the app being told, so the members
+// were already playing while the group volume only appeared after a manual
+// refresh (Jens, 2026-09-06). Same cadence as the phone page, only while the
+// window is visible, and the zone poll keeps its own 8 s debounce.
+setInterval(() => {
+  if (state.view !== 'box' || document.visibilityState !== 'visible') return;
+  if (state.otaInProgress || installRunActive() || !state.boxes.length) return;
+  refreshMusicZones();
+  refreshBoxPlaying();
+}, 15000);
+
 // applyBoxList folds a freshly probed box list into state + the UI. Shared by
 // the known-first quick refresh and the full discovery so both render
 // identically (current-box re-bind, speaker select, badges, setup picker).
@@ -2335,6 +2353,29 @@ function offlineTitle(b) {
   return t('speaker.offlineTooltip', { ago: offlineAgo(b.offlineSinceSec || 0) });
 }
 
+// dissolveGroupFrame takes apart the group led by masterKey, from the x on its
+// frame in the speaker picker. Same call the Multi-Room tab's x makes (the
+// DELETE goes to the master and clears its stored group), then the reachable
+// ex-followers are stopped so nothing keeps playing the group's stream alone.
+async function dissolveGroupFrame(masterKey) {
+  const mk = String(masterKey || '').toUpperCase();
+  const masterBox = state.boxes.find(b => (b.deviceID || '').toUpperCase() === mk);
+  if (!masterBox) return;
+  const followers = state.boxes.filter(b => b !== masterBox && b.kind !== 'stock' && !b.offline &&
+    String(((state.zoneLive || {})[b.deviceID] || {}).master || '').toUpperCase() === mk);
+  try {
+    await DissolveZone(masterBox.host, masterBox.port);
+    await Promise.allSettled(followers.map(b => Stop(b.host, b.port)));
+    state.zoneLive = applyOptimisticZone(state.zoneLive, masterBox, []);
+    showToast(t('group.dissolvedToast'));
+  } catch (e) {
+    showToast(t('multiroom.formFailed', { err: String((e && e.message) || e || '') }));
+  }
+  renderBoxSelect();
+  renderGroupControl();
+  setTimeout(() => refreshMusicZones(true), 1200);
+}
+
 function renderBoxSelect() {
   const sel = $('boxSelect');
   if (state.boxes.length === 0) {
@@ -2551,10 +2592,19 @@ function renderBoxSelect() {
       const groupLabel = groupName
         ? `<span class="box-group-label" title="${escapeAttr(isPair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: groupName }))}">${isPair ? pairIcon : zoneIcon} ${escapeHtml(isPair ? (pairDisplayName(framePair, renderBoxSelect) || t('multiroom.stereoHeading')) : groupName)}</span>`
         : '';
-      html += `<div class="box-group box-group-c${colorOf[m]}">${groupLabel}${members.map(pill).join('')}</div>`;
+      // The same x the Multi-Room tab has: take THIS group apart from where it
+      // is shown. It was only on the other tab (Jens, 2026-09-06). A stereo
+      // pair keeps its undo on the Multi-Room tab, where both halves are named.
+      const xBtn = (!isPair && masterBox)
+        ? `<button class="box-group-x" data-dissolve="${escapeAttr(m)}" title="${escapeAttr(t('multiroom.dissolveGroupTip'))}" aria-label="${escapeAttr(t('multiroom.dissolveGroupTip'))}">&times;</button>`
+        : '';
+      html += `<div class="box-group box-group-c${colorOf[m]}${xBtn ? ' has-x' : ''}">${xBtn}${groupLabel}${members.map(pill).join('')}</div>`;
     }
     html += state.boxes.filter(b => { const mm = masterOf(b); return !(mm && memberCount[mm] >= 2); }).map(pill).join('');
     sel.innerHTML = html + addIpTile();
+    sel.querySelectorAll('.box-group-x').forEach(x => {
+      x.onclick = (e) => { e.stopPropagation(); dissolveGroupFrame(x.dataset.dissolve); };
+    });
   }
   const ipTile = document.getElementById('addIpTile');
   const ipRow = document.getElementById('addIpRow');
@@ -2730,14 +2780,21 @@ function selectBox(box) {
 // back when a box that has the source is selected (#417: it previously
 // stayed hidden for every box until an app restart). STANDBY exists on
 // every model.
+// sourceVisibilityCache remembers, per speaker, what its own source list said
+// about Bluetooth. The heuristic below runs first on every refresh and showed
+// the button for a speaker whose list had already hidden it, so the button
+// blinked in and out every minute (Jens, 2026-09-06). A known verdict wins
+// over the heuristic from the start.
+const sourceVisibilityCache = new Map();
 async function updateSourceButtonVisibility() {
   const btBtn = document.querySelector('.btn-source[data-source="BLUETOOTH"]');
   const auxBtn = document.querySelector('.btn-source[data-source="AUX"]');
   if ((!btBtn && !auxBtn) || !state.currentBox) return;
   const model = (state.currentBox.model) || '';
   // Immediate heuristic so the buttons are correct before the async
-  // source list arrives.
-  if (btBtn) btBtn.classList.toggle('hidden', /portable/i.test(model));
+  // source list arrives, unless this speaker's list has already answered.
+  const known = sourceVisibilityCache.get(state.currentBox.host);
+  if (btBtn) btBtn.classList.toggle('hidden', known ? !known.bt : /portable/i.test(model));
   if (auxBtn) auxBtn.classList.toggle('hidden', /wave/i.test(model));
   // Until the speaker's own list arrives, assume the usual name.
   if (auxBtn) auxBtn.dataset.sourceActual = 'AUX';
@@ -2751,6 +2808,7 @@ async function updateSourceButtonVisibility() {
     // answer /sources and we keep the heuristic result.
     if (Array.isArray(sources) && sources.length) {
       const has = (name) => sources.some(s => (s.source || '').toUpperCase() === name);
+      sourceVisibilityCache.set(box.host, { bt: has('BLUETOOTH') });
       if (btBtn) btBtn.classList.toggle('hidden', !has('BLUETOOTH'));
       // The analogue input is not called the same thing on every model. A
       // Cinemate reports it as LOCAL, and because STR only ever looked for

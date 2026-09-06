@@ -111,8 +111,11 @@ var (
 // tried; waking an already-awake box is a fast no-op on the member side.
 func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
 	for _, port := range []string{"17008", "8888"} {
+		// quiet=1: the member mutes itself for the wake and stops what its
+		// firmware resumes, so the room does not get every member's own
+		// last station for a few seconds before the zone takes over.
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake", nil)
+			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake?quiet=1", nil)
 		if err != nil {
 			continue
 		}

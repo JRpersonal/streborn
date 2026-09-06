@@ -182,14 +182,23 @@ func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
 // (#726 follow-up, 2026-08-29). The adopt condition must be gated on the
 // members actually confirming the wanted levels.
 func TestPhoneRemoteGroupVolumeHoldsSentValue(t *testing.T) {
-	for _, want := range []string{"GRP_VOL_CONFIRM_MS", "grpWantPending"} {
+	for _, want := range []string{"GRP_VOL_CONFIRM_MS", "grpVolAwaitingConfirm"} {
 		if !strings.Contains(indexHTML, want) {
 			t.Fatalf("phone page is missing %q", want)
 		}
 	}
-	i := strings.Index(indexHTML, "!grpVolSettling() && !grpWantPending")
+	i := strings.Index(indexHTML, "!grpVolSettling() && !grpVolAwaitingConfirm()")
 	if i < 0 {
 		t.Error("the group slider adopt is not gated on the members confirming the sent levels")
+	}
+	// The group slider sends a STEP and lets the agent compute every member's
+	// level from what the members report (#726: six releases of a page-side
+	// baseline that sprang back or moved two steps for one press).
+	if !strings.Contains(indexHTML, "{ delta: delta }") {
+		t.Error("the group slider no longer sends a delta step to the agent")
+	}
+	if strings.Contains(indexHTML, "captureGroupBaseline") {
+		t.Error("the page-side group baseline is back; the agent owns the levels")
 	}
 }
 

@@ -677,7 +677,7 @@ body {
    is why 0.55 and then 0.82 both still read as faded (#833, twice). The "not a
    live value" cue is carried by the italic alone now; the color stays at the
    AA-compliant --c-muted so the version is actually readable. */
-.box-ver-stale { font-style: italic; }
+.box-ver-stale { font-style: italic; color: var(--c-text-2); }
 .box-model { color: var(--c-muted); font-size: 11px; font-weight: 500; margin-left: 8px; }
 /* Multiroom group frame (#70): speakers sharing a live zone are clustered and
    wrapped in a colored border so the group reads as one block on the music tab.
@@ -718,7 +718,7 @@ body {
 .box-group-label { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--bg-color, var(--c-muted)); margin: 0 2px 1px; }
 .box-group-label svg { flex: 0 0 auto; }
 /* Per-frame dismiss (x): dissolve exactly this group/pair from where it is shown (#843). */
-.zone-frames .box-group { position: relative; padding-right: 22px; }
+.zone-frames .box-group, .box-group.has-x { position: relative; padding-right: 22px; }
 .box-group-x { position: absolute; top: 3px; right: 4px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 1px 4px; border-radius: 4px; }
 .box-group-x:hover { color: var(--c-text); background: var(--c-border); }
 /* A permanent group that is stored on its main speaker but not playing right
@@ -2631,11 +2631,15 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    listed when scans miss it, clearly greyed out with a disconnect mark and a
    "last seen ..." tooltip, until it answers again. */
 .box-btn.offline {
-  opacity: .45;
+  /* .45 faded the whole tile, version chip included, to near-nothing on the
+     light theme (#833, still on v0.9.72: the chip's own opacity fix could not
+     win against the tile's). The greyscale and the disconnect mark carry the
+     "offline" cue; the fade only needs to be a hint. */
+  opacity: .78;
   filter: grayscale(.85);
   cursor: default;
 }
-.box-btn.offline:hover { opacity: .6; }
+.box-btn.offline:hover { opacity: .9; }
 .box-offline-mark {
   display: inline-flex;
   align-items: center;

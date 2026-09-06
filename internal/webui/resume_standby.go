@@ -834,6 +834,10 @@ func (s *Server) forgetZoneDocDoubt() {
 // live group's document on a single observation. That is exactly the
 // mid-handshake race the two-observation rule exists to survive.
 func (s *Server) NoteBoxZoneState(master string) {
+	if strings.TrimSpace(master) != "" {
+		// Joined a zone: a level muted for a quiet group wake comes back now.
+		s.restoreQuietWakeVolume("zone joined")
+	}
 	if s.zones == nil {
 		return
 	}
