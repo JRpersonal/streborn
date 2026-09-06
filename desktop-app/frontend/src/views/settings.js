@@ -36,6 +36,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
 import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
+import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -1895,6 +1896,7 @@ function renderBoxSettings(s, box) {
         const r = await UninstallSTR(box.host);
         if (r && r.ok) {
           showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
+          purgeSpeakerLocalState(box, state); // forget every local record of this speaker (speakerPurge.js)
           // Speaker reboots into vanilla Bose OOB; it will be off the LAN
           // for a while. Re-scan in 60 s.
           setTimeout(deps.discoverBoxes, 60000);

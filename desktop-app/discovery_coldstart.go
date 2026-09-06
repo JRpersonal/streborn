@@ -96,6 +96,18 @@ func saveKnownSpeakersTo(path string, list []knownSpeaker) error {
 // skipping the write when the host set is unchanged since the last write.
 // Best-effort: discovery must never fail on a config-dir hiccup.
 func (a *App) persistKnownSpeakers() {
+	a.persistKnownSpeakersWith(false)
+}
+
+// persistKnownSpeakersWith is persistKnownSpeakers with the write forced.
+//
+// The plain discovery path never writes an EMPTY list: a cycle that found
+// nothing (Wi-Fi still coming up, a wrong NIC) must not wipe the very file
+// that makes the next cold start find the speakers again. That guard had a
+// side effect: removing STR from the LAST speaker could never rewrite the
+// file, so its stale line stayed forever. force=true (purgeSpeakerState)
+// writes the snapshot as it is, including an empty list.
+func (a *App) persistKnownSpeakersWith(force bool) {
 	a.discMu.Lock()
 	list := make([]knownSpeaker, 0, len(a.discCache))
 	for _, e := range a.discCache {
@@ -117,7 +129,7 @@ func (a *App) persistKnownSpeakers() {
 	changed := fingerprint != a.knownSpeakersWritten
 	a.knownSpeakersWritten = fingerprint
 	a.knownSpeakersMu.Unlock()
-	if !changed || len(list) == 0 {
+	if !force && (!changed || len(list) == 0) {
 		return
 	}
 	path, err := knownSpeakersPath()
@@ -128,7 +140,9 @@ func (a *App) persistKnownSpeakers() {
 	}
 	// The speaker set changed: distribute it to the fleet so every speaker's
 	// on-box picker knows the whole set (sticky picker, 2026-07-26).
-	a.distributeKnownSpeakers()
+	if changed {
+		a.distributeKnownSpeakers()
+	}
 }
 
 // distributeKnownSpeakers pushes the currently known STR speaker set to every

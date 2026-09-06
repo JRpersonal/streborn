@@ -113,6 +113,12 @@ func (a *App) SetStereoPairName(key, name string) error {
 		return errors.New("stereo pair name store is corrupt; refusing to overwrite")
 	}
 	m = applyStereoName(m, key, name)
+	return writeStereoNames(m)
+}
+
+// writeStereoNames replaces the store atomically (temp file + rename). The
+// caller holds stereoNamesMu.
+func writeStereoNames(m map[string]string) error {
 	path, err := stereoNamesPath()
 	if err != nil {
 		return err
@@ -126,4 +132,48 @@ func (a *App) SetStereoPairName(key, name string) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// stereoNameKeyHas reports whether a pair key (sorted member deviceIDs joined
+// by "+", see groups.js stereoPairKey) names the given deviceID as a member.
+// Case-insensitive: the frontend uppercases the IDs, discovery may not.
+func stereoNameKeyHas(key, deviceID string) bool {
+	if deviceID == "" {
+		return false
+	}
+	for _, part := range strings.Split(key, "+") {
+		if strings.EqualFold(strings.TrimSpace(part), deviceID) {
+			return true
+		}
+	}
+	return false
+}
+
+// removeStereoNamesFor drops every stored pair name that has deviceID as a
+// member and returns how many it dropped. Used when STR is removed from a
+// speaker (purgeSpeakerState): a stock speaker cannot be half of an STR stereo
+// pair, and the next pair it joins after a reinstall must not inherit the old
+// name. Nothing is written when no entry matches; a corrupt store is left
+// alone rather than clobbered, like SetStereoPairName.
+func removeStereoNamesFor(deviceID string) (int, error) {
+	if strings.TrimSpace(deviceID) == "" {
+		return 0, nil
+	}
+	stereoNamesMu.Lock()
+	defer stereoNamesMu.Unlock()
+	m, ok := readStereoNamesOK()
+	if !ok {
+		return 0, errors.New("stereo pair name store is corrupt; refusing to overwrite")
+	}
+	n := 0
+	for key := range m {
+		if stereoNameKeyHas(key, deviceID) {
+			delete(m, key)
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, writeStereoNames(m)
 }

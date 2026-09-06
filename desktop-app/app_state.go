@@ -82,6 +82,37 @@ func (a *App) SetAppFlag(name string) error {
 	return os.Rename(tmp, path)
 }
 
+// deleteAppFlags removes the named flags again. SetAppFlag stays one-way for
+// its callers (a once-ever prompt must never come back by accident); this is
+// the one deliberate exception, for per-speaker flags whose subject is gone
+// (STR removed from the speaker, see purgeSpeakerState). Unknown names are
+// ignored and a file that has none of them is left untouched.
+func deleteAppFlags(names ...string) error {
+	appFlagsMu.Lock()
+	defer appFlagsMu.Unlock()
+	m := readAppFlags()
+	changed := false
+	for _, n := range names {
+		if _, ok := m[n]; ok {
+			delete(m, n)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	path, err := appStatePath()
+	if err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(m, "", "  ")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // RescuedSpeakerCount returns how many speakers are shown on the community world
 // map, i.e. the sum of the per-pin reaction counts at st-reborn.de/api/pins.php,
 // which is exactly what the website's "rescued" counter displays. The world-map

@@ -581,6 +581,30 @@ tolerates.
 after first boot, so its contents are a snapshot of the install-time
 configuration plus the agent binary that gets copied into NAND.
 
+## Storage on the PC (desktop app)
+
+The desktop app keeps its own per-speaker records under the OS
+user-config dir (`%AppData%\ST Reborn`, `~/Library/Application
+Support/ST Reborn`, `~/.config/ST Reborn`): `known-speakers.json`
+(last-seen hosts for the cold-start direct probe), `update-intent.json`
+(what each speaker should be running, so an interrupted update is
+finished), `stereo-pair-names.json` (display names keyed on the pair's
+member deviceIDs), `app-state.json` (one-way flags, including the
+per-box `str.worldMapProvisioned.<deviceID|host>`), plus the webview's
+`localStorage` (`cachedBoxes`, `lastBoxDeviceID`, `warnDismiss:*`,
+`otaStuck:*`, the same world-map flags). Removing STR from a speaker
+(Settings > Remove STR) purges every one of those records for that
+speaker, in memory and on disk, so it comes back as a plain installable
+speaker with nothing cached against it: `desktop-app/uninstall_purge.go`
+(`purgeSpeakerState`) on the Go side, `frontend/src/speakerPurge.js`
+(`purgeSpeakerLocalState`) in the webview. Kept on purpose: the history
+files `ota-history.log` and `str.log`, the DLNA server lists, user
+backups, favourites and preferences. Known gap: records that live off
+this PC are not touched. The removed speaker stays in its former peers'
+sticky roster (`/api/peers/seed` is additive; each agent ages it out on
+its own) and remains a remembered member of a permanent group on its
+master until that group is edited.
+
 ## Where to look in the code
 
 | You want to... | Read this |

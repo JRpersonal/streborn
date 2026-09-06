@@ -127,6 +127,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		if tcpReachable(host, 8090, 2*time.Second) &&
 			!tcpReachable(host, 8888, 1500*time.Millisecond) &&
 			!tcpReachable(host, 17008, 1500*time.Millisecond) {
+			a.purgeSpeakerState(host, "")
 			a.forgetSTRDeviceByHost(host)
 			res.Step = "already-stock"
 			res.OK = true
@@ -168,6 +169,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		boseUp := tcpReachable(host, 8090, 2*time.Second)
 		strAgentUp := tcpReachable(host, 8888, 1500*time.Millisecond) || tcpReachable(host, 17008, 1500*time.Millisecond)
 		if boseUp && !strAgentUp {
+			a.purgeSpeakerState(host, "")
 			a.forgetSTRDeviceByHost(host)
 			res.Step = "already-stock"
 			res.OK = true
@@ -233,6 +235,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// The box is going back to stock, so drop its confirmed-STR identity memory:
 	// otherwise discovery would keep relabelling the now-stock speaker as STR for
 	// up to strKnownTTL and never offer the reinstall it now genuinely needs.
+	a.purgeSpeakerState(host, "")
 	a.forgetSTRDeviceByHost(host)
 
 	// Step 3: reboot into vanilla Bose. Connection drops mid-command;
