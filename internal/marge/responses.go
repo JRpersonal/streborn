@@ -475,14 +475,32 @@ func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	s.logRecentPayload(r)
-	echo, ok := recentEchoXML(body, s.nextRecentID())
+	// The firmware's request is the flat MargeAddRecentRequest form; its
+	// answer parser wants the record in the same dialect as the preset list
+	// (an id attribute and a ContentItem child), not the flat form echoed
+	// back: the echo was answered with "AddRecentCB Failed with status=200"
+	// on the Portable, 2026-09-06.
+	rec, ok := parseFlatRecord(body, "recent")
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	if !ok {
+	if !ok || rec.location == "" {
 		_, _ = w.Write([]byte(EmptyRecentsXML))
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(echo))
+	_, _ = w.Write([]byte(recentElementXML(rec, s.nextRecentID(), time.Now())))
+}
+
+// recentElementXML renders one confirmed recent record in the list dialect
+// the firmware provably parses for presets.
+func recentElementXML(rec flatRecord, id int64, now time.Time) string {
+	ts := strconv.FormatInt(now.Unix(), 10)
+	return `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<recent id="` + strconv.FormatInt(id, 10) + `" createdOn="` + ts + `" updatedOn="` + ts + `">` +
+		`<ContentItem source="` + xmlEscapeText(sourceNameForAccountID(rec.sourceID)) + `" type="` + xmlEscapeText(rec.contentItemType) +
+		`" location="` + xmlEscapeText(rec.location) + `" sourceAccount="" isPresetable="true">` +
+		`<itemName>` + xmlEscapeText(rec.name) + `</itemName>` +
+		`<containerArt>` + xmlEscapeText(rec.containerArt) + `</containerArt>` +
+		`</ContentItem></recent>`
 }
 
 // nextRecentID hands out the id the echoed recents record carries. Per agent
@@ -493,34 +511,6 @@ func (s *Server) nextRecentID() int64 {
 	defer s.mu.Unlock()
 	s.recentSeq++
 	return s.recentSeq
-}
-
-// recentEchoXML turns the posted <recent> record into the confirmed one: the
-// same element with an id attribute, behind a single XML declaration. ok is
-// false when the body carries no <recent> element.
-func recentEchoXML(body []byte, id int64) (string, bool) {
-	doc := string(body)
-	start := strings.Index(doc, "<recent")
-	if start < 0 {
-		return "", false
-	}
-	// "<recents" is the list, not a record.
-	if strings.HasPrefix(doc[start:], "<recents") {
-		return "", false
-	}
-	end := strings.LastIndex(doc, "</recent>")
-	if end < start {
-		return "", false
-	}
-	elem := doc[start : end+len("</recent>")]
-	// Inject the id into the start tag: "<recent>" or "<recent attr=...>".
-	gt := strings.IndexByte(elem, '>')
-	if gt < 0 {
-		return "", false
-	}
-	open := strings.TrimSuffix(strings.TrimSpace(elem[:gt]), "/")
-	elem = open + ` id="` + strconv.FormatInt(id, 10) + `"` + elem[gt:]
-	return `<?xml version="1.0" encoding="UTF-8"?>` + elem, true
 }
 
 // logRecentPayload records what the box tells marge when a station starts.

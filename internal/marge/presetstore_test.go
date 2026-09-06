@@ -256,13 +256,36 @@ func TestRecentsPostWithoutRecordKeepsTheListAnswer(t *testing.T) {
 	}
 }
 
-func TestRecentEchoXML(t *testing.T) {
-	got, ok := recentEchoXML([]byte(`<?xml version="1.0"?><recent><name>x</name></recent>`), 7)
-	if !ok || got != `<?xml version="1.0" encoding="UTF-8"?><recent id="7"><name>x</name></recent>` {
-		t.Fatalf("got %q ok=%v", got, ok)
+func TestFlatPresetBodyFromTheFirmwareIsUnderstood(t *testing.T) {
+	// Verbatim shape of the Portable's hold-to-store PUT (2026-09-06), the
+	// station location shortened.
+	body := `<?xml version="1.0" encoding="UTF-8" ?><preset buttonNumber="6"><sourceid>3</sourceid><name>MANGORADIO</name><username>MANGORADIO</username><location>/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9</location><contentItemType>stationurl</contentItemType><containerArt></containerArt></preset>`
+	item, ok := parseHeldItem([]byte(body))
+	if !ok {
+		t.Fatal("flat preset body not understood")
 	}
-	got, ok = recentEchoXML([]byte(`<recent foo="bar"><name>x</name></recent>`), 1)
-	if !ok || got != `<?xml version="1.0" encoding="UTF-8"?><recent foo="bar" id="1"><name>x</name></recent>` {
-		t.Fatalf("attributes kept: got %q ok=%v", got, ok)
+	if item.Source != "LOCAL_INTERNET_RADIO" || item.Type != "stationurl" || item.ItemName != "MANGORADIO" ||
+		item.Location != "/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9" || item.SourceAccount != "MANGORADIO" {
+		t.Fatalf("got %+v", item)
+	}
+	if _, ok := parseHeldItem([]byte(`<preset buttonNumber="2"><sourceid>3</sourceid><name>x</name></preset>`)); ok {
+		t.Fatal("a body without a location must be refused")
+	}
+}
+
+func TestRecentAnswerUsesTheContentItemDialect(t *testing.T) {
+	body := `<?xml version="1.0" encoding="UTF-8" ?><recent><lastplayedat>2026-09-06T20:28:30+00:00</lastplayedat><sourceid>3</sourceid><name>MANGORADIO</name><location>/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9</location><contentItemType>stationurl</contentItemType></recent>`
+	rec, ok := parseFlatRecord([]byte(body), "recent")
+	if !ok || rec.lastPlayedAt != "2026-09-06T20:28:30+00:00" || rec.sourceID != "3" {
+		t.Fatalf("parse: ok=%v rec=%+v", ok, rec)
+	}
+	got := recentElementXML(rec, 7, time.Unix(1700000000, 0))
+	for _, want := range []string{`<recent id="7" createdOn="1700000000" updatedOn="1700000000">`, `<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9"`, `<itemName>MANGORADIO</itemName>`, `</ContentItem></recent>`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %s", want, got)
+		}
+	}
+	if sourceNameForAccountID("12") != "STORED_MUSIC" || sourceNameForAccountID("x") != "SOURCE#x" {
+		t.Fatal("source id mapping")
 	}
 }

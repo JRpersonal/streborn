@@ -124,9 +124,92 @@ func parseHeldItem(body []byte) (HeldItem, bool) {
 		break
 	}
 	if !found || item.Source == "" || item.Location == "" {
-		return HeldItem{}, false
+		// Not the ContentItem dialect: the firmware's real store body is the
+		// flat MargeAddPresetRequest form measured live on the Portable
+		// (2026-09-06):
+		//   <preset buttonNumber="6"><sourceid>3</sourceid><name>..</name>
+		//   <username>..</username><location>/station?data=..</location>
+		//   <contentItemType>stationurl</contentItemType>
+		//   <containerArt></containerArt></preset>
+		rec, ok := parseFlatRecord(body, "preset")
+		if !ok || rec.location == "" {
+			return HeldItem{}, false
+		}
+		return HeldItem{
+			Source:        sourceNameForAccountID(rec.sourceID),
+			Type:          rec.contentItemType,
+			Location:      rec.location,
+			SourceAccount: rec.username,
+			ItemName:      rec.name,
+			ContainerArt:  rec.containerArt,
+		}, true
 	}
 	return item, true
+}
+
+// flatRecord is the firmware's own request shape for a preset or a recent:
+// a root element with one child element per field (MargeAddPresetRequest /
+// MargeAddRecentRequest in the firmware's proto table).
+type flatRecord struct {
+	sourceID, name, username, location, contentItemType, containerArt, lastPlayedAt string
+}
+
+// parseFlatRecord reads the child strings of the first element named root.
+func parseFlatRecord(body []byte, root string) (flatRecord, bool) {
+	var rec flatRecord
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	dec.Strict = false
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return rec, false
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || !strings.EqualFold(se.Name.Local, root) {
+			continue
+		}
+		var children struct {
+			SourceID        string `xml:"sourceid"`
+			Name            string `xml:"name"`
+			Username        string `xml:"username"`
+			Location        string `xml:"location"`
+			ContentItemType string `xml:"contentItemType"`
+			ContainerArt    string `xml:"containerArt"`
+			LastPlayedAt    string `xml:"lastplayedat"`
+		}
+		if err := dec.DecodeElement(&children, &se); err != nil {
+			return rec, false
+		}
+		rec = flatRecord{
+			sourceID:        strings.TrimSpace(children.SourceID),
+			name:            strings.TrimSpace(children.Name),
+			username:        strings.TrimSpace(children.Username),
+			location:        strings.TrimSpace(children.Location),
+			contentItemType: strings.TrimSpace(children.ContentItemType),
+			containerArt:    strings.TrimSpace(children.ContainerArt),
+			lastPlayedAt:    strings.TrimSpace(children.LastPlayedAt),
+		}
+		return rec, true
+	}
+}
+
+// sourceNameForAccountID maps the <sourceid> the firmware quotes (the id of
+// a <source> in STR's account document) back to the source enum: 3 is the
+// static radio source (staticRadioSourceXML), 10 and up are media servers,
+// 100 and up the reflected cloud sources. Anything else is handed on as an
+// opaque id so the keeper refuses it instead of guessing.
+func sourceNameForAccountID(id string) string {
+	n, err := strconv.Atoi(id)
+	if err != nil {
+		return "SOURCE#" + id
+	}
+	switch {
+	case n == 3:
+		return "LOCAL_INTERNET_RADIO"
+	case n >= 10 && n < 100:
+		return "STORED_MUSIC"
+	}
+	return "SOURCE#" + id
 }
 
 // presetElementXML renders the single <preset> element the firmware expects
