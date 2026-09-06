@@ -28,7 +28,13 @@ const ALL_LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl', 'lt', 'lv', '
 const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
   ? process.env.SHOOT_LANGS.split(',').map((s) => s.trim()).filter(Boolean)
   : ALL_LANGS;
-const VIEWS = ['app-library', 'app-listen', 'app-search', 'app-settings1', 'app-settings2', 'app-settings3', 'app-stick-step1', 'app-stick-step2'];
+// app-logs is a cropped shot of the settings tail with the "Save diagnostic
+// logs" footer link highlighted; the website FAQ uses it to show where the
+// log lives. Override with SHOOT_VIEWS=app-logs to re-shoot a subset.
+const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-settings1', 'app-settings2', 'app-settings3', 'app-stick-step1', 'app-stick-step2', 'app-logs'];
+const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
+  ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
+  : ALL_VIEWS;
 
 // ---- demo data -------------------------------------------------------------
 // A tiny inline SVG cover so screenshots have artwork without any network.
@@ -264,6 +270,21 @@ async function drive(page, view) {
       await page.waitForTimeout(250);
       await scrollY(100000);
     }
+  } else if (view === 'app-logs') {
+    // Settings tail with the footer link that saves the diagnostic logs,
+    // ringed so the eye lands on it. Groups stay collapsed: the point is
+    // the footer, not the settings.
+    await click('.tab-btn[data-view="settings"]');
+    await page.waitForSelector('#view-settings:not(.hidden) .settings-section', { timeout: 9000 });
+    await page.waitForSelector('#footerSaveLogs', { timeout: 9000 });
+    await scrollY(100000);
+    await page.evaluate(() => {
+      const a = document.getElementById('footerSaveLogs');
+      a.style.outline = '3px solid #f59e0b';
+      a.style.outlineOffset = '6px';
+      a.style.borderRadius = '4px';
+      a.style.fontWeight = '700';
+    });
   } else if (view === 'app-stick-step1') {
     await click('.tab-btn[data-view="setup"]');
     await page.waitForSelector('#view-setup:not(.hidden) #drivesList .drive-row', { timeout: 9000 });
@@ -325,7 +346,10 @@ try {
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
         await drive(page, view);
         const out = path.join(OUT, lang, view + '.png');
-        await page.screenshot({ path: out });
+        // app-logs keeps only the lower part of the window: the footer is
+        // what matters, and a full-height shot would dwarf it.
+        const clip = view === 'app-logs' ? { x: 0, y: 780 - 300, width: 1100, height: 300 } : undefined;
+        await page.screenshot({ path: out, clip });
         console.log(`ok  ${lang}/${view}`);
         ok++;
       } catch (e) {

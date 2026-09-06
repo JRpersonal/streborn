@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, storedPermanentGroupsOf } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName } from '../stereoNames.js';
 
@@ -153,7 +153,6 @@ export function renderMultiroom(fetchLive) {
   const enough = strBoxes.length >= 2;
   if (!state.zoneLive) state.zoneLive = {};
   if (!state.zoneSlaves) state.zoneSlaves = {};
-  if (!state.zoneMode) state.zoneMode = 'native';
   // The MAIN star follows the LIVE leader on every repaint, not only when
   // nothing was selected yet. Guarding this on "zoneMaster unset" left the
   // Multiroom screen on its stale default while a group led by another
@@ -201,7 +200,24 @@ export function renderMultiroom(fetchLive) {
     return mb && (mb.deviceID || '').toUpperCase() === mk;
   }) || null;
   const frameKeys = Object.keys(colorMap).sort();
-  const liveFramesHtml = frameKeys.length
+  // Permanent groups that are stored but not live right now: the main speaker
+  // reports them under `remembered` with `permanent` set. They get a dashed
+  // frame of their own, so the user sees the group exists and can remove it
+  // with the same x as a live one.
+  const storedGroups = storedPermanentGroupsOf(state.zoneLive, strBoxes)
+    .filter(g => !colorMap[g.masterKey]);
+  const storedFramesHtml = storedGroups.map(g => {
+    const xTip = t('multiroom.forgetPermanentTip');
+    const xBtn = `<button class="box-group-x" data-dissolve="${escapeAttr(g.masterKey)}" data-dissolve-kind="stored" title="${escapeAttr(xTip)}" aria-label="${escapeAttr(xTip)}">&times;</button>`;
+    const label = zoneLabel(g.masterBox);
+    const chips = [g.masterBox, ...g.members.map(m => m.box)].filter(Boolean).map(b =>
+      `<span class="zone-frame-chip">${escapeHtml(zoneLabel(b))}</span>`).join('') +
+      g.members.filter(m => !m.box).map(m => `<span class="zone-frame-chip">${escapeHtml(m.name || m.ip)}</span>`).join('');
+    return `<div class="box-group box-group-stored">` + xBtn +
+      `<span class="box-group-label" title="${escapeAttr(t('speaker.groupLabelTitle', { name: label }))}">${GROUP_ICON} ${escapeHtml(label)}</span>` +
+      chips + `<span class="zone-frame-note">${escapeHtml(t('multiroom.storedPermanentBadge'))}</span></div>`;
+  }).join('');
+  const liveFramesHtml = (frameKeys.length || storedGroups.length)
     ? `<div class="zone-frames">` + frameKeys.map(mk => {
         const members = strBoxes
           .filter(b => zoneOrPairMaster(b, state.zoneLive, strBoxes) === mk)
@@ -228,7 +244,7 @@ export function renderMultiroom(fetchLive) {
         return `<div class="box-group box-group-c${colorMap[mk]}">` + xBtn +
           `<span class="box-group-label" title="${escapeAttr(frameTip)}">${frameIcon} ${escapeHtml(label)}</span>` +
           chips + `</div>`;
-      }).join('') + `</div>`
+      }).join('') + storedFramesHtml + `</div>`
     : '';
 
   const topbar = `<div class="zone-topbar"><button id="zoneRefresh" class="btn btn-mini">${escapeHtml(t('common.refresh'))}</button></div>`;
@@ -303,7 +319,6 @@ export function renderMultiroom(fetchLive) {
     : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`
       + (pairHiddenCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>` : '');
   const dis = enough ? '' : ' disabled';
-  const modeBtn = (m, lbl) => `<button class="seg-btn${state.zoneMode === m ? ' active' : ''}" data-mode="${m}">${escapeHtml(lbl)}</button>`;
 
   // Summary line: the group that is LIVE on the speakers, not the group the
   // card selection would make. It used to read state.zoneMaster only, which is
@@ -447,14 +462,12 @@ export function renderMultiroom(fetchLive) {
          <span class="zone-permanent-body">
            <span class="zone-permanent-title"><span class="zone-permanent-icon" aria-hidden="true">&#128257;</span>${escapeHtml(t('multiroom.permanentLabel'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></span>
            <span class="muted small">${escapeHtml(permanentHelpText)}</span>
+           <span class="muted small" id="zonePermanentHint"${state.zonePermanent ? '' : ' hidden'}>${escapeHtml(t('multiroom.permanentApplyHint'))}</span>
          </span>
        </label>
-       <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
-         <div class="seg">${modeBtn('native', t('multiroom.modeNative'))}${modeBtn('mirror', t('multiroom.modeMirror'))}</div>
-         <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></div>
        <div class="zone-name-note muted small">${escapeHtml(t('multiroom.groupNameNote'))}</div>
        <div class="zone-actions">
-         <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
+         <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t(state.zonePermanent ? 'multiroom.createPermanentBtn' : 'multiroom.createBtn'))}</button>
          <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
        </div>
        <div id="zoneResult">${state.zoneMsg || ''}</div>
@@ -503,7 +516,10 @@ export function renderMultiroom(fetchLive) {
     x.onclick = (e) => {
       e.stopPropagation();
       const mk = String(x.dataset.dissolve || '').toUpperCase();
-      if (x.dataset.dissolveKind === 'pair') {
+      if (x.dataset.dissolveKind === 'stored') {
+        const mb = strBoxes.find(b => String(b.deviceID || '').toUpperCase() === mk);
+        doDissolveZoneAt(mb);
+      } else if (x.dataset.dissolveKind === 'pair') {
         const pair = stereoPairsOf(state.zoneLive).find(p =>
           String(p.master || '').toUpperCase() === mk ||
           (p.members || []).some(m => String((m && m.deviceID) || '').toUpperCase() === mk));
@@ -544,15 +560,19 @@ export function renderMultiroom(fetchLive) {
       renderMultiroom();
     };
   });
-  root.querySelectorAll('.seg-btn').forEach(btn => {
-    btn.onclick = () => { state.zoneMode = btn.dataset.mode; renderMultiroom(); };
-  });
   if (enough) {
     const perm = $('zonePermanent');
     if (perm) perm.onchange = () => {
       state.zonePermanent = perm.checked;
       const card = perm.closest('.zone-permanent-card');
       if (card) card.classList.toggle('on', perm.checked);
+      // The tick alone does nothing yet: say so next to it and on the button
+      // that actually applies it. Ticking the card and waiting was a real
+      // reading of the page (Jens 2026-09-06).
+      const hint = $('zonePermanentHint');
+      if (hint) hint.hidden = !perm.checked;
+      const create = $('zoneCreate');
+      if (create) create.textContent = t(perm.checked ? 'multiroom.createPermanentBtn' : 'multiroom.createBtn');
     };
     $('zoneCreate').onclick = () => doFormZone(strBoxes);
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
@@ -716,7 +736,10 @@ async function doFormZone(strBoxes) {
     renderMultiroom(false);
     return;
   }
-  const mode = state.zoneMode || 'native';
+  // Native only: the firmware keeps the group in sync. The mirror mode (each
+  // speaker pulling the same stream) stayed a beta switch nobody used once
+  // native worked, so the choice is gone from the page (Jens 2026-09-06).
+  const mode = 'native';
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
     // Wake the master and every selected member before enrolling them (#70): a box
@@ -739,8 +762,8 @@ async function doFormZone(strBoxes) {
       // master starts music (#70).
       permanent: !!state.zonePermanent,
     });
-    // Real feedback: mirror reports back {ok,mode}; native returns the live
-    // zone, so verify the firmware actually took the members.
+    // Real feedback: native returns the live zone, so verify the firmware
+    // actually took the members.
     if (res && res.ok === false) {
       // The agent refused the form outright (it answers ok:false with a reason),
       // e.g. the master or a member is half of a stereo pair, which cannot join a
@@ -752,8 +775,6 @@ async function doFormZone(strBoxes) {
         ? t('multiroom.pairNotGroupable')
         : ((res.error && String(res.error)) || t('multiroom.formedNone'));
       state.zoneMsg = `<div class="setup-err">${escapeHtml(msg)}</div>`;
-    } else if (mode === 'mirror') {
-      state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: slaves.length }))}</div>`;
     } else {
       // Trust the followers' own zone self-report, not the master's optimistic
       // member list (#70). notReady = speakers that were still starting and were

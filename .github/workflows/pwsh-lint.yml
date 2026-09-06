@@ -15,7 +15,10 @@ permissions:
 
 concurrency:
   group: pwsh-lint-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a superseded PR push is cancelled. Back-to-back merges to main used
+  # to cancel the earlier main run, which then showed up as a red X on the
+  # commit list for a run nobody meant to abandon (Jens, 2026-09-06).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:

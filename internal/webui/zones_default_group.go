@@ -111,8 +111,11 @@ var (
 // tried; waking an already-awake box is a fast no-op on the member side.
 func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
 	for _, port := range []string{"17008", "8888"} {
+		// quiet=1: the member mutes itself for the wake and stops what its
+		// firmware resumes, so the room does not get every member's own
+		// last station for a few seconds before the zone takes over.
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake", nil)
+			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake?quiet=1", nil)
 		if err != nil {
 			continue
 		}
@@ -161,6 +164,19 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 	// and the kick that got us here has long returned.
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+
+	// Second gate, on the master's own live state: whatever the kick was
+	// read from, nobody is woken unless this speaker is audibly playing right
+	// now. The kick runs seconds after the event, so a real start is in
+	// PLAY_STATE by then; a source flip in STOP_STATE (a reboot re-registering
+	// its presets) is not. Without this the whole group woke, and every
+	// member resumed its last station, at 03:28 after a fleet update
+	// (2026-09-06).
+	if np := rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+		s.logger.Info("default group: master is not playing, leaving the members alone",
+			"source", np.Source, "playStatus", np.PlayStatus)
+		return
+	}
 
 	type verdict struct {
 		m   zones.Member

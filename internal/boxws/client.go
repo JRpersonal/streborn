@@ -73,6 +73,13 @@ type Client struct {
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
 	lastSource string
+	// sourcePlaying is whether the last now-playing frame showed a streaming
+	// source that was actually playing (PLAY_STATE / BUFFERING_STATE). The
+	// default-group trigger fires on the false->true edge of this, not on a
+	// bare source change: a rebooted speaker flips STANDBY -> LOCAL_INTERNET_RADIO
+	// in STOP_STATE while its presets are re-registered, and that flip woke a
+	// whole permanent group at 3 in the morning (2026-09-06).
+	sourcePlaying bool
 
 	// unknownFrames counts the frame shapes STR does not handle, keyed by the
 	// element name, so the first of each shape can be logged in full and the

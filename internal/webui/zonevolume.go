@@ -282,6 +282,27 @@ func (s *Server) groupView(ctx context.Context) ([]zoneMemberVolume, bool, bool)
 	if grouped && !s.storedGroupIsLive(own) {
 		return nil, false, false
 	}
+	// The stored document lists every speaker the user put into the group;
+	// the firmware lists the ones that are actually in it right now. A member
+	// that did not join (still asleep, a failed join, switched off) must not
+	// be part of the group volume: it was read as the group's loudest level
+	// and written to on every step, so the slider showed a level nobody in
+	// the room was playing at and moved a speaker that was not playing along
+	// (Jens' Gaestebad, 2026-09-06). The document still names the speakers,
+	// the firmware decides which of them count.
+	if grouped && own.read && len(own.zone.Members) > 0 {
+		inLive := make(map[string]bool, len(own.zone.Members)+1)
+		for _, m := range own.zone.Members {
+			inLive[strings.ToUpper(m.DeviceID)] = true
+		}
+		kept := members[:0:0]
+		for _, m := range members {
+			if m.IsSelf || inLive[strings.ToUpper(m.DeviceID)] {
+				kept = append(kept, m)
+			}
+		}
+		members = kept
+	}
 	return members, grouped, false
 }
 
@@ -289,9 +310,19 @@ func (s *Server) zoneVolumeSet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IP    string `json:"ip"`
 		Value int    `json:"value"`
+		// Delta moves every member of the group by this many steps from where
+		// it is, keeping the balance between the speakers. The phone page
+		// sends this for its group slider; the agent computes the absolute
+		// levels from what the members report, so no client-side baseline
+		// can go stale (#726, six releases of a slider that sprang back).
+		Delta *int `json:"delta"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4*1024)).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Delta != nil {
+		s.zoneVolumeStep(w, r, *req.Delta)
 		return
 	}
 	if req.Value < 0 || req.Value > 100 {
@@ -499,4 +530,117 @@ func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool, o
 			"master", master, "ownID", ownID)
 	}
 	return out, true, own
+}
+
+// groupStepBase is what the last group step wrote to each member. A run of
+// quick steps (a held button, a slider drag) must add up on top of what was
+// just sent, not on top of what the speakers report, because a speaker's own
+// report lags a write by a second or more and a step read against the lagging
+// value lands on the level before the previous step. It is trusted only for a
+// few seconds after the last step; after that the members are read afresh.
+const groupStepBaseTTL = 4 * time.Second
+
+// zoneVolumeStep moves every member of the group by delta, from the levels
+// the members are at (or were just sent). One request per step, serialised,
+// and the reply carries the levels that were written, so the page can draw
+// them without waiting for the speakers to report.
+func (s *Server) zoneVolumeStep(w http.ResponseWriter, r *http.Request, delta int) {
+	if delta < -100 || delta > 100 {
+		http.Error(w, "delta must be -100..100", http.StatusBadRequest)
+		return
+	}
+	s.groupStepMu.Lock()
+	defer s.groupStepMu.Unlock()
+
+	vctx, vcancel := context.WithTimeout(r.Context(), 3*time.Second)
+	members, grouped, _ := s.groupView(vctx)
+	vcancel()
+	if !grouped {
+		http.Error(w, "this speaker is not in a group", http.StatusConflict)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 8*time.Second)
+	defer cancel()
+
+	fresh := time.Since(s.groupStepAt) < groupStepBaseTTL
+	// Base per member: the level the previous step wrote when that was
+	// moments ago, otherwise the level the member reports now.
+	var wg sync.WaitGroup
+	base := make([]int, len(members))
+	for i := range members {
+		base[i] = -1
+		if fresh {
+			if v, ok := s.groupStepBase[members[i].IP]; ok {
+				base[i] = v
+				continue
+			}
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if v, err := boxapi.New(members[i].IP).GetVolume(ctx); err == nil {
+				base[i] = v.Actual
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	next := make(map[string]int, len(members))
+	var (
+		mu     sync.Mutex
+		failed []string
+	)
+	for i := range members {
+		if base[i] < 0 {
+			continue // not answering: left where it is, reported as such
+		}
+		want := base[i] + delta
+		if want < 0 {
+			want = 0
+		}
+		if want > 100 {
+			want = 100
+		}
+		next[members[i].IP] = want
+		members[i].Volume = want
+		wg.Add(1)
+		go func(m zoneMemberVolume, want int) {
+			defer wg.Done()
+			if err := boxapi.New(m.IP).SetVolume(ctx, want); err != nil {
+				mu.Lock()
+				failed = append(failed, m.Name)
+				mu.Unlock()
+				s.logger.Info("group volume step: member did not take the change", "member", m.Name, "ip", m.IP, "err", err)
+			}
+		}(members[i], want)
+	}
+	wg.Wait()
+	if s.groupStepBase == nil || !fresh {
+		s.groupStepBase = map[string]int{}
+	}
+	for ip, v := range next {
+		s.groupStepBase[ip] = v
+	}
+	s.groupStepAt = time.Now()
+
+	loudest, sum, n := -1, 0, 0
+	for _, m := range members {
+		if m.Volume >= 0 {
+			sum += m.Volume
+			n++
+			if m.Volume > loudest {
+				loudest = m.Volume
+			}
+		}
+	}
+	avg := -1
+	if n > 0 {
+		avg = sum / n
+	}
+	sort.SliceStable(members, func(a, b int) bool { return members[a].IsMaster && !members[b].IsMaster })
+	s.logger.Info("group volume step", "delta", delta, "members", len(members), "written", len(next), "failed", len(failed), "loudest", loudest, "fromLastStep", fresh)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": len(failed) == 0, "delta": delta, "members": members,
+		"loudest": loudest, "average": avg, "failed": failed,
+	})
 }

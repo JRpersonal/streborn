@@ -2286,9 +2286,9 @@ async function verifyInstalledState(box, onState) {
   // same trap, with the same fix, is documented on agentBox thirty lines below.
   const agentPortBox = { ...foundBox, port: 0 };
   const installed = await verifyInstalledState(agentPortBox, (st) => {
-    render(`<div class="muted">${escapeHtml(st.reachable
-      ? t('updateAll.phase.spotifyState', { engine: st.engine })
-      : t('updateAll.phase.spotifyUnreachable'))}</div>`);
+    render(`<div class="muted">${escapeHtml(!st.reachable
+      ? t('updateAll.phase.spotifyUnreachable')
+      : (st.engine === 'present' ? t('updateAll.phase.spotifyChecking') : t('updateAll.phase.spotifyInstalling')))}</div>`);
   });
   try { SetOTARunning(false); } catch {}
   if (!installed.ok) {

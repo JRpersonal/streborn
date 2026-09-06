@@ -58,6 +58,8 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 			return nowPlayingSnapshot{Source: "STANDBY"}
 		case "10.0.0.3":
 			return nowPlayingSnapshot{Source: "SPOTIFY", PlayStatus: "PLAY_STATE"}
+		case "10.0.0.1": // the master itself: playing, so the re-form may run
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 		default:
 			return nowPlayingSnapshot{Source: "INVALID_SOURCE"}
 		}
@@ -156,5 +158,48 @@ func TestFormDefaultGroupSkipsWhenComplete(t *testing.T) {
 	s.formDefaultGroupOnPlay(z)
 	if called {
 		t.Error("setZone driven although the live zone already matches")
+	}
+}
+
+// The master that is NOT playing must not wake anyone: a rebooted speaker
+// flips STANDBY -> LOCAL_INTERNET_RADIO in STOP_STATE while it re-registers
+// its presets, and that flip woke every member of a permanent group at 03:28
+// after a fleet update (2026-09-06). The play kick may still arrive; the
+// re-form has to check the master's own play state before acting.
+func TestFormDefaultGroupOnPlayLeavesMembersAloneWhenMasterIsNotPlaying(t *testing.T) {
+	oldNP, oldZM, oldWake, oldLive, oldSet := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone
+	defer func() {
+		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone = oldNP, oldZM, oldWake, oldLive, oldSet
+	}()
+	var mu sync.Mutex
+	woken := map[string]bool{}
+	setCalls := 0
+	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+		switch ip {
+		case "10.0.0.1":
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
+		default:
+			return nowPlayingSnapshot{Source: "STANDBY"}
+		}
+	}
+	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
+	rejoinWakeMember = func(_ context.Context, ip string, _ *slog.Logger) {
+		mu.Lock()
+		woken[ip] = true
+		mu.Unlock()
+	}
+	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) { return boxapi.Zone{}, nil }
+	rejoinSetZone = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+		mu.Lock()
+		setCalls++
+		mu.Unlock()
+		return nil
+	}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true,
+		Slaves: []zones.Member{{DeviceID: "SLEEPY", IP: "10.0.0.2"}}}
+	s.formDefaultGroupOnPlay(z)
+	if len(woken) != 0 || setCalls != 0 {
+		t.Fatalf("master in STOP_STATE still acted: woken=%v setCalls=%d", woken, setCalls)
 	}
 }
