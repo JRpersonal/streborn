@@ -119,9 +119,20 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		// household read that as the group being gone (mail report,
 		// 2026-08-25). Only the desktop's own store, no probes.
 		Remembered []rememberedMember `json:"remembered,omitempty"`
+		// Permanent says the remembered group is the user's durable choice
+		// (re-formed on the master's next play). The desktop shows such a
+		// group as a stored frame when it is not live, so the user can see
+		// it exists and remove it; without the flag the group was invisible
+		// between plays (2026-09-06).
+		Permanent bool `json:"permanent,omitempty"`
 	}{Zone: z}
 	if len(z.Members) == 0 {
 		out.Remembered = s.rememberedZoneMembers()
+		if s.zones != nil {
+			if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
+				out.Permanent = true
+			}
+		}
 	}
 	// The pair read gets its own SHORT budget, never the zone's. The firmware's
 	// /getGroup HANGS on scm/BCO chassis — no refusal, just silence (12 s and

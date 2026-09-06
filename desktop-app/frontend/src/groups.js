@@ -522,3 +522,28 @@ export function groupColorMap(zoneLive, boxes) {
   }
   return colorOf;
 }
+
+// storedPermanentGroupsOf lists the permanent groups that are STORED on a main
+// speaker but not live right now. The main speaker's own zone answer carries
+// them as `remembered` (its follower IPs and names) with `permanent` set and
+// no live members. Each entry names the main speaker's box and its members,
+// resolved to discovered boxes where possible (by deviceID, then by IP) so the
+// multiroom page can frame the group and offer to remove it.
+// Returns [{ masterKey, masterBox, members: [{ box, ip, name }] }].
+export function storedPermanentGroupsOf(zoneLive, boxes) {
+  const up = (s) => String(s || '').toUpperCase();
+  const out = [];
+  (boxes || []).forEach((b) => {
+    if (!b || b.kind === 'stock' || !b.deviceID) return;
+    const e = zoneLive && zoneLive[b.deviceID];
+    if (!e || !e.permanent || (e.members || []).length || !(e.remembered || []).length) return;
+    const members = e.remembered.map((m) => {
+      const box = (boxes || []).find((x) => x && x.deviceID && m.deviceID && up(x.deviceID) === up(m.deviceID))
+        || (boxes || []).find((x) => x && x.host && m.ip && x.host === m.ip)
+        || null;
+      return { box, ip: m.ip || '', name: m.name || '' };
+    });
+    out.push({ masterKey: up(b.deviceID), masterBox: b, members });
+  });
+  return out;
+}

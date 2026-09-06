@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from './state.js';
 import {
   zoneBoxes,
+  storedPermanentGroupsOf,
   masterOf,
   isFollower,
   followersOf,
@@ -609,5 +610,31 @@ describe('stereoSelectionPick', () => {
     const got = stereoSelectionPick({ left: 'B', right: '', liveIDs, candIDs });
     expect(got[0]).not.toEqual(got[1]);
     expect(got).toEqual(['B', 'A']);
+  });
+});
+
+describe('storedPermanentGroupsOf', () => {
+  it('frames a stored permanent group that is not live and resolves its members', () => {
+    const boxes = [
+      { deviceID: 'AAA', host: '10.0.0.1', kind: 'str' },
+      { deviceID: 'BBB', host: '10.0.0.2', kind: 'str' },
+      { deviceID: 'CCC', host: '10.0.0.3', kind: 'str' },
+    ];
+    const zoneLive = {
+      AAA: { master: '', members: [], permanent: true, remembered: [{ ip: '10.0.0.2', deviceID: 'bbb' }, { ip: '10.0.0.9', name: 'Flur' }] },
+      BBB: { master: '', members: [] },
+      CCC: { master: '', members: [], remembered: [{ ip: '10.0.0.2' }] }, // remembered but NOT permanent
+    };
+    const got = storedPermanentGroupsOf(zoneLive, boxes);
+    expect(got).toHaveLength(1);
+    expect(got[0].masterKey).toBe('AAA');
+    expect(got[0].members[0].box.deviceID).toBe('BBB');
+    expect(got[0].members[1].box).toBeNull();
+    expect(got[0].members[1].name).toBe('Flur');
+  });
+  it('does not frame a permanent group while it is live', () => {
+    const boxes = [{ deviceID: 'AAA', host: '10.0.0.1', kind: 'str' }];
+    const zoneLive = { AAA: { master: 'AAA', members: [{ deviceID: 'BBB', ip: '10.0.0.2' }], permanent: true, remembered: [{ ip: '10.0.0.2' }] } };
+    expect(storedPermanentGroupsOf(zoneLive, boxes)).toEqual([]);
   });
 });
