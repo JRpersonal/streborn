@@ -125,6 +125,10 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	}
 	defer release()
 	a.logger.Info("install_str: starting", "host", host, "model", model)
+	// A speaker STR was removed from earlier in this session is being set up
+	// again: lift the "being removed" mark so the post-install engine delivery
+	// is not skipped (see App.uninstalling).
+	a.uninstalling.Delete(host)
 	a.installStart = time.Now()
 	a.installPhase = ""
 	defer func() { a.installPhase = ""; a.installMargeHits = nil }()

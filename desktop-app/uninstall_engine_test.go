@@ -25,3 +25,14 @@ func TestEngineDeliverySkippedWhileUninstalling(t *testing.T) {
 		t.Fatalf("other host: got %q, %v", got, err)
 	}
 }
+
+// TestReinstallLiftsTheUninstallMark: a speaker removed earlier in the session
+// and set up again must get its engine delivery back.
+func TestReinstallLiftsTheUninstallMark(t *testing.T) {
+	a := &App{logger: slog.Default()}
+	a.uninstalling.Store("192.0.2.60", struct{}{})
+	a.uninstalling.Delete("192.0.2.60") // what InstallSTROnBox does first
+	if a.isUninstalling("192.0.2.60") {
+		t.Fatal("mark must be lifted by a new install")
+	}
+}
