@@ -293,6 +293,54 @@ var hostHasLinkLocalIPv4 = func() bool {
 	return false
 }
 
+// isLocalSubnetBroadcast reports whether ip is the IPv4 broadcast address of one
+// of this host's own subnets (e.g. 192.168.0.255 on a /24). A broadcast address
+// is never a real speaker, but it can slip into the candidate list from an
+// announcement or a persisted/seeded entry and then show up as a "phantom
+// speaker": Update All tries to reach it and reports an error even though the
+// real speakers updated fine, and it disappears on the next app restart (field
+// 2026-09-04, ST10 fleet on v0.9.72). Computed per interface against the actual
+// mask, so a legitimate host that happens to end in .255 on a wider subnet
+// (/23 and up) is NOT excluded.
+var isLocalSubnetBroadcast = func(ip net.IP) bool {
+	if ip.To4() == nil {
+		return false
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && ipIsBroadcastOf(ip, ipnet) {
+			return true
+		}
+	}
+	return false
+}
+
+// ipIsBroadcastOf reports whether ip is the IPv4 broadcast address of ipnet
+// (host bits all ones). Pure: the mask math is what decides that .255 is the
+// broadcast of a /24 but an ordinary host on a /23, so it is unit-tested apart
+// from the live-interface lookup.
+func ipIsBroadcastOf(ip net.IP, ipnet *net.IPNet) bool {
+	ip4, n4 := ip.To4(), ipnet.IP.To4()
+	if ip4 == nil || n4 == nil {
+		return false
+	}
+	mask := ipnet.Mask
+	if len(mask) == net.IPv6len { // a 4-in-16 mask: use its last 4 bytes
+		mask = mask[12:]
+	}
+	if len(mask) != net.IPv4len {
+		return false
+	}
+	bcast := make(net.IP, net.IPv4len)
+	for i := 0; i < net.IPv4len; i++ {
+		bcast[i] = n4[i] | ^mask[i]
+	}
+	return bcast.Equal(ip4)
+}
+
 // BoxWifiScan asks the SPEAKER which Wi-Fi networks it can see.
 //
 // This is the list that decides whether a switch can work, and it is not the
