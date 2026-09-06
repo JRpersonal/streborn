@@ -1055,8 +1055,14 @@ function renderBoxSettings(s, box) {
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
+      <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
       <div class="setting-row">
         <select id="webhookTarget" style="flex:1;">
+          <option value="thumbsUp">${escapeHtml(t('settingsView.webhookKeyThumbsUp'))}</option>
+          <option value="thumbsDown">${escapeHtml(t('settingsView.webhookKeyThumbsDown'))}</option>
+          <option value="prev">${escapeHtml(t('settingsView.webhookKeyPrev'))}</option>
+          <option value="next">${escapeHtml(t('settingsView.webhookKeyNext'))}</option>
+          <option value="playPause">${escapeHtml(t('settingsView.webhookKeyPlayPause'))}</option>
           <option value="thumb">${escapeHtml(t('settingsView.webhookKeyThumb'))}</option>
           <option value="preset1">${escapeHtml(t('preset.key', { n: 1 }))}</option>
           <option value="preset2">${escapeHtml(t('preset.key', { n: 2 }))}</option>
@@ -2230,10 +2236,14 @@ function renderBoxSettings(s, box) {
     let whEnabled = false;
     // Full config held locally; each target's edits are captured into it before
     // switching target or saving, then the WHOLE config is PUT (a partial PUT
-    // would wipe the other keys). buttons keys: preset1..preset6, aux, power.
+    // would wipe the other keys). buttons keys: preset1..preset6, aux, power,
+    // and the trace keys thumbsUp, thumbsDown, prev, next, playPause.
     let cfg = { thumb: {}, buttons: {} };
-    let prevTarget = whTarget.value || 'thumb';
+    let prevTarget = whTarget.value || 'thumbsUp';
     const presetIds = new Set(['preset1', 'preset2', 'preset3', 'preset4', 'preset5', 'preset6']);
+    // Keys the speaker's own key trace identifies (agent internal/boxlog):
+    // additional-only, there is no box reaction to withhold.
+    const traceKeyIds = new Set(['thumbsUp', 'thumbsDown', 'prev', 'next', 'playPause']);
     const isModeTarget = (tg) => presetIds.has(tg); // only presets support replace
     const actionOf = (tg) => tg === 'thumb' ? (cfg.thumb || {}) : ((cfg.buttons && cfg.buttons[tg]) || {});
     const paintWh = (en) => {
@@ -2272,7 +2282,8 @@ function renderBoxSettings(s, box) {
       whMode.style.display = isModeTarget(tg) ? '' : 'none';
       whModeNote.textContent = isModeTarget(tg)
         ? t('settingsView.webhookModePresetNote')
-        : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote'));
+        : (traceKeyIds.has(tg) ? t('settingsView.webhookModeKeyNote')
+          : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote')));
       syncType();
     };
     const captureInto = (tg) => {

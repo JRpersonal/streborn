@@ -2,7 +2,10 @@ package webhooks
 
 import (
 	"bytes"
+	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -167,5 +170,53 @@ func TestBuildMagicPacket(t *testing.T) {
 				t.Fatalf("buildMagicPacket(%v) = %v, want error", tt.mac, got)
 			}
 		})
+	}
+}
+
+func TestKeyTriggerID(t *testing.T) {
+	for name, want := range map[string]string{
+		"PREV_TRACK": KeyPrev, "NEXT_TRACK": KeyNext, "THUMBS_UP": KeyThumbsUp,
+		"THUMBS_DOWN": KeyThumbsDown, "PLAY_PAUSE": KeyPlayPause, "PLAY": KeyPlayPause,
+		"VOLUME_UP": "", "PRESET_1": "", "POWER": "",
+	} {
+		if got := KeyTriggerID(name); got != want {
+			t.Errorf("KeyTriggerID(%q)=%q want %q", name, got, want)
+		}
+	}
+}
+
+// TestFireKeyFallsBackToLegacyThumb: a thumbs press with no per-key trigger
+// fires the shared legacy thumb action; a per-key trigger wins when set; a
+// key with nothing configured fires nothing and says so.
+func TestFireKeyFallsBackToLegacyThumb(t *testing.T) {
+	var hits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.URL.Path)
+	}))
+	defer srv.Close()
+	s, err := Load("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.cfg = Config{
+		Thumb:   Action{Enabled: true, URL: srv.URL + "/thumb"},
+		Buttons: map[string]Trigger{KeyThumbsDown: {Action: Action{Enabled: true, URL: srv.URL + "/down"}}},
+	}
+	ctx := context.Background()
+	if got := s.FireKey(ctx, KeyThumbsUp); got != "thumb" {
+		t.Fatalf("thumbs up without own trigger: fired %q want thumb", got)
+	}
+	if got := s.FireKey(ctx, KeyThumbsDown); got != KeyThumbsDown {
+		t.Fatalf("thumbs down with own trigger: fired %q", got)
+	}
+	if got := s.FireKey(ctx, KeyPrev); got != "" {
+		t.Fatalf("prev unconfigured: fired %q", got)
+	}
+	if len(hits) != 2 || hits[0] != "/thumb" || hits[1] != "/down" {
+		t.Fatalf("hits=%v", hits)
+	}
+	var nilStore *Store
+	if got := nilStore.FireKey(ctx, KeyPrev); got != "" {
+		t.Fatalf("nil store must be safe, got %q", got)
 	}
 }
