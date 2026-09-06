@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -205,7 +206,13 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 		c.Timeout = timeout
 		client = &c
 	}
-	var lastErr error
+	// failed collects every port that did not answer, in the order they were
+	// tried. The error handed back leads with the FIRST of them (the cached
+	// port, else the caller's: the one the caller actually means) and only
+	// summarises the rest. Returning whichever port happened to be tried last
+	// is what made a post-OTA verdict quote :17008 for a SoundTouch 10 whose
+	// update had gone through :8888 and whose firewall drops :17008 by design.
+	var failed []portFailure
 	// stranger holds the best answer from a port that is NOT the STR agent (see
 	// notTheAgent). It is kept only as a fallback, so a genuine agent 404 or 400
 	// is still surfaced when no other port answers at all, and it is never
@@ -248,7 +255,7 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 			}
 			return resp, nil
 		}
-		lastErr = err
+		failed = append(failed, portFailure{port: p, err: err})
 		if !isTransportNotReady(err) {
 			if stranger != nil {
 				return stranger, nil
@@ -260,7 +267,67 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 	if stranger != nil {
 		return stranger, nil
 	}
-	return nil, reachabilityHint(lastErr)
+	return nil, reachabilityHint(allPortsError(failed))
+}
+
+// portFailure is one agent port and why it did not answer.
+type portFailure struct {
+	port int
+	err  error
+}
+
+// allPortsErr is boxDo's error when no candidate port answered. It reads as
+// the first port's own error (so every caller that inspects the text or
+// unwraps it sees the port that matters) with the other ports summarised in
+// one clause each, e.g. "(also tried :17008: timed out)". With a single
+// candidate it is exactly that candidate's error.
+type allPortsErr struct {
+	first portFailure
+	rest  []portFailure
+}
+
+func allPortsError(failed []portFailure) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	if len(failed) == 1 {
+		return failed[0].err
+	}
+	return &allPortsErr{first: failed[0], rest: failed[1:]}
+}
+
+func (e *allPortsErr) Error() string {
+	var b strings.Builder
+	b.WriteString(e.first.err.Error())
+	for _, f := range e.rest {
+		fmt.Fprintf(&b, " (also tried :%d: %s)", f.port, briefTransportErr(f.err))
+	}
+	return b.String()
+}
+
+func (e *allPortsErr) Unwrap() error { return e.first.err }
+
+// briefTransportErr names a connection failure in two or three words, for
+// the "also tried" clause: the full Go error repeats the URL and the OS text
+// and would double the length of a message the user reads under a failed
+// update.
+func briefTransportErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	var nerr net.Error
+	msg := strings.ToLower(err.Error())
+	switch {
+	case (errors.As(err, &nerr) && nerr.Timeout()) || strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded"):
+		return "timed out"
+	case strings.Contains(msg, "refused"):
+		return "connection refused"
+	case strings.Contains(msg, "reset"):
+		return "connection reset"
+	case strings.Contains(msg, "no route to host"):
+		return "no route to host"
+	}
+	return shortErr(err)
 }
 
 // reachabilityHint turns a bare "cannot reach the speaker" connection error

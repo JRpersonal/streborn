@@ -97,6 +97,15 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		return res
 	}
 	a.logger.Info("uninstall_str: starting", "host", host)
+	// From here on no engine delivery may land on this speaker (see
+	// App.uninstalling). The mark stays after a successful removal; a failed
+	// attempt lifts it again so a later update can still complete the engine.
+	a.uninstalling.Store(host, struct{}{})
+	defer func() {
+		if !res.OK {
+			a.uninstalling.Delete(host)
+		}
+	}()
 
 	// Step 1: SSH handshake.
 	res.Step = "ssh-handshake"

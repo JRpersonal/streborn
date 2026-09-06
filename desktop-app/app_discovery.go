@@ -377,7 +377,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		var wg sync.WaitGroup
 		for _, h := range hosts {
 			if ip := net.ParseIP(h); ip == nil || ip.IsLoopback() ||
-				(ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4()) {
+				(ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4()) || isLocalSubnetBroadcast(ip) {
 				continue
 			}
 			host := h
@@ -535,6 +535,13 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 // sighting, so a box whose agent is permanently gone (uninstalled out-of-band,
 // NAND wiped) stops perpetually re-confirming its stale STR identity memory.
 func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[string]bool) {
+	// Before the cache re-adds anything, seen holds only this cycle's genuine
+	// sightings: the right moment to notice a box that came back on the new
+	// build after its update's verify window had already given up, and to
+	// write the journal line that says so (otaverify.go). presenceOnly hosts
+	// are excluded there: for those, seen carries the CACHED record (old
+	// build) because only the stock :8090 answered, not a sighting.
+	a.confirmLateOTA(seen, presenceOnly)
 	now := time.Now()
 	a.discMu.Lock()
 	defer a.discMu.Unlock()

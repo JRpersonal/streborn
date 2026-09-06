@@ -739,11 +739,56 @@ const TAGLINES = {
   if (sEl) sEl.textContent = SUPPORTED_LINE[lang] || SUPPORTED_LINE.en;
 })();
 
+// --- New-feature discovery dots (Jens 2026-08-31) ------------------------
+// A small blue dot on a nav tab points the user to a new STR-exclusive feature
+// they have not opened yet; it clears the moment they open that tab. Per viewer
+// (localStorage), so once found it stays gone. Add an entry when you ship a new
+// exclusive feature and drop it a few releases later once it is no longer "new".
+const NEW_FEATURES = [
+  { id: '2026-08-permanent-group', view: 'multiroom' },
+  { id: '2026-08-copy-presets', view: 'settings' },
+  { id: '2026-08-recently-played', view: 'recent' },
+];
+const SEEN_FEATURES_KEY = 'str.seenFeatures';
+function seenFeatureSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_FEATURES_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function markViewFeaturesSeen(view) {
+  const seen = seenFeatureSet();
+  let changed = false;
+  for (const f of NEW_FEATURES) {
+    if (f.view === view && !seen.has(f.id)) { seen.add(f.id); changed = true; }
+  }
+  if (changed) { try { localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify([...seen])); } catch {} }
+}
+// renderNavDots paints/removes the blue dot on each nav tab from the seen set.
+// Idempotent, so it is safe to call on every box refresh and every view switch.
+function renderNavDots() {
+  const seen = seenFeatureSet();
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const want = NEW_FEATURES.some(f => f.view === btn.dataset.view && !seen.has(f.id));
+    const dot = btn.querySelector('.nav-newdot');
+    if (want && !dot) {
+      const s = document.createElement('span');
+      s.className = 'nav-newdot';
+      s.setAttribute('aria-label', t('nav.newFeatureDot'));
+      s.title = t('nav.newFeatureDot');
+      btn.appendChild(s);
+    } else if (!want && dot) {
+      dot.remove();
+    }
+  });
+}
+
 function switchView(view) {
   state.view = view;
   document.querySelectorAll('.tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
+  // Opening a tab counts as finding its new exclusive features: clear their dots.
+  markViewFeaturesSeen(view);
+  renderNavDots();
   $('view-box').classList.toggle('hidden', view !== 'box');
   $('view-library').classList.toggle('hidden', view !== 'library');
   $('view-recent').classList.toggle('hidden', view !== 'recent');
@@ -1916,6 +1961,9 @@ function applyBoxList(list) {
   // Mark which speakers are currently playing (small speaker icon on their tile).
   refreshBoxPlaying();
   updateSettingsTabBadge();
+  // localStorage is reliably restored by this first box refresh (see below), so
+  // paint the new-feature discovery dots here; a module-load call runs too early.
+  renderNavDots();
   // Re-evaluate the Favorites entry on every box-list refresh. This is the first
   // point after boot where localStorage is reliably restored in the WebView, so
   // a favorites list saved in a previous session reliably brings the button back
@@ -2494,8 +2542,10 @@ function renderBoxSelect() {
     const offMark = off
       ? `<span class="box-offline-mark" aria-label="${escapeAttr(offTitle)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg></span>`
       : '';
+    // The main speaker of a group is named as such, not only starred: a lone
+    // star did not read as "this one leads" (Jens, 2026-09-06).
     const groupMark = isFramedMaster(b)
-      ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733;</span>`
+      ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>`
       : '';
     const active = state.currentBox && state.currentBox.host === b.host && !isStock ? ' active' : '';
     const stockCls = isStock ? ' stock' : '';
@@ -2609,8 +2659,15 @@ function renderBoxSelect() {
       const isPair = !!framePair;
       const pairIcon = STEREO_ICON;
       const zoneIcon = GROUP_ICON;
+      // A permanent group says so on its frame: it comes back by itself when
+      // the main speaker plays, a temporary one ends with the next standby.
+      // The main speaker's own zone answer carries the flag.
+      const permanent = !isPair && masterBox && !!(((state.zoneLive || {})[masterBox.deviceID] || {}).permanent);
+      const permBadge = permanent
+        ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>`
+        : '';
       const groupLabel = groupName
-        ? `<span class="box-group-label" title="${escapeAttr(isPair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: groupName }))}">${isPair ? pairIcon : zoneIcon} ${escapeHtml(isPair ? (pairDisplayName(framePair, renderBoxSelect) || t('multiroom.stereoHeading')) : groupName)}</span>`
+        ? `<span class="box-group-label" title="${escapeAttr(isPair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: groupName }))}">${isPair ? pairIcon : zoneIcon} ${escapeHtml(isPair ? (pairDisplayName(framePair, renderBoxSelect) || t('multiroom.stereoHeading')) : groupName)}${permBadge}</span>`
         : '';
       // The same x the Multi-Room tab has: take THIS group apart from where it
       // is shown. It was only on the other tab (Jens, 2026-09-06). A stereo
@@ -3809,6 +3866,13 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
           try { ClearUpdateIntent(box.host, box.port); } catch {}
           return { outcome: 'done', version: live || confirmedVer, engineDelivered };
         }
+        // STR is being removed from this speaker: the delivery was skipped
+        // on purpose, and a "Spotify engine installed" toast in the middle
+        // of an uninstall reads as a bug (report of 2026-09-06). Finish quietly.
+        if (engRes && /^skipped:/i.test(engRes)) {
+          try { ClearUpdateIntent(box.host, box.port); } catch {}
+          return { outcome: 'done', version: live || confirmedVer, engineDelivered: false, quiet: true };
+        }
         // "current" means nothing was sent: the engine was already the right one.
         if (engRes !== 'current') engineDelivered = true;
         // Do not take the delivery's word for it. The update may only be
@@ -4222,7 +4286,7 @@ async function doBoxUpdate(targetBox) {
       // THE done moment: everything, engine half included, is finished. One
       // toast, here and only here (#672); the confirm phase above announced
       // only the speaker-software half.
-      showToast(result.engineDelivered ? t('update.spotifyDoneToast') : t('update.doneToast'));
+      if (!result.quiet) showToast(result.engineDelivered ? t('update.spotifyDoneToast') : t('update.doneToast'));
     } else if (result && result.outcome === 'partial') {
       // Agent updated, Spotify engine outstanding.
       if (result.engineTooFull) {
