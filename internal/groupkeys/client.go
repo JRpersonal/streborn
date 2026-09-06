@@ -28,6 +28,25 @@ type HTTPOptions struct {
 	// unknown), from the peer roster. It is tried first; 17008 and 8888
 	// follow, the way the desktop app's port fallback works.
 	PortHint func(ip string) int
+	// PeerIP returns the address the peer roster currently holds for a
+	// speaker's deviceID ("" when the roster has no entry). A template stores
+	// the address a speaker had when it was saved; a DHCP renumbering moves
+	// the speakers around, and addressing the stored address then reaches a
+	// different speaker, which would lead a group of the wrong members. The
+	// roster follows a speaker by its id, so the id is resolved through it
+	// first and the stored address is only the fallback.
+	PeerIP func(deviceID string) string
+	// PeerDeviceID returns the deviceID the roster knows the speaker at ip by
+	// ("" when unknown). When the roster has no address for a template's id,
+	// the stored address is used, unless the roster says another speaker sits
+	// there now: then the press is refused rather than sent to the wrong box.
+	PeerDeviceID func(ip string) string
+	// SelfDeviceID is the id this speaker announces (the one IsSelf matches
+	// by). When set and IsSelf matches a member by address only, the member's
+	// id is checked against the firmware id over loopback: a two-chip chassis
+	// named by its firmware id passes, a stale address that became this
+	// speaker's is refused.
+	SelfDeviceID string
 	// LocalPort is this agent's own listen port for the loopback case.
 	// Defaults to 8888.
 	LocalPort int
@@ -62,12 +81,59 @@ func NewHTTPClient(opts HTTPOptions) MasterClient {
 	return &httpClient{opts: opts, selfIDs: map[string]string{}}
 }
 
+// isSelf reports whether m is this speaker.
+func (c *httpClient) isSelf(m Member) bool {
+	return c.opts.IsSelf != nil && c.opts.IsSelf(m)
+}
+
+// resolve returns m with the address the speaker has NOW: the roster's
+// address for its deviceID when the roster knows it, the stored address
+// otherwise. It refuses a stored address that belongs to a different speaker
+// by now, so a renumbered LAN cannot make the press form or dissolve the
+// wrong group: for a LAN address the roster's id for it is the witness, for
+// this speaker's own address (matched by IsSelf without an id match) the
+// firmware id its own agent reports over loopback is.
+func (c *httpClient) resolve(ctx context.Context, m Member) (Member, error) {
+	m.DeviceID = strings.TrimSpace(m.DeviceID)
+	m.IP = strings.TrimSpace(m.IP)
+	if m.DeviceID == "" {
+		return m, nil
+	}
+	if c.opts.PeerIP != nil {
+		if ip := strings.TrimSpace(c.opts.PeerIP(m.DeviceID)); ip != "" {
+			m.IP = ip
+			return m, nil
+		}
+	}
+	if c.isSelf(m) {
+		if c.opts.SelfDeviceID != "" && !strings.EqualFold(m.DeviceID, c.opts.SelfDeviceID) {
+			// Matched by address only. A two-chip chassis is legitimately
+			// named by its firmware id, which differs from the announced one;
+			// another speaker's stale address that became ours is not.
+			if fw := c.firmwareID(ctx, "127.0.0.1"); fw != "" && !strings.EqualFold(fw, m.DeviceID) {
+				return m, fmt.Errorf("the saved address %s is this speaker's now, not %s's (addresses changed?), save the group again", m.IP, m.DeviceID)
+			}
+		}
+		return m, nil
+	}
+	if m.IP != "" && c.opts.PeerDeviceID != nil {
+		if id := strings.TrimSpace(c.opts.PeerDeviceID(m.IP)); id != "" && !strings.EqualFold(id, m.DeviceID) {
+			return m, fmt.Errorf("another speaker answers at %s now (addresses changed?), save the group again", m.IP)
+		}
+	}
+	return m, nil
+}
+
 // bases lists the base URLs to try for master, in order.
-func (c *httpClient) bases(master Member) ([]string, error) {
-	if c.opts.IsSelf != nil && c.opts.IsSelf(master) {
+func (c *httpClient) bases(ctx context.Context, master Member) ([]string, error) {
+	master, err := c.resolve(ctx, master)
+	if err != nil {
+		return nil, err
+	}
+	if c.isSelf(master) {
 		return []string{fmt.Sprintf("http://127.0.0.1:%d", c.opts.LocalPort)}, nil
 	}
-	ip := strings.TrimSpace(master.IP)
+	ip := master.IP
 	if ip == "" {
 		return nil, errors.New("the main speaker has no address")
 	}
@@ -94,7 +160,7 @@ func (c *httpClient) bases(master Member) ([]string, error) {
 // (a stock Bose web server on :8888 answers 404 for every agent path). The
 // response body is read in full, capped, and returned with the status.
 func (c *httpClient) do(ctx context.Context, master Member, method, path, body string, timeout time.Duration) (int, []byte, error) {
-	bases, err := c.bases(master)
+	bases, err := c.bases(ctx, master)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -170,22 +236,32 @@ func (c *httpClient) LiveZone(ctx context.Context, master Member) (LiveZone, err
 // per address and cached. "" when it cannot be read; the caller then relies
 // on the template's id alone.
 func (c *httpClient) selfID(ctx context.Context, master Member) string {
-	ip := strings.TrimSpace(master.IP)
-	if ip == "" {
+	master, err := c.resolve(ctx, master)
+	if err != nil {
+		return ""
+	}
+	host := master.IP
+	if c.isSelf(master) {
+		host = "127.0.0.1"
+	}
+	return c.firmwareID(ctx, host)
+}
+
+// firmwareID reads the deviceID the firmware at host reports (GET /info),
+// once per host: the answer is cached, so a press costs one read the first
+// time and none after that. "" when it cannot be read.
+func (c *httpClient) firmwareID(ctx context.Context, host string) string {
+	if host == "" {
 		return ""
 	}
 	c.mu.Lock()
-	id, ok := c.selfIDs[ip]
+	id, ok := c.selfIDs[host]
 	c.mu.Unlock()
 	if ok {
 		return id
 	}
 	ictx, cancel := context.WithTimeout(ctx, infoTimeout)
 	defer cancel()
-	host := ip
-	if c.opts.IsSelf != nil && c.opts.IsSelf(master) {
-		host = "127.0.0.1"
-	}
 	info, err := boxapi.New(host).GetInfo(ictx)
 	if err != nil {
 		return ""
@@ -193,7 +269,7 @@ func (c *httpClient) selfID(ctx context.Context, master Member) string {
 	id = strings.TrimSpace(info.DeviceID)
 	if id != "" {
 		c.mu.Lock()
-		c.selfIDs[ip] = id
+		c.selfIDs[host] = id
 		c.mu.Unlock()
 	}
 	return id
@@ -217,14 +293,26 @@ type wireMember struct {
 }
 
 func (c *httpClient) Form(ctx context.Context, tpl Template) error {
+	// The main speaker enrols each member from whatever box answers at the
+	// member's address, so the members are resolved to their current
+	// addresses the same way the main speaker is, and a member whose stored
+	// address now belongs to another speaker stops the form.
+	master, err := c.resolve(ctx, tpl.Master)
+	if err != nil {
+		return err
+	}
 	body := formBody{
-		Master:    wireMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP},
+		Master:    wireMember{DeviceID: master.DeviceID, IP: master.IP},
 		Name:      tpl.Name,
 		Mode:      "native",
 		Permanent: tpl.Permanent,
 	}
 	for _, m := range tpl.Members {
-		body.Slaves = append(body.Slaves, wireMember{DeviceID: m.DeviceID, IP: m.IP})
+		rm, err := c.resolve(ctx, m)
+		if err != nil {
+			return err
+		}
+		body.Slaves = append(body.Slaves, wireMember{DeviceID: rm.DeviceID, IP: rm.IP})
 	}
 	b, _ := json.Marshal(body)
 	code, rb, err := c.do(ctx, tpl.Master, http.MethodPost, "/api/box/zone", string(b), formTimeout)

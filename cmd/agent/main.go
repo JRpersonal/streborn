@@ -334,7 +334,21 @@ func run() error {
 			}
 			return m.IP != "" && ownIPv4s()[m.IP]
 		},
-		PortHint: peerWebPort,
+		// The announced id, so the client can tell an id match from an
+		// address-only match: after a DHCP renumbering another speaker's
+		// stored address can be this box's own.
+		SelfDeviceID: deviceID,
+		PortHint:     peerWebPort,
+		// Current addresses by id: the roster for peers, the LAN interface
+		// for this box itself (a member's stored address may be stale too,
+		// and the main speaker enrols whoever answers at it).
+		PeerIP: func(id string) string {
+			if deviceID != "" && strings.EqualFold(id, deviceID) {
+				return ownLANIPv4()
+			}
+			return peerIPByDeviceID(id)
+		},
+		PeerDeviceID: peerDeviceIDAt,
 	}))
 	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
 

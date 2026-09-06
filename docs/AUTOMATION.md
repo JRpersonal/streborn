@@ -176,7 +176,12 @@ The calls go to the main speaker's agent over the LAN (`:17008`, then
 `:8888`, the roster's last known port first), or over loopback when the
 speaker that saw the press is the main speaker itself. So a press on a member
 speaker's remote works too: the member forwards the form or dissolve to the
-main speaker's agent, the same call the app makes.
+main speaker's agent, the same call the app makes. The speakers are addressed
+at the address the peer roster holds for their id, so a template survives a
+DHCP renumbering; the stored address is only used when the roster has no entry
+for the id, and never when the roster says another speaker sits there now
+(then the press fails with "save the group again", and saving the template in
+the app refreshes the addresses).
 
 Dissolving goes through the same path as the app's Ungroup, so it also clears
 the main speaker's stored permanent group; the template itself stays on the
