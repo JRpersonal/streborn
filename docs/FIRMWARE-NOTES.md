@@ -416,6 +416,36 @@ Three routes have been tried and all are closed:
 Do not re-open any of these without new firmware evidence. Deep RE of the
 native path is blocked, see the native-preset notes.
 
+## The speaker stores presets itself: hold-to-store and the boot sync
+
+Holding a preset key for about two seconds runs the firmware's OWN store
+gesture (`MargeStateActive: HandleUpdatePresetRequest Updating Preset N`).
+It does not ask STR; it talks to the cloud, which is marge:
+
+1. When the slot held something: `DELETE
+   /streaming/account/<acct>/device/<deviceid>/preset/N` (logged as
+   `DeletePresetCB Preset N deleted successfully`; any 200 satisfies it).
+2. Then `PUT .../preset/N` with the playing ContentItem as the body,
+   `<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl"
+   location="/station?data=..." sourceAccount="" isPresetable="true">`
+   plus `itemName`/`containerArt` children. The same PUT arrives once per
+   native slot a few seconds after every boot (the firmware syncs its own
+   list up). A UPNP item is refused by the firmware itself before any
+   request (`AddPreset - failed due to invalid SourceID`).
+
+The answer goes through the firmware's preset parser (`GetPresetsCB`), so
+it must be ONE `<preset id="N">` element in the dialect of the preset list.
+Anything else fails the gesture: the generic account document produced
+`EXCEPTION in GetPresetsCB xml parsing: preset expected, but XML was
+'account'` and `UpdatePresetFailureCB` (Portable, 2026-09-06). marge now
+hands the item to the agent's store and echoes it as that element
+(`internal/marge/presetstore.go`, `cmd/agent/holdstore.go`).
+
+Every source change also POSTs a `<recent>` record to `.../device/<id>/recent`
+(`HandleAddRecentRequest`). The firmware expects the record back, not the
+list: the empty `<recents/>` STR used to answer made it log `AddRecentCB
+Failed with status=N` on every change. The record is echoed with an id.
+
 ## See also
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component map, ports,

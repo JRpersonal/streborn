@@ -60,8 +60,24 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	// has been getting the addDevice answer all along and nothing visibly broke),
 	// but answering the recents endpoint with recents is what it asked for.
 	case strings.Contains(path, "/recent") && r.Method == http.MethodPost:
-		s.logRecentPayload(r)
-		s.respondRecents(w)
+		s.respondRecentAdded(w, r)
+		return
+	// The firmware's own preset store: PUT .../device/<dev>/preset/<N> with the
+	// playing ContentItem, from the hold-to-store gesture on a preset key and
+	// from the boot-time sync of its own preset list. Must sit before the
+	// generic /streaming/account case that used to answer it with the account
+	// document, which the firmware's preset parser rejects
+	// ("preset expected, but XML was 'account'" -> UpdatePresetFailureCB).
+	// The firmware's DELETE on the same path is not handled here on purpose:
+	// it is answered fine by the fallthrough today ("DeletePresetCB Preset N
+	// deleted successfully"), and it precedes every re-store of an occupied
+	// slot, so it must not touch STR's store. See presetstore.go.
+	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/preset/") &&
+		(r.Method == http.MethodPut || r.Method == http.MethodPost):
+		if s.respondPresetStore(w, r) {
+			return
+		}
+		s.respondMargeAccountFull(w, r)
 		return
 
 	// AddDevice sync: /streaming/account/<accountId>/device/ POST

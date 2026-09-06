@@ -449,6 +449,75 @@ func (s *Server) respondRecents(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(EmptyRecentsXML))
 }
 
+// respondRecentAdded answers the firmware's per-station report,
+// POST /streaming/account/<acct>/device/<dev>/recent.
+//
+// The body is one <recent> record (lastplayedat, sourceid, name, location,
+// contentItemType). STR used to answer it with the EMPTY LIST document, and
+// the firmware, which expects the record it just created back, logged
+// "AddRecentCB Failed with status=N" and "HandleAddRecentRequestFailureCB -
+// Request Failed, Marge returned: <recents/>" on every source change
+// (Portable, 2026-09-06). The record is echoed back with an id, the way the
+// cloud confirmed a create: byte for byte what the firmware sent, so nothing
+// it might compare against its request can differ. A body without a <recent>
+// element keeps the old list answer.
+//
+// STR's own Recently-played ring is not fed from here: the webui already
+// records native plays at the moment they start (app play, preset recall,
+// hardware key), and a second writer keyed on the firmware's record would
+// split one listen into two cards.
+func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
+	// logRecentPayload consumes the body copy; the spy middleware buffered it,
+	// so read it once here and hand both uses the same bytes.
+	var body []byte
+	if r != nil && r.Body != nil {
+		body, _ = io.ReadAll(io.LimitReader(r.Body, 8<<10))
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	s.logRecentPayload(r)
+	// The firmware's request is the flat MargeAddRecentRequest form; its
+	// answer parser wants the record in the same dialect as the preset list
+	// (an id attribute and a ContentItem child), not the flat form echoed
+	// back: the echo was answered with "AddRecentCB Failed with status=200"
+	// on the Portable, 2026-09-06.
+	rec, ok := parseFlatRecord(body, "recent")
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	if !ok || rec.location == "" {
+		_, _ = w.Write([]byte(EmptyRecentsXML))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(recentElementXML(rec, s.nextRecentID(), time.Now())))
+}
+
+// recentElementXML renders one confirmed recent record in the list dialect
+// the firmware provably parses for presets.
+func recentElementXML(rec flatRecord, id int64, _ time.Time) string {
+	// The firmware's MargePB.recent (its proto table): lastplayedat,
+	// location, name, a full MargeSource element, credential, sourceid and
+	// contentItemType as child elements.
+	return `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<recent id="` + strconv.FormatInt(id, 10) + `">` +
+		`<lastplayedat>` + xmlEscapeText(rec.lastPlayedAt) + `</lastplayedat>` +
+		`<location>` + xmlEscapeText(rec.location) + `</location>` +
+		`<name>` + xmlEscapeText(rec.name) + `</name>` +
+		margeSourceElementXML(rec.sourceID, sourceNameForAccountID(rec.sourceID)) +
+		`<credential></credential>` +
+		`<sourceid>` + xmlEscapeText(rec.sourceID) + `</sourceid>` +
+		`<contentItemType>` + xmlEscapeText(rec.contentItemType) + `</contentItemType>` +
+		`</recent>`
+}
+
+// nextRecentID hands out the id the echoed recents record carries. Per agent
+// run, never persisted: the firmware keeps its own list and only needs the
+// answer to be a record, not a stable one.
+func (s *Server) nextRecentID() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recentSeq++
+	return s.recentSeq
+}
+
 // logRecentPayload records what the box tells marge when a station starts.
 //
 // This is the ONLY per-station message in the whole marge conversation:
