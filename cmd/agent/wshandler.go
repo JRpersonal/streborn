@@ -73,6 +73,14 @@ type presetWsHandler struct {
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.
 	keyTrace *boxlog.Reader
+	// powerGate dedupes the standby/wake transitions between the gabbo bus
+	// and the syslog ring (powergate.go). Zero value ready.
+	powerGate powerGate
+	// strSourceRecently reports whether STR's own UPnP source is, or moments
+	// ago was, the box's active source: the dispatcher's own gate for a
+	// standby entry, applied to a standby read from the syslog ring. Wired
+	// to boxws.Client.UPnPActiveRecently. nil means "assume yes".
+	strSourceRecently func() bool
 	// margeGroupClear drops STR's stereo-pair record for this speaker. Called
 	// when the BOX itself reports its pair torn down, which is how a teardown
 	// done in the Bose app (or one that reached only the other member) reaches
@@ -898,6 +906,15 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 // that silently de-registered the key layer during standby (#487, where dead
 // presses emit no frame and no other trigger ever fires).
 func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
+	// Dedupe against the syslog ring's report of the same wake (powergate.go).
+	if !h.admitPower(powerSignalWake, originGabbo) {
+		return
+	}
+	h.standbyExit()
+}
+
+// standbyExit is what a standby exit does, whichever origin reported it.
+func (h *presetWsHandler) standbyExit() {
 	requestPresetKeyResync(h.logger, "standby-exit")
 	// The user just switched the box on. If the firmware had dropped a stream
 	// while the box was off, STR replays it NOW - on the user's own action -
@@ -966,6 +983,16 @@ func (h *presetWsHandler) logStandbyRaceSignature() {
 // UPNP<->STANDBY does not switch the speaker back on (#197). boxws calls this via
 // an optional interface, so only handlers that wire it (this one) react.
 func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
+	// Dedupe against the syslog ring's report of the same power-off
+	// (powergate.go).
+	if !h.admitPower(powerSignalStandby, originGabbo) {
+		return
+	}
+	h.enterStandby()
+}
+
+// enterStandby is what a standby entry does, whichever origin reported it.
+func (h *presetWsHandler) enterStandby() {
 	if h.onEnterStandby != nil {
 		h.onEnterStandby()
 	}

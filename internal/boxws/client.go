@@ -312,6 +312,27 @@ const wsReadDeadline = 2*wsKeepaliveInterval + 3*time.Minute
 // loop returns, triggering a clean reconnect.
 const wsWriteTimeout = 10 * time.Second
 
+// upnpRecentlyLocked reports whether STR's own source (UPNP) was the active
+// one just before a source change, directly or through the firmware's
+// UPNP -> INVALID_SOURCE -> STANDBY give-up route. prev is the source before
+// the change. Caller holds c.mu.
+func (c *Client) upnpRecentlyLocked(prev string) bool {
+	return prev == "UPNP" ||
+		(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow) ||
+		c.upnpEpisode
+}
+
+// UPnPActiveRecently reports whether STR's own source is, or moments ago
+// was, the box's active source as far as the gabbo stream has told. It is
+// the same gate the dispatcher applies before it reports a standby entry as
+// STR's playback being powered off, so a standby read from the syslog ring
+// (see cmd/agent) reaches the same handler under the same condition.
+func (c *Client) UPnPActiveRecently() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.upnpRecentlyLocked(c.lastSource)
+}
+
 // LastWifiSignal returns the most recent Wi-Fi signal class seen on the
 // gabbo stream, or "" if none observed yet.
 func (c *Client) LastWifiSignal() string {

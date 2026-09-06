@@ -140,7 +140,14 @@ underrun, plus the URL the firmware tried; standby and wake
 transitions of the system controller and scmmond's low-power
 notifications; the Wi-Fi status and signal quality the sm2 chassis
 logs once a minute; MargeClient errors about STR's own answers; and
-the "getting swamped?" overload warning) and `box_syslog_tail` (the
+the "getting swamped?" overload warning; the standby and wake lines are
+also the agent's wake signal: one deduplicated `PowerEvent` per
+transition reaches the same `OnEnterStandby` / `OnStandbyExit` handlers
+the gabbo bus feeds, so a speaker switched on at the box or by its
+remote is noticed even on a chassis that never sends the power frame or
+while the WebSocket is between recycles, with whichever origin reports
+first delivering and the other suppressed within 5 s, visible under
+`powerSignal`) and `box_syslog_tail` (the
 last 150 ring lines with the TPDA/STSCertified localhost-retry spam and
 the clock-sync chatter dropped). The agent hashes SSIDs in both before
 they leave the speaker; the app's bundle anonymizer masks IPs and

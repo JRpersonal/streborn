@@ -1023,11 +1023,32 @@ func run() error {
 	)
 	wsHandler.keyTrace = keyTrace
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
+	// The ring is also the wake signal: the firmware logs every standby and
+	// wake transition there, so a speaker switched on at the box or by its
+	// remote is noticed even on a chassis whose gabbo bus never sends the
+	// power frame, or while the WebSocket is between its idle recycles. The
+	// handler delivers it through the same doors the bus uses and dedupes
+	// the two origins (cmd/agent/powergate.go); the standby gate is the
+	// dispatcher's own (STR's source was the active one).
+	keyTrace.SetPowerHandler(wsHandler.OnBoxPowerEvent)
+	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// The same ring carries the firmware's own forensics (why a stream did
 	// not start, standby/wake, Wi-Fi, marge complaints, overload). The reader
 	// keeps a bounded classified copy and a redacted tail in RAM for the
 	// diagnostic bundle; SSIDs are hashed on the speaker before they leave it.
-	webui.RegisterDebugSection("box_syslog_events", func() any { return keyTrace.EventsSnapshot() })
+	// "powerSignal" in the section says which origin (bus or ring) delivered
+	// the last standby and wake, so a bundle shows whether the ring path is
+	// the one that fired.
+	webui.RegisterDebugSection("box_syslog_events", func() any {
+		m := keyTrace.EventsSnapshot()
+		ps, ok := m["powerSignal"].(map[string]any)
+		if !ok {
+			ps = map[string]any{}
+			m["powerSignal"] = ps
+		}
+		ps["delivery"] = wsHandler.powerGate.snapshot()
+		return m
+	})
 	webui.RegisterDebugSection("box_syslog_tail", func() any { return keyTrace.TailSnapshot() })
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is

@@ -87,6 +87,9 @@ type Reader struct {
 	// forensics keeps the classified firmware events and the redacted tail
 	// for the diagnostic bundle (see forensics.go). Own lock.
 	forensics *forensics
+	// powerHandler receives one PowerEvent per standby/wake transition the
+	// firmware logs (see power.go). Guarded by mu; nil disables the hook.
+	powerHandler PowerHandler
 }
 
 // New returns a reader that will call handler for every key event.
@@ -238,8 +241,11 @@ func (r *Reader) handleLine(line string, now time.Time) {
 	r.lastLine = now
 	r.linesSeen++
 	r.mu.Unlock()
-	if fev, logIt, ok := r.forensics.observe(line, now); ok && logIt {
-		r.logger.Info("box syslog: "+string(fev.Class), "process", fev.Process, "facility", fev.Facility, "msg", fev.Message)
+	if fev, logIt, ok := r.forensics.observe(line, now); ok {
+		if logIt {
+			r.logger.Info("box syslog: "+string(fev.Class), "process", fev.Process, "facility", fev.Facility, "msg", fev.Message)
+		}
+		r.firePower(fev)
 	}
 	ev, ok := ParseKeyLine(line, now)
 	if !ok {
@@ -301,8 +307,9 @@ func (r *Reader) LastPlaybackFailure(d time.Duration) (Event, bool) {
 
 // EventsSnapshot is the box_syslog_events debug section: the classified
 // firmware events (playback failures, standby/wake, power, Wi-Fi, marge
-// complaints, overload), newest last, SSIDs already hashed.
-func (r *Reader) EventsSnapshot() map[string]any { return r.forensics.eventsSnapshot() }
+// complaints, overload), newest last, SSIDs already hashed, plus the wake
+// signal's own counters under "powerSignal" (see power.go).
+func (r *Reader) EventsSnapshot() map[string]any { return r.forensics.sectionSnapshot() }
 
 // TailSnapshot is the box_syslog_tail debug section: the most recent ring
 // lines with the localhost-retry spam and the clock-sync chatter dropped and

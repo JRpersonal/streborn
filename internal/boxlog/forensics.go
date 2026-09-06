@@ -319,6 +319,12 @@ type forensics struct {
 	lastPlayErr Event
 	dropped     uint64
 	classified  uint64
+	// lastPower is the first line of the newest standby/wake transition; the
+	// other daemon's line about the same transition is folded into it (see
+	// power.go).
+	lastPower        PowerEvent
+	powerTransitions uint64
+	powerDuplicates  uint64
 }
 
 func newForensics() *forensics {
@@ -400,6 +406,14 @@ func (f *forensics) eventsSnapshot() map[string]any {
 		"noiseLines": f.dropped,
 		"events":     out,
 	}
+}
+
+// eventsSnapshot's sibling for the section: the ring stats plus the wake
+// signal (see power.go). Split so the lock is not held across both.
+func (f *forensics) sectionSnapshot() map[string]any {
+	out := f.eventsSnapshot()
+	out["powerSignal"] = f.powerSnapshot()
+	return out
 }
 
 // tailSnapshot is the box_syslog_tail debug section.
