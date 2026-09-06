@@ -3789,6 +3789,13 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
           try { ClearUpdateIntent(box.host, box.port); } catch {}
           return { outcome: 'done', version: live || confirmedVer, engineDelivered };
         }
+        // STR is being removed from this speaker: the delivery was skipped
+        // on purpose, and a "Spotify engine installed" toast in the middle
+        // of an uninstall reads as a bug (report of 2026-09-06). Finish quietly.
+        if (engRes && /^skipped:/i.test(engRes)) {
+          try { ClearUpdateIntent(box.host, box.port); } catch {}
+          return { outcome: 'done', version: live || confirmedVer, engineDelivered: false, quiet: true };
+        }
         // "current" means nothing was sent: the engine was already the right one.
         if (engRes !== 'current') engineDelivered = true;
         // Do not take the delivery's word for it. The update may only be
@@ -4202,7 +4209,7 @@ async function doBoxUpdate(targetBox) {
       // THE done moment: everything, engine half included, is finished. One
       // toast, here and only here (#672); the confirm phase above announced
       // only the speaker-software half.
-      showToast(result.engineDelivered ? t('update.spotifyDoneToast') : t('update.doneToast'));
+      if (!result.quiet) showToast(result.engineDelivered ? t('update.spotifyDoneToast') : t('update.doneToast'));
     } else if (result && result.outcome === 'partial') {
       // Agent updated, Spotify engine outstanding.
       if (result.engineTooFull) {

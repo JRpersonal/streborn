@@ -758,6 +758,17 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	}
 }
 
+// EngineSkippedUninstalling is EnsureSpotifyEngine's answer when STR is being
+// removed from the speaker: nothing was sent, nothing must be announced.
+const EngineSkippedUninstalling = "skipped: STR is being removed from this speaker"
+
+// isUninstalling reports whether UninstallSTR has started (or finished) for
+// host in this session.
+func (a *App) isUninstalling(host string) bool {
+	_, ok := a.uninstalling.Load(host)
+	return ok
+}
+
 // EnsureSpotifyEngine makes sure the go-librespot Spotify sidecar is present on
 // the box, delivering it over the air when missing. It is the post-upgrade
 // reconcile for #237: the sidecar is normally pushed during the agent OTA, but a
@@ -785,6 +796,13 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // transient drop right after a reboot it returns the error so the caller's retry
 // loop tries again while keeping the user informed.
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
+	if a.isUninstalling(host) {
+		// The user is removing STR from this speaker: do not push an engine
+		// onto it and do not announce one. The update flow treats this like
+		// "nothing to deliver" and stays quiet.
+		a.logger.Info("ensure spotify engine: STR is being removed from this speaker, skipping the engine delivery", "host", host)
+		return EngineSkippedUninstalling, nil
+	}
 	if !agentbin.GoLibrespotAvailable() {
 		return "no embedded engine in this build", nil
 	}
