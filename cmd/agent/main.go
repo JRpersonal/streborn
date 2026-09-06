@@ -1023,6 +1023,37 @@ func run() error {
 	)
 	wsHandler.keyTrace = keyTrace
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
+	// The ring is also the wake signal: the firmware logs every standby and
+	// wake transition there, so a speaker switched on at the box or by its
+	// remote is noticed even on a chassis whose gabbo bus never sends the
+	// power frame, or while the WebSocket is between its idle recycles. The
+	// handler delivers it through the same doors the bus uses and dedupes
+	// the two origins (cmd/agent/powergate.go); the standby gate is the
+	// dispatcher's own (STR's source was the active one).
+	keyTrace.SetPowerHandler(wsHandler.OnBoxPowerEvent)
+	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
+	// While the socket is up the bus's own standby frame is what acts (it
+	// arrives with the key stamp the standby classifier reads); the ring's
+	// copy waits for it and only goes through when the bus stays silent.
+	wsHandler.busLive = wsClient.Connected
+	// The same ring carries the firmware's own forensics (why a stream did
+	// not start, standby/wake, Wi-Fi, marge complaints, overload). The reader
+	// keeps a bounded classified copy and a redacted tail in RAM for the
+	// diagnostic bundle; SSIDs are hashed on the speaker before they leave it.
+	// "powerSignal" in the section says which origin (bus or ring) delivered
+	// the last standby and wake, so a bundle shows whether the ring path is
+	// the one that fired.
+	webui.RegisterDebugSection("box_syslog_events", func() any {
+		m := keyTrace.EventsSnapshot()
+		ps, ok := m["powerSignal"].(map[string]any)
+		if !ok {
+			ps = map[string]any{}
+			m["powerSignal"] = ps
+		}
+		ps["delivery"] = wsHandler.powerGate.snapshot()
+		return m
+	})
+	webui.RegisterDebugSection("box_syslog_tail", func() any { return keyTrace.TailSnapshot() })
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user
@@ -1064,8 +1095,18 @@ func run() error {
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
 	// Let HandleEnterStandby tell a physical power-off (accompanied by a
 	// userActivityUpdate key frame) from the firmware spontaneously powering
-	// off STR's UPnP source (#419).
-	webuiSrv.SetUserActivityFn(wsClient.LastUserActivity)
+	// off STR's UPnP source (#419). The key the syslog ring decoded counts
+	// too: a standby that reaches the handler from the ring while the
+	// WebSocket is between its idle recycles has no bus stamp to go with it,
+	// and the ring's own key line is then the only evidence that the user
+	// pressed power. Whichever origin saw a key more recently wins.
+	webuiSrv.SetUserActivityFn(func() time.Time {
+		t := wsClient.LastUserActivity()
+		if k := keyTrace.LastKeyAt(); k.After(t) {
+			return k
+		}
+		return t
+	})
 	// Report an ongoing "the box refuses every recall" state so the app can
 	// offer a soft reboot, which clears it, instead of leaving the user with
 	// the plug pull they would otherwise try (#419 Finding 4).

@@ -132,6 +132,12 @@ Contents:
   README.txt            this file
   app.log               desktop app log (rolling, up to 2 MB)
   box-<n>.json          per-box snapshot (Bose /info + /sources + STR /api/status + /api/agent/version + /api/box/zone)
+                        plus the agent's debugState: its own log, the NAND and stick listings, and
+                        two copies out of the speaker firmware's RAM-only syslog ring:
+                          box_syslog_events  classified firmware events (playback failure reasons,
+                                             standby/wake, power, Wi-Fi signal, marge complaints, overload)
+                          box_syslog_tail    the most recent firmware log lines, spam dropped
+                        The agent hashes Wi-Fi names in both before they leave the speaker.
   stick-<n>/setup.log   FAT32 setup.log if an STR stick is plugged into this PC
   stick-<n>/_meta.json  drive metadata (path, label, free space)
   manifest.json         summary
