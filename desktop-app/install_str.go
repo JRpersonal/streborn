@@ -86,6 +86,13 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	switch {
 	case err != nil:
 		a.recordOTA(host, "install: FAILED step="+res.Step+" code="+res.Code+" err="+err.Error())
+	case !res.OK && res.Code == speakerNotBackCode:
+		// Not a proven failure: the install ran, the speaker just was not
+		// back on the network when the wait budget ran out. The background
+		// re-check appends the verdict (installwait.go). Worded apart from
+		// FAILED so the failure report does not count it as one more identical
+		// failed attempt.
+		a.recordOTA(host, "install: UNCONFIRMED step="+res.Step+" code="+res.Code+" (the install ran; the speaker was not back on the network when the wait budget ran out)")
 	case !res.OK:
 		a.recordOTA(host, "install: FAILED step="+res.Step+" code="+res.Code)
 	default:
@@ -231,9 +238,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 					a.emitPhase("wait")
 					if werr := a.waitForAgent(host, model); werr != nil {
 						a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
-						instRes.OK = false
-						instRes.Code = "agent-not-up"
-						instRes.Message = "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute."
+						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
 					}
 				}
 				return instRes, instErr
@@ -386,9 +391,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 					a.emitPhase("wait")
 					if werr := a.waitForAgent(host, model); werr != nil {
 						a.logger.Warn("install_str: SSH-staged install ran but the agent did not come up in time", "host", host, "err", werr)
-						instRes.OK = false
-						instRes.Code = "agent-not-up"
-						instRes.Message = "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute."
+						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
 					}
 				}
 				return instRes, instErr
@@ -496,8 +499,8 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				// now a plain slow boot.
 				a.logger.Warn("install_str: NAND-install over network ran but agent not up yet", "host", host)
 				res.Step = "wait-agent"
-				res.Code = "agent-not-up"
-				res.Message = "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute." + fwNote
+				res = a.agentNotUp(res, host, model, "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
+				res.Message += fwNote
 				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
 				return res, nil
 			}
@@ -577,8 +580,8 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 						// slow/failed boot, so return the agent-not-up guidance.
 						a.logger.Warn("install_str: NAND-copy repair installed over network but agent still not up", "host", host)
 						res.Step = "wait-agent"
-						res.Code = "agent-not-up"
-						res.Message = "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. " + logHint + fwNote
+						res = a.agentNotUp(res, host, model, "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. "+logHint)
+						res.Message += fwNote
 						res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
 						return res, nil
 					}
@@ -612,15 +615,17 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			}
 		}
 		res.Step = "wait-agent"
-		res.Code = "agent-not-up"
+		generic := "The speaker did not bring up the STR agent on port 8888 in time. " +
+			"It may still be rebooting; refresh the speaker list in a minute. " + logHint
 		if slowBootModel(model) {
-			res.Message = "The speaker is still starting. On Portable / BCO models this can take 2 to 3 minutes. " +
+			generic = "The speaker is still starting. On Portable / BCO models this can take 2 to 3 minutes. " +
 				"Keep the STR stick plugged in, power-cycle the speaker (unplug for 10 seconds, plug back in with the stick in place), " +
 				"wait 2 to 3 minutes, then refresh the speaker list. " + logHint
-		} else {
-			res.Message = "The speaker did not bring up the STR agent on port 8888 in time. " +
-				"It may still be rebooting; refresh the speaker list in a minute. " + logHint
 		}
+		// "Did not bring up the agent" is only said when the speaker shows a
+		// sign of life; a speaker silent at every layer is reported as not
+		// back on the network yet, with a background re-check (installwait.go).
+		res = a.agentNotUp(res, host, model, generic)
 		res.Message += fwNote
 		return res, nil
 	}
