@@ -37,6 +37,8 @@ export namespace main {
 	    build: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
+	    strNotRunning?: boolean;
+	    strSilent?: boolean;
 	    otaPending?: boolean;
 	    boxHealth?: string;
 	    conflictingMod?: string;
@@ -65,6 +67,8 @@ export namespace main {
 	        this.build = source["build"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
+	        this.strNotRunning = source["strNotRunning"];
+	        this.strSilent = source["strSilent"];
 	        this.otaPending = source["otaPending"];
 	        this.boxHealth = source["boxHealth"];
 	        this.conflictingMod = source["conflictingMod"];
