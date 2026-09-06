@@ -36,6 +36,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
 import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
+import { answersWithoutSTR } from '../boxstate.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -50,6 +51,7 @@ import {
   BrowserOpenURL,
   TrueFactoryReset,
   UninstallSTR,
+  RefreshKnownBoxes,
   RemoveConflictingMod,
   GetBoxLanguage,
   SetBoxLanguage,
@@ -306,6 +308,84 @@ export function langOptionsHtml() {
     .join('');
 }
 
+// settingsBoxLabel is the name the panels below address the speaker by.
+function settingsBoxLabel(box) {
+  return (box && (box.friendlyName || box.name || box.host)) || '';
+}
+
+// openInstallFor sends the user to Setup with this speaker pinned as the
+// network-install target (the same path the Listen to music card takes for a
+// stock speaker), so the install starts on THIS box on a multi-speaker LAN.
+function openInstallFor(box) {
+  state.strRemovedHost = null;
+  state.setupTarget = { kind: 'stock', box };
+  deps.switchView('setup');
+}
+
+// renderSTRRemovedPanel replaces the settings body after STR was removed from
+// the selected speaker on purpose. The speaker rebooted into its Bose firmware
+// by design, so the "reading speaker data" retry loop and its "agent died,
+// unplug the speaker" ending would be nonsense here: nothing is wrong, and
+// there is no agent to read from. Say what happened and where the box went.
+function renderSTRRemovedPanel(body, box) {
+  body.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-state-title">${escapeHtml(t('settingsView.strRemovedTitle'))}</div>
+      <div class="empty-state-text">
+        ${escapeHtml(t('settingsView.strRemovedHelp', { name: settingsBoxLabel(box) }))}
+      </div>
+      <div class="empty-state-buttons">
+        <button class="btn btn-mini" id="settingsInstallAgain">${escapeHtml(t('settingsView.repairSTRBtn'))}</button>
+        <button class="btn btn-primary btn-mini" id="settingsBackToBoxes">${escapeHtml(t('settingsView.backToSpeakerList'))}</button>
+      </div>
+    </div>`;
+  const again = document.getElementById('settingsInstallAgain');
+  if (again) again.onclick = () => openInstallFor(box);
+  const back = document.getElementById('settingsBackToBoxes');
+  if (back) back.onclick = () => { state.strRemovedHost = null; deps.switchView('box'); };
+}
+
+// renderSTRNotRunningPanel is the honest ending for a speaker that answers its
+// Bose firmware while the STR agent on it does not answer: the box is up, so
+// "unplug it" is wrong advice; what it needs is STR installed again (a repair
+// over the network). Used both for a record discovery already degraded to
+// "STR not running" and for the reconnect loop's give-up when the box still
+// answers on its Bose port.
+function renderSTRNotRunningPanel(body, box, withRetry) {
+  body.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-state-title">${escapeHtml(t('settingsView.strNotRunningTitle'))}</div>
+      <div class="empty-state-text">
+        ${escapeHtml(t('settingsView.strNotRunningHelp', { name: settingsBoxLabel(box) }))}
+      </div>
+      <div class="empty-state-buttons">
+        <button class="btn btn-primary btn-mini" id="settingsInstallAgain">${escapeHtml(t('settingsView.repairSTRBtn'))}</button>
+        ${withRetry ? `<button class="btn btn-mini" id="settingsRetry">${escapeHtml(t('common.retry'))}</button>` : ''}
+        <button class="btn btn-mini" id="settingsBackToBoxes">${escapeHtml(t('settingsView.backToSpeakerList'))}</button>
+      </div>
+    </div>`;
+  const again = document.getElementById('settingsInstallAgain');
+  if (again) again.onclick = () => openInstallFor(box);
+  const r = document.getElementById('settingsRetry');
+  if (r) r.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
+  const back = document.getElementById('settingsBackToBoxes');
+  if (back) back.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
+}
+
+// boseAnswersWithoutSTR asks the backend for a fresh direct probe of the
+// selected speaker and reports whether its Bose firmware answered while the
+// STR agent did not: a degraded "STR not running" record, a plain stock
+// record, or this cycle's transient strSilent marker. False when nothing
+// answered (or the probe itself failed), which is the genuine "dead" case.
+async function boseAnswersWithoutSTR(box) {
+  try {
+    const fresh = await RefreshKnownBoxes();
+    return answersWithoutSTR((fresh || []).find(b => b && b.host === box.host));
+  } catch {
+    return false;
+  }
+}
+
 export async function loadBoxSettings() {
   mountSettingsShell(); // build the shell on first open (see note above)
   renderSettingsBoxSelect();
@@ -327,6 +407,25 @@ export async function loadBoxSettings() {
   // (an STR endpoint on port 8888) would hit Bose's RomPager web
   // server and return a 404 with a confusing HTML error. Render a
   // clear "install STR first" panel instead.
+  //
+  // Two cousins of the plain stock box come first. STR was just removed from
+  // this speaker by the user (strRemovedHost): the box is stock by design, say
+  // so instead of "STR not installed yet". And a box discovery degraded to
+  // "STR not running" (answers its Bose firmware, agent gone for good): the
+  // fix is a reinstall, not a power cycle. Both clear once the agent answers
+  // again (an STR record with a version behind it).
+  if (state.strRemovedHost && state.settingsBox.host === state.strRemovedHost) {
+    if (state.settingsBox.kind === 'str' && state.settingsBox.version && !state.settingsBox.strSilent) {
+      state.strRemovedHost = null;
+    } else {
+      renderSTRRemovedPanel(body, state.settingsBox);
+      return;
+    }
+  }
+  if (state.settingsBox && state.settingsBox.kind === 'stock' && state.settingsBox.strNotRunning) {
+    renderSTRNotRunningPanel(body, state.settingsBox, false);
+    return;
+  }
   if (state.settingsBox && state.settingsBox.kind === 'stock') {
     body.innerHTML = `
       <div class="empty-state">
@@ -449,6 +548,16 @@ export async function loadBoxSettings() {
   } else {
     // After 10 failed attempts: give up and show clear instructions.
     state.settingsReconnect = null;
+    // Which instructions depends on whether the speaker answers at all. A box
+    // whose Bose firmware answers while the agent does not (STR removed out
+    // of band, agent gone) is not dead, and "unplug it" would not help: what
+    // it needs is STR installed again. Only a speaker that answers nothing
+    // gets the power-cycle advice (2026-09-06 report: the dead-speaker panel
+    // on a stock speaker that was answering fine).
+    if (await boseAnswersWithoutSTR(state.settingsBox)) {
+      renderSTRNotRunningPanel(body, state.settingsBox, true);
+      return;
+    }
     body.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-title">${escapeHtml(t('settingsView.speakerDeadTitle'))}</div>
@@ -1944,9 +2053,23 @@ function renderBoxSettings(s, box) {
         const r = await UninstallSTR(box.host);
         if (r && r.ok) {
           showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
-          // Speaker reboots into vanilla Bose OOB; it will be off the LAN
-          // for a while. Re-scan in 60 s.
+          // The speaker is a stock Bose box again, by design. Do not let the
+          // reconnect loop chase an agent that is gone on purpose (it ended in
+          // "agent died, unplug the speaker", 2026-09-06 report): stop any
+          // pending retry, show what happened, and hand Speaker Settings a
+          // record that already says stock so a re-render lands on the same
+          // panel until the box list carries the backend's rewritten record.
+          if (state.settingsReconnect && state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
+          state.settingsReconnect = null;
+          state.strRemovedHost = box.host;
+          state.settingsBox = { ...box, kind: 'stock', version: '', build: '', port: 8090, portVerified: false, strSilent: false };
+          renderSTRRemovedPanel($('settingsBody'), state.settingsBox);
+          // The backend rewrote the cached record as stock; refresh the list
+          // now so the Listen to music card drops the version badge at once,
+          // and re-scan in 60 s once the box is back from its reboot.
+          deps.discoverBoxes();
           setTimeout(deps.discoverBoxes, 60000);
+          return;
         } else if (r && r.stickPresent) {
           showError(t('settingsView.removeSTRStickPresent'));
         } else {
