@@ -85,7 +85,7 @@ func TestAgentNotUpReportsASilentSpeakerAsNotBackYet(t *testing.T) {
 }
 
 // The background look two minutes later: when the agent answers, the journal
-// gets a "confirmed late" line that supersedes the failed one and the box is
+// gets a "confirmed late" line that supersedes the UNCONFIRMED one and the box is
 // pinned as STR for discovery; when it does not, the journal says that with
 // fresh facts.
 func TestLateRecheckCorrectsTheJournalWhenTheAgentAnswers(t *testing.T) {
@@ -112,6 +112,16 @@ func TestLateRecheckCorrectsTheJournalWhenTheAgentAnswers(t *testing.T) {
 	j := readJournal(t, journal)
 	if !strings.Contains(j, "install: confirmed late - the agent answered on :8888") || !strings.Contains(j, "version v0.9.75 build b9") {
 		t.Fatalf("journal lacks the corrective line:\n%s", j)
+	}
+	// The failure report counts journal lines carrying the FAILED token as
+	// failed attempts. This attempt succeeded, so neither of its lines may
+	// carry it (the wait-out line says UNCONFIRMED, and the corrective line
+	// must name that one, not FAILED).
+	if strings.Contains(j, "FAILED") {
+		t.Errorf("a late-confirmed install left a FAILED token in the journal:\n%s", j)
+	}
+	if !strings.Contains(j, "the UNCONFIRMED line above is superseded") {
+		t.Errorf("the corrective line does not name the UNCONFIRMED line it supersedes:\n%s", j)
 	}
 	a.discMu.Lock()
 	_, pinned := a.otaPinned["192.0.2.36"]

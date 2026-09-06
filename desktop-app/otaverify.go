@@ -117,7 +117,14 @@ func (a *App) forgetOTAVerify(host string) {
 // the box runs this app's build, or what it does run when it does not. Either
 // way the memo is cleared, so a journal gets exactly one such line per
 // attempt.
-func (a *App) confirmLateOTA(seen map[string]BoxInfo) {
+//
+// presenceOnly names the hosts that answered on the stock :8090 only this
+// cycle. RefreshKnownBoxes puts the CACHED record into seen for those, so
+// its Kind and Build describe the box as it was before the update, not as
+// it is now; treating that as a sighting would journal "runs the OLD build"
+// about a box that is merely still booting, and burn the one corrective line
+// the memo allows. Such hosts are left for a later cycle.
+func (a *App) confirmLateOTA(seen map[string]BoxInfo, presenceOnly map[string]bool) {
 	if len(seen) == 0 {
 		return
 	}
@@ -139,6 +146,9 @@ func (a *App) confirmLateOTA(seen map[string]BoxInfo) {
 		}
 		if now.Sub(m.unconfirmedAt) > otaVerifyMemoTTL {
 			delete(a.otaVerify, host)
+			continue
+		}
+		if presenceOnly[host] {
 			continue
 		}
 		b, ok := seen[host]

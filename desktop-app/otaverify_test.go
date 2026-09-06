@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -179,17 +180,17 @@ func TestUnreachableVerdictIsCorrectedByALaterDiscoverySighting(t *testing.T) {
 	}
 
 	// A stock-only sighting or one on the old build does not confirm.
-	a.confirmLateOTA(map[string]BoxInfo{"127.0.0.1": {Host: "127.0.0.1", Kind: "stock"}})
+	a.confirmLateOTA(map[string]BoxInfo{"127.0.0.1": {Host: "127.0.0.1", Kind: "stock"}}, nil)
 	if strings.Contains(readJournal(t, journal), "confirmed late by discovery") {
 		t.Fatal("a stock sighting was taken as confirmation")
 	}
 
-	a.confirmLateOTA(map[string]BoxInfo{"127.0.0.1": {Host: "127.0.0.1", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b2"}})
+	a.confirmLateOTA(map[string]BoxInfo{"127.0.0.1": {Host: "127.0.0.1", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b2"}}, nil)
 	j = readJournal(t, journal)
 	if !strings.Contains(j, "confirmed late by discovery - box is on build b2") || !strings.Contains(j, "found on :8888") {
 		t.Fatalf("journal lacks the corrective line:\n%s", j)
 	}
-	a.confirmLateOTA(map[string]BoxInfo{"127.0.0.1": {Host: "127.0.0.1", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b2"}})
+	a.confirmLateOTA(map[string]BoxInfo{"127.0.0.1": {Host: "127.0.0.1", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b2"}}, nil)
 	if n := strings.Count(readJournal(t, journal), "confirmed late by discovery"); n != 1 {
 		t.Errorf("corrective line written %d times, want exactly 1", n)
 	}
@@ -210,11 +211,61 @@ func TestLateSightingOnTheOldBuildIsJournaledOnce(t *testing.T) {
 	a := fastTestApp()
 	a.noteOTAUnconfirmed("192.0.2.9", "unreachable")
 	seen := map[string]BoxInfo{"192.0.2.9": {Host: "192.0.2.9", Port: 17008, Kind: "str", Version: "v0.9.70", Build: "old"}}
-	a.confirmLateOTA(seen)
-	a.confirmLateOTA(seen)
+	a.confirmLateOTA(seen, nil)
+	a.confirmLateOTA(seen, nil)
 	j := readJournal(t, journal)
 	if strings.Count(j, "seen again by discovery") != 1 || !strings.Contains(j, "build old") {
 		t.Errorf("journal:\n%s", j)
+	}
+}
+
+// The quick refresh (RefreshKnownBoxes) feeds the CACHED record into seen when
+// only the stock :8090 answered, which is exactly how a rebooting box looks
+// while its agent is not up yet. That record still carries the OLD build, and
+// must not be mistaken for a sighting of the box on it: the journal would end
+// on a false "runs the old build" verdict and the memo would be gone before
+// the genuine sighting arrives.
+func TestPresenceOnlyRefreshDoesNotCountAsALateSighting(t *testing.T) {
+	journal := useTempJournal(t)
+	oldBuild := appBuild
+	appBuild = "b4"
+	t.Cleanup(func() { appBuild = oldBuild })
+
+	a := fastTestApp()
+	a.discCache = map[string]discEntry{
+		// SerialNumber and Model set so the refresh does not go asking :8090/info.
+		"192.0.2.12": {box: BoxInfo{Host: "192.0.2.12", Port: 8888, Kind: "str", Version: "v0.9.70", Build: "old", PortVerified: true, SerialNumber: "SN", Model: "SoundTouch 10"}, seen: time.Now()},
+	}
+	a.rememberOTAPort("192.0.2.12", 8888)
+	a.noteOTAUnconfirmed("192.0.2.12", "unreachable")
+
+	// Pass 1: agent still down, stock :8090 up (mid-boot).
+	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) { return BoxInfo{}, false }
+	a.portOpenFn = func(string, int, int) bool { return true }
+	if _, err := a.RefreshKnownBoxes(); err != nil {
+		t.Fatal(err)
+	}
+	j := readJournal(t, journal)
+	if strings.Contains(j, "seen again by discovery") || strings.Contains(j, "confirmed late by discovery") {
+		t.Fatalf("a stock-only refresh was taken as a sighting:\n%s", j)
+	}
+	if _, ok := a.postOTAPort("192.0.2.12"); !ok {
+		t.Fatal("the memo was burnt by a stock-only refresh")
+	}
+
+	// Pass 2: the agent answers on the new build; now the corrective line is due.
+	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) {
+		return BoxInfo{Host: "192.0.2.12", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b4", PortVerified: true, SerialNumber: "SN", Model: "SoundTouch 10"}, true
+	}
+	if _, err := a.RefreshKnownBoxes(); err != nil {
+		t.Fatal(err)
+	}
+	j = readJournal(t, journal)
+	if !strings.Contains(j, "confirmed late by discovery - box is on build b4") || strings.Contains(j, "seen again by discovery") {
+		t.Fatalf("journal after the genuine sighting:\n%s", j)
+	}
+	if _, ok := a.postOTAPort("192.0.2.12"); ok {
+		t.Error("the memo survived its confirmation")
 	}
 }
 

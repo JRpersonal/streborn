@@ -141,7 +141,7 @@ func speakerNotBackMessage(model string) string {
 
 // scheduleInstallLateRecheck looks at the speaker once more after
 // installLateRecheckDelay and writes what it finds to the journal: a
-// "confirmed late" line that supersedes the FAILED one when the agent answers
+// "confirmed late" line that supersedes the UNCONFIRMED one when the agent answers
 // (over HTTP on either port, or as a running process over SSH on a chassis
 // whose firewall hides the ports), or a second "still not answering" line
 // with fresh facts when it does not. The UI is told either way over the
@@ -168,7 +168,10 @@ func (a *App) scheduleInstallLateRecheck(host, model string) {
 		}
 		late := time.Since(since).Round(time.Second)
 		if ok {
-			a.recordOTA(host, fmt.Sprintf("install: confirmed late - the agent answered %s %s after the wait budget ran out (version %s build %s); the FAILED line above is superseded, the install succeeded",
+			// Says UNCONFIRMED, not the other word: the failure report counts
+			// journal lines carrying that other token as failed attempts, and
+			// this line records a success.
+			a.recordOTA(host, fmt.Sprintf("install: confirmed late - the agent answered %s %s after the wait budget ran out (version %s build %s); the UNCONFIRMED line above is superseded, the install succeeded",
 				how, late, b.Version, b.Build))
 			a.logger.Info("install_str: late re-check found the agent up; the install succeeded after all", "host", host, "late", late, "version", b.Version)
 			// Same pin the success path sets: the box's stock :8090 answered

@@ -476,8 +476,10 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	// Before the cache re-adds anything, seen holds only this cycle's genuine
 	// sightings: the right moment to notice a box that came back on the new
 	// build after its update's verify window had already given up, and to
-	// write the journal line that says so (otaverify.go).
-	a.confirmLateOTA(seen)
+	// write the journal line that says so (otaverify.go). presenceOnly hosts
+	// are excluded there: for those, seen carries the CACHED record (old
+	// build) because only the stock :8090 answered, not a sighting.
+	a.confirmLateOTA(seen, presenceOnly)
 	now := time.Now()
 	a.discMu.Lock()
 	defer a.discMu.Unlock()
