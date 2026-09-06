@@ -136,6 +136,10 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// again: lift the "being removed" mark so the post-install engine delivery
 	// is not skipped (see App.uninstalling).
 	a.uninstalling.Delete(host)
+	// A fresh install supersedes any unfinished-update memo for this speaker:
+	// the install delivers the engine itself, and a stale memo from an
+	// earlier update would otherwise nag right after it (Discussion #871).
+	a.ClearUpdateIntent(host, 0)
 	a.installStart = time.Now()
 	a.installPhase = ""
 	defer func() { a.installPhase = ""; a.installMargeHits = nil }()
