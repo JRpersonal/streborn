@@ -1866,6 +1866,14 @@ func (s *Server) reconcileZoneOnce(playKick bool) {
 		s.formDefaultGroupOnPlay(z)
 		return
 	}
+	if z.Permanent {
+		// The tick's one job for a permanent group: members that dropped out
+		// of the LIVE group (an update reboot, a Wi-Fi hiccup) come back while
+		// the master plays, with the same member classification as the play
+		// kick and without waking anyone who was switched off on purpose.
+		s.rejoinMissingMembers(ctx, z)
+		return
+	}
 	if !s.zoneReconcileEnabled() {
 		// The periodic native re-assert stays opt-in (default OFF): on a tick
 		// there is no user intent to lean on, and re-asserting whenever a
