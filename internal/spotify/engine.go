@@ -109,8 +109,22 @@ func (m *Manager) StopEngine() bool {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	m.mu.Lock()
+	m.stoppedForUpdate = true
+	m.mu.Unlock()
 	m.logger.Info("spotify: stopped go-librespot to free NAND for an update", "pid", proc.Pid)
 	return true
+}
+
+// consumeStoppedForUpdate reports whether the last engine exit was the
+// deliberate StopEngine ahead of an OTA write, and clears the mark so the next
+// exit is judged on its own.
+func (m *Manager) consumeStoppedForUpdate() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	was := m.stoppedForUpdate
+	m.stoppedForUpdate = false
+	return was
 }
 
 // spotifyMinFreeBytes is the minimum free NAND below which go-librespot is not
@@ -234,9 +248,29 @@ func (m *Manager) Run(ctx context.Context) {
 	var rapidCrashes int
 	var lastClockSync time.Time
 	for ctx.Err() == nil {
+		// The binary can vanish while the loop runs: the OTA write drops the
+		// engine to fit a tight agent update (StopEngine + unlink) and the app
+		// re-delivers it after the reboot. Without this check the loop kept
+		// fork/exec-ing a file that was gone, counted every attempt as a crash
+		// and, three attempts later, told the log to "check the speaker's
+		// network/DNS" on every box of a fleet roll (2026-09-06). A dropped
+		// engine is not a crash: wait for the sidecar delivery instead.
+		if !m.Ready() {
+			m.logger.Info("spotify: engine binary is gone (dropped for an update), waiting for it to be delivered again")
+			if !m.waitForBinary(ctx) {
+				return
+			}
+			rapidCrashes = 0
+		}
 		started := time.Now()
 		err := m.runOnce(ctx)
 		if err != nil && ctx.Err() == nil && !errors.Is(err, errLowDisk) {
+			if m.consumeStoppedForUpdate() {
+				// The exit was ours (StopEngine ahead of an OTA write), so it
+				// is neither a crash nor worth a restart warning.
+				m.logger.Info("spotify: go-librespot stopped for an update, not counting it as a crash")
+				continue
+			}
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
 		}
 		// Crash-loop detection: a run that ended almost immediately is a crash,

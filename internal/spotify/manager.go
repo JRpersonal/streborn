@@ -66,9 +66,14 @@ type Manager struct {
 	// config is written, only the engine restart is owed. The box's next
 	// detach from the Ogg stream performs it (applyPendingBitrateAfterDetach).
 	bitrPending bool
-	client      *http.Client   // short ops: pause/resume/volume/info
-	playClient  *http.Client   // /player/play: a cold playlist load can take >5s
-	box         *boxapi.Client // box REST: friendly name (device_name) + volume bridge
+	// stoppedForUpdate marks an engine exit that StopEngine caused on purpose
+	// (the OTA write drops the engine to fit a tight agent update), so the
+	// supervise loop does not log it as a crash or restart a binary that is
+	// about to be unlinked.
+	stoppedForUpdate bool
+	client           *http.Client   // short ops: pause/resume/volume/info
+	playClient       *http.Client   // /player/play: a cold playlist load can take >5s
+	box              *boxapi.Client // box REST: friendly name (device_name) + volume bridge
 
 	// groupSlaveIPsFn returns the LAN IPs of the multiroom followers this box
 	// leads (empty when standalone). A Spotify Connect volume change targets the
