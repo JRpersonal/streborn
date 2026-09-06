@@ -58,16 +58,16 @@ func TestPresetPutIsKeptAndAnsweredWithThePresetElement(t *testing.T) {
 	if n := strings.Count(body, "<?xml"); n != 1 {
 		t.Fatalf("want exactly one XML declaration, got %d:\n%s", n, body)
 	}
-	if !strings.Contains(body, `<preset id="3" createdOn="`) || !strings.HasSuffix(body, "</preset>") {
-		t.Fatalf("answer must be a single <preset id=\"3\"> element, got:\n%s", body)
+	if !strings.Contains(body, `<preset buttonNumber="3">`) || !strings.HasSuffix(body, "</preset>") {
+		t.Fatalf("answer must be a single <preset buttonNumber=\"3\"> element, got:\n%s", body)
 	}
 	if strings.Contains(body, "<account") || strings.Contains(body, "<presets") {
 		t.Fatalf("answer must be the preset element, not the account or list document:\n%s", body)
 	}
-	if !strings.Contains(body, `<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="`+loc+`" sourceAccount="" isPresetable="true">`) {
-		t.Fatalf("ContentItem not echoed as sent:\n%s", body)
+	if !strings.Contains(body, `<location>`+loc+`</location><source id="3" type="Audio">`) || !strings.Contains(body, `<createdOn>`) || !strings.Contains(body, `<contentItemType>stationurl</contentItemType>`) {
+		t.Fatalf("record not in the firmware preset shape:\n%s", body)
 	}
-	if !strings.Contains(body, "<itemName>Radio Example &amp; Co</itemName>") {
+	if !strings.Contains(body, "<name>Radio Example &amp; Co</name>") {
 		t.Fatalf("itemName not echoed (escaped) in the answer:\n%s", body)
 	}
 	if got.Slot != 3 || got.Source != "LOCAL_INTERNET_RADIO" || got.Type != "stationurl" ||
@@ -86,7 +86,7 @@ func TestPresetPostIsKeptToo(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, heldDevicePath,
 		strings.NewReader(heldPresetBody(loc, "WDR 5"))))
-	if kept != 1 || !strings.Contains(w.Body.String(), `<preset id="3"`) {
+	if kept != 1 || !strings.Contains(w.Body.String(), `<preset buttonNumber="3">`) {
 		t.Fatalf("kept=%d body=%s", kept, w.Body.String())
 	}
 	if strings.Contains(w.Body.String(), "adddeviceresponse") {
@@ -199,9 +199,9 @@ func TestPresetSlotFromPath(t *testing.T) {
 func TestPresetElementXMLEscapes(t *testing.T) {
 	out := presetElementXML(HeldItem{Slot: 2, Source: "LOCAL_INTERNET_RADIO", Type: "stationurl",
 		Location: "/station?data=abc", ItemName: `Pop & "Rock"`, ContainerArt: "http://a/b?c=1&d=2"}, time.Unix(1700000000, 0))
-	if !strings.Contains(out, "<itemName>Pop &amp; &quot;Rock&quot;</itemName>") ||
+	if !strings.Contains(out, "<name>Pop &amp; &quot;Rock&quot;</name>") ||
 		!strings.Contains(out, "<containerArt>http://a/b?c=1&amp;d=2</containerArt>") ||
-		!strings.Contains(out, `createdOn="1700000000" updatedOn="1700000000"`) {
+		!strings.Contains(out, `<createdOn>2023-11-14T22:13:20.000+00:00</createdOn><updatedOn>2023-11-14T22:13:20.000+00:00</updatedOn>`) {
 		t.Fatalf("got %s", out)
 	}
 }
@@ -230,13 +230,13 @@ func TestRecentsPostEchoesTheRecordWithAnID(t *testing.T) {
 		if strings.Contains(body, "<recents") || strings.Contains(body, "adddeviceresponse") {
 			t.Fatalf("POST %d: answered with the list / addDevice document:\n%s", i, body)
 		}
-		if !strings.Contains(body, `<recent `+wantID+` `) || !strings.HasSuffix(body, "</recent>") {
+		if !strings.Contains(body, `<recent `+wantID+`>`) || !strings.HasSuffix(body, "</recent>") {
 			t.Fatalf("POST %d: want the record with %s:\n%s", i, wantID, body)
 		}
 		// The record comes back in the preset-list dialect (ContentItem child),
 		// which is what the firmware's parser accepts; the flat echo did not.
-		for _, field := range []string{`<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="/station?data=abc"`,
-			"<itemName>Best Of Rock.FM Alternative Rock</itemName>", "</ContentItem></recent>"} {
+		for _, field := range []string{`<location>/station?data=abc</location><name>Best Of Rock.FM Alternative Rock</name>`,
+			`<sourcename>LOCAL_INTERNET_RADIO</sourcename>`, `<sourceid>3</sourceid><contentItemType>stationurl</contentItemType></recent>`} {
 			if !strings.Contains(body, field) {
 				t.Fatalf("POST %d: %s missing:\n%s", i, field, body)
 			}
@@ -282,7 +282,7 @@ func TestRecentAnswerUsesTheContentItemDialect(t *testing.T) {
 		t.Fatalf("parse: ok=%v rec=%+v", ok, rec)
 	}
 	got := recentElementXML(rec, 7, time.Unix(1700000000, 0))
-	for _, want := range []string{`<recent id="7" createdOn="1700000000" updatedOn="1700000000">`, `<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9"`, `<itemName>MANGORADIO</itemName>`, `</ContentItem></recent>`} {
+	for _, want := range []string{`<recent id="7"><lastplayedat>2026-09-06T20:28:30+00:00</lastplayedat>`, `<location>/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9</location><name>MANGORADIO</name>`, `<source id="3" type="Audio">`, `<sourcename>LOCAL_INTERNET_RADIO</sourcename>`, `<credential></credential><sourceid>3</sourceid><contentItemType>stationurl</contentItemType></recent>`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in %s", want, got)
 		}

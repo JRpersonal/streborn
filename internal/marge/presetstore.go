@@ -40,6 +40,10 @@ import (
 // HeldItem is the ContentItem the firmware asks marge to keep in a preset
 // slot. String fields are the raw (unescaped) values from the request.
 type HeldItem struct {
+	// SourceID is the numeric account source id the firmware quoted, kept so
+	// the answer can embed the matching MargeSource element.
+	SourceID string
+
 	Slot          int
 	Source        string
 	Type          string
@@ -137,6 +141,7 @@ func parseHeldItem(body []byte) (HeldItem, bool) {
 		}
 		return HeldItem{
 			Source:        sourceNameForAccountID(rec.sourceID),
+			SourceID:      rec.sourceID,
 			Type:          rec.contentItemType,
 			Location:      rec.location,
 			SourceAccount: rec.username,
@@ -217,15 +222,46 @@ func sourceNameForAccountID(id string) string {
 // firmware provably parses on the list read). The item is echoed as sent, so a
 // firmware that compares the answer with its request sees its own item.
 func presetElementXML(item HeldItem, now time.Time) string {
-	ts := strconv.FormatInt(now.Unix(), 10)
+	// The firmware's MargePB.preset (its proto table): buttonNumber as the
+	// attribute it sent, then name, location, a full MargeSource element,
+	// createdOn, updatedOn, contentItemType and containerArt as child
+	// elements. Attributes for the timestamps are refused ("createdon -
+	// element was encoded as attribute", Portable 2026-09-06), and the
+	// ContentItem dialect of the list read is not what this parser wants.
+	ts := margeTimestamp(now)
 	return `<?xml version="1.0" encoding="UTF-8"?>` +
-		`<preset id="` + strconv.Itoa(item.Slot) + `" createdOn="` + ts + `" updatedOn="` + ts + `">` +
-		`<ContentItem source="` + xmlEscapeText(item.Source) + `" type="` + xmlEscapeText(item.Type) +
-		`" location="` + xmlEscapeText(item.Location) + `" sourceAccount="` + xmlEscapeText(item.SourceAccount) +
-		`" isPresetable="true">` +
-		`<itemName>` + xmlEscapeText(item.ItemName) + `</itemName>` +
+		`<preset buttonNumber="` + strconv.Itoa(item.Slot) + `">` +
+		`<name>` + xmlEscapeText(item.ItemName) + `</name>` +
+		`<location>` + xmlEscapeText(item.Location) + `</location>` +
+		margeSourceElementXML(item.SourceID, item.Source) +
+		`<createdOn>` + ts + `</createdOn><updatedOn>` + ts + `</updatedOn>` +
+		`<contentItemType>` + xmlEscapeText(item.Type) + `</contentItemType>` +
 		`<containerArt>` + xmlEscapeText(item.ContainerArt) + `</containerArt>` +
-		`</ContentItem></preset>`
+		`</preset>`
+}
+
+// margeTimestamp renders a time the way the account document does.
+func margeTimestamp(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000+00:00")
+}
+
+// margeSourceElementXML renders the MargeSource element a preset or recent
+// record embeds: the static radio source for LOCAL_INTERNET_RADIO (the same
+// element the account document carries), a minimal one for anything else.
+func margeSourceElementXML(id, sourceName string) string {
+	if sourceName == "LOCAL_INTERNET_RADIO" {
+		return staticRadioSourceXML()
+	}
+	const ts = "2020-01-01T00:00:00.000+00:00"
+	if id == "" {
+		id = "0"
+	}
+	return `<source id="` + xmlEscapeText(id) + `" type="Audio">` +
+		`<createdOn>` + ts + `</createdOn><credential type="token"></credential>` +
+		`<name>` + xmlEscapeText(sourceName) + `</name>` +
+		`<sourceproviderid>` + xmlEscapeText(numericProviderID[sourceName]) + `</sourceproviderid>` +
+		`<sourcename>` + xmlEscapeText(sourceName) + `</sourcename>` +
+		`<sourceSettings/><updatedOn>` + ts + `</updatedOn><username></username></source>`
 }
 
 // respondPresetStore answers the firmware's per-slot preset PUT/POST. It

@@ -492,15 +492,20 @@ func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
 
 // recentElementXML renders one confirmed recent record in the list dialect
 // the firmware provably parses for presets.
-func recentElementXML(rec flatRecord, id int64, now time.Time) string {
-	ts := strconv.FormatInt(now.Unix(), 10)
+func recentElementXML(rec flatRecord, id int64, _ time.Time) string {
+	// The firmware's MargePB.recent (its proto table): lastplayedat,
+	// location, name, a full MargeSource element, credential, sourceid and
+	// contentItemType as child elements.
 	return `<?xml version="1.0" encoding="UTF-8"?>` +
-		`<recent id="` + strconv.FormatInt(id, 10) + `" createdOn="` + ts + `" updatedOn="` + ts + `">` +
-		`<ContentItem source="` + xmlEscapeText(sourceNameForAccountID(rec.sourceID)) + `" type="` + xmlEscapeText(rec.contentItemType) +
-		`" location="` + xmlEscapeText(rec.location) + `" sourceAccount="" isPresetable="true">` +
-		`<itemName>` + xmlEscapeText(rec.name) + `</itemName>` +
-		`<containerArt>` + xmlEscapeText(rec.containerArt) + `</containerArt>` +
-		`</ContentItem></recent>`
+		`<recent id="` + strconv.FormatInt(id, 10) + `">` +
+		`<lastplayedat>` + xmlEscapeText(rec.lastPlayedAt) + `</lastplayedat>` +
+		`<location>` + xmlEscapeText(rec.location) + `</location>` +
+		`<name>` + xmlEscapeText(rec.name) + `</name>` +
+		margeSourceElementXML(rec.sourceID, sourceNameForAccountID(rec.sourceID)) +
+		`<credential></credential>` +
+		`<sourceid>` + xmlEscapeText(rec.sourceID) + `</sourceid>` +
+		`<contentItemType>` + xmlEscapeText(rec.contentItemType) + `</contentItemType>` +
+		`</recent>`
 }
 
 // nextRecentID hands out the id the echoed recents record carries. Per agent
