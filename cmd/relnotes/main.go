@@ -170,10 +170,17 @@ func collect(start, end string) ([]change, error) {
 		for _, d := range parseNoteDrops(body) {
 			dropped[strings.ToLower(d)] = true
 		}
+		trailers := parseNoteTrailers(body)
 		if c, keep := parseSubject(subject); keep {
-			add(c, hash)
+			// A trailer that restates the subject in other words is the
+			// author's polished wording of the SAME entry, not a second
+			// change: on 2026-09-06 two such commits produced four lines for
+			// two fixes. The trailer wins, the subject is folded into it.
+			if !restatedBy(c, trailers) {
+				add(c, hash)
+			}
 		}
-		for _, c := range parseNoteTrailers(body) {
+		for _, c := range trailers {
 			add(c, hash)
 		}
 	}
@@ -344,4 +351,56 @@ func writeList(b *strings.Builder, cs []change) {
 			fmt.Fprintf(b, "- %s\n", c.Summary)
 		}
 	}
+}
+
+// restatedBy reports whether one of the trailers says the same thing as the
+// subject entry: same type and scope, and most of the words in common. Exact
+// repeats are already folded by the type|scope|summary key; this catches the
+// reworded repeat. Word overlap is measured on the shorter of the two word
+// sets so a longer trailer that adds a clause still counts as a restatement.
+func restatedBy(subject change, trailers []change) bool {
+	sw := significantWords(subject.Summary)
+	if len(sw) == 0 {
+		return false
+	}
+	for _, t := range trailers {
+		if t.Type != subject.Type || t.Scope != subject.Scope {
+			continue
+		}
+		tw := significantWords(t.Summary)
+		if len(tw) == 0 {
+			continue
+		}
+		common := 0
+		for w := range sw {
+			if tw[w] {
+				common++
+			}
+		}
+		shorter := len(sw)
+		if len(tw) < shorter {
+			shorter = len(tw)
+		}
+		if common*10 >= shorter*6 { // 60% of the shorter set
+			return true
+		}
+	}
+	return false
+}
+
+// significantWords is the set of lower-cased words in a summary minus the
+// function words that every sentence shares.
+func significantWords(s string) map[string]bool {
+	stop := map[string]bool{"a": true, "an": true, "the": true, "no": true, "not": true, "now": true, "is": true, "of": true,
+		"so": true, "with": true, "it": true, "its": true, "and": true, "or": true, "to": true, "in": true, "on": true,
+		"longer": true, "instead": true, "there": true, "that": true, "this": true, "as": true, "at": true, "by": true}
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	}) {
+		if !stop[w] {
+			out[w] = true
+		}
+	}
+	return out
 }

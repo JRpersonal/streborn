@@ -172,3 +172,27 @@ func TestParseNoteDrops(t *testing.T) {
 		t.Error("a normal entry must not be read as a withdrawal")
 	}
 }
+
+// A Release-Note trailer that restates the commit's own subject in other
+// words is one entry, not two (two such commits produced four lines for two
+// fixes on 2026-09-06). A trailer for a DIFFERENT change under the same scope
+// still counts, which is what the trailer exists for.
+func TestRestatedTrailerFoldsIntoOneEntry(t *testing.T) {
+	subj := change{Type: "fix", Scope: "multiroom", Summary: "a refused group form no longer shows \"Group active\""}
+	restated := change{Type: "fix", Scope: "multiroom", Summary: "a refused group form no longer shows a false \"Group active\" confirmation"}
+	if !restatedBy(subj, []change{restated}) {
+		t.Error("the reworded repeat was not recognised")
+	}
+	subj2 := change{Type: "fix", Scope: "multiroom", Summary: "Ungroup with no group says so instead of a false confirmation"}
+	restated2 := change{Type: "fix", Scope: "multiroom", Summary: "pressing Ungroup with no group now says there is nothing to ungroup, not a false success"}
+	if !restatedBy(subj2, []change{restated2}) {
+		t.Error("the second reworded repeat was not recognised")
+	}
+	other := change{Type: "fix", Scope: "multiroom", Summary: "the stereo pair keeps its name after a rename on the other speaker"}
+	if restatedBy(subj, []change{other}) {
+		t.Error("a different change under the same scope was folded away")
+	}
+	if restatedBy(subj, []change{{Type: "fix", Scope: "app", Summary: subj.Summary}}) {
+		t.Error("a different scope must never fold")
+	}
+}
