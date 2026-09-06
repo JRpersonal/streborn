@@ -58,6 +58,16 @@ type App struct {
 	portMu    sync.Mutex
 	portCache map[string]int
 
+	// uninstalling holds the hosts whose STR removal is in progress or done in
+	// this app session (host -> struct{}). The post-update Spotify engine
+	// delivery consults it: an update that deferred the engine (NAND tight)
+	// finishes that delivery minutes later, and when the user has started
+	// removing STR from the speaker in the meantime, the app pushed 16 MB of
+	// engine onto a speaker it was about to wipe and told the user "Spotify
+	// engine installed" mid-uninstall (bundle of 2026-09-06: uninstall started
+	// 14:33:43, engine delivered 14:33:53, STR removed 14:34:06).
+	uninstalling sync.Map
+
 	// libraryServers caches the result of the most recent
 	// ListMediaServers call so subsequent BrowseLibrary calls can
 	// resolve a UDN to a Server without a fresh SSDP sweep on every
