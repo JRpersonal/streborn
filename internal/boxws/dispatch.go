@@ -99,7 +99,33 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			upnpRecently := prev == "UPNP" ||
 				(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow) ||
 				c.upnpEpisode
+			// "This speaker started music" is the edge from not-playing to
+			// playing on a streaming source, read from the typed play status of
+			// the same frame. A frame without a play status says nothing about
+			// it and leaves the edge tracker alone.
+			fireSourcePlaying := false
+			if f.NowPlaying != nil {
+				if ps := f.NowPlaying.playStatus(); ps != "" {
+					playingNow := isStreamingSource(src) && (ps == "PLAY_STATE" || ps == "BUFFERING_STATE")
+					fireSourcePlaying = playingNow && !c.sourcePlaying
+					c.sourcePlaying = playingNow
+				}
+			}
 			c.mu.Unlock()
+			// The persisted default group re-forms the moment its master
+			// starts music (#70): hardware-key and Spotify Connect starts
+			// included, which never pass through the agent's own play path.
+			// Gated on the play-state edge above, NOT on the source change: a
+			// speaker that merely switches to LOCAL_INTERNET_RADIO in
+			// STOP_STATE (every reboot does, while the native presets are
+			// re-registered) has not started anything, and treating it as a
+			// start woke every member of the group after a fleet update
+			// (2026-09-06, 03:28, all six speakers playing).
+			if fireSourcePlaying {
+				if h, ok := c.handler.(interface{ OnSourcePlaying(context.Context, string) }); ok {
+					h.OnSourcePlaying(ctx, src)
+				}
+			}
 			if changed {
 				// Log every source transition at INFO (rare by construction: only
 				// on change). This is how we learn the exact label the firmware
@@ -109,16 +135,6 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				c.logger.Info("box ws: source changed", "from", prev, "to", src)
 				if src == "AUX" {
 					c.handler.OnSourceAux(ctx)
-				}
-				// A switch to a streaming source is the "this speaker started
-				// music" moment the persisted default group re-forms on (#70):
-				// it fires for hardware-key and Spotify Connect starts, which
-				// never pass through the agent's own play path. Optional
-				// interface, same pattern as OnSourceRejected.
-				if isStreamingSource(src) {
-					if h, ok := c.handler.(interface{ OnSourcePlaying(context.Context, string) }); ok {
-						h.OnSourcePlaying(ctx, src)
-					}
 				}
 				// A native radio station the box abandons on its own. Measured on
 				// a SoundTouch 20 (2nd gen, v0.9.30): every one of twelve native
