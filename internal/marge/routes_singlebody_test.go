@@ -42,6 +42,8 @@ func TestEveryMargeRouteWritesOneDocument(t *testing.T) {
 		{http.MethodGet, "/bmx/registry/v1/services"},
 		{http.MethodGet, "/bmx/registry/v1/servicesAvailability"},
 		{http.MethodPost, "/streaming/account/stick@local/device/94E36DF9CE40/recent"},
+		{http.MethodPut, "/streaming/account/stick@local/device/94E36DF9CE40/preset/3"},
+		{http.MethodDelete, "/streaming/account/stick@local/device/94E36DF9CE40/preset/3"},
 	}
 
 	for _, rt := range routes {
@@ -88,8 +90,10 @@ func TestRecentsPostIsAnsweredWithRecents(t *testing.T) {
 	if strings.Contains(body, "adddeviceresponse") || strings.Contains(body, "margetoken") {
 		t.Fatalf("recents POST answered with the AddDevice document:\n%s", body)
 	}
-	if !strings.Contains(body, "<recents") {
-		t.Fatalf("recents POST must be answered with a recents document, got:\n%s", body)
+	// The record itself, since 2026-09-06 (see respondRecentAdded); the list
+	// answer made the firmware log AddRecentCB failures on every source change.
+	if !strings.Contains(body, "<recent id=") {
+		t.Fatalf("recents POST must be answered with the recent record, got:\n%s", body)
 	}
 }
 

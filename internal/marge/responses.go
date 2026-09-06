@@ -449,6 +449,80 @@ func (s *Server) respondRecents(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(EmptyRecentsXML))
 }
 
+// respondRecentAdded answers the firmware's per-station report,
+// POST /streaming/account/<acct>/device/<dev>/recent.
+//
+// The body is one <recent> record (lastplayedat, sourceid, name, location,
+// contentItemType). STR used to answer it with the EMPTY LIST document, and
+// the firmware, which expects the record it just created back, logged
+// "AddRecentCB Failed with status=N" and "HandleAddRecentRequestFailureCB -
+// Request Failed, Marge returned: <recents/>" on every source change
+// (Portable, 2026-09-06). The record is echoed back with an id, the way the
+// cloud confirmed a create: byte for byte what the firmware sent, so nothing
+// it might compare against its request can differ. A body without a <recent>
+// element keeps the old list answer.
+//
+// STR's own Recently-played ring is not fed from here: the webui already
+// records native plays at the moment they start (app play, preset recall,
+// hardware key), and a second writer keyed on the firmware's record would
+// split one listen into two cards.
+func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
+	// logRecentPayload consumes the body copy; the spy middleware buffered it,
+	// so read it once here and hand both uses the same bytes.
+	var body []byte
+	if r != nil && r.Body != nil {
+		body, _ = io.ReadAll(io.LimitReader(r.Body, 8<<10))
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	s.logRecentPayload(r)
+	echo, ok := recentEchoXML(body, s.nextRecentID())
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	if !ok {
+		_, _ = w.Write([]byte(EmptyRecentsXML))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(echo))
+}
+
+// nextRecentID hands out the id the echoed recents record carries. Per agent
+// run, never persisted: the firmware keeps its own list and only needs the
+// answer to be a record, not a stable one.
+func (s *Server) nextRecentID() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recentSeq++
+	return s.recentSeq
+}
+
+// recentEchoXML turns the posted <recent> record into the confirmed one: the
+// same element with an id attribute, behind a single XML declaration. ok is
+// false when the body carries no <recent> element.
+func recentEchoXML(body []byte, id int64) (string, bool) {
+	doc := string(body)
+	start := strings.Index(doc, "<recent")
+	if start < 0 {
+		return "", false
+	}
+	// "<recents" is the list, not a record.
+	if strings.HasPrefix(doc[start:], "<recents") {
+		return "", false
+	}
+	end := strings.LastIndex(doc, "</recent>")
+	if end < start {
+		return "", false
+	}
+	elem := doc[start : end+len("</recent>")]
+	// Inject the id into the start tag: "<recent>" or "<recent attr=...>".
+	gt := strings.IndexByte(elem, '>')
+	if gt < 0 {
+		return "", false
+	}
+	open := strings.TrimSuffix(strings.TrimSpace(elem[:gt]), "/")
+	elem = open + ` id="` + strconv.FormatInt(id, 10) + `"` + elem[gt:]
+	return `<?xml version="1.0" encoding="UTF-8"?>` + elem, true
+}
+
 // logRecentPayload records what the box tells marge when a station starts.
 //
 // This is the ONLY per-station message in the whole marge conversation:

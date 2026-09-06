@@ -366,6 +366,10 @@ func run() error {
 		// the record from its own point of view).
 		marge.WithGroupPath("/mnt/nv/streborn/marge-group.json"),
 		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
+		// The speaker's own hold-to-store gesture PUTs the playing station to
+		// marge; keep it in the STR store so the app shows the key and the
+		// reconcile keeps it registered (see holdstore.go).
+		marge.WithPresetKeeper(newHeldPresetKeeper(store, logger.With("comp", "holdstore"))),
 		// The box re-reads its cloud presets from marge during every
 		// setMargeAccount re-onboarding. Answering with an empty <presets/>
 		// made the firmware WIPE its own hardware-key registrations after

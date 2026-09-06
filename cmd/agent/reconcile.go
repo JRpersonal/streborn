@@ -553,7 +553,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// and a present slot is never re-written.
 	strSlots := map[int]bool{}
 	var missing []boxcli.PresetSpec
-	migrated, reverted := 0, 0
+	migrated, reverted, reowned := 0, 0, 0
 	for _, p := range stick {
 		strSlots[p.Slot] = true
 		native := nativePresetLocation(context.Background(), boxHost, p)
@@ -582,13 +582,24 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		relogo := boxHasNative && native != "" &&
 			webui.StationLocationCarriesStandInLogo(loc) &&
 			!webui.StationLocationCarriesStandInLogo(native)
+		// The second exception: a native slot the speaker stored ITSELF. Its
+		// hold-to-store gesture keeps the playing item as is, so the slot
+		// fetches whatever the station was playing from (the ad-hoc raw proxy
+		// of an app play) rather than this slot's own stream proxy. STR's store
+		// got the station from marge at that moment (holdstore.go); the slot
+		// is rewritten once onto its own form, and the condition stops holding
+		// as soon as that lands, so this too is one write per slot.
+		reown := boxHasNative && native != "" &&
+			!webui.NativeLocationIsOwnSlotProxy(loc, p.Slot)
 		switch {
 		case upgradable:
 			migrated++
 		case stale:
 			reverted++
+		case reown:
+			reowned++
 		}
-		if forceFull || !onBox || upgradable || stale || relogo {
+		if forceFull || !onBox || upgradable || stale || relogo || reown {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 				NativeLocation: native,
@@ -639,6 +650,10 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if reverted > 0 {
 		logger.Warn("preset migration: the box no longer offers the native radio source, putting those slots back on the UPnP form so the keys keep working",
 			"slots", reverted)
+	}
+	if reowned > 0 {
+		logger.Info("preset reconcile: rewriting slots the speaker stored itself (hold gesture) onto their own stream proxy",
+			"slots", reowned)
 	}
 	syncFailed := false
 	if len(missing) > 0 {

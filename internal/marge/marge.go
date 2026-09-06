@@ -38,6 +38,16 @@ type Server struct {
 	// (wired to the stick preset store). See WithPresetSource.
 	presetSource func() []Preset
 
+	// presetKeeper stores what the firmware's own hold-to-store gesture PUTs
+	// to a preset slot (see presetstore.go). nil keeps the pre-existing answer.
+	// presetRefusalLogged rate-limits the refusal log per slot.
+	presetKeeper        PresetKeeper
+	presetRefusalLogged map[int]time.Time
+
+	// recentSeq numbers the recents records the firmware POSTs, so each answer
+	// can carry the id the real cloud assigned (see respondRecentAdded).
+	recentSeq int64
+
 	// reflectPath points at the reflect-sources file (internal/boxsnapshot).
 	// Account-linked cloud sources listed there (e.g. Deezer) are re-advertised
 	// to the box in the source-provider + account responses so the box keeps
