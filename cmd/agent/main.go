@@ -22,6 +22,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxlog"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/boxws"
@@ -1008,6 +1009,20 @@ func run() error {
 		fmt.Sprintf("ws://%s:8080/", *boxHost),
 		wsHandler,
 	)
+	// The speaker's own key trace: BoseApp decodes every remote and console
+	// key and logs it into the firmware's RAM-only syslog ring once its
+	// IrDevice/ConsoleButtons facilities are raised over the TAP port. That is
+	// the only place Back, Forward, Thumbs up and Thumbs down are told apart
+	// (the gabbo bus sends one identical bare frame for all four, #827). One
+	// logread child, no NAND, no timer; the reader re-raises the level on
+	// every (re)start because BoseApp forgets it at reboot.
+	keyTrace := boxlog.New(
+		logger.With("comp", "boxlog"),
+		func(ctx context.Context, cmd string) (string, error) { return boxcli.Send(ctx, *boxHost, cmd) },
+		wsHandler.OnKeyEvent,
+	)
+	wsHandler.keyTrace = keyTrace
+	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user
@@ -1127,6 +1142,10 @@ func run() error {
 		defer wg.Done()
 		wsClient.Run(ctx)
 	}()
+
+	// Key trace reader (see keyTrace above). Returns at once on a host without
+	// logread, so a dev build is unaffected.
+	go keyTrace.Run(ctx)
 
 	// Spotify preset audio plane (#78, P1): supervise librespot. Idles
 	// (returns immediately) until a credential is cached, so it is safe to

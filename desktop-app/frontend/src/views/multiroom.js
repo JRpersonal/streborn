@@ -227,8 +227,18 @@ export function renderMultiroom(fetchLive) {
         const label = pair
           ? (pairDisplayName(pair, () => renderMultiroom(false)) || t('multiroom.stereoHeading'))
           : (masterBox ? zoneLabel(masterBox) : mk);
-        const chips = members.map(b =>
-          `<span class="zone-frame-chip">${escapeHtml(zoneLabel(b))}</span>`).join('');
+        // The main speaker's chip is named as such, and a permanent group
+        // says so on its frame (Jens, 2026-09-06: neither could be told
+        // apart from a temporary group or a plain member).
+        const permanent = !pair && masterBox && !!(((state.zoneLive || {})[masterBox.deviceID] || {}).permanent);
+        const permBadge = permanent
+          ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>`
+          : '';
+        const chips = members.map(b => {
+          const isMaster = !pair && (b.deviceID || '').toUpperCase() === mk;
+          const mark = isMaster ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>` : '';
+          return `<span class="zone-frame-chip">${mark}${escapeHtml(zoneLabel(b))}</span>`;
+        }).join('');
         // A dismiss control per frame: the honest place to take THIS group apart,
         // where the user is looking at it, instead of the one shared Ungroup
         // button that could only reach whichever group liveZoneMaster happened to
@@ -242,7 +252,7 @@ export function renderMultiroom(fetchLive) {
         const frameIcon = pair ? STEREO_ICON : GROUP_ICON;
         const frameTip = pair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: label });
         return `<div class="box-group box-group-c${colorMap[mk]}">` + xBtn +
-          `<span class="box-group-label" title="${escapeAttr(frameTip)}">${frameIcon} ${escapeHtml(label)}</span>` +
+          `<span class="box-group-label" title="${escapeAttr(frameTip)}">${frameIcon} ${escapeHtml(label)}${permBadge}</span>` +
           chips + `</div>`;
       }).join('') + storedFramesHtml + `</div>`
     : '';
