@@ -36,6 +36,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
 import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
+import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR } from '../boxstate.js';
 import {
   BoxSettings,
@@ -2053,6 +2054,7 @@ function renderBoxSettings(s, box) {
         const r = await UninstallSTR(box.host);
         if (r && r.ok) {
           showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
+          purgeSpeakerLocalState(box, state); // forget every local record of this speaker (speakerPurge.js)
           // The speaker is a stock Bose box again, by design. Do not let the
           // reconnect loop chase an agent that is gone on purpose (it ended in
           // "agent died, unplug the speaker", 2026-09-06 report): stop any

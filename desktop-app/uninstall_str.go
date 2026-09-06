@@ -136,6 +136,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		if tcpReachable(host, 8090, 2*time.Second) &&
 			!tcpReachable(host, 8888, 1500*time.Millisecond) &&
 			!tcpReachable(host, 17008, 1500*time.Millisecond) {
+			a.purgeSpeakerState(host, "")
 			a.markHostStock(host)
 			res.Step = "already-stock"
 			res.OK = true
@@ -177,6 +178,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		boseUp := tcpReachable(host, 8090, 2*time.Second)
 		strAgentUp := tcpReachable(host, 8888, 1500*time.Millisecond) || tcpReachable(host, 17008, 1500*time.Millisecond)
 		if boseUp && !strAgentUp {
+			a.purgeSpeakerState(host, "")
 			a.markHostStock(host)
 			res.Step = "already-stock"
 			res.OK = true
@@ -246,6 +248,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// :8090 kept answering and a presence-only sighting keeps a cached STR
 	// record alive; the Listen to music card then showed "v0.9.74" on a
 	// speaker with no STR on it (2026-09-06 report).
+	a.purgeSpeakerState(host, "")
 	a.markHostStock(host)
 
 	// Step 3: reboot into vanilla Bose. Connection drops mid-command;

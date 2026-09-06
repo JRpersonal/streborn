@@ -61,3 +61,20 @@ export async function setPairName(pair, name) {
   await SetStereoPairName(key, trimmed);
   cache.set(key, trimmed);
 }
+
+// forgetPairNamesFor drops every cached, in-flight and generation entry for a
+// pair that has deviceID as a member. Called when STR is removed from that
+// speaker (speakerPurge.js): the Go store drops the same entries, and the
+// cache must not keep serving the old name to a pair formed after a reinstall.
+// No-op for a blank deviceID.
+export function forgetPairNamesFor(deviceID) {
+  const id = String(deviceID || '').trim().toUpperCase();
+  if (!id) return 0;
+  let n = 0;
+  for (const m of [cache, pending, generations]) {
+    for (const key of [...m.keys()]) {
+      if (String(key).split('+').includes(id)) { m.delete(key); n++; }
+    }
+  }
+  return n;
+}

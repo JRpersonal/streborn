@@ -530,9 +530,9 @@ func (c *sshClientCache) log() *slog.Logger {
 	return c.logger
 }
 
-// slot returns host's cache slot, creating it on first use. Slots are never
-// removed (a session's host set is a handful of LAN speakers), only their
-// clients are.
+// slot returns host's cache slot, creating it on first use. Slots outlive
+// their clients (a session's host set is a handful of LAN speakers); only
+// forgetHost, on an STR removal, drops one.
 func (c *sshClientCache) slot(host string) *sshHostConn {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -597,6 +597,29 @@ func (c *sshClientCache) invalidate(host string, client sshTransport) {
 // socket.
 func (c *sshClientCache) invalidateHost(host string) {
 	slot := c.slot(host)
+	slot.mu.Lock()
+	client := slot.client
+	slot.client = nil
+	slot.mu.Unlock()
+	if client != nil {
+		_ = client.Close()
+	}
+}
+
+// forgetHost drops host's slot entirely, closing whatever transport it held:
+// invalidateHost plus the slot itself, including its once-per-host slow-network
+// warn latch. Used when STR is removed from the speaker (purgeSpeakerState):
+// a stock speaker keeps :22 closed, so nothing about the old connection is
+// worth keeping, and a later reinstall should start from a clean slot. A slot
+// that does not exist is not created.
+func (c *sshClientCache) forgetHost(host string) {
+	c.mu.Lock()
+	slot := c.hosts[host]
+	delete(c.hosts, host)
+	c.mu.Unlock()
+	if slot == nil {
+		return
+	}
 	slot.mu.Lock()
 	client := slot.client
 	slot.client = nil

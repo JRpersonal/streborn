@@ -378,6 +378,7 @@ import {
   initSetupView,
   installRunActive,
 } from './views/setup.js';
+import { onSpeakerPurge } from './speakerPurge.js';
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
@@ -404,6 +405,25 @@ initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxS
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
+// Session maps this file keeps per speaker, cleared when STR is removed from
+// that speaker (Settings > Remove STR calls purgeSpeakerLocalState; see
+// speakerPurge.js). Registered as a hook because speakerPurge.js cannot import
+// this file. The maps are declared further down; the hook only runs on a
+// purge, long after the module has finished evaluating.
+onSpeakerPurge(({ host }) => {
+  if (host) {
+    sourceVisibilityCache.delete(host);
+    groupOpPending.delete(host);
+    pendingGroupEdits.delete(host);
+    worldMapKindSeen.delete(host);
+    worldMapEverStr.delete(host);
+    for (const key of [...supervisedIntent]) {
+      if (key === host || key.startsWith(host + ':')) supervisedIntent.delete(key);
+    }
+    if (loadedPresetsBoxKey && loadedPresetsBoxKey.startsWith(host + ':')) loadedPresetsBoxKey = null;
+    if (loadedSnapshotBoxKey && loadedSnapshotBoxKey.startsWith(host + ':')) loadedSnapshotBoxKey = null;
+  }
+});
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
