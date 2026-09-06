@@ -43,7 +43,10 @@ func TestPowerEventsOnePerTransition(t *testing.T) {
 		t.Fatalf("wake event: %+v", got[1])
 	}
 	snap := r.EventsSnapshot()["powerSignal"].(map[string]any)
-	if snap["transitions"] != uint64(2) || snap["duplicates"] != uint64(3) {
+	// The sleep-stage line carries no direction, so it is neither a
+	// transition nor a duplicate: two duplicates remain (the second HSM
+	// standby line and the HSM wake line after the scmmond wake).
+	if snap["transitions"] != uint64(2) || snap["duplicates"] != uint64(2) {
 		t.Fatalf("snapshot counters: %+v", snap)
 	}
 	if snap["lastKind"] != "wake" || snap["lastSource"] != "scmmond" {

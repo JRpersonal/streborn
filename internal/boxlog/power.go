@@ -67,9 +67,9 @@ type PowerHandler func(PowerEvent)
 const powerDedupeWindow = 10 * time.Second
 
 // powerTransition maps a classified event to a transition. ok is false for
-// the classes that carry no direction: "sets processor clock" is logged both
-// ways, and a low power notification with a client name that was never
-// measured is left alone rather than guessed.
+// the classes that carry no direction: "sets processor clock" and "Go Sleep
+// stage" are logged both ways, and a low power notification with a client
+// name that was never measured is left alone rather than guessed.
 func powerTransition(ev Event) (kind PowerKind, source PowerSource, ok bool) {
 	switch ev.Class {
 	case ClassStandby:
@@ -84,9 +84,10 @@ func powerTransition(ev Event) (kind PowerKind, source PowerSource, ok bool) {
 			return PowerStandby, PowerSourceScmmond, true
 		}
 	case ClassPowerSleep:
-		if strings.Contains(ev.Message, "Go Sleep stage") {
-			return PowerStandby, PowerSourceScmmond, true
-		}
+		// "Go Sleep stage N" is logged on the way DOWN and on the way UP (the
+		// Portable printed "Go Sleep stage 5" together with the WAKEUP
+		// notification, 2026-09-06 22:32), so it carries no direction either.
+		return "", "", false
 	}
 	return "", "", false
 }
