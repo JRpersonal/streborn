@@ -9,6 +9,12 @@
 #                           picks it up. Cross-compiles from any host.
 #   make agent-embed        same idea for the ARM stick agent that
 #                           the desktop app embeds via go:embed.
+#   make engine-embed       pull the latest release's go-librespot Spotify
+#                           engine into the embed slot so a LOCAL desktop
+#                           build can push it to the box after an OTA. A clean
+#                           checkout ships a 0-byte stub, so without this a
+#                           fleet roll from a dev build leaves boxes without
+#                           Spotify. Restore the stub before committing.
 #   make wails-dev          run the desktop app in dev mode with the
 #                           embedded helpers freshly built. The one
 #                           command you run for everyday work.
@@ -50,9 +56,10 @@ export HOME USERPROFILE TMP TEMP APPDATA LOCALAPPDATA GOPATH GOMODCACHE GOCACHE 
 # are checked in; these targets do the same locally.
 WINFORMAT_OUT := sticksetup/embedded/winformat.exe
 AGENT_EMBED_OUT := desktop-app/agentbin/streborn-armv7l
+ENGINE_EMBED_OUT := desktop-app/agentbin/go-librespot-armv7l
 
 .PHONY: all build build-arm build-arm64 build-all \
-        winformat-embed agent-embed winres wails-dev wails-build \
+        winformat-embed agent-embed engine-embed winres wails-dev wails-build \
         test vet tidy clean
 
 all: build
@@ -100,6 +107,26 @@ agent-embed:
 	GOOS=linux GOARCH=arm GOARM=5 CGO_ENABLED=0 \
 		$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(AGENT_EMBED_OUT) $(PKG)
 	@echo "embedded $$(stat -c %s $(AGENT_EMBED_OUT) 2>/dev/null || stat -f %z $(AGENT_EMBED_OUT)) bytes into $(AGENT_EMBED_OUT)"
+
+# Pull the latest release's go-librespot Spotify engine into the embed slot so a
+# LOCAL wails build can re-deliver it to a box after an OTA, exactly like a
+# release build does. Only CI fills this slot normally; a clean checkout keeps a
+# 0-byte stub, so a fleet roll from a dev build otherwise leaves every box with
+# Spotify missing (the agent OTA drops the ~16 MB engine to fit and the dev app
+# has nothing to push back). Run this once before `make wails-build` /
+# `make wails-dev` when you want a fleet-capable dev build; agent-embed rebuilds
+# only the agent, so the fetched engine survives later wails builds.
+#
+# The filled binary is a tracked stub like the agent one: RESTORE IT with
+# `git checkout -- $(ENGINE_EMBED_OUT)` before committing (the release-skill
+# triage does this too). Needs the gh CLI and a network connection.
+engine-embed:
+	@command -v gh >/dev/null 2>&1 || { echo "engine-embed needs the gh CLI (https://cli.github.com)"; exit 1; }
+	@tag=$$(gh release view --repo JRpersonal/streborn --json tagName --jq .tagName 2>/dev/null); \
+	if [ -z "$$tag" ]; then echo "engine-embed: could not read the latest release tag (is gh authenticated?)"; exit 1; fi; \
+	echo "engine-embed: fetching go-librespot-armv7l from release $$tag"; \
+	gh release download "$$tag" --repo JRpersonal/streborn -p go-librespot-armv7l -D $(dir $(ENGINE_EMBED_OUT)) --clobber
+	@echo "embedded $$(stat -c %s $(ENGINE_EMBED_OUT) 2>/dev/null || stat -f %z $(ENGINE_EMBED_OUT)) bytes into $(ENGINE_EMBED_OUT) -- restore the stub with 'git checkout -- $(ENGINE_EMBED_OUT)' before committing"
 
 # Run the desktop app in dev mode with embedded helpers freshly
 # built so format and OTA features actually work locally. The
