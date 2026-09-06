@@ -396,7 +396,7 @@ func significantWords(s string) map[string]bool {
 		"longer": true, "instead": true, "there": true, "that": true, "this": true, "as": true, "at": true, "by": true}
 	out := map[string]bool{}
 	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 	}) {
 		if !stop[w] {
 			out[w] = true
