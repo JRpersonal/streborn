@@ -58,6 +58,16 @@ type App struct {
 	portMu    sync.Mutex
 	portCache map[string]int
 
+	// uninstalling holds the hosts whose STR removal is in progress or done in
+	// this app session (host -> struct{}). The post-update Spotify engine
+	// delivery consults it: an update that deferred the engine (NAND tight)
+	// finishes that delivery minutes later, and when the user has started
+	// removing STR from the speaker in the meantime, the app pushed 16 MB of
+	// engine onto a speaker it was about to wipe and told the user "Spotify
+	// engine installed" mid-uninstall (bundle of 2026-09-06: uninstall started
+	// 14:33:43, engine delivered 14:33:53, STR removed 14:34:06).
+	uninstalling sync.Map
+
 	// libraryServers caches the result of the most recent
 	// ListMediaServers call so subsequent BrowseLibrary calls can
 	// resolve a UDN to a Server without a fresh SSDP sweep on every
@@ -95,6 +105,16 @@ type App struct {
 	// the box to stay classified as STR regardless of what the half-booted box
 	// reports. Guarded by discMu (same lock as discCache, always held together).
 	otaPinned map[string]time.Time
+
+	// otaVerify remembers, per speaker IP, which agent port the last update
+	// went through and whether its verify window ended without a verdict, so
+	// the post-OTA version poll asks the right port first and a discovery
+	// sighting can correct an "unreachable" journal line later. See
+	// otaverify.go. Its own lock: it is touched from the update flow, the
+	// version poll and the discovery cycle, none of which should wait on the
+	// others.
+	otaVerifyMu sync.Mutex
+	otaVerify   map[string]otaVerifyMemo
 
 	// strKnown remembers every box we have positively confirmed as running STR,
 	// keyed by its stable Bose deviceID (not its IP). The IP-keyed discCache and

@@ -53,6 +53,17 @@ func isTransportNotReady(err error) bool {
 	if errors.As(err, &nerr) && nerr.Timeout() {
 		return true
 	}
+	// A dial that failed is a transport failure whatever the OS says about
+	// it. The keyword list below is English, and Windows words a refused
+	// connection in the system language ("Es konnte keine Verbindung
+	// hergestellt werden, da der Zielcomputer die Verbindung verweigerte"),
+	// so on a German PC a refusal did not read as one: boxDo then stopped at
+	// the first port instead of trying the other, and handed back the raw
+	// text without the reachability hint.
+	var operr *net.OpError
+	if errors.As(err, &operr) && operr.Op == "dial" {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
 	for _, s := range []string{"deadline exceeded", "connection refused", "actively refused", "connection reset", "no route to host", "timeout"} {
 		if strings.Contains(msg, s) {

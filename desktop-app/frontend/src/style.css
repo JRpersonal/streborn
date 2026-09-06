@@ -708,7 +708,9 @@ body {
 .box-group-c3 { --bg-color: var(--group-c3); }
 .box-group-c4 { --bg-color: var(--group-c4); }
 /* Star on the group's master speaker pill. */
-.box-group-master { color: var(--brand); margin-right: 4px; font-size: 12px; }
+.box-group-master { color: var(--brand); margin-right: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+/* "permanent" chip on a group frame: this group re-forms by itself. */
+.box-group-perm { font-size: 10px; font-weight: 600; margin-left: 6px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--bg-color, var(--c-border-2)); color: var(--bg-color, var(--c-muted)); white-space: nowrap; }
 /* Group name header on the multiroom frame — full width so the pills wrap
    below it; coloured to match the frame so the zone is obvious at a glance. */
 /* No opacity here. Blending the caption 10% into the surface cost about half a
@@ -2765,3 +2767,21 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    press visibly took even while a slow speaker keeps the request waiting. */
 .btn.working { opacity: 0.65; cursor: progress; animation: btn-working 1.1s ease-in-out infinite; }
 @keyframes btn-working { 50% { opacity: 0.35; } }
+
+/* Webhook section: the clickable remote key map (settings.js remoteSvg). The
+   physical remote is black, so the drawing keeps its own dark palette in both
+   themes; only the state colours matter. */
+.rc-wrap { display: flex; gap: 14px; align-items: flex-start; margin: 4px 0 12px; }
+.rc-svg { width: 150px; flex: 0 0 auto; }
+.rc-side { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.rc-body { fill: #151517; stroke: #2c2c30; stroke-width: 1; }
+.rc-key { fill: #2a2a2e; stroke: #3d3d44; stroke-width: 1; cursor: pointer; transition: fill .12s, stroke .12s; }
+.rc-keyg:hover .rc-key:not(.rc-off) { fill: #3a3a40; }
+.rc-key.rc-on { stroke: #4caf50; stroke-width: 2.5; }
+.rc-key.rc-sel { fill: #1f5f8f; stroke: #7cc0ff; stroke-width: 2.5; }
+.rc-key.rc-off { cursor: default; opacity: .4; }
+.rc-label { fill: #e8e8e8; font-size: 13px; font-family: system-ui, sans-serif; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+.rc-legend { line-height: 1.7; }
+.rc-legend-on, .rc-legend-sel { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; }
+.rc-legend-on { border: 2px solid #4caf50; }
+.rc-legend-sel { background: #1f5f8f; border: 2px solid #7cc0ff; }

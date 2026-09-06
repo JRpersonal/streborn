@@ -44,7 +44,8 @@ shutdown; use the UPnP path above instead.
 
 ## The other direction: a speaker press driving Home Assistant
 
-A remote-control key, the power button, a preset or an AUX change can fire an
+A remote-control key (Back, Forward, Thumbs up, Thumbs down, Play/Pause, each
+its own trigger), the power button, a preset or an AUX change can fire an
 outgoing HTTP webhook, a UDP packet, or Wake-on-LAN, so a button on the speaker
 can trigger a Home Assistant scene. See the smart-home triggers in
 [`AUTOMATION.md`](./AUTOMATION.md) and the app's automation settings.
