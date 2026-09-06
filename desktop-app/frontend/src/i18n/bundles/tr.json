@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "{{name}} güncellemesi yarıda kaldı. Şimdi tamamlıyorum.",
   "update.reportTitle": "{{name}} güncellemesi tamamlanmadı",
   "update.reportHelp": "Bu metin sorunu çözmek için gereken her şeyi içeriyor. Kopyalayıp str@sichtbar-app.de adresine gönder, neyin yanlış gittiğini tam olarak görebilirim.",
+  "update.whatToTry": "Kendin kontrol edebileceklerin",
   "update.reportCollecting": "Hatanın ayrıntıları toplanıyor. Bir saniye.",
   "update.reportAttachHint": "Tanılama dosyasını yukarıdaki düğmeyle kaydet ve aynı e-postaya ekle.",
   "update.reportCopy": "Metni kopyala",

@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "{{name}} atnaujinimas buvo nutrauktas. Dabar jį užbaigiu.",
   "update.reportTitle": "{{name}} atnaujinimas nebuvo baigtas",
   "update.reportHelp": "Šiame tekste yra visa informacija, reikalinga priežastį nustatyti. Nukopijuok jį ir išsiųsk adresu str@sichtbar-app.de.",
+  "update.whatToTry": "Ką gali patikrinti pats",
   "update.reportCollecting": "Renkami klaidos duomenys. Akimirką.",
   "update.reportAttachHint": "Išsaugok diagnostikos failą mygtuku viršuje ir pridėk jį prie to paties laiško.",
   "update.reportCopy": "Kopijuoti tekstą",

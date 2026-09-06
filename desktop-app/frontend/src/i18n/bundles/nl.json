@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "De update van {{name}} werd onderbroken. Ik maak hem nu af.",
   "update.reportTitle": "De update van {{name}} is niet afgerond",
   "update.reportHelp": "Deze tekst bevat alles wat nodig is om het uit te zoeken. Kopieer hem en stuur hem naar str@sichtbar-app.de, dan zie ik precies wat er misging.",
+  "update.whatToTry": "Wat je zelf kunt controleren",
   "update.reportCollecting": "Details van de fout worden verzameld. Een moment.",
   "update.reportAttachHint": "Sla het diagnosebestand op met de knop hierboven en voeg het toe aan dezelfde mail.",
   "update.reportCopy": "Tekst kopiëren",

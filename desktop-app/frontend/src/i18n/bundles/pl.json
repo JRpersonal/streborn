@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "Aktualizacja {{name}} została przerwana. Kończę ją teraz.",
   "update.reportTitle": "Aktualizacja {{name}} nie została ukończona",
   "update.reportHelp": "Ten tekst zawiera wszystko, co potrzebne do wyjaśnienia. Skopiuj go i wyślij na str@sichtbar-app.de, wtedy zobaczę dokładnie, co poszło nie tak.",
+  "update.whatToTry": "Co możesz sprawdzić samodzielnie",
   "update.reportCollecting": "Zbieranie szczegółów błędu. Chwileczkę.",
   "update.reportAttachHint": "Zapisz plik diagnostyczny przyciskiem powyżej i dołącz go do tej samej wiadomości.",
   "update.reportCopy": "Kopiuj tekst",

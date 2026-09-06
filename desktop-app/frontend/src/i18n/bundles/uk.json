@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "Оновлення {{name}} було перерване. Завершую його зараз.",
   "update.reportTitle": "Оновлення {{name}} не завершилося",
   "update.reportHelp": "Цей текст містить усе потрібне для з’ясування. Скопіюй його й надішли на str@sichtbar-app.de.",
+  "update.whatToTry": "Що можна перевірити самостійно",
   "update.reportCollecting": "Збираються подробиці помилки. Хвилинку.",
   "update.reportAttachHint": "Збережи діагностичний файл кнопкою вище й додай його до цього ж листа.",
   "update.reportCopy": "Копіювати текст",

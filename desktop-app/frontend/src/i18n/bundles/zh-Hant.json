@@ -442,6 +442,7 @@
   "update.resumingInterrupted": "{{name}} 的更新中斷了。現在把它做完。",
   "update.reportTitle": "{{name}} 的更新沒有跑完",
   "update.reportHelp": "這段文字包含了釐清問題所需要的一切。複製後寄到 str@sichtbar-app.de，我就能看出到底是哪裡出了問題。",
+  "update.whatToTry": "你可以自己檢查的事項",
   "update.reportCollecting": "正在收集故障的詳細資訊，請稍候。",
   "update.reportAttachHint": "用上方的按鈕儲存診斷檔案，並附加到同一封郵件。",
   "update.reportCopy": "複製文字",

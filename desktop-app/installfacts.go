@@ -86,6 +86,12 @@ type lanSighting struct {
 	Build   string
 	Kind    string
 	Offline bool
+	// MissingSec is how long this speaker has missed every probe, counted
+	// from the first miss and independent of the grace window that decides
+	// when the list greys it out. Zero while it answers. It is what turns
+	// "in the list" into "last answered twenty minutes ago", which is the fact
+	// a user can act on.
+	MissingSec int
 }
 
 // installFacts is the gathered set. Zero values mean "not established", never
@@ -120,6 +126,16 @@ type installFacts struct {
 	Firewall string
 
 	LAN []lanSighting
+
+	// TargetSeen says the speaker being installed is in the discovery cache
+	// at all; TargetMissingSec says for how long that entry has missed every
+	// probe (zero while it answers). The list keeps such a speaker, greyed
+	// out only after a grace window, so "it is in the list" proves nothing
+	// about it being on the network now (field report 2026-09-06: a
+	// SoundTouch 300 that had left the network twelve minutes earlier was
+	// diagnosed as client isolation because it was still listed).
+	TargetSeen       bool
+	TargetMissingSec int
 
 	LogTail string
 }
@@ -456,12 +472,13 @@ func (a *App) lanSightings(max int) []lanSighting {
 	out := make([]lanSighting, 0, len(a.discCache))
 	for _, e := range a.discCache {
 		out = append(out, lanSighting{
-			Host:    e.box.Host,
-			Model:   e.box.Model,
-			Version: e.box.Version,
-			Build:   e.box.Build,
-			Kind:    e.box.Kind,
-			Offline: e.box.Offline,
+			Host:       e.box.Host,
+			Model:      e.box.Model,
+			Version:    e.box.Version,
+			Build:      e.box.Build,
+			Kind:       e.box.Kind,
+			Offline:    e.box.Offline,
+			MissingSec: missingSeconds(e.firstMiss, time.Now()),
 		})
 	}
 	a.discMu.Unlock()
@@ -587,6 +604,12 @@ func (a *App) gatherInstallFacts(ctx context.Context, host string) installFacts 
 	f.SubnetKnown, f.SameSubnet, f.SubnetVia = sameSubnet(host, f.Ifaces)
 	f.Firewall = localFirewallState()
 	f.LAN = a.lanSightings(12)
+	for _, s := range f.LAN {
+		if s.Host == host {
+			f.TargetSeen = true
+			f.TargetMissingSec = s.MissingSec
+		}
+	}
 	f.LogTail = appLogTailFor(host, reportLogTailBytes)
 	return f
 }
@@ -608,4 +631,13 @@ func (f installFacts) agentPortsProvenClosed() bool {
 		seen++
 	}
 	return seen == 2
+}
+
+// missingSeconds is the length of a miss streak that started at firstMiss, or
+// zero when there is none.
+func missingSeconds(firstMiss, now time.Time) int {
+	if firstMiss.IsZero() || now.Before(firstMiss) {
+		return 0
+	}
+	return int(now.Sub(firstMiss).Seconds())
 }

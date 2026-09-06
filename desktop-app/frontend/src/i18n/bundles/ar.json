@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "تم إيقاف تحديث {{name}}. سأكمله الآن.",
   "update.reportTitle": "لم يكتمل تحديث {{name}}",
   "update.reportHelp": "يحتوي هذا النص على كل ما يلزم لمعرفة السبب. انسخه وأرسله إلى str@sichtbar-app.de.",
+  "update.whatToTry": "ما يمكنك التحقق منه بنفسك",
   "update.reportCollecting": "يجري جمع تفاصيل العطل. لحظة من فضلك.",
   "update.reportAttachHint": "احفظ ملف التشخيص بالزر أعلاه وأرفقه بالبريد نفسه.",
   "update.reportCopy": "نسخ النص",

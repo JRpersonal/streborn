@@ -402,6 +402,7 @@
   "update.resumingInterrupted": "La actualización de {{name}} se interrumpió. La estoy terminando ahora.",
   "update.reportTitle": "La actualización de {{name}} no se completó",
   "update.reportHelp": "Este texto contiene todo lo necesario para aclararlo. Cópialo y envíalo a str@sichtbar-app.de y podré ver exactamente qué falló.",
+  "update.whatToTry": "Lo que puedes comprobar tú mismo",
   "update.reportCollecting": "Recopilando los detalles del fallo. Un momento.",
   "update.reportAttachHint": "Guarda el archivo de diagnóstico con el botón de arriba y adjúntalo al mismo correo.",
   "update.reportCopy": "Copiar texto",

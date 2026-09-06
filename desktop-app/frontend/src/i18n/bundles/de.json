@@ -442,6 +442,7 @@
   "update.resumingInterrupted": "Das Update von {{name}} wurde unterbrochen. Ich mache es jetzt fertig.",
   "update.reportTitle": "Das Update von {{name}} ist nicht vollständig durchgelaufen",
   "update.reportHelp": "Dieser Text enthält alles, was zur Klärung nötig ist. Kopiere ihn und schick ihn an str@sichtbar-app.de, dann kann ich genau sehen, woran es lag.",
+  "update.whatToTry": "Was du selbst prüfen kannst",
   "update.reportCollecting": "Details des Fehlers werden gesammelt. Einen Moment.",
   "update.reportAttachHint": "Speichere die Diagnosedatei mit dem Knopf oben und häng sie an dieselbe Mail an.",
   "update.reportCopy": "Text kopieren",
