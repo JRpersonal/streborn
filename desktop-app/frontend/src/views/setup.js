@@ -1704,6 +1704,13 @@ const INSTALL_HELP_STEPS = {
   'ssh-probe': ['freshBoot', 'wifi', 'stick'],
   'stick-missing': ['st30Port', 'usbPicky', 'stickInserted', 'freshBoot', 'stick'],
   'agent-not-up': ['powerCycle', 'wifi', 'logs'],
+  // The install ran, but the speaker answered nothing at any layer (no ping,
+  // no ARP entry, no port) when the wait budget ran out: it is still
+  // restarting or reconnecting to Wi-Fi, not proven failed (a SoundTouch 10
+  // whose Wi-Fi came back minutes late, 2026-09-06). Wait and refresh first;
+  // no power-cycle advice, that would interrupt a speaker that is likely
+  // fine. The backend re-checks once by itself (install:late).
+  'speaker-not-back': ['waitRefresh', 'wifi', 'logs'],
   'not-reachable': ['wifi', 'freshBoot'],
   'install-window-closed': ['freshBoot'],
   // The box answers UPnP on :8091 but not SSH / the Bose port / the STR agent:
@@ -1746,6 +1753,7 @@ const INSTALL_HELP_STEPS_NET = {
   'ssh-handshake': ['netWifi', 'netCable', 'netRetry'],
   'ssh-probe': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry'],
   'agent-not-up': ['netRetry', 'netWifi', 'netLogs'],
+  'speaker-not-back': ['waitRefresh', 'netWifi', 'netLogs'],
   'not-reachable': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry'],
   'install-window-closed': ['netRetry'],
   'control-unresponsive': ['netRetry', 'netLogs'],
@@ -2230,10 +2238,35 @@ async function verifyInstalledState(box, onState) {
     // a full mains power-cycle (live-proven). Shown on every failure screen.
     const powerCycleHint = powerCycleAdviceHtml(foundBox);
     try { SetOTARunning(false); } catch {}
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>`
-      + help + repairBtn + powerCycleHint + installFailureReportHtml() + log);
+    // "speaker-not-back" is not a proven failure: the install ran and the
+    // speaker was simply not back on the network when the wait ran out. Head
+    // it as unconfirmed, not failed, or the user reads "failed" above a
+    // message that says the install may well have succeeded.
+    const notBack = !!(result && result.code === 'speaker-not-back');
+    const headline = notBack ? t('setup.installUnconfirmed', { msg }) : t('setup.installFailed', { msg });
+    render(`<div class="${notBack ? 'setup-warn' : 'setup-err'}">${escapeHtml(headline)}</div>`
+      + help + repairBtn + (notBack ? '' : powerCycleHint) + installFailureReportHtml() + log);
     wireInstallFailureReport(foundBox);
     fillFailReport(foundBox, 'install:' + ((result && result.code) || 'unknown'), msg);
+    if (notBack) {
+      // The backend looks once more about two minutes later (install:late).
+      // If the agent answers then, replace this screen with the success one,
+      // but only while it is still the one on show: the marker element is
+      // gone as soon as anything else has rendered into setupResult.
+      let offLate = null;
+      const stopLate = () => { if (offLate) { try { offLate(); } catch {} offLate = null; } };
+      offLate = EventsOn('install:late', (p) => {
+        if (!p || p.host !== foundBox.host) return;
+        stopLate();
+        if (!p.ok || !setupResult.querySelector('#setupFailReport')) return;
+        baseHtml = '';
+        render(`<div class="setup-ok">${escapeHtml(t('setup.installLateOk'))}</div>`
+          + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`
+          + powerCycleAdviceHtml(foundBox));
+        try { deps.discoverBoxes(); } catch {}
+      });
+      setTimeout(stopLate, 6 * 60 * 1000);
+    }
     // If the network path genuinely cannot proceed (no install window, box not
     // reachable, controls wedged), reveal the USB-stick fallback (relocated into
     // <details id="setupStickDetails">) so the user has an immediate next step.
