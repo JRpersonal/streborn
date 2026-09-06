@@ -439,6 +439,7 @@
   "update.resumingInterrupted": "The update for {{name}} was interrupted. Finishing it now.",
   "update.reportTitle": "The update for {{name}} did not finish",
   "update.reportHelp": "This text holds everything needed to work out what happened. Copy it and send it to str@sichtbar-app.de and I can see exactly where it went wrong.",
+  "update.whatToTry": "What you can check yourself",
   "update.reportCollecting": "Collecting the details of the failure. One moment.",
   "update.reportAttachHint": "Save the diagnostic file with the button above and attach it to the same mail.",
   "update.reportCopy": "Copy text",

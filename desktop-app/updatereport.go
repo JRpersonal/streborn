@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"runtime"
 	"strings"
 	"time"
@@ -33,6 +36,8 @@ type failureReport struct {
 	// BoxNowErr is why it did not answer, when it did not. Its advice
 	// paragraphs are peeled the same way ErrMsg's are.
 	BoxNowErr string
+	// BoxLog is the speaker's own log tail (boxOwnLogTail), when the agent answered.
+	BoxLog string
 	// BoxSkipped is set when the probe was not even attempted because the
 	// port facts had already ruled both agent ports out.
 	BoxSkipped bool
@@ -84,6 +89,16 @@ func (a *App) UpdateFailureReport(host string, port int, phase, errMsg, targetVe
 
 	r.History = a.otaHistoryTail(host, 25)
 	r.Facts = a.gatherInstallFacts(a.appCtx(), host)
+	defer func() {
+		// The speaker's own log is the half of the story the app cannot see:
+		// what its agent did during the failed install or update, and what
+		// its last boot said. Only when an agent port answered (the probe
+		// above is skipped otherwise), and bounded, so the report never waits
+		// on a silent speaker.
+		if len(r.BoxNow) > 0 {
+			r.BoxLog = a.boxOwnLogTail(host, port)
+		}
+	}()
 	if a != nil && a.logger != nil {
 		// One line, so the verdicts are in app.log too. A user who sends only
 		// the diagnostic bundle and not the report text still arrives with the
@@ -259,9 +274,16 @@ func formatFailureReport(r failureReport) string {
 		b.WriteString(scrubIdentities(r.Facts.LogTail) + "\n")
 	}
 
+	if r.BoxLog != "" {
+		section(&b, "speaker's own log (last lines, personal details removed)")
+		b.WriteString(scrubIdentities(r.BoxLog) + "\n")
+	}
+
 	advice = dropContradictedBlame(advice)
 	advice = applyReachedThisSession(advice, r)
 	advice = applyIsolationDiagnosis(advice, r)
+	advice = applyOffNetworkDiagnosis(advice, r)
+	advice = applyRepeatedAttempts(advice, r)
 	if len(advice) > 0 {
 		section(&b, "what to try")
 		for i, p := range advice {
@@ -343,7 +365,7 @@ func applyIsolationDiagnosis(advice []string, r failureReport) []string {
 	f := r.Facts
 	isolated := strings.Contains(r.Phase, "not-reachable") &&
 		f.SubnetKnown && f.SameSubnet && f.PingRan && !f.PingAlive &&
-		!reachedThisSession(r)
+		!reachedThisSession(r) && !speakerOffTheNetwork(f)
 	if !isolated {
 		return advice
 	}
@@ -456,7 +478,9 @@ func writeLANSnapshot(b *strings.Builder, f installFacts) {
 		if s.Build != "" {
 			line += " (build " + s.Build + ")"
 		}
-		if s.Offline {
+		if s.MissingSec > 0 {
+			line += " [not answering" + offlineForText(s.MissingSec) + "]"
+		} else if s.Offline {
 			line += " [not answering right now]"
 		}
 		b.WriteString(strings.TrimRight(line, " ") + "\n")
@@ -490,4 +514,144 @@ func stripWrongBlame(probeErr error, errMsg, history string) error {
 		return probeErr
 	}
 	return errors.New(strings.Replace(probeErr.Error(), firewallAdvice, answeredNotSTRAdvice, 1))
+}
+
+// speakerOffTheNetwork is the fingerprint of a speaker that is simply not
+// there: nothing answered even at the Ethernet/Wi-Fi layer (no ARP entry) and
+// no ping reply, while the speaker's own list entry is the sticky, greyed-out
+// kind or absent. A speaker behind client isolation still shows up in the ARP
+// table more often than not, and above all it is still seen LIVE by mDNS; a
+// powered-off speaker, one that fell off the Wi-Fi, or one whose address
+// changed shows neither. A SoundTouch 300 that had left the network was told
+// to chase guest-network settings on the strength of its stale list entry
+// (mail, 2026-09-06).
+func speakerOffTheNetwork(f installFacts) bool {
+	if !f.PingRan || f.PingAlive || f.MACPrefix != "" {
+		return false
+	}
+	// Positive evidence only: a listed speaker that is currently missing its
+	// probes. A speaker never seen at all (an address typed in by hand) keeps
+	// the older verdicts, there is nothing to say it was ever here.
+	return f.TargetSeen && f.TargetMissingSec > 0
+}
+
+// applyOffNetworkDiagnosis leads with the off-the-network steps when the facts
+// fit that fingerprint, and drops the paragraphs that blame the firewall or
+// the router for a speaker that is not on the network at all.
+func applyOffNetworkDiagnosis(advice []string, r failureReport) []string {
+	if !strings.Contains(r.Phase, "not-reachable") || reachedThisSession(r) || !speakerOffTheNetwork(r.Facts) {
+		return advice
+	}
+	lead := fmt.Sprintf(offNetworkAdvice, lastSeenText(r.Facts))
+	out := []string{lead}
+	for _, p := range advice {
+		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// lastSeenText words the sticky entry's age for the advice.
+func lastSeenText(f installFacts) string {
+	if f.TargetMissingSec > 0 {
+		return "This PC last saw the speaker answer" + offlineForText(f.TargetMissingSec) + " ago."
+	}
+	return "This PC saw the speaker earlier, but it has not answered since."
+}
+
+// offlineForText renders a miss streak as " for 3 min" / " for 2 h", empty
+// when unknown.
+func offlineForText(sec int) string {
+	switch {
+	case sec <= 0:
+		return ""
+	case sec < 120:
+		return fmt.Sprintf(" for %d s", sec)
+	case sec < 7200:
+		return fmt.Sprintf(" for %d min", sec/60)
+	default:
+		return fmt.Sprintf(" for %d h", sec/3600)
+	}
+}
+
+// applyRepeatedAttempts adds one line when the journal shows the same failure
+// several times in a row: the user has been pressing the button again, and the
+// report should say that repeating it changes nothing (seven identical
+// preflight failures in thirteen minutes, 2026-09-06).
+func applyRepeatedAttempts(advice []string, r failureReport) []string {
+	n := 0
+	for _, line := range strings.Split(r.History, "\n") {
+		if strings.Contains(line, "FAILED") {
+			n++
+		}
+	}
+	if n < 3 {
+		return advice
+	}
+	return append(advice, fmt.Sprintf(repeatedAttemptsAdvice, n))
+}
+
+// offNetworkAdvice is the closing paragraph for a speaker that is not on the
+// network. %s carries the last-seen sentence.
+const offNetworkAdvice = "Right now nothing at the speaker's address answers, not even at the network layer: no ping reply, and no entry for it in this PC's address table. %s That is a speaker that is off the network, not a firewall. Check in this order: 1. Is it powered and awake? Press its power button; the Wi-Fi light should be solid white. 2. Does the Bose SoundTouch app on your phone see it? If not, the speaker has lost your Wi-Fi: add it again with the Bose app (Add speaker), that still works without the Bose cloud. 3. Its address may have changed: press Refresh in the speaker list and install from the entry that appears. 4. Still nothing: unplug the speaker for ten seconds, plug it back in, wait two minutes, then refresh the list."
+
+// repeatedAttemptsAdvice closes a report whose journal shows the same failure
+// again and again. %d is the count.
+const repeatedAttemptsAdvice = "The journal above shows %d failed attempts in a row with the same result. Pressing Install again without changing anything gives the same answer; work through the steps above first."
+
+// boxOwnLogTail fetches the speaker's debug state and returns the lines a
+// failure report needs: why it last exited, the tail of its setup log, and the
+// tail of its live agent log. Empty on any error; a report is never held up
+// for it.
+func (a *App) boxOwnLogTail(host string, port int) string {
+	resp, err := a.boxDoTimeout(host, port, http.MethodGet, "/api/debug/state", "", "", 8*time.Second)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var st map[string]any
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&st); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	if le, ok := st["last_exit"].(map[string]any); ok {
+		if why, ok := le["bootReason"].(string); ok && why != "" {
+			fmt.Fprintf(&b, "last exit: %s\n", why)
+		}
+	}
+	for _, part := range []struct {
+		key, title string
+		n          int
+	}{
+		{"setup_log", "setup log", 20},
+		{"boot_log", "boot log", 8},
+		{"agent_log_tail", "agent log", 40},
+	} {
+		txt, _ := st[part.key].(string)
+		lines := tailLines(txt, part.n)
+		if len(lines) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "-- %s --\n%s\n", part.title, strings.Join(lines, "\n"))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// tailLines returns the last n non-empty lines of a text.
+func tailLines(s string, n int) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, strings.TrimRight(l, "\r"))
+		}
+	}
+	if len(out) > n {
+		out = out[len(out)-n:]
+	}
+	return out
 }

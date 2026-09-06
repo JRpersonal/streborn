@@ -2007,6 +2007,7 @@ function installFailureReportHtml() {
   return `<div class="failreport-inline">`
     + `<p class="muted small">${escapeHtml(t('update.reportHelp'))}</p>`
     + `<div class="muted small" id="setupFailPending">${escapeHtml(t('update.reportCollecting'))}</div>`
+    + `<div class="setup-tips hidden" id="setupFailTips"></div>`
     + `<textarea class="failreport-text hidden" id="setupFailReport" readonly rows="14"></textarea>`
     + `<div class="failreport-actions">`
     + `<button class="btn btn-mini" id="setupFailCopy" disabled>${escapeHtml(t('update.reportCopy'))}</button> `
@@ -2038,6 +2039,17 @@ async function fillFailReport(box, phase, errMsg) {
   ta.value = report;
   ta.classList.remove('hidden');
   if (copy) copy.disabled = false;
+  // The report's own verdict, lifted out of the text and shown where the
+  // user is looking. Before, the steps sat at the bottom of a long report the
+  // user was told to mail, so the first thing many did was mail it (Jens,
+  // 2026-09-06: "ein paar Schritte, die er selbst testen kann").
+  const tips = document.getElementById('setupFailTips');
+  const m = report.match(/\nwhat to try\n-+\n([\s\S]*?)\n\nPlease send this text/);
+  if (tips && m) {
+    const paras = m[1].split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+    tips.innerHTML = `<b>${escapeHtml(t('update.whatToTry'))}</b>` + paras.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+    tips.classList.remove('hidden');
+  }
 }
 
 // wireInstallFailureReport makes the copy and save buttons work after the HTML

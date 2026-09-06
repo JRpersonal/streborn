@@ -2755,3 +2755,8 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    press visibly took even while a slow speaker keeps the request waiting. */
 .btn.working { opacity: 0.65; cursor: progress; animation: btn-working 1.1s ease-in-out infinite; }
 @keyframes btn-working { 50% { opacity: 0.35; } }
+
+/* The failure report's own "what to try" verdict, shown above the report text
+   so the steps are the first thing the user sees, not the mail address. */
+.setup-tips { margin: 8px 0 10px; padding: 10px 12px; border: 1px solid var(--brand-border); border-radius: 8px; background: var(--brand-bg); color: var(--c-text); font-size: 13px; }
+.setup-tips p { margin: 6px 0 0; }

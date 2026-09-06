@@ -399,6 +399,7 @@
   "update.resumingInterrupted": "{{name}} atjaunināšana tika pārtraukta. Tagad to pabeidzu.",
   "update.reportTitle": "{{name}} atjaunināšana netika pabeigta",
   "update.reportHelp": "Šajā tekstā ir viss nepieciešamais, lai noskaidrotu cēloni. Nokopē to un nosūti uz str@sichtbar-app.de.",
+  "update.whatToTry": "Ko vari pārbaudīt pats",
   "update.reportCollecting": "Tiek vākta informācija par kļūdu. Mirkli.",
   "update.reportAttachHint": "Saglabā diagnostikas failu ar pogu augšpusē un pievieno to tai pašai vēstulei.",
   "update.reportCopy": "Kopēt tekstu",

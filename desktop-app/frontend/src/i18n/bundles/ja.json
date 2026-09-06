@@ -399,6 +399,7 @@
   "update.resumingInterrupted": "{{name}} の更新が中断されました。今完了させます。",
   "update.reportTitle": "{{name}} の更新が完了しませんでした",
   "update.reportHelp": "このテキストには原因を特定するのに必要な情報がすべて含まれています。コピーして str@sichtbar-app.de に送ってください。",
+  "update.whatToTry": "自分で確認できること",
   "update.reportCollecting": "エラーの詳細を収集しています。少しお待ちください。",
   "update.reportAttachHint": "上のボタンで診断ファイルを保存し、同じメールに添付してください。",
   "update.reportCopy": "テキストをコピー",

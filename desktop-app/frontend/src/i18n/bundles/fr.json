@@ -399,6 +399,7 @@
   "update.resumingInterrupted": "La mise à jour de {{name}} a été interrompue. Je la termine maintenant.",
   "update.reportTitle": "La mise à jour de {{name}} ne s’est pas terminée",
   "update.reportHelp": "Ce texte contient tout ce qu’il faut pour comprendre. Copie-le et envoie-le à str@sichtbar-app.de, je verrai exactement ce qui a échoué.",
+  "update.whatToTry": "Ce que tu peux vérifier toi-même",
   "update.reportCollecting": "Collecte des détails de l’échec. Un instant.",
   "update.reportAttachHint": "Enregistre le fichier de diagnostic avec le bouton ci-dessus et joins-le au même e-mail.",
   "update.reportCopy": "Copier le texte",
