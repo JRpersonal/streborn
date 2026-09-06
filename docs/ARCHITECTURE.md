@@ -129,6 +129,35 @@ Play/Pause come from the speaker's own key trace, which the agent reads
 out of the firmware's RAM-only syslog ring (`internal/boxlog`, see
 [`AUTOMATION.md`](./AUTOMATION.md)).
 
+**Box forensics in the diagnostic bundle.** The same `logread -f`
+reader keeps two bounded, RAM-only copies of what the firmware logs
+about itself and exposes them on `/api/debug/state`, so the desktop
+app's diagnostic bundle (`box-<n>.json`, `debugState`) carries them:
+`box_syslog_events` (up to 200 classified events: the playback failure
+reasons APServer and BoseApp log when a stream does not start, such as
+`BAD_URL`, no first frame, a terminal server error or a buffer
+underrun, plus the URL the firmware tried; standby and wake
+transitions of the system controller and scmmond's low-power
+notifications; the Wi-Fi status and signal quality the sm2 chassis
+logs once a minute; MargeClient errors about STR's own answers; and
+the "getting swamped?" overload warning; the standby and wake lines are
+also the agent's wake signal: one deduplicated `PowerEvent` per
+transition reaches the same `OnEnterStandby` / `OnStandbyExit` handlers
+the gabbo bus feeds, so a speaker switched on at the box or by its
+remote is noticed even on a chassis that never sends the power frame or
+while the WebSocket is between recycles, with whichever origin reports
+first delivering and the other suppressed within 5 s, visible under
+`powerSignal`) and `box_syslog_tail` (the
+last 150 ring lines with the TPDA/STSCertified localhost-retry spam and
+the clock-sync chatter dropped). The agent hashes SSIDs in both before
+they leave the speaker; the app's bundle anonymizer masks IPs and
+device ids as it does for every other section. A playback failure
+reason that arrived within the last 30 s is also appended to the
+agent's own "recall still not playing after retries" warning, and a
+few classes (playback failures, standby/wake, overload, marge errors)
+are mirrored into the agent log at INFO with a per-class rate limit.
+Nothing is written to NAND.
+
 ## Tech stack
 
 | Layer | Choice | Why |

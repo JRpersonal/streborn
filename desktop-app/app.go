@@ -129,6 +129,15 @@ type App struct {
 	// a device we recently knew as STR is relabelled STR. Guarded by discMu.
 	strKnown map[string]discEntry
 
+	// stockPinned maps a speaker IP to the time this app removed STR from it
+	// (UninstallSTR). It is the mirror image of otaPinned: the app KNOWS the box
+	// is back on its stock Bose firmware, so for stockPinGrace any discovery
+	// source that still calls the box STR without a live agent probe behind it
+	// (a stale mDNS record cached by the OS, the sticky cache's own STR
+	// promotion of a stock sighting) is corrected to stock. Only an agent that
+	// actually answers (a reinstall) lifts the pin early. Guarded by discMu.
+	stockPinned map[string]time.Time
+
 	// logoCache memoises resolved station-logo URLs (ResolveStationLogo)
 	// so the same station is validated against DuckDuckGo at most once per
 	// app run. Value "" means "no real logo, draw a monogram".

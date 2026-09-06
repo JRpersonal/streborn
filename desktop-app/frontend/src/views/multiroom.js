@@ -6,7 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
@@ -785,6 +785,13 @@ async function doFormZone(strBoxes) {
         ? t('multiroom.pairNotGroupable')
         : ((res.error && String(res.error)) || t('multiroom.formedNone'));
       state.zoneMsg = `<div class="setup-err">${escapeHtml(msg)}</div>`;
+    } else if (res && (res.deferred || res.defined)) {
+      // The box only STORED the permanent group: its master was idle, so it was
+      // not woken and no live zone was formed; the group forms itself on the
+      // master's next play. Nobody joined anything right now, so the member
+      // count below would have announced a formed group that is not there. Say
+      // what actually happened instead (2026-08-31).
+      state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.permanentSaved', { master: zoneLabel(master) }))}</div>`;
     } else {
       // Trust the followers' own zone self-report, not the master's optimistic
       // member list (#70). notReady = speakers that were still starting and were

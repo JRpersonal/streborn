@@ -37,6 +37,8 @@ export namespace main {
 	    build: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
+	    strNotRunning?: boolean;
+	    strSilent?: boolean;
 	    otaPending?: boolean;
 	    boxHealth?: string;
 	    conflictingMod?: string;
@@ -65,6 +67,8 @@ export namespace main {
 	        this.build = source["build"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
+	        this.strNotRunning = source["strNotRunning"];
+	        this.strSilent = source["strSilent"];
 	        this.otaPending = source["otaPending"];
 	        this.boxHealth = source["boxHealth"];
 	        this.conflictingMod = source["conflictingMod"];
@@ -633,6 +637,7 @@ export namespace main {
 	    stereo: boolean;
 	    mode: string;
 	    permanent: boolean;
+	    defineOnly: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ZoneSpec(source);
@@ -646,6 +651,7 @@ export namespace main {
 	        this.stereo = source["stereo"];
 	        this.mode = source["mode"];
 	        this.permanent = source["permanent"];
+	        this.defineOnly = source["defineOnly"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

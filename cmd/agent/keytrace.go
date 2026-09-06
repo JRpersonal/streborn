@@ -28,10 +28,31 @@ const keyTraceStandDown = 2 * time.Second
 // healthy, so a box without it keeps the old timing.
 const keyTraceWait = 1500 * time.Millisecond
 
+// boxReasonWindow is how recent the firmware's own playback failure line must
+// be to count as the reason a recall verify gave up. The verify retries for
+// well under a minute, so a reason older than this belongs to an earlier
+// attempt.
+const boxReasonWindow = 30 * time.Second
+
 var (
 	keyLogMu   sync.Mutex
 	keyLogLast = map[string]time.Time{}
 )
+
+// boxFailureAttrs returns the firmware's own reason for a stream that did not
+// start (a BAD_URL, no first frame, a terminal server error, an underrun) as
+// slog attributes, when the speaker logged one inside boxReasonWindow. Nil
+// otherwise, so the caller can append it unconditionally.
+func (h *presetWsHandler) boxFailureAttrs() []any {
+	if h.keyTrace == nil {
+		return nil
+	}
+	ev, ok := h.keyTrace.LastPlaybackFailure(boxReasonWindow)
+	if !ok {
+		return nil
+	}
+	return []any{"boxReason", string(ev.Class), "boxMsg", ev.Message}
+}
 
 // OnKeyEvent receives every key state change the speaker itself decoded (see
 // internal/boxlog). It logs the event and, for a physical press of one of the

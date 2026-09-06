@@ -469,3 +469,43 @@ func TestFailureReportDropsFirewallBlameWhenTheSpeakerAnswered(t *testing.T) {
 		t.Error("a speaker that never answered must still get the firewall advice")
 	}
 }
+
+// A speaker that is not on the network at all (no ping, no ARP entry, sticky
+// greyed-out list entry) gets the off-the-network steps, not the
+// client-isolation verdict its stale list entry used to earn it (2026-09-06).
+// A speaker seen LIVE that answers nothing keeps the isolation verdict.
+func TestFormatFailureReportTellsAnAbsentSpeakerFromAnIsolatedOne(t *testing.T) {
+	base := failureReport{
+		Phase:   "install:not-reachable",
+		ErrMsg:  "The speaker is not reachable on the network.\n\n" + notReachableAdvice,
+		History: "install: FAILED step=preflight code=not-reachable\ninstall: FAILED step=preflight code=not-reachable\ninstall: FAILED step=preflight code=not-reachable",
+		Facts: installFacts{
+			Host: "192.0.2.91", PingRan: true, PingAlive: false, MACPrefix: "",
+			SubnetKnown: true, SameSubnet: true,
+			TargetSeen: true, TargetMissingSec: 1500,
+		},
+	}
+	out := formatFailureReport(base)
+	if !strings.Contains(out, "off the network, not a firewall") {
+		t.Errorf("absent speaker did not get the off-the-network steps:\n%s", out)
+	}
+	if strings.Contains(out, "client isolation") || strings.Contains(out, "guest network") {
+		t.Errorf("absent speaker was still blamed on isolation:\n%s", out)
+	}
+	if !strings.Contains(out, "last saw the speaker answer for 25 min ago") {
+		t.Errorf("last-seen age missing:\n%s", out)
+	}
+	if !strings.Contains(out, "3 failed attempts in a row") {
+		t.Errorf("repeated attempts not called out:\n%s", out)
+	}
+	live := base
+	live.Facts.TargetMissingSec = 0
+	live.Facts.MACPrefix = "00-0c-8a"
+	out = formatFailureReport(live)
+	if !strings.Contains(out, "client isolation") {
+		t.Errorf("live but silent speaker lost the isolation verdict:\n%s", out)
+	}
+	if strings.Contains(out, "off the network, not a firewall") {
+		t.Errorf("live speaker was called absent:\n%s", out)
+	}
+}

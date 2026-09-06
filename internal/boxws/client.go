@@ -69,6 +69,11 @@ type Client struct {
 	// read timeout, so the next "connected" phase marker logs at Debug instead
 	// of churning the NAND log. Only touched from the Run loop goroutine.
 	prevEndedIdle bool
+	// connected is true while runOnce holds a live socket. Read by Connected
+	// so a consumer with a second origin for a bus signal (cmd/agent's syslog
+	// ring) can tell whether the bus's own report may still arrive. Guarded
+	// by mu.
+	connected bool
 	// lastSource tracks the most recent active source seen on a now-selection /
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
@@ -311,6 +316,44 @@ const wsReadDeadline = 2*wsKeepaliveInterval + 3*time.Minute
 // the keepalive goroutine; a failed/blocked write closes the conn and the read
 // loop returns, triggering a clean reconnect.
 const wsWriteTimeout = 10 * time.Second
+
+// upnpRecentlyLocked reports whether STR's own source (UPNP) was the active
+// one just before a source change, directly or through the firmware's
+// UPNP -> INVALID_SOURCE -> STANDBY give-up route. prev is the source before
+// the change. Caller holds c.mu.
+func (c *Client) upnpRecentlyLocked(prev string) bool {
+	return prev == "UPNP" ||
+		(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow) ||
+		c.upnpEpisode
+}
+
+// UPnPActiveRecently reports whether STR's own source is, or moments ago
+// was, the box's active source as far as the gabbo stream has told. It is
+// the same gate the dispatcher applies before it reports a standby entry as
+// STR's playback being powered off, so a standby read from the syslog ring
+// (see cmd/agent) reaches the same handler under the same condition.
+func (c *Client) UPnPActiveRecently() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.upnpRecentlyLocked(c.lastSource)
+}
+
+// Connected reports whether the gabbo WebSocket is up right now. While it
+// is, the bus's own report of a transition (with the userActivityUpdate that
+// accompanies a physical power press) is still expected; between its idle
+// recycles it is not, and the syslog ring is the only origin left.
+func (c *Client) Connected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.connected
+}
+
+// setConnected records the socket coming up or going down.
+func (c *Client) setConnected(up bool) {
+	c.mu.Lock()
+	c.connected = up
+	c.mu.Unlock()
+}
 
 // LastWifiSignal returns the most recent Wi-Fi signal class seen on the
 // gabbo stream, or "" if none observed yet.
@@ -584,6 +627,8 @@ func (c *Client) runOnce(ctx context.Context) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
+	c.setConnected(true)
+	defer c.setConnected(false)
 
 	// Phase marker at WARN so a reconnect after standby/resume is visible in
 	// the diagnostic bundle without raising log level. A reconnect after a

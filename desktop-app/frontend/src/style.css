@@ -824,6 +824,11 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
+/* "STR not running": a box STR once ran on whose agent is gone while the stock
+   firmware still answers. Grey, not red: it is a repair hint, not an invite. */
+.box-stock-badge.box-stock-badge-gone {
+  color: var(--c-muted);
+}
 
 /* Announcement expert command: a wrappable, selectable monospace block. */
 .announce-curl {
@@ -2767,6 +2772,11 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    press visibly took even while a slow speaker keeps the request waiting. */
 .btn.working { opacity: 0.65; cursor: progress; animation: btn-working 1.1s ease-in-out infinite; }
 @keyframes btn-working { 50% { opacity: 0.35; } }
+
+/* The failure report's own "what to try" verdict, shown above the report text
+   so the steps are the first thing the user sees, not the mail address. */
+.setup-tips { margin: 8px 0 10px; padding: 10px 12px; border: 1px solid var(--brand-border); border-radius: 8px; background: var(--brand-bg); color: var(--c-text); font-size: 13px; }
+.setup-tips p { margin: 6px 0 0; }
 
 /* Webhook section: the clickable remote key map (settings.js remoteSvg). The
    physical remote is black, so the drawing keeps its own dark palette in both

@@ -96,9 +96,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if prev == "UPNP" {
 				c.lastUpnpActiveAt = time.Now()
 			}
-			upnpRecently := prev == "UPNP" ||
-				(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow) ||
-				c.upnpEpisode
+			upnpRecently := c.upnpRecentlyLocked(prev)
 			// "This speaker started music" is the edge from not-playing to
 			// playing on a streaming source, read from the typed play status of
 			// the same frame. A frame without a play status says nothing about

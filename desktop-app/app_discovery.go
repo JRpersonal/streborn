@@ -34,7 +34,36 @@ type discEntry struct {
 	// back short of a manual refresh. Miss-based, every box gets the full
 	// grace window of ACTUAL misses to finish its reboot.
 	firstMiss time.Time
+	// strMisses counts the consecutive cycles in which this STR box answered
+	// ONLY on the stock :8090 (presence-only sightings, see
+	// mergeDiscoveryCacheWith); strMissSince is when that streak began. Both
+	// reset on a confirmed agent sighting. Once the streak is long enough
+	// (strGoneMisses over at least strGoneMinSpan) the record is degraded to
+	// a stock box flagged STRNotRunning, instead of serving the last agent
+	// version forever to a speaker whose agent is gone.
+	strMisses    int
+	strMissSince time.Time
 }
+
+// strGoneMisses / strGoneMinSpan define when a cached STR box whose agent keeps
+// silent while its stock Bose port answers is degraded to "STR not running".
+// Both must hold: at least strGoneMisses consecutive presence-only sightings
+// spanning at least strGoneMinSpan. The count alone would let three quick
+// Refresh presses during a slow reboot degrade a healthy box; the span alone
+// would degrade on a single cycle after a long idle. At the periodic refresh
+// cadence (one probe a minute) this is the third refresh, about three minutes
+// after the agent stopped answering. A post-OTA reboot is protected separately
+// by otaRebootGrace, which outlasts this window.
+const (
+	strGoneMisses  = 3
+	strGoneMinSpan = 2 * time.Minute
+)
+
+// stockPinGrace is how long after an in-app uninstall a box is force-classified
+// as stock (see App.stockPinned). The window has to outlast the OS mDNS cache
+// of the agent's last announcement and the box's reboot; an agent that answers
+// a live probe inside the window (a reinstall) lifts the pin at once.
+const stockPinGrace = 15 * time.Minute
 
 // discoveryStickyTTL is how long a box stays in the list after its last
 // genuine sighting. Long enough to cover a box rebooting (~60-120s on a
@@ -100,6 +129,22 @@ type BoxInfo struct {
 	// started, for the "last seen ..." tooltip; only meaningful while Offline.
 	Offline         bool `json:"offline,omitempty"`
 	OfflineSinceSec int  `json:"offlineSinceSec,omitempty"`
+	// STRNotRunning marks a speaker STR once ran on whose agent has stopped
+	// answering for good while the stock Bose firmware still does (the box
+	// answers :8090, the agent port stays silent across several refreshes:
+	// uninstalled out of band, NAND wiped, agent crashed). Kind is "stock" on
+	// such a record, so the app offers the install like for any stock box;
+	// the flag lets the UI say "STR not running" instead of "Ready for STR"
+	// and drop the "unplug the speaker" advice, which does not help a box
+	// that answers. Persisted in the cache until the agent answers again.
+	STRNotRunning bool `json:"strNotRunning,omitempty"`
+	// STRSilent is the transient per-cycle sibling of STRNotRunning: on THIS
+	// refresh the stock :8090 answered but the STR agent did not, while the
+	// record still counts as STR. It lets the Settings pane tell "the
+	// speaker answers its Bose firmware, STR is not running" from "nothing
+	// answers, unplug it" right away, without waiting for the degrade above.
+	// Never persisted to the discovery cache.
+	STRSilent bool `json:"strSilent,omitempty"`
 	// OTAPending marks a box inside the post-OTA discovery pin window: STR is
 	// mid-update on it, so the frontend must not flag "update available" while
 	// the agent restarts and cannot answer its real version yet. This replaces
@@ -383,7 +428,20 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// flaps instead of flickering (#90: spotty ST20 dropped out of
 	// the list on marginal Wi-Fi / mid-reboot and radio+presets failed
 	// whenever it briefly vanished).
-	a.mergeDiscoveryCache(seen)
+	//
+	// Sightings without a live agent probe behind them are handed over as
+	// presence-only, like RefreshKnownBoxes does: a stock-only record, or an
+	// STR label that only an announcement backs (PortVerified false). They keep
+	// the box listed but neither confirm STR on it nor reset its agent-silence
+	// streak, so a box whose agent is gone does not get its stale version
+	// badge re-armed by every full discovery.
+	presenceOnly := make(map[string]bool, len(seen))
+	for key, b := range seen {
+		if b.Kind == "stock" || !b.PortVerified {
+			presenceOnly[key] = true
+		}
+	}
+	a.mergeDiscoveryCacheWith(seen, presenceOnly)
 
 	// Collapse any same-device duplicate that survived the IP-keyed upsert and the
 	// cache merge: a DHCP lease change leaves the box's stale mDNS record (old IP)
@@ -441,6 +499,10 @@ func (a *App) notePostOTA(host string) {
 		a.otaPinned = map[string]time.Time{}
 	}
 	a.otaPinned[host] = time.Now()
+	// An install or update the app itself runs on the host outranks a stock
+	// pin from an earlier uninstall: STR is going back on, so the box must
+	// not be corrected to stock while its agent restarts.
+	delete(a.stockPinned, host)
 	a.discMu.Unlock()
 	a.logger.Info("post-OTA: pinning box as STR through its reboot", "host", host, "grace", otaRebootGrace.String())
 }
@@ -494,15 +556,42 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	// flickers to "Bereit für STR" or to the generic "Bose SoundTouch
 	// <id>" name between good cycles.
 	for key, b := range seen {
-		if prev, ok := a.discCache[key]; ok {
+		prev, cached := a.discCache[key]
+		if cached {
 			b = mergeBoxInfo(prev.box, b)
 		}
 		// A genuine sighting always clears the offline marker, whatever the
 		// merge carried over from the cached record.
 		b.Offline = false
 		b.OfflineSinceSec = 0
+		e := discEntry{box: b, seen: now}
+		// Agent-silence streak: the box counts as STR (cached, or promoted by
+		// the merge) but only its stock :8090 answered this cycle. A confirmed
+		// agent sighting resets the streak; a long enough streak degrades the
+		// record to "STR not running" (field case 2026-09-06: after an
+		// uninstall the stock speaker kept its old agent version badge for
+		// as long as the app ran, because every refresh saw :8090 answer and
+		// served the cached STR record). A box mid-OTA is excluded: its
+		// reboot is covered by the pin below, which outlasts this window.
+		if presenceOnly[key] && cached && b.Kind == "str" {
+			e.strMisses = prev.strMisses + 1
+			e.strMissSince = prev.strMissSince
+			if e.strMissSince.IsZero() {
+				e.strMissSince = now
+			}
+			if _, pinned := a.otaPinned[key]; !pinned &&
+				e.strMisses >= strGoneMisses && now.Sub(e.strMissSince) >= strGoneMinSpan {
+				b = degradeToSTRNotRunning(b)
+				e = discEntry{box: b, seen: now}
+				delete(a.strKnown, b.DeviceID)
+				if a.logger != nil {
+					a.logger.Info("discovery: STR agent silent while the stock Bose port answers; box degraded to STR not running",
+						"host", b.Host, "misses", prev.strMisses+1, "since", prev.strMissSince.Format(time.RFC3339))
+				}
+			}
+		}
 		seen[key] = b
-		a.discCache[key] = discEntry{box: b, seen: now}
+		a.discCache[key] = e
 	}
 	// Devices GENUINELY seen this cycle (before any cache re-adds), keyed by their
 	// stable deviceID. Used just below to drop a stale cache entry for a device that
@@ -597,6 +686,7 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			}
 		}
 		b.Kind = "str"
+		b.STRNotRunning = false
 		// Cache the record with the STR kind but WITHOUT any version claim,
 		// and annotate only the served copy. The old code stamped the APP's
 		// version (plus build) here and persisted it, which falsified the
@@ -611,6 +701,48 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		a.discCache[host] = discEntry{box: b, seen: now}
 		b.OTAPending = true
 		seen[host] = b
+	}
+
+	// Post-uninstall pin: the mirror image of the OTA pin above. This app just
+	// removed STR from the host, so it is a stock Bose speaker until an agent
+	// answers a live probe again. Any STR label that arrives without a verified
+	// agent port behind it inside the grace (a stale mDNS announcement the OS
+	// still serves, or the merge's own STR promotion of a stock :8090 sighting)
+	// is corrected to stock here, BEFORE the identity memory below could
+	// re-record the box as STR. A verified agent sighting means a reinstall:
+	// the pin is lifted and the STR record stands.
+	for host, t := range a.stockPinned {
+		if now.Sub(t) > stockPinGrace {
+			delete(a.stockPinned, host)
+			continue
+		}
+		b, ok := seen[host]
+		if !ok {
+			continue
+		}
+		if _, updating := a.otaPinned[host]; updating {
+			// notePostOTA drops the stock pin, so this only guards a pin that
+			// arrived between the two; the OTA pin above already won.
+			delete(a.stockPinned, host)
+			continue
+		}
+		if b.Kind == "str" && b.PortVerified {
+			delete(a.stockPinned, host)
+			if a.logger != nil {
+				a.logger.Info("discovery: STR agent answered on a box STR was removed from; treating it as reinstalled", "host", host)
+			}
+			continue
+		}
+		if b.Kind == "stock" && !b.STRNotRunning && b.Version == "" {
+			continue
+		}
+		b = degradeToSTRNotRunning(b)
+		b.STRNotRunning = false
+		seen[host] = b
+		e := a.discCache[host]
+		e.box = b
+		e.seen = now
+		a.discCache[host] = e
 	}
 
 	// STR identity memory (deviceID-keyed, survives an IP change). The pins above
@@ -644,6 +776,11 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	for key := range seen {
 		b := seen[key]
 		if b.Kind != "stock" || b.DeviceID == "" {
+			continue
+		}
+		if _, pinned := a.stockPinned[key]; pinned {
+			// STR was just removed from this host by the app: a stock
+			// sighting is the truth, not a misclassification.
 			continue
 		}
 		memo, ok := a.strKnown[b.DeviceID]
@@ -820,6 +957,66 @@ func (a *App) forgetSTRDeviceByHost(host string) {
 	}
 }
 
+// markHostStock records that this app just removed STR from host: the box is a
+// stock Bose speaker now. Unlike forgetSTRDeviceByHost, which only DROPPED the
+// cached record and left the next discovery to rediscover the box from scratch,
+// this rewrites the cached record in place as the stock speaker it has become
+// (name, model, deviceID, serial and host kept; agent version, build and port
+// gone), so the speaker list shows it as a box without STR right away and the
+// periodic refresh cannot serve the old agent version from the cache while the
+// stock :8090 answers. The deviceID identity memory is dropped as before, the
+// OTA pin (if any) too, and the host is pinned stock for stockPinGrace so a
+// stale announcement cannot relabel it (see App.stockPinned).
+func (a *App) markHostStock(host string) {
+	if host == "" {
+		return
+	}
+	a.discMu.Lock()
+	defer a.discMu.Unlock()
+	now := time.Now()
+	var rec BoxInfo
+	have := false
+	for key, e := range a.discCache {
+		if key != host && e.box.Host != host {
+			continue
+		}
+		if e.box.DeviceID != "" {
+			delete(a.strKnown, e.box.DeviceID)
+		}
+		if !have || key == host {
+			rec = e.box
+			have = true
+		}
+		delete(a.discCache, key)
+	}
+	for id, e := range a.strKnown {
+		if e.box.Host == host {
+			delete(a.strKnown, id)
+		}
+	}
+	delete(a.otaPinned, host)
+	if a.discCache == nil {
+		a.discCache = map[string]discEntry{}
+	}
+	if have {
+		rec.Host = host
+		rec = degradeToSTRNotRunning(rec)
+		// A box the app itself just returned to stock is an ordinary stock
+		// speaker, not one whose agent went missing: plain "Ready for STR".
+		rec.STRNotRunning = false
+		rec.Offline = false
+		rec.OfflineSinceSec = 0
+		a.discCache[host] = discEntry{box: rec, seen: now}
+	}
+	if a.stockPinned == nil {
+		a.stockPinned = map[string]time.Time{}
+	}
+	a.stockPinned[host] = now
+	if a.logger != nil {
+		a.logger.Info("discovery: box marked stock after STR removal", "host", host, "hadRecord", have, "grace", stockPinGrace.String())
+	}
+}
+
 // RefreshKnownBoxes re-probes only the speakers already in the discovery cache,
 // directly by their last-known IP, with NO mDNS browse and NO full /24 sweep.
 // The desktop refresh calls this FIRST so the boxes you already have update
@@ -882,7 +1079,14 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	wg.Wait()
 	a.mergeDiscoveryCacheWith(seen, presenceOnly)
 	out := make([]BoxInfo, 0, len(seen)+len(offline))
-	for _, b := range seen {
+	for h, b := range seen {
+		// Served copy only, never cached: this cycle the stock :8090 answered
+		// but the agent did not, on a box still counted as STR. Settings uses
+		// it to say "answers its Bose firmware, STR is not running" instead of
+		// "unplug the speaker".
+		if presenceOnly[h] && b.Kind == "str" {
+			b.STRSilent = true
+		}
 		out = append(out, b)
 	}
 	for h, b := range offline {
@@ -977,7 +1181,46 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 		out.Port = prev.Port
 		out.PortVerified = true
 	}
+	// "STR not running" is remembered across stock sightings of the same box
+	// (a later /24 sweep hands in a plain stock record): the tile keeps saying
+	// STR is missing rather than flipping to a first-time "Ready for STR". Only
+	// an agent that answered a live probe (a verified STR record) lifts it; an
+	// STR label backed by nothing but an announcement (the box's responder can
+	// keep serving the agent's mDNS record after the agent died) must not
+	// resurrect the old version badge on a box whose agent is known to be gone.
+	if prev.STRNotRunning {
+		if out.Kind == "str" && !out.PortVerified {
+			out = degradeToSTRNotRunning(out)
+		}
+		if out.Kind == "stock" {
+			out.STRNotRunning = true
+		}
+	}
 	return out
+}
+
+// degradeToSTRNotRunning turns a record for a box whose STR agent no longer
+// answers into the stock-speaker record it now is: no agent version, build or
+// port, none of the agent-only warning flags, Kind "stock" so the app offers
+// the install, plus the STRNotRunning marker so the UI can say why. The box's
+// identity (name, model, deviceID, serial, host) is kept.
+func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
+	b.Kind = "stock"
+	b.Version = ""
+	b.Build = ""
+	b.Port = 8090
+	b.PortVerified = false
+	b.OTAPending = false
+	b.BoxHealth = ""
+	b.ConflictingMod = ""
+	b.WLANCredsMissing = false
+	b.Storm1036 = false
+	b.Storm1036SinceSec = 0
+	b.RecallRefusal = false
+	b.RecallRefusalSinceSec = 0
+	b.STRSilent = false
+	b.STRNotRunning = true
+	return b
 }
 
 // isGenericBoxName reports whether name is empty or Bose's factory
