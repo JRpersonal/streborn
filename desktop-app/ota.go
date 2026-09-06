@@ -36,7 +36,18 @@ import (
 // This matters on rhino ST10s where the Bose firewall blocks :8888: the version
 // probe (and the box-update banner) would otherwise read the box as unreachable
 // even when its agent answers on the alternate port.
+//
+// After an update, the port that update went through is asked first on every
+// call (postOTAPort). The port cache cannot do that job: a rebooting box fails
+// the first probe, the failure evicts the cache, and from then on the caller's
+// port decides the order. A record still carrying :17008 (or the stock :8090,
+// which maps to :17008) then makes every poll of a SoundTouch 10 spend a full
+// timeout on the port its firewall drops before trying the one that will
+// answer.
 func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) {
+	if p, ok := a.postOTAPort(host); ok {
+		port = p
+	}
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/agent/version", "", "")
 	if err != nil {
 		return nil, err
@@ -287,6 +298,10 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		return fmt.Errorf("no embedded stick binary available")
 	}
 	a.recordOTA(host, fmt.Sprintf("start: port=%d bytes=%d app=%s build=%s", port, len(bin), appVersion, appBuild))
+	// Remember which port this update talks to the box on, so the post-OTA
+	// version poll asks that port first (see otaverify.go). The caller's port
+	// is the first guess; the preflight below replaces it with the proven one.
+	a.rememberOTAPort(host, a.agentPortInUse(host, port))
 	// Record the box's NAND headroom before the push so a "no space left on
 	// device" failure is diagnosable from the journal (the ~31 MB writable volume
 	// must hold a second ~10 MB copy during the atomic write). Older agents do not
@@ -311,6 +326,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// post-OTA pin's premise is gone; keeping it would annotate the
 			// box as mid-update for the full grace window (#775).
 			a.clearPostOTA(host)
+			a.forgetOTAVerify(host)
 		case outcomeNote != "":
 			a.recordOTA(host, "outcome: "+outcomeNote)
 		default:
@@ -398,6 +414,9 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
 		return nil
 	}
+	// The preflight pinned the port that actually answers; that is the port
+	// the upload goes through and the one the verify must ask first.
+	a.rememberOTAPort(host, a.agentPortInUse(host, port))
 	if bodySent, err := a.uploadAgentWithRetries(host, port, bin); err != nil {
 		// A connection drop AFTER the whole binary reached the box is the
 		// self-replacing agent applying it and rebooting, which severs the reply
@@ -466,6 +485,9 @@ func (a *App) RecordOTAOutcome(host, verdict string) {
 		verdict = verdict[:300]
 	}
 	a.recordOTA(host, "outcome: "+verdict)
+	if strings.HasPrefix(verdict, "confirmed") {
+		a.forgetOTAVerify(host)
+	}
 }
 
 // ClassifyOTAResult probes the box after the frontend's post-OTA version poll
@@ -503,13 +525,21 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		// verify probe time out rather than fail fast in the first place.
 		if a.boxAnswersBoseAPI(host) {
 			a.recordOTA(host, "outcome: NOT CONFIRMED - the speaker is up and answering its Bose web API on :8090, but STR's agent is not running on it; a power cycle is needed: "+err.Error())
+			a.noteOTAUnconfirmed(host, "agent-gone")
 			return "agent-gone"
 		}
-		a.recordOTA(host, "outcome: NOT CONFIRMED - box unreachable after the verify window: "+err.Error())
+		// err leads with the port the update went through (postOTAPort puts
+		// it first, boxDo reports the first port's failure) and names the
+		// other port in an "also tried" clause. A box that is off the network
+		// for the whole window and then turns up in discovery on the new build
+		// gets a corrective line from confirmLateOTA.
+		a.recordOTA(host, "outcome: NOT CONFIRMED - box unreachable after the verify window (a later discovery sighting on the new build adds a corrective line): "+err.Error())
+		a.noteOTAUnconfirmed(host, "unreachable")
 		return "unreachable"
 	}
 	if ver["build"] == appBuild && appBuild != "" {
 		a.recordOTA(host, "outcome: confirmed late - box is on build "+ver["build"])
+		a.forgetOTAVerify(host)
 		return "confirmed"
 	}
 	if msg := ver["otaSwapFailed"]; msg != "" {
@@ -758,6 +788,17 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	}
 }
 
+// EngineSkippedUninstalling is EnsureSpotifyEngine's answer when STR is being
+// removed from the speaker: nothing was sent, nothing must be announced.
+const EngineSkippedUninstalling = "skipped: STR is being removed from this speaker"
+
+// isUninstalling reports whether UninstallSTR has started (or finished) for
+// host in this session.
+func (a *App) isUninstalling(host string) bool {
+	_, ok := a.uninstalling.Load(host)
+	return ok
+}
+
 // EnsureSpotifyEngine makes sure the go-librespot Spotify sidecar is present on
 // the box, delivering it over the air when missing. It is the post-upgrade
 // reconcile for #237: the sidecar is normally pushed during the agent OTA, but a
@@ -785,6 +826,13 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // transient drop right after a reboot it returns the error so the caller's retry
 // loop tries again while keeping the user informed.
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
+	if a.isUninstalling(host) {
+		// The user is removing STR from this speaker: do not push an engine
+		// onto it and do not announce one. The update flow treats this like
+		// "nothing to deliver" and stays quiet.
+		a.logger.Info("ensure spotify engine: STR is being removed from this speaker, skipping the engine delivery", "host", host)
+		return EngineSkippedUninstalling, nil
+	}
 	if !agentbin.GoLibrespotAvailable() {
 		return "no embedded engine in this build", nil
 	}

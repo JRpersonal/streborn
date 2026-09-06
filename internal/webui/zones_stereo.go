@@ -128,10 +128,13 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	}{Zone: z}
 	if len(z.Members) == 0 {
 		out.Remembered = s.rememberedZoneMembers()
-		if s.zones != nil {
-			if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
-				out.Permanent = true
-			}
+	}
+	// Live or not: the desktop marks a permanent group's frame with it, so
+	// the user can tell a group that will come back by itself from one that
+	// ends with the next standby (Jens, 2026-09-06).
+	if s.zones != nil {
+		if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
+			out.Permanent = true
 		}
 	}
 	// The pair read gets its own SHORT budget, never the zone's. The firmware's
@@ -1864,6 +1867,14 @@ func (s *Server) reconcileZoneOnce(playKick bool) {
 		// re-assert never had a safe answer for. Member classification keeps
 		// deliberately-solo speakers out (zones_default_group.go).
 		s.formDefaultGroupOnPlay(z)
+		return
+	}
+	if z.Permanent {
+		// The tick's one job for a permanent group: members that dropped out
+		// of the LIVE group (an update reboot, a Wi-Fi hiccup) come back while
+		// the master plays, with the same member classification as the play
+		// kick and without waking anyone who was switched off on purpose.
+		s.rejoinMissingMembers(ctx, z)
 		return
 	}
 	if !s.zoneReconcileEnabled() {

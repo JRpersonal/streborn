@@ -120,10 +120,14 @@ SoundCloud (#241), SiriusXM (#242), and Pandora (#243) are at feasibility.
 Each runs through a bridge STR controls and hands the box a stream URL,
 never a cloud credential.
 
-**Smart home.** Box events on the gabbo bus (a remote-control key, the
-power button, an AUX change) can fire user-configured HTTP webhooks
-(NAND `webhooks.json`), so a key press can drive Home Assistant,
-ioBroker, Node-RED, or any HTTP endpoint on the LAN.
+**Smart home.** Box events (a remote-control key, the power button, an
+AUX change) can fire user-configured HTTP webhooks, UDP packets or
+Wake-on-LAN (NAND `webhooks.json`), so a key press can drive Home
+Assistant, ioBroker, Node-RED, or any endpoint on the LAN. Preset, AUX
+and power come off the gabbo bus; Back, Forward, Thumbs up/down and
+Play/Pause come from the speaker's own key trace, which the agent reads
+out of the firmware's RAM-only syslog ring (`internal/boxlog`, see
+[`AUTOMATION.md`](./AUTOMATION.md)).
 
 ## Tech stack
 
