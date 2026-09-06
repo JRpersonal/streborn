@@ -721,6 +721,13 @@ body {
 .zone-frames .box-group { position: relative; padding-right: 22px; }
 .box-group-x { position: absolute; top: 3px; right: 4px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 1px 4px; border-radius: 4px; }
 .box-group-x:hover { color: var(--c-text); background: var(--c-border); }
+/* A permanent group that is stored on its main speaker but not playing right
+   now: dashed, uncoloured, with a caption saying it forms when music starts.
+   Without a frame the group was invisible after creation, the user could not
+   tell whether it existed and had no x to remove it (Jens 2026-09-06). */
+.box-group-stored { border-style: dashed; --bg-color: var(--c-muted); }
+.box-group-stored .zone-frame-chip { opacity: 0.8; }
+.zone-frame-note { flex-basis: 100%; font-size: 11px; color: var(--c-muted); margin: 0 2px; }
 /* Small speaker icon on a tile whose speaker is currently playing. */
 /* Green, matching the "playing" status bar (--signal-green), so the icon means
    the same thing on a tile as in the status. */
@@ -1546,8 +1553,11 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .ua-row.ua-done .ua-bar-fill { background: #3a9b6c; }
 .ua-row.ua-defer .ua-bar-fill { background: #c9933a; }
 .ua-row.ua-failed .ua-bar-fill { background: #c44; width: 100%; }
-.ua-row.ua-indet .ua-bar-fill { width: 40%; background: var(--brand); animation: ua-indet 1.2s ease-in-out infinite; }
-@keyframes ua-indet { 0% { margin-inline-start: -40%; } 100% { margin-inline-start: 100%; } }
+.ua-row.ua-wait .ua-bar-fill { width: 0; }
+.ua-row.ua-wait .ua-status { color: var(--c-faint); }
+.ua-row.ua-busy .ua-bar-fill { width: 100%; background: var(--brand); opacity: 0.3; animation: ua-breathe 3s ease-in-out infinite alternate; }
+@keyframes ua-breathe { from { opacity: 0.22; } to { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .ua-row.ua-busy .ua-bar-fill { animation: none; opacity: 0.35; } }
 
 .credits-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; }
 .credit-row { padding: 7px 0; border-bottom: 1px solid var(--c-border); font-size: 13px; }
