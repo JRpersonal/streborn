@@ -230,13 +230,15 @@ func TestRecentsPostEchoesTheRecordWithAnID(t *testing.T) {
 		if strings.Contains(body, "<recents") || strings.Contains(body, "adddeviceresponse") {
 			t.Fatalf("POST %d: answered with the list / addDevice document:\n%s", i, body)
 		}
-		if !strings.Contains(body, `<recent `+wantID+`>`) || !strings.HasSuffix(body, "</recent>") {
+		if !strings.Contains(body, `<recent `+wantID+` `) || !strings.HasSuffix(body, "</recent>") {
 			t.Fatalf("POST %d: want the record with %s:\n%s", i, wantID, body)
 		}
-		for _, field := range []string{"<lastplayedat>2026-09-06T17:19:49+00:00</lastplayedat>", "<sourceid>3</sourceid>",
-			"<name>Best Of Rock.FM Alternative Rock</name>", "<location>/station?data=abc</location>", "<contentItemType>stationurl</contentItemType>"} {
+		// The record comes back in the preset-list dialect (ContentItem child),
+		// which is what the firmware's parser accepts; the flat echo did not.
+		for _, field := range []string{`<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="/station?data=abc"`,
+			"<itemName>Best Of Rock.FM Alternative Rock</itemName>", "</ContentItem></recent>"} {
 			if !strings.Contains(body, field) {
-				t.Fatalf("POST %d: %s not echoed:\n%s", i, field, body)
+				t.Fatalf("POST %d: %s missing:\n%s", i, field, body)
 			}
 		}
 	}
