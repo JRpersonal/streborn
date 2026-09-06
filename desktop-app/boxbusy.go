@@ -34,6 +34,14 @@ var writesInFlight = boxBusy{busy: map[string]string{}}
 
 // claim marks the speaker as being written to. The release function must be
 // called when the work finishes; it is a no-op if the claim failed.
+// isBusy reports whether an install or update currently holds host.
+func (b *boxBusy) isBusy(host string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, ok := b.busy[host]
+	return ok
+}
+
 func (b *boxBusy) claim(host, what string) (release func(), err error) {
 	if host == "" {
 		return func() {}, nil

@@ -221,6 +221,14 @@ func (a *App) ClearUpdateIntent(host string, port int) {
 // frontend supervisor. Returns an empty action when there is nothing to do, so
 // the common case costs one file read and no speaker traffic.
 func (a *App) PendingUpdateIntent(host string, port int) map[string]string {
+	// An install or update is writing to this speaker right now: whatever the
+	// memo says is being dealt with by that run, and judging the speaker
+	// mid-run produced "the Spotify component from the last update is still
+	// missing, run the update once more" during a reinstall, eight seconds
+	// before that very install delivered the engine (Discussion #871).
+	if otaRunning.Load() || writesInFlight.isBusy(host) {
+		return map[string]string{"action": "", "reason": "install or update running"}
+	}
 	intentMu.Lock()
 	path, err := updateIntentPath()
 	var list []updateIntent
