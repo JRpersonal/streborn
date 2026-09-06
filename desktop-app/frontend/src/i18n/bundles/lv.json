@@ -730,7 +730,7 @@
   "settingsView.voiceHeading": "Balss vadība (Alexa, Google)",
   "settingsView.voiceHelp": "Vecā Alexa vadība darbojās caur Bose mākoni un izzuda kopā ar to, un STR to neaizstāj ar savu mākoni. Tā vietā darbojas centrāle jūsu mājās, piemēram, Home Assistant: tā tīklā sarunājas ar jūsu skaļruņiem un piedāvā tos Alexa. Pamācībā ir visas adreses, kas šādai centrālei vajadzīgas. Tas domāts tiem, kam nesagādā grūtības uzstādīt nelielu serveri; lietotnei un telefona pultij tas nav vajadzīgs.",
   "settingsView.voiceGuideBtn": "Atvērt pamācību",
-  "settingsView.webhookHelp": "Paplašināti: tālvadības īkšķis augšup un īkšķis lejup taustiņi nosūta šo HTTP pieprasījumu, piemēram, viedās mājas ieslēgšanas/izslēgšanas pārslēgšanai. Abi taustiņi sūta vienu un to pašu pieprasījumu, tāpēc izmanto to kā pārslēdzēju. Tas tiek saglabāts skaļrunī un turpina darboties arī bez šīs lietotnes. Atstāj to aizvērtu, ja tev tas nav vajadzīgs.",
+  "settingsView.webhookHelp": "Paplašināti: tālvadības taustiņš (īkšķa taustiņi vai iestatījuma / AUX / barošanas taustiņš) nosūta izejošu trigeri uz citu ierīci: HTTP tīmekļa āķi, UDP paketi vai Wake-on-LAN paketi (piemēram, viedās mājas slēdzi vai datora pamodināšanu). Tas vada citas ierīces un skaļrunī skaņu neatskaņo, atšķirībā no augstāk esošā URL iestatījuma, kas atskaņo audio failu. Tas tiek saglabāts skaļrunī un turpina darboties arī bez šīs lietotnes. Atstāj to aizvērtu, ja tev tas nav vajadzīgs.",
   "settingsView.webhookKeyThumb": "Īkšķa taustiņi (jebkurš, rezerve)",
   "settingsView.webhookKeyPrev": "Atpakaļ (pults)",
   "settingsView.webhookKeyNext": "Uz priekšu (pults)",
