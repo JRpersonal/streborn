@@ -247,6 +247,8 @@
   "speaker.updateChipTitle": "Luidspreker draait {{box}}, app draait {{app}}. Klik om de luidsprekerinstellingen te openen.",
   "speaker.playingNow": "Speelt nu",
   "speaker.groupLabelTitle": "Multiroomgroep geleid door {{name}}",
+  "speaker.permanentBadge": "permanent",
+  "speaker.permanentTitle": "Permanente groep: vormt zich vanzelf opnieuw zodra de hoofdspeaker afspeelt, ook na stand-by of een herstart.",
   "speaker.editTitle": "Instellingen voor deze speaker",
   "speaker.noneSelected": "Geen speaker geselecteerd.",
   "speaker.reboot": "Speaker herstarten",

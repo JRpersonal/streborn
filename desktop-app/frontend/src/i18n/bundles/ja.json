@@ -247,6 +247,8 @@
   "speaker.updateChipTitle": "スピーカーは {{box}}、アプリは {{app}} です。クリックするとスピーカー設定を開きます。",
   "speaker.playingNow": "再生中",
   "speaker.groupLabelTitle": "{{name}} が主導するマルチルームグループ",
+  "speaker.permanentBadge": "常設",
+  "speaker.permanentTitle": "常設グループ: メインスピーカーが再生を始めると自動で再構成されます（スタンバイや再起動の後も）。",
   "speaker.editTitle": "このスピーカーの設定",
   "speaker.noneSelected": "スピーカーが選択されていません。",
   "speaker.reboot": "スピーカーを再起動",

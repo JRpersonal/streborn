@@ -270,6 +270,8 @@
   "speaker.updateChipTitle": "Lautsprecher läuft auf {{box}}, App auf {{app}}. Klicken öffnet die Lautsprecher-Einstellungen.",
   "speaker.playingNow": "Spielt gerade",
   "speaker.groupLabelTitle": "Multiroom-Gruppe, angeführt von {{name}}",
+  "speaker.permanentBadge": "dauerhaft",
+  "speaker.permanentTitle": "Dauerhafte Gruppe: bildet sich von selbst neu, sobald der Hauptlautsprecher spielt, auch nach Standby oder Neustart.",
   "speaker.editTitle": "Einstellungen dieses Lautsprechers",
   "speaker.noneSelected": "Kein Lautsprecher ausgewählt.",
   "speaker.reboot": "Lautsprecher neu starten",

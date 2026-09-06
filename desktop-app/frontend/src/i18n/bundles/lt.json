@@ -247,6 +247,8 @@
   "speaker.updateChipTitle": "Garsiakalbyje {{box}}, programoje {{app}}. Spustelėkite, kad atidarytumėte garsiakalbio nustatymus.",
   "speaker.playingNow": "Dabar groja",
   "speaker.groupLabelTitle": "Kelių kambarių grupė, kuriai vadovauja {{name}}",
+  "speaker.permanentBadge": "nuolatinė",
+  "speaker.permanentTitle": "Nuolatinė grupė: susidaro iš naujo pati, kai pagrindinė kolonėlė pradeda groti, taip pat po budėjimo ar perkrovimo.",
   "speaker.editTitle": "Šio garsiakalbio nustatymai",
   "speaker.noneSelected": "Nepasirinktas garsiakalbis.",
   "speaker.reboot": "Paleisti garsiakalbį iš naujo",

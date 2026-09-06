@@ -247,6 +247,8 @@
   "speaker.updateChipTitle": "На колонці {{box}}, у застосунку {{app}}. Натисніть, щоб відкрити налаштування колонки.",
   "speaker.playingNow": "Зараз відтворює",
   "speaker.groupLabelTitle": "Мультирум-група під керуванням {{name}}",
+  "speaker.permanentBadge": "постійна",
+  "speaker.permanentTitle": "Постійна група: утворюється знову сама, щойно головний динамік почне грати, також після режиму очікування чи перезапуску.",
   "speaker.editTitle": "Налаштування цієї колонки",
   "speaker.noneSelected": "Колонку не вибрано.",
   "speaker.reboot": "Перезапустити колонку",

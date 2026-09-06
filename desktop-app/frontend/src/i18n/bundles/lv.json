@@ -247,6 +247,8 @@
   "speaker.updateChipTitle": "Skaļrunī ir {{box}}, lietotnē {{app}}. Noklikšķiniet, lai atvērtu skaļruņa iestatījumus.",
   "speaker.playingNow": "Šobrīd atskaņo",
   "speaker.groupLabelTitle": "Vairāku telpu grupa, kuru vada {{name}}",
+  "speaker.permanentBadge": "pastāvīga",
+  "speaker.permanentTitle": "Pastāvīga grupa: izveidojas no jauna pati, tiklīdz galvenais skaļrunis sāk atskaņot, arī pēc gaidstāves vai restarta.",
   "speaker.editTitle": "Šī skaļruņa iestatījumi",
   "speaker.noneSelected": "Nav atlasīts skaļrunis.",
   "speaker.reboot": "Restartēt skaļruni",

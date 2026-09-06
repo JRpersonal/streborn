@@ -128,10 +128,13 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	}{Zone: z}
 	if len(z.Members) == 0 {
 		out.Remembered = s.rememberedZoneMembers()
-		if s.zones != nil {
-			if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
-				out.Permanent = true
-			}
+	}
+	// Live or not: the desktop marks a permanent group's frame with it, so
+	// the user can tell a group that will come back by itself from one that
+	// ends with the next standby (Jens, 2026-09-06).
+	if s.zones != nil {
+		if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
+			out.Permanent = true
 		}
 	}
 	// The pair read gets its own SHORT budget, never the zone's. The firmware's
