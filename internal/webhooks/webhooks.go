@@ -1,10 +1,10 @@
 // Package webhooks holds user-configured HTTP requests that STR fires when a
-// box trigger occurs. The first use is the remote's thumbs keys: the box only
-// emits a generic <userActivityUpdate/> for them (no up/down identity), so STR
-// cannot tell thumb-up from thumb-down. What it CAN do is detect a "lone" user
-// activity (a key press with no accompanying volume/now-playing/preset change)
-// and fire one configured request, which the user points at e.g. a smart-home
-// toggle. See internal/boxws for the detection heuristic.
+// box trigger occurs. The first use was the remote's thumbs keys: the gabbo bus
+// only emits a generic <userActivityUpdate/> for them (no up/down identity), so
+// the first release fired one shared "thumb" action off a "lone" user activity
+// (see internal/boxws for that heuristic, kept as the fallback). Since the
+// speaker's own key trace is read (internal/boxlog), the lower remote keys and
+// play/pause are separate triggers with their real identity.
 //
 // The config is persisted on NAND so it survives a stick removal, the same
 // place the agent keeps its other durable state.
@@ -98,10 +98,43 @@ type Trigger struct {
 	Mode string `json:"mode,omitempty"`
 }
 
+// Per-key trigger ids fed by the speaker's own key trace (internal/boxlog).
+// Unlike the preset/aux/power buttons these are additional-only: STR cannot
+// withhold the firmware's reaction to a transport key, and in standby there is
+// none to withhold.
+const (
+	KeyPrev       = "prev"
+	KeyNext       = "next"
+	KeyThumbsUp   = "thumbsUp"
+	KeyThumbsDown = "thumbsDown"
+	KeyPlayPause  = "playPause"
+)
+
+// keyTriggerByName maps the firmware's KEY_VAL_* names onto trigger ids. Play
+// and Pause fold into playPause: the SoundTouch remote has a single key for
+// both, and a network client sending a bare PLAY means the same intent.
+var keyTriggerByName = map[string]string{
+	"PREV_TRACK":  KeyPrev,
+	"NEXT_TRACK":  KeyNext,
+	"THUMBS_UP":   KeyThumbsUp,
+	"THUMBS_DOWN": KeyThumbsDown,
+	"PLAY_PAUSE":  KeyPlayPause,
+	"PLAY":        KeyPlayPause,
+	"PAUSE":       KeyPlayPause,
+}
+
+// KeyTriggerID returns the trigger id for a firmware key name, or "" for a
+// key that has no webhook trigger (volume, presets, power and aux keep their
+// own paths).
+func KeyTriggerID(keyName string) string {
+	return keyTriggerByName[keyName]
+}
+
 // Config is the full webhook configuration. Thumb is a dedicated field for
 // on-disk back-compat with the first release, which only had the thumbs trigger.
 // Buttons holds the per-remote-key triggers added later, keyed by id:
-// "preset1".."preset6", "aux", "power".
+// "preset1".."preset6", "aux", "power", and since the key trace also "prev",
+// "next", "thumbsUp", "thumbsDown", "playPause".
 type Config struct {
 	Thumb   Action             `json:"thumb"`
 	Buttons map[string]Trigger `json:"buttons,omitempty"`
@@ -264,6 +297,30 @@ func (s *Store) FireButton(ctx context.Context, id string) bool {
 	}
 	s.fire(ctx, t.Action)
 	return true
+}
+
+// FireKey fires the trigger for a per-key id from the speaker's key trace.
+// A thumbs key without its own trigger falls back to the legacy shared thumbs
+// action, so a setup made before the keys were distinguishable keeps working.
+// Returns the id that fired ("" when nothing was configured); a rate-limited
+// press still reports its id so the caller can log the press.
+func (s *Store) FireKey(ctx context.Context, id string) string {
+	if s == nil {
+		return ""
+	}
+	if s.FireButton(ctx, id) {
+		return id
+	}
+	if id == KeyThumbsUp || id == KeyThumbsDown {
+		s.mu.RLock()
+		a := s.cfg.Thumb
+		s.mu.RUnlock()
+		if a.Enabled && a.Configured() {
+			s.FireThumb(ctx)
+			return "thumb"
+		}
+	}
+	return ""
 }
 
 // Fire runs a single action immediately (used by the manual test endpoint).

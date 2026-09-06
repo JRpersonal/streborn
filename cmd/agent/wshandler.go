@@ -17,6 +17,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxlog"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -68,6 +69,10 @@ type presetWsHandler struct {
 	// webhooks fires the user-configured HTTP request on a "thumb" trigger (a
 	// lone userActivityUpdate, see OnThumbActivity). nil-safe.
 	webhooks *webhooks.Store
+	// keyTrace follows the speaker's own key trace (internal/boxlog). When it
+	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
+	// the bare-frame thumb heuristic stands down. nil-safe.
+	keyTrace *boxlog.Reader
 	// margeGroupClear drops STR's stereo-pair record for this speaker. Called
 	// when the BOX itself reports its pair torn down, which is how a teardown
 	// done in the Bose app (or one that reached only the other member) reaches
@@ -758,6 +763,29 @@ func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
 	// retries. The second frame within a minute schedules the heal and is
 	// allowed one gate-exempt write - the user is standing at the box. Off
 	// the WS hot path.
+	//
+	// The speaker's own key trace (internal/boxlog) names the key behind the
+	// frame. When it names a transport key, the per-key webhook already fired
+	// from OnKeyEvent and the press was no dead preset key: nothing to heal,
+	// nothing to fire, so the whole heuristic stands down. The trace line can
+	// trail the gabbo frame by more than boxws's settle window (seen live on
+	// the Portable 2026-09-06: the frame settled first, the trace line landed
+	// a moment later), so the decision waits for it, bounded, and only while
+	// the trace is healthy. It stays active when the trace is silent (sm2
+	// without the analytics line, or a level not yet raised) and when the
+	// trace named a preset key.
+	go func() {
+		if h.waitForKeyTrace() {
+			h.logger.Debug("bare user-activity explained by the key trace, legacy thumb path stands down")
+			return
+		}
+		h.legacyThumbFrame(ctx)
+	}()
+}
+
+// legacyThumbFrame is the pre-trace handling of a bare userActivityUpdate:
+// the #342 dead-key-layer re-sync plus the shared legacy thumb action.
+func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 	go func() {
 		src, _, status := h.nowPlayingSummary()
 		playing := status == "PLAY_STATE" || status == "BUFFERING_STATE"
