@@ -708,7 +708,9 @@ body {
 .box-group-c3 { --bg-color: var(--group-c3); }
 .box-group-c4 { --bg-color: var(--group-c4); }
 /* Star on the group's master speaker pill. */
-.box-group-master { color: var(--brand); margin-right: 4px; font-size: 12px; }
+.box-group-master { color: var(--brand); margin-right: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+/* "permanent" chip on a group frame: this group re-forms by itself. */
+.box-group-perm { font-size: 10px; font-weight: 600; margin-left: 6px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--bg-color, var(--c-border-2)); color: var(--bg-color, var(--c-muted)); white-space: nowrap; }
 /* Group name header on the multiroom frame — full width so the pills wrap
    below it; coloured to match the frame so the zone is obvious at a glance. */
 /* No opacity here. Blending the caption 10% into the surface cost about half a

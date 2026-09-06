@@ -269,6 +269,8 @@
   "speaker.updateChipTitle": "Speaker runs {{box}}, app runs {{app}}. Click to open the speaker settings.",
   "speaker.playingNow": "Playing now",
   "speaker.groupLabelTitle": "Multiroom group led by {{name}}",
+  "speaker.permanentBadge": "permanent",
+  "speaker.permanentTitle": "Permanent group: it forms again by itself whenever the main speaker starts playing, also after standby or a restart.",
   "speaker.editTitle": "Settings for this speaker",
   "speaker.noneSelected": "No speaker selected.",
   "speaker.reboot": "Restart speaker",

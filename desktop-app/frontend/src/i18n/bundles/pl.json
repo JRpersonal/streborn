@@ -246,6 +246,8 @@
   "speaker.updateChipTitle": "Głośnik ma {{box}}, aplikacja {{app}}. Kliknij, aby otworzyć ustawienia głośnika.",
   "speaker.playingNow": "Teraz odtwarza",
   "speaker.groupLabelTitle": "Grupa multiroom prowadzona przez {{name}}",
+  "speaker.permanentBadge": "stała",
+  "speaker.permanentTitle": "Stała grupa: tworzy się ponownie sama, gdy główny głośnik zacznie grać, także po trybie czuwania lub restarcie.",
   "speaker.editTitle": "Ustawienia tego głośnika",
   "speaker.noneSelected": "Nie wybrano głośnika.",
   "speaker.reboot": "Uruchom głośnik ponownie",

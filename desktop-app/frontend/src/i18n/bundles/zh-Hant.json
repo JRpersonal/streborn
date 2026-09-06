@@ -269,6 +269,8 @@
   "speaker.updateChipTitle": "喇叭是 {{box}}，應用程式是 {{app}}。點一下開啟喇叭設定。",
   "speaker.playingNow": "正在播放",
   "speaker.groupLabelTitle": "由 {{name}} 帶領的多房間群組",
+  "speaker.permanentBadge": "永久",
+  "speaker.permanentTitle": "永久群組：主喇叭開始播放時會自動重新組成，待機或重新啟動後也是。",
   "speaker.editTitle": "這台喇叭的設定",
   "speaker.noneSelected": "尚未選擇喇叭。",
   "speaker.reboot": "重新啟動喇叭",

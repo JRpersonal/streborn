@@ -246,6 +246,8 @@
   "speaker.updateChipTitle": "El altavoz tiene la {{box}} y la app la {{app}}. Haz clic para abrir los ajustes del altavoz.",
   "speaker.playingNow": "Reproduciendo ahora",
   "speaker.groupLabelTitle": "Grupo multisala liderado por {{name}}",
+  "speaker.permanentBadge": "permanente",
+  "speaker.permanentTitle": "Grupo permanente: se vuelve a formar solo cuando el altavoz principal reproduce, también tras el reposo o un reinicio.",
   "speaker.editTitle": "Ajustes de este altavoz",
   "speaker.noneSelected": "Ningún altavoz seleccionado.",
   "speaker.reboot": "Reiniciar altavoz",

@@ -246,6 +246,8 @@
   "speaker.updateChipTitle": "L’enceinte est en {{box}}, l’application en {{app}}. Clique pour ouvrir les réglages de l’enceinte.",
   "speaker.playingNow": "En lecture",
   "speaker.groupLabelTitle": "Groupe multiroom dirigé par {{name}}",
+  "speaker.permanentBadge": "permanent",
+  "speaker.permanentTitle": "Groupe permanent : il se reforme tout seul dès que l’enceinte principale joue, même après une veille ou un redémarrage.",
   "speaker.editTitle": "Réglages de cette enceinte",
   "speaker.noneSelected": "Aucune enceinte sélectionnée.",
   "speaker.reboot": "Redémarrer l'enceinte",
