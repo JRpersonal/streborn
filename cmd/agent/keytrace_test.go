@@ -34,3 +34,27 @@ func TestKeyTraceExplainsBareFrame(t *testing.T) {
 		t.Fatal("an app-sent key is not a physical press")
 	}
 }
+
+// TestBoxFailureAttrs: the firmware's own playback failure reason is appended
+// to the recall-exhausted warning only when it arrived inside the window.
+func TestBoxFailureAttrs(t *testing.T) {
+	h := &presetWsHandler{}
+	if h.boxFailureAttrs() != nil {
+		t.Fatal("nil reader must add nothing")
+	}
+	r := boxlog.New(nil, nil, nil)
+	h.keyTrace = r
+	if h.boxFailureAttrs() != nil {
+		t.Fatal("no failure yet must add nothing")
+	}
+	const line = `Sep  6 18:02:12 taigan local0.err APServer[1877]: [(002101):AudioIF:ERROR]SERVER ERROR: Server state has terminal error = BAD_URL and m_nMaxRetryAttempt =3`
+	r.InjectLine(line, time.Now().Add(-2*boxReasonWindow))
+	if h.boxFailureAttrs() != nil {
+		t.Fatal("a stale reason must add nothing")
+	}
+	r.InjectLine(line, time.Now())
+	attrs := h.boxFailureAttrs()
+	if len(attrs) != 4 || attrs[0] != "boxReason" || attrs[1] != string(boxlog.ClassPlayServerError) {
+		t.Fatalf("attrs %v", attrs)
+	}
+}

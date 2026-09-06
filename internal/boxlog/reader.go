@@ -83,6 +83,10 @@ type Reader struct {
 	eventsSeen   uint64
 	lastPress    map[int]KeyEvent
 	history      []KeyEvent
+
+	// forensics keeps the classified firmware events and the redacted tail
+	// for the diagnostic bundle (see forensics.go). Own lock.
+	forensics *forensics
 }
 
 // New returns a reader that will call handler for every key event.
@@ -103,6 +107,7 @@ func New(logger *slog.Logger, cli func(ctx context.Context, cmd string) (string,
 		},
 		lastPress:   make(map[int]KeyEvent),
 		retryDelays: traceRetryDelays,
+		forensics:   newForensics(),
 	}
 }
 
@@ -225,13 +230,17 @@ func (r *Reader) follow(ctx context.Context) error {
 	return waitErr
 }
 
-// handleLine is the per-line hot path: stamp liveness, then only pay for a
-// parse when the cheap substring checks inside ParseKeyLine say so.
+// handleLine is the per-line hot path: stamp liveness, drop the spam, keep
+// the forensic copy, then only pay for a key parse when the cheap substring
+// checks inside ParseKeyLine say so.
 func (r *Reader) handleLine(line string, now time.Time) {
 	r.mu.Lock()
 	r.lastLine = now
 	r.linesSeen++
 	r.mu.Unlock()
+	if fev, logIt, ok := r.forensics.observe(line, now); ok && logIt {
+		r.logger.Info("box syslog: "+string(fev.Class), "process", fev.Process, "facility", fev.Facility, "msg", fev.Message)
+	}
 	ev, ok := ParseKeyLine(line, now)
 	if !ok {
 		return
@@ -277,6 +286,28 @@ func (r *Reader) Inject(ev KeyEvent) {
 		r.handler(ev)
 	}
 }
+
+// InjectLine feeds one raw syslog line through the per-line path as if
+// logread had delivered it, for tests of the consumers.
+func (r *Reader) InjectLine(line string, now time.Time) { r.handleLine(line, now) }
+
+// LastPlaybackFailure returns the firmware's newest playback failure reason
+// (a BAD_URL, no first frame, a terminal server error, an underrun) if it
+// arrived within the last d, so a recall that gave up can say why the box
+// itself refused the stream.
+func (r *Reader) LastPlaybackFailure(d time.Duration) (Event, bool) {
+	return r.forensics.lastPlaybackFailure(time.Now(), d)
+}
+
+// EventsSnapshot is the box_syslog_events debug section: the classified
+// firmware events (playback failures, standby/wake, power, Wi-Fi, marge
+// complaints, overload), newest last, SSIDs already hashed.
+func (r *Reader) EventsSnapshot() map[string]any { return r.forensics.eventsSnapshot() }
+
+// TailSnapshot is the box_syslog_tail debug section: the most recent ring
+// lines with the localhost-retry spam and the clock-sync chatter dropped and
+// SSIDs hashed, so a bundle carries the minutes before a report.
+func (r *Reader) TailSnapshot() []string { return r.forensics.tailSnapshot() }
 
 // NeedsReassert reports, and claims, one re-send of the loglevel commands:
 // the caller saw a press with no DEBUG trace around it on a chassis that had

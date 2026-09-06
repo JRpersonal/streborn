@@ -1387,8 +1387,8 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		cancel()
 	}
 	src, item, status := h.nowPlayingSummary()
-	h.logger.Warn("hardware recall still not playing after retries", "slot", slot,
-		"source", src, "itemName", item, "playStatus", status)
+	h.logger.Warn("hardware recall still not playing after retries", append([]any{"slot", slot,
+		"source", src, "itemName", item, "playStatus", status}, h.boxFailureAttrs()...)...)
 	if h.noteRecallExhausted != nil {
 		h.noteRecallExhausted()
 	}
@@ -1581,7 +1581,7 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 		pcancel()
 		return
 	}
-	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)
+	h.logger.Warn("spotify recall still not playing after retries", append([]any{"slot", slot}, h.boxFailureAttrs()...)...)
 }
 
 // nowPlayingSummary is the seam-aware wrapper over boxNowPlayingSummary.

@@ -1023,6 +1023,12 @@ func run() error {
 	)
 	wsHandler.keyTrace = keyTrace
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
+	// The same ring carries the firmware's own forensics (why a stream did
+	// not start, standby/wake, Wi-Fi, marge complaints, overload). The reader
+	// keeps a bounded classified copy and a redacted tail in RAM for the
+	// diagnostic bundle; SSIDs are hashed on the speaker before they leave it.
+	webui.RegisterDebugSection("box_syslog_events", func() any { return keyTrace.EventsSnapshot() })
+	webui.RegisterDebugSection("box_syslog_tail", func() any { return keyTrace.TailSnapshot() })
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user
