@@ -93,6 +93,10 @@ const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
 // works the day the button ships; move it to the website page when that exists
 // and this one line follows.
 const VOICE_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/ALEXA.md';
+// The Home Assistant guide sits on the webhook tile: that is where someone
+// wiring a hub lands first, and the guide lists every local address STR keeps
+// alive plus the integrations that target them (Jens, 2026-09-06).
+const HOME_ASSISTANT_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/HOME-ASSISTANT.md';
 
 // Injected main.js helpers (see initSettingsView). These stay in main.js because
 // they are shared across views; the settings code calls them as deps.<name>.
@@ -806,6 +810,31 @@ const EXPERT_DISCUSS = {
   copyPresets: 'https://github.com/JRpersonal/streborn/discussions/829',
   urlPreset: 'https://github.com/JRpersonal/streborn/discussions/830',
 };
+// remoteSvg draws the SoundTouch remote as a clickable key map for the
+// webhook section, laid out from a photo of the real remote (2026-09-06):
+// power and AUX on top, presets 1 to 6, volume up/down stacked beside a tall
+// play/pause, then back/forward, then thumbs down/up. No Bose logo: it is a
+// trademark, and the drawing only needs the keys. Keys carry data-key with
+// the trigger id; the volume keys carry no trigger and are drawn dimmed.
+function remoteSvg() {
+  const key = (id, x, y, w, h, label, cls) =>
+    `<g class="rc-keyg" data-key="${id}">`
+    + `<rect class="rc-key ${cls || ''}" data-key="${id}" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"/>`
+    + `<text class="rc-label" x="${x + w / 2}" y="${y + h / 2 + 1}">${label}</text>`
+    + `</g>`;
+  const keys = [
+    key('power', 16, 22, 80, 46, '&#9211;'), key('aux', 104, 22, 80, 46, 'AUX'),
+    key('preset1', 16, 78, 50, 46, '1'), key('preset2', 75, 78, 50, 46, '2'), key('preset3', 134, 78, 50, 46, '3'),
+    key('preset4', 16, 134, 50, 46, '4'), key('preset5', 75, 134, 50, 46, '5'), key('preset6', 134, 134, 50, 46, '6'),
+    key('volUp', 16, 190, 80, 46, '&#128266;+', 'rc-off'), key('volDown', 16, 246, 80, 46, '&#128266;&#8722;', 'rc-off'),
+    key('playPause', 104, 190, 80, 102, '&#9654;&#10074;&#10074;'),
+    key('prev', 16, 302, 80, 46, '&#9198;'), key('next', 104, 302, 80, 46, '&#9197;'),
+    key('thumbsDown', 16, 358, 80, 46, '&#128078;'), key('thumbsUp', 104, 358, 80, 46, '&#128077;'),
+  ].join('');
+  return `<svg class="rc-svg" viewBox="0 0 200 428" role="img" aria-label="remote">`
+    + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}</svg>`;
+}
+
 function discussLink(key) {
   const url = EXPERT_DISCUSS[key];
   if (!url) return '';
@@ -1056,6 +1085,14 @@ function renderBoxSettings(s, box) {
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
+      <div class="rc-wrap">
+        ${remoteSvg()}
+        <div class="rc-side">
+          <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
+          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}</small>
+          <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteNoVol'))}</small>
+        </div>
+      </div>
       <div class="setting-row">
         <select id="webhookTarget" style="flex:1;">
           <option value="thumbsUp">${escapeHtml(t('settingsView.webhookKeyThumbsUp'))}</option>
@@ -1117,6 +1154,10 @@ function renderBoxSettings(s, box) {
         <span style="flex:1;"></span>
         <button class="btn btn-mini" id="webhookTestBtn">${escapeHtml(t('settingsView.webhookTestBtn'))}</button>
         <button class="btn btn-mini btn-primary" id="webhookSaveBtn">${escapeHtml(t('common.save'))}</button>
+      </div>
+      <div class="setting-row" style="align-items:center;gap:10px;margin-top:10px">
+        <small class="muted small" style="flex:1">${escapeHtml(t('settingsView.webhookHaHint'))}</small>
+        <button class="btn btn-mini" id="webhookHaGuideBtn">${escapeHtml(t('settingsView.webhookHaGuideBtn'))}</button>
       </div>
       ${discussLink('webhook')}
     </details>
@@ -1371,6 +1412,8 @@ function renderBoxSettings(s, box) {
   {
     const vg = $('voiceGuideBtn');
     if (vg) vg.onclick = () => { try { BrowserOpenURL(VOICE_GUIDE_URL); } catch {} };
+    const hg = $('webhookHaGuideBtn');
+    if (hg) hg.onclick = () => { try { BrowserOpenURL(HOME_ASSISTANT_GUIDE_URL); } catch {} };
   }
   // Playground discussion links: every expert section links to its own
   // "Show and tell" thread. One handler for all of them, driven by data-url.
@@ -2285,7 +2328,34 @@ function renderBoxSettings(s, box) {
         : (traceKeyIds.has(tg) ? t('settingsView.webhookModeKeyNote')
           : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote')));
       syncType();
+      paintRemote(tg);
     };
+    // paintRemote marks every key that carries an enabled, configured trigger
+    // and the key currently being edited. The legacy shared thumbs action
+    // lights both thumbs keys, since it fires for either.
+    const configured = (a) => !!a && a.enabled === true && (
+      a.type === 'wol' ? !!a.mac : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
+    const paintRemote = (selected) => {
+      const thumbShared = configured(cfg.thumb);
+      document.querySelectorAll('.rc-key[data-key]').forEach((el) => {
+        const k = el.getAttribute('data-key');
+        if (el.classList.contains('rc-off')) return;
+        const on = configured(cfg.buttons && cfg.buttons[k]) || ((k === 'thumbsUp' || k === 'thumbsDown') && thumbShared);
+        el.classList.toggle('rc-on', on);
+        el.classList.toggle('rc-sel', k === selected || (selected === 'thumb' && (k === 'thumbsUp' || k === 'thumbsDown')));
+      });
+    };
+    document.querySelectorAll('.rc-keyg[data-key]').forEach((g) => {
+      g.addEventListener('click', () => {
+        const k = g.getAttribute('data-key');
+        const rect = g.querySelector('.rc-key');
+        if (!rect || rect.classList.contains('rc-off')) return;
+        captureInto(prevTarget);
+        whTarget.value = k;
+        prevTarget = k;
+        loadInto(k);
+      });
+    });
     const captureInto = (tg) => {
       const ty = (whType && whType.value) || 'http';
       const a = { enabled: whEnabled === true, type: ty };
@@ -2333,6 +2403,7 @@ function renderBoxSettings(s, box) {
       captureInto(tg);
       try {
         await SaveWebhookConfig(box.host, box.port, cfg);
+        paintRemote(tg);
         showToast(t('settingsView.webhookSavedToast'));
       } catch (e) { showError(e); }
     };
