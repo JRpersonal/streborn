@@ -621,6 +621,20 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// which is what the field log showed: two reads of /now_playing timed out,
 	// the wake had no source to report, and everything after that was doomed.
 	// So the wake failing is only the prompt to ask one cheap question.
+	// A master asleep at form time is woken QUIETLY: the plain wake let the
+	// firmware resume the master's last station and the fresh zone carried
+	// it into every room, so "create a group" meant "start playing" (Jens,
+	// 2026-09-06, after #805 had fixed the same for permanent groups on the
+	// app side). The quiet wake mutes, stops the resumed station and gives
+	// the level back on the join; the group then forms silent and plays
+	// what the user starts next.
+	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "STANDBY" {
+		if err := s.quietWake(ctx); err != nil {
+			s.logger.Warn("zone: quiet wake of the sleeping master failed, trying the plain wake", "err", err)
+		} else {
+			s.logger.Info("zone: woke the sleeping master quietly so forming the group does not start its last station")
+		}
+	}
 	if err := s.ensureBoxReadyErr(ctx); err != nil {
 		perr := s.speakerStaysSilent(ctx, c)
 		if perr != nil {

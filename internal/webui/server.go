@@ -691,61 +691,77 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 	// firmware resumed, answer. The level comes back the moment the speaker
 	// joins a zone (NoteBoxZoneState) or after a bounded wait.
 	quiet := r.URL.Query().Get("quiet") == "1"
-	var prevVol = -1
-	var muteDone chan struct{}
+	var err error
 	if quiet {
-		if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
-			prevVol = v.Actual
-		}
-		// The mute has to land AFTER the power-on, not before it: a level
-		// written while the speaker sleeps is accepted by its API and then
-		// overwritten by the firmware's own remembered level the moment it
-		// powers on (measured 2026-09-06: set to 0 in standby, woke at 30).
-		// So a watcher polls for the first sign of life and mutes right then,
-		// a few hundred milliseconds into the resume instead of seconds.
-		muteDone = make(chan struct{})
-		go func() {
-			defer close(muteDone)
-			c := boxapi.New(s.boxHost)
-			for ctx.Err() == nil {
-				if np := fetchNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
-					_ = c.SetVolume(ctx, 0)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(150 * time.Millisecond):
-				}
+		err = s.quietWake(ctx)
+	} else {
+		err = boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger)
+	}
+	if err != nil {
+		http.Error(w, "wake failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
+}
+
+// quietWake wakes the speaker for a group operation, not for listening to
+// it: the firmware's power-on resumes the speaker's own last station at its
+// own level, so the speaker is muted the moment it shows life, whatever the
+// firmware resumed is stopped, and the level comes back when it joins a zone
+// or after a bounded wait (armQuietWakeRestore). Used by the app's group-join
+// wake (/api/box/wake?quiet=1) and by the zone form for a sleeping master,
+// which otherwise started its last station in every room the moment the
+// group was created (Jens, 2026-09-06).
+func (s *Server) quietWake(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var prevVol = -1
+	if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
+		prevVol = v.Actual
+	}
+	// The mute has to land AFTER the power-on, not before it: a level
+	// written while the speaker sleeps is accepted by its API and then
+	// overwritten by the firmware's own remembered level the moment it
+	// powers on (measured 2026-09-06: set to 0 in standby, woke at 30).
+	// So a watcher polls for the first sign of life and mutes right then,
+	// a few hundred milliseconds into the resume instead of seconds.
+	muteDone := make(chan struct{})
+	go func() {
+		defer close(muteDone)
+		c := boxapi.New(s.boxHost)
+		for ctx.Err() == nil {
+			if np := fetchNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
+				_ = c.SetVolume(ctx, 0)
+				return
 			}
-		}()
-	}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(150 * time.Millisecond):
+			}
+		}
+	}()
 	err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger)
-	if muteDone != nil {
-		<-muteDone
-	}
+	<-muteDone
 	if err != nil {
 		if prevVol >= 0 {
 			_ = boxapi.New(s.boxHost).SetVolume(ctx, prevVol)
 		}
-		http.Error(w, "wake failed: "+err.Error(), http.StatusBadGateway)
-		return
+		return err
 	}
-	if quiet {
-		// Belt and braces: the watcher may have raced the firmware's level
-		// restore, so the mute is written once more now that the box is up.
-		_ = boxapi.New(s.boxHost).SetVolume(ctx, 0)
-		// Whatever the firmware resumed on power-on is stopped, so the zone
-		// join meets an idle speaker instead of a station still spinning up.
-		if np := fetchNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
-			_ = boxapi.New(s.boxHost).Key(ctx, "STOP")
-		}
-		if prevVol >= 0 {
-			s.armQuietWakeRestore(prevVol)
-		}
-		s.logger.Info("wake: quiet wake for a group join", "mutedFrom", prevVol)
+	// Belt and braces: the watcher may have raced the firmware's level
+	// restore, so the mute is written once more now that the box is up.
+	_ = boxapi.New(s.boxHost).SetVolume(ctx, 0)
+	// Whatever the firmware resumed on power-on is stopped, so the zone
+	// join meets an idle speaker instead of a station still spinning up.
+	if np := fetchNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
+		_ = boxapi.New(s.boxHost).Key(ctx, "STOP")
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
+	if prevVol >= 0 {
+		s.armQuietWakeRestore(prevVol)
+	}
+	s.logger.Info("wake: quiet wake for a group operation", "mutedFrom", prevVol)
+	return nil
 }
 
 // quietWakeRestoreAfter bounds how long a member stays muted after a quiet
