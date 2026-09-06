@@ -2795,3 +2795,17 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .rc-legend-on, .rc-legend-sel { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; }
 .rc-legend-on { border: 2px solid #4caf50; }
 .rc-legend-sel { background: #1f5f8f; border: 2px solid #7cc0ff; }
+
+/* A thumbs key that carries a saved group (#863): amber dashed frame and a
+   small "G" in the corner, distinct from the green webhook frame. */
+.rc-key.rc-group { stroke: #e0a326; stroke-width: 2.5; stroke-dasharray: 5 3; }
+.rc-gmark { fill: #e0a326; font-size: 11px; font-weight: 700; pointer-events: none; }
+.rc-legend-group { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; border: 2px dashed #e0a326; }
+
+/* Group keys section on the Multi-Room tab. */
+.gk-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.gk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 8px; }
+.gk-row-name { font-weight: 600; }
+.gk-row-members { flex: 1 1 200px; }
+.gk-row select { min-width: 140px; }
+.gk-warn { flex-basis: 100%; }

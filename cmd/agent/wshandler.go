@@ -20,6 +20,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxlog"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
+	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/upnp"
@@ -69,6 +70,10 @@ type presetWsHandler struct {
 	// webhooks fires the user-configured HTTP request on a "thumb" trigger (a
 	// lone userActivityUpdate, see OnThumbActivity). nil-safe.
 	webhooks *webhooks.Store
+	// groupKeys holds the saved groups bound to the thumbs keys (#863). A
+	// physical press of a bound key toggles its group instead of firing the
+	// key's webhook. nil-safe.
+	groupKeys *groupkeys.Store
 	// keyTrace follows the speaker's own key trace (internal/boxlog). When it
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.

@@ -54,18 +54,41 @@ func (h *presetWsHandler) boxFailureAttrs() []any {
 	return []any{"boxReason", string(ev.Class), "boxMsg", ev.Message}
 }
 
+// groupKeyToggleBudget bounds one group-key press end to end: a zone form may
+// wake the main speaker (8 s) before the firmware call, and the resume after
+// it wakes again on a slow chassis.
+const groupKeyToggleBudget = 75 * time.Second
+
 // OnKeyEvent receives every key state change the speaker itself decoded (see
 // internal/boxlog). It logs the event and, for a physical press of one of the
 // transport keys, fires the per-key webhook. Presets, AUX and power keep their
 // existing paths (the box's own selection/source/power frames), so nothing
 // fires twice; volume and the rest are logged only.
+//
+// A thumbs key that carries a saved group (#863) toggles that group instead:
+// a key carries one action, and the group binding wins over a webhook on the
+// same key.
 func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 	h.logKeyEvent(ev)
 	if !ev.Pressed() || !ev.Producer.Physical() {
 		return
 	}
 	id := webhooks.KeyTriggerID(ev.Name)
-	if id == "" || h.webhooks == nil {
+	if id == "" {
+		return
+	}
+	if h.groupKeys.Bound(id) {
+		// Off the reader's goroutine, same as the webhook: a form takes
+		// seconds and must not stall the log stream.
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), groupKeyToggleBudget)
+			defer cancel()
+			h.logger.Info("group key pressed", "key", ev.Name, "producer", ev.Producer.String())
+			h.groupKeys.Toggle(ctx, id)
+		}()
+		return
+	}
+	if h.webhooks == nil {
 		return
 	}
 	// Off the reader's goroutine: a webhook request must not stall the log

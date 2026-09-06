@@ -100,6 +100,74 @@ func adoptPeerEntryLocked(ip, deviceID string) *peerEntry {
 	return e
 }
 
+// peerWebPort returns the agent port a listed peer answered on last, or 0
+// when it is unknown or the address is not in the roster. The group-key
+// toggle uses it as the first port to try for the main speaker's agent.
+func peerWebPort(ip string) int {
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	if e := peersByIP[ip]; e != nil {
+		return e.port
+	}
+	return 0
+}
+
+// peerIPByDeviceID returns the address the roster currently holds for a
+// peer's deviceID, or "" when no peer carries that id. A reachable entry wins
+// over a dimmed one should the same id ever sit under two addresses. The
+// group-key toggle resolves a template's speakers through it, because the
+// template stores the addresses of the day it was saved and a DHCP
+// renumbering hands those to other speakers.
+func peerIPByDeviceID(deviceID string) string {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return ""
+	}
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	best := ""
+	for ip, e := range peersByIP {
+		if !strings.EqualFold(e.deviceID, deviceID) {
+			continue
+		}
+		if e.reachable {
+			return ip
+		}
+		if best == "" || ip < best {
+			best = ip
+		}
+	}
+	return best
+}
+
+// peerDeviceIDAt returns the deviceID the roster knows the peer at ip by, or
+// "" when the address is not listed or its id is unknown.
+func peerDeviceIDAt(ip string) string {
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	if e := peersByIP[strings.TrimSpace(ip)]; e != nil {
+		return e.deviceID
+	}
+	return ""
+}
+
+// ownLANIPv4 returns this speaker's own LAN address: the lowest non-loopback
+// IPv4 it holds, "" when it has none. The group-key toggle puts it on this
+// speaker when it is a member of the template being formed, so the main
+// speaker enrols it at the address it has now and not at the stored one.
+func ownLANIPv4() string {
+	best := ""
+	for ip := range ownIPv4s() {
+		if strings.HasPrefix(ip, "127.") {
+			continue
+		}
+		if best == "" || ip < best {
+			best = ip
+		}
+	}
+	return best
+}
+
 // loadPersistedPeers seeds peersByIP from NAND at agent start. Entries come
 // back dimmed (reachable=false); the browse sweep's fallback probe promotes
 // the ones that actually answer within about a minute.

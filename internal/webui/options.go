@@ -10,6 +10,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
@@ -186,6 +187,12 @@ func WithStreamProxy(p *streamproxy.Server) Option {
 // WithWebhooks wires the user-configured webhook store (thumbs trigger).
 func WithWebhooks(w *webhooks.Store) Option {
 	return func(s *Server) { s.webhooks = w }
+}
+
+// WithGroupKeys wires the saved groups bound to the remote's thumbs keys
+// (#863), served at /api/groupkeys.
+func WithGroupKeys(g *groupkeys.Store) Option {
+	return func(s *Server) { s.groupKeys = g }
 }
 
 // WithSpotifySwitchedAway wires the Spotify manager's source-switch hook, called

@@ -126,6 +126,51 @@ func (a *App) SaveWebhookConfig(host string, port int, cfg map[string]any) error
 	return a.boxPut(host, port, "/api/webhooks", cfg)
 }
 
+// --- Group keys (#863): a saved group on a thumbs key of one remote -------
+//
+// The document (templates + key bindings) lives on the speaker whose remote
+// is pressed, because that speaker is the only one that sees the press. Both
+// calls address exactly that speaker; the app never merges documents across
+// speakers.
+
+// GetGroupKeys reads the speaker's group-key document (GET /api/groupkeys)
+// -> {templates: [...], bindings: {thumbsUp: name, thumbsDown: name}}.
+func (a *App) GetGroupKeys(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/groupkeys", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SaveGroupKeys replaces the speaker's whole group-key document (PUT
+// /api/groupkeys). The agent validates it and answers with the reason when it
+// refuses, which is surfaced verbatim.
+func (a *App) SaveGroupKeys(host string, port int, doc map[string]any) error {
+	a.logger.Info("group keys: saving", "host", host,
+		"templates", len(anySlice(doc["templates"])), "bindings", len(anyMap(doc["bindings"])))
+	return a.boxPut(host, port, "/api/groupkeys", doc)
+}
+
+// anySlice and anyMap read a JSON-shaped value defensively for logging.
+func anySlice(v any) []any {
+	s, _ := v.([]any)
+	return s
+}
+
+func anyMap(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}
+
 // TestWebhook fires the given request immediately so the user can verify their
 // URL from the app without pressing a key on the box. Returns {ok, status}.
 func (a *App) TestWebhook(host string, port int, method, url, body, contentType string) (map[string]any, error) {

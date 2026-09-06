@@ -17,6 +17,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -108,6 +109,9 @@ type Server struct {
 	// webhooks holds the user-configured HTTP requests (thumbs trigger). nil
 	// when not wired; endpoints then report unavailable.
 	webhooks *webhooks.Store
+	// groupKeys holds the saved groups bound to the remote's thumbs keys
+	// (#863). nil when not wired; the endpoint then reports unavailable.
+	groupKeys *groupkeys.Store
 	// spotifySwitchedAway tells the Spotify manager the box was pointed at a
 	// non-Spotify source, so its #14 auto-attach does not yank the box back.
 	// nil when Spotify is not configured.
@@ -945,6 +949,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
+	mux.HandleFunc("/api/groupkeys", s.handleGroupKeys)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
 

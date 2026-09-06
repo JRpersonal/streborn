@@ -28,6 +28,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/clocksync"
 	"github.com/JRpersonal/streborn/internal/dnsboot"
+	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/mdnshost"
@@ -317,6 +318,39 @@ func run() error {
 	if whErr != nil {
 		logger.Warn("webhooks config load failed, continuing with empty config", "err", whErr)
 	}
+
+	// Group keys (#863): saved groups bound to the remote's thumbs keys. Read
+	// once here, written only when the app saves; a press reads the main
+	// speaker's live zone and reuses the zone form/dissolve endpoints, over
+	// loopback when this speaker leads the group and over the LAN otherwise.
+	groupKeysStore, gkErr := groupkeys.Load("/mnt/nv/streborn/group-keys.json", logger.With("comp", "groupkeys"))
+	if gkErr != nil {
+		logger.Warn("group keys load failed, continuing with none", "err", gkErr)
+	}
+	groupKeysStore.SetClient(groupkeys.NewHTTPClient(groupkeys.HTTPOptions{
+		IsSelf: func(m groupkeys.Member) bool {
+			if m.DeviceID != "" && deviceID != "" && strings.EqualFold(m.DeviceID, deviceID) {
+				return true
+			}
+			return m.IP != "" && ownIPv4s()[m.IP]
+		},
+		// The announced id, so the client can tell an id match from an
+		// address-only match: after a DHCP renumbering another speaker's
+		// stored address can be this box's own.
+		SelfDeviceID: deviceID,
+		PortHint:     peerWebPort,
+		// Current addresses by id: the roster for peers, the LAN interface
+		// for this box itself (a member's stored address may be stale too,
+		// and the main speaker enrols whoever answers at it).
+		PeerIP: func(id string) string {
+			if deviceID != "" && strings.EqualFold(id, deviceID) {
+				return ownLANIPv4()
+			}
+			return peerIPByDeviceID(id)
+		},
+		PeerDeviceID: peerDeviceIDAt,
+	}))
+	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
 
 	// Multiroom zone membership (#70 beta), persisted on NAND so a formed zone
 	// auto-reforms after reboot/standby without the user re-grouping. Missing
@@ -769,6 +803,7 @@ func run() error {
 			return forgetPeer(host, logger.With("comp", "peers"))
 		}),
 		webui.WithWebhooks(webhooksStore),
+		webui.WithGroupKeys(groupKeysStore),
 		webui.WithZones(zonesStore),
 		webui.WithMediaServers(mediaServerStore),
 		webui.WithStoredMusicPublisher(func(list []webui.StoredMusicSource) {
@@ -855,6 +890,9 @@ func run() error {
 		// Spotify preset with a single clean slot recall instead (see its doc).
 		onRemoteSkip: webuiSrv.HardwareSkip,
 		webhooks:     webhooksStore,
+		// A thumbs key that carries a saved group forms/dissolves it (#863)
+		// and wins over a webhook on the same key.
+		groupKeys: groupKeysStore,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.
