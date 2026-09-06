@@ -822,6 +822,11 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
+/* "STR not running": a box STR once ran on whose agent is gone while the stock
+   firmware still answers. Grey, not red: it is a repair hint, not an invite. */
+.box-stock-badge.box-stock-badge-gone {
+  color: var(--c-muted);
+}
 
 /* Announcement expert command: a wrappable, selectable monospace block. */
 .announce-curl {

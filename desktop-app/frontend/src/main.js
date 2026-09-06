@@ -1867,9 +1867,21 @@ function applyBoxList(list) {
     || (a.host || '').localeCompare(b.host || '')
     || (a.deviceID || '').localeCompare(b.deviceID || ''));
   saveCachedBoxes(state.boxes);
+  // Speaker Settings shows whatever record it was handed when the gear was
+  // clicked. Re-point it at this cycle's record for the same speaker, so a box
+  // that turned stock (STR removed, agent gone) or changed IP is shown as it
+  // is now, not as it was at click time.
+  if (state.settingsBox && state.settingsBox.deviceID) {
+    const freshSettings = state.boxes.find(b => b.deviceID === state.settingsBox.deviceID);
+    if (freshSettings) state.settingsBox = freshSettings;
+  }
   if (state.currentBox && state.currentBox.deviceID) {
     const fresh = state.boxes.find(b => b.deviceID === state.currentBox.deviceID);
-    if (fresh) {
+    // A selected speaker whose record turned stock cannot be controlled any
+    // more (STR was removed from it, or its agent is gone for good): treat it
+    // like a speaker that left the list. Transient stock sightings never reach
+    // here as stock (the cache promotes them), so this is a real change.
+    if (fresh && fresh.kind !== 'stock') {
       const changed = fresh.host !== state.currentBox.host
                    || fresh.port !== state.currentBox.port
                    || fresh.version !== state.currentBox.version
@@ -2500,8 +2512,16 @@ function renderBoxSelect() {
       // reachable by IP installs over the network (stick-free), so we invite the
       // install for any model rather than blocking one. Soundbars / adapters
       // install too; their missing hardware preset buttons are noted in Setup.
-      const badge = `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
-      const stockTitle = off ? offTitle : t('speaker.stockTooltip');
+      //
+      // A box STR once ran on whose agent went silent for good while the stock
+      // firmware still answers (uninstalled, NAND wiped, agent crashed) is a
+      // stock box too, but says so: a grey "STR not running" instead of the
+      // first-time "Ready for STR", so the owner knows this is a repair, not
+      // a speaker that never had STR (2026-09-06 report: the card kept the
+      // old version badge on a speaker STR had just been removed from).
+      const gone = !!b.strNotRunning;
+      const badge = `<span class="box-stock-badge${gone ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge'))}</span>`;
+      const stockTitle = off ? offTitle : t(gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
       return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     // An offline tile keeps showing the last CONFIRMED self-report, marked
@@ -2649,7 +2669,7 @@ function renderBoxSelect() {
         const label = getBoxLabel(box);
         const ok = await confirmWarn(
           t('speaker.stockConfirmTitle'),
-          t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
+          t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),
           { icon: null, confirmLabel: t('speaker.stockConfirmCta'), confirmClass: 'btn btn-primary' },
         );
         // Pin the clicked box as the setup target so Setup opens on the

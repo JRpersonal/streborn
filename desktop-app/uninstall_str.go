@@ -127,7 +127,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		if tcpReachable(host, 8090, 2*time.Second) &&
 			!tcpReachable(host, 8888, 1500*time.Millisecond) &&
 			!tcpReachable(host, 17008, 1500*time.Millisecond) {
-			a.forgetSTRDeviceByHost(host)
+			a.markHostStock(host)
 			res.Step = "already-stock"
 			res.OK = true
 			res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
@@ -168,7 +168,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		boseUp := tcpReachable(host, 8090, 2*time.Second)
 		strAgentUp := tcpReachable(host, 8888, 1500*time.Millisecond) || tcpReachable(host, 17008, 1500*time.Millisecond)
 		if boseUp && !strAgentUp {
-			a.forgetSTRDeviceByHost(host)
+			a.markHostStock(host)
 			res.Step = "already-stock"
 			res.OK = true
 			res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
@@ -230,10 +230,14 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		a.logger.Info("uninstall_str: removed", "host", host, "removedCount", len(res.RemovedFiles))
 	}
 
-	// The box is going back to stock, so drop its confirmed-STR identity memory:
-	// otherwise discovery would keep relabelling the now-stock speaker as STR for
-	// up to strKnownTTL and never offer the reinstall it now genuinely needs.
-	a.forgetSTRDeviceByHost(host)
+	// The box is going back to stock: rewrite its cached record as the stock
+	// speaker it now is and drop its confirmed-STR identity memory. Merely
+	// forgetting the record (the old behaviour) let the next discovery bring
+	// the box back as STR with its old agent version, because the box's stock
+	// :8090 kept answering and a presence-only sighting keeps a cached STR
+	// record alive; the Listen to music card then showed "v0.9.74" on a
+	// speaker with no STR on it (2026-09-06 report).
+	a.markHostStock(host)
 
 	// Step 3: reboot into vanilla Bose. Connection drops mid-command;
 	// fire-and-forget so the drop is not treated as a failure.
