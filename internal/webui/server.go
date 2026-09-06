@@ -692,15 +692,39 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 	// joins a zone (NoteBoxZoneState) or after a bounded wait.
 	quiet := r.URL.Query().Get("quiet") == "1"
 	var prevVol = -1
+	var muteDone chan struct{}
 	if quiet {
 		if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
 			prevVol = v.Actual
-			if err := boxapi.New(s.boxHost).SetVolume(ctx, 0); err != nil {
-				prevVol = -1
-			}
 		}
+		// The mute has to land AFTER the power-on, not before it: a level
+		// written while the speaker sleeps is accepted by its API and then
+		// overwritten by the firmware's own remembered level the moment it
+		// powers on (measured 2026-09-06: set to 0 in standby, woke at 30).
+		// So a watcher polls for the first sign of life and mutes right then,
+		// a few hundred milliseconds into the resume instead of seconds.
+		muteDone = make(chan struct{})
+		go func() {
+			defer close(muteDone)
+			c := boxapi.New(s.boxHost)
+			for ctx.Err() == nil {
+				if np := fetchNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
+					_ = c.SetVolume(ctx, 0)
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(150 * time.Millisecond):
+				}
+			}
+		}()
 	}
-	if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
+	err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger)
+	if muteDone != nil {
+		<-muteDone
+	}
+	if err != nil {
 		if prevVol >= 0 {
 			_ = boxapi.New(s.boxHost).SetVolume(ctx, prevVol)
 		}
@@ -708,6 +732,9 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if quiet {
+		// Belt and braces: the watcher may have raced the firmware's level
+		// restore, so the mute is written once more now that the box is up.
+		_ = boxapi.New(s.boxHost).SetVolume(ctx, 0)
 		// Whatever the firmware resumed on power-on is stopped, so the zone
 		// join meets an idle speaker instead of a station still spinning up.
 		if np := fetchNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
