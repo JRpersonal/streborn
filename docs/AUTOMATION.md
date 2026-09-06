@@ -87,6 +87,59 @@ curl -s "http://$SPEAKER:8091/AVTransport/Control" \
   `INVALID_SOURCE`; from some active sources the firmware can ignore it. STR
   handles the wake/state itself.
 
+## Remote and top-panel keys as triggers (webhooks)
+
+A key on the remote or on top of the speaker can fire an outgoing trigger:
+an HTTP webhook, a UDP packet, or a Wake-on-LAN magic packet. The app's
+settings view configures them per key; the agent keeps the config on the
+speaker (`/mnt/nv/streborn/webhooks.json`), so it keeps working without the
+app. Each trigger fires at most once per 2 s.
+
+Trigger ids, as stored in that file under `buttons`:
+
+| Id | Key | Fires on |
+|---|---|---|
+| `thumbsUp`, `thumbsDown` | Thumbs up / Thumbs down on the remote | the press, additional only |
+| `prev`, `next` | Back / Forward on the remote | the press, additional only (also during playback, next to the skip) |
+| `playPause` | Play/Pause on the remote | the press, additional only |
+| `preset1` .. `preset6` | Preset keys (remote and top panel) | the speaker's preset selection; "replace" mode withholds STR's playback |
+| `aux` | AUX (top panel) | the source change to AUX |
+| `power` | Power | the standby transition |
+| `thumb` (top-level field) | either thumbs key | fallback when the thumbs key has no trigger of its own |
+
+### How the lower remote keys are told apart
+
+The speaker's WebSocket bus (gabbo, `:8080`) reports Back, Forward, Thumbs up
+and Thumbs down as one identical bare `<userActivityUpdate/>` frame, so that
+bus cannot distinguish them. The firmware (BoseApp) does decode the key, and
+it logs the result into the speaker's syslog, a RAM-only ring buffer
+(`syslogd -C512`, nothing reaches NAND). The agent raises the two key
+facilities over the TAP port (`loglevel IrDevice on 4`,
+`loglevel ConsoleButtons on 4`, forgotten at reboot and re-sent on every
+agent start) and follows the ring with one `logread -f` child. Every press
+and release then arrives as
+
+```
+[(tid):IrDevice:DEBUG]IR Key event: Key()=5, State()=0, Producer()=2
+[(tid):ConsoleButtons:DEBUG]CONSOLE Key event: Key()=12, State()=1, Producer()=1
+```
+
+with `State` 0 = press, 1 = release and `Producer` 1 = top panel, 2 = IR
+remote, 0 = a network client. The key numbers follow the firmware's
+`KEY_VAL_*` enum: 0 PLAY, 1 PAUSE, 2 STOP, 3 PREV_TRACK, 4 NEXT_TRACK,
+5 THUMBS_UP, 6 THUMBS_DOWN, 7 BOOKMARK, 8 POWER, 9 MUTE, 10 VOLUME_UP,
+11 VOLUME_DOWN, 12 to 17 PRESET_1 to PRESET_6, 18 AUX_INPUT, 24 PLAY_PAUSE.
+Measured on a Portable (taigan); an ST30 (mojo) lists the same facilities;
+the sm2 chassis
+(SoundTouch 10, rhino) stays silent on those two facilities but logs the
+firmware's analytics line at its default level instead,
+`buildJson(), like-pressed, THUMBS_UP, ir-remote`, once per press, which the
+agent reads the same way (no release event there, so no hold timing).
+
+The old bare-frame heuristic stays as the fallback for a speaker whose trace
+is silent. The diagnostic bundle's `box_keys` section shows whether the trace
+is live and the last presses the speaker decoded.
+
 ## The dead endpoint (for reference)
 
 `POST :8090/speaker` was the documented notification API:
