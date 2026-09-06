@@ -20,9 +20,12 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,6 +102,13 @@ var (
 	}
 	rejoinLiveZone = func(ctx context.Context, host string) (boxapi.Zone, error) {
 		return boxapi.New(host).GetZone(ctx)
+	}
+	// rejoinReadAgentUptime is how long the member's agent has been up, in
+	// seconds, or -1 when it does not answer. It tells a member that just
+	// rebooted (and therefore sits in standby through no choice of anyone)
+	// from one somebody switched off on purpose.
+	rejoinReadAgentUptime = func(ctx context.Context, ip string) int {
+		return readAgentUptime(ctx, ip)
 	}
 	rejoinSetZone = func(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
 		return boxapi.New(host).SetZone(ctx, master, slaves)
@@ -272,3 +282,112 @@ func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
 // package (the gabbo handler firing on a hardware-key or Connect start).
 // Same debounce as every app-driven play.
 func (s *Server) KickDefaultGroup() { s.kickMirrorAfterPlay() }
+
+// readAgentUptime asks a member's agent for its uptime on either agent port.
+func readAgentUptime(ctx context.Context, ip string) int {
+	for _, port := range []string{"17008", "8888"} {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(ip, port)+"/api/agent/version", nil)
+		if err != nil {
+			continue
+		}
+		resp, err := rejoinVersionClient.Do(req)
+		if err != nil {
+			continue
+		}
+		var v struct {
+			UptimeSec string `json:"uptimeSec"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&v)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		if n, err := strconv.Atoi(v.UptimeSec); err == nil {
+			return n
+		}
+	}
+	return -1
+}
+
+var rejoinVersionClient = &http.Client{Timeout: 4 * time.Second}
+
+// rejoinFreshBootWindow is how long after a member's agent started its standby
+// still counts as "just rebooted" rather than "switched off by someone". A
+// speaker rebooted by an update, a power cut or a watchdog comes up in standby
+// and is taken back into the group; one that has been up for an hour and sits
+// in standby was put there, and is left alone.
+const rejoinFreshBootWindow = 10 * time.Minute
+
+// rejoinMissingMembers takes stored members back into a LIVE permanent group
+// that lost them: the master is playing, the firmware zone lists fewer members
+// than the document, and the missing ones are either idle or freshly rebooted.
+// Runs on the periodic zone tick, so a member that rebooted for an update, or
+// that lost the zone with a Wi-Fi hiccup, is back within minutes without the
+// user pressing anything (Jens, 2026-09-06: a fleet update dropped the
+// members one after another and they stayed out until the next play).
+//
+// What it deliberately does NOT do: wake a member that somebody switched off
+// (standby with a long agent uptime), pull in a member playing its own source
+// or grouped elsewhere (classifyMemberForRejoin), or touch anything while the
+// master is silent. Returns true when a setZone was driven.
+func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
+	if !z.Permanent || z.Stereo || len(z.Slaves) == 0 || s.boxHost == "" {
+		return false
+	}
+	live, err := rejoinLiveZone(ctx, s.boxHost)
+	if err != nil || !strings.EqualFold(live.Master, z.Master) {
+		return false // not leading a live zone right now: the play kick owns that case
+	}
+	have := make(map[string]boxapi.ZoneMember, len(live.Members))
+	for _, m := range live.Members {
+		have[strings.ToUpper(m.DeviceID)] = m
+	}
+	var missing []zones.Member
+	for _, m := range z.Slaves {
+		if _, ok := have[strings.ToUpper(m.DeviceID)]; !ok && m.IP != "" {
+			missing = append(missing, m)
+		}
+	}
+	if len(missing) == 0 {
+		return false
+	}
+	if np := rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+		return false // nothing to bring anyone back to
+	}
+	joiners := make([]boxapi.ZoneMember, 0, len(live.Members)+len(missing))
+	for _, m := range live.Members {
+		joiners = append(joiners, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+	}
+	added := 0
+	for _, m := range missing {
+		mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
+		np := rejoinReadNowPlaying(mctx, m.IP)
+		act := classifyMemberForRejoin(np.Source, np.PlayStatus, rejoinReadZoneMaster(mctx, m.IP), z.Master)
+		if act == rejoinWake {
+			up := rejoinReadAgentUptime(mctx, m.IP)
+			if up < 0 || time.Duration(up)*time.Second > rejoinFreshBootWindow {
+				s.logger.Info("default group: missing member is in standby and was not just rebooted, leaving it off", "ip", m.IP, "agentUptimeSec", up)
+				mcancel()
+				continue
+			}
+			rejoinWakeMember(mctx, m.IP, s.logger)
+			act = rejoinJoin
+		}
+		mcancel()
+		s.logger.Info("default group: missing member classified", "ip", m.IP, "action", act.String())
+		if act == rejoinJoin {
+			joiners = append(joiners, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			added++
+		}
+	}
+	if added == 0 {
+		return false
+	}
+	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	if err := rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
+		s.logger.Warn("default group: taking missing members back failed", "err", err, "added", added)
+		return false
+	}
+	s.logger.Info("default group: missing members taken back into the live group", "added", added, "members", len(joiners))
+	return true
+}

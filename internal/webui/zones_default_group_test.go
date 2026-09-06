@@ -203,3 +203,82 @@ func TestFormDefaultGroupOnPlayLeavesMembersAloneWhenMasterIsNotPlaying(t *testi
 		t.Fatalf("master in STOP_STATE still acted: woken=%v setCalls=%d", woken, setCalls)
 	}
 }
+
+// The periodic rejoin: a permanent group whose master plays takes a member
+// back that rebooted (fresh agent uptime, standby) or sits idle, leaves a
+// member alone that somebody switched off (standby, long uptime), and does
+// nothing at all while the master is silent (2026-09-06).
+func TestRejoinMissingMembersTakesRebootedMembersBackOnly(t *testing.T) {
+	oldNP, oldZM, oldWake, oldLive, oldSet, oldUp := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, rejoinReadAgentUptime
+	defer func() {
+		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, rejoinReadAgentUptime = oldNP, oldZM, oldWake, oldLive, oldSet, oldUp
+	}()
+	var mu sync.Mutex
+	woken := map[string]bool{}
+	var setSlaves []boxapi.ZoneMember
+	setCalls := 0
+	masterStatus := "PLAY_STATE"
+	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+		switch ip {
+		case "10.0.0.1":
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: masterStatus}
+		case "10.0.0.2", "10.0.0.3":
+			return nowPlayingSnapshot{Source: "STANDBY"}
+		case "10.0.0.4":
+			return nowPlayingSnapshot{Source: "INVALID_SOURCE"}
+		default:
+			return nowPlayingSnapshot{}
+		}
+	}
+	rejoinReadAgentUptime = func(_ context.Context, ip string) int {
+		if ip == "10.0.0.2" {
+			return 120 // just rebooted
+		}
+		return 5000 // switched off an hour ago
+	}
+	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
+	rejoinWakeMember = func(_ context.Context, ip string, _ *slog.Logger) { mu.Lock(); woken[ip] = true; mu.Unlock() }
+	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
+		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "KEPT", IP: "10.0.0.5"}}}, nil
+	}
+	rejoinSetZone = func(_ context.Context, _ string, _ boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
+		mu.Lock()
+		setCalls++
+		setSlaves = slaves
+		mu.Unlock()
+		return nil
+	}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true, Slaves: []zones.Member{
+		{DeviceID: "KEPT", IP: "10.0.0.5"},
+		{DeviceID: "REBOOTED", IP: "10.0.0.2"},
+		{DeviceID: "SWITCHEDOFF", IP: "10.0.0.3"},
+		{DeviceID: "IDLE", IP: "10.0.0.4"},
+	}}
+	if !s.rejoinMissingMembers(context.Background(), z) {
+		t.Fatal("nothing was taken back")
+	}
+	if !woken["10.0.0.2"] || woken["10.0.0.3"] {
+		t.Errorf("woken = %v, want only the rebooted member", woken)
+	}
+	ids := map[string]bool{}
+	for _, m := range setSlaves {
+		ids[m.DeviceID] = true
+	}
+	if !ids["KEPT"] || !ids["REBOOTED"] || !ids["IDLE"] || ids["SWITCHEDOFF"] {
+		t.Errorf("setZone members = %v, want KEPT+REBOOTED+IDLE without SWITCHEDOFF", ids)
+	}
+	// Silent master: nothing happens, nobody is woken.
+	masterStatus = "STOP_STATE"
+	woken = map[string]bool{}
+	setCalls = 0
+	if s.rejoinMissingMembers(context.Background(), z) || setCalls != 0 || len(woken) != 0 {
+		t.Errorf("a silent master must not take anyone back: setCalls=%d woken=%v", setCalls, woken)
+	}
+	// Not permanent: never.
+	masterStatus = "PLAY_STATE"
+	z.Permanent = false
+	if s.rejoinMissingMembers(context.Background(), z) {
+		t.Error("a non-permanent group must not rejoin on the tick")
+	}
+}
