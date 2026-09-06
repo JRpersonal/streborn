@@ -135,6 +135,16 @@ func normalise(s string) string {
 	for len(parts) < 4 {
 		parts = append(parts, "0")
 	}
+	// A build without a release number (the weekly dry run and a plain
+	// workflow_dispatch pass "dev-<sha>") is a real build that only lacks a
+	// number to stamp; every non-numeric part becomes 0 instead of failing the
+	// whole Windows build on the version string (every scheduled run since
+	// the resource generator was added, 2026-09-06).
+	for i, p := range parts[:4] {
+		if p == "" || strings.Trim(p, "0123456789") != "" {
+			parts[i] = "0"
+		}
+	}
 	return strings.Join(parts[:4], ".")
 }
 
