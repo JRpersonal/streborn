@@ -739,6 +739,8 @@
   "settingsView.webhookKeyPlayPause": "تشغيل/إيقاف مؤقت (جهاز التحكّم)",
   "settingsView.webhookModeKeyNote": "إضافي فقط. يبلّغ مكبّر الصوت عن الزر الذي ضُغط، لذا يعمل هذا المشغّل لهذا الزر تحديدًا. يعمل إدخال الإعجاب المشترك عندما لا يكون لزر الإعجاب مشغّل خاص به.",
   "settingsView.webhookKeyTraceNote": "رجوع وتقدّم وإعجاب وعدم إعجاب وتشغيل/إيقاف مؤقت مشغّلات منفصلة: مكبّر الصوت نفسه يبلّغ عن الزر الذي ضُغط، على جهاز التحكّم وعلى اللوحة العلوية.",
+  "settingsView.webhookHaHint": "هل تستخدم Home Assistant؟ يسرد الدليل كل عنوان محلي يبقيه STR نشطًا، والتكاملات المتوافقة، وهذه المشغّلات.",
+  "settingsView.webhookHaGuideBtn": "دليل Home Assistant",
   "settingsView.webhookModeAdditional": "الإبقاء على الأصلي + webhook",
   "settingsView.webhookModeReplace": "Webhook فقط (لا تُشغَّل المحطة المحفوظة)",
   "settingsView.webhookModePresetNote": "اترك محطة محفوظة على هذا الزر. لا يبلّغ مكبر الصوت عن الضغط إلا لزر يحتوي على شيء، لذا يرفض الزر الفارغ بنفسه ولا يعلم ST Reborn بالضغط أصلًا.",

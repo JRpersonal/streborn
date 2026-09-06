@@ -739,6 +739,8 @@
   "settingsView.webhookKeyPlayPause": "再生/一時停止（リモコン）",
   "settingsView.webhookModeKeyNote": "追加のみ。スピーカーがどのキーが押されたかを報告するため、このキーに対してのみ発火します。サムキーに固有のトリガーがない場合は共通のサム項目が発火します。",
   "settingsView.webhookKeyTraceNote": "戻る、進む、サムアップ、サムダウン、再生/一時停止は別々のトリガーです。リモコンでも本体上面でも、スピーカー自身がどのキーが押されたかを報告します。",
+  "settingsView.webhookHaHint": "Home Assistant をお使いですか？ガイドには、STR が維持しているすべてのローカルアドレス、対応する連携、そしてこれらのトリガーが載っています。",
+  "settingsView.webhookHaGuideBtn": "Home Assistant ガイド",
   "settingsView.webhookModeAdditional": "元の機能＋Webhook",
   "settingsView.webhookModeReplace": "Webhook のみ（保存した放送局は再生しません）",
   "settingsView.webhookModePresetNote": "このキーには放送局を保存したままにしてください。スピーカーは中身のあるキーの押下しか通知しません。空のキーはスピーカー自身が拒否するため、ST Reborn は押されたことすら分かりません。",

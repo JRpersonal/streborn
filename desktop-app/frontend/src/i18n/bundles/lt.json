@@ -739,6 +739,8 @@
   "settingsView.webhookKeyPlayPause": "Groti/Pauzė (pultas)",
   "settingsView.webhookModeKeyNote": "Tik papildomai. Garsiakalbis praneša, kuris klavišas paspaustas, todėl tai suveikia būtent šiam klavišui. Bendras nykščio įrašas suveikia, kai nykščio klavišas neturi savo trigerio.",
   "settingsView.webhookKeyTraceNote": "Atgal, Pirmyn, Patinka, Nepatinka ir Groti/Pauzė yra atskiri trigeriai: pats garsiakalbis praneša, kuris klavišas paspaustas, pulte ir viršutiniame skydelyje.",
+  "settingsView.webhookHaHint": "Naudojate Home Assistant? Vadove išvardytas kiekvienas vietinis adresas, kurį STR palaiko, tinkamos integracijos ir šie trigeriai.",
+  "settingsView.webhookHaGuideBtn": "Home Assistant vadovas",
   "settingsView.webhookModeAdditional": "Palikti originala + webhook",
   "settingsView.webhookModeReplace": "Tik webhook (išsaugota stotis negrojama)",
   "settingsView.webhookModePresetNote": "Palik stotį išsaugotą šiame klaviše. Garsiakalbis praneša apie paspaudimą tik tada, kai klaviše kažkas yra, todėl tuščią klavišą jis atmeta pats ir ST Reborn apie paspaudimą nesužino.",

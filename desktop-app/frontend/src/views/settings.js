@@ -93,6 +93,10 @@ const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
 // works the day the button ships; move it to the website page when that exists
 // and this one line follows.
 const VOICE_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/ALEXA.md';
+// The Home Assistant guide sits on the webhook tile: that is where someone
+// wiring a hub lands first, and the guide lists every local address STR keeps
+// alive plus the integrations that target them (Jens, 2026-09-06).
+const HOME_ASSISTANT_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/HOME-ASSISTANT.md';
 
 // Injected main.js helpers (see initSettingsView). These stay in main.js because
 // they are shared across views; the settings code calls them as deps.<name>.
@@ -1118,6 +1122,10 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini" id="webhookTestBtn">${escapeHtml(t('settingsView.webhookTestBtn'))}</button>
         <button class="btn btn-mini btn-primary" id="webhookSaveBtn">${escapeHtml(t('common.save'))}</button>
       </div>
+      <div class="setting-row" style="align-items:center;gap:10px;margin-top:10px">
+        <small class="muted small" style="flex:1">${escapeHtml(t('settingsView.webhookHaHint'))}</small>
+        <button class="btn btn-mini" id="webhookHaGuideBtn">${escapeHtml(t('settingsView.webhookHaGuideBtn'))}</button>
+      </div>
       ${discussLink('webhook')}
     </details>
 
@@ -1371,6 +1379,8 @@ function renderBoxSettings(s, box) {
   {
     const vg = $('voiceGuideBtn');
     if (vg) vg.onclick = () => { try { BrowserOpenURL(VOICE_GUIDE_URL); } catch {} };
+    const hg = $('webhookHaGuideBtn');
+    if (hg) hg.onclick = () => { try { BrowserOpenURL(HOME_ASSISTANT_GUIDE_URL); } catch {} };
   }
   // Playground discussion links: every expert section links to its own
   // "Show and tell" thread. One handler for all of them, driven by data-url.

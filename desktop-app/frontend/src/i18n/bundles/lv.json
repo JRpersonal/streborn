@@ -739,6 +739,8 @@
   "settingsView.webhookKeyPlayPause": "Atskaņot/Pauze (pults)",
   "settingsView.webhookModeKeyNote": "Tikai papildus. Skaļrunis ziņo, kurš taustiņš nospiests, tāpēc tas nostrādā tieši šim taustiņam. Kopīgais īkšķa ieraksts nostrādā, ja īkšķa taustiņam nav sava trigera.",
   "settingsView.webhookKeyTraceNote": "Atpakaļ, Uz priekšu, Patīk, Nepatīk un Atskaņot/Pauze ir atsevišķi trigeri: skaļrunis pats ziņo, kurš taustiņš nospiests, uz pults un augšējā panelī.",
+  "settingsView.webhookHaHint": "Izmantojat Home Assistant? Ceļvedī uzskaitīta katra vietējā adrese, ko STR uztur, piemērotās integrācijas un šie trigeri.",
+  "settingsView.webhookHaGuideBtn": "Home Assistant ceļvedis",
   "settingsView.webhookModeAdditional": "Saglabat originalu + webhook",
   "settingsView.webhookModeReplace": "Tikai webhook (saglabātā stacija netiek atskaņota)",
   "settingsView.webhookModePresetNote": "Atstāj staciju saglabātu uz šī taustiņa. Skaļrunis ziņo par nospiešanu tikai tad, ja uz taustiņa kaut kas ir, tāpēc tukšu taustiņu tas noraida pats un ST Reborn par nospiešanu neuzzina.",

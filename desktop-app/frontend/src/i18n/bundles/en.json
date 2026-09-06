@@ -808,6 +808,8 @@
   "settingsView.webhookKeyPlayPause": "Play/Pause (remote)",
   "settingsView.webhookModeKeyNote": "Additional only. The speaker reports which key was pressed, so this fires for exactly this key. The shared thumbs entry fires when a thumbs key has no trigger of its own.",
   "settingsView.webhookKeyTraceNote": "Back, Forward, Thumbs up, Thumbs down and Play/Pause are separate triggers: the speaker itself reports which key was pressed, on the remote and on the top panel.",
+  "settingsView.webhookHaHint": "Using Home Assistant? The guide lists every local address STR keeps alive, the integrations that work with it, and these triggers.",
+  "settingsView.webhookHaGuideBtn": "Home Assistant guide",
   "settingsView.webhookModeAdditional": "Keep original + webhook",
   "settingsView.webhookModeReplace": "Webhook only (the saved station is not played)",
   "settingsView.webhookModePresetNote": "Leave a station saved on this key. The speaker only reports a press for a key that has something on it, so an empty key is refused by the speaker itself and ST Reborn never learns about the press.",

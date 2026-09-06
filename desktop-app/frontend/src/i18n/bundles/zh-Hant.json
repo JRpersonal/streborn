@@ -808,6 +808,8 @@
   "settingsView.webhookKeyPlayPause": "播放／暫停（遙控器）",
   "settingsView.webhookModeKeyNote": "僅為附加。喇叭會回報按下的是哪個鍵，因此此觸發只針對這個鍵。當讚／倒讚鍵沒有自己的觸發時，才會使用共用的讚／倒讚項目。",
   "settingsView.webhookKeyTraceNote": "上一首、下一首、讚、倒讚與播放／暫停是各自獨立的觸發：喇叭本身會回報按下的是哪個鍵，無論是遙控器還是機頂面板。",
+  "settingsView.webhookHaHint": "使用 Home Assistant 嗎？指南列出 STR 維持的每個本機位址、可搭配的整合，以及這些觸發。",
+  "settingsView.webhookHaGuideBtn": "Home Assistant 指南",
   "settingsView.webhookModeAdditional": "保留原功能 + Webhook",
   "settingsView.webhookModeReplace": "只用 Webhook",
   "settingsView.webhookModePresetNote": "要讓按鍵在「只用 Webhook」模式下保持安靜，請把它的 STR 預設留空。喇叭還是會回報按鍵動作，所以 webhook 照樣會觸發。",

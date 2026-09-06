@@ -739,6 +739,8 @@
   "settingsView.webhookKeyPlayPause": "Afspelen/Pauze (afstandsbediening)",
   "settingsView.webhookModeKeyNote": "Alleen aanvullend. De speaker meldt welke toets is ingedrukt, dus dit vuurt precies voor deze toets. De gedeelde duim-regel vuurt wanneer een duim-toets geen eigen trigger heeft.",
   "settingsView.webhookKeyTraceNote": "Terug, Vooruit, Duim omhoog, Duim omlaag en Afspelen/Pauze zijn aparte triggers: de speaker zelf meldt welke toets is ingedrukt, op de afstandsbediening en op het bovenpaneel.",
+  "settingsView.webhookHaHint": "Gebruik je Home Assistant? De gids somt elk lokaal adres op dat STR in leven houdt, de passende integraties en deze triggers.",
+  "settingsView.webhookHaGuideBtn": "Home Assistant-gids",
   "settingsView.webhookModeAdditional": "Origineel behouden + webhook",
   "settingsView.webhookModeReplace": "Alleen webhook (de opgeslagen zender speelt niet)",
   "settingsView.webhookModePresetNote": "Laat een zender op deze toets staan. De speaker meldt een druk alleen voor een toets waar iets op staat, dus een lege toets weigert hij zelf en ST Reborn hoort niets van de druk.",
