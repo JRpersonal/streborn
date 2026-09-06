@@ -96,6 +96,16 @@ type App struct {
 	// reports. Guarded by discMu (same lock as discCache, always held together).
 	otaPinned map[string]time.Time
 
+	// otaVerify remembers, per speaker IP, which agent port the last update
+	// went through and whether its verify window ended without a verdict, so
+	// the post-OTA version poll asks the right port first and a discovery
+	// sighting can correct an "unreachable" journal line later. See
+	// otaverify.go. Its own lock: it is touched from the update flow, the
+	// version poll and the discovery cycle, none of which should wait on the
+	// others.
+	otaVerifyMu sync.Mutex
+	otaVerify   map[string]otaVerifyMemo
+
 	// strKnown remembers every box we have positively confirmed as running STR,
 	// keyed by its stable Bose deviceID (not its IP). The IP-keyed discCache and
 	// otaPinned above cannot protect a box across a DHCP change: a runtime Wi-Fi

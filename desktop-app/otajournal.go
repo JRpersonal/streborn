@@ -26,9 +26,17 @@ const maxOTAJournalBytes = 64 * 1024
 // the very journal used to diagnose those (often weak-Wi-Fi) batch updates.
 var otaJournalMu sync.Mutex
 
+// otaJournalDir, when set, overrides the directory the journal lives in. A
+// test seam only: tests that check what an outcome line says need a journal
+// they own, not the user's. Nothing in the app assigns to it.
+var otaJournalDir string
+
 // otaJournalPath is the OTA history file, next to str.log so it lands in the same
 // app-data dir the user already knows from logFile.
 func otaJournalPath() string {
+	if otaJournalDir != "" {
+		return filepath.Join(otaJournalDir, "ota-history.log")
+	}
 	return filepath.Join(filepath.Dir(LogFilePath()), "ota-history.log")
 }
 
