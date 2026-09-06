@@ -69,6 +69,11 @@ type Client struct {
 	// read timeout, so the next "connected" phase marker logs at Debug instead
 	// of churning the NAND log. Only touched from the Run loop goroutine.
 	prevEndedIdle bool
+	// connected is true while runOnce holds a live socket. Read by Connected
+	// so a consumer with a second origin for a bus signal (cmd/agent's syslog
+	// ring) can tell whether the bus's own report may still arrive. Guarded
+	// by mu.
+	connected bool
 	// lastSource tracks the most recent active source seen on a now-selection /
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
@@ -331,6 +336,23 @@ func (c *Client) UPnPActiveRecently() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.upnpRecentlyLocked(c.lastSource)
+}
+
+// Connected reports whether the gabbo WebSocket is up right now. While it
+// is, the bus's own report of a transition (with the userActivityUpdate that
+// accompanies a physical power press) is still expected; between its idle
+// recycles it is not, and the syslog ring is the only origin left.
+func (c *Client) Connected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.connected
+}
+
+// setConnected records the socket coming up or going down.
+func (c *Client) setConnected(up bool) {
+	c.mu.Lock()
+	c.connected = up
+	c.mu.Unlock()
 }
 
 // LastWifiSignal returns the most recent Wi-Fi signal class seen on the
@@ -605,6 +627,8 @@ func (c *Client) runOnce(ctx context.Context) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
+	c.setConnected(true)
+	defer c.setConnected(false)
 
 	// Phase marker at WARN so a reconnect after standby/resume is visible in
 	// the diagnostic bundle without raising log level. A reconnect after a

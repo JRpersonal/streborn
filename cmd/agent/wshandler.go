@@ -81,6 +81,11 @@ type presetWsHandler struct {
 	// standby entry, applied to a standby read from the syslog ring. Wired
 	// to boxws.Client.UPnPActiveRecently. nil means "assume yes".
 	strSourceRecently func() bool
+	// busLive reports whether the gabbo WebSocket is up, in which case a
+	// standby read from the syslog ring waits for the bus's own report before
+	// it is acted on (powergate.go). Wired to boxws.Client.Connected. nil
+	// means "assume down": the ring delivers at once.
+	busLive func() bool
 	// margeGroupClear drops STR's stereo-pair record for this speaker. Called
 	// when the BOX itself reports its pair torn down, which is how a teardown
 	// done in the Bose app (or one that reached only the other member) reaches
@@ -906,6 +911,11 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 // that silently de-registered the key layer during standby (#487, where dead
 // presses emit no frame and no other trigger ever fires).
 func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
+	// A ring standby still waiting for the bus is stale now: the box is on
+	// again (powergate.go).
+	if h.powerGate.cancelHeldStandby(false) {
+		h.logger.Debug("box power signal: held standby superseded by a wake, dropped", "source", "gabbo")
+	}
 	// Dedupe against the syslog ring's report of the same wake (powergate.go).
 	if !h.admitPower(powerSignalWake, originGabbo) {
 		return
@@ -983,8 +993,14 @@ func (h *presetWsHandler) logStandbyRaceSignature() {
 // UPNP<->STANDBY does not switch the speaker back on (#197). boxws calls this via
 // an optional interface, so only handlers that wire it (this one) react.
 func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
-	// Dedupe against the syslog ring's report of the same power-off
-	// (powergate.go).
+	// The ring may have read the same power-off first and be holding it for
+	// exactly this frame: the bus carries the fresh key stamp the standby
+	// classifier needs, so the bus report acts and the ring's copy is the
+	// duplicate (powergate.go).
+	if h.powerGate.cancelHeldStandby(true) {
+		h.logger.Debug("box power signal: the bus reported the standby the ring was holding, ring copy dropped")
+	}
+	// Dedupe against a ring report that already went through the door.
 	if !h.admitPower(powerSignalStandby, originGabbo) {
 		return
 	}

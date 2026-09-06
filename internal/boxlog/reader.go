@@ -348,6 +348,19 @@ func (r *Reader) KeyEventWithin(d time.Duration) bool {
 	return ok
 }
 
+// LastKeyAt returns when the newest key event was read from the ring, zero
+// when none has been. The webui's standby classifier folds it into the bus's
+// userActivityUpdate stamp so a power press the ring decoded counts as user
+// activity even when the WebSocket is between its idle recycles.
+func (r *Reader) LastKeyAt() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.history) == 0 {
+		return time.Time{}
+	}
+	return r.history[len(r.history)-1].At
+}
+
 // LastKeyEventWithin returns the newest key event if it arrived in the last d.
 func (r *Reader) LastKeyEventWithin(d time.Duration) (KeyEvent, bool) {
 	r.mu.Lock()

@@ -28,12 +28,31 @@ import (
 //   - standby -> OnEnterStandby, under the dispatcher's own gate (STR's
 //     UPnP source was the active one, boxws.Client.UPnPActiveRecently), so a
 //     power-off of AUX or a native station is left alone exactly as before.
+//
+// The standby door is NOT first-come while the bus is live. The standby
+// handler (webui.HandleEnterStandby) tells a user power-off from the firmware
+// dropping the source on its own by the age of the last user key, and the
+// fresh stamp for a power press arrives on the bus (userActivityUpdate) in
+// the same moment as the bus's own standby frame. The HSM line can be read
+// from the ring before that frame lands; acting on it then classifies a
+// deliberate power-off against a stale stamp, takes the spontaneous-drop
+// branch (no stop latch, no #197 transport clear, possibly a re-push that
+// switches the box back on) and the bus frame that carried the right answer
+// is dropped as the duplicate. So while the socket is up the ring's standby
+// is held for standbyHoldForBus (a one-shot timer, no polling): a bus
+// delivery cancels it, a wake supersedes it, and only when the bus stays
+// silent does the ring's report go through the door. With the socket down
+// the ring delivers at once, as nothing else will.
 
 // powerSignalWindow is how long after one origin delivered a transition the
 // other origin's report of it counts as a duplicate. The bus frame and the
 // HSM line are within about a second of each other; five seconds covers a
 // loaded box and is still far shorter than any deliberate off/on.
 const powerSignalWindow = 5 * time.Second
+
+// standbyHoldForBus is how long a standby read from the ring waits for the
+// bus's own report while the socket is up. A var so tests can shorten it.
+var standbyHoldForBus = powerSignalWindow
 
 // powerSignal is the handler door a transition goes through.
 type powerSignal int
@@ -75,10 +94,57 @@ type powerGateEntry struct {
 type powerGate struct {
 	mu      sync.Mutex
 	entries [powerSignalCount]powerGateEntry
+	// heldStandby is the ring's standby report waiting for the bus (see the
+	// file comment); nil when none is pending.
+	heldStandby *time.Timer
 	// counters for the debug section
 	deliveredSyslog uint64
 	dupSyslog       uint64
 	dupGabbo        uint64
+	heldSyslog      uint64
+}
+
+// holdStandby parks the ring's standby report until the bus has had
+// standbyHoldForBus to deliver its own. release runs on the timer's goroutine
+// if nothing cancels the hold. A hold already pending stands (the ring folds
+// same-direction repeats anyway). Reports whether a new hold was started.
+func (g *powerGate) holdStandby(now time.Time, release func()) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.entries[powerSignalStandby].seenSyslog = now
+	if g.heldStandby != nil {
+		return false
+	}
+	g.heldSyslog++
+	g.heldStandby = time.AfterFunc(standbyHoldForBus, release)
+	return true
+}
+
+// releaseStandby is the timer side of holdStandby: the hold is over, the
+// caller admits the report as usual.
+func (g *powerGate) releaseStandby() {
+	g.mu.Lock()
+	g.heldStandby = nil
+	g.mu.Unlock()
+}
+
+// cancelHeldStandby drops a pending ring standby because the bus delivered
+// the same transition (dup, the ring's copy was the duplicate after all) or
+// because a wake superseded it. Reports whether a hold was stopped in time;
+// a hold whose timer already fired admits itself through the gate, where a
+// bus delivery inside powerSignalWindow still makes it the duplicate.
+func (g *powerGate) cancelHeldStandby(dup bool) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.heldStandby == nil {
+		return false
+	}
+	stopped := g.heldStandby.Stop()
+	g.heldStandby = nil
+	if stopped && dup {
+		g.dupSyslog++
+	}
+	return stopped
 }
 
 // admit records a report and says whether it is to be delivered. A report
@@ -134,6 +200,8 @@ func (g *powerGate) snapshot() map[string]any {
 		"syslogDelivered":     g.deliveredSyslog,
 		"syslogDuplicates":    g.dupSyslog,
 		"gabboDuplicates":     g.dupGabbo,
+		"syslogHeldForBus":    g.heldSyslog,
+		"standbyHeld":         g.heldStandby != nil,
 		"duplicateWindowSecs": int(powerSignalWindow / time.Second),
 	}
 }
@@ -160,6 +228,12 @@ func (h *presetWsHandler) admitPower(sig powerSignal, origin powerOrigin) bool {
 func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 	switch ev.Kind {
 	case boxlog.PowerWake:
+		// A standby still waiting for the bus is stale now: the box is on
+		// again, and delivering it late would latch a stop against a box the
+		// user just switched on.
+		if h.powerGate.cancelHeldStandby(false) {
+			h.logger.Debug("box power signal: held standby superseded by a wake, dropped", "source", "syslog")
+		}
 		if !h.admitPower(powerSignalWake, originSyslog) {
 			return
 		}
@@ -178,6 +252,16 @@ func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 				"source", "syslog", "via", string(ev.Source), "class", string(ev.Class))
 			return
 		}
+		if h.busLive != nil && h.busLive() {
+			// The bus is up, so its own standby frame (and the key stamp
+			// that tells the classifier it was a power press) is expected
+			// in a moment; let it be the one that acts. See the file comment.
+			if h.powerGate.holdStandby(time.Now(), func() { h.releaseHeldStandby(ev) }) {
+				h.logger.Debug("box power signal: standby read from the ring, held for the bus's own report",
+					"source", "syslog", "via", string(ev.Source), "class", string(ev.Class), "holdMs", standbyHoldForBus.Milliseconds())
+			}
+			return
+		}
 		if !h.admitPower(powerSignalStandby, originSyslog) {
 			return
 		}
@@ -185,4 +269,19 @@ func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 			"source", "syslog", "via", string(ev.Source), "class", string(ev.Class))
 		go h.enterStandby()
 	}
+}
+
+// releaseHeldStandby runs when the bus stayed silent for the whole hold: the
+// ring's report goes through the door as if the bus were down. Runs on the
+// timer's goroutine, so the action needs no further hand-off. The gate is
+// still consulted: a bus delivery that raced the timer makes this the
+// duplicate.
+func (h *presetWsHandler) releaseHeldStandby(ev boxlog.PowerEvent) {
+	h.powerGate.releaseStandby()
+	if !h.admitPower(powerSignalStandby, originSyslog) {
+		return
+	}
+	h.logger.Info("box power signal: the speaker powered off STR's source and the bus did not report it, acting on the ring's report",
+		"source", "syslog", "via", string(ev.Source), "class", string(ev.Class))
+	h.enterStandby()
 }

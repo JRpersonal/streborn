@@ -87,6 +87,23 @@ func TestReaderDedupsTraceAndStatsForOnePress(t *testing.T) {
 	}
 }
 
+func TestReaderLastKeyAtFollowsNewestEvent(t *testing.T) {
+	r := New(nil, nil, nil)
+	if !r.LastKeyAt().IsZero() {
+		t.Fatal("no key yet must read as zero")
+	}
+	base := time.Now()
+	r.handleLine(linePortableThumbsUpPress, base)
+	r.handleLine(lineNoise, base.Add(time.Second)) // not a key, must not move the stamp
+	if got := r.LastKeyAt(); !got.Equal(base) {
+		t.Fatalf("LastKeyAt=%v want %v", got, base)
+	}
+	r.handleLine(linePortableThumbsUpRelease, base.Add(3*time.Second))
+	if got := r.LastKeyAt(); !got.Equal(base.Add(3 * time.Second)) {
+		t.Fatalf("a release is user activity too: LastKeyAt=%v", got)
+	}
+}
+
 func TestReaderNeedsReassertOnlyWhenTraceIsMissing(t *testing.T) {
 	r := New(nil, nil, nil)
 	now := time.Now()
