@@ -730,7 +730,7 @@
   "settingsView.voiceHeading": "Sesle kontrol (Alexa, Google)",
   "settingsView.voiceHelp": "Eski Alexa kontrolü Bose bulutu üzerinden çalışıyordu ve onunla birlikte sona erdi; STR bunun yerine kendi bulutunu kurmaz. Bunun yerine evinizdeki bir merkez işe yarar, örneğin Home Assistant: ağdaki hoparlörlerinizle konuşur ve onları Alexa'ya sunar. Kılavuzda böyle bir merkezin ihtiyaç duyduğu tüm adresler yazılı. Bu, küçük bir sunucu çalıştırmaktan çekinmeyenler için; uygulama ve telefondaki kumanda buna ihtiyaç duymaz.",
   "settingsView.voiceGuideBtn": "Kılavuzu aç",
-  "settingsView.webhookHelp": "Gelişmiş: uzaktan kumandanın beğen ve beğenme tuşları bu HTTP isteğini tetikler, örneğin bir akıllı ev aç/kapat anahtarı için. Her iki tuş da aynı isteği gönderir, bu yüzden bunu bir aç/kapat anahtarı olarak kullan. İstek hoparlörde saklanır ve bu uygulama olmadan da çalışmaya devam eder. İhtiyacın yoksa bunu kapalı bırak.",
+  "settingsView.webhookHelp": "Gelişmiş: bir kumanda tuşu (başparmak tuşları ya da bir ön ayar/AUX/güç tuşu) başka bir cihaza giden bir tetikleyici gönderir: bir HTTP webhook'u, bir UDP paketi ya da bir Wake-on-LAN sihirli paketi (örneğin bir akıllı ev anahtarı ya da bir bilgisayarı uyandırmak). Bu, başka cihazları kontrol eder ve hoparlörde ses çalmaz; yukarıdaki, bir ses dosyası çalan URL ön ayarından farklıdır. Hoparlörde saklanır ve bu uygulama olmadan da çalışmaya devam eder. İhtiyacın yoksa bunu kapalı bırak.",
   "settingsView.webhookKeyThumb": "Başparmak tuşları (ikisinden biri, yedek)",
   "settingsView.webhookKeyPrev": "Geri (kumanda)",
   "settingsView.webhookKeyNext": "İleri (kumanda)",

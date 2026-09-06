@@ -730,7 +730,7 @@
   "settingsView.voiceHeading": "Valdymas balsu (Alexa, Google)",
   "settingsView.voiceHelp": "Senasis „Alexa“ valdymas veikė per „Bose“ debesį ir kartu su juo dingo, o STR savo debesies nekuria. Vietoje to veikia namuose paleista valdymo programa, pavyzdžiui Home Assistant: ji tinkle bendrauja su jūsų garsiakalbiais ir pasiūlo juos „Alexa“. Vadove surašyti visi adresai, kurių tokiai programai reikia. Tai tiems, kam nesunku pasileisti nedidelį serverį; programai ir telefono pultui to nereikia.",
   "settingsView.voiceGuideBtn": "Atverti vadovą",
-  "settingsView.webhookHelp": "Pažengusiems: pulteliio mygtukai „nykštys aukštyn“ ir „nykštys žemyn“ siunčia šią HTTP užklausą, pavyzdžiui, išmaniųjų namų įjungimo / išjungimo perjungimą. Abu mygtukai siunčia tą pačią užklausą, todėl naudokite ją kaip perjungiklį. Ji saugoma kolonėlėje ir veikia ir be šios programos. Jei jums to nereikia, palikite uždarytą.",
+  "settingsView.webhookHelp": "Pažengusiems: pultelio klavišas (nykščio klavišai arba nustatymo / AUX / maitinimo mygtukas) siunčia išeinantį trigerį į kitą įrenginį: HTTP webhook, UDP paketą arba Wake-on-LAN paketą (pavyzdžiui, išmaniųjų namų jungiklį arba kompiuterio pažadinimą). Tai valdo kitus įrenginius ir kolonėlėje garso negroja, kitaip nei aukščiau esantis URL nustatymas, kuris groja garso failą. Tai saugoma kolonėlėje ir veikia ir be šios programos. Jei jums to nereikia, palikite uždarytą.",
   "settingsView.webhookKeyThumb": "Nykščio klavišai (bet kuris, atsarginis)",
   "settingsView.webhookKeyPrev": "Atgal (pultas)",
   "settingsView.webhookKeyNext": "Pirmyn (pultas)",
