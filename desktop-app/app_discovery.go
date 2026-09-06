@@ -473,6 +473,11 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 // sighting, so a box whose agent is permanently gone (uninstalled out-of-band,
 // NAND wiped) stops perpetually re-confirming its stale STR identity memory.
 func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[string]bool) {
+	// Before the cache re-adds anything, seen holds only this cycle's genuine
+	// sightings: the right moment to notice a box that came back on the new
+	// build after its update's verify window had already given up, and to
+	// write the journal line that says so (otaverify.go).
+	a.confirmLateOTA(seen)
 	now := time.Now()
 	a.discMu.Lock()
 	defer a.discMu.Unlock()
