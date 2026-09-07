@@ -306,6 +306,7 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.sinkAttachedAt, m.sinkBytes, m.sinkPages = time.Now(), 0, 0
 	m.sinkFirstAudioAt, m.sinkLastPageAt = time.Time{}, time.Time{}
+	m.sinkSeams = 0
 	m.mu.Unlock()
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
 
@@ -377,7 +378,7 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	if !m.sinkFirstAudioAt.IsZero() && !m.sinkAttachedAt.IsZero() {
 		firstAudioMs = m.sinkFirstAudioAt.Sub(m.sinkAttachedAt).Milliseconds()
 	}
-	bytes, pages := m.sinkBytes, m.sinkPages
+	bytes, pages, seams := m.sinkBytes, m.sinkPages, m.sinkSeams
 	m.mu.Unlock()
 	kbps := int64(0)
 	if attachedMs > 0 {
@@ -385,9 +386,10 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	}
 	// firstAudioMs = -1 means the box was attached but never received a single
 	// audio page: the silent-stream failure that used to look like success.
+	// seams counts the chain seams (oggchain.go) this attachment carried.
 	m.logger.Info("spotify: box detached from Ogg stream",
 		"attachedMs", attachedMs, "forwardedKB", bytes/1024, "pages", pages,
-		"firstAudioAfterMs", firstAudioMs, "kbps", kbps)
+		"firstAudioAfterMs", firstAudioMs, "kbps", kbps, "seams", seams)
 	// Stamp the detach so the warm-recall gate can tell "streaming until a
 	// moment ago" (our own URI re-push tears the sink down right before the
 	// engine call) from "long idle" - lastAttachAt cannot: it ages while a

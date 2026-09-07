@@ -29,8 +29,13 @@ const vorbisRate = 44100
 //	256 KB            0.38 MB/min  occasional underrun restart (~1 in 3 tracks)
 //	512 KB            0.48 MB/min  frequent underrun restarts (no leak gain)
 //
-// The leak floors at ~0.4 MB/min (the irreducible live-streaming component);
-// past ~256 KB there is no gain, only more underruns. Underruns happen because
+// The leak floors at ~0.4 MB/min; past ~256 KB there is no gain, only more
+// underruns. That floor is NOT irreducible and not HTTP-related: it is the
+// firmware's per-logical-stream retention (~1.25 bytes per byte of audio
+// within one Vorbis stream, freed at a BOS with a new serial), measured here
+// across the frees at track boundaries. Within a single long track it runs
+// unbounded, which oggchain.go now caps by seaming the track into chained
+// logical streams. Underruns happen because
 // the single-goroutine drain blocks while writing a big batch and stops reading
 // go-librespot, leaving a gap the box re-fetches over. 256 KB is the chosen
 // operating point: lowest leak at the floor, with rare restarts Jens accepted

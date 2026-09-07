@@ -1,12 +1,12 @@
 // engine.go: go-librespot process lifecycle — supervision and restarts,
-// crash-loop backoff, disk-space gating, the Ogg drain in runOnce, and
-// stderr signal parsing (Premium/seek/desync markers).
+// crash-loop backoff, disk-space gating, the Ogg drain loop in runOnce (the
+// per-page step lives in drain.go), and stderr signal parsing (Premium/seek/
+// desync markers).
 
 package spotify
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"log/slog"
 	"os"
@@ -440,210 +440,18 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// the box. While no box is attached, capture the current track's header
 	// pages and pause go-librespot so it does not race to the end of the
 	// playlist unheard; ServeOgg resumes it and replays the headers when a
-	// box joins, so a mid-track joiner can still decode.
+	// box joins, so a mid-track joiner can still decode. The per-page work
+	// lives in oggDrain.page (drain.go); the chain cutter (oggchain.go) splits
+	// a long track into logical streams so the box frees its stream buffer.
 	r := newOggPageReader(stdout, m.logger)
-	var hdr []byte
-	capturing := false
-	paused := false
-	// Bitrate measurement: body bytes and the highest granule (sample count at
-	// vorbisRate) seen since the current track's BOS. kbps = bytes*8 over the
-	// elapsed seconds. This is the real stream rate, not the configured nominal.
-	var trackBody, maxGran int64
-	// pending batches pages so the box receives large chunks instead of one
-	// tiny chunk per page (see flushThreshold: small chunks leak box memory).
-	var pending []byte
-	// trackNum + forwarded count instrument the playback so the occasional
-	// "track restarts at its start" can be diagnosed: track boundaries (new
-	// BOS) and box (re)attaches are logged with byte/granule context.
-	trackNum := 0
-	var forwarded int64
-	// Realtime pacing state (see leadCapSec above). Granules reset per track,
-	// so granOffset accumulates finished tracks into one continuous timeline;
-	// the anchor is set once per sink attachment at the first audio page, so
-	// the lead cannot creep up by one cap per track boundary.
-	var granOffset, leadBaseGran int64
-	var leadBaseAt time.Time
-	leadAnchored := false
-	// pendingSince stamps the oldest byte in the batch, for the flush-age
-	// bound below.
-	pendingSince := time.Now()
+	d := m.newOggDrain(flushBytes, leadCapSec, m.newChain())
+	defer d.finish()
 	for {
 		page, err := r.ReadPage()
 		if err != nil {
 			break
 		}
-
-		// Maintain the current track's header pages: a BOS page starts a
-		// track (Vorbis identification header), the following granule<=0
-		// pages carry comment/setup, the first audio page (granule>0) ends
-		// the header sequence.
-		htype := page[5]
-		gran := int64(binary.LittleEndian.Uint64(page[6:14]))
-		numSegs := int(page[26])
-		bodyLen := int64(len(page) - 27 - numSegs)
-		switch {
-		case htype&0x02 != 0: // BOS
-			// New logical stream = track boundary. Log it with the previous
-			// track's size so a premature/duplicate BOS (the suspected cause of
-			// a track restarting at its start) is visible in the log.
-			m.logger.Info("spotify: track boundary (BOS)",
-				"track", trackNum+1, "prevTrackKB", trackBody/1024,
-				"prevMaxGran", maxGran, "forwardedKB", forwarded/1024)
-			// App-skip detector: a boundary that cuts the previous track
-			// clearly short, with no STR skip or recall cut armed, came from
-			// the Spotify app itself; re-point the box so it drops the old
-			// track's buffered tail (see durQueueMs in Manager).
-			m.noteTrackBoundaryCut(maxGran, trackBody)
-			// A fresh logical stream means the engine is demonstrably
-			// delivering audio: that is the recovery signal the delayed
-			// auto-advance checks before skipping (see handleEnginePlaybackEnd).
-			m.mu.Lock()
-			m.lastEngineActiveAt = time.Now()
-			m.mu.Unlock()
-			trackNum++
-			granOffset += maxGran // finished track extends the continuous timeline
-			hdr = append([]byte(nil), page...)
-			capturing = true
-			trackBody, maxGran = 0, 0
-		case capturing && gran > 0: // first audio page
-			m.mu.Lock()
-			m.headerPages = hdr
-			persist := !m.hdrPersisted && m.hdrPath != ""
-			if persist {
-				m.hdrPersisted = true
-			}
-			hdrKbps := m.bitr
-			m.mu.Unlock()
-			capturing = false
-			if persist {
-				// Persist one valid header set to NAND for the next cold boot.
-				// Once only (guarded above), so no per-track flash wear.
-				if err := os.WriteFile(m.hdrPath, hdr, 0o644); err != nil {
-					m.logger.Debug("spotify: persist stream headers failed", "err", err)
-				}
-				// The set is only valid for the bitrate it was captured at
-				// (Vorbis codebooks differ per profile; a mismatched replay
-				// decodes to noise). The marker lets the next boot reject a
-				// stale set after a quality change.
-				if err := os.WriteFile(m.hdrPath+".kbps", []byte(strconv.Itoa(hdrKbps)), 0o644); err != nil {
-					m.logger.Debug("spotify: persist header bitrate marker failed", "err", err)
-				}
-			}
-		case capturing:
-			hdr = append(hdr, page...)
-		}
-		trackBody += bodyLen
-		if gran > maxGran {
-			maxGran = gran
-		}
-		if maxGran > vorbisRate { // at least one second streamed
-			kbps := int(trackBody * 8 * vorbisRate / (maxGran * 1000))
-			m.mu.Lock()
-			m.actualKbps = kbps
-			m.mu.Unlock()
-		}
-
-		m.mu.Lock()
-		sink := m.sink
-		haveHdr := len(m.headerPages) > 0
-		m.mu.Unlock()
-
-		if sink != nil {
-			paused = false
-			// Track-boundary flush: a new BOS is a new logical Vorbis stream
-			// (the box must reload codebooks). If the BOS is buried mid-batch
-			// behind the previous track's tail, the box re-inits on a partial
-			// chunk and the new track audibly restarts (live-observed, ~1 in 3
-			// tracks). Flushing the tail first makes the BOS begin on a clean
-			// chunk boundary so the decoder re-inits cleanly.
-			//
-			// Skip cut: when this boundary was CAUSED by a user skip, the old
-			// track's unsent tail is noise the user asked to get away from, so
-			// it is dropped instead of flushed and the new track starts that
-			// much sooner. A natural track end never has an armed skip window,
-			// so song endings are never clipped. The cut disarms here and the
-			// pacing re-anchors, so the new track gets its instant prefill.
-			if htype&0x02 != 0 {
-				if m.skipCutArmed() {
-					m.logger.Info("spotify: skip cut, boundary reached; dropped the old track's unsent tail", "droppedKB", len(pending)/1024)
-					pending = pending[:0]
-					m.clearSkipCut()
-					m.noteSkipBoundary()
-					leadAnchored = false
-				} else if len(pending) > 0 {
-					m.forward(sink, pending)
-					pending = pending[:0]
-				}
-			} else if m.skipCutArmed() && gran > 0 {
-				// Stale audio between the user's skip and the new track's
-				// boundary. The first version PACED these pages to realtime, so
-				// the boundary reached the box up to a full lead cap late and
-				// the skip felt >20 s (Jens, live 2026-08-01 00:30). They carry
-				// nothing the user wants to hear: drop them outright and race
-				// to the boundary.
-				continue
-			}
-			// Realtime pacing: anchor once per attachment at the first audio
-			// page, then hold each page until its position on the continuous
-			// timeline is within leadCapSec of wall clock. A detach mid-wait
-			// (box paused or dropped the stream) bails out immediately.
-			if gran > 0 && leadCapSec > 0 {
-				timeline := granOffset + gran
-				if !leadAnchored {
-					leadBaseGran, leadBaseAt, leadAnchored = timeline, time.Now(), true
-				}
-				for {
-					ahead := float64(timeline-leadBaseGran)/float64(vorbisRate) - time.Since(leadBaseAt).Seconds()
-					if ahead <= leadCapSec || ctx.Err() != nil {
-						break
-					}
-					time.Sleep(min(time.Duration((ahead-leadCapSec)*float64(time.Second)), 250*time.Millisecond))
-					m.mu.Lock()
-					stillAttached := m.sink == sink
-					m.mu.Unlock()
-					if !stillAttached {
-						break
-					}
-				}
-			}
-			// Batch pages into large writes (see flushThreshold) so the box
-			// gets large chunks, not a tiny chunk per page. With the realtime
-			// pacing above, the size threshold alone is a trap: at ~187 kbps it
-			// takes ~11 s to fill 256 KB, so the box received its audio as one
-			// lump per ~11 s, ran dry in between, and a skip landing in the gap
-			// starved it into detaching (live 2026-08-01 01:13, followed by a
-			// recovery recall that read as a double skip). A flush-age bound
-			// keeps the flow continuous; the chunks stay far above the
-			// per-page writes the size threshold exists to prevent.
-			if len(pending) == 0 {
-				pendingSince = time.Now()
-			}
-			pending = append(pending, page...)
-			forwarded += int64(len(page))
-			if len(pending) >= flushBytes || time.Since(pendingSince) > maxFlushAge {
-				m.forward(sink, pending)
-				pending = pending[:0]
-			}
-			continue
-		}
-		leadAnchored = false // no consumer: next attachment re-anchors fresh
-		// No consumer: drop any half-filled batch so a freshly attaching box
-		// starts clean, then once a track's headers are captured pause
-		// go-librespot so it stops producing (no racing) until a box attaches
-		// and ServeOgg resumes it.
-		pending = pending[:0]
-		// During a recall keep the engine playing even with no sink: a hardware
-		// preset press makes the box flap its source (1036 INVALID_SOURCE) and
-		// drop the sink repeatedly before it settles, and pausing here stranded
-		// the engine so the settled box never got audio. engineHot() covers the
-		// recall + verify window; outside it, pause as before so an idle box does
-		// not keep go-librespot decoding to nothing.
-		if !paused && haveHdr && !m.engineHot() {
-			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			_ = m.Pause(pctx)
-			cancel()
-			paused = true
-		}
+		d.page(ctx, page)
 		if ctx.Err() != nil {
 			break
 		}

@@ -38,6 +38,12 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # oggdec (vorbis-tools) is the reference decoder for the Ogg chain-seam
+      # PCM test (internal/spotify TestChainRealVorbisPCM); the test skips
+      # itself where the tool is absent, so this only widens coverage.
+      - name: Install oggdec for the Vorbis seam test
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq vorbis-tools
+
       - name: go test
         run: go test ./... -count=1
 

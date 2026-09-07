@@ -186,12 +186,13 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 // the only writer today, but the values are also read from the memory guard's
 // goroutine in tests.
 var (
-	resHealthMu       sync.Mutex
-	resHealthLastAt   time.Time
-	resHealthLastMem  int64
-	resHealthLastRSS  int64
-	resHealthLastThr  int64
-	resHealthHaveLast bool
+	resHealthMu         sync.Mutex
+	resHealthLastAt     time.Time
+	resHealthLastMem    int64
+	resHealthLastRSS    int64
+	resHealthLastThr    int64
+	resHealthLastEngRSS int64
+	resHealthHaveLast   bool
 )
 
 // Thresholds for "something actually moved". Relative, because the interesting
@@ -221,21 +222,26 @@ const (
 // drop one anchor an hour so a flat box still shows a trend line. Everything
 // else goes to Debug, where it costs nothing on NAND. No forensic signal is
 // lost; the flat repeats that were burying it are.
-func logResourceHealth(logger *slog.Logger) {
+func logResourceHealth(logger *slog.Logger, sp *spotify.Manager) {
 	avail, total := readMemKB()
 	rss, threads := readSelfRSS()
+	engRSS := engineRSSKB(sp)
 	// The agent's own RSS and thread count travel with every line. If
 	// memAvailable trends down while these stay flat, the leak is BoseApp's
 	// (firmware); if these climb too, it is ours. That attributes the leak
-	// preceding the recurring BoseApp freeze without guesswork.
+	// preceding the recurring BoseApp freeze without guesswork. The engine's
+	// RSS settles the third suspect: go-librespot's chunk reader holding a
+	// long track climbs with the audio, the firmware's per-stream retention
+	// (which the Ogg chain seam addresses) leaves it flat.
 	attrs := []any{
 		"memAvailableKB", avail,
 		"memTotalKB", total,
 		"loadavg", readLoadAvg(),
 		"agentRSSKB", rss,
 		"agentThreads", threads,
+		"engineRSSKB", engRSS,
 	}
-	why, worth := resourceHealthWorthLogging(avail, total, rss, threads, time.Now())
+	why, worth := resourceHealthWorthLogging(avail, total, rss, threads, engRSS, time.Now())
 	if !worth {
 		logger.Debug("resource health", attrs...)
 		return
@@ -245,11 +251,12 @@ func logResourceHealth(logger *slog.Logger) {
 
 // resourceHealthWorthLogging decides, and records the new baseline when it says
 // yes. Split out so the decision is testable without touching /proc.
-func resourceHealthWorthLogging(avail, total, rss, threads int64, now time.Time) (string, bool) {
+func resourceHealthWorthLogging(avail, total, rss, threads, engRSS int64, now time.Time) (string, bool) {
 	resHealthMu.Lock()
 	defer resHealthMu.Unlock()
 	keep := func(why string) (string, bool) {
 		resHealthLastAt, resHealthLastMem, resHealthLastRSS, resHealthLastThr = now, avail, rss, threads
+		resHealthLastEngRSS = engRSS
 		resHealthHaveLast = true
 		return why, true
 	}
@@ -268,6 +275,9 @@ func resourceHealthWorthLogging(avail, total, rss, threads int64, now time.Time)
 	}
 	if threads != resHealthLastThr {
 		return keep("threads-changed")
+	}
+	if moved(resHealthLastEngRSS, engRSS, resHealthRSSDelta) {
+		return keep("engine-rss-moved")
 	}
 	if now.Sub(resHealthLastAt) >= resHealthAnchorEach {
 		return keep("hourly-anchor")
@@ -288,12 +298,17 @@ func moved(prev, cur int64, frac float64) bool {
 	return d >= frac
 }
 
-// memory-guard tunables. The Spotify Ogg path leaves a residual box-side
-// firmware leak (~1.3 MB/min while playing) that only a reboot frees (pause,
-// standby and re-push do not). The guard reboots the box ONLY when memory is
-// critically low AND nothing is playing, so the leak is reset during idle and
-// never causes an OOM mid-playback. When idle the leak does not grow, so the
-// low reading is stable and there is no race with the 5-minute cycle.
+// memory-guard tunables. The Bose firmware retains memory in proportion to
+// the audio it receives within ONE logical Ogg stream (about 1.25 bytes per
+// byte, field-measured 2026-09-07 on a SoundTouch 20) and frees it at the
+// next BOS with a new serial: a real track boundary, or the seam the Spotify
+// drain cuts into a long track (internal/spotify/oggchain.go). A pause, a
+// standby or an HTTP re-attach frees nothing; a reboot frees everything. So
+// a normal playlist stays flat and a single hour-long track is the case that
+// used to run into this guard. The guard stays as the backstop underneath:
+// it reboots the box ONLY when memory is critically low AND nothing is
+// playing, so a leak from any other source (the BoseApp fd-leak family) is
+// reset during idle and never causes an OOM mid-playback.
 const (
 	// Live observation (2026-06-05, 35 min continuous Spotify with the 16 KB
 	// flush fix): memAvail declined to a self-limiting floor of ~9 MB (brief
@@ -301,13 +316,17 @@ const (
 	// backstop only: 6 MB sits below the normal ~9 MB idle floor (no reboot
 	// after a normal session) yet above the danger zone. When idle the leak
 	// does not grow, so a low reading is stable and the 5-min cycle is fine.
+	// The chain seam's memory gate sits at twice this (chainLowWaterKB).
 	memGuardThresholdKB = 6 * 1024
-	// While Spotify is actively streaming the firmware leak is GROWING, so the
-	// old "never interrupt playback" hold-off let it run to an uncontrolled OOM
-	// (garbled audio then crash/reboot, live 2026-06-10). Below this critical
-	// floor we reboot even during playback: a clean reboot + auto-resume beats
-	// the firmware OOM. Set below the ~4.4 MB normal-session dip so it only fires
-	// on a genuine runaway, not a healthy self-limiting session.
+	// While Spotify streams one long logical stream the retention is GROWING,
+	// so the old "never interrupt playback" hold-off let it run to an
+	// uncontrolled OOM (garbled audio then crash/reboot, live 2026-06-10).
+	// Below this critical floor we reboot even during playback: a clean reboot
+	// + auto-resume beats the firmware OOM. Set below the ~4.4 MB
+	// normal-session dip so it only fires on a genuine runaway, not a healthy
+	// self-limiting session. With the chain seam in place a long track should
+	// never get here; a guard line during Spotify playback now means the seam
+	// did not free (see the chain's latch warning and engineRSSKB).
 	memGuardCriticalKB   = 4 * 1024
 	memGuardMinUptimeSec = 900 // never reboot in the first 15 min (boot-loop guard)
 )
@@ -379,8 +398,29 @@ func readUptimeSec() int64 {
 }
 
 func readSelfRSS() (rssKB, threads int64) {
+	return readProcStatus("/proc/self/status")
+}
+
+// engineRSSKB returns the go-librespot process's resident set in KB, or -1
+// when Spotify is not configured, no engine has been started, or its
+// /proc entry is gone (the process exited between the pid read and this).
+func engineRSSKB(sp *spotify.Manager) int64 {
+	if sp == nil {
+		return -1
+	}
+	pid := sp.EnginePID()
+	if pid <= 0 {
+		return -1
+	}
+	rss, _ := readProcStatus(fmt.Sprintf("/proc/%d/status", pid))
+	return rss
+}
+
+// readProcStatus parses VmRSS and Threads out of a /proc/<pid>/status file;
+// -1 for either when the file is unreadable or the field is absent.
+func readProcStatus(path string) (rssKB, threads int64) {
 	rssKB, threads = -1, -1
-	b, err := os.ReadFile("/proc/self/status")
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}

@@ -11,7 +11,7 @@ func resetResHealth() {
 	defer resHealthMu.Unlock()
 	resHealthHaveLast = false
 	resHealthLastAt = time.Time{}
-	resHealthLastMem, resHealthLastRSS, resHealthLastThr = 0, 0, 0
+	resHealthLastMem, resHealthLastRSS, resHealthLastThr, resHealthLastEngRSS = 0, 0, 0, 0
 }
 
 // The instrument exists to show the memory trend before an OOM freeze. Quieting
@@ -22,27 +22,27 @@ func TestResourceHealthLogsWhatMatters(t *testing.T) {
 	t0 := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
 
 	resetResHealth()
-	if why, ok := resourceHealthWorthLogging(60000, total, 11000, 9, t0); !ok || why != "first" {
+	if why, ok := resourceHealthWorthLogging(60000, total, 11000, 9, -1, t0); !ok || why != "first" {
 		t.Fatalf("first reading: why=%q ok=%v, want first/true", why, ok)
 	}
 	// A flat box a minute later says nothing new.
-	if _, ok := resourceHealthWorthLogging(60000, total, 11000, 9, t0.Add(time.Minute)); ok {
+	if _, ok := resourceHealthWorthLogging(60000, total, 11000, 9, -1, t0.Add(time.Minute)); ok {
 		t.Error("an unchanged reading was logged; that is the noise this removes")
 	}
 	// Small drift is still noise.
-	if _, ok := resourceHealthWorthLogging(58000, total, 11050, 9, t0.Add(2*time.Minute)); ok {
+	if _, ok := resourceHealthWorthLogging(58000, total, 11050, 9, -1, t0.Add(2*time.Minute)); ok {
 		t.Error("a 3 % drift was logged")
 	}
 	// A real drop is the signal.
-	if why, ok := resourceHealthWorthLogging(50000, total, 11050, 9, t0.Add(3*time.Minute)); !ok || why != "memory-moved" {
+	if why, ok := resourceHealthWorthLogging(50000, total, 11050, 9, -1, t0.Add(3*time.Minute)); !ok || why != "memory-moved" {
 		t.Errorf("a 14 %% memory drop: why=%q ok=%v, want memory-moved/true", why, ok)
 	}
 	// The agent's own footprint growing is how we tell OUR leak from BoseApp's.
-	if why, ok := resourceHealthWorthLogging(50000, total, 13500, 9, t0.Add(4*time.Minute)); !ok || why != "agent-rss-moved" {
+	if why, ok := resourceHealthWorthLogging(50000, total, 13500, 9, -1, t0.Add(4*time.Minute)); !ok || why != "agent-rss-moved" {
 		t.Errorf("agent RSS +22 %%: why=%q ok=%v, want agent-rss-moved/true", why, ok)
 	}
 	// A thread count change is cheap to carry and pins a goroutine leak.
-	if why, ok := resourceHealthWorthLogging(50000, total, 13500, 14, t0.Add(5*time.Minute)); !ok || why != "threads-changed" {
+	if why, ok := resourceHealthWorthLogging(50000, total, 13500, 14, -1, t0.Add(5*time.Minute)); !ok || why != "threads-changed" {
 		t.Errorf("thread count change: why=%q ok=%v, want threads-changed/true", why, ok)
 	}
 }
@@ -53,9 +53,9 @@ func TestResourceHealthNeverQuietsALowBox(t *testing.T) {
 	const total = 120000
 	t0 := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
 	resetResHealth()
-	resourceHealthWorthLogging(20000, total, 11000, 9, t0) // first
+	resourceHealthWorthLogging(20000, total, 11000, 9, -1, t0) // first
 	for i := 1; i <= 5; i++ {
-		why, ok := resourceHealthWorthLogging(20000, total, 11000, 9, t0.Add(time.Duration(i)*time.Minute))
+		why, ok := resourceHealthWorthLogging(20000, total, 11000, 9, -1, t0.Add(time.Duration(i)*time.Minute))
 		if !ok || why != "low-memory" {
 			t.Fatalf("reading %d on a low box: why=%q ok=%v, want low-memory/true", i, why, ok)
 		}
@@ -67,11 +67,11 @@ func TestResourceHealthDropsAnHourlyAnchor(t *testing.T) {
 	const total = 120000
 	t0 := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
 	resetResHealth()
-	resourceHealthWorthLogging(60000, total, 11000, 9, t0)
-	if _, ok := resourceHealthWorthLogging(60000, total, 11000, 9, t0.Add(59*time.Minute)); ok {
+	resourceHealthWorthLogging(60000, total, 11000, 9, -1, t0)
+	if _, ok := resourceHealthWorthLogging(60000, total, 11000, 9, -1, t0.Add(59*time.Minute)); ok {
 		t.Error("logged before the hour was up")
 	}
-	if why, ok := resourceHealthWorthLogging(60000, total, 11000, 9, t0.Add(61*time.Minute)); !ok || why != "hourly-anchor" {
+	if why, ok := resourceHealthWorthLogging(60000, total, 11000, 9, -1, t0.Add(61*time.Minute)); !ok || why != "hourly-anchor" {
 		t.Errorf("after an hour: why=%q ok=%v, want hourly-anchor/true", why, ok)
 	}
 }
@@ -84,7 +84,7 @@ func TestResourceHealthIdleBoxCollapsesToHourlyAnchors(t *testing.T) {
 	resetResHealth()
 	logged := 0
 	for i := 0; i < 12*24; i++ { // 24 hours at the old 5-minute cadence
-		if _, ok := resourceHealthWorthLogging(60000, total, 11000, 9, t0.Add(time.Duration(i)*5*time.Minute)); ok {
+		if _, ok := resourceHealthWorthLogging(60000, total, 11000, 9, -1, t0.Add(time.Duration(i)*5*time.Minute)); ok {
 			logged++
 		}
 	}
