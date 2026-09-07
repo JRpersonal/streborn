@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Lautsprecher-Einstellungen",
   "nav.setupStick": "Lautsprecher einrichten",
   "nav.multiroom": "Multi-Room",
+  "nav.multiroomBadgeTitle": "{{n}} aktive Gruppe(n): sie bestimmen, welche Lautsprecher zusammen spielen",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
   "nav.newFeatureDot": "Neue STR-Funktion, schau rein",

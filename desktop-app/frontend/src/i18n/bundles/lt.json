@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Garsiakalbio nustatymai",
   "nav.setupStick": "Nustatyti garsiakalbį",
   "nav.multiroom": "Multiroom",
+  "nav.multiroomBadgeTitle": "Aktyvios grupės: {{n}}. Jos nustato, kurios kolonėlės groja kartu",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Tinklalaidės",
   "nav.newFeatureDot": "Nauja STR funkcija, pažiūrėk",

@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Speakerinstellingen",
   "nav.setupStick": "Speaker instellen",
   "nav.multiroom": "Multiroom",
+  "nav.multiroomBadgeTitle": "{{n}} actieve groep(en): zij bepalen welke speakers samen spelen",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
   "nav.newFeatureDot": "Nieuwe STR-functie, kijk eens",

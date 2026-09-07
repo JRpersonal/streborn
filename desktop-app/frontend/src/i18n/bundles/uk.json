@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Налаштування колонки",
   "nav.setupStick": "Налаштувати колонку",
   "nav.multiroom": "Мультирум",
+  "nav.multiroomBadgeTitle": "Активні групи: {{n}}. Вони визначають, які динаміки грають разом",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Подкасти",
   "nav.newFeatureDot": "Нова функція STR, погляньте",

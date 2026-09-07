@@ -254,6 +254,9 @@ import {
   inStereoPair,
   pairMemberBoxes,
   balanceSourceBox,
+  groupCount,
+  onZoneLive,
+  notifyZoneLive,
 } from './groups.js';
 import { pairDisplayName } from './stereoNames.js';
 
@@ -560,7 +563,7 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="recent">${escapeHtml(t('nav.recent'))}</button>
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
-    <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}</button>
+    <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="tab-badge" id="multiroomTabBadge" hidden></span></button>
     <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}</button>
     <button class="tab-btn" data-view="podcasts">${escapeHtml(t('nav.podcasts'))}<span class="beta-pill planned-pill">${escapeHtml(t('common.planned'))}</span></button>
   </div>
@@ -1982,6 +1985,10 @@ function applyBoxList(list) {
   // Mark which speakers are currently playing (small speaker icon on their tile).
   refreshBoxPlaying();
   updateSettingsTabBadge();
+  // The group count depends on the box list too (a stored permanent group is
+  // read off its master's record), so recount on every list refresh; the zone
+  // poll above recounts again once its round lands.
+  updateMultiroomTabBadge();
   // localStorage is reliably restored by this first box refresh (see below), so
   // paint the new-feature discovery dots here; a module-load call runs too early.
   renderNavDots();
@@ -2448,6 +2455,7 @@ async function dissolveGroupFrame(masterKey) {
     await DissolveZone(masterBox.host, masterBox.port);
     await Promise.allSettled(followers.map(b => Stop(b.host, b.port)));
     state.zoneLive = applyOptimisticZone(state.zoneLive, masterBox, []);
+    notifyZoneLive();
     showToast(t('group.dissolvedToast'));
   } catch (e) {
     showToast(t('multiroom.formFailed', { err: String((e && e.message) || e || '') }));
@@ -3218,6 +3226,25 @@ function updateSettingsTabBadge() {
   const needsUpdate = state.boxes.some(boxNeedsUpdate);
   btn.classList.toggle('has-update', needsUpdate);
 }
+
+// updateMultiroomTabBadge shows how many groups exist right now (live zones
+// plus stored permanent groups, see groupCount) as a small count on the
+// Multi-Room tab, so a user sees at a glance that groups exist and shape which
+// speakers play together, without opening the tab (Jens, 2026-09-07). Fed by
+// the shared zone poll through onZoneLive, so it is right as soon as the first
+// round lands and after every refresh path (music-tab poll, Multi-Room poll,
+// optimistic group edits). Hidden at zero; no poll or timer of its own.
+function updateMultiroomTabBadge() {
+  const el = $('multiroomTabBadge');
+  if (!el) return;
+  const n = groupCount(state.zoneLive, state.boxes);
+  el.hidden = n === 0;
+  el.textContent = n ? String(n) : '';
+  const tip = n ? t('nav.multiroomBadgeTitle', { n }) : '';
+  el.title = tip;
+  el.setAttribute('aria-label', tip);
+}
+onZoneLive(updateMultiroomTabBadge);
 
 // foreignMod maps a leftover /mnt/nv directory name (as the agent reports it in
 // foreignDirs / conflictingMod) to a human-readable name of the OTHER SoundTouch
@@ -5674,6 +5701,7 @@ async function runGroupMemberToggle(edits) {
     // (including the master's OWN entry); the confirming poll below
     // corrects it shortly after.
     state.zoneLive = applyOptimisticZone(state.zoneLive, box, next);
+    notifyZoneLive();
     renderBoxSelect();
   } catch (e) {
     showError(String(e));

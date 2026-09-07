@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Ustawienia głośnika",
   "nav.setupStick": "Skonfiguruj głośnik",
   "nav.multiroom": "Multiroom",
+  "nav.multiroomBadgeTitle": "Aktywne grupy: {{n}}. Decydują, które głośniki grają razem",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasty",
   "nav.newFeatureDot": "Nowa funkcja STR, zobacz",
