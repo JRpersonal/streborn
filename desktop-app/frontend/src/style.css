@@ -542,6 +542,27 @@ body {
   background: #2f80ed;
   box-shadow: 0 0 0 2px var(--c-bg);
 }
+/* Count pill on the Multi-Room tab: how many groups (live zones + stored
+   permanent groups) exist right now. Brand-tinted like the group frames so it
+   reads as "state", not as an alert like the blue update dot; the tint rides
+   on --brand, which is retuned per theme, so it holds up in light and dark. */
+.tab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: middle;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 55%, transparent);
+  white-space: nowrap;
+}
+.tab-badge[hidden] { display: none; }
 .view.hidden { display: none; }
 .hidden { display: none !important; }
 

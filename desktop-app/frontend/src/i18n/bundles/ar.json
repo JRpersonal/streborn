@@ -61,6 +61,7 @@
   "nav.speakerSettings": "إعدادات السمّاعة",
   "nav.setupStick": "إعداد السمّاعة",
   "nav.multiroom": "تعدّد الغرف",
+  "nav.multiroomBadgeTitle": "{{n}} مجموعة نشطة: تحدد أي السماعات تعمل معًا",
   "nav.spotify": "Spotify",
   "nav.podcasts": "البودكاست",
   "nav.newFeatureDot": "ميزة STR جديدة، ألقِ نظرة",

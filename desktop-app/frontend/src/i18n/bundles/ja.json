@@ -61,6 +61,7 @@
   "nav.speakerSettings": "スピーカー設定",
   "nav.setupStick": "スピーカーを設定",
   "nav.multiroom": "マルチルーム",
+  "nav.multiroomBadgeTitle": "有効なグループ: {{n}}。どのスピーカーが一緒に再生するかを決めます",
   "nav.spotify": "Spotify",
   "nav.podcasts": "ポッドキャスト",
   "nav.newFeatureDot": "STRの新機能。タップしてみてください",

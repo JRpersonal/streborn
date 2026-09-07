@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Réglages de l'enceinte",
   "nav.setupStick": "Configurer l'enceinte",
   "nav.multiroom": "Multiroom",
+  "nav.multiroomBadgeTitle": "{{n}} groupe(s) actif(s) : ils déterminent quelles enceintes jouent ensemble",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
   "nav.newFeatureDot": "Nouvelle fonction STR, jette un œil",

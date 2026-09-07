@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Hoparlör ayarları",
   "nav.setupStick": "Hoparlörü kur",
   "nav.multiroom": "Multiroom",
+  "nav.multiroomBadgeTitle": "{{n}} etkin grup: hangi hoparlörlerin birlikte çalacağını belirler",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcast'ler",
   "nav.newFeatureDot": "Yeni STR özelliği, göz at",

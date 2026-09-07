@@ -5,6 +5,9 @@ import { state } from './state.js';
 import {
   zoneBoxes,
   storedPermanentGroupsOf,
+  groupCount,
+  onZoneLive,
+  notifyZoneLive,
   masterOf,
   isFollower,
   followersOf,
@@ -636,5 +639,91 @@ describe('storedPermanentGroupsOf', () => {
     const boxes = [{ deviceID: 'AAA', host: '10.0.0.1', kind: 'str' }];
     const zoneLive = { AAA: { master: 'AAA', members: [{ deviceID: 'BBB', ip: '10.0.0.2' }], permanent: true, remembered: [{ ip: '10.0.0.2' }] } };
     expect(storedPermanentGroupsOf(zoneLive, boxes)).toEqual([]);
+  });
+});
+
+describe('groupCount', () => {
+  const boxes = [master, boxA, boxB, stock];
+
+  it('is 0 with no zone data', () => {
+    expect(groupCount({}, boxes)).toBe(0);
+    expect(groupCount(undefined, boxes)).toBe(0);
+  });
+
+  it('counts one live zone once, however many members report it', () => {
+    expect(groupCount(liveMap(), boxes)).toBe(1);
+  });
+
+  it('counts a zone whose followers dropped out of discovery, from the master row alone', () => {
+    const zl = { [master.deviceID]: liveMap()[master.deviceID] };
+    expect(groupCount(zl, [master])).toBe(1);
+  });
+
+  it('counts a zone a follower alone reports (master not discovered)', () => {
+    const zl = { [boxA.deviceID]: liveMap()[boxA.deviceID] };
+    expect(groupCount(zl, [boxA, boxB])).toBe(1);
+  });
+
+  it('ignores a master whose member list holds only itself', () => {
+    const zl = { [master.deviceID]: { master: master.deviceID, members: [{ deviceID: master.deviceID, ip: master.host }] } };
+    expect(groupCount(zl, boxes)).toBe(0);
+  });
+
+  it('counts two separate zones as two', () => {
+    const zl = {
+      [master.deviceID]: { master: master.deviceID, members: [{ deviceID: master.deviceID, ip: master.host }, { deviceID: boxA.deviceID, ip: boxA.host }] },
+      [boxA.deviceID]: { master: master.deviceID, members: [] },
+      [boxB.deviceID]: { master: boxB.deviceID, members: [{ deviceID: boxB.deviceID, ip: boxB.host }, { ip: '192.0.2.7' }] },
+    };
+    expect(groupCount(zl, boxes)).toBe(2);
+  });
+
+  it('adds a stored permanent group that is not live', () => {
+    const zl = {
+      ...liveMap(),
+      [boxB.deviceID]: { master: '', members: [], permanent: true, remembered: [{ ip: '192.0.2.7', name: 'Kueche' }] },
+    };
+    expect(groupCount(zl, boxes)).toBe(2);
+  });
+
+  it('counts a live permanent group once, not as live plus stored', () => {
+    const zl = liveMap();
+    zl[master.deviceID] = { ...zl[master.deviceID], permanent: true, remembered: [{ ip: boxA.host }, { ip: boxB.host }] };
+    expect(groupCount(zl, boxes)).toBe(1);
+  });
+
+  it('does not count a stereo pair as a group', () => {
+    const zl = {
+      [boxA.deviceID]: { master: '', members: [], stereo: { id: 'pair-1', masterDeviceID: boxA.deviceID, members: [{ deviceID: boxA.deviceID, role: 'LEFT' }, { deviceID: boxB.deviceID, role: 'RIGHT' }] } },
+      [boxB.deviceID]: { master: '', members: [], stereo: { id: 'pair-1', masterDeviceID: boxA.deviceID, members: [{ deviceID: boxA.deviceID, role: 'LEFT' }, { deviceID: boxB.deviceID, role: 'RIGHT' }] } },
+    };
+    expect(groupCount(zl, boxes)).toBe(0);
+  });
+});
+
+describe('onZoneLive', () => {
+  beforeEach(() => resetZoneLivePoll());
+
+  it('runs listeners after a completed poll round and on notifyZoneLive', async () => {
+    let calls = 0;
+    const off = onZoneLive(() => { calls++; });
+    state.zoneLive = {};
+    const fetchZone = async () => ({ master: master.deviceID, members: [] });
+    await fetchZoneLive([master, boxA], { maxAgeMs: 0, minBoxes: 1 }, fetchZone);
+    expect(calls).toBe(1);
+    notifyZoneLive();
+    expect(calls).toBe(2);
+    off();
+    notifyZoneLive();
+    expect(calls).toBe(2);
+  });
+
+  it('keeps polling when a listener throws', async () => {
+    const off = onZoneLive(() => { throw new Error('boom'); });
+    state.zoneLive = {};
+    const fetchZone = async () => ({ master: master.deviceID, members: [] });
+    await expect(fetchZoneLive([master], { maxAgeMs: 0, minBoxes: 1 }, fetchZone)).resolves.toBe(true);
+    expect(state.zoneLive[master.deviceID]).toBeTruthy();
+    off();
   });
 });

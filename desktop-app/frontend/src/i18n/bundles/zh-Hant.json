@@ -61,6 +61,7 @@
   "nav.speakerSettings": "喇叭設定",
   "nav.setupStick": "設定喇叭",
   "nav.multiroom": "多房間",
+  "nav.multiroomBadgeTitle": "使用中的群組：{{n}}，決定哪些喇叭一起播放",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcast",
   "nav.newFeatureDot": "STR 新功能，看看吧",

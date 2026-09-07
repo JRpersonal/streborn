@@ -278,6 +278,7 @@ export async function fetchZoneLive(boxes, { maxAgeMs = 0, minBoxes = 1 } = {}, 
     try {
       const results = await Promise.allSettled(strBoxes.map(b => fetchZone(b.host, b.port)));
       state.zoneLive = mergeZoneLive(state.zoneLive, strBoxes, results);
+      notifyZoneLive();
     } catch { /* keep previous entries */ }
   })();
   try {
@@ -286,6 +287,32 @@ export async function fetchZoneLive(boxes, { maxAgeMs = 0, minBoxes = 1 } = {}, 
     _inFlight = null;
   }
   return true;
+}
+
+// ---- Zone change listeners ----
+//
+// UI that hangs off state.zoneLive OUTSIDE the two views (the group-count
+// badge on the Multi-Room tab) must follow EVERY refresh path: the music-tab
+// poll, the Multi-Room poll and the optimistic group edits. Rather than each
+// caller remembering to repaint it (the same drift that once left the
+// Multi-Room tab stale), the shared poll notifies registered listeners after
+// every completed round, and an optimistic edit calls notifyZoneLive itself.
+// No poll of its own, no timer.
+const _zoneListeners = new Set();
+
+// onZoneLive registers fn to run after each zoneLive change. Returns the
+// unsubscribe function.
+export function onZoneLive(fn) {
+  _zoneListeners.add(fn);
+  return () => _zoneListeners.delete(fn);
+}
+
+// notifyZoneLive runs every listener; one that throws must not break the poll
+// or starve the others.
+export function notifyZoneLive() {
+  for (const fn of _zoneListeners) {
+    try { fn(); } catch { /* a listener bug must not stop the poll */ }
+  }
 }
 
 // resetZoneLivePoll clears the poll's debounce/busy bookkeeping. Test-only.
@@ -546,4 +573,44 @@ export function storedPermanentGroupsOf(zoneLive, boxes) {
     out.push({ masterKey: up(b.deviceID), masterBox: b, members });
   });
   return out;
+}
+
+// groupCount returns how many groups currently shape playback across the
+// discovered speakers, for the count badge on the Multi-Room tab:
+//
+//   - every distinct LIVE multiroom zone: a master with at least one member,
+//     proven either by a discovered box that reports following it or by a
+//     row other than the master itself in the master's own member list, so a
+//     zone whose followers dropped out of discovery still counts once and a
+//     master whose members[] came back empty does not count at all;
+//   - plus every STORED permanent group that is not live right now. A live
+//     permanent group is one group, never two, so a stored entry whose master
+//     is already counted live is skipped.
+//
+// Stereo pairs are firmware groups, not zones: masterOf reads the zone field
+// only, so a pair never shows up here. Pure, so groups.test.js covers it.
+export function groupCount(zoneLive, boxes) {
+  const up = (s) => String(s || '').toUpperCase();
+  const strBoxes = (boxes || []).filter((b) => b && b.kind !== 'stock' && b.deviceID);
+  const live = new Set();
+  for (const b of strBoxes) {
+    const m = masterOf(b.deviceID, zoneLive);
+    if (!m || live.has(m)) continue;
+    if (m !== up(b.deviceID)) {
+      // A follower's self-report is proof the zone exists.
+      live.add(m);
+      continue;
+    }
+    const own = (zoneLive || {})[b.deviceID] || {};
+    const host = b.host || '';
+    const others = (own.members || []).filter((x) => {
+      const id = up(x && x.deviceID);
+      const ip = (x && x.ip) || '';
+      if (!id && !ip) return false;
+      return !((id && id === m) || (ip && ip === host));
+    });
+    if (others.length || followersOf(b.deviceID, zoneLive, strBoxes).length) live.add(m);
+  }
+  const stored = storedPermanentGroupsOf(zoneLive, strBoxes).filter((g) => !live.has(g.masterKey));
+  return live.size + stored.length;
 }

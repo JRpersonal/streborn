@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Ajustes del altavoz",
   "nav.setupStick": "Configurar el altavoz",
   "nav.multiroom": "Multisala",
+  "nav.multiroomBadgeTitle": "{{n}} grupo(s) activo(s): deciden qué altavoces suenan juntos",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podcasts",
   "nav.newFeatureDot": "Nueva función de STR, échale un vistazo",

@@ -61,6 +61,7 @@
   "nav.speakerSettings": "Skaļruņa iestatījumi",
   "nav.setupStick": "Iestatīt skaļruni",
   "nav.multiroom": "Multiroom",
+  "nav.multiroomBadgeTitle": "Aktīvās grupas: {{n}}. Tās nosaka, kuri skaļruņi atskaņo kopā",
   "nav.spotify": "Spotify",
   "nav.podcasts": "Podkāsti",
   "nav.newFeatureDot": "Jauna STR funkcija, apskaties",
