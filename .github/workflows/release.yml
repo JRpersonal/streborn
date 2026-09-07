@@ -1730,7 +1730,7 @@ jobs:
         # the action creates the tag at github.sha when it does not
         # already exist. The tag-push path uses the same value (the
         # version derived from the pushed tag), so behaviour matches.
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           # RELEASE_PUBLISH_PAT (fine-grained PAT, this repo, Contents R/W):
           # GitHub now rejects the built-in GITHUB_TOKEN for release
