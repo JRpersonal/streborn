@@ -111,7 +111,7 @@
   "multiroom.nothingToUngroup": "Er is nu geen groep om op te heffen.",
   "multiroom.dissolveGroupTip": "Deze groep opheffen",
   "multiroom.forgetPermanentTip": "Deze permanente groep verwijderen",
-  "multiroom.storedPermanentBadge": "permanente groep, vormt zich bij afspelen",
+  "multiroom.storedPermanentNote": "Vaste groep. Hij vormt zich alleen als het afspelen op {{master}} wordt gestart.",
   "multiroom.undoPairTip": "Dit stereopaar opheffen",
   "multiroom.formed": "Groep gemaakt. De hoofdspeaker streamt naar de andere. Als ze stil blijven, controleer dan of de hoofdspeaker echt afspeelt en stuur de logs.",
   "multiroom.formFailed": "Kon de groep niet wijzigen: {{err}}",
