@@ -852,6 +852,7 @@ func (s *Server) NoteBoxZoneState(master string) {
 	s.noteZoneDocDoubt()
 	s.logger.Info("zone: the speaker reported its zone dissolved while a group document is still stored",
 		"master", z.Master, "slaves", len(z.Slaves))
+	s.scheduleStragglerSweepAfterFirmwareDissolve(z)
 }
 
 // resumeOnPowerOnEnabled reports whether "resume the last station on power-on"
