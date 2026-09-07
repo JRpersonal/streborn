@@ -25,17 +25,9 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		all := s.presets.All()
-		// Phase marker for the "presets reported empty" symptom on #60.
-		// A WARN log on every empty GET makes it directly visible in the
-		// diagnostic bundle whether the desktop app actually polled the
-		// agent and received an empty array (vs the agent never being
-		// reached). Non-empty responses stay at Debug to avoid noise.
-		if len(all) == 0 {
-			s.logger.Warn("preset store phase: GET /api/presets returned empty",
-				"remote", r.RemoteAddr)
-		} else {
-			s.logger.Debug("GET /api/presets", "count", len(all), "remote", r.RemoteAddr)
-		}
+		// Rate-limited per client (presets_readlog.go): the per-GET WARN on
+		// an empty store flooded the NAND log tail out of a bundle (#882).
+		s.notePresetsRead(r.RemoteAddr, len(all))
 		writeJSON(w, http.StatusOK, all)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

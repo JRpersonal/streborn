@@ -169,8 +169,12 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	}
 	// Re-push the target's hardware keys so 1-6 on the speaker match the copy.
 	if _, err := a.SyncBoxPresets(dstHost, dstPort); err != nil {
-		a.logger.Warn("copy presets: target hardware sync failed", "dst", dstHost, "err", err)
+		a.logger.Warn("copy presets: target hardware sync failed", "src", srcHost, "dst", dstHost, "err", err)
 	}
+	// One line per run, success included. A successful copy used to leave no
+	// trace, so the #882 bundle could not say which speaker a copy had gone
+	// to; the box side had to answer that instead.
+	a.logger.Info("copy presets: done", "src", srcHost, "dst", dstHost, "copied", copied, "slotErrs", len(slotErrs))
 	// A copied Spotify preset is dead on a speaker that lacks the Spotify
 	// login: the credential lives per box, so recalls there fail with
 	// "speaker not logged into Spotify" until the user taps the target in the

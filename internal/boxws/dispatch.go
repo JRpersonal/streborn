@@ -350,7 +350,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// the NAND log, so an INFO burst is a stack of rapid NAND writes for no
 		// diagnostic gain. The slots are still captured at DEBUG when needed.
 		c.logger.Debug("box ws: presetsUpdated", "count", len(slots), "slots", strings.Join(slots, ","))
-		if c.handler != nil && len(bps) > 0 {
+		// An EMPTY list is forwarded too. It used to be dropped here, which
+		// left the agent's box-preset cache holding the last non-empty report
+		// for good: a speaker whose firmware had dropped every key (a re-read
+		// from an empty marge store after a reinstall) kept serving six stale
+		// entries to the desktop, which drew them as playable (#882). Whether
+		// an empty frame is the truth or a boot-window partial list is decided
+		// at the composition root, where the STR store is known.
+		if c.handler != nil {
 			c.handler.OnPresetsChanged(ctx, bps)
 		}
 	case f.ZoneUpdated != nil:

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // isSTRStreamURL reports whether u is one of STR's own stream URLs (the radio
@@ -31,9 +33,21 @@ const ownNativePresetLocPrefix = "/core02/svc-bmx-adapter-orion/prod/orion/stati
 
 // isOwnBoxPresetLocation reports whether loc is a box-preset location STR
 // itself wrote (strict match), the only shape the prune may remove.
+//
+// Three shapes: the absolute UPnP proxy forms, the orion-prefixed native
+// form, and the RELATIVE "/station?data=" form the speaker reports STR's
+// native slots in (the form OrionStationLocation writes). The third was
+// missing until #882: on a box whose six keys were all native, the prune and
+// the store recovery matched nothing, so the dead keys of a removed install
+// were never pruned and never recovered. It is matched by decoding, strictly:
+// only a payload whose stream is this agent's own per-key proxy counts, a
+// foreign descriptor with an external streamUrl does not.
 func isOwnBoxPresetLocation(loc string) bool {
-	return ownBoxPresetLocRe.MatchString(loc) ||
-		strings.HasPrefix(loc, ownNativePresetLocPrefix)
+	if ownBoxPresetLocRe.MatchString(loc) || strings.HasPrefix(loc, ownNativePresetLocPrefix) {
+		return true
+	}
+	_, ok := webui.StationLocationOwnSlot(loc)
+	return ok
 }
 
 // isPlayableURL reports whether u is an absolute HTTP(S) URL the UPnP renderer can

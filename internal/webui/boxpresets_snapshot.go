@@ -81,6 +81,13 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 func (s *Server) NoteBoxPresets(ps []BoxPreset) {
 	s.boxPresetsMu.Lock()
 	defer s.boxPresetsMu.Unlock()
+	// The one transition a bundle could not show (#882): the firmware's own
+	// list going from N entries to none while the STR store is empty, which
+	// is what a re-read of the presets from an empty marge store does to it.
+	if len(ps) == 0 && len(s.boxPresets) > 0 && s.logger != nil && s.presets != nil && len(s.presets.All()) == 0 {
+		s.logger.Info("box preset list went to empty while the STR store is empty (the firmware dropped its own list, presumably after re-reading its presets from marge)",
+			"was", len(s.boxPresets))
+	}
 	now := time.Now()
 	for slot, when := range s.deletedBoxSlots {
 		if now.Sub(when) > boxPresetTombstoneTTL {

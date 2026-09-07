@@ -115,6 +115,8 @@ export namespace main {
 	    location: string;
 	    sourceAccount: string;
 	    name: string;
+	    strOrigin: boolean;
+	    lost: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new BoxPresetInfo(source);
@@ -128,6 +130,8 @@ export namespace main {
 	        this.location = source["location"];
 	        this.sourceAccount = source["sourceAccount"];
 	        this.name = source["name"];
+	        this.strOrigin = source["strOrigin"];
+	        this.lost = source["lost"];
 	    }
 	}
 	export class FirmwareInfo {

@@ -295,6 +295,19 @@ type BoxPresetInfo struct {
 	Location      string `json:"location"`
 	SourceAccount string `json:"sourceAccount"`
 	Name          string `json:"name"`
+	// StrOrigin: the agent says STR itself wrote this slot (its proxy or
+	// native station form). On a speaker whose store has nothing on the slot
+	// that is a dead key left over from before a reinstall, which the grid
+	// shows as such instead of as a playable speaker-side preset (#882).
+	// Absent from agents before v0.9.76; the frontend then judges by the
+	// location itself.
+	StrOrigin bool `json:"strOrigin"`
+	// Lost: the agent's verdict on a StrOrigin slot, nothing in the store and
+	// no webhook-only key on it (#536 keeps such a key's placeholder out of
+	// the store on purpose, and the frontend cannot tell it from a dead key
+	// by the location). Meaningful only when StrOrigin is set; an agent that
+	// sends the one sends the other.
+	Lost bool `json:"lost"`
 }
 
 // BoxPresets reads the box's own preset list (incl. foreign sources). Empty until

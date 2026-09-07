@@ -1278,6 +1278,12 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .preset.box-native { border-style: dashed; border-color: var(--c-border); }
 .preset.box-native.playing { border-style: solid; }
 .preset-box-hint { font-size: 10px; font-weight: 400; color: var(--c-muted); margin-top: 2px; line-height: 1.1; opacity: 0.75; }
+/* A key STR wrote that the store no longer backs (left over from before a
+   reinstall, #882): shown, named, but not offered as playable. Same amber as
+   the loss banner above the grid, which explains it. */
+.preset.lost { border-style: dashed; border-color: var(--c-border); cursor: default; }
+.preset.lost .name { color: var(--c-muted); }
+.preset.lost .preset-box-hint { color: #e8c878; opacity: 1; }
 /* Banner above the preset grid warning that the box dropped account-linked
    presets STR cannot carry over yet (e.g. Deezer). Amber accent, dismissible. */
 .loss-notice {

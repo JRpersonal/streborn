@@ -498,6 +498,45 @@ export function orionStationPayload(loc) {
   }
 }
 
+// isStrOriginLocation reports whether a speaker-side preset location is one
+// STR itself wrote: the per-key stream proxy in its absolute UPnP form, or a
+// native station descriptor whose stream points at that proxy. Such a slot on
+// a speaker whose STR store has nothing on it is a DEAD key, not a
+// speaker-side preset the app may offer to play: the firmware keeps its keys
+// across a removal and reinstall of STR, the stream behind them is gone with
+// the store, and the app drew six playable stations on exactly such a
+// speaker (#882). Newer agents flag this as strOrigin on /api/box/presets;
+// this covers the v0.9.75 agent, which does not.
+export function isStrOriginLocation(loc) {
+  const s = String(loc || '');
+  if (/^http:\/\/127\.0\.0\.1:\d+\/(?:stream\/[1-6]|spotify\/stream(?:-[1-6])?\.ogg)$/.test(s)) return true;
+  const payload = orionStationPayload(s);
+  const url = payload && typeof payload.streamUrl === 'string' ? payload.streamUrl : '';
+  return /^http:\/\/127\.0\.0\.1:\d+\/stream\/[1-6]$/.test(url);
+}
+
+// WEBHOOK_PLACEHOLDER_NAME is what the agent writes into a "webhook only" key
+// (#536): the firmware refuses an empty key and never reports its press, so
+// the key holds a placeholder in STR's own /stream/N form and stays out of
+// the store on purpose. Mirrors webhookPlaceholderName in cmd/agent.
+export const WEBHOOK_PLACEHOLDER_NAME = 'Webhook';
+
+// isLostStrKey reports whether a speaker-side preset is a DEAD key: one STR
+// itself wrote whose store slot is empty, left behind by a removal and
+// reinstall (#882). Called only for slots the store has nothing on.
+//
+// An agent from v0.9.76 on says it outright (strOrigin plus lost): it sees
+// the store and the webhook config, and a webhook-only key, STR-origin and
+// store-less BY DESIGN, is exactly the case a location check cannot tell from
+// a dead key. Trusting the flag keeps that key what it is: a hardware press
+// that fires the webhook from the app. An older agent sends neither flag;
+// then the location decides and the webhook placeholder is known by its name.
+export function isLostStrKey(bp) {
+  if (!bp) return false;
+  if (bp.strOrigin === true) return bp.lost === true;
+  return bp.name !== WEBHOOK_PLACEHOLDER_NAME && isStrOriginLocation(bp.location);
+}
+
 // nativeSlotStale decides whether a preset tile the active-slot number points
 // at should still light up while the speaker plays a NATIVE radio descriptor.
 // The speaker keeps playing the station it recalled even after the box's own

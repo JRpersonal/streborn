@@ -464,6 +464,11 @@ func run() error {
 	webui.RegisterDebugSection("native_presets", func() any {
 		return nativePresetStatus(nativeStatusHost)
 	})
+	// The store recovery's verdict (#882): what the box listed at agent start,
+	// how many of those slots STR itself wrote, and why an empty store was or
+	// was not refilled. Without it a bundle from a reinstalled speaker could
+	// not say whether the six dead keys were ever seen.
+	webui.RegisterDebugSection("preset_recovery", presetRecoveryStatus)
 	webui.RegisterDebugSection("marge_recent_requests", func() any {
 		return margeSrv.RecentRequestLines(60)
 	})
@@ -874,6 +879,29 @@ func run() error {
 	// WebSocket on 8080 (gabbo protocol) when the user physically presses a
 	// button. We hook the event and trigger our UPnP player.
 	renderer := upnp.NewBoseRenderer(*boxHost)
+	// publishBoxPresets is the ONE place a box preset list read from the
+	// speaker (a gabbo presetsUpdated frame, the boot seed read, the
+	// reconcile's own /presets read) reaches the webui cache and the
+	// foreign-preset preservation. boxws forwards EMPTY frames as well since
+	// #882; what an empty list means depends on the STR store, which only this
+	// root knows: with an empty store the firmware really has nothing and the
+	// desktop grid must follow (six stale "playable" tiles were the #882
+	// symptom); with a non-empty store it is a boot-window partial list the
+	// reconcile is about to re-register, and the cache keeps the last real
+	// list. The foreign preservation keeps its own partial-list rule.
+	//
+	// It is also where a slot gets its Lost verdict: STR-origin, nothing in
+	// the store, no webhook-only key on it. The desktop cannot make that call
+	// (a webhook placeholder looks exactly like a dead key from the location),
+	// so it is made here, once, for every list that reaches the cache.
+	publishBoxPresets := func(bps []webui.BoxPreset) {
+		stampLostBoxPresets(bps, store, webhooksStore)
+		if len(bps) > 0 || len(store.All()) == 0 {
+			webuiSrv.NoteBoxPresets(bps)
+		}
+		foreignPresets.NoteBoxList(bps)
+	}
+	setBoxPresetListSink(publishBoxPresets)
 	wsHandler := &presetWsHandler{
 		logger:   logger.With("comp", "boxws"),
 		store:    store,
@@ -969,10 +997,10 @@ func run() error {
 				out = append(out, webui.BoxPreset{
 					Slot: p.Slot, Source: p.Source, Type: p.Type, Location: p.Location,
 					SourceAccount: p.SourceAccount, Name: p.Name,
+					StrOrigin: isOwnBoxPresetLocation(p.Location),
 				})
 			}
-			webuiSrv.NoteBoxPresets(out)
-			foreignPresets.NoteBoxList(out)
+			publishBoxPresets(out)
 		},
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
@@ -1181,15 +1209,12 @@ func run() error {
 	// first forced re-assert cannot re-onboard the box - and thereby wipe its
 	// preset list - before the recovery had its one chance to snapshot it.
 	seedFirstRead := make(chan struct{})
+	// The seed read goes through publishBoxPresets like every other list read,
+	// so the foreign-preset preservation is seeded from the same first read
+	// (the very first re-onboarding after agent start then already serves the
+	// box-owned slots; the wipe this guards against happens exactly there).
 	go seedBoxPresetsAndRecoverStore(store, recentStore, *boxHost,
-		func(bps []webui.BoxPreset) {
-			webuiSrv.NoteBoxPresets(bps)
-			// Seed the foreign-preset preservation from the same first read, so
-			// the very first re-onboarding after agent start already serves the
-			// box-owned slots (the wipe this guards against happens exactly
-			// there; NoteBoxList unescapes the regex-captured values).
-			foreignPresets.NoteBoxList(bps)
-		},
+		publishBoxPresets,
 		logger.With("comp", "presetrecovery"),
 		func() { close(seedFirstRead) })
 
