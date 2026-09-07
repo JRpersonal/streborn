@@ -121,6 +121,106 @@ least two track changes before believing it.
 4. **Architecture diagram / docs** updated to show the sidecar + the
    audio (`/spotify/stream`) and control (local API) planes.
 
+### Long tracks: where the memory goes, and the seam mechanism (off)
+
+**Read this first (2026-09-08).** The retention is the SPOTIFY ENGINE's,
+not the speaker firmware's, and the seam mechanism described below is
+therefore OFF by default. A measurement on a live Portable cut three seams
+a megabyte apart while a track played: every seam was accepted, playback
+continued, and the box freed nothing (`freedKB` -928, +80, -556, the
+effectiveness latch engaged after the third), while the engine's own
+resident memory climbed from 19.9 to 22.4 MB across the same three links.
+go-librespot's chunked reader keeps every fetched chunk of the current
+track in memory (`audio/chunked-reader.go`, one 256 KiB `chunkItem` per
+chunk of the whole file, never cleared) and the reader is only dropped at a
+track change, which is exactly why a playlist is stable and one long track
+is not. The fix belongs there. What remains valuable here is the
+instrument: the engine's resident size now sits next to the speaker's free
+memory in the health line, the heartbeat and the diagnostic file, which is
+what settled this in two minutes.
+
+**The field finding (2026-09-07, SoundTouch 20 sm2, FW 27.0.6, 122 MB
+RAM).** Memory falls in proportion to the audio delivered *within one
+logical Ogg stream* and recovers when a new logical stream begins, i.e. at
+a BOS page with a new serial. That reading was consistent with the
+firmware holding the buffer, and the paragraph below was built on it; the
+measurement above showed the same pattern has a different owner, because
+the engine drops its chunk cache at exactly that moment. Ordinary
+playlists (3 to 9 minute songs, a BOS between every two) kept
+`memAvailableKB` flat for 46 minutes and 45 MB of audio, even inside one
+uninterrupted 15-minute HTTP attach. One 60-minute track, a single logical
+stream for the whole hour, dropped it monotonically at ~1.25 bytes per byte
+of audio (29.9 MB to 3.8 MB in 1092 s) until STR's memory guard rebooted the
+box after 20 to 30 minutes. Bluetooth does not leak; an HTTP re-attach, a
+pause or a standby frees nothing. The "irreducible ~0.4 MB/min floor" of
+the earlier flush-size sweep was this same retention measured across the
+frees at track boundaries. Details in `docs/FIRMWARE-NOTES.md`.
+
+**The mechanism (`internal/spotify/oggchain.go`), off unless switched on.**
+It gives the decoder a logical-stream boundary of STR's own making: it splits a long track into a chain
+of logical streams. At the seam the current page P goes out with the EOS
+flag, then the track's own header pages (identification, comment, setup)
+are re-emitted under a fresh serial S2 with page sequence 0..h-1, and every
+following page is re-stamped with S2 and a contiguous sequence. Granule
+positions are never touched (absolute continuation, the late-join shape
+the box already decodes), no packet is reassembled, the HTTP connection
+and chunking stay as they are. P must complete its last packet (final
+lacing value below 255) so the next page starts a fresh packet; a page that
+completes no packet, a BOS or an already-EOS page is never P. The decoder
+re-initialises from identical headers and the firmware frees the old
+link. Cost: a naive cut loses the overlap between the last packet before
+and the first after the seam, a quarter block each (a few milliseconds),
+at most once every ~10 minutes of a long track. A primer packet that would
+make it sample-exact is deliberately not built until a hardware A/B says
+which decoder class the box runs; `openLink` is the hook.
+
+**Trigger.** Never inside the first 2 MiB of a link; at the latest at the
+ceiling (12 MiB, ~10.5 min at 160 kbps); 4 MiB when meminfo is unreadable.
+A `MemAvailable` reading may end a link earlier only when the memory can be
+attributed to *that link*, which takes three things together: the reading is
+below 12 MiB, it has fallen by at least 0.5 bytes per byte of the link since
+the link's first probe (the field leak runs at 1.25), and the link carries at
+least 60 s of audio, counted from the granule positions the pages already
+carry rather than from wall clock. The level alone is not enough: a box that
+sits between the memory guard's 6 MiB and this 12 MiB gate for hours or days
+for an unrelated reason (the BoseApp leak family) would otherwise be seamed at
+the 2 MiB minimum on every ordinary song, once per ~105 s at 160 kbps and once
+per ~52 s at 320, each an audible ~23 ms dropout and one line into the NAND
+log, with the effectiveness latch never engaging because each seam does free
+its own link. Such a box now only ever sees the 12 MiB ceiling. The baseline
+the fall is measured against is the link's first probe, which lands at the
+2 MiB minimum (the cadence from there is one probe per 512 KiB of audio, about
+twice a minute, no timer) and therefore after the box has finished freeing the
+previous link, so it is a settled reading; the price is that a leak at the
+field rate seams at ~3.5 MiB rather than at the 2 MiB minimum. Ordinary songs
+on a healthy box never see a seam. Three consecutive seams that free under
+10 % of their link warn once and stop seaming until the next real track
+boundary (the engine holding the memory instead of the firmware).
+
+**Knob / kill switch.** `/mnt/nv/streborn/spotify-chain-mb`: absent = OFF (the default since 2026-09-08),
+`0` = off (byte-identical passthrough), 1..64 = the ceiling in MiB. Read
+at engine start, at every real track boundary and after every seam, never
+polled, so `echo 0 > /mnt/nv/streborn/spotify-chain-mb` lands at the next
+boundary without a restart; remove the file to return to the default.
+
+**What the log shows.** One Info line per seam, `spotify: chain seam, long
+track split so the box frees its stream buffer`, written ~20 s after the
+cut (earlier at a real BOS, a detach or the engine exit, then with
+`forcedBy`), carrying `track, seam, reason=memory|period|fallback, linkKB,
+linkSec, granuleSec, oldSerial, newSerial, memBeforeKB, memAfterKB,
+availAtLinkStartKB, fellKB, fellPerByte, freedKB, probeSec, engineRSSKB`.
+`freedKB` positive and roughly `linkKB * 1.25` confirms the mechanism;
+`availAtLinkStartKB`, `fellKB` and `fellPerByte` are the evidence a
+`reason=memory` seam was judged on, so a bundle shows whether the box really
+was losing memory to that link (`fellPerByte` at or above 0.50, the field
+value ~1.25) or was merely low; the latch warning `chain seams are not
+freeing memory on this box` marks the other cases. `resource health` lines and
+the crash heartbeat now carry `engineRSSKB` (a climb in step with the
+audio means go-librespot's chunk reader holds the track and the fix
+belongs in the fork), the detach line carries `seams`, and the
+`spotify_chain` section of `/api/debug/state` keeps the last seam's
+readings for a bundle after the NAND ring has rolled.
+
 ## Why native Spotify works without the Bose cloud
 
 Spotify Connect has two login paths. Bose's app used the **account-linked**

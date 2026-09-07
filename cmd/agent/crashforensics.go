@@ -33,6 +33,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/spotify"
 )
 
 // heartbeatPath lives on tmpfs deliberately: no NAND wear, and it disappears
@@ -54,6 +56,12 @@ type agentHeartbeat struct {
 	AgentRSSKB       int64  `json:"agentRSSKB"`
 	AgentThreads     int64  `json:"agentThreads"`
 	SpotifyStreaming bool   `json:"spotifyStreaming"`
+	// EngineRSSKB is go-librespot's resident set (-1 when not running) and
+	// SpotifySeams the chain seams the current engine run has opened: if the
+	// box dies on a long track, the last heartbeat says whether the engine
+	// or the firmware was holding the memory and whether a seam had landed.
+	EngineRSSKB  int64 `json:"engineRSSKB"`
+	SpotifySeams int   `json:"spotifySeams"`
 }
 
 // lastExitReport is what the previous run left behind, assembled once at start.
@@ -121,28 +129,18 @@ func noteAgentStart(bootReason string, logger *slog.Logger) {
 			"memAvailableKB", rep.Previous.MemAvailKB,
 			"agentRSSKB", rep.Previous.AgentRSSKB,
 			"agentThreads", rep.Previous.AgentThreads,
-			"spotifyStreaming", rep.Previous.SpotifyStreaming)
+			"spotifyStreaming", rep.Previous.SpotifyStreaming,
+			"engineRSSKB", rep.Previous.EngineRSSKB,
+			"spotifySeams", rep.Previous.SpotifySeams)
 	}
 }
 
-// runHeartbeat writes the state file until ctx is done. streaming reports
-// whether Spotify is currently forwarding; nil when Spotify is not configured.
-func runHeartbeat(stop <-chan struct{}, streaming func() bool, logger *slog.Logger) {
+// runHeartbeat writes the state file until stop closes. sp is the Spotify
+// manager (streaming state, engine pid, seam count); nil when Spotify is not
+// configured.
+func runHeartbeat(stop <-chan struct{}, sp *spotify.Manager, logger *slog.Logger) {
 	write := func() {
-		avail, total := readMemKB()
-		rss, threads := readSelfRSS()
-		hb := agentHeartbeat{
-			At:           time.Now().Format(time.RFC3339Nano),
-			UptimeSec:    readUptimeSec(),
-			MemAvailKB:   avail,
-			MemTotalKB:   total,
-			AgentRSSKB:   rss,
-			AgentThreads: threads,
-		}
-		if streaming != nil {
-			hb.SpotifyStreaming = streaming()
-		}
-		b, err := json.Marshal(hb)
+		b, err := json.Marshal(collectHeartbeat(sp))
 		if err != nil {
 			return
 		}
@@ -164,6 +162,28 @@ func runHeartbeat(stop <-chan struct{}, streaming func() bool, logger *slog.Logg
 			write()
 		}
 	}
+}
+
+// collectHeartbeat samples the process state for one heartbeat. sp may be
+// nil (Spotify not configured); split out so the sampler is testable without
+// touching tmpfs.
+func collectHeartbeat(sp *spotify.Manager) agentHeartbeat {
+	avail, total := readMemKB()
+	rss, threads := readSelfRSS()
+	hb := agentHeartbeat{
+		At:           time.Now().Format(time.RFC3339Nano),
+		UptimeSec:    readUptimeSec(),
+		MemAvailKB:   avail,
+		MemTotalKB:   total,
+		AgentRSSKB:   rss,
+		AgentThreads: threads,
+		EngineRSSKB:  engineRSSKB(sp),
+	}
+	if sp != nil {
+		hb.SpotifyStreaming = sp.Streaming()
+		hb.SpotifySeams = sp.SeamsTotal()
+	}
+	return hb
 }
 
 func readHeartbeat() (*agentHeartbeat, error) {

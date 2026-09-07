@@ -446,6 +446,48 @@ Every source change also POSTs a `<recent>` record to `.../device/<id>/recent`
 list: the empty `<recents/>` STR used to answer made it log `AddRecentCB
 Failed with status=N` on every change. The record is echoed with an id.
 
+## Per-logical-stream retention in the Ogg/HTTP path
+
+**Symptom.** Spotify through STR (go-librespot raw Ogg Vorbis passthrough,
+served over HTTP to the box's UPnP renderer) plays ordinary playlists for
+hours with flat memory, but a single very long track (an hour of rain
+sounds, a DJ set) drains `MemAvailable` steadily until STR's memory guard
+reboots the box after 20 to 30 minutes.
+
+**Measured (2026-09-07, SoundTouch 20 sm2/spotty, FW 27.0.6, 122484 kB
+RAM, STR v0.9.75, `agent.log` captured over SSH plus a diagnostic
+bundle):**
+
+- Normal playlist, tracks 3 to 9 minutes: `memAvailableKB` flat for 46 min
+  and 45 MB of audio, including one uninterrupted HTTP attach of 15 min /
+  17 MB. So the HTTP connection is not the unit of retention.
+- One 60-minute track, a single Ogg logical stream (no BOS for the whole
+  hour): `memAvailableKB` falls monotonically, ~1.25 bytes per byte of
+  audio, 29.9 MB to 3.8 MB in 1092 s, until the guard reboots.
+- Bluetooth playback does not leak.
+- A pause, a standby or a re-fetch of the stream frees nothing; a reboot
+  frees everything (earlier sweeps, 2026-06).
+
+**Conclusion.** The firmware accumulates per Ogg *logical stream* and
+releases the accumulation when the demuxer sees a BOS page with a new
+serial, not at an HTTP boundary. The "~0.4 MB/min irreducible floor" seen
+in the 2026-06 flush-size sweep was the same retention measured across
+the frees at track boundaries. Whether the box's Ogg demuxer/decoder is
+libvorbisfile, GStreamer oggdemux or an in-house component is not known;
+the behaviour is consistent with a chain-aware demuxer that keeps
+per-stream state until the stream ends.
+
+**What STR does about it.** The Spotify drain splits a long track into a
+chain of logical streams itself: EOS on the current page, the track's own
+header pages re-emitted under a fresh serial, contiguous page sequence,
+granules untouched (`internal/spotify/oggchain.go`, the design note in
+`docs/streaming/spotify.md`). It fires no earlier than 2 MiB into a link
+and at the latest at 12 MiB, sooner when `MemAvailable` is already under
+12 MiB, so ordinary songs never see a seam and a long track seams a handful
+of times an hour instead of rebooting at minute 20. Kill switch:
+`/mnt/nv/streborn/spotify-chain-mb` = `0`. The memory guard stays as the
+backstop.
+
 ## See also
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component map, ports,

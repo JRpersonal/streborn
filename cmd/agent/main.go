@@ -636,6 +636,20 @@ func run() error {
 	// kernel + NEON as the Portable where Spotify works).
 	syscheck.Run(logger, goLibrespotPath)
 	spotifyMgr := spotify.New(goLibrespotPath, "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
+	// The Ogg chain seam (internal/spotify/oggchain.go) reads the box's free
+	// memory to split a long track before the memory guard fires, and stamps
+	// the engine's RSS onto its seam lines so a bundle can tell firmware
+	// retention from the engine holding the track.
+	spotifyMgr.MemAvailKB = func() int64 { a, _ := readMemKB(); return a }
+	spotifyMgr.EngineRSSKB = func(pid int) int64 {
+		rss, _ := readProcStatus(fmt.Sprintf("/proc/%d/status", pid))
+		return rss
+	}
+	webui.RegisterDebugSection("spotify_chain", func() any {
+		snap := spotifyMgr.ChainSnapshot()
+		snap["engineRSSKB"] = engineRSSKB(spotifyMgr)
+		return snap
+	})
 
 	// Answer for this speaker's own mDNS name BEFORE the engine is told to
 	// advertise it. The order is the safety property, not a detail: the engine
@@ -1299,12 +1313,12 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runHeartbeat(ctx.Done(), spotifyMgr.Streaming, logger)
+		runHeartbeat(ctx.Done(), spotifyMgr, logger)
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		logResourceHealth(logger)
+		logResourceHealth(logger, spotifyMgr)
 		checkNetworkReachability(logger)
 		health := time.NewTicker(5 * time.Minute)
 		defer health.Stop()
@@ -1317,7 +1331,7 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-health.C:
-				logResourceHealth(logger)
+				logResourceHealth(logger, spotifyMgr)
 				checkNetworkReachability(logger)
 			case <-guard.C:
 				memoryGuardCheck(logger, spotifyMgr, *boxHost)

@@ -86,6 +86,16 @@ type Manager struct {
 	// tests can count/observe fan-outs without a network.
 	groupVolumeSetFn func(ctx context.Context, ip string, pct int) error
 	credStore        string // per-account credential copies for multi-account swap
+	// MemAvailKB reads the box's MemAvailable in KB, negative when unknown.
+	// Wired by the agent from /proc/meminfo before Run; nil in tests. The
+	// chain cutter (oggchain.go) reads it a couple of times a minute while a
+	// long track streams, to seam the track before the memory guard fires.
+	MemAvailKB func() int64
+	// EngineRSSKB reads the resident set (KB) of the go-librespot process with
+	// that pid, negative when unknown. Wired by the agent; nil in tests. It
+	// rides on every seam line: an engine RSS climbing with the audio means
+	// the engine holds the memory, flat means the firmware does.
+	EngineRSSKB func(pid int) int64
 
 	mu sync.Mutex
 	// selfVolUntil marks a volume change as caused by the manager itself (the
@@ -277,6 +287,13 @@ type Manager struct {
 	sinkPages              int64
 	sinkFirstAudioAt       time.Time
 	sinkLastPageAt         time.Time
+	// sinkSeams counts the chain seams (oggchain.go) opened on this
+	// attachment; logged on detach. chainSnap is the cutter's published
+	// state for the spotify_chain debug section, so a bundle shows the last
+	// seam's before/after memory readings even after the NAND log ring has
+	// rolled.
+	sinkSeams int
+	chainSnap chainSnapshot
 	// lastContext is the Spotify context (playlist/album) URI go-librespot last
 	// announced via will_play. When it changes (the app switched to another
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
@@ -406,4 +423,71 @@ func (m *Manager) zeroconfHost() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.zeroconfLabel
+}
+
+// newChain builds the chain cutter for one engine run, wired to the agent's
+// memory and engine-RSS readers and publishing its state into chainSnap.
+func (m *Manager) newChain() *oggChain {
+	c := newOggChain(m.MemAvailKB, m.logger)
+	c.engineRSS = func() int64 {
+		pid := m.EnginePID()
+		if pid <= 0 || m.EngineRSSKB == nil {
+			return -1
+		}
+		return m.EngineRSSKB(pid)
+	}
+	c.publish = func(s chainSnapshot) {
+		m.mu.Lock()
+		m.chainSnap = s
+		m.mu.Unlock()
+	}
+	c.emit()
+	return c
+}
+
+// EnginePID returns the pid of the supervised go-librespot process, 0 when
+// none has been started. The process may already have exited: callers read
+// /proc and tolerate an absent entry.
+func (m *Manager) EnginePID() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cmd == nil || m.cmd.Process == nil {
+		return 0
+	}
+	return m.cmd.Process.Pid
+}
+
+// SeamsTotal reports how many chain seams the current engine run has opened.
+func (m *Manager) SeamsTotal() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.chainSnap.SeamsTotal
+}
+
+// ChainSnapshot is the spotify_chain debug section: the cutter's published
+// state plus the live pid and memory reading. The agent adds the engine RSS.
+func (m *Manager) ChainSnapshot() map[string]any {
+	m.mu.Lock()
+	s := m.chainSnap
+	m.mu.Unlock()
+	out := map[string]any{
+		"enabled":         s.Enabled,
+		"periodMB":        s.PeriodMB,
+		"overridden":      s.Overridden,
+		"seamsTotal":      s.SeamsTotal,
+		"lastSeamAt":      s.LastSeamAt,
+		"lastReason":      s.LastReason,
+		"lastLinkKB":      s.LastLinkKB,
+		"lastMemBeforeKB": s.LastMemBeforeKB,
+		"lastMemAfterKB":  s.LastMemAfterKB,
+		"lastFreedKB":     s.LastFreedKB,
+		"latched":         s.Latched,
+		"liveSerial":      s.LiveSerial,
+		"enginePID":       m.EnginePID(),
+		"memAvailKB":      int64(-1),
+	}
+	if m.MemAvailKB != nil {
+		out["memAvailKB"] = m.MemAvailKB()
+	}
+	return out
 }
