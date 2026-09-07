@@ -59,19 +59,19 @@ func (f *fakeSpeaker) stops() int {
 // through the "unreadable, leave it alone" branch and assert nothing.
 func withFakeFleet(t *testing.T, byHost map[string]*fakeSpeaker) {
 	t.Helper()
-	prevLoc := playingLocationFn
+	prevLoc := playingStateFn
 	prevStop := stopKeyFn
-	playingLocationFn = func(_ context.Context, host string) string {
+	playingStateFn = func(_ context.Context, host string) playingState {
 		f := byHost[host]
 		if f == nil {
-			return ""
+			return playingState{}
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		if f.status != "PLAY_STATE" && f.status != "BUFFERING_STATE" {
-			return ""
+			return playingState{}
 		}
-		return f.location
+		return playingState{Source: f.source, Location: f.location}
 	}
 	stopKeyFn = func(_ context.Context, host string) error {
 		f := byHost[host]
@@ -83,7 +83,7 @@ func withFakeFleet(t *testing.T, byHost map[string]*fakeSpeaker) {
 		f.mu.Unlock()
 		return nil
 	}
-	t.Cleanup(func() { playingLocationFn, stopKeyFn = prevLoc, prevStop })
+	t.Cleanup(func() { playingStateFn, stopKeyFn = prevLoc, prevStop })
 }
 
 func newDissolveServer() *Server {
@@ -205,5 +205,74 @@ func TestMirrorSweepLeavesAForeignProxyAlone(t *testing.T) {
 
 	if got := other.stops(); got != 0 {
 		t.Errorf("a speaker on a foreign proxy was stopped %d time(s)", got)
+	}
+}
+
+// The 2026-09-07 bundle: the master plays a music library and has moved on to
+// the next track since the follower dropped out. The follower still plays the
+// earlier track from the SAME server, so it is on the group's programme and
+// must be stopped although the locations differ.
+func TestAFollowerOnTheSameMediaServerIsStopped(t *testing.T) {
+	const server = "http://192.0.2.17:10243/WMPNSSv4/3763749585/"
+	follower := newFakeSpeaker("STORED_MUSIC", "PLAY_STATE", server+"1_track-before.mp3")
+	defer follower.srv.Close()
+	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": follower})
+
+	s := newDissolveServer()
+	s.stopStragglers(context.Background(), server+"1_track-now.mp3", "",
+		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
+
+	if got := follower.stops(); got != 1 {
+		t.Errorf("stop keys sent = %d, want 1", got)
+	}
+}
+
+// A member on its OWN local proxy is not on the master's programme just
+// because the master's location is a loopback proxy URL as well: the
+// same-server rule never applies to loopback hosts.
+func TestAMemberOnItsOwnLoopbackProxyIsLeftAlone(t *testing.T) {
+	own := newFakeSpeaker("UPNP", "PLAY_STATE", "http://127.0.0.1:8888/stream/5")
+	defer own.srv.Close()
+	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": own})
+
+	s := newDissolveServer()
+	s.stopStragglers(context.Background(), "http://127.0.0.1:8888/stream/2", "",
+		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
+
+	if got := own.stops(); got != 0 {
+		t.Errorf("a member on its own proxy was stopped %d time(s)", got)
+	}
+}
+
+// A former member that still reports the GROUP_SLAVE source carries the
+// group's audio by its own account, whatever its location says.
+func TestAMemberStillReportingGroupSlaveIsStopped(t *testing.T) {
+	slave := newFakeSpeaker("GROUP_SLAVE", "PLAY_STATE", "")
+	defer slave.srv.Close()
+	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": slave})
+
+	s := newDissolveServer()
+	s.stopStragglers(context.Background(), "http://192.0.2.17:10243/track.mp3", "",
+		[]boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}})
+
+	if got := slave.stops(); got != 1 {
+		t.Errorf("stop keys sent = %d, want 1", got)
+	}
+}
+
+func TestGroupServerHostPort(t *testing.T) {
+	cases := map[string]string{
+		"":                                 "",
+		"http://127.0.0.1:8888/stream/2":   "",
+		"http://localhost:8888/stream/2":   "",
+		"http://192.0.2.17:10243/a/b.mp3":  "192.0.2.17:10243",
+		"http://[::1]:8888/stream/2":       "",
+		"http://192.0.2.10:17008/stream/1": "192.0.2.10:17008",
+		"bt://phone":                       "phone",
+	}
+	for in, want := range cases {
+		if got := groupServerHostPort(in); got != want {
+			t.Errorf("groupServerHostPort(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

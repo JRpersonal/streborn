@@ -73,6 +73,10 @@ type Server struct {
 	// wrong verdict across a restart. Only the resulting clear reaches NAND.
 	zoneDocDoubt   string
 	zoneDocDoubtMu sync.Mutex
+	// dissolveSweepBusy marks a straggler sweep scheduled by a firmware
+	// zone-dissolve frame (dissolvesweep.go) so repeated frames for the same
+	// collapse schedule one sweep, not one per frame.
+	dissolveSweepBusy atomic.Bool
 	// memberIDs remembers, per member IP, the SoundTouch deviceID that
 	// speaker's own firmware reported. Zone forming corrects the caller's
 	// deviceID from a live /info read, because a two-chip chassis announces

@@ -150,6 +150,34 @@ func deferPresetResyncForStandby(logger *slog.Logger, src string) {
 		"asker", asker)
 }
 
+// retryHoldVerdict is what the steady-state retry gate decides for a box
+// that reads STANDBY (or nothing at all).
+type retryHoldVerdict int
+
+const (
+	// retryHoldDefer holds the pass: nothing is written, a pending ask is
+	// consumed through the standby deferral, the loop sleeps a full tick.
+	retryHoldDefer retryHoldVerdict = iota
+	// retryHoldRunAsk lets the pass run despite the reading, because a
+	// pending ask carries user-present evidence (repeated dead-key presses).
+	retryHoldRunAsk
+)
+
+// retryHoldDecision is the retry gate's verdict for a STANDBY/unreadable
+// reading, kept pure so the spin fixed on 2026-09-07 stays testable: a
+// pending ask on a sleeping box is DEFERRED (consumed), never left armed for
+// the wait loop to trip over, and only a standby-OK ask runs.
+func retryHoldDecision(src string, askPending, standbyOK bool) retryHoldVerdict {
+	if src != "STANDBY" && src != "" {
+		// Not a hold at all; callers only ask for the two readings above.
+		return retryHoldRunAsk
+	}
+	if askPending && standbyOK {
+		return retryHoldRunAsk
+	}
+	return retryHoldDefer
+}
+
 // proxyStreamURL returns the stable loopback URL for a preset. The Bose
 // UPnP player opens it — the stream proxy in the stick agent resolves the
 // real station redirect behind it and reconnects on token expiry without
@@ -268,9 +296,14 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// ceiling to the first hold, not to the latest retry.
 	forceHeld := false
 	var forceHeldSince time.Time
+	// retryHoldLogged keeps the "retry pass held" line to ONE per hold
+	// episode: the hold is re-evaluated every maintenance tick for as long as
+	// the box sleeps, and a line per tick is noise in the NAND log.
+	retryHoldLogged := false
 	for {
 		force := !fullDone || forceHeld
 		retryDeferred := false
+		retryHeldSrc := ""
 		if force && everFullDone {
 			// A steady-state retry force (failed AddPresets, a transient
 			// /presets read error) is NOT the boot window: gate it like any
@@ -282,9 +315,25 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// STANDBY before the first press, and gating it would regress the
 			// first-press-after-reboot registration (#4).
 			if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
-				retryDeferred = true
-				logger.Info("preset reconcile: retry pass held, box in standby or unreadable; resuming on wake or the next maintenance tick")
+				switch retryHoldDecision(src, presetResyncAsk.Load(), presetResyncStandbyOK.Load()) {
+				case retryHoldRunAsk:
+					// User-present evidence (repeated dead-key presses): the
+					// pending ask runs despite the STANDBY reading, exactly as
+					// the routine path below grants it.
+					presetResyncStandbyOK.Store(false)
+					presetResyncAsk.Store(false)
+				default:
+					retryDeferred = true
+					retryHeldSrc = src
+					if !retryHoldLogged {
+						logger.Info("preset reconcile: retry pass held, box in standby or unreadable; resuming on wake or the next maintenance tick")
+						retryHoldLogged = true
+					}
+				}
 			}
+		}
+		if !retryDeferred {
+			retryHoldLogged = false
 		}
 		if !retryDeferred && !force && presetResyncAsk.CompareAndSwap(true, false) {
 			// Dead-key self-heal (#342): a hardware press produced no
@@ -366,9 +415,26 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 		}
 		if retryDeferred {
 			// Held pass: no reconcile at all this round (the missing-only
-			// heal would write the same failed slots right back). Maintenance
-			// cadence, but wake early on a fresh ask (= the box woke up).
-			for waited := time.Duration(0); waited < 5*time.Minute && !presetResyncAsk.Load(); waited += 10 * time.Second {
+			// heal would write the same failed slots right back).
+			//
+			// A pending ask cannot run into the sleeping box either, so it is
+			// consumed through the standby deferral (which resets the budgets
+			// so the wake re-asks) BEFORE the wait starts. Until 2026-09-07 the
+			// wait below exited at once on a pending ask this branch never
+			// consumed, and the loop spun: one /now_playing read per pass, some
+			// 25 a second, for as long as the box slept. A field bundle showed
+			// two ST10s in that state for hours, the firmware's syslog ring
+			// and the NAND agent log flooded (4 MB agent.log of one line). The
+			// wait therefore also has a floor of one tick no matter what: an
+			// asker that re-arms straight after the deferral (its budget was
+			// just reset) must not shorten it to zero.
+			if presetResyncAsk.CompareAndSwap(true, false) {
+				deferPresetResyncForStandby(logger, retryHeldSrc)
+			}
+			time.Sleep(10 * time.Second)
+			// Maintenance cadence, but wake early on a fresh ask (= the box
+			// woke up).
+			for waited := 10 * time.Second; waited < 5*time.Minute && !presetResyncAsk.Load(); waited += 10 * time.Second {
 				time.Sleep(10 * time.Second)
 			}
 			continue
