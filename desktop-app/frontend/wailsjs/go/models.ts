@@ -117,11 +117,11 @@ export namespace main {
 	    name: string;
 	    strOrigin: boolean;
 	    lost: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BoxPresetInfo(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.slot = source["slot"];
