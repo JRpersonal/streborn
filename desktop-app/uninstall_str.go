@@ -192,6 +192,14 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		return res
 	}
 
+	// Keep the speaker's preset keys on this PC before the script below
+	// deletes the store together with the STR folder (#882): a reinstall
+	// started with an empty store while the firmware still showed the old
+	// six keys, and nothing brought them back. The deviceID is resolved
+	// here, BEFORE purgeSpeakerState drops that memory further down. See
+	// preset_stash.go; the next install from this app puts the keys back.
+	stashed := a.stashPresetsBeforeUninstall(host, 0, a.deviceIDForHost(host))
+
 	// Step 2: the whole uninstall runs as one script. It self-aborts up
 	// front if the stick is still inserted (run.sh / the agent binary on
 	// /media/sda1), so we never remove STR only to have Bose reinstall it
@@ -269,6 +277,10 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		"factory Bose state. Wait ~60 s. The speaker no longer runs STR; onboard it again "+
 		"with the Bose iOS app, or re-insert a prepared STR stick to bring STR back.",
 		len(res.RemovedFiles))
+	if stashed > 0 {
+		res.Message += fmt.Sprintf(" Its %d preset keys were kept on this PC and go back onto the speaker "+
+			"the next time STR is installed on it from this app.", stashed)
+	}
 	a.logger.Info("uninstall_str: done", "host", host, "removedCount", len(res.RemovedFiles))
 	return res
 }

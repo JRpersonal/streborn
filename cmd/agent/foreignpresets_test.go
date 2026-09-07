@@ -24,6 +24,9 @@ func TestIsForeignBoxPreset(t *testing.T) {
 		{"http://127.0.0.1:8888/stream/3", false},
 		{"http://127.0.0.1:8888/spotify/stream-2.ogg", false},
 		{"/station?data=eyJuYW1lIjoi", false},
+		// The exact native form STR writes for its own key (#882): still not
+		// foreign now that isOwnBoxPresetLocation decodes it.
+		{webui.OrionStationLocation("http://127.0.0.1:8888/stream/3", "WDCB Jazz", ""), false},
 		{"/core02/svc-bmx-adapter-orion/prod/orion/station?data=abc", false},
 		{"https://content.api.bose.io/core02/svc-bmx-adapter-orion/prod/orion/station?data=abc", false},
 		{"https://api.deezer.com/user/me/flow", true},

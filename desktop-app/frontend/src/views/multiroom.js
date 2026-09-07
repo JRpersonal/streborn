@@ -113,6 +113,30 @@ function flashZoneMsg(html) {
   }, 8000);
 }
 
+// resetMultiroomNotes clears both result notes. switchView calls it when the
+// user LEAVES the tab. An error note is meant to stay until the next action,
+// because the user still has to act on it, but "the next action" was never
+// meant to include coming back to the tab: renderMultiroom re-emits the note
+// on every paint, so a group refused the last time the tab was open greeted
+// the user on every return (#882, screenshot: "the message is still there").
+// Bumping the tokens disarms any flash timer still pending, so an old timer
+// cannot clear a note written after the return either.
+export function resetMultiroomNotes() {
+  state.zoneMsg = '';
+  state.stereoMsg = '';
+  zoneMsgToken++;
+  stereoMsgToken++;
+}
+
+// finishAction paints the outcome of an action. Unless the user has left the
+// tab while it was in flight: the note the action just wrote is then dropped
+// instead of painted, or it would sit in the hidden panel and be the first
+// thing shown on the next visit, which is the #882 note in another guise.
+function finishAction() {
+  if (state.view !== 'multiroom') { resetMultiroomNotes(); return; }
+  renderMultiroom(true);
+}
+
 // pairMemberIds is the set of every deviceID that belongs to a live stereo pair,
 // uppercased. Ungroup uses it to refuse to act on a pair (a pair is not a
 // multiroom group; it has its own "Undo stereo pair").
@@ -175,14 +199,27 @@ export function renderMultiroom(fetchLive) {
   if (liveNow && !state.zoneMasterPicked) {
     state.zoneMaster = liveNow.deviceID;
   }
-  if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
-    // No live group and nothing valid selected: default to the first speaker.
-    // liveZoneMaster returns the box OBJECT; zoneMaster holds a deviceID
-    // string everywhere else (card badges compare, doFormZone looks it up).
-    // Assigning the object (v0.9.48) made every comparison false: no card
-    // ever showed MAIN and forming silently no-oped on fleets with a live
-    // zone answer.
-    state.zoneMaster = (liveNow && liveNow.deviceID) || (strBoxes.length ? strBoxes[0].deviceID : '');
+  // The halves of a live stereo pair are worked out BEFORE the master default
+  // (#882). The grid below hides them (#792), but the default still picked
+  // strBoxes[0], so a hidden pair half was submitted as the group's master;
+  // the agent refused, and the refusal landed as a note the user could not
+  // act on from this screen, because no visible card carried the star.
+  // Neither the default nor a stale selection may name a pair half.
+  const groupablePairIDs = new Set(
+    stereoPairsOf(state.zoneLive).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
+  const inPair = (b) => groupablePairIDs.has(String((b && b.deviceID) || '').toUpperCase());
+  const zoneBoxes = strBoxes.filter(b => !inPair(b));
+  for (const id of Object.keys(state.zoneSlaves)) {
+    if (strBoxes.some(b => b.deviceID === id && inPair(b))) delete state.zoneSlaves[id];
+  }
+  if (!state.zoneMaster || !zoneBoxes.some(b => b.deviceID === state.zoneMaster)) {
+    // No live group and nothing valid selected: default to the first
+    // groupable speaker. liveZoneMaster returns the box OBJECT; zoneMaster
+    // holds a deviceID string everywhere else (card badges compare,
+    // doFormZone looks it up). Assigning the object (v0.9.48) made every
+    // comparison false: no card ever showed MAIN and forming silently
+    // no-oped on fleets with a live zone answer.
+    state.zoneMaster = (liveNow && !inPair(liveNow) && liveNow.deviceID) || (zoneBoxes.length ? zoneBoxes[0].deviceID : '');
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
@@ -307,10 +344,8 @@ export function renderMultiroom(fetchLive) {
   // distribution (log-proven, 12-speaker household 2026-08-30). Until pairs
   // can join as one unit, the honest offer is: dissolve the pair, group,
   // re-pair afterwards - and the grid says so instead of hiding boxes
-  // silently.
-  const groupablePairIDs = new Set(
-    stereoPairsOf(state.zoneLive).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
-  const zoneBoxes = strBoxes.filter(b => !groupablePairIDs.has(String(b.deviceID || '').toUpperCase()));
+  // silently. groupablePairIDs / zoneBoxes are computed above the master
+  // default, so the default can never land on a hidden half (#882).
   const pairHiddenCount = strBoxes.length - zoneBoxes.length;
   const cards = zoneBoxes.length
     ? zoneBoxes.map(b => {
@@ -936,16 +971,27 @@ async function doFormStereo(pairCands) {
   } catch (e) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
-  renderMultiroom(true);
+  finishAction();
 }
 
 async function doFormZone(strBoxes) {
-  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
-  if (!master) return;
+  // Only speakers that are NOT half of a live stereo pair can be grouped
+  // (#792). The grid hides the halves, so the submit must not see them
+  // either: a hidden half used to slip in as the default master, and the
+  // agent's refusal landed as a note nobody could act on (#882). When the
+  // pick is a pair half or nothing groupable is left, say so here, through
+  // the flash, instead of sending a request that is refused for sure.
+  const pairs = pairMemberIds(state.zoneLive);
+  const groupable = strBoxes.filter(b => !pairs.has(String(b.deviceID || '').toUpperCase()));
+  const master = groupable.find(b => b.deviceID === state.zoneMaster);
   const sel = state.zoneSlaves || {};
-  const slaves = strBoxes
-    .filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID])
-    .map(b => ({ deviceID: b.deviceID, ip: b.host }));
+  const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
+  if (!master || (!slaveBoxes.length && groupable.length < 2)) {
+    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>`);
+    renderMultiroom(false);
+    return;
+  }
+  const slaves = slaveBoxes.map(b => ({ deviceID: b.deviceID, ip: b.host }));
   if (!slaves.length) {
     state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`;
     renderMultiroom(false);
@@ -966,7 +1012,6 @@ async function doFormZone(strBoxes) {
     // speakers. A permanent group is not formed now anyway, it is stored and the
     // box forms it (waking the members) the next time the master plays, so the
     // boxes are left exactly as they are.
-    const slaveBoxes = strBoxes.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
     if (!state.zonePermanent) {
       await Promise.allSettled([master, ...slaveBoxes].map(b => WakeBox(b.host, b.port)));
     }
@@ -1033,7 +1078,7 @@ async function doFormZone(strBoxes) {
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
-  renderMultiroom(true);
+  finishAction();
 }
 
 // doDissolveStereo undoes a stereo pair and reports it WHERE THE USER IS
@@ -1137,7 +1182,7 @@ async function doDissolveStereo(pairCands) {
     // text and the two overlapped (#851).
     state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
   }
-  renderMultiroom(true);
+  finishAction();
 }
 
 // The shared Ungroup button at the bottom. It dissolves the LIVE group, not
@@ -1181,7 +1226,7 @@ async function doDissolveZoneAt(master) {
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
-  renderMultiroom(true);
+  finishAction();
 }
 
 // doDissolveStereoPair undoes ONE specific live pair (the per-frame x), sending
@@ -1218,7 +1263,7 @@ async function doDissolveStereoPair(pair, boxes) {
   } else {
     flashStereoMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`);
   }
-  renderMultiroom(true);
+  finishAction();
 }
 
 // fillPairBalance shows the pair's balance as information, with where to change

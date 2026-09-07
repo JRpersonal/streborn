@@ -577,7 +577,10 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// no presets anywhere, six dead keys, and a webhook that could never fire.
 	hookSlots := webhookOnlySlots(wh, stick)
 	if len(stick) == 0 && len(hookSlots) == 0 {
-		return false
+		// Nothing to register, but the box may still list the keys of a
+		// removed install (#882): read once, prune them, then idle at the
+		// maintenance cadence. See preset_recovery.go.
+		return pruneStaleKeysOnEmptyStore(store, wh, boxHost, logger)
 	}
 	// A forced full re-sync is exactly the moment the box's source registration
 	// may have changed (it follows a re-association or a box that just became
@@ -595,10 +598,19 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		logger.Debug("preset reconcile: box still in OOB setup (MargeHSM not associated), skipping until it joins a network")
 		return false
 	}
-	boxLocs, err := fetchBoxPresets(boxHost)
+	entries, err := fetchBoxPresetsFullFn(boxHost)
 	if err != nil {
 		logger.Debug("preset reconcile: box presets not readable", "err", err)
 		return false
+	}
+	// The read this pass makes anyway refreshes the webui's box-preset cache
+	// (#882): that cache was fed only by gabbo frames and the boot seed, so it
+	// could serve the desktop a list hours stale. No extra :8090 read, no
+	// timer; the composition root decides what an empty list means.
+	publishBoxPresetList(entries)
+	boxLocs := make(map[int]string, len(entries))
+	for _, e := range entries {
+		boxLocs[e.Slot] = e.Location
 	}
 	// A box-side EMPTY list while STR's store has presets is the "all presets
 	// suddenly empty" field state (Wave 2026-07-25: keys dead by evening, a
@@ -787,20 +799,10 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// loose "/stream/" substring match, which could misread a foreign Icecast
 	// URL containing /stream/ as STR-owned and delete a working box preset); a
 	// foreign preset (e.g. a box-cached Deezer entry) or any slot STR does have
-	// is left untouched.
-	for slot, loc := range boxLocs {
-		if strSlots[slot] || !isOwnBoxPresetLocation(loc) {
-			continue
-		}
-		boxwrites.Note("removepreset", boxNowPlayingSource(boxHost))
-		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		if rerr := boxcli.RemovePreset(rctx, boxHost, slot); rerr != nil {
-			logger.Warn("preset reconcile: could not remove a stale STR preset", "slot", slot, "err", rerr)
-		} else {
-			logger.Info("preset reconcile: removed a stale STR preset the store no longer backs (dead button after reinstall)", "slot", slot)
-		}
-		cancel()
-	}
+	// is left untouched. The selection is staleStrSlots (preset_recovery.go),
+	// which since #882 also recognises the relative native form the speaker
+	// reports STR's own keys in.
+	pruneBoxSlots(boxHost, staleStrSlots(boxLocs, strSlots), logger)
 	// A pass with failed AddPresets is NOT done: returning true here dropped
 	// the loop to the 5-minute maintenance cadence while the box's key layer
 	// stayed empty, which is exactly the "hardware keys dead for ~6.5 minutes
@@ -932,6 +934,10 @@ func firstArtURL(art string) string {
 // good on exactly the warm-restart (#252/OTA) case the recovery targets.
 // Reading first, then pairing, closes the race.
 func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Store, boxHost string, seed func([]webui.BoxPreset), logger *slog.Logger, firstAttempt func()) {
+	// Whatever happens below, the empty-store prune may run once this returns
+	// (preset_recovery.go): it must never delete the slots this recovery
+	// reads its evidence from.
+	defer presetRecoverySettled.Store(true)
 	if boxHost == "" || store == nil {
 		if firstAttempt != nil {
 			firstAttempt()
@@ -950,7 +956,7 @@ func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Sto
 			time.Sleep(20 * time.Second)
 		}
 		var err error
-		entries, err = fetchBoxPresetsFull(boxHost)
+		entries, err = fetchBoxPresetsFullFn(boxHost)
 		if i == 0 && firstAttempt != nil {
 			firstAttempt()
 		}
@@ -959,25 +965,42 @@ func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Sto
 		}
 		entries = nil
 	}
+	// The verdict goes to /api/debug/state (preset_recovery) whichever way
+	// this ends, so a bundle can say what the recovery saw (#882: a bundle
+	// from a reinstalled speaker could not tell whether the dead keys were
+	// ever read, because a recovery that restored nothing logged nothing).
+	verdict := presetRecoveryVerdict{At: time.Now().Format(time.RFC3339), BoxSlots: len(entries)}
+	defer func() { setPresetRecoveryVerdict(verdict) }()
 	if len(entries) == 0 {
+		verdict.Reason = "no-box-list"
 		return
 	}
 	if seed != nil {
-		bps := make([]webui.BoxPreset, 0, len(entries))
-		for _, e := range entries {
-			bps = append(bps, webui.BoxPreset{
-				Slot: e.Slot, Source: e.Source, Type: e.Type,
-				Location: e.Location, SourceAccount: e.Account, Name: e.Name,
-			})
-		}
+		bps := boxPresetsFromEntries(entries)
 		seed(bps)
 		logger.Info("box preset snapshot seeded from :8090/presets", "slots", len(bps))
 	}
-	if recentStore == nil || len(store.All()) > 0 {
+	strOrigin := 0
+	for _, e := range entries {
+		if isOwnBoxPresetLocation(e.Location) {
+			strOrigin++
+		}
+	}
+	verdict.StrOriginSlots = strOrigin
+	if len(store.All()) > 0 {
+		verdict.Reason = "store-not-empty"
 		return
 	}
+	if strOrigin == 0 {
+		verdict.Reason = "no-str-origin-slots"
+		return
+	}
+	var recents []recent.Entry
+	if recentStore != nil {
+		recents = recentStore.All()
+	}
+	verdict.HistoryEntries = len(recents)
 	recovered := 0
-	recents := recentStore.All()
 	for _, e := range entries {
 		if !isOwnBoxPresetLocation(e.Location) || e.Name == "" {
 			continue
@@ -1015,10 +1038,30 @@ func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Sto
 			break
 		}
 	}
-	if recovered > 0 {
-		logger.Warn("preset store recovery: the preset store was empty while the box still lists STR presets (likely wiped by a pre-v0.9.14 standby power-cut); restored what the history could identify",
-			"recovered", recovered)
+	verdict.Recovered = recovered
+	// The seed above went out against the empty store, so its Lost verdicts
+	// named the very slots that are back now. Publish the list once more
+	// (a fresh slice: the cache holds the first one) so the desktop does not
+	// call a recovered key dead until the next reconcile read.
+	if recovered > 0 && seed != nil {
+		seed(boxPresetsFromEntries(entries))
 	}
+	switch {
+	case recovered > 0:
+		verdict.Reason = "ok"
+	case len(recents) == 0:
+		verdict.Reason = "no-history"
+	default:
+		verdict.Reason = "no-name-match"
+	}
+	// WARN on purpose, and ALWAYS in this state: an empty store facing STR's
+	// own keys on the box is either a wiped store (the pre-v0.9.14 standby
+	// power-cut) or a removed-and-reinstalled STR (#882), and a bundle must
+	// show which and what was done about it. "no-history" with an empty
+	// store is the reinstall signature: the removal took the history too.
+	logger.Warn("preset store recovery: store empty, box lists STR-origin slots",
+		"boxSlots", len(entries), "strOriginSlots", strOrigin, "historyEntries", len(recents),
+		"recovered", recovered, "reason", verdict.Reason)
 }
 
 // presetBlockRegex captures one <preset id="N" ...> ... </preset> block; (?s)

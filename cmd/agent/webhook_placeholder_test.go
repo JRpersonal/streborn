@@ -43,6 +43,17 @@ func presetButtonID(slot int) string {
 	return fmt.Sprintf("preset%d", slot)
 }
 
+// webhooksReplaceTrigger is what a "webhook only" key carries: an enabled
+// action in replace mode, so the firmware's own reaction to the press is
+// withheld and only the webhook fires. Same shape hookStore writes; separate
+// so a test can add one to a store that is already live.
+func webhooksReplaceTrigger() webhooks.Trigger {
+	return webhooks.Trigger{
+		Action: webhooks.Action{Enabled: true, URL: "http://192.0.2.1/hook"},
+		Mode:   webhooks.ModeReplace,
+	}
+}
+
 func TestWebhookOnlySlotsNeedingPlaceholder(t *testing.T) {
 	stick := []presets.Preset{{Slot: 2, Name: "A station"}}
 

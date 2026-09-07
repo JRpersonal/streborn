@@ -111,6 +111,15 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// otaRebootGrace (4 min), so a box that genuinely cannot be reached as STR
 		// self-corrects rather than being masked durably.
 		a.notePostOTA(host)
+		// The preset keys an earlier removal kept on this PC go back now
+		// (#882): the fresh agent starts with an empty store, and the firmware
+		// still shows the old keys, which cannot play. Synchronous and short
+		// (a probe, one read, at most six writes, one sync) so the count can
+		// be part of the result the user reads; a box with nothing kept costs
+		// one file lookup. See preset_stash.go.
+		if n := a.restorePresetStashAfterInstall(host); n > 0 {
+			res.Message += fmt.Sprintf(" %d preset keys from before the removal were put back onto the speaker.", n)
+		}
 	}
 	return res, err
 }

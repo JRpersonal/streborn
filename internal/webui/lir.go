@@ -24,6 +24,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -293,4 +295,50 @@ func (s *Server) handleOrionToken(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	s.logger.Info("lir: orion token served")
 	_, _ = w.Write([]byte(`{"access_token":"","refresh_token":""}`))
+}
+
+// ownSlotStreamRe is the stream form STR itself writes into a native station
+// descriptor for preset key N (boxurl.StreamSlot): this agent's loopback
+// proxy, one route per key. Strict on purpose, the reconcile prune keys
+// DELETION off it: the ad-hoc raw proxy of an app play, a station's own URL
+// and any other port or host shape must never match.
+var ownSlotStreamRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/stream/([1-6])$`)
+
+// StationLocationOwnSlot reports whether loc is a native station location STR
+// wrote for one of its own preset keys, and which key the stream belongs to.
+//
+// The speaker reports STR's native slots back in the RELATIVE "/station?data="
+// form that OrionStationLocation writes, and the agent's absolute-URL
+// predicate never matched that, so a slot the store no longer backed stayed on
+// the speaker as a dead key after a reinstall (#882: the desktop showed six
+// playable stations on a speaker whose store had been empty since the
+// removal). This decodes the payload and asks the one question that matters:
+// does the stream point at this agent's own per-key proxy? The "/core02/...
+// /station?data=" prefixed form and a percent-escaped payload are accepted
+// too. A foreign "/station?data=" (an external streamUrl, an old-cloud orion
+// entry) answers false, as does anything unreadable.
+func StationLocationOwnSlot(loc string) (int, bool) {
+	const p = "/station?data="
+	i := strings.Index(loc, p)
+	if i < 0 {
+		return 0, false
+	}
+	raw := strings.TrimSpace(loc[i+len(p):])
+	// PathUnescape, not QueryUnescape: a standard-alphabet payload carries
+	// "+", which the query form would turn into a space.
+	if strings.Contains(raw, "%") {
+		if un, err := url.PathUnescape(raw); err == nil {
+			raw = un
+		}
+	}
+	st, ok := DecodeNativeStation(p + raw)
+	if !ok {
+		return 0, false
+	}
+	m := ownSlotStreamRe.FindStringSubmatch(st.StreamURL)
+	if m == nil {
+		return 0, false
+	}
+	slot, _ := strconv.Atoi(m[1])
+	return slot, true
 }

@@ -560,6 +560,11 @@ type Server struct {
 	// Keyed slot -> deletion time; entries older than boxPresetTombstoneTTL are
 	// ignored/pruned. Guarded by boxPresetsMu.
 	deletedBoxSlots map[int]time.Time
+	// presetsReadLast rate-limits the GET /api/presets read log per client
+	// (presets_readlog.go); presetsReadNow is a test clock, nil = time.Now.
+	presetsReadMu   sync.Mutex
+	presetsReadLast map[string]*presetsReadMark
+	presetsReadNow  func() time.Time
 
 	// The stereo /getGroup hang tracker (see handleZoneGet): consecutive
 	// timeouts and the pause window they earn. Guarded by groupReadMu.
@@ -615,6 +620,22 @@ type BoxPreset struct {
 	Location      string `json:"location"`
 	SourceAccount string `json:"sourceAccount"`
 	Name          string `json:"name"`
+	// StrOrigin marks a slot STR itself wrote (its proxy or native station
+	// form). The desktop shows such a slot as a key STR no longer backs when
+	// the store has nothing on it, instead of as a playable speaker-side
+	// preset: after a removal and reinstall the firmware keeps the old keys,
+	// and the app drew six playable stations on a speaker whose store was
+	// empty (#882). Set by the agent at the composition root, never dropped
+	// here: the desktop is the place to explain a dead key, not to hide it.
+	StrOrigin bool `json:"strOrigin"`
+	// Lost is the agent's verdict on a StrOrigin slot: the store has nothing
+	// on it AND no webhook-only key claims it, so a press plays nothing. The
+	// second condition is why the verdict is made here and not on the
+	// desktop: a webhook-only key (#536) carries a placeholder in STR's own
+	// form and is kept out of the store on purpose, and the desktop sees
+	// neither the store nor the webhook slots. Stamped alongside StrOrigin
+	// at the composition root.
+	Lost bool `json:"lost"`
 }
 
 // recentCardCtx is the current source card for a source, retained so the live

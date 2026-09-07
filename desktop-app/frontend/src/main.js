@@ -227,6 +227,7 @@ import {
   activeSlotFromLocation,
   orionStationPayload,
   nativeSlotStale,
+  isLostStrKey,
   clearNoticeDismissal,
   balanceLabel,
   shouldAdoptPresetArt,
@@ -341,7 +342,7 @@ import {
 // file stops growing.
 import { renderRecent, initRecentView } from './views/recent.js';
 import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
-import { renderMultiroom, initMultiroomView, stopMultiroomLive } from './views/multiroom.js';
+import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
@@ -821,7 +822,10 @@ function switchView(view) {
   $('view-multiroom').classList.toggle('hidden', view !== 'multiroom');
   // The Multiroom view runs an active-only live poll (multiroom.js); stop it the
   // moment we leave so it never keeps polling boxes from behind another tab.
-  if (view !== 'multiroom') stopMultiroomLive();
+  // Its result notes go with it: an error note is meant to stay until the next
+  // action, not to greet the user on every return to the tab (#882, the
+  // "stereo pair cannot be grouped" note that survived every screen change).
+  if (view !== 'multiroom') { stopMultiroomLive(); resetMultiroomNotes(); }
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   $('view-podcasts').classList.toggle('hidden', view !== 'podcasts');
   // Global SSH banner: the Setup tab has no speaker context, so hide
@@ -4932,7 +4936,15 @@ async function loadPresets(retry = 0) {
   // from the previous speaker never flashes on this one's empty slot. Kept across
   // same-box refreshes so the tiles don't flicker on every reload.
   const boxKey = state.currentBox.host + ':' + state.currentBox.port;
-  if (boxKey !== loadedPresetsBoxKey) { state.boxPresets = []; state.boxSnapshot = null; loadedPresetsBoxKey = boxKey; }
+  // The previous speaker's STORE tiles go too. They used to stay clickable on
+  // the new speaker until its own read landed (1.5 s, longer when the read
+  // threw), and a click in that window sent play(slot) to a speaker whose
+  // store had nothing on that key: the "slot rejected ... preset not
+  // configured" 404 in the #882 bundle. The transient-empty retry below still
+  // applies to same-box refreshes, which this does not touch.
+  if (boxKey !== loadedPresetsBoxKey) {
+    state.boxPresets = []; state.boxSnapshot = null; state.presets = []; loadedPresetsBoxKey = boxKey;
+  }
   if (state.presets.length === 0) {
     $('presets').innerHTML = `<div class="muted small grid-loading">${escapeHtml(t('preset.loading'))}</div>`;
   }
@@ -5024,9 +5036,34 @@ function lostPresetsNow() {
   });
 }
 
+// lostStrKey reports whether a speaker-side preset is a key STR itself wrote
+// that the store no longer backs (#882). The decision is isLostStrKey in
+// utils.js, where it can be tested: the agent's verdict when it sends one
+// (it alone knows the webhook-only keys, #536, which look exactly like dead
+// keys from the location), the location otherwise. Called only for slots the
+// store has nothing on, so a true answer means a dead key.
+function lostStrKey(bp) {
+  return isLostStrKey(bp);
+}
+
+// lostStrKeysNow lists the dead STR keys of the current speaker: speaker-side
+// slots STR wrote whose store slot is empty.
+function lostStrKeysNow() {
+  return (state.boxPresets || []).filter((bp) =>
+    lostStrKey(bp) && !state.presets.find((x) => x.slot === bp.slot));
+}
+
+// The dead-key banner is dismissed per speaker for this app run only. A
+// persisted flag would hide it after the NEXT reinstall too, and the keys it
+// names are gone from the grid anyway once they are copied back (or once the
+// agent prunes them), so it stops showing by itself.
+const lostKeysDismissed = new Set();
+
 // renderPresetLossNotice shows a dismissible banner above the preset grid when
 // the box dropped account-linked presets STR cannot carry over (e.g. Deezer),
-// listing the affected slots so the user knows what was there. Idempotent:
+// listing the affected slots so the user knows what was there. Since #882 it
+// also covers dead STR keys: speaker-side slots STR wrote before a reinstall
+// whose store slot is now empty, with the way to get them back. Idempotent:
 // re-creates or removes a single #preset-loss-notice element each call.
 function renderPresetLossNotice() {
   const grid = $('presets');
@@ -5035,7 +5072,10 @@ function renderPresetLossNotice() {
   const snap = state.boxSnapshot;
   const lost = lostPresetsNow();
   const services = (snap && Array.isArray(snap.lostServices)) ? snap.lostServices : [];
-  if (!snap || snap._dismissed || lost.length === 0 || services.length === 0) {
+  const showSnapshot = !!snap && !snap._dismissed && lost.length > 0 && services.length > 0;
+  const boxKey = state.currentBox ? (state.currentBox.host + ':' + state.currentBox.port) : '';
+  const lostKeys = lostKeysDismissed.has(boxKey) ? [] : lostStrKeysNow();
+  if (!showSnapshot && lostKeys.length === 0) {
     if (el) el.remove();
     return;
   }
@@ -5045,21 +5085,34 @@ function renderPresetLossNotice() {
     el.className = 'loss-notice';
     grid.parentNode.insertBefore(el, grid);
   }
-  const svc = services.map((s) => boxSourceLabel(s)).join(', ');
-  const slots = lost.map((lp) => `${lp.slot} (${lp.name || boxSourceLabel(lp.source)})`).join(', ');
+  let title, body;
+  if (showSnapshot) {
+    const svc = services.map((s) => boxSourceLabel(s)).join(', ');
+    const slots = lost.map((lp) => `${lp.slot} (${lp.name || boxSourceLabel(lp.source)})`).join(', ');
+    title = t('preset.lossTitle', { service: svc });
+    body = t('preset.lossBody', { service: svc, slots });
+  } else {
+    const slots = lostKeys.map((bp) => `${bp.slot} (${bp.name || boxSourceLabel(bp.source)})`).join(', ');
+    title = t('preset.lostKeysTitle', { n: lostKeys.length });
+    body = t('preset.lostKeysBody', { slots });
+  }
   el.innerHTML =
     `<div class="loss-notice-body">` +
-      `<strong>${escapeHtml(t('preset.lossTitle', { service: svc }))}</strong>` +
-      `<div class="small">${escapeHtml(t('preset.lossBody', { service: svc, slots }))}</div>` +
+      `<strong>${escapeHtml(title)}</strong>` +
+      `<div class="small">${escapeHtml(body)}</div>` +
     `</div>` +
     `<button type="button" class="loss-notice-dismiss" aria-label="${escapeAttr(t('preset.lossDismiss'))}">&times;</button>`;
   const btn = el.querySelector('.loss-notice-dismiss');
   if (btn) {
     btn.addEventListener('click', async () => {
-      if (state.boxSnapshot) state.boxSnapshot._dismissed = true;
-      const dev = (snap && snap.deviceID) ||
-        (state.currentBox && (state.currentBox.host + ':' + state.currentBox.port));
-      try { await SetAppFlag('box-loss-notice:' + dev); } catch { /* best-effort */ }
+      if (showSnapshot) {
+        if (state.boxSnapshot) state.boxSnapshot._dismissed = true;
+        const dev = (snap && snap.deviceID) ||
+          (state.currentBox && (state.currentBox.host + ':' + state.currentBox.port));
+        try { await SetAppFlag('box-loss-notice:' + dev); } catch { /* best-effort */ }
+      } else {
+        lostKeysDismissed.add(boxKey);
+      }
       el.remove();
     });
   }
@@ -6041,6 +6094,31 @@ function renderPresets() {
         ${hint}
         <div class="long-press-bar" id="lp-bar-${i}"></div>
       `;
+    } else if (bp && lostStrKey(bp)) {
+      // A key STR itself wrote that the store no longer backs: the firmware
+      // kept it across a removal and reinstall of STR, the stream behind it
+      // went with the store, and a press plays nothing. It used to render as
+      // the box-native tile below, i.e. as a playable speaker-side preset,
+      // which is how the desktop showed six stations on a speaker whose store
+      // had been empty for a day (#882). Shown and named, not offered: the
+      // hint says where the key comes back from, the banner above the grid
+      // says it for all of them.
+      div.classList.add('lost');
+      const srcLabel = boxSourceLabel(bp.source);
+      const logo =
+        `<img class="preset-logo" alt="" src="${escapeAttr(monogramDataUri(bp.name || srcLabel || '?'))}"/>`;
+      div.innerHTML = `
+        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span></div>
+        <div class="preset-body">
+          ${logo}
+          <div class="preset-text">
+            <div class="name">${escapeHtml(bp.name || srcLabel || t('preset.onSpeaker'))}</div>
+            ${srcLabel ? `<div class="preset-source" title="${escapeAttr(srcLabel)}">${escapeHtml(t('preset.sourceBadge', { source: srcLabel }))}</div>` : ''}
+            <div class="preset-box-hint">${escapeHtml(t('preset.lostOnSpeaker'))}</div>
+          </div>
+        </div>
+        <div class="long-press-bar" id="lp-bar-${i}"></div>
+      `;
     } else if (bp) {
       // The box's own preset (a source STR does not manage, e.g. Deezer). Tap to
       // recall it via the hardware key; the box plays it through its own account.
@@ -6071,7 +6149,12 @@ function renderPresets() {
         <div class="long-press-bar" id="lp-bar-${i}"></div>
       `;
     }
-    if (bp) {
+    if (bp && lostStrKey(bp)) {
+      // A dead STR key: a tap explains, it never sends a recall the speaker
+      // cannot fulfil. The long-press save stays allowed, it is one of the
+      // two ways the key comes back (the other is the copy the toast names).
+      attachPresetHandlers(div, i, bp, { onPlay: () => showToast(t('preset.lostOnSpeakerToast')) });
+    } else if (bp) {
       // Box-native preset: click recalls it; no long-press save so the user's
       // own (e.g. Deezer) preset can't be clobbered by STR's current station.
       attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i), allowSave: false });

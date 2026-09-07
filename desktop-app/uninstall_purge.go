@@ -15,6 +15,8 @@ package main
 // place that knows the full list, so a new per-speaker record only has to be
 // added here. History files (ota-history.log, str.log) are kept on purpose:
 // they are a record of what happened, not a claim about the speaker's state.
+// The preset stash (preset_stash.go) is kept for the same reason: it records
+// what was on the speaker's keys, and the next install reads it (#882).
 //
 // What is NOT purged, because it lives off this PC: the removed speaker stays
 // in its former peers' sticky roster (POST /api/peers/seed is additive; each

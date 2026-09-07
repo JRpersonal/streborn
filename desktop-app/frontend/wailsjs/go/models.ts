@@ -115,11 +115,13 @@ export namespace main {
 	    location: string;
 	    sourceAccount: string;
 	    name: string;
-	
+	    strOrigin: boolean;
+	    lost: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new BoxPresetInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.slot = source["slot"];
@@ -128,6 +130,8 @@ export namespace main {
 	        this.location = source["location"];
 	        this.sourceAccount = source["sourceAccount"];
 	        this.name = source["name"];
+	        this.strOrigin = source["strOrigin"];
+	        this.lost = source["lost"];
 	    }
 	}
 	export class FirmwareInfo {

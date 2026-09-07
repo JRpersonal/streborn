@@ -14,6 +14,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/upnp"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // TestSuperseded covers the hardware verify's stand-down on a newer play: a
@@ -79,11 +80,18 @@ func TestSlotPulledSince(t *testing.T) {
 // loose "/stream/" substring match could misread a foreign station URL as
 // STR-owned and delete a working box preset.
 func TestIsOwnBoxPresetLocation(t *testing.T) {
+	// The native form the speaker reports STR's own keys in (#882): the
+	// RELATIVE "/station?data=" location OrionStationLocation writes, and the
+	// same behind the orion adapter prefix. Neither matched before #882, so
+	// on an all-native box the prune and the recovery both did nothing.
+	native3 := webui.OrionStationLocation("http://127.0.0.1:8888/stream/3", "WDCB Jazz", "")
 	own := []string{
 		"http://127.0.0.1:8888/stream/1",
 		"http://127.0.0.1:8888/stream/6",
 		"http://127.0.0.1:8888/spotify/stream-4.ogg",
 		"http://127.0.0.1:8888/spotify/stream.ogg",
+		native3,
+		"/core02/svc-bmx-adapter-orion/prod/orion" + native3,
 	}
 	for _, u := range own {
 		if !isOwnBoxPresetLocation(u) {
@@ -98,6 +106,14 @@ func TestIsOwnBoxPresetLocation(t *testing.T) {
 		"/v1/playback/station/s12345",
 		"123456789",
 		"",
+		// A native descriptor that is NOT ours: an external stream (an
+		// old-cloud orion station, or a foreign adapter), a slot number STR
+		// never writes, the ad-hoc raw proxy of an app play, and garbage.
+		webui.OrionStationLocation("https://stream.example.com/live.mp3", "Foreign", ""),
+		webui.OrionStationLocation("http://127.0.0.1:8888/stream/7", "Seven", ""),
+		webui.OrionStationLocation("http://127.0.0.1:8888/stream/raw?u=abc", "Ad hoc", ""),
+		"/station?data=!!!not-base64!!!",
+		"/station?data=",
 	}
 	for _, u := range foreign {
 		if isOwnBoxPresetLocation(u) {
