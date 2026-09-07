@@ -111,7 +111,7 @@
   "multiroom.nothingToUngroup": "Il n'y a aucun groupe à dissocier pour le moment.",
   "multiroom.dissolveGroupTip": "Dissoudre ce groupe",
   "multiroom.forgetPermanentTip": "Supprimer ce groupe permanent",
-  "multiroom.storedPermanentBadge": "groupe permanent, se forme à la lecture",
+  "multiroom.storedPermanentNote": "Groupe permanent. Il ne se forme que si la lecture est lancée sur {{master}}.",
   "multiroom.undoPairTip": "Défaire cette paire stéréo",
   "multiroom.formed": "Groupe créé. L'enceinte principale diffuse vers les autres. Si elles restent muettes, vérifie que l'enceinte principale joue bien, puis envoie-moi les journaux.",
   "multiroom.formFailed": "Impossible de modifier le groupe : {{err}}",

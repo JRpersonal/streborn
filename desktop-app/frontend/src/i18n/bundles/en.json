@@ -115,7 +115,7 @@
   "multiroom.nothingToUngroup": "There is no group to ungroup.",
   "multiroom.dissolveGroupTip": "Dissolve this group",
   "multiroom.forgetPermanentTip": "Delete this permanent group",
-  "multiroom.storedPermanentBadge": "permanent group, forms when music starts",
+  "multiroom.storedPermanentNote": "Permanent group. It only forms when playback is started on {{master}}.",
   "multiroom.undoPairTip": "Undo this stereo pair",
   "multiroom.formed": "Group created. The main speaker streams to the others. If they stay silent, make sure the main speaker is actually playing, then send logs.",
   "multiroom.formFailed": "Could not change the group: {{err}}",

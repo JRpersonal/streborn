@@ -214,12 +214,18 @@ export function renderMultiroom(fetchLive) {
     const xTip = t('multiroom.forgetPermanentTip');
     const xBtn = `<button class="box-group-x" data-dissolve="${escapeAttr(g.masterKey)}" data-dissolve-kind="stored" title="${escapeAttr(xTip)}" aria-label="${escapeAttr(xTip)}">&times;</button>`;
     const label = zoneLabel(g.masterBox);
-    const chips = [g.masterBox, ...g.members.map(m => m.box)].filter(Boolean).map(b =>
+    // The main speaker's chip carries the same star as on a live frame, and
+    // the note names it: a stored group listed its speakers as equals, so
+    // nothing said which one the group forms from, nor that a play on any
+    // OTHER member does not form it (Jens, 2026-09-07).
+    const masterMark = `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>`;
+    const chips = (g.masterBox ? `<span class="zone-frame-chip">${masterMark}${escapeHtml(label)}</span>` : '') +
+      g.members.map(m => m.box).filter(Boolean).map(b =>
       `<span class="zone-frame-chip">${escapeHtml(zoneLabel(b))}</span>`).join('') +
       g.members.filter(m => !m.box).map(m => `<span class="zone-frame-chip">${escapeHtml(m.name || m.ip)}</span>`).join('');
     return `<div class="box-group box-group-stored">` + xBtn +
       `<span class="box-group-label" title="${escapeAttr(t('speaker.groupLabelTitle', { name: label }))}">${GROUP_ICON} ${escapeHtml(label)}</span>` +
-      chips + `<span class="zone-frame-note">${escapeHtml(t('multiroom.storedPermanentBadge'))}</span></div>`;
+      chips + `<span class="zone-frame-note">${escapeHtml(t('multiroom.storedPermanentNote', { master: label }))}</span></div>`;
   }).join('');
   const liveFramesHtml = (frameKeys.length || storedGroups.length)
     ? `<div class="zone-frames">` + frameKeys.map(mk => {
