@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Rādīt pults taustiņu kartē",
   "multiroom.groupKeysNeedsUpdate": "{{name}} darbojas ar vecāku STR versiju bez grupu taustiņiem. Vispirms to atjauniniet.",
   "settingsView.webhookGroupKeyNote": "Šis taustiņš ir piesaistīts grupai \"{{name}}\" (cilne Multiroom). Grupa uzvar: nospiediens izveido vai izjauc grupu, un tīmekļa āķis neizpildās.",
-  "settingsView.webhookRemoteLegendGroup": "piesaistīts grupai (cilne Multiroom)"
+  "settingsView.webhookRemoteLegendGroup": "piesaistīts grupai (cilne Multiroom)",
+  "setup.installBoxInSetup": "Skaļrunis pabeidz savu paša iestatīšanu. ST Reborn tajā jau ir uzstādīts.",
+  "setup.installInSetupPhase": "Tobrīd Wi-Fi gaismiņa ātri mirgo un skaļrunis ik reizi uz dažām minūtēm pazūd no tīkla, tāpēc no šejienes tam nevar piekļūt. Tā nav tava tīkla vaina, un šis stāvoklis parasti pats beidzas aptuveni piecpadsmit minūtēs.",
+  "setup.installStillWaiting": "Joprojām gaidām skaļruni, vēl ne vairāk kā {{remaining}}.",
+  "setup.installWaitGaveUp": "Skaļrunis tā arī neatgriezās. ST Reborn tika tajā iekopēts un skaļrunis pārstartēts, bet kopš tā laika tas vispār neatbild.",
+  "setup.installLateSetupOk": "Skaļrunis ir pabeidzis savu iestatīšanu un atkal ir pieejams. Tagad tiek piemēroti pārējie tavi iestatījumi.",
+  "setup.help.setupPhase": "Šī ir paša skaļruņa iestatīšana, nevis ST Reborn: Wi-Fi gaismiņa ātri mirgo un skaļrunis šajā laikā pamet tīklu. ST Reborn skaļrunī jau ir un šo stāvokli pārtraukt nevar.",
+  "setup.help.setupWait": "Nogaidi aptuveni piecpadsmit minūtes un neko nedari. Nepalaid uzstādīšanu vēlreiz, kamēr gaismiņa mirgo: tas nepalīdzēs. Ja pēc tam tā joprojām mirgo, atvieno skaļruni no strāvas uz desmit sekundēm un pievieno atpakaļ.",
+  "updateAll.phase.boxInSetup": "Skaļrunis pabeidz savu iestatīšanu, pārbaudi vēlāk.",
+  "update.boxInSetupNote": "{{name}} ir aizņemts ar savu iestatīšanu un šajā laikā pamet tīklu, tāpēc atjauninājumu nevarēja apstiprināt. Visticamāk, tas izdevās. Pārbaudi vēlreiz pēc aptuveni piecpadsmit minūtēm.",
+  "setup.installWaitStopBtn": "Beigt gaidīt un rādīt sīkāku informāciju"
 }

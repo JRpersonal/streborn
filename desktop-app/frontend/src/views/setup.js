@@ -1711,6 +1711,13 @@ const INSTALL_HELP_STEPS = {
   // no power-cycle advice, that would interrupt a speaker that is likely
   // fine. The backend re-checks once by itself (install:late).
   'speaker-not-back': ['waitRefresh', 'wifi', 'logs'],
+  // The speaker is running the firmware's OWN out-of-box setup: its Wi-Fi
+  // light blinks fast and it leaves the network for minutes at a time (#873,
+  // two independent SoundTouch 10 reports, 2026-09-06). STR is already on the
+  // box and nothing here can end the state, so the checklist explains it and
+  // says to wait. No power-cycle step: pulling the plug mid-setup is the one
+  // action that can make it worse.
+  'speaker-in-setup': ['setupPhase', 'setupWait', 'waitRefresh', 'logs'],
   'not-reachable': ['wifi', 'freshBoot'],
   'install-window-closed': ['freshBoot'],
   // The box answers UPnP on :8091 but not SSH / the Bose port / the STR agent:
@@ -1754,6 +1761,7 @@ const INSTALL_HELP_STEPS_NET = {
   'ssh-probe': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry'],
   'agent-not-up': ['netRetry', 'netWifi', 'netLogs'],
   'speaker-not-back': ['waitRefresh', 'netWifi', 'netLogs'],
+  'speaker-in-setup': ['setupPhase', 'setupWait', 'waitRefresh', 'netLogs'],
   'not-reachable': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry'],
   'install-window-closed': ['netRetry'],
   'control-unresponsive': ['netRetry', 'netLogs'],
@@ -2238,35 +2246,25 @@ async function verifyInstalledState(box, onState) {
     // a full mains power-cycle (live-proven). Shown on every failure screen.
     const powerCycleHint = powerCycleAdviceHtml(foundBox);
     try { SetOTARunning(false); } catch {}
-    // "speaker-not-back" is not a proven failure: the install ran and the
-    // speaker was simply not back on the network when the wait ran out. Head
-    // it as unconfirmed, not failed, or the user reads "failed" above a
-    // message that says the install may well have succeeded.
-    const notBack = !!(result && result.code === 'speaker-not-back');
-    const headline = notBack ? t('setup.installUnconfirmed', { msg }) : t('setup.installFailed', { msg });
-    render(`<div class="${notBack ? 'setup-warn' : 'setup-err'}">${escapeHtml(headline)}</div>`
-      + help + repairBtn + (notBack ? '' : powerCycleHint) + installFailureReportHtml() + log);
+    // Neither "speaker-not-back" nor "speaker-in-setup" is a proven failure.
+    // The install ran; the speaker was either not back on the network when
+    // the wait ran out, or busy with the firmware's own out-of-box setup,
+    // which takes it off the network for minutes at a time (#873). The
+    // backend keeps looking in both cases, so this screen is a WAIT, not a
+    // verdict: no repair button, no power-cycle block, and above all no
+    // failure report and no "press Install again", which is precisely what
+    // produced a second and worse failure on one reporter's speaker.
+    const inSetup = !!(result && result.code === 'speaker-in-setup');
+    const waiting = inSetup || !!(result && result.code === 'speaker-not-back');
+    if (waiting) {
+      renderInstallWaiting(inSetup, msg, help, log);
+      return;
+    }
+    const headline = t('setup.installFailed', { msg });
+    render(`<div class="setup-err">${escapeHtml(headline)}</div>`
+      + help + repairBtn + powerCycleHint + installFailureReportHtml() + log);
     wireInstallFailureReport(foundBox);
     fillFailReport(foundBox, 'install:' + ((result && result.code) || 'unknown'), msg);
-    if (notBack) {
-      // The backend looks once more about two minutes later (install:late).
-      // If the agent answers then, replace this screen with the success one,
-      // but only while it is still the one on show: the marker element is
-      // gone as soon as anything else has rendered into setupResult.
-      let offLate = null;
-      const stopLate = () => { if (offLate) { try { offLate(); } catch {} offLate = null; } };
-      offLate = EventsOn('install:late', (p) => {
-        if (!p || p.host !== foundBox.host) return;
-        stopLate();
-        if (!p.ok || !setupResult.querySelector('#setupFailReport')) return;
-        baseHtml = '';
-        render(`<div class="setup-ok">${escapeHtml(t('setup.installLateOk'))}</div>`
-          + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`
-          + powerCycleAdviceHtml(foundBox));
-        try { deps.discoverBoxes(); } catch {}
-      });
-      setTimeout(stopLate, 6 * 60 * 1000);
-    }
     // If the network path genuinely cannot proceed (no install window, box not
     // reachable, controls wedged), reveal the USB-stick fallback (relocated into
     // <details id="setupStickDetails">) so the user has an immediate next step.
@@ -2301,198 +2299,311 @@ async function verifyInstalledState(box, onState) {
     }
     return;
   }
-  // After a successful install, spell out HOW to play. Users repeatedly went
-  // back to the Bose app, saw "playback not possible" (dead Bose cloud) and
-  // assumed STR was broken (HP Baehr, 2026-06-12). The recurring expectation
-  // gap is that playback moved from the Bose app to the STR presets + the
-  // speaker's own buttons 1-6, so say it plainly and offer a jump to the tab.
-  // Network install (knownBox) succeeded. The box has just restarted its agent,
-  // so it is often NOT ready to accept settings for another few seconds. On the
-  // real ST300 the name/language/timezone/Wi-Fi silently failed to take because
-  // provisioning ran against a still-rebooting box. So: wait for the agent + box
-  // to answer again, then apply name -> language -> timezone -> Wi-Fi IN ORDER,
-  // each with a short retry, and surface per-step success/failure in a live
-  // checklist. All best-effort: a step that cannot be applied never blocks the
-  // otherwise-successful install, and the user can set it later in Speaker
-  // settings. The Wi-Fi write keeps the box reachable after the Ethernet cable is
-  // pulled (agent persists creds to NAND, then wpa live-switch or BCO reboot).
-  // The install reported success. That is not the same as the speaker being
-  // in the state it was supposed to reach, and nothing will fix it later in
-  // the background, so the flow stays here until the speaker itself says so.
-  // Verify against the AGENT, not the stock box record. foundBox still carries
-  // the pre-install Bose port :8090 that probeStock stamped, and
-  // candidatePorts(host, 8090) yields [8090, 8888]: it can never reach :17008,
-  // so on a BCO/whitelisted chassis (Portable taigan, ST20 scm) a fully
-  // successful install was reported as "The installation did not complete".
-  // Worse, :8090 ANSWERS, with a 404, so the failure report's closing probe
-  // printed "NOT REACHABLE (status 404)" and blamed the speaker. A field report
-  // on 2026-08-22 carried exactly that, down to the "speaker : <ip>:8090" line.
-  // port 0 gives candidatePorts [17008, 8888], which is both agent ports. The
-  // same trap, with the same fix, is documented on agentBox thirty lines below.
-  const agentPortBox = { ...foundBox, port: 0 };
-  const installed = await verifyInstalledState(agentPortBox, (st) => {
-    render(`<div class="muted">${escapeHtml(!st.reachable
-      ? t('updateAll.phase.spotifyUnreachable')
-      : (st.engine === 'present' ? t('updateAll.phase.spotifyChecking') : t('updateAll.phase.spotifyInstalling')))}</div>`);
-  });
-  try { SetOTARunning(false); } catch {}
-  if (!installed.ok) {
-    render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + installFailureReportHtml());
-    wireInstallFailureReport(agentPortBox);
-    fillFailReport(agentPortBox, 'install:verify', installed.reason || '');
-    return;
+  // renderInstallWaiting is the screen for an install that is not finished and
+  // not failed: the software is on the speaker, the speaker is not answering
+  // yet, and the backend is still looking (installwait.go's watcher).
+  //
+  // What it deliberately does NOT show: a failure report, a repair button, a
+  // power-cycle block, or any invitation to install again. Reporter A read a
+  // checklist telling him to press Install, pressed it, and got a second and
+  // much worse failure out of a speaker that was working the whole time.
+  //
+  // It is NOT a screen with no way out, either. It carries the two actions the
+  // help text under it already promises: save the diagnostic logs (the
+  // checklist says "use the button below", and there has to be a button), and
+  // stop waiting, which goes straight to the give-up screen instead of leaving
+  // the user with a quarter of an hour of spinner and no control.
+  function renderInstallWaiting(inSetup, msg, help, log) {
+    let offLate = null, offWaiting = null;
+    const stopAll = () => {
+      for (const off of [offLate, offWaiting]) { if (off) { try { off(); } catch {} } }
+      offLate = offWaiting = null;
+    };
+    // The panel owns a marker element, so a screen the user has navigated away
+    // from is never overwritten by a late event.
+    const mine = () => !!setupResult.querySelector('#setupWaitPanel');
+    // forUs decides whether an event still concerns this panel, and UNSUBSCRIBES
+    // when it does not. Without that the two listeners outlive the screen: the
+    // single look this replaced dropped its own listener on a six-minute timer,
+    // and a bare "return when the panel is gone" would have leaked both of them
+    // for the life of the app, once per install the user starts.
+    const forUs = (p) => {
+      if (!p || p.host !== foundBox.host) return false;
+      if (!mine()) { stopAll(); return false; }
+      return true;
+    };
+    // Belt and braces for the case where no further event ever arrives (the app
+    // context died with the watcher): longer than either ceiling, so it can
+    // never cut a live wait short.
+    setTimeout(stopAll, 20 * 60 * 1000);
+    let remainingMs = 0;
+    // The "Installing STR over the network on X..." lead is stale the moment
+    // this panel goes up, and leaving it there under a wait message is the
+    // stuck-progress-line trap of #852 all over again.
+    baseHtml = '';
+    // giveUp is the end of the wait, from the watcher's ceiling OR from the
+    // user pressing the button. One render, so both routes tell the same story.
+    const giveUp = () => {
+      baseHtml = '';
+      render(`<div class="setup-err">${escapeHtml(t('setup.installWaitGaveUp'))}</div>`
+        + help + powerCycleAdviceHtml(foundBox) + installFailureReportHtml() + (log || ''));
+      wireInstallFailureReport(foundBox);
+      fillFailReport(foundBox, 'install:' + (inSetup ? 'speaker-in-setup' : 'speaker-not-back'), msg);
+    };
+    const draw = () => {
+      const head = inSetup ? t('setup.installBoxInSetup') : t('setup.installUnconfirmed', { msg });
+      const wait = remainingMs > 0
+        ? `<div class="muted small">${escapeHtml(t('setup.installStillWaiting', { remaining: formatRemaining(remainingMs) }))}</div>`
+        : '';
+      render(`<div id="setupWaitPanel" class="setup-warn">${escapeHtml(head)}</div>`
+        + (inSetup ? `<div class="muted small">${escapeHtml(t('setup.installInSetupPhase'))}</div>` : '')
+        + wait + help
+        + `<div class="failreport-actions" style="margin-top:12px">`
+        + `<button class="btn btn-mini" id="setupWaitSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button> `
+        + `<button class="btn btn-mini" id="setupWaitStop">${escapeHtml(t('setup.installWaitStopBtn'))}</button>`
+        + `</div>`);
+      const save = $('setupWaitSaveLogs');
+      if (save) save.onclick = () => saveFailReportBundle(save, foundBox, null);
+      const stop = $('setupWaitStop');
+      if (stop) stop.onclick = () => { stopAll(); giveUp(); };
+    };
+    draw();
+    offWaiting = EventsOn('install:waiting', (p) => {
+      if (!forUs(p)) return;
+      if (p.inSetup) inSetup = true;
+      remainingMs = p.remainingMs || 0;
+      draw();
+    });
+    offLate = EventsOn('install:late', async (p) => {
+      if (!forUs(p)) return;
+      stopAll();
+      if (p.ok) {
+        // The speaker answered after all. Carry on with the REST of the
+        // install: until now this rendered "it worked" and stopped, so the
+        // name, language, timezone and Wi-Fi the user had typed were never
+        // written to a speaker the app had just rescued.
+        //
+        // The banner rides along as baseHtml, which finishInstall clears when
+        // it puts up the final result, so the news is on screen for the whole
+        // provisioning run and gone once it is old.
+        baseHtml = `<div class="setup-ok">${escapeHtml(t(inSetup ? 'setup.installLateSetupOk' : 'setup.installLateOk'))}</div>`;
+        await finishInstall();
+        return;
+      }
+      // The watcher reached its ceiling. Now, and only now, this is a failure
+      // report worth filling in.
+      giveUp();
+    });
   }
-  // Installed, but without the Spotify engine. The speaker works; only Spotify
-  // is missing, and running the speaker update once delivers it (nothing does
-  // that in the background, by design). Said here as a note, because calling
-  // this a failed install sends people hunting for a fault they do not have.
-  const engineNote = installed.engineMissing
-    ? `<div class="setup-warn">${escapeHtml(t('setup.installedEngineMissing'))}</div>`
-    : '';
 
-  let unplugLine = '';
-  let provisionFailed = false;
-  let failReasons = {};
-  if (knownBox) {
-    // After install the box is an STR agent, reachable on :17008 (BCO REDIRECT)
-    // or :8888 (sm2 direct), NOT the pre-install stock :8090 that foundBox still
-    // carries (probeStock stamped it). Provision + probe readiness against the
-    // agent port: port 0 => candidatePorts(host, 0) tries 17008 then 8888, so
-    // name / Wi-Fi / status never hit the dead-for-this-purpose Bose :8090 (which
-    // answers /api/* with a 404 that boxDo/boxFetch would wrongly accept as a
-    // reachable response, silently failing name+Wi-Fi and burning the readiness
-    // gate's full 90 s). Language + timezone ARE Bose :8090 endpoints and keep
-    // using foundBox.host directly (no port), so they are unaffected.
-    const agentBox = { ...foundBox, port: 0 };
-    // Ordered steps, built only from what the user actually requested.
-    const steps = [];
-    if (nameForBox) {
-      steps.push({ id: 'name', label: t('setup.provisionName'),
-        run: () => SetBoxName(agentBox.host, agentBox.port, nameForBox) });
+  // finishInstall is everything that happens AFTER the install itself
+  // succeeded: the verify, the name/language/timezone/Wi-Fi provisioning, and
+  // the "how to play" panel.
+  //
+  // It is a function rather than straight-line code because there are now TWO
+  // ways to arrive here. The obvious one is an install that returned ok. The
+  // other is a speaker that was silent when the wait budget ran out and
+  // answered a few minutes later (install:late): that path used to render "the
+  // install succeeded after all" and call discoverBoxes(), and stop. Everything
+  // the user had typed into the wizard - the name, the language, the timezone
+  // and the Wi-Fi - was never written to that speaker, and nothing said so.
+  async function finishInstall() {
+    // After a successful install, spell out HOW to play. Users repeatedly went
+    // back to the Bose app, saw "playback not possible" (dead Bose cloud) and
+    // assumed STR was broken (HP Baehr, 2026-06-12). The recurring expectation
+    // gap is that playback moved from the Bose app to the STR presets + the
+    // speaker's own buttons 1-6, so say it plainly and offer a jump to the tab.
+    // Network install (knownBox) succeeded. The box has just restarted its agent,
+    // so it is often NOT ready to accept settings for another few seconds. On the
+    // real ST300 the name/language/timezone/Wi-Fi silently failed to take because
+    // provisioning ran against a still-rebooting box. So: wait for the agent + box
+    // to answer again, then apply name -> language -> timezone -> Wi-Fi IN ORDER,
+    // each with a short retry, and surface per-step success/failure in a live
+    // checklist. All best-effort: a step that cannot be applied never blocks the
+    // otherwise-successful install, and the user can set it later in Speaker
+    // settings. The Wi-Fi write keeps the box reachable after the Ethernet cable is
+    // pulled (agent persists creds to NAND, then wpa live-switch or BCO reboot).
+    // The install reported success. That is not the same as the speaker being
+    // in the state it was supposed to reach, and nothing will fix it later in
+    // the background, so the flow stays here until the speaker itself says so.
+    // Verify against the AGENT, not the stock box record. foundBox still carries
+    // the pre-install Bose port :8090 that probeStock stamped, and
+    // candidatePorts(host, 8090) yields [8090, 8888]: it can never reach :17008,
+    // so on a BCO/whitelisted chassis (Portable taigan, ST20 scm) a fully
+    // successful install was reported as "The installation did not complete".
+    // Worse, :8090 ANSWERS, with a 404, so the failure report's closing probe
+    // printed "NOT REACHABLE (status 404)" and blamed the speaker. A field report
+    // on 2026-08-22 carried exactly that, down to the "speaker : <ip>:8090" line.
+    // port 0 gives candidatePorts [17008, 8888], which is both agent ports. The
+    // same trap, with the same fix, is documented on agentBox thirty lines below.
+    const agentPortBox = { ...foundBox, port: 0 };
+    const installed = await verifyInstalledState(agentPortBox, (st) => {
+      render(`<div class="muted">${escapeHtml(!st.reachable
+        ? t('updateAll.phase.spotifyUnreachable')
+        : (st.engine === 'present' ? t('updateAll.phase.spotifyChecking') : t('updateAll.phase.spotifyInstalling')))}</div>`);
+    });
+    try { SetOTARunning(false); } catch {}
+    if (!installed.ok) {
+      render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + installFailureReportHtml());
+      wireInstallFailureReport(agentPortBox);
+      fillFailReport(agentPortBox, 'install:verify', installed.reason || '');
+      return;
     }
-    if (langForBox > 0) {
-      steps.push({ id: 'lang', label: t('setup.provisionLang'),
-        run: () => SetBoxLanguage(foundBox.host, langForBox) });
-    }
-    if (tzForBox) {
-      // Real IANA zone => the box derives the offset incl. DST itself, so the
-      // offset argument MUST stay 0 (a non-zero value would double-shift).
-      steps.push({ id: 'tz', label: t('setup.provisionTz'),
-        run: () => SetClockDisplay(foundBox.host, true, tzForBox, 0, !!format24ForBox) });
-    }
-    if (wifiForBox && wifiForBox.ssid) {
-      steps.push({ id: 'wifi', label: t('setup.provisionWifi'),
-        run: async () => {
-          // force:true - this is the FIRST setup and the user just typed this
-          // network in. The visibility preflight refused a cable-connected
-          // ST30 whose site survey came back empty (live 2026-07-09,
-          // "WLAN switch refused ... visible=[]"), silently breaking the
-          // Wi-Fi save; on a first install the cable stays in anyway, so the
-          // strand-protection the preflight exists for does not apply.
-          const wr = await boxFetch(agentBox, '/api/box/wlan', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass, hidden: !!wifiForBox.hidden, force: true }),
-          });
-          if (!wr || !wr.ok) {
-            let reason = wr ? 'HTTP ' + wr.status : t('setup.provisionNoAnswer');
-            try {
-              const body = await wr.text();
+    // Installed, but without the Spotify engine. The speaker works; only Spotify
+    // is missing, and running the speaker update once delivers it (nothing does
+    // that in the background, by design). Said here as a note, because calling
+    // this a failed install sends people hunting for a fault they do not have.
+    const engineNote = installed.engineMissing
+      ? `<div class="setup-warn">${escapeHtml(t('setup.installedEngineMissing'))}</div>`
+      : '';
+
+    let unplugLine = '';
+    let provisionFailed = false;
+    let failReasons = {};
+    if (knownBox) {
+      // After install the box is an STR agent, reachable on :17008 (BCO REDIRECT)
+      // or :8888 (sm2 direct), NOT the pre-install stock :8090 that foundBox still
+      // carries (probeStock stamped it). Provision + probe readiness against the
+      // agent port: port 0 => candidatePorts(host, 0) tries 17008 then 8888, so
+      // name / Wi-Fi / status never hit the dead-for-this-purpose Bose :8090 (which
+      // answers /api/* with a 404 that boxDo/boxFetch would wrongly accept as a
+      // reachable response, silently failing name+Wi-Fi and burning the readiness
+      // gate's full 90 s). Language + timezone ARE Bose :8090 endpoints and keep
+      // using foundBox.host directly (no port), so they are unaffected.
+      const agentBox = { ...foundBox, port: 0 };
+      // Ordered steps, built only from what the user actually requested.
+      const steps = [];
+      if (nameForBox) {
+        steps.push({ id: 'name', label: t('setup.provisionName'),
+          run: () => SetBoxName(agentBox.host, agentBox.port, nameForBox) });
+      }
+      if (langForBox > 0) {
+        steps.push({ id: 'lang', label: t('setup.provisionLang'),
+          run: () => SetBoxLanguage(foundBox.host, langForBox) });
+      }
+      if (tzForBox) {
+        // Real IANA zone => the box derives the offset incl. DST itself, so the
+        // offset argument MUST stay 0 (a non-zero value would double-shift).
+        steps.push({ id: 'tz', label: t('setup.provisionTz'),
+          run: () => SetClockDisplay(foundBox.host, true, tzForBox, 0, !!format24ForBox) });
+      }
+      if (wifiForBox && wifiForBox.ssid) {
+        steps.push({ id: 'wifi', label: t('setup.provisionWifi'),
+          run: async () => {
+            // force:true - this is the FIRST setup and the user just typed this
+            // network in. The visibility preflight refused a cable-connected
+            // ST30 whose site survey came back empty (live 2026-07-09,
+            // "WLAN switch refused ... visible=[]"), silently breaking the
+            // Wi-Fi save; on a first install the cable stays in anyway, so the
+            // strand-protection the preflight exists for does not apply.
+            const wr = await boxFetch(agentBox, '/api/box/wlan', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass, hidden: !!wifiForBox.hidden, force: true }),
+            });
+            if (!wr || !wr.ok) {
+              let reason = wr ? 'HTTP ' + wr.status : t('setup.provisionNoAnswer');
               try {
-                const j = JSON.parse(body);
-                if (j && j.error) reason = j.error;
-                else if (body) reason = body.slice(0, 160);
-              } catch { if (body) reason = body.slice(0, 160); }
-            } catch {}
-            throw new Error(reason);
-          }
-          let info = {};
-          try { info = await wr.json(); } catch {}
-          return info || {};
-        } });
-    }
-
-    // Live per-step checklist (reuses the .chk-* row styling plus a red-cross
-    // fail variant). A leading "waiting for the speaker" row covers the reboot
-    // gap before the first step runs.
-    const st = {}; steps.forEach(s => { st[s.id] = 'pend'; });
-    let waitingAgent = true;
-    const chkRowLike = (rowState, label) => {
-      const ico = rowState === 'done' ? '<span class="chk-ico chk-done">&#10003;</span>'
-        : rowState === 'fail' ? '<span class="chk-ico chk-fail">&#10007;</span>'
-        : rowState === 'run' ? '<span class="chk-ico chk-spin"></span>'
-        : '<span class="chk-ico chk-pend"></span>';
-      return `<div class="chk-row chk-${rowState}">${ico}<span class="chk-lbl">${escapeHtml(label)}</span></div>`;
-    };
-    const renderProvision = () => {
-      const head = `<div class="chk-head"><span>${escapeHtml(t('setup.provisionTitle'))}</span></div>`;
-      const agentRow = chkRowLike(waitingAgent ? 'run' : 'done', t('setup.provisionWaitAgent'));
-      const rows = steps.map(s => chkRowLike(st[s.id], s.label)).join('');
-      render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
-        `<div class="setup-checklist setup-provision">${head}${agentRow}${rows}</div>`);
-    };
-    renderProvision();
-
-    // Wait (up to ~90s) for the agent + box :8090 to answer via /api/status
-    // (self-healing fetch through the agent). If it never answers we still try
-    // the steps below; the per-step retries give more chances.
-    const readyDeadline = Date.now() + 90 * 1000;
-    while (Date.now() < readyDeadline) {
-      try { const r = await boxFetch(agentBox, '/api/status', {}); if (r && r.ok) break; } catch {}
-      await sleep(3000);
-    }
-    waitingAgent = false;
-    renderProvision();
-
-    // Apply each step in order with a short retry, reflecting the result live.
-    for (const s of steps) {
-      st[s.id] = 'run'; renderProvision();
-      const res = await retryStep(s.run, 3, 2500);
-      st[s.id] = res.ok ? 'done' : 'fail';
-      if (!res.ok) {
-        provisionFailed = true;
-        // Keep the REAL reason: "some settings could not be applied" without
-        // saying which and why sent the maintainer log-diving (2026-07-09).
-        failReasons[s.id] = { label: s.label, reason: String((res.value && res.value.message) || res.value || t('setup.provisionNoAnswer')) };
+                const body = await wr.text();
+                try {
+                  const j = JSON.parse(body);
+                  if (j && j.error) reason = j.error;
+                  else if (body) reason = body.slice(0, 160);
+                } catch { if (body) reason = body.slice(0, 160); }
+              } catch {}
+              throw new Error(reason);
+            }
+            let info = {};
+            try { info = await wr.json(); } catch {}
+            return info || {};
+          } });
       }
-      if (s.id === 'wifi') {
-        if (res.ok) {
-          const info = res.value || {};
-          unplugLine = (info.mechanism === 'bco') ? t('setup.unplugSafeBco') : t('setup.unplugSafeWpa');
-        } else {
-          unplugLine = t('setup.wifiWriteFailed');
-        }
-      }
+
+      // Live per-step checklist (reuses the .chk-* row styling plus a red-cross
+      // fail variant). A leading "waiting for the speaker" row covers the reboot
+      // gap before the first step runs.
+      const st = {}; steps.forEach(s => { st[s.id] = 'pend'; });
+      let waitingAgent = true;
+      const chkRowLike = (rowState, label) => {
+        const ico = rowState === 'done' ? '<span class="chk-ico chk-done">&#10003;</span>'
+          : rowState === 'fail' ? '<span class="chk-ico chk-fail">&#10007;</span>'
+          : rowState === 'run' ? '<span class="chk-ico chk-spin"></span>'
+          : '<span class="chk-ico chk-pend"></span>';
+        return `<div class="chk-row chk-${rowState}">${ico}<span class="chk-lbl">${escapeHtml(label)}</span></div>`;
+      };
+      const renderProvision = () => {
+        const head = `<div class="chk-head"><span>${escapeHtml(t('setup.provisionTitle'))}</span></div>`;
+        const agentRow = chkRowLike(waitingAgent ? 'run' : 'done', t('setup.provisionWaitAgent'));
+        const rows = steps.map(s => chkRowLike(st[s.id], s.label)).join('');
+        render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+          `<div class="setup-checklist setup-provision">${head}${agentRow}${rows}</div>`);
+      };
       renderProvision();
+
+      // Wait (up to ~90s) for the agent + box :8090 to answer via /api/status
+      // (self-healing fetch through the agent). If it never answers we still try
+      // the steps below; the per-step retries give more chances.
+      const readyDeadline = Date.now() + 90 * 1000;
+      while (Date.now() < readyDeadline) {
+        try { const r = await boxFetch(agentBox, '/api/status', {}); if (r && r.ok) break; } catch {}
+        await sleep(3000);
+      }
+      waitingAgent = false;
+      renderProvision();
+
+      // Apply each step in order with a short retry, reflecting the result live.
+      for (const s of steps) {
+        st[s.id] = 'run'; renderProvision();
+        const res = await retryStep(s.run, 3, 2500);
+        st[s.id] = res.ok ? 'done' : 'fail';
+        if (!res.ok) {
+          provisionFailed = true;
+          // Keep the REAL reason: "some settings could not be applied" without
+          // saying which and why sent the maintainer log-diving (2026-07-09).
+          failReasons[s.id] = { label: s.label, reason: String((res.value && res.value.message) || res.value || t('setup.provisionNoAnswer')) };
+        }
+        if (s.id === 'wifi') {
+          if (res.ok) {
+            const info = res.value || {};
+            unplugLine = (info.mechanism === 'bco') ? t('setup.unplugSafeBco') : t('setup.unplugSafeWpa');
+          } else {
+            unplugLine = t('setup.wifiWriteFailed');
+          }
+        }
+        renderProvision();
+      }
+      if (!(wifiForBox && wifiForBox.ssid)) {
+        unplugLine = t('setup.unplugNoWifi');
+      }
     }
-    if (!(wifiForBox && wifiForBox.ssid)) {
-      unplugLine = t('setup.unplugNoWifi');
-    }
+    const failDetails = Object.values(failReasons)
+      .map(f => `<div class="setup-warn-detail muted small">${escapeHtml(f.label)}: ${escapeHtml(f.reason)}</div>`).join('');
+    // Install is finished: drop the "Installing..." progress lead so the result
+    // stands on its own instead of sitting under a stuck progress line (#852).
+    baseHtml = '';
+    render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+           engineNote +
+           (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +
+           (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}${failDetails}</div>` : '') +
+           `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +
+           `<div class="setup-playhow">` +
+             `<h3>${escapeHtml(t('setup.playHowTitle'))}</h3>` +
+             `<ol>` +
+               `<li>${escapeHtml(t('setup.playHowStep1'))}</li>` +
+               `<li>${escapeHtml(t('setup.playHowStep2'))}</li>` +
+             `</ol>` +
+             `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
+             `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
+           `</div>` +
+           powerCycleAdviceHtml(foundBox));
+    const goMusic = $('installGoMusic');
+    if (goMusic) goMusic.onclick = () => deps.switchView('box');
+    deps.discoverBoxes();
+    // The box is alive again: invite the user to drop a pin on the community world
+    // map. The most reliable moment to ask, and the one most users reach.
+    try { deps.celebrateProvision(foundBox); } catch {}
   }
-  const failDetails = Object.values(failReasons)
-    .map(f => `<div class="setup-warn-detail muted small">${escapeHtml(f.label)}: ${escapeHtml(f.reason)}</div>`).join('');
-  // Install is finished: drop the "Installing..." progress lead so the result
-  // stands on its own instead of sitting under a stuck progress line (#852).
-  baseHtml = '';
-  render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
-         engineNote +
-         (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +
-         (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}${failDetails}</div>` : '') +
-         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +
-         `<div class="setup-playhow">` +
-           `<h3>${escapeHtml(t('setup.playHowTitle'))}</h3>` +
-           `<ol>` +
-             `<li>${escapeHtml(t('setup.playHowStep1'))}</li>` +
-             `<li>${escapeHtml(t('setup.playHowStep2'))}</li>` +
-           `</ol>` +
-           `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
-           `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
-         `</div>` +
-         powerCycleAdviceHtml(foundBox));
-  const goMusic = $('installGoMusic');
-  if (goMusic) goMusic.onclick = () => deps.switchView('box');
-  deps.discoverBoxes();
-  // The box is alive again: invite the user to drop a pin on the community world
-  // map. The most reliable moment to ask, and the one most users reach.
-  try { deps.celebrateProvision(foundBox); } catch {}
+
+
+  await finishInstall();
 }

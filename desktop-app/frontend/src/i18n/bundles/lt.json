@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Rodyti pultelio mygtukų žemėlapyje",
   "multiroom.groupKeysNeedsUpdate": "{{name}} naudoja senesnę STR versiją be grupių mygtukų. Pirmiausia jį atnaujinkite.",
   "settingsView.webhookGroupKeyNote": "Šis mygtukas susietas su grupe \"{{name}}\" (skirtukas Multiroom). Laimi grupė: paspaudimas sudaro arba išardo grupę, o webhook nesuveikia.",
-  "settingsView.webhookRemoteLegendGroup": "susietas su grupe (skirtukas Multiroom)"
+  "settingsView.webhookRemoteLegendGroup": "susietas su grupe (skirtukas Multiroom)",
+  "setup.installBoxInSetup": "Garsiakalbis baigia savo paties nustatymą. ST Reborn jame jau įdiegtas.",
+  "setup.installInSetupPhase": "Tuo metu Wi-Fi lemputė greitai mirksi, o garsiakalbis kaskart kelioms minutėms dingsta iš tinklo, todėl iš čia jo pasiekti neįmanoma. Tai ne dėl tavo tinklo, ir ši būsena paprastai pati baigiasi maždaug per penkiolika minučių.",
+  "setup.installStillWaiting": "Vis dar laukiama garsiakalbio, dar daugiausia {{remaining}}.",
+  "setup.installWaitGaveUp": "Garsiakalbis taip ir negrįžo. ST Reborn į jį nukopijuotas, garsiakalbis paleistas iš naujo, bet nuo tada jis visiškai neatsako.",
+  "setup.installLateSetupOk": "Garsiakalbis baigė savo nustatymą ir vėl pasiekiamas. Dabar taikomi likę tavo nustatymai.",
+  "setup.help.setupPhase": "Tai paties garsiakalbio nustatymas, o ne ST Reborn: Wi-Fi lemputė greitai mirksi, o garsiakalbis tuo metu palieka tinklą. ST Reborn jau yra garsiakalbyje ir šios būsenos nutraukti negali.",
+  "setup.help.setupWait": "Palauk maždaug penkiolika minučių nieko nedarydamas. Nepaleisk diegimo iš naujo, kol lemputė mirksi: tai nepadės. Jei po to ji vis dar mirksi, ištrauk garsiakalbio kištuką dešimčiai sekundžių ir vėl įkišk.",
+  "updateAll.phase.boxInSetup": "Garsiakalbis baigia savo nustatymą, patikrink vėliau.",
+  "update.boxInSetupNote": "{{name}} užsiėmęs savo nustatymu ir tuo metu palieka tinklą, todėl atnaujinimo patvirtinti nepavyko. Greičiausiai jis pavyko. Patikrink dar kartą maždaug po penkiolikos minučių.",
+  "setup.installWaitStopBtn": "Nebelaukti ir rodyti išsamiau"
 }

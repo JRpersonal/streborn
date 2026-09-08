@@ -126,6 +126,48 @@ func TestRedactSSID(t *testing.T) {
 	}
 }
 
+// The forms wpa_supplicant writes. Its lines are kept deliberately now (they
+// are a Classify gate and they feed the frozen setup tail), and /debug/state
+// serves that tail to an unauthenticated LAN GET, so the network name and the
+// router's BSSID must not be in clear in them.
+func TestRedactCoversTheSupplicantForms(t *testing.T) {
+	cases := []struct {
+		name, line, leak string
+	}{
+		{"the association line's single quotes",
+			`wlan0: Trying to associate with aa:bb:cc:dd:ee:ff (SSID='HomeNet' freq=5220 MHz)`, "HomeNet"},
+		{"the CTRL-EVENT line's lower case",
+			`wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="HomeNet" auth_failures=1`, "HomeNet"},
+		{"a network name with a space",
+			`wlan0: Trying to associate with aa:bb:cc:dd:ee:ff (SSID='Home Net 5G' freq=5220 MHz)`, "Home Net 5G"},
+	}
+	// A MAC on a line with nothing else on it: exactly five colons, which is
+	// the whole margin the cheap pre-filter in Redact leaves itself.
+	if got := Redact("aa:bb:cc:dd:ee:ff"); strings.Contains(got, "aa:bb:cc:dd:ee:ff") {
+		t.Errorf("a bare BSSID leaked: %s", got)
+	}
+	for _, c := range cases {
+		got := Redact(c.line)
+		if strings.Contains(got, c.leak) {
+			t.Errorf("%s: network name leaked: %s", c.name, got)
+		}
+		if strings.Contains(got, "aa:bb:cc:dd:ee:ff") {
+			t.Errorf("%s: BSSID leaked: %s", c.name, got)
+		}
+		if !strings.Contains(got, "ssid#") {
+			t.Errorf("%s: the redacted line lost its shape: %s", c.name, got)
+		}
+	}
+	// Stable, so two lines about the same network still match each other.
+	a := Redact(`ssid="HomeNet"`)
+	if a != Redact(`ssid="HomeNet"`) {
+		t.Error("the hash tag must be stable")
+	}
+	if a == Redact(`ssid="OtherNet"`) {
+		t.Error("two different networks must not share a tag")
+	}
+}
+
 func TestObserveRingsAndRateLimit(t *testing.T) {
 	f := newForensics()
 	now := time.Date(2026, 9, 6, 18, 0, 0, 0, time.UTC)

@@ -160,6 +160,24 @@ type gabboFrame struct {
 	// the association flipping, which would timestamp the state behind a 1036
 	// storm independently of the first rejected recall.
 	AcctModeUpdated *struct{} `xml:"acctModeUpdated"`
+
+	// SetupAPUpdated is the firmware announcing that its OWN setup access
+	// point went up or down: <updates><setupAPUpdated>true</setupAPUpdated>.
+	//
+	// It is the firmware saying in its own words that the speaker is about to
+	// leave the LAN, and it went into the unrecognized bucket until #873. It
+	// is NOT the first sign: on the reporter's ST10 it arrived five seconds
+	// AFTER the source flipped to SETUP, so the source flip is what leads. It
+	// is the unambiguous one - a source of SETUP also happens on a box whose
+	// source is merely stuck (#367) and whose radio never goes anywhere.
+	//
+	// That capture sat seven and a half minutes into an install window in
+	// which the desktop app could reach the speaker at nothing, at any layer,
+	// and therefore reported a successful install as a failure.
+	//
+	// The body is the boolean as text, so a *string captures it and an absent
+	// element stays nil. Anything other than "true" is the AP going away.
+	SetupAPUpdated *string `xml:"setupAPUpdated"`
 }
 
 // wsGroupUpdated is the <groupUpdated> body. A self-closing <group /> still
@@ -284,6 +302,30 @@ func parseBoxError(s string) (value, name, severity, detail string) {
 		return "", "", "", ""
 	}
 	return e.Error.Value, e.Error.Name, e.Error.Severity, strings.TrimSpace(e.Error.Detail)
+}
+
+// elementText returns the character data of the first <name> element, for the
+// bare-root frames the typed <updates> parse leaves nil. Empty when the
+// element is absent, self-closing, or the document does not parse.
+func elementText(s, name string) string {
+	var v struct {
+		Text string `xml:",chardata"`
+	}
+	dec := xml.NewDecoder(strings.NewReader(s))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != name {
+			continue
+		}
+		if err := dec.DecodeElement(&v, &se); err != nil {
+			return ""
+		}
+		return strings.TrimSpace(v.Text)
+	}
 }
 
 func rootLocalName(s string) string {

@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Afficher sur la carte des touches de la télécommande",
   "multiroom.groupKeysNeedsUpdate": "{{name}} utilise une version STR plus ancienne sans touches de groupe. Mettez-la d'abord à jour.",
   "settingsView.webhookGroupKeyNote": "Cette touche est liée au groupe « {{name}} » (onglet Multiroom). Le groupe l'emporte : un appui forme ou dissout le groupe, et le webhook ne se déclenche pas.",
-  "settingsView.webhookRemoteLegendGroup": "liée à un groupe (onglet Multiroom)"
+  "settingsView.webhookRemoteLegendGroup": "liée à un groupe (onglet Multiroom)",
+  "setup.installBoxInSetup": "L'enceinte termine sa propre configuration. ST Reborn est déjà installé dessus.",
+  "setup.installInSetupPhase": "Son voyant Wi-Fi clignote rapidement et elle quitte le réseau pendant quelques minutes à la fois, elle est donc injoignable depuis ici. Ce n'est pas votre réseau, et cet état se termine généralement tout seul en un quart d'heure environ.",
+  "setup.installStillWaiting": "Toujours en attente de l'enceinte, encore {{remaining}} au maximum.",
+  "setup.installWaitGaveUp": "L'enceinte n'est jamais revenue. ST Reborn y a été copié et l'enceinte a redémarré, mais depuis elle ne répond plus du tout.",
+  "setup.installLateSetupOk": "L'enceinte a terminé sa propre configuration et elle est de retour. Application du reste de vos réglages.",
+  "setup.help.setupPhase": "C'est la configuration propre à l'enceinte, pas ST Reborn : son voyant Wi-Fi clignote rapidement et elle quitte le réseau pendant ce temps. ST Reborn est déjà sur l'enceinte et ne peut pas mettre fin à cet état.",
+  "setup.help.setupWait": "Attendez environ un quart d'heure sans rien faire. Ne relancez pas l'installation tant que le voyant clignote : cela n'aide pas. S'il clignote encore ensuite, débranchez l'enceinte dix secondes puis rebranchez-la.",
+  "updateAll.phase.boxInSetup": "L'enceinte termine sa propre configuration, revérifiez plus tard.",
+  "update.boxInSetupNote": "{{name}} est occupée par sa propre configuration et quitte le réseau pendant ce temps, la mise à jour n'a donc pas pu être confirmée. Elle a probablement réussi. Revérifiez dans un quart d'heure environ.",
+  "setup.installWaitStopBtn": "Arrêter d'attendre et afficher les détails"
 }

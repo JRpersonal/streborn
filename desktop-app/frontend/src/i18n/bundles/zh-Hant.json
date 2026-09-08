@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "在遙控器按鍵圖上顯示",
   "multiroom.groupKeysNeedsUpdate": "{{name}} 執行的是沒有群組鍵的舊版 STR。請先更新。",
   "settingsView.webhookGroupKeyNote": "這個按鍵已綁定群組「{{name}}」（多房間分頁）。群組優先：按一下組成或解散群組，Webhook 不會觸發。",
-  "settingsView.webhookRemoteLegendGroup": "已綁定群組（多房間分頁）"
+  "settingsView.webhookRemoteLegendGroup": "已綁定群組（多房間分頁）",
+  "setup.installBoxInSetup": "喇叭正在完成它自己的設定。ST Reborn 已經安裝在上面了。",
+  "setup.installInSetupPhase": "這段期間它的 Wi-Fi 指示燈會快速閃爍，喇叭每次會離開網路幾分鐘，所以從這裡連不上它。這不是你的網路的問題，這個狀態通常會在大約十五分鐘內自行結束。",
+  "setup.installStillWaiting": "仍在等待喇叭，最多還要 {{remaining}}。",
+  "setup.installWaitGaveUp": "喇叭一直沒有回來。ST Reborn 已經複製到喇叭上並重新啟動了喇叭，但從那之後它完全沒有任何回應。",
+  "setup.installLateSetupOk": "喇叭已完成它自己的設定並回到網路上。正在套用你其餘的設定。",
+  "setup.help.setupPhase": "這是喇叭自己的設定，不是 ST Reborn：它的 Wi-Fi 指示燈會快速閃爍，期間喇叭會離開網路。ST Reborn 已經在喇叭上，無法結束這個狀態。",
+  "setup.help.setupWait": "什麼都別做，等大約十五分鐘。指示燈還在閃爍時不要再執行一次安裝，那沒有幫助。如果之後仍在閃爍，請拔掉喇叭電源十秒再插回去。",
+  "updateAll.phase.boxInSetup": "喇叭正在完成自己的設定，稍後再確認。",
+  "update.boxInSetupNote": "{{name}} 正忙著自己的設定，期間會離開網路，因此無法確認更新。多半已經成功了。請在大約十五分鐘後再確認一次。",
+  "setup.installWaitStopBtn": "停止等待並顯示詳細資訊"
 }

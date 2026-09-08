@@ -137,6 +137,16 @@ type installFacts struct {
 	TargetSeen       bool
 	TargetMissingSec int
 
+	// BoxSetupState comes from the SPEAKER's own /api/agent/version (#873):
+	// whether the firmware is raising its out-of-box setup now, did so within
+	// the last three quarters of an hour, or not. The app cannot observe that
+	// from here at all - while the setup access point is up the speaker is not
+	// on the home network - so it is the only explanation a report can offer
+	// for total silence on a working network. The raw episode COUNT is printed
+	// verbatim in the report's box_now block and is deliberately not a field
+	// here: it is a lifetime counter, and nothing may key a diagnosis on it.
+	BoxSetupState string
+
 	LogTail string
 }
 

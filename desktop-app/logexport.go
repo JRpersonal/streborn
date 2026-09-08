@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -522,11 +523,33 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for
 		// "agent came up but is misbehaving" diagnostics.
-		debugRaw := httpGetTextTimeout(base+"/api/debug/state", 256*1024, 20*time.Second)
+		//
+		// 1 MB, not 256 KB. httpGetTextTimeout TRUNCATES at the cap, and a
+		// truncated body is not valid JSON, so the old cap silently dropped the
+		// entire debugState from the bundle. The payload has grown past it: two
+		// dozen inline fields, several at their own 8 KB tail cap, the NAND
+		// agent log at 32 KB, the boot-marker log at 48 KB, the box setup tail,
+		// plus every RegisterDebugSection provider. A box that actually had a
+		// setup episode is the box whose tails are FULL, so the very bundle
+		// that has to settle the question was the likeliest to arrive empty.
+		// The app's own boxOwnLogTail already reads this endpoint under a 4 MB
+		// limit; 256 KB was the odd one out.
+		const debugStateCap = 1 << 20
+		debugRaw := httpGetTextTimeout(base+"/api/debug/state", debugStateCap, 20*time.Second)
 		if debugRaw != "" {
 			var ds map[string]any
 			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {
 				s.DebugState = ds
+			} else {
+				// Never drop it silently. A reader who sees no debugState must
+				// be able to tell "the box did not answer" from "the answer did
+				// not parse", and the byte count says at a glance whether the
+				// cap was hit again.
+				slog.Warn("diagnostic bundle: /api/debug/state did not parse", "bytes", len(debugRaw), "err", err)
+				s.DebugState = map[string]any{
+					"_parseError": err.Error(),
+					"_rawBytes":   len(debugRaw),
+				}
 			}
 		}
 	}

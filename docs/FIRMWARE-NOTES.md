@@ -131,6 +131,28 @@ unrecognized-frame log as shape `updates/volume` and never has.
 Consequence: the unrecognized-frame capture stays; the doc's list can
 never replace it.
 
+### `setupAPUpdated`: the speaker announcing it is about to leave the LAN
+
+Field-observed on a rhino SoundTouch 10, FW 27.0.6, 2026-09-06 (#873),
+and in the doc nowhere:
+
+```xml
+<updates deviceID="..."><setupAPUpdated>true</setupAPUpdated></updates>
+```
+
+It is the firmware raising its OWN setup access point. While that AP is
+up the speaker is not on the home Wi-Fi, so from a PC it is
+indistinguishable from a dead speaker: no ping, no `:8090`, nothing.
+On the reporter's box it arrived five seconds after the source flipped
+to `SETUP`, in the middle of an install wait, and the desktop app
+reported a successful install as a failure because it could not see
+any of this.
+
+The agent runs ON the speaker, so it is the only side that ever learns
+it. STR types the frame, counts the episodes, and reports them on
+`/api/agent/version` (`boxSetup`, `boxSetupEpisodes`, `boxSetupLastSec`)
+so the app can explain a blackout afterwards.
+
 ### Frame shape traps
 
 - **`zoneUpdated` carries a body (field wins).** The doc shows the
@@ -149,6 +171,30 @@ never replace it.
   notification chapter spells it `updatedOn`. STR emits `updatedOn`,
   the spelling proven against the installed base; do not "correct" it
   to the other one.
+
+## `SETUP_LEAVE` is not a one-time repair on every chassis
+
+`POST /setup` with `SETUP_LEAVE` clears a stuck out-of-box `SETUP`
+source, and on an ST300 and an scm ST30 that was measured as a
+permanent repair: the box did not come back to it. **That does not
+generalise.** On a rhino SoundTouch 10 (v0.9.74, 2026-09-06) the box
+re-entered `SETUP` three times after three successful clears inside
+fourteen minutes, and the episode ended on its own after roughly a
+quarter of an hour, or immediately on a plug-pull.
+
+So `SETUP_LEAVE` is a repair of the SOURCE, not of the state machine
+behind it. STR clears the source, spends at most four clear attempts on
+one episode and then watches without POSTing rather than arguing with
+the firmware every fifteen seconds for a quarter of an hour. One
+episode is deliberately not "one entry into `SETUP`": the source flips
+between `SETUP` and `INVALID_SOURCE` while an episode lasts, and a
+budget that refilled on every flip would not be a budget at all, so a
+new episode needs the source to stay OUT of `SETUP` for five minutes
+first. STR also logs
+`setupState` / `systemState` with every clear so the next
+bundle can tell a real `SETUP_AP_OOB` from #367's merely stuck source
+(`SETUP_INACTIVE` with `now_playing source=SETUP`). Nothing in STR can
+stop the firmware re-entering setup, and nothing should try.
 
 ## Reaching the agent on BCO speakers (chipset whitelist)
 

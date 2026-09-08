@@ -3879,6 +3879,12 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
       // expected" line that sent a user hunting through his antivirus settings
       // while three speakers sat there answering Bose's ports (2026-08-22).
       if (cls === 'agent-gone') return { outcome: 'agentGone', version: null };
+      // "box-in-setup" is the speaker running Bose's OWN out-of-box setup: it
+      // leaves the network for minutes at a time while it does, so the update
+      // may well have landed and confirmLateOTA corrects the journal on its
+      // own. Its own outcome, because the advice is the opposite of
+      // agentGone's: do NOT pull the plug on a speaker mid-setup (#873).
+      if (cls === 'box-in-setup') return { outcome: 'boxInSetup', version: null };
       return { outcome: 'timeout', version: null };
     }
   }
@@ -4387,6 +4393,10 @@ async function doBoxUpdate(targetBox) {
         // "Install Spotify engine" action.
         showToast(t('spotify.engineDeferredVisible'));
       }
+    } else if (result && result.outcome === 'boxInSetup') {
+      // The speaker was busy with its own setup. Nothing is wrong with the
+      // network and nothing needs pulling out of the wall.
+      showToast(t('update.boxInSetupNote', { name: getBoxLabel(targetBox) }));
     } else if (result && result.outcome === 'agentGone') {
       // The speaker is up and answering its own Bose web API; only STR is not
       // running on it. That has one exact fix and the user can do it in ten
@@ -4646,7 +4656,9 @@ async function runUpdateAllBoxes(onStart) {
       if (r.outcome === 'done') done++;
       else if (r.outcome === 'failed') fail++;
       else if (r.outcome === 'agentGone') fail++;
-      else if (r.outcome === 'partial' || r.outcome === 'timeout') defer++;
+      // A speaker in its own setup is deferred, not failed: it is very likely
+      // updated and simply off the network while the firmware finishes.
+      else if (r.outcome === 'partial' || r.outcome === 'timeout' || r.outcome === 'boxInSetup') defer++;
       else busy++;
     }
     return { done, fail, defer, busy };
@@ -4802,6 +4814,7 @@ async function runUpdateAllBoxes(onStart) {
       } else if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
       else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
       else if (outcome === 'agentGone') setRow(b.host, { phaseText: t('updateAll.phase.agentGone'), barClass: 'ua-failed' });
+      else if (outcome === 'boxInSetup') setRow(b.host, { phaseText: t('updateAll.phase.boxInSetup'), pct: 100, barClass: 'ua-defer' });
       else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     } catch (e) {
       outcome = 'failed';

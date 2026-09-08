@@ -44,6 +44,14 @@ type App struct {
 	installPhase     string
 	installStart     time.Time
 	installMargeHits func() int64
+	// installSawSetup records that the agent wait observed the SPEAKER'S OWN
+	// out-of-box setup phase at least once while it ran (#873). It is App
+	// state for the same reason installPhase is: the wait sets it, and both
+	// the heartbeat and the verdict at the end of the wait read it without
+	// every call site having to carry it. A speaker that flapped through setup
+	// during the wait and is silent at the end is still a speaker in setup,
+	// and that is the only moment at which anything can know it.
+	installSawSetup bool
 
 	// portCache maps a box host to the agent port last seen answering it.
 	// BCO boxes (Portable/taigan, ST20-spotty) expose the agent only on

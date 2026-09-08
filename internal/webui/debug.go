@@ -3,17 +3,22 @@
 package webui
 
 import (
+	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
@@ -202,11 +207,32 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		return string(b)
 	}
 
+	// The three firmware reads, started together. Sequentially they are three
+	// five-second timeouts stacked on the ONE code path whose client gives up
+	// after twenty (logexport.go's captureBoxSnapshot), and the box they have
+	// to describe is the box that answers slowly or not at all - so a silent
+	// speaker would have spent fifteen of those twenty seconds here and cost
+	// the bundle its whole debugState. In parallel the worst case is five.
+	boseSetup, boseNet, boseConfig := s.boseFirmwareDebug()
+
 	state := map[string]any{
 		"agent_log_tail": readTail("/tmp/streborn-agent.log"),
 		"agent_log_nand": readTailN("/mnt/nv/streborn/agent.log", 32*1024),
+		// The CURRENT boot's agent log from its very first line, not a blind
+		// tail. agent_log_nand above is the last 32 KB of a file that spans
+		// several boots, and on a chatty box that window no longer reaches back
+		// to the boot that failed: in the #873 bundles the failing boot's first
+		// lines were already gone at export time, so the one question a
+		// post-install investigation asks ("what did the agent do in its first
+		// two minutes") could not be answered at all.
+		"agent_log_boot": readFromLastBootMarker("/mnt/nv/streborn/agent.log", 48*1024),
 		"previous_log":   readTail("/mnt/nv/streborn/previous.log"),
 		"setup_log":      readTail("/mnt/nv/streborn/setup.log"),
+		// The PREVIOUS boot's run.sh log. setup_log is the current boot only,
+		// and after an install the boot that actually failed is already the
+		// previous one by the time anybody exports a bundle. The file exists on
+		// every box (9376 bytes in the #873 nv_listing) and was never read.
+		"setup_log_prev": readTail("/mnt/nv/streborn/setup.log.prev"),
 		"boot_log":       readTail("/mnt/nv/streborn/boot.log"),
 		// wpaConfPath, not a second literal. This read pointed at
 		// /mnt/nv/wpa_supplicant.conf while the code that WRITES the file uses
@@ -282,6 +308,29 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// answer "is this box genuinely tighter or carrying foreign firmware
 		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).
 		"disk_usage": nandInventory(),
+		// The firmware's own view of its setup and its network, read once here
+		// and nowhere else (#873). Every one of these is a plain GET against
+		// the speaker's :8090 at bundle time: no polling, no standing timer.
+		//
+		// bose_setup separates a real out-of-box setup (SETUP_AP_OOB plus a
+		// systemstate like SETUP_LANG_NOT_SET) from #367's merely STUCK source
+		// (SETUP_INACTIVE while now_playing still says source=SETUP). Those are
+		// different bugs with different fixes and no bundle could tell them
+		// apart.
+		"bose_setup": boseSetup,
+		// bose_network_info carries the number of profiles the firmware has on
+		// file, the one figure behind "the speaker has two saved networks and
+		// tried the dead one first". Names, addresses and MACs are left out on
+		// purpose; the tag is enough to tell two networks apart.
+		"bose_network_info": boseNet,
+		// bose_config_status is the firmware's OWN verdict on whether it thinks
+		// it is provisioned (SOUNDTOUCH_CONFIGURED / NOT_CONFIGURED /
+		// CONFIGURING). STR calls this endpoint nowhere else.
+		"bose_config_status": boseConfig,
+		// How often the firmware raised setup on this agent run, and how often
+		// STR cleared it (boxsetup.go). In memory, so a reboot resets it, which
+		// is correct: the question is what happened since the box came up.
+		"box_setup_episodes": s.boxSetupDebug(),
 	}
 	// Preset store summary: one compact line per slot so a diagnostic bundle
 	// shows dead presets (empty/invalid stream URL) directly. Before this the
@@ -317,6 +366,138 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	writeJSON(w, http.StatusOK, state)
+}
+
+// agentBootMarker is the first line the agent writes on every start
+// (cmd/agent/main.go). Finding the LAST one splits a multi-boot log file at
+// the boot that is running now.
+const agentBootMarker = "streborn starting"
+
+// readFromLastBootMarker returns the agent log from the current boot's first
+// line, capped at max bytes. Falls back to the whole file's head when the
+// marker is not in it at all (a log that has already rotated past it).
+//
+// The HEAD is kept, not the tail. This section exists for one question - what
+// the agent did in its first two minutes - and on a box that logs heavily the
+// current boot passes the cap within those very minutes. Keeping the last
+// bytes instead would answer a different question, and answer it with the same
+// region agent_log_nand already carries.
+func readFromLastBootMarker(path string, max int) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "ERR: " + err.Error()
+	}
+	txt := string(b)
+	if i := strings.LastIndex(txt, agentBootMarker); i >= 0 {
+		// Back up to the start of that line so the timestamp comes with it.
+		if nl := strings.LastIndexByte(txt[:i], '\n'); nl >= 0 {
+			txt = txt[nl+1:]
+		} else {
+			txt = txt[i:]
+		}
+	}
+	if len(txt) > max {
+		return txt[:max] + "\n...(truncated)"
+	}
+	return txt
+}
+
+// boseFirmwareDebug runs the three firmware reads at once and returns them in
+// the order the bundle lists them. They touch three different endpoints on the
+// same box and have nothing to say to each other, so the only thing serialising
+// them buys is three timeouts where one will do.
+func (s *Server) boseFirmwareDebug() (setup, network map[string]any, config string) {
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() { defer wg.Done(); setup = s.boseSetupDebug() }()
+	go func() { defer wg.Done(); network = s.boseNetworkDebug() }()
+	go func() { defer wg.Done(); config = s.boseConfigStatus() }()
+	wg.Wait()
+	return setup, network, config
+}
+
+// boseSetupDebug is the speaker's own /setup, the endpoint that says whether
+// the box is genuinely in out-of-box setup. Errors are reported, not hidden: a
+// firmware that does not answer this is itself the finding.
+func (s *Server) boseSetupDebug() map[string]any {
+	if s.boxHost == "" {
+		return map[string]any{"err": "no box host configured"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := boxapi.New(s.boxHost).GetSetupStatus(ctx)
+	if err != nil {
+		return map[string]any{"err": err.Error()}
+	}
+	return map[string]any{"state": st.State, "systemstate": st.SystemState}
+}
+
+// boseNetworkDebug is /networkInfo reduced to what a diagnosis uses. Network
+// names become tags and the addresses and MACs are dropped: this endpoint
+// answers an unauthenticated LAN GET and its body is the diagnostic bundle.
+func (s *Server) boseNetworkDebug() map[string]any {
+	if s.boxHost == "" {
+		return map[string]any{"err": "no box host configured"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	n, err := boxapi.New(s.boxHost).GetNetwork(ctx)
+	if err != nil {
+		return map[string]any{"err": err.Error()}
+	}
+	ifaces := make([]map[string]any, 0, len(n.Interfaces))
+	for _, i := range n.Interfaces {
+		ifaces = append(ifaces, map[string]any{
+			"type": i.Type, "name": i.Name, "state": i.State,
+			"signal": i.Signal, "mode": i.Mode,
+			"ssidTag": ssidTag(i.SSID), "hasAddress": i.IP != "",
+		})
+	}
+	return map[string]any{"wifiProfileCount": n.WifiProfileCount, "interfaces": ifaces}
+}
+
+// configStatusRe pulls the verdict out of /soundTouchConfigurationStatus,
+// whichever of the two shapes the firmware uses (element text or attribute).
+var configStatusRe = regexp.MustCompile(`(?i)(SOUNDTOUCH_CONFIGURED|NOT_CONFIGURED|CONFIGURING)`)
+
+// boseConfigStatus reads the firmware's own provisioning verdict. It is the
+// one answer nothing in STR has ever asked for, and it separates "the speaker
+// thinks it still has to be set up" from "the speaker is configured and its
+// source is merely stuck".
+func (s *Server) boseConfigStatus() string {
+	if s.boxHost == "" {
+		return "ERR: no box host configured"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b, err := boxGet(ctx, "http://"+s.boxHost+":8090/soundTouchConfigurationStatus", 4<<10)
+	if err != nil {
+		return "ERR: " + err.Error()
+	}
+	if m := configStatusRe.FindSubmatch(b); m != nil {
+		return string(m[1])
+	}
+	// NOT the body. Bose's :8090 roots carry deviceID="<12 hex>", which is the
+	// SCM MAC and on the never-publish list, and /debug/state answers an
+	// unauthenticated LAN GET. Every neighbouring reader in this file is
+	// careful the other way (boseNetworkDebug hashes the SSID and reduces the
+	// address to hasAddress), so an unrecognised shape is reported as a shape.
+	return fmt.Sprintf("ERR: unrecognised body (%d bytes, root %q)", len(b), xmlRootName(b))
+}
+
+// xmlRootName is the first element name in a firmware document, so an
+// unrecognised answer can be reported without repeating its contents.
+func xmlRootName(b []byte) string {
+	dec := xml.NewDecoder(bytes.NewReader(b))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			return se.Name.Local
+		}
+	}
 }
 
 // handleDebugProbe issues an HTTP request from inside the box to a

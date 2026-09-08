@@ -3411,6 +3411,55 @@ fi
 # idempotency guard: it returns 0 if the rule already exists, so a
 # re-assert is cheap and writes nothing when nothing changed.
 INPUT_ACCEPT_PORTS="8888 9080 8081 8443"
+
+# STR_FW_COMMENT reports which form the last successful insert used, "yes" or
+# "no", empty until one has run. It is a REPORT, never a decision: nothing
+# reads it to choose a form.
+#
+# Why this exists: NOT ONE rhino chain in the #873 evidence set carried a
+# single streborn-fw rule, on any box, including one that had been up fifty
+# hours and was working fine. Either every insert fails silently (a kernel
+# built without xt_comment refuses the whole rule, and the 2>/dev/null hid
+# it), or the block never runs. Both were invisible, because the only log
+# lines here were the successes.
+#
+# So: try the commented form, fall back to the bare one, and say which took.
+# A log line and a fallback, not a new behaviour.
+#
+# What it must NOT do is latch. An earlier version set it to "no" whenever a
+# commented insert failed for ANY reason, xtables lock contention included, and
+# fw_have then stopped looking for the commented form: the already-installed
+# commented rules went invisible on the next 30 s pass and each got a second,
+# bare duplicate, which the self-heal line then reported as a chain flush that
+# never happened.
+STR_FW_COMMENT=""
+
+# fw_have reports whether our ACCEPT for a rule spec (everything between the
+# chain and -j) is already present, in EITHER form. Form-agnostic on purpose:
+# a rule installed in one form must never look absent because the other form
+# was tried, or it is installed a second time.
+fw_have() {
+    iptables -w -C INPUT "$@" -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null && return 0
+    iptables -w -C INPUT "$@" -j ACCEPT 2>/dev/null
+}
+
+# fw_insert inserts our ACCEPT at position 1, preferring the commented form
+# (which is what lets a later cleanup identify our rules) and falling back to
+# the bare one so a kernel without xt_comment still gets its ports opened.
+# The commented form is tried on every call: a single transient failure must
+# not switch the rest of the process to the bare form.
+fw_insert() {
+    if iptables -w -I INPUT 1 "$@" -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+        STR_FW_COMMENT="yes"
+        return 0
+    fi
+    if iptables -w -I INPUT 1 "$@" -j ACCEPT 2>/dev/null; then
+        STR_FW_COMMENT="no"
+        return 0
+    fi
+    return 1
+}
+
 iptables_install_streborn_fw() {
     rc_total=0
     healed=0
@@ -3422,28 +3471,35 @@ iptables_install_streborn_fw() {
     # which is a whole-INPUT blackhole, not a closed port. Keeping ICMP up here
     # means a box that has gone silent to ping is one whose watchdog itself has
     # stopped, which tells that failure apart from a mere port flush.
-    if iptables -w -C INPUT -p icmp \
-        -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+    if fw_have -p icmp; then
         : # already present
-    elif iptables -w -I INPUT 1 -p icmp \
-        -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+    elif fw_insert -p icmp; then
         healed=$((healed + 1))
     else
         rc_total=$((rc_total + 1))
     fi
     for port in $INPUT_ACCEPT_PORTS; do
-        if iptables -w -C INPUT -p tcp --dport "$port" \
-            -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+        if fw_have -p tcp --dport "$port"; then
             continue  # rule already present, no-op
         fi
-        if iptables -w -I INPUT 1 -p tcp --dport "$port" \
-            -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+        if fw_insert -p tcp --dport "$port"; then
             setup_log "iptables INPUT ACCEPT tcp/$port installed at uptime=$(uptime_s)s"
             healed=$((healed + 1))
         else
             rc_total=$((rc_total + 1))
         fi
     done
+    # The explicit result: the first pass always, and after that only when it
+    # CHANGES. Without any line at all a box that installed none of these rules
+    # looked exactly like a box that installed all of them; with a line per
+    # pass, a permanently failing box would append to the NAND setup log every
+    # 30 s, 2880 times a day, for the lifetime of run.sh. Edge-triggered gives
+    # the evidence and costs one line (SCHONE die Box-Hardware).
+    fw_sig="$healed:$rc_total:${STR_FW_COMMENT:-unknown}"
+    if [ "${STR_FW_PRIMED:-0}" != "1" ] || [ "$fw_sig" != "${STR_FW_LAST_SIG:-}" ]; then
+        setup_log "iptables streborn-fw: inserted rules=$healed failed=$rc_total commentUsed=${STR_FW_COMMENT:-unknown} at uptime=$(uptime_s)s"
+        STR_FW_LAST_SIG="$fw_sig"
+    fi
     # A (re)install AFTER the first pass means our rules were flushed out from
     # under us since the last check. Log it as a distinct, grep-able self-heal
     # event so the NAND log shows how often and when the flush happens (the

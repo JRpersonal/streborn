@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Tonen op de toetsenkaart van de afstandsbediening",
   "multiroom.groupKeysNeedsUpdate": "{{name}} draait een oudere STR-versie zonder groepstoetsen. Werk hem eerst bij.",
   "settingsView.webhookGroupKeyNote": "Deze toets is gekoppeld aan de groep \"{{name}}\" (tabblad Multiroom). De groep wint: een druk vormt de groep of heft hem op, en de webhook wordt niet afgevuurd.",
-  "settingsView.webhookRemoteLegendGroup": "gekoppeld aan een groep (tabblad Multiroom)"
+  "settingsView.webhookRemoteLegendGroup": "gekoppeld aan een groep (tabblad Multiroom)",
+  "setup.installBoxInSetup": "De speaker rondt zijn eigen installatie af. ST Reborn staat er al op.",
+  "setup.installInSetupPhase": "Het Wi-Fi-lampje knippert daarbij snel en de speaker verlaat het netwerk telkens een paar minuten, daarom is hij van hieruit niet bereikbaar. Dat ligt niet aan jouw netwerk, en die toestand houdt meestal binnen een kwartier vanzelf op.",
+  "setup.installStillWaiting": "Nog aan het wachten op de speaker, nog maximaal {{remaining}}.",
+  "setup.installWaitGaveUp": "De speaker is nooit teruggekomen. ST Reborn is erop gezet en de speaker is opnieuw gestart, maar sindsdien antwoordt hij helemaal niet meer.",
+  "setup.installLateSetupOk": "De speaker is klaar met zijn eigen installatie en is terug. De rest van je instellingen wordt nu doorgevoerd.",
+  "setup.help.setupPhase": "Dit is de eigen installatie van de speaker, niet ST Reborn: het Wi-Fi-lampje knippert snel en de speaker verlaat het netwerk zolang dat duurt. ST Reborn staat al op de speaker en kan die toestand niet beëindigen.",
+  "setup.help.setupWait": "Wacht ongeveer een kwartier zonder iets te doen. Start de installatie niet opnieuw zolang het lampje knippert: dat helpt niet. Knippert het daarna nog steeds, haal dan tien seconden de stekker eruit en steek hem er weer in.",
+  "updateAll.phase.boxInSetup": "Speaker rondt zijn eigen installatie af, kijk later nog eens.",
+  "update.boxInSetupNote": "{{name}} is bezig met zijn eigen installatie en verlaat daarbij het netwerk, daarom kon de update niet bevestigd worden. Waarschijnlijk is het gelukt. Kijk over ongeveer een kwartier nog eens.",
+  "setup.installWaitStopBtn": "Stop met wachten en toon details"
 }

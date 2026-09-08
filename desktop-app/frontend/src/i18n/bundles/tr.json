@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Kumanda tuş haritasında göster",
   "multiroom.groupKeysNeedsUpdate": "{{name}} grup tuşları olmayan eski bir STR sürümü çalıştırıyor. Önce güncelleyin.",
   "settingsView.webhookGroupKeyNote": "Bu tuş \"{{name}}\" grubuna bağlı (Multiroom sekmesi). Grup kazanır: bir basış grubu oluşturur ya da dağıtır, webhook tetiklenmez.",
-  "settingsView.webhookRemoteLegendGroup": "bir gruba bağlı (Multiroom sekmesi)"
+  "settingsView.webhookRemoteLegendGroup": "bir gruba bağlı (Multiroom sekmesi)",
+  "setup.installBoxInSetup": "Hoparlör kendi kurulumunu tamamlıyor. ST Reborn zaten üzerinde kurulu.",
+  "setup.installInSetupPhase": "Bu sırada Wi-Fi ışığı hızlı yanıp söner ve hoparlör her seferinde birkaç dakikalığına ağdan çıkar, bu yüzden buradan erişilemez. Bu senin ağınla ilgili değil ve bu durum genelde on beş dakika içinde kendiliğinden biter.",
+  "setup.installStillWaiting": "Hoparlör hâlâ bekleniyor, en fazla {{remaining}} daha.",
+  "setup.installWaitGaveUp": "Hoparlör hiç geri dönmedi. ST Reborn üzerine kopyalandı ve hoparlör yeniden başlatıldı, ama o zamandan beri hiçbir şeye yanıt vermiyor.",
+  "setup.installLateSetupOk": "Hoparlör kendi kurulumunu bitirdi ve geri döndü. Kalan ayarların şimdi uygulanıyor.",
+  "setup.help.setupPhase": "Bu, ST Reborn değil hoparlörün kendi kurulumu: Wi-Fi ışığı hızlı yanıp söner ve hoparlör bu süre boyunca ağdan çıkar. ST Reborn zaten hoparlörde ve bu durumu sonlandıramaz.",
+  "setup.help.setupWait": "Hiçbir şey yapmadan yaklaşık on beş dakika bekle. Işık yanıp sönerken kurulumu tekrar başlatma: faydası olmaz. Sonrasında hâlâ yanıp sönüyorsa hoparlörün fişini on saniye çek ve tekrar tak.",
+  "updateAll.phase.boxInSetup": "Hoparlör kendi kurulumunu tamamlıyor, daha sonra tekrar bak.",
+  "update.boxInSetupNote": "{{name}} kendi kurulumuyla meşgul ve bu sırada ağdan çıkıyor, bu yüzden güncelleme doğrulanamadı. Muhtemelen başarılı oldu. Yaklaşık on beş dakika sonra tekrar bak.",
+  "setup.installWaitStopBtn": "Beklemeyi bırak ve ayrıntıları göster"
 }

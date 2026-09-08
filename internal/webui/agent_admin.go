@@ -144,6 +144,18 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 	}
+	// The firmware's OWN setup episodes (#873). Emitted only when there has
+	// been one, same "keep the common response small" rule as conflictingMod.
+	//
+	// This is the field that lets the desktop app say, after the fact, that the
+	// speaker was finishing its own out-of-box setup during a window in which
+	// it answered the PC nothing at all: the app cannot see a setup access
+	// point going up, and reported the resulting silence as a failed install.
+	if state, episodes, lastSec := s.BoxSetup(); episodes > 0 {
+		out["boxSetup"] = state
+		out["boxSetupEpisodes"] = strconv.Itoa(episodes)
+		out["boxSetupLastSec"] = strconv.Itoa(lastSec)
+	}
 	// Silent-refusal latch: the 1036 storm's quiet sibling (the box drops its
 	// source on its own for every recall without ever sending a 1036). Same
 	// remedy, so the desktop app joins it into the storm banner.

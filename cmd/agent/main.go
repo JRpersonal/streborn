@@ -869,7 +869,13 @@ func run() error {
 	// and every play is refused, though the box is otherwise ready (live:
 	// ST300 + scm-ST30, 2026-07-09). One POST /setup SETUP_LEAVE clears it and
 	// UPnP radio plays. Watch for it and repair it so no user has to power-cycle.
-	go leaveSetupSourceWatcher(context.Background(), *boxHost, logger)
+	//
+	// It also records every entry into setup on the webui server, so a bundle
+	// and /api/agent/version can report an episode the desktop app could not
+	// see at all: while the firmware raises its setup access point the speaker
+	// leaves the LAN, and the app's install wait then times out and calls a
+	// successful install a failure (#873).
+	go leaveSetupSourceWatcher(context.Background(), *boxHost, logger, webuiSrv)
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
@@ -996,6 +1002,15 @@ func run() error {
 		// wakes the stored members (#70): hardware keys and Spotify Connect
 		// starts reach the agent only through this gabbo signal.
 		onSourcePlaying: webuiSrv.KickDefaultGroup,
+		// The firmware raised its own setup access point (#873): record the
+		// episode for the app's after-the-fact explanation and wake the
+		// leave-setup watcher, so the clear happens now rather than at its next
+		// tick (up to five minutes away on the reporter's box) while still
+		// going through the watcher's clear budget and backoff.
+		onSetupAPRaised: func() {
+			webuiSrv.NoteBoxSetupEpisode()
+			nudgeLeaveSetupWatcher()
+		},
 		// Let the hardware-recall verify stand down when the user powered the box
 		// off mid-recall, so it does not re-push the stream into a power-off (#197).
 		// The absolute variant is preferred: the rolling 6s window could expire
@@ -1156,6 +1171,11 @@ func run() error {
 		return m
 	})
 	webui.RegisterDebugSection("box_syslog_tail", func() any { return keyTrace.TailSnapshot() })
+	// The frozen setup episode (#873). The rolling tail above is 150 lines and
+	// a busy box overwrites it in seconds, so a quarter of an hour of setup
+	// flapping was gone long before a bundle was exported. This one is
+	// snapshotted the moment the firmware's setup state machine first speaks.
+	webui.RegisterDebugSection("box_setup_tail", func() any { return keyTrace.SetupTailSnapshot() })
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user
