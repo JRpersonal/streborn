@@ -62,6 +62,36 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 `POST /api/play/<slot>` is usually what you want to start a preset from
 automation; `presets/recall` mirrors a physical button press.
 
+## Alarm clock
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`  | `/api/alarms` | - | The alarm document plus a read-only `status` block. |
+| `PUT`  | `/api/alarms` | the whole document | Replaces it wholesale. LAN only. |
+
+An alarm is `{"id","enabled","name","hour","minute","days","slot","volume"}`:
+`days` are weekdays with `0` = Sunday, `slot` is a preset 1-6, and `volume` is
+1-100 or `0` to leave the speaker's own level alone. The document also carries
+one IANA `zone` for the speaker; an empty zone means UTC. At most 8 alarms, and
+an alarm with no days is rejected rather than treated as "every day".
+
+A rejected `PUT` answers `400` with the reason as plain text, meant to be shown
+to the user as it stands. The `status` block reports `clockTrusted`,
+`zoneResolved`, `nextFire`, `nextAlarmId` and `lastFire`; it is ignored on the
+way in. `nextFire` comes from the speaker, so it is the honest answer to "when
+will this actually go off", including its zone and its clock.
+
+```bash
+curl -s $BOX/api/alarms
+curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
+  "zone":"Europe/Berlin",
+  "alarms":[{"id":"weekdays","enabled":true,"hour":6,"minute":30,
+             "days":[1,2,3,4,5],"slot":3,"volume":25}]}'
+```
+
+See [AUTOMATION.md](AUTOMATION.md) for what a fire actually does and how the
+clock is handled.
+
 ## Examples
 
 ```bash

@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/alarm"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
@@ -117,6 +118,27 @@ type Server struct {
 	// groupKeys holds the saved groups bound to the remote's thumbs keys
 	// (#863). nil when not wired; the endpoint then reports unavailable.
 	groupKeys *groupkeys.Store
+	// alarms holds the alarm clock document, and alarmState what has already
+	// been fired. nil when not wired; the endpoint then reports unavailable and
+	// no scheduler runs. See alarms.go.
+	alarms     *alarm.Store
+	alarmState *alarm.StateStore
+	// alarmNow is the scheduler's test clock, nil = time.Now.
+	alarmNow func() time.Time
+	// alarmReload wakes the scheduler when an editor saves the document.
+	alarmReload chan struct{}
+	// alarmZoneWarned rate-limits the unknown-zone warning. Touched only by the
+	// scheduler goroutine.
+	alarmZoneWarned bool
+	// alarmMu guards the clock-trust bookkeeping, which the status endpoint
+	// reads from another goroutine.
+	alarmMu sync.Mutex
+	// alarmClockBad is whether the last evaluation found the clock implausible.
+	alarmClockBad bool
+	// alarmBackground tracks the wake-and-recall and its verify, which outlive
+	// the evaluation that started them. The tests wait on it; nothing in
+	// production does yet, but a graceful shutdown would.
+	alarmBackground sync.WaitGroup
 	// spotifySwitchedAway tells the Spotify manager the box was pointed at a
 	// non-Spotify source, so its #14 auto-attach does not yank the box back.
 	// nil when Spotify is not configured.
@@ -819,22 +841,7 @@ func (s *Server) quietWake(ctx context.Context) error {
 	// powers on (measured 2026-09-06: set to 0 in standby, woke at 30).
 	// So a watcher polls for the first sign of life and mutes right then,
 	// a few hundred milliseconds into the resume instead of seconds.
-	muteDone := make(chan struct{})
-	go func() {
-		defer close(muteDone)
-		c := boxapi.New(s.boxHost)
-		for ctx.Err() == nil {
-			if np := quietWakeNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
-				_ = c.SetVolume(ctx, 0)
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(150 * time.Millisecond):
-			}
-		}
-	}()
+	muteDone := s.setVolumeOnFirstLife(ctx, 0)
 	err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger)
 	<-muteDone
 	if err != nil {
@@ -856,6 +863,35 @@ func (s *Server) quietWake(ctx context.Context) error {
 	}
 	s.logger.Info("wake: quiet wake for a group operation", "mutedFrom", prevVol)
 	return nil
+}
+
+// setVolumeOnFirstLife starts a watcher that writes vol the moment the speaker
+// shows its first sign of life, and returns a channel closed when the watcher
+// is done. It exists because a level written while the speaker is in standby is
+// accepted by its API and then overwritten by the firmware's own remembered
+// level on power-on (measured 2026-09-06: set to 0 in standby, woke at 30), so
+// the write has to be raced into the resume rather than made before it.
+//
+// Shared by the quiet wake (which writes a mute) and the alarm (which writes
+// the level you want to wake up to).
+func (s *Server) setVolumeOnFirstLife(ctx context.Context, vol int) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c := boxapi.New(s.boxHost)
+		for ctx.Err() == nil {
+			if np := quietWakeNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
+				_ = c.SetVolume(ctx, vol)
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(150 * time.Millisecond):
+			}
+		}
+	}()
+	return done
 }
 
 // quietWakeRestoreAfter bounds how long a member stays muted after a quiet
@@ -949,7 +985,7 @@ func (s *Server) ensureBoxReadyErr(ctx context.Context) error {
 // New creates a new webui server.
 func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	s := &Server{addr: addr, logger: logger, queue: newPlayQueue(),
-		mirrorKick: make(chan struct{}, 1)}
+		mirrorKick: make(chan struct{}, 1), alarmReload: make(chan struct{}, 1)}
 	for _, o := range opts {
 		o(s)
 	}
@@ -1058,6 +1094,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/groupkeys", s.handleGroupKeys)
+	mux.HandleFunc("/api/alarms", s.handleAlarms)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
 
@@ -1149,6 +1186,9 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() {
 		errCh <- srv.Serve(ln)
 	}()
+	// The alarm scheduler outlives every request, so it hangs off the server's
+	// context rather than any one of them. It returns on ctx.Done.
+	go s.runAlarms(ctx)
 
 	select {
 	case <-ctx.Done():
