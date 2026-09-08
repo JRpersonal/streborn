@@ -309,6 +309,15 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.sinkSeams = 0
 	m.mu.Unlock()
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
+	// Buffer-lag baseline (boxlag.go): arm it here, take it in the drain on the
+	// first audio page this box receives. Delivered audio is then counted from
+	// the same instant the box's own RelTime counts from, and the reading taken
+	// there is the zero check - both sides should read about the same, and a
+	// bundle that shows they do not is what tells us how to read the per-track
+	// numbers. Reading it HERE instead would compare a box that has not started
+	// the new transport yet (its RelTime can still be the previous URI's clock)
+	// against a delivered counter that stopped at the previous detach.
+	m.noteStreamAttached()
 
 	// A fresh (non-reattach) attach is a clean recall start, not a storm: clear
 	// any accumulated re-point backoff so the next genuine playlist switch is

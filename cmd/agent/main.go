@@ -899,6 +899,18 @@ func run() error {
 	// WebSocket on 8080 (gabbo protocol) when the user physically presses a
 	// button. We hook the event and trigger our UPnP player.
 	renderer := upnp.NewBoseRenderer(*boxHost)
+	// The speaker's own playback clock, for the Spotify buffer-lag measurement
+	// (internal/spotify/boxlag.go): the app shows the position go-librespot has
+	// delivered, the room hears what the box has rendered, and this is the only
+	// side that can say how far apart they are. Measured on stream attach and on
+	// each track boundary, never polled.
+	//
+	// RelPosition, not PositionInfo: the measurement needs to know whether the
+	// box gave a readable clock, and PositionInfo reports call success while
+	// mapping an unreadable RelTime to zero. A zero there would be recorded as
+	// the box having played none of the audio it was given, i.e. the largest lag
+	// the measurement can express, and nothing in the bundle would say so.
+	spotifyMgr.SetBoxPositionFn(renderer.RelPosition)
 	// publishBoxPresets is the ONE place a box preset list read from the
 	// speaker (a gabbo presetsUpdated frame, the boot seed read, the
 	// reconcile's own /presets read) reaches the webui cache and the

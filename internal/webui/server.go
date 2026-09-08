@@ -496,6 +496,11 @@ type Server struct {
 	// playStateFn overrides boxPlayState for tests. nil = the real :8090 probe.
 	playStateFn func() (standby, busy bool)
 
+	// nowPlayingBodyFn seams the raw now_playing read behind the foreign-content
+	// guard (resume_foreign.go), so the decision is assertable without a live
+	// box. nil = the real :8090 fetch.
+	nowPlayingBodyFn func() string
+
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
