@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -109,4 +110,65 @@ func TestNoteTrackBoundaryCutStandsDown(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	})
+}
+
+// The field regression (living-room ST30, 2026-09-08): the box attaches
+// mid-stream, so the engine logs a "loaded track" line that never reaches a
+// boundary of its own. With the durations paired to boundaries by position,
+// that one extra load shifted every later pairing by one for good, and each
+// track that had played in FULL was measured against the duration of the
+// track before it. Two of the three boundaries in the captured log were
+// declared app skips and the box lost its buffered tail, which is heard as
+// the song ending a few seconds early.
+func TestAnExtraLoadWithoutABoundaryDoesNotDesyncTheDetector(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 4)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard // a box is attached
+
+	load := func(ms int64) {
+		m.noteLibrespotLine(`level=info msg="loaded track \"x\" (position: 0ms, duration: ` +
+			strconv.FormatInt(ms, 10) + `ms, prefetched: true)"`)
+	}
+	quiet := func(what string) {
+		t.Helper()
+		select {
+		case <-fired:
+			t.Fatalf("%s played to its full length and must not be read as an app skip", what)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	// The attach: a load with no boundary behind it, exactly what a box
+	// joining an already running stream produces.
+	load(233000)
+
+	// Every engine load names the track that is ABOUT to start, so the
+	// played time handed to a boundary belongs to the track loaded one step
+	// earlier. These are the four loads and the three full-length endings
+	// from the captured log.
+	load(213760) // Rollin'
+	m.noteTrackBoundaryCut(0, 0)
+	quiet("the track before the capture")
+
+	load(268826) // Gone Away
+	m.noteTrackBoundaryCut(213*vorbisRate, 4096)
+	quiet("Rollin'")
+
+	load(198081) // Freeze Me
+	m.noteTrackBoundaryCut(268*vorbisRate, 4096)
+	quiet("Gone Away")
+
+	load(228360) // Centuries
+	m.noteTrackBoundaryCut(198*vorbisRate, 4096)
+	quiet("Freeze Me")
+
+	// The detector still has to work: Centuries is cut 60 s short.
+	load(200000)
+	m.noteTrackBoundaryCut((228360-60000)*vorbisRate/1000, 4096)
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a genuine mid-track cut must still re-point the box")
+	}
 }

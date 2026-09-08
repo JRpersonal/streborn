@@ -499,17 +499,16 @@ func parseLoadedTrackDurMs(lc string) int64 {
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
 	// "loaded track" carries the duration the app-skip detector needs (see
-	// durQueueMs). The prefetch line names a duration too, but describes a
-	// track that may never play, so it must not enter the queue.
+	// loadedTrackDurMs). The prefetch line names a duration too, but
+	// describes a track that may never play, so it is ignored here.
+	//
+	// The newest load simply overwrites the slot. A load that never reaches a
+	// boundary is then forgotten at the next one instead of shifting every
+	// later pairing by one.
 	if strings.Contains(lc, `msg="loaded track`) {
 		if ms := parseLoadedTrackDurMs(lc); ms > 0 {
 			m.mu.Lock()
-			m.durQueueMs = append(m.durQueueMs, ms)
-			// Bounded: a load that never produces a boundary (aborted play)
-			// must not let the queue drift away from the stream for good.
-			if len(m.durQueueMs) > 4 {
-				m.durQueueMs = m.durQueueMs[len(m.durQueueMs)-4:]
-			}
+			m.loadedTrackDurMs = ms
 			m.mu.Unlock()
 		}
 	}

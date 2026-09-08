@@ -293,22 +293,19 @@ func cutShortOfDuration(prevGran, prevBody, durMs int64) bool {
 	return prevGran*1000/vorbisRate < durMs-5000
 }
 
-// noteTrackBoundaryCut runs the app-skip detector at a track boundary: it
-// shifts the duration queue (see durQueueMs in Manager) and, when the ended
-// track was cut mid-play while NO STR-issued cut was armed, stamps the skip
-// boundary and re-points the box so its buffered tail of the old track is
-// dropped. STR's own skip and recall paths arm the cut first, so they never
-// trip this; a boundary with no known duration (agent restarted mid-play) is
+// noteTrackBoundaryCut runs the app-skip detector at a track boundary: the
+// track named by the newest load takes over as the one being forwarded (see
+// loadedTrackDurMs in Manager) and, when the ended track was cut mid-play
+// while NO STR-issued cut was armed, it stamps the skip boundary and
+// re-points the box so its buffered tail of the old track is dropped. STR's
+// own skip and recall paths arm the cut first, so they never trip this; a
+// boundary with no known duration (agent restarted mid-play) is
 // conservatively treated as natural.
 func (m *Manager) noteTrackBoundaryCut(prevGran, prevBody int64) {
 	m.mu.Lock()
 	endedMs := m.streamTrackDurMs
-	if len(m.durQueueMs) > 0 {
-		m.streamTrackDurMs = m.durQueueMs[0]
-		m.durQueueMs = m.durQueueMs[1:]
-	} else {
-		m.streamTrackDurMs = 0
-	}
+	m.streamTrackDurMs = m.loadedTrackDurMs
+	m.loadedTrackDurMs = 0
 	armed := time.Now().Before(m.skipCutUntil)
 	m.mu.Unlock()
 	if armed || !cutShortOfDuration(prevGran, prevBody, endedMs) {
