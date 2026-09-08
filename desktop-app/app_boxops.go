@@ -81,8 +81,26 @@ func (a *App) RebootBox(host string, port int) error {
 // frontend can bring a zone member that a user switched off at the speaker back
 // up before enrolling it in a group (#70). Best-effort: a failure is not fatal to
 // the group form.
+//
+// Asks for a quiet wake, because every caller of this is a group form. The
+// plain wake lets the firmware's power-on resume the speaker's OWN last station
+// at its own level: for a few seconds each joining member played something
+// else, loudly, before the zone took it over, and the firmware answered its own
+// failed self-resume with 1036 rejections that the box's storm detector counted
+// as "this speaker refuses every station" (field, 2026-09-07). The agent's
+// quiet branch mutes first, stops whatever the firmware resumed, and puts the
+// level back when the speaker joins the zone.
+//
+// quietifasleep, NOT quiet: agents v0.9.74 and v0.9.75 honour quiet=1 but do it
+// to any speaker, awake or not - they mute it to 0 and send STOP. This app wakes
+// the FULL desired member list of a group edit, so against those agents asking
+// for quiet would silence every member of a playing group whenever one speaker
+// is added or removed. Users update the app before they update each box, so
+// that is the normal path, not an edge case. An old agent ignores a key it does
+// not know and does its plain wake; the agents that gate the quiet treatment on
+// standby understand this name.
 func (a *App) WakeBox(host string, port int) error {
-	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/wake", "application/json", "")
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/wake?quietifasleep=1", "application/json", "")
 	if err != nil {
 		return err
 	}

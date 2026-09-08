@@ -15,7 +15,7 @@ import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, Wa
 import { normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, storedPermanentGroupsOf } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName } from '../stereoNames.js';
 
@@ -98,19 +98,39 @@ function flashStereoMsg(html) {
 // written to state.zoneMsg and never cleared, and a second Ungroup press also
 // fired a toast, so the same "Group dissolved" line showed twice at once and
 // then sat in the panel forever, still there after leaving the tab and coming
-// back (#843). Flash it exactly like the stereo one: one confirmation, no toast
-// duplicate, gone after a few seconds. Only green confirmations auto-clear;
-// errors stay until the next action because the user still has to act on them.
+// back (#843). One confirmation, no toast duplicate, gone after a few seconds.
+// Only green confirmations auto-clear; errors stay until the next action
+// because the user still has to act on them.
 let zoneMsgToken = 0;
-function flashZoneMsg(html) {
+
+// ZONE_MSG_FLASH_MS is how long a transient note stays up: long enough to be
+// read after the action that wrote it, short enough that it is gone before the
+// page can contradict it.
+export const ZONE_MSG_FLASH_MS = 8000;
+
+// setZoneMsg is the ONE writer of state.zoneMsg. Every branch states its policy
+// in the call: transient:true for a confirmation, transient:false for something
+// the user still has to act on. It is an explicit flag and not a look at the
+// html on purpose - a writer that guessed from `setup-ok` would silently pick
+// the wrong policy for the next class of note somebody adds, which is exactly
+// how the green "Group active: 2 speaker(s) joined" came to sit on the page
+// long after the group was gone, over a line that said "No group right now"
+// (field, 2026-09-07). The self-clearing flash existed by then; the form branch
+// simply did not use it, because using it was optional.
+//
+// The token moves on EVERY write, transient or not, so a timer armed by an
+// earlier confirmation can never wipe the note that has since replaced it, and
+// the identity check makes each timer clear only the note it was armed for.
+export function setZoneMsg(html, opts) {
   state.zoneMsg = html;
   const mine = ++zoneMsgToken;
+  if (!opts || opts.transient !== true) return;
   setTimeout(() => {
     if (zoneMsgToken === mine && state.zoneMsg === html) {
       state.zoneMsg = '';
       if (state.view === 'multiroom') renderMultiroom(false);
     }
-  }, 8000);
+  }, ZONE_MSG_FLASH_MS);
 }
 
 // resetMultiroomNotes clears both result notes. switchView calls it when the
@@ -270,10 +290,19 @@ export function renderMultiroom(fetchLive) {
           .filter(b => zoneOrPairMaster(b, state.zoneLive, strBoxes) === mk)
           .sort((a, b) => (((b.deviceID || '').toUpperCase() === mk ? 1 : 0) - ((a.deviceID || '').toUpperCase() === mk ? 1 : 0)));
         const pair = pairForMasterKey(mk);
-        const masterBox = strBoxes.find(b => (b.deviceID || '').toUpperCase() === mk);
+        // NOT a plain deviceID lookup: the master key comes from the speakers'
+        // own zone documents, so it names the master by the identity the
+        // SPEAKER answers with, and the app's record for that speaker can carry
+        // a different one (three single-chip SoundTouch 10s did, field bundle
+        // 2026-09-07). The lookup then missed and the frame printed the raw hex
+        // key as its name. masterBoxForKey asks by address and by group shape
+        // as well, and answers null rather than guessing.
+        const masterBox = masterBoxForKey(mk, state.zoneLive, strBoxes);
+        // A raw ID is never a label: it tells the user nothing and reads like a
+        // fault. With no name to show, the generic word for a group is honest.
         const label = pair
           ? (pairDisplayName(pair, () => renderMultiroom(false)) || t('multiroom.stereoHeading'))
-          : (masterBox ? zoneLabel(masterBox) : mk);
+          : (masterBox ? zoneLabel(masterBox) : t('multiroom.groupLabelPrefix'));
         // The main speaker's chip is named as such, and a permanent group
         // says so on its frame (Jens, 2026-09-06: neither could be told
         // apart from a temporary group or a plain member).
@@ -282,7 +311,11 @@ export function renderMultiroom(fetchLive) {
           ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>`
           : '';
         const chips = members.map(b => {
-          const isMaster = !pair && (b.deviceID || '').toUpperCase() === mk;
+          // Compared by HOST, not by deviceID: the ID is the untrustworthy
+          // field here (see masterBoxForKey), and wherever it disagrees the
+          // star sat on no chip at all, so the frame showed a group with no
+          // main speaker in it.
+          const isMaster = !pair && !!masterBox && b.host === masterBox.host;
           const mark = isMaster ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>` : '';
           return `<span class="zone-frame-chip">${mark}${escapeHtml(zoneLabel(b))}</span>`;
         }).join('');
@@ -408,7 +441,20 @@ export function renderMultiroom(fetchLive) {
   // Stereo pair (scaffold). Bose stereo pairing is a SoundTouch 10 feature, so
   // only ST10s are offered as candidates (matches the "needs two SoundTouch 10"
   // copy). \b10\b matches "SoundTouch 10" but not 20/30/300/Portable.
-  const pairCands = strBoxes.filter(b => /\b10\b/.test(b.model || ''));
+  //
+  // Minus the speakers that belong to a saved permanent group: a speaker keeps
+  // ONE zone document, so pairing one of them replaces the group with the pair
+  // and the group is gone for good. The group is invisible to every live check
+  // while its main speaker is idle (storedGroupHostsOf), which is exactly when
+  // the picker used to offer its members as if they were free.
+  //
+  // A speaker that is half of a LIVE pair is never fenced off (pairBlockedHosts
+  // subtracts those): the pair is what its document already holds, and taking
+  // it out of the dropdowns would take away the only place it can be renamed or
+  // undone.
+  const storedGroupHosts = pairBlockedHosts(state.zoneLive, strBoxes);
+  const pairCands = strBoxes.filter(b => /\b10\b/.test(b.model || '') && !storedGroupHosts.has(b.host));
+  const pairInGroupCount = strBoxes.filter(b => /\b10\b/.test(b.model || '') && storedGroupHosts.has(b.host)).length;
   const canPair = pairCands.length >= 2;
   // Which two speakers the dropdowns show, in order of trust: the pair that is
   // actually live on the speakers, then what the user last picked, then the
@@ -448,12 +494,16 @@ export function renderMultiroom(fetchLive) {
   // Say whether a pair exists at all. Until now the section gave no sign
   // either way, so a user could not tell a dissolve that did nothing from one
   // that worked.
-  const pairStatus = formingPair
+  const pairStatus = (formingPair
     ? `<div class="muted small">${escapeHtml(t('multiroom.stereoCurrent', {
         names: pairMemberBoxes(formingPair, strBoxes)
           .map(x => x.box ? zoneLabel(x.box) : (x.member.ip || x.member.deviceID)).join(' + '),
       }))}</div>`
-    : `<div class="muted small">${escapeHtml(t('multiroom.stereoNoPair'))}</div>`;
+    : `<div class="muted small">${escapeHtml(t('multiroom.stereoNoPair'))}</div>`)
+    // Say why a speaker the user can see is not in the dropdowns. Left unsaid,
+    // a missing speaker reads as a bug rather than as the group protecting
+    // itself.
+    + (pairInGroupCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.groupNotPairable'))}</div>` : '');
 
   // The pair's own display name, kept app-side (stereoNames.js). Prefilled from
   // the store for the SELECTED pair; the async lookup repaints once it lands.
@@ -577,16 +627,24 @@ export function renderMultiroom(fetchLive) {
     x.onclick = (e) => {
       e.stopPropagation();
       const mk = String(x.dataset.dissolve || '').toUpperCase();
-      if (x.dataset.dissolveKind === 'stored') {
-        const mb = strBoxes.find(b => String(b.deviceID || '').toUpperCase() === mk);
-        doDissolveZoneAt(mb);
-      } else if (x.dataset.dissolveKind === 'pair') {
+      if (x.dataset.dissolveKind === 'pair') {
         const pair = stereoPairsOf(state.zoneLive).find(p =>
           String(p.master || '').toUpperCase() === mk ||
           (p.members || []).some(m => String((m && m.deviceID) || '').toUpperCase() === mk));
         doDissolveStereoPair(pair, strBoxes);
       } else {
-        const mb = strBoxes.find(b => String(b.deviceID || '').toUpperCase() === mk);
+        // Through the same resolver the frame's LABEL uses, so the x can never
+        // aim at nothing while the frame carries a name (a plain deviceID
+        // lookup missed wherever the app's record and the speaker's own answer
+        // name the box differently, and doDissolveZoneAt(undefined) returned
+        // without a word: the button did nothing, silently, every time it was
+        // pressed).
+        const mb = masterBoxForKey(mk, state.zoneLive, strBoxes);
+        if (!mb) {
+          setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`, { transient: false });
+          finishAction();
+          return;
+        }
         doDissolveZoneAt(mb);
       }
     };
@@ -663,7 +721,7 @@ export function renderMultiroom(fetchLive) {
     };
     if (left) left.onchange = () => { state.stereoLeft = left.value; snapPair(left.value); delete state.stereoName; renderMultiroom(false); };
     if (right) right.onchange = () => { state.stereoRight = right.value; snapPair(right.value); delete state.stereoName; renderMultiroom(false); };
-    $('stereoCreate').onclick = () => doFormStereo(pairCands);
+    $('stereoCreate').onclick = () => doFormStereo(pairCands, strBoxes);
     // Keep the typed name across the automatic live-poll repaints (which rebuild
     // this markup wholesale), the same way the L/R selects persist to state.
     const nm = $('stereoName');
@@ -916,7 +974,7 @@ async function saveGroupKeys(box, doc) {
 // left speaker as master, RIGHT = the partner); only the ST10 actually pairs, so
 // the agent surfaces the firmware's error verbatim if a box refuses. The result
 // also shows in /getGroup and the logs.
-async function doFormStereo(pairCands) {
+async function doFormStereo(pairCands, allBoxes) {
   const leftId = $('stereoLeft').value;
   const rightId = $('stereoRight').value;
   // Read the typed name before any await, while this DOM is still live.
@@ -929,6 +987,30 @@ async function doFormStereo(pairCands) {
   const left = pairCands.find(b => b.deviceID === leftId);
   const right = pairCands.find(b => b.deviceID === rightId);
   if (!left || !right) return;
+  // The mirror image of pairNotGroupable, and it was guarded in one direction
+  // only: forming a GROUP out of a pair half was refused, forming a PAIR out of
+  // two speakers that are already in a group was checked nowhere. The firmware
+  // keeps that group standing behind the fresh pair, so a third speaker follows
+  // the pair's master into every station and then starts refusing them, and
+  // STR's single-slot zone store loses the group document to the pair (field,
+  // 2026-09-07). The agent refuses this too, and is the authority; saying it
+  // here means the request is not sent against speakers the app can already see
+  // are grouped.
+  //
+  // Live AND saved: a permanent group whose main speaker is idle is not live,
+  // and pairing one of its speakers replaces the saved group with the pair, so
+  // the group is gone with nothing to restore it from. The dropdowns no longer
+  // offer those speakers, so this catches the stale selection that survived the
+  // group being saved in another window. Through the same pairBlockedHosts the
+  // dropdowns use, so re-forming or renaming a LIVE pair is not refused here
+  // after the picker deliberately kept offering it.
+  const storedHosts = pairBlockedHosts(state.zoneLive, allBoxes || pairCands);
+  const grouped = [left, right].filter(b => zoneMasterOf(b.deviceID, state.zoneLive) || storedHosts.has(b.host));
+  if (grouped.length) {
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.groupNotPairable'))}</div>`;
+    renderMultiroom(false);
+    return;
+  }
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
     // The picked left speaker is the master (LEFT channel); the agent assigns
@@ -987,13 +1069,13 @@ async function doFormZone(strBoxes) {
   const sel = state.zoneSlaves || {};
   const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
   if (!master || (!slaveBoxes.length && groupable.length < 2)) {
-    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>`);
+    setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>`, { transient: true });
     renderMultiroom(false);
     return;
   }
   const slaves = slaveBoxes.map(b => ({ deviceID: b.deviceID, ip: b.host }));
   if (!slaves.length) {
-    state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`;
+    setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`, { transient: false });
     renderMultiroom(false);
     return;
   }
@@ -1034,14 +1116,14 @@ async function doFormZone(strBoxes) {
       const msg = inPair
         ? t('multiroom.pairNotGroupable')
         : ((res.error && String(res.error)) || t('multiroom.formedNone'));
-      state.zoneMsg = `<div class="setup-err">${escapeHtml(msg)}</div>`;
+      setZoneMsg(`<div class="setup-err">${escapeHtml(msg)}</div>`, { transient: false });
     } else if (res && (res.deferred || res.defined)) {
       // The box only STORED the permanent group: its master was idle, so it was
       // not woken and no live zone was formed; the group forms itself on the
       // master's next play. Nobody joined anything right now, so the member
       // count below would have announced a formed group that is not there. Say
       // what actually happened instead (2026-08-31).
-      state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.permanentSaved', { master: zoneLabel(master) }))}</div>`;
+      setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.permanentSaved', { master: zoneLabel(master) }))}</div>`, { transient: true });
     } else {
       // Trust the followers' own zone self-report, not the master's optimistic
       // member list (#70). notReady = speakers that were still starting and were
@@ -1057,15 +1139,15 @@ async function doFormZone(strBoxes) {
         .map(ip => { const b = strBoxes.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
         .join(', ');
       if (verified <= 0 && notReady.length) {
-        state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names: notReadyNames }))}</div>`;
+        setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names: notReadyNames }))}</div>`, { transient: false });
       } else if (verified <= 0) {
-        state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`;
+        setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`, { transient: false });
       } else if (missing.length || notReady.length) {
         let msg = t('multiroom.formedPartial', { joined: verified, total: slaves.length });
         if (notReady.length) msg += ' ' + t('multiroom.notReady', { names: notReadyNames });
-        state.zoneMsg = `<div class="setup-warn">${escapeHtml(msg)}</div>`;
+        setZoneMsg(`<div class="setup-warn">${escapeHtml(msg)}</div>`, { transient: false });
       } else {
-        state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: verified }))}</div>`;
+        setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: verified }))}</div>`, { transient: true });
       }
     }
     // Move the app's playback selection to the group master (#70 scenario c):
@@ -1076,7 +1158,7 @@ async function doFormZone(strBoxes) {
       deps.selectBox(master);
     }
   } catch (e) {
-    state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`, { transient: false });
   }
   finishAction();
 }
@@ -1197,7 +1279,7 @@ async function doDissolveZone(strBoxes) {
   const master = liveZoneMaster(strBoxes) || strBoxes.find(b => b.deviceID === state.zoneMaster);
   const pairs = pairMemberIds(state.zoneLive);
   if (!master || pairs.has(String(master.deviceID || '').toUpperCase())) {
-    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`);
+    setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`, { transient: true });
     renderMultiroom(false);
     return;
   }
@@ -1217,14 +1299,14 @@ async function doDissolveZoneAt(master) {
     // group; otherwise it is really gone.
     const res = await DissolveZone(master.host, master.port);
     if (res && res.nothing) {
-      flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`);
+      setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`, { transient: true });
     } else if (res && res.ok === false) {
-      state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`;
+      setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`, { transient: false });
     } else {
-      flashZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`);
+      setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`, { transient: true });
     }
   } catch (e) {
-    state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`, { transient: false });
   }
   finishAction();
 }
@@ -1235,14 +1317,14 @@ async function doDissolveZoneAt(master) {
 // doDissolveStereo asks both halves).
 async function doDissolveStereoPair(pair, boxes) {
   if (!pair) {
-    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`);
+    setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`, { transient: true });
     renderMultiroom(false);
     return;
   }
   const targets = stereoUndoTargets(pair, boxes || []);
   const reachable = targets.filter(b => !b.offline);
   if (!reachable.length) {
-    flashZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`);
+    setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`, { transient: true });
     renderMultiroom(false);
     return;
   }

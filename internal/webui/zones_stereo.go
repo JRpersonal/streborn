@@ -1161,6 +1161,75 @@ func (s *Server) dropStereoDocAfterFailure(why string) {
 	s.logger.Info("stereo: pairing failed, the pair document was removed again", "why", why)
 }
 
+// zonedPairCandidates returns the addresses of the speakers a pairing would
+// involve that are in a live multiroom zone right now: this box first, then the
+// partner. Empty means neither is grouped - or neither could be asked, which is
+// deliberately the same answer: refusing a pairing because a speaker was busy
+// for a moment would block a legitimate action on no evidence, the same
+// best-effort policy the desktop's own boxInStereoPair guard follows.
+//
+// Reads through the package's fetchZone seam, so tests need no :8090 server.
+func (s *Server) zonedPairCandidates(ctx context.Context, partnerIP string) []string {
+	hosts := make([]string, 0, 2)
+	if s.boxHost != "" {
+		hosts = append(hosts, s.boxHost)
+	}
+	if partnerIP != "" && !strings.EqualFold(partnerIP, s.boxHost) {
+		hosts = append(hosts, partnerIP)
+	}
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		zctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		z, err := fetchZone(zctx, h)
+		cancel()
+		if err != nil {
+			s.logger.Info("stereo: could not read the live zone before pairing, going ahead", "host", h, "err", err)
+			continue
+		}
+		if strings.TrimSpace(z.Master) == "" && len(z.Members) == 0 {
+			continue
+		}
+		s.logger.Info("stereo: speaker reports a live multiroom zone", "host", h, "master", z.Master, "members", len(z.Members))
+		out = append(out, h)
+	}
+	return out
+}
+
+// storedGroupBlocksPair reports whether this speaker keeps a saved multiroom
+// group that a pairing would destroy, and returns it for the log line.
+//
+// It answers for the group the live zone read CANNOT see. A permanent group
+// whose master is idle is STORED, not live: both speakers answer no master and
+// no members, so the live guard waves the pairing through, and formStereoPair's
+// persist then replaces the group document in this box's single-slot store with
+// the pair. The group is gone, silently, and this document is its only copy -
+// nothing re-creates it. That is the loss class this project has already paid
+// for once (a wiped zones.json, 2026-09-03), so a group that is merely waiting
+// for its master to play still counts as a group.
+//
+// PERMANENT only, and that is the whole point of the check. A temporary group
+// lives exactly as long as the live zone does, so the firmware's own answer is
+// the truth about it and zonedPairCandidates, which runs first, already refuses
+// a pairing while that zone stands. What is left in the store afterwards is a
+// document nobody can see any more: a temporary group ends with the next
+// standby, the frontend picker does not show it, and refusing on it would tell
+// a user their two speakers cannot be paired because of a group that no longer
+// exists - forever, with no way to clear it from the app.
+//
+// A stored PAIR (z.Stereo) never blocks either: re-pairing the same two
+// speakers and renaming an existing pair both come through formStereoPair and
+// both must stay possible. Neither does a document with no members left in it.
+func (s *Server) storedGroupBlocksPair() (bool, zones.Zone) {
+	if s.zones == nil {
+		return false, zones.Zone{}
+	}
+	z, ok := s.zones.Get()
+	if !ok || z.Stereo || !z.Permanent || len(z.Slaves) == 0 {
+		return false, z
+	}
+	return true, z
+}
+
 func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string) {
 	if len(slaves) != 1 {
 		http.Error(w, "a stereo pair needs exactly one partner speaker", http.StatusBadRequest)
@@ -1207,6 +1276,47 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		} else {
 			s.logger.Warn("stereo: could not read partner /info, using the app-supplied deviceID", "err", perr, "partnerIP", partner.IP)
 		}
+	}
+
+	// A speaker that is in a live multiroom ZONE must not become half of a
+	// stereo pair. STR guarded the reverse direction only: forming a zone is
+	// refused when a member is half of a pair (#792), while forming a PAIR out
+	// of two speakers that are already grouped was checked nowhere - not here,
+	// not in the desktop, not in the frontend. The firmware then keeps the zone
+	// standing behind the fresh pair: a third speaker goes on following the
+	// pair's master and starts refusing stations, and this agent's single-slot
+	// zone store overwrites the group document with the pair, so the group can
+	// no longer even be taken apart from STR (field, 2026-09-07).
+	//
+	// BEFORE the wake below on purpose. Waking resumes the speaker's last
+	// station, so a refusal that arrives after it has started music has already
+	// changed the thing it refused to change.
+	//
+	// A healthy pair is NOT caught by this: a paired speaker's /getZone reports
+	// no master and no members, exactly like a standalone one, because a pair is
+	// a firmware GROUP (/getGroup), not a zone.
+	if inZone := s.zonedPairCandidates(ctx, partner.IP); len(inZone) > 0 {
+		s.logger.Warn("stereo: refusing to pair a speaker that is in a multiroom group (the group would stay standing behind the pair)",
+			"inZone", strings.Join(inZone, ","), "left", master.DeviceID, "rightIP", partner.IP)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": false, "stereo": true, "inZone": inZone,
+			"error": "a speaker that is in a multiroom group cannot become half of a stereo pair; dissolve the group first, then create the pair",
+		})
+		return
+	}
+
+	// And the PERMANENT group that is stored but not live, which the read above
+	// cannot see: a group waiting for its master to play answers exactly like a
+	// standalone speaker (see storedGroupBlocksPair).
+	if blocked, z := s.storedGroupBlocksPair(); blocked {
+		s.logger.Warn("stereo: refusing to pair a speaker that holds a saved multiroom group (pairing would overwrite the group document)",
+			"storedMaster", z.Master, "storedSlaves", len(z.Slaves), "permanent", z.Permanent,
+			"left", master.DeviceID, "rightIP", partner.IP)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": false, "stereo": true, "storedGroup": true, "inZone": []string{s.boxHost},
+			"error": "this speaker keeps a saved multiroom group; pairing it would delete that group. Dissolve the group first, then create the pair",
+		})
+		return
 	}
 
 	// What was playing, captured from BOTH speakers BEFORE the firmware is
@@ -1948,6 +2058,12 @@ func (s *Server) reconcileZoneOnce(playKick bool) {
 	}
 }
 
+// zoneTeardown1036Window is how long a dissolve's own 1036 rejections are kept
+// out of the storm count. The handler's budget is 8 s and the firmware keeps
+// answering for a beat after it, so the window covers both rather than ending
+// mid-teardown.
+const zoneTeardown1036Window = 12 * time.Second
+
 // handleZoneDissolve tears down the zone this box leads and stops re-forming it.
 func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// A dissolve is a membership change like any form, so stamp the sequence:
@@ -1962,6 +2078,15 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// drive against the firmware.
 	s.zoneFormSerial.Lock()
 	defer s.zoneFormSerial.Unlock()
+	// Taking a zone apart kills the in-flight UPnP session on every member, and
+	// the members answer that with errorUpdate 1036
+	// UpnpRcvdContentItemInWrongState. Expected, caused by us, and no evidence
+	// at all about the box - but the storm counter used to count it, so a user
+	// who formed and dissolved a group a few times was shown a red banner
+	// claiming the speaker refuses every station (field, 2026-09-07). Armed
+	// before the teardown starts, so the frames it produces arrive inside the
+	// window.
+	s.suppress1036For(zoneTeardown1036Window, "zone teardown")
 	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()

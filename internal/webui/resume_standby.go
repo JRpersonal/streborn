@@ -1077,6 +1077,26 @@ func (s *Server) SetStorm1036Fn(fn func() (bool, int, time.Time)) {
 	s.storm1036Fn = fn
 }
 
+// SetSuppress1036Fn wires boxws.Suppress1036Until so the paths that PROVOKE a
+// 1036 can say so, instead of the storm detector reading STR's own footprints
+// as a box that refuses everything (see suppress1036For).
+func (s *Server) SetSuppress1036Fn(fn func(time.Time)) {
+	s.suppress1036Fn = fn
+}
+
+// suppress1036For stands the 1036 storm counter down for d. Call it where STR
+// is about to make the box reject something: the rejection is expected, it is
+// STR's own doing, and it says nothing about the box's health. Only the storm
+// COUNT is affected - the per-frame WARN and the boxErrors entry a diagnostic
+// bundle carries are written before the counter is consulted. nil-safe.
+func (s *Server) suppress1036For(d time.Duration, why string) {
+	if s.suppress1036Fn == nil {
+		return
+	}
+	s.suppress1036Fn(time.Now().Add(d))
+	s.logger.Debug("1036: storm counting stood down for a self-inflicted rejection", "why", why, "for", d.String())
+}
+
 // SetOwnTransportCmdFn wires boxws.LastOwnTransportCommand so HandleEnterStandby
 // can recognise a source flip that answers STR's OWN transport push (the
 // firmware rejecting a wake-resume or recall SetURI) instead of classifying it

@@ -240,21 +240,82 @@ func savePersistedPeersLocked(logger *slog.Logger) {
 // announcer, which is the same source the version envelope uses.
 var peerSelfNameFn func() string
 
-// peerSelfDeviceIDFn reports this speaker's own announced deviceID: the one
+// peerSelfDeviceIDsFn reports every id this speaker answers under: the one
 // signal that survives BOTH an address change and a placeholder name. The
 // name-based self-purge below missed exactly that combination after a live
 // subnet move (#697): the box's own stale announcement came back with the old
 // IP and the "str-<ip>" placeholder, so the roster adopted the box as its own
-// peer and dialed the dead address every sweep. Wired at startup from the same
-// value the announcer puts into its TXT record, so the comparison is against
-// what the stale announcement actually carries.
-var peerSelfDeviceIDFn func() string
+// peer and dialed the dead address every sweep. Wired at startup from the
+// announcer itself (see announcerSelfDeviceIDs), so the comparison is against
+// what our announcement actually carries and cannot drift away from it.
+//
+// A LIST, not one id, because this speaker has more than one legitimate
+// identity: the agent's own deviceID and the firmware's SoundTouch id, and
+// those can be different values for the same box. Whichever of them a record
+// names, it names us.
+var peerSelfDeviceIDsFn func() []string
 
-func peerSelfDeviceID() string {
-	if peerSelfDeviceIDFn == nil {
-		return ""
+// selfDeviceIDs builds that list from the announcer's live TXT values plus the
+// id this agent booted with, in that order, without empties or duplicates.
+// Live, not a snapshot: a frozen boot value would silently stop matching the
+// announcement the day anything re-announces a different id, and the self-check
+// is the only #697 backstop that works when both the address and the name are
+// useless. The boot id is kept as a second identity so an entry adopted from an
+// EARLIER announcement is still recognised as us.
+func selfDeviceIDs(bootID string, announced ...func() string) []string {
+	out := make([]string, 0, len(announced)+1)
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		for _, have := range out {
+			if strings.EqualFold(have, id) {
+				return
+			}
+		}
+		out = append(out, id)
 	}
-	return strings.TrimSpace(peerSelfDeviceIDFn())
+	for _, fn := range announced {
+		if fn != nil {
+			add(fn())
+		}
+	}
+	add(bootID)
+	return out
+}
+
+// announcerSelfDeviceIDs is what main.go wires into the seam: the two ids this
+// speaker publishes plus the one it booted with. A named function rather than a
+// closure at the wiring site so a test can check the actual composition instead
+// of a copy of it (the seam tests below set the list themselves and therefore
+// only prove the comparison). Nil-safe: the announcer is created seconds after
+// the seam is wired.
+func announcerSelfDeviceIDs(ann *discovery.Announcer, bootID string) []string {
+	return selfDeviceIDs(bootID, ann.DeviceID, ann.BoxDeviceID)
+}
+
+func peerSelfDeviceIDs() []string {
+	if peerSelfDeviceIDsFn == nil {
+		return nil
+	}
+	return peerSelfDeviceIDsFn()
+}
+
+// matchesSelfDeviceID reports whether id names THIS speaker. Case-insensitive:
+// the ids reach us from an mDNS TXT record, from the desktop app and from the
+// firmware, and only one of those three is guaranteed to be uppercase.
+func matchesSelfDeviceID(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	for _, self := range peerSelfDeviceIDs() {
+		if strings.EqualFold(self, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // purgeSelfPeers drops every roster entry that is really this speaker (by
@@ -263,7 +324,6 @@ func peerSelfDeviceID() string {
 // refresh: the entry for the address the box just left would otherwise be
 // re-dialed every sweep until its 12 h TTL.
 func purgeSelfPeers(logger *slog.Logger) {
-	selfDev := peerSelfDeviceID()
 	selfName := ""
 	if peerSelfNameFn != nil {
 		selfName = strings.TrimSpace(peerSelfNameFn())
@@ -272,7 +332,7 @@ func purgeSelfPeers(logger *slog.Logger) {
 	defer peersMu.Unlock()
 	removed := 0
 	for ip, e := range peersByIP {
-		if (selfDev != "" && e.deviceID == selfDev) ||
+		if matchesSelfDeviceID(e.deviceID) ||
 			(selfName != "" && strings.EqualFold(e.name, selfName)) {
 			delete(peersByIP, ip)
 			removed++
@@ -290,7 +350,6 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		return
 	}
 	mine := ownIPv4s()
-	selfDev := peerSelfDeviceID()
 	selfName := ""
 	if peerSelfNameFn != nil {
 		selfName = strings.TrimSpace(peerSelfNameFn())
@@ -308,9 +367,13 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		// for a moment, and a seed re-created exactly the stale self-entry the
 		// switch refresh had just purged, with reachable forced true and no
 		// deviceID for the other guards to catch (#697). The identity check
-		// mirrors the browse path: announced deviceID first, display name as
-		// the fallback for apps that send no deviceID yet.
-		if (selfDev != "" && s.DeviceID == selfDev) ||
+		// mirrors the browse path: any id this speaker answers under first,
+		// display name as the fallback for apps that send no deviceID yet. The
+		// app resolves a speaker's id from the FIRMWARE where it can, so a seed
+		// for this very box can name it by an id its own mDNS record does not
+		// carry - which is why the check is against every self identity and not
+		// against the announced one alone.
+		if matchesSelfDeviceID(s.DeviceID) ||
 			(selfName != "" && strings.EqualFold(strings.TrimSpace(s.Name), selfName)) {
 			continue
 		}
@@ -494,9 +557,9 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 				// (and our own frozen registration, until the re-announce
 				// lands) still carry the OLD address, which is no longer
 				// "mine", so the box adopted itself as a peer and dialed the
-				// dead address every sweep (#697). The announced deviceID is
-				// ours no matter which address the record carries.
-				if selfDev := peerSelfDeviceID(); selfDev != "" && inst.DeviceID == selfDev {
+				// dead address every sweep (#697). Our own id is ours no matter
+				// which address the record carries.
+				if matchesSelfDeviceID(inst.DeviceID) || matchesSelfDeviceID(inst.BoxDeviceID) {
 					self = true
 				}
 				if self || ip == "" {
@@ -611,7 +674,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		// And by deviceID, which also survives a PLACEHOLDER name: the stale
 		// self-entry after a live subnet move carried "str-<old-ip>" and sailed
 		// past the name check above (#697).
-		if selfDev := peerSelfDeviceID(); selfDev != "" && e.deviceID == selfDev {
+		if matchesSelfDeviceID(e.deviceID) {
 			delete(peersByIP, ip)
 			continue
 		}

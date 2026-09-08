@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -52,8 +53,41 @@ func Send(ctx context.Context, host, cmd string) (string, error) {
 // risk turning a running box off. WakeAndWait does that gating; prefer it over
 // calling PowerOn directly.
 func PowerOn(ctx context.Context, host string) error {
+	if fn := powerToggleHook(); fn != nil {
+		fn()
+	}
 	_, err := Send(ctx, host, "sys power")
 	return err
+}
+
+// beforePowerToggle runs immediately before every `sys power` toggle. It exists
+// for ONE caller: the box answers the firmware's own power-on self-resume with
+// errorUpdate 1036 (it tries to restart a source it does not consider itself
+// logged into), and the 1036 storm counter in internal/boxws counted those as
+// evidence that the box refuses everything - so forming and dissolving a group
+// a few times, which wakes speakers, was enough to raise a red banner about a
+// perfectly healthy speaker (field, 2026-09-07).
+//
+// A callback rather than a direct call so this package keeps no dependency on
+// boxws: boxcli is the low-level CLI transport and is imported by nearly
+// everything, boxws is a WebSocket client with its own lifecycle.
+var (
+	powerHookMu       sync.Mutex
+	beforePowerToggle func()
+)
+
+// SetBeforePowerToggle wires the callback run immediately before each `sys
+// power` toggle. nil clears it. Wired once at agent start.
+func SetBeforePowerToggle(fn func()) {
+	powerHookMu.Lock()
+	defer powerHookMu.Unlock()
+	beforePowerToggle = fn
+}
+
+func powerToggleHook() func() {
+	powerHookMu.Lock()
+	defer powerHookMu.Unlock()
+	return beforePowerToggle
 }
 
 // selfWakeGrace is how long WakeAndWait first watches for the box to leave

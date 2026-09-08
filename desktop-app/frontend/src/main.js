@@ -253,6 +253,7 @@ import {
   resolveBoxByRef,
   stereoPairsOf,
   inStereoPair,
+  masterBoxForKey,
   pairMemberBoxes,
   balanceSourceBox,
   groupCount,
@@ -2451,8 +2452,15 @@ function offlineTitle(b) {
 // ex-followers are stopped so nothing keeps playing the group's stream alone.
 async function dissolveGroupFrame(masterKey) {
   const mk = String(masterKey || '').toUpperCase();
-  const masterBox = state.boxes.find(b => (b.deviceID || '').toUpperCase() === mk);
-  if (!masterBox) return;
+  // The same resolver the frame's label uses. A plain deviceID lookup missed
+  // whenever the app's record carries a different identity than the speaker's
+  // own answer, and this handler then returned without a word: the x was drawn
+  // and pressing it did nothing at all.
+  const masterBox = masterBoxForKey(mk, state.zoneLive, state.boxes);
+  if (!masterBox) {
+    showToast(t('multiroom.dissolveIncomplete'));
+    return;
+  }
   const followers = state.boxes.filter(b => b !== masterBox && b.kind !== 'stock' && !b.offline &&
     String(((state.zoneLive || {})[b.deviceID] || {}).master || '').toUpperCase() === mk);
   try {
@@ -2556,12 +2564,30 @@ function renderBoxSelect() {
   };
   const memberCount = {};
   state.boxes.forEach(b => { const m = masterOf(b); if (m) memberCount[m] = (memberCount[m] || 0) + 1; });
+  // Which discovered box leads a given master key. NOT a plain deviceID
+  // lookup: the key comes from the speakers' own zone documents, so it names
+  // the master by the identity the SPEAKER answers with, while the box record
+  // here carries whatever the app resolved for it, and those two can be
+  // different values for the same speaker (field bundle 2026-09-07: three
+  // single-chip SoundTouch 10s where the box's own /info id WAS the zone master
+  // and the app's record held the other MAC). The lookup then found nobody, so
+  // the frame had no name and no x and no chip was starred. masterBoxForKey
+  // asks by address and by group shape as well, and answers null rather than
+  // guessing. Resolved once per key, because every pill asks again.
+  const masterBoxCache = new Map();
+  const masterBoxOfKey = (m) => {
+    if (!masterBoxCache.has(m)) masterBoxCache.set(m, masterBoxForKey(m, zlMap, state.boxes));
+    return masterBoxCache.get(m);
+  };
   // A box is a framed master only when its group actually renders a frame, i.e.
   // >=2 of its members are discovered here. This keeps the master star and the
-  // frame in lock-step (never a lone star on an unframed pill).
+  // frame in lock-step (never a lone star on an unframed pill). Compared by
+  // HOST for the same reason: the id is the field that can disagree.
   const isFramedMaster = (b) => {
     const m = masterOf(b);
-    return !!m && m === (b.deviceID || '').toUpperCase() && memberCount[m] >= 2;
+    if (!m || memberCount[m] < 2) return false;
+    const resolved = masterBoxOfKey(m);
+    return !!resolved && resolved.host === b.host;
   };
   const pill = (b) => {
     const isStock = b.kind === 'stock';
@@ -2682,8 +2708,11 @@ function renderBoxSelect() {
       // master first inside the frame
       members.sort((a, b) => (((b.deviceID || '').toUpperCase() === m ? 1 : 0) - ((a.deviceID || '').toUpperCase() === m ? 1 : 0)));
       // Name the group after its master speaker so it is obvious which zone the
-      // frame is (the master leads the multiroom group).
-      const masterBox = state.boxes.find(b => (b.deviceID || '').toUpperCase() === m);
+      // frame is (the master leads the multiroom group). Through the same
+      // resolver the star uses, so a frame can never be left nameless and
+      // without its x by a key the box record does not carry (see
+      // masterBoxOfKey).
+      const masterBox = masterBoxOfKey(m);
       const groupName = masterBox ? getBoxLabel(masterBox) : '';
       // A stereo pair gets its own wording and its own mark. Reusing the
       // multiroom label would call two speakers acting as one channel pair a

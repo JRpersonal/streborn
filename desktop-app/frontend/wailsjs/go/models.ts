@@ -31,6 +31,7 @@ export namespace main {
 	    host: string;
 	    port: number;
 	    deviceID: string;
+	    boxDeviceID?: string;
 	    friendlyName: string;
 	    model: string;
 	    version: string;
@@ -61,6 +62,7 @@ export namespace main {
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.deviceID = source["deviceID"];
+	        this.boxDeviceID = source["boxDeviceID"];
 	        this.friendlyName = source["friendlyName"];
 	        this.model = source["model"];
 	        this.version = source["version"];

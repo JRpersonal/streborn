@@ -1406,6 +1406,7 @@
   "setup.targetEmptyBoseApp": "Skaļrunis vēl nav nevienā Wi-Fi tīklā? Vispirms pievienojiet to Wi-Fi ar oriģinālo Bose SoundTouch lietotni, izmantojot “Pievienot skaļruni”. Tas joprojām darbojas lokāli un bez Bose konta. Tiklīdz tas būs jūsu mājas tīklā, tas šeit parādīsies pats. Kartītē jauniem vai atiestatītiem skaļruņiem zemāk ir saites uz Bose lietotni.",
   "setup.targetEmptySetupMode": "Ja pat Bose lietotne skaļruni neatrod, pārslēdziet to iestatīšanas režīmā: uz skaļruņa vienlaikus turiet 1. taustiņu un skaļuma samazināšanu apmēram 10 sekundes, līdz tas restartējas (modeļiem ar ciparu taustiņiem: SoundTouch 10, 20, 30 un Portable). Pēc tam tas dažas minūtes raida savu “Bose SoundTouch” tīklu, kurā Bose lietotne to atradīs pievienošanai. Saglabātie iestatījumu taustiņi tiek zaudēti.",
   "multiroom.pairNotGroupable": "Stereo pāris pašlaik nevar būt grupas daļa; skaļruņu programmaparatūra tad nesāk audio izplatīšanu. Atdaliet pāri, grupējiet skaļruņus atsevišķi un pēc tam izveidojiet pāri no jauna.",
+  "multiroom.groupNotPairable": "Skaļruņi, kas ir grupā, tostarp saglabātā grupā, pašlaik nevar kļūt par stereo pāri: pāris ieņem grupas vietu, un pārējie dalībnieki tad sāk atteikt stacijas. Atdaliet grupu, izveidojiet pāri un pēc tam skaļruņus sagrupējiet no jauna.",
   "multiroom.groupKeysHeading": "Grupu taustiņi",
   "multiroom.groupKeysIntro": "Saglabājiet grupu kā veidni un piesaistiet to viena skaļruņa pults īkšķa taustiņam. Viens nospiediens izveido grupu, otrs to izjauc.",
   "multiroom.groupKeysRemoteOf": "Pults skaļrunim",

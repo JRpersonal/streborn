@@ -121,11 +121,15 @@ var (
 // tried; waking an already-awake box is a fast no-op on the member side.
 func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
 	for _, port := range []string{"17008", "8888"} {
-		// quiet=1: the member mutes itself for the wake and stops what its
-		// firmware resumes, so the room does not get every member's own
-		// last station for a few seconds before the zone takes over.
+		// quietifasleep=1: the member mutes itself for the wake and stops what
+		// its firmware resumes, so the room does not get every member's own
+		// last station for a few seconds before the zone takes over - but only
+		// if it was asleep. The older spelling (quiet=1) is honoured by v0.9.74
+		// and v0.9.75 without that condition, so a member of this group that is
+		// already playing would be muted and stopped by its own re-form. An
+		// agent that does not know this key does the plain wake instead.
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake?quiet=1", nil)
+			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake?quietifasleep=1", nil)
 		if err != nil {
 			continue
 		}

@@ -525,6 +525,66 @@ export function zoneOrPairMaster(box, zoneLive, boxes) {
   return '';
 }
 
+// masterBoxForKey resolves a master KEY (what zoneOrPairMaster returns) back to
+// the discovered box that leads that group, or null when nothing resolves.
+//
+// The key is a deviceID, and the deviceID is the one field on a box record that
+// cannot be trusted. The key comes from the speakers' own zone documents, so it
+// names the master by the identity the SPEAKER answers with, while the box
+// record carries whatever the app resolved for that speaker - and the two can
+// be different values for the same box, whatever the chassis. The bundle that
+// forced this was three single-chip SoundTouch 10s: the master's own /info id
+// WAS the id its zone document named, and the app's record for it carried the
+// other MAC. The group then matched no box at all: the multi-room frame printed
+// the raw hex key as its label, and its x had no box to send the dissolve to,
+// so it was a silent no-op (field bundle 2026-09-07). Which side is "wrong"
+// does not matter here; the frame has to survive the disagreement.
+//
+// So the ID is only the FIRST of three ways to ask, and each later one needs
+// less of it than the one before:
+//   1. by uppercased deviceID OR boxDeviceID, the second identity a speaker
+//      publishes for exactly this reason: boxDeviceID is what its own firmware
+//      calls it, so it matches a key taken from a zone document even when the
+//      two disagree. An older agent announces none, which is what the two
+//      ID-free steps below are for,
+//   2. by address: a zone entry naming mk also carries the leader's senderIP,
+//      and the box at that address is the leader - but only when that box's own
+//      answer names mk too, so a senderIP left over from a group that has since
+//      been rebuilt can never nominate a stranger,
+//   3. ID-free: among the boxes whose entry names mk, the leader is the one
+//      whose own answer does not list itself in members[]. A follower's
+//      /getZone names the master and lists only itself; the leader's lists the
+//      followers. Ambiguity (none, or several) resolves to null rather than to
+//      a guess: the caller then falls back to a generic label, which is honest,
+//      while a guessed box would send a dissolve to the wrong speaker.
+export function masterBoxForKey(mk, zoneLive, boxes) {
+  const up = (s) => String(s || '').toUpperCase();
+  const key = up(mk);
+  if (!key) return null;
+  const strBoxes = (boxes || []).filter((b) => b && b.kind !== 'stock');
+  const byID = strBoxes.find((b) => (b.deviceID && up(b.deviceID) === key)
+    || (b.boxDeviceID && up(b.boxDeviceID) === key));
+  if (byID) return byID;
+  const entryOf = (b) => (zoneLive || {})[b.deviceID] || null;
+  const namesKey = (b) => {
+    const e = entryOf(b);
+    return !!e && up(e.master) === key;
+  };
+  const inGroup = strBoxes.filter(namesKey);
+  for (const b of inGroup) {
+    const ip = (entryOf(b) || {}).senderIP || '';
+    if (!ip) continue;
+    const at = strBoxes.find((x) => x.host === ip);
+    if (at && namesKey(at)) return at;
+  }
+  const leaders = inGroup.filter((b) => {
+    const members = (entryOf(b) || {}).members || [];
+    return !members.some((m) => (m && m.ip && m.ip === b.host)
+      || (m && m.deviceID && b.deviceID && up(m.deviceID) === up(b.deviceID)));
+  });
+  return leaders.length === 1 ? leaders[0] : null;
+}
+
 // groupColorMap assigns each live group and stereo pair (a master with two or
 // more discovered members) a stable colour slot 1..4, hashed from its master
 // key with linear probing into the next free slot. This is the EXACT scheme
@@ -573,6 +633,53 @@ export function storedPermanentGroupsOf(zoneLive, boxes) {
     out.push({ masterKey: up(b.deviceID), masterBox: b, members });
   });
   return out;
+}
+
+// storedGroupHostsOf returns the addresses of every speaker that belongs to a
+// permanent group STORED on a main speaker: the main speaker itself and each of
+// its remembered members. Hosts, not deviceIDs, because a remembered member is
+// only reliably known by the address the group was saved with.
+//
+// A stored group is invisible to every LIVE check: its master is idle, so both
+// it and its members report no master and no members, exactly like a standalone
+// speaker. Pairing one of them destroys the group - a speaker keeps ONE zone
+// document and the pair takes its place - so the stereo picker must not offer
+// those speakers at all. The agent refuses the same combination and is the
+// authority; this only keeps the UI from proposing it.
+export function storedGroupHostsOf(zoneLive, boxes) {
+  const hosts = new Set();
+  for (const g of storedPermanentGroupsOf(zoneLive, boxes)) {
+    if (g.masterBox && g.masterBox.host) hosts.add(g.masterBox.host);
+    for (const m of g.members || []) {
+      const h = (m.box && m.box.host) || m.ip || '';
+      if (h) hosts.add(h);
+    }
+  }
+  return hosts;
+}
+
+// pairBlockedHosts returns the speakers the stereo controls must not act on:
+// storedGroupHostsOf MINUS the speakers that are half of a LIVE stereo pair
+// right now.
+//
+// The subtraction is the point. A pair and a stored group can name the same two
+// speakers: the group was saved first and the pair took the document's slot
+// afterwards, or the group was saved on a main speaker that lists a paired one
+// among its remembered members. Fencing those speakers off wholesale removed
+// the pair from the picker as well, and the picker is the only place a pair can
+// be renamed or undone - so the fence stranded the very pair it had nothing to
+// say about. Nothing is at risk there either: the slot already holds the pair
+// document, so re-forming or renaming it cannot overwrite a group with it.
+export function pairBlockedHosts(zoneLive, boxes) {
+  const hosts = storedGroupHostsOf(zoneLive, boxes);
+  if (!hosts.size) return hosts;
+  for (const p of stereoPairsOf(zoneLive)) {
+    for (const x of pairMemberBoxes(p, boxes || [])) {
+      const h = (x.box && x.box.host) || (x.member && x.member.ip) || '';
+      if (h) hosts.delete(h);
+    }
+  }
+  return hosts;
 }
 
 // groupCount returns how many groups currently shape playback across the
