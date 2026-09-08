@@ -134,10 +134,25 @@ go-librespot's chunked reader keeps every fetched chunk of the current
 track in memory (`audio/chunked-reader.go`, one 256 KiB `chunkItem` per
 chunk of the whole file, never cleared) and the reader is only dropped at a
 track change, which is exactly why a playlist is stable and one long track
-is not. The fix belongs there. What remains valuable here is the
-instrument: the engine's resident size now sits next to the speaker's free
-memory in the health line, the heartbeat and the diagnostic file, which is
-what settled this in two minutes.
+is not.
+
+**Fixed in the engine, same night.** The fork releases the chunks the read
+position has passed and keeps four behind plus the two prefetched, so the
+reader holds 1.75 MiB whatever the track length; a released chunk is
+re-downloaded transparently, and the window is switched off while a
+completion callback is registered, because that callback reads the whole
+file back to persist it to the audio cache (STR pins that cache off, so on
+a speaker the window is always active). Measured on the Portable
+immediately afterwards, same preset, same length of run: the engine's
+resident size settles around 20 MB and stays there for six minutes while
+the speaker's free memory is flat, against 19.3 to 24.5 MB and 7.3 MB lost
+in two minutes before. The release pipeline builds the engine from the
+fork's master, so a release carries it.
+
+What remains valuable on the STR side is the instrument: the engine's
+resident size now sits next to the speaker's free memory in the health
+line, the heartbeat and the diagnostic file, which is what settled this in
+two minutes.
 
 **The field finding (2026-09-07, SoundTouch 20 sm2, FW 27.0.6, 122 MB
 RAM).** Memory falls in proportion to the audio delivered *within one
