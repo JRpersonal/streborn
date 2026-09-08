@@ -92,6 +92,311 @@ is invisible in normal use. It matters when reading a log: an address with
 `:17008` in it is the same agent, reached the long way round. See
 [`MODEL-VARIANTS.md`](./MODEL-VARIANTS.md).
 
+## Three engineering views
+
+The "Big picture" above is a **trust** diagram: it answers "what leaves my
+network". It is deliberately not an engineering drawing. The three views
+below are, and each one answers a different question:
+
+| View | Question it answers | Source of truth below |
+|---|---|---|
+| [1. Network](#view-1-the-network) | Who opens a connection to whom, on which port, and does it leave the house? | [Network ports](#network-ports), [Communication flows](#communication-flows) |
+| [2. Operating system](#view-2-the-operating-system-on-the-speaker) | Which files are read, written and created on the speaker, on which filesystem, and what survives a reboot or a factory reset? | [Storage layout on the speaker](#storage-layout-on-the-speaker) |
+| [3. Components](#view-3-components-and-libraries) | Which Go packages exist, which of them talk to each other, and where the deliberate seams are | [Components](#components), [Tech stack](#tech-stack) |
+
+If a diagram and the section it points at disagree, the section wins: the
+diagrams are drawn from the code, but they are drawings.
+
+---
+
+### View 1: the network
+
+Every arrow is an **initiator reaching a listener**. Solid arrows stay
+inside the house, dotted arrows leave it. Loopback traffic never touches
+the network at all: the agent and the Bose firmware are two processes on
+the same speaker, and almost all of the interesting traffic between them
+is `127.0.0.1`.
+
+```mermaid
+flowchart TB
+  subgraph WAN["Public internet"]
+    direction LR
+    RB["radio-browser.info"]
+    CDN["Radio CDNs<br/>audio and station logos"]
+    SPOT["Spotify access points"]
+    GH["github.com and st-reborn.de<br/>update check"]
+    TIME["Clock check<br/>HEAD, Date header only"]
+    TTS["Google Translate<br/>announcements only"]
+  end
+
+  subgraph HOME["Home network"]
+    direction TB
+    APP["ST Reborn app on the PC<br/>listens on nothing, except<br/>during a factory-reset unlock"]
+    PHONE["Phone remote<br/>a page the speaker serves"]
+    NAS["DLNA media server"]
+    PEER["Another speaker<br/>running the STR agent"]
+
+    subgraph BOX["One SoundTouch speaker"]
+      direction TB
+      subgraph AGENT["STR agent, one Go process"]
+        W["8888: webui, phone page,<br/>stream proxy, Spotify stream"]
+        M["443 and 9080: marge, 8081: BMX<br/>the local cloud stand-in"]
+      end
+      GLR["go-librespot<br/>local API on 3678"]
+      subgraph FW["Bose firmware, stock"]
+        F90["8090 BoseApp REST"]
+        F91["8091 UPnP AVTransport"]
+        F80["8080 gabbo WebSocket"]
+        F17["17000 TAP shell"]
+      end
+    end
+  end
+
+  APP -->|"HTTP /api on 17008 or 8888"| W
+  PHONE -->|"HTTP /api, polling, no WebSocket"| W
+  APP -->|"HTTP 8090, install and settings"| F90
+  APP -->|"TCP 17000, stick-free SSH unlock"| F17
+  APP -->|"SSH 22, install, uninstall, log export"| BOX
+  PEER -->|"HTTP 17008, pulls the master audio"| W
+  W -->|"HTTP 17008, zones, group keys, volume"| PEER
+  APP <-.->|"mDNS 5353"| W
+  W -->|"SSDP 1900 and SOAP, library browse"| NAS
+
+  W -->|"SOAP 8091, SetURI, Play, Stop"| F91
+  W -->|"HTTP 8090, presets, volume, zones"| F90
+  F80 -->|"push only, key and power events"| W
+  W -->|"TCP 17000, wake, log facilities"| F17
+  F90 -->|"HTTPS 443 to streaming.bose.com,<br/>pinned to 127.0.0.1 by /etc/hosts"| M
+  F91 -->|"HTTP 8888, pulls the audio"| W
+  W <-->|"HTTP 3678, play, volume, events"| GLR
+
+  W -.->|"the audio bytes, station logos"| CDN
+  W -.->|"clock, after a power cut"| TIME
+  W -.->|"announcement text to speech"| TTS
+  GLR -.->|"Spotify audio"| SPOT
+  APP -.->|"station search"| RB
+  PHONE -.->|"station search, from the phone itself"| RB
+  APP -.->|"update check and download"| GH
+
+  style HOME fill:#cfe8ff,stroke:#1f6feb,stroke-width:3px,color:#000
+  style BOX fill:#eaf3ff,stroke:#1f6feb,color:#000
+  style AGENT fill:#dff0d8,stroke:#2f855a,color:#000
+  style FW fill:#f5f5f5,stroke:#666,color:#000
+  style WAN fill:#fff4e5,stroke:#d97706,stroke-width:3px,stroke-dasharray:8 5,color:#000
+```
+
+Five things this drawing is meant to make obvious, because each of them
+has cost real debugging time:
+
+1. **The Bose firmware never leaves the house.** Every one of its cloud
+   calls terminates on the same speaker, in the agent. That is the whole
+   project in one arrow.
+2. **`:17008` is not only how the app reaches a BCO box.** On *every*
+   chassis a follower pulls the master's audio from
+   `master:17008/stream/<slot>` while a mirror group plays, so it is an
+   audio path between speakers, not just a control path
+   (`mirrorStreamPort`, `internal/webui/zones_stereo.go`).
+3. **mDNS always advertises port 8888**, even on chassis where 8888 is
+   not reachable from the LAN. That is why both the app and the agent
+   probe and fall back rather than trusting the SRV record.
+4. **The gabbo bus is push only.** STR subscribes to nothing and sends
+   nothing on it beyond protocol pings. It connects to `ws://box:8080/`
+   and names `gabbo` as the WebSocket **subprotocol**, not as a path.
+5. **The PC listens exactly once**: during the factory-reset unlock the
+   app binds `:19080` and the *speaker* calls back into it every 60
+   seconds. Outside that one flow the app opens connections and accepts
+   none.
+
+---
+
+### View 2: the operating system on the speaker
+
+Four storage areas, and which one a file lands in is a decision every
+time. The rule behind all of them: **NAND is small, shared with the
+firmware, and wears out.** Around 31 MB is all there is, and the Bose
+logs live in the same space.
+
+```mermaid
+flowchart TB
+  subgraph RO["rootfs, UBIFS, read-only, never remounted"]
+    R1["/etc/hosts and /etc/resolv.conf<br/>untouched on disk,<br/>shadowed by a bind mount"]
+    R2["/opt/Bose, the firmware itself"]
+  end
+
+  subgraph NV["/mnt/nv, NAND, UBIFS read-write<br/>survives a reboot AND a Bose factory reset<br/>about 31 MB, shared with the firmware"]
+    direction TB
+    BOOT["rc.local, the single entry point<br/>streborn/run-override.sh, the boot script<br/>written by the installer, by the stick,<br/>and by the agent itself when stale"]
+    BIN["streborn/bin/streborn-armv7l, the agent<br/>streborn/bin/go-librespot, the engine<br/>replaced by an OTA, verified on flash"]
+    STORE["presets.json, zones.json, webhooks.json<br/>group-keys.json, recent.json, last-play.json<br/>every write goes through atomicfile:<br/>fsync, rename, fsync the directory"]
+    SEC["ca/, the per-box CA for marge TLS<br/>wlan-creds and wlan-target,<br/>the Wi-Fi passphrase in the clear, mode 0600"]
+    LOGS["agent.log, boot.log, setup.log, run.out<br/>bounded: trimmed to a 64 KB tail at each boot"]
+    BOSE["BoseApp-Persistence and BoseLog<br/>owned by the firmware,<br/>STR only heals and trims them"]
+  end
+
+  subgraph TMP["tmpfs, /tmp and /dev/shm, RAM<br/>survives nothing, costs no flash"]
+    T1["/tmp/streborn-agent.log, the live log"]
+    T2["/tmp/hosts.live, bind-mounted over /etc/hosts<br/>/tmp/streborn-resolv.conf, over /etc/resolv.conf"]
+    T3["heartbeat, per-boot guards, trust overlays,<br/>OTA staging when NAND is too full"]
+  end
+
+  subgraph USB["USB stick, FAT32, optional after the install"]
+    U1["run.sh, rc.local, install.sh, the binaries"]
+    U2["wlan.conf, name.conf, region.conf<br/>read once, then persisted to NAND"]
+  end
+
+  USB -->|"at boot: copy, only if the bytes differ"| NV
+  BOOT -->|"rc.local execs run-override.sh"| BIN
+  BIN -->|"writes"| STORE
+  BIN -->|"writes"| LOGS
+  BIN -->|"bind mounts"| T2
+  T2 -.->|"shadows, never edits"| RO
+  BIN -->|"heals and trims, never deletes"| BOSE
+
+  style NV fill:#dff0d8,stroke:#2f855a,stroke-width:3px,color:#000
+  style TMP fill:#fff4e5,stroke:#d97706,color:#000
+  style RO fill:#f5f5f5,stroke:#666,color:#000
+  style USB fill:#eaf3ff,stroke:#1f6feb,color:#000
+```
+
+**Power on to "the agent is listening"**, in the order it actually
+happens:
+
+```mermaid
+flowchart LR
+  A["Bose init execs<br/>/mnt/nv/rc.local"] --> B["wait up to 30 s<br/>for a stick"]
+  B --> C["copy rc.local and run-override.sh<br/>from the stick, unconditionally:<br/>the box clock reads 2015, so FAT32<br/>timestamps cannot be trusted"]
+  C --> D["run-override.sh from NAND;<br/>NAND beats the SD card"]
+  D --> E["rotate the logs, sync the binaries,<br/>verify them on flash after<br/>sync and drop_caches"]
+  E --> F["Wi-Fi, region, name,<br/>bind /etc/hosts, iptables"]
+  F --> G["start the agent"]
+  G --> H["repair the boot files if stale,<br/>at most one guarded self-reboot"]
+  H --> I["load the stores,<br/>bind 9080, 8081, then 8888"]
+  I --> J["listening"]
+  style J fill:#dff0d8,stroke:#2f855a,color:#000
+```
+
+**Why so few writes.** The steady state costs almost no flash, and that
+is deliberate:
+
+- The live log is on tmpfs. NAND only holds a bounded 256 KB mirror.
+- The recently-played list is debounced by 90 seconds, so a station that
+  changes its ICY title every few minutes is one write, not twenty.
+- The peer roster is written only when its fingerprint changes, and at
+  most every six hours.
+- Boot files, the engine, the priority attributes in the firmware's own
+  Wi-Fi profile: each compares first and skips the write when the bytes
+  already match. A healthy boot writes nothing.
+- The crash log is written only **when the agent exits**, so a box that
+  runs for months never touches it.
+- The 30-second heartbeat lives in RAM. On NAND it would be 2880 writes
+  a day for nothing.
+
+Two files carry a warning label: `wlan-creds` and `wlan-target` hold the
+Wi-Fi passphrase in cleartext on NAND, mode 0600. They are what lets a
+speaker rejoin a network without the app present, and they are covered in
+[`THREAT-MODEL.md`](./THREAT-MODEL.md).
+
+**An uninstall is the same map read backwards**: the agent process, all
+of `/mnt/nv/streborn`, `/mnt/nv/rc.local`, and the `/etc/hosts` bind
+mount. What it deliberately leaves behind is the box's own network and
+account state, because wiping the Wi-Fi profile drops the speaker into
+its setup access point and it disappears from the LAN. A full wipe is
+what the separate factory-reset path is for.
+
+---
+
+### View 3: components and libraries
+
+About fifty Go packages in two modules. They are drawn in layers, and the
+layers are real: nothing in a lower layer imports anything above it.
+
+```mermaid
+flowchart TB
+  subgraph M2["Module streborn-app, the desktop application"]
+    UI["frontend: Vite 8, vanilla JS, no framework,<br/>Vitest, ESLint, Stylelint, 13 locales"]
+    WAILS["Wails v2, generated Go bindings"]
+    APPGO["package main: install, OTA, discovery,<br/>diagnostic bundle, SSH, TAP unlock"]
+    EMB["agentbin: go:embed of<br/>the ARM agent and the ARM engine"]
+  end
+
+  subgraph SHARED["Top level, outside internal/, so the app can import them"]
+    DISC["discovery: mDNS"]
+    DLNA["dlna: SSDP and ContentDirectory"]
+    RADIO["radiobrowser"]
+    STICK["sticksetup and cmd/winformat"]
+    WIFI["wifiprofiles"]
+  end
+
+  subgraph M1["Module streborn, the speaker agent"]
+    ROOT["cmd/agent, the composition root:<br/>wiring, the gabbo handler,<br/>reconcile, the peer roster"]
+    WEBUI["internal/webui: the HTTP surface on 8888,<br/>and most of the behaviour: zones, resume,<br/>queue, playback policy, WLAN, OTA receive"]
+    AUDIO["internal/spotify and internal/streamproxy<br/>the two audio planes"]
+    CLOUD["internal/marge, tlsgen, hosts,<br/>mdnshost, bmx<br/>the local cloud stand-in"]
+    WIRE["internal/boxapi, boxws, upnp, boxcli, boxlog<br/>the only code that touches firmware ports"]
+    STORES["internal/presets, zones, groupkeys, recent,<br/>webhooks, mediaservers, boxsnapshot"]
+    ATOMIC["internal/atomicfile<br/>every NAND write goes through here"]
+  end
+
+  EXT["External at runtime:<br/>gorilla/websocket, grandcat/zeroconf,<br/>miekg/dns, x/net/ipv4, x/sys.<br/>Everything else is the standard library."]
+  GLRP["go-librespot, a separate process:<br/>the fork with the Ogg passthrough patch,<br/>GPL kept at arm's length from the MIT agent"]
+
+  UI --> WAILS
+  WAILS --> APPGO
+  APPGO --> SHARED
+  APPGO -->|"HTTP /api over the LAN"| WEBUI
+  EMB -->|"pushed over HTTP"| WEBUI
+  ROOT --> WEBUI
+  ROOT --> AUDIO
+  ROOT --> CLOUD
+  ROOT --> WIRE
+  ROOT --> STORES
+  ROOT --> DISC
+  WEBUI --> STORES
+  WEBUI --> WIRE
+  WEBUI --> DLNA
+  AUDIO --> WIRE
+  AUDIO -->|"supervises, local API"| GLRP
+  CLOUD --> WIRE
+  STORES --> ATOMIC
+  WIRE --> EXT
+
+  style M1 fill:#dff0d8,stroke:#2f855a,color:#000
+  style M2 fill:#cfe8ff,stroke:#1f6feb,color:#000
+  style SHARED fill:#eaf3ff,stroke:#1f6feb,color:#000
+```
+
+**The seams are the interesting part.** Several edges you would expect to
+find do not exist, on purpose. They are wired up at the composition root
+instead, which is what lets the packages be tested without a speaker:
+
+- `internal/webui` does **not** import `internal/spotify`. Twenty-four
+  function values are passed in instead, so the HTTP surface can be
+  tested with no Spotify engine anywhere near it.
+- `internal/webui` does **not** import `internal/marge` either; six
+  method values do that job.
+- `internal/boxws` knows nothing about presets, zones or webhooks. It
+  emits typed events through a `Handler` interface, and the
+  implementation that decides what to do with them lives in `cmd/agent`.
+- `internal/boxlog` reads the speaker's syslog ring without importing
+  anything box-specific: it is handed `boxcli.Send` as a closure. Its
+  own import list is standard library only.
+- `/api/debug/state` carries the state of TLS, DNS, marge, the box
+  syslog and Spotify without `webui` importing any of them, through a
+  package-level registry the agent fills at start
+  (`webui.RegisterDebugSection`).
+
+**Two browser stacks, not one.** The desktop frontend is Vite plus
+vanilla ES modules with a test runner and a lint chain. The phone remote
+is a single hand-written HTML file the agent serves, with no framework,
+no build step and no external script tag at all. They call the same
+`/api/*` routes and share nothing else.
+
+**One process boundary that is not an accident.** go-librespot runs as a
+separate process, controlled over a localhost API. It is GPL-3.0 and the
+agent is MIT, so two binaries keep that clean, and an engine crash does
+not take the speaker's radio down with it.
+
+---
 ## Components
 
 | Component | Lives in | Runtime | Job |
@@ -99,11 +404,11 @@ is invisible in normal use. It matters when reading a log: an address with
 | **Stick agent** | `cmd/agent/`, `internal/` | Go binary on the speaker NAND, started by `/mnt/nv/streborn/run-override.sh` from Bose `rc.local` | Emulates the Bose cloud (marge, BMX), proxies radio streams (incl. HLS conversion), owns the preset store, announces over mDNS, hooks the speaker's WebSocket bus to re-enable hardware preset buttons, manages multiroom zones (NAND `zones.json`, auto-reform), and fires user-configured webhooks on box events (NAND `webhooks.json`). On whitelisted chassis it also installs the iptables PREROUTING REDIRECTs that make it LAN-reachable, and serves the `:17002` BatteryMonitor fallback on the Portable. |
 | **Spotify plane** | `internal/spotify/`, `go-librespot` binary on NAND | go-librespot runs as a Spotify Connect receiver, supervised by the agent's `spotify.Manager` | Spotify Connect on the speaker without the Bose cloud. go-librespot decodes nothing: with the fork's `audio_output_pipe_passthrough` it writes the raw Ogg/Vorbis bitstream to a pipe; the agent serves it at `/spotify/stream.ogg` on :8888 and points the box's UPnP renderer there. Preset recall drives go-librespot's local play API (no token plane). Multi-account is done by swapping credentials + restarting go-librespot (fragile, see fork issue #1). |
 | **Desktop app** | `desktop-app/` | Wails app (Go backend + Vite frontend), built for Windows, macOS, Linux | Discovers agents over mDNS, talks to them by REST, ships a UI for radio search (app-side, direct to radio-browser.info), presets, playback (with the live now-playing track + bitrate), a DLNA media library, Spotify Connect, multiroom, settings, webhooks (smart-home triggers), diagnostics export, OTA agent updates, network first-install (stick-free `:17000` unlock, USB stick as fallback), and box maintenance (true factory reset, uninstall STR, setup-AP Wi-Fi push). |
-| **Local library (DLNA)** | `dlna/` (top level so Wails can import it) | Imported by the desktop app | SSDP discovery + ContentDirectory browse of LAN media servers (FRITZ!Box, Synology, Plex, miniDLNA). The app saves a track's stream URL as a normal preset; the box pulls it via the streamproxy. |
-| **Multiroom** | `internal/zones/`, `internal/boxapi` zone primitives | Agent endpoints `/api/box/zone` + `/api/box/group` | Groups speakers via the box's native `/setZone` (firmware-synced) or a per-agent mirror fallback, plus stereo pairs. Membership persists in `/mnt/nv/streborn/zones.json` and auto-reforms after reboot/standby/Wi-Fi outage. Group keys (`internal/groupkeys`, `/api/groupkeys`, NAND `group-keys.json`) put a saved group on a remote's thumbs key: a press forms it through the main speaker's agent, the next press dissolves it (see `docs/AUTOMATION.md`). |
+| **Local library (DLNA)** | `dlna/` (top level so Wails can import it) | Imported by the desktop app **and by the agent** (`internal/webui/librarybrowse.go`, `librarysearch.go`), so the speaker itself does SSDP for the phone page | SSDP discovery + ContentDirectory browse of LAN media servers (FRITZ!Box, Synology, Plex, miniDLNA). The app saves a track's stream URL as a normal preset; the box pulls it via the streamproxy. |
+| **Multiroom** | the logic is `internal/webui` (`zones_stereo.go`, `zones_default_group.go`, `zonevolume.go`, `zonemirror.go`, `dissolve*.go`, ~4900 lines); `internal/zones` is persistence only (~160 lines), `internal/boxapi` has the zone primitives | Agent endpoints `/api/box/zone` + `/api/box/group` | Groups speakers via the box's native `/setZone` (firmware-synced) or a per-agent mirror fallback, plus stereo pairs. Membership persists in `/mnt/nv/streborn/zones.json` and auto-reforms after reboot/standby/Wi-Fi outage. Group keys (`internal/groupkeys`, `/api/groupkeys`, NAND `group-keys.json`) put a saved group on a remote's thumbs key: a press forms it through the main speaker's agent, the next press dissolves it (see `docs/AUTOMATION.md`). |
 | **Setup wizard** | `sticksetup/`, `cmd/winformat/` (in-app); `setup/` (legacy PowerShell) | Embedded in the desktop app; `winformat.exe` handles FAT32 formatting | Prepares a FAT32 USB stick with Wi-Fi credentials, region, friendly name, language, and the bootstrap shell scripts, then drives the install over SSH. The standalone PowerShell wizard in `setup/` is legacy. |
 | **USB stick filesystem** | `usb-stick/` | Files written to a FAT32 stick by the wizard | Boot-time bootstrap (`rc.local`, `run.sh`, `install.sh`), one-shot config (`wlan.conf`, `name.conf`, `region.conf`, `lang.conf`, `presets.json`), `str-shim.so`, `version.txt`, and the agent binary itself. `run.sh` persists name/region to NAND as `name.txt`/`region.txt`. |
-| **mDNS discovery** | `discovery/` (top level on purpose, see `CLAUDE.md`) | Imported by both the agent and the desktop app | Service type `_streborn._tcp.local`. TXT record carries deviceID, model, friendly name, version. |
+| **mDNS discovery** | `discovery/` (top level on purpose, see `CLAUDE.md`) | Imported by both the agent and the desktop app | Service types `_streborn._tcp.local` **and** the legacy `_soundtouchstick._tcp.local`. TXT keys: `version`, `build`, `deviceID`, `boxDeviceID`, `model`, `friendlyName`, `path=/api`. The announced port is always **8888**, even on chassis where 8888 is not LAN-reachable, which is why every client probes and falls back to `:17008` instead of trusting the record. |
 | **Website** | separate repo `JRpersonal/streborn-website` | Astro static site, EN and DE | Downloads, FAQ, Verify page with SHA256 and Sigstore click-paths, legal pages. Built on `repository_dispatch` from this repo's release workflow. |
 
 **Sources are presets.** A preset slot or hardware button (1 to 6) can
@@ -162,7 +467,7 @@ Nothing is written to NAND.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Stick agent language | Go 1.25+ (module `github.com/JRpersonal/streborn`) | Static single binary cross-compiles to `linux/arm/v7` from any host. No runtime on the speaker beyond BusyBox. |
+| Stick agent language | Go 1.25+ (module `github.com/JRpersonal/streborn`; the desktop module `streborn-app` declares Go 1.26) | Static single binary cross-compiles to `linux/arm/v7` from any host. No runtime on the speaker beyond BusyBox. |
 | Desktop backend | Go via Wails v2 (`github.com/wailsapp/wails/v2`); own module, imports the shared top-level packages `discovery/`, `dlna/`, `radiobrowser/`, `sticksetup/`, `wifiprofiles/` | Same language as the agent. Go forbids importing the agent module's `internal/`, which is why the shared packages are top-level. |
 | Desktop frontend | Vite 8 + vanilla JS (no framework), i18n layer with 13 locales (EN, DE, ES, FR, JA, LT, LV, NL, PL, TR, UK, AR, ZH-Hant), including right-to-left layout for Arabic | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
 | mDNS | `github.com/grandcat/zeroconf` | Pure Go, dual stack, works on all three desktop OSes and on the speaker. |
@@ -202,7 +507,7 @@ firmware ports are stock. External reachability splits by chassis:
 | 443 | STR marge HTTPS | TLS cloud-stub for `streaming.bose.com` after the Hosts redirect. | loopback (firmware) |
 | 3678 | go-librespot local API (started by STR) | The agent's `spotify.Manager` drives playback here (`/player/play`, shuffle, next, volume) and reads track events. | loopback |
 | 7000 | STSCertified (Bose) | TLS endpoint inside the firmware. Untouched. | internal |
-| 8080 | WebServer / gabbo (Bose) | Hosts the `/gabbo` WebSocket bus. STR connects as a client and keeps the connection genuinely persistent via ping/pong keepalive (a silent ~11 min client-side self-timeout was fixed in v0.9.21; see `FIRMWARE-NOTES.md`). | internal |
+| 8080 | WebServer / gabbo (Bose) | The WebSocket bus, at `ws://127.0.0.1:8080/`: `gabbo` is the WebSocket **subprotocol**, not a path. STR connects as a client and only receives, it subscribes to nothing and sends nothing but protocol pings. The connection is kept genuinely persistent via ping/pong keepalive (a silent ~11 min client-side self-timeout was fixed in v0.9.21; see `FIRMWARE-NOTES.md`). | internal |
 | 8081 | STR BMX stub | Healthz-only placeholder for `content.api.bose.io`; the `/bmx/registry/v1/services` route is answered by marge via the hosts rewrite. | sm2: direct (INPUT ACCEPT) / whitelisted chassis: loopback |
 | 8090 | BoseApp (Bose) | REST: `/info`, `/now_playing`, `/presets`, `/select`, `/volume`, zones, ... STR reads and writes here. | internal |
 | 8091 | UPnP AVTransport (Bose) | STR sets the stream URL via SetURI; the speaker fetches and decodes. | internal |
@@ -264,18 +569,18 @@ sequenceDiagram
   participant Agent as Stick agent
   participant RB as radio-browser.info
   participant SP as STR streamproxy
-  participant Box as Bose firmware
+  participant Spk as Bose firmware
   User->>App: Type query "1live"
   App->>RB: HTTPS GET /stations/search (app-side, direct)
   RB-->>App: JSON, ranked by votes
   User->>App: Click play
   App->>Agent: POST /api/play {url, name, icon}
-  Agent->>Box: SetURI on :8091 with<br/>http://127.0.0.1:8888/stream/raw?u=<b64>
-  Box->>SP: GET /stream/raw?u=<b64>
+  Agent->>Spk: SetURI on :8091 with<br/>http://127.0.0.1:8888/stream/raw?u=<b64>
+  Spk->>SP: GET /stream/raw?u=<b64>
   SP->>UpstreamCDN: Follow redirects, stream bytes
   UpstreamCDN-->>SP: audio/mpeg
-  SP-->>Box: audio/mpeg<br/>(reconnect on EOF without dropping Box's TCP)
-  Box-->>User: Audio out
+  SP-->>Spk: audio/mpeg<br/>(reconnect on EOF without dropping the box's TCP)
+  Spk-->>User: Audio out
 ```
 
 The streamproxy on `:8888` is the load-bearing mechanism: the speaker
@@ -302,18 +607,18 @@ error.
 ```mermaid
 sequenceDiagram
   participant User
-  participant Box as Bose firmware
-  participant WS as ws://127.0.0.1:8080/gabbo
+  participant Spk as Bose firmware
+  participant WS as gabbo bus, ws://127.0.0.1:8080/
   participant Agent as STR boxws hook
   participant SP as STR streamproxy
-  User->>Box: Press preset 2
-  Box->>WS: <updates><nowSelectionUpdated><preset id="2">...
+  User->>Spk: Press preset 2
+  Spk->>WS: <updates><nowSelectionUpdated><preset id="2">...
   WS-->>Agent: XML frame
   Agent->>Agent: parse, slot=2,<br/>read presets.json
-  Agent->>Box: AVTransport SetURI on :8091<br/>http://127.0.0.1:8888/stream/2
-  Box->>SP: GET /stream/2
-  SP-->>Box: audio bytes
-  Box-->>User: Plays slot 2
+  Agent->>Spk: AVTransport SetURI on :8091<br/>http://127.0.0.1:8888/stream/2
+  Spk->>SP: GET /stream/2
+  SP-->>Spk: audio bytes
+  Spk-->>User: Plays slot 2
 ```
 
 Long-press save is firmware-bound and does not emit a WebSocket
@@ -333,15 +638,15 @@ sequenceDiagram
   participant Agent as STR boxws hook
   participant GLR as go-librespot :3678
   participant SP as STR /spotify/stream.ogg
-  participant Box as Bose UPnP :8091
+  participant Spk as Bose UPnP :8091
   User->>Agent: Press Spotify preset 6 (gabbo)
   Agent->>GLR: switch account if needed, play(uri), shuffle, skip to random
-  Agent->>Box: AVTransport SetURI<br/>http://127.0.0.1:8888/spotify/stream-6.ogg
-  Box->>SP: GET /spotify/stream-6.ogg
+  Agent->>Spk: AVTransport SetURI<br/>http://127.0.0.1:8888/spotify/stream-6.ogg
+  Spk->>SP: GET /spotify/stream-6.ogg
   GLR-->>SP: raw Ogg/Vorbis (passthrough pipe)
-  SP-->>Box: cached headers, then live Ogg
-  Box-->>User: Plays the playlist (box decodes Vorbis)
-  Note over Agent,Box: verify loop re-points until the box truly streams<br/>(keyed on the now-playing location, not a bare play state)
+  SP-->>Spk: cached headers, then live Ogg
+  Spk-->>User: Plays the playlist (box decodes Vorbis)
+  Note over Agent,Spk: verify loop re-points until the box truly streams<br/>(keyed on the now-playing location, not a bare play state)
 ```
 
 Key points and their rationale:
@@ -368,20 +673,20 @@ Key points and their rationale:
 
 ```mermaid
 sequenceDiagram
-  participant Box as Bose STSCertified
+  participant Spk as Bose STSCertified
   participant Hosts as /etc/hosts (bind mount)
   participant Iptables as iptables NAT
   participant Marge as STR marge stub
   Note over Hosts: streaming.bose.com -> 127.0.0.1<br/>*.api.bose.io -> 127.0.0.1<br/>TuneIn partner -> 127.0.0.1
-  Box->>Hosts: resolve streaming.bose.com
-  Hosts-->>Box: 127.0.0.1
+  Spk->>Hosts: resolve streaming.bose.com
+  Hosts-->>Spk: 127.0.0.1
   alt HTTPS request
-    Box->>Marge: TLS connect :443<br/>(STR CA installed in box trust store)
-    Marge-->>Box: HTTP 200 + spy log entry
+    Spk->>Marge: TLS connect :443<br/>(STR CA installed in box trust store)
+    Marge-->>Spk: HTTP 200 + spy log entry
   else HTTP request
-    Box->>Iptables: TCP :80
+    Spk->>Iptables: TCP :80
     Iptables->>Marge: redirected to :9080
-    Marge-->>Box: HTTP 200 + spy log entry
+    Marge-->>Spk: HTTP 200 + spy log entry
   end
   Marge->>Marge: log to /__spy/log<br/>respond with minimal stub<br/>(power_on, sourceProviders, addDevice, ...)
 ```
@@ -399,19 +704,19 @@ sequenceDiagram
   participant User
   participant App as Desktop app
   participant TAP as Bose TAP shell :17000
-  participant Box as Speaker (stock, on Wi-Fi)
+  participant Spk as Speaker (stock, on Wi-Fi)
   participant NAND as /mnt/nv/streborn/
   User->>App: Pick the speaker from the list<br/>("ready for STR"), start install
   App->>TAP: envswitch boseurls / accountid injection<br/>(desktop-app/telnet_enable_ssh.go)
-  TAP->>Box: sys reboot
-  Box->>Box: comes up with sshd open<br/>(no stick involved)
-  App->>Box: SSH: stage streborn-armv7l + run-override.sh
-  Box->>NAND: write agent, rc.local chain, presets
-  App->>Box: SSH: reboot
-  Box->>NAND: Bose init runs /mnt/nv/rc.local<br/>-> run-override.sh
-  Box->>Box: region, name, agent start, mDNS :8888
-  App->>Box: poll :8888 / :17008 until the agent answers
-  Note over Box: SSH closes again on the next stickless boot<br/>(opt-in marker only, see THREAT-MODEL.md)
+  TAP->>Spk: sys reboot
+  Spk->>Spk: comes up with sshd open<br/>(no stick involved)
+  App->>Spk: SSH: stage streborn-armv7l + run-override.sh
+  Spk->>NAND: write agent, rc.local chain, presets
+  App->>Spk: SSH: reboot
+  Spk->>NAND: Bose init runs /mnt/nv/rc.local<br/>-> run-override.sh
+  Spk->>Spk: region, name, agent start, mDNS :8888
+  App->>Spk: poll :8888 / :17008 until the agent answers
+  Note over Spk: SSH closes again on the next stickless boot<br/>(opt-in marker only, see THREAT-MODEL.md)
 ```
 
 This is what the "install" button does on a speaker that has never seen
@@ -426,22 +731,22 @@ sequenceDiagram
   participant User
   participant App as Desktop app
   participant Stick as USB stick (FAT32)
-  participant Box as Speaker (cold boot)
+  participant Spk as Speaker (cold boot)
   participant NAND as /mnt/nv/streborn/
   User->>App: Prepare stick<br/>pick speaker, Wi-Fi, name
   App->>Stick: winformat.exe (FAT32)<br/>write run.sh, install.sh, rc.local,<br/>streborn-armv7l, str-shim.so, wlan.conf,<br/>name.conf, region.conf, lang.conf, remote_services
-  User->>Box: Insert stick, power on
-  Box->>Box: Bose init sees remote_services<br/>opens sshd, mounts /media/sda1
-  App->>Box: SSH (passwordless root):<br/>sh /media/sda1/install.sh install
-  Box->>NAND: install.sh copies rc.local +<br/>run-override.sh + presets to NAND
-  App->>Box: SSH: reboot
-  Box->>NAND: Bose init runs /mnt/nv/rc.local<br/>-> run-override.sh
-  Box->>NAND: sync agent binary stick -> NAND
-  Box->>Box: WLAN provisioning, region, name
-  Box->>Box: Start agent, announce mDNS :8888
-  App->>Box: discover on :8888, poll until up
-  User->>Box: Remove stick after first boot
-  Note over Box: From now on /mnt/nv/rc.local -> run-override.sh<br/>starts the agent on every boot. No stick needed.
+  User->>Spk: Insert stick, power on
+  Spk->>Spk: Bose init sees remote_services<br/>opens sshd, mounts /media/sda1
+  App->>Spk: SSH (passwordless root):<br/>sh /media/sda1/install.sh install
+  Spk->>NAND: install.sh copies rc.local +<br/>run-override.sh + presets to NAND
+  App->>Spk: SSH: reboot
+  Spk->>NAND: Bose init runs /mnt/nv/rc.local<br/>-> run-override.sh
+  Spk->>NAND: sync agent binary stick -> NAND
+  Spk->>Spk: WLAN provisioning, region, name
+  Spk->>Spk: Start agent, announce mDNS :8888
+  App->>Spk: discover on :8888, poll until up
+  User->>Spk: Remove stick after first boot
+  Note over Spk: From now on /mnt/nv/rc.local -> run-override.sh<br/>starts the agent on every boot. No stick needed.
 ```
 
 The first install needs a shell on the box. The app opens one
@@ -477,7 +782,7 @@ sequenceDiagram
     User->>App: Click "Update agent"
     App->>Stick: refresh stick over SSH FIRST<br/>(mount + fsck, rewrite program files, durable flush)
     Note over App,Stick: otherwise the next boot's stick->NAND sync<br/>would revert the freshly updated binary
-    App->>Agent: HTTP preflight, then POST /api/agent/update<br/>(raw ARM binary, ELF-checked; SSH-OTA fallback<br/>on preflight rejection or mid-upload failure)
+    App->>Agent: HTTP preflight, then POST /api/agent/update<br/>(raw ARM binary, ELF-checked, with an SSH-OTA fallback<br/>on preflight rejection or mid-upload failure)
     Agent->>NAND: write new binary, chmod +x
     Agent->>Agent: respond {action: reboot},<br/>reboot the whole box ~1.5 s later<br/>(self-restart only if reboot fails)
     App->>Agent: poll /api/agent/version<br/>until the new build answers
@@ -506,7 +811,7 @@ sequenceDiagram
   App->>App: compare remote version to running
   alt remote is newer
     App->>App: show "update available" banner
-    Note over App,GH: today the banner links to the release;<br/>planned (#71): in-app download + sha256 verify + relaunch
+    Note over App,GH: today the banner links to the release.<br/>Planned (#71): in-app download + sha256 verify + relaunch
   end
 ```
 
@@ -586,33 +891,112 @@ tolerates.
 
 ## Storage layout on the speaker
 
+Four areas, and the difference between them matters: **rootfs is UBIFS
+mounted read-only and is never remounted writable**, `/mnt/nv` is the
+read-write NAND that survives both a reboot and a Bose factory reset,
+`/tmp` and `/dev/shm` are RAM, and the stick is FAT32 and optional after
+the install. NAND is roughly **31 MB in total and shared with the Bose
+firmware**, which is why so much of the agent goes out of its way not to
+write. See [View 2](#view-2-the-operating-system-on-the-speaker) for the
+picture.
+
+### NAND, outside STR's own folder
+
 ```
-/mnt/nv/streborn/             persistent across reboots and Bose factory reset
-  bin/streborn-armv7l         agent binary
-  bin/go-librespot            Spotify Connect client (cached from the stick)
-  run-override.sh             NAND copy that takes priority over the stick's run.sh
-  ca/                         STR's local TLS CA + server cert (regenerated on first boot)
-  presets.json                preset store; same schema as /media/sda1/presets.json
-  zones.json                  multiroom group membership (auto-reformed after reboot)
-  webhooks.json               webhook trigger config
-  peers.json                  sticky speaker roster for the on-box picker (see flow 8)
-  lib/                        str-shim.so + SoftwareUpdate-real backup + SU-wrapper.sh
-                              (chipset-whitelist shim; skipped on all catalogued chassis)
-  region.txt                  ISO country code from the setup wizard
-  name.txt                    pending box name to apply once
-  sp-cache/                   go-librespot config.yml + zeroconf credentials.json,
-                              plus stream-headers.ogg (one cached Ogg header set so a
-                              cold Spotify recall does not flash "service unavailable")
-  sp-accounts/                per-account Spotify credential copies for multi-account recall
-  logs/                       rolling agent logs
-  state/                      transient state
-  boot.log                    last boot timeline
-  version.txt                 installed agent version
+/mnt/nv/rc.local                    THE entry point: Bose init execs it.
+                                    Written by the installer, refreshed from
+                                    the stick at boot, and repaired by the
+                                    agent itself when it differs from the
+                                    copy embedded in the binary.
+/mnt/nv/OverrideSdkPrivateCfg.xml   firmware-owned; STR heals the cloud host
+                                    in it at install and at every boot
+/mnt/nv/BoseApp-Persistence/        firmware-owned. STR rewrites only the
+                                    priority attributes in NetworkProfiles.xml
+                                    (and AirplayConfiguration.xml on BCO)
+/mnt/nv/BoseLog/                    firmware-owned; STR trims files over 1 MiB
+                                    to a 256 KiB tail, never deletes them
 ```
 
-`/media/sda1/` is the stick mount; the stick is no longer required
-after first boot, so its contents are a snapshot of the install-time
-configuration plus the agent binary that gets copied into NAND.
+### NAND, STR's own folder
+
+```
+/mnt/nv/streborn/             persistent across reboots and Bose factory reset
+  run-override.sh             NAND copy that takes priority over the stick's run.sh
+  bin/streborn-armv7l         agent binary; replaced by an OTA and then verified
+                              on flash (sync + drop_caches + re-read)
+  bin/go-librespot            Spotify Connect engine; from the stick or pushed
+                              over HTTP by the desktop app, and re-pushed after
+                              the agent drops it to make room for an update
+  lib/                        str-shim.so + SoftwareUpdate-real backup + SU-wrapper.sh
+                              (chipset-whitelist shim; skipped on all catalogued chassis)
+  ca/                         STR's local TLS CA + server cert. Generated once, with a
+                              fixed validity window, because the box has no clock battery
+                              and reads 2015 at boot; reused from then on.
+  presets.json (+ .bak)       preset store; same schema as /media/sda1/presets.json
+  zones.json                  multiroom group membership (auto-reformed after reboot)
+  webhooks.json               webhook trigger config
+  group-keys.json             saved groups bound to a remote's thumbs keys
+  recent.json                 recently played, capped at 30, written at most every 90 s
+  last-play.json              what to resume, and the resume guard
+  peers.json                  sticky speaker roster for the on-box picker (see flow 8)
+  foreign-presets.json        presets the box holds that STR did not write
+  marge-group.json, deviceid  the group document marge serves, and the confirmed box id
+  box-snapshot.json           one-shot capture of the box's pre-takeover presets
+  mediaservers.json           DLNA servers turned into native box sources
+  wlan-creds, wlan-target     SSID and passphrase, IN THE CLEAR, mode 0600
+  wpa_supplicant.conf.bak     rollback copy, on NAND because /etc is read-only
+  region.txt                  ISO country code from the setup wizard
+  name.txt                    pending box name; deleted by the agent after it applies
+  version.txt                 installed agent version
+  agent.log (+ .1)            NAND mirror of the log, capped at 256 KiB
+  boot.log, setup.log, run.out, previous.log
+                              boot timeline and script output; each trimmed to a
+                              64 KiB tail at every boot
+  logs/                       agent-crash.log (written ONLY when the agent exits),
+                              agent-unstable.txt, selfheal-count
+  state/                      only the manual kill switch state/shim-disable
+  sp-cache/                   go-librespot config.yml + zeroconf credentials.json,
+                              plus stream-headers.ogg (one cached Ogg header set so a
+                              cold Spotify recall does not flash "service unavailable").
+                              No audio is cached here.
+  sp-accounts/                per-account Spotify credential copies for multi-account recall
+  <flag files>                one-line markers: ota-reboot, play-mode,
+                              resume-on-power-on, enable-ssh, devtools, and about
+                              fifteen more. Some the agent writes, some are support knobs.
+```
+
+Every one of those JSON files is written through `internal/atomicfile`:
+data fsync, rename, directory fsync. That exists because presets and
+`last-play.json` came back **zero bytes** after an overnight standby power
+cut.
+
+### RAM, and the two bind mounts
+
+```
+/tmp/streborn-agent.log       the LIVE log. On tmpfs on purpose, so continuous
+                              operation does not wear the flash.
+/tmp/hosts.live               bind-mounted over /etc/hosts: this is how
+                              streaming.bose.com becomes 127.0.0.1 without
+                              ever editing the read-only rootfs
+/tmp/streborn-resolv.conf     bind-mounted over /etc/resolv.conf when the box
+                              came up with no usable nameserver
+/tmp/streborn-agent-heartbeat.json, per-boot guard flags, trust-store overlays
+/dev/shm/streborn-ota.stage   OTA staging when NAND cannot hold two agent copies
+```
+
+Held in memory only, never on disk: the marge stub responses, the box
+write ledger, the box key trace, the stream proxy buffers, and the clock.
+
+### The stick
+
+`/media/sda1/` is the stick mount. The stick is not required after the
+first boot, and its contents are the install-time configuration plus the
+binaries. It is **not** strictly read-only afterwards: the box appends to
+`setup.log` on it, stamps `version.txt`, and refreshes the agent binary
+there after an OTA so a later stick boot does not roll the box back. The
+preset store is deliberately never written to the stick, because FAT32
+writes on these boxes throw I/O errors; `presets.json` is migrated off it
+once and lives on NAND from then on.
 
 ## Storage on the PC (desktop app)
 
