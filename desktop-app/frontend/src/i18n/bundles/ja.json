@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "リモコンのキー配置で表示",
   "multiroom.groupKeysNeedsUpdate": "{{name}} はグループキーのない古い STR バージョンです。先に更新してください。",
   "settingsView.webhookGroupKeyNote": "このキーはグループ「{{name}}」に割り当てられています（マルチルームタブ）。グループが優先されます。押すとグループが作られるか解除され、Webhook は発火しません。",
-  "settingsView.webhookRemoteLegendGroup": "グループに割り当て済み（マルチルームタブ）"
+  "settingsView.webhookRemoteLegendGroup": "グループに割り当て済み（マルチルームタブ）",
+  "setup.installBoxInSetup": "スピーカーが自身のセットアップを終えようとしています。ST Reborn はすでにインストール済みです。",
+  "setup.installInSetupPhase": "その間 Wi-Fi ランプが速く点滅し、スピーカーは数分ずつネットワークから外れるため、ここからは届きません。ネットワークのせいではなく、この状態はたいてい15分ほどで自然に終わります。",
+  "setup.installStillWaiting": "まだスピーカーを待っています。残り最大 {{remaining}} です。",
+  "setup.installWaitGaveUp": "スピーカーは戻ってきませんでした。ST Reborn はコピーされ、スピーカーは再起動しましたが、それ以降まったく応答がありません。",
+  "setup.installLateSetupOk": "スピーカーが自身のセットアップを終えて戻りました。残りの設定を適用しています。",
+  "setup.help.setupPhase": "これは ST Reborn ではなくスピーカー自身のセットアップです。Wi-Fi ランプが速く点滅し、その間スピーカーはネットワークから外れます。ST Reborn はすでにスピーカー上にあり、この状態を終わらせることはできません。",
+  "setup.help.setupWait": "何もせずに15分ほど待ってください。ランプが点滅している間にインストールをやり直さないでください。効果はありません。その後も点滅しているときは、電源プラグを10秒抜いてから差し直してください。",
+  "updateAll.phase.boxInSetup": "スピーカーが自身のセットアップ中です。後でもう一度確認してください。",
+  "update.boxInSetupNote": "{{name}} は自身のセットアップ中でその間ネットワークから外れるため、更新を確認できませんでした。おそらく成功しています。15分ほど経ってからもう一度確認してください。",
+  "setup.installWaitStopBtn": "待機をやめて詳細を表示"
 }

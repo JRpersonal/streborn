@@ -413,6 +413,11 @@ type Server struct {
 	// re-login runs instead of thrashing the box. See wedge.go / NoteBoxLoginError.
 	loginErr loginErrState
 
+	// boxSetup counts the firmware's own setup episodes, so the desktop app can
+	// say "the speaker was finishing its own setup" for a window it could not
+	// see at all. See boxsetup.go.
+	boxSetup boxSetupState
+
 	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
 	// auto-re-push does not fight a wanted stop (v0.7.0: a single Stop
 	// did not hold because the proxy disconnect that a stop causes looks

@@ -421,6 +421,13 @@ const (
 	// coming back after the install rebooted it.
 	agentNotUpAdvice = "ST Reborn reached your speaker and ran the install over the network, so your Wi-Fi, firewall and network are fine. The speaker just did not come back on the network after the install rebooted it. First pull any USB stick out of the speaker: a stick left in can keep an ST30 or Portable off the network even while it still plays. Then power-cycle the speaker, unplug it for about 30 seconds, plug it back in, and wait about 3 minutes before you refresh the speaker list. If it still does not appear, use \"Save diagnostic logs\" and send the file in."
 
+	// boxInSetupAdvice replaces the network blame when the speaker's own
+	// records show it was running Bose's out-of-box setup. That state takes
+	// the speaker off the network for minutes at a time, which from this PC
+	// is indistinguishable from a firewall, and two reporters were sent after
+	// their firewalls for it (#873, 2026-09-06).
+	boxInSetupAdvice = "Your speaker was busy with its own setup while this ran: in that state its Wi-Fi light blinks fast and it leaves the network for a few minutes at a time, so nothing on this PC can reach it. That is not your firewall and not your Wi-Fi. ST Reborn is on the speaker either way. Wait about fifteen minutes and press Refresh in the speaker list; if the speaker appears with an ST Reborn version, everything worked. If the light is still blinking after that, unplug the speaker for ten seconds and plug it back in. Do not run the install again while the light is blinking: it cannot help, and it produced a second, worse failure for the person who tried."
+
 	installWindowClosedAdvice = "Bose only opens the install access while the speaker boots with the STR stick plugged in. Power the speaker off, insert the STR stick, power it back on, then install."
 
 	controlUnresponsiveAdvice = "Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again."

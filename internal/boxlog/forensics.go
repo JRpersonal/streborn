@@ -24,6 +24,33 @@ const (
 	eventRingLen = 200
 	// tailRingLen bounds the redacted raw tail.
 	tailRingLen = 150
+	// setupTailFollow is how many further lines the frozen setup tail keeps
+	// after the event that triggered it.
+	setupTailFollow = 200
+	// setupTailLen sizes the frozen buffer so it holds the snapshot AND the
+	// lines that follow it. Sizing it at tailRingLen alone would let the
+	// follow-up lines overwrite the very snapshot the freeze exists to keep.
+	// Allocated only when a setup event actually happens, so a healthy box
+	// carries none of it.
+	setupTailLen = tailRingLen + setupTailFollow
+	// setupRearmQuiet is how long the box has to go WITHOUT a setup
+	// access-point line before a completed capture may be replaced by a later
+	// one.
+	//
+	// Quiet since the last setup event, deliberately, and not the age of the
+	// freeze. The freeze's own age says nothing about whether the episode that
+	// armed it is over: the episodes measured on the #873 reporter's box ran
+	// about a quarter of an hour and re-raised the access point every two to
+	// five minutes inside that, so an age gate fires in the MIDDLE of a live
+	// episode and throws away the opening snapshot - the one part of the
+	// capture that nothing else can reconstruct, and the whole reason the
+	// freeze exists.
+	//
+	// Ten minutes is twice the longest gap observed inside one episode, so a
+	// continuing episode cannot look like a new one, while a freeze spent on
+	// an unrelated access-point line at boot still frees up for the real
+	// episode later.
+	setupRearmQuiet = 10 * time.Minute
 	// maxMessageLen truncates a stored message so one long firmware line
 	// cannot bloat the bundle.
 	maxMessageLen = 240
@@ -57,6 +84,16 @@ const (
 	// Wi-Fi (once a minute on the sm2 chassis; ring only, never the agent log).
 	ClassWiFiStatus  Class = "wifi_status"
 	ClassWiFiQuality Class = "wifi_quality"
+	// The setup / network state machine (#873). None of these had a class, so
+	// the one question two reporters' bundles could not answer - what the
+	// firmware was doing while the speaker was off the LAN - had no evidence
+	// at all in them. The v0.9.75 tails were the first to show these lines
+	// exist; naming them is what makes the next bundle decidable.
+	ClassSetupState    Class = "setup_state"    // the firmware's own Wi-Fi/setup state machine
+	ClassSetupAP       Class = "setup_ap"       // the speaker raising its own access point
+	ClassNetManager    Class = "netmanager"     // Bose's NetManager and its wpa control socket
+	ClassWPASupplicant Class = "wpa_supplicant" // the supplicant's own association events
+	ClassDHCP          Class = "dhcp"           // udhcpc discover / lease
 	// Marge complaints about STR's own answers.
 	ClassMargeError Class = "marge_error"
 	// BoseApp overload.
@@ -161,6 +198,43 @@ func Classify(l Line) (Class, bool) {
 		return ClassPlayUnderrun, true
 	case strings.Contains(m, "CAudioInterface::Select("):
 		return ClassPlaySelect, true
+	// The setup gates come BEFORE the ChangeState one on purpose: the
+	// firmware's Wi-Fi state machine logs through the same ChangeState shape,
+	// and that case deliberately drops everything whose facility is not HSM.
+	// Behind it, a "ChangeState(WifiConfigTopState >> ...)" line would be
+	// classified as nothing at all, which is exactly how this family stayed
+	// invisible.
+	case strings.Contains(m, "WifiConfigTopState"),
+		strings.Contains(m, "EVT_SYSTEM_SETUP"),
+		strings.Contains(m, "setupStateResponse"):
+		return ClassSetupState, true
+	case strings.Contains(m, "ACCESS_POINT"),
+		strings.Contains(m, "SoftAP"),
+		l.Process == "hostapd",
+		strings.Contains(m, "hostapd"):
+		return ClassSetupAP, true
+	// NetManager is the process that owns the running supplicant. Its facility
+	// and level are parsed out of the message by ParseLine, so the measured
+	// "WiFiManager:ERROR" is matched as the pair it actually is.
+	//
+	// Deliberately NOT gated on the NetworkServicesController facility. That
+	// facility is the one the WiFiStatus and WiFiSignalStrength lines carry,
+	// which have their own classes below and their own SSID redaction; taking
+	// them here would move a once-a-minute ring-only family onto a class that
+	// reaches the NAND-mirrored agent log.
+	case strings.Contains(m, "wpa_ctrl_request failed"),
+		l.Facility == "WiFiManager" && l.Level == "ERROR":
+		return ClassNetManager, true
+	case l.Process == "wpa_supplicant",
+		strings.Contains(m, "CTRL-EVENT-"),
+		strings.Contains(m, "Trying to associate"),
+		strings.Contains(m, "wpa_supplicant"):
+		return ClassWPASupplicant, true
+	case l.Process == "udhcpc",
+		strings.Contains(m, "Sending discover"),
+		strings.Contains(m, "Lease of"),
+		strings.Contains(m, "udhcpc"):
+		return ClassDHCP, true
 	case strings.Contains(m, "ChangeState("):
 		if l.Facility != "HSM" {
 			return "", false
@@ -227,29 +301,125 @@ func (c Class) logGap() time.Duration {
 		return powerLogGap
 	case c == ClassSwamped, c == ClassMargeError:
 		return rareLogGap
+	case c == ClassSetupState, c == ClassSetupAP, c == ClassNetManager:
+		// The three that decide #873 do reach the agent log, but through the
+		// rare gap: on a box in a setup episode these repeat every few seconds
+		// for a quarter of an hour, and the agent log is mirrored to NAND.
+		// One line per ten minutes is enough to timestamp the episode; the
+		// frozen tail carries the detail.
+		return rareLogGap
 	}
+	// wpa_supplicant and udhcpc are ring-only: they are the noisiest families
+	// on the box and the whole point of keeping them is the frozen tail, not
+	// the agent log (SCHONE die Box-Hardware).
 	return 0
 }
 
-// ssidRe matches the SSID attribute of the WiFiStatus XML. The firmware
-// writes plain quotes; the escaped form covers a line that was itself quoted
-// into another log.
-var ssidRe = regexp.MustCompile(`SSID=\\?"([^"\\]*)\\?"`)
+// ssidRe matches a network name wherever the box writes one, which since the
+// wpa_supplicant / setup_ap classes were added is more than the WiFiStatus
+// XML's own attribute:
+//
+//	SSID="HomeNet"                    the firmware's WiFiStatus attribute
+//	SSID=\"HomeNet\"                  the same line quoted into another log
+//	(SSID='HomeNet' freq=5220 MHz)    wpa_supplicant's "Trying to associate"
+//	ssid="HomeNet"                    wpa_supplicant's CTRL-EVENT lines
+//
+// The last two are new Classify gates, so the lines that carry them are now
+// deliberately KEPT - and the old double-quoted, case-sensitive pattern
+// matched neither of them.
+var ssidRe = regexp.MustCompile(`(?i)(ssid=)(?:(\\?")([^"\\]*)(\\?")|'([^']*)')`)
 
-// Redact replaces every SSID value with a hash tag. The app's bundle
-// anonymizer masks IPs and device ids on its own, but it cannot recognise a
-// bare network name in free text, so that happens here, on the speaker.
+// bssidRe matches a MAC address in the same association lines. The router's
+// BSSID is as identifying as the network name, and a speaker device id is on
+// the never-publish list; the app's export anonymizer masks these downstream,
+// but /debug/state answers an unauthenticated LAN GET and is not covered by
+// it.
+var bssidRe = regexp.MustCompile(`\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b`)
+
+// Redact replaces every SSID value and every MAC address with a hash tag. The
+// app's bundle anonymizer masks IPs and device ids on its own, but it cannot
+// recognise a bare network name in free text, so that happens here, on the
+// speaker.
 func Redact(s string) string {
-	if !strings.Contains(s, "SSID=") {
-		return s
-	}
-	return ssidRe.ReplaceAllStringFunc(s, func(m string) string {
-		sub := ssidRe.FindStringSubmatch(m)
-		if len(sub) < 2 || sub[1] == "" {
+	if containsFoldASCII(s, "ssid=") {
+		s = ssidRe.ReplaceAllStringFunc(s, func(m string) string {
+			sub := ssidRe.FindStringSubmatch(m)
+			if sub == nil {
+				return m
+			}
+			if sub[3] != "" {
+				return sub[1] + sub[2] + HashTag(sub[3]) + sub[4]
+			}
+			if sub[5] != "" {
+				return sub[1] + "'" + HashTag(sub[5]) + "'"
+			}
 			return m
+		})
+	}
+	// Five colons, not one. A MAC always carries exactly five, while a bare
+	// "contains a colon" test is true of practically every syslog line (the
+	// timestamp alone has two), so it let the regex scan the whole box log line
+	// by line. Redact runs on every line the firmware emits, on a speaker with
+	// 120 MB of RAM, so the guard has to actually guard.
+	if countByte(s, ':') >= 5 {
+		s = bssidRe.ReplaceAllStringFunc(s, func(m string) string { return "mac#" + HashTag(m)[5:] })
+	}
+	return s
+}
+
+// countByte counts b in s, stopping as soon as it has seen enough for the
+// caller. strings.Count would walk the whole line every time.
+func countByte(s string, b byte) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			n++
+			if n >= 5 {
+				return n
+			}
 		}
-		return `SSID="` + HashTag(sub[1]) + `"`
-	})
+	}
+	return n
+}
+
+// containsFoldASCII is the allocation-free ASCII case-insensitive substring
+// test the per-line guard needs: Redact runs on every syslog line the box
+// emits, and a strings.ToLower there would allocate on each of them.
+//
+// The first byte is compared directly before the fold, so the common case (a
+// line with no 's' or 'S' at that offset) costs one byte compare rather than a
+// call into the Unicode-aware strings.EqualFold.
+func containsFoldASCII(s, sub string) bool {
+	if len(sub) == 0 {
+		return true
+	}
+	if len(s) < len(sub) {
+		return false
+	}
+	lo, up := lowerASCII(sub[0]), upperASCII(sub[0])
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i] != lo && s[i] != up {
+			continue
+		}
+		if strings.EqualFold(s[i:i+len(sub)], sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func lowerASCII(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + 'a' - 'A'
+	}
+	return b
+}
+
+func upperASCII(b byte) byte {
+	if b >= 'a' && b <= 'z' {
+		return b - 'a' + 'A'
+	}
+	return b
 }
 
 // HashTag is the anonymized stand-in for a network name: stable, so two
@@ -325,6 +495,29 @@ type forensics struct {
 	lastPower        PowerEvent
 	powerTransitions uint64
 	powerDuplicates  uint64
+
+	// The frozen setup tail (#873). tailRingLen is 150 lines, which a busy box
+	// overwrites in seconds, so a fifteen-minute setup episode rolled straight
+	// out of the ring long before anybody exported a bundle. On the FIRST
+	// setup event the tail is snapshotted here and kept filling for
+	// setupTailFollow further lines, then stopped. One extra buffer, bounded,
+	// and the single change that would have answered this issue.
+	setupTail     *ring[string]
+	setupTrigger  Class
+	setupFrozenAt time.Time
+	setupFollowed int
+	setupDone     bool
+	// setupLastAPAt is when the last setup access-point line was seen, which is
+	// the clock the re-arm gate reads: a capture may only be replaced after
+	// setupRearmQuiet with no setup event at all.
+	setupLastAPAt time.Time
+	// setupRearms bounds the replacement of a completed capture at one, so a
+	// freeze spent on an unrelated AP-mode line at boot does not cost the
+	// whole agent run while the buffer count still cannot grow.
+	setupRearms int
+	// setupNotice carries the one-shot "tail frozen" report to the reader,
+	// which owns the logger.
+	setupNotice bool
 }
 
 func newForensics() *forensics {
@@ -359,8 +552,12 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tail.push(tailLine)
+	f.feedSetupTailLocked(tailLine)
 	if !classified {
 		return ev, false, false
+	}
+	if class == ClassSetupAP {
+		f.freezeSetupTailLocked(class, now)
 	}
 	f.classified++
 	ev = Event{Class: class, At: now, Process: l.Process, Facility: l.Facility, Message: msg}
@@ -421,4 +618,96 @@ func (f *forensics) tailSnapshot() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.tail.items()
+}
+
+// freezeSetupTailLocked starts the frozen tail on the first ACCESS-POINT
+// event: the current ring is copied in, and every later line is appended until
+// setupTailFollow of them have passed.
+//
+// The trigger is ClassSetupAP alone, never ClassSetupState. The state class
+// matches "WifiConfigTopState", the firmware's own Wi-Fi state machine, which
+// logs during a perfectly ordinary association at every single boot - and it
+// matches "setupStateResponse", which STR's own /setup reads provoke. Either
+// would have spent the one-shot freeze on the boot, and the real episode seven
+// minutes later would have been captured nowhere.
+//
+// One re-arm, and one only. A capture that is already COMPLETE may be replaced
+// by a later one, so a freeze burnt on an unrelated AP-mode status line at boot
+// does not cost the whole agent run. Bounded at two allocations per run either
+// way. Caller holds f.mu.
+//
+// The re-arm gate is QUIET TIME since the last setup access-point line, never
+// the age of the freeze itself: an episode that keeps re-raising the access
+// point for a quarter of an hour would otherwise re-arm in the middle of
+// itself and discard the episode-start snapshot the capture exists for. See
+// setupRearmQuiet.
+func (f *forensics) freezeSetupTailLocked(trigger Class, now time.Time) {
+	prevAP := f.setupLastAPAt
+	f.setupLastAPAt = now
+	if f.setupTail != nil {
+		quiet := !prevAP.IsZero() && now.Sub(prevAP) >= setupRearmQuiet
+		if !f.setupDone || !quiet || f.setupRearms >= 1 {
+			return
+		}
+		f.setupRearms++
+		f.setupDone = false
+		f.setupFollowed = 0
+	}
+	f.setupTail = newRing[string](setupTailLen)
+	for _, line := range f.tail.items() {
+		f.setupTail.push(line)
+	}
+	f.setupTrigger = trigger
+	f.setupFrozenAt = now
+	f.setupNotice = true
+}
+
+// feedSetupTailLocked appends one line to the frozen tail while it is still
+// collecting. Caller holds f.mu.
+func (f *forensics) feedSetupTailLocked(line string) {
+	if f.setupTail == nil || f.setupDone {
+		return
+	}
+	f.setupTail.push(line)
+	f.setupFollowed++
+	if f.setupFollowed >= setupTailFollow {
+		f.setupDone = true
+	}
+}
+
+// takeFreezeNotice claims the one-shot "the tail was frozen" report, so the
+// reader (which owns the logger) can say it once.
+func (f *forensics) takeFreezeNotice() (lines int, trigger Class, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.setupNotice {
+		return 0, "", false
+	}
+	f.setupNotice = false
+	return f.setupTail.n, f.setupTrigger, true
+}
+
+// setupTailSnapshot is the box_setup_tail debug section: empty until the
+// firmware's setup state machine says something, which is itself the answer
+// for a box that never entered setup.
+func (f *forensics) setupTailSnapshot() map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.setupTail == nil {
+		return map[string]any{"frozen": false, "lines": []string{}}
+	}
+	out := map[string]any{
+		"frozen":   true,
+		"trigger":  string(f.setupTrigger),
+		"complete": f.setupDone,
+		"lines":    f.setupTail.items(),
+	}
+	if !f.setupFrozenAt.IsZero() {
+		out["frozenSecAgo"] = int(time.Since(f.setupFrozenAt).Seconds())
+	}
+	if f.setupRearms > 0 {
+		// The reader has to know this is not the first capture of the run.
+		out["rearmed"] = f.setupRearms
+	}
+	return out
 }

@@ -507,6 +507,10 @@ func (a *App) RecordOTAOutcome(host, verdict string) {
 //	"agent-gone"         the SPEAKER answers (its own Bose web API is up) but
 //	                     STR's agent is not running on it. A power cycle is the
 //	                     fix, and it is the only thing that is.
+//	"box-in-setup"       the SPEAKER answers and is running the firmware's own
+//	                     out-of-box setup. It leaves the network for minutes at
+//	                     a time in that state, so the update may well have
+//	                     landed; confirmLateOTA corrects this on its own.
 func (a *App) ClassifyOTAResult(host string, port int) string {
 	ver, err := a.BoxAgentVersion(host, port)
 	if err != nil {
@@ -524,6 +528,23 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		// connection on :17008 and then never answers, which is what made the
 		// verify probe time out rather than fail fast in the first place.
 		if a.boxAnswersBoseAPI(host) {
+			// Before blaming the agent, ask what the SPEAKER is doing. A box in
+			// its own out-of-box setup answers :8090 between the phases in
+			// which it is off the network entirely, and telling that user to
+			// power-cycle a speaker that is mid-setup is both wrong and the
+			// one piece of advice that can make it worse. Reporter A's update
+			// had in fact succeeded while the journal said the opposite (#873).
+			//
+			// The oob verdict only. A source merely stuck on SETUP (#367) means
+			// a speaker that is fully on the network with no agent running on
+			// it, which IS agent-gone, and the dead agent is exactly what
+			// leaves the source stuck: reading it as a setup phase would
+			// replace the one correct answer (power cycle) with "wait".
+			if oob, _ := a.readBoxSetupState(host); oob {
+				a.recordOTA(host, "outcome: NOT CONFIRMED - the speaker is running its OWN out-of-box setup and drops off the network while it does; the update may well have landed, a later sighting on the new build adds a corrective line: "+err.Error())
+				a.noteOTAUnconfirmed(host, "box-in-setup")
+				return "box-in-setup"
+			}
 			a.recordOTA(host, "outcome: NOT CONFIRMED - the speaker is up and answering its Bose web API on :8090, but STR's agent is not running on it; a power cycle is needed: "+err.Error())
 			a.noteOTAUnconfirmed(host, "agent-gone")
 			return "agent-gone"

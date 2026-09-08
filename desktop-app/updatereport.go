@@ -89,16 +89,6 @@ func (a *App) UpdateFailureReport(host string, port int, phase, errMsg, targetVe
 
 	r.History = a.otaHistoryTail(host, 25)
 	r.Facts = a.gatherInstallFacts(a.appCtx(), host)
-	defer func() {
-		// The speaker's own log is the half of the story the app cannot see:
-		// what its agent did during the failed install or update, and what
-		// its last boot said. Only when an agent port answered (the probe
-		// above is skipped otherwise), and bounded, so the report never waits
-		// on a silent speaker.
-		if len(r.BoxNow) > 0 {
-			r.BoxLog = a.boxOwnLogTail(host, port)
-		}
-	}()
 	if a != nil && a.logger != nil {
 		// One line, so the verdicts are in app.log too. A user who sends only
 		// the diagnostic bundle and not the report text still arrives with the
@@ -120,11 +110,16 @@ func (a *App) UpdateFailureReport(host string, port int, phase, errMsg, targetVe
 			"version", "build", "model", "friendlyName", "boxHealth",
 			"goLibrespot", "goLibrespotDroppedForUpdate",
 			"nandFreeBytes", "nandTotalBytes", "uptimeSec", "wlanCreds",
+			// The firmware's own setup episodes (#873). The speaker is the
+			// only side that can see them, and they explain a window in which
+			// this PC could reach nothing at all.
+			"boxSetup", "boxSetupEpisodes", "boxSetupLastSec",
 		} {
 			if v, ok := ver[k]; ok && v != "" {
 				r.BoxNow = append(r.BoxNow, fmt.Sprintf("%-27s %s", k+":", v))
 			}
 		}
+		r.Facts.BoxSetupState = ver["boxSetup"]
 		if fd := ver["foreignDirs"]; fd != "" {
 			r.BoxNow = append(r.BoxNow, fmt.Sprintf("%-27s %s", "other software on speaker:", fd))
 		}
@@ -134,6 +129,19 @@ func (a *App) UpdateFailureReport(host string, port int, phase, errMsg, targetVe
 		r.BoxNowErr = stripWrongBlame(err, errMsg, r.History).Error()
 	}
 
+	// The speaker's own log is the half of the story the app cannot see: what
+	// its agent did during the failed install or update, and what its last
+	// boot said. Only when an agent port answered (the probe above is skipped
+	// otherwise), and bounded, so the report never waits on a silent speaker.
+	//
+	// This used to sit in a deferred call, which runs AFTER the return
+	// expression is evaluated: the field was filled on a copy nobody read, so
+	// the "speaker's own log" section has never actually appeared in a report.
+	// Found while wiring the setup diagnosis below, which reads exactly this
+	// text (2026-09-08).
+	if len(r.BoxNow) > 0 {
+		r.BoxLog = a.boxOwnLogTail(host, port)
+	}
 	return formatFailureReport(r)
 }
 
@@ -153,6 +161,7 @@ func adviceParagraphs() []string {
 		controlUnresponsiveAdvice,
 		restartingAfterUnlockAdvice,
 		alreadyInstalledAdvice,
+		boxInSetupAdvice,
 	}
 }
 
@@ -280,6 +289,11 @@ func formatFailureReport(r failureReport) string {
 	}
 
 	advice = dropContradictedBlame(advice)
+	// The speaker's own setup phase outranks every network verdict below it:
+	// it is the one cause that explains total silence on a network that
+	// demonstrably works, and every one of those paragraphs would send the
+	// user after something that is not wrong.
+	advice = applyBoxInSetupDiagnosis(advice, r)
 	advice = applyReachedThisSession(advice, r)
 	advice = applyIsolationDiagnosis(advice, r)
 	advice = applyOffNetworkDiagnosis(advice, r)
@@ -354,6 +368,79 @@ func applyReachedThisSession(advice []string, r failureReport) []string {
 	out := []string{agentNotUpAdvice}
 	for _, p := range advice {
 		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// boxSetupSignature reports whether the speaker's own log tail carries the
+// marks of a REAL out-of-box setup. The counters on /api/agent/version are the
+// primary evidence, but they only exist on an agent new enough to keep them
+// and only while the agent answers at all; the log tail is what an older or a
+// briefly-silent speaker still gives up.
+//
+// What it deliberately does NOT match is "leave-setup: cleared". A one-shot
+// SETUP_LEAVE at boot is the normal, permanent repair of #367's merely stuck
+// source on an ST300 and an scm ST30 (cmd/agent/main.go, docs/FIRMWARE-NOTES),
+// and the agent itself takes care to call that a different bug. Matching it
+// would put "your speaker was busy with its own setup" in front of every
+// genuinely firewalled ST300 owner and delete the firewall paragraph that was
+// the right answer.
+func boxSetupSignature(logTail string) bool {
+	// The firmware's own AP warning, and the setup state STR now logs with
+	// every clear: SETUP_AP_OOB (or any other SETUP_AP*) is a real setup
+	// access point, unlike the SETUP_INACTIVE that a stuck source reports.
+	for _, s := range []string{
+		"the firmware raised its setup access point",
+		"setupState=SETUP_AP",
+	} {
+		if strings.Contains(logTail, s) {
+			return true
+		}
+	}
+	// The gabbo source flip INTO setup, which a stuck source never shows: it
+	// was already there when the agent came up.
+	//
+	// Both tokens on the SAME line. Tested against the whole tail they are two
+	// unrelated log lines away from a false positive - any "source changed"
+	// anywhere plus any "to=SETUP" anywhere - and this diagnosis DELETES the
+	// firewall and reachability advice, so a false positive costs a genuinely
+	// firewalled user the one paragraph that would have helped.
+	for _, line := range strings.Split(logTail, "\n") {
+		if strings.Contains(line, "source changed") && strings.Contains(line, "to=SETUP") {
+			return true
+		}
+	}
+	return false
+}
+
+// applyBoxInSetupDiagnosis leads the advice with the speaker's own setup phase
+// and drops the paragraphs that blame the network for it.
+//
+// Both #873 reporters were told to look at their firewall and their Wi-Fi for
+// a speaker that was busy running Bose's own out-of-box setup, on a network
+// that had just carried a complete install to that same speaker. The firewall
+// and not-reachable paragraphs are not merely unhelpful there, they are the
+// wrong answer, and one reporter acted on them by pressing Install again,
+// which produced a second and worse failure.
+//
+// Gated on FRESHNESS, never on the lifetime counter. boxSetupEpisodes counts
+// for the whole life of the agent process and is never reset, so a speaker
+// that had one episode at install time and has been up for three weeks still
+// reports it; keying on that would strip the firewall and reachability
+// paragraphs from every later failure on that box, which is this same wrong
+// blame pointed the other way. The agent already ages the STATE out
+// (webui.BoxSetup, 45 minutes), and that is the field to read.
+func applyBoxInSetupDiagnosis(advice []string, r failureReport) []string {
+	fresh := r.Facts.BoxSetupState == "active" || r.Facts.BoxSetupState == "recent"
+	if !fresh && !boxSetupSignature(r.BoxLog) {
+		return advice
+	}
+	out := []string{boxInSetupAdvice}
+	for _, p := range advice {
+		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) {
 			continue
 		}
 		out = append(out, p)

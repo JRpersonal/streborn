@@ -151,6 +151,13 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	a.ClearUpdateIntent(host, 0)
 	a.installStart = time.Now()
 	a.installPhase = ""
+	// Cleared once per INSTALL, not once per wait. One install can call
+	// waitForAgent several times (repair, then reboot-and-retry), and clearing
+	// it per wait threw away a setup episode the first wait had seen: an
+	// episode lasts about a quarter of an hour and outlives every retry inside
+	// it, so the later wait would go on to report the silence it causes as a
+	// hard failure.
+	a.installSawSetup = false
 	defer func() { a.installPhase = ""; a.installMargeHits = nil }()
 
 	// Read the box firmware (Bose :8090/info, reachable on stock and STR boxes)
@@ -253,7 +260,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				// running - the frontend then immediately writes the Wi-Fi profile.
 				if instRes.OK && instErr == nil {
 					a.emitPhase("wait")
-					if werr := a.waitForAgent(host, model); werr != nil {
+					if _, werr := a.waitForAgent(host, model); werr != nil {
 						a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
 						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
 					}
@@ -406,7 +413,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				// for :8888 so a network install returns OK only once STR is running.
 				if instRes.OK && instErr == nil {
 					a.emitPhase("wait")
-					if werr := a.waitForAgent(host, model); werr != nil {
+					if _, werr := a.waitForAgent(host, model); werr != nil {
 						a.logger.Warn("install_str: SSH-staged install ran but the agent did not come up in time", "host", host, "err", werr)
 						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
 					}
@@ -505,7 +512,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			res.Step = "stick-copy-repair"
 			rr, _ := a.RepairInstallViaSSH(host, model)
 			if rr.OK {
-				if a.waitForAgent(host, model) == nil {
+				if _, werr := a.waitForAgent(host, model); werr == nil {
 					res.Step = "done"
 					res.OK = true
 					res.Message = "The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888."
@@ -553,7 +560,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// the main first-install failure (#114).
 	res.Step = "wait-agent"
 	a.emitPhase("wait")
-	if err := a.waitForAgent(host, model); err != nil {
+	if _, err := a.waitForAgent(host, model); err != nil {
 		// Specific message + finalize for the "stick read failed, so the agent
 		// binary never reached NAND" case. Defined once; used from both the
 		// pre-retry detection and the post-retry re-check below.
@@ -585,7 +592,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 					res.Step = "stick-copy-repair"
 					rr, _ := a.RepairInstallViaSSH(host, model)
 					if rr.OK {
-						if a.waitForAgent(host, model) == nil {
+						if _, werr := a.waitForAgent(host, model); werr == nil {
 							res.Step = "done"
 							res.OK = true
 							res.Message = "The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888."
@@ -618,7 +625,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			a.logger.Info("install_str: agent not up, SSH still open, rebooting once and retrying", "host", host)
 			res.Step = "reboot-and-retry"
 			_ = boxReboot(host)
-			if a.waitForAgent(host, model) == nil {
+			if _, werr := a.waitForAgent(host, model); werr == nil {
 				res.Step = "done"
 				res.OK = true
 				res.Message = "STR agent is up on port 8888 (after an automatic retry)."
@@ -1456,12 +1463,36 @@ func (a *App) agentLogShowsStickCopyFailure(host string) bool {
 // the box had come up fine (#114, Baehr ST20). It also verifies the STR agent
 // rather than just an open port, so the Bose SoftwareUpdate service that also
 // listens on :17008 is not mistaken for the agent.
-func (a *App) waitForAgent(host, model string) error {
+// agentWaitResult is what the wait learned about the SPEAKER while it ran,
+// beyond the one question it was asked. Both fields exist because the app is
+// blind to them at every other moment: after the wait ends the speaker may be
+// answering nothing at all, and then nothing can be established any more.
+type agentWaitResult struct {
+	// SawSetupPhase: the speaker reported its own out-of-box setup at least
+	// once during the wait (/setup said state=SETUP_AP*, or a systemstate that
+	// is genuinely unset). That is the state that takes its Wi-Fi down, and it
+	// is the reason the wait can end with a speaker that answers nothing. A
+	// source merely stuck on SETUP (#367) is NOT this and does not set it.
+	SawSetupPhase bool
+	// BoxAnsweredOwnPorts: the speaker's own Bose web API answered a real GET
+	// at least once during the wait, so it demonstrably WAS on the network and
+	// reachable from this PC while the wait ran.
+	BoxAnsweredOwnPorts bool
+}
+
+func (a *App) waitForAgent(host, model string) (agentWaitResult, error) {
 	budget := agentWaitBudget(model)
 	sleep := 2 * time.Second
 	if slowBootModel(model) {
 		sleep = 3 * time.Second
 	}
+	var res agentWaitResult
+	// a.installSawSetup is NOT cleared here: it is the install's memory, not
+	// this wait's, and installSTROnBox clears it once per install.
+	//
+	// Said once per wait, not once per poll: #367's stuck source is forensics,
+	// not an event.
+	loggedStuckSetupSource := false
 	deadline := time.Now().Add(budget)
 	i := 0
 	for time.Now().Before(deadline) {
@@ -1470,7 +1501,7 @@ func (a *App) waitForAgent(host, model string) error {
 		_, ok := probeSTR(ctx, host)
 		cancel()
 		if ok {
-			return nil
+			return res, nil
 		}
 		// The HTTP probe failed. On SoundTouch 10 (rhino) the desktop cannot
 		// reach the agent's HTTP API at all, even when it is running fine: the
@@ -1479,9 +1510,33 @@ func (a *App) waitForAgent(host, model string) error {
 		// as "agent not up" and the install wrongly fails. So every few polls,
 		// confirm over SSH whether the agent PROCESS is actually up; that is the
 		// authoritative success signal where the API is unreachable from the LAN.
-		if i%4 == 3 && a.agentRunningViaSSH(host) {
-			a.logger.Info("install_str: agent process is running on the box; treating as up despite the HTTP API being unreachable from the desktop (e.g. ST10 firewall)", "host", host)
-			return nil
+		//
+		// The same slot carries the speaker's own :8090 read (#873). No new
+		// cadence: this is the one poll in four that already talks to the box,
+		// and what it learns there cannot be learned afterwards.
+		if i%4 == 3 {
+			if a.boxAnswersBoseAPI(host) {
+				res.BoxAnsweredOwnPorts = true
+				oob, stuckSource := a.readBoxSetupState(host)
+				if oob {
+					if !res.SawSetupPhase {
+						a.logger.Info("install_str: the speaker is running its OWN out-of-box setup while we wait for the agent; it drops off the network for minutes at a time in that state", "host", host)
+					}
+					res.SawSetupPhase = true
+					a.installSawSetup = true
+				} else if stuckSource && !loggedStuckSetupSource {
+					// A DIFFERENT bug, said so once. The speaker is on the
+					// network and answering; only its source is stuck on SETUP
+					// (#367), which the agent clears by itself. It must never
+					// be reported as the out-of-box setup above.
+					loggedStuckSetupSource = true
+					a.logger.Info("install_str: the speaker's source is stuck on SETUP (#367) but it is fully on the network; not an out-of-box setup", "host", host)
+				}
+			}
+			if a.agentRunningViaSSH(host) {
+				a.logger.Info("install_str: agent process is running on the box; treating as up despite the HTTP API being unreachable from the desktop (e.g. ST10 firewall)", "host", host)
+				return res, nil
+			}
 		}
 		i++
 		time.Sleep(sleep)
@@ -1490,9 +1545,9 @@ func (a *App) waitForAgent(host, model string) error {
 	// HTTP API never became desktop-reachable is still recognised as installed.
 	if a.agentRunningViaSSH(host) {
 		a.logger.Info("install_str: agent process running on the box at the deadline; HTTP API unreachable from the desktop, treating as up", "host", host)
-		return nil
+		return res, nil
 	}
-	return fmt.Errorf("STR agent on %s not reachable within %s", host, budget)
+	return res, fmt.Errorf("STR agent on %s not reachable within %s", host, budget)
 }
 
 // agentRunningViaSSH reports whether the STR agent process is alive on the box,

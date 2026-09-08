@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Pokaż na mapie klawiszy pilota",
   "multiroom.groupKeysNeedsUpdate": "{{name}} ma starszą wersję STR bez klawiszy grup. Najpierw go zaktualizuj.",
   "settingsView.webhookGroupKeyNote": "Ten klawisz jest powiązany z grupą \"{{name}}\" (karta Multiroom). Grupa wygrywa: naciśnięcie tworzy lub rozwiązuje grupę, a webhook nie jest wywoływany.",
-  "settingsView.webhookRemoteLegendGroup": "powiązany z grupą (karta Multiroom)"
+  "settingsView.webhookRemoteLegendGroup": "powiązany z grupą (karta Multiroom)",
+  "setup.installBoxInSetup": "Głośnik kończy własną konfigurację. ST Reborn jest już na nim zainstalowany.",
+  "setup.installInSetupPhase": "Kontrolka Wi-Fi miga wtedy szybko, a głośnik co chwilę na kilka minut znika z sieci, więc stąd nie da się go osiągnąć. To nie wina Twojej sieci, a stan ten zwykle sam mija po około piętnastu minutach.",
+  "setup.installStillWaiting": "Nadal czekamy na głośnik, jeszcze najwyżej {{remaining}}.",
+  "setup.installWaitGaveUp": "Głośnik nie wrócił. ST Reborn został na niego skopiowany, a głośnik uruchomiony ponownie, ale od tego czasu w ogóle nie odpowiada.",
+  "setup.installLateSetupOk": "Głośnik zakończył własną konfigurację i znów jest dostępny. Trwa zapisywanie pozostałych ustawień.",
+  "setup.help.setupPhase": "To jest własna konfiguracja głośnika, a nie ST Reborn: kontrolka Wi-Fi miga szybko, a głośnik na ten czas opuszcza sieć. ST Reborn jest już na głośniku i nie może przerwać tego stanu.",
+  "setup.help.setupWait": "Odczekaj około piętnastu minut i nic nie rób. Nie uruchamiaj instalacji ponownie, dopóki kontrolka miga: to nie pomoże. Jeśli potem nadal miga, odłącz głośnik od prądu na dziesięć sekund i podłącz go z powrotem.",
+  "updateAll.phase.boxInSetup": "Głośnik kończy własną konfigurację, sprawdź później.",
+  "update.boxInSetupNote": "{{name}} jest zajęty własną konfiguracją i opuszcza przy tym sieć, więc nie udało się potwierdzić aktualizacji. Prawdopodobnie się udała. Sprawdź ponownie za około piętnaście minut.",
+  "setup.installWaitStopBtn": "Przestań czekać i pokaż szczegóły"
 }

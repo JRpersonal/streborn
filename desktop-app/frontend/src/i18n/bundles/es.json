@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Mostrar en el mapa de teclas del mando",
   "multiroom.groupKeysNeedsUpdate": "{{name}} usa una versión de STR más antigua sin teclas de grupo. Actualízalo primero.",
   "settingsView.webhookGroupKeyNote": "Esta tecla está vinculada al grupo \"{{name}}\" (pestaña Multisala). Gana el grupo: una pulsación forma o disuelve el grupo, y el webhook no se dispara.",
-  "settingsView.webhookRemoteLegendGroup": "vinculada a un grupo (pestaña Multisala)"
+  "settingsView.webhookRemoteLegendGroup": "vinculada a un grupo (pestaña Multisala)",
+  "setup.installBoxInSetup": "El altavoz está terminando su propia configuración. ST Reborn ya está instalado en él.",
+  "setup.installInSetupPhase": "Su luz de Wi-Fi parpadea rápido y el altavoz sale de la red durante unos minutos cada vez, así que desde aquí no se puede alcanzar. No es cosa de tu red, y ese estado suele terminar solo en unos quince minutos.",
+  "setup.installStillWaiting": "Seguimos esperando al altavoz, hasta {{remaining}} más.",
+  "setup.installWaitGaveUp": "El altavoz no volvió. ST Reborn se copió en él y el altavoz se reinició, pero desde entonces no responde a nada.",
+  "setup.installLateSetupOk": "El altavoz ha terminado su propia configuración y ha vuelto. Aplicando el resto de tus ajustes.",
+  "setup.help.setupPhase": "Esta es la configuración propia del altavoz, no de ST Reborn: su luz de Wi-Fi parpadea rápido y sale de la red mientras dura. ST Reborn ya está en el altavoz y no puede terminar ese estado.",
+  "setup.help.setupWait": "Espera unos quince minutos sin hacer nada. No vuelvas a lanzar la instalación mientras la luz parpadee: no sirve de nada. Si sigue parpadeando después, desenchufa el altavoz diez segundos y vuelve a enchufarlo.",
+  "updateAll.phase.boxInSetup": "El altavoz está terminando su propia configuración, vuelve a comprobarlo más tarde.",
+  "update.boxInSetupNote": "{{name}} está ocupado con su propia configuración y sale de la red mientras tanto, así que no se pudo confirmar la actualización. Probablemente funcionó. Vuelve a comprobarlo en unos quince minutos.",
+  "setup.installWaitStopBtn": "Dejar de esperar y ver los detalles"
 }

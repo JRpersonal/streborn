@@ -245,6 +245,12 @@ func (r *Reader) handleLine(line string, now time.Time) {
 		if logIt {
 			r.logger.Info("box syslog: "+string(fev.Class), "process", fev.Process, "facility", fev.Facility, "msg", fev.Message)
 		}
+		// One line, once, when the setup episode's tail is frozen: without it
+		// a bundle carrying box_setup_tail gives no clue when the freeze
+		// happened relative to everything else in the agent log.
+		if lines, trigger, froze := r.forensics.takeFreezeNotice(); froze {
+			r.logger.Info("boxlog: setup episode tail frozen", "lines", lines, "trigger", string(trigger))
+		}
 		r.firePower(fev)
 	}
 	ev, ok := ParseKeyLine(line, now)
@@ -315,6 +321,12 @@ func (r *Reader) EventsSnapshot() map[string]any { return r.forensics.sectionSna
 // lines with the localhost-retry spam and the clock-sync chatter dropped and
 // SSIDs hashed, so a bundle carries the minutes before a report.
 func (r *Reader) TailSnapshot() []string { return r.forensics.tailSnapshot() }
+
+// SetupTailSnapshot is the box_setup_tail debug section: the ring as it stood
+// when the firmware's setup state machine first spoke, plus the lines that
+// followed. Empty on a box that never entered setup, which is the answer for
+// that box.
+func (r *Reader) SetupTailSnapshot() map[string]any { return r.forensics.setupTailSnapshot() }
 
 // NeedsReassert reports, and claims, one re-send of the loglevel commands:
 // the caller saw a press with no DEBUG trace around it on a chassis that had

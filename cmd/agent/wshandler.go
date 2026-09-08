@@ -164,6 +164,12 @@ type presetWsHandler struct {
 	// webui.KickDefaultGroup so a persisted default group re-forms the moment
 	// its master starts music (#70). nil-safe; the webui side debounces.
 	onSourcePlaying func()
+	// onSetupAPRaised fires when the firmware raises its own setup access
+	// point (<setupAPUpdated>true</>), the firmware's own unambiguous word
+	// that the speaker is about to leave the LAN (#873). Wired at the
+	// composition root to record the episode and clear the SETUP source at
+	// once. nil-safe.
+	onSetupAPRaised func()
 	// recentlyPoweredOff reports whether STR saw this box drop UPNP->STANDBY within
 	// the bounce window. The hardware-preset recall verify (verifyPlayURL) checks it
 	// so it does NOT re-push the stream when the user powered the box off mid-recall
@@ -1016,6 +1022,20 @@ func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
 func (h *presetWsHandler) enterStandby() {
 	if h.onEnterStandby != nil {
 		h.onEnterStandby()
+	}
+}
+
+// OnSetupAPRaised reacts to the firmware raising its own setup access point
+// (boxws optional hook, #873): the speaker is about to leave the home Wi-Fi.
+//
+// Two things happen, and neither of them tries to stop the firmware. The
+// episode is recorded so the desktop app can afterwards say what the speaker
+// was doing during a window in which it answered nothing at all, and the
+// SETUP source is cleared NOW instead of at the watcher's next tick, which on
+// the reporter's box could be up to five minutes away.
+func (h *presetWsHandler) OnSetupAPRaised(_ context.Context) {
+	if h.onSetupAPRaised != nil {
+		h.onSetupAPRaised()
 	}
 }
 

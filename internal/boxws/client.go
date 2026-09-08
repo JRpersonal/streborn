@@ -54,6 +54,24 @@ type Client struct {
 	// cannot spam the NAND ring (the frame's cadence on 27.0.6 is unknown; it
 	// has never appeared in a field bundle). Guarded by mu.
 	lastAcctModeLogAt time.Time
+	// setupAPEpisodes counts how often the firmware raised its own setup
+	// access point on this connection (#873). Per-connection, not per box:
+	// the authoritative count is the one the webui keeps (boxsetup.go), this
+	// one only numbers the log lines.
+	setupAPEpisodes int
+	// lastSetupAPRaisedAt / lastSetupAPDownAt gate the setupAPUpdated log line
+	// and the hook, the same way lastAcctModeLogAt gates its own. The frame's
+	// cadence on 27.0.6 is unmeasured and the firmware re-raises setup every
+	// couple of minutes for a quarter of an hour, so an ungated frame is a
+	// NAND log storm and a stream of hook calls.
+	//
+	// One clock PER POLARITY, because a shared one starves the half that
+	// matters: the firmware lowers the AP at T and raises it again at T+40 s,
+	// and with a single clock that raise falls inside the gap the "down" frame
+	// just consumed - no log line, no hook, no episode, for the transition
+	// that carries the warning. Guarded by mu.
+	lastSetupAPRaisedAt time.Time
+	lastSetupAPDownAt   time.Time
 	// boxErrors is a small ring of the errors the BOX reported, newest last.
 	// The log already carries each one, but a bundle then needs someone to
 	// find them by eye among thousands of lines, and the code alone does not
@@ -434,6 +452,62 @@ func (c *Client) noteAcctModeUpdated() {
 	c.lastAcctModeLogAt = now
 	c.mu.Unlock()
 	c.logger.Info("box ws: box account association changed")
+}
+
+// setupAPLogEvery is the minimum gap between two setupAPUpdated reactions. One
+// a minute is fast enough to catch the start of an episode and slow enough
+// that a firmware flapping the AP cannot turn the NAND ring into a log storm.
+const setupAPLogEvery = time.Minute
+
+// noteSetupAP handles the firmware's <setupAPUpdated> frame: its own setup
+// access point going up or down (#873).
+//
+// "up" is the point of it. While that AP is up the speaker is not on the home
+// Wi-Fi, so everything the desktop app sees is silence, and the install wait
+// that runs at exactly that moment reports a successful install as a failure.
+// The agent runs ON the speaker, so it is the only side that ever learns this.
+//
+// The handler hook is optional (same shape as OnSourcePlaying): a handler that
+// does not implement it simply gets the log line.
+//
+// Rate limited to one line and one hook call per setupAPLogEvery, for the same
+// reason noteAcctModeUpdated is: the frame's cadence on 27.0.6 has never been
+// measured, and the firmware is documented right here as re-raising setup
+// every couple of minutes for a quarter of an hour. Ungated, every frame would
+// Warn into the NAND-mirrored ring and fire the hook again.
+//
+// The two polarities have their OWN clock. Sharing one lets an "AP down" frame
+// spend the minute that the "AP up" frame forty seconds later needs, and it is
+// the up frame that carries the warning.
+func (c *Client) noteSetupAP(ctx context.Context, body string) {
+	raised := strings.EqualFold(strings.TrimSpace(body), "true")
+	now := time.Now()
+	c.mu.Lock()
+	last := &c.lastSetupAPDownAt
+	if raised {
+		last = &c.lastSetupAPRaisedAt
+	}
+	if !last.IsZero() && now.Sub(*last) < setupAPLogEvery {
+		c.mu.Unlock()
+		return
+	}
+	*last = now
+	if raised {
+		c.setupAPEpisodes++
+	}
+	episode := c.setupAPEpisodes
+	source := c.lastSource
+	c.mu.Unlock()
+	if !raised {
+		c.logger.Info("box ws: the firmware took its setup access point down again",
+			"episode", episode, "source", source)
+		return
+	}
+	c.logger.Warn("box ws: the firmware raised its setup access point (the speaker is about to drop off the LAN)",
+		"episode", episode, "source", source)
+	if h, ok := c.handler.(interface{ OnSetupAPRaised(context.Context) }); ok {
+		h.OnSetupAPRaised(ctx)
+	}
 }
 
 // storm1036Threshold / storm1036Window / storm1036LogEvery bound the 1036-storm

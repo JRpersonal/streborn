@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Show on the remote key map",
   "multiroom.groupKeysNeedsUpdate": "{{name}} runs an older STR version without group keys. Update it first.",
   "settingsView.webhookGroupKeyNote": "This key is bound to the group \"{{name}}\" (Multi-room tab). The group wins: a press forms or dissolves the group, and the webhook does not fire.",
-  "settingsView.webhookRemoteLegendGroup": "bound to a group (Multi-room tab)"
+  "settingsView.webhookRemoteLegendGroup": "bound to a group (Multi-room tab)",
+  "setup.installBoxInSetup": "The speaker is finishing its own setup. ST Reborn is already installed on it.",
+  "setup.installInSetupPhase": "Its Wi-Fi light blinks fast and it leaves the network for a few minutes at a time while it does, so nothing here can reach it. That is not your network, and the state usually ends by itself within about fifteen minutes.",
+  "setup.installStillWaiting": "Still waiting for the speaker, up to {{remaining}} more.",
+  "setup.installWaitGaveUp": "The speaker never came back. ST Reborn was copied onto it and the speaker was restarted, but since then it has answered nothing at all.",
+  "setup.installLateSetupOk": "The speaker has finished its own setup and is back. Applying the rest of your settings now.",
+  "setup.help.setupPhase": "This is the speaker's own setup, not ST Reborn: its Wi-Fi light blinks fast and it leaves the network while it runs. ST Reborn is already on the speaker and cannot end that state.",
+  "setup.help.setupWait": "Wait about fifteen minutes without touching anything. Do not start the install again while the light is blinking: it cannot help. If the light is still blinking afterwards, unplug the speaker for ten seconds and plug it back in.",
+  "updateAll.phase.boxInSetup": "Speaker is finishing its own setup, check again later.",
+  "update.boxInSetupNote": "{{name}} is busy with its own setup and leaves the network while it does, so the update could not be confirmed. It probably worked. Check again in about fifteen minutes.",
+  "setup.installWaitStopBtn": "Stop waiting and show details"
 }

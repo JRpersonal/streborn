@@ -422,6 +422,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	case f.AcctModeUpdated != nil:
 		known = true
 		c.noteAcctModeUpdated()
+	case f.SetupAPUpdated != nil:
+		known = true
+		c.noteSetupAP(ctx, *f.SetupAPUpdated)
 	}
 
 	pe := f.NowSelection
@@ -456,6 +459,25 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// switch above: known, ignored, Debug only, and never
 				// noteExplainedActivity.
 				c.logger.Debug("box ws: documented no-op frame", "shape", frameShape(data))
+				return
+			case "setupAPUpdated":
+				// Bare-root twin of the wrapped case above. The measured frame
+				// is the wrapped one (shape=updates/setupAPUpdated), but
+				// sourcesUpdated proves the firmware uses both forms for the
+				// same event, and missing this one would mean missing the
+				// firmware's own word that the speaker is leaving the network.
+				//
+				// A BODYLESS bare root is the announcement itself, not a
+				// boolean false: every other bare-root frame on this firmware
+				// is self-closing (<sourcesUpdated/>, <swUpdateStatusUpdated/>,
+				// <userActivityUpdate/>). Reading "" as "the AP went down"
+				// would log the opposite of what happened and skip the hook,
+				// which is the whole reason the frame was typed.
+				body := elementText(s, "setupAPUpdated")
+				if body == "" {
+					body = "true"
+				}
+				c.noteSetupAP(ctx, body)
 				return
 			case "acctModeUpdated":
 				// Bare-root twin of the wrapped case above (sourcesUpdated shows

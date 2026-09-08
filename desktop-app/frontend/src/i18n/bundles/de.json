@@ -1431,5 +1431,15 @@
   "multiroom.groupKeysOpenKeyMap": "Auf der Tastenkarte der Fernbedienung zeigen",
   "multiroom.groupKeysNeedsUpdate": "{{name}} läuft mit einer älteren STR-Version ohne Gruppentasten. Aktualisiere ihn zuerst.",
   "settingsView.webhookGroupKeyNote": "Diese Taste ist mit der Gruppe \"{{name}}\" verbunden (Reiter Multi-Room). Die Gruppe gewinnt: ein Druck bildet die Gruppe oder löst sie auf, der Webhook feuert nicht.",
-  "settingsView.webhookRemoteLegendGroup": "mit einer Gruppe verbunden (Reiter Multi-Room)"
+  "settingsView.webhookRemoteLegendGroup": "mit einer Gruppe verbunden (Reiter Multi-Room)",
+  "setup.installBoxInSetup": "Der Lautsprecher schließt gerade seine eigene Einrichtung ab. ST Reborn ist schon darauf installiert.",
+  "setup.installInSetupPhase": "Die WLAN-Leuchte blinkt dabei schnell und der Lautsprecher verlässt für jeweils ein paar Minuten das Netzwerk, deshalb ist er von hier aus nicht erreichbar. Das liegt nicht an deinem Netzwerk, und der Zustand endet meist nach etwa fünfzehn Minuten von selbst.",
+  "setup.installStillWaiting": "Warte noch auf den Lautsprecher, höchstens noch {{remaining}}.",
+  "setup.installWaitGaveUp": "Der Lautsprecher ist nicht zurückgekommen. ST Reborn wurde darauf kopiert und der Lautsprecher neu gestartet, seitdem antwortet er aber überhaupt nicht mehr.",
+  "setup.installLateSetupOk": "Der Lautsprecher hat seine eigene Einrichtung beendet und ist wieder da. Die restlichen Einstellungen werden jetzt übertragen.",
+  "setup.help.setupPhase": "Das ist die eigene Einrichtung des Lautsprechers, nicht ST Reborn: Die WLAN-Leuchte blinkt dabei schnell und der Lautsprecher verlässt das Netzwerk. ST Reborn ist bereits auf dem Lautsprecher und kann diesen Zustand nicht beenden.",
+  "setup.help.setupWait": "Warte etwa fünfzehn Minuten, ohne etwas zu tun. Starte die Installation nicht noch einmal, solange die Leuchte blinkt: Das hilft nicht. Blinkt sie danach immer noch, zieh den Stecker für zehn Sekunden und steck ihn wieder ein.",
+  "updateAll.phase.boxInSetup": "Lautsprecher schließt seine eigene Einrichtung ab, später noch einmal prüfen.",
+  "update.boxInSetupNote": "{{name}} ist mit der eigenen Einrichtung beschäftigt und verlässt dabei das Netzwerk, deshalb konnte das Update nicht bestätigt werden. Wahrscheinlich hat es geklappt. Schau in etwa fünfzehn Minuten noch einmal nach.",
+  "setup.installWaitStopBtn": "Nicht mehr warten und Details anzeigen"
 }
