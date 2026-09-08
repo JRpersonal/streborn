@@ -19,13 +19,56 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
+
+// Writes to the same path are serialized in this process.
+//
+// The temp sibling is named after the target ("<path>.tmp"), which is what
+// keeps the rename on one filesystem and leaves at most ONE stale file behind
+// after a kill. The cost is that two goroutines writing the same path share
+// that name: the second one truncates the first one's temp file mid-write, and
+// then the first one either renames a torn mix into place or fails outright.
+// The second half was seen in the field on 2026-09-08, a preset recall and the
+// resume guard both updating last-play.json in the same moment:
+//
+//	last-play persist failed err="rename: rename /mnt/nv/streborn/last-play.json.tmp
+//	  /mnt/nv/streborn/last-play.json: no such file or directory"
+//
+// A per-path lock is the right fix here rather than a unique temp name: the
+// agent is the only writer of these files, and unique names would litter a
+// 31 MB NAND with one orphan per unclean shutdown. The map holds one entry per
+// store file, about a dozen for the life of the process.
+var (
+	pathLocksMu sync.Mutex
+	pathLocks   = map[string]*sync.Mutex{}
+)
+
+// lockFor returns the mutex guarding path, creating it on first use.
+func lockFor(path string) *sync.Mutex {
+	key := filepath.Clean(path)
+	pathLocksMu.Lock()
+	defer pathLocksMu.Unlock()
+	m, ok := pathLocks[key]
+	if !ok {
+		m = &sync.Mutex{}
+		pathLocks[key] = m
+	}
+	return m
+}
 
 // WriteFile durably writes data to path. It writes a sibling temp file (same
 // directory, so the rename stays on one filesystem and is itself atomic),
 // fsyncs its data, renames it over path, then fsyncs the directory. On any
 // failure the temp file is removed and the original path is left untouched.
+//
+// Concurrent writes to the same path are serialized, so the file always holds
+// one complete version and the last writer wins. See the pathLocks comment.
 func WriteFile(path string, data []byte, perm os.FileMode) error {
+	mu := lockFor(path)
+	mu.Lock()
+	defer mu.Unlock()
+
 	dir := filepath.Dir(path)
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
