@@ -28,6 +28,8 @@ import {
   inStereoPair,
   stereoUndoTargets,
   stereoSelectionPick,
+  masterBoxForKey,
+  storedGroupHostsOf,
 } from './groups.js';
 
 // Placeholder LAN (192.0.2.0/24, RFC 5737) and deviceIDs only.
@@ -642,6 +644,38 @@ describe('storedPermanentGroupsOf', () => {
   });
 });
 
+// A speaker keeps ONE zone document, so pairing a speaker that belongs to a
+// saved permanent group replaces that group with the pair and the group is gone
+// with nothing to restore it from. While its main speaker is idle the group is
+// invisible to every live check, which is exactly when the stereo picker used
+// to offer its speakers as if they were free.
+describe('storedGroupHostsOf', () => {
+  const boxes = [
+    { deviceID: 'AAA', host: '10.0.0.1', kind: 'str' },
+    { deviceID: 'BBB', host: '10.0.0.2', kind: 'str' },
+    { deviceID: 'CCC', host: '10.0.0.3', kind: 'str' },
+  ];
+
+  it('names the main speaker and every remembered member', () => {
+    const zoneLive = {
+      AAA: { master: '', members: [], permanent: true, remembered: [{ ip: '10.0.0.2', deviceID: 'bbb' }, { ip: '10.0.0.9', name: 'Flur' }] },
+      BBB: { master: '', members: [] },
+      CCC: { master: '', members: [] },
+    };
+    const got = storedGroupHostsOf(zoneLive, boxes);
+    expect(got.has('10.0.0.1')).toBe(true); // the main speaker
+    expect(got.has('10.0.0.2')).toBe(true); // a member the app has discovered
+    expect(got.has('10.0.0.9')).toBe(true); // a member it has not: the saved address still counts
+    expect(got.has('10.0.0.3')).toBe(false); // a free speaker stays free
+  });
+
+  it('is empty without a saved group, so nothing is hidden for no reason', () => {
+    expect(storedGroupHostsOf({ AAA: { master: '', members: [] } }, boxes).size).toBe(0);
+    expect(storedGroupHostsOf({}, boxes).size).toBe(0);
+    expect(storedGroupHostsOf(undefined, undefined).size).toBe(0);
+  });
+});
+
 describe('groupCount', () => {
   const boxes = [master, boxA, boxB, stock];
 
@@ -725,5 +759,132 @@ describe('onZoneLive', () => {
     await expect(fetchZoneLive([master], { maxAgeMs: 0, minBoxes: 1 }, fetchZone)).resolves.toBe(true);
     expect(state.zoneLive[master.deviceID]).toBeTruthy();
     off();
+  });
+});
+
+// The master key comes from the SPEAKERS' zone documents, which name the master
+// by the firmware's SoundTouch deviceID (the SCM MAC). The app's box record
+// carries whatever the app resolved for that speaker, and the two are not
+// always the same value. When they disagree, a plain deviceID lookup finds no
+// box at all: the Multi-Room frame then printed the raw hex key as its name and
+// its x had nothing to dissolve (field bundle 2026-09-07).
+describe('masterBoxForKey', () => {
+  // The firmware id of `master`, deliberately not the one it announces.
+  const fwID = 'FF99EE88DD07';
+  // What every speaker answers while `master` leads and A and B follow, with
+  // the master named by its FIRMWARE id throughout.
+  function fwMap() {
+    return {
+      [master.deviceID]: {
+        master: fwID,
+        senderIP: master.host,
+        members: [{ deviceID: boxA.deviceID, ip: boxA.host }, { deviceID: boxB.deviceID, ip: boxB.host }],
+      },
+      [boxA.deviceID]: { master: fwID, senderIP: master.host, members: [{ deviceID: boxA.deviceID, ip: boxA.host }] },
+      [boxB.deviceID]: { master: fwID, senderIP: master.host, members: [{ deviceID: boxB.deviceID, ip: boxB.host }] },
+    };
+  }
+
+  it('resolves by deviceID when the two identities agree', () => {
+    expect(masterBoxForKey(master.deviceID, liveMap(), [master, boxA, boxB])).toBe(master);
+  });
+
+  it('takes the key in any case', () => {
+    expect(masterBoxForKey(master.deviceID.toLowerCase(), liveMap(), [master, boxA, boxB])).toBe(master);
+  });
+
+  it('resolves by the leader address when the announced id is not the firmware id', () => {
+    expect(masterBoxForKey(fwID, fwMap(), [master, boxA, boxB])).toBe(master);
+  });
+
+  it('resolves by boxDeviceID, the second identity a speaker publishes', () => {
+    // An up-to-date agent announces what its own firmware calls it next to its
+    // deviceID, so the key from a zone document matches directly - no address
+    // and no group shape needed. Nothing about the announced deviceID changes:
+    // the same box still answers to it.
+    const named = { ...master, boxDeviceID: fwID };
+    expect(masterBoxForKey(fwID, {}, [named, boxA, boxB])).toBe(named);
+    expect(masterBoxForKey(fwID.toLowerCase(), {}, [named, boxA, boxB])).toBe(named);
+    expect(masterBoxForKey(named.deviceID, {}, [named, boxA, boxB])).toBe(named);
+  });
+
+  it('refuses a senderIP whose box does not name the same master', () => {
+    // A senderIP left over from a group that has since been rebuilt: the box at
+    // that address leads something else now and must not be nominated. Nothing
+    // else identifies the leader here, so the answer is null, not a stranger.
+    const zl = {
+      [boxA.deviceID]: { master: fwID, senderIP: master.host, members: [{ deviceID: boxA.deviceID, ip: boxA.host }] },
+      [master.deviceID]: { master: 'CC00CC00CC00', senderIP: boxB.host, members: [] },
+    };
+    expect(masterBoxForKey(fwID, zl, [master, boxA, boxB])).toBeNull();
+  });
+
+  it('falls back to the group shape when no address identifies the leader', () => {
+    // No senderIP anywhere: a follower's answer lists only itself and the
+    // leader's lists the others, so the one that does not list itself leads.
+    const zl = fwMap();
+    for (const k of Object.keys(zl)) delete zl[k].senderIP;
+    expect(masterBoxForKey(fwID, zl, [master, boxA, boxB])).toBe(master);
+  });
+
+  it('returns null rather than guessing when nothing resolves', () => {
+    expect(masterBoxForKey(fwID, {}, [master, boxA, boxB])).toBeNull();
+    expect(masterBoxForKey('', liveMap(), [master, boxA, boxB])).toBeNull();
+    expect(masterBoxForKey(master.deviceID, liveMap(), [])).toBeNull();
+  });
+
+  it('never returns a stock speaker', () => {
+    const stockLeader = { ...stock, deviceID: fwID };
+    expect(masterBoxForKey(fwID, {}, [stockLeader])).toBeNull();
+  });
+});
+
+// The field bundle itself (gh883, 2026-09-07), because the shapes above are
+// tidier than what a speaker actually answers:
+//   - the firmware drops the MASTER's own row from /getZone, so the master's
+//     members[] holds the followers and a FOLLOWER's holds every follower
+//     including itself,
+//   - the master's own answer carries NO senderIPAddress at all; only the
+//     followers' answers name the leader's address,
+//   - exactly one box (the leader) announces an id that is not its firmware id.
+// So neither the id nor the leader's own answer can find it: it is a follower's
+// senderIP, or the group shape, or nothing.
+describe('masterBoxForKey on the field bundle shape', () => {
+  const fwID = 'FF99EE88DD07'; // the leader's SCM MAC, what every speaker names
+  const followers = [
+    { deviceID: boxA.deviceID, ip: boxA.host },
+    { deviceID: boxB.deviceID, ip: boxB.host },
+  ];
+  const bundleMap = (withSenderIP) => ({
+    [master.deviceID]: { master: fwID, members: followers },
+    [boxA.deviceID]: { master: fwID, ...(withSenderIP ? { senderIP: master.host } : {}), members: followers },
+    [boxB.deviceID]: { master: fwID, ...(withSenderIP ? { senderIP: master.host } : {}), members: followers },
+  });
+
+  it('finds the leader from a FOLLOWER senderIP when the leader itself reports none', () => {
+    expect(masterBoxForKey(fwID, bundleMap(true), [master, boxA, boxB])).toBe(master);
+  });
+
+  it('finds it by group shape when not one answer carries a senderIP', () => {
+    // The leader is the only box whose own members[] does not list itself.
+    expect(masterBoxForKey(fwID, bundleMap(false), [master, boxA, boxB])).toBe(master);
+  });
+
+  it('finds it with the leader box listed last, so order is not doing the work', () => {
+    expect(masterBoxForKey(fwID, bundleMap(true), [boxA, boxB, master])).toBe(master);
+    expect(masterBoxForKey(fwID, bundleMap(false), [boxA, boxB, master])).toBe(master);
+  });
+
+  it('gives the caller a name to print, never the raw key', () => {
+    const mb = masterBoxForKey(fwID, bundleMap(true), [master, boxA, boxB]);
+    expect(mb).not.toBeNull();
+    expect(mb.deviceID).not.toBe(fwID);
+  });
+
+  it('answers null when the leader is not discovered at all', () => {
+    // Only the two followers are in the box list. Their senderIP points at a
+    // box the app cannot see and each of them lists itself, so there is no
+    // leader to nominate and a guess would send a dissolve to a follower.
+    expect(masterBoxForKey(fwID, bundleMap(true), [boxA, boxB])).toBeNull();
   });
 });

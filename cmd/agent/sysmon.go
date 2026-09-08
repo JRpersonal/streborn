@@ -118,26 +118,60 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 			logger.Debug("pollBoxInfo fail", "err", err)
 			return
 		}
-		if model := strings.TrimSpace(s.Info.Type); model != "" {
-			if !modelEverFound {
-				logger.Info("box model detected", "type", model)
-				modelEverFound = true
-			}
-			if model != lastModel {
-				if err := ann.UpdateModel(model); err != nil {
-					logger.Warn("mDNS UpdateModel failed", "err", err)
-				} else {
-					logger.Info("mDNS model updated", "model", model)
-					lastModel = model
-				}
-			}
+		model := strings.TrimSpace(s.Info.Type)
+		if model != "" && !modelEverFound {
+			logger.Info("box model detected", "type", model)
+			modelEverFound = true
 		}
-		if name := strings.TrimSpace(s.Info.Name); name != "" && name != lastName {
-			if err := ann.UpdateFriendlyName(name); err != nil {
-				logger.Warn("mDNS UpdateFriendlyName failed", "err", err)
+		// Everything this answer can change, gathered first and applied in ONE
+		// re-announce (discovery.Announcer.UpdateBoxInfo). A re-announce tears
+		// both mDNS servers down and registers again, so the speaker is briefly
+		// not there at all; the first successful poll after a boot normally has
+		// all three fields to report at once, and three separate updates
+		// withdrew the service three times in a row while a desktop app may be
+		// browsing.
+		//
+		// The firmware's own SoundTouch id is announced as a SECOND identity
+		// next to the agent's deviceID, never in place of it: that id is what
+		// the app has already stored for this speaker and what the peer roster
+		// recognises our own stale announcement by (#697). The two are not
+		// always the same value for the same speaker - the field bundle behind
+		// this was three single-chip SoundTouch 10s whose zone documents named
+		// a master the app's records did not carry - so a client that has to
+		// match a box against something a SPEAKER said needs the firmware id
+		// too. See discovery.Announcer.UpdateBoxDeviceID.
+		//
+		// Each field is compared against what is actually announced, so a value
+		// that already agrees costs nothing and logs nothing.
+		boxID := strings.ToUpper(strings.TrimSpace(s.Info.DeviceID))
+		name := strings.TrimSpace(s.Info.Name)
+		newModel, newBoxID, newName := "", "", ""
+		if model != "" && model != lastModel {
+			newModel = model
+		}
+		if boxID != "" && boxID != ann.BoxDeviceID() {
+			newBoxID = boxID
+		}
+		if name != "" && name != lastName {
+			newName = name
+		}
+		if newModel != "" || newBoxID != "" || newName != "" {
+			oldBoxID := ann.BoxDeviceID()
+			if err := ann.UpdateBoxInfo(newModel, newBoxID, newName); err != nil {
+				logger.Warn("mDNS UpdateBoxInfo failed", "err", err)
 			} else {
-				logger.Info("mDNS FriendlyName updated", "name", name)
-				lastName = name
+				if newModel != "" {
+					lastModel = newModel
+					logger.Info("mDNS model updated", "model", newModel)
+				}
+				if newBoxID != "" {
+					logger.Info("mDNS: announcing the firmware SoundTouch id alongside the agent deviceID",
+						"old", oldBoxID, "boxDeviceID", newBoxID, "deviceID", ann.DeviceID())
+				}
+				if newName != "" {
+					lastName = newName
+					logger.Info("mDNS FriendlyName updated", "name", newName)
+				}
 			}
 		}
 		if !regionLogged {

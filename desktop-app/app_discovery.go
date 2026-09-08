@@ -108,10 +108,20 @@ const strKnownTTL = 24 * time.Hour
 // Kind distinguishes STR-equipped speakers from stock Bose speakers
 // that still need a USB-stick install.
 type BoxInfo struct {
-	Name         string `json:"name"`
-	Host         string `json:"host"` // IPv4 for the REST API
-	Port         int    `json:"port"` // typically 8888 for STR, 8090 for stock
-	DeviceID     string `json:"deviceID"`
+	Name     string `json:"name"`
+	Host     string `json:"host"` // IPv4 for the REST API
+	Port     int    `json:"port"` // typically 8888 for STR, 8090 for stock
+	DeviceID string `json:"deviceID"`
+	// BoxDeviceID is the SoundTouch id the FIRMWARE calls this speaker: the
+	// agent announces it next to its own deviceID and the :8090 /info probe
+	// reports the same value. The speakers name each other by this one in their
+	// zone documents, and it is not always what this record's DeviceID ended up
+	// holding, so a group's master matched no box in the list at all (field
+	// bundle 2026-09-07: three single-chip SoundTouch 10s). Kept as a SECOND
+	// field rather than replacing DeviceID: that one is what every stored
+	// record is keyed on. Empty for an older agent that does not announce it
+	// and for a speaker whose firmware has not answered.
+	BoxDeviceID  string `json:"boxDeviceID,omitempty"`
 	FriendlyName string `json:"friendlyName"`
 	Model        string `json:"model"`
 	Version      string `json:"version"`
@@ -292,6 +302,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			Host:         host,
 			Port:         inst.Port,
 			DeviceID:     inst.DeviceID,
+			BoxDeviceID:  inst.BoxDeviceID,
 			FriendlyName: toValidUTF8(inst.FriendlyName),
 			Model:        inst.Model,
 			Version:      inst.Version,
@@ -1165,6 +1176,12 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 	if out.DeviceID == "" {
 		out.DeviceID = prev.DeviceID
 	}
+	// A speaker cannot stop being what the firmware calls it, so the last known
+	// box id is kept across a cycle in which only mDNS answered (an older agent
+	// announces no boxDeviceID) rather than blanked.
+	if out.BoxDeviceID == "" {
+		out.BoxDeviceID = prev.BoxDeviceID
+	}
 	if out.SerialNumber == "" {
 		out.SerialNumber = prev.SerialNumber
 	}
@@ -1294,6 +1311,12 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.DeviceID = b.DeviceID
 	case out.DeviceID == "":
 		out.DeviceID = b.DeviceID
+	}
+	// BoxDeviceID has no such contest: both sides that set it (the firmware's
+	// own /info and the agent's TXT copy of it) carry the same value, so the
+	// only question is which side has one at all.
+	if out.BoxDeviceID == "" {
+		out.BoxDeviceID = b.BoxDeviceID
 	}
 	if out.SerialNumber == "" {
 		out.SerialNumber = b.SerialNumber
@@ -1734,6 +1757,10 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		// ST20 master: the master formed a zone the Wave never joined).
 		if info.DeviceID != "" {
 			box.DeviceID = info.DeviceID
+			// The same value under its own name, so a caller that must match
+			// what a SPEAKER said (a zone document names its master by this id)
+			// has it even when DeviceID later resolves to the agent's own.
+			box.BoxDeviceID = info.DeviceID
 		}
 		if info.SerialNumber != "" {
 			box.SerialNumber = info.SerialNumber
@@ -1830,6 +1857,7 @@ func probeStockDetail(ctx context.Context, ip string) (BoxInfo, bool, error) {
 		Host:         ip,
 		Port:         8090,
 		DeviceID:     deviceID,
+		BoxDeviceID:  deviceID, // straight from the firmware: by definition the box id
 		FriendlyName: name,
 		Model:        model,
 		SerialNumber: serial,

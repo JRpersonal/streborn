@@ -91,8 +91,20 @@ type Config struct {
 	InstanceName string
 	// Port is the TCP port of the webui/REST API (default 8888).
 	Port int
-	// DeviceID is the Bose box MAC in uppercase without separators.
+	// DeviceID is the Bose box MAC in uppercase without separators. It is the
+	// agent's OWN identity, read from its first interface at boot, and it stays
+	// put for the life of the announcement: clients store it (the desktop app's
+	// group-key templates keep it on NAND) and the peer roster recognises this
+	// speaker's own stale announcement by it (#697).
 	DeviceID string
+	// BoxDeviceID is the SoundTouch deviceID the FIRMWARE reports for this
+	// speaker (/info), announced alongside DeviceID because the two are not
+	// always the same box-side value, and a client cannot tell in advance which
+	// speaker they will disagree on. The speakers key their zone documents on
+	// this one, so a client that has to match a speaker against something the
+	// firmware said needs it. Empty until the firmware answers (see
+	// UpdateBoxDeviceID).
+	BoxDeviceID string
 	// FriendlyName is the Bose box display name, e.g. "Living Room Bose".
 	FriendlyName string
 	// Model is the Bose model name, e.g. "SoundTouch 10".
@@ -135,18 +147,29 @@ func Announce(logger *slog.Logger, cfg Config) (*Announcer, error) {
 	return a, nil
 }
 
-// register builds the TXT record from a.cfg and registers both the
-// current and legacy service entries. Caller must hold a.mu except on
-// the first call.
-func (a *Announcer) register() error {
-	txt := []string{
+// txtRecord builds the TXT key/value list from a.cfg. Separate from register()
+// so a test can read what this speaker publishes without a live registration on
+// the machine's real interfaces. Caller must hold a.mu except on the first call.
+func (a *Announcer) txtRecord() []string {
+	return []string{
 		"version=" + nz(a.cfg.Version, "dev"),
 		"build=" + nz(a.cfg.Build, ""),
 		"deviceID=" + nz(a.cfg.DeviceID, ""),
+		// The firmware's own id, next to (never instead of) deviceID. Clients
+		// that match against something a speaker said need it; clients that
+		// stored deviceID keep working. See UpdateBoxDeviceID.
+		"boxDeviceID=" + nz(a.cfg.BoxDeviceID, ""),
 		"model=" + nz(a.cfg.Model, ""),
 		"friendlyName=" + nz(a.cfg.FriendlyName, ""),
 		"path=/api",
 	}
+}
+
+// register builds the TXT record from a.cfg and registers both the
+// current and legacy service entries. Caller must hold a.mu except on
+// the first call.
+func (a *Announcer) register() error {
+	txt := a.txtRecord()
 	ifaces := pickAnnounceIfaces(a.logger)
 
 	// register the service under a name that resolves. See Config.HostName:
@@ -276,6 +299,122 @@ func (a *Announcer) UpdateModel(model string) error {
 	return a.reannounceLocked("model change", old, model)
 }
 
+// DeviceID returns the deviceID currently held in the TXT record. It is the
+// identity every client keys this speaker on, and it never changes for the life
+// of the announcement (see UpdateBoxDeviceID for why the firmware id is a
+// second key instead of a correction of this one).
+func (a *Announcer) DeviceID() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.DeviceID
+}
+
+// BoxDeviceID returns the firmware SoundTouch id currently held in the TXT
+// record, so a caller that has just read /info can tell whether announcing it
+// would change anything.
+func (a *Announcer) BoxDeviceID() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.BoxDeviceID
+}
+
+// UpdateBoxDeviceID publishes the firmware's SoundTouch deviceID as the SECOND
+// identity in the TXT record and re-announces both service types. No-op if it
+// has not changed.
+//
+// Why a second key and not a correction of deviceID: the announced deviceID is
+// a boot-time guess (the first interface's MAC), and it is not always the
+// SoundTouch id the firmware keys its own zone documents on. Matching an
+// app-side box record against a speaker's own answer therefore missed: a
+// multiroom group whose master the speakers named by the firmware id matched no
+// box in the app at all, so the group frame showed a raw hex id instead of the
+// speaker's name and its dissolve had nothing to aim at. The bundle that showed
+// it was three single-chip SoundTouch 10s, so this is not a property of one
+// chassis: whatever the reason the two records drift apart, announcing both
+// ends the guessing (field bundle 2026-09-07).
+//
+// Overwriting deviceID would fix that match and break every other one. The
+// announced id is what the app has already stored for this speaker (group-key
+// templates keep it on NAND verbatim) and what the agent's own peer roster
+// compares a stale self-announcement against after a live subnet move (#697).
+// An id that changes under those is a silent data migration nobody asked for.
+// So both identities are announced and clients match against either.
+//
+// The instance name is deliberately NOT rebuilt either: it is the service
+// identity clients track across re-announces, and renaming the service to add a
+// TXT field would look like the speaker vanished and a new one appeared.
+func (a *Announcer) UpdateBoxDeviceID(boxDeviceID string) error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if boxDeviceID == a.cfg.BoxDeviceID {
+		return nil
+	}
+	old := a.cfg.BoxDeviceID
+	a.cfg.BoxDeviceID = boxDeviceID
+	return a.reannounceLocked("boxDeviceID change", old, boxDeviceID)
+}
+
+// applyBoxInfoLocked writes the firmware-derived TXT fields that are non-empty
+// AND different from what is announced, and reports what it changed as two
+// parallel before/after lists for the re-announce log line. An empty argument
+// means "the firmware did not answer for this field", never "clear it". Caller
+// must hold a.mu.
+//
+// Split out of UpdateBoxInfo so a test can check the gathering without starting
+// a real registration on the machine's interfaces.
+func (a *Announcer) applyBoxInfoLocked(model, boxDeviceID, friendlyName string) (was, now []string) {
+	set := func(key string, cur *string, next string) {
+		if next == "" || next == *cur {
+			return
+		}
+		was = append(was, key+"="+*cur)
+		now = append(now, key+"="+next)
+		*cur = next
+	}
+	set("model", &a.cfg.Model, model)
+	set("boxDeviceID", &a.cfg.BoxDeviceID, boxDeviceID)
+	set("friendlyName", &a.cfg.FriendlyName, friendlyName)
+	return was, now
+}
+
+// UpdateBoxInfo applies every field the box /info poll can change in ONE
+// re-announce. An empty argument leaves that field alone; a value that is
+// already announced changes nothing. No-op (and no re-announce) when nothing
+// differs.
+//
+// This exists because a re-announce is not free: it shuts both mDNS servers
+// down and registers again, and for that moment the service is simply not
+// there. The first successful poll after a boot typically has all three fields
+// to report at once (the model was still the generic fallback, the firmware id
+// was unknown, the name had never been read), so calling UpdateModel,
+// UpdateBoxDeviceID and UpdateFriendlyName in a row withdrew the speaker three
+// times in a row while a desktop app may be browsing. Now it withdraws at most
+// once per poll round.
+//
+// The single-field setters stay for their own callers; this one is for the
+// poll that learns several things from one answer.
+func (a *Announcer) UpdateBoxInfo(model, boxDeviceID, friendlyName string) error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	was, now := a.applyBoxInfoLocked(model, boxDeviceID, friendlyName)
+	if len(now) == 0 {
+		return nil
+	}
+	return a.reannounceLocked("box info change", strings.Join(was, " "), strings.Join(now, " "))
+}
+
 // Snapshot returns the friendlyName and model currently held in the TXT
 // record. The agent serves these through its version endpoint so the desktop
 // app can read the box display name straight from the running agent. That
@@ -314,11 +453,15 @@ func (a *Announcer) Run(ctx context.Context) {
 // STR-equipped speakers from stock Bose speakers; for stock entries
 // Version and Build are empty.
 type Instance struct {
-	Name         string
-	Host         string
-	IPv4         []string
-	Port         int
-	DeviceID     string
+	Name     string
+	Host     string
+	IPv4     []string
+	Port     int
+	DeviceID string
+	// BoxDeviceID is the SoundTouch id the firmware reports for the speaker,
+	// announced by STR agents next to DeviceID (see Config.BoxDeviceID). Empty
+	// for stock speakers and for agents older than this key.
+	BoxDeviceID  string
 	Model        string
 	FriendlyName string
 	Version      string
@@ -470,6 +613,10 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 				case "deviceid", "mac":
 					if inst.DeviceID == "" {
 						inst.DeviceID = strings.ToUpper(strings.ReplaceAll(v, ":", ""))
+					}
+				case "boxdeviceid":
+					if inst.BoxDeviceID == "" {
+						inst.BoxDeviceID = strings.ToUpper(strings.ReplaceAll(v, ":", ""))
 					}
 				case "model":
 					if inst.Model == "" {

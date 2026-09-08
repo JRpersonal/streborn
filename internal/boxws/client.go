@@ -46,6 +46,10 @@ type Client struct {
 	// storm so bundles can correlate it with the boot clock and marge trail.
 	err1036Times   []time.Time
 	lastStormLogAt time.Time
+	// suppress1036Until stands the storm COUNTER down while STR is itself
+	// provoking the rejections it would otherwise count (see
+	// Suppress1036Until). Guarded by mu.
+	suppress1036Until time.Time
 	// lastAcctModeLogAt gates the acctModeUpdated INFO line so a flapping box
 	// cannot spam the NAND ring (the frame's cadence on 27.0.6 is unknown; it
 	// has never appeared in a field bundle). Guarded by mu.
@@ -495,10 +499,43 @@ func (c *Client) NoteSelection(loc string) {
 	c.lastSelectionAt = time.Now()
 }
 
+// Suppress1036Until stands the 1036 STORM COUNTER down until t. A later t wins;
+// an earlier one never shortens a window that is already armed.
+//
+// The storm marker is there to catch a box that rejects essentially every
+// recall on its own, which is a real state with a real remedy (a soft reboot).
+// What it cannot do is tell those rejections apart from the ones STR PROVOKES.
+// A power-on makes the firmware resume the speaker's own last station, that
+// self-resume fails against a source the box does not consider itself logged
+// into, and each failure was counted like a symptom. A user who formed and
+// dissolved a group a few times collected six of them inside ten minutes and
+// got a red banner claiming the speaker refuses every station - about a speaker
+// that was fine and healed by itself (field, 2026-09-07).
+//
+// Only the COUNT is suppressed. The per-frame WARN and the boxErrors entry are
+// written before this is ever consulted, so a diagnostic bundle still carries
+// every single rejection and loses nothing.
+func (c *Client) Suppress1036Until(t time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if t.After(c.suppress1036Until) {
+		c.suppress1036Until = t
+	}
+}
+
 func (c *Client) note1036() {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// STR asked for this one: it is not evidence about the box. Returning
+	// before the window is even touched keeps a provoked rejection from
+	// counting AND from ageing a genuine one out of the sliding window.
+	if now.Before(c.suppress1036Until) {
+		return
+	}
 	keep := c.err1036Times[:0]
 	for _, t := range c.err1036Times {
 		if now.Sub(t) < storm1036Window {

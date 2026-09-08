@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -479,6 +480,13 @@ type Server struct {
 	// Finding 4). nil = not wired (no storm reported).
 	storm1036Fn func() (bool, int, time.Time)
 
+	// suppress1036Fn stands the 1036 storm COUNTER down until the given time.
+	// Wired to boxws.Suppress1036Until. Used where STR itself provokes the
+	// rejection it would otherwise count as a symptom (a zone teardown kills
+	// every member's in-flight UPnP session). nil = not wired; every rejection
+	// counts, which is the pre-existing behaviour.
+	suppress1036Fn func(time.Time)
+
 	// ownTransportCmdFn reports when STR itself last issued a transport-
 	// mutating SOAP command; zero = never. Wired to
 	// boxws.LastOwnTransportCommand. HandleEnterStandby uses it to excuse a
@@ -711,15 +719,15 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 	defer cancel()
-	// quiet=1: the wake is for a group join, not for listening to THIS
-	// speaker. The firmware's power-on resumes the speaker's own last station
-	// at its own level, so for a few seconds every joining member played
-	// something else, loudly, before the zone took it over; on one member
-	// the join then failed against the still-starting station (Jens,
-	// 2026-09-06, Gaestebad). So: mute first, wake, stop whatever the
-	// firmware resumed, answer. The level comes back the moment the speaker
-	// joins a zone (NoteBoxZoneState) or after a bounded wait.
-	quiet := r.URL.Query().Get("quiet") == "1"
+	// A quiet wake is for a group join, not for listening to THIS speaker. The
+	// firmware's power-on resumes the speaker's own last station at its own
+	// level, so for a few seconds every joining member played something else,
+	// loudly, before the zone took it over; on one member the join then failed
+	// against the still-starting station (Jens, 2026-09-06, Gaestebad). So:
+	// mute first, wake, stop whatever the firmware resumed, answer. The level
+	// comes back the moment the speaker joins a zone (NoteBoxZoneState) or
+	// after a bounded wait.
+	quiet := wakeQuietRequested(r.URL.Query())
 	var err error
 	if quiet {
 		err = s.quietWake(ctx)
@@ -733,6 +741,45 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
 }
 
+// wakeQuietRequested reads the quiet flag off a wake request. Two spellings,
+// and the second one exists ONLY because of what an OLD agent does with the
+// first: v0.9.74 and v0.9.75 honour quiet=1 without the quietWakeNeeded gate
+// below, so they mute and STOP a speaker that is happily playing. The app wakes
+// the full desired member list on every group edit, and users update the app
+// long before they update each speaker, so asking those agents for quiet would
+// silence the members of a playing group on the normal update path.
+//
+//   - quietifasleep=1 is the name only a gated agent knows. An old agent does
+//     not recognise the key and does today's plain wake, which is exactly the
+//     behaviour it had before the app started asking.
+//   - quiet=1 keeps its meaning for everything that already sends it.
+//
+// Both mean the same thing HERE: the gate lives inside quietWake, so this agent
+// leaves an awake speaker alone whichever spelling it was asked with.
+func wakeQuietRequested(q url.Values) bool {
+	return q.Get("quiet") == "1" || q.Get("quietifasleep") == "1"
+}
+
+// quietWakeNeeded says whether the quiet treatment (mute, wake, stop) has any
+// work to do. Only a sleeping speaker does: there is no power-on self-resume to
+// mute or stop on one that is already up, and muting a member that is playing
+// in the very group being edited silences it for nothing. The app wakes the
+// FULL desired member list on a group change, not only the speakers being
+// added, so without this every existing member of a playing group was muted and
+// stopped when one speaker was added or removed. A state that cannot be read
+// (empty source) is treated as asleep, which is what it was before this gate.
+func quietWakeNeeded(np nowPlayingSnapshot) bool {
+	return np.Source == "" || np.Source == "STANDBY"
+}
+
+// quietWakeNowPlaying is the seam for the tests: the real read reaches the
+// firmware on a fixed port, so a test server on a random port cannot be
+// reached through it (same pattern as hushforupload.go and
+// dissolvestragglers.go). Production always uses the real implementation.
+var quietWakeNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
+	return fetchNowPlaying(ctx, host)
+}
+
 // quietWake wakes the speaker for a group operation, not for listening to
 // it: the firmware's power-on resumes the speaker's own last station at its
 // own level, so the speaker is muted the moment it shows life, whatever the
@@ -740,10 +787,18 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 // or after a bounded wait (armQuietWakeRestore). Used by the app's group-join
 // wake (/api/box/wake?quiet=1) and by the zone form for a sleeping master,
 // which otherwise started its last station in every room the moment the
-// group was created (Jens, 2026-09-06).
+// group was created (Jens, 2026-09-06). A speaker that is not in standby is
+// left exactly as it is.
 func (s *Server) quietWake(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	// Only a sleeping speaker gets the quiet treatment (quietWakeNeeded). The
+	// other callers check standby themselves (zones_stereo.go, rejoinDecision),
+	// so for them this early return never fires; the app path is the one that
+	// wakes speakers that are already playing.
+	if !quietWakeNeeded(quietWakeNowPlaying(ctx, s.boxHost)) {
+		return nil
+	}
 	var prevVol = -1
 	if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
 		prevVol = v.Actual
@@ -759,7 +814,7 @@ func (s *Server) quietWake(ctx context.Context) error {
 		defer close(muteDone)
 		c := boxapi.New(s.boxHost)
 		for ctx.Err() == nil {
-			if np := fetchNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
+			if np := quietWakeNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
 				_ = c.SetVolume(ctx, 0)
 				return
 			}
@@ -783,7 +838,7 @@ func (s *Server) quietWake(ctx context.Context) error {
 	_ = boxapi.New(s.boxHost).SetVolume(ctx, 0)
 	// Whatever the firmware resumed on power-on is stopped, so the zone
 	// join meets an idle speaker instead of a station still spinning up.
-	if np := fetchNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
+	if np := quietWakeNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
 		_ = boxapi.New(s.boxHost).Key(ctx, "STOP")
 	}
 	if prevVol >= 0 {
@@ -801,7 +856,15 @@ const quietWakeRestoreAfter = 20 * time.Second
 // the bounded fallback that restores it if no zone join does.
 func (s *Server) armQuietWakeRestore(vol int) {
 	s.quietWakeMu.Lock()
-	s.quietWakeVol = vol
+	// The level already armed wins: a SECOND quiet wake inside the window
+	// would otherwise snapshot the level the first one already muted (0) and
+	// then "restore" the speaker to silence. That is the normal case, not an
+	// edge one: the app races each wake against a 4 s deadline and retries,
+	// while a real wake out of standby needs longer than that. So a repeat
+	// arming only pushes the deadline out.
+	if s.quietWakeUntil.IsZero() {
+		s.quietWakeVol = vol
+	}
 	s.quietWakeUntil = time.Now().Add(quietWakeRestoreAfter)
 	s.quietWakeMu.Unlock()
 	time.AfterFunc(quietWakeRestoreAfter, func() { s.restoreQuietWakeVolume("timeout") })
@@ -810,7 +873,17 @@ func (s *Server) armQuietWakeRestore(vol int) {
 // restoreQuietWakeVolume puts the level back that a quiet wake muted, once.
 func (s *Server) restoreQuietWakeVolume(why string) {
 	s.quietWakeMu.Lock()
-	vol, armed := s.quietWakeVol, !s.quietWakeUntil.IsZero()
+	vol, until := s.quietWakeVol, s.quietWakeUntil
+	armed := !until.IsZero()
+	// A repeat arming pushed the deadline out and started its own timer, so
+	// the timer of the earlier wake must not un-mute a speaker that a later
+	// quiet wake is still holding down. It leaves the arming alone and the
+	// later timer does the work. A zone join is not a deadline and always
+	// restores.
+	if armed && why == "timeout" && time.Now().Before(until) {
+		s.quietWakeMu.Unlock()
+		return
+	}
 	s.quietWakeUntil = time.Time{}
 	s.quietWakeMu.Unlock()
 	if !armed || vol < 0 || s.boxHost == "" {

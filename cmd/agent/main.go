@@ -135,6 +135,12 @@ func runShepherdCmd(args []string) error {
 
 // nandPresetsPath is the canonical on-NAND preset store. NAND (ubifs) survives
 // reboots and the stick being removed; a stick mountpoint does not.
+// powerToggle1036Window is how long the 1036 storm COUNTER is stood down after
+// STR toggles the box's power. The firmware answers its own power-on
+// self-resume with errorUpdate 1036 immediately; anything arriving later than
+// this is the box speaking for itself and still counts.
+const powerToggle1036Window = 2 * time.Second
+
 const nandPresetsPath = "/mnt/nv/streborn/presets.json"
 
 // canonicalPresetsPath keeps the preset store on NAND. If the configured path
@@ -1195,6 +1201,26 @@ func run() error {
 	// offer a soft reboot, which clears it, instead of leaving the user with
 	// the plug pull they would otherwise try (#419 Finding 4).
 	webuiSrv.SetStorm1036Fn(wsClient.Storm1036)
+	// ...and keep the rejections STR PROVOKES out of that count, or the banner
+	// fires on a healthy speaker. Two paths provoke them: the firmware answers
+	// its own power-on self-resume with 1036 (it restarts a source it does not
+	// consider itself logged into), and a zone teardown kills every member's
+	// in-flight UPnP session. Forming and dissolving a group a few times was
+	// enough to raise the banner on a speaker that was fine (field,
+	// 2026-09-07). Two seconds for the power-on (powerToggle1036Window): the
+	// self-resume follows the toggle immediately, anything later is the box
+	// speaking for itself.
+	boxcli.SetBeforePowerToggle(func() {
+		wsClient.Suppress1036Until(time.Now().Add(powerToggle1036Window))
+		// Said out loud, in the same words internal/webui uses for its own
+		// stand-downs: without a line here a bundle from a box that really
+		// does reject everything around each wake looks exactly like a bundle
+		// from a healthy one, because the count that would have shown it is
+		// the thing being suppressed.
+		logger.Debug("1036: storm counting stood down for a self-inflicted rejection",
+			"why", "power toggle", "for", powerToggle1036Window.String())
+	})
+	webuiSrv.SetSuppress1036Fn(wsClient.Suppress1036Until)
 	// The volume restore consults the same signal so a hand-adjusted level
 	// during a recall recovery is never clamped back to the pre-recall
 	// snapshot (which after a deep standby is the box's own wake default).
@@ -1383,11 +1409,23 @@ func run() error {
 		n, _ := ann.Snapshot()
 		return n
 	}
-	// The roster's second self-signal: the deviceID this agent announces. Same
-	// value the announcer carries in its TXT record, so an entry adopted from
-	// our own stale announcement compares equal even under a placeholder name
-	// and an address we no longer hold (#697).
-	peerSelfDeviceIDFn = func() string { return deviceID }
+	// The roster's second self-signal: every id this speaker answers under, so
+	// an entry adopted from our own stale announcement compares equal even under
+	// a placeholder name and an address we no longer hold (#697). Read from the
+	// announcer on every call, exactly like the name above: a snapshot taken
+	// here would quietly stop matching the TXT record the day anything
+	// re-announces a different id, and this check is the last one left when both
+	// the address and the name are useless. The boot id stays in the list as a
+	// second identity, and the firmware's own SoundTouch id joins it once the
+	// box has answered: the app resolves a speaker's id from the firmware where
+	// it can, so a record naming this box can carry an id our own announcement
+	// never did.
+	peerSelfDeviceIDsFn = func() []string {
+		mdnsMu.Lock()
+		ann := mdnsAnnouncer
+		mdnsMu.Unlock()
+		return announcerSelfDeviceIDs(ann, deviceID)
+	}
 	// Post-switch network refresh (#697): fired by the webui after a CONFIRMED
 	// live Wi-Fi switch. Runs on its own goroutine (the webui hook spawns it)
 	// and waits for the new DHCP lease itself before repointing the mDNS
