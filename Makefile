@@ -30,6 +30,20 @@ PKG         := ./cmd/agent
 BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_STAMP ?= $(shell date '+%Y-%m-%d-%H%M')
+
+# Freeze both, once. `?=` creates a RECURSIVELY expanded variable, so
+# `$(shell ...)` re-runs at every single reference: measured 2026-09-08, two
+# references a millisecond apart returned different values. That matters because
+# `wails-build` stamps the embedded ARM agent in one recipe line and the app
+# itself in the next, minutes later. Cross a minute boundary and the app is
+# stamped newer than the agent it just installed, so the version comparison
+# reads a freshly updated speaker as out of date and the OTA banner never
+# clears. (git describe re-runs too, and agent-embed writes into the tracked
+# embed slot, so a clean checkout could even go from "v0.9.76" to
+# "v0.9.76-dirty" between the two lines.) These two lines keep the ?= override
+# semantics for the environment and the command line, and pin the result.
+VERSION     := $(VERSION)
+BUILD_STAMP := $(BUILD_STAMP)
 LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.buildStamp=$(BUILD_STAMP)
 # Do not try to keep symbols in the desktop app by removing -s -w here: Wails
 # appends its own "-w -s" after ours whenever it builds in production mode
@@ -38,6 +52,18 @@ LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.buildStamp=$(BUILD_STAMP
 # to reduce antivirus false positives on the Windows build.
 APP_LDFLAGS := -s -w -X main.appVersion=$(VERSION) -X main.appBuild=$(BUILD_STAMP)
 GO          ?= go
+
+# Wails needs WebKitGTK, and distributions have moved on: Fedora 44 ships only
+# webkit2gtk4.1-devel, with no 4.0 package at all. Wails v2 still defaults its
+# pkg-config to webkit2gtk-4.0 (+ libsoup-2.4), so a Linux build without this
+# tag dies at cgo with "Package webkit2gtk-4.0 was not found". The tag switches
+# it to webkit2gtk-4.1 + libsoup-3.0. release.yml passes exactly the same tag
+# for linux/amd64; only the local build was missing it. Linux-only, because the
+# tag gates linux build files and macOS/Windows have no use for it.
+ifeq ($(shell uname -s),Linux)
+WAILS_TAGS  ?= webkit2_41
+endif
+WAILS_TAGFLAG := $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),)
 
 # Some Windows make builds do not pass the inherited environment into recipe
 # sub-shells: TMP/TEMP vanish (Go dies with "mkdir C:\WINDOWS\go-buildN:
@@ -135,6 +161,7 @@ engine-embed:
 # changes — not just the desktop-app dir.
 wails-dev: winformat-embed agent-embed
 	cd desktop-app && wails dev \
+		$(WAILS_TAGFLAG) \
 		-ldflags "$(APP_LDFLAGS)" \
 		-reloaddirs ".."
 
@@ -155,6 +182,7 @@ winres:
 # stamps wired in. Outputs to desktop-app/build/bin/.
 wails-build: winformat-embed agent-embed winres
 	cd desktop-app && wails build \
+		$(WAILS_TAGFLAG) \
 		-ldflags "$(APP_LDFLAGS)" \
 		-trimpath \
 		-clean \
