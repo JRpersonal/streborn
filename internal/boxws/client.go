@@ -111,6 +111,14 @@ type Client struct {
 	lastInvalidSourceAt time.Time
 	lastPresetPressAt   time.Time
 
+	// lastSkipFailAt is when the box last reported that its OWN skip on a UPnP
+	// source failed (QPLAY_SKIP_*_FAILED). That failure is followed by the
+	// firmware tearing the source down, and the teardown restore is
+	// indistinguishable on the wire from a standby wake, so the dispatcher
+	// consults this stamp before it reports a wake (see skipWakeWindow).
+	// Guarded by mu, like the teardown stamps above.
+	lastSkipFailAt time.Time
+
 	// lastOwnCmdAt is when STR itself last issued a transport-mutating SOAP
 	// command (SetURI/Play/Pause/Stop), stamped via NoteOwnTransportCommand from
 	// the upnp renderer's OnTransportCommand hook. The box answers a SOAP Stop
@@ -488,6 +496,39 @@ func (c *Client) BoxErrors() []BoxErrorNote {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]BoxErrorNote(nil), c.boxErrors...)
+}
+
+// skipWakeWindow is how close a failed native skip must be for the
+// DO_NOT_RESUME restore that follows it to be read as that skip's source
+// teardown rather than as a power-on wake.
+//
+// The two events are one firmware sequence: the QPLAY_SKIP_*_FAILED error, the
+// source drop, and the restore of the selection arrive within a second of each
+// other. Five seconds is generous enough to cover a box that is slow to give up
+// (an INVALID_SOURCE dwell of a few seconds is normal, see upnpEpisode) while
+// staying far below the time it takes a person to press skip and then power.
+const skipWakeWindow = 5 * time.Second
+
+// noteSkipFailure records that the box just failed its own skip. Same shape as
+// noteExplainedActivity: a bare stamp written where the frame is recognised,
+// read at the decision it has to inform. See lastSkipFailAt.
+func (c *Client) noteSkipFailure() {
+	c.mu.Lock()
+	c.lastSkipFailAt = time.Now()
+	c.mu.Unlock()
+}
+
+// sinceSkipFailure reports how long ago the box failed its own skip and whether
+// that was inside skipWakeWindow. A box that has never failed a skip reports
+// recent=false, never a zero-age match.
+func (c *Client) sinceSkipFailure() (age time.Duration, recent bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lastSkipFailAt.IsZero() {
+		return 0, false
+	}
+	age = time.Since(c.lastSkipFailAt)
+	return age, age < skipWakeWindow
 }
 
 // NoteSelection records the preset location the box just selected, so an error

@@ -81,11 +81,31 @@ func (s *Server) ResumeLastPlay() {
 	s.lastPlayMu.Unlock()
 
 	go func() {
+		// What the box reports at the MOMENT of the wake, before the settle
+		// sleep below can let it be replaced. A source teardown (the shape this
+		// resume cannot tell from a wake) is over in a second or two, so this is
+		// the only reading that can still catch a foreign stream in progress.
+		// See foreignContentStandDown.
+		//
+		// Taken CONCURRENTLY with the settle below, never in front of it: the
+		// read can block for its full 4 s timeout on a slow box, and the
+		// standby-bounce guard right after the settle measures its 6 s window
+		// from the power-off. Spending the read serially pushed that budget to
+		// 6.2 s and let the guard miss, which is the #197 regression this
+		// resume must not reintroduce. What does not arrive within the settle
+		// is simply not used.
+		priorCh := make(chan boxReading, 1)
+		go func() { priorCh <- s.readBox() }()
 		// Let the power transition settle so the box's reported state is
 		// unambiguous before we decide. The DO_NOT_RESUME wake that triggers this
 		// fires on a power-on, but the box can also reach standby again right
 		// after, so settle then read the real state.
 		time.Sleep(2 * time.Second)
+		var priorRead boxReading
+		select {
+		case priorRead = <-priorCh:
+		default:
+		}
 
 		// scm power-off bounce guard (#197). Some ST20 (scm) firmware oscillates
 		// UPNP->STANDBY->UPNP on a power-off, and the STANDBY->UPNP restore arrives
@@ -102,6 +122,17 @@ func (s *Server) ResumeLastPlay() {
 		// playing music").
 		if s.standbyStoppedRecently() {
 			s.logger.Info("wake resume: standby bounce detected (box just powered off STR's source), not resuming (#197)")
+			return
+		}
+
+		// Foreign-content guard: the wake frame is also what a UPnP source
+		// teardown looks like, and a teardown happens while somebody else is
+		// streaming to this speaker (a failed remote skip on a Music Assistant
+		// stream, discussion #827). A speaker that is PLAYING content STR does
+		// not serve belongs to whoever put it there, and that outranks anything
+		// the frame claimed. A merely restored foreign selection does not: see
+		// foreignContentStandDown.
+		if s.foreignContentStandDown(priorRead, boxURL) {
 			return
 		}
 

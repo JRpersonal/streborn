@@ -475,12 +475,40 @@ func xmlEscapeAttr(s string) string {
 // H:MM:SS, and Bose also answers "NOT_IMPLEMENTED" for fields it has no value
 // for, so anything unparseable is reported as zero rather than as an error.
 func (r *Renderer) PositionInfo(ctx context.Context) (rel, dur time.Duration, ok bool) {
-	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetPositionInfo xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:GetPositionInfo></s:Body></s:Envelope>`
-	out, err := r.soapCallBody(ctx, "GetPositionInfo", body)
+	out, err := r.getPositionInfo(ctx)
 	if err != nil {
 		return 0, 0, false
 	}
-	return parseClock(innerText(string(out), "RelTime")), parseClock(innerText(string(out), "TrackDuration")), true
+	return parseClock(innerText(out, "RelTime")), parseClock(innerText(out, "TrackDuration")), true
+}
+
+// RelPosition asks the renderer for RelTime alone and, unlike PositionInfo,
+// reports whether that field was READABLE rather than whether the call
+// succeeded.
+//
+// The distinction matters wherever the position is compared against another
+// clock. Bose answers "NOT_IMPLEMENTED" for fields it has no value for, and
+// PositionInfo maps that to zero, which a caller cannot tell from a stream that
+// really is at 0:00:00 - and a false zero there reads as "the box has played
+// nothing of what it was given", i.e. the maximum possible lag. ok=false means
+// "no usable clock", so such a caller can skip instead of recording a fiction.
+func (r *Renderer) RelPosition(ctx context.Context) (time.Duration, bool) {
+	out, err := r.getPositionInfo(ctx)
+	if err != nil {
+		return 0, false
+	}
+	return parseClockOK(innerText(out, "RelTime"))
+}
+
+// getPositionInfo runs the GetPositionInfo query and returns the response
+// envelope. Shared by the two readers above so both send the identical body.
+func (r *Renderer) getPositionInfo(ctx context.Context) (string, error) {
+	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetPositionInfo xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:GetPositionInfo></s:Body></s:Envelope>`
+	out, err := r.soapCallBody(ctx, "GetPositionInfo", body)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 // innerText pulls the text of the first <tag>...</tag> out of an XML blob. The
@@ -504,9 +532,18 @@ func innerText(doc, tag string) string {
 // including the "NOT_IMPLEMENTED" the firmware answers for unknown fields,
 // is zero.
 func parseClock(s string) time.Duration {
+	d, _ := parseClockOK(s)
+	return d
+}
+
+// parseClockOK is parseClock plus the verdict a comparing caller needs: ok is
+// false for anything that is not a well-formed clock, which is what tells "the
+// box has no value for this field" apart from "the box is at zero". Both map to
+// a zero duration, and only one of them is a position.
+func parseClockOK(s string) (time.Duration, bool) {
 	parts := strings.Split(s, ":")
 	if len(parts) < 2 || len(parts) > 3 {
-		return 0
+		return 0, false
 	}
 	var total time.Duration
 	units := []time.Duration{time.Hour, time.Minute, time.Second}
@@ -519,9 +556,9 @@ func parseClock(s string) time.Duration {
 		}
 		n, err := strconv.Atoi(p)
 		if err != nil || n < 0 {
-			return 0
+			return 0, false
 		}
 		total += time.Duration(n) * units[i]
 	}
-	return total
+	return total, true
 }

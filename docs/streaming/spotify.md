@@ -236,6 +236,58 @@ belongs in the fork), the detach line carries `seams`, and the
 `spotify_chain` section of `/api/debug/state` keeps the last seam's
 readings for a bundle after the NAND ring has rolled.
 
+### Lyrics run ahead of the audio: the buffer lag is measured, not corrected
+
+Field report (2026-09): with STR's Spotify entry the lyrics in the Spotify
+app run ahead of the sound, with the speaker's own Spotify entry they line
+up. The mechanism follows from the architecture above. go-librespot reports
+its position from the bytes it has written to the pipe, while that audio is
+still travelling through STR's batch and the box's own buffer, and STR
+deliberately keeps roughly ten seconds there (`leadCapSec` in
+`internal/spotify/engine.go`, the flush batch in `drain.go`). The app shows
+the delivered position; the lyrics follow the app.
+
+What was never known is the size of the offset on real hardware, and any
+correction applied before that number exists would be a guess. So
+`internal/spotify/boxlag.go` measures it and does nothing else: the drain
+publishes the delivered timeline of the last page it handed to the box, the
+speaker's own clock comes from UPnP `RelPosition` (`GetPositionInfo`'s
+`RelTime`), and the difference is logged as `spotify: buffer lag measured
+(audio delivered vs audio played)` with both sides and `diffSec`. The last
+reading is also in the `spotify_chain` section of `/api/debug/state`, so a
+field bundle carries it after the NAND ring has rolled.
+
+Event-driven only, once per attachment and once per track boundary: no
+ticker, no standing poll, nothing on the wire while nothing happens. A
+boundary caused by a skip is labelled `track-boundary after a skip`, because
+the box drops its buffer there and both clocks are mid-jump.
+
+The two clocks only mean something against a shared base, which is most of
+what the code does:
+
+- The baseline is taken in the drain, on the first audio page the new
+  attachment actually receives, not where the box attached. The engine keeps
+  producing while no box is attached (`engineHot`, see `recall.go`), so the
+  delivered counter at the attach instant is the value at the PREVIOUS
+  detach, and basing on it folded that whole detached window into every later
+  reading of the attachment.
+- Delivered counts only audio handed to the box. The pages a skip cut throws
+  away, and a batch dropped when the box goes, are never played, so the
+  box's `RelTime` cannot contain them; counting them inflated every later
+  reading by up to a full lead cap, i.e. by the same order of magnitude as
+  the quantity being measured.
+- The delivered timeline carries across go-librespot runs. The sink outlives
+  one engine run by design (crash restart, volume-config restart, the OTA
+  sidecar swap), and a per-run counter starting at zero under an attached box
+  made every later reading negative.
+- `RelPosition` reports whether the field was READABLE, not whether the call
+  succeeded. Bose answers `NOT_IMPLEMENTED` for fields it has no value for,
+  which parses as zero, and a zero box clock reads as the largest lag the
+  measurement can express. No usable clock means no line and no stored
+  reading; the same goes for a baseline that has not been taken yet and for a
+  timeline that was rebuilt underneath the box. A missing number is worth
+  more than a plausible wrong one.
+
 ## Why native Spotify works without the Bose cloud
 
 Spotify Connect has two login paths. Bose's app used the **account-linked**

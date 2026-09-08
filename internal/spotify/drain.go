@@ -51,6 +51,17 @@ type oggDrain struct {
 	granOffset, leadBaseGran int64
 	leadBaseAt               time.Time
 	leadAnchored             bool
+	// Delivered timeline for the buffer-lag measurement (boxlag.go). Separate
+	// from the pacing timeline above on purpose: pacing counts what the engine
+	// produced, this counts only what was actually handed to the box.
+	//   - deliveredBase: the manager's timeline when this run started. The sink
+	//     outlives one go-librespot run (that is the seam design), so a drain
+	//     starting its own count at zero would send the timeline backwards under
+	//     an attached box on every engine restart.
+	//   - delivered: granules handed to the box during this run.
+	//   - flushed: delivered at the last write that reached the box, i.e. the
+	//     point a dropped batch is rolled back to.
+	deliveredBase, delivered, flushed int64
 }
 
 // newOggDrain returns the drain state for one go-librespot run. flushBytes is
@@ -58,7 +69,46 @@ type oggDrain struct {
 // ahead of realtime the box is fed (0 disables pacing), chain is the seam
 // cutter for long tracks (oggchain.go).
 func (m *Manager) newOggDrain(flushBytes int, leadCapSec float64, chain *oggChain) *oggDrain {
-	return &oggDrain{m: m, flushBytes: flushBytes, leadCapSec: leadCapSec, chain: chain, pendingSince: time.Now()}
+	// Continue the delivered timeline where the previous run left it: an engine
+	// restart (crash-restart loop, a deliberate volume-config restart, the OTA
+	// sidecar swap) builds a new drain while the box stays attached, and a
+	// timeline that restarted at zero there made every later buffer-lag reading
+	// negative until the box happened to re-attach.
+	m.mu.Lock()
+	base := m.deliveredGran
+	m.mu.Unlock()
+	return &oggDrain{m: m, flushBytes: flushBytes, leadCapSec: leadCapSec, chain: chain,
+		pendingSince: time.Now(), deliveredBase: base}
+}
+
+// noteDelivered extends the delivered timeline by audio that is actually being
+// handed to the box, publishes it for the buffer-lag measurement (boxlag.go)
+// and takes the per-attachment baseline when one is armed (see
+// noteStreamAttached). It reports whether it took that baseline, i.e. whether
+// this is the first audio the current attachment receives.
+func (d *oggDrain) noteDelivered(advance int64) (tookBaseline bool) {
+	m := d.m
+	d.delivered += advance
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deliveredGran = d.deliveredBase + d.delivered
+	if !m.lagRebase {
+		return false
+	}
+	m.lagBaseGran, m.lagRebase = m.deliveredGran, false
+	return true
+}
+
+// dropUnsent rolls the delivered timeline back to the last write that reached
+// the box. The batched pages being thrown away here were counted when they were
+// batched, but the box never received them, so its own clock cannot contain
+// them. No baseline is taken: nothing was delivered.
+func (d *oggDrain) dropUnsent() {
+	m := d.m
+	d.delivered = d.flushed
+	m.mu.Lock()
+	m.deliveredGran = d.deliveredBase + d.delivered
+	m.mu.Unlock()
 }
 
 // page processes one checksum-valid Ogg page from the engine.
@@ -130,8 +180,14 @@ func (d *oggDrain) page(ctx context.Context, page []byte) {
 		d.hdr = append(d.hdr, page...)
 	}
 	d.trackBody += bodyLen
+	// How much new audio this page adds to the current track. Granules are the
+	// track's own sample clock and restart per track, so the ADVANCE is what
+	// extends the continuous timelines; it is computed for every page, including
+	// the ones that are about to be dropped, because d.maxGran has to track the
+	// engine's production either way.
+	advance := int64(0)
 	if gran > d.maxGran {
-		d.maxGran = gran
+		advance, d.maxGran = gran-d.maxGran, gran
 	}
 	if d.maxGran > vorbisRate { // at least one second streamed
 		kbps := int(d.trackBody * 8 * vorbisRate / (d.maxGran * 1000))
@@ -161,16 +217,27 @@ func (d *oggDrain) page(ctx context.Context, page []byte) {
 		// so song endings are never clipped. The cut disarms here and the
 		// pacing re-anchors, so the new track gets its instant prefill.
 		if htype&0x02 != 0 {
+			boundary := "track-boundary"
 			if m.skipCutArmed() {
 				m.logger.Info("spotify: skip cut, boundary reached; dropped the old track's unsent tail", "droppedKB", len(d.pending)/1024)
 				d.pending = d.pending[:0]
+				d.dropUnsent() // the box never got this batch: keep the lag honest
 				m.clearSkipCut()
 				m.noteSkipBoundary()
 				d.leadAnchored = false
+				// Named apart for the lag measurement below: a skip makes the
+				// box drop its buffer, so the two clocks are mid-jump here and
+				// the number must not be read like a steady-state one.
+				boundary = "track-boundary after a skip"
 			} else if len(d.pending) > 0 {
 				m.forward(sink, d.pending)
-				d.pending = d.pending[:0]
+				d.pending, d.flushed = d.pending[:0], d.delivered
 			}
+			// One buffer-lag measurement per track boundary (boxlag.go). The
+			// delivered side is sampled here, the box's SOAP round trip runs in
+			// the background: the drain is pacing live audio and must never wait
+			// on the box.
+			m.triggerBoxLag(boundary)
 		} else if m.skipCutArmed() && gran > 0 {
 			// Stale audio between the user's skip and the new track's
 			// boundary. The first version PACED these pages to realtime, so
@@ -179,6 +246,19 @@ func (d *oggDrain) page(ctx context.Context, page []byte) {
 			// nothing the user wants to hear: drop them outright and race
 			// to the boundary.
 			return
+		}
+		// Publish the delivered timeline for the buffer-lag measurement
+		// (boxlag.go). After the skip cut above, because those pages are dropped
+		// and the box's own clock can never contain them; still before the pacing
+		// wait below, because the number this is compared against is the position
+		// go-librespot reports to the Spotify app, i.e. the page that has just
+		// left the engine's pipe rather than the one the pacing is holding back.
+		if advance > 0 && d.noteDelivered(advance) {
+			// First audio of a new attachment: both clocks are at their start, so
+			// this is the zero check the attach reading exists for. Taken here
+			// rather than where the box attached, so the two sides share one
+			// instant.
+			m.triggerBoxLag(boxLagReasonAttach)
 		}
 		// Realtime pacing: anchor once per attachment at the first audio
 		// page, then hold each page until its position on the continuous
@@ -249,7 +329,7 @@ func (d *oggDrain) page(ctx context.Context, page []byte) {
 		// same rule as the tail flush before a real BOS above.
 		if seam || len(d.pending) >= d.flushBytes || time.Since(d.pendingSince) > maxFlushAge {
 			m.forward(sink, d.pending)
-			d.pending = d.pending[:0]
+			d.pending, d.flushed = d.pending[:0], d.delivered
 		}
 		d.chain.probe(now, "")
 		return
@@ -260,6 +340,7 @@ func (d *oggDrain) page(ctx context.Context, page []byte) {
 	// go-librespot so it stops producing (no racing) until a box attaches
 	// and ServeOgg resumes it.
 	d.pending = d.pending[:0]
+	d.dropUnsent() // same rule as the skip cut: undelivered audio is not delivered
 	// A seam still waiting for its proof line gets it now: the box is gone,
 	// so its memory reading will not move for this link any more. The link
 	// byte count is deliberately NOT reset, an HTTP re-attach frees nothing

@@ -491,6 +491,28 @@ func nowPlayingStandby(body string) bool {
 	return false
 }
 
+// nowPlayingStatus reads the play status out of a now_playing body, empty when
+// the box reported none (a box that has just left standby, and the source
+// teardown while it is in progress). The typed element first so a track title
+// containing "STOP_STATE" cannot be mistaken for one; some firmwares put the
+// status on an attribute instead, which is what the scan covers.
+func nowPlayingStatus(body string) string {
+	if m := reNowPlayStatus.FindStringSubmatch(body); m != nil {
+		return m[1]
+	}
+	switch {
+	case strings.Contains(body, "PLAY_STATE"):
+		return "PLAY_STATE"
+	case strings.Contains(body, "BUFFERING_STATE"):
+		return "BUFFERING_STATE"
+	case strings.Contains(body, "PAUSE_STATE"):
+		return "PAUSE_STATE"
+	case strings.Contains(body, "STOP_STATE"):
+		return "STOP_STATE"
+	}
+	return ""
+}
+
 // pollNowPlaying reads the box's now_playing once and returns the play status,
 // the current/total position, and whether the box is in standby. Zero values on
 // any error.
@@ -507,20 +529,7 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 	resp.Body.Close()
 	body := string(b)
 	standby = nowPlayingStandby(body)
-	if m := reNowPlayStatus.FindStringSubmatch(body); m != nil {
-		status = m[1]
-	} else {
-		switch { // some firmwares put it on an attribute; fall back to a scan
-		case strings.Contains(body, "PLAY_STATE"):
-			status = "PLAY_STATE"
-		case strings.Contains(body, "BUFFERING_STATE"):
-			status = "BUFFERING_STATE"
-		case strings.Contains(body, "PAUSE_STATE"):
-			status = "PAUSE_STATE"
-		case strings.Contains(body, "STOP_STATE"):
-			status = "STOP_STATE"
-		}
-	}
+	status = nowPlayingStatus(body)
 	if m := reNowPlayTime.FindStringSubmatch(body); m != nil {
 		if t, err := strconv.Atoi(m[1]); err == nil {
 			total = time.Duration(t) * time.Second

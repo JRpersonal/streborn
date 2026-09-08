@@ -29,12 +29,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// well: reported on 2026-08-06, "my ST20s do skip through songs using
 		// the remote, but doing so also triggers the webhook" (#536).
 		c.noteExplainedActivity()
+		c.noteSkipFailure()
 		if c.handler != nil {
 			c.handler.OnRemoteSkip(ctx, true)
 		}
 		return
 	case strings.Contains(s, "QPLAY_SKIP_PREV_FAILED"):
 		c.noteExplainedActivity()
+		c.noteSkipFailure()
 		if c.handler != nil {
 			c.handler.OnRemoteSkip(ctx, false)
 		}
@@ -599,6 +601,24 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// what it says. STR now stands down; playback only follows an explicit
 			// user action: a real preset press (slot 1-6 below) or an app recall.
 			if strings.Contains(pe.Inner, "DO_NOT_RESUME") {
+				// A failed remote skip produces the SAME restore. The box cannot
+				// skip a UPnP source, answers QPLAY_SKIP_*_FAILED and tears the
+				// source down, and the teardown restores the selection as
+				// INVALID_SOURCE + DO_NOT_RESUME - byte for byte the standby-wake
+				// shape. Reading it as a power-on made STR push its own last
+				// station onto a speaker somebody was streaming to from elsewhere:
+				// press Next on the remote during a Music Assistant stream and the
+				// speaker "wants to switch presets" (Christian1985l, discussion
+				// #827). A skip moments ago explains this frame, so it is a
+				// teardown, not a wake. Only this branch is gated: a powerState
+				// event (handled above) is the box saying it powered on, which no
+				// teardown fakes, so a genuine power press inside the window still
+				// resumes.
+				if since, recent := c.sinceSkipFailure(); recent {
+					c.logger.Info("box ws: DO_NOT_RESUME restore right after a failed remote skip - source teardown, not a power-on; not resuming",
+						"sinceSkipMs", since.Milliseconds())
+					return
+				}
 				// The box left standby and, unable to play its UPNP selection
 				// itself, restored it as INVALID_SOURCE + DO_NOT_RESUME. On this
 				// firmware that is the ONLY power-on signal: no powerStateUpdated is

@@ -345,6 +345,22 @@ type Manager struct {
 	// captured from /status and metadata events to feed the resume store.
 	resume      *resumeStore
 	curTrackURI string
+	// Buffer-lag measurement (boxlag.go): deliveredGran is the continuous audio
+	// timeline of the last page the drain HANDED TO the box, lagBaseGran its
+	// value when the current attachment received its first audio, boxPositionFn
+	// reads the speaker's own clock and lastLag holds the most recent comparison
+	// for the debug section. lagRebase is set when a box attaches and consumed
+	// by the drain when it takes that baseline, so a reading that arrives in
+	// between is skipped instead of being measured against the previous
+	// attachment. Measured only, never applied. Guarded by mu.
+	deliveredGran int64
+	lagBaseGran   int64
+	lagRebase     bool
+	boxPositionFn func(context.Context) (time.Duration, bool)
+	lastLag       boxLagMeasurement
+	// loggedBoxLag keeps the buffer-lag line to one INFO per agent run; see
+	// measureBoxLag.
+	loggedBoxLag bool
 	// lowDisk is set when the configDir filesystem is below spotifyMinFreeBytes, so
 	// go-librespot is not started (it cannot persist its credential on a full NAND).
 	// Surfaced in ServeInfo so the desktop app shows "box NAND full" instead of
@@ -469,6 +485,7 @@ func (m *Manager) SeamsTotal() int {
 func (m *Manager) ChainSnapshot() map[string]any {
 	m.mu.Lock()
 	s := m.chainSnap
+	lag := m.lastLag
 	m.mu.Unlock()
 	out := map[string]any{
 		"enabled":         s.Enabled,
@@ -485,6 +502,14 @@ func (m *Manager) ChainSnapshot() map[string]any {
 		"liveSerial":      s.LiveSerial,
 		"enginePID":       m.EnginePID(),
 		"memAvailKB":      int64(-1),
+		// The last buffer-lag measurement (boxlag.go). It rides in this section
+		// because it is the same subject: how much audio sits between the engine
+		// and the room. Zero values mean none has been taken yet.
+		"lastLagAt":           lag.At,
+		"lastLagReason":       lag.Reason,
+		"lastLagDeliveredSec": lag.DeliveredSec,
+		"lastLagBoxRelSec":    lag.BoxRelSec,
+		"lastLagDiffSec":      lag.DiffSec,
 	}
 	if m.MemAvailKB != nil {
 		out["memAvailKB"] = m.MemAvailKB()
