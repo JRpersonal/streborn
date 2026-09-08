@@ -147,6 +147,15 @@ func (s *Server) ResumeLastPlay() {
 			s.logger.Info("wake resume: box is in a zone / stereo pair, not auto-resuming (self-wake guard)")
 			return
 		}
+		// The same self-wake guard, one step earlier in time: STR wakes a
+		// standby master to form a group, and at that moment there is no zone
+		// yet for boxInZone to find (#900). A quiet wake is STR's own doing by
+		// definition, so a power-on frame arriving inside its window is not a
+		// user pressing power.
+		if s.quietWakeActive() {
+			s.logger.Info("wake resume: STR woke this speaker for a group operation, not auto-resuming (self-wake guard)")
+			return
+		}
 
 		// Power-off bounce guard for boxes where the UPnP-source standby did not
 		// arm standbyStoppedRecently above. A rhino ST10 reports a power-off as a
@@ -325,6 +334,10 @@ func (s *Server) RecoverAfterReconnect() {
 		time.Sleep(2 * time.Second)
 		if s.boxInZone() {
 			s.logger.Info("reconnect recovery: box in a zone / stereo pair, standing down (self-wake guard)")
+			return
+		}
+		if s.quietWakeActive() {
+			s.logger.Info("reconnect recovery: STR woke this speaker for a group operation, standing down (self-wake guard)")
 			return
 		}
 		stuck, selLoc := s.boxStuckSelection()
