@@ -929,6 +929,7 @@
   "settingsView.copyPresetsPartial": "Copied {{n}} presets to {{target}}. Not copied: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Some presets could not be copied to {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Presets copied, but some were rejected: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} is already on key {{n}} of the target speaker. Delete that key there, then transfer again.",
   "settingsView.firmwareLabel": "Speaker firmware",
   "settingsView.rebootHelp": "Restart the speaker. Use this if it stops responding, or after a change that only takes effect on a restart.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",

@@ -301,6 +301,37 @@ func (s *Store) SetSlot(p Preset) error {
 	return s.Save()
 }
 
+// SetSlots adds or replaces SEVERAL slots and persists them in a SINGLE write.
+// Slots not named in ps are left exactly as they are.
+//
+// It exists because a whole-set write (the box-to-box preset transfer) used to
+// be a loop of SetSlot calls, i.e. one presets.json + presets.json.bak rewrite
+// per slot: six rewrites of the same file on the speaker's NAND for one user
+// action. It is also the only way the transfer can be all-or-nothing, because a
+// per-slot loop leaves a half-written store behind when a later slot is
+// refused.
+func (s *Store) SetSlots(ps []Preset) error {
+	for i := range ps {
+		capQueueItems(&ps[i])
+	}
+	s.mu.Lock()
+	for _, p := range ps {
+		replaced := false
+		for i, existing := range s.data {
+			if existing.Slot == p.Slot {
+				s.data[i] = p
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			s.data = append(s.data, p)
+		}
+	}
+	s.mu.Unlock()
+	return s.Save()
+}
+
 // RemoveSlot removes the preset for the given slot.
 func (s *Store) RemoveSlot(slot int) error {
 	s.mu.Lock()

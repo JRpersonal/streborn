@@ -929,6 +929,7 @@
   "settingsView.copyPresetsPartial": "{{n}} Presets nach {{target}} kopiert. Nicht kopiert: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Einige Presets konnten nicht nach {{target}} kopiert werden: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Presets kopiert, aber einige wurden abgelehnt: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} liegt auf dem Ziellautsprecher schon auf Taste {{n}}. Lösche die Taste dort und übertrage noch einmal.",
   "settingsView.firmwareLabel": "Lautsprecher-Firmware",
   "settingsView.syncing": "Wird übertragen ...",
   "settingsView.syncDoneToast": "Speichertasten neu übertragen ({{n}} Stück).",

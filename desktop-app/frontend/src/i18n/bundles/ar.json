@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "نُسخ {{n}} إعداد مسبق إلى {{target}}. لم يُنسخ: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "تعذّر نسخ بعض الإعدادات المسبقة إلى {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "نُسخت الإعدادات المسبقة، لكن بعضها رُفض: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} موجود بالفعل على الزر {{n}} في السماعة الهدف. احذف هذا الزر هناك ثم أعد النقل.",
   "settingsView.copyPresetsAllTargets": "كل السمّاعات الأخرى",
   "settingsView.displayTrackConfirmBody": "تنبيه: لتحديث النص يجب على السمّاعة إعادة تخزين البثّ مؤقّتًا، فتنقطع الموسيقى نحو ثانية في كل مرة يتغيّر فيها العنوان أو النص. يُعرض المقطع دائمًا هنا في التطبيق دون أي انقطاع. هل تفعّل على أي حال؟",
   "settingsView.displayTrackConfirmTitle": "هل تعرض المقطع على شاشة السمّاعة؟",

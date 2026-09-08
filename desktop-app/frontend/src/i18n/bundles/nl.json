@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "{{n}} presets gekopieerd naar {{target}}. Niet gekopieerd: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Sommige presets konden niet naar {{target}} worden gekopieerd: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Presets gekopieerd, maar sommige zijn geweigerd: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} staat al op toets {{n}} van de doelspeaker. Verwijder die toets daar en breng de presets opnieuw over.",
   "settingsView.copyPresetsAllTargets": "Alle andere luidsprekers",
   "settingsView.displayTrackConfirmBody": "Let op: om de tekst bij te werken moet de luidspreker de stream opnieuw bufferen, dus de muziek valt elke keer ongeveer een seconde weg als het nummer of de tekst verandert. Het nummer wordt hier in de app altijd zonder onderbreking getoond. Toch inschakelen?",
   "settingsView.displayTrackConfirmTitle": "Het nummer op het luidsprekerdisplay tonen?",

@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "{{n}} ön ayar {{target}} hoparlörüne kopyalandı. Kopyalanamayanlar: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Bazı ön ayarlar {{target}} hoparlörüne kopyalanamadı: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Ön ayarlar kopyalandı, ancak bazıları reddedildi: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} hedef hoparlörde zaten {{n}} numaralı tuşta. Oradaki tuşu sil ve aktarmayı yeniden başlat.",
   "settingsView.copyPresetsAllTargets": "Diğer tüm hoparlörler",
   "settingsView.displayTrackConfirmBody": "Dikkat: Metni güncellemek için hoparlörün akışı yeniden ara belleğe alması gerekir, bu yüzden şarkı veya metin her değiştiğinde müzik yaklaşık bir saniye kesilir. Parça burada uygulamada her zaman kesintisiz gösterilir. Yine de açılsın mı?",
   "settingsView.displayTrackConfirmTitle": "Parça hoparlör ekranında gösterilsin mi?",
