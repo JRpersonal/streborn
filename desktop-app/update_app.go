@@ -336,6 +336,7 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 				return "", rerr
 			}
 			a.logger.Info("update downloaded and verified", "version", version, "path", finalPath, "attempts", attempt)
+			a.pruneStagedUpdates(appVersion)
 			return finalPath, nil
 		}
 		lastErr = err
@@ -580,6 +581,65 @@ func (a *App) RevealUpdateFile(path string) error {
 		return exec.Command("explorer", "/select,", filepath.FromSlash(path)).Start()
 	default:
 		return exec.Command("xdg-open", filepath.Dir(path)).Start()
+	}
+}
+
+// stagedVersionRe pulls the version out of a staged installer's file name,
+// e.g. "STR-Windows-v0.9.77.exe" or "STR-Linux-x64-v0.9.77.tar.gz".
+var stagedVersionRe = regexp.MustCompile(`v[0-9]+(?:\.[0-9]+)+`)
+
+// pruneStagedUpdates deletes installers the update cache no longer needs.
+// Every downloaded update used to stay there for good: one machine held eight
+// of them, 390 MB, in the user's AppData with nothing in the app hinting at it
+// (found 2026-09-08). An installer is removed when its version is not newer
+// than keepFrom, so the one the user is running and everything older go, while
+// an update already fetched but not applied yet survives a restart. A ".part"
+// is only touched when it has not grown for an hour, so a download in flight
+// is never pulled out from under itself. Best-effort throughout: a file still
+// locked is skipped and caught on the next run.
+func (a *App) pruneStagedUpdates(keepFrom string) {
+	dir, err := updateDir()
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	var removed int
+	var freed int64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		info, ierr := e.Info()
+		if ierr != nil {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(name, ".part"):
+			if time.Since(info.ModTime()) < time.Hour {
+				continue
+			}
+		default:
+			v := stagedVersionRe.FindString(name)
+			if v == "" {
+				continue // not one of our installers, leave it alone
+			}
+			if v != keepFrom && !versionLess(v, keepFrom) {
+				continue // newer than what we run: a pending update, keep it
+			}
+		}
+		if rerr := os.Remove(filepath.Join(dir, name)); rerr != nil {
+			continue
+		}
+		removed++
+		freed += info.Size()
+	}
+	if removed > 0 {
+		a.logger.Info("update cleanup: removed staged installers",
+			"files", removed, "freedMB", freed/(1024*1024), "keptFrom", keepFrom, "dir", dir)
 	}
 }
 
