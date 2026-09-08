@@ -299,16 +299,27 @@ type Manager struct {
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
 	// plays the new playlist promptly instead of finishing the old buffer.
 	lastContext string
-	// durQueueMs / streamTrackDurMs feed the app-skip detector: every engine
-	// "loaded track" line queues that track's duration, and each BOS shifts
-	// the queue so streamTrackDurMs names the duration of the track whose
-	// pages are currently being forwarded. A BOS arriving while the forwarded
-	// granule is clearly short of that duration is a mid-track cut the agent
-	// did not issue (the Spotify app's own Next/Prev), and the box must drop
-	// its buffered tail like the STR skip paths do; without that, an app skip
-	// only became audible once the box had drained its whole pacing buffer,
-	// which a listener clocked at over 20 seconds (field, 2026-08-29).
-	durQueueMs       []int64
+	// loadedTrackDurMs / streamTrackDurMs feed the app-skip detector. The
+	// engine logs "loaded track" for the track it is about to start, always
+	// before that track's BOS, so the newest load names the track the NEXT
+	// boundary hands over to, and streamTrackDurMs names the duration of the
+	// track whose pages are being forwarded right now. A BOS arriving while
+	// the forwarded granule is clearly short of that duration is a mid-track
+	// cut the agent did not issue (the Spotify app's own Next/Prev), and the
+	// box must drop its buffered tail like the STR skip paths do; without
+	// that, an app skip only became audible once the box had drained its
+	// whole pacing buffer, which a listener clocked at over 20 seconds
+	// (field, 2026-08-29).
+	//
+	// One slot, overwritten, never a queue. A queue pairs durations with
+	// boundaries BY POSITION, and every load that produces no boundary (an
+	// attach mid-stream, a paused load, an aborted play) shifts that pairing
+	// by one for good. In the field that made STR compare each ended track
+	// against the duration of the one before it, so a track that had played
+	// in full looked cut short and the box lost the last seconds of every
+	// other song to a needless re-point (living-room ST30, 2026-09-08:
+	// 213 s played against 233 s expected, 198 s against 268 s).
+	loadedTrackDurMs int64
 	streamTrackDurMs int64
 	// pendingRepointFrom/To hold a context change announced by will_play that
 	// has not been acted on yet.
