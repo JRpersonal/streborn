@@ -5,10 +5,21 @@ this repository. Read it first.
 
 ## What this project is
 
-In February 2026 Bose shut down the SoundTouch cloud. All SoundTouch
-speakers (models 10, 20, 30, Portable) lost their internet radio,
-presets, and remote control overnight. STR (SoundTouch Reborn) brings
-them back **without any Bose cloud dependency**.
+On 6 May 2026 Bose shut down the SoundTouch cloud, an extension of the
+originally announced 18 February date. All SoundTouch speakers (models
+10, 20, 30, Portable) lost their internet radio, presets, and remote
+control overnight. STR (SoundTouch Reborn) brings them back **without
+any Bose cloud dependency**.
+
+Bose's end-of-life page also states that "firmware updates are no longer
+available now that the cloud is offline". That is a policy statement, not
+an infrastructure fact: the firmware images themselves are still served
+from Bose's own download host (verified 2026-09-08, `Update.stu` answers
+200 with the full 95.9 MB payload, and the model catalogue beside it was
+last changed in April 2026). Only the HTML pages that used to link them
+were taken down. This matters because STR is built and tested against
+firmware 27.0.6, and a speaker that never got that far can still be
+brought to it. STR must never mirror or redistribute a Bose image.
 
 ### Components
 
