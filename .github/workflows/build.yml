@@ -288,6 +288,35 @@ jobs:
           [ "$fail" -eq 0 ] && echo "embed stubs empty, dist/.gitkeep present"
           exit $fail
 
+  diagrams:
+    name: Mermaid diagrams parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      # A mermaid block GitHub cannot parse renders as a grey error box, and
+      # nothing in the build ever said so. Eight of the fourteen diagrams in
+      # docs/ARCHITECTURE.md were broken at once for months (2026-09-08):
+      # mermaid 11 turned `box` into a sequence-diagram keyword, so
+      # `participant Box as ...` stopped parsing, and a `;` in message or note
+      # text is a parse error as well.
+      - name: Check every mermaid block
+        run: |
+          set -e
+          npm install --no-save --no-audit --no-fund mermaid@11 jsdom
+          mapfile -t files < <(git ls-files '*.md' | xargs grep -l '```mermaid' || true)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no markdown with mermaid blocks"; exit 0
+          fi
+          echo "checking: ${files[*]}"
+          node .github/scripts/check-mermaid.mjs "${files[@]}"
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
