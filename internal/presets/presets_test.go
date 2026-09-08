@@ -223,3 +223,68 @@ func TestSaveLoadQueueRoundtrip(t *testing.T) {
 		t.Errorf("round trip lost items:\n got  %+v\n want %+v", got.Items, want.Items)
 	}
 }
+
+// SetSlots replaces several slots in ONE persisted write. The box-to-box
+// preset transfer used to loop SetSlot, rewriting presets.json plus its backup
+// once per slot: six NAND rewrites of the same file for one user action, and a
+// half-written store whenever a later slot was refused (#882).
+func TestSetSlotsWritesTheWholeSetAndKeepsUnnamedSlots(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(new): %v", err)
+	}
+	if err := s.SetSlot(Preset{Slot: 1, Name: "Old One", StreamURL: "http://example.com/old1", Type: "radio"}); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	if err := s.SetSlot(Preset{Slot: 4, Name: "Untouched", StreamURL: "http://example.com/keep", Type: "radio"}); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	// Slot 1 is replaced, slots 2 and 3 are new, slot 4 is not named at all.
+	if err := s.SetSlots([]Preset{
+		{Slot: 1, Name: "New One", StreamURL: "http://example.com/new1", Type: "radio"},
+		{Slot: 2, Name: "New Two", StreamURL: "http://example.com/new2", Type: "radio"},
+		{Slot: 3, Name: "New Three", StreamURL: "http://example.com/new3", Type: "radio"},
+	}); err != nil {
+		t.Fatalf("SetSlots: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(reload): %v", err)
+	}
+	want := map[int]string{1: "New One", 2: "New Two", 3: "New Three", 4: "Untouched"}
+	if len(reloaded.All()) != len(want) {
+		t.Fatalf("store holds %d slots after the set write, want %d", len(reloaded.All()), len(want))
+	}
+	for slot, name := range want {
+		got, ok := reloaded.Get(slot)
+		if !ok || got.Name != name {
+			t.Errorf("slot %d = %q (present %v), want %q", slot, got.Name, ok, name)
+		}
+	}
+}
+
+// A queue preset written through SetSlots is capped like every other write
+// path, so one folder preset cannot fill the speaker's flash and strand the
+// next OTA.
+func TestSetSlotsCapsQueueItems(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(new): %v", err)
+	}
+	items := make([]PresetItem, MaxQueueItems+250)
+	for i := range items {
+		items[i] = PresetItem{URL: "http://nas/track.mp3"}
+	}
+	if err := s.SetSlots([]Preset{{Slot: 2, Name: "Everything", Type: "queue", Items: items}}); err != nil {
+		t.Fatalf("SetSlots: %v", err)
+	}
+	got, ok := s.Get(2)
+	if !ok {
+		t.Fatal("slot 2 missing")
+	}
+	if len(got.Items) != MaxQueueItems {
+		t.Errorf("stored %d items, want the cap of %d", len(got.Items), MaxQueueItems)
+	}
+}

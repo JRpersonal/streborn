@@ -23,14 +23,32 @@ func installProbe(t *testing.T, ready func() bool) {
 	t.Cleanup(func() { copyTargetProbe = nil })
 }
 
+// presetConflict is the agent's 409 answer to a bulk write whose set would put
+// a station on two keys, or on a key the set does not rewrite (#836/#882).
+type presetConflict struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+	Slot int    `json:"slot"`
+}
+
 // fakeBox serves the preset API for both ends of a copy and records the writes
 // it accepted.
+//
+// bulk is off by default on purpose: an unconfigured fakeBox models a target
+// running an agent older than PUT /api/presets, which is exactly the fallback
+// path the existing tests below exercise. Tests that mean the current agent
+// switch it on.
 type fakeBox struct {
-	mu      sync.Mutex
-	srv     *httptest.Server
-	host    string
-	written map[int]string
-	fail    func(slot int) bool
+	mu        sync.Mutex
+	srv       *httptest.Server
+	host      string
+	written   map[int]string
+	fail      func(slot int) bool
+	bulk      bool
+	bulkPuts  int
+	slotPuts  int
+	conflict  *presetConflict
+	bulkFails bool
 }
 
 // newFakeBox binds on a caller-chosen loopback address, because a copy refuses
@@ -43,11 +61,38 @@ func newFakeBox(t *testing.T, host string, source []Preset) *fakeBox {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == presetAPIPath:
 			_ = json.NewEncoder(w).Encode(source)
+		case r.Method == http.MethodPut && r.URL.Path == presetAPIPath:
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			b.bulkPuts++
+			if !b.bulk {
+				// An older agent's collection handler answers GET only.
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			var set []Preset
+			_ = json.NewDecoder(r.Body).Decode(&set)
+			if b.conflict != nil {
+				// All-or-nothing: a refused set writes nothing.
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(b.conflict)
+				return
+			}
+			if b.bulkFails {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			for _, p := range set {
+				b.written[p.Slot] = p.Name
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "written": len(set)})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, presetAPIPath+"/"):
 			var p Preset
 			_ = json.NewDecoder(r.Body).Decode(&p)
 			b.mu.Lock()
 			defer b.mu.Unlock()
+			b.slotPuts++
 			if b.fail != nil && b.fail(p.Slot) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -76,6 +121,13 @@ func (b *fakeBox) count() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.written)
+}
+
+// requests reports how many bulk and per-slot preset writes the box saw.
+func (b *fakeBox) requests() (bulk, slot int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.bulkPuts, b.slotPuts
 }
 
 // copyApp is an App wired for a copy: an HTTP client, a logger, and a live

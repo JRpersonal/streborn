@@ -347,6 +347,9 @@ import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNo
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
+// Turning a refused preset transfer into a readable sentence is a pure
+// decision (copyreport.js, vitest-covered).
+import { presetCopyConflict } from './copyreport.js';
 // App-wide accessibility prefs (text size + theme). Applied to <html> before
 // the skeleton renders so the first paint already reflects the chosen size and
 // theme. The matching CSS lives in style.css (html.a11y-*).
@@ -5400,7 +5403,12 @@ function wirePresetTransferRow() {
         showToast(t('settingsView.copyPresetsDone', { n, target: target ? getBoxLabel(target) : thost }));
       }
     } catch (e) {
-      showError(e);
+      // The target already holds one of the stations on a key this transfer
+      // does not rewrite, so it refused the whole set and wrote nothing. That
+      // used to surface as the agent's raw 409 JSON in an error dialog (#882).
+      const conflict = presetCopyConflict(e);
+      if (conflict) showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: conflict.slot }));
+      else showError(e);
     } finally {
       btn.textContent = origLabel;
       updatePresetTransferRow();

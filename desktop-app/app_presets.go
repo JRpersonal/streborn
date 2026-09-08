@@ -138,34 +138,46 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	if err := a.waitCopyTargetReady(dstHost, dstPort); err != nil {
 		return 0, err
 	}
-	copied := 0
-	var slotErrs []string
+	// The set the transfer is about: the same filter the per-slot loop applies.
+	var set []Preset
 	for _, p := range presets {
 		if p.Slot < 1 || p.Slot > 6 || p.Name == "" {
 			continue
 		}
-		// PUT the source preset verbatim (via boxPut, so the target's port
-		// fallback applies too) so radio, Spotify and queue presets keep all
-		// their fields (type, uri, account, art, bitrate, shuffle, items)
-		// with no field mapping. A rejected slot is reported but must not
-		// abort the transfer: the remaining slots still copy.
-		err := a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p)
-		// A speaker can also go away DURING the copy: the same bundle shows a
-		// target that took six slots and dropped two of them mid-run. One
-		// re-wait and one retry costs nothing on the happy path and turns that
-		// into a complete transfer.
+		set = append(set, p)
+	}
+	copied := 0
+	var slotErrs []string
+	if len(set) > 0 {
+		// Whole set in ONE request when the target's agent knows the bulk
+		// endpoint. That is not a speed optimisation: writing the slots one at
+		// a time made the target judge each write against a half-written store,
+		// so transferring the same six stations in a different order collided
+		// with itself and failed (#882). One request also means one NAND write
+		// on the speaker instead of six.
+		supported, err := a.putPresetsBulk(dstHost, dstPort, set)
+		// A speaker can go away DURING the transfer. One re-wait and one retry
+		// costs nothing on the happy path, same as the per-slot path below.
 		if err != nil && isTransportNotReady(err) {
 			if werr := a.waitCopyTargetReady(dstHost, dstPort); werr == nil {
-				err = a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p)
+				supported, err = a.putPresetsBulk(dstHost, dstPort, set)
 			}
 		}
-		if err != nil {
-			a.logger.Warn("copy presets: slot rejected by the target",
-				"src", srcHost, "dst", dstHost, "slot", p.Slot, "type", p.Type, "err", err)
-			slotErrs = append(slotErrs, fmt.Sprintf("preset %d (%s): %v", p.Slot, p.Name, err))
-			continue
+		switch {
+		case supported && err == nil:
+			copied = len(set)
+		case supported:
+			// The bulk write is all-or-nothing, so a refusal left the target
+			// exactly as it was. Report it and stop: there is no partial
+			// result to sync or to count.
+			a.logger.Warn("copy presets: the target refused the whole set, nothing was written",
+				"src", srcHost, "dst", dstHost, "slots", len(set), "err", err)
+			return 0, err
+		default:
+			a.logger.Info("copy presets: target agent has no bulk preset endpoint, copying slot by slot",
+				"src", srcHost, "dst", dstHost)
+			copied, slotErrs = a.copyPresetsPerSlot(dstHost, dstPort, set)
 		}
-		copied++
 	}
 	// Re-push the target's hardware keys so 1-6 on the speaker match the copy.
 	if _, err := a.SyncBoxPresets(dstHost, dstPort); err != nil {
@@ -189,6 +201,82 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 		return copied, fmt.Errorf("%s", strings.Join(slotErrs, "; "))
 	}
 	return copied, nil
+}
+
+// presetConflictPrefix marks the one preset-transfer failure that has a
+// friendly explanation instead of a raw status line: the target already holds
+// the station on a key the transfer does not rewrite. The frontend parses this
+// shape (copyreport.js) into a translated sentence, so it must stay stable.
+const presetConflictPrefix = "already-on-slot: "
+
+// putPresetsBulk PUTs the whole preset set to the target's collection endpoint.
+// supported is false when the target answers 404 or 405, i.e. it runs an agent
+// older than the bulk endpoint and the caller must fall back to the per-slot
+// loop. A 409 is turned into the stable already-on-slot message the frontend
+// translates; every other failure keeps the usual status+body error.
+func (a *App) putPresetsBulk(host string, port int, ps []Preset) (bool, error) {
+	b, err := json.Marshal(ps)
+	if err != nil {
+		return true, err
+	}
+	resp, err := a.boxDo(host, port, http.MethodPut, presetAPIPath, "application/json", string(b))
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return false, nil
+	}
+	if resp.StatusCode == http.StatusConflict {
+		var c struct {
+			Code string `json:"code"`
+			Name string `json:"name"`
+			Slot int    `json:"slot"`
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		if json.Unmarshal(body, &c) == nil && c.Code == "already-on-slot" {
+			return true, fmt.Errorf("%s%q is already on key %d", presetConflictPrefix, c.Name, c.Slot)
+		}
+		return true, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+	if resp.StatusCode >= 400 {
+		return true, readHTTPError(resp)
+	}
+	return true, nil
+}
+
+// copyPresetsPerSlot is the original slot-by-slot transfer, kept for target
+// speakers running an agent without the bulk endpoint. Returns how many slots
+// landed and one message per rejected slot.
+func (a *App) copyPresetsPerSlot(dstHost string, dstPort int, set []Preset) (int, []string) {
+	copied := 0
+	var slotErrs []string
+	for _, p := range set {
+		// PUT the source preset verbatim (via boxPut, so the target's port
+		// fallback applies too) so radio, Spotify and queue presets keep all
+		// their fields (type, uri, account, art, bitrate, shuffle, items)
+		// with no field mapping. A rejected slot is reported but must not
+		// abort the transfer: the remaining slots still copy.
+		err := a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p)
+		// A speaker can also go away DURING the copy: the same bundle shows a
+		// target that took six slots and dropped two of them mid-run. One
+		// re-wait and one retry costs nothing on the happy path and turns that
+		// into a complete transfer.
+		if err != nil && isTransportNotReady(err) {
+			if werr := a.waitCopyTargetReady(dstHost, dstPort); werr == nil {
+				err = a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p)
+			}
+		}
+		if err != nil {
+			a.logger.Warn("copy presets: slot rejected by the target",
+				"dst", dstHost, "slot", p.Slot, "type", p.Type, "err", err)
+			slotErrs = append(slotErrs, fmt.Sprintf("preset %d (%s): %v", p.Slot, p.Name, err))
+			continue
+		}
+		copied++
+	}
+	return copied, slotErrs
 }
 
 // hasSpotifyPreset reports whether any preset in the set is a Spotify one.

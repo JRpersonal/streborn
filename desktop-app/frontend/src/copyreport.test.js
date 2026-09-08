@@ -1,6 +1,6 @@
 // Tests for the pure preset-copy rejection summary in copyreport.js.
 import { describe, it, expect } from 'vitest';
-import { summarizePresetCopyError, countValidPresetSlots } from './copyreport.js';
+import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } from './copyreport.js';
 
 describe('summarizePresetCopyError', () => {
   it('reconstructs the copied count from the combined per-slot message', () => {
@@ -57,5 +57,28 @@ describe('countValidPresetSlots', () => {
     expect(countValidPresetSlots([])).toBe(0);
     expect(countValidPresetSlots(null)).toBe(0);
     expect(countValidPresetSlots(undefined)).toBe(0);
+  });
+});
+
+describe('presetCopyConflict', () => {
+  it('names the station and the key it already sits on', () => {
+    const r = presetCopyConflict('already-on-slot: "Exclusively Rush" is already on key 6');
+    expect(r).toEqual({ name: 'Exclusively Rush', slot: 6 });
+  });
+  it('unescapes a quoted station name, so the user sees what the key shows', () => {
+    // Go's %q escapes a quote inside the name; the parser must undo that.
+    const r = presetCopyConflict('already-on-slot: "Rush \\"Live\\"" is already on key 4');
+    expect(r.name).toBe('Rush "Live"');
+    expect(r.slot).toBe(4);
+  });
+  it('accepts an Error-like input via string coercion', () => {
+    const r = presetCopyConflict(new Error('already-on-slot: "101 SMOOTH JAZZ" is already on key 1'));
+    expect(r).toEqual({ name: '101 SMOOTH JAZZ', slot: 1 });
+  });
+  it('returns null for every other failure, so they keep their own handling', () => {
+    expect(presetCopyConflict('preset 2 (X): status 500')).toBeNull();
+    expect(presetCopyConflict('the target speaker is not answering yet')).toBeNull();
+    expect(presetCopyConflict('')).toBeNull();
+    expect(presetCopyConflict(null)).toBeNull();
   });
 });

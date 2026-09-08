@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "{{n}} 件のプリセットを {{target}} にコピーしました。コピーできなかったもの: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "一部のプリセットを {{target}} にコピーできませんでした: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "プリセットをコピーしましたが、一部は拒否されました: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} は転送先スピーカーのキー {{n}} にすでに登録されています。転送先でそのキーを削除してから、もう一度転送してください。",
   "settingsView.copyPresetsAllTargets": "他のすべてのスピーカー",
   "settingsView.displayTrackConfirmBody": "ご注意: テキストを更新するにはスピーカーがストリームを再バッファリングする必要があるため、曲やテキストが変わるたびに音楽が約1秒途切れます。このアプリ内では曲名が常に途切れなく表示されます。それでもオンにしますか？",
   "settingsView.displayTrackConfirmTitle": "スピーカーのディスプレイに曲を表示しますか？",

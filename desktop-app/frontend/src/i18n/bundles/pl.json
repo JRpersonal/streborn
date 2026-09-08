@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "Skopiowano {{n}} zaprogramowanych stacji do {{target}}. Nie skopiowano: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Niektórych zaprogramowanych stacji nie udało się skopiować do {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Stacje skopiowano, ale niektóre zostały odrzucone: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} jest już pod przyciskiem {{n}} w głośniku docelowym. Usuń tam ten przycisk i przenieś jeszcze raz.",
   "settingsView.copyPresetsAllTargets": "Wszystkie inne głośniki",
   "settingsView.displayTrackConfirmBody": "Uwaga: aby zaktualizować tekst, głośnik musi ponownie buforować strumień, więc muzyka będzie się urywać na około sekundę za każdą zmianą utworu lub tekstu. Utwór jest zawsze pokazywany tutaj w aplikacji bez żadnych przerw. Włączyć mimo to?",
   "settingsView.displayTrackConfirmTitle": "Pokazywać utwór na wyświetlaczu głośnika?",

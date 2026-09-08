@@ -29,9 +29,190 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 		// an empty store flooded the NAND log tail out of a bundle (#882).
 		s.notePresetsRead(r.RemoteAddr, len(all))
 		writeJSON(w, http.StatusOK, all)
+	case http.MethodPut:
+		s.handlePresetsBulkPut(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// maxBulkPresetBody bounds PUT /api/presets. Six times the per-slot cap, for
+// the same reason it is generous there: a queue preset carries the whole track
+// list of a DLNA folder, and a whole-set write may carry six of them.
+const maxBulkPresetBody = 6 << 20
+
+// handlePresetsBulkPut writes a WHOLE preset set in one go: PUT /api/presets
+// with a JSON array of at most six presets, each on a slot 1-6. Slots the
+// payload does not name are left untouched.
+//
+// It exists because the per-slot duplicate guard is the wrong rule for a
+// transfer. A box-to-box copy PUT the source slots one at a time, and the guard
+// (#836: refuse rather than silently delete the key a station already sits on)
+// looked at the HALF-WRITTEN store. Two speakers holding the same six stations
+// in a different order therefore failed mid-transfer with a 409 per swapped
+// pair (#882), even though the finished set would have been perfectly legal.
+// Here the duplicate rule is applied to the RESULT, so a re-ordering is fine
+// while a genuine collision is still refused, and refusing costs the user
+// nothing because nothing is written until the whole set is accepted.
+func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
+	var in []presets.Preset
+	if !decodeJSONRequest(w, r, maxBulkPresetBody, &in) {
+		return
+	}
+	if len(in) == 0 {
+		http.Error(w, "empty preset set", http.StatusBadRequest)
+		return
+	}
+	if len(in) > 6 {
+		http.Error(w, "too many presets, at most 6", http.StatusBadRequest)
+		return
+	}
+	inPayload := make(map[int]bool, len(in))
+	for i := range in {
+		p := &in[i]
+		if p.Slot < 1 || p.Slot > 6 {
+			http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+			return
+		}
+		if inPayload[p.Slot] {
+			http.Error(w, "slot "+strconv.Itoa(p.Slot)+" appears twice", http.StatusBadRequest)
+			return
+		}
+		inPayload[p.Slot] = true
+		if p.Type == "" {
+			p.Type = "radio"
+		}
+		if p.Type == "spotify" {
+			p.URI = normalizeSpotifyURI(p.URI)
+		}
+		// Same art rule as the per-slot save: the store keeps the station's
+		// ORIGIN image URL, never this agent's own art-proxy wrapper (#696).
+		p.Art = healSelfArtProxy(p.Art)
+		if msg, code := bulkPresetRejection(*p); code != "" {
+			s.logger.Warn("bulk preset write refused: a preset in the set is not playable",
+				"slot", p.Slot, "name", p.Name, "code", code,
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": msg, "code": code, "slot": p.Slot,
+			})
+			return
+		}
+	}
+	// A station lives on at most ONE key, checked against the FINISHED set:
+	// two payload entries carrying the same station collide with each other,
+	// and a payload station also collides with a slot the payload does not
+	// rewrite. Nothing is ever deleted to make room, so the loss-free promise
+	// of #836 holds here too.
+	for i := range in {
+		for j := i + 1; j < len(in); j++ {
+			if !samePresetStation(in[i], in[j]) && !samePresetStation(in[j], in[i]) {
+				continue
+			}
+			s.logger.Info("bulk preset write refused: the set puts one station on two keys",
+				"slot", in[i].Slot, "otherSlot", in[j].Slot, "name", in[j].Name,
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"code": "already-on-slot", "slot": in[j].Slot, "name": in[j].Name,
+			})
+			return
+		}
+	}
+	for _, other := range s.presets.All() {
+		if inPayload[other.Slot] {
+			continue // this slot is being rewritten, so it cannot collide
+		}
+		for _, p := range in {
+			if !samePresetStation(p, other) {
+				continue
+			}
+			s.logger.Info("bulk preset write refused: a station in the set is already on a key the set does not rewrite",
+				"slot", p.Slot, "existingSlot", other.Slot, "name", other.Name,
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"code": "already-on-slot", "slot": other.Slot, "name": other.Name,
+			})
+			return
+		}
+	}
+	// One store write for the whole set: six SetSlot calls would rewrite
+	// presets.json plus its backup six times on the speaker's NAND for a
+	// single user action.
+	if err := s.presets.SetSlots(in); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	slots := make([]int, 0, len(in))
+	for _, p := range in {
+		slots = append(slots, p.Slot)
+	}
+	// Same forensic rule as the per-slot save: every accepted write names its
+	// writer, because a silent success path is a hole in a later bundle.
+	s.logger.Info("bulk preset write accepted",
+		"slots", slots, "count", len(in),
+		"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+	// Sync the hardware keys, same mapping as the per-slot save. Best-effort:
+	// the store already holds the set, and a failed box push is retried by the
+	// caller's own /api/box/sync-presets.
+	if s.boxHost != "" {
+		for _, p := range in {
+			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			if err := s.writeBoxPreset(boxCtx, p.Slot, p.Name, boxPresetURL(p.Slot, p.Type == "spotify"), p.Art, p.Type == "spotify"); err != nil {
+				s.logger.Warn("box preset sync failed", "slot", p.Slot, "err", err)
+			}
+			cancel()
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok", "written": len(in), "slots": slots,
+	})
+}
+
+// bulkPresetRejection reports why a preset in a bulk set cannot be stored, as
+// the same {error, code} pair the per-slot save answers with, or "" when it is
+// fine. It keeps the structural gates that stop a dead preset from being stored
+// (#45/#105/#252) and deliberately drops the per-slot save's NETWORK probes and
+// Spotify enrichment: a whole-set write must not fan out into a dozen outbound
+// requests, and every preset in it was already vetted when it was first saved
+// on the source speaker.
+func bulkPresetRejection(p presets.Preset) (msg, code string) {
+	switch p.Type {
+	case "spotify":
+		if !playableSpotifyURI(p.URI) {
+			return "This Spotify preset has no replayable playlist, album or track.", "spotify-uri-unplayable"
+		}
+	case "queue":
+		for _, it := range p.Items {
+			if it.URL != "" {
+				return "", ""
+			}
+		}
+		return "This folder preset has no playable tracks.", "queue-empty"
+	default:
+		if p.StreamURL == "" {
+			return "This preset has no playable stream.", "stream-url-missing"
+		}
+		if !isHTTPURL(p.StreamURL) {
+			return "This preset has no playable stream.", "stream-url-invalid"
+		}
+		// A stream URL pointing back at an agent's own /stream/<n> proxy is a
+		// poisoned value (#252) and must never be stored: on this speaker it
+		// would dial itself.
+		if _, self := selfProxySlot(p.StreamURL); self {
+			return "This preset stores a speaker's own proxy address instead of the station.", "stream-url-self-proxy"
+		}
+	}
+	return "", ""
+}
+
+// samePresetStation reports whether p and other play the same thing. It mirrors
+// the per-slot duplicate rule exactly: the SAVED preset's type decides which
+// field is compared, and an empty field never collides (a queue preset carries
+// neither, so folders never collide with anything).
+func samePresetStation(p, other presets.Preset) bool {
+	if p.Type == "spotify" {
+		return p.URI != "" && other.URI == p.URI
+	}
+	return p.StreamURL != "" && other.StreamURL == p.StreamURL
 }
 
 func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {

@@ -33,6 +33,22 @@ export function summarizePresetCopyError(message, totalValidSlots) {
   return { failedSlots, copied, detail: msg };
 }
 
+// presetCopyConflict recognises the ONE transfer failure that has a friendly
+// explanation: the target speaker already holds one of the stations on a key
+// the transfer does not rewrite, so the whole set was refused and nothing was
+// written (the agent's already-on-slot guard, #836, applied to the finished
+// set, #882). The Go side formats it as
+//   already-on-slot: "Station Name" is already on key 6
+// Returns {name, slot} or null when the message is something else.
+export function presetCopyConflict(message) {
+  const s = String(message == null ? '' : message);
+  const m = s.match(/already-on-slot:\s*"([\s\S]*)" is already on key (\d+)/);
+  if (!m) return null;
+  // The name is Go-quoted (%q), so a quote or backslash inside it arrives
+  // escaped; hand the caller back the name the user actually sees.
+  return { name: m[1].replace(/\\(["\\])/g, '$1'), slot: parseInt(m[2], 10) };
+}
+
 // countValidPresetSlots mirrors the Go-side copy filter (slot 1..6 with a
 // non-empty name) so "total - failed" equals what the backend attempted.
 export function countValidPresetSlots(presets) {

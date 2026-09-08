@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "Se copiaron {{n}} presintonías a {{target}}. No copiadas: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Algunas presintonías no se pudieron copiar a {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Presintonías copiadas, pero algunas fueron rechazadas: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} ya está en la tecla {{n}} del altavoz de destino. Borra esa tecla allí y vuelve a transferir.",
   "settingsView.copyPresetsAllTargets": "Todos los demás altavoces",
   "settingsView.displayTrackConfirmBody": "Aviso: para actualizar el texto, el altavoz tiene que volver a cargar el búfer del stream, así que la música se cortará alrededor de un segundo cada vez que cambie la canción o el texto. La pista siempre se muestra aquí en la app sin ninguna interrupción. ¿Activar de todos modos?",
   "settingsView.displayTrackConfirmTitle": "¿Mostrar la pista en la pantalla del altavoz?",

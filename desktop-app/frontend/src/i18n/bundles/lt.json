@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "Nukopijuota {{n}} išankstinių nustatymų į {{target}}. Nenukopijuota: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Kai kurių išankstinių nustatymų nepavyko nukopijuoti į {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Išankstiniai nustatymai nukopijuoti, bet kai kurie buvo atmesti: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} jau yra paskirties kolonėlės {{n}} mygtuke. Ištrink tą mygtuką ten ir perkelk dar kartą.",
   "settingsView.copyPresetsAllTargets": "Visi kiti garsiakalbiai",
   "settingsView.displayTrackConfirmBody": "Atkreipk dėmesį: kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti srautą, todėl muzika nutrūks maždaug sekundei kaskart, kai pasikeičia daina ar tekstas. Programoje takelis visada rodomas be jokių pertrūkių. Vis tiek įjungti?",
   "settingsView.displayTrackConfirmTitle": "Rodyti takelį garsiakalbio ekrane?",

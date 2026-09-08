@@ -34,7 +34,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // The box-to-box preset copy continues past rejected slots and reports them
 // as one combined error; reconstructing "how many still copied" from that
 // message is a pure decision in copyreport.js (vitest-covered).
-import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
+import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } from '../copyreport.js';
 import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
@@ -2685,6 +2685,15 @@ function renderBoxSettings(s, box) {
         showToast(t('settingsView.copyPresetsDone', { n, target: targetName }));
         if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
       } catch (e) {
+        // The target already holds one of the stations on a key this transfer
+        // does not rewrite, so it refused the whole set and wrote nothing. The
+        // user used to get the agent's raw 409 JSON in an error dialog (#882).
+        const conflict = presetCopyConflict(e);
+        if (conflict) {
+          showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: conflict.slot }));
+          copyBtn.disabled = false;
+          return;
+        }
         // A per-slot rejection is usually a PARTIAL success (the other slots
         // copied); saying only "error" hid that and read as all-or-nothing.
         const part = summarizePresetCopyError(e, await sourceSlotCount());

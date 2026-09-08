@@ -929,6 +929,7 @@
   "settingsView.copyPresetsPartial": "已把 {{n}} 個預設複製到 {{target}}。沒複製到的：{{detail}}",
   "settingsView.copyPresetsSomeFailed": "有些預設沒辦法複製到 {{target}}：{{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "預設已複製，但有幾個被拒絕了：{{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} 已經在目標喇叭的按鍵 {{n}} 上。請先刪除該按鍵，再重新傳送。",
   "settingsView.firmwareLabel": "喇叭韌體",
   "settingsView.rebootHelp": "重新啟動喇叭。如果它沒反應了，或某項變更要重開才會生效，就用這個。",
   "settingsView.removeConflictBtn": "移除 {{mod}} 殘留",

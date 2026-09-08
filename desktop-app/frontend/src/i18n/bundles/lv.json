@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "Uz {{target}} nokopēti {{n}} priekšiestatījumi. Nav nokopēti: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Dažus priekšiestatījumus neizdevās nokopēt uz {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Priekšiestatījumi nokopēti, bet daži tika noraidīti: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} jau ir mērķa skaļruņa {{n}}. taustiņā. Izdzēs to taustiņu tur un pārsūti vēlreiz.",
   "settingsView.copyPresetsAllTargets": "Visi pārējie skaļruņi",
   "settingsView.displayTrackConfirmBody": "Ievēro: lai atjauninātu tekstu, skaļrunim jāpārbuferē straume, tāpēc mūzika uz aptuveni sekundi pārtrūks ikreiz, kad mainās dziesma vai teksts. Šeit, lietotnē, dziesma vienmēr tiek rādīta bez pārtraukumiem. Tomēr ieslēgt?",
   "settingsView.displayTrackConfirmTitle": "Rādīt dziesmu skaļruņa displejā?",

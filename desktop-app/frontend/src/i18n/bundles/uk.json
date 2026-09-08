@@ -1255,6 +1255,7 @@
   "settingsView.copyPresetsPartial": "Скопійовано пресети ({{n}}) на {{target}}. Не скопійовано: {{detail}}",
   "settingsView.copyPresetsSomeFailed": "Деякі пресети не вдалося скопіювати на {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Пресети скопійовано, але деякі було відхилено: {{detail}}",
+  "settingsView.copyPresetsConflict": "{{name}} вже стоїть на кнопці {{n}} цільової колонки. Видали цю кнопку там і перенеси ще раз.",
   "settingsView.copyPresetsAllTargets": "Усі інші колонки",
   "settingsView.displayTrackConfirmBody": "Увага: щоб оновити текст, колонка має перебуферувати потік, тож музика перериватиметься приблизно на секунду щоразу, коли змінюється пісня чи текст. Тут, у застосунку, трек завжди показується без жодних перерв. Все одно ввімкнути?",
   "settingsView.displayTrackConfirmTitle": "Показувати трек на дисплеї колонки?",
