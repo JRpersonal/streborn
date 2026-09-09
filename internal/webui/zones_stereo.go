@@ -2297,7 +2297,22 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	mirrorHostPort := hostPortOf(s.mirrorURLForSlaves(ctx, masterLocation, master.IP))
 	s.stopStragglers(ctx, masterLocation, mirrorHostPort, slaves)
 	if s.zones != nil {
-		if err := s.zones.Clear(); err != nil {
+		// A PERMANENT group is a saved arrangement, not the live zone. Taking
+		// the live zone apart has to leave the saved one alone, or "ungroup for
+		// now" silently deletes what the user built and there is no way back.
+		//
+		// Every other Clear() call site already knows this: the peer purge
+		// checks Permanent (zonemirror.go), and so does the standby two-strike
+		// doubt clear (resume_standby.go). This one did not, and it is the one
+		// behind the button. It cost a stored group on the maintainer's own
+		// fleet during a test on 2026-09-03, and it is the first thing a
+		// reporter suspects when a group is missing after an update, which is
+		// how it came up again on 2026-09-09 (that group turned out to be
+		// intact; this path is what would have taken it).
+		if doc, ok := s.zones.Get(); ok && doc.Permanent {
+			s.logger.Info("zone: live group taken apart, the saved group stays saved and forms again when its main speaker plays",
+				"master", doc.Master, "members", len(doc.Slaves))
+		} else if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
 		}
 	}
