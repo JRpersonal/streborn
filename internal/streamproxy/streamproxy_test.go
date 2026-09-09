@@ -173,8 +173,13 @@ func TestUpstreamStallForcesReconnect(t *testing.T) {
 	rw := httptest.NewRecorder()
 	start := time.Now()
 	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
-	if elapsed := time.Since(start); elapsed > 15*time.Second {
-		t.Fatalf("stall took %s to detect; the watchdog should fire after ~5s", elapsed)
+	// The production threshold is upstreamStallAfter (15 s since #823, where
+	// 5 s turned a box with a half-minute buffer into a reconnect every twenty
+	// seconds). Assert against the field rather than a literal, so the test
+	// pins the BEHAVIOUR (the watchdog fires and hands back a read error)
+	// rather than a number somebody has to remember to update here too.
+	if elapsed := time.Since(start); elapsed > s.upstreamStallAfter+5*time.Second {
+		t.Fatalf("stall took %s to detect; the watchdog should fire after ~%s", elapsed, s.upstreamStallAfter)
 	}
 	if !boseAlive {
 		t.Fatalf("streamOne reported the box gone; a stalled UPSTREAM must ask for a reconnect instead")
