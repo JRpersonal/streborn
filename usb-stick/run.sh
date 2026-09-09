@@ -2061,6 +2061,14 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # The coprocessor honours encrypted="false"; the AES path is
     # NetManager's separate NetworkProfiles.xml store, not this one.
     AIR_REBOOT_STAMP="$PERSIST/.airplay-reboot-stamp"
+    # Bounded recovery budget for the case the reboot stamp was never
+    # written for: the box WAS provisioned, its coprocessor profile is
+    # gone, and the stamp still says "already rebooted for these creds",
+    # so the one path that can put the network back is locked out. See
+    # airplay_reboot_guard_ok.
+    AIR_REPROV_COUNT="$PERSIST/.airplay-reprovision-count"
+    AIR_REPROV_MAX=2
+    AIR_PRE_SSID=""
     AIR_WROTE=""
     AIR_FILE=""
 
@@ -2081,8 +2089,44 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # boot falls through to M1..M6 instead of rebooting forever.
         _fp=$(airplay_creds_fp)
         _seen=$(cat "$AIR_REBOOT_STAMP" 2>/dev/null)
-        [ "$_fp" = "$_seen" ] && return 1
-        printf '%s' "$_fp" > "$AIR_REBOOT_STAMP" 2>/dev/null
+        if [ "$_fp" != "$_seen" ]; then
+            printf '%s' "$_fp" > "$AIR_REBOOT_STAMP" 2>/dev/null
+            rm -f "$AIR_REPROV_COUNT" 2>/dev/null
+            return 0
+        fi
+        # Same creds as the last reboot. The stamp was written for the
+        # case "we already did this and it worked", and until now it also
+        # covered the case it must not: the profile is GONE.
+        #
+        # A BCO box whose coprocessor profile got wiped could not repair
+        # itself. M_air rewrote AirplayConfiguration.xml correctly, the
+        # stamp then refused the reboot that is the only thing which
+        # programs the coprocessor from that file, and the boot fell
+        # through to M1 and M2 instead, which is where the profile went in
+        # the first place. Every following boot repeated it. That is the
+        # loop the reporter of the 2026-09-09 scm ST20 case was stuck in,
+        # and it is why re-running the Wi-Fi setup "saved the credentials"
+        # and changed nothing.
+        #
+        # So: when the store still holds a network, the stamp keeps its
+        # original meaning and blocks the reboot. When the store is empty
+        # we are not repeating a provisioning that took, we are recovering
+        # one that was destroyed, and a reboot is exactly what is needed.
+        # Bounded by AIR_REPROV_MAX so a box whose profile genuinely never
+        # sticks still cannot boot-loop: after the budget it falls through
+        # as before.
+        if [ -n "$AIR_PRE_SSID" ]; then
+            return 1
+        fi
+        _n=$(cat "$AIR_REPROV_COUNT" 2>/dev/null)
+        case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+        if [ "$_n" -ge "$AIR_REPROV_MAX" ]; then
+            setup_log "M_air: profile store empty again but the recovery budget is spent (${_n}/${AIR_REPROV_MAX} reboots for these creds), not rebooting"
+            return 1
+        fi
+        _n=$((_n + 1))
+        printf '%s' "$_n" > "$AIR_REPROV_COUNT" 2>/dev/null
+        setup_log "M_air: the coprocessor profile store is EMPTY although this box was already provisioned for these creds, treating this as a wiped profile and rebooting to reprogram it (recovery ${_n}/${AIR_REPROV_MAX})"
         return 0
     }
     airplay_slot0_ssid() {
@@ -2097,6 +2141,46 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         done
         [ -z "$_asf" ] && return 0
         sed -n 's/.*PersistentWifiProfile[^>]*ssid="\([^"]*\)".*/\1/p' "$_asf" | head -1
+    }
+    bco_stored_ssid() {
+        # Echo the FIRST non-empty SSID in ANY PersistentWifiProfile slot
+        # of AirplayConfiguration.xml, or nothing.
+        #
+        # This is the profile store the BCO coprocessor is actually
+        # programmed from (see the M_air block above). It exists because
+        # every "is this box already provisioned?" guard below used to
+        # ask only two sources, and BOTH are blind on this chassis:
+        #
+        #   NetworkProfiles.xml   is NetManager's store. On BCO the
+        #                         profile is not in it.
+        #   TAP `network wifi profiles info`   answers "<WiFiProfiles />"
+        #                         on this chassis by design, provisioned
+        #                         or not.
+        #
+        # So on a BCO box both guards read "no profile stored": M0a
+        # declines to wait for a late association, and M2 concludes it
+        # has nothing to lose and runs `network wifi profiles clear`.
+        # This script already records where that ends, in M2's own
+        # comment: "Verified live on Series-I scm-variant ST20 #60 where
+        # M2's clear wiped the working profile and the box went
+        # orange-Wi-Fi forever."
+        #
+        # Field case 2026-09-09, scm ST20 on agent v0.9.77: the box had
+        # been on Wi-Fi for weeks, took an agent update, and never came
+        # back onto Wi-Fi after the reboot while Ethernet stayed perfect.
+        # The reporter's setup log carries this ladder end to end, HTTP
+        # 500 from M1's /addWirelessProfile, then M2's "Add requested",
+        # then "<WiFiProfiles />", then "no real STA lease within 60s".
+        #
+        # Unlike airplay_slot0_ssid this walks EVERY slot: a guard must
+        # not conclude "nothing to lose" from an empty slot 0 while a
+        # later slot still holds the working network.
+        _bsf=""
+        for _bf in /mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml; do
+            [ -f "$_bf" ] && _bsf="$_bf" && break
+        done
+        [ -z "$_bsf" ] && return 0
+        sed -n 's/.*PersistentWifiProfile[^>]*ssid="\([^"]\{1,\}\)".*/\1/p' "$_bsf" | head -1
     }
     write_airplay_profile() {
         # Non-destructive: only slot 0 is set, other slots are left as-is,
@@ -2329,6 +2413,23 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 *'wifiProfileCount="0"'*) ;;
                 *'wifiProfileCount="'*) HAS_STORED_PROFILE=1; HAS_STORED_PROFILE_SRC="http" ;;
             esac
+        fi
+        # Source 4: the BCO coprocessor's own profile store. THE one that
+        # matters on this chassis, and the one all three sources above
+        # miss: NetworkProfiles.xml does not hold it, TAP answers
+        # "<WiFiProfiles />" whatever the truth is, and /networkInfo needs
+        # BoseApp, which on a BCO box binds :8090 only around 120-130 s
+        # after boot, long after this probe runs. Without it a provisioned
+        # BCO box reads as "never configured" on every single boot, M0a
+        # does not even wait its 60 s for a late association, and the
+        # destructive ladder below runs against a box that was working.
+        # See bco_stored_ssid for the field case.
+        if [ -z "$HAS_STORED_PROFILE" ]; then
+            _bco_ssid=$(bco_stored_ssid 2>/dev/null)
+            if [ -n "$_bco_ssid" ]; then
+                HAS_STORED_PROFILE=1
+                HAS_STORED_PROFILE_SRC="bco-file"
+            fi
         fi
         if [ -n "$HAS_STORED_PROFILE" ]; then
             setup_log "M0a: no STA lease yet but stored profile present (src=$HAS_STORED_PROFILE_SRC), polling up to 60s for cold-boot reassociation"
@@ -2568,9 +2669,16 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # change still re-provisions (stick stays a recovery tool).
     AIR_FP_NOW=$(airplay_creds_fp)
     AIR_FP_SEEN=$(cat "$AIR_REBOOT_STAMP" 2>/dev/null)
+    # Read the coprocessor's store BEFORE we write to it. This is what
+    # tells "already provisioned, leave it alone" apart from "provisioned
+    # once, profile since destroyed, this is a repair"; the reboot guard
+    # answers differently to the two and cannot tell them apart after the
+    # write. Empty here means the box has no network to lose.
+    AIR_PRE_SSID=$(bco_stored_ssid 2>/dev/null)
     if [ -n "$AIR_FP_NOW" ] && [ "$AIR_FP_NOW" = "$AIR_FP_SEEN" ] && [ "$(airplay_slot0_ssid)" = "$SSID" ]; then
         setup_log "M_air: already provisioned + rebooted for the current creds (SSID='$SSID', slot-0 matches), skipping M_air rewrite+reboot"
     else
+    setup_log "M_air: coprocessor profile store before write: ssid='${AIR_PRE_SSID:-none}' (empty means nothing to lose)"
     write_airplay_profile
     if [ "${AIR_WROTE:-}" = "1" ] && { [ "$BCO_MODE" = "1" ] || [ -n "${IS_TAIGAN:-}" ]; }; then
         if airplay_reboot_guard_ok; then
@@ -2877,6 +2985,18 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 *"<profile "*|*"<profile>"*) M2_HAS_PROFILE=1; M2_HAS_PROFILE_SRC="tap" ;;
             esac
         fi
+        # Third source, and on a BCO chassis the ONLY one that can ever
+        # answer: the coprocessor's own store in AirplayConfiguration.xml.
+        # Both sources above are structurally blind there (see
+        # bco_stored_ssid), so this guard used to be a guard in name only
+        # on exactly the chassis whose profile the clear below destroys.
+        if [ -z "$M2_HAS_PROFILE" ]; then
+            M2_BCO_SSID=$(bco_stored_ssid 2>/dev/null)
+            if [ -n "$M2_BCO_SSID" ]; then
+                M2_HAS_PROFILE=1
+                M2_HAS_PROFILE_SRC="bco-file"
+            fi
+        fi
         if [ -n "$M2_HAS_PROFILE" ]; then
             setup_log "M2: SKIP reason=existing-profile-in-DB (src=$M2_HAS_PROFILE_SRC; 'profiles clear' would wipe the working profile)"
             # Wait a generous additional window for the existing
@@ -2902,7 +3022,26 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             # entirely upstream) and on sm2 (already accepts add in
             # the current pipeline). After the add we transition back
             # to `mode auto` as before.
-            setup_log "M2: TAP CLI sequence (mode wifisetup, scan, profiles clear/add, info, setupap exit, mode auto)"
+            # `profiles clear` runs on sm2 only. It exists to drop stale
+            # networks the box would otherwise try first at boot, which is
+            # a real problem there because on sm2 the TAP store IS the
+            # store NetManager associates from.
+            #
+            # On a BCO chassis it is pure downside. The store TAP talks to
+            # is not the one the coprocessor is programmed from (that is
+            # AirplayConfiguration.xml), TAP reports it as
+            # "<WiFiProfiles />" whether or not the box is provisioned, and
+            # the add that follows does not persist there either, so the
+            # clear can take a working network away and can never put one
+            # back. #60 recorded exactly that outcome on a scm ST20, and it
+            # came back on 2026-09-09 on another one.
+            M2_CLEAR=""
+            if [ -z "$BCO_MODE" ]; then
+                M2_CLEAR="network wifi profiles clear"
+                setup_log "M2: TAP CLI sequence (mode wifisetup, scan, profiles clear/add, info, setupap exit, mode auto)"
+            else
+                setup_log "M2: TAP CLI sequence WITHOUT 'profiles clear' (BCO chassis: the TAP store is not the one the coprocessor reads, so a clear can only lose the working network)"
+            fi
             TAP_OUT=$(
                 (
                     printf 'async_responses on\n'
@@ -2911,8 +3050,10 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                     sleep 3
                     printf 'network wifi scan\n'
                     sleep 25
-                    printf 'network wifi profiles clear\n'
-                    sleep 2
+                    if [ -n "$M2_CLEAR" ]; then
+                        printf '%s\n' "$M2_CLEAR"
+                        sleep 2
+                    fi
                     printf 'network wifi profiles add %s wpa_or_wpa2 %s\n' "$SSID" "$PASS"
                     sleep 20
                     printf 'network wifi profiles info\n'
