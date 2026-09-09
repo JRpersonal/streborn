@@ -80,6 +80,25 @@ func DecodeNativeStation(loc string) (NativeStation, bool) {
 		out.ProxySlot = slot
 		return out, true
 	}
+	// STR's own PER-SLOT SPOTIFY stream is one of its keys too, and it has to
+	// be recognised as one here.
+	//
+	// Without this the URL falls through as if it were a station origin, and a
+	// hold-to-store on a playing Spotify preset rewrote that key as a radio
+	// preset whose stream URL was the agent's own Spotify proxy: the playlist
+	// URI gone, the type wrong, and a "station" that only resolves while that
+	// slot happens to be playing Spotify. Two of a reporter's three speakers
+	// carried exactly that damage (bundle 2026-09-09, slots 3 and 4 as
+	// type=radio pointing at .../spotify/stream-N.ogg), against a third whose
+	// slot 4 was still a proper spotify preset with its playlist URI.
+	//
+	// Resolved as a proxy slot, the branch above keeps the preset the store
+	// already holds, which is the correct answer for a key held down while its
+	// own content plays.
+	if slot := slotFromSpotifyStreamURL(out.StreamURL); slot > 0 && sameAgentAuthority(out.StreamURL) {
+		out.ProxySlot = slot
+		return out, true
+	}
 	if origin := unwrapRawStreamProxy(out.StreamURL); isHTTPURL(origin) {
 		out.OriginStreamURL = origin
 	}
