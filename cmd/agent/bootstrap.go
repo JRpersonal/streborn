@@ -351,11 +351,22 @@ func embeddedBootstrapStamp() string {
 // "bco", "taigan-bco", "wlan0", "wlan1" and "ethernet-only".
 //
 // On the two coprocessor values the Wi-Fi does not belong to the kernel at all:
-// it is programmed over the USB bridge from AirplayConfiguration.xml and, in
-// the field, does not reliably come back after a SOFT reboot. Only a real power
-// cycle re-associates it. That is why the Lifestyle reporter's speaker needs
-// the plug pulled after an STR restart, and it is the shape of the scm ST20
-// cold-boot association failure in #157.
+// it is programmed over the USB bridge from AirplayConfiguration.xml, and the
+// only thing that reprograms it is a boot. #157 records what that looks like
+// when it goes wrong on this chassis: the speaker comes up without an
+// association, Ethernet recovers it instantly, and Wi-Fi is orange until
+// somebody intervenes.
+//
+// So a reboot here is not the cheap operation it is on a chassis where
+// wpa_supplicant owns the radio, and this one is STACKED on the reboot the
+// update already took. It buys almost nothing since the hands-off boot of
+// v0.9.7 (below), so the trade is not close.
+//
+// NOT because a Lifestyle needs its plug pulled after a restart: that reporter
+// was investigated the same day and his speaker is a different chassis whose
+// Wi-Fi was healthy throughout. It simply takes 108 seconds to shut down where
+// a SoundTouch 10 takes 13, and the app gave up waiting after 35. Recorded here
+// because that wrong explanation was in this comment first.
 //
 // An unreadable or unknown mode returns "", i.e. the caller keeps its old
 // behaviour. This gate must never turn a chassis we cannot classify into one
