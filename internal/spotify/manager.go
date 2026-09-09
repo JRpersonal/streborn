@@ -375,6 +375,12 @@ type Manager struct {
 	lagRebase     bool
 	boxPositionFn func(context.Context) (time.Duration, bool)
 	lastLag       boxLagMeasurement
+	// lagSeq numbers buffer-lag events in the order they are sampled;
+	// lastLagSeq is the one behind lastLag. Only a reading from a newer event
+	// replaces it, so two measurements in flight cannot store out of order.
+	// See readBoxLag.
+	lagSeq     uint64
+	lastLagSeq uint64
 	// loggedBoxLag keeps the buffer-lag line to one INFO per agent run; see
 	// measureBoxLag.
 	loggedBoxLag bool

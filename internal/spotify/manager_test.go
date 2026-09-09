@@ -231,7 +231,12 @@ type recordedCall struct {
 // mockLibrespot stands in for go-librespot's local HTTP API: it records every
 // POST and answers /status with a loaded track so waitContextLoaded returns
 // promptly. The returned cleanup closes the server.
-func mockLibrespot(t *testing.T) (m *Manager, calls *[]recordedCall, cleanup func()) {
+//
+// calls is a SNAPSHOT accessor, not a pointer to the slice. The server records
+// from its own goroutine while the test reads, so handing out the slice itself
+// was a data race the race detector caught on the whole package: the mutex was
+// there, and every reader went around it.
+func mockLibrespot(t *testing.T) (m *Manager, calls func() []recordedCall, cleanup func()) {
 	t.Helper()
 	var mu sync.Mutex
 	var got []recordedCall
@@ -248,7 +253,12 @@ func mockLibrespot(t *testing.T) (m *Manager, calls *[]recordedCall, cleanup fun
 	}))
 	mgr := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	mgr.apiAddr = strings.TrimPrefix(ts.URL, "http://")
-	return mgr, &got, ts.Close
+	snapshot := func() []recordedCall {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]recordedCall(nil), got...)
+	}
+	return mgr, snapshot, ts.Close
 }
 
 func pathsOf(calls []recordedCall) []string {
@@ -282,18 +292,18 @@ func TestPlayDefaultResumesWithoutShuffle(t *testing.T) {
 		t.Fatalf("Play: %v", err)
 	}
 
-	playBody, ok := bodyForPath(*calls, "/player/play")
+	playBody, ok := bodyForPath(calls(), "/player/play")
 	if !ok {
 		t.Fatal("no /player/play call recorded")
 	}
 	if !strings.Contains(playBody, `"skip_to_uri":"spotify:track:resume-here"`) {
 		t.Errorf("default recall must resume via skip_to_uri, play body = %s", playBody)
 	}
-	shufBody, ok := bodyForPath(*calls, "/player/shuffle_context")
+	shufBody, ok := bodyForPath(calls(), "/player/shuffle_context")
 	if !ok || !strings.Contains(shufBody, `"shuffle_context":false`) {
 		t.Errorf("default recall must set shuffle OFF, got %q ok=%v", shufBody, ok)
 	}
-	for _, p := range pathsOf(*calls) {
+	for _, p := range pathsOf(calls()) {
 		if p == "/player/next" {
 			t.Error("default recall must NOT skip to a random track (/player/next)")
 		}
@@ -312,7 +322,7 @@ func TestPlayShuffleStartsRandom(t *testing.T) {
 		t.Fatalf("Play: %v", err)
 	}
 
-	playBody, _ := bodyForPath(*calls, "/player/play")
+	playBody, _ := bodyForPath(calls(), "/player/play")
 	if strings.Contains(playBody, "skip_to_uri") {
 		t.Errorf("shuffle recall must NOT resume a track, play body = %s", playBody)
 	}
@@ -322,9 +332,9 @@ func TestPlayShuffleStartsRandom(t *testing.T) {
 	// pre-clear a repeated press of the same shuffle preset replayed the same
 	// sequence every time (live Portable, 2026-08-19).
 	var shufBodies []string
-	for i, p := range pathsOf(*calls) {
+	for i, p := range pathsOf(calls()) {
 		if p == "/player/shuffle_context" {
-			shufBodies = append(shufBodies, (*calls)[i].body)
+			shufBodies = append(shufBodies, calls()[i].body)
 		}
 	}
 	if len(shufBodies) < 2 ||
@@ -333,7 +343,7 @@ func TestPlayShuffleStartsRandom(t *testing.T) {
 		t.Errorf("shuffle recall must clear shuffle and re-enable it (fresh order), got %v", shufBodies)
 	}
 	sawNext := false
-	for _, p := range pathsOf(*calls) {
+	for _, p := range pathsOf(calls()) {
 		if p == "/player/next" {
 			sawNext = true
 		}

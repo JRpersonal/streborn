@@ -174,7 +174,7 @@ func TestAutoAdvanceStandsDownWhenTheEngineRecovers(t *testing.T) {
 	m.handleEnginePlaybackStart()
 
 	time.Sleep(250 * time.Millisecond)
-	for _, p := range pathsOf(*calls) {
+	for _, p := range pathsOf(calls()) {
 		if p == "/player/next" {
 			t.Fatal("the engine recovered on its own, the auto-advance must not skip")
 		}
@@ -191,7 +191,7 @@ func TestAutoAdvanceFiresWhenTheEngineStaysDown(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		for _, p := range pathsOf(*calls) {
+		for _, p := range pathsOf(calls()) {
 			if p == "/player/next" {
 				return // advanced, as it must
 			}
