@@ -128,6 +128,27 @@ func (m *Manager) SetOnTrack(fn func(track, artist string)) {
 	m.mu.Unlock()
 }
 
+// SetOnSinkDetach registers the hook fired when the box drops a Spotify stream
+// it had been playing. The twin of streamproxy's SetOnDisconnect, which has
+// given internet radio an automatic recovery for a long time while the Spotify
+// audio path had none.
+func (m *Manager) SetOnSinkDetach(fn func(attachedMs int64)) {
+	m.mu.Lock()
+	m.onSinkDetach = fn
+	m.mu.Unlock()
+}
+
+// sinkDetachWorthRecovering is the shortest attachment that counts as "this was
+// playing and then it stopped".
+//
+// The Ogg sink also detaches on every normal preset switch and around a
+// hardware skip, and those attachments are short: a field bundle shows three
+// detaches inside sixteen seconds around one preset press, at 7986 ms and
+// 6882 ms, against 2207055 ms and 7097882 ms for the two real overnight drops
+// that motivated this. Twenty seconds sits far above the flaps and far below
+// anything a listener would call playing.
+const sinkDetachWorthRecovering = 20 * time.Second
+
 // notifyTrack fires onTrack when the current Spotify track changed since the
 // last notification, so each song is recorded once. Called after every
 // metadata/status update; the dedup on the track name keeps a repeated /status
@@ -406,7 +427,27 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.lastDetachAt = time.Now()
 	pendingBitr := m.bitrPending
+	onDetach := m.onSinkDetach
 	m.mu.Unlock()
+	// Tell the resume watchdog, but only about a drop that is neither ours nor
+	// the user's. Internet radio has had this recovery for a long time; the
+	// Spotify path had none, so a two-second Wi-Fi dropout at half past one in
+	// the morning ended playback until somebody pressed a button (field report
+	// 2026-09-09: the box let go at 01:39:08 and went to standby at 01:57).
+	//
+	// The gate lives here rather than in the callback because every one of
+	// these exclusions is a way to turn a recovery into a recall storm:
+	// recalling covers a preset switch and STR's own re-point, engineHot covers
+	// the deliberate flap around a hardware press, connectPauseStands covers
+	// somebody pausing in the Spotify app, and firstAudioMs < 0 means the box
+	// never received a single audio page, which is a failed start rather than a
+	// drop and has its own handling.
+	if onDetach != nil &&
+		attachedMs >= sinkDetachWorthRecovering.Milliseconds() &&
+		firstAudioMs >= 0 &&
+		!m.recalling() && !m.engineHot() && !m.connectPauseStands() {
+		go onDetach(attachedMs)
+	}
 	// A bitrate change made during playback waits for exactly this moment
 	// (#728). Event-driven on purpose: no standing ticker on every speaker
 	// for a change that happens once in a blue moon.

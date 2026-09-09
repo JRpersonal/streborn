@@ -1677,6 +1677,38 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 	go s.maybeRePush()
 }
 
+// HandleSpotifyStreamDetach is the Spotify twin of HandleStreamDisconnect: the
+// box let go of a Spotify stream it had been playing, and nothing was going to
+// bring it back.
+//
+// Internet radio has had this recovery since v0.7.5; the Spotify audio path
+// never did, so a two-second Wi-Fi dropout ended playback for the rest of the
+// night (field report 2026-09-09: the router deregistered the speaker at
+// 01:39:07 and registered it again at 01:39:09, the stream was gone at
+// 01:39:08.259 after nearly two hours of playing, and the box sat silent until
+// it went to standby at 01:57).
+//
+// It runs the SAME maybeRePush the radio path runs, on purpose: that function
+// carries every guard this needs (the backoff, the deliberate-stop and
+// power-off holds, the ownership window a user's own recall owns, the group
+// stand-down, the attempt cap) and a parallel path would be a second watchdog
+// to keep in step with the first. The Spotify-specific part is one branch
+// inside it, which recalls the preset cleanly instead of re-pointing the box at
+// a live Ogg. Which detaches are worth reporting is decided in the Spotify
+// manager, not here.
+func (s *Server) HandleSpotifyStreamDetach(attachedMs int64) {
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || s.rePushInFlight {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	s.rePushInFlight = true
+	s.lastPlayMu.Unlock()
+	s.logger.Info("spotify: the speaker dropped the stream, checking whether to bring it back", "playedForSec", attachedMs/1000)
+	go s.maybeRePush()
+}
+
 // maybeRePush resumes the last stream, but only when it is safe: it waits a
 // moment (a user power-off reaches STANDBY within ~1-2 s, so this tells "user
 // turned it off" from "renderer dropped the stream while the box stays on"),
@@ -1856,6 +1888,29 @@ func (s *Server) maybeRePush() {
 	lp.rePushes++
 	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
 	s.lastPlayMu.Unlock()
+
+	// A Spotify preset goes back through the clean slot recall, not through the
+	// bare re-point below. Re-pointing the box at a live Ogg mid-stream hands
+	// it a stream with no headers where it expects a track boundary, which is
+	// the wedge repairResume already documents and avoids the same way.
+	//
+	// BEFORE boxCmdMu, deliberately: recallSlotClean re-enters handlePlaySlot,
+	// which takes that mutex itself, so calling it under the lock below would
+	// deadlock the agent. repairResume orders it the same way.
+	if slot := slotFromSpotifyStreamURL(boxURL); slot > 0 && strings.Contains(boxURL, "spotify/stream") {
+		s.logger.Info("re-push: box dropped the Spotify stream while idle, recalling the preset cleanly", "slot", slot, "attempt", n, "max", maxRePushes)
+		rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer rcancel()
+		s.recallSlotClean(rctx, slot)
+		return
+	}
+	// A Spotify stream with no preset behind it is app-driven Connect playback.
+	// The Spotify app owns that session and knows where it was; STR pushing a
+	// slot it does not have would be a guess.
+	if strings.Contains(boxURL, "spotify/stream") {
+		s.logger.Info("re-push: box dropped an app-driven Spotify session, leaving it to the Spotify app", "attempt", n)
+		return
+	}
 
 	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n, "max", maxRePushes)
 	s.boxCmdMu.Lock()
