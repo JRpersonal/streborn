@@ -163,6 +163,12 @@ type Server struct {
 	lastGapMs            int64
 	healthURL            string
 	forwardedBytes       int64
+	// lastConnBytes / lastConnDur describe the most recent upstream
+	// connection, so the retry loops can tell "this one played for a while and
+	// then the token expired" from "this one failed immediately". See
+	// noteConnResult.
+	lastConnBytes int64
+	lastConnDur   time.Duration
 }
 
 // SetOnDisconnect registers a callback invoked whenever the box closes a
@@ -272,13 +278,30 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		},
 		lastFail:   make(map[string]time.Time),
 		measuredBr: make(map[string]int),
-		// Five seconds is several buffers' worth at any real bitrate, so the
-		// watchdog never fires on a healthy live stream, and it is short
-		// enough that the internal reconnect lands before the box gives up
-		// on its own connection.
-		upstreamStallAfter: 5 * time.Second,
+		// Five seconds was chosen as "several buffers' worth at any real
+		// bitrate". The #823 SoundTouch 30 disproved that: it swallowed 388 KB
+		// of a 96 kbps stream in three to five seconds, so its buffer alone is
+		// half a minute, and a five-second quiet upstream after that says
+		// nothing about the station. Fifteen seconds still fires long before a
+		// starving box runs dry in the shape this watchdog was written for
+		// (#510: an ST20 sitting byte-less in BUFFERING_STATE for minutes), and
+		// it no longer turns a full box into a reconnect. The write-block grace
+		// in streamOneDepth is the other half of that.
+		upstreamStallAfter: 15 * time.Second,
 	}
 }
+
+const (
+	// maxConsecutiveFailures is how many reconnects in a row may deliver
+	// nothing before STR stops trying. Consecutive, not cumulative: see the
+	// slot loop for what the cumulative version cost a listener.
+	maxConsecutiveFailures = 60
+	// noAudioGiveUpAfter is the absolute valve. However the retries are
+	// counted, a box that has heard nothing for this long is not being served
+	// by anything, and continuing costs the station bandwidth and the box its
+	// open connection for no benefit.
+	noAudioGiveUpAfter = 5 * time.Minute
+)
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/stream/raw", s.handleRaw)
@@ -332,11 +355,23 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	s.resetAudioGap()
 	headersSent := false
 	var lastErr error
-	for attempt := 0; attempt < 60; attempt++ {
+	// failStreak counts CONSECUTIVE attempts that delivered nothing, not
+	// attempts over the handler's life. See the slot loop for why.
+	failStreak := 0
+	for attempt := 0; ; attempt++ {
 		if r.Context().Err() != nil {
 			s.logger.Info("stream proxy end: client gone", "kind", "raw", "elapsed", time.Since(start).Round(time.Second).String())
 			return
 		}
+		if failStreak >= maxConsecutiveFailures {
+			break
+		}
+		if gap := s.audioGap(); gap > noAudioGiveUpAfter {
+			s.logger.Warn("stream proxy end: no audio reached the box for too long, giving up", "kind", "raw",
+				"gapSec", int(gap.Seconds()), "attempt", attempt, "lastErr", errStr(lastErr))
+			break
+		}
+		s.noteConnResult(0, 0)
 		if attempt > 0 {
 			if gap := s.audioGap(); gap > 1*time.Second {
 				s.logger.Warn("stream proxy audio gap before reconnect", "kind", "raw",
@@ -385,12 +420,20 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("stream proxy end: permanent upstream rejection, not retrying", "kind", "raw", "lastErr", errStr(lastErr))
 			return
 		}
+		if s.connWasProductive() {
+			failStreak = 0
+		} else {
+			failStreak++
+		}
 		headersSent = true
 	}
-	// 60 reconnects exhausted: the box still wanted bytes but upstream
-	// kept failing. A network error in lastErr points at the box's
-	// outbound path (e.g. a flaky wired link) rather than the box itself.
-	s.logger.Warn("stream proxy gave up reconnecting", "kind", "raw", "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
+	// The failure streak ran out: the box still wanted bytes but the upstream
+	// kept failing without ever delivering audio again. A network error in
+	// lastErr points at the box's outbound path (e.g. a flaky wired link)
+	// rather than the box itself.
+	s.logger.Warn("stream proxy gave up reconnecting", "kind", "raw",
+		"consecutiveFailures", maxConsecutiveFailures,
+		"elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
 
 // requestFacts describes the box's OWN request for a stream, as slog attributes
@@ -497,12 +540,36 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.resetAudioGap()
 	headersSent := false
 	var lastErr error
-	for attempt := 0; attempt < 60; attempt++ {
+	// failStreak counts CONSECUTIVE attempts that delivered nothing.
+	//
+	// It used to be a LIFETIME cap of 60 reconnects, which meant a station
+	// STR was reconnecting to for a good reason ran out of budget while it was
+	// still playing. In the #823 bundle that is exactly what ended the music:
+	// after twenty-five minutes and sixty reconnects, several of which had each
+	// delivered more than a megabyte of clean audio, the handler simply
+	// returned and the speaker recorded SOURCE_DISCONNECTED. The listener heard
+	// "and then it suddenly stopped playing completely".
+	//
+	// A budget that resets on a connection which actually played is the honest
+	// version of the same protection: a station that never yields audio still
+	// stops after maxConsecutiveFailures, and the no-audio valve below bounds
+	// the total silence regardless.
+	failStreak := 0
+	for attempt := 0; ; attempt++ {
 		// If Bose has closed the connection, bail out immediately.
 		if r.Context().Err() != nil {
 			s.logger.Info("stream proxy end: client gone", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String())
 			return
 		}
+		if failStreak >= maxConsecutiveFailures {
+			break
+		}
+		if gap := s.audioGap(); gap > noAudioGiveUpAfter {
+			s.logger.Warn("stream proxy end: no audio reached the box for too long, giving up", "slot", slot,
+				"gapSec", int(gap.Seconds()), "attempt", attempt, "lastErr", errStr(lastErr))
+			break
+		}
+		s.noteConnResult(0, 0)
 		if attempt > 0 {
 			if gap := s.audioGap(); gap > 1*time.Second {
 				s.logger.Warn("stream proxy audio gap before reconnect", "slot", slot,
@@ -565,12 +632,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("stream proxy end: permanent upstream rejection, not retrying", "slot", slot, "lastErr", errStr(lastErr))
 			return
 		}
+		if s.connWasProductive() {
+			failStreak = 0
+		} else {
+			failStreak++
+		}
 		headersSent = true
 	}
-	// 60 reconnects exhausted: the box still wanted bytes, but upstream
-	// kept failing. A network error in lastErr points at the box's outbound
-	// path (e.g. a flaky cable) rather than the box itself.
-	s.logger.Warn("stream proxy gave up reconnecting", "slot", slot, "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
+	// The failure streak ran out: the box still wanted bytes, but the upstream
+	// kept failing without ever delivering audio again. A network error in
+	// lastErr points at the box's outbound path (e.g. a flaky cable) rather
+	// than the box itself.
+	s.logger.Warn("stream proxy gave up reconnecting", "slot", slot,
+		"consecutiveFailures", maxConsecutiveFailures,
+		"elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
 
 // errUpstreamFileComplete signals that the upstream was a finite file
@@ -793,12 +868,37 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			}
 		})
 	}
+	// On a RECONNECT, trim the upstream's burst-on-connect down to the hole it
+	// has to fill. Without this the box is handed the last half minute again
+	// and the listener hears it repeat (#823, see burst.go). Never on the first
+	// connect: that burst is the box's legitimate prebuffer. Never without a
+	// known bitrate either, because there is then no way to tell a burst from a
+	// healthy stream and the safe answer is exactly today's behaviour.
+	if !sendHeaders && knownBitrate {
+		if bps := s.CurrentBitrate() * 1000 / 8; bps > 0 {
+			hole := s.audioGap()
+			keep := int(hole.Seconds() * float64(bps))
+			var dropped int64
+			var drainDur time.Duration
+			src, dropped, drainDur = trimBurst(src, bps, keep)
+			if dropped > 0 {
+				s.logger.Info("stream proxy reconnect: trimmed the upstream's burst to the size of the gap so the box does not replay what it already played",
+					"url", url, "holeMs", hole.Milliseconds(), "bitrateKbps", s.CurrentBitrate(),
+					"keptBytes", keep, "droppedBytes", dropped, "drainMs", drainDur.Milliseconds())
+			}
+		}
+	}
 	buf := make([]byte, 16*1024)
 	// Connection-scoped telemetry so a diagnostic bundle can explain a dropout
 	// without a live capture: how long this upstream connection lasted and how
 	// many bytes it delivered to the box before it ended (#185).
 	connStart := time.Now()
 	var connBytes int64
+	// Report what this connection delivered so the retry loops can tell a
+	// connection that played for a while from one that failed at once. Covers
+	// every return past this point; the loops zero it before each attempt, so a
+	// failure that never reaches here correctly reads as "delivered nothing".
+	defer func() { s.noteConnResult(connBytes, time.Since(connStart)) }()
 	gotData := false
 	// Rolling short-window byte count: the number that decides between "the
 	// box bailed at full data rate" and "the upstream starved the box" is the
@@ -860,6 +960,32 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		}
 		return time.Since(readWaitStart)
 	}
+	// lastWriteBlock is how long the previous w.Write spent blocked on the box.
+	// The watchdog adds it to its own threshold, because a Write that blocked
+	// is STR holding the upstream's receive window shut: when the loop starts
+	// reading again the sender is in TCP persist-timer backoff and does not
+	// resume instantly, and counting that against the upstream is blaming it
+	// for our own backpressure.
+	//
+	// This is what made #823 self-sustaining. The box swallowed a 33-second
+	// burst in three to five seconds, its input path filled, the Write blocked,
+	// the watchdog read the quiet upstream as dead and closed it, and the
+	// reconnect delivered another burst. Forty-six times in twenty-five
+	// minutes, every cycle guaranteeing the next.
+	var lastWriteBlock time.Duration
+	noteWriteBlock := func(d time.Duration) {
+		if d > 30*time.Second {
+			d = 30 * time.Second
+		}
+		lastReadMu.Lock()
+		lastWriteBlock = d
+		lastReadMu.Unlock()
+	}
+	writeBlock := func() time.Duration {
+		lastReadMu.Lock()
+		defer lastReadMu.Unlock()
+		return lastWriteBlock
+	}
 	watchdogDone := make(chan struct{})
 	defer close(watchdogDone)
 	go func() {
@@ -870,9 +996,16 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			case <-watchdogDone:
 				return
 			case <-ticker.C:
-				if readBlocked() >= s.upstreamStallAfter {
+				// The grace is the time the last write to the box blocked: we
+				// closed the upstream's window for that long, so the silence
+				// that follows is ours, not the station's. On the #510 shape
+				// (a hungry box on a byte-less upstream) no write ever blocks,
+				// the grace is zero, and this behaves exactly as before.
+				wb := writeBlock()
+				if blocked := readBlocked(); blocked >= s.upstreamStallAfter+wb {
 					s.logger.Warn("stream proxy upstream stalled (no bytes), closing the upstream connection to force a reconnect",
-						"url", url, "stalledSec", int(readBlocked().Seconds()),
+						"url", url, "stalledSec", int(blocked.Seconds()),
+						"writeBlockGraceSec", int(wb.Seconds()),
 						"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
 					_ = resp.Body.Close()
 					return
@@ -904,7 +1037,10 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 					"bytes", connBytes, "gapNr", gapLogged)
 			}
 			touchRead()
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+			wStart := time.Now()
+			_, writeErr := w.Write(buf[:n])
+			noteWriteBlock(time.Since(wStart))
+			if writeErr != nil {
 				// Bose closed the connection
 				connSummary("bose closed")
 				return false, nil

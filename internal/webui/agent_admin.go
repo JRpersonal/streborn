@@ -1013,12 +1013,24 @@ func selfProxySlot(raw string) (int, bool) {
 	if m == nil {
 		return 0, false
 	}
-	host, port := u.Hostname(), u.Port()
-	if port != "8888" && port != "17008" && host != "127.0.0.1" && host != "localhost" && host != "::1" {
+	if !sameAgentAuthority(raw) {
 		return 0, false
 	}
 	n, _ := strconv.Atoi(m[1])
 	return n, true
+}
+
+// sameAgentAuthority reports whether a URL points at THIS agent: one of its own
+// ports, or a loopback host. Factored out of selfProxySlot so every "is this our
+// own stream?" test uses the same rule rather than a copy of it.
+func sameAgentAuthority(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host, port := u.Hostname(), u.Port()
+	return port == "8888" || port == "17008" ||
+		host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
 // dirBytes is a du -s in bytes for path, best-effort: unreadable entries are

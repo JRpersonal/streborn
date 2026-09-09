@@ -167,3 +167,30 @@ func (s *Server) LastActivity() (lastFetch, lastFailure time.Time) {
 	s.errMu.Unlock()
 	return lastFetch, lastFailure
 }
+
+// noteConnResult records what the last upstream connection actually delivered.
+// The retry loops read it to tell a connection that played for a while from one
+// that failed at once, which is the difference between a retry budget and a
+// lifetime cap. Reset to zero before each attempt so an early failure, which
+// never reaches the copy loop, is correctly seen as delivering nothing.
+func (s *Server) noteConnResult(bytes int64, dur time.Duration) {
+	s.healthMu.Lock()
+	s.lastConnBytes = bytes
+	s.lastConnDur = dur
+	s.healthMu.Unlock()
+}
+
+// connWasProductive reports whether the last upstream connection carried real
+// audio for a real length of time.
+//
+// The thresholds are deliberately generous. This decides only whether to RESET
+// the failure streak, so being wrong in one direction costs a few extra retries
+// on a station that is genuinely dying, and being wrong in the other costs the
+// listener their music: #823's speaker gave up mid-morning after connections
+// that had each delivered more than a megabyte of clean audio, because the
+// budget was spent rather than because the station had stopped answering.
+func (s *Server) connWasProductive() bool {
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	return s.lastConnBytes > 64<<10 && s.lastConnDur > 20*time.Second
+}

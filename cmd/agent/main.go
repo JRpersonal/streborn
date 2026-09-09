@@ -881,6 +881,10 @@ func run() error {
 	// own (reported: radio stops after ~11 min with no upstream error), the
 	// webui resumes it conservatively (only if the box stays on and idle).
 	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
+	// The same for the Spotify audio path, which had no recovery at all until
+	// a reporter's speaker lost the Wi-Fi for two seconds at half past one in
+	// the morning and stayed silent until he pressed a button.
+	spotifyMgr.SetOnSinkDetach(webuiSrv.HandleSpotifyStreamDetach)
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
 	// last-failure timestamps tell a wedged box apart from a failing station.
 	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)

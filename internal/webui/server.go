@@ -858,6 +858,30 @@ func (s *Server) quietWake(ctx context.Context) error {
 	return nil
 }
 
+// quietWakeActive reports whether a quiet wake is still holding this speaker
+// down, i.e. STR itself pulled the box out of standby for a group operation
+// moments ago.
+//
+// The power-on resume needs this. Its own self-wake guard asks whether the box
+// is in a zone, on the reasoning that a standalone box can only have been woken
+// by a user pressing power. That is true right up until STR wakes the box in
+// order to form a zone: at that instant the zone does not exist yet, the guard
+// sees a standalone box and the last station starts playing. Reported on #900,
+// a group formed while nothing was playing and music started (2026-09-08):
+//
+//	17:23:50 power-on detected, attempting last-station resume
+//	17:23:51 wake: quiet wake for a group operation  mutedFrom=32
+//	17:23:53 wake resume: resumed last stream after power-on
+//	17:23:54 zone: forming (beta)
+//
+// The mute did not save it either: the zone join lifts the mute a second later
+// and the resumed stream becomes audible at full level.
+func (s *Server) quietWakeActive() bool {
+	s.quietWakeMu.Lock()
+	defer s.quietWakeMu.Unlock()
+	return !s.quietWakeUntil.IsZero()
+}
+
 // quietWakeRestoreAfter bounds how long a member stays muted after a quiet
 // wake when no zone join arrives.
 const quietWakeRestoreAfter = 20 * time.Second
