@@ -954,6 +954,29 @@ function remoteSvg() {
     + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
 }
 
+// revealInSettings brings a settings element into view for real.
+//
+// Opening the element's own <details> is not enough: renderSettingsGroups moves
+// every section into a collapsible GROUP, and the two groups that matter here,
+// Advanced and Info, start closed. A deep link that only opened the section
+// itself therefore left the user on the settings page with everything still
+// folded up and nothing to see, which is exactly how the Multi-Room tab's
+// "show on the remote key map" button was reported (2026-09-10: "schickt den
+// user nur auf die einstellungsseite aber nicht direkt in das untermenue").
+//
+// So open every <details> ANCESTOR as well, from the element outwards, and only
+// then scroll. Walking the ancestors rather than naming the group keeps this
+// correct if the grouping is ever changed again.
+function revealInSettings(el) {
+  if (!el) return;
+  let node = el;
+  while (node && node !== document.body) {
+    if (node.tagName === 'DETAILS') node.open = true;
+    node = node.parentElement;
+  }
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
+}
+
 // openWebhookKeyMap takes the user to the remote key map in the webhook
 // section of THIS speaker's settings: the Multi-Room tab links here so a
 // thumbs key that was just bound to a group is seen marked on the remote.
@@ -1217,7 +1240,7 @@ function renderBoxSettings(s, box) {
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
-      <div class="rc-wrap">
+      <div class="rc-wrap" id="webhookKeyMap">
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
@@ -1523,8 +1546,7 @@ function renderBoxSettings(s, box) {
   const fwBtn = $('fwUpdateBtn');
   if (fwBtn) {
     fwBtn.onclick = () => {
-      const banner = $('fwUpdateBanner');
-      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      revealInSettings($('fwUpdateBanner'));
     };
   }
   // Outdated-firmware banner links: open the Bose support guide / USB download
@@ -2555,11 +2577,9 @@ function renderBoxSettings(s, box) {
       // section and bring the remote into view, once, now that it is painted.
       if (pendingKeyMapOpen) {
         pendingKeyMapOpen = false;
-        const sec = $('webhookSection');
-        if (sec) {
-          sec.open = true;
-          try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
-        }
+        // The remote itself, not the section: the key map is the thing the user
+        // came to look at, and the section header can be a screen above it.
+        revealInSettings($('webhookKeyMap') || $('webhookSection'));
       }
     })();
     whTarget.onchange = () => { captureInto(prevTarget); prevTarget = whTarget.value; loadInto(whTarget.value); };
