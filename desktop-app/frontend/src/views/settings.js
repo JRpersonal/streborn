@@ -533,7 +533,7 @@ export async function loadBoxSettings() {
       : `
       <div class="reconnect-banner">
         <div>
-          <b>${escapeHtml(t('settingsView.speakerUnreachable'))}</b>
+          <b>${escapeHtml(noNetworkHere(lastErr) ? t('settingsView.noNetworkTitle') : t('settingsView.speakerUnreachable'))}</b>
           <small>${escapeHtml(friendly)}</small>
           <small>${escapeHtml(t('settingsView.retryIn', { remaining }))}</small>
         </div>
@@ -560,6 +560,28 @@ export async function loadBoxSettings() {
     // it needs is STR installed again. Only a speaker that answers nothing
     // gets the power-cycle advice (2026-09-06 report: the dead-speaker panel
     // on a stock speaker that was answering fine).
+    // This computer has no network at all. Nothing here is about the speaker,
+    // so none of the speaker advice applies, and above all nothing should be
+    // unplugged. Keep re-checking: while the machine has no route the attempt
+    // fails inside the socket layer and never reaches a speaker, so this costs
+    // the speakers nothing, and the moment the network is back the panel
+    // replaces itself with the real settings. That is what Eileen asked for:
+    // "when wifi was restored, shouldn't the notice be updated to reflect that
+    // the speakers all came back online?"
+    if (noNetworkHere(lastErr)) {
+      body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.noNetworkTitle'))}</div>
+        <div class="empty-state-text">${escapeHtml(t('settingsView.noNetworkHelp'))}</div>
+        <div class="empty-state-buttons">
+          <button class="btn btn-mini" id="settingsRetry">${escapeHtml(t('common.retry'))}</button>
+        </div>
+      </div>`;
+      const rn = document.getElementById('settingsRetry');
+      if (rn) rn.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
+      state.settingsReconnect = { attempts: 0, max: 10, timer: setTimeout(loadBoxSettings, 5000) };
+      return;
+    }
     if (await boseAnswersWithoutSTR(state.settingsBox)) {
       renderSTRNotRunningPanel(body, state.settingsBox, true);
       return;
@@ -584,6 +606,23 @@ export async function loadBoxSettings() {
   }
 }
 
+// noNetworkHere is the ENETUNREACH family: this computer has no route to the
+// speaker's network, so the request never left the machine. It is the one
+// unreachable-speaker cause that is provably NOT the speaker: a firewall cannot
+// produce it and neither can a speaker, and it fails identically for every
+// device at once. Eileen Wilson pulled her Mac's Wi-Fi mid-update on 2026-09-10
+// and this panel told her the agent on the speaker had died and to unplug it.
+//
+// The matching pair lives in Go as noNetworkHere (desktop-app/app_transport.go),
+// which attaches the honest paragraph; this is the same test on the text that
+// reaches the view. "no route to host" is deliberately NOT included: that one
+// means a route exists and the host did not answer, which usually IS a speaker
+// that is switched off.
+export function noNetworkHere(err) {
+  const s = String(err || '').toLowerCase();
+  return s.includes('network is unreachable') || s.includes('unreachable network');
+}
+
 function isTransientBoxError(err) {
   const s = String(err || '').toLowerCase();
   return s.includes('refused') || s.includes('timeout') ||
@@ -593,6 +632,10 @@ function isTransientBoxError(err) {
 
 function friendlySettingsError(err) {
   const s = String(err || '');
+  // Checked FIRST: this message reaches the view with the whole dial/connect
+  // string in it, and every pattern below would otherwise match a fragment of
+  // that and print a speaker explanation for a laptop with no Wi-Fi.
+  if (noNetworkHere(s)) return t('settingsView.errNoNetwork');
   if (/box_settings_empty/.test(s)) return t('settingsView.errBoseBusy');
   if (/refused/i.test(s)) return t('settingsView.errRefused');
   if (/timeout|deadline/i.test(s)) return t('settingsView.errTimeout');

@@ -392,6 +392,15 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	if perr != nil {
 		perr = a.preflightSettleRetry(host, port, perr)
 	}
+	if perr != nil && noNetworkHere(perr) {
+		// Same reasoning as the settle window above, one level up: SSH runs over
+		// the same missing route. Worse, the SSH path opens :17000 on a BCO
+		// chassis and REBOOTS the speaker to do it, so escalating here would
+		// restart a healthy speaker over a laptop's Wi-Fi dropping out.
+		a.recordOTA(host, "no network route from this computer; not escalating to SSH: "+perr.Error())
+		a.logger.Warn("update agent: no local network route, refusing the SSH escalation", "host", host, "reason", perr)
+		return perr
+	}
 	if perr != nil {
 		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
@@ -1215,6 +1224,16 @@ const (
 // waiting cannot help.
 func (a *App) preflightSettleRetry(host string, port int, perr error) error {
 	if errors.Is(perr, errPreflightNotSTR) {
+		return perr
+	}
+	// This machine has no route to the speaker's network, so the probe never
+	// reached the wire. Two minutes of re-polling cannot change that, and the
+	// SSH escalation behind it fails on the same syscall (Eileen Wilson,
+	// 2026-09-10: the app waited the full window and then tried SSH, which
+	// answered "ssh: connect to host ... port 22: Network is unreachable").
+	if noNetworkHere(perr) {
+		a.recordOTA(host, "preflight: this computer has no network route to the speaker, so nothing was sent; not waiting and not escalating")
+		a.logger.Info("update agent: no local network route, skipping the settle window", "host", host, "err", perr)
 		return perr
 	}
 	a.recordOTA(host, fmt.Sprintf("preflight rejected (%v) -> waiting up to %s for the speaker to settle (a booting speaker answers only once its agent is up) before anything invasive", perr, otaPreflightSettleWindow))

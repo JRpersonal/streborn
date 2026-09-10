@@ -367,6 +367,16 @@ func reachabilityHint(err error) error {
 	if noLocalRoute(err) {
 		return fmt.Errorf("%w\n\n%s", err, noLocalRouteAdvice)
 	}
+	// ENETUNREACH is the operating system saying the request never left this
+	// machine: there is no route to that network, which is what a laptop with
+	// its Wi-Fi off or its adapter gone looks like from in here. A firewall
+	// cannot produce it and neither can the speaker, so the firewall paragraph
+	// is wrong twice over. Eileen Wilson pulled her Mac's Wi-Fi mid-update on
+	// 2026-09-10 and got it anyway, on all three speakers at once and on SSH
+	// port 22, followed by advice to unplug a speaker that was fine.
+	if noNetworkHere(err) {
+		return fmt.Errorf("%w\n\n%s", err, noNetworkAdvice)
+	}
 	return fmt.Errorf("%w\n\n%s", err, firewallAdvice)
 }
 
@@ -380,6 +390,30 @@ func noLocalRoute(err error) bool {
 		strings.Contains(msg, "address is not valid in its context")
 }
 
+// noNetworkHere reports the ENETUNREACH family: this machine has no route to
+// the speaker's network at all, so the connection attempt failed locally and
+// nothing was ever put on the wire.
+//
+// Deliberately NOT matching "no route to host" (EHOSTUNREACH), which is the
+// neighbouring error and means something different: there a route exists and
+// the host at the end of it did not answer, which is mostly a speaker that is
+// switched off. Blaming the user's network for that would be the same mistake
+// pointed the other way.
+//
+// macOS and Linux phrase it "connect: network is unreachable"; Windows
+// (WSAENETUNREACH) as "A socket operation was attempted to an unreachable
+// network". String matching rather than errors.Is because these errors reach
+// here already flattened into text by the layers in between, which is also how
+// noLocalRoute above has to do it.
+func noNetworkHere(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "network is unreachable") ||
+		strings.Contains(msg, "unreachable network")
+}
+
 // The two closing paragraphs a user reads under a failed update. They are
 // constants because the update report has to be able to recognise the wrong one
 // and swap it for the right one (see stripWrongBlame): a copy of the text in
@@ -388,6 +422,8 @@ const (
 	firewallAdvice = "The app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network"
 
 	answeredNotSTRAdvice = "The speaker answered, so this is not your firewall and not a Wi-Fi problem: something on the speaker replied to every request. What answered was not ST Reborn, which is what a speaker looks like while it is still starting up, or when its ST Reborn software did not come up at all. Unplug the speaker for ten seconds, plug it back in, wait about three minutes until it is fully up, and try the update again"
+
+	noNetworkAdvice = "This computer has no network connection right now, so the request never left it: the system reports the speaker's network as unreachable. That is not the speaker and not a firewall, and nothing needs to be unplugged. Reconnect this computer's Wi-Fi (or its network cable) and try again; the speakers come back on their own once they can be reached."
 
 	noLocalRouteAdvice = "This PC could not open a network connection to the speaker's address, and it failed the same way for every device on the network, so this is your PC's own networking, not the speaker and not its firewall. The usual cause is a VPN capturing all your traffic, or the network adapter ST Reborn is using having no address on the speaker's network. Disconnect the VPN (or exclude your local network from it), make sure this PC is on the same Wi-Fi as the speaker with a normal address, then try again"
 )

@@ -1323,6 +1323,31 @@ async function checkAppUpdate(manual) {
 // the verified .dmg is opened for the user to drag into Applications). On any
 // failure the button becomes a "download from the website" fallback so the user
 // is never stuck.
+// downloadWasInterrupted separates "the connection went away" from a genuine
+// failure of the update itself.
+//
+// Everything here is a transport fault: the machine lost its network, the
+// connection was cut, the server never answered, or the download stopped short.
+// None of them says anything is wrong with the app, the release or the file, so
+// none of them earns an error the user is invited to copy and send on. A hash
+// mismatch or a file that cannot be written is the opposite and is left to the
+// full error path.
+//
+// Matching on the message rather than a typed error because these arrive from
+// the Go side already flattened into a string.
+export function downloadWasInterrupted(err) {
+  const s = String(err || '').toLowerCase();
+  return [
+    'network is unreachable', 'unreachable network', // the machine has no route
+    'no route to host', 'no such host', 'dns',        // gateway or resolver gone
+    'connection reset', 'connection refused', 'broken pipe',
+    'eof', 'unexpected eof',                          // cut mid-transfer
+    'timeout', 'deadline exceeded', 'timed out',
+    'canceled', 'cancelled', 'aborted',
+    'i/o error', 'connection was aborted',
+  ].some((m) => s.includes(m));
+}
+
 // fmtRate turns a bytes/second number into a short human rate for the live
 // download/upload throughput shown during an app update or a speaker update.
 function fmtRate(bps) {
@@ -1383,14 +1408,28 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
       showMacHandoff(path);
     }
   } catch (e) {
-    showError(t('banner.updateFailed', { err: String(e) }));
     btn.disabled = false;
-    btn.textContent = t('banner.getFromReleases');
-    if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
-    // Reassure the non-technical user: the app replaces itself, so any .exe they
-    // downloaded by hand earlier can simply be deleted (the duplicate-copies
-    // confusion that prompted this).
-    showToast(t('banner.manualHint'));
+    // A download the network cut off is not a fault anybody needs to report,
+    // and it is not a reason to send the user to a web page either: the same
+    // button, pressed again once the connection is back, is the whole fix.
+    // Reported by shorty310 (#916) after pulling his Wi-Fi mid-download: he got
+    // the copyable error modal, which reads as "send this to the developer",
+    // and a button that had turned into "Get it from the downloads page".
+    if (downloadWasInterrupted(e)) {
+      btn.textContent = t('banner.retryAppUpdate');
+      btn.onclick = () => runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl);
+      showToast(t('banner.updateInterrupted'), 9000);
+    } else {
+      // A real failure: a hash that did not match, a file that could not be
+      // written. That one IS worth showing in full and worth the web fallback.
+      showError(t('banner.updateFailed', { err: String(e) }));
+      btn.textContent = t('banner.getFromReleases');
+      if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
+      // Reassure the non-technical user: the app replaces itself, so any .exe
+      // they downloaded by hand earlier can simply be deleted (the
+      // duplicate-copies confusion that prompted this).
+      showToast(t('banner.manualHint'));
+    }
   } finally {
     if (typeof off === 'function') off();
   }
