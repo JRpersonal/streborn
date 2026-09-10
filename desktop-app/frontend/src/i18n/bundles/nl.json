@@ -104,6 +104,7 @@
   "multiroom.noZone": "Nu geen groep.",
   "multiroom.stereoDissolved": "Stereopaar opgeheven. Beide speakers spelen weer afzonderlijk.",
   "multiroom.stereoNothingToUndo": "Er is nu geen stereopaar om op te heffen.",
+  "multiroom.stereoUndoNotAGroup": "Geen stereopaar op {{names}}. Die speakers zitten in een groep, en \"Stereopaar ongedaan maken\" haalt een groep niet uit elkaar. Gebruik daarvoor Groep opheffen.",
   "multiroom.stereoCurrent": "Huidig stereopaar: {{names}}",
   "multiroom.stereoNoPair": "Er is op dit moment geen stereopaar op deze speakers.",
   "multiroom.zoneDissolved": "Groep opgeheven. De speakers spelen weer afzonderlijk.",

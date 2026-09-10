@@ -104,6 +104,7 @@
   "multiroom.noZone": "لا توجد مجموعة الآن.",
   "multiroom.stereoDissolved": "تم إلغاء الاقتران الاستريو. يعمل كلا مكبري الصوت بشكل منفصل مرة أخرى.",
   "multiroom.stereoNothingToUndo": "لا يوجد اقتران استريو لإلغائه حاليًا.",
+  "multiroom.stereoUndoNotAGroup": "لا يوجد إقران ستيريو على {{names}}. هذه المكبرات داخل مجموعة، و\"إلغاء الإقران الستيريو\" لا يفكك المجموعة. استخدم تفكيك المجموعة لذلك.",
   "multiroom.stereoCurrent": "زوج ستيريو حالي: {{names}}",
   "multiroom.stereoNoPair": "لا يوجد زوج ستيريو على هذه السماعات حاليا.",
   "multiroom.zoneDissolved": "تم حل المجموعة. تعمل مكبرات الصوت بشكل منفصل مرة أخرى.",

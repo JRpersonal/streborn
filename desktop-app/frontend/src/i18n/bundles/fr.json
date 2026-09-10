@@ -104,6 +104,7 @@
   "multiroom.noZone": "Aucun groupe pour le moment.",
   "multiroom.stereoDissolved": "Paire stéréo dissoute. Les deux enceintes rejouent séparément.",
   "multiroom.stereoNothingToUndo": "Il n'y a aucune paire stéréo à dissoudre pour le moment.",
+  "multiroom.stereoUndoNotAGroup": "Pas de paire stéréo sur {{names}}. Ces enceintes sont dans un groupe, et \"Annuler la paire stéréo\" ne défait pas un groupe. Utilisez Dissoudre le groupe pour cela.",
   "multiroom.stereoCurrent": "Paire stéréo actuelle : {{names}}",
   "multiroom.stereoNoPair": "Aucune paire stéréo sur ces enceintes pour le moment.",
   "multiroom.zoneDissolved": "Groupe dissous. Les enceintes rejouent séparément.",

@@ -108,6 +108,7 @@
   "multiroom.noZone": "Gerade keine Gruppe.",
   "multiroom.stereoDissolved": "Stereopaar aufgelöst. Beide Lautsprecher spielen wieder einzeln.",
   "multiroom.stereoNothingToUndo": "Es gibt gerade kein Stereopaar zum Auflösen.",
+  "multiroom.stereoUndoNotAGroup": "Auf {{names}} gibt es kein Stereopaar, diese Lautsprecher sind in einer Gruppe. \"Stereopaar auflösen\" löst keine Gruppe auf, dafür ist \"Gruppe auflösen\" da.",
   "multiroom.stereoCurrent": "Aktuelles Stereopaar: {{names}}",
   "multiroom.stereoNoPair": "Auf diesen Lautsprechern gibt es gerade kein Stereopaar.",
   "multiroom.zoneDissolved": "Gruppe aufgelöst. Die Lautsprecher spielen wieder einzeln.",

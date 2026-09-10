@@ -108,6 +108,7 @@
   "multiroom.noZone": "No group right now.",
   "multiroom.stereoDissolved": "Stereo pair undone. Both speakers play on their own again.",
   "multiroom.stereoNothingToUndo": "There is no stereo pair to undo right now.",
+  "multiroom.stereoUndoNotAGroup": "No stereo pair on {{names}}. Those speakers are in a group, and \"Undo stereo pair\" does not take a group apart. Use Ungroup for that.",
   "multiroom.stereoCurrent": "Stereo pair right now: {{names}}",
   "multiroom.stereoNoPair": "No stereo pair on these speakers right now.",
   "multiroom.zoneDissolved": "Group dissolved. The speakers play on their own again.",

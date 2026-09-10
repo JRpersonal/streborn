@@ -104,6 +104,7 @@
   "multiroom.noZone": "Зараз групи немає.",
   "multiroom.stereoDissolved": "Стереопару роз'єднано. Обидві колонки знову грають окремо.",
   "multiroom.stereoNothingToUndo": "Зараз немає стереопари, яку можна роз'єднати.",
+  "multiroom.stereoUndoNotAGroup": "На {{names}} немає стереопари. Ці колонки в групі, а \"Скасувати стереопару\" не розпускає групу. Для цього скористайтеся Розпустити групу.",
   "multiroom.stereoCurrent": "Поточна стереопара: {{names}}",
   "multiroom.stereoNoPair": "Зараз на цих колонках немає стереопари.",
   "multiroom.zoneDissolved": "Групу роз'єднано. Колонки знову грають окремо.",

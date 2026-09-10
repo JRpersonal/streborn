@@ -2134,14 +2134,65 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// The stereo escalation is gated on explicit caller intent (?stereo=1, set
-	// by the app's undo-stereo-pair button): a plain multiroom dissolve that
-	// happens to hit a box in a firmware pair must keep its pre-existing
-	// no-op semantics instead of silently destroying the pair.
-	if !stereo && master.DeviceID == "" && wantStereo {
-		if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
-			// A firmware-native stereo pair with no persisted zone: dissolve it
-			// as a pair. The members are partitioned relative to THIS box, not
+	// "Undo stereo pair" asks the PAIR AUTHORITY, always.
+	//
+	// This escalation used to carry `master.DeviceID == ""` as a precondition,
+	// which quietly made it unreachable on any speaker holding group state: the
+	// two blocks above fill master from the persisted document or from the live
+	// zone, so by the time intent was consulted there was already a master and
+	// the read never happened. `?stereo=1` therefore ADDED a path without ever
+	// RESTRICTING the handler to it, and the request fell through to the
+	// multiroom teardown below.
+	//
+	// #907, reported with a bundle that proves it twice over: three ST10s in a
+	// plain group, no pair anywhere (marge_group present=false on all three,
+	// the firmware answering /getGroup empty), and four presses of "Undo stereo
+	// pair" each logging `zone: dissolving (beta) slaves=2` and purging both
+	// peers' stores. The stereo arm's own log line appears in the same bundle
+	// exactly once, the day before, when she really did have a pair.
+	//
+	// Dropping the precondition also fixes the mirror case: a speaker carrying
+	// a stale multiroom document while it IS in a real firmware pair (paired in
+	// the Bose app, or the agent reinstalled over an old document) could never
+	// be unpaired from that speaker, because intent was never consulted there
+	// either.
+	//
+	// The read gets its OWN short budget rather than the dissolve's, for the
+	// reason spelled out at the top of this file: /getGroup HANGS on scm/BCO
+	// chassis, silently, and on the dissolve's context that hang would eat the
+	// whole request.
+	if !stereo && wantStereo {
+		gctx, gcancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		g, gerr := c.GetGroup(gctx)
+		gcancel()
+		pairConfirmed := gerr == nil && (g.ID != "" || len(g.Members) > 0)
+		// Group state we would otherwise tear down. This is the ONLY thing the
+		// refusal has to protect, and scoping it this way keeps the
+		// nothing-to-dissolve branch below reachable, which is where a phantom
+		// marge pair record gets cleared. Refusing on a speaker that holds
+		// nothing at all would have closed that escape hatch.
+		inZone := master.DeviceID != "" || len(slaves) > 0
+		if !pairConfirmed && inZone {
+			// Only a POSITIVE confirmation may act, so an unreadable answer
+			// refuses too. /getGroup hangs rather than refuses on scm/BCO
+			// chassis, and treating a hang as "carry on" is exactly what put
+			// the multiroom teardown behind this button. A STR-formed pair is
+			// covered by its own persisted document above and never reaches
+			// here, so the cost of refusing an unconfirmed pair is a retry,
+			// while the cost of continuing is somebody's group.
+			s.logger.Info("stereo: undo-pair refused, no pair confirmed on this speaker",
+				"readable", gerr == nil, "master", master.DeviceID, "slaves", len(slaves))
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok": false, "nothing": true, "noPair": true, "inZone": true,
+				"pairReadable": gerr == nil,
+			})
+			return
+		}
+		if pairConfirmed {
+			// The firmware confirms a pair, so dissolve it as a pair, whatever
+			// the local document happened to say. That covers both the
+			// no-persisted-zone case this was written for and a speaker holding
+			// a stale multiroom document over a real pair. The members are partitioned relative to THIS box, not
 			// the group master — the dissolve may run on the RIGHT/slave box
 			// (the store only exists on the master), where "everyone but the
 			// master" would be ourselves and the remote teardown would clear

@@ -108,6 +108,7 @@
   "multiroom.noZone": "目前沒有群組。",
   "multiroom.stereoDissolved": "立體聲配對已解除。兩台喇叭都恢復單獨播放。",
   "multiroom.stereoNothingToUndo": "目前沒有可以解除的立體聲配對。",
+  "multiroom.stereoUndoNotAGroup": "{{names}} 上沒有立體聲配對。這些喇叭在群組中，「解除立體聲配對」不會解散群組。請改用解散群組。",
   "multiroom.stereoCurrent": "目前的立體聲配對：{{names}}",
   "multiroom.stereoNoPair": "這些喇叭目前沒有立體聲配對。",
   "multiroom.zoneDissolved": "群組已解散。喇叭都恢復單獨播放。",

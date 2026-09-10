@@ -1200,7 +1200,26 @@ async function doDissolveStereo(pairCands) {
     || livePairs[0] || null;
   const targets = stereoUndoTargets(pair, state.boxes || []);
   if (!targets.length) {
+    // No pair was identified anywhere, so this is the one-sided-leftover
+    // fallback: ask the speaker the user picked on the left, because a pair
+    // half can hold the record on its own.
+    //
+    // It must NOT fire on a speaker that is simply in a group. #907: three
+    // speakers in a plain multiroom group and no pair at all, and every
+    // left/right combination "succeeded" here and took the group apart, because
+    // the guess went out and the agent's ?stereo=1 path fell through to the
+    // multiroom teardown. The agent refuses that now; refusing before the
+    // request is sent is what lets the panel say which operation the user
+    // actually wants.
     const guess = pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
+    if (guess && zoneMasterOf(guess.deviceID, state.zoneLive)) {
+      const right = pairCands.find(b => b.deviceID === ($('stereoRight') || {}).value);
+      state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoUndoNotAGroup', {
+        names: [guess, right].filter(Boolean).map(zoneLabel).join(', '),
+      }))}</div>`;
+      renderMultiroom(false);
+      return;
+    }
     if (guess) targets.push(guess);
   }
   if (!targets.length) {
