@@ -545,12 +545,18 @@ export function renderMultiroom(fetchLive) {
         : t('multiroom.permanentHelpMasterOnly', { master: permMasterName }))
     : t('multiroom.permanentHelp');
 
-  // The pair's balance belongs here, where the pair is made and undone, and
-  // nowhere near a volume slider: it is a READ-OUT, not a control. The firmware
-  // accepts no balance write that sticks (every attempt hung the endpoint until
-  // the speaker was woken), so shown beside a slider it reads as a control that
-  // is broken. An owner said exactly that: "steht neben dem Lautstaerkeregler
-  // und hat auch keinen Effekt" (2026-08-09), and #70 asked twice where it was.
+  // The pair's balance is shown here, where the pair is made and undone, because
+  // that is where people were looking for it (#70 asked twice). It stays a
+  // READ-OUT here and the control lives in Speaker settings, next to the volume:
+  // one slider in one place, and this page paints a card grid that a live
+  // control would have to be kept in step with on every repaint.
+  //
+  // It was read-only everywhere until 2026-09-10, and an owner reported exactly
+  // that: "steht neben dem Lautstaerkeregler und hat auch keinen Effekt"
+  // (2026-08-09). The write hung the firmware's HTTP endpoint every time, and
+  // the missing piece was the interface: Bose's own client sends it on the
+  // speaker's WebSocket (gesellix, #70). So this line now says where to change
+  // it instead of sending people to the Bose app.
   const fpMaster = formingPair ? String(formingPair.master || '').toUpperCase() : '';
   const showBal = !!(formingPair && pairBalanceText && fpMaster === pairBalanceMaster);
   const pairBalance = formingPair
@@ -1367,9 +1373,9 @@ async function doDissolveStereoPair(pair, boxes) {
   finishAction();
 }
 
-// fillPairBalance shows the pair's balance as information, with where to change
-// it, because here it cannot be changed. Asked from the pair's MASTER whichever
-// half is selected: only the master reports one (#70).
+// fillPairBalance shows the pair's balance as information, and says where to
+// change it. Asked from the pair's MASTER whichever half is selected: only the
+// master reports one, and only the master takes the write (#70).
 async function fillPairBalance(pair, boxes) {
   const el = document.getElementById('pairBalance');
   if (!el || !pair) return;
@@ -1379,7 +1385,7 @@ async function fillPairBalance(pair, boxes) {
   if (!src || src.kind === 'stock') return;
   const v = await readBoxBalance(src);
   if (v === null) return;
-  pairBalanceText = balanceLabel(v) + '. ' + t('controls.balanceTitle');
+  pairBalanceText = balanceLabel(v) + '. ' + t('controls.balanceInSettings');
   pairBalanceMaster = String(pair.master || '').toUpperCase();
   el.textContent = pairBalanceText;
   el.hidden = false;

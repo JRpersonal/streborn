@@ -88,7 +88,8 @@ import {
   EnableBoxMediaServer,
   DisableBoxMediaServer,
   boxFetch,
-  readBoxBalance,
+  readBoxBalanceInfo,
+  writeBoxBalance,
 } from '../api.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
@@ -1068,7 +1069,12 @@ function renderBoxSettings(s, box) {
         <span class="setting-value" id="boxVolumeVal">${vol.actual || 0}</span>
       </div>
       <div class="setting-row" id="boxBalanceRow" hidden>
-        <span class="muted small" id="boxBalance"></span>
+        <input type="range" id="boxBalanceSlider" min="-7" max="7" step="1" value="0" hidden />
+        <span class="setting-value" id="boxBalance"></span>
+        <button class="btn btn-mini" id="boxBalanceCentre" hidden>${escapeHtml(t('controls.balanceCentreBtn'))}</button>
+      </div>
+      <div class="setting-row" id="boxBalanceNoteRow" hidden>
+        <small class="muted small" id="boxBalanceNote"></small>
       </div>
       ${vol.muted ? `<small class="muted small">${escapeHtml(t('settingsView.muted'))}</small>` : ''}
     </div>
@@ -3383,22 +3389,95 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
   } catch (e) { showError(e); }
 }, 200);
 
-// The stereo balance, shown where people look for it.
+// The stereo balance, shown where people look for it, and settable since
+// v0.9.79.
 //
 // It has been on the Play page next to the volume since v0.9.35, and the owner
 // who asked for it went to Speaker settings twice and reported it missing, on
 // the very version that added it (#70, 2026-08-08). A feature nobody can find
-// is not shipped. Read-only on purpose: the firmware accepts no write that
-// sticks, which the tooltip says.
+// is not shipped. A second owner then found it and reported the other half:
+// "steht neben dem Lautstaerkeregler und hat auch keinen Effekt" (2026-08-09).
+// He was right, and it was read-only for a year because every write over the
+// firmware's HTTP API hung the endpoint. It is written on the speaker's own
+// WebSocket now (gesellix, #70), so the read-out is a control.
+//
+// Which speaker: always the pair's MASTER, whichever half is selected. Only the
+// master reports a balance and only the master takes the write.
 export async function refreshBoxBalanceRow(box, pair, boxes) {
   const row = document.getElementById('boxBalanceRow');
   const el = document.getElementById('boxBalance');
   if (!row || !el) return;
+  const slider = document.getElementById('boxBalanceSlider');
+  const centre = document.getElementById('boxBalanceCentre');
   const src = balanceSourceBox(box, pair, boxes) || box;
   if (!src || src.kind === 'stock') { row.hidden = true; return; }
-  const v = await readBoxBalance(src);
-  if (v === null) { row.hidden = true; return; }
-  el.textContent = balanceLabel(v);
-  el.title = t('controls.balanceTitle');
+  const b = await readBoxBalanceInfo(src);
+  if (!b) { row.hidden = true; setBalanceNote(''); return; }
+
+  el.textContent = balanceLabel(b.actual);
+  el.title = t(b.settable ? 'controls.balanceSetTitle' : 'controls.balanceTitle');
   row.hidden = false;
+  setBalanceNote('');
+  if (!slider || !centre) return;
+
+  // An older agent on the other end reports no socket, so there is nothing to
+  // drag: leave the read-out exactly as it was rather than offering a control
+  // that cannot work.
+  if (!b.settable) { slider.hidden = true; centre.hidden = true; return; }
+
+  // Bounds from the speaker, never a constant (see readBoxBalanceInfo).
+  slider.min = String(b.min);
+  slider.max = String(b.max);
+  slider.value = String(b.actual);
+  slider.title = el.title;
+  slider.hidden = false;
+  centre.hidden = false;
+  centre.title = t('controls.balanceCentreTitle');
+
+  // While dragging, only the label moves. The write goes out on release: the
+  // value travels over a WebSocket to the speaker and is then read back to
+  // confirm, and firing that per pixel of slider travel would put a queue of
+  // writes on the speaker's own bus for one gesture.
+  slider.oninput = () => { el.textContent = balanceLabel(parseInt(slider.value, 10)); };
+  slider.onchange = () => applyBalance(src, parseInt(slider.value, 10));
+  centre.onclick = () => {
+    slider.value = String(b.default || 0);
+    el.textContent = balanceLabel(b.default || 0);
+    applyBalance(src, b.default || 0);
+  };
 }
+
+// applyBalance sends one balance write and says what came back.
+//
+// Three outcomes, and they are deliberately three rather than two. A write that
+// was refused is a failure. A write the speaker accepted but has not reported
+// back is NOT a failure: the value goes out on a bus that acknowledges nothing,
+// the agent reads it back on a budget of a couple of seconds, and a slow
+// speaker missing that window would otherwise be shown to the user as a broken
+// control. Silence is reserved for the case where it plainly worked.
+async function applyBalance(src, target) {
+  const res = await writeBoxBalance(src, target);
+  if (!res || res.ok !== true) {
+    setBalanceNote(t('controls.balanceFailed'), true);
+    return;
+  }
+  const slider = document.getElementById('boxBalanceSlider');
+  const el = document.getElementById('boxBalance');
+  // The agent clamps to the speaker's own range, so the value that landed can
+  // differ from the one that was asked for. Show what the speaker has.
+  if (Number.isFinite(Number(res.target))) {
+    if (slider) slider.value = String(res.target);
+    if (el) el.textContent = balanceLabel(Number(res.target));
+  }
+  setBalanceNote(res.verified === false ? t('controls.balanceUnverified') : '');
+}
+
+function setBalanceNote(text, warn = false) {
+  const row = document.getElementById('boxBalanceNoteRow');
+  const el = document.getElementById('boxBalanceNote');
+  if (!row || !el) return;
+  el.textContent = text || '';
+  el.classList.toggle('setup-warn', !!warn && !!text);
+  row.hidden = !text;
+}
+

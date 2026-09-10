@@ -90,8 +90,15 @@ type gabboFrame struct {
 	// one was logged as an unrecognized frame: seven in 400 ms filled a field
 	// log while the real point, that this IS identifiable user activity, was
 	// lost (ST30 bundle, 2026-07-29).
-	BassUpdated  *struct{} `xml:"bassUpdated"`
-	UserActivity *struct{} `xml:"userActivityUpdate"`
+	BassUpdated *struct{} `xml:"bassUpdated"`
+	// BalanceUpdated is the same shape again, for the left/right balance of a
+	// stereo pair. It carries no value, and STR has nothing to do with it today
+	// beyond recognising it: the balance is read over HTTP, and the desktop app
+	// refreshes it on the events it already has. Typed so it stops being logged
+	// as an unrecognized shape on every source change (30 occurrences in one
+	// field bundle, 2026-09-09).
+	BalanceUpdated *struct{} `xml:"balanceUpdated"`
+	UserActivity   *struct{} `xml:"userActivityUpdate"`
 
 	// PresetsUpdated carries the box's full preset list when it changes; the
 	// landing spot for preset sync from the box (#14).
@@ -339,4 +346,58 @@ func rootLocalName(s string) string {
 			return se.Name.Local
 		}
 	}
+}
+
+// gabboResponse is the firmware's ANSWER to a request STR sent on the socket.
+//
+// Measured on 2026-09-10, on the first write STR ever made on this bus (a
+// balance write to a live pair of SoundTouch 10s). The speaker replies on the
+// same socket with the request echoed, msgType="RESPONSE", and the whole
+// document it just wrote:
+//
+//	<?xml version="1.0" encoding="UTF-8" ?><msg><header deviceID="..."
+//	 url="balance" method="POST"><request requestID="1" msgType="RESPONSE">
+//	 <info mainNode="balanceSet" type="new" /></request></header><body>
+//	 <balance ...><targetBalance>-3</targetBalance>
+//	 <actualBalance>-3</actualBalance></balance></body></msg>
+//
+// Two things follow from that, and neither is built yet. The requestID comes
+// back, so a general request/response helper has something to correlate on; and
+// the answer carries the value, so such a helper could confirm a write without
+// reading anything back over HTTP. The HTTP read-back confirms in about 50 ms
+// (measured in the same run), so correlation is infrastructure this one write
+// does not need.
+//
+// What could not wait is smaller. Untyped, this frame falls into the
+// unrecognized-frame capture, under the shape "?xml": the bucket that every
+// declaration-prefixed frame shares. STR's own acknowledgements would have
+// permanently occupied the slot whose entire purpose is to log the first body of
+// each NEW shape the firmware sends. (frameShape now looks past the declaration
+// as well, so the bucket is per element again either way.)
+type gabboResponse struct {
+	XMLName xml.Name `xml:"msg"`
+	Header  struct {
+		DeviceID string `xml:"deviceID,attr"`
+		URL      string `xml:"url,attr"`
+		Method   string `xml:"method,attr"`
+		Request  struct {
+			ID      string `xml:"requestID,attr"`
+			MsgType string `xml:"msgType,attr"`
+		} `xml:"request"`
+	} `xml:"header"`
+}
+
+// parseGabboResponse reports whether data is the speaker answering something STR
+// asked for. The string pre-check is there so the common case (an <updates>
+// notification) is not unmarshalled a second time on every single frame.
+func parseGabboResponse(data []byte) (gabboResponse, bool) {
+	var r gabboResponse
+	s := string(data)
+	if !strings.Contains(s, "<msg") || !strings.Contains(s, `msgType="RESPONSE"`) {
+		return r, false
+	}
+	if err := xml.Unmarshal(data, &r); err != nil {
+		return r, false
+	}
+	return r, strings.EqualFold(r.Header.Request.MsgType, "RESPONSE")
 }

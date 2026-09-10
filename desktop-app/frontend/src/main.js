@@ -7074,9 +7074,10 @@ function renderNowPlayingBar() {
 // on a SoundTouch 10) rather than from a constant, because a widely-copied
 // community value of -50..+50 does not match what the firmware actually says.
 //
-// Shown, not settable. The firmware accepts no write we could get to work: every
-// attempt hung and left the speaker's balance endpoint unresponsive until it was
-// woken again. Displaying it still earns its place, because a pair that was set
+// Shown, not settable yet. Every write ATTEMPT OVER HTTP hung and left the
+// speaker's balance endpoint unresponsive until it was woken again. The
+// WebSocket bus is reported to accept it (#70) and has never been tried,
+// because STR's client there cannot send. Displaying it still earns its place, because a pair that was set
 // off-centre in the old Bose app otherwise just sounds lopsided for no visible
 // reason.
 //

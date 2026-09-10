@@ -237,12 +237,55 @@ export async function boxFetch(box, path, opts = {}, timeoutMs = 8000) {
   throw lastErr || new Error('box unreachable');
 }
 
-// readBoxBalance reads a speaker's stereo balance, or null when the speaker
-// does not report one or cannot be asked right now.
-export async function readBoxBalance(box) {
+// readBoxBalanceInfo reads a speaker's whole stereo-balance answer, or null when
+// the speaker does not report one or cannot be asked right now.
+//
+// The bounds matter to the caller and must come from the SPEAKER: a
+// widely-copied community implementation assumes -50..+50 and the firmware
+// answers -7..+7, so a slider built on a constant would be wrong by a factor of
+// seven. `settable` says whether the agent on the other end has a socket to
+// write the value on; an older agent simply omits it, which reads as false and
+// leaves the caller with the read-out it has always had.
+export async function readBoxBalanceInfo(box) {
   try {
     const r = await boxFetch(box, '/api/box/balance');
     const b = await r.json();
-    return (b && b.available) ? (Number(b.actual) || 0) : null;
+    if (!b || !b.available) return null;
+    return {
+      actual: Number(b.actual) || 0,
+      target: Number(b.target) || 0,
+      min: Number.isFinite(Number(b.min)) ? Number(b.min) : -7,
+      max: Number.isFinite(Number(b.max)) ? Number(b.max) : 7,
+      default: Number(b.default) || 0,
+      settable: !!b.settable,
+    };
   } catch { return null; /* asleep or unreachable: show nothing rather than an error */ }
+}
+
+// readBoxBalance reads just the current position, for the two places that only
+// print it.
+export async function readBoxBalance(box) {
+  const b = await readBoxBalanceInfo(box);
+  return b ? b.actual : null;
+}
+
+// writeBoxBalance moves the balance of the pair this speaker masters.
+//
+// Always addressed to the MASTER: only the master reports a balance and only the
+// master can be written to (see groups.balanceSourceBox). The answer says
+// whether the value was accepted AND whether the speaker has confirmed it, and
+// those are two different things: the agent sends the value on the speaker's own
+// WebSocket, which acknowledges nothing, so it reads the balance back and
+// reports verified:false when the read-back has not caught up yet. Resolves to
+// the answer object, or null when the speaker could not be reached at all.
+export async function writeBoxBalance(box, target) {
+  try {
+    const r = await boxFetch(box, '/api/box/balance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: Math.round(Number(target) || 0) }),
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
 }

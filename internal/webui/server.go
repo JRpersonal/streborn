@@ -485,6 +485,11 @@ type Server struct {
 	// Finding 4). nil = not wired (no storm reported).
 	storm1036Fn func() (bool, int, time.Time)
 
+	// balanceWriteFn sends a stereo-balance write on the box WebSocket (see
+	// SetBalanceWriteFn). nil means no socket is available, and the balance
+	// endpoint then reports itself as not settable instead of failing a write.
+	balanceWriteFn func(deviceID string, target int) error
+
 	// suppress1036Fn stands the 1036 storm COUNTER down until the given time.
 	// Wired to boxws.Suppress1036Until. Used where STR itself provokes the
 	// rejection it would otherwise count as a symptom (a zone teardown kills
