@@ -412,19 +412,34 @@ async function libraryPlay(item) {
 }
 
 // verifyLibraryPlayback confirms a library track actually reaches a playing
-// state on the speaker after PlayURL. The SoundTouch's UPnP layer accepts the
-// URI but its decoder only handles some formats: a high-resolution FLAC (24-bit
-// or above 48 kHz) never decodes, so the track sits at "stream starting"
-// forever with no feedback, and users read it as a network or app fault (#139).
-// Poll the box play state for a short window; if it never starts (or the box
-// reports the source invalid), surface a soft, format-agnostic hint. Run
+// state on the speaker after PlayURL, and, when it does not, says which of the
+// two possible reasons it was.
+//
+// The original reason for it (#139): the SoundTouch's UPnP layer accepts the
+// URI but its decoder only handles some formats, so a high-resolution FLAC
+// (24-bit or above 48 kHz) sits at "stream starting" forever with no feedback
+// and users read it as a network or app fault.
+//
+// The reason it had to learn a second answer (#915, 2026-09-10): a reporter
+// whose files are plain mp3 was told his format was probably unsupported. His
+// speaker logged AUDIO_ERROR_TIMEOUT and ERROR_NO_DECODED_DATA twenty seconds
+// into every attempt, which is the box saying nothing ever arrived to decode,
+// and his media server did not answer its own description fetch either. The
+// format was never in question; the file never reached the speaker.
+//
+// Two changes follow. The window now outlasts the box's OWN verdict, which
+// lands at about twenty seconds, so the app stops guessing before the speaker
+// has decided. And when the track did not start, the app fetches a few bytes of
+// the URL itself: if the server will not hand over the beginning of the file,
+// the delivery is the problem and the format is not worth mentioning. Run
 // fire-and-forget so the click stays responsive.
 async function verifyLibraryPlayback(item, target) {
   // Watch the box the play was actually sent to (the group master when the
   // selected box is a follower, #70), not blindly the selected box.
   const box = target || state.currentBox;
   if (!box) return;
-  const deadline = Date.now() + 12000;
+  // Past the box's own AUDIO_ERROR_TIMEOUT, which arrives ~20 s in.
+  const deadline = Date.now() + 26000;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
     // Bail if the user moved to another box entirely.
@@ -440,7 +455,39 @@ async function verifyLibraryPlayback(item, target) {
     if (ps === 'PLAY_STATE') return; // decoded and playing: all good
     if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
   }
-  showToast(t('library.formatMaybeUnsupported', { title: item.title || '' }), 8000);
+  const served = await serverDeliversTrack(item.streamURL);
+  showToast(served
+    ? t('library.formatMaybeUnsupported', { title: item.title || '' })
+    : t('library.serverNotDelivering', { title: item.title || '' }), 9000);
+}
+
+// serverDeliversTrack asks the media server for the first bytes of the track
+// the speaker could not play. It is the one measurement that separates the two
+// causes, and the app can take it without involving the speaker at all.
+//
+// A range request rather than a full GET, so a 40 MB file is not pulled to
+// answer a yes/no question, and a short budget because the answer only matters
+// while the user is still looking at the toast. Anything that comes back at all
+// counts as delivered: a server that refuses ranges answers 200 with the whole
+// body, which is still proof it serves the file.
+//
+// Unknown on error is deliberate: the app may be blocked from the server while
+// the speaker is not, so a failed probe here must not be reported as a
+// server fault. Only a probe that plainly fails to produce bytes does that.
+async function serverDeliversTrack(url) {
+  if (!url) return true; // nothing to probe; keep the old wording
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(url, { headers: { Range: 'bytes=0-2047' }, signal: ctrl.signal });
+    if (!r.ok && r.status !== 206) return false;
+    const buf = await r.arrayBuffer();
+    return buf.byteLength > 0;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // libraryPlayFolder starts an auto-advancing queue from every playable track in
