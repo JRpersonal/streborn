@@ -104,6 +104,7 @@
   "multiroom.noZone": "Pašlaik nav grupas.",
   "multiroom.stereoDissolved": "Stereo pāris atsaistīts. Abi skaļruņi atkal atskaņo atsevišķi.",
   "multiroom.stereoNothingToUndo": "Pašlaik nav stereo pāra, ko atsaistīt.",
+  "multiroom.stereoUndoNotAGroup": "Uz {{names}} nav stereo pāra. Šie skaļruņi ir grupā, un \"Atsaukt stereo pāri\" grupu neizjauc. Tam izmanto Izjaukt grupu.",
   "multiroom.stereoCurrent": "Pašreizējā stereo pāris: {{names}}",
   "multiroom.stereoNoPair": "Šobrīd uz šiem skaļruņiem nav stereo pāra.",
   "multiroom.zoneDissolved": "Grupa atsaistīta. Skaļruņi atkal atskaņo atsevišķi.",

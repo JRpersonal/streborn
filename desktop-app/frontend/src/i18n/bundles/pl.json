@@ -104,6 +104,7 @@
   "multiroom.noZone": "Teraz brak grupy.",
   "multiroom.stereoDissolved": "Para stereo rozłączona. Oba głośniki grają znów osobno.",
   "multiroom.stereoNothingToUndo": "Obecnie nie ma pary stereo do rozłączenia.",
+  "multiroom.stereoUndoNotAGroup": "Brak pary stereo na {{names}}. Te głośniki są w grupie, a \"Rozdziel parę stereo\" nie rozwiązuje grupy. Użyj do tego Rozwiąż grupę.",
   "multiroom.stereoCurrent": "Obecna para stereo: {{names}}",
   "multiroom.stereoNoPair": "W tej chwili na tych głośnikach nie ma pary stereo.",
   "multiroom.zoneDissolved": "Grupa rozwiązana. Głośniki grają znów osobno.",

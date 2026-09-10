@@ -104,6 +104,7 @@
   "multiroom.noZone": "Ahora mismo no hay ningún grupo.",
   "multiroom.stereoDissolved": "Pareja estéreo deshecha. Ambos altavoces vuelven a sonar por separado.",
   "multiroom.stereoNothingToUndo": "Ahora mismo no hay ninguna pareja estéreo que deshacer.",
+  "multiroom.stereoUndoNotAGroup": "No hay pareja estéreo en {{names}}. Esos altavoces están en un grupo, y \"Deshacer pareja estéreo\" no deshace un grupo. Usa Deshacer grupo para eso.",
   "multiroom.stereoCurrent": "Pareja estéreo actual: {{names}}",
   "multiroom.stereoNoPair": "Ahora mismo no hay ninguna pareja estéreo en estos altavoces.",
   "multiroom.zoneDissolved": "Grupo disuelto. Los altavoces vuelven a sonar por separado.",
