@@ -1530,10 +1530,15 @@ function renderBoxSettings(s, box) {
   // Outdated-firmware banner links: open the Bose support guide / USB download
   // directory in the user's browser (Wails BrowserOpenURL) instead of leaving
   // them as plain text the user has to retype (Jens, 2026-06-27).
-  for (const id of ['fwGuideLink', 'fwUsbLink', 'fwFaqLink']) {
+  for (const id of ['fwUsbLink', 'fwFaqLink']) {
     const el = $(id);
     if (el) el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
   }
+  // The guide links are per model, and a model that exists in two series offers
+  // two of them, so they are wired by class rather than by id.
+  document.querySelectorAll('.fw-guide-link').forEach(el => {
+    el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
+  });
   // Voice control: STR itself will never speak to Alexa (the old skill was
   // Bose's cloud talking to Bose's cloud, and a new one would mean an account,
   // a public endpoint and a bill). What does work is a hub the user runs at
@@ -3045,11 +3050,46 @@ const LATEST_FW = {
   'SoundTouch Portable': '27.0.6',
 };
 
-// Bose's own SoundTouch firmware-update support article. The update steps are
-// the same across the 10/20/30/Portable, so one link serves every model; swap
-// in a per-model article later if needed. Shown as a clickable link in the
-// outdated-firmware banner (Jens, 2026-06-27: link the Bose support article).
-const BOSE_FW_SUPPORT_URL = 'https://support.bose.com/s/article/soundtouch-20-iii-updating-the-software-or-firmware-of-your-product?language=en_US';
+// Bose's own firmware-update support article, PER MODEL. Shown as a clickable
+// link in the outdated-firmware banner (Jens, 2026-06-27: link the Bose support
+// article).
+//
+// This used to be ONE link for every speaker, and that link was the SoundTouch
+// 20 Series III article, on the reasoning that the steps are the same
+// everywhere. They mostly are, but a SoundTouch 10 owner then opens an article
+// showing a different speaker, and the owner of a Series II ST20 is sent to the
+// Series III page. That came up on 2026-09-09 from a reporter whose Series II
+// lost its sound after a firmware update; whatever caused that, pointing him at
+// the wrong series was ours.
+//
+// The ST20 and the ST30 each exist in two series and the speaker does not say
+// which one it is (docs/MODEL-VARIANTS.md: moduleType separates sm2 from scm,
+// not the series), so those two models offer BOTH articles instead of guessing.
+// Every URL below answered 200 when it was added; Bose has no model-independent
+// article, that URL is a 404.
+const BOSE_FW_ARTICLES = {
+  'SoundTouch 10': [
+    ['', 'https://support.bose.com/s/article/soundtouch-10-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+  'SoundTouch 20': [
+    ['Series II', 'https://support.bose.com/s/article/soundtouch-20-ii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+    ['Series III', 'https://support.bose.com/s/article/soundtouch-20-iii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+  'SoundTouch 30': [
+    ['Series II', 'https://support.bose.com/s/article/soundtouch-30-ii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+    ['Series III', 'https://support.bose.com/s/article/soundtouch-30-iii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+  'SoundTouch Portable': [
+    ['', 'https://support.bose.com/s/article/soundtouch-portable-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+};
+
+// boseFwArticles returns the support articles for a speaker type. An unknown
+// type falls back to the SoundTouch 10 article rather than to nothing: the steps
+// are close enough to be useful, and a dead end helps nobody.
+function boseFwArticles(type) {
+  return BOSE_FW_ARTICLES[type] || BOSE_FW_ARTICLES['SoundTouch 10'];
+}
 // Bose's official "Bose Software Updater" download page, referenced in step 4
 // and made clickable so the user does not have to retype it. The old direct
 // USB directory (downloads.bose.com/ced/soundtouch/soundtouch_usb/) went dead:
@@ -3193,7 +3233,10 @@ function fwUpdateHint(info) {
           <li>${escapeHtml(t('fw.step3'))}</li>
           <li>${t('fw.step4')} <a href="#" class="link" id="fwUsbLink" data-url="${escapeHtml(BOSE_FW_USB_URL)}">btu.bose.com</a></li>
         </ol>
-        <p><a href="#" class="btn btn-mini" id="fwGuideLink" data-url="${escapeHtml(BOSE_FW_SUPPORT_URL)}">${escapeHtml(t('fw.boseGuideLink'))}</a></p>
+        <p>${boseFwArticles(info.type).map(([series, url]) =>
+          `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeHtml(url)}">`
+          + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
+          + '</a>').join(' ')}</p>
         <small class="muted small">${escapeHtml(t('fw.hint'))}</small>
         <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
       </div>
