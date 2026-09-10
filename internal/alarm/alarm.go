@@ -38,6 +38,12 @@ const (
 	MaxAlarms  = 8
 	MaxNameLen = 40
 	MaxZoneLen = 64
+	// MaxAutoOffMinutes matches the sleep timer's own bound (sleepMaxMinutes,
+	// 12 hours), which is what an alarm's switch-off arms. It is matched rather
+	// than imported because internal/alarm must not depend on internal/webui.
+	// Checking it here is load-bearing, not decorative: armSleep validates
+	// nothing, the bound lives only in the sleep timer's HTTP handler.
+	MaxAutoOffMinutes = 720
 )
 
 // Alarm is one entry: WHEN, and WHICH OF THE SIX.
@@ -57,6 +63,12 @@ type Alarm struct {
 	// Volume is the level to set when the alarm fires, 1 to 100. Zero means
 	// leave the speaker at whatever level it remembers.
 	Volume int `json:"volume,omitempty"`
+	// AutoOff switches this speaker off that many minutes after the alarm
+	// starts, so an alarm nobody is home for does not play all day. Zero means
+	// never, and an alarm saved without the field therefore never switches off:
+	// omitempty on an int cannot tell absent from zero, so the editor supplies
+	// the useful default instead of hiding one here.
+	AutoOff int `json:"autoOff,omitempty"`
 }
 
 // Document is the whole per-speaker file.
@@ -109,6 +121,9 @@ func (d *Document) Validate() error {
 		}
 		if a.Volume < 0 || a.Volume > 100 {
 			return fmt.Errorf("alarm volume has to be between 0 and 100")
+		}
+		if a.AutoOff < 0 || a.AutoOff > MaxAutoOffMinutes {
+			return fmt.Errorf("the switch-off time has to be between 0 and %d minutes", MaxAutoOffMinutes)
 		}
 		// An empty day set is a validation error, never an implicit "every
 		// day": a client that sends days:[] would otherwise arm a daily

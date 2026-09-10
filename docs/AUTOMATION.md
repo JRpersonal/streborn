@@ -235,7 +235,22 @@ until somebody unplugs it.
 **Stopping it.** There is no snooze key. The alarm is ordinary playback, so the
 Stop button in the app or on the phone page, and the speaker's own power key,
 end it the way they end anything else; the retry stands down when it sees one of
-those.
+those. An alarm can also switch its speaker off by itself a set number of
+minutes after it starts, so one nobody is home for does not play all day. That
+arms the ordinary sleep timer, so it shows on the phone's sleep card as "Off in
+45 min" and can be cancelled there. Leave it at "Never" and the alarm plays until
+something stops it. The setting is per alarm, capped at twelve hours, and a new
+alarm starts at an hour.
+
+**One speaker, not the house.** An alarm wakes only the speaker it is set on,
+even when that speaker belongs to a permanent group. Starting playback is
+normally what tells STR to re-form a stored group, so the alarm suppresses that
+for about ninety seconds around its own fire. The group itself is untouched: the
+stored document is not read, written or dissolved, and the group forms as usual
+on the next play. Two consequences worth knowing: a play *you* start inside the
+same ninety seconds is not auto-formed either (it comes back on your next play,
+or on the five-minute reconcile), and a group that is still live at 06:30 rather
+than asleep will still hear the alarm, because STR is not the thing forming it.
 
 **The clock is the part that can bite.** These speakers have no
 battery-backed RTC, so after a power cut they boot reading the firmware's 2015

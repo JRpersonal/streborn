@@ -356,3 +356,76 @@ func TestAlarmRetriesOnceWhenNothingPlayed(t *testing.T) {
 		t.Errorf("expected a recorded failure after the retry, got %+v (ok=%v)", last, ok)
 	}
 }
+
+// An alarm is per speaker. The hush is armed before the wake, not after the
+// recall, because the firmware's own power-on resume of yesterday's station
+// already reports a play start over gabbo, and that is a group re-form trigger.
+func TestAlarmHushesTheGroupReForm(t *testing.T) {
+	h := newAlarmHarness(t, weekdayDoc())
+	if h.s.groupFormHushed() {
+		t.Fatal("nothing has fired yet, so nothing should be hushed")
+	}
+	now := berlinTime(t, 2026, time.September, 7, 6, 30)
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	if !waitFor(func() bool { return h.s.groupFormHushed() }) {
+		t.Error("the alarm fired without hushing the group re-form; the whole house would wake")
+	}
+}
+
+// autoOffDoc is weekdayDoc with a switch-off. Deliberately long: the real
+// time.AfterFunc must never fire during a test, or fireSleep would reach the
+// unstubbed sleepReadSource against an empty boxHost.
+func autoOffDoc(minutes int) alarm.Document {
+	d := weekdayDoc()
+	d.Alarms[0].AutoOff = minutes
+	return d
+}
+
+func TestAlarmArmsTheAutoOff(t *testing.T) {
+	h := newAlarmHarness(t, autoOffDoc(45))
+	now := berlinTime(t, 2026, time.September, 7, 6, 30)
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	if !waitFor(func() bool { return h.s.sleepStatus()["active"] == true }) {
+		t.Fatal("the alarm did not arm a switch-off; a forgotten alarm would play all day")
+	}
+	st := h.s.sleepStatus()
+	rem, _ := st["remainingSec"].(int)
+	if rem <= 44*60 || rem > 45*60 {
+		t.Errorf("remainingSec = %d, want just under 45 minutes", rem)
+	}
+	// Per speaker, like the group hush: switching off other rooms because THIS
+	// alarm timed out would be the worse default.
+	if st["group"] != false {
+		t.Errorf("the switch-off is armed for the whole group: %v", st["group"])
+	}
+}
+
+func TestAlarmWithoutAnAutoOffArmsNothing(t *testing.T) {
+	h := newAlarmHarness(t, autoOffDoc(0))
+	now := berlinTime(t, 2026, time.September, 7, 6, 30)
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	if !waitFor(func() bool { return h.firedCount() == 1 }) {
+		t.Fatal("the alarm did not fire at all")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if h.s.sleepStatus()["active"] == true {
+		t.Error("zero minutes has to mean never, not a hidden default")
+	}
+}
+
+// Pins the placement AFTER the status >= 400 return: a preset that could not be
+// played must not leave the speaker scheduled to switch itself off.
+func TestAlarmThatCouldNotPlayArmsNoAutoOff(t *testing.T) {
+	h := newAlarmHarness(t, autoOffDoc(45))
+	alarmRecallSlot = func(_ *Server, _ context.Context, _ int) int { return 500 }
+	now := berlinTime(t, 2026, time.September, 7, 6, 30)
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	time.Sleep(150 * time.Millisecond)
+	if h.s.sleepStatus()["active"] == true {
+		t.Error("a refused recall still armed a switch-off")
+	}
+}

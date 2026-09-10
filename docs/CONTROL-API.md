@@ -69,11 +69,17 @@ automation; `presets/recall` mirrors a physical button press.
 | `GET`  | `/api/alarms` | - | The alarm document plus a read-only `status` block. |
 | `PUT`  | `/api/alarms` | the whole document | Replaces it wholesale. LAN only. |
 
-An alarm is `{"id","enabled","name","hour","minute","days","slot","volume"}`:
-`days` are weekdays with `0` = Sunday, `slot` is a preset 1-6, and `volume` is
-1-100 or `0` to leave the speaker's own level alone. The document also carries
-one IANA `zone` for the speaker; an empty zone means UTC. At most 8 alarms, and
-an alarm with no days is rejected rather than treated as "every day".
+An alarm is
+`{"id","enabled","name","hour","minute","days","slot","volume","autoOff"}`:
+`days` are weekdays with `0` = Sunday, `slot` is a preset 1-6, `volume` is
+1-100 or `0` to leave the speaker's own level alone, and `autoOff` switches the
+speaker off that many minutes after the alarm starts (1-720, or `0` for never).
+The document also carries one IANA `zone` for the speaker; an empty zone means
+UTC. At most 8 alarms, and an alarm with no days is rejected rather than treated
+as "every day".
+
+An alarm plays on its own speaker only. It does not re-form a permanent group,
+and `autoOff` switches off only that speaker, not the group.
 
 A rejected `PUT` answers `400` with the reason as plain text, meant to be shown
 to the user as it stands. The `status` block reports `clockTrusted`,
@@ -86,7 +92,7 @@ curl -s $BOX/api/alarms
 curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
   "zone":"Europe/Berlin",
   "alarms":[{"id":"weekdays","enabled":true,"hour":6,"minute":30,
-             "days":[1,2,3,4,5],"slot":3,"volume":25}]}'
+             "days":[1,2,3,4,5],"slot":3,"volume":25,"autoOff":60}]}'
 ```
 
 See [AUTOMATION.md](AUTOMATION.md) for what a fire actually does and how the

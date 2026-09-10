@@ -84,7 +84,7 @@ func TestPhoneRemoteLocalesCarryTheAlarm(t *testing.T) {
 	for _, key := range []string{
 		"alarm", "alarmNone", "alarmAdd", "alarmSave", "alarmDelete", "alarmCancel",
 		"alarmPreset", "alarmVol", "alarmVolKeep", "alarmZone", "alarmClockBad",
-		"alarmFail", "alarmNext", "alarmDow",
+		"alarmFail", "alarmNext", "alarmDow", "alarmOff", "alarmOffNever",
 	} {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
@@ -143,5 +143,41 @@ func TestPhoneRemoteAlarmWeekStartsMonday(t *testing.T) {
 	// Both the chips and the summary label follow that order.
 	if strings.Count(indexHTML, "alarmDayOrder()") < 3 {
 		t.Error("the chips and the summary label both have to use the display order")
+	}
+}
+
+// The switch-off answers "what if you forgot the alarm and are not home". It is
+// a DOM-only field like the volume, so it MUST go through captureAlarmEditor or
+// it snaps back the moment a preset chip re-renders the editor.
+func TestPhoneRemoteAlarmHasASwitchOff(t *testing.T) {
+	if !strings.Contains(indexHTML, `id="alarmAutoOff"`) {
+		t.Error("the alarm editor is missing the switch-off control")
+	}
+	if !strings.Contains(indexHTML, "alarmDraft.autoOff = Number(off.value) || 0;") {
+		t.Error("the switch-off has to be captured before the editor re-renders")
+	}
+	// A new alarm switches off by itself an hour after it starts; the stored
+	// zero still means never, so an alarm saved without the field is unchanged.
+	if !strings.Contains(indexHTML, "volume: 0, autoOff: 60 }") {
+		t.Error("a new alarm has to default to switching off after an hour")
+	}
+}
+
+// The volume is a slider, not a dropdown of tens: picking a wake-up level is a
+// "somewhere around here" decision, and snapping to tens was too coarse.
+// Zero keeps its meaning of "leave the speaker's own level alone", so the live
+// label reads alarmVolKeep at the bottom of the travel rather than showing 0.
+func TestPhoneRemoteAlarmVolumeIsASlider(t *testing.T) {
+	if !strings.Contains(indexHTML, `type="range" id="alarmVol"`) {
+		t.Error("the alarm volume has to be a slider")
+	}
+	if strings.Contains(indexHTML, `<select id="alarmVol">`) {
+		t.Error("the coarse volume dropdown must not come back")
+	}
+	if !strings.Contains(indexHTML, `step="1"`) {
+		t.Error("the slider has to move in single steps, not tens")
+	}
+	if !strings.Contains(indexHTML, "lab.textContent = Number(vol.value) > 0 ? vol.value : T.alarmVolKeep;") {
+		t.Error("the live label has to say 'leave as it is' at zero rather than showing 0")
 	}
 }

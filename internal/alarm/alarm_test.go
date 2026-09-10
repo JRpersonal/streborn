@@ -55,6 +55,8 @@ func TestValidateRejects(t *testing.T) {
 		{"slot zero", docWith(func(a *Alarm) { a.Slot = 0 }), "preset 1 to 6"},
 		{"slot seven", docWith(func(a *Alarm) { a.Slot = 7 }), "preset 1 to 6"},
 		{"volume over 100", docWith(func(a *Alarm) { a.Volume = 101 }), "between 0 and 100"},
+		{"negative switch-off", docWith(func(a *Alarm) { a.AutoOff = -1 }), "switch-off time"},
+		{"switch-off over the cap", docWith(func(a *Alarm) { a.AutoOff = MaxAutoOffMinutes + 1 }), "switch-off time"},
 		{"no days", docWith(func(a *Alarm) { a.Days = nil }), "at least one day"},
 		{"empty day slice", docWith(func(a *Alarm) { a.Days = []int{} }), "at least one day"},
 		{"day out of range", docWith(func(a *Alarm) { a.Days = []int{7} }), "outside Sunday"},
@@ -225,4 +227,37 @@ func docWith(mut func(*Alarm)) Document {
 	a := weekdayAlarm()
 	mut(&a)
 	return Document{Alarms: []Alarm{a}}
+}
+
+// Zero means never and the cap is the sleep timer's own bound, which is what an
+// alarm's switch-off arms.
+func TestValidateAcceptsTheSwitchOffRange(t *testing.T) {
+	for _, m := range []int{0, 1, 60, MaxAutoOffMinutes} {
+		d := docWith(func(a *Alarm) { a.AutoOff = m })
+		if err := d.Validate(); err != nil {
+			t.Errorf("a switch-off of %d minutes was rejected: %v", m, err)
+		}
+	}
+}
+
+// The JSON tag has to survive a save and reload, or a switch-off set on the
+// phone would quietly not be there in the morning.
+func TestStoreRoundTripsTheSwitchOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alarms.json")
+	s, err := Load(path, quietLogger())
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := weekdayAlarm()
+	want.AutoOff = 90
+	if err := s.Set(Document{Zone: "Europe/Berlin", Alarms: []Alarm{want}}); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	again, err := Load(path, quietLogger())
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := again.Get().Alarms[0].AutoOff; got != 90 {
+		t.Errorf("switch-off came back as %d, want 90", got)
+	}
 }

@@ -242,13 +242,19 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), alarmFireTimeout)
 	defer cancel()
 
+	// Armed BEFORE the wake, not after the recall: the firmware resumes its own
+	// last station on power-on (wakeForAlarm stops it a moment later), and that
+	// resume already reports a play start over gabbo, which is a group re-form
+	// trigger. By the time the recall runs it would be too late.
+	s.hushGroupForm(groupFormHushWindow)
 	// Clears the stop latches, so the recall's own verify does not read a
 	// stale user-stop as a reason to stand down (#419).
 	s.NoteUserPlay()
 	alarmWakeBox(s, ctx, a.Volume)
 	status := alarmRecallSlot(s, ctx, a.Slot)
 	gen := s.RecallGeneration()
-	s.logger.Info("alarm: fired", "id", a.ID, "slot", a.Slot, "volume", a.Volume, "status", status)
+	s.logger.Info("alarm: fired", "id", a.ID, "slot", a.Slot, "volume", a.Volume,
+		"autoOffMin", a.AutoOff, "status", status)
 
 	if status >= 400 {
 		// The recall refused for a structural reason (an unplayable Spotify
@@ -258,6 +264,19 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 		s.logger.Warn("alarm: the preset could not be played, not retrying", "id", a.ID, "status", status)
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: false, Detail: detail})
 		return
+	}
+	if a.AutoOff > 0 {
+		// The sleep timer, armed from here: the same standby, the same "already
+		// asleep, stand down" guard and the same NoteUserStop (#419), and it
+		// shows on the phone's sleep card so the user can see it and cancel it.
+		// group=false for the same reason the group re-form is hushed above: an
+		// alarm is per speaker, and switching off other rooms because THIS
+		// alarm timed out would be the worse default.
+		//
+		// A monotonic timer is right here, unlike the scheduler above: this is
+		// armed at fire time, a moment the scheduler has already judged the
+		// clock trustworthy, and it counts tens of minutes rather than hours.
+		s.armSleep(time.Duration(a.AutoOff)*time.Minute, false)
 	}
 	s.alarmBackground.Add(1)
 	go func() {
@@ -287,6 +306,10 @@ func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt t
 	s.logger.Warn("alarm: the stream did not start, trying once more", "id", a.ID, "slot", a.Slot)
 	retryAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), alarmFireTimeout)
+	// A second arm rather than one wider window on the first: this retry is a
+	// whole second wake and recall, landing a minute or so after the fire, and
+	// it re-opens every group re-form path the first one did.
+	s.hushGroupForm(groupFormHushWindow)
 	s.NoteUserPlay()
 	alarmWakeBox(s, ctx, a.Volume)
 	alarmRecallSlot(s, ctx, a.Slot)
