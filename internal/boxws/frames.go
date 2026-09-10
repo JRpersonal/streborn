@@ -90,8 +90,15 @@ type gabboFrame struct {
 	// one was logged as an unrecognized frame: seven in 400 ms filled a field
 	// log while the real point, that this IS identifiable user activity, was
 	// lost (ST30 bundle, 2026-07-29).
-	BassUpdated  *struct{} `xml:"bassUpdated"`
-	UserActivity *struct{} `xml:"userActivityUpdate"`
+	BassUpdated *struct{} `xml:"bassUpdated"`
+	// BalanceUpdated is the same shape again, for the left/right balance of a
+	// stereo pair. It carries no value, and STR has nothing to do with it today
+	// beyond recognising it: the balance is read over HTTP, and the desktop app
+	// refreshes it on the events it already has. Typed so it stops being logged
+	// as an unrecognized shape on every source change (30 occurrences in one
+	// field bundle, 2026-09-09).
+	BalanceUpdated *struct{} `xml:"balanceUpdated"`
+	UserActivity   *struct{} `xml:"userActivityUpdate"`
 
 	// PresetsUpdated carries the box's full preset list when it changes; the
 	// landing spot for preset sync from the box (#14).

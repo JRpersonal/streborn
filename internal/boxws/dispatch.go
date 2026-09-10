@@ -409,7 +409,8 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		c.logger.Debug("box ws: the box changed its registered sources (wrapped form)")
 		c.fireSourcesChanged()
 	case f.SwUpdateStatus != nil, f.SiteSurveyResults != nil,
-		f.RecentsUpdated != nil, f.InfoUpdated != nil:
+		f.RecentsUpdated != nil, f.InfoUpdated != nil,
+		f.BalanceUpdated != nil:
 		// Documented no-ops, known and ignored (see the field comments in
 		// frames.go for why each carries nothing STR wants, including why
 		// recentsUpdated's value-carrying body is discarded on purpose).

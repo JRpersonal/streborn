@@ -235,12 +235,20 @@ func (s *Server) noteGroupReadResult(err error) {
 // few seconds, so folding balance into it would have put a multi-second stall
 // into a hot path for every speaker that happens to be asleep.
 //
-// Read-only for now. The firmware accepts no write over this API that we could
-// make work: every POST /balance hung the same way, including the exact body
-// the community reference sends, and left the endpoint unresponsive until the
-// speaker was woken again. So STR reports what the balance IS, which is enough
-// to explain a pair that sounds lopsided because it was set in the Bose app,
-// and does not pretend to offer a control that would not work.
+// Read-only for now, and the negative result is scoped to HTTP. Every
+// POST /balance hung the same way, including the exact body the community
+// reference sends, and left the endpoint unresponsive until the speaker was
+// woken again. So STR reports what the balance IS, which is enough to explain a
+// pair that sounds lopsided because it was set in the Bose app.
+//
+// It is NOT a firmware limitation, and this comment used to imply it was. On
+// 2026-09-09 gesellix reported on #70 that the Bose app never writes balance
+// over HTTP either, and that the WebSocket bus does accept it. That is
+// consistent with what we measured and it points at the one interface nobody
+// tried: internal/boxws is a listener that cannot send at all, so no code path
+// existed from which a balance write could even be attempted. Untested by us;
+// making it settable means giving that client a send path and proving it on a
+// real pair first.
 func (s *Server) handleBoxBalance(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
