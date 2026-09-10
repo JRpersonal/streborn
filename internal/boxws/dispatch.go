@@ -586,15 +586,25 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// on every source change. Measured 2026-08-06, unrecognized frames
 			// were 15.6 % of the 32 KB NAND log, the only log that survives a
 			// reboot on a box with no shell, at up to 1800 bytes per line.
-			// (sourcesUpdated and swUpdateStatusUpdated have since been typed
-			// above; balanceUpdated and userInactivityUpdate still land here,
+			// (sourcesUpdated, swUpdateStatusUpdated and balanceUpdated have
+			// since been typed above; userInactivityUpdate still lands here,
 			// deliberately: the doc's frame list is provably incomplete for
 			// 27.0.6, so this capture is how new shapes get discovered.)
 			//
 			// The forensic value is in learning that a frame SHAPE exists, not
 			// in the hundredth copy of it. So the first of each shape is logged
 			// in full, and repeats are counted and reported once an hour.
-			c.logUnrecognizedFrame(data)
+			if resp, ok := parseGabboResponse(data); ok {
+				// The speaker acknowledging something STR asked for on this
+				// socket. Debug: it arrives once per request and the request
+				// itself is already logged at Info by whoever sent it, so an
+				// Info line here would double the NAND writes per write.
+				c.logger.Debug("box ws: the speaker answered our own request",
+					"url", resp.Header.URL, "method", resp.Header.Method,
+					"requestID", resp.Header.Request.ID)
+			} else {
+				c.logUnrecognizedFrame(data)
+			}
 		}
 		return
 	}
@@ -705,6 +715,14 @@ const unknownSummaryEvery = time.Hour
 // every time (which would defeat the whole point).
 func frameShape(data []byte) string {
 	s := string(data)
+	// Look past an <?xml ... ?> declaration. Without this every frame that
+	// carries one shares the single bucket "?xml", so the first such frame
+	// silences the full-body log for every later one - and the full body of a
+	// shape nobody has seen before is the only thing this capture is for. Found
+	// on 2026-09-10, when STR's own first socket write took that bucket.
+	if d := strings.Index(s, "?>"); d >= 0 && strings.HasPrefix(strings.TrimSpace(s), "<?") {
+		s = s[d+2:]
+	}
 	i := strings.IndexByte(s, '<')
 	if i < 0 {
 		return strings.TrimSpace(preview(data, 24))
