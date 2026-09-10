@@ -413,6 +413,11 @@ type Server struct {
 	// mirrorKickPending is true between scheduling a kick and sending it, so a
 	// burst of plays produces one reconcile rather than one per play.
 	mirrorKickPending atomic.Bool
+	// groupFormHushUntil suppresses the play-triggered group re-form until this
+	// instant (unix nanos, 0 = not hushed). The alarm arms it: an alarm is per
+	// speaker and must not wake the rest of the house. See hushGroupForm in
+	// zones_default_group.go.
+	groupFormHushUntil atomic.Int64
 	// defaultFormMu/lastDefaultFormAt rate-limit the play-triggered re-form of
 	// the persisted default group (zones_default_group.go), so preset zapping
 	// does not drive the firmware with back-to-back setZone rounds.
