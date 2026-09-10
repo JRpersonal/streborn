@@ -223,6 +223,21 @@ type Client struct {
 	// down, so STR does not thrash a box that keeps rejecting the UPnP source
 	// (repeated re-pushes flap the source and can wedge the box). Rate-limited
 	// via lastLoginErrFire.
+	// sendMu guards the APPLICATION writes on the live socket, and sendConn is
+	// that socket, or nil while the client sits between reconnects. boxws was a
+	// pure listener until 2026-09-10, so this is the first writer besides the
+	// keepalive; see send.go for why one is needed at all. gorilla/websocket
+	// allows a single concurrent writer and documents WriteControl (the
+	// keepalive's ping) as safe alongside it, so this mutex only has to
+	// serialise the application writers against each other.
+	sendMu   sync.Mutex
+	sendConn *websocket.Conn
+	// reqID numbers the requests STR sends. The firmware echoes the number back
+	// on its answer frame. Nothing correlates on it yet, but Bose's own client
+	// counts up per request, and a repeated ID is the kind of thing a firmware
+	// is entitled to treat as a duplicate.
+	reqID uint64
+
 	loginErrMu   sync.Mutex
 	onLoginError func()
 	// onSourcesChanged fires when the box announces a changed source list.
@@ -781,6 +796,12 @@ func (c *Client) runOnce(ctx context.Context) error {
 	defer conn.Close()
 	c.setConnected(true)
 	defer c.setConnected(false)
+
+	// Make this socket the one Send writes on, for as long as it lives. A send
+	// arriving after this returns finds nil and fails cleanly rather than
+	// writing into a closed connection.
+	c.setSendConn(conn)
+	defer c.setSendConn(nil)
 
 	// Phase marker at WARN so a reconnect after standby/resume is visible in
 	// the diagnostic bundle without raising log level. A reconnect after a

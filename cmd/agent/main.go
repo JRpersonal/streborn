@@ -1257,6 +1257,11 @@ func run() error {
 			"why", "power toggle", "for", powerToggle1036Window.String())
 	})
 	webuiSrv.SetSuppress1036Fn(wsClient.Suppress1036Until)
+	// The stereo balance is the one setting the firmware will not take over
+	// HTTP, so its write goes out on this socket instead (gesellix on #70; the
+	// envelope and the evidence are in internal/boxws/send.go). Wired here
+	// because the socket client is the only thing that can send it.
+	webuiSrv.SetBalanceWriteFn(wsClient.SetBalance)
 	// The volume restore consults the same signal so a hand-adjusted level
 	// during a recall recovery is never clamped back to the pre-recall
 	// snapshot (which after a deep standby is the box's own wake default).

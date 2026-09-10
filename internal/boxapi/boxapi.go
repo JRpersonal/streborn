@@ -1009,13 +1009,20 @@ func stripBuildSuffix(s string) string {
 }
 
 // Balance is the left/right offset of a stereo pair. It exists only while two
-// speakers are paired: an unpaired speaker reports Available == false, and so
-// does the RIGHT-hand speaker of a pair. Only the master carries it.
+// speakers are paired: an unpaired speaker reports Available == false.
 //
 // Measured live on two SoundTouch 10s (2026-08-04): Min -7, Max +7, Default 0,
 // negative to the left. Note that a widely-referenced community implementation
 // assumes -50..+50; the firmware itself does not agree, so use the Min/Max the
 // speaker reports rather than a constant.
+//
+// This comment used to say that only the master carries a balance and that the
+// RIGHT-hand member reports Available == false. Re-measured on 2026-09-10 with
+// a live pair, that is wrong: BOTH members report the same document, including
+// the same targetBalance, and either one accepts a write that both then report.
+// The pair, not the speaker, owns the value. The desktop app still addresses the
+// master (see groups.balanceSourceBox), because reading and writing one known
+// end of the pair is one behaviour instead of two.
 type Balance struct {
 	Available bool `json:"available"`
 	Min       int  `json:"min"`
