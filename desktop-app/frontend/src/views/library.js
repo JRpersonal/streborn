@@ -18,6 +18,7 @@ import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
 import {
+  ProbeTrackDelivery,
   ListMediaServers,
   BrowseLibrary,
   AddMediaServerByURL,
@@ -455,38 +456,31 @@ async function verifyLibraryPlayback(item, target) {
     if (ps === 'PLAY_STATE') return; // decoded and playing: all good
     if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
   }
-  const served = await serverDeliversTrack(item.streamURL);
-  showToast(served
-    ? t('library.formatMaybeUnsupported', { title: item.title || '' })
-    : t('library.serverNotDelivering', { title: item.title || '' }), 9000);
+  const probe = await probeDelivery(item.streamURL);
+  // Only a probe that actually answered may change the wording. "Not known" is
+  // the state a blocked or unreachable probe lands in, and the app can be kept
+  // from a server the speaker reaches perfectly well, so it keeps the older
+  // format wording rather than inventing a verdict.
+  showToast(probe.known && !probe.delivered
+    ? t('library.serverNotDelivering', { title: item.title || '' })
+    : t('library.formatMaybeUnsupported', { title: item.title || '' }), 9000);
 }
 
-// serverDeliversTrack asks the media server for the first bytes of the track
-// the speaker could not play. It is the one measurement that separates the two
-// causes, and the app can take it without involving the speaker at all.
+// probeDelivery asks the Go side whether the media server hands over the first
+// bytes of the track. It is the one measurement that separates a file the
+// speaker cannot decode from a server that is not serving.
 //
-// A range request rather than a full GET, so a 40 MB file is not pulled to
-// answer a yes/no question, and a short budget because the answer only matters
-// while the user is still looking at the toast. Anything that comes back at all
-// counts as delivered: a server that refuses ranges answers 200 with the whole
-// body, which is still proof it serves the file.
-//
-// Unknown on error is deliberate: the app may be blocked from the server while
-// the speaker is not, so a failed probe here must not be reported as a
-// server fault. Only a probe that plainly fails to produce bytes does that.
-async function serverDeliversTrack(url) {
-  if (!url) return true; // nothing to probe; keep the old wording
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 6000);
+// It must NOT be a fetch() from here. This page has its own origin, a DLNA
+// server sends no Access-Control-Allow-Origin, and the browser then refuses the
+// answer however healthy the server is, so a frontend probe would report every
+// server as dead. That is how the first version of this went wrong, and it would
+// have told a FLAC owner to go and check his NAS.
+async function probeDelivery(url) {
   try {
-    const r = await fetch(url, { headers: { Range: 'bytes=0-2047' }, signal: ctrl.signal });
-    if (!r.ok && r.status !== 206) return false;
-    const buf = await r.arrayBuffer();
-    return buf.byteLength > 0;
+    const r = await ProbeTrackDelivery(url);
+    return { known: !!(r && r.known), delivered: !!(r && r.delivered) };
   } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
+    return { known: false, delivered: false };
   }
 }
 

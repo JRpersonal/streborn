@@ -156,6 +156,11 @@ func adviceParagraphs() []string {
 		firewallAdvice,
 		answeredNotSTRAdvice,
 		noLocalRouteAdvice,
+		// Added 2026-09-11. Without it a report whose cause was the
+		// user's own dead network kept the advice glued inside the
+		// "what failed" facts and printed no "what to try" section at
+		// all, which is the one report that needs one least ambiguously.
+		noNetworkAdvice,
 		notReachableAdvice,
 		installWindowClosedAdvice,
 		controlUnresponsiveAdvice,

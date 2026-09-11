@@ -270,6 +270,10 @@ export function ProbeSetupAP() {
   return window['go']['main']['App']['ProbeSetupAP']();
 }
 
+export function ProbeTrackDelivery(arg1) {
+  return window['go']['main']['App']['ProbeTrackDelivery'](arg1);
+}
+
 export function PushStereoPairNameToBox(arg1, arg2, arg3) {
   return window['go']['main']['App']['PushStereoPairNameToBox'](arg1, arg2, arg3);
 }

@@ -95,11 +95,16 @@ describe('a library track that did not start', () => {
     expect(Number(m[1])).toBeGreaterThan(20000);
   });
 
+  // The probe moved into Go on 2026-09-11: a fetch() from this page to a DLNA
+  // server is refused by the browser (no Access-Control-Allow-Origin), so the
+  // frontend version reported every server as dead. The intent is unchanged,
+  // which is why this test stayed: measure, do not guess.
   it('measures whether the server delivers instead of blaming the format', () => {
-    expect(library).toContain('async function serverDeliversTrack');
-    const at = library.indexOf('const served = await serverDeliversTrack');
+    expect(library).toContain('async function probeDelivery');
+    expect(library).toContain('ProbeTrackDelivery');
+    const at = library.indexOf('const probe = await probeDelivery');
     expect(at).toBeGreaterThan(-1);
-    const decision = library.slice(at, at + 320);
+    const decision = library.slice(at, at + 520);
     expect(decision).toContain('library.formatMaybeUnsupported');
     expect(decision).toContain('library.serverNotDelivering');
   });
@@ -107,11 +112,14 @@ describe('a library track that did not start', () => {
   // A probe the app itself could not run says nothing about the server: the app
   // may be blocked from it while the speaker is not.
   it('only blames the server on a probe that plainly produced no bytes', () => {
-    const fn = library.slice(library.indexOf('async function serverDeliversTrack'),
-                             library.indexOf('async function serverDeliversTrack') + 900);
-    expect(fn).toContain('if (!url) return true');
-    expect(fn).toContain('Range');
-    expect(fn).toContain('byteLength > 0');
+    // Three states, and the third is the point: a probe that could not be taken
+    // is not a verdict against the server, because the app can be blocked from
+    // one the speaker reaches perfectly well.
+    const at = library.indexOf('const probe = await probeDelivery');
+    expect(library.slice(at, at + 520)).toContain('probe.known && !probe.delivered');
+    const fn = library.slice(library.indexOf('async function probeDelivery'),
+                             library.indexOf('async function probeDelivery') + 600);
+    expect(fn).toContain('known: false');
   });
 
   it('has the new wording, and it does not mention the format', () => {

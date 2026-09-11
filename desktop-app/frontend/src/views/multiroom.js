@@ -1251,6 +1251,7 @@ async function doDissolveStereo(pairCands) {
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   let dissolved = false;
   let failure = null;
+  let unconfirmed = false;
   for (const box of reachable) {
     try {
       // The stereo-intent endpoint: it also dissolves a firmware pair the agent
@@ -1264,7 +1265,13 @@ async function doDissolveStereo(pairCands) {
       // to do, because the agent answers 200 for it). With more than one target
       // it is also the EXPECTED answer from the half that already let go, so it
       // never stops the sweep.
-      if (!String((e && e.message) || e || '').includes('stereo-not-paired')) failure = e;
+      const msg = String((e && e.message) || e || '');
+      // Two sentinels come back from the agent, and only one of them was known
+      // here. stereo-undo-unconfirmed means the speaker did not confirm the pair
+      // came apart; printing the token itself is what the user got until
+      // 2026-09-11 ("Could not change the group: stereo-undo-unconfirmed").
+      if (msg.includes('stereo-undo-unconfirmed')) unconfirmed = true;
+      else if (!msg.includes('stereo-not-paired')) failure = e;
     }
   }
   if (dissolved) {
@@ -1282,6 +1289,11 @@ async function doDissolveStereo(pairCands) {
     // No toast on top of the inline confirmation: the two said the same thing and
     // overlapped (#843 problem 2). The inline message sits in the stereo panel
     // right where the Undo button is, so it is already in view after the click.
+  } else if (unconfirmed) {
+    // Not an error and not a success. The agent sent the teardown and the
+    // speaker did not confirm it came apart, so the honest thing is to say that
+    // and let the user look.
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoUndoUnconfirmed'))}</div>`;
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
   } else {
@@ -1355,16 +1367,28 @@ async function doDissolveStereoPair(pair, boxes) {
   }
   let dissolved = false;
   let failure = null;
+  let unconfirmed = false;
   for (const box of reachable) {
     try {
       await DissolveStereoPair(box.host, box.port);
       dissolved = true;
     } catch (e) {
-      if (!String((e && e.message) || e || '').includes('stereo-not-paired')) failure = e;
+      const msg = String((e && e.message) || e || '');
+      // Two sentinels come back from the agent, and only one of them was known
+      // here. stereo-undo-unconfirmed means the speaker did not confirm the pair
+      // came apart; printing the token itself is what the user got until
+      // 2026-09-11 ("Could not change the group: stereo-undo-unconfirmed").
+      if (msg.includes('stereo-undo-unconfirmed')) unconfirmed = true;
+      else if (!msg.includes('stereo-not-paired')) failure = e;
     }
   }
   if (dissolved) {
     flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`);
+  } else if (unconfirmed) {
+    // Not an error and not a success. The agent sent the teardown and the
+    // speaker did not confirm it came apart, so the honest thing is to say that
+    // and let the user look.
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoUndoUnconfirmed'))}</div>`;
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
   } else {
