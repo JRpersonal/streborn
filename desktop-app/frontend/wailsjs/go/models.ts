@@ -560,6 +560,24 @@ export namespace main {
 	        this.status = source["status"];
 	    }
 	}
+	export class TrackDelivery {
+	    delivered: boolean;
+	    known: boolean;
+	    status: number;
+	    detail?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TrackDelivery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.delivered = source["delivered"];
+	        this.known = source["known"];
+	        this.status = source["status"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class TrueFactoryResetResult {
 	    step: string;
 	    ok: boolean;

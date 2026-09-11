@@ -196,3 +196,73 @@ func TestRestatedTrailerFoldsIntoOneEntry(t *testing.T) {
 		t.Error("a different scope must never fold")
 	}
 }
+
+// A trailer that cannot be parsed is REPORTED, not silently dropped.
+//
+// Three commits in the v0.9.79 range wrote theirs as prose over two lines with
+// no type(scope): prefix. All three parsed as nothing, the notes fell back to
+// the rougher commit subject, and there was nothing anywhere to say so, so
+// three of the eight lines users would have read were not the sentences written
+// for them. The prefix stays required; losing one is what had to stop being
+// quiet.
+func TestABrokenNoteTrailerIsReportedRatherThanDropped(t *testing.T) {
+	noteTrailerProblems = nil
+	t.Cleanup(func() { noteTrailerProblems = nil })
+
+	body := "Some commit body.\n\n" +
+		"Release-Note: The firmware help in the speaker settings opens the Bose\n" +
+		"  article for your own model instead of always the SoundTouch 20 one.\n" +
+		"Release-Note: fix(app): a good one that parses\n"
+
+	got := parseNoteTrailers(body)
+	if len(got) != 1 || got[0].Summary != "A good one that parses" {
+		t.Fatalf("the well-formed trailer did not survive: %+v", got)
+	}
+	if len(noteTrailerProblems) == 0 {
+		t.Fatal("the prose trailer was dropped without a word, which is the whole bug")
+	}
+	joined := strings.Join(noteTrailerProblems, "\n")
+	if !strings.Contains(joined, "firmware help") {
+		t.Fatalf("the warning does not name the payload that was lost:\n%s", joined)
+	}
+}
+
+// The quieter half: a trailer wrapped onto a second line still produces an
+// entry, truncated mid-sentence, which reads as a typo in the release rather
+// than as a broken trailer.
+func TestAWrappedNoteTrailerIsReportedToo(t *testing.T) {
+	noteTrailerProblems = nil
+	t.Cleanup(func() { noteTrailerProblems = nil })
+
+	body := "Release-Note: fix(app): this sentence runs on past the end of the\n" +
+		"  first line and loses its tail\n"
+	got := parseNoteTrailers(body)
+	if len(got) != 1 {
+		t.Fatalf("want the truncated entry, got %+v", got)
+	}
+	if len(noteTrailerProblems) == 0 {
+		t.Fatal("a wrapped trailer was accepted silently")
+	}
+	if !strings.Contains(strings.Join(noteTrailerProblems, "\n"), "wrapped") {
+		t.Fatalf("the warning does not say it was wrapped: %v", noteTrailerProblems)
+	}
+}
+
+// A well-formed body must stay silent, or the warning becomes noise nobody
+// reads. Co-Authored-By and the session trailer sit right under a Release-Note
+// line in every commit this repo makes, and neither is a continuation.
+func TestAWellFormedBodyWarnsAboutNothing(t *testing.T) {
+	noteTrailerProblems = nil
+	t.Cleanup(func() { noteTrailerProblems = nil })
+
+	body := "Release-Note: fix(agent): one clean line\n" +
+		"Release-Note: feat(app): another clean line\n" +
+		"\n" +
+		"Co-Authored-By: Somebody <nobody@example.com>\n"
+	if got := parseNoteTrailers(body); len(got) != 2 {
+		t.Fatalf("want both entries, got %+v", got)
+	}
+	if len(noteTrailerProblems) != 0 {
+		t.Fatalf("a clean body produced warnings: %v", noteTrailerProblems)
+	}
+}

@@ -237,6 +237,15 @@ export async function boxFetch(box, path, opts = {}, timeoutMs = 8000) {
   throw lastErr || new Error('box unreachable');
 }
 
+// ProbeTrackDelivery asks the media server, from the Go side, whether it hands
+// over the start of a track. It cannot be done with fetch() from here: the page
+// has its own origin and a DLNA server sends no Access-Control-Allow-Origin, so
+// the browser refuses the answer no matter how healthy the server is.
+// Optional binding, so an older build simply reports "not known".
+export function ProbeTrackDelivery(url) {
+  return callOptionalBinding('ProbeTrackDelivery', [url]);
+}
+
 // readBoxBalanceInfo reads a speaker's whole stereo-balance answer, or null when
 // the speaker does not report one or cannot be asked right now.
 //

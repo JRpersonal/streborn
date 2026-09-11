@@ -313,6 +313,69 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	return page, nil
 }
 
+// TrackDelivery is the answer to "did the media server hand over the file".
+//
+// Three states, not two, and the third one is the point: a probe that could not
+// be taken says nothing about the server, and must not be reported as one that
+// failed. See ProbeTrackDelivery.
+type TrackDelivery struct {
+	// Delivered is true when bytes actually came back.
+	Delivered bool `json:"delivered"`
+	// Known is false when the probe itself could not be taken (no URL, the
+	// request never got an answer). The caller then keeps whatever it would
+	// have said without a probe.
+	Known  bool   `json:"known"`
+	Status int    `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// ProbeTrackDelivery asks the media server for the first bytes of a track the
+// speaker could not play. It is the one measurement that separates a file the
+// speaker cannot decode from a server that is not serving.
+//
+// It lives in Go, and that is the whole reason this exists rather than a fetch()
+// in the view. The Wails page is served from its own origin and a DLNA server
+// sends no Access-Control-Allow-Origin, so a fetch from the frontend is refused
+// before the app can read the answer, however healthy the server is. Measured on
+// 2026-09-11 against two servers on one LAN: both answered 206 with the
+// requested range and carried no access-control header at all. A probe that
+// always fails is worse than no probe, because it turns into a confident wrong
+// diagnosis.
+//
+// A range request rather than a full GET, so a 40 MB file is not pulled to
+// answer a yes/no question. A server that does not do ranges answers 200 with
+// the whole body, which still proves it serves the file, and one that refuses
+// the range with 416 is also serving; both count as delivered.
+func (a *App) ProbeTrackDelivery(url string) TrackDelivery {
+	if strings.TrimSpace(url) == "" {
+		return TrackDelivery{Known: false, Detail: "no url"}
+	}
+	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return TrackDelivery{Known: false, Detail: "bad url"}
+	}
+	req.Header.Set("User-Agent", "STReborn-Desktop")
+	req.Header.Set("Range", "bytes=0-2047")
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		// The app could not reach the server. It may still be reachable from the
+		// speaker, which sits on the same network with different rules, so this
+		// is unknown rather than a verdict against the server.
+		return TrackDelivery{Known: false, Detail: shortErr(err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return TrackDelivery{Delivered: true, Known: true, Status: resp.StatusCode}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TrackDelivery{Delivered: false, Known: true, Status: resp.StatusCode}
+	}
+	n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 2048))
+	return TrackDelivery{Delivered: n > 0, Known: true, Status: resp.StatusCode}
+}
+
 // StreamURLKind classifies a pasted URL so the search view can refuse a
 // website before it becomes a preset that can never play.
 //
