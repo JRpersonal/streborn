@@ -322,6 +322,7 @@
   "preset.copiedToKey": "{{n}} tuşuna kopyalandı: {{name}}",
   "preset.savedToKey": "{{n}} tuşuna kaydedildi: {{name}}",
   "preset.alreadyOnKey": "Bu istasyon zaten {{n}} tuşunda kayıtlı.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" zaten {{n}} numaralı tuşta. Önce kaydetmek istediğini hoparlörde başlat, sonra kaydet.",
   "preset.sourceBadge": "kaynak: {{source}}",
   "preset.saveFailed": "Kaydedilemedi: {{err}}",
   "play.errNoInternet": "internet yok mu?",

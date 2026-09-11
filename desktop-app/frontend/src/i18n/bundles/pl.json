@@ -322,6 +322,7 @@
   "preset.copiedToKey": "Skopiowano do przycisku {{n}}: {{name}}",
   "preset.savedToKey": "Zapisano na przycisku {{n}}: {{name}}",
   "preset.alreadyOnKey": "Ta stacja jest już przypisana do przycisku {{n}}.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" jest już na przycisku {{n}}. Najpierw włącz na głośniku to, co chcesz zapisać, a potem zapisz.",
   "preset.sourceBadge": "z {{source}}",
   "preset.saveFailed": "Zapis nie powiódł się: {{err}}",
   "play.errNoInternet": "brak internetu?",

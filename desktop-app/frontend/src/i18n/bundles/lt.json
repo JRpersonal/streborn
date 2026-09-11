@@ -322,6 +322,7 @@
   "preset.copiedToKey": "Nukopijuota į mygtuką {{n}}: {{name}}",
   "preset.savedToKey": "Išsaugota mygtuke {{n}}: {{name}}",
   "preset.alreadyOnKey": "Ši stotis jau priskirta klavišui {{n}}.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" jau yra ties mygtuku {{n}}. Pirma paleisk kolonėlėje tai, ką nori išsaugoti, tada saugok.",
   "preset.sourceBadge": "iš {{source}}",
   "preset.saveFailed": "Nepavyko išsaugoti: {{err}}",
   "play.errNoInternet": "nėra interneto?",
