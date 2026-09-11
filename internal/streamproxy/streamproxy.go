@@ -463,6 +463,21 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 // Deliberately cheap: no extra request, no timer, nothing written to the
 // speaker's flash, and no new log LINE. It rides on one that was being written
 // anyway, once per stream start.
+// offsetRange returns the caller's Range header when it asks for a NON-ZERO
+// start, and "" otherwise. See the forwarding site for why only an offset
+// qualifies: a zero-start range is what every player sends for every stream.
+func offsetRange(h string) string {
+	v := strings.TrimSpace(h)
+	if !strings.HasPrefix(strings.ToLower(v), "bytes=") {
+		return ""
+	}
+	spec := strings.TrimSpace(v[len("bytes="):])
+	if spec == "" || strings.HasPrefix(spec, "-") || strings.HasPrefix(spec, "0-") || spec == "0" {
+		return ""
+	}
+	return v
+}
+
 func requestFacts(r *http.Request) []any {
 	if r == nil {
 		return nil
@@ -688,6 +703,22 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// now-playing text. The box never sees the icy-metaint contract.
 	req.Header.Set("Icy-MetaData", "1")
 	req.Header.Set("User-Agent", "STR-Proxy/1.0")
+	// Carry a MID-FILE range request upstream. The box asks for one when it is
+	// reading a finite file's header or seeking, and this proxy answered every
+	// such request from byte 0, so the box got a few kilobytes of the wrong part,
+	// gave up with AUDIO_ERROR_DECODER and retried every five seconds. A library
+	// FLAC asked for bytes=253170- and never played once (#844).
+	//
+	// Only an OFFSET range is forwarded. "bytes=0-" is what a plain player sends
+	// for any stream and says nothing, while a non-zero start is something no
+	// radio listener ever asks for, so this cannot reach a live stream. An
+	// upstream that does not do ranges ignores the header and answers 200, which
+	// is exactly what this path did before.
+	if r != nil {
+		if rng := offsetRange(r.Header.Get("Range")); rng != "" {
+			req.Header.Set("Range", rng)
+		}
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
