@@ -225,6 +225,7 @@ import {
   dismissNotice,
   noticeDismissed,
   activeSlotFromLocation,
+  proxiedRadioPlaying,
   orionStationPayload,
   nativeSlotStale,
   isLostStrKey,
@@ -6875,14 +6876,14 @@ function scheduleLiveTitle() {
     if (state.currentBox !== box) { liveTitleActive = false; return; }   // speaker changed
     const loc = state.nowLocation || '';
     if (loc === '') { liveTitleActive = false; return; }                 // playback stopped
-    // Slot-based, not a raw /stream/ match: a NATIVE radio preset carries the
-    // ORION "/station?data=<base64>" descriptor, which the raw regex never
-    // matched, so on native playback this loop spun without ever fetching a
-    // title and the Play tab showed no artist/track at all (#597).
-    // activeSlotFromLocation decodes the descriptor (the #555 fix) and also
-    // correctly yields null for a native station pointing straight at a CDN,
-    // where the proxy has no title to offer.
-    const isRadio = !/\/spotify\//.test(loc) && activeSlotFromLocation(loc) !== null;
+    // Anything the stream proxy is serving, which is where a live title comes
+    // from. This used to ask for a preset SLOT instead, which is a narrower
+    // question: a station started from Find stations has no slot, so the poll
+    // never ran and the Play tab showed no artist or track while the speaker's
+    // own page showed both (#922). The predicate still covers the ORION
+    // descriptor a native preset carries (#597/#555) and still says no to a
+    // native station pointing straight at a CDN, where there is no title to get.
+    const isRadio = proxiedRadioPlaying(loc);
     if (isRadio) {
       let title = '';
       try { title = (await StreamTitle(box.host, box.port)) || ''; } catch {}
@@ -7033,10 +7034,10 @@ function renderNowPlayingBar() {
       ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
       : state.nowSpotifyTrack;
     displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
-  } else if (!/\/spotify\//.test(loc) && activeSlotFromLocation(loc) !== null && state.nowTitle) {
-    // Slot-based like the title poller above: the raw /stream/ regex missed
-    // NATIVE radio locations (ORION descriptor), so the status line dropped
-    // the artist/track exactly when the box played natively (#597).
+  } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
+    // The same predicate as the title poller above, and it has to be the same
+    // one: fixing only the poll would fetch a title that this line then refused
+    // to print (#922).
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
   }
   // Match the source case-insensitively: the firmware is not consistent about
