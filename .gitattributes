@@ -51,5 +51,6 @@ usb-stick/rc.local text eol=lf
 # checkout. Treating them as binary keeps git from line-ending
 # transforming a real ELF the moment CI fills it in.
 desktop-app/agentbin/streborn-armv7l binary
+desktop-app/agentbin/go-librespot-armv7l binary
 sticksetup/embedded/winformat.exe    binary
 *.html text eol=lf

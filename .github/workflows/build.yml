@@ -261,7 +261,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # Two go:embed targets are tracked as EMPTY stubs so a clean checkout
+      # Three go:embed targets are tracked as EMPTY stubs so a clean checkout
       # compiles, and CI overwrites them with the real binaries in a later job.
       # A local `make wails-build` fills them and deletes frontend/dist/.gitkeep,
       # and committing that state puts a 13 MB binary in the history and breaks
@@ -271,7 +271,7 @@ jobs:
         run: |
           set -e
           fail=0
-          for f in desktop-app/agentbin/streborn-armv7l sticksetup/embedded/winformat.exe; do
+          for f in desktop-app/agentbin/streborn-armv7l desktop-app/agentbin/go-librespot-armv7l sticksetup/embedded/winformat.exe; do
             if [ ! -f "$f" ]; then
               echo "::error file=$f::tracked stub is missing"; fail=1; continue
             fi

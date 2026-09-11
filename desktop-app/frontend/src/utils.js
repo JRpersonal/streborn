@@ -432,6 +432,36 @@ export function clearNoticeDismissal(kind) {
   storeDel(dismissKey(kind));
 }
 
+// proxiedRadioPlaying reports whether what the speaker is playing right now is
+// radio coming THROUGH STR's stream proxy, which is the only case where the
+// agent has a live ICY title to hand out.
+//
+// It exists because the two places that ask used activeSlotFromLocation() for
+// it, and a slot number is a narrower question than the one they were asking.
+// A station started from Find stations is pushed as /stream/raw?u=<base64> and
+// belongs to no preset, so it has no slot, so the app never asked for its title
+// and the Play tab showed no artist or track (#922, reported on v0.9.79). The
+// speaker's own page kept showing it, because the agent had the title all along.
+//
+// Three shapes count, and the fourth deliberately does not:
+//   /stream/<n>          a preset recall through the proxy
+//   /stream/raw?u=<b64>  an ad-hoc station from Find stations or the library
+//   /station?data=<b64>  the ORION descriptor, when its streamUrl is one of those
+//   a bare CDN address   NATIVE playback, where the proxy is not in the path and
+//                        has no title to offer
+// Spotify is excluded here as well; it has its own now-playing fields.
+export function proxiedRadioPlaying(loc) {
+  if (!loc || /\/spotify\//.test(loc)) return false;
+  if (proxiedRadioURL(loc)) return true;
+  const payload = orionStationPayload(loc);
+  return !!(payload && payload.streamUrl && proxiedRadioURL(String(payload.streamUrl)));
+}
+
+// proxiedRadioURL matches the two proxy paths the agent serves radio on.
+function proxiedRadioURL(u) {
+  return /\/stream\/\d+(?:[/?#]|$)/.test(u) || /\/stream\/raw(?:[/?#]|$)/.test(u);
+}
+
 // activeSlotFromLocation extracts the slot number from a stream proxy
 // URL like http://127.0.0.1:8888/stream/3. Since build 2335 the
 // speaker's content items always run through the proxy, so the older
