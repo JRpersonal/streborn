@@ -1344,18 +1344,15 @@ async function doDissolveZone(strBoxes) {
 // group's own frame.
 async function doForgetPermanentAt(master) {
   if (!master) return;
-  startAction();
   try {
     await ForgetPermanentGroup(master.host, master.port);
     // Transient: a confirmation that the thing the user just asked for
     // happened, and the frame disappearing from the tab says it too.
     setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.permanentForgotten'))}</div>`, { transient: true });
   } catch (e) {
-    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveFailed', { err: String(e) }))}</div>`, { transient: false });
-  } finally {
-    finishAction();
-    await refreshZones();
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`, { transient: false });
   }
+  finishAction();
 }
 
 // doDissolveZoneAt dissolves the group led by a SPECIFIC master box. Shared by
