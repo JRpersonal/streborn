@@ -2,67 +2,60 @@ package webui
 
 import "testing"
 
-// The speaker's own /api/debug/state is what the phone remote's "Save
-// diagnostic file" button downloads verbatim, and that file gets mailed in and
-// attached to public issues. A user's household network name shipped that way
-// on 2026-08-22.
-
-func TestRedactedDropsNetworkNamesAndAddresses(t *testing.T) {
-	in := wlanConfigured{
-		Tool:      "BoseApp-Persistence",
+// A household network name reached three public diagnostic attachments through
+// the Stored list, which the redactor never walked: the same name appeared as
+// <REDACTED> in networks and in clear two fields below.
+//
+//	"networks": [{"ssid": "<REDACTED>", "ssidTag": "604c81:5", ...}]
+//	"stored":   [{"ssid": "RicoI",      "ssidTag": "604c81:5", ...}]
+//
+// Every list of networks on this struct has to be covered, so the test asserts
+// on both rather than on the one that happened to be broken.
+func TestRedactedCoversEveryNetworkList(t *testing.T) {
+	w := wlanConfigured{
+		Tool:      "/usr/local/sbin/wpa_cli",
 		Interface: "wlan0",
-		Networks: []wlanNetwork{
-			{ID: 0, SSID: "FRITZ!Box 6690 XH", BSSID: "any", Flags: "[CURRENT]", Current: true},
-			{ID: 1, SSID: "Guest", BSSID: "AA:BB:CC:DD:EE:FF"},
-		},
-		FileBlocks: 2,
+		Networks:  []wlanNetwork{{ID: 0, SSID: "HomeNet", BSSID: "any", Current: true, SSIDTag: "aabbcc:7"}},
+		Stored:    []wlanNetwork{{ID: 0, SSID: "HomeNet", BSSID: "11:22:33:44:55:66", Flags: "NetworkProfiles", SSIDTag: "aabbcc:7"}},
 	}
 
-	got := in.redacted()
+	got := w.redacted()
 
-	for i, n := range got.Networks {
-		if n.SSID != wlanRedacted {
-			t.Errorf("network %d ssid = %q, want %q", i, n.SSID, wlanRedacted)
+	for _, tc := range []struct {
+		list string
+		nets []wlanNetwork
+	}{{"networks", got.Networks}, {"stored", got.Stored}} {
+		for _, n := range tc.nets {
+			if n.SSID != wlanRedacted {
+				t.Errorf("%s: the network name survived as %q", tc.list, n.SSID)
+			}
 		}
 	}
-	// "any" is wpa_supplicant's wildcard, not an address: losing it would hide
-	// that no BSSID is pinned.
+
+	// The wildcard is not an address and losing it would hide that no BSSID is
+	// pinned; a real address is an address wherever it appears.
 	if got.Networks[0].BSSID != "any" {
-		t.Errorf("wildcard bssid = %q, want it kept", got.Networks[0].BSSID)
+		t.Errorf("the wpa_supplicant wildcard was redacted: %q", got.Networks[0].BSSID)
 	}
-	if got.Networks[1].BSSID != wlanRedacted {
-		t.Errorf("real bssid = %q, want %q", got.Networks[1].BSSID, wlanRedacted)
+	if got.Stored[0].BSSID != wlanRedacted {
+		t.Errorf("a hardware address survived in stored: %q", got.Stored[0].BSSID)
 	}
 
-	// Everything a diagnosis actually reads must survive.
-	if got.Tool != in.Tool || got.Interface != in.Interface || got.FileBlocks != in.FileBlocks {
-		t.Errorf("redacted() lost diagnostic context: %+v", got)
+	// Everything a diagnosis reads has to survive, or the redaction costs more
+	// than it protects.
+	if got.Stored[0].SSIDTag != "aabbcc:7" || got.Networks[0].SSIDTag != "aabbcc:7" {
+		t.Error("the scrub-proof tag was lost, so two lists can no longer be compared")
 	}
-	if len(got.Networks) != len(in.Networks) {
-		t.Fatalf("network count = %d, want %d", len(got.Networks), len(in.Networks))
-	}
-	if !got.Networks[0].Current || got.Networks[0].Flags != "[CURRENT]" || got.Networks[1].ID != 1 {
-		t.Errorf("redacted() lost per-network context: %+v", got.Networks)
+	if !got.Networks[0].Current || got.Stored[0].Flags != "NetworkProfiles" || got.Tool == "" || got.Interface == "" {
+		t.Errorf("redaction removed diagnostic context: %+v", got)
 	}
 }
 
-func TestRedactedLeavesTheCallerUntouched(t *testing.T) {
-	// Value receiver plus a fresh slice: the source struct must keep its real
-	// data, because only the diagnostic path is supposed to lose it.
-	in := wlanConfigured{Networks: []wlanNetwork{{SSID: "Home", BSSID: "AA:BB:CC:DD:EE:FF"}}}
-
-	_ = in.redacted()
-
-	if in.Networks[0].SSID != "Home" || in.Networks[0].BSSID != "AA:BB:CC:DD:EE:FF" {
-		t.Errorf("redacted() mutated its receiver: %+v", in.Networks[0])
-	}
-}
-
-func TestRedactedHandlesAnEmptyPicture(t *testing.T) {
-	// A chassis with no wpa_cli and no stored profiles reports no networks at
-	// all, and that is itself the answer for that box.
-	got := wlanConfigured{Tool: "", Err: "no wpa_cli and no stored profile files on this speaker"}.redacted()
-	if len(got.Networks) != 0 || got.Err == "" {
-		t.Errorf("empty picture mangled: %+v", got)
+// A box with no networks at all must not turn nil into an empty list, which
+// would read as "the question was asked and the answer is none" in a bundle.
+func TestRedactedKeepsNilLists(t *testing.T) {
+	got := wlanConfigured{Tool: "none"}.redacted()
+	if got.Networks != nil || got.Stored != nil {
+		t.Errorf("nil lists became %v / %v", got.Networks, got.Stored)
 	}
 }

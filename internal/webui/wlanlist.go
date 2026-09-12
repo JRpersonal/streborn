@@ -101,8 +101,31 @@ const wlanRedacted = "<REDACTED>"
 // and the block count from the file. What a name adds is the one thing that is
 // nobody else's business.
 func (w wlanConfigured) redacted() wlanConfigured {
-	nets := make([]wlanNetwork, len(w.Networks))
-	for i, n := range w.Networks {
+	w.Networks = redactNetworkNames(w.Networks)
+	// Stored is the firmware's own profile list and it arrived later than this
+	// function, with the boot guard. It was never added here, so a diagnostic
+	// showed the household network name in clear one field below the same name
+	// as <REDACTED>. Found in three public attachments, e.g. #823:
+	//
+	//	"networks": [{"ssid": "<REDACTED>", "ssidTag": "604c81:5", ...}]
+	//	"stored":   [{"ssid": "RicoI",      "ssidTag": "604c81:5", ...}]
+	//
+	// Both lists are the same kind of thing and get the same treatment. Any
+	// future list of networks on this struct must come through here too.
+	w.Stored = redactNetworkNames(w.Stored)
+	return w
+}
+
+// redactNetworkNames removes the network names and hardware addresses from one
+// list, leaving everything a diagnosis actually reads: the id, the flags, which
+// entry is current, and the scrub-proof ssidTag that lets two lists be compared
+// without either of them naming anything.
+func redactNetworkNames(in []wlanNetwork) []wlanNetwork {
+	if in == nil {
+		return nil
+	}
+	out := make([]wlanNetwork, len(in))
+	for i, n := range in {
 		if n.SSID != "" {
 			n.SSID = wlanRedacted
 		}
@@ -111,10 +134,9 @@ func (w wlanConfigured) redacted() wlanConfigured {
 		if n.BSSID != "" && !strings.EqualFold(n.BSSID, "any") {
 			n.BSSID = wlanRedacted
 		}
-		nets[i] = n
+		out[i] = n
 	}
-	w.Networks = nets
-	return w
+	return out
 }
 
 var wlanNetLine = regexp.MustCompile(`^(\d+)\t([^\t]*)\t([^\t]*)\t?(.*)$`)
