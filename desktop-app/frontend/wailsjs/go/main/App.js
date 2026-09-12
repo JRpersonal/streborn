@@ -138,6 +138,10 @@ export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
 }
 
+export function ForgetPermanentGroup(arg1, arg2) {
+  return window['go']['main']['App']['ForgetPermanentGroup'](arg1, arg2);
+}
+
 export function FormZone(arg1, arg2, arg3) {
   return window['go']['main']['App']['FormZone'](arg1, arg2, arg3);
 }

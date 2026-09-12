@@ -113,6 +113,7 @@
   "multiroom.nothingToUngroup": "Nie ma teraz grupy do rozłączenia.",
   "multiroom.dissolveGroupTip": "Rozłącz tę grupę",
   "multiroom.forgetPermanentTip": "Usuń tę stałą grupę",
+  "multiroom.permanentForgotten": "Grupa stała usunięta. Nie utworzy się już sama.",
   "multiroom.storedPermanentNote": "Grupa stała. Tworzy się tylko wtedy, gdy odtwarzanie zostanie uruchomione na {{master}}.",
   "multiroom.undoPairTip": "Cofnij tę parę stereo",
   "multiroom.formed": "Grupa utworzona. Główny głośnik strumieniuje do pozostałych. Jeśli milczą, upewnij się, że główny głośnik faktycznie odtwarza, a następnie prześlij logi.",

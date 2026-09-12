@@ -113,6 +113,7 @@
   "multiroom.nothingToUngroup": "لا توجد مجموعة لإلغاء تجميعها الآن.",
   "multiroom.dissolveGroupTip": "حلّ هذه المجموعة",
   "multiroom.forgetPermanentTip": "حذف هذه المجموعة الدائمة",
+  "multiroom.permanentForgotten": "تم حذف المجموعة الدائمة. لن تتكوّن من تلقاء نفسها بعد الآن.",
   "multiroom.storedPermanentNote": "مجموعة دائمة. لا تتكوّن إلا عند بدء التشغيل على {{master}}.",
   "multiroom.undoPairTip": "التراجع عن هذا الزوج الاستريو",
   "multiroom.formed": "تم إنشاء المجموعة. تبث السمّاعة الرئيسية إلى البقية. إذا بقيت صامتة، فتأكّد من أن السمّاعة الرئيسية تعمل فعلًا، ثم أرسل السجلات.",

@@ -73,6 +73,8 @@ export function ExportBackup(arg1:string):Promise<Record<string, any>>;
 
 export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
 
+export function ForgetPermanentGroup(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;
 
 export function FormatStick(arg1:string):Promise<void>;

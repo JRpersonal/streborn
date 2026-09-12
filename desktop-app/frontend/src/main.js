@@ -258,6 +258,7 @@ import {
   pairMemberBoxes,
   balanceSourceBox,
   groupCount,
+  groupCountSplit,
   onZoneLive,
   notifyZoneLive,
 } from './groups.js';
@@ -284,6 +285,7 @@ import {
   translateTags,
   flagFromCC,
   flagSvg,
+  localeFlagSvg,
   optFlag,
 } from './localization.js';
 
@@ -299,7 +301,13 @@ import {
 // codes for flag emoji rendering. The "language flag" mapping is a UX
 // convention: English uses the Union Jack rather than US for global
 // audiences. Add new entries here when registering a new bundle.
+// A locale whose code happens to look like a country code is the trap here:
+// "ar" upper-cases to AR, which is Argentina. Locales with no country of their
+// own are listed with an empty string so the fallback below cannot invent one;
+// they are drawn by localeFlagSvg from a script mark instead.
 const LOCALE_FLAG_CC = {
+  ar: '',
+  'zh-Hant': '',
   en: 'GB',
   de: 'DE',
   fr: 'FR',
@@ -550,12 +558,12 @@ document.querySelector('#app').innerHTML = `
       <div class="app-locale locale-dd" role="group" aria-label="${escapeAttr(t('settings.language'))}">
         ${(() => {
           const cur = AVAILABLE_LOCALES.find(l => l.code === getLocale()) || AVAILABLE_LOCALES[0];
-          const curCc = LOCALE_FLAG_CC[cur.code] || cur.code.toUpperCase();
-          const trigger = `<button type="button" class="locale-dd-trigger" id="localeTrigger" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(cur.label)}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(curCc) || flagFromCC(curCc)}</span><span class="locale-flag-code">${escapeHtml(cur.code.toUpperCase())}</span><span class="locale-dd-caret" aria-hidden="true">&#9662;</span></button>`;
+          const curCc = LOCALE_FLAG_CC[cur.code] ?? cur.code.toUpperCase();
+          const trigger = `<button type="button" class="locale-dd-trigger" id="localeTrigger" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(cur.label)}"><span class="locale-flag-emoji" aria-hidden="true">${localeFlagSvg(cur.code, curCc) || flagFromCC(curCc)}</span><span class="locale-flag-code">${escapeHtml(cur.code.toUpperCase())}</span><span class="locale-dd-caret" aria-hidden="true">&#9662;</span></button>`;
           const items = AVAILABLE_LOCALES.map(l => {
-            const cc = LOCALE_FLAG_CC[l.code] || l.code.toUpperCase();
+            const cc = LOCALE_FLAG_CC[l.code] ?? l.code.toUpperCase();
             const sel = l.code === getLocale();
-            return `<li role="option" class="locale-dd-item${sel ? ' active' : ''}" data-locale="${escapeAttr(l.code)}" aria-selected="${sel ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(cc) || flagFromCC(cc)}</span><span class="locale-dd-name">${escapeHtml(l.label)}</span></li>`;
+            return `<li role="option" class="locale-dd-item${sel ? ' active' : ''}" data-locale="${escapeAttr(l.code)}" aria-selected="${sel ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${localeFlagSvg(l.code, cc) || flagFromCC(cc)}</span><span class="locale-dd-name">${escapeHtml(l.label)}</span></li>`;
           }).join('');
           return trigger + `<ul class="locale-dd-menu" id="localeMenu" role="listbox" hidden>${items}</ul>`;
         })()}
@@ -3335,9 +3343,17 @@ function updateSettingsTabBadge() {
 function updateMultiroomTabBadge() {
   const el = $('multiroomTabBadge');
   if (!el) return;
-  const n = groupCount(state.zoneLive, state.boxes);
+  const split = groupCountSplit(state.zoneLive, state.boxes);
+  const n = split.total;
   el.hidden = n === 0;
   el.textContent = n ? String(n) : '';
+  // A badge carries the colour of the state that produced it. A saved group
+  // that is not currently formed is drawn as a dashed muted frame, so a count
+  // made up only of those reads muted too; as soon as one group is actually
+  // live the badge is brand again, matching the solid frames (Jens,
+  // 2026-09-12: the blue count over a grey dashed frame did not read as the
+  // same thing).
+  el.classList.toggle('tab-badge-stored', n > 0 && split.live === 0);
   const tip = n ? t('nav.multiroomBadgeTitle', { n }) : '';
   el.title = tip;
   el.setAttribute('aria-label', tip);
