@@ -113,6 +113,7 @@
   "multiroom.nothingToUngroup": "Šiuo metu nėra grupės, kurią būtų galima išskaidyti.",
   "multiroom.dissolveGroupTip": "Išardyti šią grupę",
   "multiroom.forgetPermanentTip": "Ištrinti šią nuolatinę grupę",
+  "multiroom.permanentForgotten": "Nuolatinė grupė ištrinta. Ji daugiau pati nesusikurs.",
   "multiroom.storedPermanentNote": "Nuolatinė grupė. Ji susidaro tik tada, kai grojimas paleidžiamas per {{master}}.",
   "multiroom.undoPairTip": "Panaikinti šią stereoporą",
   "multiroom.formed": "Grupė sukurta. Pagrindinis garsiakalbis transliuoja į kitus. Jei jie tyli, įsitikinkite, kad pagrindinis garsiakalbis tikrai groja, ir atsiųskite žurnalus.",

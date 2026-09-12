@@ -113,6 +113,7 @@
   "multiroom.nothingToUngroup": "解除できるグループが今はありません。",
   "multiroom.dissolveGroupTip": "このグループを解除",
   "multiroom.forgetPermanentTip": "この常設グループを削除",
+  "multiroom.permanentForgotten": "常設グループを削除しました。もう自動では作られません。",
   "multiroom.storedPermanentNote": "常設グループ。{{master}} で再生を始めたときだけグループになります。",
   "multiroom.undoPairTip": "このステレオペアを解除",
   "multiroom.formed": "グループを作成しました。メインのスピーカーがほかのスピーカーへ配信します。音が出ない場合は、メインのスピーカーが実際に再生しているか確認し、ログを送ってください。",

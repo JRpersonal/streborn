@@ -117,6 +117,7 @@
   "multiroom.nothingToUngroup": "Es gibt gerade keine Gruppe zum Auflösen.",
   "multiroom.dissolveGroupTip": "Diese Gruppe auflösen",
   "multiroom.forgetPermanentTip": "Diese dauerhafte Gruppe löschen",
+  "multiroom.permanentForgotten": "Dauerhafte Gruppe gelöscht. Sie bildet sich nicht mehr von selbst.",
   "multiroom.storedPermanentNote": "Dauerhafte Gruppe. Sie bildet sich nur, wenn die Wiedergabe an {{master}} gestartet wird.",
   "multiroom.undoPairTip": "Dieses Stereopaar auflösen",
   "multiroom.formed": "Gruppe erstellt. Der Haupt-Lautsprecher streamt zu den anderen. Wenn sie stumm bleiben, prüfe, ob der Haupt-Lautsprecher wirklich spielt, und schick mir die Logs.",

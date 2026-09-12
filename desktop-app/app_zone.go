@@ -365,6 +365,34 @@ func (a *App) DissolveZone(masterHost string, masterPort int) (map[string]any, e
 	return out, nil
 }
 
+// ForgetPermanentGroup takes the group apart AND deletes the saved template, so
+// it does not form itself again the next time the main speaker plays.
+//
+// Deliberately separate from DissolveZone rather than a flag on it. The two are
+// different intents: "not right now" and "never again". Dissolve is reached
+// from several places (the x on a live frame, the Multi-Room button, the
+// stereo path) and every one of them means the first; only the x on a saved
+// group's own dashed frame means the second, and until now it silently did the
+// first, so a saved group could not be deleted from the app at all (#119).
+func (a *App) ForgetPermanentGroup(masterHost string, masterPort int) (map[string]any, error) {
+	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodDelete, "/api/box/zone?forget=1", "", "", zoneCallTimeout)
+	if err != nil {
+		a.logger.Info("zone: forgetting the saved group failed", "master", masterHost, "err", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		herr := readHTTPError(resp)
+		a.logger.Info("zone: forgetting the saved group rejected", "master", masterHost, "err", herr)
+		return nil, herr
+	}
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	a.relayStereoPairClear(out)
+	a.logger.Info("zone: saved group deleted", "master", masterHost)
+	return out, nil
+}
+
 // relayStereoPairClear relays the pair-record DELETE to the partner's agent
 // when a stereo dissolve response says the agent could not clear it directly.
 func (a *App) relayStereoPairClear(out map[string]any) {

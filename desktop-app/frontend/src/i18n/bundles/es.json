@@ -113,6 +113,7 @@
   "multiroom.nothingToUngroup": "No hay ningún grupo que deshacer ahora mismo.",
   "multiroom.dissolveGroupTip": "Deshacer este grupo",
   "multiroom.forgetPermanentTip": "Eliminar este grupo permanente",
+  "multiroom.permanentForgotten": "Grupo permanente eliminado. Ya no volverá a formarse solo.",
   "multiroom.storedPermanentNote": "Grupo permanente. Solo se forma cuando la reproducción se inicia en {{master}}.",
   "multiroom.undoPairTip": "Deshacer esta pareja estéreo",
   "multiroom.formed": "Grupo creado. El altavoz principal transmite a los demás. Si se quedan en silencio, comprueba que el altavoz principal esté reproduciendo de verdad y envíame los registros.",

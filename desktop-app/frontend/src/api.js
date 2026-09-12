@@ -145,6 +145,7 @@ export {
   GetZoneState,
   FormZone,
   DissolveZone,
+  ForgetPermanentGroup,
   DissolveStereoPair,
   SyncSpotifyLogin,
 } from '../wailsjs/go/main/App';

@@ -2528,11 +2528,21 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		// reporter suspects when a group is missing after an update, which is
 		// how it came up again on 2026-09-09 (that group turned out to be
 		// intact; this path is what would have taken it).
-		if doc, ok := s.zones.Get(); ok && doc.Permanent {
+		// ... unless the caller says it means the saved one as well. That is a
+		// separate, deliberate act in the UI (the x on the saved group's own
+		// dashed frame), and without it a saved group could not be removed from
+		// the app at all: every route led here, and here it always survived.
+		// Reported as "the multiroom connection cannot be separated", with a log
+		// showing three dissolves in ninety seconds and the group re-forming
+		// each time (#119).
+		forget := r.URL.Query().Get("forget") == "1"
+		if doc, ok := s.zones.Get(); ok && doc.Permanent && !forget {
 			s.logger.Info("zone: live group taken apart, the saved group stays saved and forms again when its main speaker plays",
 				"master", doc.Master, "members", len(doc.Slaves))
 		} else if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
+		} else if forget {
+			s.logger.Info("zone: the saved group was deleted as well, it will not form again on its own")
 		}
 	}
 	// Also clear the group from every member's own persisted store

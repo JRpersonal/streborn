@@ -8,7 +8,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
+import { FormZone, DissolveZone, ForgetPermanentGroup, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
@@ -633,7 +633,22 @@ export function renderMultiroom(fetchLive) {
     x.onclick = (e) => {
       e.stopPropagation();
       const mk = String(x.dataset.dissolve || '').toUpperCase();
-      if (x.dataset.dissolveKind === 'pair') {
+      if (x.dataset.dissolveKind === 'stored') {
+        // The x on a SAVED group's dashed frame. Its tooltip has promised
+        // "delete this permanent group" in thirteen languages while doing the
+        // same thing as the live frame's x, which by design leaves the saved
+        // group alone. So the button could not do what it said, and with no
+        // other control anywhere a saved group could not be removed from the
+        // app at all: reported as "the multiroom connection cannot be
+        // separated", with three dissolves in ninety seconds in the log (#119).
+        const mb = masterBoxForKey(mk, state.zoneLive, strBoxes);
+        if (!mb) {
+          setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`, { transient: false });
+          finishAction();
+          return;
+        }
+        doForgetPermanentAt(mb);
+      } else if (x.dataset.dissolveKind === 'pair') {
         const pair = stereoPairsOf(state.zoneLive).find(p =>
           String(p.master || '').toUpperCase() === mk ||
           (p.members || []).some(m => String((m && m.deviceID) || '').toUpperCase() === mk));
@@ -1321,6 +1336,26 @@ async function doDissolveZone(strBoxes) {
     return;
   }
   await doDissolveZoneAt(master);
+}
+
+// doForgetPermanentAt deletes the SAVED group led by this master, so it stops
+// re-forming itself the next time that speaker plays. The live group goes with
+// it, which is what the user is asking for when they press the x on the saved
+// group's own frame.
+async function doForgetPermanentAt(master) {
+  if (!master) return;
+  startAction();
+  try {
+    await ForgetPermanentGroup(master.host, master.port);
+    // Transient: a confirmation that the thing the user just asked for
+    // happened, and the frame disappearing from the tab says it too.
+    setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.permanentForgotten'))}</div>`, { transient: true });
+  } catch (e) {
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveFailed', { err: String(e) }))}</div>`, { transient: false });
+  } finally {
+    finishAction();
+    await refreshZones();
+  }
 }
 
 // doDissolveZoneAt dissolves the group led by a SPECIFIC master box. Shared by
