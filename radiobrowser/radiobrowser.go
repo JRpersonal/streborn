@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Mirrors are the servers we try in order. First success wins; on
@@ -412,10 +413,82 @@ func (c *Client) SearchSmart(ctx context.Context, opts SearchOpts) ([]Station, e
 	add(nameRes.stations)
 	add(tagStations)
 
+	// Still nothing, and the user typed more than one word? Then the station
+	// they mean may simply spell itself with punctuation. See punctFallback.
+	if len(merged) == 0 && len(tokens) >= 2 {
+		if st, err := c.punctFallback(ctx, opts, tokens); err == nil {
+			add(st)
+		}
+	}
+
 	if len(merged) > opts.Limit {
 		merged = merged[:opts.Limit]
 	}
 	return merged, nil
+}
+
+// punctFallback finds a station whose own name carries punctuation the user did
+// not type.
+//
+// radio-browser's byname is a plain substring match, so "Mi Soul" finds nothing
+// while "Mi-Soul" finds the station: the searcher has to guess the spelling
+// they are searching in order to discover. Reported by a user with that exact
+// example, and confirmed against the live API (0 hits vs 2).
+//
+// So the longest word is asked for on its own, which is the part most likely to
+// be spelled plainly, and the answers are compared with the punctuation removed
+// from BOTH sides. Deliberately a whole-query comparison rather than a per-token
+// one: "Mi Soul" normalises to "misoul", which "Mi-Soul" contains and
+// "Missoula" does not, though the latter does contain both "mi" and "soul".
+// Measured on the live API: 181 stations came back for "Soul" and exactly the
+// two intended ones survived.
+//
+// Runs only when the ordinary search found nothing at all, so a working query
+// costs no extra request.
+func (c *Client) punctFallback(ctx context.Context, opts SearchOpts, tokens []string) ([]Station, error) {
+	longest := ""
+	for _, t := range tokens {
+		if len(t) > len(longest) {
+			longest = t
+		}
+	}
+	// One character is every station's substring; it would fetch a page of
+	// noise to filter nothing useful out of.
+	if len([]rune(longest)) < 3 {
+		return nil, nil
+	}
+	wide := opts
+	wide.Name = longest
+	wide.TagList = nil
+	wide.Limit = 400
+	if wide.Order == "" {
+		wide.Order = "votes"
+	}
+	st, err := c.Search(ctx, wide)
+	if err != nil {
+		return nil, err
+	}
+	want := normalizeName(opts.Name)
+	out := make([]Station, 0, 8)
+	for _, s := range st {
+		if strings.Contains(normalizeName(s.Name), want) {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// normalizeName lower-cases and drops everything that is not a letter or a
+// digit, so "Mi-Soul", "Mi Soul" and "mi.soul" are one and the same name.
+func normalizeName(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // EnrichSiblingLogos fills an entry's empty Favicon/Homepage from a SIBLING
