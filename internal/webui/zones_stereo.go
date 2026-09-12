@@ -2131,6 +2131,16 @@ func (s *Server) kickMirrorAfterPlay() {
 	if s.zones == nil || s.mirrorKick == nil {
 		return
 	}
+	// An alarm is per speaker: it wakes the bedroom, not the house. The hush is
+	// checked here rather than at the send because BOTH kick paths funnel
+	// through this one function - this in-process call from setLastPlay, and
+	// the firmware's own "started playing" event over gabbo (KickDefaultGroup,
+	// wired as onSourcePlaying) - so one check covers both. It suppresses only
+	// the automatic re-form; the stored group document is never touched.
+	if s.groupFormHushed() {
+		s.logger.Info("group re-form: hushed, leaving the other speakers asleep")
+		return
+	}
 	if z, ok := s.zones.Get(); !ok || z.Stereo {
 		// Standalone, or a stereo pair (the firmware persists a pair itself).
 		// Native zones pass since the default group (#70): the play kick is

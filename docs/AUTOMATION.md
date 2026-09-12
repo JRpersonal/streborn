@@ -202,6 +202,69 @@ failed`, at most one WARN per minute per key) and nothing changes. The
 diagnostic bundle's `group_keys` section shows the templates, the bindings,
 the last action and the last error.
 
+## Alarm clock (a preset, but timed)
+
+An alarm wakes the speaker at a set time on set weekdays and plays one of the
+six STR presets. Set it in the speaker's own web page from a phone
+(`http://<speaker>:17008/`, the Play tab).
+
+**Why it stores a preset and not a station.** The preset store already knows how
+to play radio, Spotify and saved folders, and it heals its own records, so an
+alarm that stored a URL would rot the moment you re-saved that preset. "Change
+what wakes me up" is therefore "save a new preset 3", with nothing to edit on
+the alarm itself.
+
+**What is stored, and where.** An alarm is an id, an on/off flag, an hour and
+minute, the weekdays it repeats on, the preset slot, and optionally a volume
+(leave it empty to keep whatever level the speaker remembers). The document also
+carries one IANA time zone for the speaker. It lives in
+`/mnt/nv/streborn/alarms.json`, written only when an editor saves it
+(`PUT /api/alarms`, LAN only; `GET /api/alarms` reads it back, with a status
+block). The scheduler keeps what it has already fired in a **separate** file,
+`/mnt/nv/streborn/alarms-state.json`, so a fire at 06:30 can never clobber an
+edit made at 06:29:59.
+
+**What a fire does.** Wake the speaker (`sys power` over the TAP CLI, with the
+same self-wake grace the app's wake uses), set the alarm's level once the box
+shows life, stop whatever station the firmware resumed on power-on, then recall
+the preset through exactly the same path as the app's `POST /api/play/<slot>`.
+If nothing is playing 45 seconds later it tries once more, and then stops: a
+dead station at 06:30 leaves a log line, not a speaker re-pushing a dead URL
+until somebody unplugs it.
+
+**Stopping it.** There is no snooze key. The alarm is ordinary playback, so the
+Stop button in the app or on the phone page, and the speaker's own power key,
+end it the way they end anything else; the retry stands down when it sees one of
+those. An alarm can also switch its speaker off by itself a set number of
+minutes after it starts, so one nobody is home for does not play all day. That
+arms the ordinary sleep timer, so it shows on the phone's sleep card as "Off in
+45 min" and can be cancelled there. Leave it at "Never" and the alarm plays until
+something stops it. The setting is per alarm, capped at twelve hours, and a new
+alarm starts at an hour.
+
+**One speaker, not the house.** An alarm wakes only the speaker it is set on,
+even when that speaker belongs to a permanent group. Starting playback is
+normally what tells STR to re-form a stored group, so the alarm suppresses that
+for about ninety seconds around its own fire. The group itself is untouched: the
+stored document is not read, written or dissolved, and the group forms as usual
+on the next play. Two consequences worth knowing: a play *you* start inside the
+same ninety seconds is not auto-formed either (it comes back on your next play,
+or on the five-minute reconcile), and a group that is still live at 06:30 rather
+than asleep will still hear the alarm, because STR is not the thing forming it.
+
+**The clock is the part that can bite.** These speakers have no
+battery-backed RTC, so after a power cut they boot reading the firmware's 2015
+build epoch until something corrects them. The scheduler therefore refuses to
+fire at all on a clock it does not trust. Once the clock IS repaired it is the
+true time, so the only other rule is staleness: an alarm more than five minutes
+late is skipped. A restart at 06:31 still wakes you, and so does a power cut
+whose clock repair lands just after the alarm, which is the morning somebody
+most wants waking. A box first plugged in at 09:00 stays quiet.
+The phone card says so in as many words when the clock is not yet known.
+
+The diagnostic bundle's `alarms` section shows the document, the resolved zone,
+whether the clock is trusted, the next fire and the last one.
+
 ## The dead endpoint (for reference)
 
 `POST :8090/speaker` was the documented notification API:

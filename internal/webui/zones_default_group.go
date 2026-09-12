@@ -287,6 +287,32 @@ func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
 // Same debounce as every app-driven play.
 func (s *Server) KickDefaultGroup() { s.kickMirrorAfterPlay() }
 
+// groupFormHushWindow covers one whole alarm fire: the wake (alarmWakeTimeout,
+// 20 s), during which the FIRMWARE's own power-on resume of yesterday's station
+// already reports a play start over gabbo, then the recall, the box actually
+// starting, and the 6 s the kick itself waits before it is sent.
+//
+// A window rather than something exact because there is nothing to be exact
+// with: the firmware's event says only "this speaker started playing", with no
+// indication of what started it, and the resume above fires it before the alarm
+// has recalled anything. The cost is that a play the USER starts inside the same
+// window is not auto-formed either; it comes back on their next play or on the
+// five-minute reconcile tick.
+const groupFormHushWindow = 90 * time.Second
+
+// hushGroupForm suppresses the play-triggered group re-form for d. It does not
+// touch the stored group in any way: the document is not read, written or
+// dissolved, and the group forms again as usual once the window passes.
+func (s *Server) hushGroupForm(d time.Duration) {
+	s.groupFormHushUntil.Store(time.Now().Add(d).UnixNano())
+}
+
+// groupFormHushed reports whether a hush is in force right now.
+func (s *Server) groupFormHushed() bool {
+	until := s.groupFormHushUntil.Load()
+	return until != 0 && time.Now().UnixNano() < until
+}
+
 // readAgentUptime asks a member's agent for its uptime on either agent port.
 func readAgentUptime(ctx context.Context, ip string) int {
 	for _, port := range []string{"17008", "8888"} {
