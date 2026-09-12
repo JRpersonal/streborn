@@ -214,3 +214,130 @@ func TestNetworkTagging(t *testing.T) {
 		t.Errorf("ssidTagsOf(nil) = %v, want an empty list", got)
 	}
 }
+
+// Which interface the box leaves through decides whether the Wi-Fi guard runs
+// at all, so the two tables that matter are pinned here: a wired CineMate and
+// an ordinary speaker on Wi-Fi. Real /proc/net/route output, kernel columns and
+// all, because the parse reads by position.
+func TestDefaultRouteIface(t *testing.T) {
+	const header = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+
+	cases := []struct {
+		name  string
+		table string
+		want  string
+	}{
+		{
+			// The adapter on a cable: the on-link route comes first, the
+			// default route second, which is the order the kernel prints.
+			name: "wired box",
+			table: header +
+				"eth0\t00C0A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n" +
+				"eth0\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n",
+			want: "eth0",
+		},
+		{
+			name: "speaker on wifi",
+			table: header +
+				"wlan0\t00C0A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n" +
+				"wlan0\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n",
+			want: "wlan0",
+		},
+		{
+			// A box that has not reached a network yet has on-link routes and
+			// no default. That must not read as a wired uplink.
+			name: "no default route",
+			table: header +
+				"eth0\t00C0A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n",
+			want: "",
+		},
+		{name: "unreadable", table: "", want: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultRouteIface(tc.table); got != tc.want {
+				t.Errorf("defaultRouteIface = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// wiredUplinkFrom is what makes the guard stand down, so both directions are
+// pinned: the CineMate that started this, and every way a box can look wired
+// without being wired.
+func TestWiredUplinkFrom(t *testing.T) {
+	const header = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+	route := func(iface string) string {
+		return header + iface + "\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"
+	}
+	yes := func(string) bool { return true }
+	no := func(string) bool { return false }
+
+	cases := []struct {
+		name     string
+		wlan     string
+		table    string
+		carrier  func(string) bool
+		routable func(string) bool
+		want     string
+	}{
+		{
+			// Benoit Barbaix's CineMate, the box this whole change came from.
+			name: "cinemate on a cable", wlan: "wlan0", table: route("eth0"),
+			carrier: yes, routable: yes, want: "eth0",
+		},
+		{
+			// The ordinary case: every speaker in the maintainer's own fleet.
+			name: "speaker on wifi", wlan: "wlan0", table: route("wlan0"),
+			carrier: yes, routable: yes, want: "",
+		},
+		{
+			// Some chassis call the radio mlan0. It is still the radio.
+			name: "radio named mlan0", wlan: "mlan0", table: route("mlan0"),
+			carrier: yes, routable: yes, want: "",
+		},
+		{
+			// An eth0 that is up with nothing plugged into it keeps its route.
+			name: "cable pulled", wlan: "wlan0", table: route("eth0"),
+			carrier: no, routable: yes, want: "",
+		},
+		{
+			// The scm chassis USB bridge: an interface, not a way out.
+			name: "internal bridge only", wlan: "wlan0", table: route("usb0"),
+			carrier: yes, routable: no, want: "",
+		},
+		{
+			name: "no default route", wlan: "wlan0", table: header,
+			carrier: yes, routable: yes, want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := wiredUplinkFrom(tc.wlan, tc.table, tc.carrier, tc.routable)
+			if got != tc.want {
+				t.Errorf("wiredUplinkFrom = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A guard that reports a wired stand-down under a name nobody can grep for is
+// half a diagnostic. Every reason string has to be distinct, or two different
+// verdicts read the same in a bundle.
+func TestGuardReasonsAreDistinct(t *testing.T) {
+	seen := map[string]bool{}
+	for _, r := range []string{
+		guardReasonBudget, guardReasonNoAssoc, guardReasonOnTarget,
+		guardReasonNotInRange, guardReasonWrongNet, guardReasonWired,
+	} {
+		if r == "" {
+			t.Error("a guard reason is empty")
+		}
+		if seen[r] {
+			t.Errorf("two verdicts share the reason %q", r)
+		}
+		seen[r] = true
+	}
+}

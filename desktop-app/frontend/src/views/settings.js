@@ -88,7 +88,8 @@ import {
   EnableBoxMediaServer,
   DisableBoxMediaServer,
   boxFetch,
-  readBoxBalance,
+  readBoxBalanceInfo,
+  writeBoxBalance,
 } from '../api.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
@@ -532,7 +533,7 @@ export async function loadBoxSettings() {
       : `
       <div class="reconnect-banner">
         <div>
-          <b>${escapeHtml(t('settingsView.speakerUnreachable'))}</b>
+          <b>${escapeHtml(noNetworkHere(lastErr) ? t('settingsView.noNetworkTitle') : t('settingsView.speakerUnreachable'))}</b>
           <small>${escapeHtml(friendly)}</small>
           <small>${escapeHtml(t('settingsView.retryIn', { remaining }))}</small>
         </div>
@@ -559,6 +560,28 @@ export async function loadBoxSettings() {
     // it needs is STR installed again. Only a speaker that answers nothing
     // gets the power-cycle advice (2026-09-06 report: the dead-speaker panel
     // on a stock speaker that was answering fine).
+    // This computer has no network at all. Nothing here is about the speaker,
+    // so none of the speaker advice applies, and above all nothing should be
+    // unplugged. Keep re-checking: while the machine has no route the attempt
+    // fails inside the socket layer and never reaches a speaker, so this costs
+    // the speakers nothing, and the moment the network is back the panel
+    // replaces itself with the real settings. That is what Eileen asked for:
+    // "when wifi was restored, shouldn't the notice be updated to reflect that
+    // the speakers all came back online?"
+    if (noNetworkHere(lastErr)) {
+      body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.noNetworkTitle'))}</div>
+        <div class="empty-state-text">${escapeHtml(t('settingsView.noNetworkHelp'))}</div>
+        <div class="empty-state-buttons">
+          <button class="btn btn-mini" id="settingsRetry">${escapeHtml(t('common.retry'))}</button>
+        </div>
+      </div>`;
+      const rn = document.getElementById('settingsRetry');
+      if (rn) rn.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
+      state.settingsReconnect = { attempts: 0, max: 10, timer: setTimeout(loadBoxSettings, 5000) };
+      return;
+    }
     if (await boseAnswersWithoutSTR(state.settingsBox)) {
       renderSTRNotRunningPanel(body, state.settingsBox, true);
       return;
@@ -583,6 +606,23 @@ export async function loadBoxSettings() {
   }
 }
 
+// noNetworkHere is the ENETUNREACH family: this computer has no route to the
+// speaker's network, so the request never left the machine. It is the one
+// unreachable-speaker cause that is provably NOT the speaker: a firewall cannot
+// produce it and neither can a speaker, and it fails identically for every
+// device at once. Eileen Wilson pulled her Mac's Wi-Fi mid-update on 2026-09-10
+// and this panel told her the agent on the speaker had died and to unplug it.
+//
+// The matching pair lives in Go as noNetworkHere (desktop-app/app_transport.go),
+// which attaches the honest paragraph; this is the same test on the text that
+// reaches the view. "no route to host" is deliberately NOT included: that one
+// means a route exists and the host did not answer, which usually IS a speaker
+// that is switched off.
+export function noNetworkHere(err) {
+  const s = String(err || '').toLowerCase();
+  return s.includes('network is unreachable') || s.includes('unreachable network');
+}
+
 function isTransientBoxError(err) {
   const s = String(err || '').toLowerCase();
   return s.includes('refused') || s.includes('timeout') ||
@@ -592,6 +632,10 @@ function isTransientBoxError(err) {
 
 function friendlySettingsError(err) {
   const s = String(err || '');
+  // Checked FIRST: this message reaches the view with the whole dial/connect
+  // string in it, and every pattern below would otherwise match a fragment of
+  // that and print a speaker explanation for a laptop with no Wi-Fi.
+  if (noNetworkHere(s)) return t('settingsView.errNoNetwork');
   if (/box_settings_empty/.test(s)) return t('settingsView.errBoseBusy');
   if (/refused/i.test(s)) return t('settingsView.errRefused');
   if (/timeout|deadline/i.test(s)) return t('settingsView.errTimeout');
@@ -954,6 +998,29 @@ function remoteSvg() {
     + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
 }
 
+// revealInSettings brings a settings element into view for real.
+//
+// Opening the element's own <details> is not enough: renderSettingsGroups moves
+// every section into a collapsible GROUP, and the two groups that matter here,
+// Advanced and Info, start closed. A deep link that only opened the section
+// itself therefore left the user on the settings page with everything still
+// folded up and nothing to see, which is exactly how the Multi-Room tab's
+// "show on the remote key map" button was reported (2026-09-10: "schickt den
+// user nur auf die einstellungsseite aber nicht direkt in das untermenue").
+//
+// So open every <details> ANCESTOR as well, from the element outwards, and only
+// then scroll. Walking the ancestors rather than naming the group keeps this
+// correct if the grouping is ever changed again.
+function revealInSettings(el) {
+  if (!el) return;
+  let node = el;
+  while (node && node !== document.body) {
+    if (node.tagName === 'DETAILS') node.open = true;
+    node = node.parentElement;
+  }
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
+}
+
 // openWebhookKeyMap takes the user to the remote key map in the webhook
 // section of THIS speaker's settings: the Multi-Room tab links here so a
 // thumbs key that was just bound to a group is seen marked on the remote.
@@ -1045,7 +1112,12 @@ function renderBoxSettings(s, box) {
         <span class="setting-value" id="boxVolumeVal">${vol.actual || 0}</span>
       </div>
       <div class="setting-row" id="boxBalanceRow" hidden>
-        <span class="muted small" id="boxBalance"></span>
+        <input type="range" id="boxBalanceSlider" min="-7" max="7" step="1" value="0" hidden />
+        <span class="setting-value" id="boxBalance"></span>
+        <button class="btn btn-mini" id="boxBalanceCentre" hidden>${escapeHtml(t('controls.balanceCentreBtn'))}</button>
+      </div>
+      <div class="setting-row" id="boxBalanceNoteRow" hidden>
+        <small class="muted small" id="boxBalanceNote"></small>
       </div>
       ${vol.muted ? `<small class="muted small">${escapeHtml(t('settingsView.muted'))}</small>` : ''}
     </div>
@@ -1217,7 +1289,7 @@ function renderBoxSettings(s, box) {
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
-      <div class="rc-wrap">
+      <div class="rc-wrap" id="webhookKeyMap">
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
@@ -1523,17 +1595,21 @@ function renderBoxSettings(s, box) {
   const fwBtn = $('fwUpdateBtn');
   if (fwBtn) {
     fwBtn.onclick = () => {
-      const banner = $('fwUpdateBanner');
-      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      revealInSettings($('fwUpdateBanner'));
     };
   }
   // Outdated-firmware banner links: open the Bose support guide / USB download
   // directory in the user's browser (Wails BrowserOpenURL) instead of leaving
   // them as plain text the user has to retype (Jens, 2026-06-27).
-  for (const id of ['fwGuideLink', 'fwUsbLink', 'fwFaqLink']) {
+  for (const id of ['fwUsbLink', 'fwFaqLink']) {
     const el = $(id);
     if (el) el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
   }
+  // The guide links are per model, and a model that exists in two series offers
+  // two of them, so they are wired by class rather than by id.
+  document.querySelectorAll('.fw-guide-link').forEach(el => {
+    el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
+  });
   // Voice control: STR itself will never speak to Alexa (the old skill was
   // Bose's cloud talking to Bose's cloud, and a new one would mean an account,
   // a public endpoint and a bill). What does work is a hub the user runs at
@@ -2550,11 +2626,9 @@ function renderBoxSettings(s, box) {
       // section and bring the remote into view, once, now that it is painted.
       if (pendingKeyMapOpen) {
         pendingKeyMapOpen = false;
-        const sec = $('webhookSection');
-        if (sec) {
-          sec.open = true;
-          try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
-        }
+        // The remote itself, not the section: the key map is the thing the user
+        // came to look at, and the section header can be a screen above it.
+        revealInSettings($('webhookKeyMap') || $('webhookSection'));
       }
     })();
     whTarget.onchange = () => { captureInto(prevTarget); prevTarget = whTarget.value; loadInto(whTarget.value); };
@@ -3045,11 +3119,46 @@ const LATEST_FW = {
   'SoundTouch Portable': '27.0.6',
 };
 
-// Bose's own SoundTouch firmware-update support article. The update steps are
-// the same across the 10/20/30/Portable, so one link serves every model; swap
-// in a per-model article later if needed. Shown as a clickable link in the
-// outdated-firmware banner (Jens, 2026-06-27: link the Bose support article).
-const BOSE_FW_SUPPORT_URL = 'https://support.bose.com/s/article/soundtouch-20-iii-updating-the-software-or-firmware-of-your-product?language=en_US';
+// Bose's own firmware-update support article, PER MODEL. Shown as a clickable
+// link in the outdated-firmware banner (Jens, 2026-06-27: link the Bose support
+// article).
+//
+// This used to be ONE link for every speaker, and that link was the SoundTouch
+// 20 Series III article, on the reasoning that the steps are the same
+// everywhere. They mostly are, but a SoundTouch 10 owner then opens an article
+// showing a different speaker, and the owner of a Series II ST20 is sent to the
+// Series III page. That came up on 2026-09-09 from a reporter whose Series II
+// lost its sound after a firmware update; whatever caused that, pointing him at
+// the wrong series was ours.
+//
+// The ST20 and the ST30 each exist in two series and the speaker does not say
+// which one it is (docs/MODEL-VARIANTS.md: moduleType separates sm2 from scm,
+// not the series), so those two models offer BOTH articles instead of guessing.
+// Every URL below answered 200 when it was added; Bose has no model-independent
+// article, that URL is a 404.
+const BOSE_FW_ARTICLES = {
+  'SoundTouch 10': [
+    ['', 'https://support.bose.com/s/article/soundtouch-10-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+  'SoundTouch 20': [
+    ['Series II', 'https://support.bose.com/s/article/soundtouch-20-ii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+    ['Series III', 'https://support.bose.com/s/article/soundtouch-20-iii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+  'SoundTouch 30': [
+    ['Series II', 'https://support.bose.com/s/article/soundtouch-30-ii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+    ['Series III', 'https://support.bose.com/s/article/soundtouch-30-iii-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+  'SoundTouch Portable': [
+    ['', 'https://support.bose.com/s/article/soundtouch-portable-updating-the-software-or-firmware-of-your-product?language=en_US'],
+  ],
+};
+
+// boseFwArticles returns the support articles for a speaker type. An unknown
+// type falls back to the SoundTouch 10 article rather than to nothing: the steps
+// are close enough to be useful, and a dead end helps nobody.
+function boseFwArticles(type) {
+  return BOSE_FW_ARTICLES[type] || BOSE_FW_ARTICLES['SoundTouch 10'];
+}
 // Bose's official "Bose Software Updater" download page, referenced in step 4
 // and made clickable so the user does not have to retype it. The old direct
 // USB directory (downloads.bose.com/ced/soundtouch/soundtouch_usb/) went dead:
@@ -3193,7 +3302,10 @@ function fwUpdateHint(info) {
           <li>${escapeHtml(t('fw.step3'))}</li>
           <li>${t('fw.step4')} <a href="#" class="link" id="fwUsbLink" data-url="${escapeHtml(BOSE_FW_USB_URL)}">btu.bose.com</a></li>
         </ol>
-        <p><a href="#" class="btn btn-mini" id="fwGuideLink" data-url="${escapeHtml(BOSE_FW_SUPPORT_URL)}">${escapeHtml(t('fw.boseGuideLink'))}</a></p>
+        <p>${boseFwArticles(info.type).map(([series, url]) =>
+          `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeHtml(url)}">`
+          + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
+          + '</a>').join(' ')}</p>
         <small class="muted small">${escapeHtml(t('fw.hint'))}</small>
         <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
       </div>
@@ -3320,22 +3432,95 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
   } catch (e) { showError(e); }
 }, 200);
 
-// The stereo balance, shown where people look for it.
+// The stereo balance, shown where people look for it, and settable since
+// v0.9.79.
 //
 // It has been on the Play page next to the volume since v0.9.35, and the owner
 // who asked for it went to Speaker settings twice and reported it missing, on
 // the very version that added it (#70, 2026-08-08). A feature nobody can find
-// is not shipped. Read-only on purpose: the firmware accepts no write that
-// sticks, which the tooltip says.
+// is not shipped. A second owner then found it and reported the other half:
+// "steht neben dem Lautstaerkeregler und hat auch keinen Effekt" (2026-08-09).
+// He was right, and it was read-only for a year because every write over the
+// firmware's HTTP API hung the endpoint. It is written on the speaker's own
+// WebSocket now (gesellix, #70), so the read-out is a control.
+//
+// Which speaker: always the pair's MASTER, whichever half is selected. Only the
+// master reports a balance and only the master takes the write.
 export async function refreshBoxBalanceRow(box, pair, boxes) {
   const row = document.getElementById('boxBalanceRow');
   const el = document.getElementById('boxBalance');
   if (!row || !el) return;
+  const slider = document.getElementById('boxBalanceSlider');
+  const centre = document.getElementById('boxBalanceCentre');
   const src = balanceSourceBox(box, pair, boxes) || box;
   if (!src || src.kind === 'stock') { row.hidden = true; return; }
-  const v = await readBoxBalance(src);
-  if (v === null) { row.hidden = true; return; }
-  el.textContent = balanceLabel(v);
-  el.title = t('controls.balanceTitle');
+  const b = await readBoxBalanceInfo(src);
+  if (!b) { row.hidden = true; setBalanceNote(''); return; }
+
+  el.textContent = balanceLabel(b.actual);
+  el.title = t(b.settable ? 'controls.balanceSetTitle' : 'controls.balanceTitle');
   row.hidden = false;
+  setBalanceNote('');
+  if (!slider || !centre) return;
+
+  // An older agent on the other end reports no socket, so there is nothing to
+  // drag: leave the read-out exactly as it was rather than offering a control
+  // that cannot work.
+  if (!b.settable) { slider.hidden = true; centre.hidden = true; return; }
+
+  // Bounds from the speaker, never a constant (see readBoxBalanceInfo).
+  slider.min = String(b.min);
+  slider.max = String(b.max);
+  slider.value = String(b.actual);
+  slider.title = el.title;
+  slider.hidden = false;
+  centre.hidden = false;
+  centre.title = t('controls.balanceCentreTitle');
+
+  // While dragging, only the label moves. The write goes out on release: the
+  // value travels over a WebSocket to the speaker and is then read back to
+  // confirm, and firing that per pixel of slider travel would put a queue of
+  // writes on the speaker's own bus for one gesture.
+  slider.oninput = () => { el.textContent = balanceLabel(parseInt(slider.value, 10)); };
+  slider.onchange = () => applyBalance(src, parseInt(slider.value, 10));
+  centre.onclick = () => {
+    slider.value = String(b.default || 0);
+    el.textContent = balanceLabel(b.default || 0);
+    applyBalance(src, b.default || 0);
+  };
 }
+
+// applyBalance sends one balance write and says what came back.
+//
+// Three outcomes, and they are deliberately three rather than two. A write that
+// was refused is a failure. A write the speaker accepted but has not reported
+// back is NOT a failure: the value goes out on a bus that acknowledges nothing,
+// the agent reads it back on a budget of a couple of seconds, and a slow
+// speaker missing that window would otherwise be shown to the user as a broken
+// control. Silence is reserved for the case where it plainly worked.
+async function applyBalance(src, target) {
+  const res = await writeBoxBalance(src, target);
+  if (!res || res.ok !== true) {
+    setBalanceNote(t('controls.balanceFailed'), true);
+    return;
+  }
+  const slider = document.getElementById('boxBalanceSlider');
+  const el = document.getElementById('boxBalance');
+  // The agent clamps to the speaker's own range, so the value that landed can
+  // differ from the one that was asked for. Show what the speaker has.
+  if (Number.isFinite(Number(res.target))) {
+    if (slider) slider.value = String(res.target);
+    if (el) el.textContent = balanceLabel(Number(res.target));
+  }
+  setBalanceNote(res.verified === false ? t('controls.balanceUnverified') : '');
+}
+
+function setBalanceNote(text, warn = false) {
+  const row = document.getElementById('boxBalanceNoteRow');
+  const el = document.getElementById('boxBalanceNote');
+  if (!row || !el) return;
+  el.textContent = text || '';
+  el.classList.toggle('setup-warn', !!warn && !!text);
+  row.hidden = !text;
+}
+

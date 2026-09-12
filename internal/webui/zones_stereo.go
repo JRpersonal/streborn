@@ -224,9 +224,10 @@ func (s *Server) noteGroupReadResult(err error) {
 		"pauseMin", 5)
 }
 
-// handleBoxBalance reports the left/right balance of a stereo pair.
+// handleBoxBalance reads and writes the left/right balance of a stereo pair.
 //
-// GET /api/box/balance -> {"available":bool,"min":-7,"max":7,"actual":0,...}
+//	GET  /api/box/balance -> {"available":bool,"min":-7,"max":7,"actual":0,...}
+//	POST /api/box/balance {"target":-3} -> {"ok":true,"verified":true,"target":-3,...}
 //
 // Deliberately its OWN endpoint rather than a field on the zone read, and
 // deliberately on a short budget. The firmware's /balance does not answer at
@@ -235,16 +236,27 @@ func (s *Server) noteGroupReadResult(err error) {
 // few seconds, so folding balance into it would have put a multi-second stall
 // into a hot path for every speaker that happens to be asleep.
 //
-// Read-only for now. The firmware accepts no write over this API that we could
-// make work: every POST /balance hung the same way, including the exact body
-// the community reference sends, and left the endpoint unresponsive until the
-// speaker was woken again. So STR reports what the balance IS, which is enough
-// to explain a pair that sounds lopsided because it was set in the Bose app,
-// and does not pretend to offer a control that would not work.
+// The WRITE does not go over HTTP. Every POST /balance to the firmware hung the
+// endpoint until the speaker was woken again, including the exact body the
+// community reference sends, so STR showed the balance read-only from v0.9.35
+// until 2026-09-10 and this comment said the firmware accepted no write that
+// sticks. It was one interface short: gesellix reported on #70, with the source
+// of the web app Bose ships on the speaker itself, that Bose's own client never
+// writes balance over HTTP either and sends it on the gabbo WebSocket instead.
+// internal/boxws could not send at all, so no path existed from which to try.
+// It can now, and the write goes there (see boxws.SetBalance).
 func (s *Server) handleBoxBalance(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
+	switch r.Method {
+	case http.MethodGet:
+		s.readBoxBalance(w, r)
+	case http.MethodPost:
+		s.writeBoxBalance(w, r)
+	default:
+		requireMethod(w, r, http.MethodGet, http.MethodPost)
 	}
+}
+
+func (s *Server) readBoxBalance(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 	b, err := boxapi.New(s.boxHost).GetBalance(ctx)
@@ -255,7 +267,163 @@ func (s *Server) handleBoxBalance(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": "unreachable"})
 		return
 	}
-	writeJSON(w, http.StatusOK, b)
+	// settable says whether this agent has a socket to write on at all, so the
+	// app can render a slider instead of a read-out without having to know which
+	// agent version it is talking to.
+	writeJSON(w, http.StatusOK, balanceWithSettable(b, s.balanceWriteFn != nil))
+}
+
+// balanceWithSettable is boxapi.Balance plus the one field the app needs that
+// the firmware does not report. Built as a map rather than a wrapper struct so
+// the read answer keeps exactly the field names it had before.
+func balanceWithSettable(b boxapi.Balance, settable bool) map[string]any {
+	return map[string]any{
+		"available": b.Available, "min": b.Min, "max": b.Max,
+		"default": b.Default, "target": b.Target, "actual": b.Actual,
+		"settable": settable && b.Available,
+	}
+}
+
+// balanceWriteReq is the POST body. A POINTER so a missing field is told apart
+// from a deliberate 0, which is the centre position and the most likely value
+// anybody sends.
+type balanceWriteReq struct {
+	Target *int `json:"target"`
+}
+
+// balanceVerifyBudget bounds the read-back after a write. The firmware applies
+// the value asynchronously and broadcasts balanceUpdated when it has; the write
+// itself is fire-and-forget on the socket, so a read-back is the only evidence
+// the value took. Kept short, because the app is waiting on it, and a miss is
+// reported as "not verified" rather than as a failure: the balance may well
+// have moved a moment after the answer went out.
+const balanceVerifyBudget = 2500 * time.Millisecond
+
+// writeBoxBalance sets the balance of the pair this speaker masters.
+//
+// Order matters. The current balance is read FIRST, for three things that come
+// out of the same call: whether this speaker is in a pair at all (an unpaired
+// one reports available=false), the bounds to clamp against, and the proof that
+// the speaker is awake enough to answer, which the read-back afterwards depends
+// on.
+//
+// Either member can be written to; the value belongs to the pair and both
+// members report it (measured 2026-09-10). So this does not check for
+// mastership, and a user who opens the settings of the right-hand speaker gets a
+// working slider rather than a refusal.
+func (s *Server) writeBoxBalance(w http.ResponseWriter, r *http.Request) {
+	if s.balanceWriteFn == nil {
+		// No socket client wired (an agent running without the box WebSocket,
+		// and every test that does not need one). Say so plainly instead of
+		// pretending to have written.
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "reason": "unsupported"})
+		return
+	}
+	var req balanceWriteReq
+	if !decodeJSONRequest(w, r, 1<<10, &req) {
+		return
+	}
+	if req.Target == nil {
+		http.Error(w, "target required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	c := boxapi.New(s.boxHost)
+	cur, err := c.GetBalance(ctx)
+	if err != nil {
+		s.logger.Info("balance: cannot write, the speaker did not answer the read", "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "reason": "unreachable"})
+		return
+	}
+	if !cur.Available {
+		// No pair on this speaker, so there is no balance to move. A refusal
+		// rather than an error: a stale pair record in the app is exactly how a
+		// write would arrive here, and that is worth reporting plainly.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": false, "reason": "noPair", "available": false,
+		})
+		return
+	}
+
+	// Clamp against what the SPEAKER reports, never against a constant. The
+	// community reference assumes -50..+50 and the firmware does not agree, so a
+	// value from a client built against that range has to land inside this range
+	// rather than be written through or rejected.
+	want := clampInt(*req.Target, cur.Min, cur.Max)
+	dev := s.localDeviceID(ctx, c, "")
+	if dev == "" {
+		s.logger.Info("balance: cannot write, this speaker did not report its own deviceID")
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "reason": "noDeviceID"})
+		return
+	}
+	if err := s.balanceWriteFn(dev, want); err != nil {
+		s.logger.Info("balance: the write did not leave", "err", err, "target", want)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "reason": "sendFailed"})
+		return
+	}
+
+	// Read it back on a budget of its own, not on what is left of the request's:
+	// the read above may have used most of that, and a verify that expires
+	// because its predecessor was slow would report a good write as unverified.
+	vctx, vcancel := context.WithTimeout(context.WithoutCancel(r.Context()), balanceVerifyBudget)
+	defer vcancel()
+	after, verified := verifyBalance(vctx, c, want)
+	if verified {
+		s.logger.Info("balance: set", "target", want, "was", cur.Target)
+	} else {
+		s.logger.Info("balance: written, but the read-back did not show it yet",
+			"target", want, "readBack", after.Target)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "verified": verified,
+		"requested": *req.Target, "target": want,
+		"min": cur.Min, "max": cur.Max,
+		"actual": after.Actual, "available": true, "settable": true,
+	})
+}
+
+// verifyBalance polls the firmware read until it reports the value that was
+// written, or until the budget runs out. It compares targetBalance, not
+// actualBalance: the target is what was asked for and appears at once, while
+// the actual is what the pair currently realises and can still be ramping.
+func verifyBalance(ctx context.Context, c *boxapi.Client, want int) (boxapi.Balance, bool) {
+	var last boxapi.Balance
+	for {
+		b, err := c.GetBalance(ctx)
+		if err == nil {
+			last = b
+			if b.Target == want {
+				return b, true
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return last, false
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func clampInt(v, lo, hi int) int {
+	if lo > hi {
+		return v
+	}
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// SetBalanceWriteFn wires boxws.SetBalance so the balance endpoint has a socket
+// to write on. Left nil, the endpoint stays read-only and says so, which is
+// what a build without the box WebSocket gets.
+func (s *Server) SetBalanceWriteFn(fn func(deviceID string, target int) error) {
+	s.balanceWriteFn = fn
 }
 
 type zoneMemberReq struct {
@@ -2144,14 +2312,65 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// The stereo escalation is gated on explicit caller intent (?stereo=1, set
-	// by the app's undo-stereo-pair button): a plain multiroom dissolve that
-	// happens to hit a box in a firmware pair must keep its pre-existing
-	// no-op semantics instead of silently destroying the pair.
-	if !stereo && master.DeviceID == "" && wantStereo {
-		if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
-			// A firmware-native stereo pair with no persisted zone: dissolve it
-			// as a pair. The members are partitioned relative to THIS box, not
+	// "Undo stereo pair" asks the PAIR AUTHORITY, always.
+	//
+	// This escalation used to carry `master.DeviceID == ""` as a precondition,
+	// which quietly made it unreachable on any speaker holding group state: the
+	// two blocks above fill master from the persisted document or from the live
+	// zone, so by the time intent was consulted there was already a master and
+	// the read never happened. `?stereo=1` therefore ADDED a path without ever
+	// RESTRICTING the handler to it, and the request fell through to the
+	// multiroom teardown below.
+	//
+	// #907, reported with a bundle that proves it twice over: three ST10s in a
+	// plain group, no pair anywhere (marge_group present=false on all three,
+	// the firmware answering /getGroup empty), and four presses of "Undo stereo
+	// pair" each logging `zone: dissolving (beta) slaves=2` and purging both
+	// peers' stores. The stereo arm's own log line appears in the same bundle
+	// exactly once, the day before, when she really did have a pair.
+	//
+	// Dropping the precondition also fixes the mirror case: a speaker carrying
+	// a stale multiroom document while it IS in a real firmware pair (paired in
+	// the Bose app, or the agent reinstalled over an old document) could never
+	// be unpaired from that speaker, because intent was never consulted there
+	// either.
+	//
+	// The read gets its OWN short budget rather than the dissolve's, for the
+	// reason spelled out at the top of this file: /getGroup HANGS on scm/BCO
+	// chassis, silently, and on the dissolve's context that hang would eat the
+	// whole request.
+	if !stereo && wantStereo {
+		gctx, gcancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		g, gerr := c.GetGroup(gctx)
+		gcancel()
+		pairConfirmed := gerr == nil && (g.ID != "" || len(g.Members) > 0)
+		// Group state we would otherwise tear down. This is the ONLY thing the
+		// refusal has to protect, and scoping it this way keeps the
+		// nothing-to-dissolve branch below reachable, which is where a phantom
+		// marge pair record gets cleared. Refusing on a speaker that holds
+		// nothing at all would have closed that escape hatch.
+		inZone := master.DeviceID != "" || len(slaves) > 0
+		if !pairConfirmed && inZone {
+			// Only a POSITIVE confirmation may act, so an unreadable answer
+			// refuses too. /getGroup hangs rather than refuses on scm/BCO
+			// chassis, and treating a hang as "carry on" is exactly what put
+			// the multiroom teardown behind this button. A STR-formed pair is
+			// covered by its own persisted document above and never reaches
+			// here, so the cost of refusing an unconfirmed pair is a retry,
+			// while the cost of continuing is somebody's group.
+			s.logger.Info("stereo: undo-pair refused, no pair confirmed on this speaker",
+				"readable", gerr == nil, "master", master.DeviceID, "slaves", len(slaves))
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok": false, "nothing": true, "noPair": true, "inZone": true,
+				"pairReadable": gerr == nil,
+			})
+			return
+		}
+		if pairConfirmed {
+			// The firmware confirms a pair, so dissolve it as a pair, whatever
+			// the local document happened to say. That covers both the
+			// no-persisted-zone case this was written for and a speaker holding
+			// a stale multiroom document over a real pair. The members are partitioned relative to THIS box, not
 			// the group master — the dissolve may run on the RIGHT/slave box
 			// (the store only exists on the master), where "everyone but the
 			// master" would be ourselves and the remote teardown would clear
@@ -2307,7 +2526,22 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	mirrorHostPort := hostPortOf(s.mirrorURLForSlaves(ctx, masterLocation, master.IP))
 	s.stopStragglers(ctx, masterLocation, mirrorHostPort, slaves)
 	if s.zones != nil {
-		if err := s.zones.Clear(); err != nil {
+		// A PERMANENT group is a saved arrangement, not the live zone. Taking
+		// the live zone apart has to leave the saved one alone, or "ungroup for
+		// now" silently deletes what the user built and there is no way back.
+		//
+		// Every other Clear() call site already knows this: the peer purge
+		// checks Permanent (zonemirror.go), and so does the standby two-strike
+		// doubt clear (resume_standby.go). This one did not, and it is the one
+		// behind the button. It cost a stored group on the maintainer's own
+		// fleet during a test on 2026-09-03, and it is the first thing a
+		// reporter suspects when a group is missing after an update, which is
+		// how it came up again on 2026-09-09 (that group turned out to be
+		// intact; this path is what would have taken it).
+		if doc, ok := s.zones.Get(); ok && doc.Permanent {
+			s.logger.Info("zone: live group taken apart, the saved group stays saved and forms again when its main speaker plays",
+				"master", doc.Master, "members", len(doc.Slaves))
+		} else if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
 		}
 	}

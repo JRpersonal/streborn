@@ -856,6 +856,14 @@ func run() error {
 
 	webui.RegisterDebugSection("alarms", webuiSrv.AlarmsSnapshot)
 
+	// The preset reconcile has to know when STR woke this speaker for a group:
+	// its own native preset write makes the firmware select the radio source
+	// and play, which is silent on a speaker that was already idle and a room
+	// full of music on one that was just woken and un-muted (#900). The
+	// reconcile loop sleeps before its first pass, so wiring it here is early
+	// enough.
+	quietWakeEpisodeActive = webuiSrv.QuietWakeEpisodeActive
+
 	// Re-assert a persisted multiroom group (native or mirror) so it survives
 	// reboot/standby/Wi-Fi outage without the user re-grouping (#70 beta).
 	// No-op when standalone. Lives on the server so the mirror path can reach
@@ -895,6 +903,10 @@ func run() error {
 	// own (reported: radio stops after ~11 min with no upstream error), the
 	// webui resumes it conservatively (only if the box stays on and idle).
 	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
+	// The same for the Spotify audio path, which had no recovery at all until
+	// a reporter's speaker lost the Wi-Fi for two seconds at half past one in
+	// the morning and stayed silent until he pressed a button.
+	spotifyMgr.SetOnSinkDetach(webuiSrv.HandleSpotifyStreamDetach)
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
 	// last-failure timestamps tell a wedged box apart from a failing station.
 	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)
@@ -1267,6 +1279,11 @@ func run() error {
 			"why", "power toggle", "for", powerToggle1036Window.String())
 	})
 	webuiSrv.SetSuppress1036Fn(wsClient.Suppress1036Until)
+	// The stereo balance is the one setting the firmware will not take over
+	// HTTP, so its write goes out on this socket instead (gesellix on #70; the
+	// envelope and the evidence are in internal/boxws/send.go). Wired here
+	// because the socket client is the only thing that can send it.
+	webuiSrv.SetBalanceWriteFn(wsClient.SetBalance)
 	// The volume restore consults the same signal so a hand-adjusted level
 	// during a recall recovery is never clamped back to the pre-recall
 	// snapshot (which after a deep standby is the box's own wake default).

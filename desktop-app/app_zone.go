@@ -439,8 +439,23 @@ func (a *App) DissolveStereoPair(host string, port int) error {
 	// intact in the Bose app: both calls had gone to an uninvolved speaker
 	// (field, 2026-08-04). Say what actually happened.
 	if nothing, _ := out["nothing"].(bool); nothing {
+		// noPair means the agent asked the pair authority and got a no, so the
+		// speaker may well be in a multiroom GROUP instead. Name that, because
+		// "Undo stereo pair" taking a group apart and reporting a pair undone is
+		// #907, and the log has to say which of the two answers arrived.
+		if noPair, _ := out["noPair"].(bool); noPair {
+			inZone, _ := out["inZone"].(bool)
+			a.logger.Info("stereo: no pair on this speaker, nothing was changed", "host", host, "inZone", inZone)
+			return fmt.Errorf("stereo-not-paired")
+		}
 		a.logger.Info("stereo: nothing to dissolve, this speaker is not in a pair", "host", host)
 		return fmt.Errorf("stereo-not-paired")
+	}
+	// Only `nothing` used to be inspected, so an incomplete teardown (ok:false)
+	// was reported to the user as a pair undone as well.
+	if ok, present := out["ok"].(bool); present && !ok {
+		a.logger.Info("stereo: dissolve not confirmed by the speaker", "host", host)
+		return fmt.Errorf("stereo-undo-unconfirmed")
 	}
 	a.relayStereoPairClear(out)
 	a.logger.Info("stereo: pair dissolved", "host", host)

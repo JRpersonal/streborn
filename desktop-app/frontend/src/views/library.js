@@ -18,6 +18,7 @@ import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
 import {
+  ProbeTrackDelivery,
   ListMediaServers,
   BrowseLibrary,
   AddMediaServerByURL,
@@ -412,19 +413,34 @@ async function libraryPlay(item) {
 }
 
 // verifyLibraryPlayback confirms a library track actually reaches a playing
-// state on the speaker after PlayURL. The SoundTouch's UPnP layer accepts the
-// URI but its decoder only handles some formats: a high-resolution FLAC (24-bit
-// or above 48 kHz) never decodes, so the track sits at "stream starting"
-// forever with no feedback, and users read it as a network or app fault (#139).
-// Poll the box play state for a short window; if it never starts (or the box
-// reports the source invalid), surface a soft, format-agnostic hint. Run
+// state on the speaker after PlayURL, and, when it does not, says which of the
+// two possible reasons it was.
+//
+// The original reason for it (#139): the SoundTouch's UPnP layer accepts the
+// URI but its decoder only handles some formats, so a high-resolution FLAC
+// (24-bit or above 48 kHz) sits at "stream starting" forever with no feedback
+// and users read it as a network or app fault.
+//
+// The reason it had to learn a second answer (#915, 2026-09-10): a reporter
+// whose files are plain mp3 was told his format was probably unsupported. His
+// speaker logged AUDIO_ERROR_TIMEOUT and ERROR_NO_DECODED_DATA twenty seconds
+// into every attempt, which is the box saying nothing ever arrived to decode,
+// and his media server did not answer its own description fetch either. The
+// format was never in question; the file never reached the speaker.
+//
+// Two changes follow. The window now outlasts the box's OWN verdict, which
+// lands at about twenty seconds, so the app stops guessing before the speaker
+// has decided. And when the track did not start, the app fetches a few bytes of
+// the URL itself: if the server will not hand over the beginning of the file,
+// the delivery is the problem and the format is not worth mentioning. Run
 // fire-and-forget so the click stays responsive.
 async function verifyLibraryPlayback(item, target) {
   // Watch the box the play was actually sent to (the group master when the
   // selected box is a follower, #70), not blindly the selected box.
   const box = target || state.currentBox;
   if (!box) return;
-  const deadline = Date.now() + 12000;
+  // Past the box's own AUDIO_ERROR_TIMEOUT, which arrives ~20 s in.
+  const deadline = Date.now() + 26000;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
     // Bail if the user moved to another box entirely.
@@ -440,7 +456,32 @@ async function verifyLibraryPlayback(item, target) {
     if (ps === 'PLAY_STATE') return; // decoded and playing: all good
     if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
   }
-  showToast(t('library.formatMaybeUnsupported', { title: item.title || '' }), 8000);
+  const probe = await probeDelivery(item.streamURL);
+  // Only a probe that actually answered may change the wording. "Not known" is
+  // the state a blocked or unreachable probe lands in, and the app can be kept
+  // from a server the speaker reaches perfectly well, so it keeps the older
+  // format wording rather than inventing a verdict.
+  showToast(probe.known && !probe.delivered
+    ? t('library.serverNotDelivering', { title: item.title || '' })
+    : t('library.formatMaybeUnsupported', { title: item.title || '' }), 9000);
+}
+
+// probeDelivery asks the Go side whether the media server hands over the first
+// bytes of the track. It is the one measurement that separates a file the
+// speaker cannot decode from a server that is not serving.
+//
+// It must NOT be a fetch() from here. This page has its own origin, a DLNA
+// server sends no Access-Control-Allow-Origin, and the browser then refuses the
+// answer however healthy the server is, so a frontend probe would report every
+// server as dead. That is how the first version of this went wrong, and it would
+// have told a FLAC owner to go and check his NAS.
+async function probeDelivery(url) {
+  try {
+    const r = await ProbeTrackDelivery(url);
+    return { known: !!(r && r.known), delivered: !!(r && r.delivered) };
+  } catch {
+    return { known: false, delivered: false };
+  }
 }
 
 // libraryPlayFolder starts an auto-advancing queue from every playable track in

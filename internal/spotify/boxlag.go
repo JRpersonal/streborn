@@ -105,18 +105,18 @@ func (m *Manager) noteStreamAttached() {
 // that raced the following attach came out negative that way; the drain test
 // pins the order.
 func (m *Manager) triggerBoxLag(reason string) {
-	fn, deliveredGran, ok := m.boxLagSample(reason)
+	fn, deliveredGran, seq, ok := m.boxLagSample(reason)
 	if !ok {
 		return
 	}
-	go m.readBoxLag(fn, reason, deliveredGran)
+	go m.readBoxLag(fn, reason, deliveredGran, seq)
 }
 
 // measureBoxLag is triggerBoxLag start to finish in the caller's goroutine, for
 // tests that want the reading before they assert on it.
 func (m *Manager) measureBoxLag(reason string) {
-	if fn, deliveredGran, ok := m.boxLagSample(reason); ok {
-		m.readBoxLag(fn, reason, deliveredGran)
+	if fn, deliveredGran, seq, ok := m.boxLagSample(reason); ok {
+		m.readBoxLag(fn, reason, deliveredGran, seq)
 	}
 }
 
@@ -124,8 +124,12 @@ func (m *Manager) measureBoxLag(reason string) {
 // there is anything to compare it against. ok=false means no reading is taken at
 // all: no position reader wired, nothing attached, or no baseline for this
 // attachment yet.
-func (m *Manager) boxLagSample(reason string) (fn func(context.Context) (time.Duration, bool), deliveredGran int64, ok bool) {
+func (m *Manager) boxLagSample(reason string) (fn func(context.Context) (time.Duration, bool), deliveredGran int64, seq uint64, ok bool) {
 	m.mu.Lock()
+	// Ordering key for the store, handed out under the same lock that samples
+	// the delivered side, so it numbers the events in the order they happened.
+	m.lagSeq++
+	seq = m.lagSeq
 	fn = m.boxPositionFn
 	attached := m.sink != nil
 	rebasePending := m.lagRebase
@@ -142,15 +146,15 @@ func (m *Manager) boxLagSample(reason string) (fn func(context.Context) (time.Du
 	m.mu.Unlock()
 	switch {
 	case fn == nil || !attached:
-		return nil, 0, false
+		return nil, 0, 0, false
 	case rebasePending:
 		m.logger.Debug("spotify: no audio delivered since the box attached, no buffer-lag measurement", "at", reason)
-		return nil, 0, false
+		return nil, 0, 0, false
 	case rebuilt:
 		m.logger.Debug("spotify: delivered timeline was rebuilt under the attached box, re-baselined instead of measuring", "at", reason)
-		return nil, 0, false
+		return nil, 0, 0, false
 	}
-	return fn, deliveredGran, true
+	return fn, deliveredGran, seq, true
 }
 
 // readBoxLag reads the speaker's own clock and logs it against the delivered
@@ -161,7 +165,7 @@ func (m *Manager) boxLagSample(reason string) (fn func(context.Context) (time.Du
 // Best effort: a box that gives no usable clock means no line and no stored
 // measurement. A made-up number here would be read as a measured one, which is
 // the one wrong answer this could give.
-func (m *Manager) readBoxLag(fn func(context.Context) (time.Duration, bool), reason string, deliveredGran int64) {
+func (m *Manager) readBoxLag(fn func(context.Context) (time.Duration, bool), reason string, deliveredGran int64, seq uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), boxLagReadTimeout)
 	defer cancel()
 	rel, ok := fn(ctx)
@@ -182,7 +186,21 @@ func (m *Manager) readBoxLag(fn func(context.Context) (time.Duration, bool), rea
 		DeliveredSec: delivered, BoxRelSec: boxSec, DiffSec: round2(delivered - boxSec),
 	}
 	m.mu.Lock()
-	m.lastLag = lag
+	// Keep the reading from the NEWEST event. The box read is a SOAP round trip
+	// in its own goroutine, so two measurements in flight finish in whatever
+	// order the scheduler picks, and the one that finishes last used to win the
+	// store whatever it measured.
+	//
+	// The page that carries the first audio of an attachment can also be a
+	// track boundary, so the boundary and the attach reading are dispatched
+	// microseconds apart. A wall-clock stamp cannot separate them: on Windows
+	// the two timestamps come out equal and the tie let the staler reading
+	// through. The sequence number is taken under the same lock as the sample,
+	// so it orders the EVENTS rather than the goroutines.
+	if seq > m.lastLagSeq {
+		m.lastLag = lag
+		m.lastLagSeq = seq
+	}
 	m.mu.Unlock()
 	// The raw inputs, not just the difference: the number is only readable
 	// against them (a box whose RelTime did not restart on a re-attach produces

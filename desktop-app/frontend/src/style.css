@@ -2836,3 +2836,33 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .gk-row-members { flex: 1 1 200px; }
 .gk-row select { min-width: 140px; }
 .gk-warn { flex-basis: 100%; }
+
+/* Donate dialog: the same three branded buttons as the rail, reachable from the
+   footer at any window size. The rail is display:none below 62em and that
+   threshold moves with the text size, so on a narrow window or a large font it
+   was the only donate affordance and it was not there. */
+.donate-modal { max-width: 340px; }
+.donate-modal-btns { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 16px; }
+.donate-modal-btns .donate-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.donate-modal-btns .donate-btn:hover { transform: translateY(-1px); }
+.donate-modal-btns .donate-btn-icon { display: inline-flex; align-items: center; }
+.donate-modal-btns .donate-btn-label { line-height: 1; }
+.donate-modal-btns .donate-gh { background: #fff; color: #24292f; border-color: #bf3989; }
+.donate-modal-btns .donate-gh .donate-btn-icon { color: #bf3989; }
+.donate-modal-btns .donate-paypal { background: #ffc439; }
+.donate-modal-btns .donate-paypal-wordmark { font-weight: 700; font-style: italic; }
+.donate-modal-btns .donate-paypal-wordmark .pay { color: #003087; }
+.donate-modal-btns .donate-paypal-wordmark .pal { color: #009cde; }
+.donate-modal-btns .donate-kofi { background: #ff5e5b; color: #fff; }

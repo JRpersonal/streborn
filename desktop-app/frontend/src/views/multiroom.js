@@ -545,12 +545,18 @@ export function renderMultiroom(fetchLive) {
         : t('multiroom.permanentHelpMasterOnly', { master: permMasterName }))
     : t('multiroom.permanentHelp');
 
-  // The pair's balance belongs here, where the pair is made and undone, and
-  // nowhere near a volume slider: it is a READ-OUT, not a control. The firmware
-  // accepts no balance write that sticks (every attempt hung the endpoint until
-  // the speaker was woken), so shown beside a slider it reads as a control that
-  // is broken. An owner said exactly that: "steht neben dem Lautstaerkeregler
-  // und hat auch keinen Effekt" (2026-08-09), and #70 asked twice where it was.
+  // The pair's balance is shown here, where the pair is made and undone, because
+  // that is where people were looking for it (#70 asked twice). It stays a
+  // READ-OUT here and the control lives in Speaker settings, next to the volume:
+  // one slider in one place, and this page paints a card grid that a live
+  // control would have to be kept in step with on every repaint.
+  //
+  // It was read-only everywhere until 2026-09-10, and an owner reported exactly
+  // that: "steht neben dem Lautstaerkeregler und hat auch keinen Effekt"
+  // (2026-08-09). The write hung the firmware's HTTP endpoint every time, and
+  // the missing piece was the interface: Bose's own client sends it on the
+  // speaker's WebSocket (gesellix, #70). So this line now says where to change
+  // it instead of sending people to the Bose app.
   const fpMaster = formingPair ? String(formingPair.master || '').toUpperCase() : '';
   const showBal = !!(formingPair && pairBalanceText && fpMaster === pairBalanceMaster);
   const pairBalance = formingPair
@@ -1200,7 +1206,26 @@ async function doDissolveStereo(pairCands) {
     || livePairs[0] || null;
   const targets = stereoUndoTargets(pair, state.boxes || []);
   if (!targets.length) {
+    // No pair was identified anywhere, so this is the one-sided-leftover
+    // fallback: ask the speaker the user picked on the left, because a pair
+    // half can hold the record on its own.
+    //
+    // It must NOT fire on a speaker that is simply in a group. #907: three
+    // speakers in a plain multiroom group and no pair at all, and every
+    // left/right combination "succeeded" here and took the group apart, because
+    // the guess went out and the agent's ?stereo=1 path fell through to the
+    // multiroom teardown. The agent refuses that now; refusing before the
+    // request is sent is what lets the panel say which operation the user
+    // actually wants.
     const guess = pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
+    if (guess && zoneMasterOf(guess.deviceID, state.zoneLive)) {
+      const right = pairCands.find(b => b.deviceID === ($('stereoRight') || {}).value);
+      state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoUndoNotAGroup', {
+        names: [guess, right].filter(Boolean).map(zoneLabel).join(', '),
+      }))}</div>`;
+      renderMultiroom(false);
+      return;
+    }
     if (guess) targets.push(guess);
   }
   if (!targets.length) {
@@ -1226,6 +1251,7 @@ async function doDissolveStereo(pairCands) {
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   let dissolved = false;
   let failure = null;
+  let unconfirmed = false;
   for (const box of reachable) {
     try {
       // The stereo-intent endpoint: it also dissolves a firmware pair the agent
@@ -1239,7 +1265,13 @@ async function doDissolveStereo(pairCands) {
       // to do, because the agent answers 200 for it). With more than one target
       // it is also the EXPECTED answer from the half that already let go, so it
       // never stops the sweep.
-      if (!String((e && e.message) || e || '').includes('stereo-not-paired')) failure = e;
+      const msg = String((e && e.message) || e || '');
+      // Two sentinels come back from the agent, and only one of them was known
+      // here. stereo-undo-unconfirmed means the speaker did not confirm the pair
+      // came apart; printing the token itself is what the user got until
+      // 2026-09-11 ("Could not change the group: stereo-undo-unconfirmed").
+      if (msg.includes('stereo-undo-unconfirmed')) unconfirmed = true;
+      else if (!msg.includes('stereo-not-paired')) failure = e;
     }
   }
   if (dissolved) {
@@ -1257,6 +1289,11 @@ async function doDissolveStereo(pairCands) {
     // No toast on top of the inline confirmation: the two said the same thing and
     // overlapped (#843 problem 2). The inline message sits in the stereo panel
     // right where the Undo button is, so it is already in view after the click.
+  } else if (unconfirmed) {
+    // Not an error and not a success. The agent sent the teardown and the
+    // speaker did not confirm it came apart, so the honest thing is to say that
+    // and let the user look.
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoUndoUnconfirmed'))}</div>`;
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
   } else {
@@ -1330,16 +1367,28 @@ async function doDissolveStereoPair(pair, boxes) {
   }
   let dissolved = false;
   let failure = null;
+  let unconfirmed = false;
   for (const box of reachable) {
     try {
       await DissolveStereoPair(box.host, box.port);
       dissolved = true;
     } catch (e) {
-      if (!String((e && e.message) || e || '').includes('stereo-not-paired')) failure = e;
+      const msg = String((e && e.message) || e || '');
+      // Two sentinels come back from the agent, and only one of them was known
+      // here. stereo-undo-unconfirmed means the speaker did not confirm the pair
+      // came apart; printing the token itself is what the user got until
+      // 2026-09-11 ("Could not change the group: stereo-undo-unconfirmed").
+      if (msg.includes('stereo-undo-unconfirmed')) unconfirmed = true;
+      else if (!msg.includes('stereo-not-paired')) failure = e;
     }
   }
   if (dissolved) {
     flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`);
+  } else if (unconfirmed) {
+    // Not an error and not a success. The agent sent the teardown and the
+    // speaker did not confirm it came apart, so the honest thing is to say that
+    // and let the user look.
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoUndoUnconfirmed'))}</div>`;
   } else if (failure) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
   } else {
@@ -1348,9 +1397,9 @@ async function doDissolveStereoPair(pair, boxes) {
   finishAction();
 }
 
-// fillPairBalance shows the pair's balance as information, with where to change
-// it, because here it cannot be changed. Asked from the pair's MASTER whichever
-// half is selected: only the master reports one (#70).
+// fillPairBalance shows the pair's balance as information, and says where to
+// change it. Asked from the pair's MASTER whichever half is selected: only the
+// master reports one, and only the master takes the write (#70).
 async function fillPairBalance(pair, boxes) {
   const el = document.getElementById('pairBalance');
   if (!el || !pair) return;
@@ -1360,7 +1409,7 @@ async function fillPairBalance(pair, boxes) {
   if (!src || src.kind === 'stock') return;
   const v = await readBoxBalance(src);
   if (v === null) return;
-  pairBalanceText = balanceLabel(v) + '. ' + t('controls.balanceTitle');
+  pairBalanceText = balanceLabel(v) + '. ' + t('controls.balanceInSettings');
   pairBalanceMaster = String(pair.master || '').toUpperCase();
   el.textContent = pairBalanceText;
   el.hidden = false;

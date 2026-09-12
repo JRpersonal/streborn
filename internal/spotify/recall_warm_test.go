@@ -48,7 +48,7 @@ func TestPlayWarmShuffleFastPath(t *testing.T) {
 	}
 
 	want := []string{"/player/shuffle_context", "/player/shuffle_context", "/player/next", "/player/resume"}
-	got := pathsOf(*calls)
+	got := pathsOf(calls())
 	if len(got) != len(want) {
 		t.Fatalf("warm shuffle calls = %v, want %v", got, want)
 	}
@@ -57,9 +57,9 @@ func TestPlayWarmShuffleFastPath(t *testing.T) {
 			t.Fatalf("warm shuffle calls = %v, want %v", got, want)
 		}
 	}
-	if !strings.Contains((*calls)[0].body, `"shuffle_context":false`) ||
-		!strings.Contains((*calls)[1].body, `"shuffle_context":true`) {
-		t.Errorf("warm shuffle must reseed off-then-on, got %q then %q", (*calls)[0].body, (*calls)[1].body)
+	if !strings.Contains((calls())[0].body, `"shuffle_context":false`) ||
+		!strings.Contains((calls())[1].body, `"shuffle_context":true`) {
+		t.Errorf("warm shuffle must reseed off-then-on, got %q then %q", (calls())[0].body, (calls())[1].body)
 	}
 	if !m.skipCutArmed() {
 		t.Error("the recall cut must stay armed so the /player/next BOS drops the old tail")
@@ -81,12 +81,12 @@ func TestPlayWarmResumeClearsCut(t *testing.T) {
 		t.Fatalf("Play: %v", err)
 	}
 
-	for _, p := range pathsOf(*calls) {
+	for _, p := range pathsOf(calls()) {
 		if p == "/player/play" || p == "/player/next" {
 			t.Errorf("warm resume re-press must not reload or skip, saw %s", p)
 		}
 	}
-	shufBody, ok := bodyForPath(*calls, "/player/shuffle_context")
+	shufBody, ok := bodyForPath(calls(), "/player/shuffle_context")
 	if !ok || !strings.Contains(shufBody, `"shuffle_context":false`) {
 		t.Errorf("warm resume must ensure shuffle OFF, got %q ok=%v", shufBody, ok)
 	}
@@ -155,7 +155,7 @@ func TestPlaySameContextNoSinkTakesColdPath(t *testing.T) {
 	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: false}); err != nil {
 		t.Fatalf("Play: %v", err)
 	}
-	if _, ok := bodyForPath(*calls, "/player/play"); !ok {
+	if _, ok := bodyForPath(calls(), "/player/play"); !ok {
 		t.Fatal("same context with no sink must reload via /player/play")
 	}
 }

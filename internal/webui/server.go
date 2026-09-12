@@ -43,11 +43,27 @@ type Server struct {
 	// quietWake is a member wake done for a group join: the level the speaker
 	// had before it was muted for the wake, restored once the speaker joins a
 	// zone or the window runs out. Guarded by quietWakeMu.
+	// zoneChangedAt is when the speaker last joined, led or left a zone, as the
+	// firmware itself reported it. It exists so the re-push watchdog can tell a
+	// stream that DROPPED from one that ended because the group changed under it
+	// (#900). Deliberately not derived from quietWakeUntil: the zone join is what
+	// CLEARS that, so reading it here is a race that the push wins or loses by a
+	// quarter of a second. Guarded by quietWakeMu, which already covers the other
+	// piece of group-wake state and is taken on the same events.
+	zoneChangedAt time.Time
+
 	quietWakeMu    sync.Mutex
 	quietWakeVol   int
 	quietWakeUntil time.Time
-	logger         *slog.Logger
-	presets        *presets.Store
+	// quietWakeEpisodeUntil is how long this speaker counts as "STR woke me for
+	// a group operation", independently of the mute. quietWakeUntil answers a
+	// different question (is the level still held down) and the zone join
+	// CLEARS it, which is why the preset reconcile could not use it: the join
+	// lands a second before the reconcile looks (#900). This one is a plain
+	// deadline that nothing clears early. Guarded by quietWakeMu.
+	quietWakeEpisodeUntil time.Time
+	logger                *slog.Logger
+	presets               *presets.Store
 	// snapshotPath is the NAND file where the agent persisted the box's
 	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
 	// by GET /api/box/snapshot so the app can warn about account-linked cloud
@@ -512,6 +528,11 @@ type Server struct {
 	// Finding 4). nil = not wired (no storm reported).
 	storm1036Fn func() (bool, int, time.Time)
 
+	// balanceWriteFn sends a stereo-balance write on the box WebSocket (see
+	// SetBalanceWriteFn). nil means no socket is available, and the balance
+	// endpoint then reports itself as not settable instead of failing a write.
+	balanceWriteFn func(deviceID string, target int) error
+
 	// suppress1036Fn stands the 1036 storm COUNTER down until the given time.
 	// Wired to boxws.Suppress1036Until. Used where STR itself provokes the
 	// rejection it would otherwise count as a symptom (a zone teardown kills
@@ -836,6 +857,10 @@ func (s *Server) quietWake(ctx context.Context) error {
 	if !quietWakeNeeded(quietWakeNowPlaying(ctx, s.boxHost)) {
 		return nil
 	}
+	// Stamped before the wake, not after it: a wake that fails half way still
+	// leaves a speaker that was pulled out of standby, and the preset write
+	// would start music on that one just the same.
+	s.noteQuietWakeEpisode()
 	var prevVol = -1
 	if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
 		prevVol = v.Actual
@@ -897,6 +922,60 @@ func (s *Server) setVolumeOnFirstLife(ctx context.Context, vol int) <-chan struc
 		}
 	}()
 	return done
+}
+
+// quietWakeEpisodeWindow is how long after a group wake the speaker is treated
+// as still settling. It has to outlast the whole sequence, not just the mute:
+// the wake takes about four seconds, the zone forms two or three after that,
+// and the preset re-sync the wake scheduled starts writing right behind it.
+const quietWakeEpisodeWindow = 30 * time.Second
+
+// noteQuietWakeEpisode stamps the settling window. Called by the quiet wake
+// itself, so every group wake is covered whichever caller made it.
+func (s *Server) noteQuietWakeEpisode() {
+	s.quietWakeMu.Lock()
+	s.quietWakeEpisodeUntil = time.Now().Add(quietWakeEpisodeWindow)
+	s.quietWakeMu.Unlock()
+}
+
+// QuietWakeEpisodeActive reports whether STR woke this speaker for a group
+// operation moments ago and the operation has not settled yet.
+//
+// The preset reconcile asks this before a forced pass. Writing the six native
+// preset elements makes the firmware select LOCAL_INTERNET_RADIO and start
+// playing, which is invisible on a speaker that was already idle and left
+// alone, and very audible on one that was just woken and un-muted by a zone
+// join (#900, re-confirmed on v0.9.79 with the write and the source change 168
+// ms apart). The forced pass already stands down in front of live audio for
+// the mirror-image reason.
+func (s *Server) QuietWakeEpisodeActive() bool {
+	s.quietWakeMu.Lock()
+	defer s.quietWakeMu.Unlock()
+	return time.Now().Before(s.quietWakeEpisodeUntil)
+}
+
+// quietWakeActive reports whether a quiet wake is still holding this speaker
+// down, i.e. STR itself pulled the box out of standby for a group operation
+// moments ago.
+//
+// The power-on resume needs this. Its own self-wake guard asks whether the box
+// is in a zone, on the reasoning that a standalone box can only have been woken
+// by a user pressing power. That is true right up until STR wakes the box in
+// order to form a zone: at that instant the zone does not exist yet, the guard
+// sees a standalone box and the last station starts playing. Reported on #900,
+// a group formed while nothing was playing and music started (2026-09-08):
+//
+//	17:23:50 power-on detected, attempting last-station resume
+//	17:23:51 wake: quiet wake for a group operation  mutedFrom=32
+//	17:23:53 wake resume: resumed last stream after power-on
+//	17:23:54 zone: forming (beta)
+//
+// The mute did not save it either: the zone join lifts the mute a second later
+// and the resumed stream becomes audible at full level.
+func (s *Server) quietWakeActive() bool {
+	s.quietWakeMu.Lock()
+	defer s.quietWakeMu.Unlock()
+	return !s.quietWakeUntil.IsZero()
 }
 
 // quietWakeRestoreAfter bounds how long a member stays muted after a quiet

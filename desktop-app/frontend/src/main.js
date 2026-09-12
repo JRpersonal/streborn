@@ -225,6 +225,7 @@ import {
   dismissNotice,
   noticeDismissed,
   activeSlotFromLocation,
+  proxiedRadioPlaying,
   orionStationPayload,
   nativeSlotStale,
   isLostStrKey,
@@ -343,6 +344,7 @@ import {
 // file stops growing.
 import { renderRecent, initRecentView } from './views/recent.js';
 import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
+import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
@@ -625,6 +627,15 @@ document.querySelector('#app').innerHTML = `
       <p class="modal-sub" id="creditsIntro">${escapeHtml(t('credits.intro'))}</p>
       <div id="creditsBody" class="credits-list"></div>
       <button class="btn" id="creditsClose">${escapeHtml(t('common.close'))}</button>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="donateModal">
+    <div class="modal-content donate-modal">
+      <h3>${escapeHtml(t('credits.donate'))}</h3>
+      <p class="modal-sub" id="donateModalSlogan"></p>
+      <div class="donate-modal-btns" id="donateModalBtns"></div>
+      <button class="btn" id="donateClose">${escapeHtml(t('common.close'))}</button>
     </div>
   </div>
 
@@ -1015,6 +1026,13 @@ async function renderFooter() {
   const links = [];
   if (i.githubUrl)  links.push(`<a href="#" data-url="${escapeAttr(i.githubUrl)}" class="footer-link">GitHub</a>`);
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
+  // Early in the row on purpose: the row wraps on a narrow window, and this is
+  // the one entry whose whole point is to still be reachable there. The donate
+  // rail is hidden below 62em, which with a larger text size is a fairly wide
+  // window, so without this link somebody who WANTS to donate has nowhere to
+  // click (reported 2026-09-09 by a user who had just written that he wanted to
+  // buy a coffee).
+  links.push(donateFooterLinkHTML());
   // Persistent way to reach the community pin map. The one-time celebration invite
   // auto-dismisses, so users who miss it had no way back and kept asking "where do
   // I add my pin?" (Helmut). This footer link is always available.
@@ -1051,6 +1069,8 @@ async function renderFooter() {
   if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
   const creditsLink = $('footerCredits');
   if (creditsLink) creditsLink.onclick = (e) => { e.preventDefault(); showCredits(); };
+  const donateLink = $('footerDonate');
+  if (donateLink) donateLink.onclick = (e) => { e.preventDefault(); showDonate(); };
   // Straight to the issue list rather than the repository front page: a user
   // with a problem wants to see whether it is already reported and to write it
   // down, not to read a README.
@@ -1141,39 +1161,42 @@ function renderDonateSidebar() {
   const i = state.appInfo || {};
   const slogan = i.donateSlogan || t('footer.donateSlogan');
 
-  // Octicons heart-fill-16, MIT licensed (https://github.com/primer/octicons).
-  const heartSvg = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m8 14.25.345.666a.75.75 0 0 1-.69 0l-.008-.004-.018-.01a7.152 7.152 0 0 1-.31-.17 22.055 22.055 0 0 1-3.434-2.414C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.25 1 5.797 1 7.153 1.802 8 3.02 8.847 1.802 10.203 1 11.75 1 13.914 1 16 2.836 16 5.5c0 2.85-2.045 5.231-3.885 6.818a22.066 22.066 0 0 1-3.744 2.584l-.018.01-.005.003h-.002Z"/></svg>`;
-  // Ko-fi has no single canonical inline mark; this is a compact
-  // coffee-cup glyph (taken from Simple Icons / Ko-fi brand kit
-  // composition) that recognisable at 14px.
-  const coffeeSvg = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M20.216 6.415C19.964 5.43 19.066 4.78 18.057 4.78H5.943c-1.009 0-1.907.65-2.159 1.635C2.987 9.085 3 12.34 4.97 14.605c1.236 1.42 3.116 2.13 5.59 2.13 1.85 0 3.62-.404 4.97-1.137A6.43 6.43 0 0 0 19.046 14H19.5a3.5 3.5 0 1 0 0-7h-.07a4.8 4.8 0 0 0-.214-.585zM19 9.5h.5a1.5 1.5 0 0 1 0 3H19a4.21 4.21 0 0 0 .003-.123V9.535c0-.012-.002-.023-.003-.035zM7.5 19h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1 0-1z"/></svg>`;
-
   side.innerHTML = `
     <div class="donate-icon">&#9749;</div>
     <div class="donate-slogan">${escapeHtml(slogan)}</div>
-    <button class="donate-btn donate-gh" id="donateGhBtn" type="button" title="GitHub Sponsors">
-      <span class="donate-btn-icon">${heartSvg}</span>
-      <span class="donate-btn-label">Sponsor</span>
-    </button>
-    <button class="donate-btn donate-paypal" id="donatePayPalBtn" type="button" title="PayPal">
-      <span class="donate-paypal-wordmark"><span class="pay">Pay</span><span class="pal">Pal</span></span>
-    </button>
-    <button class="donate-btn donate-kofi" id="donateKofiBtn" type="button" title="Ko-fi">
-      <span class="donate-btn-icon">${coffeeSvg}</span>
-      <span class="donate-btn-label">Ko-fi</span>
-    </button>
+    ${donateButtonsHTML()}
     ${shareTriggerHTML()}
   `;
 
-  const wire = (id, url) => {
-    const b = $(id);
-    if (b) b.onclick = () => BrowserOpenURL(url);
-  };
-  wire('donateGhBtn',     'https://github.com/sponsors/JRpersonal');
-  wire('donatePayPalBtn', 'https://paypal.me/JR31337');
-  wire('donateKofiBtn',   'https://ko-fi.com/streborn');
+  wireDonateButtons(side);
   const shareBtn = $('shareTrigger');
   if (shareBtn) shareBtn.onclick = openShareModal;
+}
+
+// showDonate opens the same three buttons as a dialog, from the footer link.
+//
+// The rail they normally live in is an overlay that needs a wide window: it is
+// display:none below 62em, and because that threshold is in em it moves out
+// with the user's text size, so a narrow window or a large font hides it
+// entirely. The CSS comment beside that rule promised "below that the footer
+// donate link carries it" and there was no such link, which is how a user who
+// had gone looking in order to actually pay reported the coffee button as
+// missing (mail, 2026-09-09). The footer is always on screen, so this is the
+// path that cannot disappear.
+function showDonate() {
+  const modal = $('donateModal');
+  const btns = $('donateModalBtns');
+  if (!modal || !btns) return;
+  const i = state.appInfo || {};
+  const slogan = $('donateModalSlogan');
+  if (slogan) slogan.textContent = i.donateSlogan || t('footer.donateSlogan');
+  btns.innerHTML = donateButtonsHTML();
+  wireDonateButtons(btns);
+  const close = () => modal.classList.add('hidden');
+  const closeBtn = $('donateClose');
+  if (closeBtn) closeBtn.onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  modal.classList.remove('hidden');
 }
 
 // renderAppUpdateCheckLink leaves a quiet way back to the update notice in the
@@ -1301,6 +1324,31 @@ async function checkAppUpdate(manual) {
 // the verified .dmg is opened for the user to drag into Applications). On any
 // failure the button becomes a "download from the website" fallback so the user
 // is never stuck.
+// downloadWasInterrupted separates "the connection went away" from a genuine
+// failure of the update itself.
+//
+// Everything here is a transport fault: the machine lost its network, the
+// connection was cut, the server never answered, or the download stopped short.
+// None of them says anything is wrong with the app, the release or the file, so
+// none of them earns an error the user is invited to copy and send on. A hash
+// mismatch or a file that cannot be written is the opposite and is left to the
+// full error path.
+//
+// Matching on the message rather than a typed error because these arrive from
+// the Go side already flattened into a string.
+export function downloadWasInterrupted(err) {
+  const s = String(err || '').toLowerCase();
+  return [
+    'network is unreachable', 'unreachable network', // the machine has no route
+    'no route to host', 'no such host', 'dns',        // gateway or resolver gone
+    'connection reset', 'connection refused', 'broken pipe',
+    'eof', 'unexpected eof',                          // cut mid-transfer
+    'timeout', 'deadline exceeded', 'timed out',
+    'canceled', 'cancelled', 'aborted',
+    'i/o error', 'connection was aborted',
+  ].some((m) => s.includes(m));
+}
+
 // fmtRate turns a bytes/second number into a short human rate for the live
 // download/upload throughput shown during an app update or a speaker update.
 function fmtRate(bps) {
@@ -1361,14 +1409,28 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
       showMacHandoff(path);
     }
   } catch (e) {
-    showError(t('banner.updateFailed', { err: String(e) }));
     btn.disabled = false;
-    btn.textContent = t('banner.getFromReleases');
-    if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
-    // Reassure the non-technical user: the app replaces itself, so any .exe they
-    // downloaded by hand earlier can simply be deleted (the duplicate-copies
-    // confusion that prompted this).
-    showToast(t('banner.manualHint'));
+    // A download the network cut off is not a fault anybody needs to report,
+    // and it is not a reason to send the user to a web page either: the same
+    // button, pressed again once the connection is back, is the whole fix.
+    // Reported by shorty310 (#916) after pulling his Wi-Fi mid-download: he got
+    // the copyable error modal, which reads as "send this to the developer",
+    // and a button that had turned into "Get it from the downloads page".
+    if (downloadWasInterrupted(e)) {
+      btn.textContent = t('banner.retryAppUpdate');
+      btn.onclick = () => runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl);
+      showToast(t('banner.updateInterrupted'), 9000);
+    } else {
+      // A real failure: a hash that did not match, a file that could not be
+      // written. That one IS worth showing in full and worth the web fallback.
+      showError(t('banner.updateFailed', { err: String(e) }));
+      btn.textContent = t('banner.getFromReleases');
+      if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
+      // Reassure the non-technical user: the app replaces itself, so any .exe
+      // they downloaded by hand earlier can simply be deleted (the
+      // duplicate-copies confusion that prompted this).
+      showToast(t('banner.manualHint'));
+    }
   } finally {
     if (typeof off === 'function') off();
   }
@@ -6357,7 +6419,19 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 function showPresetSaveError(err) {
   const s = String(err);
   const m = /already-on-slot/.test(s) && s.match(/"slot":\s*(\d+)/);
-  if (m) { showToast(t('preset.alreadyOnKey', { n: m[1] })); return; }
+  if (m) {
+    // Name WHAT it collided with. Without it the note reads as a refusal to
+    // have more than one of something, which is how a user with three Spotify
+    // playlists concluded he could only keep one (#925). The agent's 409
+    // carries the other preset's name, and saying it turns the refusal into the
+    // answer: he reads back the playlist the speaker was still on.
+    const nm = (s.match(/"name":\s*"((?:[^"\\]|\\.)*)"/) || [])[1];
+    const name = nm ? nm.replace(/\\(.)/g, '$1') : '';
+    showToast(name
+      ? t('preset.alreadyOnKeyNamed', { name, n: m[1] })
+      : t('preset.alreadyOnKey', { n: m[1] }));
+    return;
+  }
   showError(t('preset.saveFailed', { err: s }));
 }
 
@@ -6814,14 +6888,14 @@ function scheduleLiveTitle() {
     if (state.currentBox !== box) { liveTitleActive = false; return; }   // speaker changed
     const loc = state.nowLocation || '';
     if (loc === '') { liveTitleActive = false; return; }                 // playback stopped
-    // Slot-based, not a raw /stream/ match: a NATIVE radio preset carries the
-    // ORION "/station?data=<base64>" descriptor, which the raw regex never
-    // matched, so on native playback this loop spun without ever fetching a
-    // title and the Play tab showed no artist/track at all (#597).
-    // activeSlotFromLocation decodes the descriptor (the #555 fix) and also
-    // correctly yields null for a native station pointing straight at a CDN,
-    // where the proxy has no title to offer.
-    const isRadio = !/\/spotify\//.test(loc) && activeSlotFromLocation(loc) !== null;
+    // Anything the stream proxy is serving, which is where a live title comes
+    // from. This used to ask for a preset SLOT instead, which is a narrower
+    // question: a station started from Find stations has no slot, so the poll
+    // never ran and the Play tab showed no artist or track while the speaker's
+    // own page showed both (#922). The predicate still covers the ORION
+    // descriptor a native preset carries (#597/#555) and still says no to a
+    // native station pointing straight at a CDN, where there is no title to get.
+    const isRadio = proxiedRadioPlaying(loc);
     if (isRadio) {
       let title = '';
       try { title = (await StreamTitle(box.host, box.port)) || ''; } catch {}
@@ -6972,10 +7046,10 @@ function renderNowPlayingBar() {
       ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
       : state.nowSpotifyTrack;
     displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
-  } else if (!/\/spotify\//.test(loc) && activeSlotFromLocation(loc) !== null && state.nowTitle) {
-    // Slot-based like the title poller above: the raw /stream/ regex missed
-    // NATIVE radio locations (ORION descriptor), so the status line dropped
-    // the artist/track exactly when the box played natively (#597).
+  } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
+    // The same predicate as the title poller above, and it has to be the same
+    // one: fixing only the poll would fetch a title that this line then refused
+    // to print (#922).
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
   }
   // Match the source case-insensitively: the firmware is not consistent about
@@ -7052,9 +7126,10 @@ function renderNowPlayingBar() {
 // on a SoundTouch 10) rather than from a constant, because a widely-copied
 // community value of -50..+50 does not match what the firmware actually says.
 //
-// Shown, not settable. The firmware accepts no write we could get to work: every
-// attempt hung and left the speaker's balance endpoint unresponsive until it was
-// woken again. Displaying it still earns its place, because a pair that was set
+// Shown, not settable yet. Every write ATTEMPT OVER HTTP hung and left the
+// speaker's balance endpoint unresponsive until it was woken again. The
+// WebSocket bus is reported to accept it (#70) and has never been tried,
+// because STR's client there cannot send. Displaying it still earns its place, because a pair that was set
 // off-centre in the old Bose app otherwise just sounds lopsided for no visible
 // reason.
 //

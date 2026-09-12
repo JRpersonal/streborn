@@ -21,6 +21,7 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -761,7 +762,61 @@ var userPathRegex = regexp.MustCompile(`(?i)([/\\]+(?:Users|home)[/\\]+)([^/\\\s
 // cannot accidentally skip a scrub the other paths already do — the exact hole
 // that leaked real device IDs and friendly names through anonymizeText while
 // sanitizeLog scrubbed them (see #187/#197 diagnostic bundles).
+// proxyPayloadRegex finds the base64 upstream STR's stream proxy carries in its
+// own URLs, /stream/raw?u=<payload>. Both encodings appear in the field, and a
+// payload can itself wrap another proxy URL, so the unwrapper below loops.
+var proxyPayloadRegex = regexp.MustCompile(`(/stream/raw\?u=)([A-Za-z0-9+/_-]+={0,2})`)
+
+// scrubProxyPayloads rewrites the addresses hidden INSIDE those payloads.
+//
+// It has to run before the text passes, because a base64 blob is opaque to every
+// regex in this file: on issue #844 the log line's proxy host was correctly
+// masked to 192.0.2.1 while the payload beside it still decoded to the
+// reporter's real media server, and that bundle is public. Same shape as the
+// device-ID and SSID holes this file already carries comments about, one level
+// further down.
+//
+// A payload that does not decode, or decodes to something that is not a URL, is
+// left exactly as it was: a bundle is diagnostic evidence and mangling a value
+// nobody can read is worse than leaving it.
+func scrubProxyPayloads(s string) string {
+	return proxyPayloadRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := proxyPayloadRegex.FindStringSubmatch(m)
+		prefix, payload := sub[1], sub[2]
+		dec, enc, ok := decodeProxyPayload(payload)
+		if !ok {
+			return m
+		}
+		// Recurse first, so a doubly wrapped upstream is reached as well.
+		cleaned := scrubPII(scrubProxyPayloads(dec))
+		if cleaned == dec {
+			return m
+		}
+		return prefix + enc.EncodeToString([]byte(cleaned))
+	})
+}
+
+// decodeProxyPayload tries the encodings the proxy has used, and reports which
+// one worked so the value can be put back the way it was found.
+func decodeProxyPayload(payload string) (string, *base64.Encoding, bool) {
+	for _, enc := range []*base64.Encoding{
+		base64.RawURLEncoding, base64.URLEncoding,
+		base64.RawStdEncoding, base64.StdEncoding,
+	} {
+		if dec, err := enc.DecodeString(payload); err == nil {
+			s := string(dec)
+			if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+				return s, enc, true
+			}
+		}
+	}
+	return "", nil, false
+}
+
 func scrubPII(s string) string {
+	// Encoded first: an address inside a base64 payload is invisible to every
+	// regex below it (#844, a public bundle).
+	s = scrubProxyPayloads(s)
 	s = ipv4Regex.ReplaceAllStringFunc(s, func(ip string) string { return maskIP(ip) })
 	return scrubIdentities(s)
 }

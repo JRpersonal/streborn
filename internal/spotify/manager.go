@@ -148,6 +148,12 @@ type Manager struct {
 	// until wired; lastNotifiedTrack dedups repeated metadata/status updates.
 	onTrack           func(track, artist string)
 	lastNotifiedTrack string
+	// onSinkDetach fires when the box lets go of a Spotify stream it had been
+	// playing for a while, so the watchdog that already recovers a dropped
+	// internet-radio stream can recover this one too. nil until wired; the
+	// decision about which detaches are worth reporting is made here rather
+	// than in the callback, so no caller can get it wrong. See ServeOgg.
+	onSinkDetach func(attachedMs int64)
 	// Spotify account product type, used to warn that preset recall needs Premium
 	// (#45). productType is cached from go-librespot's /web-api/v1/me ("premium"/
 	// "free"/"open"); sawFreeAccountLog is set when go-librespot logs that it does
@@ -369,6 +375,12 @@ type Manager struct {
 	lagRebase     bool
 	boxPositionFn func(context.Context) (time.Duration, bool)
 	lastLag       boxLagMeasurement
+	// lagSeq numbers buffer-lag events in the order they are sampled;
+	// lastLagSeq is the one behind lastLag. Only a reading from a newer event
+	// replaces it, so two measurements in flight cannot store out of order.
+	// See readBoxLag.
+	lagSeq     uint64
+	lastLagSeq uint64
 	// loggedBoxLag keeps the buffer-lag line to one INFO per agent run; see
 	// measureBoxLag.
 	loggedBoxLag bool

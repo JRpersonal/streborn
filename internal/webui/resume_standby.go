@@ -147,6 +147,15 @@ func (s *Server) ResumeLastPlay() {
 			s.logger.Info("wake resume: box is in a zone / stereo pair, not auto-resuming (self-wake guard)")
 			return
 		}
+		// The same self-wake guard, one step earlier in time: STR wakes a
+		// standby master to form a group, and at that moment there is no zone
+		// yet for boxInZone to find (#900). A quiet wake is STR's own doing by
+		// definition, so a power-on frame arriving inside its window is not a
+		// user pressing power.
+		if s.quietWakeActive() {
+			s.logger.Info("wake resume: STR woke this speaker for a group operation, not auto-resuming (self-wake guard)")
+			return
+		}
 
 		// Power-off bounce guard for boxes where the UPnP-source standby did not
 		// arm standbyStoppedRecently above. A rhino ST10 reports a power-off as a
@@ -325,6 +334,10 @@ func (s *Server) RecoverAfterReconnect() {
 		time.Sleep(2 * time.Second)
 		if s.boxInZone() {
 			s.logger.Info("reconnect recovery: box in a zone / stereo pair, standing down (self-wake guard)")
+			return
+		}
+		if s.quietWakeActive() {
+			s.logger.Info("reconnect recovery: STR woke this speaker for a group operation, standing down (self-wake guard)")
 			return
 		}
 		stuck, selLoc := s.boxStuckSelection()
@@ -661,6 +674,36 @@ func zoneRoleFromMaster(masterID, selfID string) (follower, known bool) {
 //     down. Being in a group is already the risky state, and here the choice
 //     is only between a station the user restarts and a push that fights a
 //     group that is currently playing.
+//
+// zoneSettleWindow is how long after a zone membership change the re-push
+// watchdog holds off. It has to outlast the whole form handshake: in the #900
+// bundle the quiet wake's STOP lands 2.7 s before "zone: formed", and the
+// firmware's zoneUpdated can trail the drive by a second more. Fifteen seconds
+// covers that with room, and the cost of being wrong in this direction is a
+// station the user starts again, while the cost the other way is music in a
+// room nobody asked.
+const zoneSettleWindow = 15 * time.Second
+
+// noteZoneChanged stamps a zone membership change.
+func (s *Server) noteZoneChanged() {
+	s.quietWakeMu.Lock()
+	s.zoneChangedAt = time.Now()
+	s.quietWakeMu.Unlock()
+}
+
+// zoneJustChanged reports whether the speaker joined, led or left a zone within
+// zoneSettleWindow, and how long ago.
+func (s *Server) zoneJustChanged() (bool, time.Duration) {
+	s.quietWakeMu.Lock()
+	at := s.zoneChangedAt
+	s.quietWakeMu.Unlock()
+	if at.IsZero() {
+		return false, 0
+	}
+	age := time.Since(at)
+	return age < zoneSettleWindow, age
+}
+
 func (s *Server) zonePushWouldFightGroup() (standDown bool, reason string) {
 	if s.boxHost == "" {
 		return false, ""
@@ -865,6 +908,11 @@ func (s *Server) forgetZoneDocDoubt() {
 // live group's document on a single observation. That is exactly the
 // mid-handshake race the two-observation rule exists to survive.
 func (s *Server) NoteBoxZoneState(master string) {
+	// Stamp every membership change, joining and leaving alike. The re-push
+	// watchdog reads it to tell a dropped stream from one that ended because the
+	// group changed (#900). Free: this hook already fires on exactly these
+	// events, so it costs no timer, no poll and no write to the speaker.
+	s.noteZoneChanged()
 	if strings.TrimSpace(master) != "" {
 		// Joined a zone: a level muted for a quiet group wake comes back now.
 		s.restoreQuietWakeVolume("zone joined")
@@ -1664,6 +1712,38 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 	go s.maybeRePush()
 }
 
+// HandleSpotifyStreamDetach is the Spotify twin of HandleStreamDisconnect: the
+// box let go of a Spotify stream it had been playing, and nothing was going to
+// bring it back.
+//
+// Internet radio has had this recovery since v0.7.5; the Spotify audio path
+// never did, so a two-second Wi-Fi dropout ended playback for the rest of the
+// night (field report 2026-09-09: the router deregistered the speaker at
+// 01:39:07 and registered it again at 01:39:09, the stream was gone at
+// 01:39:08.259 after nearly two hours of playing, and the box sat silent until
+// it went to standby at 01:57).
+//
+// It runs the SAME maybeRePush the radio path runs, on purpose: that function
+// carries every guard this needs (the backoff, the deliberate-stop and
+// power-off holds, the ownership window a user's own recall owns, the group
+// stand-down, the attempt cap) and a parallel path would be a second watchdog
+// to keep in step with the first. The Spotify-specific part is one branch
+// inside it, which recalls the preset cleanly instead of re-pointing the box at
+// a live Ogg. Which detaches are worth reporting is decided in the Spotify
+// manager, not here.
+func (s *Server) HandleSpotifyStreamDetach(attachedMs int64) {
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || s.rePushInFlight {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	s.rePushInFlight = true
+	s.lastPlayMu.Unlock()
+	s.logger.Info("spotify: the speaker dropped the stream, checking whether to bring it back", "playedForSec", attachedMs/1000)
+	go s.maybeRePush()
+}
+
 // maybeRePush resumes the last stream, but only when it is safe: it waits a
 // moment (a user power-off reaches STANDBY within ~1-2 s, so this tells "user
 // turned it off" from "renderer dropped the stream while the box stays on"),
@@ -1756,19 +1836,30 @@ func (s *Server) maybeRePush() {
 			return
 		}
 	}
-	standby, busy := s.boxPlayState()
+	standby, busy, buffering := s.boxPlayStateDetail()
 	if standby {
 		s.logger.Info("re-push: box went to standby, not resuming (treated as user power-off)")
 		return
 	}
 	if busy {
-		// Recovered (playing/paused again, or the user switched). Reset the
-		// attempt counter so a later genuine drop starts a fresh backoff window.
-		s.lastPlayMu.Lock()
-		if s.lastPlay != nil {
-			s.lastPlay.rePushes = 0
+		// Playing or paused again, or the user switched: this is a recovery, so
+		// the attempt counter resets and a later genuine drop starts a fresh
+		// backoff window.
+		//
+		// BUFFERING is NOT a recovery, and counting it as one is why the hard
+		// stop below never engaged. A library file the box cannot read has it
+		// retrying every five seconds, each retry reads as busy, and each reset
+		// put the counter back to zero: six re-pushes of the same track in two
+		// minutes, every one of them logged attempt=1 max=10, so the cap was
+		// decorative (#844). A box that is buffering has not recovered, it is
+		// still trying.
+		if !buffering {
+			s.lastPlayMu.Lock()
+			if s.lastPlay != nil {
+				s.lastPlay.rePushes = 0
+			}
+			s.lastPlayMu.Unlock()
 		}
-		s.lastPlayMu.Unlock()
 		return
 	}
 
@@ -1817,6 +1908,26 @@ func (s *Server) maybeRePush() {
 	// indeterminate answer also stands down: this runs on a speaker that is
 	// idle, so the cost of not pushing is a station the user restarts, while
 	// the cost of pushing into a group is the fight above.
+	// A zone that changed a moment ago is not a dropped stream. Forming a group
+	// wakes the master, and the quiet wake's own STOP tears down whatever the
+	// firmware had just restored, which arms this watchdog; 0.14 s after the
+	// group formed it then pushed back a station the user had switched off two
+	// minutes earlier, and the whole group played it (#900, traced on v0.9.79).
+	//
+	// This covers the MASTER, which the role check below deliberately does not:
+	// a master that really loses its stream still has to recover it, because the
+	// group is listening to that one. What separates the two cases is not the
+	// role, it is whether a zone edit just happened.
+	//
+	// The rule is the one the form path already follows: never start audio that
+	// was not playing before the user's action. A master that WAS playing keeps
+	// its recovery, because zones_stereo.go carries that stream forward itself
+	// rather than leaving it to this watchdog.
+	if changed, age := s.zoneJustChanged(); changed {
+		s.logger.Info("re-push: not resuming, the speaker's group changed a moment ago (that is not a dropped stream)",
+			"ago", age.Round(time.Millisecond).String())
+		return
+	}
 	if standDown, why := s.zonePushWouldFightGroup(); standDown {
 		s.logger.Info("re-push: not resuming, " + why)
 		return
@@ -1843,6 +1954,29 @@ func (s *Server) maybeRePush() {
 	lp.rePushes++
 	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
 	s.lastPlayMu.Unlock()
+
+	// A Spotify preset goes back through the clean slot recall, not through the
+	// bare re-point below. Re-pointing the box at a live Ogg mid-stream hands
+	// it a stream with no headers where it expects a track boundary, which is
+	// the wedge repairResume already documents and avoids the same way.
+	//
+	// BEFORE boxCmdMu, deliberately: recallSlotClean re-enters handlePlaySlot,
+	// which takes that mutex itself, so calling it under the lock below would
+	// deadlock the agent. repairResume orders it the same way.
+	if slot := slotFromSpotifyStreamURL(boxURL); slot > 0 && strings.Contains(boxURL, "spotify/stream") {
+		s.logger.Info("re-push: box dropped the Spotify stream while idle, recalling the preset cleanly", "slot", slot, "attempt", n, "max", maxRePushes)
+		rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer rcancel()
+		s.recallSlotClean(rctx, slot)
+		return
+	}
+	// A Spotify stream with no preset behind it is app-driven Connect playback.
+	// The Spotify app owns that session and knows where it was; STR pushing a
+	// slot it does not have would be a guess.
+	if strings.Contains(boxURL, "spotify/stream") {
+		s.logger.Info("re-push: box dropped an app-driven Spotify session, leaving it to the Spotify app", "attempt", n)
+		return
+	}
 
 	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n, "max", maxRePushes)
 	s.boxCmdMu.Lock()
@@ -2024,11 +2158,23 @@ func (s *Server) pushDisplayDefault() {
 // and idle" and trigger a resume. One quick retry first so a single hiccup does
 // not abort a legitimate stream recovery (where the box really is awake+idle).
 func (s *Server) boxPlayState() (standby, busy bool) {
+	standby, busy, _ = s.boxPlayStateDetail()
+	return standby, busy
+}
+
+// boxPlayStateDetail is boxPlayState plus whether the box is merely BUFFERING.
+//
+// The two are not the same question. For "may I push to this box" buffering
+// counts as busy and always has. For "has this box recovered" it does not: a box
+// retrying a file it cannot read buffers forever, and treating that as recovery
+// is what kept the re-push hard stop from ever engaging (#844).
+func (s *Server) boxPlayStateDetail() (standby, busy, buffering bool) {
 	if s.playStateFn != nil {
-		return s.playStateFn()
+		standby, busy = s.playStateFn()
+		return standby, busy, false
 	}
 	if s.boxHost == "" {
-		return true, false
+		return true, false, false
 	}
 	cl := &http.Client{Timeout: 5 * time.Second}
 	var lastErr error
@@ -2045,11 +2191,12 @@ func (s *Server) boxPlayState() (standby, busy bool) {
 		resp.Body.Close()
 		body := string(b)
 		standby = strings.Contains(body, "STANDBY")
-		busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
-		return standby, busy
+		buffering = strings.Contains(body, "BUFFERING_STATE")
+		busy = strings.Contains(body, "PLAY_STATE") || buffering || strings.Contains(body, "PAUSE_STATE")
+		return standby, busy, buffering
 	}
 	// Could not read the box state: assume standby so we never resume/wake on an
 	// uncertain state (silence beats spontaneous playback).
 	s.logger.Warn("box play-state query failed, assuming standby (will not resume/re-push)", "err", lastErr)
-	return true, false
+	return true, false, false
 }

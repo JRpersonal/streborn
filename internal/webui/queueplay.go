@@ -443,7 +443,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// past it. This covers both a missed STOP frame and a box that freezes at
 		// PLAY_STATE on a finite file's EOF (#219), neither of which the STOP path
 		// above can catch.
-		if sawPlay && end > 0 && time.Since(start) >= end+queueTimerMargin {
+		if sawPlay && end > 0 && time.Since(start) >= end+s.advanceMargin(lastPos, end) {
 			s.advanceAndPlay(true, curGen)
 			continue
 		}
@@ -459,6 +459,30 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			s.advanceAndPlay(true, curGen)
 		}
 	}
+}
+
+// advanceMargin is how long past the track length the wall-clock net waits.
+//
+// The six seconds exist for a box that reports NO position: with nothing to
+// corroborate the length against, the timer has to be generous, or a track that
+// buffers mid-way gets cut off. A box that DOES report a position and reports it
+// sitting at the end of the track has already said the track is over, and making
+// it wait another six seconds is the gap users hear.
+//
+// Measured on an ST20 playing one Synology folder twice, once through STR and
+// once by the box itself (#923): 157 s against 150 s, and 236 s against 230 s.
+// The box's own advance is 0.8 s. The chassis finishes the file and freezes in
+// PLAY_STATE at EOF rather than emitting STOP, so the STOP branch never runs and
+// every track ends on this timer.
+//
+// The remaining floor is the four second poll, which stays where it is: a faster
+// poll would run on every speaker all day for one case (see the project rule on
+// sparing the box hardware).
+func (s *Server) advanceMargin(lastPos, end time.Duration) time.Duration {
+	if lastPos > 0 && nearEnd(lastPos, end) {
+		return 0
+	}
+	return queueTimerMargin
 }
 
 func nearEnd(progress, end time.Duration) bool {

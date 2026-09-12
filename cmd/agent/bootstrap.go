@@ -345,12 +345,71 @@ func embeddedBootstrapStamp() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// coprocessorWLANMode returns the box's wlan-mode when its Wi-Fi is driven by
+// the BCO coprocessor rather than by Linux, and "" otherwise. run.sh writes
+// this file at every boot from its own chassis detection; the values are
+// "bco", "taigan-bco", "wlan0", "wlan1" and "ethernet-only".
+//
+// On the two coprocessor values the Wi-Fi does not belong to the kernel at all:
+// it is programmed over the USB bridge from AirplayConfiguration.xml, and the
+// only thing that reprograms it is a boot. #157 records what that looks like
+// when it goes wrong on this chassis: the speaker comes up without an
+// association, Ethernet recovers it instantly, and Wi-Fi is orange until
+// somebody intervenes.
+//
+// So a reboot here is not the cheap operation it is on a chassis where
+// wpa_supplicant owns the radio, and this one is STACKED on the reboot the
+// update already took. It buys almost nothing since the hands-off boot of
+// v0.9.7 (below), so the trade is not close.
+//
+// NOT because a Lifestyle needs its plug pulled after a restart: that reporter
+// was investigated the same day and his speaker is a different chassis whose
+// Wi-Fi was healthy throughout. It simply takes 108 seconds to shut down where
+// a SoundTouch 10 takes 13, and the app gave up waiting after 35. Recorded here
+// because that wrong explanation was in this comment first.
+//
+// An unreadable or unknown mode returns "", i.e. the caller keeps its old
+// behaviour. This gate must never turn a chassis we cannot classify into one
+// that silently stops updating its boot path.
+func coprocessorWLANMode() string { return coprocessorWLANModeAt(wlanModePath) }
+
+// wlanModePath is the on-NAND file run.sh writes its chassis verdict to. A
+// variable so the test can point it at a temp file.
+var wlanModePath = "/mnt/nv/streborn/wlan-mode"
+
+func coprocessorWLANModeAt(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	switch mode := strings.TrimSpace(string(b)); mode {
+	case "bco", "taigan-bco":
+		return mode
+	}
+	return ""
+}
+
 // maybeRebootAfterBootstrapSync reboots the box once so a freshly
 // written run-override.sh / rc.local take effect immediately instead
 // of on the user's next manual power-cycle. This is the "STR reboots
 // itself into a clean state" path: after a stick install or agent OTA
 // the running boot used the OLD scripts; one clean reboot lands the
 // box on the boot path that matches the running binary.
+//
+// NOT on a coprocessor Wi-Fi chassis. This reboot is stacked on the OTA's own
+// reboot, and on those boxes a soft reboot is exactly what can leave the Wi-Fi
+// chip unassociated, with no way back except pulling the plug. It was written
+// in May 2026, when run.sh still provisioned Wi-Fi on every boot and having the
+// new script live one boot earlier mattered. Since the hands-off boot of v0.9.7
+// a normal boot's run.sh does no Wi-Fi work at all, so waiting for the next
+// natural boot costs nothing, and the difference only becomes visible at all on
+// a release that changes run.sh.
+//
+// The cost of getting that trade wrong is not symmetric, and v0.9.77 is what
+// showed it: run.sh had been byte-identical from v0.9.70 through v0.9.76, so
+// this reboot had not fired for seven releases. v0.9.77 changed run.sh, every
+// updating box therefore took a second reboot minutes after the first, and a
+// SoundTouch 20 came back on Ethernet only and never returned to Wi-Fi.
 //
 // Guarded so it can never loop:
 //   - If the embedded fingerprint cannot be computed, do not reboot.
@@ -359,6 +418,11 @@ func embeddedBootstrapStamp() string {
 //     not persisting; rebooting again would loop, so we stay up in a
 //     degraded state and log loudly instead.
 func maybeRebootAfterBootstrapSync(logger *slog.Logger) {
+	if mode := coprocessorWLANMode(); mode != "" {
+		logger.Warn("bootstrap reboot: skipped on a coprocessor Wi-Fi chassis, the refreshed boot path takes effect on this speaker's next boot instead",
+			"wlanMode", mode)
+		return
+	}
 	stamp := embeddedBootstrapStamp()
 	if stamp == "" {
 		logger.Warn("bootstrap reboot: skipped, cannot fingerprint embedded boot files (no loop guard possible)")

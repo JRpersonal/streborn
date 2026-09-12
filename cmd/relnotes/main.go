@@ -240,12 +240,70 @@ func parseNoteDrops(body string) []string {
 // Each trailer is parsed exactly like a subject, so the same type filter and
 // the same "the summary is shown to users almost verbatim" rule apply, and a
 // commit whose own type is not user-facing (chore, docs) can still carry them.
+// A trailer that does not parse is REPORTED, not silently dropped. Three
+// commits in one release wrote theirs as prose over two lines with no
+// type(scope): prefix (2026-09-11); all three vanished, the notes fell back to
+// the rougher commit subject, and there was no output anywhere to say so. The
+// prefix stays required, because it carries the type filter and the scope label
+// that ends up in brackets after every line. What changes is that losing one is
+// now loud.
 func parseNoteTrailers(body string) []change {
 	var out []change
 	for _, m := range noteTrailerRE.FindAllStringSubmatch(body, -1) {
-		if c, keep := parseSubject(m[1]); keep {
-			out = append(out, c)
+		c, keep := parseSubject(m[1])
+		if !keep {
+			noteTrailerProblem(m[1], "it does not start with type(scope): so it was not added to the notes")
+			continue
 		}
+		out = append(out, c)
+	}
+	// A trailer wrapped over two lines loses its tail to the line-anchored
+	// regex above, which is the quieter half of the same mistake: the entry
+	// still appears, truncated mid-sentence, and reads as a typo in the
+	// release rather than as a broken trailer.
+	for _, line := range wrappedNoteTrailers(body) {
+		noteTrailerProblem(line, "it is wrapped onto a second line, so only the first line was read")
+	}
+	return out
+}
+
+// noteTrailerProblems collects what went wrong, so a caller can decide whether
+// to warn or to fail. Package-level because the parse is called per commit from
+// several places and the report belongs to the run, not to one commit.
+var noteTrailerProblems []string
+
+// noteTrailerProblem records one broken trailer and prints it immediately on
+// stderr, where it lands in the release job's log next to the preview.
+func noteTrailerProblem(payload, why string) {
+	msg := fmt.Sprintf("release-note trailer ignored: %q: %s", payload, why)
+	noteTrailerProblems = append(noteTrailerProblems, msg)
+	fmt.Fprintln(os.Stderr, "warning: "+msg)
+}
+
+// wrappedNoteTrailers finds "Release-Note:" lines whose sentence continues on
+// the next line. A continuation is an indented, non-empty line that is not
+// itself a trailer and does not start a new paragraph.
+func wrappedNoteTrailers(body string) []string {
+	var out []string
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(t), "release-note:") {
+			continue
+		}
+		if i+1 >= len(lines) {
+			continue
+		}
+		next := lines[i+1]
+		if strings.TrimSpace(next) == "" || !strings.HasPrefix(next, " ") && !strings.HasPrefix(next, "\t") {
+			continue
+		}
+		nt := strings.ToLower(strings.TrimSpace(next))
+		if strings.HasPrefix(nt, "release-note") || strings.HasPrefix(nt, "co-authored-by:") ||
+			strings.HasPrefix(nt, "claude-session:") || strings.HasPrefix(nt, "signed-off-by:") {
+			continue
+		}
+		out = append(out, strings.TrimSpace(strings.TrimPrefix(t, "Release-Note:")))
 	}
 	return out
 }
