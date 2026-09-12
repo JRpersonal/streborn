@@ -449,6 +449,18 @@ var lastRecallActivity atomic.Int64
 
 func noteRecallActivity() { lastRecallActivity.Store(time.Now().UnixNano()) }
 
+// quietWakeEpisodeActive is wired to the webui's QuietWakeEpisodeActive in
+// main.go. Left nil in tests and in any build without a webui, where it reads
+// as "no group wake in progress", which is the behaviour this file had before.
+var quietWakeEpisodeActive func() bool
+
+// groupWakeSettling reports whether STR woke this speaker for a group
+// operation moments ago. See webui.QuietWakeEpisodeActive for why the preset
+// reconcile has to know.
+func groupWakeSettling() bool {
+	return quietWakeEpisodeActive != nil && quietWakeEpisodeActive()
+}
+
 // recallActiveWithin reports whether a hardware recall showed activity within
 // the last d.
 func recallActiveWithin(d time.Duration) bool {

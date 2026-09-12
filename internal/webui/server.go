@@ -54,8 +54,15 @@ type Server struct {
 	quietWakeMu    sync.Mutex
 	quietWakeVol   int
 	quietWakeUntil time.Time
-	logger         *slog.Logger
-	presets        *presets.Store
+	// quietWakeEpisodeUntil is how long this speaker counts as "STR woke me for
+	// a group operation", independently of the mute. quietWakeUntil answers a
+	// different question (is the level still held down) and the zone join
+	// CLEARS it, which is why the preset reconcile could not use it: the join
+	// lands a second before the reconcile looks (#900). This one is a plain
+	// deadline that nothing clears early. Guarded by quietWakeMu.
+	quietWakeEpisodeUntil time.Time
+	logger                *slog.Logger
+	presets               *presets.Store
 	// snapshotPath is the NAND file where the agent persisted the box's
 	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
 	// by GET /api/box/snapshot so the app can warn about account-linked cloud
@@ -823,6 +830,10 @@ func (s *Server) quietWake(ctx context.Context) error {
 	if !quietWakeNeeded(quietWakeNowPlaying(ctx, s.boxHost)) {
 		return nil
 	}
+	// Stamped before the wake, not after it: a wake that fails half way still
+	// leaves a speaker that was pulled out of standby, and the preset write
+	// would start music on that one just the same.
+	s.noteQuietWakeEpisode()
 	var prevVol = -1
 	if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
 		prevVol = v.Actual
@@ -870,6 +881,36 @@ func (s *Server) quietWake(ctx context.Context) error {
 	}
 	s.logger.Info("wake: quiet wake for a group operation", "mutedFrom", prevVol)
 	return nil
+}
+
+// quietWakeEpisodeWindow is how long after a group wake the speaker is treated
+// as still settling. It has to outlast the whole sequence, not just the mute:
+// the wake takes about four seconds, the zone forms two or three after that,
+// and the preset re-sync the wake scheduled starts writing right behind it.
+const quietWakeEpisodeWindow = 30 * time.Second
+
+// noteQuietWakeEpisode stamps the settling window. Called by the quiet wake
+// itself, so every group wake is covered whichever caller made it.
+func (s *Server) noteQuietWakeEpisode() {
+	s.quietWakeMu.Lock()
+	s.quietWakeEpisodeUntil = time.Now().Add(quietWakeEpisodeWindow)
+	s.quietWakeMu.Unlock()
+}
+
+// QuietWakeEpisodeActive reports whether STR woke this speaker for a group
+// operation moments ago and the operation has not settled yet.
+//
+// The preset reconcile asks this before a forced pass. Writing the six native
+// preset elements makes the firmware select LOCAL_INTERNET_RADIO and start
+// playing, which is invisible on a speaker that was already idle and left
+// alone, and very audible on one that was just woken and un-muted by a zone
+// join (#900, re-confirmed on v0.9.79 with the write and the source change 168
+// ms apart). The forced pass already stands down in front of live audio for
+// the mirror-image reason.
+func (s *Server) QuietWakeEpisodeActive() bool {
+	s.quietWakeMu.Lock()
+	defer s.quietWakeMu.Unlock()
+	return time.Now().Before(s.quietWakeEpisodeUntil)
 }
 
 // quietWakeActive reports whether a quiet wake is still holding this speaker

@@ -636,7 +636,7 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 		return BrowseResult{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return BrowseResult{}, fmt.Errorf("browse status %d: %s", resp.StatusCode, truncate(string(raw), 240))
+		return BrowseResult{}, fmt.Errorf("browse failed: %s", soapFaultMessage(raw, resp.StatusCode))
 	}
 	return parseBrowseResponse(raw)
 }
@@ -713,7 +713,7 @@ func searchWithCriteria(ctx context.Context, srv Server, criteria string, count 
 		return BrowseResult{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return BrowseResult{}, fmt.Errorf("search status %d: %s", resp.StatusCode, truncate(string(raw), 240))
+		return BrowseResult{}, fmt.Errorf("search failed: %s", soapFaultMessage(raw, resp.StatusCode))
 	}
 	return parseSearchResponse(raw)
 }
@@ -953,6 +953,56 @@ func xmlEscape(s string) string {
 	var b strings.Builder
 	xml.EscapeText(&b, []byte(s))
 	return b.String()
+}
+
+// upnpErrorText names the error codes a media server actually answers with, so
+// the message says what happened rather than what number happened. Anything not
+// listed keeps its bare code, which is still infinitely more use than a cut off
+// XML envelope.
+//
+// From the ContentDirectory:1 spec plus the two every server produces in the
+// field: 701 when the app asks for a container the server does not have, and
+// 708 from servers whose Search only accepts a title criterion.
+var upnpErrorText = map[string]string{
+	"401": "invalid action",
+	"402": "invalid arguments",
+	"501": "action failed",
+	"600": "argument value invalid",
+	"701": "no such object",
+	"709": "unsupported sort criteria",
+	"708": "unsupported search criteria",
+	"710": "no such container",
+	"720": "cannot process the request",
+}
+
+// soapFaultMessage turns a server's SOAP fault into one readable line.
+//
+// A UPnP fault carries its meaning in <errorCode>, which sits at the very end
+// of the envelope. Reporting the first 240 characters of the raw XML therefore
+// showed the reader everything except the answer, and the error dialog then
+// truncated even that (#929: a Synology DS918+ fault that stopped at
+// "<UPnPError xmlns=..."). Falls back to the raw text when there is no fault to
+// read, e.g. a plain HTML error page from something that is not a media server.
+func soapFaultMessage(raw []byte, status int) string {
+	var env struct {
+		Code string `xml:"Body>Fault>detail>UPnPError>errorCode"`
+		Desc string `xml:"Body>Fault>detail>UPnPError>errorDescription"`
+		Str  string `xml:"Body>Fault>faultstring"`
+	}
+	if err := xml.Unmarshal(raw, &env); err == nil && env.Code != "" {
+		desc := strings.TrimSpace(env.Desc)
+		if desc == "" {
+			desc = upnpErrorText[env.Code]
+		}
+		if desc != "" {
+			return fmt.Sprintf("the server answered UPnP error %s (%s)", env.Code, desc)
+		}
+		return fmt.Sprintf("the server answered UPnP error %s", env.Code)
+	}
+	if s := strings.TrimSpace(env.Str); s != "" {
+		return fmt.Sprintf("the server answered %q (HTTP %d)", s, status)
+	}
+	return fmt.Sprintf("HTTP %d: %s", status, truncate(strings.TrimSpace(string(raw)), 240))
 }
 
 func truncate(s string, n int) string {
