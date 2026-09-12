@@ -322,6 +322,7 @@
   "preset.copiedToKey": "Скопійовано на кнопку {{n}}: {{name}}",
   "preset.savedToKey": "Збережено на кнопку {{n}}: {{name}}",
   "preset.alreadyOnKey": "Ця станція вже призначена на клавішу {{n}}.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" вже на кнопці {{n}}. Спершу увімкніть на колонці те, що хочете зберегти, а тоді збережіть.",
   "preset.sourceBadge": "з {{source}}",
   "preset.saveFailed": "Не вдалося зберегти: {{err}}",
   "play.errNoInternet": "немає інтернету?",

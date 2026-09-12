@@ -322,6 +322,7 @@
   "preset.copiedToKey": "キー {{n}} にコピーしました: {{name}}",
   "preset.savedToKey": "キー {{n}} に保存しました: {{name}}",
   "preset.alreadyOnKey": "この局はすでにキー {{n}} に登録されています。",
+  "preset.alreadyOnKeyNamed": "「{{name}}」はすでにキー {{n}} にあります。保存したいものを先にスピーカーで再生してから保存してください。",
   "preset.sourceBadge": "提供元: {{source}}",
   "preset.saveFailed": "保存に失敗しました: {{err}}",
   "play.errNoInternet": "インターネットなし?",

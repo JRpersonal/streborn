@@ -6419,7 +6419,19 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 function showPresetSaveError(err) {
   const s = String(err);
   const m = /already-on-slot/.test(s) && s.match(/"slot":\s*(\d+)/);
-  if (m) { showToast(t('preset.alreadyOnKey', { n: m[1] })); return; }
+  if (m) {
+    // Name WHAT it collided with. Without it the note reads as a refusal to
+    // have more than one of something, which is how a user with three Spotify
+    // playlists concluded he could only keep one (#925). The agent's 409
+    // carries the other preset's name, and saying it turns the refusal into the
+    // answer: he reads back the playlist the speaker was still on.
+    const nm = (s.match(/"name":\s*"((?:[^"\\]|\\.)*)"/) || [])[1];
+    const name = nm ? nm.replace(/\\(.)/g, '$1') : '';
+    showToast(name
+      ? t('preset.alreadyOnKeyNamed', { name, n: m[1] })
+      : t('preset.alreadyOnKey', { n: m[1] }));
+    return;
+  }
   showError(t('preset.saveFailed', { err: s }));
 }
 

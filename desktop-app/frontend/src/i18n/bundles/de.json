@@ -349,6 +349,7 @@
   "preset.copiedToKey": "Auf Taste {{n}} kopiert: {{name}}",
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
   "preset.alreadyOnKey": "Dieser Sender liegt schon auf Taste {{n}}.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" liegt schon auf Taste {{n}}. Starte erst das, was du speichern willst, auf dem Lautsprecher, dann sichere es.",
   "preset.sourceBadge": "von {{source}}",
   "preset.onSpeaker": "Auf dem Lautsprecher",
   "preset.boxNativeHint": "antippen zum Abspielen auf dem Lautsprecher",

@@ -42,6 +42,15 @@ type Server struct {
 	// quietWake is a member wake done for a group join: the level the speaker
 	// had before it was muted for the wake, restored once the speaker joins a
 	// zone or the window runs out. Guarded by quietWakeMu.
+	// zoneChangedAt is when the speaker last joined, led or left a zone, as the
+	// firmware itself reported it. It exists so the re-push watchdog can tell a
+	// stream that DROPPED from one that ended because the group changed under it
+	// (#900). Deliberately not derived from quietWakeUntil: the zone join is what
+	// CLEARS that, so reading it here is a race that the push wins or loses by a
+	// quarter of a second. Guarded by quietWakeMu, which already covers the other
+	// piece of group-wake state and is taken on the same events.
+	zoneChangedAt time.Time
+
 	quietWakeMu    sync.Mutex
 	quietWakeVol   int
 	quietWakeUntil time.Time

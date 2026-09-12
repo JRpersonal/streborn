@@ -322,6 +322,7 @@
   "preset.copiedToKey": "Copiado a la tecla {{n}}: {{name}}",
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
   "preset.alreadyOnKey": "Esta emisora ya está en la tecla {{n}}.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" ya está en la tecla {{n}}. Pon primero en el altavoz lo que quieras guardar y guárdalo entonces.",
   "preset.sourceBadge": "de {{source}}",
   "preset.saveFailed": "Error al guardar: {{err}}",
   "play.errNoInternet": "¿sin internet?",

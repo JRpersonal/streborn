@@ -322,6 +322,7 @@
   "preset.copiedToKey": "Nokopēts pogā {{n}}: {{name}}",
   "preset.savedToKey": "Saglabāts pogā {{n}}: {{name}}",
   "preset.alreadyOnKey": "Šī stacija jau ir piešķirta taustiņam {{n}}.",
+  "preset.alreadyOnKeyNamed": "\"{{name}}\" jau ir uz taustiņa {{n}}. Vispirms atskaņo skaļrunī to, ko gribi saglabāt, un tad saglabā.",
   "preset.sourceBadge": "no {{source}}",
   "preset.saveFailed": "Saglabāt neizdevās: {{err}}",
   "play.errNoInternet": "nav interneta?",

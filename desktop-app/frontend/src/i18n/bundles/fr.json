@@ -322,6 +322,7 @@
   "preset.copiedToKey": "Copié sur la touche {{n}} : {{name}}",
   "preset.savedToKey": "Enregistré sur la touche {{n}} : {{name}}",
   "preset.alreadyOnKey": "Cette station est déjà sur la touche {{n}}.",
+  "preset.alreadyOnKeyNamed": "« {{name}} » est déjà sur la touche {{n}}. Lancez d’abord sur l’enceinte ce que vous voulez enregistrer, puis enregistrez-le.",
   "preset.sourceBadge": "de {{source}}",
   "preset.saveFailed": "Échec de l'enregistrement : {{err}}",
   "play.errNoInternet": "pas d'internet ?",
