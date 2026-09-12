@@ -296,6 +296,9 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// ceiling to the first hold, not to the latest retry.
 	forceHeld := false
 	var forceHeldSince time.Time
+	// groupWakeHeld keeps the group-wake hold line to one per episode, the
+	// same way retryHoldLogged does for the playback hold.
+	groupWakeHeld := false
 	// retryHoldLogged keeps the "retry pass held" line to ONE per hold
 	// episode: the hold is re-evaluated every maintenance tick for as long as
 	// the box sleeps, and a line per tick is noise in the NAND log.
@@ -456,6 +459,27 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			if waitedForRecall {
 				logger.Info("preset reconcile: forced pass waited for a live hardware recall to finish before writing")
 			}
+			// ... and it must not run into a GROUP WAKE either. Writing the
+			// native preset elements makes the firmware select
+			// LOCAL_INTERNET_RADIO and start playing. On a speaker that was
+			// already idle nobody ever noticed. On one STR just woke for a
+			// group, the quiet wake's mute has been lifted by the zone join a
+			// second earlier, so the same write is a room full of music nobody
+			// asked for (#900, re-confirmed on v0.9.79: reconcile at 06:26:55.857,
+			// source change to LOCAL_INTERNET_RADIO at 06:26:56.025).
+			//
+			// The window is a deadline, so this can hold for at most half a
+			// minute and the pass runs straight after with the ask still
+			// pending.
+			if groupWakeSettling() {
+				if !groupWakeHeld {
+					groupWakeHeld = true
+					logger.Info("preset reconcile: forced pass held, this speaker was just woken for a group and the write would start music")
+				}
+				time.Sleep(forcedPlayHoldRetry)
+				continue
+			}
+			groupWakeHeld = false
 			// ... and it must not run into live AUDIO either. A recall is over
 			// in seconds; a station plays for hours, and the write ends it.
 			src, playing, playKnown := boxSourceAndPlaying(boxHost)

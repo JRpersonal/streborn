@@ -842,6 +842,14 @@ func run() error {
 		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
 
+	// The preset reconcile has to know when STR woke this speaker for a group:
+	// its own native preset write makes the firmware select the radio source
+	// and play, which is silent on a speaker that was already idle and a room
+	// full of music on one that was just woken and un-muted (#900). The
+	// reconcile loop sleeps before its first pass, so wiring it here is early
+	// enough.
+	quietWakeEpisodeActive = webuiSrv.QuietWakeEpisodeActive
+
 	// Re-assert a persisted multiroom group (native or mirror) so it survives
 	// reboot/standby/Wi-Fi outage without the user re-grouping (#70 beta).
 	// No-op when standalone. Lives on the server so the mirror path can reach
