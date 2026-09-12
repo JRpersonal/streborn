@@ -41,6 +41,12 @@ type Server struct {
 	logger *slog.Logger
 	client *http.Client
 
+	// edgePins maps a station URL to the edge server a redirect resolved it to,
+	// so a reconnect rebuilds the same connection rather than rolling the CDN's
+	// dice again (#823). See pinEdge.
+	edgeMu   sync.Mutex
+	edgePins map[string]string
+
 	failMu   sync.Mutex
 	lastFail map[string]time.Time
 
@@ -385,7 +391,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var boseAlive bool
-		boseAlive, lastErr = s.streamOne(r.Context(), w, r, url, !headersSent)
+		boseAlive, lastErr = s.streamOne(r.Context(), w, r, s.edgeFor(url), !headersSent)
 		if errors.Is(lastErr, errPlaylistIsHLS) && !headersSent {
 			// The URL had no .m3u8 suffix but its body is an HLS playlist; demux
 			// it (#252). serveHLS only errors before writing audio, so http.Error
@@ -614,7 +620,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		curURL := s.resolvePresetURL(slot, curStream)
-		boseAlive, err := s.streamOne(r.Context(), w, r, curURL, !headersSent)
+		boseAlive, err := s.streamOne(r.Context(), w, r, s.edgeFor(curURL), !headersSent)
 		lastErr = err
 		if errors.Is(err, errPlaylistIsHLS) && !headersSent {
 			// A preset whose URL had no .m3u8 suffix but serves an HLS playlist
@@ -680,6 +686,80 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	return s.streamOneDepth(ctx, w, r, url, sendHeaders, 0)
 }
 
+// Reconnecting to the SAME edge server, not just to the same station.
+//
+// A station URL is often a redirect endpoint rather than a stream: ask
+// streamtheworld's /api/livestream-redirect/ for a station and it answers with
+// one of its edge nodes, a different one nearly every time. Those nodes are not
+// aligned with each other, so two of them can be half a minute apart in the
+// same broadcast. Rebuilding a dropped connection through the redirect
+// therefore resumed the station at a random point, and a listener heard the
+// programme jump backwards and repeat a stretch it had already played (#823:
+// 41 reconnects across 15 distinct edge addresses in eight minutes on one ST30,
+// on every station the reporter tried).
+//
+// So the edge a redirect resolved to is remembered for this listening session
+// and reused when the connection has to be rebuilt. It is a hint, never a
+// requirement: the moment the pinned edge itself refuses, the pin is dropped
+// and the next attempt goes through the redirect again, which is what this path
+// always did.
+func (s *Server) pinEdge(station, edge string) {
+	if station == "" || edge == "" || edge == station {
+		return
+	}
+	s.edgeMu.Lock()
+	prev := s.edgePins[station]
+	if s.edgePins == nil {
+		s.edgePins = map[string]string{}
+	}
+	s.edgePins[station] = edge
+	s.edgeMu.Unlock()
+	if prev == "" {
+		s.logger.Info("stream proxy: pinned the station's edge server for reconnects", "station", station, "edge", edge)
+	}
+}
+
+// edgeFor returns the edge to dial for a station: the pinned one when there is
+// one, otherwise the station URL itself.
+func (s *Server) edgeFor(station string) string {
+	s.edgeMu.Lock()
+	defer s.edgeMu.Unlock()
+	if e := s.edgePins[station]; e != "" {
+		return e
+	}
+	return station
+}
+
+// dropEdgePinByEdge forgets a pin whose edge is the URL that just failed, so
+// the next attempt goes through the station's redirect again.
+//
+// Called ONLY when the edge refused a connection or answered a non-200. A
+// mid-stream stall must not drop the pin: constant rebuilding is the situation
+// this whole mechanism exists for, and rebuilding to the same node is the
+// point. The map holds one entry per station being listened to, so the scan is
+// over a handful of strings.
+func (s *Server) dropEdgePinByEdge(edge string) {
+	if edge == "" {
+		return
+	}
+	s.edgeMu.Lock()
+	station := ""
+	for st, e := range s.edgePins {
+		if e == edge {
+			station = st
+			break
+		}
+	}
+	if station != "" {
+		delete(s.edgePins, station)
+	}
+	s.edgeMu.Unlock()
+	if station != "" {
+		s.logger.Info("stream proxy: the pinned edge server stopped answering, resolving the station again",
+			"station", station, "edge", edge)
+	}
+}
+
 // streamOneDepth is streamOne with a playlist-resolution recursion guard: an
 // audio/x-mpegurl response that turns out to be a plain M3U/PLS pointer file is
 // re-fetched at its first real stream URL (depth+1), capped so a playlist that
@@ -735,6 +815,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			s.logger.Debug("stream proxy upstream fail (dedup)", "url", url, "err", err)
 		}
 		s.recordFailure(url, err)
+		s.dropEdgePinByEdge(url)
 		if sendHeaders {
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
 			return false, err
@@ -752,11 +833,21 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			s.logger.Debug("stream proxy upstream status (dedup)", "status", resp.StatusCode, "url", url)
 		}
 		s.recordFailure(url, statusErr)
+		s.dropEdgePinByEdge(url)
 		if sendHeaders {
 			http.Error(w, "upstream status: "+resp.Status, http.StatusBadGateway)
 			return false, statusErr
 		}
 		return true, statusErr
+	}
+
+	// The answer is usable, so remember which edge served it. resp.Request is
+	// the LAST request the client made, i.e. the one after every redirect, so
+	// this is the concrete node rather than the station's redirect endpoint.
+	// A no-op when nothing redirected, and a no-op on a reconnect, which dialed
+	// the pinned edge and therefore resolved to itself.
+	if resp.Request != nil && resp.Request.URL != nil {
+		s.pinEdge(url, resp.Request.URL.String())
 	}
 
 	// HLS/DASH/playlist detected by MIME type (a URL without the telltale
