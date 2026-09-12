@@ -562,6 +562,16 @@ body {
   border: 1px solid color-mix(in srgb, var(--brand) 55%, transparent);
   white-space: nowrap;
 }
+/* A count made up only of SAVED groups takes the same muted, dashed treatment
+   those groups are drawn with (.box-group-stored), so the badge and the frame
+   it refers to read as one state. A single live group flips it back to brand,
+   which is what the solid frames use. */
+.tab-badge-stored {
+  color: var(--c-muted);
+  background: color-mix(in srgb, var(--c-muted) 14%, transparent);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--c-muted) 55%, transparent);
+}
 .tab-badge[hidden] { display: none; }
 .view.hidden { display: none; }
 .hidden { display: none !important; }
