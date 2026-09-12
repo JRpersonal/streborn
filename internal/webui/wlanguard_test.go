@@ -263,17 +263,63 @@ func TestDefaultRouteIface(t *testing.T) {
 	}
 }
 
-// wiredUplinkIface is what makes the guard stand down, so the cases that must
-// NOT trip it are the point of this test. The happy path needs a real box and
-// is covered by the field bundle it came from.
-func TestWiredUplinkIfaceRejects(t *testing.T) {
-	// No /proc/net/route on the machine running the tests, so every call here
-	// takes the "no default route" exit. That is the safe direction: the guard
-	// then behaves exactly as it did before this change.
-	for _, iface := range []string{"wlan0", "mlan0", ""} {
-		if got := wiredUplinkIface(iface); got != "" {
-			t.Errorf("wiredUplinkIface(%q) = %q on a host with no box routing table, want \"\"", iface, got)
-		}
+// wiredUplinkFrom is what makes the guard stand down, so both directions are
+// pinned: the CineMate that started this, and every way a box can look wired
+// without being wired.
+func TestWiredUplinkFrom(t *testing.T) {
+	const header = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+	route := func(iface string) string {
+		return header + iface + "\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"
+	}
+	yes := func(string) bool { return true }
+	no := func(string) bool { return false }
+
+	cases := []struct {
+		name     string
+		wlan     string
+		table    string
+		carrier  func(string) bool
+		routable func(string) bool
+		want     string
+	}{
+		{
+			// Benoit Barbaix's CineMate, the box this whole change came from.
+			name: "cinemate on a cable", wlan: "wlan0", table: route("eth0"),
+			carrier: yes, routable: yes, want: "eth0",
+		},
+		{
+			// The ordinary case: every speaker in the maintainer's own fleet.
+			name: "speaker on wifi", wlan: "wlan0", table: route("wlan0"),
+			carrier: yes, routable: yes, want: "",
+		},
+		{
+			// Some chassis call the radio mlan0. It is still the radio.
+			name: "radio named mlan0", wlan: "mlan0", table: route("mlan0"),
+			carrier: yes, routable: yes, want: "",
+		},
+		{
+			// An eth0 that is up with nothing plugged into it keeps its route.
+			name: "cable pulled", wlan: "wlan0", table: route("eth0"),
+			carrier: no, routable: yes, want: "",
+		},
+		{
+			// The scm chassis USB bridge: an interface, not a way out.
+			name: "internal bridge only", wlan: "wlan0", table: route("usb0"),
+			carrier: yes, routable: no, want: "",
+		},
+		{
+			name: "no default route", wlan: "wlan0", table: header,
+			carrier: yes, routable: yes, want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := wiredUplinkFrom(tc.wlan, tc.table, tc.carrier, tc.routable)
+			if got != tc.want {
+				t.Errorf("wiredUplinkFrom = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

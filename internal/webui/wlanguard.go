@@ -436,18 +436,29 @@ func (s *Server) recoverUnassociatedRadio(iface string) bool {
 // A false negative here is harmless: the guard then runs exactly as it did
 // before, which is the behaviour every Wi-Fi speaker has today.
 func wiredUplinkIface(wlanIface string) string {
-	name := defaultRouteIface(readFileString(procRoutePath))
+	return wiredUplinkFrom(wlanIface, readFileString(procRoutePath), ifaceHasCarrier, ifaceHasRoutableAddr)
+}
+
+// wiredUplinkFrom is the decision itself, with the box's routing table and its
+// two per-interface probes handed in so the whole policy can be exercised off
+// the box. Only the three-line wiring above touches /proc and /sys.
+func wiredUplinkFrom(wlanIface, routeTable string, carrier, routable func(string) bool) string {
+	name := defaultRouteIface(routeTable)
 	switch {
-	case name == "", name == wlanIface, strings.HasPrefix(name, "wlan"), name == "lo":
+	case name == "", name == wlanIface, strings.HasPrefix(name, "wlan"), strings.HasPrefix(name, "mlan"), name == "lo":
 		return ""
 	}
-	if strings.TrimSpace(readFileString("/sys/class/net/"+name+"/carrier")) != "1" {
-		return ""
-	}
-	if !ifaceHasRoutableAddr(name) {
+	if !carrier(name) || !routable(name) {
 		return ""
 	}
 	return name
+}
+
+// ifaceHasCarrier reads the kernel's own link state. An interface can be
+// administratively up with nothing plugged into it, and it keeps its routes
+// while it is.
+func ifaceHasCarrier(name string) bool {
+	return strings.TrimSpace(readFileString("/sys/class/net/"+name+"/carrier")) == "1"
 }
 
 // defaultRouteIface parses a /proc/net/route table and returns the interface
