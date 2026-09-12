@@ -214,3 +214,84 @@ func TestNetworkTagging(t *testing.T) {
 		t.Errorf("ssidTagsOf(nil) = %v, want an empty list", got)
 	}
 }
+
+// Which interface the box leaves through decides whether the Wi-Fi guard runs
+// at all, so the two tables that matter are pinned here: a wired CineMate and
+// an ordinary speaker on Wi-Fi. Real /proc/net/route output, kernel columns and
+// all, because the parse reads by position.
+func TestDefaultRouteIface(t *testing.T) {
+	const header = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+
+	cases := []struct {
+		name  string
+		table string
+		want  string
+	}{
+		{
+			// The adapter on a cable: the on-link route comes first, the
+			// default route second, which is the order the kernel prints.
+			name: "wired box",
+			table: header +
+				"eth0\t00C0A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n" +
+				"eth0\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n",
+			want: "eth0",
+		},
+		{
+			name: "speaker on wifi",
+			table: header +
+				"wlan0\t00C0A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n" +
+				"wlan0\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n",
+			want: "wlan0",
+		},
+		{
+			// A box that has not reached a network yet has on-link routes and
+			// no default. That must not read as a wired uplink.
+			name: "no default route",
+			table: header +
+				"eth0\t00C0A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n",
+			want: "",
+		},
+		{name: "unreadable", table: "", want: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultRouteIface(tc.table); got != tc.want {
+				t.Errorf("defaultRouteIface = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// wiredUplinkIface is what makes the guard stand down, so the cases that must
+// NOT trip it are the point of this test. The happy path needs a real box and
+// is covered by the field bundle it came from.
+func TestWiredUplinkIfaceRejects(t *testing.T) {
+	// No /proc/net/route on the machine running the tests, so every call here
+	// takes the "no default route" exit. That is the safe direction: the guard
+	// then behaves exactly as it did before this change.
+	for _, iface := range []string{"wlan0", "mlan0", ""} {
+		if got := wiredUplinkIface(iface); got != "" {
+			t.Errorf("wiredUplinkIface(%q) = %q on a host with no box routing table, want \"\"", iface, got)
+		}
+	}
+}
+
+// A guard that reports a wired stand-down under a name nobody can grep for is
+// half a diagnostic. Every reason string has to be distinct, or two different
+// verdicts read the same in a bundle.
+func TestGuardReasonsAreDistinct(t *testing.T) {
+	seen := map[string]bool{}
+	for _, r := range []string{
+		guardReasonBudget, guardReasonNoAssoc, guardReasonOnTarget,
+		guardReasonNotInRange, guardReasonWrongNet, guardReasonWired,
+	} {
+		if r == "" {
+			t.Error("a guard reason is empty")
+		}
+		if seen[r] {
+			t.Errorf("two verdicts share the reason %q", r)
+		}
+		seen[r] = true
+	}
+}

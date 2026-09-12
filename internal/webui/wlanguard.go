@@ -23,6 +23,7 @@ package webui
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -49,6 +50,9 @@ const (
 	// generous: the runtime switch itself escalates internally (reconfigure,
 	// restart, add_network) before it reports failure.
 	wlanGuardAttempts = 3
+	// procRoutePath is the kernel's IPv4 routing table, read to find out which
+	// interface the box actually leaves through.
+	procRoutePath = "/proc/net/route"
 )
 
 // guardAction is what the guard decided to do about this boot.
@@ -84,6 +88,7 @@ const (
 	guardReasonNoAssoc    = "no-association-rescue-owns-this"
 	guardReasonOnTarget   = "on-target"
 	guardReasonNotInRange = "target-not-in-range"
+	guardReasonWired      = "wired-uplink-owns-this"
 	guardReasonWrongNet   = "wrong-network"
 )
 
@@ -126,6 +131,26 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	}
 	iface, mech := detectWlanMechanism()
 	tgt, hasTarget := readWlanTarget()
+
+	// A speaker on a network cable is not a speaker with a Wi-Fi problem. The
+	// SoundTouch Wireless Adapter has an Ethernet port and people use it, and on
+	// such a box wlan0 sits unassociated by design: that is the resting state of
+	// a radio nobody asked for, not a chip that failed to come up. Running the
+	// guard there cost three and a half minutes of every boot and put the radio
+	// through an SDIO power-cycle for nothing (first CineMate bundle, 2026-09-12:
+	// eth0 had carrier and a reachable gateway the whole time).
+	//
+	// This is the same doctrine as every other stand-down in this file, applied
+	// to one more owner: while the cable carries the box, the cable decides. Pull
+	// it and the next boot finds no wired uplink and the guard runs as before.
+	if wired := wiredUplinkIface(iface); wired != "" {
+		s.logger.Info("wlan guard: this speaker is on a network cable, leaving the Wi-Fi radio alone",
+			"uplink", wired, "iface", iface, "hasTarget", hasTarget)
+		if hasTarget {
+			noteWlanTargetVerdict("stood-down:"+guardReasonWired, budgetHold)
+		}
+		return
+	}
 
 	// A warm reboot does not power-cycle the TI wl18xx radio, so its firmware
 	// re-download (via the slow deprecated user-helper) can fail and the box
@@ -396,6 +421,88 @@ func (s *Server) recoverUnassociatedRadio(iface string) bool {
 		return false
 	}
 	return true
+}
+
+// wiredUplinkIface returns the non-Wi-Fi interface the box's default route
+// leaves through, or "" when the box has no wired uplink.
+//
+// Three conditions, and all three are needed. The default route because an
+// interface that merely exists proves nothing (every one of these chassis has
+// an eth0, most have nothing plugged into it). Carrier because an
+// administratively up interface with no cable still keeps a stale route.
+// A usable address because the USB bridge on the scm chassis is an interface
+// too, and its internal 203.0.113.0/24 link is not a way out of the box.
+//
+// A false negative here is harmless: the guard then runs exactly as it did
+// before, which is the behaviour every Wi-Fi speaker has today.
+func wiredUplinkIface(wlanIface string) string {
+	name := defaultRouteIface(readFileString(procRoutePath))
+	switch {
+	case name == "", name == wlanIface, strings.HasPrefix(name, "wlan"), name == "lo":
+		return ""
+	}
+	if strings.TrimSpace(readFileString("/sys/class/net/"+name+"/carrier")) != "1" {
+		return ""
+	}
+	if !ifaceHasRoutableAddr(name) {
+		return ""
+	}
+	return name
+}
+
+// defaultRouteIface parses a /proc/net/route table and returns the interface
+// carrying the IPv4 default route ("" when there is none). Kept pure so the
+// table can be fed in from a test.
+func defaultRouteIface(table string) string {
+	for i, line := range strings.Split(table, "\n") {
+		if i == 0 { // header
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 3 || f[1] != "00000000" {
+			continue
+		}
+		return f[0]
+	}
+	return ""
+}
+
+// ifaceHasRoutableAddr reports whether the interface carries an IPv4 address
+// that can actually reach a LAN: not link-local (a box that failed DHCP self
+// -assigns 169.254.x and goes nowhere with it) and not the 203.0.113.0/24
+// internal USB bridge link.
+func ifaceHasRoutableAddr(name string) bool {
+	ifi, err := net.InterfaceByName(name)
+	if err != nil {
+		return false
+	}
+	addrs, err := ifi.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := ipn.IP.To4()
+		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		if ip[0] == 203 && ip[1] == 0 && ip[2] == 113 {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func readFileString(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func waitAssociationSettled(ctx context.Context, iface string, budget time.Duration) (ssid string, associated bool) {
