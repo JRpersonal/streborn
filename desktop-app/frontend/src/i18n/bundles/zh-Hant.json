@@ -408,6 +408,7 @@
   "search.removeFav": "從我的最愛移除",
   "search.favEmpty": "還沒有收藏。點電台上的星星就能加進來。",
   "search.addStationHint": "找不到你的電台嗎？你可以自己加：開啟 radio-browser.info，在那裡填上名稱和串流網址（直接的音訊連結）。不知道網址？可以問 ChatGPT 這類 AI 聊天機器人要這個電台的直接串流網址，再貼上去。經過短暫檢查後它就會出現在這裡，也能存成預設。",
+  "search.addStationCta": "找不到電台？自己加上去，大家都能用。",
   "search.openWebsite": "開啟網站",
   "search.errSelectSpeaker": "請先選一台喇叭",
   "search.streamBlocked": "這個串流在你的地區被封鎖或有地區限制。",

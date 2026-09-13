@@ -368,6 +368,7 @@
   "search.removeFav": "Retirer des favoris",
   "search.favEmpty": "Aucun favori pour le moment. Touche l'étoile d'une station pour l'ajouter ici.",
   "search.addStationHint": "Une station manque ? Tu peux l'ajouter toi-même : ouvre radio-browser.info et ajoute-la avec son nom et l'URL du flux (le lien audio direct). Tu ne connais pas l'URL ? Demande à un chatbot IA comme ChatGPT l'URL directe du flux de la station et colle-la. Après une brève vérification, elle apparaît ici et peut être enregistrée comme préréglage.",
+  "search.addStationCta": "Une station manque ? Ajoute-la toi-même, et elle fonctionne pour tout le monde.",
   "search.openWebsite": "Ouvrir le site web",
   "search.errSelectSpeaker": "Veuillez d'abord choisir une enceinte",
   "search.streamBlocked": "Ce flux est bloqué ou géo-restreint dans votre région.",

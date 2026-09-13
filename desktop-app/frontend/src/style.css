@@ -1493,9 +1493,29 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }
-/* Discreet "add a missing station" pointer at the very end of the results. */
-.search-addhint { display: inline-block; margin: 12px 0 4px; opacity: 0.7; text-decoration: none; }
-.search-addhint:hover { opacity: 1; text-decoration: underline; }
+/* "Add a missing station" (discussion #619): the guide used to be a whole
+   paragraph at 0.7 opacity below the load-more button, and the users who needed
+   it never saw it. Now one quiet line sits above the result list and unfolds
+   into the full text, so it is readable at a glance and still out of the way. */
+.search-addhint { margin: 0 0 6px; }
+.search-addhint > summary {
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--c-muted);
+}
+.search-addhint > summary:hover { color: var(--c-text-2); text-decoration: underline; }
+.search-addhint-body {
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  background: var(--brand-bg);
+  color: var(--c-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.search-addhint-actions { margin-top: 6px; }
 
 /* Dismissible hint above the results when the quality filters had to be
    relaxed: quiet, one line, an x to dismiss for the current result set. */

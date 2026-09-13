@@ -368,6 +368,7 @@
   "search.removeFav": "Pašalinti iš mėgstamiausių",
   "search.favEmpty": "Mėgstamiausių dar nėra. Bakstelėk žvaigždutę ties stotimi, kad ją čia pridėtum.",
   "search.addStationHint": "Trūksta stoties? Gali pridėti ją pats: atidaryk radio-browser.info ir pridėk ją ten su pavadinimu ir srauto URL (tiesioginę garso nuorodą). Nežinai URL? Paklausk DI pokalbių roboto, pavyzdžiui ChatGPT, tiesioginio stoties srauto URL ir jį įklijuok. Po trumpo patikrinimo ji atsiras čia ir ją bus galima išsaugoti kaip išankstinį nustatymą.",
+  "search.addStationCta": "Trūksta stoties? Pridėk ją pats ir ji veiks visiems.",
   "search.openWebsite": "Atverti svetainę",
   "search.errSelectSpeaker": "Pirmiausia pasirinkite garsiakalbį",
   "search.streamBlocked": "Šis srautas užblokuotas arba geografiškai apribotas jūsų regione.",
