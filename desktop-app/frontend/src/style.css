@@ -2944,3 +2944,18 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   cursor: pointer;
 }
 .zone-chip-x:hover, .zone-chip-x:focus-visible { opacity: 1; }
+
+/* The two conditions a Spotify preset needs. Set apart from the steps below
+   it, because somebody who does not meet them cannot follow the steps at all
+   and the whole point is that they find this out here rather than after a
+   silent preset key. */
+.sp-prereq {
+  border-left: 3px solid var(--accent, #8a2318);
+  padding: .55rem .85rem;
+  margin: .6rem 0 1rem;
+  background: rgba(127, 127, 127, .07);
+  border-radius: 0 6px 6px 0;
+}
+.sp-prereq-title { font-weight: 600; margin-bottom: .3rem; }
+.sp-prereq ul { margin: 0; padding-left: 1.1rem; }
+.sp-prereq li { margin: .25rem 0; }

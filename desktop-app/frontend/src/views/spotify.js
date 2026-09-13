@@ -47,6 +47,13 @@ export function renderSpotifyAlpha() {
       <section class="sp-card">
         <h3 class="sp-card-title">${escapeHtml(t('spotify.presetsTitle'))}</h3>
         <p>${escapeHtml(t('spotify.presetsIntro'))}</p>
+        <div class="sp-prereq">
+          <div class="sp-prereq-title">${escapeHtml(t('spotify.presetsNeedTitle'))}</div>
+          <ul>
+            <li>${escapeHtml(t('spotify.presetsNeedPremium'))}</li>
+            <li>${escapeHtml(t('spotify.presetsNeedStr'))}</li>
+          </ul>
+        </div>
         <ol class="sp-steps">
           <li>${escapeHtml(t('spotify.presetsStep1'))}</li>
           <li>${escapeHtml(t('spotify.presetsStep2'))}</li>
