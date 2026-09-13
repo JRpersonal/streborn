@@ -272,6 +272,7 @@ import {
   syntheticStationForURL,
   normalizeDetailedSearch,
   relaxedHintVisible,
+  addStationGuideFold,
 } from './searchflow.js';
 
 import {
@@ -1531,11 +1532,19 @@ $('view-box').innerHTML = `
       </div>
       <div class="genre-chips" id="genreChips"></div>
       <div class="search-count muted small hidden" id="searchCount"></div>
+      <details class="search-addhint" id="addStationBox">
+        <summary>${escapeHtml(t('search.addStationCta'))}</summary>
+        <div class="search-addhint-body">
+          ${escapeHtml(t('search.addStationHint'))}
+          <div class="search-addhint-actions">
+            <button class="btn btn-mini" id="addStationOpenBtn">radio-browser.info</button>
+          </div>
+        </div>
+      </details>
       <div class="search-results" id="searchResults"></div>
       <div class="load-more-row hidden" id="loadMoreRow">
         <button class="btn btn-mini" id="loadMoreBtn">${escapeHtml(t('search.loadMore'))}</button>
       </div>
-      <a href="#" class="search-addhint muted small" id="addStationHint">${escapeHtml(t('search.addStationHint'))}</a>
     </div>
   </div>
 `;
@@ -1838,9 +1847,12 @@ $('searchBtn').onclick = () => doSearch();
 $('topBtn').onclick = () => doTop();
 $('favModeBtn').onclick = () => loadFavorites();
 updateFavModeBtn();
-// Discreet pointer for the few users who want a station that radio-browser.info
-// does not list yet: they can add it there and it shows up here after a while.
-{ const ah = $('addStationHint'); if (ah) ah.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} }; }
+// Pointer for the users who want a station that radio-browser.info does not
+// list yet: they can add it there and it shows up here after a while. The
+// paragraph used to sit below the load-more button as one long link and nobody
+// found it (discussion #619, three missing stations), so it is now a one-line
+// question above the results that unfolds into the full guide.
+{ const ab = $('addStationOpenBtn'); if (ab) ab.onclick = () => { try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} }; }
 $('loadMoreBtn').onclick = () => loadMore();
 $('searchQ').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
 $('searchQ').oninput = () => {
@@ -8288,6 +8300,14 @@ function renderSearchResults() {
       cnt.classList.remove('hidden');
     }
   }
+  // The "add a missing station" guide above the list: unfolded by the renderer
+  // when the directory answered a name search with nothing, folded back when a
+  // later search does return stations. A guide the user unfolded themselves is
+  // left alone, so the flag records who opened it.
+  const guide = $('addStationBox');
+  const fold = addStationGuideFold(state.addStationGuideAuto, state.searchLastMode, totalRaw);
+  if (guide && fold.open !== null) guide.open = fold.open;
+  state.addStationGuideAuto = fold.auto;
   // Small dismissible hint above the results when the backend had to relax
   // the quality filters: entries may be unverified, and the user should know
   // why. Rendered inside #searchResults so no markup outside src/ changes.
@@ -8313,25 +8333,9 @@ function renderSearchResults() {
       : state.searchOnlyBose && (state.searchResults || []).length > 0
         ? t('search.noBoseStations')
         : t('search.noStationsFound');
-    let html = '<div class="muted">' + escapeHtml(msg) + '</div>';
-    // A name search that genuinely returned nothing (not the favorites view and
-    // not the Bose-filter-hid-everything case) means the station is not in the
-    // radio-browser directory. Surface the "add it yourself" guide right here so
-    // the user does not have to spot the small permanent hint in the filter row.
-    const genuinelyEmpty = state.searchLastMode === 'search'
-      && state.searchLastQuery
-      && (state.searchResults || []).length === 0;
-    if (genuinelyEmpty) {
-      html += '<div class="search-empty-addhint" style="margin-top:.6rem">'
-        + '<a href="#" class="search-addhint" id="emptyAddStationHint">'
-        + escapeHtml(t('search.addStationHint')) + '</a></div>';
-    }
+    const html = '<div class="muted">' + escapeHtml(msg) + '</div>';
     res.innerHTML = hintHtml + html;
     wireRelaxedDismiss();
-    const addLink = $('emptyAddStationHint');
-    if (addLink) {
-      addLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} };
-    }
     return;
   }
   res.innerHTML = hintHtml + list.map((s, i) => {

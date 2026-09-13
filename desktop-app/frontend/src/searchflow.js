@@ -64,6 +64,26 @@ export function normalizeDetailedSearch(res) {
   };
 }
 
+// addStationGuideFold decides the fold state of the "add a missing station"
+// guide that sits above the result list: { open: true } unfolds it, false folds
+// it, null leaves it exactly as it is, and auto records whether it is open
+// because of this decision or because the user clicked the line.
+//
+// It unfolds only when a name search came back with nothing at all from the
+// directory: then the station really is absent from radio-browser.info and
+// adding it there is the answer (discussion #619, three stations missing until
+// they were entered by hand). When the directory did return stations and only
+// the local Bose/bitrate filters emptied the list, the station exists and the
+// guide would be the wrong advice, so fetchedCount counts what the directory
+// sent, not what survived the filters. A guide unfolded by the app folds again
+// on the next search that finds something, so it cannot become a nag; one the
+// user opened stays open until they close it.
+export function addStationGuideFold(autoOpened, mode, fetchedCount) {
+  if (mode === 'search' && fetchedCount === 0) return { open: true, auto: true };
+  if (autoOpened) return { open: false, auto: false };
+  return { open: null, auto: false };
+}
+
 // relaxedHintVisible decides whether the "showing unverified results too"
 // hint renders above the results: only when the last fetch actually relaxed
 // the quality filters, the user has not dismissed it for this result set,
