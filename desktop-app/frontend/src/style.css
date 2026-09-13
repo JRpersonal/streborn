@@ -1027,6 +1027,20 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   border-radius: 4px;
   font-size: 13px;
 }
+/* A server the last scan heard nothing from, listed from memory (#770). Quiet
+   on purpose: it is a fact about the network, not an error in the app, and the
+   entry stays usable for a NAS that wakes on access. */
+.library-server-dark {
+  flex: 0 0 auto;
+  font-size: 10px;
+  background: var(--c-surface-3);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.library-server-dark-note { color: var(--c-muted); font-size: 12px; margin: 0 0 12px; }
 .library-empty {
   background: var(--c-surface);
   border: 1px dashed var(--c-surface-3);
