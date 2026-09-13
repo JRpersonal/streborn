@@ -926,6 +926,19 @@ func (s *Server) undoWakeAutoResume(slot int) {
 	}
 	s.logger.Info("preset recall failed after waking the speaker, stopping the station it resumed by itself",
 		"slot", slot, "resumedSource", src)
+	// The speaker's own player first, the UPnP transport second, in that order
+	// and for the same reason handleStop does it: a station the box fetches
+	// ITSELF is not on the UPnP transport at all, so a UPnP Stop against it
+	// succeeds, reports success, and the music keeps playing.
+	//
+	// That is exactly the case this function exists for. The station a wake
+	// resumes is the box's own last one, which comes back as
+	// LOCAL_INTERNET_RADIO, and the first version of this shipped with only
+	// renderer.Stop - so it silenced nothing on the very speakers it was
+	// written for.
+	if s.transportKeyFallback(ctx, "STOP") {
+		return
+	}
 	if err := s.renderer.Stop(ctx); err != nil {
 		s.logger.Warn("could not stop the auto-resumed station", "slot", slot, "err", err)
 	}
