@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Стерео",
   "multiroom.stereoNote": "Використовуйте дві колонки SoundTouch 10 як ліву й праву пару. Експериментально: ще доопрацьовується, тож поки що вони можуть просто об'єднатися в групу. Будь ласка, надішліть журнали.",
   "multiroom.stereoNeedTwo": "Потрібні дві колонки SoundTouch 10.",
+  "multiroom.stereoBlockedByGroup": "Усі ваші SoundTouch 10 належать до збереженої постійної групи. Колонка може зберігати лише одне з двох, тож пара видалила б групу. Спершу заберіть дві з групи, а тоді створіть пару.",
   "multiroom.stereoLeft": "Ліва колонка",
   "multiroom.stereoRight": "Права колонка",
   "multiroom.stereoName": "Назва",

@@ -456,6 +456,13 @@ export function renderMultiroom(fetchLive) {
   const pairCands = strBoxes.filter(b => /\b10\b/.test(b.model || '') && !storedGroupHosts.has(b.host));
   const pairInGroupCount = strBoxes.filter(b => /\b10\b/.test(b.model || '') && storedGroupHosts.has(b.host)).length;
   const canPair = pairCands.length >= 2;
+  // WHY the picker is empty, which is a different question from whether it is.
+  // The blanket "needs two SoundTouch 10" was shown to an owner of six of them,
+  // all fenced off because they belong to saved permanent groups, and the only
+  // conclusion left to him was that STR was broken (#938). Count the ST10s that
+  // exist before the fence, so the note can name the real reason.
+  const st10s = strBoxes.filter(b2 => /\b10\b/.test(b2.model || ''));
+  const fencedByGroup = st10s.length >= 2 && pairCands.length < 2;
   // Which two speakers the dropdowns show, in order of trust: the pair that is
   // actually live on the speakers, then what the user last picked, then the
   // first two candidates. The last one used to be the ONLY rule, so with three
@@ -593,7 +600,7 @@ export function renderMultiroom(fetchLive) {
 
        <b>${escapeHtml(t('multiroom.stereoHeading'))}</b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
-       ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
+       ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t(fencedByGroup ? 'multiroom.stereoBlockedByGroup' : 'multiroom.stereoNeedTwo'))}</div>`}
        ${canPair ? pairStatus : ''}
        ${stereoCardsHtml}
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>

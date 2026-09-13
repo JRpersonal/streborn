@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "ステレオ",
   "multiroom.stereoNote": "2台のSoundTouch 10を左右のペアとして使います。実験的機能で、まだ調整中のため、今のところ単にグループ化されるだけの場合があります。ログを送ってください。",
   "multiroom.stereoNeedTwo": "SoundTouch 10が2台必要です。",
+  "multiroom.stereoBlockedByGroup": "お使いの SoundTouch 10 はすべて保存済みの常設グループに属しています。スピーカーはどちらか一方しか保持できないため、ペアにするとグループが消えます。まず 2 台をグループから外してからペアにしてください。",
   "multiroom.stereoLeft": "左のスピーカー",
   "multiroom.stereoRight": "右のスピーカー",
   "multiroom.stereoName": "名前",
