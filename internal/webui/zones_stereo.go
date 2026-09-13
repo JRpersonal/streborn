@@ -771,6 +771,12 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 		s.lastPlayMu.Unlock()
 	}
+	// The master may have nothing while a MEMBER is playing: forming the group
+	// then took that member's station down and left the whole group silent
+	// (#954). See memberResumeForZone.
+	if resume == nil {
+		resume = s.memberResumeForZone(ctx, slaves)
+	}
 
 	// Never form against a standby master: the firmware then wakes INTO its
 	// stale UPnP item, throws the 1036 wrong-state error and self-dissolves
@@ -2915,4 +2921,47 @@ func (s *Server) restorePreviousZoneVia(ctx context.Context,
 		return
 	}
 	s.logger.Info("zone: the previous group is back", "master", master.DeviceID, "members", len(prevLive.Members))
+}
+
+// memberResumeForZone derives the stream a freshly formed zone should play when
+// the MASTER has nothing of its own to resume but a member is audibly playing.
+//
+// Forming a group makes the master the source, and /setZone takes the members'
+// own sessions down. When the master was the one playing, the capture above
+// covers it. When a MEMBER was playing, nobody covered it: the member's station
+// was torn down, the re-push on that member correctly stood down because its
+// group had just changed, and the master, now the group's source, was never
+// given anything to play. The whole group went silent with an amber indicator
+// and no error anywhere (#954, three SoundTouch 10s on v0.9.81: master formed
+// cleanly at 14:43:53, the player logged "a native station ended right after
+// OUR preset write" at 14:43:54 and nothing followed).
+//
+// This is the same problem the stereo pair had in #705 and the same derivation
+// solves it, so partnerResumeForPair is shared rather than copied: the location
+// a native station carries is unwrapped, a UPnP push carries its URL directly,
+// and the loopback address is rewritten to the member's own so the master can
+// fetch it. Verified on hardware 2026-09-13 that a speaker's firmware really
+// does fetch a stream through another speaker's agent, including between two
+// rhino SoundTouch 10s.
+//
+// The first audibly playing member wins. With more than one there is no right
+// answer to compute, and the alternative, silence, is the outcome being fixed.
+// memberNowPlaying is the read seam, the same shape hushReadNowPlaying uses:
+// the real one reaches :8090 on a fixed port, so a test without it would only
+// ever exercise the "nothing there" branch.
+var memberNowPlaying = fetchNowPlaying
+
+func (s *Server) memberResumeForZone(ctx context.Context, members []boxapi.ZoneMember) *lastPlayInfo {
+	for _, m := range members {
+		ip := strings.TrimSpace(m.IP)
+		if ip == "" || ip == s.boxHost {
+			continue
+		}
+		if r := partnerResumeForPair(memberNowPlaying(ctx, ip), ip); r != nil {
+			s.logger.Info("zone: the master has nothing to play, taking over the stream a member was playing",
+				"member", ip, "title", r.title)
+			return r
+		}
+	}
+	return nil
 }
