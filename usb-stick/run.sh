@@ -193,7 +193,7 @@ goform_wlan_push() {
             --header="Referer: http://$_gf_h/" \
             --post-data="$_gf_body" \
             "http://$_gf_h/goform/aformHandlerConfigureProfileSettings" 2>&1)
-        setup_log "goform_wlan_push @ $_gf_h ssid='$_gf_ssid' rc=$? resp='$(echo "$_gf_resp" | tr -d '\r\n' | head -c 120)'"
+        setup_log "goform_wlan_push @ $_gf_h ssid name_length=${#_gf_ssid} rc=$? resp='$(echo "$_gf_resp" | tr -d '\r\n' | head -c 120)'"
         case "$_gf_resp" in
             *"successfully applied"*|*EndRes*) return 0 ;;
         esac
@@ -1048,7 +1048,7 @@ elif [ -f "$STICK/wlan.conf" ]; then
     _es_pass=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
 fi
 if [ -n "$_es_ssid" ] && [ -n "$_es_pass" ]; then
-    setup_log "early WLAN one-shot: provisioning '$_es_ssid' via goform BEFORE the heavy stick copy (power-weak safety net)"
+    setup_log "early WLAN one-shot: provisioning a network (name_length=${#_es_ssid}) via goform BEFORE the heavy stick copy (power-weak safety net)"
     goform_wlan_push "$_es_ssid" "$_es_pass" \
         && setup_log "early WLAN one-shot: coprocessor accepted the profile" \
         || setup_log "early WLAN one-shot: no goform apply yet (coprocessor :80 maybe not up); full provisioning will retry"
@@ -1642,7 +1642,7 @@ assert_profile_priority() {
             fi
             if ! cmp -s "$_pp_f" "$_pp_f.strnew"; then
                 mv "$_pp_f.strnew" "$_pp_f" && sync 2>/dev/null
-                setup_log "profile-priority: '$SSID' outranked in $(basename "$(dirname "$_pp_f")")/NetworkProfiles.xml (#697)"
+                setup_log "profile-priority: the provisioned network (name_length=${#SSID}) outranked in $(basename "$(dirname "$_pp_f")")/NetworkProfiles.xml (#697)"
             else
                 rm -f "$_pp_f.strnew" 2>/dev/null
             fi
@@ -1730,7 +1730,7 @@ fi
 case "$WLAN_SOURCE" in
     "stick wlan.ssid"|"stick wlan.conf")
         if [ -n "$SSID" ]; then
-            setup_log "early priority demotion: stick provisions '$SSID' - outranking it over any stored profiles BEFORE the join attempts (router-switch safety, see #697)"
+            setup_log "early priority demotion: stick provisions a network (name_length=${#SSID}) - outranking it over any stored profiles BEFORE the join attempts (router-switch safety, see #697)"
             assert_profile_priority
         fi
         ;;
@@ -2009,7 +2009,7 @@ fi
 
 if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
-    setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
+    setup_log "wlan.conf parsed: SSID name_length=${#SSID} password_length=${#PASS}"
 
     # ---- v0.9.7 hands-off boot (Jens, 2026-07-12) ----------------------
     # On a NORMAL boot (credentials replayed from NAND, no fresh stick
@@ -2323,7 +2323,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             mv "$_air.str-new" "$_air" 2>/dev/null
             sync 2>/dev/null
             AIR_WROTE=1
-            setup_log "M_air: wrote slot-0 PersistentWifiProfile encrypted=false ssid='$SSID' pass_len=${#PASS} -> $_air"
+            setup_log "M_air: wrote slot-0 PersistentWifiProfile encrypted=false ssid name_length=${#SSID} pass_len=${#PASS} -> $_air"
             # acctMode=local so BoseApp does not block on a cloud account.
             _scdb="${_air%/AirplayConfiguration.xml}/SystemConfigurationDB.xml"
             if [ -f "$_scdb" ] && ! grep -q '<acctMode>local</acctMode>' "$_scdb" 2>/dev/null; then
@@ -2504,7 +2504,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             esac
         fi
         if [ -n "$M0A_SSID_DIFFER" ] && [ -z "$M0A_SSID_MATCH" ]; then
-            setup_log "M0a: STA lease present BUT stored SSID differs from stick wlan.conf SSID='$SSID' — falling through to provisioning so the network switch can take effect"
+            setup_log "M0a: STA lease present BUT stored SSID differs from stick wlan.conf SSID (name_length=${#SSID}) — falling through to provisioning so the network switch can take effect"
             PRE_LEASE=""
         else
             setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping destructive provisioning, leaving Bose state intact (ssid match=${M0A_SSID_MATCH:-unknown})"
@@ -2596,7 +2596,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # reboot, so a win here skips the disruptive reboot path; every existing
     # method stays as a fallback below. Heavy logging is intentional.
     if [ "$WINNER" = "none" ] && { [ -n "$IS_TAIGAN" ] || [ "$BCO_MODE" = "1" ]; }; then
-        setup_log "M_jukebox: === BCO on-box recon + GoForm START (ssid='$SSID' src='${WLAN_SOURCE:-none}') ==="
+        setup_log "M_jukebox: === BCO on-box recon + GoForm START (ssid name_length=${#SSID} src='${WLAN_SOURCE:-none}') ==="
         for _ji in lo eth0 wlan0; do
             [ -d "/sys/class/net/$_ji" ] || continue
             setup_log "M_jukebox recon: $_ji operstate=$(cat "/sys/class/net/$_ji/operstate" 2>/dev/null) carrier=$(cat "/sys/class/net/$_ji/carrier" 2>/dev/null) ip=$(ip -4 addr show "$_ji" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | tr '\n' ',')"
@@ -2706,9 +2706,9 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # write. Empty here means the box has no network to lose.
     AIR_PRE_SSID=$(bco_stored_ssid 2>/dev/null)
     if [ -n "$AIR_FP_NOW" ] && [ "$AIR_FP_NOW" = "$AIR_FP_SEEN" ] && [ "$(airplay_slot0_ssid)" = "$SSID" ]; then
-        setup_log "M_air: already provisioned + rebooted for the current creds (SSID='$SSID', slot-0 matches), skipping M_air rewrite+reboot"
+        setup_log "M_air: already provisioned + rebooted for the current creds (SSID name_length=${#SSID}, slot-0 matches), skipping M_air rewrite+reboot"
     else
-    setup_log "M_air: coprocessor profile store before write: ssid='${AIR_PRE_SSID:-none}' (empty means nothing to lose)"
+    setup_log "M_air: coprocessor profile store before write: ssid name_length=${#AIR_PRE_SSID} (0 means nothing to lose)"
     write_airplay_profile
     if [ "${AIR_WROTE:-}" = "1" ] && { [ "$BCO_MODE" = "1" ] || [ -n "${IS_TAIGAN:-}" ]; }; then
         if airplay_reboot_guard_ok; then
@@ -3193,7 +3193,7 @@ WPAEOF
                 wpa_cli -i "$_WI" enable_network "$NETID"                  >/dev/null 2>&1; R4=$?
                 wpa_cli -i "$_WI" select_network "$NETID"                  >/dev/null 2>&1; R5=$?
                 wpa_cli -i "$_WI" save_config                              >/dev/null 2>&1; R6=$?
-                setup_log "M4: set ssid=$R1 psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
+                setup_log "M4: rc set_ssid=$R1 set_psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
                 if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$R4" = "0" ]; then
                     { printf 'SSID=%s\n' "$SSID"
                       printf 'PASS=%s\n' "$PASS"
