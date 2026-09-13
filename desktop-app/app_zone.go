@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -556,4 +557,53 @@ func (a *App) SyncSpotifyLogin(boxes []SpotifySyncTarget) (map[string]any, error
 	}
 	a.logger.Info("spotify: synced login to speakers", "source", sourceName, "synced", len(synced), "failed", len(failed))
 	return map[string]any{"source": sourceName, "synced": synced, "failed": failed}, nil
+}
+
+// RemoveGroupMember takes ONE speaker out of a saved permanent group, leaving
+// the rest of the group as it is.
+//
+// The only control a saved group had was the x that deletes the whole thing,
+// which became a problem the moment the stereo section started telling people
+// to "remove two of them from their group first, then pair them": the app could
+// not do it (#938). A saved group is only a document, so this edits the stored
+// membership and wakes nothing.
+//
+// An agent too old to have the endpoint answers its index page or a 404, and
+// neither decodes as JSON. That is reported as such rather than as a failure to
+// remove, because the two need different things from the user.
+func (a *App) RemoveGroupMember(masterHost string, masterPort int, memberIP string) (map[string]any, error) {
+	memberIP = strings.TrimSpace(memberIP)
+	if memberIP == "" {
+		return nil, fmt.Errorf("no speaker named to remove")
+	}
+	path := "/api/box/zone/member?ip=" + url.QueryEscape(memberIP)
+	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodDelete, path, "", "", zoneCallTimeout)
+	if err != nil {
+		a.logger.Info("zone: removing a member from the saved group failed",
+			"master", masterHost, "member", memberIP, "err", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		a.logger.Info("zone: this speaker's agent has no member removal yet",
+			"master", masterHost, "status", resp.StatusCode)
+		return nil, fmt.Errorf("update %s first: its agent cannot remove a single speaker from a group yet", masterHost)
+	}
+	if resp.StatusCode != http.StatusOK {
+		herr := readHTTPError(resp)
+		a.logger.Info("zone: removing a member was rejected",
+			"master", masterHost, "member", memberIP, "err", herr)
+		return nil, herr
+	}
+	var out map[string]any
+	if derr := json.NewDecoder(resp.Body).Decode(&out); derr != nil {
+		// An older agent has no route here, so the mux answers with the index
+		// page and the decode fails on its first character.
+		a.logger.Info("zone: member removal answered something that is not JSON, treating the agent as too old",
+			"master", masterHost, "err", derr)
+		return nil, fmt.Errorf("update %s first: its agent cannot remove a single speaker from a group yet", masterHost)
+	}
+	a.logger.Info("zone: a speaker was taken out of the saved group",
+		"master", masterHost, "member", memberIP, "remaining", out["remaining"], "groupGone", out["groupGone"])
+	return out, nil
 }
