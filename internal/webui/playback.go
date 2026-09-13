@@ -248,6 +248,24 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// standby-flip discriminator (#419). Before the wake: the wake itself can
 	// flip the source states around.
 	s.NoteUserPlay()
+	// Was the speaker asleep? Read it BEFORE the wake, because the wake is what
+	// changes the answer.
+	//
+	// The firmware resumes whatever it played last when it is powered on, and a
+	// recall of a sleeping speaker powers it on. A recall that then fails leaves
+	// the speaker playing a DIFFERENT key than the one that was pressed: key 1
+	// asked for, key 6 playing, an error on key 1 (#948, where the resumed
+	// station started 1.6 s before the recall itself ran).
+	//
+	// Only STANDBY qualifies. On a speaker that was already playing, stopping
+	// after a failed recall would take away music the user put on deliberately.
+	wokeFromStandby := strings.EqualFold(strings.TrimSpace(s.boxSourceNow()), "STANDBY")
+	recallDelivered := false
+	defer func() {
+		if wokeFromStandby && !recallDelivered {
+			s.undoWakeAutoResume(slot)
+		}
+	}()
 	s.ensureBoxReady(r.Context())
 	// recallStart anchors the verify's stand-down decision: a deliberate user
 	// stop/pause/power-off that arrives AFTER this moment must end the verify
@@ -287,6 +305,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		recallDelivered = true
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "queue"})
 		return
 	}
@@ -461,6 +480,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
 			}, s.spotifyStreaming)
 		}()
+		recallDelivered = true
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
 		return
 	}
@@ -496,6 +516,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
 				_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
 			}, nil)
+			recallDelivered = true
 			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 			return
 		}
@@ -518,6 +539,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			// the last station comes back" behaviour.
 			s.setLastPlay(playURL, p.Name, p.Art, upnp.MimeForCodecOrURL(p.Codec, p.StreamURL))
 			s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage, "") // #135
+			recallDelivered = true
 			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 			return
 		} else {
@@ -559,6 +581,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			_ = s.renderer.PlayURL(ctx, playURL, name, art)
 		}
 	}, nil)
+	recallDelivered = true
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 }
 
@@ -877,5 +900,33 @@ func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "removed": removed})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// undoWakeAutoResume stops what the speaker started on its own after a recall
+// woke it, when that recall could not deliver the key that was asked for.
+//
+// The firmware resumes its last station on power-on. That is right when the
+// user presses the speaker's own power button and wrong here: the user pressed
+// a preset key in the app, the recall had to wake the speaker to serve it, and
+// the wake handed them a different key's station instead. Leaving it playing is
+// how "I pressed key 1 and key 6 started" happens (#948).
+//
+// Called only when the speaker was in STANDBY when the recall began, so there
+// is nothing of the user's own to take away.
+func (s *Server) undoWakeAutoResume(slot int) {
+	if s.renderer == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	src := strings.TrimSpace(s.boxSourceNow())
+	if src == "" || strings.EqualFold(src, "STANDBY") || strings.EqualFold(src, "INVALID_SOURCE") {
+		return // it did not resume anything
+	}
+	s.logger.Info("preset recall failed after waking the speaker, stopping the station it resumed by itself",
+		"slot", slot, "resumedSource", src)
+	if err := s.renderer.Stop(ctx); err != nil {
+		s.logger.Warn("could not stop the auto-resumed station", "slot", slot, "err", err)
 	}
 }
