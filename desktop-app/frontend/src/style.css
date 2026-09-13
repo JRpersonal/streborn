@@ -1352,8 +1352,21 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 }
 .preset .url { font-size: 10px; color: var(--c-faint); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preset-head { display: flex; justify-content: space-between; }
+/* The two key icons share the right-hand end of the header, so adding the
+   rename pencil did not push the clear X away from the corner users know. */
+.preset-acts { display: flex; align-items: center; gap: 2px; }
 .preset .del { color: var(--c-faint); cursor: pointer; padding: 0 4px; font-size: 16px; }
 .preset .del:hover { color: var(--signal-red); }
+.preset .ren { color: var(--c-faint); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1.2; }
+.preset .ren:hover { color: var(--c-text); }
+/* The name field in the shared modal: full width, because a station name is
+   longer than the box a browser gives an input by default. */
+.rename-input {
+  width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px 10px;
+  font: inherit; font-size: 14px; color: var(--c-text);
+  background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 6px;
+}
+.rename-input:focus { outline: none; border-color: var(--brand); }
 .preset-state { font-size: 12px; margin-top: 4px; font-weight: 500; }
 .preset-state.state-play { color: var(--signal-green); }
 .preset-state.state-buf { color: var(--signal-yellow); animation: pulse 1.5s ease-in-out infinite; }

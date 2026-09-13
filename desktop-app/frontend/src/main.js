@@ -5,6 +5,7 @@ import {
   AddBoxByIP,
   GetPresets,
   SetPreset,
+  RenamePreset,
   DeletePreset,
   PlaySlot,
   PlayURL,
@@ -6208,7 +6209,7 @@ function renderPresets() {
       // wide enough for the string", user report 2026-08-23). The running title
       // now lives only in that bar, which is the full window wide.
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></div>
+        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}">&#9998;</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
@@ -6291,6 +6292,12 @@ function renderPresets() {
     }
     grid.appendChild(div);
   }
+  grid.querySelectorAll('.ren').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      renamePresetKey(parseInt(el.dataset.slot, 10));
+    };
+  });
   grid.querySelectorAll('.del').forEach(el => {
     el.onclick = async (e) => {
       e.stopPropagation();
@@ -6311,6 +6318,63 @@ function renderPresets() {
   // No marquee pass here: nothing in a tile scrolls any more (see the tile
   // template above). The saved name wraps and the badge lines clip, so a
   // rebuilt grid needs no measuring frame.
+}
+
+// PRESET_NAME_MAX mirrors maxPresetNameRunes in the agent, so the field stops
+// where the speaker's own preset entry does and a typed name is never handed
+// back shortened.
+const PRESET_NAME_MAX = 64;
+
+// renamePresetKey lets the user call a key whatever they want (#812). Station
+// names arrive from the radio directory shouted in capitals, misspelled, or long
+// enough to fill the whole tile, and the key is the user's own. Only the name is
+// written: the station, its logo, a Spotify preset's playlist and account all
+// stay exactly as they are.
+async function renamePresetKey(slot) {
+  if (!state.currentBox) return;
+  const p = state.presets.find(x => x.slot === slot);
+  if (!p) return;
+  const current = p.name || '';
+  const answer = confirmWarn(
+    t('preset.renameHeading'),
+    `<p>${escapeHtml(t('preset.renameBody', { n: slot }))}</p>`
+    + `<input id="presetRenameInput" class="rename-input" type="text" maxlength="${PRESET_NAME_MAX}" />`,
+    {
+      icon: null,
+      calm: true,
+      rich: true,
+      confirmLabel: t('common.save'),
+      confirmClass: 'btn btn-primary',
+    },
+  );
+  // Filled and focused only once the modal is on screen, and the value is set
+  // from JS so an apostrophe or a quote in a station name cannot break out of
+  // the markup.
+  const input = $('presetRenameInput');
+  if (input) {
+    input.value = current;
+    input.focus();
+    input.select();
+    // Enter is what a person presses after typing a name. Without this the
+    // modal's two buttons are the only way out of the field.
+    input.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const confirmBtn = $('warnConfirm');
+      if (confirmBtn) confirmBtn.click();
+    };
+  }
+  if (!await answer) return;
+  const name = (input ? input.value : '').trim();
+  if (!name || name === current) return;
+  try {
+    await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
+  } catch (err) {
+    showError(err);
+    return;
+  }
+  showToast(t('preset.renamedKey', { n: slot, name }));
+  loadPresets();
 }
 
 // applyTrackScroll turns an overflowing line into a gentle marquee: it pauses
@@ -6350,6 +6414,16 @@ function applyTrackScroll(selector = '.status-bar .now') {
 // long-press save so a box-native preset can't be overwritten by a hold.
 const LONG_PRESS_MS = 1100;
 const VISUAL_HOLD_DELAY = 180;
+// isKeyChrome reports whether an event landed on one of the small icons in a
+// key's header (clear, rename) rather than on the key itself. Those icons sit
+// INSIDE the element that carries the play click and the hold-to-save, so
+// without this a tap on the pencil would also start the station, and holding it
+// would save over the key the user only wanted to rename.
+function isKeyChrome(target) {
+  const cl = target && target.classList;
+  return !!cl && (cl.contains('del') || cl.contains('ren'));
+}
+
 function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));
   const allowSave = opts.allowSave !== false;
@@ -6373,8 +6447,8 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   };
   const start = (e) => {
     if (e.button !== undefined && e.button !== 0) return; // left click only
-    // A click on the X icon is not a preset click.
-    if (e.target.classList && e.target.classList.contains('del')) return;
+    // A press on one of the icons in the key's header is not a press on the key.
+    if (isKeyChrome(e.target)) return;
     armed = true; // we start the hold
     firedLong = false; // true once long press fires
     startedAt = Date.now();
@@ -6405,7 +6479,7 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     if (bar) bar.style.width = '0%';
   };
   const finish = (e) => {
-    if (e.target.classList && e.target.classList.contains('del')) return;
+    if (isKeyChrome(e.target)) return;
     const wasArmed = armed;
     cancel();
     if (!wasArmed) return;

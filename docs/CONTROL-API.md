@@ -56,6 +56,7 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/presets` | - | The STR preset store (what the six slots point at). |
+| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename key `1`-`6`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them. |
 | `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). |
 
@@ -77,6 +78,9 @@ curl -s "$BOX/api/box/volume"          # -> {"value":20,"target":20,"muted":fals
 # Start preset 1, then pause
 curl -s -X POST "$BOX/api/play/1"
 curl -s -X POST "$BOX/api/pause"
+
+# Give key 1 a shorter name
+curl -s -X PATCH "$BOX/api/presets/1" -d '{"name":"Radio Paradise"}'
 
 # Play an arbitrary internet radio stream
 curl -s -X POST "$BOX/api/play" -d '{"url":"https://example.com/stream.mp3"}'
