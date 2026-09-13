@@ -185,6 +185,8 @@ export function RemoveConflictingMod(arg1:string,arg2:number):Promise<string>;
 
 export function RemoveManualMediaServer(arg1:string):Promise<void>;
 
+export function RenamePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
+
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function RescuedSpeakerCount():Promise<number>;

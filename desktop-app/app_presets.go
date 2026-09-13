@@ -67,6 +67,64 @@ func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art st
 		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Homepage: homepage, Codec: codec})
 }
 
+// RenamePreset changes only what a key is CALLED, on the speaker's store and on
+// the speaker itself. Station names come out of the radio directory shouted in
+// capitals, wrong, or long enough to fill a whole tile, and the key is the
+// user's own (discussion #812).
+//
+// It goes out as PATCH /api/presets/<slot>, the agent's rename-only verb, which
+// leaves the station, the artwork and the Spotify identity alone. An agent from
+// before that verb answers 405 on it, and only 405: the route itself has existed
+// for as long as presets have, and a new agent's own 404 means the key is empty.
+// So a 405 is the one answer worth falling back for, and the fallback re-saves
+// the preset the speaker already holds with the new name, which the duplicate
+// guard permits because it skips the slot being written.
+func (a *App) RenamePreset(host string, port int, slot int, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("a preset needs a name")
+	}
+	b, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		return err
+	}
+	resp, err := a.boxDo(host, port, http.MethodPatch,
+		fmt.Sprintf("%s/%d", presetAPIPath, slot), "application/json", string(b))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusMethodNotAllowed {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		a.logger.Info("rename preset: this speaker's agent has no rename endpoint, re-saving the key with the new name",
+			"host", host, "slot", slot)
+		return a.renamePresetByResave(host, port, slot, name)
+	}
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
+// renamePresetByResave is the older-agent path: read what the key holds, put the
+// new name on it, write it back whole. Everything else in the preset is sent
+// back exactly as it came, so the re-save cannot lose a field the app does not
+// model.
+func (a *App) renamePresetByResave(host string, port int, slot int, name string) error {
+	all, err := a.GetPresets(host, port)
+	if err != nil {
+		return err
+	}
+	for _, p := range all {
+		if p.Slot != slot {
+			continue
+		}
+		p.Name = name
+		return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot), p)
+	}
+	return fmt.Errorf("key %d holds nothing to rename", slot)
+}
+
 // SaveLibraryPreset stores a preset saved from a DLNA media server (the Library
 // tab). It plays like a radio preset (a stream URL the box pulls) but carries
 // the media server name as Source, so the desktop app can show a small "from"
