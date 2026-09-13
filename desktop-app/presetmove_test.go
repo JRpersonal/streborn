@@ -26,7 +26,7 @@ type moveBox struct {
 	moves    int
 	deletes  int
 	puts     int
-	knowMove bool           // false models an agent older than POST /api/presets/move
+	knowMove bool           // false models an agent older than presetMoveAPIPath
 	refuse   func(int) bool // a key the speaker will not accept a write on
 }
 
@@ -40,14 +40,25 @@ func newMoveBox(t *testing.T, keys map[int]Preset) *moveBox {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == presetAPIPath+"/move":
+		case r.Method == http.MethodPost && r.URL.Path == presetMoveAPIPath:
 			b.moves++
 			if !b.knowMove {
+				// An agent without the endpoint has no handler for this path at
+				// all, because it sits outside the "/api/presets/" prefix its
+				// catch-all owns. A plain 404 is what it answers, and nothing
+				// else does.
 				http.NotFound(w, r)
 				return
 			}
 			var req struct{ From, To int }
 			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.From == req.To {
+				// What the real endpoint answers. A speaker that understands
+				// the request and refuses it must not be mistaken for one that
+				// never had the endpoint.
+				http.Error(w, "the station is already on that key", http.StatusBadRequest)
+				return
+			}
 			p, ok := b.keys[req.From]
 			if !ok {
 				http.Error(w, "preset not set", http.StatusNotFound)
@@ -186,5 +197,25 @@ func TestMovePresetRefusesAnEmptySourceKeyOnAnOlderAgent(t *testing.T) {
 	}
 	if got := box.held(); got[1] != "1LIVE" || len(got) != 1 {
 		t.Errorf("keys = %v, want key 1 untouched", got)
+	}
+}
+
+// A genuine bad request must still surface as an error. 400 alone cannot mean
+// "this agent is too old", because the real move endpoint answers 400 for
+// from == to and for a slot out of range. Swallowing that would send the
+// two-step fallback at a speaker that understood the request perfectly well
+// and refused it on purpose, and the fallback deletes the source key first.
+func TestMovePresetKeepsARealBadRequest(t *testing.T) {
+	box := newMoveBox(t, map[int]Preset{
+		1: {Slot: 1, Name: "Bel RTL", Type: "radio", StreamURL: "http://stream.example/belrtl"},
+	})
+	a := moveApp(t)
+
+	err := a.MovePreset("127.0.0.1", listenPort(t, box.srv), 1, 1)
+	if err == nil {
+		t.Fatal("a refusal from a speaker that understands move must reach the user")
+	}
+	if got := box.held(); got[1] != "Bel RTL" {
+		t.Errorf("the fallback ran on a real bad request and touched the source key: %v", got)
 	}
 }

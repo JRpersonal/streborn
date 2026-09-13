@@ -16,7 +16,7 @@ import (
 // A save whose station already sits on another key is refused, and that refusal
 // stays (#836). What was missing is the way out: discussion #709 read the
 // refusal as a bug and discussion #925 read it as "so I can only keep one
-// Spotify playlist". POST /api/presets/move is the third option, and these
+// Spotify playlist". POST /api/box/preset-move is the third option, and these
 // tests describe it from the user's side: the station ends up on the key he
 // pressed, the old key is free, and nothing is ever lost on the way.
 
@@ -35,7 +35,7 @@ func newMoveServer(t *testing.T) *Server {
 func movePreset(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/presets/move", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/box/preset-move", strings.NewReader(body))
 	req.RemoteAddr = "192.0.2.10:51234"
 	s.handlePresetMove(rec, req)
 	return rec
@@ -201,21 +201,26 @@ func TestPresetMoveAnswersWithTheMovedPreset(t *testing.T) {
 func TestPresetMoveIgnoresOtherMethods(t *testing.T) {
 	s := newMoveServer(t)
 	rec := httptest.NewRecorder()
-	s.handlePresetMove(rec, httptest.NewRequest(http.MethodGet, "/api/presets/move", nil))
+	s.handlePresetMove(rec, httptest.NewRequest(http.MethodGet, "/api/box/preset-move", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("GET /api/presets/move: status = %d, want 405", rec.Code)
+		t.Errorf("GET /api/box/preset-move: status = %d, want 405", rec.Code)
 	}
 }
 
-// "move" must never reach the per-slot handler: the exact route exists because
-// the slot handler parses the last path element as a key number, and this is
-// what it does with the word instead.
+// The per-slot handler parses ANY word after /api/presets/ as a slot number and
+// answers 400 "invalid slot, must be 1-6". That is why the move endpoint lives
+// at /api/box/preset-move instead: an agent older than the endpoint would
+// otherwise answer that same 400 to a move request, and the real endpoint
+// produces that same sentence for a slot out of range, so the app could not
+// tell an old agent from a real refusal. Guessing wrong runs a destructive
+// two-step fallback, so the ambiguity was removed rather than guessed at.
+// This test pins the behaviour the relocation exists for.
 func TestPresetMoveIsNotASlotNumber(t *testing.T) {
 	s := newMoveServer(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/presets/move", strings.NewReader(`{"from":1,"to":2}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/box/preset-move", strings.NewReader(`{"from":1,"to":2}`))
 	s.handlePresetSlot(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Errorf("the slot handler took /api/presets/move: status = %d, want 400", rec.Code)
+		t.Errorf("the slot handler still parses a word as a slot: status = %d, want 400", rec.Code)
 	}
 }

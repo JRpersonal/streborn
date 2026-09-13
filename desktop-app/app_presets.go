@@ -41,6 +41,12 @@ type Preset struct {
 // per-slot writes and deletes.
 const presetAPIPath = "/api/presets"
 
+// presetMoveAPIPath sits outside presetAPIPath on purpose: an agent that
+// predates it then answers a plain 404 rather than the per-slot handler's
+// "invalid slot" 400, which the real endpoint also produces for a bad slot.
+// See the registration comment in internal/webui/server.go.
+const presetMoveAPIPath = "/api/box/preset-move"
+
 func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 	resp, err := a.boxDo(host, port, http.MethodGet, presetAPIPath, "", "")
 	if err != nil {
@@ -355,10 +361,12 @@ func (a *App) MovePreset(host string, port int, from, to int) error {
 	if err != nil {
 		return err
 	}
-	resp, err := a.boxDo(host, port, http.MethodPost, presetAPIPath+"/move", "application/json", string(body))
+	resp, err := a.boxDo(host, port, http.MethodPost, presetMoveAPIPath, "application/json", string(body))
 	if err != nil {
 		return err
 	}
+	// An agent without the endpoint answers 404; nothing else does, because the
+	// path is off the prefix its catch-all owns.
 	older := resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed
 	if !older && resp.StatusCode >= 400 {
 		defer resp.Body.Close()
