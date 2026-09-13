@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Stéréo",
   "multiroom.stereoNote": "Utilise deux enceintes SoundTouch 10 comme paire gauche et droite. Expérimental : encore en cours de mise au point, donc pour l'instant cela peut se contenter de les grouper. Envoie-moi les journaux.",
   "multiroom.stereoNeedTwo": "Nécessite deux enceintes SoundTouch 10.",
+  "multiroom.stereoBlockedByGroup": "Vos SoundTouch 10 appartiennent toutes à un groupe permanent enregistré. Une enceinte ne peut retenir que l'un des deux, une paire effacerait donc le groupe. Retirez-en deux de leur groupe, puis appairez-les.",
   "multiroom.stereoLeft": "Enceinte de gauche",
   "multiroom.stereoRight": "Enceinte de droite",
   "multiroom.stereoName": "Nom",

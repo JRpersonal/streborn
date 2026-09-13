@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Stereo",
   "multiroom.stereoNote": "Gebruik twee SoundTouch 10-speakers als linker- en rechterpaar. Experimenteel: nog in ontwikkeling, dus voorlopig worden ze misschien alleen gegroepeerd. Stuur de logs.",
   "multiroom.stereoNeedTwo": "Heeft twee SoundTouch 10-speakers nodig.",
+  "multiroom.stereoBlockedByGroup": "Je SoundTouch 10 speakers horen allemaal bij een opgeslagen vaste groep. Een speaker kan maar één van beide bewaren, dus koppelen zou de groep wissen. Haal er eerst twee uit hun groep, dan kun je ze koppelen.",
   "multiroom.stereoLeft": "Linkerspeaker",
   "multiroom.stereoRight": "Rechterspeaker",
   "multiroom.stereoName": "Naam",

@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Stereo",
   "multiroom.stereoNote": "Użyj dwóch głośników SoundTouch 10 jako pary lewy i prawy. Eksperymentalne: wciąż dopracowywane, więc na razie może po prostu je zgrupować. Prześlij proszę logi.",
   "multiroom.stereoNeedTwo": "Wymaga dwóch głośników SoundTouch 10.",
+  "multiroom.stereoBlockedByGroup": "Wszystkie twoje SoundTouch 10 należą do zapisanej grupy stałej. Głośnik może przechowywać tylko jedno z dwóch, więc para skasowałaby grupę. Najpierw wyjmij dwa z grupy, potem je sparuj.",
   "multiroom.stereoLeft": "Lewy głośnik",
   "multiroom.stereoRight": "Prawy głośnik",
   "multiroom.stereoName": "Nazwa",
