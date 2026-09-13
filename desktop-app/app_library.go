@@ -139,6 +139,59 @@ type LibraryServer struct {
 	// (AddMediaServerByURL); the frontend shows a remove control for
 	// these.
 	Manual bool `json:"manual"`
+	// NotAnswering is true for an entry this scan could only take from
+	// memory: nothing answered at its address, and the list shows it
+	// from the stored snapshot. The #733 reporter enabled such an entry
+	// on all three of his speakers while the NAS was switched off, every
+	// browse then failed, and nothing in the app had said the server was
+	// never seen alive (#770).
+	NotAnswering bool `json:"notAnswering"`
+}
+
+// libraryEntry is one server on its way to the frontend list: the
+// described server plus how this scan learned about it.
+type libraryEntry struct {
+	Server       dlna.Server
+	Manual       bool
+	NotAnswering bool
+}
+
+// mergeLibraryEntries builds the Library list from this scan's live
+// sightings and the user's manually pinned servers, deduped by UDN.
+//
+// A pinned server is listed even when it is dark right now (that is the
+// point of pinning it, #341), so it is the one entry that can reach the
+// list without anything having answered. It is flagged here so the UI can
+// say so; a pinned server that DID answer this scan, whether through its
+// own probe or the SSDP sweep, is a live entry that merely keeps its
+// remove control.
+func mergeLibraryEntries(live []dlna.Server, manual []manualServerProbe) []libraryEntry {
+	at := make(map[string]int, len(live)+len(manual))
+	out := make([]libraryEntry, 0, len(live)+len(manual))
+	for _, s := range live {
+		if s.UDN == "" {
+			continue
+		}
+		if _, dup := at[s.UDN]; dup {
+			continue
+		}
+		at[s.UDN] = len(out)
+		out = append(out, libraryEntry{Server: s})
+	}
+	for _, m := range manual {
+		if m.Server.UDN == "" {
+			continue
+		}
+		if i, dup := at[m.Server.UDN]; dup {
+			out[i].Manual = true
+			continue
+		}
+		at[m.Server.UDN] = len(out)
+		out = append(out, libraryEntry{
+			Server: m.Server, Manual: true, NotAnswering: !m.Answering,
+		})
+	}
+	return out
 }
 
 // LibraryContainer is a folder / album node in the browse view.
@@ -179,6 +232,11 @@ type LibraryPage struct {
 // host's own addresses, and the user's manually added servers. Result
 // is cached so BrowseLibrary can look up the server by UDN without
 // rediscovering.
+//
+// Each entry carries whether anything answered for it in THIS scan
+// (NotAnswering), because only the first three sources prove liveness
+// and the list has to be able to say which entries it is showing from
+// memory (#770).
 func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 	// The M-SEARCH goes out with MX=3: a compliant server may wait up
 	// to 3 s before answering, so the previous 3 s window regularly cut
@@ -236,37 +294,37 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 	// for an announcement.
 	a.rememberKnownServers(servers)
 
-	// Merge in the user's manually added servers (#341). Deduped by
-	// UDN: a manual server that ALSO showed up via SSDP is listed once
-	// but keeps its manual flag so the remove control stays available.
-	manualUDNs := map[string]bool{}
-	for _, m := range a.refreshedManualServers() {
-		manualUDNs[m.UDN] = true
-		if !seen[m.UDN] {
-			seen[m.UDN] = true
-			servers = append(servers, m)
+	// Merge in the user's manually added servers (#341), which is also
+	// where an entry can enter the list without having answered.
+	entries := mergeLibraryEntries(servers, a.refreshedManualServers())
+	dark := 0
+	for _, e := range entries {
+		if e.NotAnswering {
+			dark++
 		}
 	}
 	a.logger.Info("library: media server scan done",
-		"ssdp", len(ssdp), "known", len(known), "local", len(local), "total", len(servers))
+		"ssdp", len(ssdp), "known", len(known), "local", len(local),
+		"total", len(entries), "notAnswering", dark)
 
 	a.libraryMu.Lock()
 	a.libraryServers = map[string]dlna.Server{}
-	for _, s := range servers {
-		a.libraryServers[s.UDN] = s
+	for _, e := range entries {
+		a.libraryServers[e.Server.UDN] = e.Server
 	}
 	a.libraryMu.Unlock()
 
-	out := make([]LibraryServer, 0, len(servers))
-	for _, s := range servers {
+	out := make([]LibraryServer, 0, len(entries))
+	for _, e := range entries {
 		out = append(out, LibraryServer{
-			UDN:          s.UDN,
-			FriendlyName: s.FriendlyName,
-			Manufacturer: s.Manufacturer,
-			ModelName:    s.ModelName,
-			IconURL:      s.IconURL,
-			Address:      s.Address,
-			Manual:       manualUDNs[s.UDN],
+			UDN:          e.Server.UDN,
+			FriendlyName: e.Server.FriendlyName,
+			Manufacturer: e.Server.Manufacturer,
+			ModelName:    e.Server.ModelName,
+			IconURL:      e.Server.IconURL,
+			Address:      e.Server.Address,
+			Manual:       e.Manual,
+			NotAnswering: e.NotAnswering,
 		})
 	}
 	return out, nil

@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn } from '../utils.js';
 import { t } from '../i18n/index.js';
 import {
   ProbeTrackDelivery,
@@ -224,6 +224,23 @@ async function libraryAddManualServer(value, btn) {
   }
 }
 
+// serverNotAnswering says whether a list entry is one the last scan could only
+// take from memory: nothing answered at its address (the backend's notAnswering).
+export function serverNotAnswering(srv) {
+  return !!(srv && srv.notAnswering);
+}
+
+// libraryServerLabel is the text the server picker shows for one entry. An entry
+// nothing answered for carries the "not answering" mark, because a <select>
+// cannot hold a styled badge inside an <option>; the chip beside the picker
+// repeats it for the entry that is open.
+export function libraryServerLabel(srv) {
+  const name = (srv && (srv.friendlyName || srv.address)) || '';
+  const model = srv && srv.modelName ? ` (${srv.modelName})` : '';
+  const mark = serverNotAnswering(srv) ? ` · ${t('library.serverNotAnswering')}` : '';
+  return `${name}${model}${mark}`;
+}
+
 // libraryPutServerOnSpeakers registers the selected media server as a music
 // source on every ST Reborn speaker, so it appears in the speaker's own menu
 // (and therefore in the Bose app too) whether or not this app is running.
@@ -232,8 +249,10 @@ async function libraryAddManualServer(value, btn) {
 // PC's own discovery reports it with the prefix, so it is stripped here. Every
 // speaker sees the same server under the same id, which is what makes one
 // button enough for the whole house.
-async function libraryPutServerOnSpeakers(btn) {
-  const srv = libState.servers.find(s => s.udn === libState.currentUDN);
+//
+// server is the entry to add; the button passes nothing and gets the open one.
+export async function libraryPutServerOnSpeakers(btn, server) {
+  const srv = server || libState.servers.find(s => s.udn === libState.currentUDN);
   const msg = $('libOnSpeakersMsg');
   if (!srv) return;
   const id = String(srv.udn || '').replace(/^uuid:/i, '');
@@ -241,6 +260,18 @@ async function libraryPutServerOnSpeakers(btn) {
   if (!boxes.length) {
     if (msg) msg.innerHTML = `<span class="setup-warn">${escapeHtml(t('library.onSpeakersNoBoxes'))}</span>`;
     return;
+  }
+  // #733: the reporter added a NAS that was switched off to all three of his
+  // speakers, every browse of it failed afterwards, and nothing had said the
+  // server was never seen alive. Say it here, once, and let him carry on: a NAS
+  // that is off for the evening or wakes on access is a normal setup, so this
+  // cannot be a refusal (#770).
+  if (serverNotAnswering(srv)) {
+    const proceed = await confirmWarn(
+      t('library.notAnsweringWarnTitle'),
+      escapeHtml(t('library.notAnsweringWarnBody', { name: srv.friendlyName || srv.address || '' })),
+    );
+    if (!proceed) return;
   }
   btn.disabled = true;
   if (msg) msg.innerHTML = `<span class="muted small">${escapeHtml(t('common.loading'))}</span>`;
@@ -772,13 +803,22 @@ function renderLibrary() {
       : `<option value="" selected disabled>${escapeHtml(t('library.chooseServer'))}</option>`;
     const opts = placeholder + libState.servers.map(s => {
       const sel = s.udn === libState.currentUDN ? ' selected' : '';
-      const sub = s.modelName ? ` (${escapeHtml(s.modelName)})` : '';
-      return `<option value="${escapeAttr(s.udn)}"${sel}>${escapeHtml(s.friendlyName || s.address)}${sub}</option>`;
+      return `<option value="${escapeAttr(s.udn)}"${sel}>${escapeHtml(libraryServerLabel(s))}</option>`;
     }).join('');
     // Manually added servers (#341) get a remove control when selected.
     const cur = libState.servers.find(s => s.udn === libState.currentUDN);
     const removeBtn = cur && cur.manual
       ? `<button class="btn btn-mini btn-secondary" id="libManualRemoveBtn" title="${escapeAttr(t('library.removeServerBtn'))}">&#10005;</button>`
+      : '';
+    // The entry that is open and did not answer gets the chip plus one plain
+    // line. Without it the list showed a remembered server exactly like a live
+    // one, which is how a switched-off NAS ended up as a source on three
+    // speakers (#733, #770).
+    const notAnsweringChip = serverNotAnswering(cur)
+      ? `<span class="library-server-dark" title="${escapeAttr(t('library.serverNotAnsweringNote'))}">${escapeHtml(t('library.serverNotAnswering'))}</span>`
+      : '';
+    const notAnsweringNote = serverNotAnswering(cur)
+      ? `<div class="library-server-dark-note">${escapeHtml(t('library.serverNotAnsweringNote'))}</div>`
       : '';
     // Put the selected server on the speakers themselves.
     //
@@ -799,10 +839,12 @@ function renderLibrary() {
       <div class="library-server-row">
         <label class="library-label">${escapeHtml(t('library.server'))}</label>
         <select class="library-select" id="libServerSelect">${opts}</select>
+        ${notAnsweringChip}
         <button class="btn btn-mini" id="libRefreshBtn" title="${escapeAttr(t('library.refresh'))}">&#8634;</button>
         ${onSpeakersBtn}
         ${removeBtn}
       </div>
+      ${notAnsweringNote}
       <div class="library-onspeakers-msg" id="libOnSpeakersMsg"></div>`;
   }
 
