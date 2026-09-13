@@ -56,7 +56,9 @@ func newSweepServer(t *testing.T, z zones.Zone) *Server {
 	return &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10", zones: st}
 }
 
-var sweepDoc = zones.Zone{Master: "DEV-M", MasterIP: "192.0.2.10", Slaves: []zones.Member{{DeviceID: "DEV-A", IP: "192.0.2.54"}}}
+const masterDeviceID = "DEV-M"
+
+var sweepDoc = zones.Zone{Master: masterDeviceID, MasterIP: "192.0.2.10", Slaves: []zones.Member{{DeviceID: "DEV-A", IP: "192.0.2.54"}}}
 
 // The reported case: the firmware dropped the follower, the master moved on to
 // the next track, the follower still plays the earlier track from the same
@@ -69,7 +71,7 @@ func TestFirmwareDissolveSweepStopsAFollowerStillOnTheProgramme(t *testing.T) {
 	withDissolveSweepSeams(t, nil, nil) // every read: no zone
 
 	s := newSweepServer(t, sweepDoc)
-	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), server+"track-2.mp3", sweepDoc.Slaves)
+	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 1 {
 		t.Errorf("stop keys sent = %d, want 1", got)
@@ -86,7 +88,7 @@ func TestFirmwareDissolveSweepStandsDownWhenTheZoneIsBack(t *testing.T) {
 	withDissolveSweepSeams(t, []boxapi.Zone{{Master: "DEV-M", Members: []boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}}}}, nil)
 
 	s := newSweepServer(t, sweepDoc)
-	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), server+"track-2.mp3", sweepDoc.Slaves)
+	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 0 {
 		t.Errorf("a member of a live zone was stopped %d time(s)", got)
@@ -110,7 +112,7 @@ func TestFirmwareDissolveSweepRetriesAnUnreachableFollower(t *testing.T) {
 	}
 
 	s := newSweepServer(t, sweepDoc)
-	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), server+"track-2.mp3", sweepDoc.Slaves)
+	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 1 {
 		t.Errorf("stop keys sent = %d, want 1", got)
@@ -134,7 +136,7 @@ func TestFirmwareDissolveSweepStandsDownForANewGroup(t *testing.T) {
 	if err := s.zones.Set(other); err != nil {
 		t.Fatal(err)
 	}
-	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), server+"track-2.mp3", sweepDoc.Slaves)
+	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 0 {
 		t.Errorf("a member outside the current group was stopped %d time(s)", got)
@@ -150,7 +152,7 @@ func TestFirmwareDissolveSweepSkipsWhenTheZoneIsUnreadable(t *testing.T) {
 	withDissolveSweepSeams(t, nil, errors.New("timeout"))
 
 	s := newSweepServer(t, sweepDoc)
-	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), server+"track-2.mp3", sweepDoc.Slaves)
+	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 0 {
 		t.Errorf("a follower was stopped %d time(s) on an unreadable zone", got)

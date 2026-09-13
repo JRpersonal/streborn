@@ -22,6 +22,7 @@ package webui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -41,7 +42,20 @@ var (
 		return boxapi.New(host).GetZone(ctx)
 	}
 	dissolveSweepSleep = time.Sleep
+	// leaveZoneAtFollowerFn posts the teardown AT THE FOLLOWER. Every other
+	// teardown in the codebase posts it at the master, which is a no-op once
+	// the master's firmware has forgotten the zone, and that is precisely the
+	// state a stale membership survives in.
+	leaveZoneAtFollowerFn = func(ctx context.Context, followerIP string, master, follower boxapi.ZoneMember) error {
+		return boxapi.New(followerIP).RemoveZoneSlave(ctx, master, []boxapi.ZoneMember{follower})
+	}
 )
+
+// staleMembershipBudget is the per-follower time for the read and the write.
+// Short on purpose: this runs over speakers that may be asleep or, between two
+// rhino ST10s, unreachable from here at all, and none of them is worth waiting
+// on. A follower missed now is looked at again on the next pass.
+const staleMembershipBudget = 4 * time.Second
 
 // scheduleStragglerSweepAfterFirmwareDissolve starts the delayed sweep for the
 // stored group z (already known to be a native multiroom document). The
@@ -59,15 +73,23 @@ func (s *Server) scheduleStragglerSweepAfterFirmwareDissolve(z zones.Zone) {
 	cancel()
 	go func() {
 		defer s.dissolveSweepBusy.Store(false)
-		s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(z), masterLocation, z.Slaves)
+		s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(z), z.Master, masterLocation, z.Slaves)
 	}()
 }
 
 // runStragglerSweepAfterFirmwareDissolve is the pass loop. It returns after the
 // first pass that actually swept, or once the group is back or gone for good.
-func (s *Server) runStragglerSweepAfterFirmwareDissolve(fingerprint, masterLocation string, slaves []zones.Member) {
+func (s *Server) runStragglerSweepAfterFirmwareDissolve(fingerprint, masterID, masterLocation string, slaves []zones.Member) {
 	if masterLocation == "" {
-		s.logger.Info("zone: firmware dissolve, the master plays nothing to compare against, followers are left alone")
+		// No programme to compare a follower's audio against, so the playback
+		// sweep below cannot run: silencing a speaker that legitimately plays
+		// something of its own is the worse mistake of the two.
+		//
+		// The MEMBERSHIP still has an answer, and leaving it alone is what
+		// produced the ghost: a follower whose firmware still names this master
+		// goes on powering off with it and drifting behind it, while no app
+		// shows it as grouped. Clearing that touches no audio.
+		s.clearStaleZoneMembership(masterID, slaves)
 		return
 	}
 	members := make([]boxapi.ZoneMember, 0, len(slaves))
@@ -120,4 +142,61 @@ func (s *Server) sweepIfFirmwareZoneStillGone(masterLocation string, members []b
 		"pass", pass, "followers", len(members))
 	s.stopStragglers(ctx, masterLocation, "", members)
 	return true
+}
+
+// clearStaleZoneMembership tells each follower that still names this master to
+// leave, once the master's own firmware has reported the zone gone.
+//
+// Read before write, and only on positive evidence. A follower that does not
+// answer is left alone, because unreachable is not the same as wrong, and one
+// that names a different master has joined somebody else's group since and is
+// none of our business. Nothing in here calls playback: the worst case for a
+// wrong guess is a membership the firmware had already dropped being dropped a
+// second time.
+func (s *Server) clearStaleZoneMembership(masterID string, slaves []zones.Member) {
+	masterID = strings.TrimSpace(masterID)
+	if masterID == "" {
+		return
+	}
+	master := boxapi.ZoneMember{DeviceID: masterID, IP: s.boxHost}
+	cleared, checked := 0, 0
+	for _, m := range slaves {
+		ip := strings.TrimSpace(m.IP)
+		if ip == "" || ip == s.boxHost {
+			continue
+		}
+		checked++
+		ctx, cancel := context.WithTimeout(context.Background(), staleMembershipBudget)
+		fz, err := firmwareZoneFn(ctx, ip)
+		if err != nil {
+			s.logger.Info("zone: a follower did not answer the stale-membership check, left as it is",
+				"follower", ip, "err", err)
+			cancel()
+			continue
+		}
+		switch {
+		case strings.TrimSpace(fz.Master) == "":
+			cancel()
+			continue // it already knows the group is gone
+		case !strings.EqualFold(strings.TrimSpace(fz.Master), masterID):
+			s.logger.Info("zone: a follower belongs to another group now, left alone",
+				"follower", ip, "itsMaster", fz.Master)
+			cancel()
+			continue
+		}
+		self := boxapi.ZoneMember{DeviceID: strings.TrimSpace(m.DeviceID), IP: ip, Role: m.Role}
+		if err := leaveZoneAtFollowerFn(ctx, ip, master, self); err != nil {
+			s.logger.Info("zone: could not clear a follower's stale group membership",
+				"follower", ip, "err", err)
+			cancel()
+			continue
+		}
+		cleared++
+		s.logger.Info("zone: cleared a follower's stale group membership, the master's firmware had already dropped the group",
+			"follower", ip)
+		cancel()
+	}
+	if checked > 0 {
+		s.logger.Info("zone: stale-membership pass done", "checked", checked, "cleared", cleared)
+	}
 }
