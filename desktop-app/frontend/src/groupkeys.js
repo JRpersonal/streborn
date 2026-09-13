@@ -47,6 +47,30 @@ function sameName(a, b) {
 
 // templateFromBoxes builds a template from the master box and the member
 // boxes the user composed on the tab. label(box) gives the display name.
+// gkMembersForSave decides which speakers "Save the current group" means.
+//
+// Three sources, and the order is the whole point:
+//
+//   picked   what the user ticked in the picker. An explicit instruction, so
+//            it wins over anything the speakers are doing.
+//   live     who is in the group playing right now. This is what the button
+//            says on the tin, and it was the one missing: with nothing ticked
+//            the composer fell straight through to the stored group, found
+//            none, and returned null, so the save was refused and nothing was
+//            written. A field bundle of eleven speakers had an empty group-key
+//            store on every one of them after exactly that (2026-09-13).
+//   stored   the saved permanent group, for a master whose group is at rest
+//            and therefore not live anywhere.
+//
+// Returns the members and which source they came from, so the caller can take
+// the permanent flag from the same place rather than from a stale checkbox.
+export function gkMembersForSave({ picked, live, stored }) {
+  if (picked && picked.length) return { members: picked, from: 'picked' };
+  if (live && live.length) return { members: live, from: 'live' };
+  if (stored && stored.length) return { members: stored, from: 'stored' };
+  return { members: [], from: '' };
+}
+
 export function templateFromBoxes({ name, master, members, permanent, label }) {
   const lbl = label || ((b) => (b && (b.friendlyName || b.name || b.host)) || '');
   const asMember = (b) => ({ deviceID: String(b.deviceID || ''), ip: String(b.host || ''), name: String(lbl(b) || '') });

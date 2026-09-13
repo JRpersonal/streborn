@@ -12,7 +12,7 @@ import { FormZone, DissolveZone, ForgetPermanentGroup, DissolveStereoPair, PushS
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
-import { normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
+import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts } from '../groups.js';
@@ -838,13 +838,29 @@ function gkComposedTemplate(strBoxes, name) {
   const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
   if (!master) return null;
   const sel = state.zoneSlaves || {};
-  const members = strBoxes.filter(b => b.deviceID !== master.deviceID && sel[b.deviceID]);
-  if (members.length) {
-    return templateFromBoxes({ name, master, members, permanent: !!state.zonePermanent, label: zoneLabel });
-  }
+  const picked = strBoxes.filter(b => b.deviceID !== master.deviceID && sel[b.deviceID]);
+  // Who is in the group right now. Missing until 2026-09-13, which is why a
+  // user looking at a running group and pressing this button got a validation
+  // warning and an empty store. See gkMembersForSave.
+  const live = groupMembersOf(master, state.zoneLive, strBoxes)
+    .map(m => m.box)
+    .filter(b => b && b.deviceID !== master.deviceID);
   const stored = storedPermanentGroupsOf(state.zoneLive, strBoxes)
     .find(g => g.masterBox && g.masterBox.deviceID === master.deviceID);
-  return stored ? templateFromStored(stored, name, zoneLabel) : null;
+
+  const chosen = gkMembersForSave({
+    picked,
+    live,
+    stored: stored ? (stored.members || []).map(m => m.box).filter(Boolean) : [],
+  });
+  if (!chosen.members.length) return null;
+  if (chosen.from === 'stored' && stored) {
+    return templateFromStored(stored, name, zoneLabel);
+  }
+  // A live group that is also the saved permanent one keeps that badge; the
+  // checkbox only speaks for a group the user is composing by hand.
+  const permanent = chosen.from === 'picked' ? !!state.zonePermanent : !!stored;
+  return templateFromBoxes({ name, master, members: chosen.members, permanent, label: zoneLabel });
 }
 
 function renderGroupKeysSection(strBoxes) {
