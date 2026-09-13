@@ -1072,6 +1072,10 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// REST API
 	mux.HandleFunc("/api/presets", s.handlePresets)
+	// Registered before the slot prefix for readability only: the exact pattern
+	// wins over "/api/presets/" whatever the order, so "move" is never parsed as
+	// a slot number.
+	mux.HandleFunc("/api/presets/move", s.handlePresetMove)
 	mux.HandleFunc("/api/presets/", s.handlePresetSlot)
 	mux.HandleFunc("/api/play", s.handlePlay)
 	mux.HandleFunc("/api/play/", s.handlePlaySlot)

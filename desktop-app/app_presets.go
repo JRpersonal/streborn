@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -338,6 +339,82 @@ func (a *App) transferSpotifyCredential(srcHost string, srcPort int, dstHost str
 		return
 	}
 	a.logger.Info("copy presets: Spotify login transferred with the presets", "src", srcHost, "dst", dstHost)
+}
+
+// MovePreset takes the station on key `from` over to key `to`, replacing
+// whatever `to` held. It is what the app offers when a save is refused because
+// the station is already on another key: the refusal itself stays (silently
+// deleting the other key is what wiped users' presets, #836), and this is the
+// user saying "then move it" (discussions #709 and #925).
+//
+// The speaker does it in one store write. An agent too old to know the move
+// endpoint gets the two-step fallback below, which is the only place the app
+// itself has to be careful about not losing the preset.
+func (a *App) MovePreset(host string, port int, from, to int) error {
+	body, err := json.Marshal(map[string]int{"from": from, "to": to})
+	if err != nil {
+		return err
+	}
+	resp, err := a.boxDo(host, port, http.MethodPost, presetAPIPath+"/move", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	older := resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed
+	if !older && resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		return readHTTPError(resp)
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
+	if !older {
+		a.logger.Info("preset move: done on the speaker", "box", host, "from", from, "to", to)
+		return nil
+	}
+	// The desktop app updates independently of the on-box agent, so a user can
+	// have this button in front of a speaker that has never heard of the move
+	// endpoint. Do it from here in that case, in the order that cannot lose the
+	// preset: read it first, hold it, clear the old key, write the new one, and
+	// put it back on the old key if the write is refused.
+	a.logger.Info("preset move: this speaker's agent has no move endpoint, moving it from here",
+		"box", host, "from", from, "to", to)
+	ps, err := a.GetPresets(host, port)
+	if err != nil {
+		return err
+	}
+	var moving *Preset
+	for i := range ps {
+		if ps[i].Slot == from {
+			moving = &ps[i]
+			break
+		}
+	}
+	if moving == nil {
+		return fmt.Errorf("key %d holds no preset to move", from)
+	}
+	if err := a.DeletePreset(host, port, from); err != nil {
+		return err
+	}
+	moved := *moving
+	moved.Slot = to
+	if err := a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, to), moved); err != nil {
+		restore := *moving
+		restore.Slot = from
+		if rerr := a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, from), restore); rerr != nil {
+			a.logger.Error("preset move: the new key was refused AND the station could not be put back",
+				"box", host, "from", from, "to", to, "err", err, "restoreErr", rerr)
+			return fmt.Errorf("the station could not be moved to key %d and could not be put back on key %d: %w", to, from, errors.Join(err, rerr))
+		}
+		a.logger.Warn("preset move: the new key was refused, the station is back on its old key",
+			"box", host, "from", from, "to", to, "err", err)
+		return err
+	}
+	// The hardware keys are written by the agent on each save, but the old key
+	// was deleted through the app, so re-push the set to be sure buttons 1-6
+	// match the store.
+	if _, err := a.SyncBoxPresets(host, port); err != nil {
+		a.logger.Warn("preset move: hardware key sync failed", "box", host, "err", err)
+	}
+	return nil
 }
 
 // DeletePreset does DELETE /api/presets/<slot>.
