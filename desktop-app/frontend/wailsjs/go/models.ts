@@ -274,6 +274,7 @@ export namespace main {
 	    iconURL: string;
 	    address: string;
 	    manual: boolean;
+	    notAnswering: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryServer(source);
@@ -288,6 +289,7 @@ export namespace main {
 	        this.iconURL = source["iconURL"];
 	        this.address = source["address"];
 	        this.manual = source["manual"];
+	        this.notAnswering = source["notAnswering"];
 	    }
 	}
 	export class LogExportRequest {
