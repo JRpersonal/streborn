@@ -414,8 +414,8 @@ export function SaveWebhookConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveWebhookConfig'](arg1, arg2, arg3);
 }
 
-export function SelectBoxSource(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3);
+export function SelectBoxSource(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3, arg4);
 }
 
 export function SendAnnounce(arg1, arg2, arg3, arg4, arg5) {

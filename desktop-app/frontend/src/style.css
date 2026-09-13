@@ -1119,7 +1119,11 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 
 /* ---------- Controls ---------- */
 .controls { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
-.source-buttons { display: flex; gap: 4px; margin-left: 8px; }
+/* A soundbar brings five or six inputs into this row (TV, CBL-Sat, BD-DVD,
+   Game, Aux), where a one-piece speaker brought two, so it wraps now instead of
+   pushing the volume slider off the edge. */
+.source-buttons { display: flex; gap: 4px; margin-left: 8px; flex-wrap: wrap; }
+.source-inputs { display: flex; gap: 4px; flex-wrap: wrap; }
 .queue-controls { display: flex; gap: 4px; align-items: center; }
 .queue-controls.hidden { display: none; }
 .queue-pos { font-size: 12px; color: var(--c-muted); margin-left: 4px; white-space: nowrap; }
