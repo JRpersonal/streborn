@@ -216,8 +216,8 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	boseSetup, boseNet, boseConfig := s.boseFirmwareDebug()
 
 	state := map[string]any{
-		"agent_log_tail": readTail("/tmp/streborn-agent.log"),
-		"agent_log_nand": readTailN("/mnt/nv/streborn/agent.log", 32*1024),
+		"agent_log_tail": redactNetworkNamesInLog(readTail("/tmp/streborn-agent.log")),
+		"agent_log_nand": redactNetworkNamesInLog(readTailN("/mnt/nv/streborn/agent.log", 32*1024)),
 		// The CURRENT boot's agent log from its very first line, not a blind
 		// tail. agent_log_nand above is the last 32 KB of a file that spans
 		// several boots, and on a chatty box that window no longer reaches back
@@ -225,15 +225,15 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// lines were already gone at export time, so the one question a
 		// post-install investigation asks ("what did the agent do in its first
 		// two minutes") could not be answered at all.
-		"agent_log_boot": readFromLastBootMarker("/mnt/nv/streborn/agent.log", 48*1024),
-		"previous_log":   readTail("/mnt/nv/streborn/previous.log"),
-		"setup_log":      readTail("/mnt/nv/streborn/setup.log"),
+		"agent_log_boot": redactNetworkNamesInLog(readFromLastBootMarker("/mnt/nv/streborn/agent.log", 48*1024)),
+		"previous_log":   redactNetworkNamesInLog(readTail("/mnt/nv/streborn/previous.log")),
+		"setup_log":      redactNetworkNamesInLog(readTail("/mnt/nv/streborn/setup.log")),
 		// The PREVIOUS boot's run.sh log. setup_log is the current boot only,
 		// and after an install the boot that actually failed is already the
 		// previous one by the time anybody exports a bundle. The file exists on
 		// every box (9376 bytes in the #873 nv_listing) and was never read.
-		"setup_log_prev": readTail("/mnt/nv/streborn/setup.log.prev"),
-		"boot_log":       readTail("/mnt/nv/streborn/boot.log"),
+		"setup_log_prev": redactNetworkNamesInLog(readTail("/mnt/nv/streborn/setup.log.prev")),
+		"boot_log":       redactNetworkNamesInLog(readTail("/mnt/nv/streborn/boot.log")),
 		// wpaConfPath, not a second literal. This read pointed at
 		// /mnt/nv/wpa_supplicant.conf while the code that WRITES the file uses
 		// /etc/wpa_supplicant.conf, so every bundle ever collected carried
