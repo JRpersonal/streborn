@@ -235,6 +235,10 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, p)
+	case http.MethodPatch:
+		// Rename only (presets_rename.go). Its own verb on purpose: a rename must
+		// not be judged by the station gates below.
+		s.handlePresetRename(w, r, slot)
 	case http.MethodPut:
 		var p presets.Preset
 		// A queue preset carries the whole track list of a DLNA folder or an
