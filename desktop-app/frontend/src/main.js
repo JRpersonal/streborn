@@ -357,6 +357,9 @@ import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNo
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
+// Which of a speaker's sources are line inputs a person can switch to, and what
+// each button is called (sourceinputs.js, vitest-covered).
+import { inputButtons, isActiveInput, sourceRowKey } from './sourceinputs.js';
 // Turning a refused preset transfer into a readable sentence is a pure
 // decision (copyreport.js, vitest-covered).
 import { presetCopyConflict } from './copyreport.js';
@@ -431,7 +434,7 @@ initPodcastsView();
 // purge, long after the module has finished evaluating.
 onSpeakerPurge(({ host }) => {
   if (host) {
-    sourceVisibilityCache.delete(host);
+    sourceListCache.delete(host);
     groupOpPending.delete(host);
     pendingGroupEdits.delete(host);
     worldMapKindSeen.delete(host);
@@ -1479,9 +1482,8 @@ $('view-box').innerHTML = `
         <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" aria-label="${escapeAttr(t('controls.repeat'))}" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
         <span class="queue-pos" id="queuePos"></span>
       </div>
-      <div class="source-buttons">
-        <button class="btn btn-source" data-source="AUX" title="${escapeAttr(t('controls.auxTitle'))}">AUX</button>
-        <button class="btn btn-source btn-source-icon" data-source="BLUETOOTH" aria-label="${escapeAttr(t('controls.bluetoothTitle'))}" title="${escapeAttr(t('controls.bluetoothTitle'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg></button>
+      <div class="source-buttons" id="sourceButtons">
+        <span class="source-inputs" id="sourceInputs"></span>
         <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
@@ -1621,37 +1623,46 @@ $('queueRepeatBtn').onclick = () => {
   queueAction((h, p) => QueueRepeat(h, p, nextMode));
 };
 
-// Source Buttons (AUX / Bluetooth / Standby) im Musik-Hoeren Tab —
-// rufen das neue /api/box/source Endpoint via SelectBoxSource Binding.
-document.querySelectorAll('.btn-source').forEach(btn => {
-  btn.onclick = async () => {
-    const box = state.currentBox;
-    if (!box) { showToast(t('speaker.noneSelected')); return; }
-    // A speaker that calls its analogue input LOCAL must be switched with
-    // LOCAL: the button keeps its familiar AUX label, but the name that goes
-    // to the speaker is the one the speaker itself reports (see #491).
-    const src = btn.dataset.sourceActual || btn.dataset.source;
-    btn.disabled = true;
-    try {
-      await SelectBoxSource(box.host, box.port, src);
-      showToast(t('toast.source', { src }));
-      setTimeout(refreshStatus, 800);
-    } catch (e) {
-      // The button is normally hidden on hardware that lacks the
-      // source, but if the box reports it unavailable anyway (1005
-      // UNKNOWN_SOURCE_ERROR, relayed by the agent as source_unavailable)
-      // show a clear message instead of the raw box error.
-      if (String(e).includes('source_unavailable')) {
-        showToast(t('toast.sourceUnavailable', { src }));
-        btn.classList.add('hidden');
-      } else {
-        showError(e);
-      }
-    } finally {
-      btn.disabled = false;
-    }
-  };
+// The input row and the standby button in the music tab, both routed through
+// the agent's /api/box/source endpoint via the SelectBoxSource binding.
+//
+// Delegated from the row because the input buttons are built per speaker now: a
+// soundbar's TV and HDMI sockets only exist once that speaker has reported them,
+// so there is no fixed set of buttons left to bind at startup.
+$('sourceButtons').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.btn-source');
+  if (btn) selectSource(btn);
 });
+
+async function selectSource(btn) {
+  const box = state.currentBox;
+  if (!box) { showToast(t('speaker.noneSelected')); return; }
+  // The name that goes to the speaker is the name the speaker itself reported,
+  // which is why a CineMate's analogue input is switched with LOCAL and an
+  // SA-5's second line input needs the account alongside it: without the
+  // account its three AUX sockets are indistinguishable (#491, #274).
+  const src = btn.dataset.source;
+  const account = btn.dataset.sourceAccount || '';
+  const shown = btn.dataset.sourceLabel || src;
+  btn.disabled = true;
+  try {
+    await SelectBoxSource(box.host, box.port, src, account);
+    showToast(t('toast.source', { src: shown }));
+    setTimeout(refreshStatus, 800);
+  } catch (e) {
+    // A button is only drawn for an input the speaker listed, but if the box
+    // refuses it anyway (1005 UNKNOWN_SOURCE_ERROR, relayed by the agent as
+    // source_unavailable) show a clear message instead of the raw box error.
+    if (String(e).includes('source_unavailable')) {
+      showToast(t('toast.sourceUnavailable', { src: shown }));
+      btn.classList.add('hidden');
+    } else {
+      showError(e);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 // Volume slider in the music tab. Uses SetBoxVolume, debounced so a
 // drag does not fire a hundred API calls.
@@ -2049,7 +2060,7 @@ function applyBoxList(list) {
         refreshStatus();
         checkBoxUpdate();
       }
-      updateSourceButtonVisibility();
+      refreshSourceButtons();
     } else {
       state.currentBox = null;
       state.presets = [];
@@ -2969,74 +2980,87 @@ function selectBox(box) {
   // Fetch the stick's region and use it as a default for radio search.
   // Do not overwrite a country the user has already picked manually.
   loadStickRegion();
-  // Some models do not have Bluetooth hardware. Hide the source
-  // button for those instead of letting the user click it and hit
-  // the box's 1005 UNKNOWN_SOURCE_ERROR.
-  updateSourceButtonVisibility();
+  // Draw the input buttons this speaker actually has. A soundbar's TV and HDMI
+  // sockets only appear once the speaker has listed them.
+  refreshSourceButtons();
 }
 
-// updateSourceButtonVisibility hides source buttons for hardware that
-// the currently-selected box does not have. Run after every selectBox()
-// AND after every discovery refresh so the visibility tracks model
-// detection that lands later (Bose stock /info enrichment).
+// refreshSourceButtons draws one button per input the selected speaker reports,
+// and is run after every selectBox() AND after every discovery refresh so the
+// row tracks model detection that lands later (Bose stock /info enrichment).
 //
-// Two layers: a model-name heuristic gives an immediate answer (the
-// SoundTouch Portable has no Bluetooth, the Wave pedestal exposes no
-// selectable AUX), then the box's actual /sources list refines it. The
-// list is authoritative and model-agnostic, so it also catches ST20
-// hardware variants that ship without Bluetooth (see issue #102, where
-// the box answered a BT /select with 1005 UNKNOWN_SOURCE_ERROR) and the
-// Wave, whose own Aux input is not reachable through the SoundTouch
-// pedestal (#417). Visibility is recomputed both ways on every box
-// switch, so a button hidden after a 1005 rejection on one box comes
-// back when a box that has the source is selected (#417: it previously
-// stayed hidden for every box until an app restart). STANDBY exists on
-// every model.
-// sourceVisibilityCache remembers, per speaker, what its own source list said
-// about Bluetooth. The heuristic below runs first on every refresh and showed
-// the button for a speaker whose list had already hidden it, so the button
-// blinked in and out every minute (Jens, 2026-09-06). A known verdict wins
-// over the heuristic from the start.
-const sourceVisibilityCache = new Map();
-async function updateSourceButtonVisibility() {
-  const btBtn = document.querySelector('.btn-source[data-source="BLUETOOTH"]');
-  const auxBtn = document.querySelector('.btn-source[data-source="AUX"]');
-  if ((!btBtn && !auxBtn) || !state.currentBox) return;
-  const model = (state.currentBox.model) || '';
-  // Immediate heuristic so the buttons are correct before the async
-  // source list arrives, unless this speaker's list has already answered.
-  const known = sourceVisibilityCache.get(state.currentBox.host);
-  if (btBtn) btBtn.classList.toggle('hidden', known ? !known.bt : /portable/i.test(model));
-  if (auxBtn) auxBtn.classList.toggle('hidden', /wave/i.test(model));
-  // Until the speaker's own list arrives, assume the usual name.
-  if (auxBtn) auxBtn.dataset.sourceActual = 'AUX';
+// Two layers. The speaker's own source list is the answer, and until it arrives
+// the row holds the classic AUX plus Bluetooth pair, minus what the model name
+// rules out. The list then replaces them, which is what brings a soundbar's TV,
+// CBL-Sat, BD-DVD and Game sockets in (#385, #491, #577), splits an SA-5's three
+// line inputs (#274), and still catches the ST20 variants that ship without
+// Bluetooth and used to answer a BT /select with 1005 UNKNOWN_SOURCE_ERROR
+// (#102). The row is rebuilt on every box switch, so a button hidden after a
+// 1005 rejection on one speaker comes back on a speaker that has the input
+// (#417: it stayed hidden for every box until an app restart).
+//
+// sourceListCache remembers each speaker's list. The startup pair is drawn
+// first on every refresh, and for a speaker whose list had already dropped a
+// button that made the button blink in and out every minute (Jens,
+// 2026-09-06), so a list already read wins from the first frame.
+const sourceListCache = new Map();
+async function refreshSourceButtons() {
+  const row = $('sourceInputs');
+  if (!row || !state.currentBox) return;
   const box = state.currentBox;
+  renderSourceButtons(inputButtons(sourceListCache.get(box.host), box.model || ''), box.host);
   try {
     const settings = await BoxSettings(box.host, box.port);
     // Guard against a box switch while the request was in flight.
     if (state.currentBox !== box) return;
     const sources = (settings && settings.sources) || [];
-    // Only trust a non-empty list; an empty one means the box did not
-    // answer /sources and we keep the heuristic result.
+    // Only trust a non-empty list. An empty one means the speaker did not
+    // answer /sources, and the startup pair is the better guess than no inputs
+    // at all on a box that has them.
     if (Array.isArray(sources) && sources.length) {
-      const has = (name) => sources.some(s => (s.source || '').toUpperCase() === name);
-      sourceVisibilityCache.set(box.host, { bt: has('BLUETOOTH') });
-      if (btBtn) btBtn.classList.toggle('hidden', !has('BLUETOOTH'));
-      // The analogue input is not called the same thing on every model. A
-      // Cinemate reports it as LOCAL, and because STR only ever looked for
-      // AUX the button was hidden on a speaker that has the input and was
-      // even playing through it, while the same button showed up fine on the
-      // owner's ST10 and ST20 (#491). Accept either name and remember which
-      // one this speaker uses, so switching sends back what it understands.
-      if (auxBtn) {
-        const localName = has('AUX') ? 'AUX' : (has('LOCAL') ? 'LOCAL' : '');
-        auxBtn.classList.toggle('hidden', !localName);
-        auxBtn.dataset.sourceActual = localName || 'AUX';
-      }
+      sourceListCache.set(box.host, sources);
+      renderSourceButtons(inputButtons(sources, box.model || ''), box.host);
     }
   } catch {
-    // Keep the heuristic result on any error.
+    // Keep what is on screen on any error.
   }
+}
+
+// The Bluetooth glyph, so that input keeps the icon it has always had in this
+// row while every other input is drawn from the name the speaker gives it.
+const BLUETOOTH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg>';
+
+let sourceRowDrawn = '';
+
+function renderSourceButtons(buttons, host) {
+  const row = $('sourceInputs');
+  if (!row) return;
+  const key = sourceRowKey(host, buttons);
+  if (key === sourceRowDrawn) {
+    highlightActiveSource();
+    return;
+  }
+  sourceRowDrawn = key;
+  row.innerHTML = buttons.map((b) => {
+    const title = escapeAttr(t('controls.inputTitle', { input: b.label }));
+    const data = `data-source="${escapeAttr(b.source)}" data-source-account="${escapeAttr(b.sourceAccount)}" data-source-label="${escapeAttr(b.label)}"`;
+    if (b.bluetooth) {
+      return `<button class="btn btn-source btn-source-icon" ${data} aria-label="${escapeAttr(b.label)}" title="${title}">${BLUETOOTH_ICON}</button>`;
+    }
+    return `<button class="btn btn-source" ${data} title="${title}">${escapeHtml(b.label)}</button>`;
+  }).join('');
+  highlightActiveSource();
+}
+
+// highlightActiveSource marks the input the speaker is playing from. Called
+// after every status poll and again after a rebuild of the row, because the
+// buttons are replaced now and would otherwise come back unlit while the
+// speaker is still on that input.
+function highlightActiveSource() {
+  document.querySelectorAll('.btn-source').forEach((b) => {
+    const button = { source: b.dataset.source, sourceAccount: b.dataset.sourceAccount };
+    b.classList.toggle('active', isActiveInput(button, state.nowSource, state.nowSourceAccount));
+  });
 }
 
 // boxFetch lives in api.js next to boxURL, imported above.
@@ -7016,6 +7040,7 @@ function resetNowPlaying() {
   state.nowName = '';
   state.nowTitle = '';
   state.nowSource = '';
+  state.nowSourceAccount = '';
   state.nowPlayState = '';
   state.nowIcon = '';
   state.nowBitrate = 0;
@@ -7265,6 +7290,10 @@ async function refreshStatus() {
     const name = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
     state.nowSource = src;
+    // A speaker with more than one socket of the same kind (an SA-5 reports
+    // three AUX inputs) says which one is playing only in the account, so the
+    // input row needs it to light the right button (#274).
+    state.nowSourceAccount = (xml.match(/nowPlaying[^>]*sourceAccount="([^"]*)"/) || [])[1] || '';
 
     // Native Bose Spotify receiver detection: source=SPOTIFY means the phone
     // connected to the speaker's built-in Spotify Connect, not STR's go-librespot
@@ -7465,14 +7494,7 @@ async function refreshStatus() {
     // status poll. It is the only place the running title is shown.
     renderNowPlayingBar();
 
-    // Source buttons: highlight the active source in green.
-    document.querySelectorAll('.btn-source').forEach(b => {
-      const s = b.dataset.source;
-      const active = ((s === 'AUX' || s === 'LOCAL') && (src === 'AUX' || src === 'LOCAL')) ||
-                     (s === 'BLUETOOTH' && src === 'BLUETOOTH') ||
-                     (s === 'STANDBY' && src === 'STANDBY');
-      b.classList.toggle('active', active);
-    });
+    highlightActiveSource();
   } catch {
     // Transient status-fetch failure (a single poll timing out while the
     // box is briefly busy, e.g. BoseApp's :8090 under load). Keep the last
