@@ -185,6 +185,8 @@ export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 
 export function RemoveConflictingMod(arg1:string,arg2:number):Promise<string>;
 
+export function RemoveGroupMember(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
+
 export function RemoveManualMediaServer(arg1:string):Promise<void>;
 
 export function RenamePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;

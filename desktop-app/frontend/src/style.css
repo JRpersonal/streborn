@@ -2927,3 +2927,20 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .donate-modal-btns .donate-paypal-wordmark .pay { color: #003087; }
 .donate-modal-btns .donate-paypal-wordmark .pal { color: #009cde; }
 .donate-modal-btns .donate-kofi { background: #ff5e5b; color: #fff; }
+
+/* The x on a single member chip of a saved group. Smaller and quieter than the
+   frame's own x, because it does less: it takes one speaker out rather than
+   deleting the group. */
+.zone-frame-chip { position: relative; }
+.zone-chip-x {
+  margin-left: 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: .45;
+  font-size: 1.05em;
+  line-height: 1;
+  padding: 0 1px;
+  cursor: pointer;
+}
+.zone-chip-x:hover, .zone-chip-x:focus-visible { opacity: 1; }

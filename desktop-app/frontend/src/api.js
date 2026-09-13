@@ -183,6 +183,14 @@ function callOptionalBinding(name, args) {
   return fn(...args);
 }
 
+// RemoveGroupMember takes ONE speaker out of a saved permanent group, leaving
+// the rest of the group standing. An optional binding, per the note above: it
+// is brand new, so naming it in the re-export list at the top would break the
+// frontend build against an older generated App module.
+export function RemoveGroupMember(masterHost, masterPort, memberIP) {
+  return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
+}
+
 // RadioSearchDetailed is RadioSearch plus a relaxed flag: same opts object,
 // returns {stations, relaxed} where relaxed=true means the backend had to
 // drop the quality filters to find anything.

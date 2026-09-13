@@ -362,6 +362,10 @@ export function RemoveConflictingMod(arg1, arg2) {
   return window['go']['main']['App']['RemoveConflictingMod'](arg1, arg2);
 }
 
+export function RemoveGroupMember(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoveGroupMember'](arg1, arg2, arg3);
+}
+
 export function RemoveManualMediaServer(arg1) {
   return window['go']['main']['App']['RemoveManualMediaServer'](arg1);
 }
