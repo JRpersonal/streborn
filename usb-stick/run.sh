@@ -1126,17 +1126,53 @@ SHIM_WRAPPER="$PERSIST/lib/SU-wrapper.sh"
 # Bose-side state at this moment — Shepherd config, mount options,
 # SU binary attributes — so a scm/spotty bundle can tell us in one
 # look what is different vs the working taigan path.
-shim_stage_wrapper() {
-    setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
-    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
+# shim_wanted_here: the chipset-whitelist hijack is opt-in.
+#
+# It used to be opt-out. Both functions below named taigan, spotty, rhino and
+# mojo, skipped those, and let every other box fall through into the bind-mount
+# that replaces /opt/Bose/SoftwareUpdate and kills the running one. What that
+# does where it is not wanted is on the record: a taigan boots with its light
+# bar stuck and no setup AP, a spotty's BoseApp never answers within 180s (both
+# live 2026-05-31), and on mojo the .so cannot even load (live ST30 2026-06-10,
+# #123). The REDIRECT comment further down puts it plainly: the shim is
+# boot-hang-prone on uncatalogued boxes.
+#
+# A box whose /proc/variant will not read, or whose codename nobody here has
+# catalogued, is the box we know least about, and the deny-list handed exactly
+# that box the most invasive path in this file. Every chassis in the catalogue
+# was already skipping, so the hijack only ever ran where it had never been
+# tried.
+#
+# Nothing loses reachability by this. A chipset-blocked chassis is reached
+# through the iptables PREROUTING REDIRECT below, which leaves every Bose
+# process alone, and REDIRECT_ELIGIBLE is deliberately wider than this gate
+# ever was.
+#
+# STR_FORCE_SHIM_TAIGAN=1 turns it on for a hardware session. STR_SHIM_VARIANTS
+# is a space-separated list of variant or hostname fragments it may run on, for
+# the day a chassis turns up that genuinely needs it.
+shim_wanted_here() {
+    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" = "1" ]; then
+        setup_log "shim gate: ON — forced by STR_FORCE_SHIM_TAIGAN (variant='${VARIANT:-?}' host='${HOSTID:-?}')"
+        return 0
+    fi
+    for shim_v in ${STR_SHIM_VARIANTS:-}; do
         case "${VARIANT}|${HOSTID}" in
-            *taigan*|*spotty*)
-                setup_log "shim stage: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}). The LD_PRELOAD late-swap kills SoftwareUpdate, which on BCO boxes never actually forwards :8888 (spotty :17008 self-probe NOT STR) and races shepherdd's respawn, wedging scm_finalize / the Bose mesh init (live 2026-05-31: taigan boot bar stuck with NO setup-AP; spotty BoseApp never answers within 180s, M0 times out). External :8888 on BCO is served by the iptables PREROUTING REDIRECT path instead, which never touches SoftwareUpdate. STR_FORCE_SHIM_TAIGAN=1 overrides."
-                return 0 ;;
-            *rhino*|*mojo*)
-                setup_log "shim stage: SKIP — sm2 chassis (${VARIANT:-?}/${HOSTID:-?}). sm2 boxes (ST10 rhino, ST30 mojo) are not chipset-whitelisted; STR's :8888 is opened directly by the iptables INPUT ACCEPT path (iptables_install_streborn_fw), so the LD_PRELOAD shim is unnecessary here. Running it only kills/relaunches Bose SoftwareUpdate (racing shepherdd) for no gain, and on mojo the .so cannot even load (live ST30 2026-06-10, #123: box healthy, agent up, shim self-probe NOT STR). STR_FORCE_SHIM_TAIGAN=1 overrides."
+            *"$shim_v"*)
+                setup_log "shim gate: ON — STR_SHIM_VARIANTS names '$shim_v' (variant='${VARIANT:-?}' host='${HOSTID:-?}')"
                 return 0 ;;
         esac
+    done
+    return 1
+}
+
+SHIM_OFF_REASON="variant='${VARIANT:-?}' host='${HOSTID:-?}', and the SoftwareUpdate hijack is opt-in, so nothing asked for it. Every catalogued chassis skips it: it wedges the Bose mesh init on taigan and spotty, and the .so does not load on mojo. A chipset-blocked chassis gets external :8888 from the iptables PREROUTING REDIRECT instead, which leaves every Bose process alone. STR_FORCE_SHIM_TAIGAN=1 or STR_SHIM_VARIANTS turns it on."
+
+shim_stage_wrapper() {
+    setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
+    if ! shim_wanted_here; then
+        setup_log "shim stage: SKIP — $SHIM_OFF_REASON"
+        return 0
     fi
     if [ -e "$SHIM_DISABLE" ]; then
         setup_log "shim stage: BAIL — disabled via $SHIM_DISABLE marker"
@@ -1229,15 +1265,9 @@ shim_stage_wrapper
 # have to guess about ordering.
 shim_late_swap() {
     setup_log "shim late-swap: enter (will wait up to 240s for /info to be stable for 30s)"
-    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
-        case "${VARIANT}|${HOSTID}" in
-            *taigan*|*spotty*)
-                setup_log "shim late-swap: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}); SoftwareUpdate left untouched so the Bose mesh init cannot wedge. External :8888 via the REDIRECT path. STR_FORCE_SHIM_TAIGAN=1 overrides."
-                return 0 ;;
-            *rhino*|*mojo*)
-                setup_log "shim late-swap: SKIP — sm2 chassis (${VARIANT:-?}/${HOSTID:-?}); :8888 is opened by the iptables INPUT ACCEPT path, so SoftwareUpdate is left untouched (no shepherdd race, no needless kill/relaunch). STR_FORCE_SHIM_TAIGAN=1 overrides."
-                return 0 ;;
-        esac
+    if ! shim_wanted_here; then
+        setup_log "shim late-swap: SKIP — $SHIM_OFF_REASON"
+        return 0
     fi
     if [ -e "$SHIM_DISABLE" ]; then
         setup_log "shim late-swap: BAIL — $SHIM_DISABLE marker present"
