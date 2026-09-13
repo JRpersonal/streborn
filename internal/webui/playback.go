@@ -509,7 +509,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// source back to the form the native work exists to avoid. Falls through to
 	// the UPnP push on any refusal, so a speaker that cannot do this keeps
 	// exactly today's behaviour. See nativeselect.go.
-	if loc := s.nativePresetLocation(p.Name, playURL, p.Art); loc != "" {
+	if loc := s.nativePresetLocation(p.Name, s.nativeStationURL(slot, playURL, p.StreamURL), p.Art); loc != "" {
 		if err := s.selectNativeStation(playCtx, loc, p.Name); err == nil {
 			s.logger.Info("preset slot recall (app): started natively, the speaker fetches the stream itself",
 				"slot", slot, "name", p.Name)

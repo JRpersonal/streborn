@@ -13,6 +13,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
 
@@ -107,6 +108,19 @@ func disableNativePresets(reason string) {
 // speaker.
 const nativeDropBudget = 4
 
+// nativeDropOwnMissWindow is how recently our own stream proxy must have
+// refused a slot for the drop that follows to be read as our fault rather than
+// the speaker's. The chain is sub-second in the field (404 at 07:25:00.651,
+// source back to INVALID_SOURCE at 07:25:01.396); a speaker that genuinely
+// abandons a station it accepted does so after playing, with no refusal of ours
+// in front of it.
+const nativeDropOwnMissWindow = 10 * time.Second
+
+// lastSlotMiss is the proxy's own record of the last slot it could not serve,
+// as a variable so a test can say "we refused one 200 ms ago" without standing
+// up a proxy and a preset store to make it happen.
+var lastSlotMiss = streamproxy.LastSlotMiss
+
 var nativeDrops struct {
 	sync.Mutex
 	n int
@@ -124,6 +138,20 @@ var nativeDrops struct {
 // After a few drops the speaker is put back on the UPnP form, which works there.
 // A slower path is a far better outcome than a station that keeps falling over.
 func noteNativeStreamDropped() {
+	// A station the box abandoned because OUR OWN proxy refused the fetch is not
+	// evidence about the box. Three grouped SoundTouch 10s on 2026-09-13 spent
+	// four presses on a slot the group master did not have; the master's proxy
+	// 404ed each one, the box left the station each time, and the fourth strike
+	// latched every slot on that speaker onto the slower form for good. The
+	// speaker had done nothing wrong. Same reasoning as nativeDropIsOurOwnWrite
+	// on the write side.
+	if slot, ago, ok := lastSlotMiss(); ok && ago < nativeDropOwnMissWindow {
+		if l := nativeReadyLogger; l != nil {
+			l.Info("native presets: the station was dropped after our own proxy refused the fetch, not counting it against the speaker",
+				"slot", slot, "ago", ago.Round(time.Millisecond))
+		}
+		return
+	}
 	nativeDrops.Lock()
 	nativeDrops.n++
 	n := nativeDrops.n
