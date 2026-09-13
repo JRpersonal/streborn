@@ -1972,10 +1972,29 @@ async function discoverBoxes() {
 // minute, re-probe the KNOWN speakers directly (no mDNS sweep, the same quick
 // path the Refresh button uses first) and re-evaluate the update banner.
 // Skipped while an OTA or an install runs so the probe never lands on a
-// speaker mid-flash, and skipped while no speaker is known (the recovery
-// burst owns the empty case).
+// speaker mid-flash.
+//
+// The empty list gets a full sweep instead of the known-box probe, because
+// there are no known boxes to probe. It used to be skipped altogether, on the
+// grounds that the recovery burst owned the empty case, and the burst declines
+// it: it only starts when speakers were there and vanished (`hadBoxesBefore`),
+// deliberately, so an empty LAN is never swept every six seconds. Between the
+// two, a session that never saw a speaker had nobody watching for one: start
+// the app with the Wi-Fi off and the picker still said "No speaker found" long
+// after the network was back, until Refresh was pressed by hand (#935).
+//
+// Once a minute is the right cadence for it. Somebody staring at an empty
+// picker is waiting for exactly this, and it costs one sweep a minute for as
+// long as the app has nothing to show, which is the same situation in which
+// the app is doing nothing else at all.
 setInterval(async () => {
-  if (state.otaInProgress || installRunActive() || !state.boxes.length) return;
+  if (state.otaInProgress || installRunActive()) return;
+  if (!state.boxes.length) {
+    try {
+      await discoverBoxes();
+    } catch { /* the next tick retries */ }
+    return;
+  }
   try {
     const quick = await RefreshKnownBoxes();
     if (quick && quick.length) {

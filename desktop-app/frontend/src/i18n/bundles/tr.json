@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Stereo",
   "multiroom.stereoNote": "İki SoundTouch 10 hoparlörü sol ve sağ çift olarak kullanın. Deneysel: hâlâ üzerinde çalışılıyor, bu yüzden şimdilik onları yalnızca gruplandırabilir. Lütfen günlükleri gönderin.",
   "multiroom.stereoNeedTwo": "İki SoundTouch 10 hoparlörü gerekir.",
+  "multiroom.stereoBlockedByGroup": "SoundTouch 10 hoparlörlerinin hepsi kayıtlı bir kalıcı gruba ait. Bir hoparlör ikisinden yalnızca birini tutabilir, çift kurmak grubu silerdi. Önce ikisini grubundan çıkar, sonra eşleştir.",
   "multiroom.stereoLeft": "Sol hoparlör",
   "multiroom.stereoRight": "Sağ hoparlör",
   "multiroom.stereoName": "Ad",
