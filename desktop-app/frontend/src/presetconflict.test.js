@@ -15,6 +15,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const move = readFileSync(new URL('./presetmove.js', import.meta.url), 'utf8');
 const dir = fileURLToPath(new URL('./i18n/bundles/', import.meta.url));
 const langs = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''));
 const bundle = (l) => JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));
@@ -36,13 +37,15 @@ describe('the already-on-key refusal', () => {
   });
 
   it('uses the named message when there is a name, and the old one otherwise', () => {
-    const at = main.indexOf('function showPresetSaveError');
-    const fn = main.slice(at, at + 1200);
+    const at = move.indexOf('export function presetConflictNote');
+    const fn = move.slice(at, at + 500);
     expect(fn).toContain('preset.alreadyOnKeyNamed');
     expect(fn).toContain('preset.alreadyOnKey');
     // The choice is made on whether a name came back, so a 409 without one
     // still gets a sentence rather than an empty pair of quotes.
-    expect(fn).toContain('showToast(name');
+    expect(fn).toContain('conflict.name');
+    // The refusal reaches the user through the save-error path either way.
+    expect(main).toContain('presetConflictNote(conflict, t)');
   });
 
   it('has the named message in every language, with both placeholders', () => {

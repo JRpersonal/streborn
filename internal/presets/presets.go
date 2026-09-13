@@ -332,6 +332,36 @@ func (s *Store) SetSlots(ps []Preset) error {
 	return s.Save()
 }
 
+// MoveSlot puts p on p.Slot and clears the key it came from, in a SINGLE
+// persisted write. Used by the preset move (the user accepting the offer the
+// already-on-another-key refusal makes), where the two halves must not be two
+// writes: a remove that lands and a write that does not would leave the station
+// on NEITHER key, which is exactly the preset loss the refusal exists to
+// prevent (#836).
+func (s *Store) MoveSlot(from int, p Preset) error {
+	capQueueItems(&p)
+	s.mu.Lock()
+	out := make([]Preset, 0, len(s.data)+1)
+	placed := false
+	for _, existing := range s.data {
+		switch existing.Slot {
+		case from:
+			continue // the key the station is leaving
+		case p.Slot:
+			out = append(out, p)
+			placed = true
+		default:
+			out = append(out, existing)
+		}
+	}
+	if !placed {
+		out = append(out, p)
+	}
+	s.data = out
+	s.mu.Unlock()
+	return s.Save()
+}
+
 // RemoveSlot removes the preset for the given slot.
 func (s *Store) RemoveSlot(slot int) error {
 	s.mu.Lock()
