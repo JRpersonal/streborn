@@ -11,6 +11,7 @@ export {
   AddBoxByIP,
   GetPresets,
   SetPreset,
+  RenamePreset,
   DeletePreset,
   PlaySlot,
   PlayURL,
