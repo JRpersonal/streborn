@@ -131,6 +131,7 @@
   "multiroom.stereoLabelPrefix": "Stereo",
   "multiroom.stereoNote": "Zwei SoundTouch 10 als echtes Links/Rechts-Stereopaar, jeder spielt seinen eigenen Kanal. STR steuert das eingebaute Pairing der Lautsprecher direkt, ein Bose-Konto ist nicht nötig. Nur die SoundTouch 10 kann das. Zum Auflösen eines Paars (auch eines in der Bose-App erstellten) „Stereopaar auflösen“ nutzen. Das ist neu, bitte Logs senden.",
   "multiroom.stereoNeedTwo": "Braucht zwei SoundTouch 10.",
+  "multiroom.stereoBlockedByGroup": "Deine SoundTouch 10 gehören alle zu einer gespeicherten Dauergruppe. Ein Lautsprecher kann nur eines von beidem halten, ein Paar würde die Gruppe also löschen. Nimm zwei davon erst aus ihrer Gruppe, dann kannst du sie paaren.",
   "multiroom.stereoLeft": "Linker Lautsprecher",
   "multiroom.stereoRight": "Rechter Lautsprecher",
   "multiroom.stereoName": "Name",

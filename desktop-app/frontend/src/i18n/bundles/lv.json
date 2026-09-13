@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Stereo",
   "multiroom.stereoNote": "Izmantojiet divus SoundTouch 10 skaļruņus kā kreiso un labo pāri. Eksperimentāli: vēl tiek izstrādāts, tāpēc pagaidām tie var tikt vienkārši sagrupēti. Lūdzu, atsūtiet žurnālus.",
   "multiroom.stereoNeedTwo": "Vajadzīgi divi SoundTouch 10 skaļruņi.",
+  "multiroom.stereoBlockedByGroup": "Visi tavi SoundTouch 10 pieder saglabātai pastāvīgai grupai. Skaļrunis var paturēt tikai vienu no diviem, tāpēc pāris izdzēstu grupu. Vispirms izņem divus no grupas, tad izveido pāri.",
   "multiroom.stereoLeft": "Kreisais skaļrunis",
   "multiroom.stereoRight": "Labais skaļrunis",
   "multiroom.stereoName": "Nosaukums",

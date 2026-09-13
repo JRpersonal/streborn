@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Stereo",
   "multiroom.stereoNote": "Naudokite du SoundTouch 10 garsiakalbius kaip kairę ir dešinę porą. Eksperimentinė: dar tobulinama, todėl kol kas jie gali būti tiesiog sugrupuoti. Atsiųskite žurnalus.",
   "multiroom.stereoNeedTwo": "Reikia dviejų SoundTouch 10 garsiakalbių.",
+  "multiroom.stereoBlockedByGroup": "Visos tavo SoundTouch 10 priklauso išsaugotai nuolatinei grupei. Kolonėlė gali turėti tik vieną iš dviejų, tad pora ištrintų grupę. Pirma išimk dvi iš grupės, tada suporuok.",
   "multiroom.stereoLeft": "Kairysis garsiakalbis",
   "multiroom.stereoRight": "Dešinysis garsiakalbis",
   "multiroom.stereoName": "Pavadinimas",

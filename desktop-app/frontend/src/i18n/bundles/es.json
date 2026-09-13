@@ -127,6 +127,7 @@
   "multiroom.stereoLabelPrefix": "Estéreo",
   "multiroom.stereoNote": "Usa dos altavoces SoundTouch 10 como par izquierdo y derecho. Experimental: aún en desarrollo, así que por ahora puede que solo los agrupe. Por favor, envíame los registros.",
   "multiroom.stereoNeedTwo": "Necesita dos altavoces SoundTouch 10.",
+  "multiroom.stereoBlockedByGroup": "Tus SoundTouch 10 pertenecen todos a un grupo permanente guardado. Un altavoz solo puede guardar una de las dos cosas, así que emparejarlos borraría el grupo. Saca dos de su grupo y despues emparéjalos.",
   "multiroom.stereoLeft": "Altavoz izquierdo",
   "multiroom.stereoRight": "Altavoz derecho",
   "multiroom.stereoName": "Nombre",

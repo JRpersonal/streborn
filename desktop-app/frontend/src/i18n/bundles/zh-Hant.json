@@ -131,6 +131,7 @@
   "multiroom.stereoLabelPrefix": "立體聲",
   "multiroom.stereoNote": "把兩台 SoundTouch 10 當成真正的左右立體聲，各播各的聲道。STR 直接用喇叭內建的配對功能，所以不需要 Bose 帳號。只有 SoundTouch 10 做得到。要解除配對（包括在 Bose app 裡建立的），請用「解除立體聲配對」。這是新功能，麻煩把紀錄寄過來。",
   "multiroom.stereoNeedTwo": "需要兩台 SoundTouch 10 喇叭。",
+  "multiroom.stereoBlockedByGroup": "你的 SoundTouch 10 全部屬於已儲存的常設群組。一台喇叭只能保留其中一種，配對會刪掉群組。請先把兩台移出群組，再進行配對。",
   "multiroom.stereoLeft": "左聲道喇叭",
   "multiroom.stereoRight": "右聲道喇叭",
   "multiroom.stereoName": "名稱",
