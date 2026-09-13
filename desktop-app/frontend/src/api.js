@@ -203,6 +203,15 @@ export function ClassifyStreamURL(streamURL) {
   return callOptionalBinding('ClassifyStreamURL', [streamURL]);
 }
 
+// MovePreset takes the station on key `from` over to key `to`. Offered when a
+// save is refused because the station already sits on another key, so the user
+// can say "then move it" (discussions #709 and #925). Optional binding: an app
+// built before the method exists rejects with MISSING_BINDING and the caller
+// shows the plain refusal it always did.
+export function MovePreset(host, port, from, to) {
+  return callOptionalBinding('MovePreset', [host, port, from, to]);
+}
+
 // boxURL builds an absolute URL for an agent endpoint on a given box.
 // Centralised so the host/port pattern is in one place and switching
 // to HTTPS later only takes touching this helper.

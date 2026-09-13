@@ -56,11 +56,18 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/presets` | - | The STR preset store (what the six slots point at). |
+| `POST` | `/api/presets/move` | `{"from":N,"to":M}` | Move the station on key `N` to key `M` (1-6), replacing what `M` held. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them. |
 | `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). |
 
 `POST /api/play/<slot>` is usually what you want to start a preset from
 automation; `presets/recall` mirrors a physical button press.
+
+A station lives on one key at a time. Saving one that is already on another
+key is refused with `409` and `{"code":"already-on-slot","slot":N,"name":"..."}`,
+because clearing that other key without being asked is how presets got lost.
+`POST /api/presets/move` is the explicit way to do it: it writes the new key
+and frees the old one in a single store write.
 
 ## Examples
 

@@ -242,6 +242,10 @@ export function LogClientError(arg1) {
   return window['go']['main']['App']['LogClientError'](arg1);
 }
 
+export function MovePreset(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['MovePreset'](arg1, arg2, arg3, arg4);
+}
+
 export function Next(arg1, arg2) {
   return window['go']['main']['App']['Next'](arg1, arg2);
 }

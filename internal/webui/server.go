@@ -1072,6 +1072,15 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// REST API
 	mux.HandleFunc("/api/presets", s.handlePresets)
+	// Deliberately OUTSIDE the "/api/presets/" prefix. An agent older than this
+	// endpoint registers only the prefix, so a move request sent there reaches
+	// the per-slot handler, which parses "move" as a slot number and answers
+	// 400 "invalid slot, must be 1-6". The new endpoint answers exactly that
+	// sentence for a genuinely out-of-range slot, so the app could not tell an
+	// old agent from a real refusal, and guessing wrong runs a destructive
+	// two-step fallback. Off the prefix, an old agent has no handler at all and
+	// answers a plain 404, which cannot be confused with anything.
+	mux.HandleFunc("/api/box/preset-move", s.handlePresetMove)
 	mux.HandleFunc("/api/presets/", s.handlePresetSlot)
 	mux.HandleFunc("/api/play", s.handlePlay)
 	mux.HandleFunc("/api/play/", s.handlePlaySlot)

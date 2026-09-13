@@ -569,6 +569,83 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handlePresetMove moves the station on one key over to another key:
+// POST /api/presets/move with {"from":N,"to":M}.
+//
+// It is the third answer to the duplicate guard in the per-slot save above,
+// which refuses a save whose station already sits on another key. That refusal
+// stays the default (deleting the other key behind the user's back is what wiped
+// preset after preset, #836), but it left the user with no way to say "then put
+// it on the new key". Two reporters met the same wall from opposite sides: one
+// read the refusal as a bug (discussion #709), the other concluded he could only
+// ever keep one Spotify playlist (discussion #925). A move is an explicit act, so
+// it is allowed where the silent delete is not.
+//
+// The store does both halves in ONE write, so an interrupted move can never end
+// with the station on neither key.
+func (s *Server) handlePresetMove(w http.ResponseWriter, r *http.Request) {
+	if s.presets == nil {
+		http.Error(w, "presets store not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		From int `json:"from"`
+		To   int `json:"to"`
+	}
+	if !decodeJSONRequest(w, r, 1024, &req) {
+		return
+	}
+	if req.From < 1 || req.From > 6 || req.To < 1 || req.To > 6 {
+		http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+		return
+	}
+	if req.From == req.To {
+		http.Error(w, "the station is already on that key", http.StatusBadRequest)
+		return
+	}
+	moved, ok := s.presets.Get(req.From)
+	if !ok {
+		http.Error(w, "preset not set", http.StatusNotFound)
+		return
+	}
+	replacedName := ""
+	if old, had := s.presets.Get(req.To); had {
+		replacedName = old.Name
+	}
+	moved.Slot = req.To
+	if err := s.presets.MoveSlot(req.From, moved); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Same forensic rule as every other accepted write: a key that changed must
+	// name who changed it, because a silent success path is a hole in a later
+	// bundle (#758).
+	s.logger.Info("preset move accepted",
+		"fromSlot", req.From, "toSlot", req.To, "name", moved.Name,
+		"replaced", replacedName, "type", moved.Type,
+		"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+	// The hardware keys follow: write the new key first, then drop the old one,
+	// so the station is never absent from the box's own preset list. The
+	// tombstone stops a trailing gabbo presetsUpdated from resurfacing the old
+	// key as a foreign entry, same as the DELETE path.
+	s.forgetBoxPreset(req.From)
+	if s.boxHost != "" {
+		boxCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		if err := s.writeBoxPreset(boxCtx, moved.Slot, moved.Name, boxPresetURL(moved.Slot, moved.Type == "spotify"), moved.Art, moved.Type == "spotify"); err != nil {
+			s.logger.Warn("box preset sync failed", "slot", moved.Slot, "err", err)
+		}
+		if err := boxcli.RemovePreset(boxCtx, s.boxHost, req.From); err != nil {
+			s.logger.Warn("preset move: box-side RemovePreset failed", "slot", req.From, "err", err)
+		}
+		cancel()
+	}
+	writeJSON(w, http.StatusOK, moved)
+}
+
 // normalizeSpotifyURI rewrites an ephemeral autoplay STATION context to the
 // real context it wraps: spotify:station:playlist:X -> spotify:playlist:X.
 // Station contexts are session-bound; stored in a preset they later recall a

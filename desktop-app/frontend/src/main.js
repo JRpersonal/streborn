@@ -6,6 +6,7 @@ import {
   GetPresets,
   SetPreset,
   DeletePreset,
+  MovePreset,
   PlaySlot,
   PlayURL,
   VoteStation,
@@ -263,6 +264,10 @@ import {
   notifyZoneLive,
 } from './groups.js';
 import { pairDisplayName } from './stereoNames.js';
+
+// The already-on-another-key refusal and the offer to move the station live in
+// presetmove.js, so vitest can drive the whole decision without a DOM.
+import { parsePresetConflict, presetConflictNote, offerPresetMove } from './presetmove.js';
 
 // Pure decisions of the search flow (URL-paste detection, the synthetic
 // play-this-URL card, the relaxed-filters hint) live in searchflow.js so
@@ -6430,25 +6435,39 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 
 // showPresetSaveError turns a failed preset save into the right message. The
 // agent refuses (409 already-on-slot) a save whose station already sits on
-// another key rather than silently deleting that key (#836); that is a friendly
-// "already on key N" note, not an error.
-function showPresetSaveError(err) {
-  const s = String(err);
-  const m = /already-on-slot/.test(s) && s.match(/"slot":\s*(\d+)/);
-  if (m) {
-    // Name WHAT it collided with. Without it the note reads as a refusal to
-    // have more than one of something, which is how a user with three Spotify
-    // playlists concluded he could only keep one (#925). The agent's 409
-    // carries the other preset's name, and saying it turns the refusal into the
-    // answer: he reads back the playlist the speaker was still on.
-    const nm = (s.match(/"name":\s*"((?:[^"\\]|\\.)*)"/) || [])[1];
-    const name = nm ? nm.replace(/\\(.)/g, '$1') : '';
-    showToast(name
-      ? t('preset.alreadyOnKeyNamed', { name, n: m[1] })
-      : t('preset.alreadyOnKey', { n: m[1] }));
+// another key rather than silently deleting that key (#836); that is a question,
+// not an error, so it becomes the note naming the collision plus the offer to
+// move the station onto the key the user pressed (#709/#925). slot is that key;
+// without one there is nothing to move to and the plain note is all that is left.
+function showPresetSaveError(err, slot) {
+  const conflict = parsePresetConflict(err);
+  if (conflict) {
+    if (slot >= 1 && slot <= 6 && state.currentBox) {
+      presetMoveOffer(conflict, slot);
+    } else {
+      showToast(presetConflictNote(conflict, t));
+    }
     return;
   }
-  showError(t('preset.saveFailed', { err: s }));
+  showError(t('preset.saveFailed', { err: String(err) }));
+}
+
+// presetMoveOffer hands offerPresetMove the app's own modal, agent call and grid
+// repaint. The decision itself stays in presetmove.js where it is unit-tested.
+function presetMoveOffer(conflict, slot, onBox) {
+  const box = onBox || state.currentBox;
+  return offerPresetMove({
+    conflict,
+    toSlot: slot,
+    t,
+    // confirmWarn writes the body as HTML and a station name comes from the
+    // directory, so it is escaped here.
+    confirm: (title, body, opts) => confirmWarn(title, escapeHtml(body), opts),
+    move: (from, to) => MovePreset(box.host, box.port, from, to),
+    toast: showToast,
+    fail: showError,
+    done: loadPresets,
+  });
 }
 
 // saveCurrentToSlot saves the currently playing station onto the
@@ -6534,7 +6553,7 @@ async function saveCurrentToSlot(slot) {
       if (/spotify-uri-unplayable|replayable playlist/i.test(msg)) {
         showError(t('preset.spotifyNotSaveable'));
       } else {
-        showPresetSaveError(err);
+        showPresetSaveError(err, slot);
       }
       return;
     }
@@ -6573,7 +6592,7 @@ async function saveCurrentToSlot(slot) {
           VoteStation(state.currentBox.host, state.currentBox.port, app.uuid).catch(() => {});
         }
       } catch (err) {
-        showPresetSaveError(err);
+        showPresetSaveError(err, slot);
       }
       return;
     }
@@ -6588,7 +6607,7 @@ async function saveCurrentToSlot(slot) {
         await loadPresets();
         return;
       } catch (err) {
-        showPresetSaveError(err);
+        showPresetSaveError(err, slot);
         return;
       }
     }
@@ -6639,7 +6658,7 @@ async function saveCurrentToSlot(slot) {
       showToast(t('preset.savedToKey', { n: slot, name: oname }));
       await loadPresets();
     } catch (err) {
-      showPresetSaveError(err);
+      showPresetSaveError(err, slot);
     }
     return;
   }
@@ -6665,7 +6684,7 @@ async function saveCurrentToSlot(slot) {
       VoteStation(state.currentBox.host, state.currentBox.port, state.nowUUID).catch(() => {});
     }
   } catch (err) {
-    showPresetSaveError(err);
+    showPresetSaveError(err, slot);
   }
 }
 
@@ -8433,7 +8452,11 @@ function renderSearchResults() {
 // showSlotPicker renders the shared 1-6 preset slot-picker modal. Callers pass
 // the title, subtitle and an onPick(slot) that does the actual save; closing the
 // modal, reloading the presets and surfacing errors are common to every use.
-function showSlotPicker({ title, subtitle, onPick }) {
+// box is the speaker the pick writes to. It defaults to the selected one, and a
+// caller that can assign onto ANOTHER speaker (a Recently-played card from a
+// different box) has to pass it, so a move offered after a refusal happens on
+// the speaker the station is actually on.
+function showSlotPicker({ title, subtitle, onPick, box }) {
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
   const grid = $('pickGrid');
@@ -8448,7 +8471,19 @@ function showSlotPicker({ title, subtitle, onPick }) {
         await onPick(i);
         closePick();
         await loadPresets();
-      } catch (err) { showError(err); }
+      } catch (err) {
+        // Assigning a station from a list meets the same already-on-another-key
+        // refusal as the hold-to-save, and it is the path the two reporters were
+        // on (#709/#925), so it gets the same offer to move.
+        const conflict = parsePresetConflict(err);
+        const target = box || state.currentBox;
+        if (conflict && target) {
+          closePick();
+          presetMoveOffer(conflict, i, target);
+          return;
+        }
+        showError(err);
+      }
     };
     grid.appendChild(b);
   }
