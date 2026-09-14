@@ -389,6 +389,7 @@ import {
   throttledSetVolume,
   throttledSetBass,
   openWebhookKeyMap,
+  noNetworkHere,
 } from './views/settings.js';
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
@@ -4654,7 +4655,16 @@ async function runSingleBoxUpdate(targetBox) {
       // The update could not put this speaker into the state it was meant to
       // reach, so hand the user everything needed to report it instead of
       // making them describe a failure they cannot see.
-      showUpdateFailureReport(targetBox, 'update', msg);
+      if (noNetworkHere(msg)) {
+        // The app already knows this: the same predicate greys the speaker
+        // list out for it. The update path just never asked, so pulling the
+        // router mid-update produced a full copyable fault report about a
+        // speaker that was fine, and the reporter had to work out for
+        // themselves that it was their own router (#963).
+        showUpdateNoNetworkNotice();
+      } else {
+        showUpdateFailureReport(targetBox, 'update', msg);
+      }
     }
     reset();
   } finally {
@@ -5833,6 +5843,17 @@ function runPendingGroupEdits() {
       markGroupChipPending();
     });
   return groupOpChain;
+}
+
+// showUpdateNoNetworkNotice is the short, dismissible version of the failure
+// report, for the one cause that is not about the speaker at all.
+//
+// The full report exists so a real fault can be sent to me, and it earns its
+// weight then. A computer that lost its network produces nothing worth reading
+// in it: the speaker is untouched, nothing needs unplugging, and the whole
+// answer is one sentence that the app already owns for the speaker list.
+function showUpdateNoNetworkNotice() {
+  showError(t('settingsView.noNetworkTitle') + ' ' + t('settingsView.noNetworkHelp'));
 }
 
 // dissolveIncompleteMessage turns the agent's refusal into something the user
