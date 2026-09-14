@@ -1209,7 +1209,7 @@
   "preset.spotifyContextUnknown": "No se pudo leer una lista de Spotify desde el altavoz. Asegúrate de que el altavoz esté actualizado, abre una lista de reproducción o un álbum e inténtalo de nuevo.",
   "play.errSpotifyPremium": "Para retomar Spotify necesitas Premium",
   "play.errSpotifyLogin": "Selecciona este altavoz una vez en Spotify",
-  "play.errSpotifyLoginHelp": "STR reproduce Spotify a través de este altavoz como dispositivo de Spotify Connect. Abre Spotify en un dispositivo de la misma red Wi-Fi, toca el icono de dispositivos, elige este altavoz y reproduce una canción una vez. Después, los preajustes de Spotify se recuperan solos.",
+  "play.errSpotifyLoginHelp": "Los preajustes de Spotify necesitan dos cosas. Una cuenta de Spotify Premium, y este altavoz elegido una vez en Spotify. Abre Spotify en un dispositivo de la misma red Wi-Fi, toca el icono de dispositivos, elige la entrada de este altavoz que termina en (STR) y reproduce una canción. Con una cuenta de Spotify gratuita esa entrada no se puede elegir y los preajustes de Spotify no suenan.",
   "play.nativeSpotifyHint": "Reproduciendo en el Spotify integrado del altavoz. Pulsa un botón de Spotify guardado para cambiar a la reproducción de STR.",
   "update.speakerUpdateAvailFor": "Actualización disponible para '{{name}}'",
   "update.versionLine": "instalada: {{installed}} → nueva: {{next}}",

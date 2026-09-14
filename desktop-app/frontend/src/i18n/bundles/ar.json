@@ -1209,7 +1209,7 @@
   "preset.spotifyContextUnknown": "تعذّرت قراءة قائمة تشغيل Spotify من السمّاعة. تأكّد من أن السمّاعة محدّثة، افتح قائمة تشغيل أو ألبومًا، ثم أعد المحاولة.",
   "play.errSpotifyPremium": "استدعاء Spotify يتطلّب Premium",
   "play.errSpotifyLogin": "اختر هذه السمّاعة مرة واحدة في Spotify",
-  "play.errSpotifyLoginHelp": "يشغّل STR محتوى Spotify عبر هذه السمّاعة كجهاز Spotify Connect. افتح Spotify على جهاز على Wi-Fi نفسه، انقر أيقونة الأجهزة، اختر هذه السمّاعة، وشغّل مقطعًا مرة واحدة. بعد ذلك تُستدعى إعدادات Spotify المسبقة من تلقاء نفسها.",
+  "play.errSpotifyLoginHelp": "تحتاج إعدادات Spotify المسبقة إلى أمرين. حساب Spotify Premium، واختيار هذه السمّاعة مرة واحدة في Spotify. افتح Spotify على جهاز على شبكة Wi-Fi نفسها، انقر أيقونة الأجهزة، اختر إدخال هذه السمّاعة المنتهي بـ (STR) وشغّل أي مقطع. مع حساب Spotify المجاني لا يمكن اختيار هذا الإدخال ولن تعمل إعدادات Spotify المسبقة.",
   "play.nativeSpotifyHint": "التشغيل عبر Spotify المدمج في السمّاعة. اضغط زرّ Spotify محفوظًا للتبديل إلى تشغيل STR.",
   "update.speakerUpdateAvailFor": "يتوفّر تحديث لـ '{{name}}'",
   "update.versionLine": "المثبّت: {{installed}} ← الجديد: {{next}}",

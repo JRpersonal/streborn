@@ -65,7 +65,7 @@ func (s *Server) spotifyRecallRefused(w http.ResponseWriter, slot int, p presets
 			// The desktop app branches on the code, so this wording is free to be
 			// the accurate, non-Bose-linking instruction.
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error": "This speaker has not been picked in Spotify yet. In the Spotify app on a device on the same Wi-Fi, tap the Connect/devices icon, choose this speaker and play any track once. After that this preset will recall on its own.",
+				"error": "A Spotify preset needs two things: a Spotify Premium account, and this speaker picked once in Spotify. In the Spotify app on a device on the same Wi-Fi, tap the Connect/devices icon, choose the entry for this speaker ending in (STR), and play any track. A free Spotify account cannot pick that entry.",
 				"code":  "spotify-not-logged-in",
 				"slot":  slot, "name": p.Name,
 			})

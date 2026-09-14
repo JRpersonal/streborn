@@ -1209,7 +1209,7 @@
   "preset.spotifyContextUnknown": "Impossible de lire une playlist Spotify depuis l'enceinte. Vérifie que l'enceinte est à jour, ouvre une playlist ou un album, puis réessaie.",
   "play.errSpotifyPremium": "Le rappel Spotify nécessite Premium",
   "play.errSpotifyLogin": "Sélectionne cette enceinte une fois dans Spotify",
-  "play.errSpotifyLoginHelp": "STR lit Spotify via cette enceinte comme appareil Spotify Connect. Ouvre Spotify sur un appareil du même Wi-Fi, touche l'icône des appareils, choisis cette enceinte et lis un titre une fois. Ensuite, les préréglages Spotify se rappellent tout seuls.",
+  "play.errSpotifyLoginHelp": "Les préréglages Spotify demandent deux choses. Un compte Spotify Premium, et cette enceinte choisie une fois dans Spotify. Ouvre Spotify sur un appareil du même Wi-Fi, touche l'icône des appareils, choisis l'entrée de cette enceinte qui se termine par (STR) et lis un titre. Avec un compte Spotify gratuit cette entrée ne peut pas être choisie et les préréglages Spotify ne jouent pas.",
   "play.nativeSpotifyHint": "Lecture via le Spotify intégré de l'enceinte. Appuie sur un bouton Spotify enregistré pour passer à la lecture STR.",
   "update.speakerUpdateAvailFor": "Mise à jour disponible pour '{{name}}'",
   "update.versionLine": "installée : {{installed}} → nouvelle : {{next}}",

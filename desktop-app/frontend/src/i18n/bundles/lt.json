@@ -1209,7 +1209,7 @@
   "preset.spotifyContextUnknown": "Nepavyko nuskaityti Spotify grojaraščio iš garsiakalbio. Įsitikink, kad garsiakalbis atnaujintas, atidaryk grojaraštį arba albumą ir bandyk dar kartą.",
   "play.errSpotifyPremium": "Spotify atkūrimui reikia Premium",
   "play.errSpotifyLogin": "Vieną kartą pasirink šią kolonėlę Spotify",
-  "play.errSpotifyLoginHelp": "STR groja Spotify per šią kolonėlę kaip Spotify Connect įrenginį. Tame pačiame Wi-Fi tinkle atidaryk Spotify, paliesk įrenginių piktogramą, pasirink šią kolonėlę ir vieną kartą paleisk dainą. Po to Spotify išankstiniai nustatymai bus iškviečiami savaime.",
+  "play.errSpotifyLoginHelp": "Spotify išankstiniams nustatymams reikia dviejų dalykų. Spotify Premium paskyros ir kartą Spotify pasirinktos šios kolonėlės. Tame pačiame Wi-Fi tinkle atidaryk Spotify, paliesk įrenginių piktogramą, pasirink šios kolonėlės įrašą, kuris baigiasi (STR), ir paleisk vieną dainą. Su nemokama Spotify paskyra šio įrašo pasirinkti negalima ir Spotify išankstiniai nustatymai negros.",
   "play.nativeSpotifyHint": "Grojama per kolonėlės integruotą „Spotify“. Paspausk išsaugotą „Spotify“ mygtuką, kad perjungtum į STR atkūrimą.",
   "update.speakerUpdateAvailFor": "Yra atnaujinimas garsiakalbiui „{{name}}“",
   "update.versionLine": "įdiegta: {{installed}} → nauja: {{next}}",

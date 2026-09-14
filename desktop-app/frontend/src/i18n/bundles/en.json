@@ -388,7 +388,7 @@
   "play.errNotPlayable": "station not playable",
   "play.errSpotifyPremium": "Spotify recall needs Premium",
   "play.errSpotifyLogin": "Tap this speaker in Spotify once",
-  "play.errSpotifyLoginHelp": "STR plays Spotify through this speaker as a Spotify Connect device. Open Spotify on a phone or computer on the same Wi-Fi, tap the devices icon, pick this speaker, and play any track once. After that, Spotify presets recall on their own.",
+  "play.errSpotifyLoginHelp": "Spotify presets need two things. A Spotify Premium account, and this speaker picked once in Spotify. Open Spotify on a phone or computer on the same Wi-Fi, tap the devices icon, choose the entry for this speaker ending in (STR), and play any track. With a free Spotify account that entry cannot be picked and Spotify presets will not play.",
   "play.nativeSpotifyHint": "Playing on the speaker's built-in Spotify. Press a saved Spotify button to switch to STR's playback.",
   "play.errServer500": "station error",
   "play.errUnreachable": "station unreachable",

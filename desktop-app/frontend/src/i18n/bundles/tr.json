@@ -1209,7 +1209,7 @@
   "preset.spotifyContextUnknown": "Hoparlörden bir Spotify çalma listesi okunamadı. Hoparlörün güncel olduğundan emin ol, bir çalma listesi veya albüm açıp tekrar dene.",
   "play.errSpotifyPremium": "Spotify geri çağırma için Premium gerekir",
   "play.errSpotifyLogin": "Bu hoparlörü Spotify'da bir kez seç",
-  "play.errSpotifyLoginHelp": "STR, Spotify'ı bu hoparlör üzerinden Spotify Connect cihazı olarak çalar. Aynı Wi-Fi'deki bir cihazda Spotify'ı aç, cihazlar simgesine dokun, bu hoparlörü seç ve bir parçayı bir kez çal. Bundan sonra Spotify ön ayarları kendiliğinden geri çağrılır.",
+  "play.errSpotifyLoginHelp": "Spotify ön ayarları iki şey ister. Spotify Premium hesabı ve bu hoparlörün Spotify'da bir kez seçilmiş olması. Aynı Wi-Fi'deki telefon veya bilgisayarda Spotify'ı aç, cihazlar simgesine dokun, bu hoparlörün (STR) ile biten kaydını seç ve bir parça çal. Ücretsiz Spotify hesabında bu kayıt seçilemez ve Spotify ön ayarları çalmaz.",
   "play.nativeSpotifyHint": "Hoparlörün dahili Spotify'ında çalıyor. STR oynatmasına geçmek için kayıtlı bir Spotify düğmesine bas.",
   "update.speakerUpdateAvailFor": "'{{name}}' için güncelleme mevcut",
   "update.versionLine": "yüklü: {{installed}} → yeni: {{next}}",

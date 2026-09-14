@@ -388,7 +388,7 @@
   "play.errNotPlayable": "電台無法播放",
   "play.errSpotifyPremium": "Spotify 預設需要 Premium",
   "play.errSpotifyLogin": "請在 Spotify 裡先選一次這台喇叭",
-  "play.errSpotifyLoginHelp": "STR 是把這台喇叭當成 Spotify Connect 裝置來播放 Spotify。在同一個 Wi-Fi 的手機或電腦上開啟 Spotify，點裝置圖示，選這台喇叭，隨便播一首歌。之後 Spotify 預設就會自己叫得出來。",
+  "play.errSpotifyLoginHelp": "Spotify 預設需要兩個條件。一個 Spotify Premium 帳號，以及這台喇叭在 Spotify 裡被選過一次。在同一個 Wi-Fi 的手機或電腦上開啟 Spotify，點裝置圖示，選結尾是 (STR) 的這台喇叭項目，隨便播一首歌。用免費的 Spotify 帳號無法選這個項目，Spotify 預設也不會播放。",
   "play.nativeSpotifyHint": "現在播的是喇叭內建的 Spotify。按一下已存好的 Spotify 預設鍵，就會切換到 STR 的播放。",
   "play.errServer500": "電台錯誤",
   "play.errUnreachable": "電台連不上",

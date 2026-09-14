@@ -1209,7 +1209,7 @@
   "preset.spotifyContextUnknown": "スピーカーから Spotify のプレイリストを読み取れませんでした。スピーカーが最新であることを確認し、プレイリストかアルバムを開いてからもう一度お試しください。",
   "play.errSpotifyPremium": "Spotify の呼び出しには Premium が必要です",
   "play.errSpotifyLogin": "Spotify でこのスピーカーを一度選んでください",
-  "play.errSpotifyLoginHelp": "STR はこのスピーカーを Spotify Connect デバイスとして再生します。同じ Wi-Fi 上の端末で Spotify を開き、デバイスアイコンをタップしてこのスピーカーを選び、一度曲を再生してください。その後は Spotify のプリセットが自動で呼び出せます。",
+  "play.errSpotifyLoginHelp": "Spotify のプリセットには 2 つの条件があります。Spotify Premium のアカウントと、このスピーカーを Spotify で一度選んでおくことです。同じ Wi-Fi 上の端末で Spotify を開き、デバイスアイコンをタップし、末尾が (STR) のこのスピーカーの項目を選んで曲を 1 曲再生してください。無料の Spotify アカウントではこの項目を選べないため、Spotify のプリセットは再生されません。",
   "play.nativeSpotifyHint": "スピーカー内蔵の Spotify で再生中です。保存した Spotify ボタンを押すと STR の再生に切り替わります。",
   "update.speakerUpdateAvailFor": "'{{name}}' のアップデートがあります",
   "update.versionLine": "現在: {{installed}} → 新しいバージョン: {{next}}",
