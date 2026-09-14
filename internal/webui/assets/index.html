@@ -1983,7 +1983,10 @@ async function refreshStatus() {
   boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
   applyPowerUI();
   applyTransportUI(state);
-  const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped };
+  // INVALID_PLAY_STATUS is what a speaker reports while it has no transport at
+  // all, e.g. during Bluetooth pairing. It is a state like the others, so it
+  // belongs in the map rather than in a fallback (#961).
+  const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped, INVALID_PLAY_STATUS:T.idle };
   // A stopped/idle box reports source INVALID_SOURCE or STANDBY and carries no
   // track name. Never show that raw firmware string as the "now playing" title
   // (#384): fall through to the friendly idle text instead. A real named source
@@ -2008,7 +2011,11 @@ async function refreshStatus() {
   // "The Beatles - Help!", through source changes and an app restart (#274).
   const proxySrc = upSrc === 'UPNP' || upSrc === 'LOCAL_INTERNET_RADIO';
   const song = (playing && proxySrc) ? await currentSong() : '';
-  setNow(bigName, song || human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
+  // No raw firmware enum on the screen, ever. The old fallback stripped
+  // "_STATE" and lower-cased the rest, which turned INVALID_PLAY_STATUS into
+  // "invalid_play_status" under the station name (#961). Anything the map does
+  // not know is a firmware string by definition, so it gets the idle text.
+  setNow(bigName, song || human[state] || T.idle);
   // Keep the Recently-played list current when the song or station changes from
   // ANY source (a hardware button, the desktop app, or an ICY song change), not
   // only after a play from this page (#761). The box records each play itself;
