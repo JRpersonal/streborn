@@ -4267,8 +4267,12 @@ const BOX_BUSY_TOKEN = 'STR_BUSY:';
 let boxUpdateBusy = false;
 
 async function doBoxUpdate(targetBox) {
-  if (boxUpdateBusy) {
-    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('common.unknown') }));
+  // Both latches, not just this one. The whole-house run drives runBoxUpdate
+  // directly so it does not contend here, but it holds the single-box global
+  // lock for the entire batch, and a single-speaker click during it would walk
+  // into the same duplicate-start the latch exists to stop.
+  if (boxUpdateBusy || updateAllBusy) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
     return;
   }
   boxUpdateBusy = true;
@@ -4697,7 +4701,7 @@ let updateAllBusy = false;
 async function updateAllBoxes(onStart) {
   // Saying so out loud, not returning silently: a second press on a dead-looking
   // button is exactly what the single-box path already learned to answer.
-  if (updateAllBusy || state.otaInProgress) {
+  if (updateAllBusy || boxUpdateBusy || state.otaInProgress) {
     showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
     return false;
   }

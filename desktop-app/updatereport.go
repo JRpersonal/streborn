@@ -351,14 +351,41 @@ func formatFailureReport(r failureReport) string {
 // advice a false lead. Only strong SSH-install evidence counts: a bare
 // "agent-not-up" can also mean the install never reached the box at all (wrong
 // subnet), which IS a network problem and must keep the network advice.
+//
+// The markers have to be the lines that SUCCEEDED, spelled out in full. The
+// earlier list matched on prefixes, and two of them ("install_str: ssh" and
+// "repair_ssh") are prefixes of the FAILURE lines as well:
+//
+//	install_str: ssh handshake failed after retries
+//	repair_ssh: ssh handshake failed
+//
+// So an install whose connection never came up was reported to the user as an
+// install the app had run on the speaker. Christoph read that after two
+// evenings of a dark SoundTouch 20 and concluded he had destroyed it
+// (2026-09-14). A marker that can match a failure line is worse than none.
 func reachedThisSession(r failureReport) bool {
 	blob := r.History + "\n" + r.Facts.LogTail
-	for _, s := range []string{"ssh ok", "repair_ssh", "SSH-staged install ran", "install_str: ssh"} {
+	for _, s := range reachedMarkers {
 		if strings.Contains(blob, s) {
 			return true
 		}
 	}
 	return false
+}
+
+// reachedMarkers are log lines that can only be written AFTER the app was
+// inside the speaker. Each is a whole message from desktop-app/install_str.go
+// and none of them is a prefix of a line that reports a failure.
+//
+// "SSH-staged install ran" is deliberately on the list even though its full
+// line continues "but the agent did not come up in time": the staging did
+// reach the box, and an agent that then failed to start is precisely the case
+// this function exists to re-advise.
+var reachedMarkers = []string{
+	"install_str: ssh ok",
+	"install_str: SSH-staged install ran",
+	"repair_ssh: staged install files",
+	"repair_ssh: install ran",
 }
 
 // applyReachedThisSession swaps the network-blame advice for the agent-did-not-

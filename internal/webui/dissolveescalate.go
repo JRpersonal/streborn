@@ -49,8 +49,14 @@ func (s *Server) escalateDissolve(c *boxapi.Client, master boxapi.ZoneMember, cu
 	ctx, cancel := context.WithTimeout(context.Background(), dissolveEscalationBudget)
 	defer cancel()
 
+	// Instrumented on purpose. When this ran on eleven speakers the bundle
+	// could not say WHY the firmware refused: the member list that was sent,
+	// the answer that came back and the members each re-read returned were all
+	// invisible, so the only honest verdict was "the firmware took it and did
+	// nothing". Every line below exists to make the next bundle decide it.
 	s.logger.Warn("zone: the speaker keeps the group after a batch teardown, escalating",
-		"remaining", len(cur), "members", memberIDs(cur), "master", master.DeviceID)
+		"remaining", len(cur), "members", memberIDs(cur),
+		"master", master.DeviceID, "masterIP", master.IP)
 
 	// 1. one at a time, at the master.
 	for _, m := range cur {
@@ -60,11 +66,12 @@ func (s *Server) escalateDissolve(c *boxapi.Client, master boxapi.ZoneMember, cu
 		stepCtx, stepCancel := context.WithTimeout(ctx, dissolveEscalationStep)
 		err := c.RemoveZoneSlave(stepCtx, master, []boxapi.ZoneMember{m})
 		stepCancel()
-		if err != nil {
-			s.logger.Info("zone: single-member teardown at the master failed", "member", memberID(m), "err", err)
-		}
+		s.logger.Info("zone: single-member teardown at the master",
+			"member", memberID(m), "memberIP", m.IP, "err", errText(err))
 	}
 	left, reason := s.readZoneMembers(ctx, c)
+	s.logger.Info("zone: what the master reports after the single-member teardown",
+		"remaining", len(left), "members", memberIDs(left), "unreadable", reason)
 	if reason == "" && len(left) == 0 {
 		s.logger.Info("zone: the group came apart one member at a time, the batch teardown was the problem")
 		return nil, ""
@@ -86,9 +93,8 @@ func (s *Server) escalateDissolve(c *boxapi.Client, master boxapi.ZoneMember, cu
 		err := leaveZoneAtFollowerFn(stepCtx, m.IP, master, m)
 		stepCancel()
 		posted++
-		if err != nil {
-			s.logger.Info("zone: teardown at the follower failed", "member", memberID(m), "err", err)
-		}
+		s.logger.Info("zone: teardown posted at the follower itself",
+			"member", memberID(m), "memberIP", m.IP, "err", errText(err))
 	}
 	s.logger.Info("zone: teardown posted at the followers themselves", "speakers", posted)
 
@@ -137,4 +143,13 @@ func memberIDs(ms []boxapi.ZoneMember) string {
 		out = append(out, memberID(m))
 	}
 	return strings.Join(out, ",")
+}
+
+// errText renders an error for a log field without turning a nil into "<nil>",
+// so a line reads err="" on success rather than looking like a failure.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
