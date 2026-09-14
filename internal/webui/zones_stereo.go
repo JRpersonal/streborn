@@ -762,14 +762,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// re-push it to the now-grouped master afterwards; the master distributes
 	// it to the followers (verified live: a play pushed to the master after
 	// forming reaches every member).
+	//
+	// masterRef is this box's OWN entry and stays the staleness reference even
+	// when the stream to push comes from somewhere else. See captureMasterResume.
+	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
 	if _, busy := s.boxPlayState(); busy {
-		s.lastPlayMu.Lock()
-		if s.lastPlay != nil {
-			cp := *s.lastPlay
-			resume = &cp
-		}
-		s.lastPlayMu.Unlock()
+		resume = masterRef
 	}
 	// The master may have nothing while a MEMBER is playing: forming the group
 	// then took that member's station down and left the whole group silent
@@ -962,12 +961,15 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if resume != nil && masterFormed {
-		// resume is the copy of lastPlay taken before the drive, so it is both
-		// the stream to push and the staleness reference. Only a change that
-		// held as an incremental join may skip the push when the master's
-		// stream survived; on a fresh (or re-formed) zone the members have
-		// nothing yet (Martin, 2026-08-24).
-		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: resume, survivorReachesMembers: heldIncremental})
+		// The staleness reference is the MASTER's own entry, never the stream
+		// being pushed: a member-derived takeover (#954) compared against the
+		// master's live entry always mismatches. A real user play on the master
+		// between capture and push still moves s.lastPlay away from masterRef
+		// and still cancels the push, which is what the check is for. Only a
+		// change that held as an incremental join may skip the push when the
+		// master's stream survived; on a fresh (or re-formed) zone the members
+		// have nothing yet (Martin, 2026-08-24).
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
@@ -1003,6 +1005,24 @@ type zoneResume struct {
 	// left them silent (Martin, 2026-08-24: regroup mid-stream, members mute
 	// until a manual play).
 	survivorReachesMembers bool
+}
+
+// captureMasterResume snapshots this box's own last-play entry.
+//
+// It is the staleness reference for every group-change re-push, and it is
+// deliberately not the same thing as the stream being pushed. The push may come
+// from a MEMBER (#954) or from the stereo PARTNER (#705); comparing one of those
+// against the master's live entry made every master that had ever played
+// anything look superseded, so the takeover was captured and then dropped 1.5 s
+// later and the group formed with nothing to play (#965).
+func (s *Server) captureMasterResume() *lastPlayInfo {
+	s.lastPlayMu.Lock()
+	defer s.lastPlayMu.Unlock()
+	if s.lastPlay == nil {
+		return nil
+	}
+	cp := *s.lastPlay
+	return &cp
 }
 
 // resumeRefSuperseded reports whether this box's live lastPlay entry no longer
@@ -1510,13 +1530,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// through the master (LEFT). The partner's stream URL is loopback on the
 	// PARTNER, so it is rewritten to the partner's LAN address the same way the
 	// mirror path already lets one box pull another's stream proxy.
-	s.lastPlayMu.Lock()
-	var masterRef *lastPlayInfo
-	if s.lastPlay != nil {
-		cp := *s.lastPlay
-		masterRef = &cp
-	}
-	s.lastPlayMu.Unlock()
+	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
 	if _, busy := s.boxPlayState(); busy {
 		resume = masterRef
