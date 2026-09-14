@@ -106,10 +106,36 @@ func TestForcedWriteHoldWritesToAnIdleBox(t *testing.T) {
 			t.Errorf("src=%q must not count as busy", src)
 		}
 	}
-	for _, src := range []string{"BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT", "LOCAL_INTERNET_RADIO"} {
+	for _, src := range []string{"BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT"} {
 		if !forcedWriteBusy(src, false, true) {
 			t.Errorf("src=%q is somebody's choice and must hold the write", src)
 		}
+	}
+}
+
+// LOCAL_INTERNET_RADIO is STR's OWN source on a native-preset box, so a
+// STOPPED station there is leftover state and not a listening session. Holding
+// on it would defer the dead-key self-heal (#342) by the full ceiling on every
+// box that has ever played a native station, and that heal exists to bring a
+// dead key back in seconds. Read play state decides; an unreadable one keeps
+// the hold, because a box that may be playing is the #961 interruption again.
+func TestAStoppedNativeStationIsNotSomebodyListening(t *testing.T) {
+	const src = "LOCAL_INTERNET_RADIO"
+	if forcedWriteBusy(src, false, true) {
+		t.Error("a stopped native station held the write, so a dead key waits five minutes")
+	}
+	if got := forcedHoldReason(src, false, true); got != "free" {
+		t.Errorf("reason = %q, want %q", got, "free")
+	}
+	if !forcedWriteBusy(src, true, true) {
+		t.Error("a PLAYING native station must still hold the write")
+	}
+	if !forcedWriteBusy(src, false, false) {
+		t.Error("an unreadable play state on this source must keep the hold")
+	}
+	// The insurance pass only ever sees the name, so it keeps holding here.
+	if resyncSafeSource(src) {
+		t.Error("resyncSafeSource must stay name-only and keep this source out")
 	}
 }
 
@@ -125,6 +151,46 @@ func TestResyncSafeSourceStillGuardsUserChosenSources(t *testing.T) {
 	for _, src := range []string{"BLUETOOTH", "AUX", "LOCAL", "SPOTIFY", "PRODUCT", "LOCAL_INTERNET_RADIO"} {
 		if resyncSafeSource(src) {
 			t.Errorf("%s is the user's choice and must never be written over", src)
+		}
+	}
+}
+
+// The other door into a preset write, found by re-reading the #961 fix rather
+// than by a report: the routine pass heals a slot that fell out of the box's
+// own list, and it did that with no source check at all. Only the FORCED pass
+// was ever held. A speaker that loses a key while its owner is pairing a phone
+// would have been yanked off Bluetooth by the routine pass instead.
+//
+// Both doors now ask the same question, so this pins that the two agree.
+func TestBothWritePathsAskTheSameQuestion(t *testing.T) {
+	cases := []struct {
+		src     string
+		playing bool
+		known   bool
+		busy    bool
+	}{
+		{"BLUETOOTH", false, true, true},
+		{"AUX", false, true, true},
+		{"SPOTIFY", false, true, true},
+		{"UPNP", false, true, false},
+		{"STANDBY", false, true, false},
+		{"", false, false, false},
+		{"INVALID_SOURCE", false, true, false},
+		{"LOCAL_INTERNET_RADIO", false, true, false},
+		{"LOCAL_INTERNET_RADIO", true, true, true},
+		{"UPNP", true, true, true},
+	}
+	for _, c := range cases {
+		got := forcedWriteBusy(c.src, c.playing, c.known)
+		if got != c.busy {
+			t.Errorf("forcedWriteBusy(%q, playing=%v, known=%v) = %v, want %v",
+				c.src, c.playing, c.known, got, c.busy)
+		}
+		// The forced pass must reach the same verdict through its own entry
+		// point, or the two paths would drift apart again.
+		hold, _ := forcedWriteHold(c.src, c.playing, c.known, true, time.Time{}, time.Now())
+		if hold != c.busy {
+			t.Errorf("forcedWriteHold(%q, playing=%v) held=%v but busy=%v", c.src, c.playing, hold, c.busy)
 		}
 	}
 }

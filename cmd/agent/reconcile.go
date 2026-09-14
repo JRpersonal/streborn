@@ -624,6 +624,17 @@ func forcedWriteBusy(src string, playing, playKnown bool) bool {
 	switch src {
 	case "", "STANDBY":
 		return false
+	case "LOCAL_INTERNET_RADIO":
+		// STR's OWN source on a native-preset box, and the same argument that
+		// puts UPNP on the allowlist applies to it: a station that has stopped
+		// is STR's leftover source, not something the user is listening to.
+		// Without this a box idling on a stopped native station counts as busy
+		// and defers the dead-key self-heal (#342) by the full ceiling, and
+		// that heal's whole promise is that a dead key comes back in seconds.
+		// Only when the play state was actually READ: an unreadable box on this
+		// source may well be playing, and guessing wrong there is the #961
+		// interruption again.
+		return !(playKnown && !playing)
 	}
 	return !resyncSafeSource(src)
 }
@@ -804,6 +815,25 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			"slots", reowned)
 	}
 	syncFailed := false
+	// The FORCED pass is held while the box is on a source somebody picked
+	// (forcedWriteHold, above). The routine pass was not, and it writes too:
+	// a slot that falls out of the box's own /presets list is healed right
+	// here, with no source check at all. So the #961 interruption could still
+	// arrive through this door, on a speaker that happened to lose a key while
+	// its owner was pairing a phone or listening on AUX.
+	//
+	// Hand it to the forced pass instead of writing now. That one already has
+	// the bounded hold, the five-minute ceiling and the log line saying what
+	// was protected, so the key is still registered shortly after the source
+	// frees up, or at the ceiling at the latest.
+	if len(missing) > 0 && !forceFull {
+		if src, playing, playKnown := boxSourceAndPlaying(boxHost); forcedWriteBusy(src, playing, playKnown) {
+			logger.Info("preset reconcile: missing slots held, the write would take the box off what it is doing",
+				"reason", forcedHoldReason(src, playing, playKnown), "source", src, "slots", len(missing))
+			requestPresetKeyResync(logger, "missing-slots-held")
+			missing = nil
+		}
+	}
 	if len(missing) > 0 {
 		if forceFull {
 			logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
