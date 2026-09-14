@@ -258,6 +258,38 @@ func Classify(l Line) (Class, bool) {
 	return "", false
 }
 
+// ringOnlyLine reports whether a classified line must stay in the ring and out
+// of the agent log, whatever its class's gap says.
+//
+// One case so far: the firmware polls its own setup state forever, and on a
+// healthy speaker that poll is the ONLY setup_state line there is. The rate
+// limiter then turns it into a ten-minute heartbeat in a log that is mirrored
+// to NAND and is the only one surviving a reboot. Measured on the #960
+// reporter's ST10: 78 of the 181 lines in thirteen hours, on a box whose
+// episode counter stood at zero the whole time.
+//
+// Deliberately a list of QUERY shapes rather than a list of interesting ones.
+// An unrecognised setup_state line still reaches the log at its rare gap, so
+// the #873 evidence this class was added for cannot be lost by this.
+func ringOnlyLine(c Class, msg string) bool {
+	return c == ClassSetupState && setupStateQuery(msg)
+}
+
+// setupStateQuery reports whether a setup_state line is the firmware being
+// ASKED about its setup state rather than changing it. All four shapes were
+// measured in one second of the same burst, answering SETUP_INACTIVE.
+func setupStateQuery(m string) bool {
+	switch {
+	case strings.Contains(m, "ROM_GET"),
+		strings.Contains(m, "GET(SETUP_ENTER)"),
+		strings.Contains(m, "SETUP_ENTER, RequestType =1"),
+		strings.Contains(m, `state="SETUP_INACTIVE"`),
+		strings.Contains(m, "HandleMessage(EVT_SYSTEM_SETUP) >> IdleState"):
+		return true
+	}
+	return false
+}
+
 // classifyStateChange reads the first "ChangeState(A >> B)" of an HSM line.
 // Only transitions into or out of Standby are kept; the system controller
 // logs every source change through the same shape.
@@ -565,7 +597,7 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	if class.Playback() {
 		f.lastPlayErr = ev
 	}
-	if gap := class.logGap(); gap > 0 && now.Sub(f.lastLogged[class]) >= gap {
+	if gap := class.logGap(); gap > 0 && !ringOnlyLine(class, msg) && now.Sub(f.lastLogged[class]) >= gap {
 		f.lastLogged[class] = now
 		logIt = true
 	}
