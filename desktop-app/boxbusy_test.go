@@ -70,3 +70,33 @@ func TestOnlyOneWriterWinsUnderRace(t *testing.T) {
 		t.Errorf("speaker still locked after release: %v", err)
 	}
 }
+
+// The refusal must carry the token the window matches on. The two sides of
+// that contract live in different languages, so a rename here and a stale
+// constant in main.js would silently turn a "your second click was turned
+// away" hint back into the failure report with a copyable Go error that
+// Sascha was shown for a SoundTouch 30 update that was running fine
+// (2026-09-14).
+func TestABusyRefusalIsMarkedForTheWindow(t *testing.T) {
+	const jsConstant = "STR_BUSY:" // desktop-app/frontend/src/main.js, BOX_BUSY_TOKEN
+	if errBoxBusyToken != jsConstant {
+		t.Fatalf("errBoxBusyToken = %q but main.js matches %q", errBoxBusyToken, jsConstant)
+	}
+	b := boxBusy{busy: map[string]string{}}
+	release, err := b.claim("192.0.2.10", "an update")
+	if err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	defer release()
+	_, err = b.claim("192.0.2.10", "an update")
+	if err == nil {
+		t.Fatal("a second write on the same speaker was allowed")
+	}
+	if !strings.HasPrefix(err.Error(), errBoxBusyToken) {
+		t.Errorf("refusal = %q, want it to start with %q", err, errBoxBusyToken)
+	}
+	// Another speaker is untouched: the guard is per box, not global.
+	if _, err := b.claim("192.0.2.11", "an update"); err != nil {
+		t.Errorf("a different speaker was refused: %v", err)
+	}
+}

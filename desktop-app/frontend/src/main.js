@@ -4239,7 +4239,36 @@ async function showUpdateFailureReport(box, phase, errMsg) {
   if (close) close.onclick = () => host.classList.add('hidden');
 }
 
+// BOX_BUSY_TOKEN is the marker the one-write-per-speaker guard puts on its
+// refusal (desktop-app/boxbusy.go). Matched instead of the prose, which is free
+// to be reworded and translated.
+const BOX_BUSY_TOKEN = 'STR_BUSY:';
+
+// Re-entrancy latch for the single-speaker update, set BEFORE the first await.
+//
+// state.otaInProgress is only raised after the stick gate and the Wi-Fi
+// preflight, two network round-trips further down, so a second click inside
+// that window sailed straight past the check at the top. Both runs then reached
+// the backend, the second was correctly refused, and the REFUSED one ran the
+// shared teardown and put a failure report on screen for the update that was
+// running fine (Sascha, SoundTouch 30, 2026-09-14). The whole-house path
+// learned this in August, see updateAllBusy; this one had not.
+let boxUpdateBusy = false;
+
 async function doBoxUpdate(targetBox) {
+  if (boxUpdateBusy) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('common.unknown') }));
+    return;
+  }
+  boxUpdateBusy = true;
+  try {
+    return await runSingleBoxUpdate(targetBox);
+  } finally {
+    boxUpdateBusy = false;
+  }
+}
+
+async function runSingleBoxUpdate(targetBox) {
   // The box to update is passed explicitly by the caller (Speaker Settings
   // passes state.settingsBox). Fall back to the music-tab box only when a
   // caller omits it. Earlier this always used state.currentBox, so updating a
@@ -4595,7 +4624,13 @@ async function doBoxUpdate(targetBox) {
     // re-check the version shortly, instead of a raw Go error toast that two
     // reporters hit while their speaker actually updated fine.
     const msg = String(e);
-    if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
+    if (msg.includes(BOX_BUSY_TOKEN)) {
+      // The backend turned this start away because a write is already running
+      // on this speaker. Nothing failed: the run that IS going is fine, and its
+      // owner must not be handed an error report with a copyable Go error for
+      // an update that finishes a minute later (Sascha, ST30, 2026-09-14).
+      showToast(t('update.alreadyRunning', { name: getBoxLabel(targetBox) }));
+    } else if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
       showToast(t('update.stillWorking'));
     } else {
       showError(boxWasTouched

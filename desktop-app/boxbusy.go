@@ -25,6 +25,14 @@ import (
 // None of the downstream repairs (retrying the upload, waiting longer, being
 // gentler about a missing engine) address that. This does: the second run is
 // refused with a plain answer while the first is still working.
+// errBoxBusyToken marks the refusal as "your second start was turned away",
+// as opposed to "the update failed". The window needs to tell those apart
+// without matching the prose: on 2026-09-14 a second Update click on a
+// SoundTouch 30 was correctly refused here, and the app showed the owner a
+// full failure report with a copyable error for an update that was running
+// perfectly and finished a minute later.
+const errBoxBusyToken = "STR_BUSY:"
+
 type boxBusy struct {
 	mu   sync.Mutex
 	busy map[string]string // host -> what is running
@@ -49,7 +57,7 @@ func (b *boxBusy) claim(host, what string) (release func(), err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if running, taken := b.busy[host]; taken {
-		return func() {}, fmt.Errorf("this speaker is already being written to (%s is running); wait for that to finish", running)
+		return func() {}, fmt.Errorf("%s this speaker is already being written to (%s is running); wait for that to finish", errBoxBusyToken, running)
 	}
 	b.busy[host] = what
 	return func() {
