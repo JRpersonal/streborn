@@ -7274,10 +7274,15 @@ function renderNowPlayingBar() {
   if (nextBtn) nextBtn.classList.toggle('hidden', !isSpotify);
   if (prevBtn) prevBtn.classList.toggle('hidden', !isSpotify);
   let displayName = name;
-  if (/\/spotify\/stream/.test(loc) && state.nowSpotifyTrack) {
-    const song = state.nowSpotifyArtist
-      ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
-      : state.nowSpotifyTrack;
+  // Either Spotify: the one STR serves through its own proxy, or the one the
+  // speaker serves itself after a phone picked it in Connect. Same line, two
+  // sources for the song.
+  const spotifyTrack = state.nowBoxSpotify
+    ? state.nowBoxSpotify.track
+    : (/\/spotify\/stream/.test(loc) ? state.nowSpotifyTrack : '');
+  const spotifyArtist = state.nowBoxSpotify ? state.nowBoxSpotify.artist : state.nowSpotifyArtist;
+  if (spotifyTrack) {
+    const song = spotifyArtist ? `${spotifyArtist} - ${spotifyTrack}` : spotifyTrack;
     displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
   } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
     // The same predicate as the title poller above, and it has to be the same
@@ -7486,6 +7491,25 @@ async function refreshStatus() {
     // three AUX inputs) says which one is playing only in the account, so the
     // input row needs it to light the right button (#274).
     state.nowSourceAccount = (xml.match(/nowPlaying[^>]*sourceAccount="([^"]*)"/) || [])[1] || '';
+    // The speaker's OWN Spotify receiver names the song in the same response,
+    // and that is not true of every source: on radio <track> merely repeats the
+    // station, which is why the song has always had to come from STR's stream
+    // proxy instead (#593). Confirmed on firmware 27.0.6 with the cloud gone
+    // and a FREE Spotify account: <track>, <artist>, <album> and the cover are
+    // all filled while <itemName> carries the playlist. So a phone-started
+    // Connect session can show the song with no extra request, and STR's own
+    // engine must not be asked about it, because it is not the one playing.
+    state.nowBoxSpotify = null;
+    if (src === 'SPOTIFY') {
+      const bt = decodeXmlEntities((xml.match(/<track>([^<]*)<\/track>/) || [])[1] || '');
+      if (bt) {
+        state.nowBoxSpotify = {
+          track: bt,
+          artist: decodeXmlEntities((xml.match(/<artist>([^<]*)<\/artist>/) || [])[1] || ''),
+          cover: (xml.match(/<art\b[^>]*>([^<]*)<\/art>/) || [])[1] || '',
+        };
+      }
+    }
 
     // Native Bose Spotify receiver detection: source=SPOTIFY means the phone
     // connected to the speaker's built-in Spotify Connect, not STR's go-librespot
@@ -7540,7 +7564,10 @@ async function refreshStatus() {
     // Live Spotify track metadata for the now-playing line: poll the agent's
     // /spotify/info (throttled) while a Spotify stream is active so the desktop
     // shows the current song + artist, not just the playlist/preset name.
-    const isSpotifyNow = /\/spotify\/stream|\/playback\/container/.test(newLoc);
+    // A container location is also what the speaker's own receiver reports, and
+    // for that one the song came out of the status XML above. Asking STR's
+    // engine then answers about a session it is not serving and blanks the line.
+    const isSpotifyNow = /\/spotify\/stream|\/playback\/container/.test(newLoc) && !state.nowBoxSpotify;
     if (isSpotifyNow) {
       const npBox = state.currentBox;
       if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {

@@ -2010,7 +2010,20 @@ async function refreshStatus() {
   // before: an SA-5 owner switched to a line input and the remote still read
   // "The Beatles - Help!", through source changes and an app restart (#274).
   const proxySrc = upSrc === 'UPNP' || upSrc === 'LOCAL_INTERNET_RADIO';
-  const song = (playing && proxySrc) ? await currentSong() : '';
+  // The speaker's OWN Spotify receiver is the one source that does name the
+  // song in this very response, so it needs neither the proxy nor a second
+  // request. Confirmed on firmware 27.0.6 with the cloud gone and a FREE
+  // Spotify account: <track>, <artist> and the cover are filled while
+  // <itemName> holds the playlist. Only for SPOTIFY, never in general: on
+  // radio <track> just repeats the station, which is the whole reason the song
+  // has to come from the stream proxy (#593).
+  let song = '';
+  if (upSrc === 'SPOTIFY') {
+    const bt = decodeEntities((t.match(/<track>([^<]*)<\/track>/) || [])[1] || '');
+    const ba = decodeEntities((t.match(/<artist>([^<]*)<\/artist>/) || [])[1] || '');
+    if (bt) song = ba ? ba + ' \u00b7 ' + bt : bt;
+  }
+  if (!song) song = (playing && proxySrc) ? await currentSong() : '';
   // No raw firmware enum on the screen, ever. The old fallback stripped
   // "_STATE" and lower-cased the rest, which turned INVALID_PLAY_STATUS into
   // "invalid_play_status" under the station name (#961). Anything the map does
