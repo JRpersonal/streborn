@@ -147,6 +147,8 @@ func updateAssetKeys() []string {
 		if canSelfReplaceDarwin() {
 			return []string{"desktop_macos_zip", "desktop_macos"}
 		}
+		// The decision that costs the user the drag step is made HERE, before
+		// anything is downloaded, and it used to leave no trace at all.
 		return []string{"desktop_macos"}
 	case "linux":
 		return []string{"desktop_linux"}
@@ -457,7 +459,14 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 		// comparison "always true" to a linter running on Linux; on macOS
 		// builds it is a real branch.
 		if err := a.applyDarwin(downloadedPath); err != nil { //nolint:staticcheck // SA4023: false positive from the cross-platform stub
-			a.logger.Info("macOS in-place update not possible, falling back to the assisted install", "reason", err)
+			// Two reasons live here and they used to read the same. "got a .dmg"
+			// is a CONSEQUENCE of this installation not being replaceable, and
+			// stated on its own it sends the reader hunting for a missing zip
+			// in the release that is sitting right there (#916). So name the
+			// installation as well.
+			selfPath, selfReason, _ := SelfUpdateState()
+			a.logger.Info("macOS in-place update not possible, falling back to the assisted install",
+				"reason", err, "why", selfReason, "appPath", selfPath)
 			return a.RevealUpdateFile(downloadedPath)
 		}
 		return nil
