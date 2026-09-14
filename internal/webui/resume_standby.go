@@ -1366,7 +1366,7 @@ func (s *Server) HandleEnterStandby() {
 	// down, and the ClearURI then wiped the transport the new recall had just
 	// armed. A user play newer than this clear means the clear no longer
 	// represents current intent, so it stands down.
-	s.stopQueue()
+	s.stopQueue("the box was powered off")
 	s.logger.Info("standby bounce: box powered off STR's UPnP source, stopping + clearing the transport URI so it stays off (#197)")
 	clearArmedAt := time.Now()
 	go func() {

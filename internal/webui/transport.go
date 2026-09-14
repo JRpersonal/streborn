@@ -294,7 +294,7 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	s.NoteUserStop()
 	s.NoteExplicitStop()
 	// A stop ends any active library queue (no auto-advance after the user stops).
-	s.stopQueue()
+	s.stopQueue("stop was pressed")
 	// Same as Pause: a station the speaker fetches itself is not on the UPnP
 	// transport, so the stop has to go to the box's own player.
 	if s.transportKeyFallback(r.Context(), "STOP") {

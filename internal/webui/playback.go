@@ -131,7 +131,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
 	defer playCancel()
 	// A single play replaces any active library queue, so stop auto-advancing.
-	s.stopQueue()
+	s.stopQueue("a single station or track was played instead")
 	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
 	// auto-attach so it does not jump back to Spotify.
 	if s.spotifySwitchedAway != nil {
@@ -313,7 +313,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// queue watcher kept evaluating the OLD track's timing and, when its
 	// wall-clock net tripped minutes later, yanked playback from the station
 	// the user explicitly chose back to the next queue track.
-	s.stopQueue()
+	s.stopQueue("a preset that is not a queue was recalled")
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
 	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
@@ -688,7 +688,7 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 	// queue preset through RecallSlot, which never reaches here): drop any
 	// active library queue so its watcher does not advance over the user's new
 	// choice minutes later.
-	s.stopQueue()
+	s.stopQueue("a hardware preset key was pressed")
 	return s.setLastPlay(boxURL, title, art, mime)
 }
 
