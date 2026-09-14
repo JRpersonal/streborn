@@ -721,3 +721,33 @@ export function groupCount(zoneLive, boxes) {
   const stored = storedPermanentGroupsOf(zoneLive, strBoxes).filter((g) => !live.has(g.masterKey));
   return live.size + stored.length;
 }
+
+// groupCountSplit is groupCount with the two halves kept apart, because they
+// are drawn differently: a live group gets a solid coloured frame, a saved one
+// that is not currently formed gets the dashed muted frame (.box-group-stored).
+// The tab badge counts both and has to know which it is looking at, so its
+// colour can match the state that produced it rather than always being brand.
+export function groupCountSplit(zoneLive, boxes) {
+  const up = (s) => String(s || '').toUpperCase();
+  const strBoxes = (boxes || []).filter((b) => b && b.kind !== 'stock' && b.deviceID);
+  const live = new Set();
+  for (const b of strBoxes) {
+    const m = masterOf(b.deviceID, zoneLive);
+    if (!m || live.has(m)) continue;
+    if (m !== up(b.deviceID)) {
+      live.add(m);
+      continue;
+    }
+    const own = (zoneLive || {})[b.deviceID] || {};
+    const host = b.host || '';
+    const others = (own.members || []).filter((x) => {
+      const id = up(x && x.deviceID);
+      const ip = (x && x.ip) || '';
+      if (!id && !ip) return false;
+      return !((id && id === m) || (ip && ip === host));
+    });
+    if (others.length || followersOf(b.deviceID, zoneLive, strBoxes).length) live.add(m);
+  }
+  const stored = storedPermanentGroupsOf(zoneLive, strBoxes).filter((g) => !live.has(g.masterKey));
+  return { live: live.size, stored: stored.length, total: live.size + stored.length };
+}

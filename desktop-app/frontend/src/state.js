@@ -66,6 +66,11 @@ export const state = {
   // dismissible hint above the results; both reset on every fresh search.
   searchRelaxed: false,
   searchRelaxedDismissed: false,
+  // addStationGuideAuto: the "add a missing station" guide above the results
+  // was unfolded by the renderer because a search found nothing, so the next
+  // search that does return stations may fold it again. Stays false while the
+  // user has it open by their own click.
+  addStationGuideAuto: false,
   tags: [],            // cache of top tags for chips
   languages: [],       // cache of languages
   // Pending names: box ID -> { name, until } — after a local rename

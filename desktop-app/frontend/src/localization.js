@@ -289,9 +289,32 @@ const LOCALE_FLAG_SVG = {
   LV: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#9E3039"/><rect y="0.8" width="3" height="0.4" fill="#fff"/></svg>',
   TR: '<svg class="loc-flag-svg" viewBox="0 0 30 20" width="20" height="13" aria-hidden="true"><rect width="30" height="20" fill="#E30A17"/><circle cx="11" cy="10" r="5" fill="#fff"/><circle cx="12.5" cy="10" r="4" fill="#E30A17"/><polygon points="19.5,7.4 20.3,9.6 22.6,9.6 20.8,11.0 21.5,13.2 19.5,11.9 17.5,13.2 18.2,11.0 16.4,9.6 18.7,9.6" fill="#fff"/></svg>',
 };
+
+// LOCALE_MARK_SVG is for the locales that have no country. Arabic is spoken
+// across two dozen states and Traditional Chinese is used in Taiwan, Hong Kong
+// and Macau, so any single flag would be a claim rather than a label. They get
+// a mark in their own script at the size and weight of the flags beside them.
+//
+// Without this both were blank in the picker on Windows: ar fell through to
+// "AR" and drew Argentina (an emoji Segoe UI Emoji cannot render anyway), and
+// zh-Hant is not two letters so flagFromCC returned nothing at all.
+const LOCALE_MARK_SVG = {
+  ar: '<svg class="loc-flag-svg loc-mark-svg" viewBox="0 0 20 13" width="20" height="13" aria-hidden="true"><rect width="20" height="13" rx="2" fill="currentColor" opacity=".12"/><text x="10" y="10" text-anchor="middle" font-size="10" font-weight="600" fill="currentColor">ع</text></svg>',
+  'zh-Hant': '<svg class="loc-flag-svg loc-mark-svg" viewBox="0 0 20 13" width="20" height="13" aria-hidden="true"><rect width="20" height="13" rx="2" fill="currentColor" opacity=".12"/><text x="10" y="10" text-anchor="middle" font-size="9" font-weight="600" fill="currentColor">繁</text></svg>',
+};
+
 export function flagSvg(cc) {
   if (!cc) return '';
   return LOCALE_FLAG_SVG[cc.toUpperCase()] || '';
+}
+
+// localeFlagSvg is what the language picker should ask: it answers for every
+// locale the app ships, by country flag where there is one and by script mark
+// where there is not. Returns '' for an unknown locale so the caller can still
+// fall back to an emoji.
+export function localeFlagSvg(locale, cc) {
+  if (locale && LOCALE_MARK_SVG[locale]) return LOCALE_MARK_SVG[locale];
+  return flagSvg(cc);
 }
 
 // Country dropdown source. Each entry has a stable English lookup key

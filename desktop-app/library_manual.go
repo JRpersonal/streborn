@@ -75,12 +75,22 @@ func writeManualServers(list []manualMediaServer) error {
 	return os.Rename(tmp, path)
 }
 
+// manualServerProbe is one persisted manual server after this scan's
+// describe attempt. Answering is what the list needs to tell the user
+// the truth: a server that did not answer is listed from its stored
+// snapshot, and it used to look exactly like one that just replied
+// (#770).
+type manualServerProbe struct {
+	Server    dlna.Server
+	Answering bool
+}
+
 // refreshedManualServers returns the persisted manual servers, each
-// re-described in parallel so names/control URLs are current. A
-// server that does not answer right now falls back to its stored
-// snapshot: it stays listed (browse will fail with a clear error) and
-// remains removable.
-func (a *App) refreshedManualServers() []dlna.Server {
+// re-described in parallel so names/control URLs are current, together
+// with whether the description came back in this scan. A server that
+// does not answer right now falls back to its stored snapshot: it stays
+// listed (browse will fail with a clear error) and remains removable.
+func (a *App) refreshedManualServers() []manualServerProbe {
 	manualServersMu.Lock()
 	list := readManualServers()
 	manualServersMu.Unlock()
@@ -89,17 +99,17 @@ func (a *App) refreshedManualServers() []dlna.Server {
 	}
 	ctx, cancel := context.WithTimeout(a.appCtx(), 5*time.Second)
 	defer cancel()
-	out := make([]dlna.Server, len(list))
+	out := make([]manualServerProbe, len(list))
 	var wg sync.WaitGroup
 	for i, m := range list {
 		wg.Add(1)
 		go func(i int, m manualMediaServer) {
 			defer wg.Done()
 			if s, err := dlna.DescribeServer(ctx, m.Location); err == nil {
-				out[i] = s
+				out[i] = manualServerProbe{Server: s, Answering: true}
 				return
 			}
-			out[i] = m.Server // offline right now: keep the snapshot
+			out[i] = manualServerProbe{Server: m.Server} // offline right now: keep the snapshot
 		}(i, m)
 	}
 	wg.Wait()

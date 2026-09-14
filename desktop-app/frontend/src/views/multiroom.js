@@ -8,11 +8,11 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
+import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
-import { normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
+import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts } from '../groups.js';
@@ -276,10 +276,18 @@ export function renderMultiroom(fetchLive) {
     // nothing said which one the group forms from, nor that a play on any
     // OTHER member does not form it (Jens, 2026-09-07).
     const masterMark = `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>`;
+    // The main speaker deliberately has no x of its own: taking IT out is
+    // deleting the group, which is what the frame's x above already does.
+    const memberX = (ip, name) => ip
+      ? `<button class="zone-chip-x" data-gkill="${escapeAttr(g.masterKey)}" data-gkill-ip="${escapeAttr(ip)}"` +
+        ` title="${escapeAttr(t('multiroom.removeMemberTip', { name }))}"` +
+        ` aria-label="${escapeAttr(t('multiroom.removeMemberTip', { name }))}">&times;</button>`
+      : '';
     const chips = (g.masterBox ? `<span class="zone-frame-chip">${masterMark}${escapeHtml(label)}</span>` : '') +
-      g.members.map(m => m.box).filter(Boolean).map(b =>
-      `<span class="zone-frame-chip">${escapeHtml(zoneLabel(b))}</span>`).join('') +
-      g.members.filter(m => !m.box).map(m => `<span class="zone-frame-chip">${escapeHtml(m.name || m.ip)}</span>`).join('');
+      g.members.filter(m => m.box).map(m =>
+        `<span class="zone-frame-chip">${escapeHtml(zoneLabel(m.box))}${memberX(m.box.host || m.ip, zoneLabel(m.box))}</span>`).join('') +
+      g.members.filter(m => !m.box).map(m =>
+        `<span class="zone-frame-chip">${escapeHtml(m.name || m.ip)}${memberX(m.ip, m.name || m.ip)}</span>`).join('');
     return `<div class="box-group box-group-stored">` + xBtn +
       `<span class="box-group-label" title="${escapeAttr(t('speaker.groupLabelTitle', { name: label }))}">${GROUP_ICON} ${escapeHtml(label)}</span>` +
       chips + `<span class="zone-frame-note">${escapeHtml(t('multiroom.storedPermanentNote', { master: label }))}</span></div>`;
@@ -456,6 +464,13 @@ export function renderMultiroom(fetchLive) {
   const pairCands = strBoxes.filter(b => /\b10\b/.test(b.model || '') && !storedGroupHosts.has(b.host));
   const pairInGroupCount = strBoxes.filter(b => /\b10\b/.test(b.model || '') && storedGroupHosts.has(b.host)).length;
   const canPair = pairCands.length >= 2;
+  // WHY the picker is empty, which is a different question from whether it is.
+  // The blanket "needs two SoundTouch 10" was shown to an owner of six of them,
+  // all fenced off because they belong to saved permanent groups, and the only
+  // conclusion left to him was that STR was broken (#938). Count the ST10s that
+  // exist before the fence, so the note can name the real reason.
+  const st10s = strBoxes.filter(b2 => /\b10\b/.test(b2.model || ''));
+  const fencedByGroup = st10s.length >= 2 && pairCands.length < 2;
   // Which two speakers the dropdowns show, in order of trust: the pair that is
   // actually live on the speakers, then what the user last picked, then the
   // first two candidates. The last one used to be the ONLY rule, so with three
@@ -593,7 +608,7 @@ export function renderMultiroom(fetchLive) {
 
        <b>${escapeHtml(t('multiroom.stereoHeading'))}</b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
-       ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
+       ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t(fencedByGroup ? 'multiroom.stereoBlockedByGroup' : 'multiroom.stereoNeedTwo'))}</div>`}
        ${canPair ? pairStatus : ''}
        ${stereoCardsHtml}
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
@@ -628,12 +643,45 @@ export function renderMultiroom(fetchLive) {
     renderMultiroom(true);
   };
 
+  // The x on a single member chip of a SAVED group: take that one speaker out
+  // and leave the rest of the group standing. Separate from the frame x above,
+  // which deletes the whole group.
+  root.querySelectorAll('.zone-chip-x').forEach(x => {
+    x.onclick = (e) => {
+      e.stopPropagation();
+      const mk = String(x.dataset.gkill || '').toUpperCase();
+      const ip = String(x.dataset.gkillIp || '');
+      const mb = masterBoxForKey(mk, state.zoneLive, strBoxes);
+      if (!mb || !ip) {
+        setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`, { transient: false });
+        finishAction();
+        return;
+      }
+      doRemoveGroupMemberAt(mb, ip);
+    };
+  });
+
   // Per-frame dismiss: dissolve exactly the group/pair whose frame carries the x.
   root.querySelectorAll('.box-group-x').forEach(x => {
     x.onclick = (e) => {
       e.stopPropagation();
       const mk = String(x.dataset.dissolve || '').toUpperCase();
-      if (x.dataset.dissolveKind === 'pair') {
+      if (x.dataset.dissolveKind === 'stored') {
+        // The x on a SAVED group's dashed frame. Its tooltip has promised
+        // "delete this permanent group" in thirteen languages while doing the
+        // same thing as the live frame's x, which by design leaves the saved
+        // group alone. So the button could not do what it said, and with no
+        // other control anywhere a saved group could not be removed from the
+        // app at all: reported as "the multiroom connection cannot be
+        // separated", with three dissolves in ninety seconds in the log (#119).
+        const mb = masterBoxForKey(mk, state.zoneLive, strBoxes);
+        if (!mb) {
+          setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`, { transient: false });
+          finishAction();
+          return;
+        }
+        doForgetPermanentAt(mb);
+      } else if (x.dataset.dissolveKind === 'pair') {
         const pair = stereoPairsOf(state.zoneLive).find(p =>
           String(p.master || '').toUpperCase() === mk ||
           (p.members || []).some(m => String((m && m.deviceID) || '').toUpperCase() === mk));
@@ -823,13 +871,29 @@ function gkComposedTemplate(strBoxes, name) {
   const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
   if (!master) return null;
   const sel = state.zoneSlaves || {};
-  const members = strBoxes.filter(b => b.deviceID !== master.deviceID && sel[b.deviceID]);
-  if (members.length) {
-    return templateFromBoxes({ name, master, members, permanent: !!state.zonePermanent, label: zoneLabel });
-  }
+  const picked = strBoxes.filter(b => b.deviceID !== master.deviceID && sel[b.deviceID]);
+  // Who is in the group right now. Missing until 2026-09-13, which is why a
+  // user looking at a running group and pressing this button got a validation
+  // warning and an empty store. See gkMembersForSave.
+  const live = groupMembersOf(master, state.zoneLive, strBoxes)
+    .map(m => m.box)
+    .filter(b => b && b.deviceID !== master.deviceID);
   const stored = storedPermanentGroupsOf(state.zoneLive, strBoxes)
     .find(g => g.masterBox && g.masterBox.deviceID === master.deviceID);
-  return stored ? templateFromStored(stored, name, zoneLabel) : null;
+
+  const chosen = gkMembersForSave({
+    picked,
+    live,
+    stored: stored ? (stored.members || []).map(m => m.box).filter(Boolean) : [],
+  });
+  if (!chosen.members.length) return null;
+  if (chosen.from === 'stored' && stored) {
+    return templateFromStored(stored, name, zoneLabel);
+  }
+  // A live group that is also the saved permanent one keeps that badge; the
+  // checkbox only speaks for a group the user is composing by hand.
+  const permanent = chosen.from === 'picked' ? !!state.zonePermanent : !!stored;
+  return templateFromBoxes({ name, master, members: chosen.members, permanent, label: zoneLabel });
 }
 
 function renderGroupKeysSection(strBoxes) {
@@ -1321,6 +1385,44 @@ async function doDissolveZone(strBoxes) {
     return;
   }
   await doDissolveZoneAt(master);
+}
+
+// doForgetPermanentAt deletes the SAVED group led by this master, so it stops
+// re-forming itself the next time that speaker plays. The live group goes with
+// it, which is what the user is asking for when they press the x on the saved
+// group's own frame.
+async function doForgetPermanentAt(master) {
+  if (!master) return;
+  try {
+    await ForgetPermanentGroup(master.host, master.port);
+    // Transient: a confirmation that the thing the user just asked for
+    // happened, and the frame disappearing from the tab says it too.
+    setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.permanentForgotten'))}</div>`, { transient: true });
+  } catch (e) {
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`, { transient: false });
+  }
+  finishAction();
+}
+
+// doRemoveGroupMemberAt takes ONE speaker out of the saved group led by this
+// master. The rest of the group stays.
+//
+// Same shape as doForgetPermanentAt: no startAction, one finishAction, and the
+// speaker's own answer decides what is reported. groupGone is called out
+// separately, because removing the last member ends the group and the frame
+// disappearing would otherwise look like something else went wrong.
+async function doRemoveGroupMemberAt(master, memberIP) {
+  if (!master || !memberIP) return;
+  try {
+    const res = await RemoveGroupMember(master.host, master.port, memberIP);
+    const msg = (res && res.groupGone)
+      ? t('multiroom.memberRemovedGroupGone')
+      : t('multiroom.memberRemoved');
+    setZoneMsg(`<div class="setup-ok">${escapeHtml(msg)}</div>`, { transient: true });
+  } catch (e) {
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.memberRemoveFailed', { err: String(e) }))}</div>`, { transient: false });
+  }
+  finishAction();
 }
 
 // doDissolveZoneAt dissolves the group led by a SPECIFIC master box. Shared by

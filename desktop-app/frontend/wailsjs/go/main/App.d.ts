@@ -73,6 +73,8 @@ export function ExportBackup(arg1:string):Promise<Record<string, any>>;
 
 export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
 
+export function ForgetPermanentGroup(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;
 
 export function FormatStick(arg1:string):Promise<void>;
@@ -122,6 +124,8 @@ export function ListMediaServers(arg1:number):Promise<Array<main.LibraryServer>>
 export function ListWiFiProfiles():Promise<Array<wifiprofiles.Profile>>;
 
 export function LogClientError(arg1:string):Promise<void>;
+
+export function MovePreset(arg1:string,arg2:number,arg3:number,arg4:number):Promise<void>;
 
 export function Next(arg1:string,arg2:number):Promise<void>;
 
@@ -181,7 +185,11 @@ export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 
 export function RemoveConflictingMod(arg1:string,arg2:number):Promise<string>;
 
+export function RemoveGroupMember(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
+
 export function RemoveManualMediaServer(arg1:string):Promise<void>;
+
+export function RenamePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
@@ -209,7 +217,7 @@ export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:strin
 
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
-export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
+export function SelectBoxSource(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 
 export function SendAnnounce(arg1:string,arg2:number,arg3:string,arg4:string,arg5:number):Promise<void>;
 

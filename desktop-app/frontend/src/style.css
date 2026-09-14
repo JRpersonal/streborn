@@ -562,6 +562,16 @@ body {
   border: 1px solid color-mix(in srgb, var(--brand) 55%, transparent);
   white-space: nowrap;
 }
+/* A count made up only of SAVED groups takes the same muted, dashed treatment
+   those groups are drawn with (.box-group-stored), so the badge and the frame
+   it refers to read as one state. A single live group flips it back to brand,
+   which is what the solid frames use. */
+.tab-badge-stored {
+  color: var(--c-muted);
+  background: color-mix(in srgb, var(--c-muted) 14%, transparent);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--c-muted) 55%, transparent);
+}
 .tab-badge[hidden] { display: none; }
 .view.hidden { display: none; }
 .hidden { display: none !important; }
@@ -1017,6 +1027,20 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   border-radius: 4px;
   font-size: 13px;
 }
+/* A server the last scan heard nothing from, listed from memory (#770). Quiet
+   on purpose: it is a fact about the network, not an error in the app, and the
+   entry stays usable for a NAS that wakes on access. */
+.library-server-dark {
+  flex: 0 0 auto;
+  font-size: 10px;
+  background: var(--c-surface-3);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.library-server-dark-note { color: var(--c-muted); font-size: 12px; margin: 0 0 12px; }
 .library-empty {
   background: var(--c-surface);
   border: 1px dashed var(--c-surface-3);
@@ -1109,7 +1133,11 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 
 /* ---------- Controls ---------- */
 .controls { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
-.source-buttons { display: flex; gap: 4px; margin-left: 8px; }
+/* A soundbar brings five or six inputs into this row (TV, CBL-Sat, BD-DVD,
+   Game, Aux), where a one-piece speaker brought two, so it wraps now instead of
+   pushing the volume slider off the edge. */
+.source-buttons { display: flex; gap: 4px; margin-left: 8px; flex-wrap: wrap; }
+.source-inputs { display: flex; gap: 4px; flex-wrap: wrap; }
 .queue-controls { display: flex; gap: 4px; align-items: center; }
 .queue-controls.hidden { display: none; }
 .queue-pos { font-size: 12px; color: var(--c-muted); margin-left: 4px; white-space: nowrap; }
@@ -1342,8 +1370,21 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 }
 .preset .url { font-size: 10px; color: var(--c-faint); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preset-head { display: flex; justify-content: space-between; }
+/* The two key icons share the right-hand end of the header, so adding the
+   rename pencil did not push the clear X away from the corner users know. */
+.preset-acts { display: flex; align-items: center; gap: 2px; }
 .preset .del { color: var(--c-faint); cursor: pointer; padding: 0 4px; font-size: 16px; }
 .preset .del:hover { color: var(--signal-red); }
+.preset .ren { color: var(--c-faint); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1.2; }
+.preset .ren:hover { color: var(--c-text); }
+/* The name field in the shared modal: full width, because a station name is
+   longer than the box a browser gives an input by default. */
+.rename-input {
+  width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px 10px;
+  font: inherit; font-size: 14px; color: var(--c-text);
+  background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 6px;
+}
+.rename-input:focus { outline: none; border-color: var(--brand); }
 .preset-state { font-size: 12px; margin-top: 4px; font-weight: 500; }
 .preset-state.state-play { color: var(--signal-green); }
 .preset-state.state-buf { color: var(--signal-yellow); animation: pulse 1.5s ease-in-out infinite; }
@@ -1483,9 +1524,29 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }
-/* Discreet "add a missing station" pointer at the very end of the results. */
-.search-addhint { display: inline-block; margin: 12px 0 4px; opacity: 0.7; text-decoration: none; }
-.search-addhint:hover { opacity: 1; text-decoration: underline; }
+/* "Add a missing station" (discussion #619): the guide used to be a whole
+   paragraph at 0.7 opacity below the load-more button, and the users who needed
+   it never saw it. Now one quiet line sits above the result list and unfolds
+   into the full text, so it is readable at a glance and still out of the way. */
+.search-addhint { margin: 0 0 6px; }
+.search-addhint > summary {
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--c-muted);
+}
+.search-addhint > summary:hover { color: var(--c-text-2); text-decoration: underline; }
+.search-addhint-body {
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  background: var(--brand-bg);
+  color: var(--c-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.search-addhint-actions { margin-top: 6px; }
 
 /* Dismissible hint above the results when the quality filters had to be
    relaxed: quiet, one line, an x to dismiss for the current result set. */
@@ -2866,3 +2927,35 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .donate-modal-btns .donate-paypal-wordmark .pay { color: #003087; }
 .donate-modal-btns .donate-paypal-wordmark .pal { color: #009cde; }
 .donate-modal-btns .donate-kofi { background: #ff5e5b; color: #fff; }
+
+/* The x on a single member chip of a saved group. Smaller and quieter than the
+   frame's own x, because it does less: it takes one speaker out rather than
+   deleting the group. */
+.zone-frame-chip { position: relative; }
+.zone-chip-x {
+  margin-left: 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: .45;
+  font-size: 1.05em;
+  line-height: 1;
+  padding: 0 1px;
+  cursor: pointer;
+}
+.zone-chip-x:hover, .zone-chip-x:focus-visible { opacity: 1; }
+
+/* The two conditions a Spotify preset needs. Set apart from the steps below
+   it, because somebody who does not meet them cannot follow the steps at all
+   and the whole point is that they find this out here rather than after a
+   silent preset key. */
+.sp-prereq {
+  border-left: 3px solid var(--accent, #8a2318);
+  padding: .55rem .85rem;
+  margin: .6rem 0 1rem;
+  background: rgba(127, 127, 127, .07);
+  border-radius: 0 6px 6px 0;
+}
+.sp-prereq-title { font-weight: 600; margin-bottom: .3rem; }
+.sp-prereq ul { margin: 0; padding-left: 1.1rem; }
+.sp-prereq li { margin: .25rem 0; }

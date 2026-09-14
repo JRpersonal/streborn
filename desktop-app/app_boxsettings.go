@@ -42,15 +42,25 @@ func (a *App) SetBoxBass(host string, port int, value int) error {
 	return a.boxPut(host, port, "/api/box/bass", map[string]int{"value": value})
 }
 
-// SelectBoxSource switches the box to a different source: "AUX", "LOCAL",
-// "BLUETOOTH", "STANDBY". The Stick Agent translates that into the matching
-// /select or /key call to the Bose REST API.
+// SelectBoxSource switches the box to one of its own sources ("AUX", "LOCAL",
+// "PRODUCT", "BLUETOOTH", "STANDBY", ...). The Stick Agent translates that into
+// the matching /select or /key call to the Bose REST API, and refuses anything
+// the speaker itself does not report.
 //
 // AUX and LOCAL are the same analogue input under the two names the firmware
 // uses for it, and they are NOT interchangeable on the wire: the caller passes
 // whichever one the speaker itself reports (#491).
-func (a *App) SelectBoxSource(host string, port int, source string) error {
-	return a.boxPut(host, port, "/api/box/source", map[string]string{"source": source})
+//
+// account is the source's sourceAccount, and it travels because on several
+// models the source name alone does not identify the socket: an SA-5 reports
+// three line inputs as three AUX entries differing only in the account (#274),
+// and a soundbar's HDMI sockets all arrive as PRODUCT with the socket name in
+// the account. Empty for a source with only one account.
+func (a *App) SelectBoxSource(host string, port int, source, account string) error {
+	return a.boxPut(host, port, "/api/box/source", map[string]string{
+		"source":        source,
+		"sourceAccount": account,
+	})
 }
 
 // readHTTPError turns a failed box response into an error carrying the status

@@ -138,6 +138,10 @@ export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
 }
 
+export function ForgetPermanentGroup(arg1, arg2) {
+  return window['go']['main']['App']['ForgetPermanentGroup'](arg1, arg2);
+}
+
 export function FormZone(arg1, arg2, arg3) {
   return window['go']['main']['App']['FormZone'](arg1, arg2, arg3);
 }
@@ -236,6 +240,10 @@ export function ListWiFiProfiles() {
 
 export function LogClientError(arg1) {
   return window['go']['main']['App']['LogClientError'](arg1);
+}
+
+export function MovePreset(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['MovePreset'](arg1, arg2, arg3, arg4);
 }
 
 export function Next(arg1, arg2) {
@@ -354,8 +362,16 @@ export function RemoveConflictingMod(arg1, arg2) {
   return window['go']['main']['App']['RemoveConflictingMod'](arg1, arg2);
 }
 
+export function RemoveGroupMember(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoveGroupMember'](arg1, arg2, arg3);
+}
+
 export function RemoveManualMediaServer(arg1) {
   return window['go']['main']['App']['RemoveManualMediaServer'](arg1);
+}
+
+export function RenamePreset(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['RenamePreset'](arg1, arg2, arg3, arg4);
 }
 
 export function RepairInstallViaSSH(arg1, arg2) {
@@ -410,8 +426,8 @@ export function SaveWebhookConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveWebhookConfig'](arg1, arg2, arg3);
 }
 
-export function SelectBoxSource(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3);
+export function SelectBoxSource(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3, arg4);
 }
 
 export function SendAnnounce(arg1, arg2, arg3, arg4, arg5) {

@@ -5,7 +5,9 @@ import {
   AddBoxByIP,
   GetPresets,
   SetPreset,
+  RenamePreset,
   DeletePreset,
+  MovePreset,
   PlaySlot,
   PlayURL,
   VoteStation,
@@ -258,10 +260,15 @@ import {
   pairMemberBoxes,
   balanceSourceBox,
   groupCount,
+  groupCountSplit,
   onZoneLive,
   notifyZoneLive,
 } from './groups.js';
 import { pairDisplayName } from './stereoNames.js';
+
+// The already-on-another-key refusal and the offer to move the station live in
+// presetmove.js, so vitest can drive the whole decision without a DOM.
+import { parsePresetConflict, presetConflictNote, offerPresetMove } from './presetmove.js';
 
 // Pure decisions of the search flow (URL-paste detection, the synthetic
 // play-this-URL card, the relaxed-filters hint) live in searchflow.js so
@@ -271,6 +278,7 @@ import {
   syntheticStationForURL,
   normalizeDetailedSearch,
   relaxedHintVisible,
+  addStationGuideFold,
 } from './searchflow.js';
 
 import {
@@ -284,6 +292,7 @@ import {
   translateTags,
   flagFromCC,
   flagSvg,
+  localeFlagSvg,
   optFlag,
 } from './localization.js';
 
@@ -299,7 +308,13 @@ import {
 // codes for flag emoji rendering. The "language flag" mapping is a UX
 // convention: English uses the Union Jack rather than US for global
 // audiences. Add new entries here when registering a new bundle.
+// A locale whose code happens to look like a country code is the trap here:
+// "ar" upper-cases to AR, which is Argentina. Locales with no country of their
+// own are listed with an empty string so the fallback below cannot invent one;
+// they are drawn by localeFlagSvg from a script mark instead.
 const LOCALE_FLAG_CC = {
+  ar: '',
+  'zh-Hant': '',
   en: 'GB',
   de: 'DE',
   fr: 'FR',
@@ -349,6 +364,9 @@ import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNo
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
+// Which of a speaker's sources are line inputs a person can switch to, and what
+// each button is called (sourceinputs.js, vitest-covered).
+import { inputButtons, isActiveInput, sourceRowKey } from './sourceinputs.js';
 // Turning a refused preset transfer into a readable sentence is a pure
 // decision (copyreport.js, vitest-covered).
 import { presetCopyConflict } from './copyreport.js';
@@ -423,7 +441,7 @@ initPodcastsView();
 // purge, long after the module has finished evaluating.
 onSpeakerPurge(({ host }) => {
   if (host) {
-    sourceVisibilityCache.delete(host);
+    sourceListCache.delete(host);
     groupOpPending.delete(host);
     pendingGroupEdits.delete(host);
     worldMapKindSeen.delete(host);
@@ -550,12 +568,12 @@ document.querySelector('#app').innerHTML = `
       <div class="app-locale locale-dd" role="group" aria-label="${escapeAttr(t('settings.language'))}">
         ${(() => {
           const cur = AVAILABLE_LOCALES.find(l => l.code === getLocale()) || AVAILABLE_LOCALES[0];
-          const curCc = LOCALE_FLAG_CC[cur.code] || cur.code.toUpperCase();
-          const trigger = `<button type="button" class="locale-dd-trigger" id="localeTrigger" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(cur.label)}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(curCc) || flagFromCC(curCc)}</span><span class="locale-flag-code">${escapeHtml(cur.code.toUpperCase())}</span><span class="locale-dd-caret" aria-hidden="true">&#9662;</span></button>`;
+          const curCc = LOCALE_FLAG_CC[cur.code] ?? cur.code.toUpperCase();
+          const trigger = `<button type="button" class="locale-dd-trigger" id="localeTrigger" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(cur.label)}"><span class="locale-flag-emoji" aria-hidden="true">${localeFlagSvg(cur.code, curCc) || flagFromCC(curCc)}</span><span class="locale-flag-code">${escapeHtml(cur.code.toUpperCase())}</span><span class="locale-dd-caret" aria-hidden="true">&#9662;</span></button>`;
           const items = AVAILABLE_LOCALES.map(l => {
-            const cc = LOCALE_FLAG_CC[l.code] || l.code.toUpperCase();
+            const cc = LOCALE_FLAG_CC[l.code] ?? l.code.toUpperCase();
             const sel = l.code === getLocale();
-            return `<li role="option" class="locale-dd-item${sel ? ' active' : ''}" data-locale="${escapeAttr(l.code)}" aria-selected="${sel ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(cc) || flagFromCC(cc)}</span><span class="locale-dd-name">${escapeHtml(l.label)}</span></li>`;
+            return `<li role="option" class="locale-dd-item${sel ? ' active' : ''}" data-locale="${escapeAttr(l.code)}" aria-selected="${sel ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${localeFlagSvg(l.code, cc) || flagFromCC(cc)}</span><span class="locale-dd-name">${escapeHtml(l.label)}</span></li>`;
           }).join('');
           return trigger + `<ul class="locale-dd-menu" id="localeMenu" role="listbox" hidden>${items}</ul>`;
         })()}
@@ -1471,9 +1489,8 @@ $('view-box').innerHTML = `
         <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" aria-label="${escapeAttr(t('controls.repeat'))}" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
         <span class="queue-pos" id="queuePos"></span>
       </div>
-      <div class="source-buttons">
-        <button class="btn btn-source" data-source="AUX" title="${escapeAttr(t('controls.auxTitle'))}">AUX</button>
-        <button class="btn btn-source btn-source-icon" data-source="BLUETOOTH" aria-label="${escapeAttr(t('controls.bluetoothTitle'))}" title="${escapeAttr(t('controls.bluetoothTitle'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg></button>
+      <div class="source-buttons" id="sourceButtons">
+        <span class="source-inputs" id="sourceInputs"></span>
         <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
@@ -1523,11 +1540,19 @@ $('view-box').innerHTML = `
       </div>
       <div class="genre-chips" id="genreChips"></div>
       <div class="search-count muted small hidden" id="searchCount"></div>
+      <details class="search-addhint" id="addStationBox">
+        <summary>${escapeHtml(t('search.addStationCta'))}</summary>
+        <div class="search-addhint-body">
+          ${escapeHtml(t('search.addStationHint'))}
+          <div class="search-addhint-actions">
+            <button class="btn btn-mini" id="addStationOpenBtn">radio-browser.info</button>
+          </div>
+        </div>
+      </details>
       <div class="search-results" id="searchResults"></div>
       <div class="load-more-row hidden" id="loadMoreRow">
         <button class="btn btn-mini" id="loadMoreBtn">${escapeHtml(t('search.loadMore'))}</button>
       </div>
-      <a href="#" class="search-addhint muted small" id="addStationHint">${escapeHtml(t('search.addStationHint'))}</a>
     </div>
   </div>
 `;
@@ -1613,37 +1638,46 @@ $('queueRepeatBtn').onclick = () => {
   queueAction((h, p) => QueueRepeat(h, p, nextMode));
 };
 
-// Source Buttons (AUX / Bluetooth / Standby) im Musik-Hoeren Tab —
-// rufen das neue /api/box/source Endpoint via SelectBoxSource Binding.
-document.querySelectorAll('.btn-source').forEach(btn => {
-  btn.onclick = async () => {
-    const box = state.currentBox;
-    if (!box) { showToast(t('speaker.noneSelected')); return; }
-    // A speaker that calls its analogue input LOCAL must be switched with
-    // LOCAL: the button keeps its familiar AUX label, but the name that goes
-    // to the speaker is the one the speaker itself reports (see #491).
-    const src = btn.dataset.sourceActual || btn.dataset.source;
-    btn.disabled = true;
-    try {
-      await SelectBoxSource(box.host, box.port, src);
-      showToast(t('toast.source', { src }));
-      setTimeout(refreshStatus, 800);
-    } catch (e) {
-      // The button is normally hidden on hardware that lacks the
-      // source, but if the box reports it unavailable anyway (1005
-      // UNKNOWN_SOURCE_ERROR, relayed by the agent as source_unavailable)
-      // show a clear message instead of the raw box error.
-      if (String(e).includes('source_unavailable')) {
-        showToast(t('toast.sourceUnavailable', { src }));
-        btn.classList.add('hidden');
-      } else {
-        showError(e);
-      }
-    } finally {
-      btn.disabled = false;
-    }
-  };
+// The input row and the standby button in the music tab, both routed through
+// the agent's /api/box/source endpoint via the SelectBoxSource binding.
+//
+// Delegated from the row because the input buttons are built per speaker now: a
+// soundbar's TV and HDMI sockets only exist once that speaker has reported them,
+// so there is no fixed set of buttons left to bind at startup.
+$('sourceButtons').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.btn-source');
+  if (btn) selectSource(btn);
 });
+
+async function selectSource(btn) {
+  const box = state.currentBox;
+  if (!box) { showToast(t('speaker.noneSelected')); return; }
+  // The name that goes to the speaker is the name the speaker itself reported,
+  // which is why a CineMate's analogue input is switched with LOCAL and an
+  // SA-5's second line input needs the account alongside it: without the
+  // account its three AUX sockets are indistinguishable (#491, #274).
+  const src = btn.dataset.source;
+  const account = btn.dataset.sourceAccount || '';
+  const shown = btn.dataset.sourceLabel || src;
+  btn.disabled = true;
+  try {
+    await SelectBoxSource(box.host, box.port, src, account);
+    showToast(t('toast.source', { src: shown }));
+    setTimeout(refreshStatus, 800);
+  } catch (e) {
+    // A button is only drawn for an input the speaker listed, but if the box
+    // refuses it anyway (1005 UNKNOWN_SOURCE_ERROR, relayed by the agent as
+    // source_unavailable) show a clear message instead of the raw box error.
+    if (String(e).includes('source_unavailable')) {
+      showToast(t('toast.sourceUnavailable', { src: shown }));
+      btn.classList.add('hidden');
+    } else {
+      showError(e);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 // Volume slider in the music tab. Uses SetBoxVolume, debounced so a
 // drag does not fire a hundred API calls.
@@ -1830,9 +1864,12 @@ $('searchBtn').onclick = () => doSearch();
 $('topBtn').onclick = () => doTop();
 $('favModeBtn').onclick = () => loadFavorites();
 updateFavModeBtn();
-// Discreet pointer for the few users who want a station that radio-browser.info
-// does not list yet: they can add it there and it shows up here after a while.
-{ const ah = $('addStationHint'); if (ah) ah.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} }; }
+// Pointer for the users who want a station that radio-browser.info does not
+// list yet: they can add it there and it shows up here after a while. The
+// paragraph used to sit below the load-more button as one long link and nobody
+// found it (discussion #619, three missing stations), so it is now a one-line
+// question above the results that unfolds into the full guide.
+{ const ab = $('addStationOpenBtn'); if (ab) ab.onclick = () => { try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} }; }
 $('loadMoreBtn').onclick = () => loadMore();
 $('searchQ').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
 $('searchQ').oninput = () => {
@@ -1964,10 +2001,29 @@ async function discoverBoxes() {
 // minute, re-probe the KNOWN speakers directly (no mDNS sweep, the same quick
 // path the Refresh button uses first) and re-evaluate the update banner.
 // Skipped while an OTA or an install runs so the probe never lands on a
-// speaker mid-flash, and skipped while no speaker is known (the recovery
-// burst owns the empty case).
+// speaker mid-flash.
+//
+// The empty list gets a full sweep instead of the known-box probe, because
+// there are no known boxes to probe. It used to be skipped altogether, on the
+// grounds that the recovery burst owned the empty case, and the burst declines
+// it: it only starts when speakers were there and vanished (`hadBoxesBefore`),
+// deliberately, so an empty LAN is never swept every six seconds. Between the
+// two, a session that never saw a speaker had nobody watching for one: start
+// the app with the Wi-Fi off and the picker still said "No speaker found" long
+// after the network was back, until Refresh was pressed by hand (#935).
+//
+// Once a minute is the right cadence for it. Somebody staring at an empty
+// picker is waiting for exactly this, and it costs one sweep a minute for as
+// long as the app has nothing to show, which is the same situation in which
+// the app is doing nothing else at all.
 setInterval(async () => {
-  if (state.otaInProgress || installRunActive() || !state.boxes.length) return;
+  if (state.otaInProgress || installRunActive()) return;
+  if (!state.boxes.length) {
+    try {
+      await discoverBoxes();
+    } catch { /* the next tick retries */ }
+    return;
+  }
   try {
     const quick = await RefreshKnownBoxes();
     if (quick && quick.length) {
@@ -2041,7 +2097,7 @@ function applyBoxList(list) {
         refreshStatus();
         checkBoxUpdate();
       }
-      updateSourceButtonVisibility();
+      refreshSourceButtons();
     } else {
       state.currentBox = null;
       state.presets = [];
@@ -2961,74 +3017,87 @@ function selectBox(box) {
   // Fetch the stick's region and use it as a default for radio search.
   // Do not overwrite a country the user has already picked manually.
   loadStickRegion();
-  // Some models do not have Bluetooth hardware. Hide the source
-  // button for those instead of letting the user click it and hit
-  // the box's 1005 UNKNOWN_SOURCE_ERROR.
-  updateSourceButtonVisibility();
+  // Draw the input buttons this speaker actually has. A soundbar's TV and HDMI
+  // sockets only appear once the speaker has listed them.
+  refreshSourceButtons();
 }
 
-// updateSourceButtonVisibility hides source buttons for hardware that
-// the currently-selected box does not have. Run after every selectBox()
-// AND after every discovery refresh so the visibility tracks model
-// detection that lands later (Bose stock /info enrichment).
+// refreshSourceButtons draws one button per input the selected speaker reports,
+// and is run after every selectBox() AND after every discovery refresh so the
+// row tracks model detection that lands later (Bose stock /info enrichment).
 //
-// Two layers: a model-name heuristic gives an immediate answer (the
-// SoundTouch Portable has no Bluetooth, the Wave pedestal exposes no
-// selectable AUX), then the box's actual /sources list refines it. The
-// list is authoritative and model-agnostic, so it also catches ST20
-// hardware variants that ship without Bluetooth (see issue #102, where
-// the box answered a BT /select with 1005 UNKNOWN_SOURCE_ERROR) and the
-// Wave, whose own Aux input is not reachable through the SoundTouch
-// pedestal (#417). Visibility is recomputed both ways on every box
-// switch, so a button hidden after a 1005 rejection on one box comes
-// back when a box that has the source is selected (#417: it previously
-// stayed hidden for every box until an app restart). STANDBY exists on
-// every model.
-// sourceVisibilityCache remembers, per speaker, what its own source list said
-// about Bluetooth. The heuristic below runs first on every refresh and showed
-// the button for a speaker whose list had already hidden it, so the button
-// blinked in and out every minute (Jens, 2026-09-06). A known verdict wins
-// over the heuristic from the start.
-const sourceVisibilityCache = new Map();
-async function updateSourceButtonVisibility() {
-  const btBtn = document.querySelector('.btn-source[data-source="BLUETOOTH"]');
-  const auxBtn = document.querySelector('.btn-source[data-source="AUX"]');
-  if ((!btBtn && !auxBtn) || !state.currentBox) return;
-  const model = (state.currentBox.model) || '';
-  // Immediate heuristic so the buttons are correct before the async
-  // source list arrives, unless this speaker's list has already answered.
-  const known = sourceVisibilityCache.get(state.currentBox.host);
-  if (btBtn) btBtn.classList.toggle('hidden', known ? !known.bt : /portable/i.test(model));
-  if (auxBtn) auxBtn.classList.toggle('hidden', /wave/i.test(model));
-  // Until the speaker's own list arrives, assume the usual name.
-  if (auxBtn) auxBtn.dataset.sourceActual = 'AUX';
+// Two layers. The speaker's own source list is the answer, and until it arrives
+// the row holds the classic AUX plus Bluetooth pair, minus what the model name
+// rules out. The list then replaces them, which is what brings a soundbar's TV,
+// CBL-Sat, BD-DVD and Game sockets in (#385, #491, #577), splits an SA-5's three
+// line inputs (#274), and still catches the ST20 variants that ship without
+// Bluetooth and used to answer a BT /select with 1005 UNKNOWN_SOURCE_ERROR
+// (#102). The row is rebuilt on every box switch, so a button hidden after a
+// 1005 rejection on one speaker comes back on a speaker that has the input
+// (#417: it stayed hidden for every box until an app restart).
+//
+// sourceListCache remembers each speaker's list. The startup pair is drawn
+// first on every refresh, and for a speaker whose list had already dropped a
+// button that made the button blink in and out every minute (Jens,
+// 2026-09-06), so a list already read wins from the first frame.
+const sourceListCache = new Map();
+async function refreshSourceButtons() {
+  const row = $('sourceInputs');
+  if (!row || !state.currentBox) return;
   const box = state.currentBox;
+  renderSourceButtons(inputButtons(sourceListCache.get(box.host), box.model || ''), box.host);
   try {
     const settings = await BoxSettings(box.host, box.port);
     // Guard against a box switch while the request was in flight.
     if (state.currentBox !== box) return;
     const sources = (settings && settings.sources) || [];
-    // Only trust a non-empty list; an empty one means the box did not
-    // answer /sources and we keep the heuristic result.
+    // Only trust a non-empty list. An empty one means the speaker did not
+    // answer /sources, and the startup pair is the better guess than no inputs
+    // at all on a box that has them.
     if (Array.isArray(sources) && sources.length) {
-      const has = (name) => sources.some(s => (s.source || '').toUpperCase() === name);
-      sourceVisibilityCache.set(box.host, { bt: has('BLUETOOTH') });
-      if (btBtn) btBtn.classList.toggle('hidden', !has('BLUETOOTH'));
-      // The analogue input is not called the same thing on every model. A
-      // Cinemate reports it as LOCAL, and because STR only ever looked for
-      // AUX the button was hidden on a speaker that has the input and was
-      // even playing through it, while the same button showed up fine on the
-      // owner's ST10 and ST20 (#491). Accept either name and remember which
-      // one this speaker uses, so switching sends back what it understands.
-      if (auxBtn) {
-        const localName = has('AUX') ? 'AUX' : (has('LOCAL') ? 'LOCAL' : '');
-        auxBtn.classList.toggle('hidden', !localName);
-        auxBtn.dataset.sourceActual = localName || 'AUX';
-      }
+      sourceListCache.set(box.host, sources);
+      renderSourceButtons(inputButtons(sources, box.model || ''), box.host);
     }
   } catch {
-    // Keep the heuristic result on any error.
+    // Keep what is on screen on any error.
   }
+}
+
+// The Bluetooth glyph, so that input keeps the icon it has always had in this
+// row while every other input is drawn from the name the speaker gives it.
+const BLUETOOTH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg>';
+
+let sourceRowDrawn = '';
+
+function renderSourceButtons(buttons, host) {
+  const row = $('sourceInputs');
+  if (!row) return;
+  const key = sourceRowKey(host, buttons);
+  if (key === sourceRowDrawn) {
+    highlightActiveSource();
+    return;
+  }
+  sourceRowDrawn = key;
+  row.innerHTML = buttons.map((b) => {
+    const title = escapeAttr(t('controls.inputTitle', { input: b.label }));
+    const data = `data-source="${escapeAttr(b.source)}" data-source-account="${escapeAttr(b.sourceAccount)}" data-source-label="${escapeAttr(b.label)}"`;
+    if (b.bluetooth) {
+      return `<button class="btn btn-source btn-source-icon" ${data} aria-label="${escapeAttr(b.label)}" title="${title}">${BLUETOOTH_ICON}</button>`;
+    }
+    return `<button class="btn btn-source" ${data} title="${title}">${escapeHtml(b.label)}</button>`;
+  }).join('');
+  highlightActiveSource();
+}
+
+// highlightActiveSource marks the input the speaker is playing from. Called
+// after every status poll and again after a rebuild of the row, because the
+// buttons are replaced now and would otherwise come back unlit while the
+// speaker is still on that input.
+function highlightActiveSource() {
+  document.querySelectorAll('.btn-source').forEach((b) => {
+    const button = { source: b.dataset.source, sourceAccount: b.dataset.sourceAccount };
+    b.classList.toggle('active', isActiveInput(button, state.nowSource, state.nowSourceAccount));
+  });
 }
 
 // boxFetch lives in api.js next to boxURL, imported above.
@@ -3335,9 +3404,17 @@ function updateSettingsTabBadge() {
 function updateMultiroomTabBadge() {
   const el = $('multiroomTabBadge');
   if (!el) return;
-  const n = groupCount(state.zoneLive, state.boxes);
+  const split = groupCountSplit(state.zoneLive, state.boxes);
+  const n = split.total;
   el.hidden = n === 0;
   el.textContent = n ? String(n) : '';
+  // A badge carries the colour of the state that produced it. A saved group
+  // that is not currently formed is drawn as a dashed muted frame, so a count
+  // made up only of those reads muted too; as soon as one group is actually
+  // live the badge is brand again, matching the solid frames (Jens,
+  // 2026-09-12: the blue count over a grey dashed frame did not read as the
+  // same thing).
+  el.classList.toggle('tab-badge-stored', n > 0 && split.live === 0);
   const tip = n ? t('nav.multiroomBadgeTitle', { n }) : '';
   el.title = tip;
   el.setAttribute('aria-label', tip);
@@ -6192,7 +6269,7 @@ function renderPresets() {
       // wide enough for the string", user report 2026-08-23). The running title
       // now lives only in that bar, which is the full window wide.
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></div>
+        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}">&#9998;</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
@@ -6275,6 +6352,12 @@ function renderPresets() {
     }
     grid.appendChild(div);
   }
+  grid.querySelectorAll('.ren').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      renamePresetKey(parseInt(el.dataset.slot, 10));
+    };
+  });
   grid.querySelectorAll('.del').forEach(el => {
     el.onclick = async (e) => {
       e.stopPropagation();
@@ -6295,6 +6378,63 @@ function renderPresets() {
   // No marquee pass here: nothing in a tile scrolls any more (see the tile
   // template above). The saved name wraps and the badge lines clip, so a
   // rebuilt grid needs no measuring frame.
+}
+
+// PRESET_NAME_MAX mirrors maxPresetNameRunes in the agent, so the field stops
+// where the speaker's own preset entry does and a typed name is never handed
+// back shortened.
+const PRESET_NAME_MAX = 64;
+
+// renamePresetKey lets the user call a key whatever they want (#812). Station
+// names arrive from the radio directory shouted in capitals, misspelled, or long
+// enough to fill the whole tile, and the key is the user's own. Only the name is
+// written: the station, its logo, a Spotify preset's playlist and account all
+// stay exactly as they are.
+async function renamePresetKey(slot) {
+  if (!state.currentBox) return;
+  const p = state.presets.find(x => x.slot === slot);
+  if (!p) return;
+  const current = p.name || '';
+  const answer = confirmWarn(
+    t('preset.renameHeading'),
+    `<p>${escapeHtml(t('preset.renameBody', { n: slot }))}</p>`
+    + `<input id="presetRenameInput" class="rename-input" type="text" maxlength="${PRESET_NAME_MAX}" />`,
+    {
+      icon: null,
+      calm: true,
+      rich: true,
+      confirmLabel: t('common.save'),
+      confirmClass: 'btn btn-primary',
+    },
+  );
+  // Filled and focused only once the modal is on screen, and the value is set
+  // from JS so an apostrophe or a quote in a station name cannot break out of
+  // the markup.
+  const input = $('presetRenameInput');
+  if (input) {
+    input.value = current;
+    input.focus();
+    input.select();
+    // Enter is what a person presses after typing a name. Without this the
+    // modal's two buttons are the only way out of the field.
+    input.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const confirmBtn = $('warnConfirm');
+      if (confirmBtn) confirmBtn.click();
+    };
+  }
+  if (!await answer) return;
+  const name = (input ? input.value : '').trim();
+  if (!name || name === current) return;
+  try {
+    await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
+  } catch (err) {
+    showError(err);
+    return;
+  }
+  showToast(t('preset.renamedKey', { n: slot, name }));
+  loadPresets();
 }
 
 // applyTrackScroll turns an overflowing line into a gentle marquee: it pauses
@@ -6334,6 +6474,16 @@ function applyTrackScroll(selector = '.status-bar .now') {
 // long-press save so a box-native preset can't be overwritten by a hold.
 const LONG_PRESS_MS = 1100;
 const VISUAL_HOLD_DELAY = 180;
+// isKeyChrome reports whether an event landed on one of the small icons in a
+// key's header (clear, rename) rather than on the key itself. Those icons sit
+// INSIDE the element that carries the play click and the hold-to-save, so
+// without this a tap on the pencil would also start the station, and holding it
+// would save over the key the user only wanted to rename.
+function isKeyChrome(target) {
+  const cl = target && target.classList;
+  return !!cl && (cl.contains('del') || cl.contains('ren'));
+}
+
 function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));
   const allowSave = opts.allowSave !== false;
@@ -6357,8 +6507,8 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   };
   const start = (e) => {
     if (e.button !== undefined && e.button !== 0) return; // left click only
-    // A click on the X icon is not a preset click.
-    if (e.target.classList && e.target.classList.contains('del')) return;
+    // A press on one of the icons in the key's header is not a press on the key.
+    if (isKeyChrome(e.target)) return;
     armed = true; // we start the hold
     firedLong = false; // true once long press fires
     startedAt = Date.now();
@@ -6389,7 +6539,7 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     if (bar) bar.style.width = '0%';
   };
   const finish = (e) => {
-    if (e.target.classList && e.target.classList.contains('del')) return;
+    if (isKeyChrome(e.target)) return;
     const wasArmed = armed;
     cancel();
     if (!wasArmed) return;
@@ -6414,25 +6564,39 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 
 // showPresetSaveError turns a failed preset save into the right message. The
 // agent refuses (409 already-on-slot) a save whose station already sits on
-// another key rather than silently deleting that key (#836); that is a friendly
-// "already on key N" note, not an error.
-function showPresetSaveError(err) {
-  const s = String(err);
-  const m = /already-on-slot/.test(s) && s.match(/"slot":\s*(\d+)/);
-  if (m) {
-    // Name WHAT it collided with. Without it the note reads as a refusal to
-    // have more than one of something, which is how a user with three Spotify
-    // playlists concluded he could only keep one (#925). The agent's 409
-    // carries the other preset's name, and saying it turns the refusal into the
-    // answer: he reads back the playlist the speaker was still on.
-    const nm = (s.match(/"name":\s*"((?:[^"\\]|\\.)*)"/) || [])[1];
-    const name = nm ? nm.replace(/\\(.)/g, '$1') : '';
-    showToast(name
-      ? t('preset.alreadyOnKeyNamed', { name, n: m[1] })
-      : t('preset.alreadyOnKey', { n: m[1] }));
+// another key rather than silently deleting that key (#836); that is a question,
+// not an error, so it becomes the note naming the collision plus the offer to
+// move the station onto the key the user pressed (#709/#925). slot is that key;
+// without one there is nothing to move to and the plain note is all that is left.
+function showPresetSaveError(err, slot) {
+  const conflict = parsePresetConflict(err);
+  if (conflict) {
+    if (slot >= 1 && slot <= 6 && state.currentBox) {
+      presetMoveOffer(conflict, slot);
+    } else {
+      showToast(presetConflictNote(conflict, t));
+    }
     return;
   }
-  showError(t('preset.saveFailed', { err: s }));
+  showError(t('preset.saveFailed', { err: String(err) }));
+}
+
+// presetMoveOffer hands offerPresetMove the app's own modal, agent call and grid
+// repaint. The decision itself stays in presetmove.js where it is unit-tested.
+function presetMoveOffer(conflict, slot, onBox) {
+  const box = onBox || state.currentBox;
+  return offerPresetMove({
+    conflict,
+    toSlot: slot,
+    t,
+    // confirmWarn writes the body as HTML and a station name comes from the
+    // directory, so it is escaped here.
+    confirm: (title, body, opts) => confirmWarn(title, escapeHtml(body), opts),
+    move: (from, to) => MovePreset(box.host, box.port, from, to),
+    toast: showToast,
+    fail: showError,
+    done: loadPresets,
+  });
 }
 
 // saveCurrentToSlot saves the currently playing station onto the
@@ -6518,7 +6682,7 @@ async function saveCurrentToSlot(slot) {
       if (/spotify-uri-unplayable|replayable playlist/i.test(msg)) {
         showError(t('preset.spotifyNotSaveable'));
       } else {
-        showPresetSaveError(err);
+        showPresetSaveError(err, slot);
       }
       return;
     }
@@ -6557,7 +6721,7 @@ async function saveCurrentToSlot(slot) {
           VoteStation(state.currentBox.host, state.currentBox.port, app.uuid).catch(() => {});
         }
       } catch (err) {
-        showPresetSaveError(err);
+        showPresetSaveError(err, slot);
       }
       return;
     }
@@ -6572,7 +6736,7 @@ async function saveCurrentToSlot(slot) {
         await loadPresets();
         return;
       } catch (err) {
-        showPresetSaveError(err);
+        showPresetSaveError(err, slot);
         return;
       }
     }
@@ -6623,7 +6787,7 @@ async function saveCurrentToSlot(slot) {
       showToast(t('preset.savedToKey', { n: slot, name: oname }));
       await loadPresets();
     } catch (err) {
-      showPresetSaveError(err);
+      showPresetSaveError(err, slot);
     }
     return;
   }
@@ -6649,7 +6813,7 @@ async function saveCurrentToSlot(slot) {
       VoteStation(state.currentBox.host, state.currentBox.port, state.nowUUID).catch(() => {});
     }
   } catch (err) {
-    showPresetSaveError(err);
+    showPresetSaveError(err, slot);
   }
 }
 
@@ -7000,6 +7164,7 @@ function resetNowPlaying() {
   state.nowName = '';
   state.nowTitle = '';
   state.nowSource = '';
+  state.nowSourceAccount = '';
   state.nowPlayState = '';
   state.nowIcon = '';
   state.nowBitrate = 0;
@@ -7249,6 +7414,10 @@ async function refreshStatus() {
     const name = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
     state.nowSource = src;
+    // A speaker with more than one socket of the same kind (an SA-5 reports
+    // three AUX inputs) says which one is playing only in the account, so the
+    // input row needs it to light the right button (#274).
+    state.nowSourceAccount = (xml.match(/nowPlaying[^>]*sourceAccount="([^"]*)"/) || [])[1] || '';
 
     // Native Bose Spotify receiver detection: source=SPOTIFY means the phone
     // connected to the speaker's built-in Spotify Connect, not STR's go-librespot
@@ -7449,14 +7618,7 @@ async function refreshStatus() {
     // status poll. It is the only place the running title is shown.
     renderNowPlayingBar();
 
-    // Source buttons: highlight the active source in green.
-    document.querySelectorAll('.btn-source').forEach(b => {
-      const s = b.dataset.source;
-      const active = ((s === 'AUX' || s === 'LOCAL') && (src === 'AUX' || src === 'LOCAL')) ||
-                     (s === 'BLUETOOTH' && src === 'BLUETOOTH') ||
-                     (s === 'STANDBY' && src === 'STANDBY');
-      b.classList.toggle('active', active);
-    });
+    highlightActiveSource();
   } catch {
     // Transient status-fetch failure (a single poll timing out while the
     // box is briefly busy, e.g. BoseApp's :8090 under load). Keep the last
@@ -8272,6 +8434,14 @@ function renderSearchResults() {
       cnt.classList.remove('hidden');
     }
   }
+  // The "add a missing station" guide above the list: unfolded by the renderer
+  // when the directory answered a name search with nothing, folded back when a
+  // later search does return stations. A guide the user unfolded themselves is
+  // left alone, so the flag records who opened it.
+  const guide = $('addStationBox');
+  const fold = addStationGuideFold(state.addStationGuideAuto, state.searchLastMode, totalRaw);
+  if (guide && fold.open !== null) guide.open = fold.open;
+  state.addStationGuideAuto = fold.auto;
   // Small dismissible hint above the results when the backend had to relax
   // the quality filters: entries may be unverified, and the user should know
   // why. Rendered inside #searchResults so no markup outside src/ changes.
@@ -8297,25 +8467,9 @@ function renderSearchResults() {
       : state.searchOnlyBose && (state.searchResults || []).length > 0
         ? t('search.noBoseStations')
         : t('search.noStationsFound');
-    let html = '<div class="muted">' + escapeHtml(msg) + '</div>';
-    // A name search that genuinely returned nothing (not the favorites view and
-    // not the Bose-filter-hid-everything case) means the station is not in the
-    // radio-browser directory. Surface the "add it yourself" guide right here so
-    // the user does not have to spot the small permanent hint in the filter row.
-    const genuinelyEmpty = state.searchLastMode === 'search'
-      && state.searchLastQuery
-      && (state.searchResults || []).length === 0;
-    if (genuinelyEmpty) {
-      html += '<div class="search-empty-addhint" style="margin-top:.6rem">'
-        + '<a href="#" class="search-addhint" id="emptyAddStationHint">'
-        + escapeHtml(t('search.addStationHint')) + '</a></div>';
-    }
+    const html = '<div class="muted">' + escapeHtml(msg) + '</div>';
     res.innerHTML = hintHtml + html;
     wireRelaxedDismiss();
-    const addLink = $('emptyAddStationHint');
-    if (addLink) {
-      addLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} };
-    }
     return;
   }
   res.innerHTML = hintHtml + list.map((s, i) => {
@@ -8417,7 +8571,11 @@ function renderSearchResults() {
 // showSlotPicker renders the shared 1-6 preset slot-picker modal. Callers pass
 // the title, subtitle and an onPick(slot) that does the actual save; closing the
 // modal, reloading the presets and surfacing errors are common to every use.
-function showSlotPicker({ title, subtitle, onPick }) {
+// box is the speaker the pick writes to. It defaults to the selected one, and a
+// caller that can assign onto ANOTHER speaker (a Recently-played card from a
+// different box) has to pass it, so a move offered after a refusal happens on
+// the speaker the station is actually on.
+function showSlotPicker({ title, subtitle, onPick, box }) {
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
   const grid = $('pickGrid');
@@ -8432,7 +8590,19 @@ function showSlotPicker({ title, subtitle, onPick }) {
         await onPick(i);
         closePick();
         await loadPresets();
-      } catch (err) { showError(err); }
+      } catch (err) {
+        // Assigning a station from a list meets the same already-on-another-key
+        // refusal as the hold-to-save, and it is the path the two reporters were
+        // on (#709/#925), so it gets the same offer to move.
+        const conflict = parsePresetConflict(err);
+        const target = box || state.currentBox;
+        if (conflict && target) {
+          closePick();
+          presetMoveOffer(conflict, i, target);
+          return;
+        }
+        showError(err);
+      }
     };
     grid.appendChild(b);
   }

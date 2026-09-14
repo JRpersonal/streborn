@@ -193,7 +193,7 @@ goform_wlan_push() {
             --header="Referer: http://$_gf_h/" \
             --post-data="$_gf_body" \
             "http://$_gf_h/goform/aformHandlerConfigureProfileSettings" 2>&1)
-        setup_log "goform_wlan_push @ $_gf_h ssid='$_gf_ssid' rc=$? resp='$(echo "$_gf_resp" | tr -d '\r\n' | head -c 120)'"
+        setup_log "goform_wlan_push @ $_gf_h ssid name_length=${#_gf_ssid} rc=$? resp='$(echo "$_gf_resp" | tr -d '\r\n' | head -c 120)'"
         case "$_gf_resp" in
             *"successfully applied"*|*EndRes*) return 0 ;;
         esac
@@ -1048,7 +1048,7 @@ elif [ -f "$STICK/wlan.conf" ]; then
     _es_pass=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
 fi
 if [ -n "$_es_ssid" ] && [ -n "$_es_pass" ]; then
-    setup_log "early WLAN one-shot: provisioning '$_es_ssid' via goform BEFORE the heavy stick copy (power-weak safety net)"
+    setup_log "early WLAN one-shot: provisioning a network (name_length=${#_es_ssid}) via goform BEFORE the heavy stick copy (power-weak safety net)"
     goform_wlan_push "$_es_ssid" "$_es_pass" \
         && setup_log "early WLAN one-shot: coprocessor accepted the profile" \
         || setup_log "early WLAN one-shot: no goform apply yet (coprocessor :80 maybe not up); full provisioning will retry"
@@ -1126,17 +1126,53 @@ SHIM_WRAPPER="$PERSIST/lib/SU-wrapper.sh"
 # Bose-side state at this moment — Shepherd config, mount options,
 # SU binary attributes — so a scm/spotty bundle can tell us in one
 # look what is different vs the working taigan path.
-shim_stage_wrapper() {
-    setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
-    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
+# shim_wanted_here: the chipset-whitelist hijack is opt-in.
+#
+# It used to be opt-out. Both functions below named taigan, spotty, rhino and
+# mojo, skipped those, and let every other box fall through into the bind-mount
+# that replaces /opt/Bose/SoftwareUpdate and kills the running one. What that
+# does where it is not wanted is on the record: a taigan boots with its light
+# bar stuck and no setup AP, a spotty's BoseApp never answers within 180s (both
+# live 2026-05-31), and on mojo the .so cannot even load (live ST30 2026-06-10,
+# #123). The REDIRECT comment further down puts it plainly: the shim is
+# boot-hang-prone on uncatalogued boxes.
+#
+# A box whose /proc/variant will not read, or whose codename nobody here has
+# catalogued, is the box we know least about, and the deny-list handed exactly
+# that box the most invasive path in this file. Every chassis in the catalogue
+# was already skipping, so the hijack only ever ran where it had never been
+# tried.
+#
+# Nothing loses reachability by this. A chipset-blocked chassis is reached
+# through the iptables PREROUTING REDIRECT below, which leaves every Bose
+# process alone, and REDIRECT_ELIGIBLE is deliberately wider than this gate
+# ever was.
+#
+# STR_FORCE_SHIM_TAIGAN=1 turns it on for a hardware session. STR_SHIM_VARIANTS
+# is a space-separated list of variant or hostname fragments it may run on, for
+# the day a chassis turns up that genuinely needs it.
+shim_wanted_here() {
+    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" = "1" ]; then
+        setup_log "shim gate: ON — forced by STR_FORCE_SHIM_TAIGAN (variant='${VARIANT:-?}' host='${HOSTID:-?}')"
+        return 0
+    fi
+    for shim_v in ${STR_SHIM_VARIANTS:-}; do
         case "${VARIANT}|${HOSTID}" in
-            *taigan*|*spotty*)
-                setup_log "shim stage: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}). The LD_PRELOAD late-swap kills SoftwareUpdate, which on BCO boxes never actually forwards :8888 (spotty :17008 self-probe NOT STR) and races shepherdd's respawn, wedging scm_finalize / the Bose mesh init (live 2026-05-31: taigan boot bar stuck with NO setup-AP; spotty BoseApp never answers within 180s, M0 times out). External :8888 on BCO is served by the iptables PREROUTING REDIRECT path instead, which never touches SoftwareUpdate. STR_FORCE_SHIM_TAIGAN=1 overrides."
-                return 0 ;;
-            *rhino*|*mojo*)
-                setup_log "shim stage: SKIP — sm2 chassis (${VARIANT:-?}/${HOSTID:-?}). sm2 boxes (ST10 rhino, ST30 mojo) are not chipset-whitelisted; STR's :8888 is opened directly by the iptables INPUT ACCEPT path (iptables_install_streborn_fw), so the LD_PRELOAD shim is unnecessary here. Running it only kills/relaunches Bose SoftwareUpdate (racing shepherdd) for no gain, and on mojo the .so cannot even load (live ST30 2026-06-10, #123: box healthy, agent up, shim self-probe NOT STR). STR_FORCE_SHIM_TAIGAN=1 overrides."
+            *"$shim_v"*)
+                setup_log "shim gate: ON — STR_SHIM_VARIANTS names '$shim_v' (variant='${VARIANT:-?}' host='${HOSTID:-?}')"
                 return 0 ;;
         esac
+    done
+    return 1
+}
+
+SHIM_OFF_REASON="variant='${VARIANT:-?}' host='${HOSTID:-?}', and the SoftwareUpdate hijack is opt-in, so nothing asked for it. Every catalogued chassis skips it: it wedges the Bose mesh init on taigan and spotty, and the .so does not load on mojo. A chipset-blocked chassis gets external :8888 from the iptables PREROUTING REDIRECT instead, which leaves every Bose process alone. STR_FORCE_SHIM_TAIGAN=1 or STR_SHIM_VARIANTS turns it on."
+
+shim_stage_wrapper() {
+    setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
+    if ! shim_wanted_here; then
+        setup_log "shim stage: SKIP — $SHIM_OFF_REASON"
+        return 0
     fi
     if [ -e "$SHIM_DISABLE" ]; then
         setup_log "shim stage: BAIL — disabled via $SHIM_DISABLE marker"
@@ -1229,15 +1265,9 @@ shim_stage_wrapper
 # have to guess about ordering.
 shim_late_swap() {
     setup_log "shim late-swap: enter (will wait up to 240s for /info to be stable for 30s)"
-    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
-        case "${VARIANT}|${HOSTID}" in
-            *taigan*|*spotty*)
-                setup_log "shim late-swap: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}); SoftwareUpdate left untouched so the Bose mesh init cannot wedge. External :8888 via the REDIRECT path. STR_FORCE_SHIM_TAIGAN=1 overrides."
-                return 0 ;;
-            *rhino*|*mojo*)
-                setup_log "shim late-swap: SKIP — sm2 chassis (${VARIANT:-?}/${HOSTID:-?}); :8888 is opened by the iptables INPUT ACCEPT path, so SoftwareUpdate is left untouched (no shepherdd race, no needless kill/relaunch). STR_FORCE_SHIM_TAIGAN=1 overrides."
-                return 0 ;;
-        esac
+    if ! shim_wanted_here; then
+        setup_log "shim late-swap: SKIP — $SHIM_OFF_REASON"
+        return 0
     fi
     if [ -e "$SHIM_DISABLE" ]; then
         setup_log "shim late-swap: BAIL — $SHIM_DISABLE marker present"
@@ -1612,7 +1642,7 @@ assert_profile_priority() {
             fi
             if ! cmp -s "$_pp_f" "$_pp_f.strnew"; then
                 mv "$_pp_f.strnew" "$_pp_f" && sync 2>/dev/null
-                setup_log "profile-priority: '$SSID' outranked in $(basename "$(dirname "$_pp_f")")/NetworkProfiles.xml (#697)"
+                setup_log "profile-priority: the provisioned network (name_length=${#SSID}) outranked in $(basename "$(dirname "$_pp_f")")/NetworkProfiles.xml (#697)"
             else
                 rm -f "$_pp_f.strnew" 2>/dev/null
             fi
@@ -1700,7 +1730,7 @@ fi
 case "$WLAN_SOURCE" in
     "stick wlan.ssid"|"stick wlan.conf")
         if [ -n "$SSID" ]; then
-            setup_log "early priority demotion: stick provisions '$SSID' - outranking it over any stored profiles BEFORE the join attempts (router-switch safety, see #697)"
+            setup_log "early priority demotion: stick provisions a network (name_length=${#SSID}) - outranking it over any stored profiles BEFORE the join attempts (router-switch safety, see #697)"
             assert_profile_priority
         fi
         ;;
@@ -1979,7 +2009,7 @@ fi
 
 if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
-    setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
+    setup_log "wlan.conf parsed: SSID name_length=${#SSID} password_length=${#PASS}"
 
     # ---- v0.9.7 hands-off boot (Jens, 2026-07-12) ----------------------
     # On a NORMAL boot (credentials replayed from NAND, no fresh stick
@@ -2293,7 +2323,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             mv "$_air.str-new" "$_air" 2>/dev/null
             sync 2>/dev/null
             AIR_WROTE=1
-            setup_log "M_air: wrote slot-0 PersistentWifiProfile encrypted=false ssid='$SSID' pass_len=${#PASS} -> $_air"
+            setup_log "M_air: wrote slot-0 PersistentWifiProfile encrypted=false ssid name_length=${#SSID} pass_len=${#PASS} -> $_air"
             # acctMode=local so BoseApp does not block on a cloud account.
             _scdb="${_air%/AirplayConfiguration.xml}/SystemConfigurationDB.xml"
             if [ -f "$_scdb" ] && ! grep -q '<acctMode>local</acctMode>' "$_scdb" 2>/dev/null; then
@@ -2474,7 +2504,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             esac
         fi
         if [ -n "$M0A_SSID_DIFFER" ] && [ -z "$M0A_SSID_MATCH" ]; then
-            setup_log "M0a: STA lease present BUT stored SSID differs from stick wlan.conf SSID='$SSID' — falling through to provisioning so the network switch can take effect"
+            setup_log "M0a: STA lease present BUT stored SSID differs from stick wlan.conf SSID (name_length=${#SSID}) — falling through to provisioning so the network switch can take effect"
             PRE_LEASE=""
         else
             setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping destructive provisioning, leaving Bose state intact (ssid match=${M0A_SSID_MATCH:-unknown})"
@@ -2566,7 +2596,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # reboot, so a win here skips the disruptive reboot path; every existing
     # method stays as a fallback below. Heavy logging is intentional.
     if [ "$WINNER" = "none" ] && { [ -n "$IS_TAIGAN" ] || [ "$BCO_MODE" = "1" ]; }; then
-        setup_log "M_jukebox: === BCO on-box recon + GoForm START (ssid='$SSID' src='${WLAN_SOURCE:-none}') ==="
+        setup_log "M_jukebox: === BCO on-box recon + GoForm START (ssid name_length=${#SSID} src='${WLAN_SOURCE:-none}') ==="
         for _ji in lo eth0 wlan0; do
             [ -d "/sys/class/net/$_ji" ] || continue
             setup_log "M_jukebox recon: $_ji operstate=$(cat "/sys/class/net/$_ji/operstate" 2>/dev/null) carrier=$(cat "/sys/class/net/$_ji/carrier" 2>/dev/null) ip=$(ip -4 addr show "$_ji" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | tr '\n' ',')"
@@ -2676,9 +2706,9 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # write. Empty here means the box has no network to lose.
     AIR_PRE_SSID=$(bco_stored_ssid 2>/dev/null)
     if [ -n "$AIR_FP_NOW" ] && [ "$AIR_FP_NOW" = "$AIR_FP_SEEN" ] && [ "$(airplay_slot0_ssid)" = "$SSID" ]; then
-        setup_log "M_air: already provisioned + rebooted for the current creds (SSID='$SSID', slot-0 matches), skipping M_air rewrite+reboot"
+        setup_log "M_air: already provisioned + rebooted for the current creds (SSID name_length=${#SSID}, slot-0 matches), skipping M_air rewrite+reboot"
     else
-    setup_log "M_air: coprocessor profile store before write: ssid='${AIR_PRE_SSID:-none}' (empty means nothing to lose)"
+    setup_log "M_air: coprocessor profile store before write: ssid name_length=${#AIR_PRE_SSID} (0 means nothing to lose)"
     write_airplay_profile
     if [ "${AIR_WROTE:-}" = "1" ] && { [ "$BCO_MODE" = "1" ] || [ -n "${IS_TAIGAN:-}" ]; }; then
         if airplay_reboot_guard_ok; then
@@ -3163,7 +3193,7 @@ WPAEOF
                 wpa_cli -i "$_WI" enable_network "$NETID"                  >/dev/null 2>&1; R4=$?
                 wpa_cli -i "$_WI" select_network "$NETID"                  >/dev/null 2>&1; R5=$?
                 wpa_cli -i "$_WI" save_config                              >/dev/null 2>&1; R6=$?
-                setup_log "M4: set ssid=$R1 psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
+                setup_log "M4: rc set_ssid=$R1 set_psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
                 if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$R4" = "0" ]; then
                     { printf 'SSID=%s\n' "$SSID"
                       printf 'PASS=%s\n' "$PASS"

@@ -519,6 +519,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		// the only branch in the recall chain with no trace at all (#252).
 		s.logger.Warn("stream proxy: box fetched a slot with no playable preset",
 			"slot", slot, "found", ok, "queue", ok && p.Type == "queue")
+		// The box will now leave the station it was just handed. Record the
+		// refusal so the native-preset watchdog does not read that as the
+		// speaker being unable to hold one. See slotmiss.go.
+		noteSlotMiss(slot)
 		http.Error(w, "no preset", http.StatusNotFound)
 		return
 	}

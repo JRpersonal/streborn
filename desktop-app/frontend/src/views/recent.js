@@ -372,6 +372,10 @@ function saveSpotifyCard(c) {
   deps.showSlotPicker({
     title: t('recent.saveTitle'),
     subtitle: c.name || '',
+    // A card can belong to another speaker than the selected one, and the picker
+    // needs to know which speaker it is writing to: a refusal there is answered
+    // with a move on that same speaker.
+    box,
     onPick: async (i) => {
       await SaveSpotifyPreset(box.host, box.port, i, c.name || '', c.url, c.account || '');
       showToast(t('recent.saved', { name: c.name || '' }));

@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/JRpersonal/streborn/internal/boxurl"
 )
 
 // NativeStation is what a native radio location describes.
@@ -106,6 +108,56 @@ func DecodeNativeStation(loc string) (NativeStation, bool) {
 }
 
 // rawStreamProxyPath is the ad-hoc stream proxy route (boxurl.RawStream).
+// nativeStationURL picks the proxy URL to put inside a native station for this
+// speaker: the slot form normally, the raw form while this speaker is a group
+// follower.
+//
+// A native station is activated by the speaker itself, so the URL only has to
+// mean something locally, and /stream/<slot> is the better form: the per-slot
+// machinery (the re-push watchdog, recall verification, a queue preset's live
+// track) is all keyed on that number.
+//
+// In a group it stops being local. The firmware hands a follower's content item
+// to the MASTER to play, and the master reads 127.0.0.1 as itself, so the slot
+// is looked up in the master's preset store. Three grouped SoundTouch 10s,
+// 2026-09-13: key 6 held a station on the follower the recall went to and
+// nothing on the master, the master fetched its own /stream/6, its proxy
+// answered "box fetched a slot with no playable preset slot=6 found=false", and
+// the user got a solid amber LED and silence on all three. The same keys played
+// as soon as the group was undone.
+//
+// Naming the follower's own LAN address instead is not the way out: two rhino
+// ST10s cannot reach each other's web port at all, so the master's fetch would
+// simply fail differently. The raw form carries the station in the URL, so
+// whichever speaker ends up fetching resolves it against its own proxy and no
+// preset store is consulted.
+//
+// An unreadable zone keeps the slot form. Guessing "follower" on a read error
+// would take the slot machinery away from the standalone majority for nothing.
+func (s *Server) nativeStationURL(slot int, slotURL, streamURL string) string {
+	standDown, why := s.zonePushWouldFightGroup()
+	url := nativeStationURLFor(slotURL, streamURL, standDown)
+	if url != slotURL {
+		s.logger.Info("native station: the master resolves this station, not this speaker, so it travels in the URL",
+			"slot", slot, "reason", why)
+	}
+	return url
+}
+
+// nativeStationURLFor is the choice itself, without the zone read.
+//
+// masterResolves says this speaker will not be the one fetching: it is a group
+// follower, or it is in a group and cannot tell which end it is, and either way
+// a slot number means whatever the master has in that slot. Without a stream
+// URL to put in the raw form there is nothing to fall back to, so the slot form
+// stays and the recall fails the way it did before rather than differently.
+func nativeStationURLFor(slotURL, streamURL string, masterResolves bool) string {
+	if !masterResolves || strings.TrimSpace(streamURL) == "" {
+		return slotURL
+	}
+	return boxurl.RawStream(streamURL)
+}
+
 var rawStreamProxyPath = regexp.MustCompile(`^/stream/raw$`)
 
 // unwrapRawStreamProxy unwinds "/stream/raw?u=<base64 URL>" wrappers (an

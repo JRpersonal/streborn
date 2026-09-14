@@ -11,6 +11,7 @@ export {
   AddBoxByIP,
   GetPresets,
   SetPreset,
+  RenamePreset,
   DeletePreset,
   PlaySlot,
   PlayURL,
@@ -145,6 +146,7 @@ export {
   GetZoneState,
   FormZone,
   DissolveZone,
+  ForgetPermanentGroup,
   DissolveStereoPair,
   SyncSpotifyLogin,
 } from '../wailsjs/go/main/App';
@@ -181,6 +183,14 @@ function callOptionalBinding(name, args) {
   return fn(...args);
 }
 
+// RemoveGroupMember takes ONE speaker out of a saved permanent group, leaving
+// the rest of the group standing. An optional binding, per the note above: it
+// is brand new, so naming it in the re-export list at the top would break the
+// frontend build against an older generated App module.
+export function RemoveGroupMember(masterHost, masterPort, memberIP) {
+  return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
+}
+
 // RadioSearchDetailed is RadioSearch plus a relaxed flag: same opts object,
 // returns {stations, relaxed} where relaxed=true means the backend had to
 // drop the quality filters to find anything.
@@ -200,6 +210,15 @@ export function RadioStationsByURL(streamURL) {
 // falls back to its previous behaviour.
 export function ClassifyStreamURL(streamURL) {
   return callOptionalBinding('ClassifyStreamURL', [streamURL]);
+}
+
+// MovePreset takes the station on key `from` over to key `to`. Offered when a
+// save is refused because the station already sits on another key, so the user
+// can say "then move it" (discussions #709 and #925). Optional binding: an app
+// built before the method exists rejects with MISSING_BINDING and the caller
+// shows the plain refusal it always did.
+export function MovePreset(host, port, from, to) {
+  return callOptionalBinding('MovePreset', [host, port, from, to]);
 }
 
 // boxURL builds an absolute URL for an agent endpoint on a given box.
