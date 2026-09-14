@@ -14,8 +14,10 @@ import (
 // holding a preset press.
 const spotifyGateTimeout = 4 * time.Second
 
-// spotifyRecallRefused answers the preconditions for a Spotify preset recall
-// and writes the refusal itself, reporting whether the caller must stop.
+// recallRefusedBeforeWake answers every precondition for a preset recall that
+// can be settled without the speaker, writes the refusal itself, and reports
+// whether the caller must stop. It also performs the legacy-preset heal, which
+// is why it takes a pointer.
 //
 // It runs BEFORE the speaker is woken, and that ordering is the whole point.
 //
@@ -26,10 +28,45 @@ const spotifyGateTimeout = 4 * time.Second
 // Two releases tried to stop the resumed station again afterwards and both
 // lost the race, because the box answers the stop with an HTTP 200 whether or
 // not the audio actually stopped. None of these three checks needs an awake
-// speaker: the engine handle is local state, CanRecall probes the sidecar on
+// speaker: an empty track list and an unreplayable saved URI are fields on the
+// preset, the engine handle is local state, CanRecall probes the sidecar on
 // loopback and reads a file, and the account type is already known. Asked
 // here, a doomed recall never sends `sys power`, so there is nothing to undo.
-func (s *Server) spotifyRecallRefused(w http.ResponseWriter, slot int, p presets.Preset) bool {
+//
+// Anything added here must be answerable with the box asleep. A check that
+// needs the speaker belongs after the wake, where it always did.
+func (s *Server) recallRefusedBeforeWake(w http.ResponseWriter, slot int, pp *presets.Preset) bool {
+	p := *pp
+	// A saved folder with nothing left in it cannot play either, and the
+	// check is the length of a slice.
+	if p.Type == "queue" && len(presetItemsToQueue(p.Items)) == 0 {
+		s.logger.Warn("preset recall (app): the saved folder has no playable tracks, not waking the speaker", "slot", slot)
+		http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
+		return true
+	}
+	// Heal a legacy mis-saved Spotify preset before recall: older versions could
+	// store a Spotify selection as a non-spotify preset whose stream URL encoded
+	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
+	// radio path would then stream-proxy a scheme-less URL and the box would get
+	// nothing, which is the "Service not available" recall failure (#45/#105).
+	// Recover the URI and route to the Spotify path; if it is a Spotify stream
+	// with no recoverable URI, tell the user to re-save instead of pushing a
+	// doomed /stream/<slot>.
+	if p.Type != "spotify" && p.StreamURL != "" && !isHTTPURL(p.StreamURL) {
+		if uri := legacySpotifyURI(p.StreamURL); uri != "" {
+			p.Type, p.URI = "spotify", uri
+			s.logger.Info("preset recall: healed legacy spotify preset", "slot", slot, "uri", uri)
+		} else if looksLikeSpotifyStreamURL(p.StreamURL) {
+			s.logger.Warn("preset recall: spotify preset has no replayable URI", "slot", slot, "url", p.StreamURL)
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": "This Spotify preset was saved in an older version and can't be replayed. Please open the playlist and save it to the preset again.",
+				"code":  "spotify-preset-unreplayable",
+				"slot":  slot, "name": p.Name,
+			})
+			return true
+		}
+	}
+	*pp = p
 	if p.Type != "spotify" || p.URI == "" {
 		return false
 	}

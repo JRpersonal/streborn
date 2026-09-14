@@ -252,7 +252,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// it again was a race STR kept losing. These three preconditions need
 	// nothing from an awake speaker, so asked here they cost one local probe
 	// and the box stays asleep.
-	if s.spotifyRecallRefused(w, slot, p) {
+	if s.recallRefusedBeforeWake(w, slot, &p) {
 		return
 	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the
@@ -294,11 +294,8 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
 	// use the *Locked variant (startQueue would re-lock and deadlock).
 	if p.Type == "queue" {
+		// Emptiness was answered before the wake, in recallRefusedBeforeWake.
 		items := presetItemsToQueue(p.Items)
-		if len(items) == 0 {
-			http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
-			return
-		}
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 		// Bind the slot before the queue starts so a box-native /stream/<slot>
 		// fetch racing this app-initiated recall can hold for the first track
@@ -325,28 +322,6 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// wall-clock net tripped minutes later, yanked playback from the station
 	// the user explicitly chose back to the next queue track.
 	s.stopQueue("a preset that is not a queue was recalled")
-	// Heal a legacy mis-saved Spotify preset before recall: older versions could
-	// store a Spotify selection as a non-spotify preset whose stream URL encoded
-	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
-	// radio path would then stream-proxy a scheme-less URL and the box would get
-	// nothing, which is the "Service not available" recall failure (#45/#105).
-	// Recover the URI and route to the Spotify path; if it is a Spotify stream
-	// with no recoverable URI, tell the user to re-save instead of pushing a
-	// doomed /stream/<slot>.
-	if p.Type != "spotify" && p.StreamURL != "" && !isHTTPURL(p.StreamURL) {
-		if uri := legacySpotifyURI(p.StreamURL); uri != "" {
-			p.Type, p.URI = "spotify", uri
-			s.logger.Info("preset recall: healed legacy spotify preset", "slot", slot, "uri", uri)
-		} else if looksLikeSpotifyStreamURL(p.StreamURL) {
-			s.logger.Warn("preset recall: spotify preset has no replayable URI", "slot", slot, "url", p.StreamURL)
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error": "This Spotify preset was saved in an older version and can't be replayed. Please open the playlist and save it to the preset again.",
-				"code":  "spotify-preset-unreplayable",
-				"slot":  slot, "name": p.Name,
-			})
-			return
-		}
-	}
 	// Spotify presets have no playable HTTP StreamURL. Mirror the hardware-press
 	// recall (cmd/agent playSpotifyPreset) so a soft recall behaves identically:
 	//  1. wait out a cold go-librespot (auth not finished) instead of pointing

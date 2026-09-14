@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -160,9 +161,56 @@ func TestTheSpotifyGateOnlyRefusesSpotifyRecallsThatCannotWork(t *testing.T) {
 	noURI := presets.Preset{Slot: 3, Name: "Half saved", Type: "spotify", StreamURL: "http://stream.example/y"}
 
 	for _, p := range []presets.Preset{radio, spot, noURI} {
+		p := p
 		w := httptest.NewRecorder()
-		if s.spotifyRecallRefused(w, p.Slot, p) {
+		if s.recallRefusedBeforeWake(w, p.Slot, &p) {
 			t.Errorf("slot %d (%s) was refused: %s", p.Slot, p.Type, w.Body.String())
 		}
+	}
+}
+
+// The two doomed recalls that are not about Spotify at all. Both used to wake
+// the speaker first and then refuse, which on a sleeping speaker reproduces
+// #948 exactly: the firmware brings back its last station and the user is
+// listening to a key they did not press.
+func TestTheOtherDoomedRecallsAlsoLeaveTheSpeakerAsleep(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+
+	empty := presets.Preset{Slot: 4, Name: "Gone folder", Type: "queue"}
+	legacy := presets.Preset{Slot: 5, Name: "Old mix", Type: "radio",
+		StreamURL: "/playback/container/not-a-url"}
+
+	for _, p := range []presets.Preset{empty, legacy} {
+		p := p
+		w := httptest.NewRecorder()
+		if !s.recallRefusedBeforeWake(w, p.Slot, &p) {
+			t.Errorf("slot %d (%s) was not refused before the wake", p.Slot, p.Type)
+			continue
+		}
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("slot %d: status = %d, want 422 (body %s)", p.Slot, w.Code, w.Body.String())
+		}
+	}
+	if n := rec.count(); n != 0 {
+		t.Errorf("%d commands reached the speaker, want none: %v", n, rec.list())
+	}
+}
+
+// The heal is part of the same pass, so a legacy preset that CAN be recovered
+// comes back out of the gate as a playable Spotify preset rather than a
+// refusal.
+func TestTheLegacyHealSurvivesTheMoveIntoTheGate(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+	s.spotifyCanRecall = func(context.Context) bool { return true }
+
+	p := presets.Preset{Slot: 6, Name: "Old mix", Type: "radio",
+		StreamURL: "/playback/container/" + base64.RawURLEncoding.EncodeToString([]byte("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"))}
+	w := httptest.NewRecorder()
+	if s.recallRefusedBeforeWake(w, p.Slot, &p) {
+		t.Fatalf("a recoverable legacy preset was refused: %s", w.Body.String())
+	}
+	if p.Type != "spotify" || p.URI == "" {
+		t.Errorf("the heal did not reach the caller: type=%q uri=%q", p.Type, p.URI)
 	}
 }
