@@ -1,8 +1,13 @@
 package webui
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // #948: "Initiating a Spotify playlist via a preset key causes another preset
@@ -59,6 +64,105 @@ func TestNothingIsStoppedWhenTheSpeakerResumedNothing(t *testing.T) {
 		quiet := s == "" || strings.EqualFold(s, "STANDBY") || strings.EqualFold(s, "INVALID_SOURCE")
 		if quiet {
 			t.Errorf("source %q is a real station and must be stoppable", src)
+		}
+	}
+}
+
+// The durable half of #948, after two releases had tried to STOP the station
+// the firmware had already started.
+//
+// A Spotify recall that cannot succeed is now refused BEFORE anything touches
+// the speaker, so `sys power` is never sent, the firmware never resumes its
+// last station, and there is no auto-resume left to undo. These three
+// preconditions are all answerable with the box asleep.
+func TestASpotifyRecallThatCannotSucceedNeverReachesTheSpeaker(t *testing.T) {
+	spotifyPreset := presets.Preset{Slot: 1, Name: "Morning mix", Type: "spotify",
+		URI: "spotify:playlist:0000000000000000000000"}
+
+	cases := []struct {
+		name     string
+		setup    func(*Server)
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "no engine on this box",
+			setup:    func(s *Server) {},
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "Spotify not configured",
+		},
+		{
+			name: "speaker never picked in Spotify",
+			setup: func(s *Server) {
+				s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+				s.spotifyCanRecall = func(context.Context) bool { return false }
+			},
+			wantCode: http.StatusUnprocessableEntity,
+			wantBody: "spotify-not-logged-in",
+		},
+		{
+			name: "free account",
+			setup: func(s *Server) {
+				s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+				s.spotifyCanRecall = func(context.Context) bool { return true }
+				s.spotifyPremiumRequired = func() bool { return true }
+			},
+			wantCode: http.StatusUnprocessableEntity,
+			wantBody: "spotify-premium-required",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, rec := newPlayTestServer(t)
+			c.setup(s)
+			if err := s.presets.SetSlot(spotifyPreset); err != nil {
+				t.Fatalf("SetSlot: %v", err)
+			}
+			w := httptest.NewRecorder()
+			s.handlePlaySlot(w, httptest.NewRequest(http.MethodPost, "/api/play/1", nil))
+
+			if w.Code != c.wantCode {
+				t.Errorf("status = %d, want %d (body %s)", w.Code, c.wantCode, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), c.wantBody) {
+				t.Errorf("body = %s, want it to carry %q", w.Body.String(), c.wantBody)
+			}
+			// Nothing may have been sent to the speaker. A UPnP action here
+			// would mean the handler had already driven the box.
+			if n := rec.count(); n != 0 {
+				t.Errorf("%d commands reached the speaker, want none: %v", n, rec.list())
+			}
+			// The refusal ran before the recall was recorded as a user play,
+			// which is the same point in the handler as the standby wake.
+			s.standbyStopMu.Lock()
+			started := s.lastUserPlayStart
+			s.standbyStopMu.Unlock()
+			if !started.IsZero() {
+				t.Error("the recall was recorded as a user play, so the handler had already gone past the wake")
+			}
+		})
+	}
+}
+
+// The gate must not touch anything else. A radio preset, and a Spotify preset
+// on a speaker that CAN recall, both fall through to the normal path.
+func TestTheSpotifyGateOnlyRefusesSpotifyRecallsThatCannotWork(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+	s.spotifyCanRecall = func(context.Context) bool { return true }
+	s.spotifyPremiumRequired = func() bool { return false }
+
+	radio := presets.Preset{Slot: 2, Name: "Test Station", Type: "radio", StreamURL: "http://stream.example/x"}
+	spot := presets.Preset{Slot: 1, Name: "Mix", Type: "spotify", URI: "spotify:playlist:x"}
+	// A "spotify" preset with no URI is the broken-save shape and takes the
+	// radio path, so the gate must let it through rather than refusing it.
+	noURI := presets.Preset{Slot: 3, Name: "Half saved", Type: "spotify", StreamURL: "http://stream.example/y"}
+
+	for _, p := range []presets.Preset{radio, spot, noURI} {
+		w := httptest.NewRecorder()
+		if s.spotifyRecallRefused(w, p.Slot, p) {
+			t.Errorf("slot %d (%s) was refused: %s", p.Slot, p.Type, w.Body.String())
 		}
 	}
 }
