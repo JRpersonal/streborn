@@ -631,10 +631,10 @@ func forcedWriteBusy(src string, playing, playKnown bool) bool {
 		// Without this a box idling on a stopped native station counts as busy
 		// and defers the dead-key self-heal (#342) by the full ceiling, and
 		// that heal's whole promise is that a dead key comes back in seconds.
-		// Only when the play state was actually READ: an unreadable box on this
+		// Only when the play state was actually READ. An unreadable box on this
 		// source may well be playing, and guessing wrong there is the #961
 		// interruption again.
-		return !(playKnown && !playing)
+		return !playKnown || playing
 	}
 	return !resyncSafeSource(src)
 }
