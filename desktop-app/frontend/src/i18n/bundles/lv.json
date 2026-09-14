@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "Šobrīd uz šiem skaļruņiem nav stereo pāra.",
   "multiroom.zoneDissolved": "Grupa atsaistīta. Skaļruņi atkal atskaņo atsevišķi.",
   "multiroom.dissolveIncomplete": "Grupu neizdevās pilnībā izjaukt. Mēģiniet vēlreiz pēc brīža.",
+  "multiroom.dissolveIncompleteN": "{{n}} skaļruņi joprojām ir šajā grupā. Izslēdzot un atkal ieslēdzot galveno skaļruni, tie atbrīvojas.",
   "multiroom.nothingToUngroup": "Pašlaik nav grupas, ko atgrupēt.",
   "multiroom.dissolveGroupTip": "Izšķīdināt šo grupu",
   "multiroom.forgetPermanentTip": "Dzēst šo pastāvīgo grupu",

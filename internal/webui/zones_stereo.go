@@ -2521,7 +2521,17 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 				break // the speaker confirms it: the zone is gone
 			}
 			cur = z.Members
-			s.logger.Info("zone: members still present after removeZoneSlave, retrying", "remaining", len(cur), "attempt", attempt)
+			s.logger.Info("zone: members still present after removeZoneSlave, retrying",
+				"remaining", len(cur), "members", memberIDs(cur), "attempt", attempt)
+		}
+		// The master took every call and kept the group. Try the two routes the
+		// batch-at-the-master loop above cannot reach before answering.
+		if len(cur) > 0 && dissolveUnverified == "" {
+			left, reason := s.escalateDissolve(c, master, cur)
+			cur = left
+			if reason != "" {
+				dissolveUnverified = reason
+			}
 		}
 		remaining = len(cur)
 	}
@@ -2579,7 +2589,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	if remaining > 0 {
 		resp["remaining"] = remaining
 		resp["error"] = "the speaker still reports members in the group"
-		s.logger.Warn("zone: dissolve did not empty the group", "remaining", remaining)
+		s.logger.Warn("zone: dissolve did not empty the group, every teardown route was tried", "remaining", remaining)
 	}
 	if dissolveUnverified != "" {
 		resp["unverified"] = dissolveUnverified

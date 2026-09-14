@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "W tej chwili na tych głośnikach nie ma pary stereo.",
   "multiroom.zoneDissolved": "Grupa rozwiązana. Głośniki grają znów osobno.",
   "multiroom.dissolveIncomplete": "Nie udało się całkowicie rozwiązać grupy. Spróbuj za chwilę.",
+  "multiroom.dissolveIncompleteN": "{{n}} głośników wciąż jest w tej grupie. Wyłączenie i włączenie głównego głośnika je uwalnia.",
   "multiroom.nothingToUngroup": "Nie ma teraz grupy do rozłączenia.",
   "multiroom.dissolveGroupTip": "Rozłącz tę grupę",
   "multiroom.forgetPermanentTip": "Usuń tę stałą grupę",

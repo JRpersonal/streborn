@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "Šiuo metu šiuose garsiakalbiuose stereo poros nėra.",
   "multiroom.zoneDissolved": "Grupė išardyta. Kolonėlės vėl groja atskirai.",
   "multiroom.dissolveIncomplete": "Grupės nepavyko visiškai išskirstyti. Pabandykite netrukus dar kartą.",
+  "multiroom.dissolveIncompleteN": "{{n}} kolonėlės vis dar yra šioje grupėje. Išjungus ir vėl įjungus pagrindinę kolonėlę jos atsilaisvina.",
   "multiroom.nothingToUngroup": "Šiuo metu nėra grupės, kurią būtų galima išskaidyti.",
   "multiroom.dissolveGroupTip": "Išardyti šią grupę",
   "multiroom.forgetPermanentTip": "Ištrinti šią nuolatinę grupę",

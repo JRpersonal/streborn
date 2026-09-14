@@ -114,6 +114,7 @@
   "multiroom.stereoNoPair": "No stereo pair on these speakers right now.",
   "multiroom.zoneDissolved": "Group dissolved. The speakers play on their own again.",
   "multiroom.dissolveIncomplete": "The group could not be taken apart completely. Try again in a moment.",
+  "multiroom.dissolveIncompleteN": "{{n}} speakers are still in this group. Switching the main speaker off and on again releases them.",
   "multiroom.nothingToUngroup": "There is no group to ungroup.",
   "multiroom.dissolveGroupTip": "Dissolve this group",
   "multiroom.forgetPermanentTip": "Delete this permanent group",

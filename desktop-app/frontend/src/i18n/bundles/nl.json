@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "Er is op dit moment geen stereopaar op deze speakers.",
   "multiroom.zoneDissolved": "Groep opgeheven. De speakers spelen weer afzonderlijk.",
   "multiroom.dissolveIncomplete": "De groep kon niet volledig worden opgeheven. Probeer het zo nog eens.",
+  "multiroom.dissolveIncompleteN": "{{n}} speakers zitten nog in deze groep. De hoofdspeaker even uit en weer aan zetten maakt ze los.",
   "multiroom.nothingToUngroup": "Er is nu geen groep om op te heffen.",
   "multiroom.dissolveGroupTip": "Deze groep opheffen",
   "multiroom.forgetPermanentTip": "Deze permanente groep verwijderen",

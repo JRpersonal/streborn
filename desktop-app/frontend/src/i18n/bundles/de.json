@@ -114,6 +114,7 @@
   "multiroom.stereoNoPair": "Auf diesen Lautsprechern gibt es gerade kein Stereopaar.",
   "multiroom.zoneDissolved": "Gruppe aufgelöst. Die Lautsprecher spielen wieder einzeln.",
   "multiroom.dissolveIncomplete": "Die Gruppe ließ sich nicht vollständig auflösen. Versuche es gleich noch einmal.",
+  "multiroom.dissolveIncompleteN": "{{n}} Lautsprecher sind noch in dieser Gruppe. Den Hauptlautsprecher einmal aus und wieder einschalten löst sie.",
   "multiroom.nothingToUngroup": "Es gibt gerade keine Gruppe zum Auflösen.",
   "multiroom.dissolveGroupTip": "Diese Gruppe auflösen",
   "multiroom.forgetPermanentTip": "Diese dauerhafte Gruppe löschen",

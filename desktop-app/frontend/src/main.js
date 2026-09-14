@@ -2585,11 +2585,22 @@ async function dissolveGroupFrame(masterKey) {
   const followers = state.boxes.filter(b => b !== masterBox && b.kind !== 'stock' && !b.offline &&
     String(((state.zoneLive || {})[b.deviceID] || {}).master || '').toUpperCase() === mk);
   try {
-    await DissolveZone(masterBox.host, masterBox.port);
-    await Promise.allSettled(followers.map(b => Stop(b.host, b.port)));
-    state.zoneLive = applyOptimisticZone(state.zoneLive, masterBox, []);
-    notifyZoneLive();
-    showToast(t('group.dissolvedToast'));
+    // Trust the speaker's verdict, the same way views/multiroom.js already
+    // does. A green tick on a group that is still playing is worse than no
+    // message at all: it sends the user round the loop again, which is exactly
+    // what nine refused dissolves in a row looked like from the outside
+    // (Juergen, eleven speakers, 2026-09-14).
+    const res = await DissolveZone(masterBox.host, masterBox.port);
+    if (res && res.ok === false) {
+      // The group is still there, so the optimistic empty zone must NOT be
+      // applied: painting it empty is what made the frame vanish and come back.
+      showToast(dissolveIncompleteMessage(res));
+    } else {
+      await Promise.allSettled(followers.map(b => Stop(b.host, b.port)));
+      state.zoneLive = applyOptimisticZone(state.zoneLive, masterBox, []);
+      notifyZoneLive();
+      showToast(t(res && res.nothing ? 'multiroom.nothingToUngroup' : 'group.dissolvedToast'));
+    }
   } catch (e) {
     showToast(t('multiroom.formFailed', { err: String((e && e.message) || e || '') }));
   }
@@ -5820,6 +5831,17 @@ function runPendingGroupEdits() {
   return groupOpChain;
 }
 
+// dissolveIncompleteMessage turns the agent's refusal into something the user
+// can act on. "remaining" is how many speakers the master still reports after
+// every teardown route was tried, and naming it is the difference between "it
+// did not work" and "four speakers are still in this group".
+function dissolveIncompleteMessage(res) {
+  const left = res && Number(res.remaining) > 0 ? Number(res.remaining) : 0;
+  return left
+    ? t('multiroom.dissolveIncompleteN', { n: left })
+    : t('multiroom.dissolveIncomplete');
+}
+
 // runGroupMemberToggle applies a whole batch of toggles as ONE zone edit.
 // edits is [[host, port], ...]; a single click is simply a batch of one.
 async function runGroupMemberToggle(edits) {
@@ -5858,11 +5880,18 @@ async function runGroupMemberToggle(edits) {
   const wasIn = removed.length > 0 && targets.length === 1;
   try {
     if (next.length === 0) {
-      await DissolveZone(box.host, box.port);
-      // Stop the ex-followers we can reach (their agent port is only known
-      // for discovered boxes).
-      await Promise.allSettled(members.filter(m => m.box).map(m => Stop(m.box.host, m.box.port)));
-      showToast(t('group.dissolvedToast'));
+      // Same rule as the group frame's x: a refusal from the speaker must not
+      // come out as a green tick, or the group the user is looking at keeps
+      // playing while the app says it is gone.
+      const res = await DissolveZone(box.host, box.port);
+      if (res && res.ok === false) {
+        showToast(dissolveIncompleteMessage(res));
+      } else {
+        // Stop the ex-followers we can reach (their agent port is only known
+        // for discovered boxes).
+        await Promise.allSettled(members.filter(m => m.box).map(m => Stop(m.box.host, m.box.port)));
+        showToast(t(res && res.nothing ? 'multiroom.nothingToUngroup' : 'group.dissolvedToast'));
+      }
     } else {
       // Preserve the group's mode when the agent reports one (a mirror group
       // must not be silently converted to native by an add/remove); older

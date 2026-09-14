@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "Şu anda bu hoparlörlerde stereo çift yok.",
   "multiroom.zoneDissolved": "Grup dağıtıldı. Hoparlörler yeniden tek başına çalıyor.",
   "multiroom.dissolveIncomplete": "Grup tamamen dağıtılamadı. Birazdan tekrar deneyin.",
+  "multiroom.dissolveIncompleteN": "{{n}} hoparlör hâlâ bu grupta. Ana hoparlörü kapatıp açmak onları serbest bırakır.",
   "multiroom.nothingToUngroup": "Şu anda çözülecek bir grup yok.",
   "multiroom.dissolveGroupTip": "Bu grubu çöz",
   "multiroom.forgetPermanentTip": "Bu kalıcı grubu sil",

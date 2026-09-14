@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "現在、これらのスピーカーにステレオペアはありません。",
   "multiroom.zoneDissolved": "グループを解除しました。スピーカーは再び個別に再生します。",
   "multiroom.dissolveIncomplete": "グループを完全に解除できませんでした。少ししてからもう一度お試しください。",
+  "multiroom.dissolveIncompleteN": "{{n}} 台のスピーカーがまだこのグループに残っています。メインのスピーカーを一度切って入れ直すと解除されます。",
   "multiroom.nothingToUngroup": "解除できるグループが今はありません。",
   "multiroom.dissolveGroupTip": "このグループを解除",
   "multiroom.forgetPermanentTip": "この常設グループを削除",

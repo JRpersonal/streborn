@@ -114,6 +114,7 @@
   "multiroom.stereoNoPair": "這些喇叭目前沒有立體聲配對。",
   "multiroom.zoneDissolved": "群組已解散。喇叭都恢復單獨播放。",
   "multiroom.dissolveIncomplete": "群組沒有完全解散。過一會兒再試一次。",
+  "multiroom.dissolveIncompleteN": "還有 {{n}} 台喇叭在這個群組裡。把主喇叭關掉再開一次就會放開它們。",
   "multiroom.nothingToUngroup": "目前沒有可解除的群組。",
   "multiroom.dissolveGroupTip": "解除此群組",
   "multiroom.forgetPermanentTip": "刪除此永久群組",

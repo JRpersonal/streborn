@@ -1440,7 +1440,12 @@ async function doDissolveZoneAt(master) {
     if (res && res.nothing) {
       setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.nothingToUngroup'))}</div>`, { transient: true });
     } else if (res && res.ok === false) {
-      setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`, { transient: false });
+      // Say how many speakers are still in it. "Could not be taken apart" sends
+      // the user round the loop; "four speakers are still in this group" is
+      // something they can act on.
+      const left = Number(res.remaining) > 0 ? Number(res.remaining) : 0;
+      const msg = left ? t('multiroom.dissolveIncompleteN', { n: left }) : t('multiroom.dissolveIncomplete');
+      setZoneMsg(`<div class="setup-err">${escapeHtml(msg)}</div>`, { transient: false });
     } else {
       setZoneMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`, { transient: true });
     }

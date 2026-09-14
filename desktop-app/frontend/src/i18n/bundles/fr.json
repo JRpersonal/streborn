@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "Aucune paire stéréo sur ces enceintes pour le moment.",
   "multiroom.zoneDissolved": "Groupe dissous. Les enceintes rejouent séparément.",
   "multiroom.dissolveIncomplete": "Le groupe n'a pas pu être entièrement dissous. Réessayez dans un instant.",
+  "multiroom.dissolveIncompleteN": "{{n}} enceintes sont encore dans ce groupe. Éteindre et rallumer l'enceinte principale les libère.",
   "multiroom.nothingToUngroup": "Il n'y a aucun groupe à dissocier pour le moment.",
   "multiroom.dissolveGroupTip": "Dissoudre ce groupe",
   "multiroom.forgetPermanentTip": "Supprimer ce groupe permanent",

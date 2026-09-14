@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "Ahora mismo no hay ninguna pareja estéreo en estos altavoces.",
   "multiroom.zoneDissolved": "Grupo disuelto. Los altavoces vuelven a sonar por separado.",
   "multiroom.dissolveIncomplete": "No se pudo deshacer el grupo por completo. Inténtalo de nuevo en un momento.",
+  "multiroom.dissolveIncompleteN": "{{n}} altavoces siguen en este grupo. Apagar y encender el altavoz principal los libera.",
   "multiroom.nothingToUngroup": "No hay ningún grupo que deshacer ahora mismo.",
   "multiroom.dissolveGroupTip": "Deshacer este grupo",
   "multiroom.forgetPermanentTip": "Eliminar este grupo permanente",

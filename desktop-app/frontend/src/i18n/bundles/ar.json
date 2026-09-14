@@ -110,6 +110,7 @@
   "multiroom.stereoNoPair": "لا يوجد زوج ستيريو على هذه السماعات حاليا.",
   "multiroom.zoneDissolved": "تم حل المجموعة. تعمل مكبرات الصوت بشكل منفصل مرة أخرى.",
   "multiroom.dissolveIncomplete": "تعذّر حل المجموعة بالكامل. حاول مرة أخرى بعد قليل.",
+  "multiroom.dissolveIncompleteN": "{{n}} سماعات ما زالت في هذه المجموعة. إطفاء السمّاعة الرئيسية وتشغيلها من جديد يحررها.",
   "multiroom.nothingToUngroup": "لا توجد مجموعة لإلغاء تجميعها الآن.",
   "multiroom.dissolveGroupTip": "حلّ هذه المجموعة",
   "multiroom.forgetPermanentTip": "حذف هذه المجموعة الدائمة",
