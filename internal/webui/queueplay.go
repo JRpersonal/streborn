@@ -218,7 +218,9 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	} else {
 		s.recentClearQueueCard()
 	}
+	s.noteQueueStart(len(items), start, shuffle, rep)
 	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
+		s.noteQueueEnd("the first track could not be pushed to the box")
 		return err
 	}
 	s.setQueueTiming(it.Duration)
@@ -259,7 +261,13 @@ func (s *Server) cancelWatcher() {
 
 // stopQueue deactivates the queue and stops the watcher. Called on a single
 // play, a stop, or when the queue runs out.
-func (s *Server) stopQueue() {
+//
+// why names the caller, and it is not decoration: a queue that ended because
+// somebody pressed stop, because the box went into standby, because a station
+// was started instead and because a hardware key was pressed all left exactly
+// the same trace before #960, which was nothing at all.
+func (s *Server) stopQueue(why string) {
+	s.noteQueueEnd(why)
 	s.queue.clear()
 	s.cancelWatcher()
 	s.recentClearQueueCard()
@@ -274,14 +282,14 @@ func (s *Server) stopQueue() {
 // advance the NEW queue and cut off the first track the user just chose, so
 // the advance re-checks the generation once it holds the lock and aborts when
 // superseded.
-func (s *Server) advanceAndPlay(natural bool, gen int) {
+func (s *Server) advanceAndPlay(natural bool, gen int, why string) {
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
 	s.queueMu.Lock()
 	superseded := s.queueGen != gen
 	s.queueMu.Unlock()
 	if superseded {
-		s.logger.Info("queue advance: a new queue/track started while this advance waited, standing down")
+		s.logger.Info("queue advance: a new queue/track started while this advance waited, standing down", "why", why)
 		return
 	}
 	var (
@@ -306,15 +314,20 @@ func (s *Server) advanceAndPlay(natural bool, gen int) {
 			if err := s.renderer.Stop(s.queueCtx()); err != nil {
 				s.logger.Warn("queue end: stopping the box failed", "err", err)
 			}
+			s.noteQueueEnd("played to the end of the list")
+		} else {
+			s.noteQueueEnd("skipped past the end of the list")
 		}
 		s.cancelWatcher()
 		return
 	}
 	s.ClearUserStop()
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
-		s.logger.Warn("queue advance: play failed", "title", it.Title, "err", err)
+		s.noteQueuePushFailed()
+		s.logger.Warn("queue advance: play failed", "why", why, "title", it.Title, "err", err)
 		return
 	}
+	s.noteQueueAdvance(natural, why, it.Title, it.Duration)
 	s.setQueueTiming(it.Duration)
 }
 
@@ -335,13 +348,16 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 		it, ok = s.queue.prev()
 	}
 	if !ok {
+		s.noteQueueEnd("skipped past the end of the list")
 		s.cancelWatcher()
 		return queueItem{}, false, nil
 	}
 	s.ClearUserStop()
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
+		s.noteQueuePushFailed()
 		return queueItem{}, false, err
 	}
+	s.noteQueueAdvance(false, "next/previous pressed", it.Title, it.Duration)
 	s.setQueueTiming(it.Duration)
 	return it, true, nil
 }
@@ -362,10 +378,12 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.logger.Debug("queue watcher: stopped")
 			return
 		case <-ticker.C:
 		}
 		if !s.queue.isActive() {
+			s.logger.Debug("queue watcher: the queue is no longer active, stopping")
 			return
 		}
 		s.queueMu.Lock()
@@ -384,7 +402,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			// track end: stop the queue so STR does not advance and re-push the next
 			// track, which would wake the box back up and resume playing (#219).
 			s.logger.Info("queue watcher: box entered standby, stopping queue (not advancing)")
-			s.stopQueue()
+			s.stopQueue("the box went into standby")
 			return
 		}
 		if total > obsTotal {
@@ -424,16 +442,20 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 				prog = time.Since(start) // box reported no position; use elapsed
 			}
 			if nearEnd(prog, end) {
-				s.advanceAndPlay(true, curGen)
+				s.advanceAndPlay(true, curGen, "the box reported the track stopped at its end")
 			} else {
-				s.stopQueue() // stopped well before the end: a real stop, not an end
+				// Stopped well before the end: a real stop, not an end.
+				s.logger.Info("queue watcher: the box stopped well before the end of the track, treating it as a stop",
+					"progressSec", int(prog.Seconds()), "trackSec", int(end.Seconds()))
+				s.stopQueue("the box stopped in the middle of a track")
 				return
 			}
 			continue
 		default:
 			// No usable status this tick (poll error or an idle box).
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
-				s.advanceAndPlay(true, curGen) // a track that never started: skip it
+				// A track that never started: skip it.
+				s.advanceAndPlay(true, curGen, "the track never started playing")
 				continue
 			}
 		}
@@ -444,7 +466,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// PLAY_STATE on a finite file's EOF (#219), neither of which the STOP path
 		// above can catch.
 		if sawPlay && end > 0 && time.Since(start) >= end+s.advanceMargin(lastPos, end) {
-			s.advanceAndPlay(true, curGen)
+			s.advanceAndPlay(true, curGen, "the track's length elapsed without a stop from the box")
 			continue
 		}
 		// Frozen-position net, for the UNKNOWN-length case only (end==0): the box
@@ -456,7 +478,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// trips only at a real EOF (#380, #381 FRITZ!Box mediaserver).
 		if sawPlay && ps == "PLAY_STATE" && end == 0 && lastPos > 0 &&
 			!lastPosAt.IsZero() && time.Since(lastPosAt) >= queueFrozenTimeout {
-			s.advanceAndPlay(true, curGen)
+			s.advanceAndPlay(true, curGen, "the box stayed on play with its position frozen")
 		}
 	}
 }
@@ -541,6 +563,12 @@ func nowPlayingStatus(body string) string {
 // the current/total position, and whether the box is in standby. Zero values on
 // any error.
 func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby bool) {
+	// Test seam, the same one boxPlayStateDetail has: the end detection is a
+	// state machine over what the box reports, and it is only testable if the
+	// reports can be scripted.
+	if s.nowPlayingFn != nil {
+		return s.nowPlayingFn()
+	}
 	if s.boxHost == "" {
 		return "", 0, 0, false
 	}

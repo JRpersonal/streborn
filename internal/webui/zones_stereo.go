@@ -762,19 +762,30 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// re-push it to the now-grouped master afterwards; the master distributes
 	// it to the followers (verified live: a play pushed to the master after
 	// forming reaches every member).
+	//
+	// masterRef is this box's OWN entry and stays the staleness reference even
+	// when the stream to push comes from somewhere else. See captureMasterResume.
+	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
+	masterBlocked := false
 	if _, busy := s.boxPlayState(); busy {
-		s.lastPlayMu.Lock()
-		if s.lastPlay != nil {
-			cp := *s.lastPlay
-			resume = &cp
-		}
-		s.lastPlayMu.Unlock()
+		// WHAT the box is playing, not just that it is: a Spotify session runs
+		// on a URL STR never recorded, and re-pushing the recorded one replaced
+		// the user's live playlist with an old station in every room. See
+		// masterResumeForZone.
+		np := fetchNowPlaying(ctx, s.boxHost)
+		var why string
+		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
+		s.logger.Info("zone: what to restart on the master after forming",
+			"source", np.Source, "location", np.Location, "lastPlayed", lastPlayURL(masterRef),
+			"restart", lastPlayURL(resume), "reason", why)
 	}
 	// The master may have nothing while a MEMBER is playing: forming the group
 	// then took that member's station down and left the whole group silent
-	// (#954). See memberResumeForZone.
-	if resume == nil {
+	// (#954). See memberResumeForZone. Not when the master is audibly on a
+	// source STR cannot push: it is still playing, and moving the whole group
+	// onto a member's station would be the same theft from the other side.
+	if resume == nil && !masterBlocked {
 		resume = s.memberResumeForZone(ctx, slaves)
 	}
 
@@ -962,12 +973,15 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if resume != nil && masterFormed {
-		// resume is the copy of lastPlay taken before the drive, so it is both
-		// the stream to push and the staleness reference. Only a change that
-		// held as an incremental join may skip the push when the master's
-		// stream survived; on a fresh (or re-formed) zone the members have
-		// nothing yet (Martin, 2026-08-24).
-		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: resume, survivorReachesMembers: heldIncremental})
+		// The staleness reference is the MASTER's own entry, never the stream
+		// being pushed: a member-derived takeover (#954) compared against the
+		// master's live entry always mismatches. A real user play on the master
+		// between capture and push still moves s.lastPlay away from masterRef
+		// and still cancels the push, which is what the check is for. Only a
+		// change that held as an incremental join may skip the push when the
+		// master's stream survived; on a fresh (or re-formed) zone the members
+		// have nothing yet (Martin, 2026-08-24).
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
@@ -1003,6 +1017,24 @@ type zoneResume struct {
 	// left them silent (Martin, 2026-08-24: regroup mid-stream, members mute
 	// until a manual play).
 	survivorReachesMembers bool
+}
+
+// captureMasterResume snapshots this box's own last-play entry.
+//
+// It is the staleness reference for every group-change re-push, and it is
+// deliberately not the same thing as the stream being pushed. The push may come
+// from a MEMBER (#954) or from the stereo PARTNER (#705); comparing one of those
+// against the master's live entry made every master that had ever played
+// anything look superseded, so the takeover was captured and then dropped 1.5 s
+// later and the group formed with nothing to play (#965).
+func (s *Server) captureMasterResume() *lastPlayInfo {
+	s.lastPlayMu.Lock()
+	defer s.lastPlayMu.Unlock()
+	if s.lastPlay == nil {
+		return nil
+	}
+	cp := *s.lastPlay
+	return &cp
 }
 
 // resumeRefSuperseded reports whether this box's live lastPlay entry no longer
@@ -1060,6 +1092,12 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 		s.logger.Info("zone: not restarting playback after forming, a newer play superseded it",
 			"captured", lp.boxURL, "current", lastPlayURL(cur))
 		return
+	}
+	if s.spotifyExpectReattach != nil && looksLikeSpotifyStreamURL(lp.boxURL) {
+		// Carrying a live Spotify session into the group detaches and
+		// re-attaches the Ogg sink within a second or two, which is the exact
+		// shape ServeOgg damps as a re-point storm. Mark it as ours.
+		s.spotifyExpectReattach(15 * time.Second)
 	}
 	push := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1510,18 +1548,18 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// through the master (LEFT). The partner's stream URL is loopback on the
 	// PARTNER, so it is rewritten to the partner's LAN address the same way the
 	// mirror path already lets one box pull another's stream proxy.
-	s.lastPlayMu.Lock()
-	var masterRef *lastPlayInfo
-	if s.lastPlay != nil {
-		cp := *s.lastPlay
-		masterRef = &cp
-	}
-	s.lastPlayMu.Unlock()
+	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
+	masterBlocked := false
 	if _, busy := s.boxPlayState(); busy {
-		resume = masterRef
+		np := fetchNowPlaying(ctx, s.boxHost)
+		var why string
+		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
+		s.logger.Info("stereo: what to restart on the pair after pairing",
+			"source", np.Source, "location", np.Location, "lastPlayed", lastPlayURL(masterRef),
+			"restart", lastPlayURL(resume), "reason", why)
 	}
-	if resume == nil && partner.IP != "" {
+	if resume == nil && !masterBlocked && partner.IP != "" {
 		if pr := partnerResumeForPair(fetchNowPlaying(ctx, partner.IP), partner.IP); pr != nil {
 			s.logger.Info("stereo: captured the partner's stream to restart on the pair (the master is not playing)",
 				"partnerIP", partner.IP, "url", pr.boxURL, "title", pr.title)
@@ -2507,7 +2545,17 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 				break // the speaker confirms it: the zone is gone
 			}
 			cur = z.Members
-			s.logger.Info("zone: members still present after removeZoneSlave, retrying", "remaining", len(cur), "attempt", attempt)
+			s.logger.Info("zone: members still present after removeZoneSlave, retrying",
+				"remaining", len(cur), "members", memberIDs(cur), "attempt", attempt)
+		}
+		// The master took every call and kept the group. Try the two routes the
+		// batch-at-the-master loop above cannot reach before answering.
+		if len(cur) > 0 && dissolveUnverified == "" {
+			left, reason := s.escalateDissolve(c, master, cur)
+			cur = left
+			if reason != "" {
+				dissolveUnverified = reason
+			}
 		}
 		remaining = len(cur)
 	}
@@ -2565,7 +2613,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	if remaining > 0 {
 		resp["remaining"] = remaining
 		resp["error"] = "the speaker still reports members in the group"
-		s.logger.Warn("zone: dissolve did not empty the group", "remaining", remaining)
+		s.logger.Warn("zone: dissolve did not empty the group, every teardown route was tried", "remaining", remaining)
 	}
 	if dissolveUnverified != "" {
 		resp["unverified"] = dissolveUnverified

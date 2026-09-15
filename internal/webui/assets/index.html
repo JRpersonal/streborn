@@ -137,6 +137,14 @@ header .dev.haspeers .chev { display:inline; }
 .trackprog .tfill { height:100%; width:0; border-radius:2px; background:var(--accent); transition:width .9s linear; }
 @media (prefers-reduced-motion:no-preference) { .nowcard.loading { animation:pulse 1.2s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.3; } } }
 .label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:8px; }
+/* The hidden attribute must win. The browser's own rule for it is a plain
+   display:none, so ANY declared display outranks it: .row below is grid and
+   .btn is flex, which means a <div class="row" hidden> and a
+   <button class="btn" hidden> stay on screen. Three elements were visibly
+   affected (browseNav, btnBrowseMore, btnSleepOff), and the sleep-timer row
+   right at the bottom of this stylesheet carries its own one-element patch for
+   exactly this, written before anyone noticed it was general (#709). */
+[hidden] { display:none !important; }
 .row { display:grid; gap:8px; }
 .row.c2 { grid-template-columns:1fr 1fr; }
 .row.c3 { grid-template-columns:1fr 1fr 1fr; }
@@ -1983,7 +1991,10 @@ async function refreshStatus() {
   boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
   applyPowerUI();
   applyTransportUI(state);
-  const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped };
+  // INVALID_PLAY_STATUS is what a speaker reports while it has no transport at
+  // all, e.g. during Bluetooth pairing. It is a state like the others, so it
+  // belongs in the map rather than in a fallback (#961).
+  const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped, INVALID_PLAY_STATUS:T.idle };
   // A stopped/idle box reports source INVALID_SOURCE or STANDBY and carries no
   // track name. Never show that raw firmware string as the "now playing" title
   // (#384): fall through to the friendly idle text instead. A real named source
@@ -2007,8 +2018,25 @@ async function refreshStatus() {
   // before: an SA-5 owner switched to a line input and the remote still read
   // "The Beatles - Help!", through source changes and an app restart (#274).
   const proxySrc = upSrc === 'UPNP' || upSrc === 'LOCAL_INTERNET_RADIO';
-  const song = (playing && proxySrc) ? await currentSong() : '';
-  setNow(bigName, song || human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
+  // The speaker's OWN Spotify receiver is the one source that does name the
+  // song in this very response, so it needs neither the proxy nor a second
+  // request. Confirmed on firmware 27.0.6 with the cloud gone and a FREE
+  // Spotify account: <track>, <artist> and the cover are filled while
+  // <itemName> holds the playlist. Only for SPOTIFY, never in general: on
+  // radio <track> just repeats the station, which is the whole reason the song
+  // has to come from the stream proxy (#593).
+  let song = '';
+  if (upSrc === 'SPOTIFY') {
+    const bt = decodeEntities((t.match(/<track>([^<]*)<\/track>/) || [])[1] || '');
+    const ba = decodeEntities((t.match(/<artist>([^<]*)<\/artist>/) || [])[1] || '');
+    if (bt) song = ba ? ba + ' \u00b7 ' + bt : bt;
+  }
+  if (!song) song = (playing && proxySrc) ? await currentSong() : '';
+  // No raw firmware enum on the screen, ever. The old fallback stripped
+  // "_STATE" and lower-cased the rest, which turned INVALID_PLAY_STATUS into
+  // "invalid_play_status" under the station name (#961). Anything the map does
+  // not know is a firmware string by definition, so it gets the idle text.
+  setNow(bigName, song || human[state] || T.idle);
   // Keep the Recently-played list current when the song or station changes from
   // ANY source (a hardware button, the desktop app, or an ICY song change), not
   // only after a play from this page (#761). The box records each play itself;
@@ -2884,11 +2912,13 @@ async function playLibTrack(idx, btn) {
   // "it only buffers a tiny bit of a song up until about 95 seconds then the
   // song repeats". The desktop Library has always sent it (#139); the search
   // results here carry it too and simply dropped it on the floor.
+  // duration_sec draws the bar and lets the speaker see the end (#845, #844).
   var ok = await api('/api/play', 'POST', {
     url: it.url,
     title: it.title || '',
     icon: it.art || '',
-    mime: it.mime || ''
+    mime: it.mime || '',
+    duration_sec: it.durationSec || 0
   });
   if (ok) { showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
   else { searchMsg(T.cantStart, true); }
@@ -3127,7 +3157,12 @@ async function setSleep(minutes) {
       var r = await fetch('/api/debug/state');
       if (!r.ok) throw new Error('status ' + r.status);
       var txt = await r.text();
-      var name = 'str-diagnostic-' + (document.getElementById('devName').textContent || 'speaker').replace(/[^A-Za-z0-9-]/g, '_') + '.json';
+      /* The speaker's own name is the user's, and this file gets attached to
+         public issues: str-diagnostic-Kueche.json and -Esszimmer.json were
+         both on GitHub. A timestamp identifies the file well enough, and the
+         model is inside it anyway. */
+      var stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+      var name = 'str-diagnostic-' + stamp + '.json';
       var url = URL.createObjectURL(new Blob([txt], { type: 'application/json' }));
       var a = document.createElement('a');
       a.href = url; a.download = name;
@@ -3370,7 +3405,8 @@ async function playBrowseTrack(it, btn) {
   press(btn);
   /* mime routes the file past the endless-radio proxy, same as playLibTrack. */
   var ok = await api('/api/play', 'POST', {
-    url: it.url, title: it.title || '', icon: it.art || '', mime: it.mime || ''
+    url: it.url, title: it.title || '', icon: it.art || '', mime: it.mime || '',
+    duration_sec: it.durationSec || 0
   });
   if (ok) { showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000); }
   else { browseMsgSet(T.cantStart); }

@@ -213,10 +213,19 @@ func (a *App) startup(ctx context.Context) {
 	// Verbose startup line so users always see SOMETHING in the
 	// log when they hit "Save diagnostic logs", even on a session
 	// where they did not poke any features that emit further logs.
+	// Where the app runs from, and whether it can replace itself there. A Mac
+	// that keeps asking its owner to drag the app into Applications does so for
+	// one of four reasons, and until now none of them was written down
+	// anywhere: the answer was computed, used, and thrown away, so a thread
+	// about it ran on guesses for three days (#916).
+	selfPath, selfReason, selfOK := SelfUpdateState()
 	a.logger.Info("Desktop App started",
 		"version", appVersion,
 		"build", appBuild,
 		"logFile", LogFilePath(),
+		"appPath", selfPath,
+		"selfUpdate", selfOK,
+		"selfUpdateReason", selfReason,
 		"agentbinAvailable", agentbin.Available())
 	a.fitWindowToScreen()
 }

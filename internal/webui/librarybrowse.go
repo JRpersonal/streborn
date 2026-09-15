@@ -574,7 +574,7 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		}
 		tracks = append(tracks, trackOut{
 			Title: it.Title, Artist: it.Artist, Album: it.Album,
-			URL: it.StreamURL, Art: it.AlbumArtURL, Mime: it.MimeType,
+			URL: it.StreamURL, Art: it.AlbumArtURL, Mime: trackMime(it),
 			DurationSec: it.DurationSec,
 		})
 	}
@@ -586,4 +586,24 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		"start":   start,
 		"count":   res.Returned,
 	})
+}
+
+// trackMime is the MIME a library track is handed to the phone page with.
+//
+// It decides more than it looks like it does. An empty MIME sends the track
+// through the endless-radio stream proxy instead of straight at the speaker
+// (playback.go, playDirect), and the proxy has no end: a finite file then plays
+// to its last byte and nothing stops, no progress bar is drawn, and the play is
+// filed in Recently played as a radio station so replaying it fails the same
+// way. Three reports, one reporter, one missing field (#844, #817, #845).
+//
+// Plenty of servers simply do not put a MIME in protocolInfo, so the file
+// extension is the fallback. mimeFromURL returns "" for anything it does not
+// recognise, which keeps today's behaviour for a URL with no usable extension
+// rather than guessing a codec the speaker would then fail to decode.
+func trackMime(it dlna.Item) string {
+	if it.MimeType != "" {
+		return it.MimeType
+	}
+	return mimeFromURL(it.StreamURL)
 }

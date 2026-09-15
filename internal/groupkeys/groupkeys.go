@@ -159,7 +159,9 @@ type MasterClient interface {
 	// LiveZone reads the main speaker's live zone (GET /api/box/zone).
 	LiveZone(ctx context.Context, master Member) (LiveZone, error)
 	// Form forms the template's group on its main speaker (POST /api/box/zone).
-	Form(ctx context.Context, tpl Template) error
+	// deferred is true when the answer says the group was stored for the next
+	// play instead of wired now (a permanent template).
+	Form(ctx context.Context, tpl Template) (deferred bool, err error)
 	// Dissolve takes the group led by master apart (DELETE /api/box/zone).
 	Dissolve(ctx context.Context, master Member) error
 	// Idle reports whether the main speaker is NOT playing right now.
@@ -177,6 +179,11 @@ const (
 	OutcomeBusy      Outcome = "ignored-busy"
 	OutcomeRateLimit Outcome = "ignored-rate-limit"
 	OutcomeFormed    Outcome = "formed"
+	// OutcomeDeferred is a PERMANENT template whose form was stored rather
+	// than wired: the agent defers a permanent group to the next play so
+	// creating one never starts music. Reported apart from "formed" because
+	// the two look identical in a log and completely different in the room.
+	OutcomeDeferred  Outcome = "formed-deferred"
 	OutcomeDissolved Outcome = "dissolved"
 	OutcomeSwitched  Outcome = "switched"
 	OutcomeFailed    Outcome = "failed"
@@ -428,11 +435,22 @@ func (s *Store) act(ctx context.Context, client MasterClient, key string, tpl Te
 	if ierr != nil {
 		// Unknown counts as idle: a press that ends in silence is the
 		// complaint this feature exists to avoid, and a resume on a speaker
-		// that already plays its own station is a no-op.
+		// that already plays its own station is a no-op. Logged, because a
+		// main speaker that cannot be read here usually cannot be formed
+		// either, and the form error alone does not say that came first.
+		s.logger.Info("group key: could not read whether the main speaker is playing, assuming it is not",
+			"key", key, "template", tpl.Name, "err", ierr)
 		idle = true
 	}
-	if err := client.Form(ctx, tpl); err != nil {
-		return OutcomeFailed, fmt.Errorf("form: %w", err)
+	deferred, ferr := client.Form(ctx, tpl)
+	if ferr != nil {
+		return OutcomeFailed, fmt.Errorf("form: %w", ferr)
+	}
+	if deferred {
+		// Stored, not wired. The speakers join on the next play, so a press
+		// that ends in silence here is the feature working as built, not a
+		// failure, and the log has to say which of the two it was.
+		outcome = OutcomeDeferred
 	}
 	if idle {
 		// A permanent template's form is only STORED while the main speaker is

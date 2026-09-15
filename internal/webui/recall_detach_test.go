@@ -75,7 +75,7 @@ func newPlayTestServer(t *testing.T) (*Server, *soapRecorder) {
 		queue:    newPlayQueue(),
 		renderer: &upnp.Renderer{ControlURL: box.URL, Client: box.Client()},
 	}
-	t.Cleanup(s.stopQueue)
+	t.Cleanup(func() { s.stopQueue("test cleanup") })
 	return s, rec
 }
 

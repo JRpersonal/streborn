@@ -96,3 +96,53 @@ func TestAPushedStreamIsAlsoTakenOver(t *testing.T) {
 		t.Errorf("got %v, want the member's own address", got)
 	}
 }
+
+// #965: the takeover above was captured correctly and then thrown away.
+//
+// handleZoneForm passed the stream it was about to push as the staleness
+// reference too. For a member takeover that stream is the MEMBER's URL, so the
+// gate compared it against the MASTER's own live entry and every master that
+// had ever played anything looked superseded. Three ST10s, v0.9.82: "taking
+// over the stream a member was playing, member=192.0.2.60" and 2 s later "not
+// restarting playback after forming, a newer play superseded it,
+// captured=http://192.0.2.60:17008/stream/6 current=http://127.0.0.1:8888/stream/5".
+// The group formed with nothing playing, which is the solid amber light.
+func TestAMemberTakeoverSurvivesTheMastersOwnOlderPlay(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false } // master idle
+	// What the master itself last played, minutes ago. This is masterRef, and
+	// it is also what s.lastPlay still holds, so nothing was superseded.
+	masterRef := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "181.FM"}
+	s.lastPlayMu.Lock()
+	cp := masterRef
+	s.lastPlay = &cp
+	s.lastPlayMu.Unlock()
+	// What a member is playing and the master must take over.
+	member := lastPlayInfo{boxURL: "http://192.0.2.60:17008/stream/6", title: "Exclusively Rush"}
+
+	s.resumeAfterZoneForm(zoneResume{push: member, ref: &cp, survivorReachesMembers: false})
+
+	if !rec.has("SetAVTransportURI") {
+		t.Fatalf("the member's station was not pushed, so the group forms silent and amber: %v", rec.list())
+	}
+}
+
+// The other half of the same argument: the gate still has to fire. A real play
+// on the master between capture and push moves s.lastPlay away from masterRef,
+// and then the stale takeover must not overwrite what the user just started.
+func TestARealPlayOnTheMasterStillCancelsTheTakeover(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false }
+	masterRef := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "181.FM"}
+	s.lastPlayMu.Lock()
+	newer := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", title: "something the user just pressed"}
+	s.lastPlay = &newer
+	s.lastPlayMu.Unlock()
+	member := lastPlayInfo{boxURL: "http://192.0.2.60:17008/stream/6", title: "Exclusively Rush"}
+
+	s.resumeAfterZoneForm(zoneResume{push: member, ref: &masterRef, survivorReachesMembers: false})
+
+	if rec.has("SetAVTransportURI") {
+		t.Fatalf("a newer play on the master was overwritten by the takeover: %v", rec.list())
+	}
+}

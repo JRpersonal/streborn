@@ -211,6 +211,14 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 		a.logger.Info("telnet-enable: :17000 not reachable, cannot unlock SSH stick-free", "host", host, "err", err)
 		return false, "port 17000 not reachable: " + err.Error()
 	}
+	// Read the configuration BEFORE writing anything. A box that does not
+	// come back from the reboot below cannot be asked afterwards, so this is
+	// the only record of what it was carrying: #966 (SoundTouch 20 dark,
+	// 2026-09-15) could say what STR sent and not what the speaker held.
+	// Bracketing the write also shows which of the five values changed.
+	if v, _ := t.send("getpdo CurrentSystemConfiguration"); strings.TrimSpace(v) != "" {
+		fmt.Fprintf(&log, "-> getpdo CurrentSystemConfiguration (before)\n%s\n", strings.TrimSpace(v))
+	}
 	// Seed a throwaway marge account first so a box with no residual Bose account
 	// still runs the marge check the injection rides on (see unlockAccountID).
 	// Best-effort: a firmware that rejects `envswitch accountid` still gets the
@@ -226,7 +234,7 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 		}
 	}
 	if v, _ := t.send("getpdo CurrentSystemConfiguration"); strings.TrimSpace(v) != "" {
-		fmt.Fprintf(&log, "-> getpdo CurrentSystemConfiguration\n%s\n", strings.TrimSpace(v))
+		fmt.Fprintf(&log, "-> getpdo CurrentSystemConfiguration (after)\n%s\n", strings.TrimSpace(v))
 	}
 	// Reboot to trigger the boot-time URL re-parse without the user touching the
 	// speaker. This is STR's advantage over the manual CLI flow.

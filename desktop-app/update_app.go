@@ -147,6 +147,8 @@ func updateAssetKeys() []string {
 		if canSelfReplaceDarwin() {
 			return []string{"desktop_macos_zip", "desktop_macos"}
 		}
+		// The decision that costs the user the drag step is made HERE, before
+		// anything is downloaded, and it used to leave no trace at all.
 		return []string{"desktop_macos"}
 	case "linux":
 		return []string{"desktop_linux"}
@@ -308,10 +310,23 @@ func updateDir() (string, error) {
 // for a progress bar, then renames to the final name only after the hash checks
 // out, so a partial/corrupt download never sits where Apply would pick it up.
 func (a *App) DownloadUpdate(version string) (string, error) {
+	// Everything from here to the first body byte is displayed as one state,
+	// and it can legitimately take a minute: the release manifest lookup has a
+	// 15 s budget with a 15 s fallback behind it, and the asset request then
+	// gets 10 s to dial, 10 s for TLS and 30 s for the response headers, all
+	// of it replayed on each of the four attempts below. None of it was
+	// written down, so a reporter who watched it sit still and took a
+	// diagnostic sent a log with nothing about the update in it (#935).
+	started := time.Now()
+	a.logger.Info("app update: download starting, looking up the release", "version", version)
 	asset, err := a.ResolveUpdateAsset(version)
 	if err != nil {
+		a.logger.Warn("app update: release lookup failed", "version", version,
+			"afterMs", time.Since(started).Milliseconds(), "err", err)
 		return "", err
 	}
+	a.logger.Info("app update: release found, opening the connection", "version", version,
+		"file", asset.Filename, "lookupMs", time.Since(started).Milliseconds())
 	dir, err := updateDir()
 	if err != nil {
 		return "", err
@@ -329,6 +344,7 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 	const maxAttempts = 4
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptAt := time.Now()
 		err := a.downloadAssetOnce(asset.URL, asset.SHA256, partPath)
 		if err == nil {
 			if rerr := os.Rename(partPath, finalPath); rerr != nil {
@@ -341,7 +357,8 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 		}
 		lastErr = err
 		os.Remove(partPath)
-		a.logger.Warn("app update: download attempt failed, retrying", "attempt", attempt, "max", maxAttempts, "err", err)
+		a.logger.Warn("app update: download attempt failed, retrying", "attempt", attempt, "max", maxAttempts,
+			"attemptMs", time.Since(attemptAt).Milliseconds(), "err", err)
 		if attempt < maxAttempts {
 			select {
 			case <-a.appCtx().Done():
@@ -457,7 +474,14 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 		// comparison "always true" to a linter running on Linux; on macOS
 		// builds it is a real branch.
 		if err := a.applyDarwin(downloadedPath); err != nil { //nolint:staticcheck // SA4023: false positive from the cross-platform stub
-			a.logger.Info("macOS in-place update not possible, falling back to the assisted install", "reason", err)
+			// Two reasons live here and they used to read the same. "got a .dmg"
+			// is a CONSEQUENCE of this installation not being replaceable, and
+			// stated on its own it sends the reader hunting for a missing zip
+			// in the release that is sitting right there (#916). So name the
+			// installation as well.
+			selfPath, selfReason, _ := SelfUpdateState()
+			a.logger.Info("macOS in-place update not possible, falling back to the assisted install",
+				"reason", err, "why", selfReason, "appPath", selfPath)
 			return a.RevealUpdateFile(downloadedPath)
 		}
 		return nil

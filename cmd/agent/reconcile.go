@@ -480,15 +480,18 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				continue
 			}
 			groupWakeHeld = false
-			// ... and it must not run into live AUDIO either. A recall is over
-			// in seconds; a station plays for hours, and the write ends it.
+			// ... and it must not run into live AUDIO either, nor into a
+			// source somebody is using. A recall is over in seconds; a
+			// station plays for hours and a pairing session is mid-handshake,
+			// and the write ends both.
 			src, playing, playKnown := boxSourceAndPlaying(boxHost)
-			hold, ceilingHit := forcedWriteHold(playing, playKnown, everFullDone, forceHeldSince, time.Now())
+			hold, ceilingHit := forcedWriteHold(src, playing, playKnown, everFullDone, forceHeldSince, time.Now())
 			switch {
 			case hold:
 				if forceHeldSince.IsZero() {
 					forceHeldSince = time.Now()
-					logger.Info("preset reconcile: forced pass held, the speaker is playing and the write would take the stream down",
+					logger.Info("preset reconcile: forced pass held, the write would take the box off what it is doing",
+						"reason", forcedHoldReason(src, playing, playKnown),
 						"source", src, "ceiling", forcedPlayHoldCeiling.String())
 				}
 				forceHeld = true
@@ -499,7 +502,8 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				time.Sleep(forcedPlayHoldRetry)
 				continue
 			case ceilingHit:
-				logger.Warn("preset reconcile: forced pass ran despite playback, the hold ceiling passed and the hardware keys have to be registered",
+				logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the hardware keys have to be registered",
+					"reason", forcedHoldReason(src, playing, playKnown),
 					"source", src, "heldFor", time.Since(forceHeldSince).Round(time.Second).String())
 			}
 			forceHeld = false
@@ -581,8 +585,19 @@ const forcedPlayHoldRetry = 30 * time.Second
 // just-started agent may find the box already playing, and holding there would
 // leave the hardware keys unregistered for the whole session - the regression
 // #4 was about. everFullDone false means that first pass has not happened yet.
-func forcedWriteHold(playing, playKnown, everFullDone bool, heldSince, now time.Time) (hold, ceilingHit bool) {
-	if !everFullDone || !playKnown || !playing {
+//
+// Audio is not the only thing a write interrupts, which is what #961 cost. A
+// speaker in Bluetooth pairing mode reports playStatus INVALID, so the play
+// test above says "not playing" and the hold waved the write through. That
+// reporter's ledger reads addpreset@BLUETOOTH 3, and his box flipped
+// BLUETOOTH -> LOCAL_INTERNET_RADIO -> BLUETOOTH four times inside six seconds
+// while his PC was searching for it. So the source NAME decides too, exactly as
+// it has for the insurance pass since 2026-08-02.
+func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSince, now time.Time) (hold, ceilingHit bool) {
+	if !everFullDone {
+		return false, false
+	}
+	if !forcedWriteBusy(src, playing, playKnown) {
 		return false, false
 	}
 	if heldSince.IsZero() {
@@ -592,6 +607,48 @@ func forcedWriteHold(playing, playKnown, everFullDone bool, heldSince, now time.
 		return false, true
 	}
 	return true, false
+}
+
+// forcedWriteBusy reports whether the box is doing something the write would
+// take away from it: audio is flowing, or it sits on a source somebody chose.
+//
+// STANDBY and an unreadable source are the two additions over resyncSafeSource.
+// A sleeping box is the ideal moment to register hardware keys and holding
+// there would delay every wake by the ceiling, and a now_playing read that
+// failed says nothing at all: letting one slow answer defer the write for five
+// minutes would strand the keys on a box that is merely busy booting.
+func forcedWriteBusy(src string, playing, playKnown bool) bool {
+	if playKnown && playing {
+		return true
+	}
+	switch src {
+	case "", "STANDBY":
+		return false
+	case "LOCAL_INTERNET_RADIO":
+		// STR's OWN source on a native-preset box, and the same argument that
+		// puts UPNP on the allowlist applies to it: a station that has stopped
+		// is STR's leftover source, not something the user is listening to.
+		// Without this a box idling on a stopped native station counts as busy
+		// and defers the dead-key self-heal (#342) by the full ceiling, and
+		// that heal's whole promise is that a dead key comes back in seconds.
+		// Only when the play state was actually READ. An unreadable box on this
+		// source may well be playing, and guessing wrong there is the #961
+		// interruption again.
+		return !playKnown || playing
+	}
+	return !resyncSafeSource(src)
+}
+
+// forcedHoldReason names which of the two conditions held the pass, so a
+// bundle says whether a stream or a pairing session was protected.
+func forcedHoldReason(src string, playing, playKnown bool) string {
+	if playKnown && playing {
+		return "playing"
+	}
+	if !forcedWriteBusy(src, playing, playKnown) {
+		return "free"
+	}
+	return "user-chosen source"
 }
 
 func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
@@ -758,6 +815,25 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			"slots", reowned)
 	}
 	syncFailed := false
+	// The FORCED pass is held while the box is on a source somebody picked
+	// (forcedWriteHold, above). The routine pass was not, and it writes too:
+	// a slot that falls out of the box's own /presets list is healed right
+	// here, with no source check at all. So the #961 interruption could still
+	// arrive through this door, on a speaker that happened to lose a key while
+	// its owner was pairing a phone or listening on AUX.
+	//
+	// Hand it to the forced pass instead of writing now. That one already has
+	// the bounded hold, the five-minute ceiling and the log line saying what
+	// was protected, so the key is still registered shortly after the source
+	// frees up, or at the ceiling at the latest.
+	if len(missing) > 0 && !forceFull {
+		if src, playing, playKnown := boxSourceAndPlaying(boxHost); forcedWriteBusy(src, playing, playKnown) {
+			logger.Info("preset reconcile: missing slots held, the write would take the box off what it is doing",
+				"reason", forcedHoldReason(src, playing, playKnown), "source", src, "slots", len(missing))
+			requestPresetKeyResync(logger, "missing-slots-held")
+			missing = nil
+		}
+	}
 	if len(missing) > 0 {
 		if forceFull {
 			logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
