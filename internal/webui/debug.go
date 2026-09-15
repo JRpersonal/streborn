@@ -5,6 +5,7 @@ package webui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -417,7 +418,35 @@ func (s *Server) writeDebugState(w http.ResponseWriter, state map[string]any, ra
 		writeJSON(w, http.StatusOK, state)
 		return
 	}
-	writeJSON(w, http.StatusOK, anonymise.DebugState(state))
+	// Round-trip through JSON BEFORE walking, and this is the whole trick.
+	//
+	// The sections registered by main.go return live Go values: structs and
+	// slices of structs, not map[string]any. The walker switches on string,
+	// []any and map[string]any, so a struct falls through its default branch
+	// untouched and everything inside it ships in the clear. Measured on six
+	// speakers after the first version of this shipped: mdns_host kept an
+	// interface address and three hardware addresses, net_reachability kept the
+	// LAN address and the gateway, dns_status kept the nameserver. Everything
+	// that had already been through JSON was masked correctly, which is exactly
+	// why an offline check over a fetched payload showed nothing wrong.
+	//
+	// Marshalling first turns every struct into the generic shape the walker
+	// understands. Note this is NOT the same as scrubbing the encoded text: the
+	// document is decoded again before anything is replaced, so the SSID
+	// pattern can never run across a JSON delimiter.
+	b, err := json.Marshal(state)
+	if err != nil {
+		s.logger.Warn("debug state: could not encode for masking", "err", err)
+		http.Error(w, "debug state could not be anonymised", http.StatusInternalServerError)
+		return
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(b, &generic); err != nil {
+		s.logger.Warn("debug state: could not decode for masking", "err", err)
+		http.Error(w, "debug state could not be anonymised", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, anonymise.DebugState(generic))
 }
 
 // agentBootMarker is the first line the agent writes on every start
