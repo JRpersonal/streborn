@@ -137,6 +137,14 @@ header .dev.haspeers .chev { display:inline; }
 .trackprog .tfill { height:100%; width:0; border-radius:2px; background:var(--accent); transition:width .9s linear; }
 @media (prefers-reduced-motion:no-preference) { .nowcard.loading { animation:pulse 1.2s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.3; } } }
 .label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:8px; }
+/* The hidden attribute must win. The browser's own rule for it is a plain
+   display:none, so ANY declared display outranks it: .row below is grid and
+   .btn is flex, which means a <div class="row" hidden> and a
+   <button class="btn" hidden> stay on screen. Three elements were visibly
+   affected (browseNav, btnBrowseMore, btnSleepOff), and the sleep-timer row
+   right at the bottom of this stylesheet carries its own one-element patch for
+   exactly this, written before anyone noticed it was general (#709). */
+[hidden] { display:none !important; }
 .row { display:grid; gap:8px; }
 .row.c2 { grid-template-columns:1fr 1fr; }
 .row.c3 { grid-template-columns:1fr 1fr 1fr; }
