@@ -767,13 +767,25 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// when the stream to push comes from somewhere else. See captureMasterResume.
 	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
+	masterBlocked := false
 	if _, busy := s.boxPlayState(); busy {
-		resume = masterRef
+		// WHAT the box is playing, not just that it is: a Spotify session runs
+		// on a URL STR never recorded, and re-pushing the recorded one replaced
+		// the user's live playlist with an old station in every room. See
+		// masterResumeForZone.
+		np := fetchNowPlaying(ctx, s.boxHost)
+		var why string
+		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
+		s.logger.Info("zone: what to restart on the master after forming",
+			"source", np.Source, "location", np.Location, "lastPlayed", lastPlayURL(masterRef),
+			"restart", lastPlayURL(resume), "reason", why)
 	}
 	// The master may have nothing while a MEMBER is playing: forming the group
 	// then took that member's station down and left the whole group silent
-	// (#954). See memberResumeForZone.
-	if resume == nil {
+	// (#954). See memberResumeForZone. Not when the master is audibly on a
+	// source STR cannot push: it is still playing, and moving the whole group
+	// onto a member's station would be the same theft from the other side.
+	if resume == nil && !masterBlocked {
 		resume = s.memberResumeForZone(ctx, slaves)
 	}
 
@@ -1080,6 +1092,12 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 		s.logger.Info("zone: not restarting playback after forming, a newer play superseded it",
 			"captured", lp.boxURL, "current", lastPlayURL(cur))
 		return
+	}
+	if s.spotifyExpectReattach != nil && looksLikeSpotifyStreamURL(lp.boxURL) {
+		// Carrying a live Spotify session into the group detaches and
+		// re-attaches the Ogg sink within a second or two, which is the exact
+		// shape ServeOgg damps as a re-point storm. Mark it as ours.
+		s.spotifyExpectReattach(15 * time.Second)
 	}
 	push := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1532,10 +1550,16 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// mirror path already lets one box pull another's stream proxy.
 	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
+	masterBlocked := false
 	if _, busy := s.boxPlayState(); busy {
-		resume = masterRef
+		np := fetchNowPlaying(ctx, s.boxHost)
+		var why string
+		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
+		s.logger.Info("stereo: what to restart on the pair after pairing",
+			"source", np.Source, "location", np.Location, "lastPlayed", lastPlayURL(masterRef),
+			"restart", lastPlayURL(resume), "reason", why)
 	}
-	if resume == nil && partner.IP != "" {
+	if resume == nil && !masterBlocked && partner.IP != "" {
 		if pr := partnerResumeForPair(fetchNowPlaying(ctx, partner.IP), partner.IP); pr != nil {
 			s.logger.Info("stereo: captured the partner's stream to restart on the pair (the master is not playing)",
 				"partnerIP", partner.IP, "url", pr.boxURL, "title", pr.title)
