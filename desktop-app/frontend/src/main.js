@@ -389,6 +389,7 @@ import {
   throttledSetVolume,
   throttledSetBass,
   openWebhookKeyMap,
+  noNetworkHere,
 } from './views/settings.js';
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
@@ -675,6 +676,12 @@ document.querySelector('#app').innerHTML = `
       </div>
     </div>
   </div>
+
+  <!-- Shown only while a run is still going and the panel above is hidden.
+       Closing that panel does not stop anything, but with nothing left on
+       screen "hidden" and "finished" look identical, and the next thing an
+       owner does is close the app. -->
+  <button class="ua-mini hidden" id="uaMini" type="button"></button>
 
   <div id="toast" class="toast"></div>
 
@@ -1408,7 +1415,12 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
     btn.textContent = t('banner.downloadingPct', { pct }) + rate;
   });
   try {
-    btn.textContent = t('banner.downloadingPct', { pct: 0 });
+    // Not "Downloading 0%". Nothing is downloading yet: the release
+    // manifest still has to be looked up and the connection opened, which is
+    // a minute of legitimate waiting on a slow link, and the first progress
+    // event only fires once body bytes arrive. Showing 0% for all of it made
+    // a reporter watch a frozen percentage and take a diagnostic (#935).
+    btn.textContent = t('banner.connecting');
     const path = await DownloadUpdate(version);
     btn.textContent = t('banner.installing');
     await ApplyUpdate(path);
@@ -1937,18 +1949,32 @@ function doRefilter() {
   }
 }
 
+// emptyStateOnScreen reports whether the "no speaker found" card is the thing
+// currently in the speaker panel. Its manual connect-by-IP field exists only
+// inside that card, so its presence is the cheapest honest test.
+function emptyStateOnScreen() {
+  return !!document.getElementById('emptyIpInput');
+}
+
 async function discoverBoxes() {
   const hadBoxes = state.boxes.length > 0;
-  if (!hadBoxes) {
-    // First search: explicit message so the user understands the app is
-    // doing something. But NOT while the user is typing into the empty
-    // state's manual connect-by-IP field: the recovery burst re-runs this
-    // every 6s and replacing the selector destroyed the input mid-typing,
-    // making the manual fallback unusable exactly when it is needed.
-    if (!manualIpInputBusy()) $('boxSelect').textContent = t('speaker.searching');
+  if (!hadBoxes && !emptyStateOnScreen() && !manualIpInputBusy()) {
+    // The FIRST search of a session, with nothing on screen yet: an explicit
+    // message, so the user understands the app is doing something.
+    //
+    // Not while the manual connect-by-IP field is in use either: a repeat
+    // sweep replacing the selector destroyed the input mid-typing, which made
+    // the manual fallback unusable exactly when it is needed.
+    $('boxSelect').textContent = t('speaker.searching');
   } else {
-    // Background refresh: the refresh icon spins, the existing list
-    // stays visible.
+    // Every repeat, with speakers or without: the refresh icon spins and
+    // whatever is on screen stays put.
+    //
+    // The empty case used to blank the card back to the one-line text on every
+    // sweep, and a reporter watching an empty LAN saw the window toggle
+    // between two screens ten times in about a minute (#935). Since the minute
+    // timer began sweeping the empty list it would do that for as long as
+    // nothing is found, which is the whole time somebody is waiting.
     const rb = $('refreshBtn');
     if (rb) rb.classList.add('spinning');
   }
@@ -2585,11 +2611,22 @@ async function dissolveGroupFrame(masterKey) {
   const followers = state.boxes.filter(b => b !== masterBox && b.kind !== 'stock' && !b.offline &&
     String(((state.zoneLive || {})[b.deviceID] || {}).master || '').toUpperCase() === mk);
   try {
-    await DissolveZone(masterBox.host, masterBox.port);
-    await Promise.allSettled(followers.map(b => Stop(b.host, b.port)));
-    state.zoneLive = applyOptimisticZone(state.zoneLive, masterBox, []);
-    notifyZoneLive();
-    showToast(t('group.dissolvedToast'));
+    // Trust the speaker's verdict, the same way views/multiroom.js already
+    // does. A green tick on a group that is still playing is worse than no
+    // message at all: it sends the user round the loop again, which is exactly
+    // what nine refused dissolves in a row looked like from the outside
+    // (Juergen, eleven speakers, 2026-09-14).
+    const res = await DissolveZone(masterBox.host, masterBox.port);
+    if (res && res.ok === false) {
+      // The group is still there, so the optimistic empty zone must NOT be
+      // applied: painting it empty is what made the frame vanish and come back.
+      showToast(dissolveIncompleteMessage(res));
+    } else {
+      await Promise.allSettled(followers.map(b => Stop(b.host, b.port)));
+      state.zoneLive = applyOptimisticZone(state.zoneLive, masterBox, []);
+      notifyZoneLive();
+      showToast(t(res && res.nothing ? 'multiroom.nothingToUngroup' : 'group.dissolvedToast'));
+    }
   } catch (e) {
     showToast(t('multiroom.formFailed', { err: String((e && e.message) || e || '') }));
   }
@@ -4239,7 +4276,40 @@ async function showUpdateFailureReport(box, phase, errMsg) {
   if (close) close.onclick = () => host.classList.add('hidden');
 }
 
+// BOX_BUSY_TOKEN is the marker the one-write-per-speaker guard puts on its
+// refusal (desktop-app/boxbusy.go). Matched instead of the prose, which is free
+// to be reworded and translated.
+const BOX_BUSY_TOKEN = 'STR_BUSY:';
+
+// Re-entrancy latch for the single-speaker update, set BEFORE the first await.
+//
+// state.otaInProgress is only raised after the stick gate and the Wi-Fi
+// preflight, two network round-trips further down, so a second click inside
+// that window sailed straight past the check at the top. Both runs then reached
+// the backend, the second was correctly refused, and the REFUSED one ran the
+// shared teardown and put a failure report on screen for the update that was
+// running fine (Sascha, SoundTouch 30, 2026-09-14). The whole-house path
+// learned this in August, see updateAllBusy; this one had not.
+let boxUpdateBusy = false;
+
 async function doBoxUpdate(targetBox) {
+  // Both latches, not just this one. The whole-house run drives runBoxUpdate
+  // directly so it does not contend here, but it holds the single-box global
+  // lock for the entire batch, and a single-speaker click during it would walk
+  // into the same duplicate-start the latch exists to stop.
+  if (boxUpdateBusy || updateAllBusy) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
+    return;
+  }
+  boxUpdateBusy = true;
+  try {
+    return await runSingleBoxUpdate(targetBox);
+  } finally {
+    boxUpdateBusy = false;
+  }
+}
+
+async function runSingleBoxUpdate(targetBox) {
   // The box to update is passed explicitly by the caller (Speaker Settings
   // passes state.settingsBox). Fall back to the music-tab box only when a
   // caller omits it. Earlier this always used state.currentBox, so updating a
@@ -4450,9 +4520,12 @@ async function doBoxUpdate(targetBox) {
     render();
     if (!tickHandle) tickHandle = setInterval(() => { if (tickRender) tickRender(); }, 1000);
   };
-  const countdown = (remainingMs, key) => {
+  const countdown = (remainingMs, key, step) => {
     const dl = Date.now() + (remainingMs || 0);
-    startTick(() => setStatus(t(key, { remaining: formatRemaining(dl - Date.now()) })));
+    startTick(() => {
+      const text = t(key, { remaining: formatRemaining(dl - Date.now()) });
+      setStatus(step ? withStep(text, step) : text);
+    });
   };
   let uploadedToastShown = false;
   try {
@@ -4464,7 +4537,7 @@ async function doBoxUpdate(targetBox) {
       switch (ph) {
         case 'uploading':
           stopTick();
-          setStatus(t('update.uploading'));
+          setStatus(withStep(t('update.uploading'), UPDATE_STEPS.send));
           break;
         case 'rebooting':
           stopTick();
@@ -4474,14 +4547,14 @@ async function doBoxUpdate(targetBox) {
           // internal/webui handleAgentUpdate) and only then execs the new
           // binary, so the speaker is away for minutes with nothing to show.
           if (!uploadedToastShown) { uploadedToastShown = true; showToast(t('update.uploadedToast')); }
-          setStatus(t('update.rebooting'));
+          setStatus(withStep(t('update.rebooting'), UPDATE_STEPS.restart));
           break;
-        case 'verifying': countdown(d.remainingMs, 'update.waitingForSpeaker'); break;
+        case 'verifying': countdown(d.remainingMs, 'update.waitingForSpeaker', UPDATE_STEPS.restart); break;
         // The speaker IS back on the new version and is only being held for the
         // stability window before we believe it (a BCO box can reboot a second
         // time on its own). Saying "restarting" through that window reads as if
         // the app had not noticed the speaker was back.
-        case 'settling': countdown(d.remainingMs, 'updateAll.phase.settling'); break;
+        case 'settling': countdown(d.remainingMs, 'updateAll.phase.settling', UPDATE_STEPS.confirm); break;
         case 'retrying':
           stopTick();
           uploadedToastShown = false;
@@ -4496,11 +4569,11 @@ async function doBoxUpdate(targetBox) {
           // (#672). The single final "done" comes when the flow resolves.
           showToast(t('update.agentDoneToast'));
           break;
-        case 'engineQueued': stopTick(); setStatus(t('updateAll.phase.engineQueued')); break;
+        case 'engineQueued': stopTick(); setStatus(withStep(t('updateAll.phase.engineQueued'), UPDATE_STEPS.engine)); break;
         case 'engineUploading':
           stopTick();
           engineStreaming = true;
-          setStatus(t('updateAll.phase.engineUploading'));
+          setStatus(withStep(t('updateAll.phase.engineUploading'), UPDATE_STEPS.engine));
           break;
         case 'spotify':
           engineStreaming = false;
@@ -4595,7 +4668,13 @@ async function doBoxUpdate(targetBox) {
     // re-check the version shortly, instead of a raw Go error toast that two
     // reporters hit while their speaker actually updated fine.
     const msg = String(e);
-    if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
+    if (msg.includes(BOX_BUSY_TOKEN)) {
+      // The backend turned this start away because a write is already running
+      // on this speaker. Nothing failed: the run that IS going is fine, and its
+      // owner must not be handed an error report with a copyable Go error for
+      // an update that finishes a minute later (Sascha, ST30, 2026-09-14).
+      showToast(t('update.alreadyRunning', { name: getBoxLabel(targetBox) }));
+    } else if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
       showToast(t('update.stillWorking'));
     } else {
       showError(boxWasTouched
@@ -4604,7 +4683,16 @@ async function doBoxUpdate(targetBox) {
       // The update could not put this speaker into the state it was meant to
       // reach, so hand the user everything needed to report it instead of
       // making them describe a failure they cannot see.
-      showUpdateFailureReport(targetBox, 'update', msg);
+      if (noNetworkHere(msg)) {
+        // The app already knows this: the same predicate greys the speaker
+        // list out for it. The update path just never asked, so pulling the
+        // router mid-update produced a full copyable fault report about a
+        // speaker that was fine, and the reporter had to work out for
+        // themselves that it was their own router (#963).
+        showUpdateNoNetworkNotice();
+      } else {
+        showUpdateFailureReport(targetBox, 'update', msg);
+      }
     }
     reset();
   } finally {
@@ -4651,7 +4739,7 @@ let updateAllBusy = false;
 async function updateAllBoxes(onStart) {
   // Saying so out loud, not returning silently: a second press on a dead-looking
   // button is exactly what the single-box path already learned to answer.
-  if (updateAllBusy || state.otaInProgress) {
+  if (updateAllBusy || boxUpdateBusy || state.otaInProgress) {
     showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
     return false;
   }
@@ -4840,13 +4928,29 @@ async function runUpdateAllBoxes(onStart) {
     // in that reboot, so runBoxUpdate's own 'rebooting' phase does not fire for
     // another ~minute. Flip the row to "restarting" on upload completion so it
     // does not sit at "uploading" through a reboot the app cannot yet see.
-    if (p.pct >= 100) { setRow(p.host, { phaseText: t('updateAll.phase.rebooting'), busy: true }); return; }
+    if (p.pct >= 100) { setRow(p.host, { phaseText: withStep(t('updateAll.phase.rebooting'), UPDATE_STEPS.restart), busy: true }); return; }
     // The first byte is what turns a queued row into an uploading one: the
     // 'uploading' phase itself fires before the batch gate, while the row is
     // still waiting for another speaker's transfer to finish.
-    setRow(p.host, { phaseText: t('updateAll.phase.uploading'), pct: p.pct });
+    setRow(p.host, { phaseText: withStep(t('updateAll.phase.uploading'), UPDATE_STEPS.send), pct: p.pct });
   });
-  if ($('uaClose')) $('uaClose').onclick = () => { if (overlay) overlay.classList.add('hidden'); };
+  const mini = $('uaMini');
+  // Reopening is the whole point of the strip, so it is a button, not a label.
+  if (mini) mini.onclick = () => { mini.classList.add('hidden'); if (overlay) overlay.classList.remove('hidden'); };
+  const showMiniIfStillRunning = () => {
+    if (!mini) return;
+    const c = counts();
+    const left = rows.length - (c.done + c.failed + c.deferred);
+    if (left <= 0) { mini.classList.add('hidden'); return; }
+    mini.textContent = t('updateAll.stillRunning', { n: left });
+    mini.classList.remove('hidden');
+  };
+  if ($('uaClose')) {
+    $('uaClose').onclick = () => {
+      if (overlay) overlay.classList.add('hidden');
+      showMiniIfStillRunning();
+    };
+  }
 
   // The batch writes software to speakers exactly like the single update,
   // so it carries the same guarantees: the window asks before closing for
@@ -4902,7 +5006,13 @@ async function runUpdateAllBoxes(onStart) {
         setRow(b.host, { phaseText: t('updateAll.phase.engineTooFull'), barClass: 'ua-failed' });
       } else {
         setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
-        if (!uaReportShown) { uaReportShown = true; showUpdateFailureReport(b, 'update-all-engine', String(e)); }
+        if (!uaReportShown) {
+          uaReportShown = true;
+          // The engine repair row reaches the speaker the same way, so it
+          // loses the network the same way (#963).
+          if (noNetworkHere(m)) showUpdateNoNetworkNotice();
+          else showUpdateFailureReport(b, 'update-all-engine', String(e));
+        }
       }
       try { console.warn('update all: engine repair failed', b.host, e); } catch {}
     } finally {
@@ -4926,9 +5036,9 @@ async function runUpdateAllBoxes(onStart) {
           // until its first progress byte arrives (the progress handler above).
           case 'uploading': setRow(b.host, { phaseText: t('updateAll.phase.queued'), wait: true }); break;
           case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), busy: true }); break;
-          case 'verifying': setRow(b.host, { phaseText: t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), busy: true }); break;
+          case 'verifying': setRow(b.host, { phaseText: withStep(t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.restart), busy: true }); break;
           case 'retrying': setRow(b.host, { phaseText: t('updateAll.phase.retrying'), busy: true }); break;
-          case 'settling': setRow(b.host, { phaseText: t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), busy: true }); break;
+          case 'settling': setRow(b.host, { phaseText: withStep(t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.confirm), busy: true }); break;
           case 'engineQueued': setRow(b.host, { phaseText: t('updateAll.phase.engineQueued'), wait: true }); break;
           case 'engineUploading': setRow(b.host, { phaseText: t('updateAll.phase.engineUploading'), pct: 0 }); break;
           case 'spotify': setRow(b.host, { phaseText: spotifyPhaseText(d), busy: true }); break;
@@ -4964,7 +5074,17 @@ async function runUpdateAllBoxes(onStart) {
       // Same account of the failure the single update gives, for the
       // FIRST speaker that fails: a wall of reports would help nobody, and
       // the rest stay on record for the next time each is opened.
-      if (!uaReportShown) { uaReportShown = true; showUpdateFailureReport(b, 'update-all', String(e)); }
+      //
+      // Including the no-network case. The single-speaker button learned to
+      // say "your own network went away" in one line instead of opening a
+      // fault report about a speaker that was fine, and the batch did not,
+      // although the batch is what the reporter ran: his report header reads
+      // "failed at: update-all" (#963).
+      if (!uaReportShown) {
+        uaReportShown = true;
+        if (noNetworkHere(String(e))) showUpdateNoNetworkNotice();
+        else showUpdateFailureReport(b, 'update-all', String(e));
+      }
       try { console.warn('update all: box failed', b.host, e); } catch {}
     } finally {
       const r = rowState.get(b.host); if (r) r.outcome = outcome;
@@ -4980,6 +5100,7 @@ async function runUpdateAllBoxes(onStart) {
 
   // Batch done: release the global lock, refresh, summarize.
   offProg();
+  if (mini) mini.classList.add('hidden');
   try { SetOTARunning(false); } catch {}
   state.otaInProgress = false;
   state.otaTargetHost = null;
@@ -5785,6 +5906,44 @@ function runPendingGroupEdits() {
   return groupOpChain;
 }
 
+// showUpdateNoNetworkNotice is the short, dismissible version of the failure
+// report, for the one cause that is not about the speaker at all.
+//
+// The full report exists so a real fault can be sent to me, and it earns its
+// weight then. A computer that lost its network produces nothing worth reading
+// in it: the speaker is untouched, nothing needs unplugging, and the whole
+// answer is one sentence that the app already owns for the speaker list.
+function showUpdateNoNetworkNotice() {
+  showError(t('settingsView.noNetworkTitle') + ' ' + t('settingsView.noNetworkHelp'));
+}
+
+// step numbers the phases a speaker goes through, because the middle of the
+// sequence looks exactly like the end of it.
+//
+// The order is: send the software, restart, confirm, then the Spotify engine.
+// "Restarting" is roughly halfway, and it is the phase that sits on screen the
+// longest, so a row reading "Rebooting (usually 2-4 min)" with a full bar reads
+// as finished. It is not: the confirm and the ~16 MB engine delivery still have
+// to happen, and a run interrupted there leaves a speaker on the new version
+// with no Spotify engine, which is exactly what happened to one owner's
+// speaker (#963).
+const UPDATE_STEPS = { send: 1, restart: 2, confirm: 3, engine: 4 };
+
+function withStep(text, n) {
+  return text + t('updateAll.phase.step', { n });
+}
+
+// dissolveIncompleteMessage turns the agent's refusal into something the user
+// can act on. "remaining" is how many speakers the master still reports after
+// every teardown route was tried, and naming it is the difference between "it
+// did not work" and "four speakers are still in this group".
+function dissolveIncompleteMessage(res) {
+  const left = res && Number(res.remaining) > 0 ? Number(res.remaining) : 0;
+  return left
+    ? t('multiroom.dissolveIncompleteN', { n: left })
+    : t('multiroom.dissolveIncomplete');
+}
+
 // runGroupMemberToggle applies a whole batch of toggles as ONE zone edit.
 // edits is [[host, port], ...]; a single click is simply a batch of one.
 async function runGroupMemberToggle(edits) {
@@ -5823,11 +5982,18 @@ async function runGroupMemberToggle(edits) {
   const wasIn = removed.length > 0 && targets.length === 1;
   try {
     if (next.length === 0) {
-      await DissolveZone(box.host, box.port);
-      // Stop the ex-followers we can reach (their agent port is only known
-      // for discovered boxes).
-      await Promise.allSettled(members.filter(m => m.box).map(m => Stop(m.box.host, m.box.port)));
-      showToast(t('group.dissolvedToast'));
+      // Same rule as the group frame's x: a refusal from the speaker must not
+      // come out as a green tick, or the group the user is looking at keeps
+      // playing while the app says it is gone.
+      const res = await DissolveZone(box.host, box.port);
+      if (res && res.ok === false) {
+        showToast(dissolveIncompleteMessage(res));
+      } else {
+        // Stop the ex-followers we can reach (their agent port is only known
+        // for discovered boxes).
+        await Promise.allSettled(members.filter(m => m.box).map(m => Stop(m.box.host, m.box.port)));
+        showToast(t(res && res.nothing ? 'multiroom.nothingToUngroup' : 'group.dissolvedToast'));
+      }
     } else {
       // Preserve the group's mode when the agent reports one (a mirror group
       // must not be silently converted to native by an add/remove); older
@@ -7206,10 +7372,15 @@ function renderNowPlayingBar() {
   if (nextBtn) nextBtn.classList.toggle('hidden', !isSpotify);
   if (prevBtn) prevBtn.classList.toggle('hidden', !isSpotify);
   let displayName = name;
-  if (/\/spotify\/stream/.test(loc) && state.nowSpotifyTrack) {
-    const song = state.nowSpotifyArtist
-      ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
-      : state.nowSpotifyTrack;
+  // Either Spotify: the one STR serves through its own proxy, or the one the
+  // speaker serves itself after a phone picked it in Connect. Same line, two
+  // sources for the song.
+  const spotifyTrack = state.nowBoxSpotify
+    ? state.nowBoxSpotify.track
+    : (/\/spotify\/stream/.test(loc) ? state.nowSpotifyTrack : '');
+  const spotifyArtist = state.nowBoxSpotify ? state.nowBoxSpotify.artist : state.nowSpotifyArtist;
+  if (spotifyTrack) {
+    const song = spotifyArtist ? `${spotifyArtist} - ${spotifyTrack}` : spotifyTrack;
     displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
   } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
     // The same predicate as the title poller above, and it has to be the same
@@ -7263,6 +7434,14 @@ function renderNowPlayingBar() {
     statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
   } else if (stateLabel) {
     statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
+  } else if (state.currentBox && state.currentBox.offline) {
+    // Not "ready". A failed poll deliberately keeps the last known
+    // now-playing rather than blanking the bar, and with nothing playing
+    // that fell through to "ready", so a speaker that had gone off the
+    // network was reported as an idle speaker waiting for input, for as long
+    // as the app stayed open. The tile greys out but the status line said the
+    // opposite (#165). Discovery already knows; this just stops contradicting it.
+    statusHTML = `<span class="muted">${escapeHtml(t('status.unreachable'))}</span>`;
   } else {
     statusHTML = `<span class="muted">${escapeHtml(t('status.ready'))}</span>`;
   }
@@ -7418,19 +7597,24 @@ async function refreshStatus() {
     // three AUX inputs) says which one is playing only in the account, so the
     // input row needs it to light the right button (#274).
     state.nowSourceAccount = (xml.match(/nowPlaying[^>]*sourceAccount="([^"]*)"/) || [])[1] || '';
-
-    // Native Bose Spotify receiver detection: source=SPOTIFY means the phone
-    // connected to the speaker's built-in Spotify Connect, not STR's go-librespot
-    // (STR's own playback is always source=UPNP via the stream proxy). STR cannot
-    // recall a preset on the native receiver, so hint once per episode and reset
-    // when the box leaves SPOTIFY again.
+    // The speaker's OWN Spotify receiver names the song in the same response,
+    // and that is not true of every source: on radio <track> merely repeats the
+    // station, which is why the song has always had to come from STR's stream
+    // proxy instead (#593). Confirmed on firmware 27.0.6 with the cloud gone
+    // and a FREE Spotify account: <track>, <artist>, <album> and the cover are
+    // all filled while <itemName> carries the playlist. So a phone-started
+    // Connect session can show the song with no extra request, and STR's own
+    // engine must not be asked about it, because it is not the one playing.
+    state.nowBoxSpotify = null;
     if (src === 'SPOTIFY') {
-      if (!state.nativeSpotifyWarned) {
-        state.nativeSpotifyWarned = true;
-        showToast(t('play.nativeSpotifyHint'));
+      const bt = decodeXmlEntities((xml.match(/<track>([^<]*)<\/track>/) || [])[1] || '');
+      if (bt) {
+        state.nowBoxSpotify = {
+          track: bt,
+          artist: decodeXmlEntities((xml.match(/<artist>([^<]*)<\/artist>/) || [])[1] || ''),
+          cover: (xml.match(/<art\b[^>]*>([^<]*)<\/art>/) || [])[1] || '',
+        };
       }
-    } else {
-      state.nativeSpotifyWarned = false;
     }
 
     // Piggy-back an SSH status check on the polling we are doing
@@ -7438,6 +7622,30 @@ async function refreshStatus() {
     // tab rather than only after entering the Settings tab.
     checkSshBanner();
     const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
+
+    // Native Bose Spotify receiver detection: source=SPOTIFY means a phone
+    // connected to the speaker's built-in Spotify Connect, not STR's
+    // go-librespot (STR's own playback is always source=UPNP via the stream
+    // proxy). STR cannot recall a preset on the native receiver, so say so
+    // once per episode and reset when the speaker leaves SPOTIFY again.
+    //
+    // Two conditions, both from the same report (#950). The notice opens with
+    // "Playing on the speaker's built-in Spotify" and used to fire on a PAUSED
+    // session, because the play state was read further down than the notice.
+    // And it tells the user to press a saved Spotify key, which a free account
+    // cannot create at all, so it sent a free-account user looking for a button
+    // that does not exist. It now needs a speaker that is really playing and a
+    // key that really exists, and it is remembered per speaker, not globally.
+    const spotifyKeySaved = (state.presets || []).some(p => p && p.type === 'spotify');
+    const spotifyWarnKey = (state.currentBox && state.currentBox.host) || '';
+    if (src === 'SPOTIFY' && ps === 'PLAY_STATE' && spotifyKeySaved) {
+      if (state.nativeSpotifyWarned !== spotifyWarnKey) {
+        state.nativeSpotifyWarned = spotifyWarnKey;
+        showToast(t('play.nativeSpotifyHint'));
+      }
+    } else if (src !== 'SPOTIFY') {
+      state.nativeSpotifyWarned = '';
+    }
     const loc = decodeXmlEntities((xml.match(/location="([^"]+)"/) || [])[1] || '');
     // Extract the art URL from the <art ...>URL</art> tag. Bose
     // emits it for stations with an image (for example after a
@@ -7472,7 +7680,10 @@ async function refreshStatus() {
     // Live Spotify track metadata for the now-playing line: poll the agent's
     // /spotify/info (throttled) while a Spotify stream is active so the desktop
     // shows the current song + artist, not just the playlist/preset name.
-    const isSpotifyNow = /\/spotify\/stream|\/playback\/container/.test(newLoc);
+    // A container location is also what the speaker's own receiver reports, and
+    // for that one the song came out of the status XML above. Asking STR's
+    // engine then answers about a session it is not serving and blanks the line.
+    const isSpotifyNow = /\/spotify\/stream|\/playback\/container/.test(newLoc) && !state.nowBoxSpotify;
     if (isSpotifyNow) {
       const npBox = state.currentBox;
       if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {

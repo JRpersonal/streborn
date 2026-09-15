@@ -31,6 +31,15 @@ type playRequest struct {
 	// library track, so the box decodes it correctly. Empty for radio -> the
 	// renderer defaults to audio/mpeg.
 	Mime string `json:"mime"`
+	// DurationSec is the track length in seconds for a library file, 0 for
+	// radio and for anything of unknown length.
+	//
+	// It is what draws the progress bar and what lets the speaker know the
+	// track ended. The firmware answers `<time total="0">` unless the DIDL it
+	// was handed carries a duration, and with total 0 there is nothing for the
+	// bar to fill and no end to detect. A folder already sends it, which is why
+	// a folder draws a bar per track and a single track never did (#845, #844).
+	DurationSec int `json:"duration_sec"`
 	// Homepage is the station website (radio only), recorded into Recently-played
 	// so a card can offer a "website" link like the radio search rows do (#135).
 	Homepage string `json:"homepage"`
@@ -131,7 +140,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
 	defer playCancel()
 	// A single play replaces any active library queue, so stop auto-advancing.
-	s.stopQueue()
+	s.stopQueue("a single station or track was played instead")
 	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
 	// auto-attach so it does not jump back to Spotify.
 	if s.spotifySwitchedAway != nil {
@@ -193,7 +202,15 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	playErr := s.playWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime)
+	// A known length only means anything when the speaker is fetching the file
+	// itself: through the proxy the byte count is the proxy's, not the track's,
+	// and a seekable claim over it would be a lie. So the meta follows
+	// playDirect rather than the MIME.
+	var meta upnp.TrackMeta
+	if playDirect && req.DurationSec > 0 {
+		meta = upnp.TrackMeta{Duration: time.Duration(req.DurationSec) * time.Second, Seekable: true}
+	}
+	playErr := s.playTrackWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime, meta)
 	if playErr != nil {
 		if isGroupedRejection(playErr) {
 			s.writeGroupedPlayError(w, playErr)
@@ -206,7 +223,16 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	playGen := s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	// A finite file played on its own has nothing watching it end. The box
+	// finishes the bytes and freezes in PLAY_STATE (#380), so the app, the
+	// remote and the speaker's display kept showing a 2:07 track playing six
+	// minutes later, until the auto-off timer cut in (#844). A FOLDER is fine
+	// because the queue watcher calls the end; the single play stops the queue
+	// by design, so it gets its own watch. Radio is excluded: it has no end.
+	if playDirect {
+		s.armSingleTrackEnd(time.Duration(req.DurationSec)*time.Second, playGen, req.Title)
+	}
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
 	if req.Mime != "" {
@@ -242,6 +268,17 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.presets.Get(slot)
 	if !ok {
 		http.Error(w, "preset not configured", http.StatusNotFound)
+		return
+	}
+	// Refuse a Spotify recall that cannot succeed BEFORE touching the speaker.
+	//
+	// Everything below wakes the box, and the firmware resumes its last station
+	// on power-on, so a recall that was going to be refused anyway started key
+	// 6 playing while key 1 showed an error (#948). The undo that then stopped
+	// it again was a race STR kept losing. These three preconditions need
+	// nothing from an awake speaker, so asked here they cost one local probe
+	// and the box stays asleep.
+	if s.recallRefusedBeforeWake(w, slot, &p) {
 		return
 	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the
@@ -283,11 +320,8 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
 	// use the *Locked variant (startQueue would re-lock and deadlock).
 	if p.Type == "queue" {
+		// Emptiness was answered before the wake, in recallRefusedBeforeWake.
 		items := presetItemsToQueue(p.Items)
-		if len(items) == 0 {
-			http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
-			return
-		}
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 		// Bind the slot before the queue starts so a box-native /stream/<slot>
 		// fetch racing this app-initiated recall can hold for the first track
@@ -313,29 +347,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// queue watcher kept evaluating the OLD track's timing and, when its
 	// wall-clock net tripped minutes later, yanked playback from the station
 	// the user explicitly chose back to the next queue track.
-	s.stopQueue()
-	// Heal a legacy mis-saved Spotify preset before recall: older versions could
-	// store a Spotify selection as a non-spotify preset whose stream URL encoded
-	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
-	// radio path would then stream-proxy a scheme-less URL and the box would get
-	// nothing, which is the "Service not available" recall failure (#45/#105).
-	// Recover the URI and route to the Spotify path; if it is a Spotify stream
-	// with no recoverable URI, tell the user to re-save instead of pushing a
-	// doomed /stream/<slot>.
-	if p.Type != "spotify" && p.StreamURL != "" && !isHTTPURL(p.StreamURL) {
-		if uri := legacySpotifyURI(p.StreamURL); uri != "" {
-			p.Type, p.URI = "spotify", uri
-			s.logger.Info("preset recall: healed legacy spotify preset", "slot", slot, "uri", uri)
-		} else if looksLikeSpotifyStreamURL(p.StreamURL) {
-			s.logger.Warn("preset recall: spotify preset has no replayable URI", "slot", slot, "url", p.StreamURL)
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error": "This Spotify preset was saved in an older version and can't be replayed. Please open the playlist and save it to the preset again.",
-				"code":  "spotify-preset-unreplayable",
-				"slot":  slot, "name": p.Name,
-			})
-			return
-		}
-	}
+	s.stopQueue("a preset that is not a queue was recalled")
 	// Spotify presets have no playable HTTP StreamURL. Mirror the hardware-press
 	// recall (cmd/agent playSpotifyPreset) so a soft recall behaves identically:
 	//  1. wait out a cold go-librespot (auth not finished) instead of pointing
@@ -352,51 +364,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("spotify preset recall (app): type=spotify but empty URI, falling through to radio path", "slot", slot, "name", p.Name)
 	}
 	if p.Type == "spotify" && p.URI != "" {
-		if s.spotifyPlay == nil {
-			s.logger.Warn("spotify preset recall (app): Spotify not configured on this box", "slot", slot)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error": "Spotify not configured", "slot": slot, "name": p.Name,
-			})
-			return
-		}
-		// A speaker that has never been logged into Spotify AND holds no live
-		// session has no way for go-librespot to start playback on its own, so the
-		// recall would silently do nothing (#45 Pierre: saved preset account="" and
-		// go-librespot not running). Tell the user how to fix it instead of
-		// optimistically reporting "playing" and failing in the background. Gate on
-		// CanRecall (live session OR persisted credential), NOT a persisted
-		// credential alone: a box with a live-but-never-persisted zeroconf session
-		// plays Spotify fine yet reports not-logged-in, and gating on the credential
-		// alone wrongly refused its recall (Patrick, ST10, 2026-06-24).
-		// Checked on the detached context: on a slow wake the request context
-		// is already cancelled here and the probe would misreport "not picked
-		// in Spotify yet" (422) for a speaker that is logged in fine (#252).
-		if s.spotifyCanRecall != nil && !s.spotifyCanRecall(playCtx) {
-			s.logger.Info("spotify preset recall (app): speaker not logged into Spotify", "slot", slot)
-			// STR plays Spotify through this speaker as a Spotify Connect receiver
-			// (the go-librespot sidecar), not via any Bose account link. The
-			// speaker has to be picked in Spotify once so it stores a credential.
-			// The desktop app branches on the code, so this wording is free to be
-			// the accurate, non-Bose-linking instruction.
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error": "This speaker has not been picked in Spotify yet. In the Spotify app on a device on the same Wi-Fi, tap the Connect/devices icon, choose this speaker and play any track once. After that this preset will recall on its own.",
-				"code":  "spotify-not-logged-in",
-				"slot":  slot, "name": p.Name,
-			})
-			return
-		}
-		// A free/open Spotify account cannot do the autonomous on-demand playback a
-		// recall needs (it can only play when the phone app drives it), so the
-		// recall would silently fail. Tell the user it needs Premium instead (#45).
-		if s.spotifyPremiumRequired != nil && s.spotifyPremiumRequired() {
-			s.logger.Info("spotify preset recall (app): account is free/open, recall needs Premium", "slot", slot)
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error": "This speaker's Spotify account is free. Spotify preset recall needs Spotify Premium.",
-				"code":  "spotify-premium-required",
-				"slot":  slot, "name": p.Name,
-			})
-			return
-		}
+		// The three preconditions that can refuse this recall were answered
+		// before the wake, in spotifyRecallRefused. Reaching here means the
+		// speaker is picked in Spotify, on Premium, and the engine is
+		// configured.
 		// Mark the recall and point the box at THIS slot's stream FIRST (the box
 		// shows the name and buffers), then answer the request right away. The
 		// slow part (waiting out a cold go-librespot + loading the playlist audio
@@ -688,7 +659,7 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 	// queue preset through RecallSlot, which never reaches here): drop any
 	// active library queue so its watcher does not advance over the user's new
 	// choice minutes later.
-	s.stopQueue()
+	s.stopQueue("a hardware preset key was pressed")
 	return s.setLastPlay(boxURL, title, art, mime)
 }
 

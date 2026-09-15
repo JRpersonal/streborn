@@ -292,14 +292,14 @@ type wireMember struct {
 	IP       string `json:"ip"`
 }
 
-func (c *httpClient) Form(ctx context.Context, tpl Template) error {
+func (c *httpClient) Form(ctx context.Context, tpl Template) (bool, error) {
 	// The main speaker enrols each member from whatever box answers at the
 	// member's address, so the members are resolved to their current
 	// addresses the same way the main speaker is, and a member whose stored
 	// address now belongs to another speaker stops the form.
 	master, err := c.resolve(ctx, tpl.Master)
 	if err != nil {
-		return err
+		return false, fmt.Errorf("main speaker: %w", err)
 	}
 	body := formBody{
 		Master:    wireMember{DeviceID: master.DeviceID, IP: master.IP},
@@ -310,19 +310,34 @@ func (c *httpClient) Form(ctx context.Context, tpl Template) error {
 	for _, m := range tpl.Members {
 		rm, err := c.resolve(ctx, m)
 		if err != nil {
-			return err
+			// The commonest way a press does nothing at all, and the one that
+			// leaves dissolving working: dissolve never resolves a member.
+			return false, fmt.Errorf("member %s: %w", memberLabel(m), err)
 		}
 		body.Slaves = append(body.Slaves, wireMember{DeviceID: rm.DeviceID, IP: rm.IP})
 	}
 	b, _ := json.Marshal(body)
 	code, rb, err := c.do(ctx, tpl.Master, http.MethodPost, "/api/box/zone", string(b), formTimeout)
 	if err != nil {
-		return err
+		return false, fmt.Errorf("reaching the main speaker: %w", err)
 	}
 	if code != http.StatusOK {
-		return httpErr(code, rb)
+		return false, httpErr(code, rb)
 	}
-	return okOrError(rb)
+	return formAnswer(rb)
+}
+
+// memberLabel names a member the way a reader can match it to the app: its
+// name when the template carries one, its address otherwise.
+func memberLabel(m Member) string {
+	switch {
+	case strings.TrimSpace(m.Name) != "":
+		return strings.TrimSpace(m.Name)
+	case m.IP != "":
+		return m.IP
+	default:
+		return m.DeviceID
+	}
 }
 
 func (c *httpClient) Dissolve(ctx context.Context, master Member) error {
@@ -361,6 +376,20 @@ func (c *httpClient) PlayLast(ctx context.Context, master Member) error {
 		return httpErr(code, rb)
 	}
 	return nil
+}
+
+// formAnswer is okOrError plus the one extra field the form answer carries:
+// "deferred", set when a permanent template was stored for the next play
+// rather than wired now. Same parse, so a failure still reads identically.
+func formAnswer(b []byte) (bool, error) {
+	if err := okOrError(b); err != nil {
+		return false, err
+	}
+	var r struct {
+		Deferred bool `json:"deferred"`
+	}
+	_ = json.Unmarshal(b, &r)
+	return r.Deferred, nil
 }
 
 // okOrError turns the zone endpoints' {"ok":false,"error":"..."} answers into

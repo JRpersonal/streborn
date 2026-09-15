@@ -5,6 +5,7 @@ package webui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/JRpersonal/streborn/anonymise"
 	"sync"
 	"time"
 
@@ -336,7 +339,8 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	// shows dead presets (empty/invalid stream URL) directly. Before this the
 	// store's content was invisible in bundles and a preset that saved wrong
 	// could only be diagnosed by asking the user to fetch presets.json (#252).
-	// Stream URLs are included in full; the app's exporter anonymizes bundles.
+	// Stream URLs are included in full. They are masked on the way out with
+	// everything else unless the caller asked for raw; see writeDebugState.
 	if s.presets != nil {
 		all := s.presets.All()
 		lines := make([]string, 0, len(all))
@@ -365,7 +369,55 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 			state[k] = fn()
 		}()
 	}
-	writeJSON(w, http.StatusOK, state)
+	s.writeDebugState(w, state, r.URL.Query().Get("raw") == "1")
+}
+
+// writeDebugState writes the debug state, MASKED unless the caller explicitly
+// asked for it raw.
+//
+// Masked is the default because of what happened when it was not. This payload
+// carries the speaker's own logs, its peer list, its hosts file and its zone,
+// so it is full of addresses, hardware addresses and speaker names. The only
+// consumer used to be the desktop app, which scrubs everything it writes into a
+// bundle, so the endpoint handed out the raw text and said so in a comment. Then
+// the phone remote grew a diagnostic button that fetches this and saves the
+// answer directly, for reporters who have no PC. Nobody re-read the comment.
+// Of the 36 files attached to public issues that way, 32 carried their owner's
+// real LAN addresses and MAC addresses (found 2026-09-15).
+//
+// So the raw form is now something a caller asks for by name, and a caller that
+// forgets gets the safe answer. The desktop app asks, because it anonymises
+// what it exports itself and its failure report deliberately keeps the
+// addresses: they are shown to the user about their own equipment.
+func (s *Server) writeDebugState(w http.ResponseWriter, state map[string]any, raw bool) {
+	if raw {
+		writeJSON(w, http.StatusOK, state)
+		return
+	}
+	b, err := json.Marshal(state)
+	if err != nil {
+		writeJSON(w, http.StatusOK, state)
+		return
+	}
+	// Scrub the encoded form, not the tree: an address can sit anywhere, in a
+	// map key, in a log line, inside a base64 payload. None of the
+	// replacements introduce a quote or a backslash, so the result is still
+	// the same JSON document with different values.
+	clean := anonymise.ScrubPII(string(b))
+	var walked map[string]any
+	if err := json.Unmarshal([]byte(clean), &walked); err != nil {
+		// Unreachable by construction, and if it ever is reached the answer is
+		// to send less rather than to fall back to the unmasked text.
+		s.logger.Warn("debug state: masking produced invalid JSON, refusing to answer raw", "err", err)
+		http.Error(w, "debug state could not be anonymised", http.StatusInternalServerError)
+		return
+	}
+	// Second pass, structured. A network name is a bare value under an "ssid"
+	// KEY, so there is no "ssid" in the text for the pass above to find, and a
+	// speaker name sits under a plain "name". Four of a reporter's household
+	// network names reached a public issue exactly that way (#592), which is
+	// why the desktop bundle walks the tree as well as scrubbing the text.
+	writeJSON(w, http.StatusOK, anonymise.DebugState(walked))
 }
 
 // agentBootMarker is the first line the agent writes on every start

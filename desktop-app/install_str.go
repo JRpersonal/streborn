@@ -183,10 +183,17 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				", and STR needs it updated first. Since the Bose cloud shut down the SoundTouch app usually cannot deliver a firmware update any more, so use Bose's USB update tool: the Firmware section in the speaker settings has the steps and the link."
 		}
 	}
-	// Every message this function can end on gets the firmware note. It used to
-	// be appended only in the late branches, all of them past a successful SSH
-	// handshake, so a box that failed the PREFLIGHT never mentioned its firmware
-	// at all. That is the exact case where it matters most: a SoundTouch 30 on
+	// Every message this function can end on gets the firmware note, and that
+	// deliberately includes the ones that report SUCCESS. An install can run to
+	// the end on a speaker whose firmware is years old and leave it unusable
+	// afterwards: an scm/spotty SoundTouch 20 on 14.0.15 took the whole install,
+	// answered "install: OK", and then boot-looped into recovery, while the app
+	// had read "outdated=true" off the speaker minutes earlier and said nothing
+	// because that path had ended in success (#854).
+	//
+	// It used to be appended only in the late branches, all of them past a
+	// successful SSH handshake, so a box that failed the PREFLIGHT never
+	// mentioned its firmware at all. That is the exact case where it matters most: a SoundTouch 30 on
 	// firmware 10.0.11 (2015) failed the stick-free unlock three times, and the
 	// user was told each time that a firewall or the wrong Wi-Fi was the likely
 	// cause. He turned his firewall off for nothing while the app had read
@@ -352,7 +359,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		res.Log = hello
 		res.Code = "ssh-handshake"
 		hint := classifySSHError(hello, helloErr)
-		res.Message = "SSH handshake to speaker failed: " + hint
+		res.Message = withFW("SSH handshake to speaker failed: " + hint)
 		a.logger.Warn("install_str: ssh handshake failed after retries", "host", host, "err", helloErr, "hint", hint)
 		return res, nil
 	}
@@ -394,7 +401,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			if probeErr != nil {
 				res.Code = "ssh-probe"
 				hint := classifySSHError(probe, probeErr)
-				res.Message = "ssh probe failed after retries: " + hint
+				res.Message = withFW("ssh probe failed after retries: " + hint)
 				a.logger.Warn("install_str: ssh probe failed after retries", "host", host, "err", probeErr, "hint", hint)
 				// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
 				return res, nil
@@ -421,10 +428,10 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				return instRes, instErr
 			}
 			res.Code = "stick-missing"
-			res.Message = "install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
+			res.Message = withFW("install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
 				"On a SoundTouch 30, if no stick mounts at all: try a small plain USB 2.0 stick (4 to 32 GB), avoid SD-card adapters and USB 3 / large drives, and try BOTH USB ports:" +
 				"the rear USB-A port and the micro-USB port via a micro-USB OTG adapter. Reboot the speaker after inserting it." +
-				"If several sticks in both ports still do not mount, the speaker's USB port may be faulty."
+				"If several sticks in both ports still do not mount, the speaker's USB port may be faulty.")
 			res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
 			return res, nil
 		}
@@ -486,7 +493,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		if res.Code == "nand-full" {
 			hint = "the speaker's internal storage is full, so STR does not fit (the stick is fine). Something besides the Bose firmware already occupies it, often an earlier third-party SoundTouch tool. The diagnostic in this report lists the largest folders under '# nv usage'."
 		}
-		res.Message = "install.sh execution failed: " + hint
+		res.Message = withFW("install.sh execution failed: " + hint)
 		// The rich diagnostics must also reach str.log, not only res.Log:
 		// a remote user's str.log is often all we get, and without this it
 		// showed just the one-line hint (no kernel/stick/dmesg evidence).
@@ -515,7 +522,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				if _, werr := a.waitForAgent(host, model); werr == nil {
 					res.Step = "done"
 					res.OK = true
-					res.Message = "The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888."
+					res.Message = withFW("The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888.")
 					return res, nil
 				}
 				// Installed over the network (stick bypassed); the agent just has
@@ -540,7 +547,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	}
 	if strings.Contains(out, "FEHLER") || strings.Contains(out, "ERROR") {
 		res.Code = "install-script-error"
-		res.Message = "install.sh reported an error. See log."
+		res.Message = withFW("install.sh reported an error. See log.")
 		return res, nil
 	}
 	a.logger.Info("install_str: install.sh ran", "host", host, "outBytes", len(out))
@@ -595,7 +602,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 						if _, werr := a.waitForAgent(host, model); werr == nil {
 							res.Step = "done"
 							res.OK = true
-							res.Message = "The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888."
+							res.Message = withFW("The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888.")
 							return res, nil
 						}
 						// The over-the-network install succeeded (the stick was
@@ -628,7 +635,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			if _, werr := a.waitForAgent(host, model); werr == nil {
 				res.Step = "done"
 				res.OK = true
-				res.Message = "STR agent is up on port 8888 (after an automatic retry)."
+				res.Message = withFW("STR agent is up on port 8888 (after an automatic retry).")
 				return res, nil
 			}
 			// The first wait may have timed out before run.sh logged the copy
@@ -655,7 +662,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	}
 	res.Step = "done"
 	res.OK = true
-	res.Message = "STR agent is up on port 8888."
+	res.Message = withFW("STR agent is up on port 8888.")
 	return res, nil
 }
 

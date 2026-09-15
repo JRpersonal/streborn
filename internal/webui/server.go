@@ -556,6 +556,11 @@ type Server struct {
 	// playStateFn overrides boxPlayState for tests. nil = the real :8090 probe.
 	playStateFn func() (standby, busy bool)
 
+	// nowPlayingFn overrides pollNowPlaying for tests. The end detection is a
+	// state machine over what the box reports, so it is only testable if the
+	// reports can be scripted.
+	nowPlayingFn func() (status string, pos, total time.Duration, standby bool)
+
 	// nowPlayingBodyFn seams the raw now_playing read behind the foreign-content
 	// guard (resume_foreign.go), so the decision is assertable without a live
 	// box. nil = the real :8090 fetch.
@@ -672,6 +677,13 @@ type Server struct {
 	// Guarded by queueMu.
 	queueRecallSlot int
 	queueRecallAt   time.Time
+	// queueEp is the play-queue episode running right now and queueEpPast the
+	// last few that ended, with the reason each one ended (#960). queueLogMu
+	// guards both; it is taken alone, never while boxCmdMu or queueMu is held,
+	// so it cannot join an existing lock order.
+	queueLogMu  sync.Mutex
+	queueEp     *queueEpisode
+	queueEpPast []queueEpisode
 	// baseCtx is the server-lifetime context (set in Run), the parent for the
 	// long-lived queue watcher so it outlives the request that started the queue.
 	baseCtx context.Context

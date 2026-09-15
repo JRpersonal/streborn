@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/wlanlive"
 )
 
@@ -49,6 +50,17 @@ func guessErrorReason(err error) string {
 func isGroupedRejection(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "member of group")
 }
+
+// IsGroupedRejection is isGroupedRejection for the agent, whose hardware
+// preset path needs the same answer and had no way to ask for it.
+//
+// Every app-driven play has consulted this since #70. The key press on the
+// speaker itself consulted nothing, so a press on a grouped follower ran the
+// full verify loop against a refusal that can never succeed: five more
+// identical pushes over about 25 seconds, then a recall-exhausted mark, and
+// two of those in a row latch the speaker as wedged, which paints a red banner
+// on a speaker that is simply following its group (#528).
+func IsGroupedRejection(err error) bool { return isGroupedRejection(err) }
 
 // isWrongStateRejection reports whether a play failure is the box refusing
 // SetAVTransportURI because its OWN transport is in the wrong state: the
@@ -105,9 +117,16 @@ func (s *Server) clearTransportForReplay(ctx context.Context) {
 // not the stuck ContentItem and hammering it would only delay the error the
 // caller needs to show.
 func (s *Server) playWithWrongStateRepair(ctx context.Context, url, title, art, mime string) error {
+	return s.playTrackWithWrongStateRepair(ctx, url, title, art, mime, upnp.TrackMeta{})
+}
+
+// playTrackWithWrongStateRepair is playWithWrongStateRepair for a file whose
+// length is known. A zero TrackMeta reproduces the old behaviour exactly, which
+// is what every caller that has nothing to say about length passes.
+func (s *Server) playTrackWithWrongStateRepair(ctx context.Context, url, title, art, mime string, track upnp.TrackMeta) error {
 	push := func() error {
 		if mime != "" {
-			return s.renderer.PlayURLMime(ctx, url, title, art, mime)
+			return s.renderer.PlayURLTrack(ctx, url, title, art, mime, track)
 		}
 		return s.renderer.PlayURL(ctx, url, title, art)
 	}

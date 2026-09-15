@@ -105,6 +105,42 @@ curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
 
 See [AUTOMATION.md](AUTOMATION.md) for what a fire actually does and how the
 clock is handled.
+## Groups
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/box/zone` | - | The live zone, plus `remembered` when none is live and `permanent` when the saved group is the durable kind. |
+| `POST`   | `/api/box/zone` | the whole group | Forms or REPLACES the group. Send the full member list every time. |
+| `DELETE` | `/api/box/zone` | - | Takes the live group apart. The saved group survives; add `?forget=1` to delete that too. |
+| `GET`    | `/api/box/zone/volume` | - | `{"grouped","stereo","members":[...],"average"}`. A member that did not answer reports `volume: -1` rather than disappearing. |
+| `POST`   | `/api/box/zone/volume` | `{"value":N}` or `{"ip":"...","value":N}` | Every member, or one of them. |
+
+The form body is
+`{"master":{"deviceID","ip"},"slaves":[{"deviceID","ip"}],"mode","permanent","defineOnly","stereo"}`.
+
+Two fields decide more than they look like they do.
+
+**`permanent` is not carried forward.** The document is stored exactly as sent,
+so a POST that omits it turns a durable group into an ordinary one: it stops
+re-forming when the master plays, and the next `DELETE` clears it for good. A
+client that adds or removes ONE member must read `permanent` from
+`GET /api/box/zone` first and send it back. (Found in a third-party client,
+2026-09-14, where adding a speaker silently demoted the saved group.)
+
+**A 200 is not a success.** The dissolve answers
+`{"ok":false,"remaining":N,"error":"..."}` when the speaker took the request and
+kept the group anyway, and `{"ok":true,"nothing":true}` when there was no group
+to take apart. Both arrive as HTTP 200. Treating either as success is how an app
+shows a green tick over a group that is still playing.
+
+## Agent and history
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
+| `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`. |
+| `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
 
 ## Examples
 

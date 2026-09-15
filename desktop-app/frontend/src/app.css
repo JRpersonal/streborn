@@ -52,3 +52,38 @@
     border: none;
     background-color: rgba(255, 255, 255, 1);
 }
+/* The strip that stays behind when the update panel is hidden.
+   Closing that panel never stopped anything, but with nothing left on screen
+   "hidden" and "finished" looked identical, and the step after that is closing
+   the app, which does stop it. Fixed to the bottom so it survives a tab change,
+   and a button so it is obvious it takes you back. */
+.ua-mini {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(92vw, 520px);
+  padding: 9px 16px;
+  border: 1px solid var(--accent, #4a9eff);
+  border-radius: 999px;
+  background: var(--card, #1e2530);
+  color: var(--fg, #e8eaed);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+.ua-mini::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent, #4a9eff);
+  animation: ua-mini-pulse 1.4s ease-in-out infinite;
+}
+.ua-mini:hover { filter: brightness(1.12); }
+@keyframes ua-mini-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .ua-mini::before { animation: none; } }

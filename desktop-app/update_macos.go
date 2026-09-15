@@ -49,22 +49,61 @@ import (
 // unverifiable into place.
 const teamID = "" // set from the signing identity when the release pipeline ships zips
 
-// canSelfReplaceDarwin reports whether an in-place bundle swap is possible right
-// now. It answers for THIS installation, not for macOS in general: an app
-// running from the DMG, from a read-only volume or from a directory the user
-// cannot write must keep the assisted flow.
-func canSelfReplaceDarwin() bool {
+// Reasons an in-place swap is not possible, as stable tokens.
+//
+// The plain boolean cost a reporter two evenings and me a wrong answer. Their
+// Mac fell back to the disk image on 8 and 12 September and updated itself in
+// place on the 14th, and nothing anywhere recorded WHICH of the conditions
+// below had said no, so the thread ran on guesses about a Mac neither of us
+// could see (#916). A token per condition costs one string.
+const (
+	selfReplaceOK           = "ok"
+	selfReplaceNoBundle     = "not_an_app_bundle"
+	selfReplaceFromImage    = "running_from_disk_image"
+	selfReplaceTranslocated = "gatekeeper_translocated"
+	selfReplaceFolderLocked = "folder_not_writable"
+)
+
+// selfReplaceDarwin answers whether an in-place bundle swap is possible right
+// now, and says why when it is not. It answers for THIS installation, not for
+// macOS in general: an app running from the DMG, from a Gatekeeper
+// translocation path, or from a directory the user cannot write must keep the
+// assisted flow.
+func selfReplaceDarwin() (ok bool, reason, bundle string) {
 	bundle, err := runningBundlePath()
 	if err != nil {
-		return false
+		return false, selfReplaceNoBundle, ""
 	}
-	parent := filepath.Dir(bundle)
+	// Gatekeeper app translocation: a quarantined copy launched from outside
+	// /Applications runs from a randomised read-only mount. Checked before the
+	// write test, which would otherwise report it as a permissions problem and
+	// send the user to fix something that is not broken.
+	if strings.Contains(bundle, "/AppTranslocation/") {
+		return false, selfReplaceTranslocated, bundle
+	}
 	// Running from the mounted disk image is the common one: the user opened
 	// the DMG and launched the app out of it instead of copying it first.
 	if strings.HasPrefix(bundle, "/Volumes/") {
-		return false
+		return false, selfReplaceFromImage, bundle
 	}
-	return dirWritable(parent)
+	if !dirWritable(filepath.Dir(bundle)) {
+		return false, selfReplaceFolderLocked, bundle
+	}
+	return true, selfReplaceOK, bundle
+}
+
+// canSelfReplaceDarwin is selfReplaceDarwin for the callers that only need the
+// answer.
+func canSelfReplaceDarwin() bool {
+	ok, _, _ := selfReplaceDarwin()
+	return ok
+}
+
+// SelfUpdateState is what the app records about itself at start and puts into a
+// diagnostic: where it runs from, and whether it can update itself there.
+func SelfUpdateState() (path, reason string, ok bool) {
+	ok, reason, path = selfReplaceDarwin()
+	return path, reason, ok
 }
 
 // runningBundlePath returns the path of the .app bundle this process runs from,

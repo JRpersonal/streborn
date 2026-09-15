@@ -73,7 +73,7 @@ func TestHTTPClientAgainstAgent(t *testing.T) {
 		t.Fatalf("live zone %+v", lz)
 	}
 	tpl := Template{Name: "Evening", Master: master, Members: []Member{{DeviceID: "BBBB", IP: "192.0.2.11"}}, Permanent: true}
-	if err := c.Form(ctx, tpl); err != nil {
+	if _, err := c.Form(ctx, tpl); err != nil {
 		t.Fatal(err)
 	}
 	if formed.Name != "Evening" || !formed.Permanent || formed.Mode != "native" || len(formed.Slaves) != 1 || formed.Master.IP != "127.0.0.1" {

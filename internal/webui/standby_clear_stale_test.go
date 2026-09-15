@@ -45,7 +45,7 @@ func TestHandleEnterStandby_UserPlayDuringClearAbortsClearURI(t *testing.T) {
 		queue:    newPlayQueue(),
 		renderer: &upnp.Renderer{ControlURL: box.URL, Client: box.Client()},
 	}
-	t.Cleanup(s.stopQueue)
+	t.Cleanup(func() { s.stopQueue("test cleanup") })
 	// A real power-off: fresh adjacent key press, so the latch+clear route runs.
 	s.SetUserActivityFn(func() time.Time { return time.Now() })
 

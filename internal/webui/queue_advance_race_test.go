@@ -19,7 +19,7 @@ func TestStaleQueueAdvanceStandsDown(t *testing.T) {
 	// An advance decided against a PREVIOUS generation (the watcher's poll
 	// predates the new queue) must do nothing: no push, no position move.
 	base := rec.count()
-	s.advanceAndPlay(true, 0)
+	s.advanceAndPlay(true, 0, "test")
 	if got := rec.count(); got != base {
 		t.Fatalf("stale advance pushed a stream to the box (%d SOAP calls)", got-base)
 	}
@@ -31,7 +31,7 @@ func TestStaleQueueAdvanceStandsDown(t *testing.T) {
 	s.queueMu.Lock()
 	gen := s.queueGen
 	s.queueMu.Unlock()
-	s.advanceAndPlay(true, gen)
+	s.advanceAndPlay(true, gen, "test")
 	if pos := s.queue.snapshot().Pos; pos != 1 {
 		t.Fatalf("current-generation advance: queue pos = %d, want 1", pos)
 	}

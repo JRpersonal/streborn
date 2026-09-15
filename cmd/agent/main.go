@@ -1128,6 +1128,11 @@ func run() error {
 	// slots STR preserves in the marge answer (the Deezer slot-3 loss class).
 	webui.RegisterDebugSection("boseapp_health", func() any { return webuiSrv.BoseAppHealth() })
 	webui.RegisterDebugSection("foreign_presets", foreignPresets.DebugState)
+	// What the library play queue did: how many tracks it was given, how many it
+	// advanced through, and the reason it ended. Before #960 a folder that
+	// stopped part way through left no trace at all, so a bundle could not tell
+	// a finished list from a stop somebody pressed.
+	webui.RegisterDebugSection("queue_episodes", func() any { return webuiSrv.QueueForensics() })
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
 	// it actually plays instead of staying on the current source (#14).

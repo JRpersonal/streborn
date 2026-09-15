@@ -468,7 +468,17 @@ const (
 
 	controlUnresponsiveAdvice = "Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again."
 
-	restartingAfterUnlockAdvice = "Give it about two minutes, then refresh the speaker list and try the install again. If it keeps failing, install from the USB stick: power the speaker off, plug the stick in, power it back on."
+	// The stick leads, because the stick is the only thing that has actually
+	// brought a speaker back from this state. STR unlocks the speaker over its
+	// service port and restarts it; when the speaker does not come back, the
+	// advice that follows is the one that worked on 2026-09-13 (an owner whose
+	// SoundTouch 20 went dark here: "Stick angesteckt und dann mit dem Strom
+	// verbunden, nach ein paar Minuten war das Display mit Uhrzeit und Wlan
+	// Anzeige sichtbar"). The stick boot also rewrites the speaker's cloud
+	// addresses back to Bose's own, which is the other half of the repair, and
+	// the second Install press is called out because that is what turned one
+	// failure into two for the same owner (#966).
+	restartingAfterUnlockAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing: power it off, plug the STR stick in, power it back on, and then leave it alone for five minutes. That is what brought another speaker in exactly this state back, with the clock and the Wi-Fi symbol on its display again. Do not press Install while the stick is still working, a second attempt on top of the first one made it worse for the owner who tried."
 
 	alreadyInstalledAdvice = "Refresh the speaker list. If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
 )
