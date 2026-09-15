@@ -310,10 +310,23 @@ func updateDir() (string, error) {
 // for a progress bar, then renames to the final name only after the hash checks
 // out, so a partial/corrupt download never sits where Apply would pick it up.
 func (a *App) DownloadUpdate(version string) (string, error) {
+	// Everything from here to the first body byte is displayed as one state,
+	// and it can legitimately take a minute: the release manifest lookup has a
+	// 15 s budget with a 15 s fallback behind it, and the asset request then
+	// gets 10 s to dial, 10 s for TLS and 30 s for the response headers, all
+	// of it replayed on each of the four attempts below. None of it was
+	// written down, so a reporter who watched it sit still and took a
+	// diagnostic sent a log with nothing about the update in it (#935).
+	started := time.Now()
+	a.logger.Info("app update: download starting, looking up the release", "version", version)
 	asset, err := a.ResolveUpdateAsset(version)
 	if err != nil {
+		a.logger.Warn("app update: release lookup failed", "version", version,
+			"afterMs", time.Since(started).Milliseconds(), "err", err)
 		return "", err
 	}
+	a.logger.Info("app update: release found, opening the connection", "version", version,
+		"file", asset.Filename, "lookupMs", time.Since(started).Milliseconds())
 	dir, err := updateDir()
 	if err != nil {
 		return "", err
@@ -331,6 +344,7 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 	const maxAttempts = 4
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptAt := time.Now()
 		err := a.downloadAssetOnce(asset.URL, asset.SHA256, partPath)
 		if err == nil {
 			if rerr := os.Rename(partPath, finalPath); rerr != nil {
@@ -343,7 +357,8 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 		}
 		lastErr = err
 		os.Remove(partPath)
-		a.logger.Warn("app update: download attempt failed, retrying", "attempt", attempt, "max", maxAttempts, "err", err)
+		a.logger.Warn("app update: download attempt failed, retrying", "attempt", attempt, "max", maxAttempts,
+			"attemptMs", time.Since(attemptAt).Milliseconds(), "err", err)
 		if attempt < maxAttempts {
 			select {
 			case <-a.appCtx().Done():

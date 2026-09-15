@@ -249,6 +249,7 @@
   "banner.installNow": "Jetzt installieren",
   "banner.downloadUpdate": "Update herunterladen",
   "banner.downloadingPct": "Lädt {{pct}}%",
+  "banner.connecting": "Verbinden...",
   "banner.installing": "Wird installiert...",
   "banner.macDownloaded": "Heruntergeladen und geprüft. Öffne die .dmg und ziehe ST Reborn in den Programme-Ordner, ersetze die alte Version.",
   "banner.macReadyTitle": "Fast fertig.",

@@ -1237,6 +1237,7 @@
   "settingsView.announceTranslateTitle": "Vertaal de tekst naar de geselecteerde stemtaal",
   "banner.downloadUpdate": "Update downloaden",
   "banner.downloadingPct": "Bezig met downloaden {{pct}}%",
+  "banner.connecting": "Verbinden...",
   "banner.installNow": "Nu installeren",
   "banner.installing": "Wordt geïnstalleerd...",
   "banner.macDownloaded": "Gedownload en geverifieerd. Open de .dmg en sleep ST Reborn naar Programma's, vervang de oude versie.",

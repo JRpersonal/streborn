@@ -1237,6 +1237,7 @@
   "settingsView.announceTranslateTitle": "Przetłumacz tekst na wybrany język głosu",
   "banner.downloadUpdate": "Pobierz aktualizację",
   "banner.downloadingPct": "Pobieranie {{pct}}%",
+  "banner.connecting": "Łączenie...",
   "banner.installNow": "Zainstaluj teraz",
   "banner.installing": "Instalowanie...",
   "banner.macDownloaded": "Pobrano i zweryfikowano. Otwórz plik .dmg i przeciągnij ST Reborn do folderu Aplikacje, zastępując starą wersję.",

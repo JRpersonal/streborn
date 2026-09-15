@@ -249,6 +249,7 @@
   "banner.installNow": "立即安裝",
   "banner.downloadUpdate": "下載更新",
   "banner.downloadingPct": "下載中 {{pct}}%",
+  "banner.connecting": "連線中...",
   "banner.installing": "安裝中...",
   "banner.macDownloaded": "已下載並驗證。打開 .dmg，把 ST Reborn 拖進「應用程式」並取代舊版。",
   "banner.macReadyTitle": "快好了。",

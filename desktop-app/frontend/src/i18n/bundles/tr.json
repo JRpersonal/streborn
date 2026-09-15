@@ -1237,6 +1237,7 @@
   "settingsView.announceTranslateTitle": "Metni seçilen ses diline çevir",
   "banner.downloadUpdate": "Güncellemeyi indir",
   "banner.downloadingPct": "İndiriliyor {{pct}}%",
+  "banner.connecting": "Bağlanılıyor...",
   "banner.installNow": "Şimdi kur",
   "banner.installing": "Kuruluyor...",
   "banner.macDownloaded": "İndirildi ve doğrulandı. .dmg dosyasını aç ve ST Reborn'u Uygulamalar klasörüne sürükle, eskisinin yerine koy.",

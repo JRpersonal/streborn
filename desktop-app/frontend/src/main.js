@@ -1415,7 +1415,12 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
     btn.textContent = t('banner.downloadingPct', { pct }) + rate;
   });
   try {
-    btn.textContent = t('banner.downloadingPct', { pct: 0 });
+    // Not "Downloading 0%". Nothing is downloading yet: the release
+    // manifest still has to be looked up and the connection opened, which is
+    // a minute of legitimate waiting on a slow link, and the first progress
+    // event only fires once body bytes arrive. Showing 0% for all of it made
+    // a reporter watch a frozen percentage and take a diagnostic (#935).
+    btn.textContent = t('banner.connecting');
     const path = await DownloadUpdate(version);
     btn.textContent = t('banner.installing');
     await ApplyUpdate(path);
@@ -1944,18 +1949,32 @@ function doRefilter() {
   }
 }
 
+// emptyStateOnScreen reports whether the "no speaker found" card is the thing
+// currently in the speaker panel. Its manual connect-by-IP field exists only
+// inside that card, so its presence is the cheapest honest test.
+function emptyStateOnScreen() {
+  return !!document.getElementById('emptyIpInput');
+}
+
 async function discoverBoxes() {
   const hadBoxes = state.boxes.length > 0;
-  if (!hadBoxes) {
-    // First search: explicit message so the user understands the app is
-    // doing something. But NOT while the user is typing into the empty
-    // state's manual connect-by-IP field: the recovery burst re-runs this
-    // every 6s and replacing the selector destroyed the input mid-typing,
-    // making the manual fallback unusable exactly when it is needed.
-    if (!manualIpInputBusy()) $('boxSelect').textContent = t('speaker.searching');
+  if (!hadBoxes && !emptyStateOnScreen() && !manualIpInputBusy()) {
+    // The FIRST search of a session, with nothing on screen yet: an explicit
+    // message, so the user understands the app is doing something.
+    //
+    // Not while the manual connect-by-IP field is in use either: a repeat
+    // sweep replacing the selector destroyed the input mid-typing, which made
+    // the manual fallback unusable exactly when it is needed.
+    $('boxSelect').textContent = t('speaker.searching');
   } else {
-    // Background refresh: the refresh icon spins, the existing list
-    // stays visible.
+    // Every repeat, with speakers or without: the refresh icon spins and
+    // whatever is on screen stays put.
+    //
+    // The empty case used to blank the card back to the one-line text on every
+    // sweep, and a reporter watching an empty LAN saw the window toggle
+    // between two screens ten times in about a minute (#935). Since the minute
+    // timer began sweeping the empty list it would do that for as long as
+    // nothing is found, which is the whole time somebody is waiting.
     const rb = $('refreshBtn');
     if (rb) rb.classList.add('spinning');
   }

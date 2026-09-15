@@ -1237,6 +1237,7 @@
   "settingsView.announceTranslateTitle": "Tulkot tekstu izvēlētajā balss valodā",
   "banner.downloadUpdate": "Lejupielādēt atjauninājumu",
   "banner.downloadingPct": "Lejupielādē {{pct}}%",
+  "banner.connecting": "Savieno...",
   "banner.installNow": "Instalēt tagad",
   "banner.installing": "Instalē...",
   "banner.macDownloaded": "Lejupielādēts un pārbaudīts. Atver .dmg un ievelc ST Reborn mapē Applications, aizstājot veco versiju.",

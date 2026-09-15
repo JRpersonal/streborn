@@ -249,6 +249,7 @@
   "banner.installNow": "Install now",
   "banner.downloadUpdate": "Download update",
   "banner.downloadingPct": "Downloading {{pct}}%",
+  "banner.connecting": "Connecting...",
   "banner.installing": "Installing...",
   "banner.macDownloaded": "Downloaded and verified. Open the .dmg and drag ST Reborn into Applications, replacing the old one.",
   "banner.macReadyTitle": "Almost done.",

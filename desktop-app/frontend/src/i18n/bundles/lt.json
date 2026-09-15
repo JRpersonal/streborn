@@ -1237,6 +1237,7 @@
   "settingsView.announceTranslateTitle": "Išversti tekstą į pasirinktą balso kalbą",
   "banner.downloadUpdate": "Atsisiųsti naujinį",
   "banner.downloadingPct": "Atsisiunčiama {{pct}}%",
+  "banner.connecting": "Jungiamasi...",
   "banner.installNow": "Įdiegti dabar",
   "banner.installing": "Įdiegiama...",
   "banner.macDownloaded": "Atsisiųsta ir patikrinta. Atidaryk .dmg ir nutempk ST Reborn į Programų aplanką, pakeisdamas senąją versiją.",
