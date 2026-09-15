@@ -71,7 +71,7 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 		// An alarm moved earlier has to be picked up now, not at the next
 		// evaluation.
 		s.KickAlarms()
-		s.logger.Info("alarms: saved from an editor", "count", len(d.Alarms), "zone", d.Zone)
+		s.logger.Info("alarms: saved from an editor", "count", len(d.Alarms))
 		writeJSON(w, http.StatusOK, s.alarmView())
 	default:
 		w.Header().Set("Allow", "GET, PUT")
