@@ -412,13 +412,28 @@ func TestAlarmUnknownZoneSchedulesNothing(t *testing.T) {
 	}
 }
 
+// startRunner runs the scheduler for the rest of the test and, unlike a bare
+// `go runAlarms`, waits for it to RETURN at cleanup: a runner still winding
+// down while the next test rewrites the package-level sleeps is a data race.
+func (h *alarmHarness) startRunner(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.s.runAlarms(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
 // A save has to be picked up at once, not at the next evaluation.
 func TestAlarmReloadKickWakesTheRunner(t *testing.T) {
 	h := newAlarmHarness(t, weekdayDoc())
 	h.at(berlinTime(t, 2026, time.September, 7, 3, 0)) // hours before the alarm
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go h.s.runAlarms(ctx)
+	h.startRunner(t)
 
 	// Nothing is due, so the runner is parked on its timer.
 	time.Sleep(30 * time.Millisecond)
@@ -430,6 +445,70 @@ func TestAlarmReloadKickWakesTheRunner(t *testing.T) {
 	h.s.KickAlarms()
 	if !waitFor(func() bool { return h.firedCount() == 1 }) {
 		t.Errorf("the kick did not make the runner re-evaluate: %d recalls", h.firedCount())
+	}
+}
+
+// countingClock wraps the harness clock so a test can see how often the runner
+// wakes up: every evaluation reads the clock exactly once.
+func (h *alarmHarness) countingClock() *atomic.Int64 {
+	reads := &atomic.Int64{}
+	inner := h.s.alarmNow
+	h.s.alarmNow = func() time.Time {
+		reads.Add(1)
+		return inner()
+	}
+	return reads
+}
+
+// shortenAlarmSleeps makes the runner's cap and floor test-sized, so a test
+// sees several evaluations inside a few hundred milliseconds.
+func shortenAlarmSleeps(t *testing.T) {
+	t.Helper()
+	prevMax, prevMin := alarmMaxSleep, alarmMinSleep
+	alarmMaxSleep, alarmMinSleep = 10*time.Millisecond, time.Millisecond
+	t.Cleanup(func() { alarmMaxSleep, alarmMinSleep = prevMax, prevMin })
+}
+
+// Most speakers will never set an alarm, and they must not pay for the feature:
+// with nothing scheduled the runner evaluates once and then parks on the
+// reload channel, with no timer at all. A save wakes it, once.
+func TestAlarmRunnerSleepsWithNothingScheduled(t *testing.T) {
+	h := newAlarmHarness(t, alarm.Document{Zone: "Europe/Berlin"})
+	reads := h.countingClock()
+	h.at(berlinTime(t, 2026, time.September, 7, 3, 0))
+	shortenAlarmSleeps(t)
+	h.startRunner(t)
+
+	if !waitFor(func() bool { return reads.Load() == 1 }) {
+		t.Fatalf("the runner never evaluated: %d clock reads", reads.Load())
+	}
+	// Ten of the shortened caps go by. A runner that still ticked on the cap
+	// would have read the clock ten more times.
+	time.Sleep(100 * time.Millisecond)
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("an idle runner read the clock %d times, want exactly 1", got)
+	}
+	h.s.KickAlarms()
+	if !waitFor(func() bool { return reads.Load() == 2 }) {
+		t.Errorf("a kick did not wake the idle runner: %d clock reads", reads.Load())
+	}
+}
+
+// The other side of the same coin: with an alarm scheduled hours away the
+// runner still re-derives the next fire on every cap, because a timer armed
+// for hours on a clock that may still be stepped cannot be trusted.
+func TestAlarmRunnerTicksOnTheCapWhenSomethingIsScheduled(t *testing.T) {
+	h := newAlarmHarness(t, weekdayDoc())
+	reads := h.countingClock()
+	h.at(berlinTime(t, 2026, time.September, 7, 3, 0))
+	shortenAlarmSleeps(t)
+	h.startRunner(t)
+
+	if !waitFor(func() bool { return reads.Load() >= 3 }) {
+		t.Errorf("a runner with an alarm scheduled stopped ticking: %d clock reads", reads.Load())
+	}
+	if got := h.firedCount(); got != 0 {
+		t.Errorf("fired %d times hours before the alarm", got)
 	}
 }
 

@@ -96,17 +96,3 @@ func (d Document) NextFire(now time.Time) (time.Time, Alarm, bool) {
 	}
 	return best, which, found
 }
-
-// UntilNextFire is how long the scheduler may sleep before the next alarm is
-// due. It returns fallback when nothing is scheduled, and never a negative
-// duration.
-func (d Document) UntilNextFire(now time.Time, fallback time.Duration) time.Duration {
-	next, _, ok := d.NextFire(now)
-	if !ok {
-		return fallback
-	}
-	if wait := next.Sub(now); wait > 0 {
-		return wait
-	}
-	return 0
-}

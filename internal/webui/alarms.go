@@ -48,7 +48,8 @@ var (
 	// an agent restart or an OTA plus the wake itself, short enough that a late
 	// boot is silent.
 	alarmGrace = 5 * time.Minute
-	// alarmMaxSleep caps how long the runner sleeps between evaluations.
+	// alarmMaxSleep caps how long the runner sleeps between evaluations while
+	// an alarm is scheduled at all.
 	//
 	// This cap is the whole reason the runner is a loop rather than one
 	// time.AfterFunc per alarm, as the sleep timer does it. Go timers run on
@@ -57,6 +58,11 @@ var (
 	// jumped the clock to the right decade, and the alarm would be silently
 	// hours out. Re-deriving the next fire from the wall clock at least twice a
 	// minute bounds that damage to one cycle.
+	//
+	// With nothing scheduled there is nothing to re-derive, so the runner parks
+	// on the reload channel with no timer at all: most speakers in the fleet
+	// will never set an alarm, and they should not pay a wake-up twice a minute
+	// for a feature they do not use.
 	alarmMaxSleep = 30 * time.Second
 	// alarmMinSleep keeps the loop from spinning if a fire leaves an alarm due.
 	alarmMinSleep = time.Second
@@ -121,7 +127,19 @@ func (s *Server) runAlarms(ctx context.Context) {
 		now := s.alarmNowTime()
 		s.evaluateAlarms(now)
 
-		wait := s.alarms.Get().UntilNextFire(now, alarmMaxSleep)
+		next, _, ok := s.alarms.Get().NextFire(now)
+		if !ok {
+			// No enabled alarm (or no usable zone): nothing to re-derive, so no
+			// timer. Only a save can change that, and a save kicks.
+			select {
+			case <-ctx.Done():
+				s.logger.Info("alarms: scheduler stopped")
+				return
+			case <-s.alarmReload:
+			}
+			continue
+		}
+		wait := next.Sub(now)
 		if wait > alarmMaxSleep {
 			wait = alarmMaxSleep
 		}

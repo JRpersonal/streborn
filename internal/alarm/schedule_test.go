@@ -197,16 +197,3 @@ func TestNextFireRefusesAnUnknownZone(t *testing.T) {
 		t.Error("an unresolvable zone must not schedule anything")
 	}
 }
-
-func TestUntilNextFire(t *testing.T) {
-	loc := berlin(t)
-	d := Document{Zone: "Europe/Berlin", Alarms: []Alarm{daily(6, 30)}}
-	now := time.Date(2026, 9, 7, 6, 0, 0, 0, loc)
-	if got := d.UntilNextFire(now, time.Hour); got != 30*time.Minute {
-		t.Errorf("until next fire = %v, want 30m", got)
-	}
-	empty := Document{}
-	if got := empty.UntilNextFire(now, time.Hour); got != time.Hour {
-		t.Errorf("an empty document has to return the fallback, got %v", got)
-	}
-}
