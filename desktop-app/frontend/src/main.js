@@ -677,6 +677,12 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
 
+  <!-- Shown only while a run is still going and the panel above is hidden.
+       Closing that panel does not stop anything, but with nothing left on
+       screen "hidden" and "finished" look identical, and the next thing an
+       owner does is close the app. -->
+  <button class="ua-mini hidden" id="uaMini" type="button"></button>
+
   <div id="toast" class="toast"></div>
 
   <footer class="app-footer" id="appFooter"></footer>
@@ -4495,9 +4501,12 @@ async function runSingleBoxUpdate(targetBox) {
     render();
     if (!tickHandle) tickHandle = setInterval(() => { if (tickRender) tickRender(); }, 1000);
   };
-  const countdown = (remainingMs, key) => {
+  const countdown = (remainingMs, key, step) => {
     const dl = Date.now() + (remainingMs || 0);
-    startTick(() => setStatus(t(key, { remaining: formatRemaining(dl - Date.now()) })));
+    startTick(() => {
+      const text = t(key, { remaining: formatRemaining(dl - Date.now()) });
+      setStatus(step ? withStep(text, step) : text);
+    });
   };
   let uploadedToastShown = false;
   try {
@@ -4509,7 +4518,7 @@ async function runSingleBoxUpdate(targetBox) {
       switch (ph) {
         case 'uploading':
           stopTick();
-          setStatus(t('update.uploading'));
+          setStatus(withStep(t('update.uploading'), UPDATE_STEPS.send));
           break;
         case 'rebooting':
           stopTick();
@@ -4519,14 +4528,14 @@ async function runSingleBoxUpdate(targetBox) {
           // internal/webui handleAgentUpdate) and only then execs the new
           // binary, so the speaker is away for minutes with nothing to show.
           if (!uploadedToastShown) { uploadedToastShown = true; showToast(t('update.uploadedToast')); }
-          setStatus(t('update.rebooting'));
+          setStatus(withStep(t('update.rebooting'), UPDATE_STEPS.restart));
           break;
-        case 'verifying': countdown(d.remainingMs, 'update.waitingForSpeaker'); break;
+        case 'verifying': countdown(d.remainingMs, 'update.waitingForSpeaker', UPDATE_STEPS.restart); break;
         // The speaker IS back on the new version and is only being held for the
         // stability window before we believe it (a BCO box can reboot a second
         // time on its own). Saying "restarting" through that window reads as if
         // the app had not noticed the speaker was back.
-        case 'settling': countdown(d.remainingMs, 'updateAll.phase.settling'); break;
+        case 'settling': countdown(d.remainingMs, 'updateAll.phase.settling', UPDATE_STEPS.confirm); break;
         case 'retrying':
           stopTick();
           uploadedToastShown = false;
@@ -4541,11 +4550,11 @@ async function runSingleBoxUpdate(targetBox) {
           // (#672). The single final "done" comes when the flow resolves.
           showToast(t('update.agentDoneToast'));
           break;
-        case 'engineQueued': stopTick(); setStatus(t('updateAll.phase.engineQueued')); break;
+        case 'engineQueued': stopTick(); setStatus(withStep(t('updateAll.phase.engineQueued'), UPDATE_STEPS.engine)); break;
         case 'engineUploading':
           stopTick();
           engineStreaming = true;
-          setStatus(t('updateAll.phase.engineUploading'));
+          setStatus(withStep(t('updateAll.phase.engineUploading'), UPDATE_STEPS.engine));
           break;
         case 'spotify':
           engineStreaming = false;
@@ -4900,13 +4909,29 @@ async function runUpdateAllBoxes(onStart) {
     // in that reboot, so runBoxUpdate's own 'rebooting' phase does not fire for
     // another ~minute. Flip the row to "restarting" on upload completion so it
     // does not sit at "uploading" through a reboot the app cannot yet see.
-    if (p.pct >= 100) { setRow(p.host, { phaseText: t('updateAll.phase.rebooting'), busy: true }); return; }
+    if (p.pct >= 100) { setRow(p.host, { phaseText: withStep(t('updateAll.phase.rebooting'), UPDATE_STEPS.restart), busy: true }); return; }
     // The first byte is what turns a queued row into an uploading one: the
     // 'uploading' phase itself fires before the batch gate, while the row is
     // still waiting for another speaker's transfer to finish.
-    setRow(p.host, { phaseText: t('updateAll.phase.uploading'), pct: p.pct });
+    setRow(p.host, { phaseText: withStep(t('updateAll.phase.uploading'), UPDATE_STEPS.send), pct: p.pct });
   });
-  if ($('uaClose')) $('uaClose').onclick = () => { if (overlay) overlay.classList.add('hidden'); };
+  const mini = $('uaMini');
+  // Reopening is the whole point of the strip, so it is a button, not a label.
+  if (mini) mini.onclick = () => { mini.classList.add('hidden'); if (overlay) overlay.classList.remove('hidden'); };
+  const showMiniIfStillRunning = () => {
+    if (!mini) return;
+    const c = counts();
+    const left = rows.length - (c.done + c.failed + c.deferred);
+    if (left <= 0) { mini.classList.add('hidden'); return; }
+    mini.textContent = t('updateAll.stillRunning', { n: left });
+    mini.classList.remove('hidden');
+  };
+  if ($('uaClose')) {
+    $('uaClose').onclick = () => {
+      if (overlay) overlay.classList.add('hidden');
+      showMiniIfStillRunning();
+    };
+  }
 
   // The batch writes software to speakers exactly like the single update,
   // so it carries the same guarantees: the window asks before closing for
@@ -4986,9 +5011,9 @@ async function runUpdateAllBoxes(onStart) {
           // until its first progress byte arrives (the progress handler above).
           case 'uploading': setRow(b.host, { phaseText: t('updateAll.phase.queued'), wait: true }); break;
           case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), busy: true }); break;
-          case 'verifying': setRow(b.host, { phaseText: t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), busy: true }); break;
+          case 'verifying': setRow(b.host, { phaseText: withStep(t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.restart), busy: true }); break;
           case 'retrying': setRow(b.host, { phaseText: t('updateAll.phase.retrying'), busy: true }); break;
-          case 'settling': setRow(b.host, { phaseText: t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), busy: true }); break;
+          case 'settling': setRow(b.host, { phaseText: withStep(t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.confirm), busy: true }); break;
           case 'engineQueued': setRow(b.host, { phaseText: t('updateAll.phase.engineQueued'), wait: true }); break;
           case 'engineUploading': setRow(b.host, { phaseText: t('updateAll.phase.engineUploading'), pct: 0 }); break;
           case 'spotify': setRow(b.host, { phaseText: spotifyPhaseText(d), busy: true }); break;
@@ -5040,6 +5065,7 @@ async function runUpdateAllBoxes(onStart) {
 
   // Batch done: release the global lock, refresh, summarize.
   offProg();
+  if (mini) mini.classList.add('hidden');
   try { SetOTARunning(false); } catch {}
   state.otaInProgress = false;
   state.otaTargetHost = null;
@@ -5854,6 +5880,22 @@ function runPendingGroupEdits() {
 // answer is one sentence that the app already owns for the speaker list.
 function showUpdateNoNetworkNotice() {
   showError(t('settingsView.noNetworkTitle') + ' ' + t('settingsView.noNetworkHelp'));
+}
+
+// step numbers the phases a speaker goes through, because the middle of the
+// sequence looks exactly like the end of it.
+//
+// The order is: send the software, restart, confirm, then the Spotify engine.
+// "Restarting" is roughly halfway, and it is the phase that sits on screen the
+// longest, so a row reading "Rebooting (usually 2-4 min)" with a full bar reads
+// as finished. It is not: the confirm and the ~16 MB engine delivery still have
+// to happen, and a run interrupted there leaves a speaker on the new version
+// with no Spotify engine, which is exactly what happened to one owner's
+// speaker (#963).
+const UPDATE_STEPS = { send: 1, restart: 2, confirm: 3, engine: 4 };
+
+function withStep(text, n) {
+  return text + t('updateAll.phase.step', { n });
 }
 
 // dissolveIncompleteMessage turns the agent's refusal into something the user
