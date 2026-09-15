@@ -7434,6 +7434,14 @@ function renderNowPlayingBar() {
     statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
   } else if (stateLabel) {
     statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
+  } else if (state.currentBox && state.currentBox.offline) {
+    // Not "ready". A failed poll deliberately keeps the last known
+    // now-playing rather than blanking the bar, and with nothing playing
+    // that fell through to "ready", so a speaker that had gone off the
+    // network was reported as an idle speaker waiting for input, for as long
+    // as the app stayed open. The tile greys out but the status line said the
+    // opposite (#165). Discovery already knows; this just stops contradicting it.
+    statusHTML = `<span class="muted">${escapeHtml(t('status.unreachable'))}</span>`;
   } else {
     statusHTML = `<span class="muted">${escapeHtml(t('status.ready'))}</span>`;
   }
