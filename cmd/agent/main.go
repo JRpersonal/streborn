@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
+	"github.com/JRpersonal/streborn/internal/alarm"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -357,6 +358,16 @@ func run() error {
 		PeerDeviceID: peerDeviceIDAt,
 	}))
 	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
+
+	// Alarm clock: a preset, but timed. The document is read once here and
+	// written only when an editor saves it; the scheduler keeps what it has
+	// already fired in a separate file, so a fire at 06:30 can never clobber an
+	// edit made a minute earlier.
+	alarmStore, alErr := alarm.Load("/mnt/nv/streborn/alarms.json", logger.With("comp", "alarm"))
+	if alErr != nil {
+		logger.Warn("alarms load failed, continuing with none", "err", alErr)
+	}
+	alarmState := alarm.LoadState("/mnt/nv/streborn/alarms-state.json", logger.With("comp", "alarm"))
 
 	// Multiroom zone membership (#70 beta), persisted on NAND so a formed zone
 	// auto-reforms after reboot/standby without the user re-grouping. Missing
@@ -829,6 +840,7 @@ func run() error {
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithGroupKeys(groupKeysStore),
+		webui.WithAlarms(alarmStore, alarmState),
 		webui.WithZones(zonesStore),
 		webui.WithMediaServers(mediaServerStore),
 		webui.WithStoredMusicPublisher(func(list []webui.StoredMusicSource) {
@@ -841,6 +853,8 @@ func run() error {
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup, margeSrv.RenameGroup, margeSrv.GroupName),
 		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
+
+	webui.RegisterDebugSection("alarms", webuiSrv.AlarmsSnapshot)
 
 	// The preset reconcile has to know when STR woke this speaker for a group:
 	// its own native preset write makes the firmware select the radio source

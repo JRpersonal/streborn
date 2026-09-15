@@ -339,4 +339,35 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 		s.kickMirrorAfterPlay()
 	})
+
+	// An alarm is per speaker: it wakes the bedroom, not the house. The hush is
+	// what an alarm arms around its own fire, and it has to hold for a native
+	// zone, which is exactly the one the subtest above pins as normally kicked.
+	t.Run("a hushed play does not re-form the group", func(t *testing.T) {
+		native := mirror
+		native.Mode = "native"
+		s := newServer(t, &native)
+		s.hushGroupForm(time.Minute)
+		s.kickMirrorAfterPlay()
+		select {
+		case <-s.mirrorKick:
+			t.Error("the group was re-formed during a hush; an alarm would wake the whole house")
+		case <-time.After(9 * time.Second):
+		}
+	})
+
+	// A window, not a latch: once it passes the group behaves exactly as before,
+	// which is what keeps the alarm from permanently changing how a speaker
+	// groups.
+	t.Run("the hush expires", func(t *testing.T) {
+		native := mirror
+		native.Mode = "native"
+		s := newServer(t, &native)
+		s.hushGroupForm(time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
+		s.kickMirrorAfterPlay()
+		if !kicked(s) {
+			t.Error("the group never re-formed again; the hush latched instead of expiring")
+		}
+	})
 }
