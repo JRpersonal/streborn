@@ -1264,13 +1264,65 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// corsMiddleware allows cross-origin calls from the desktop app.
+// allowedCORSOrigins are the browser origins permitted to READ this agent's
+// answers. Only the desktop app's webview is in it: Wails serves the frontend
+// from wails://wails on macOS and Linux and from http://wails.localhost on
+// Windows (WebView2).
+//
+// The phone remote is deliberately absent, and needs to be: it is served BY
+// this agent and fetches relative paths, so it is same-origin and CORS never
+// enters into it.
+var allowedCORSOrigins = map[string]bool{
+	"wails://wails":           true,
+	"http://wails.localhost":  true,
+	"https://wails.localhost": true,
+	// `wails dev` serves the frontend from its own dev server on this fixed
+	// port (desktop-app/README.md), so leaving it out would break the
+	// maintainer's own build the moment this shipped. One exact port, not
+	// localhost in general: a page served from any other local port is as
+	// foreign as one on the open web.
+	"http://localhost:34115": true,
+	"http://127.0.0.1:34115": true,
+}
+
+// corsMiddleware lets the desktop app's webview read this agent's answers, and
+// nobody else.
+//
+// It used to answer every request with "Access-Control-Allow-Origin: *", which
+// is the agent telling the browser that ANY page may read the body. That is not
+// a theoretical grant. A user opens some website; its JavaScript runs in their
+// browser, which sits on their own LAN; it fetches http://<speaker>:17008/... ;
+// the request passes every LAN check because it genuinely comes from the LAN;
+// and the star then hands the page the answer. The same-origin policy exists to
+// stop exactly that, and the star switched it off.
+//
+// Measured on a live speaker 2026-09-15: GET /spotify/credential with a foreign
+// Origin answered 200 with the reusable Spotify Connect login.
+//
+// So: a request with NO Origin is not a browser cross-origin read at all (a Go
+// client, curl, a same-origin page load) and is served as before. A request
+// whose Origin we know gets permission. Any other origin is still SERVED, it
+// simply gets no permission header, so the browser refuses to hand the body to
+// the page. Nothing that worked stops working; only the reading stops.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		origin := r.Header.Get("Origin")
+		if origin != "" && allowedCORSOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			// Vary, because the answer now differs per origin and a cache that
+			// forgot this would hand one origin's permission to another.
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
 		if r.Method == http.MethodOptions {
+			// A preflight from an origin we do not know is refused here rather
+			// than answered with a silent 204: without the permission headers
+			// the browser blocks it anyway, and 403 says why in a network log.
+			if origin != "" && !allowedCORSOrigins[origin] {
+				http.Error(w, "origin not allowed", http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
