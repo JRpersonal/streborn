@@ -3157,7 +3157,12 @@ async function setSleep(minutes) {
       var r = await fetch('/api/debug/state');
       if (!r.ok) throw new Error('status ' + r.status);
       var txt = await r.text();
-      var name = 'str-diagnostic-' + (document.getElementById('devName').textContent || 'speaker').replace(/[^A-Za-z0-9-]/g, '_') + '.json';
+      /* The speaker's own name is the user's, and this file gets attached to
+         public issues: str-diagnostic-Kueche.json and -Esszimmer.json were
+         both on GitHub. A timestamp identifies the file well enough, and the
+         model is inside it anyway. */
+      var stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+      var name = 'str-diagnostic-' + stamp + '.json';
       var url = URL.createObjectURL(new Blob([txt], { type: 'application/json' }));
       var a = document.createElement('a');
       a.href = url; a.download = name;

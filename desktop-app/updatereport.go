@@ -724,8 +724,12 @@ const repeatedAttemptsAdvice = "The journal above shows %d failed attempts in a 
 // failure report needs: why it last exited, the tail of its setup log, and the
 // tail of its live agent log. Empty on any error; a report is never held up
 // for it.
+// Raw on purpose: the report runs scrubIdentities over this, which keeps
+// the addresses, because showing the user their own addresses is the point
+// of the report. A masked payload would blank exactly the values it exists
+// to display.
 func (a *App) boxOwnLogTail(host string, port int) string {
-	resp, err := a.boxDoTimeout(host, port, http.MethodGet, "/api/debug/state", "", "", 8*time.Second)
+	resp, err := a.boxDoTimeout(host, port, http.MethodGet, "/api/debug/state?raw=1", "", "", 8*time.Second)
 	if err != nil {
 		return ""
 	}
