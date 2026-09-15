@@ -153,3 +153,54 @@ func TestAStructuredNetworkNameDoesNotEatTheDocument(t *testing.T) {
 		t.Error("the mask took the diagnostic content with it")
 	}
 }
+
+// The case that got through to six live speakers.
+//
+// The debug state is not a map[string]any all the way down: the sections
+// registered by main.go hand back live Go values. The walker switches on the
+// generic JSON types, so a struct fell through untouched and its addresses
+// shipped in the clear, while everything that had already been through JSON
+// was masked properly. An offline check over a FETCHED payload could not see
+// it, because fetching is what makes the types generic.
+//
+// So this fixture holds real Go types, the way a provider returns them.
+type ifaceSection struct {
+	Name string   `json:"name"`
+	MAC  string   `json:"mac"`
+	IPv4 []string `json:"ipv4"`
+}
+
+type reachSection struct {
+	LanAddrs  []string `json:"lanAddrs"`
+	GatewayIP string   `json:"gatewayIP"`
+}
+
+func TestASectionThatReturnsAGoStructIsMaskedToo(t *testing.T) {
+	state := map[string]any{
+		"mdns_host":        []ifaceSection{{Name: "wlan0", MAC: "7C:EC:79:F9:EC:A2", IPv4: []string{"192.168.178.31"}}},
+		"net_reachability": reachSection{LanAddrs: []string{"192.168.178.31"}, GatewayIP: "192.168.178.1"},
+		"dns_status":       map[string]any{"nameservers": []string{"192.168.178.1 # wlan0"}},
+	}
+
+	rec := httptest.NewRecorder()
+	maskTestServer().writeDebugState(rec, state, false)
+	body := rec.Body.String()
+
+	if m := privateIP.FindString(body); m != "" {
+		t.Errorf("an address survived inside a Go struct: %s", m)
+	}
+	if m := macAddr.FindString(body); m != "" {
+		t.Errorf("a hardware address survived inside a Go struct: %s", m)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+	if len(out) != 3 {
+		t.Errorf("sections = %d, want 3", len(out))
+	}
+	// The interface name is diagnostic, not personal, and has to survive.
+	if !strings.Contains(body, "wlan0") {
+		t.Error("the interface name was lost with the addresses")
+	}
+}
