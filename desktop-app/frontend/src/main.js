@@ -7609,25 +7609,35 @@ async function refreshStatus() {
       }
     }
 
-    // Native Bose Spotify receiver detection: source=SPOTIFY means the phone
-    // connected to the speaker's built-in Spotify Connect, not STR's go-librespot
-    // (STR's own playback is always source=UPNP via the stream proxy). STR cannot
-    // recall a preset on the native receiver, so hint once per episode and reset
-    // when the box leaves SPOTIFY again.
-    if (src === 'SPOTIFY') {
-      if (!state.nativeSpotifyWarned) {
-        state.nativeSpotifyWarned = true;
-        showToast(t('play.nativeSpotifyHint'));
-      }
-    } else {
-      state.nativeSpotifyWarned = false;
-    }
-
     // Piggy-back an SSH status check on the polling we are doing
     // anyway. Toggle the global banner so the user sees it on every
     // tab rather than only after entering the Settings tab.
     checkSshBanner();
     const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
+
+    // Native Bose Spotify receiver detection: source=SPOTIFY means a phone
+    // connected to the speaker's built-in Spotify Connect, not STR's
+    // go-librespot (STR's own playback is always source=UPNP via the stream
+    // proxy). STR cannot recall a preset on the native receiver, so say so
+    // once per episode and reset when the speaker leaves SPOTIFY again.
+    //
+    // Two conditions, both from the same report (#950). The notice opens with
+    // "Playing on the speaker's built-in Spotify" and used to fire on a PAUSED
+    // session, because the play state was read further down than the notice.
+    // And it tells the user to press a saved Spotify key, which a free account
+    // cannot create at all, so it sent a free-account user looking for a button
+    // that does not exist. It now needs a speaker that is really playing and a
+    // key that really exists, and it is remembered per speaker, not globally.
+    const spotifyKeySaved = (state.presets || []).some(p => p && p.type === 'spotify');
+    const spotifyWarnKey = (state.currentBox && state.currentBox.host) || '';
+    if (src === 'SPOTIFY' && ps === 'PLAY_STATE' && spotifyKeySaved) {
+      if (state.nativeSpotifyWarned !== spotifyWarnKey) {
+        state.nativeSpotifyWarned = spotifyWarnKey;
+        showToast(t('play.nativeSpotifyHint'));
+      }
+    } else if (src !== 'SPOTIFY') {
+      state.nativeSpotifyWarned = '';
+    }
     const loc = decodeXmlEntities((xml.match(/location="([^"]+)"/) || [])[1] || '');
     // Extract the art URL from the <art ...>URL</art> tag. Bose
     // emits it for stations with an image (for example after a
