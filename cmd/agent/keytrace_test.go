@@ -81,8 +81,8 @@ func (t *toggleSpy) LiveZone(context.Context, groupkeys.Member) (groupkeys.LiveZ
 	t.mu.Unlock()
 	return groupkeys.LiveZone{}, nil
 }
-func (t *toggleSpy) Form(context.Context, groupkeys.Template) error   { return nil }
-func (t *toggleSpy) Dissolve(context.Context, groupkeys.Member) error { return nil }
+func (t *toggleSpy) Form(context.Context, groupkeys.Template) (bool, error) { return false, nil }
+func (t *toggleSpy) Dissolve(context.Context, groupkeys.Member) error       { return nil }
 func (t *toggleSpy) Idle(context.Context, groupkeys.Member) (bool, error) {
 	return false, nil
 }

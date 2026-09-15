@@ -53,7 +53,7 @@ func TestHTTPClientResolvesThroughRoster(t *testing.T) {
 	if _, err := c.LiveZone(ctx, tpl.Master); err != nil {
 		t.Fatalf("live zone must reach the roster's address: %v", err)
 	}
-	if err := c.Form(ctx, tpl); err != nil {
+	if _, err := c.Form(ctx, tpl); err != nil {
 		t.Fatal(err)
 	}
 	if hits != 2 {
@@ -98,7 +98,7 @@ func TestHTTPClientRefusesForeignAddress(t *testing.T) {
 	if _, err := c.LiveZone(ctx, master); err == nil || !strings.Contains(err.Error(), "save the group again") {
 		t.Fatalf("live zone must be refused, got %v", err)
 	}
-	if err := c.Form(ctx, tpl); err == nil {
+	if _, err := c.Form(ctx, tpl); err == nil {
 		t.Fatal("form must be refused")
 	}
 	if err := c.Dissolve(ctx, master); err == nil {
@@ -119,7 +119,7 @@ func TestHTTPClientRefusesForeignAddress(t *testing.T) {
 			return ""
 		},
 	})
-	if err := c2.Form(ctx, tpl); err == nil || !strings.Contains(err.Error(), "192.0.2.11") {
+	if _, err := c2.Form(ctx, tpl); err == nil || !strings.Contains(err.Error(), "192.0.2.11") {
 		t.Fatalf("form must be refused for the member's foreign address, got %v", err)
 	}
 	if hits != 0 {

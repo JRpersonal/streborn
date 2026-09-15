@@ -38,6 +38,9 @@ type fakeMaster struct {
 	block chan struct{}
 	// formErr is returned by Form when set.
 	formErr error
+	// deferred makes Form answer like a permanent template that was stored
+	// for the next play instead of wired now.
+	deferred bool
 }
 
 func (f *fakeMaster) rec(s string) {
@@ -53,12 +56,12 @@ func (f *fakeMaster) LiveZone(_ context.Context, m Member) (LiveZone, error) {
 	return f.zones[m.DeviceID], nil
 }
 
-func (f *fakeMaster) Form(_ context.Context, t Template) error {
+func (f *fakeMaster) Form(_ context.Context, t Template) (bool, error) {
 	f.rec("form:" + t.Name)
 	if f.block != nil {
 		<-f.block
 	}
-	return f.formErr
+	return f.deferred, f.formErr
 }
 
 func (f *fakeMaster) Dissolve(_ context.Context, m Member) error {
@@ -356,5 +359,24 @@ func TestTemplateLiveMatching(t *testing.T) {
 	}
 	if !templateLive(tpl, LiveZone{Master: "aaaa", Members: []Member{{DeviceID: "bbbb"}, {DeviceID: "cccc"}}}) {
 		t.Fatal("ids must match case-insensitively")
+	}
+}
+
+// A PERMANENT template is stored and joins on the next play, so the room stays
+// quiet after the press. That is the feature working, and it used to be logged
+// as "formed", which is indistinguishable from a group that really did wire up.
+// A report of "forming over the key does nothing" cannot be answered from a
+// bundle that cannot tell those two apart (Christopher Stark, 2026-09-15).
+func TestADeferredPermanentGroupIsNotReportedAsFormed(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, idle: true, deferred: true}
+	s.SetClient(f)
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeDeferred {
+		t.Fatalf("outcome = %q, want %q", got, OutcomeDeferred)
+	}
+	snap, _ := s.Snapshot().(map[string]any)
+	la, _ := snap["last_action"].(Action)
+	if la.Outcome != OutcomeDeferred {
+		t.Errorf("debug section says %q, want %q", la.Outcome, OutcomeDeferred)
 	}
 }

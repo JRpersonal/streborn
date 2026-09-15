@@ -839,6 +839,14 @@ func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
 // legacyThumbFrame is the pre-trace handling of a bare userActivityUpdate:
 // the #342 dead-key-layer re-sync plus the shared legacy thumb action.
 func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
+	// Reaching here with a group on a thumbs key means the press is lost: the
+	// bare frame cannot tell thumbs-up from thumbs-down, so Toggle is never
+	// called and the group is not touched. Without this line a bundle from a
+	// "forming over the key does nothing" report shows no group-key activity
+	// at all, which reads like the key was never pressed (#863).
+	if h.groupKeys.Bound(groupkeys.KeyThumbsUp) || h.groupKeys.Bound(groupkeys.KeyThumbsDown) {
+		h.logger.Info("a thumbs key carries a saved group, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so no group was formed or dissolved")
+	}
 	go func() {
 		src, _, status := h.nowPlayingSummary()
 		playing := status == "PLAY_STATE" || status == "BUFFERING_STATE"
