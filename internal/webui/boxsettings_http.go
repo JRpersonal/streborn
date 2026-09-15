@@ -51,6 +51,17 @@ func isGroupedRejection(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "member of group")
 }
 
+// IsGroupedRejection is isGroupedRejection for the agent, whose hardware
+// preset path needs the same answer and had no way to ask for it.
+//
+// Every app-driven play has consulted this since #70. The key press on the
+// speaker itself consulted nothing, so a press on a grouped follower ran the
+// full verify loop against a refusal that can never succeed: five more
+// identical pushes over about 25 seconds, then a recall-exhausted mark, and
+// two of those in a row latch the speaker as wedged, which paints a red banner
+// on a speaker that is simply following its group (#528).
+func IsGroupedRejection(err error) bool { return isGroupedRejection(err) }
+
 // isWrongStateRejection reports whether a play failure is the box refusing
 // SetAVTransportURI because its OWN transport is in the wrong state: the
 // firmware answers UPnP 501 "Action request came in wrong state" (also seen as

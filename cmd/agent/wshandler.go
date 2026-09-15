@@ -25,6 +25,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // presetWsHandler implements boxws.Handler and, on a hardware preset
@@ -681,6 +682,22 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 		playErr = h.renderer.PlayURL(playCtx, url, name, icon)
 	}
 	if playErr != nil {
+		// A follower in a group refuses transport control outright: the
+		// firmware answers "Can't control member of group". Retrying that is
+		// pointless by construction, and the verify loop below would send five
+		// more identical pushes over ~25 s and then mark the recall exhausted,
+		// which is a wedge strike. Two of those latch the speaker as wedged and
+		// the user gets a red banner on a speaker that is working perfectly and
+		// simply following its group (#528).
+		//
+		// So stop here and say which speaker to press instead. The lead speaker
+		// distributes what it plays to the whole group, which is why the app
+		// has retargeted this to the master since #70.
+		if webui.IsGroupedRejection(playErr) {
+			h.logger.Warn("hardware preset: this speaker is following a group, so it refuses to play on its own; press the key on the group's lead speaker",
+				"slot", slot, "name", name)
+			return
+		}
 		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", playErr)
 	}
 

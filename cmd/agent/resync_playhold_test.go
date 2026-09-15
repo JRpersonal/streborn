@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"github.com/JRpersonal/streborn/internal/webui"
 	"testing"
 	"time"
 )
@@ -191,6 +193,44 @@ func TestBothWritePathsAskTheSameQuestion(t *testing.T) {
 		hold, _ := forcedWriteHold(c.src, c.playing, c.known, true, time.Time{}, time.Now())
 		if hold != c.busy {
 			t.Errorf("forcedWriteHold(%q, playing=%v) held=%v but busy=%v", c.src, c.playing, hold, c.busy)
+		}
+	}
+}
+
+// #528: a hardware preset key on a speaker that is following a group.
+//
+// The firmware refuses transport control on a follower with "Can't control
+// member of group". Every app-driven play has recognised that since #70; the
+// key on the speaker itself recognised nothing, so the press ran the full
+// verify loop against a refusal that cannot succeed: five more identical
+// pushes over about 25 seconds, then a recall-exhausted mark, and two of those
+// latch the speaker as wedged. The owner gets a red banner on a speaker that
+// is working perfectly and simply following its group.
+func TestAGroupedRefusalIsNotRetried(t *testing.T) {
+	grouped := []string{
+		`SetAVTransportURI: SOAP fault 501: Can't control member of group`,
+		`upnp: 501 Can't Control Member of Group`,
+		`Get "http://192.0.2.4:8091/...": SOAP 501 can't control member of group`,
+	}
+	for _, msg := range grouped {
+		if !webui.IsGroupedRejection(errors.New(msg)) {
+			t.Errorf("not recognised as a group refusal, so it would be retried 25 s and mark a wedge: %q", msg)
+		}
+	}
+	// Everything else must still reach the verify loop: that loop exists
+	// because the first press after a cold boot really can need a re-push.
+	for _, msg := range []string{
+		`SetAVTransportURI: SOAP fault 501: Action request came in wrong state`,
+		`dial tcp 192.0.2.4:8091: connect: connection refused`,
+		`context deadline exceeded`,
+		``,
+	} {
+		var err error
+		if msg != "" {
+			err = errors.New(msg)
+		}
+		if webui.IsGroupedRejection(err) {
+			t.Errorf("wrongly treated as a group refusal, so a recoverable failure is abandoned: %q", msg)
 		}
 	}
 }
