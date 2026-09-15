@@ -223,7 +223,16 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	playGen := s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	// A finite file played on its own has nothing watching it end. The box
+	// finishes the bytes and freezes in PLAY_STATE (#380), so the app, the
+	// remote and the speaker's display kept showing a 2:07 track playing six
+	// minutes later, until the auto-off timer cut in (#844). A FOLDER is fine
+	// because the queue watcher calls the end; the single play stops the queue
+	// by design, so it gets its own watch. Radio is excluded: it has no end.
+	if playDirect {
+		s.armSingleTrackEnd(time.Duration(req.DurationSec)*time.Second, playGen, req.Title)
+	}
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
 	if req.Mime != "" {

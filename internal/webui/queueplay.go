@@ -563,6 +563,12 @@ func nowPlayingStatus(body string) string {
 // the current/total position, and whether the box is in standby. Zero values on
 // any error.
 func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby bool) {
+	// Test seam, the same one boxPlayStateDetail has: the end detection is a
+	// state machine over what the box reports, and it is only testable if the
+	// reports can be scripted.
+	if s.nowPlayingFn != nil {
+		return s.nowPlayingFn()
+	}
 	if s.boxHost == "" {
 		return "", 0, 0, false
 	}
