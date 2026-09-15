@@ -31,6 +31,15 @@ type playRequest struct {
 	// library track, so the box decodes it correctly. Empty for radio -> the
 	// renderer defaults to audio/mpeg.
 	Mime string `json:"mime"`
+	// DurationSec is the track length in seconds for a library file, 0 for
+	// radio and for anything of unknown length.
+	//
+	// It is what draws the progress bar and what lets the speaker know the
+	// track ended. The firmware answers `<time total="0">` unless the DIDL it
+	// was handed carries a duration, and with total 0 there is nothing for the
+	// bar to fill and no end to detect. A folder already sends it, which is why
+	// a folder draws a bar per track and a single track never did (#845, #844).
+	DurationSec int `json:"duration_sec"`
 	// Homepage is the station website (radio only), recorded into Recently-played
 	// so a card can offer a "website" link like the radio search rows do (#135).
 	Homepage string `json:"homepage"`
@@ -193,7 +202,15 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	playErr := s.playWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime)
+	// A known length only means anything when the speaker is fetching the file
+	// itself: through the proxy the byte count is the proxy's, not the track's,
+	// and a seekable claim over it would be a lie. So the meta follows
+	// playDirect rather than the MIME.
+	var meta upnp.TrackMeta
+	if playDirect && req.DurationSec > 0 {
+		meta = upnp.TrackMeta{Duration: time.Duration(req.DurationSec) * time.Second, Seekable: true}
+	}
+	playErr := s.playTrackWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime, meta)
 	if playErr != nil {
 		if isGroupedRejection(playErr) {
 			s.writeGroupedPlayError(w, playErr)

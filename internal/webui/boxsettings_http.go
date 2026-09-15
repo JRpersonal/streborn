@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/wlanlive"
 )
 
@@ -105,9 +106,16 @@ func (s *Server) clearTransportForReplay(ctx context.Context) {
 // not the stuck ContentItem and hammering it would only delay the error the
 // caller needs to show.
 func (s *Server) playWithWrongStateRepair(ctx context.Context, url, title, art, mime string) error {
+	return s.playTrackWithWrongStateRepair(ctx, url, title, art, mime, upnp.TrackMeta{})
+}
+
+// playTrackWithWrongStateRepair is playWithWrongStateRepair for a file whose
+// length is known. A zero TrackMeta reproduces the old behaviour exactly, which
+// is what every caller that has nothing to say about length passes.
+func (s *Server) playTrackWithWrongStateRepair(ctx context.Context, url, title, art, mime string, track upnp.TrackMeta) error {
 	push := func() error {
 		if mime != "" {
-			return s.renderer.PlayURLMime(ctx, url, title, art, mime)
+			return s.renderer.PlayURLTrack(ctx, url, title, art, mime, track)
 		}
 		return s.renderer.PlayURL(ctx, url, title, art)
 	}

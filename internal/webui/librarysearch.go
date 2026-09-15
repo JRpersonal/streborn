@@ -154,7 +154,7 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 			}
 			results = append(results, librarySearchResult{
 				Title: it.Title, Artist: it.Artist, Album: it.Album,
-				URL: it.StreamURL, Art: it.AlbumArtURL, Mime: it.MimeType,
+				URL: it.StreamURL, Art: it.AlbumArtURL, Mime: trackMime(it),
 				DurationSec: it.DurationSec, Server: name,
 			})
 			if len(results) >= librarySearchMax {

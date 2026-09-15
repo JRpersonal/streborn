@@ -2904,11 +2904,13 @@ async function playLibTrack(idx, btn) {
   // "it only buffers a tiny bit of a song up until about 95 seconds then the
   // song repeats". The desktop Library has always sent it (#139); the search
   // results here carry it too and simply dropped it on the floor.
+  // duration_sec draws the bar and lets the speaker see the end (#845, #844).
   var ok = await api('/api/play', 'POST', {
     url: it.url,
     title: it.title || '',
     icon: it.art || '',
-    mime: it.mime || ''
+    mime: it.mime || '',
+    duration_sec: it.durationSec || 0
   });
   if (ok) { showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
   else { searchMsg(T.cantStart, true); }
@@ -3390,7 +3392,8 @@ async function playBrowseTrack(it, btn) {
   press(btn);
   /* mime routes the file past the endless-radio proxy, same as playLibTrack. */
   var ok = await api('/api/play', 'POST', {
-    url: it.url, title: it.title || '', icon: it.art || '', mime: it.mime || ''
+    url: it.url, title: it.title || '', icon: it.art || '', mime: it.mime || '',
+    duration_sec: it.durationSec || 0
   });
   if (ok) { showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000); }
   else { browseMsgSet(T.cantStart); }
