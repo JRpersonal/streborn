@@ -4987,7 +4987,13 @@ async function runUpdateAllBoxes(onStart) {
         setRow(b.host, { phaseText: t('updateAll.phase.engineTooFull'), barClass: 'ua-failed' });
       } else {
         setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
-        if (!uaReportShown) { uaReportShown = true; showUpdateFailureReport(b, 'update-all-engine', String(e)); }
+        if (!uaReportShown) {
+          uaReportShown = true;
+          // The engine repair row reaches the speaker the same way, so it
+          // loses the network the same way (#963).
+          if (noNetworkHere(m)) showUpdateNoNetworkNotice();
+          else showUpdateFailureReport(b, 'update-all-engine', String(e));
+        }
       }
       try { console.warn('update all: engine repair failed', b.host, e); } catch {}
     } finally {
@@ -5049,7 +5055,17 @@ async function runUpdateAllBoxes(onStart) {
       // Same account of the failure the single update gives, for the
       // FIRST speaker that fails: a wall of reports would help nobody, and
       // the rest stay on record for the next time each is opened.
-      if (!uaReportShown) { uaReportShown = true; showUpdateFailureReport(b, 'update-all', String(e)); }
+      //
+      // Including the no-network case. The single-speaker button learned to
+      // say "your own network went away" in one line instead of opening a
+      // fault report about a speaker that was fine, and the batch did not,
+      // although the batch is what the reporter ran: his report header reads
+      // "failed at: update-all" (#963).
+      if (!uaReportShown) {
+        uaReportShown = true;
+        if (noNetworkHere(String(e))) showUpdateNoNetworkNotice();
+        else showUpdateFailureReport(b, 'update-all', String(e));
+      }
       try { console.warn('update all: box failed', b.host, e); } catch {}
     } finally {
       const r = rowState.get(b.host); if (r) r.outcome = outcome;

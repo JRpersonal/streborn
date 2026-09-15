@@ -48,6 +48,21 @@ describe('a speaker update that failed because THIS computer lost its network', 
     expect(before).toContain('noNetworkHere(msg)');
   });
 
+  it('guards every path that opens the report, not only the single-speaker one', () => {
+    // The first version of this fix guarded runSingleBoxUpdate alone, and the
+    // reporter had used the batch: his own report header read
+    // "failed at: update-all". A test that only pinned the single-speaker
+    // wiring is what let that through, so every call site is checked here.
+    const sites = ['update-all-engine', 'update-all'];
+    for (const phase of sites) {
+      const at = src.indexOf("showUpdateFailureReport(b, '" + phase + "'");
+      expect(at).toBeGreaterThan(-1);
+      const before = src.slice(Math.max(0, at - 400), at);
+      expect(before).toContain('noNetworkHere(');
+      expect(before).toContain('showUpdateNoNetworkNotice()');
+    }
+  });
+
   it('shows a notice rather than the copyable report', () => {
     expect(src).toContain('function showUpdateNoNetworkNotice()');
     const at = src.indexOf('function showUpdateNoNetworkNotice()');
