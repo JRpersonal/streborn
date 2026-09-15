@@ -5,7 +5,6 @@ package webui
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -389,35 +388,36 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 // forgets gets the safe answer. The desktop app asks, because it anonymises
 // what it exports itself and its failure report deliberately keeps the
 // addresses: they are shown to the user about their own equipment.
+// writeDebugState writes the debug state, MASKED unless the caller explicitly
+// asked for it raw.
+//
+// Masked is the default because of what happened when it was not. This payload
+// carries the speaker's own logs, its peer list, its hosts file and its zone,
+// so it is full of addresses, hardware addresses and speaker names. The only
+// consumer used to be the desktop app, which scrubs everything it writes into a
+// bundle, so the endpoint handed out the raw text and said so in a comment.
+// Then the phone remote grew a diagnostic button that fetches this and saves
+// the answer directly, for reporters who have no PC. Nobody re-read the
+// comment. Of the 36 files attached to public issues that way, 32 carried
+// their owner's real LAN addresses and MAC addresses (found 2026-09-15).
+//
+// So the raw form is now something a caller asks for by name, and a caller that
+// forgets gets the safe answer. The desktop app asks, because it anonymises
+// what it exports itself and its failure report deliberately keeps the
+// addresses: they are shown to the user about their own equipment.
+//
+// The masking WALKS THE TREE and scrubs each string value. It must never run
+// over the encoded JSON instead: the SSID pattern ends in [^\s]*, and minified
+// JSON has no whitespace, so a single "ssid" key swallowed the rest of the
+// document and the answer stopped being JSON at all. That is not a hypothetical,
+// it is what the first version of this function did to all four speakers it was
+// pointed at.
 func (s *Server) writeDebugState(w http.ResponseWriter, state map[string]any, raw bool) {
 	if raw {
 		writeJSON(w, http.StatusOK, state)
 		return
 	}
-	b, err := json.Marshal(state)
-	if err != nil {
-		writeJSON(w, http.StatusOK, state)
-		return
-	}
-	// Scrub the encoded form, not the tree: an address can sit anywhere, in a
-	// map key, in a log line, inside a base64 payload. None of the
-	// replacements introduce a quote or a backslash, so the result is still
-	// the same JSON document with different values.
-	clean := anonymise.ScrubPII(string(b))
-	var walked map[string]any
-	if err := json.Unmarshal([]byte(clean), &walked); err != nil {
-		// Unreachable by construction, and if it ever is reached the answer is
-		// to send less rather than to fall back to the unmasked text.
-		s.logger.Warn("debug state: masking produced invalid JSON, refusing to answer raw", "err", err)
-		http.Error(w, "debug state could not be anonymised", http.StatusInternalServerError)
-		return
-	}
-	// Second pass, structured. A network name is a bare value under an "ssid"
-	// KEY, so there is no "ssid" in the text for the pass above to find, and a
-	// speaker name sits under a plain "name". Four of a reporter's household
-	// network names reached a public issue exactly that way (#592), which is
-	// why the desktop bundle walks the tree as well as scrubbing the text.
-	writeJSON(w, http.StatusOK, anonymise.DebugState(walked))
+	writeJSON(w, http.StatusOK, anonymise.DebugState(state))
 }
 
 // agentBootMarker is the first line the agent writes on every start

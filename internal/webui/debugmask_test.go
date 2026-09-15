@@ -104,3 +104,52 @@ func TestAnUninformedCallerGetsTheMaskedForm(t *testing.T) {
 		}
 	}
 }
+
+// The case the first version of this test missed, and it cost a release.
+//
+// leakyState above carries a network name in the `ssid="..."` form, inside a
+// log line, which the scrub handles. A real speaker also has "ssid" as a JSON
+// KEY with the name as a bare value next to it. The first implementation
+// scrubbed the ENCODED document, and the SSID pattern ends in [^\s]*: minified
+// JSON has no whitespace, so one such key swallowed the rest of the document
+// and the answer stopped being JSON. Every synthetic test passed; all four
+// speakers it was pointed at returned a broken payload.
+//
+// So this one is shaped like a speaker, not like a fixture.
+func TestAStructuredNetworkNameDoesNotEatTheDocument(t *testing.T) {
+	state := map[string]any{
+		"wlan_configured": map[string]any{
+			"tool": "wpa_cli",
+			"networks": []any{
+				map[string]any{"ssid": "Familie Mustermann 5G", "psk": "hunter2hunter2", "id": 0},
+				map[string]any{"ssid": "Gaeste", "id": 1},
+			},
+		},
+		"after":      "this section must survive",
+		"disk_usage": map[string]any{"nvFreeBytes": 12107776},
+	}
+
+	rec := httptest.NewRecorder()
+	maskTestServer().writeDebugState(rec, state, false)
+
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("the masked answer is not JSON: %v", err)
+	}
+	if len(out) != len(state) {
+		t.Fatalf("sections = %d, want %d: the mask ate the document", len(out), len(state))
+	}
+	if out["after"] != "this section must survive" {
+		t.Error("everything after the network name was lost")
+	}
+	body := rec.Body.String()
+	for _, secret := range []string{"Familie Mustermann", "hunter2", "Gaeste"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("%q survived", secret)
+		}
+	}
+	// The speaker still has to be diagnosable afterwards.
+	if !strings.Contains(body, "wpa_cli") || !strings.Contains(body, "12107776") {
+		t.Error("the mask took the diagnostic content with it")
+	}
+}
