@@ -161,7 +161,10 @@ func TestAlarmSkippedWhenTooLate(t *testing.T) {
 	}
 }
 
-// A restart or an OTA at 06:31 still has to wake you.
+// A restart or an OTA at 06:31 still has to wake you. This is also the guard
+// for the edit acknowledgement below: the first evaluation after a start takes
+// the stored document as its baseline, so the alarm found there is a restart
+// survivor, not a fresh save, and it fires.
 func TestAlarmFiresInsideTheGraceWindow(t *testing.T) {
 	h := newAlarmHarness(t, weekdayDoc())
 	now := berlinTime(t, 2026, time.September, 7, 6, 33)
@@ -169,6 +172,109 @@ func TestAlarmFiresInsideTheGraceWindow(t *testing.T) {
 	h.s.evaluateAlarms(now)
 	if !waitFor(func() bool { return h.firedCount() == 1 }) {
 		t.Errorf("an alarm three minutes late did not fire: %d recalls", h.firedCount())
+	}
+}
+
+// save stands in for the editor's PUT: the store is replaced and the runner
+// evaluates on its next tick, which the tests call by hand.
+func (h *alarmHarness) save(t *testing.T, doc alarm.Document) {
+	t.Helper()
+	if err := h.s.alarms.Set(doc); err != nil {
+		t.Fatalf("save the document: %v", err)
+	}
+}
+
+// settled evaluates at now and gives any fire a moment to reach the recall
+// seam, so "did not fire" is asserted against a quiet harness.
+func (h *alarmHarness) settled(now time.Time) {
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	time.Sleep(50 * time.Millisecond)
+}
+
+// It is 06:32 and you add an alarm for 06:30, meaning tomorrow. The runner
+// cannot tell that from a restart at 06:32 by the fired state alone, so it
+// acknowledges the save instead: the current due instant is recorded, nothing
+// plays now, and Tuesday goes off.
+func TestAlarmSavedInsideItsOwnWindowWaitsForTheNextOne(t *testing.T) {
+	h := newAlarmHarness(t, alarm.Document{Zone: "Europe/Berlin"})
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 0)) // Monday, the baseline
+
+	h.save(t, weekdayDoc())
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 32))
+	if got := h.firedCount(); got != 0 {
+		t.Fatalf("an alarm saved two minutes after its own time fired %d times", got)
+	}
+	if got, want := h.s.alarmState.FiredFor("wake"), berlinTime(t, 2026, time.September, 7, 6, 30); !got.Equal(want) {
+		t.Errorf("the save was not acknowledged as %v, fired state reads %v", want, got)
+	}
+
+	tuesday := berlinTime(t, 2026, time.September, 8, 6, 30)
+	h.at(tuesday)
+	h.s.evaluateAlarms(tuesday)
+	if !waitFor(func() bool { return h.firedCount() == 1 }) {
+		t.Errorf("the next morning did not fire: %d recalls", h.firedCount())
+	}
+}
+
+// An alarm switched off at 06:30 and back on at 06:33 is the same case with an
+// existing id: a disabled alarm is never marked, so without the
+// acknowledgement it would go off the moment it is re-enabled.
+func TestAlarmReEnabledInsideItsOwnWindowWaitsForTheNextOne(t *testing.T) {
+	off := weekdayDoc()
+	off.Alarms[0].Enabled = false
+	h := newAlarmHarness(t, off)
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 30))
+	if got := h.firedCount(); got != 0 {
+		t.Fatalf("a disabled alarm fired %d times", got)
+	}
+
+	h.save(t, weekdayDoc())
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 33))
+	if got := h.firedCount(); got != 0 {
+		t.Fatalf("an alarm re-enabled three minutes after its own time fired %d times", got)
+	}
+
+	tuesday := berlinTime(t, 2026, time.September, 8, 6, 30)
+	h.at(tuesday)
+	h.s.evaluateAlarms(tuesday)
+	if !waitFor(func() bool { return h.firedCount() == 1 }) {
+		t.Errorf("the next morning did not fire: %d recalls", h.firedCount())
+	}
+}
+
+// Moving a 07:00 alarm to 06:32 at 06:33 is a save inside the new window too.
+func TestAlarmMovedIntoItsOwnWindowWaitsForTheNextOne(t *testing.T) {
+	late := weekdayDoc()
+	late.Alarms[0].Hour, late.Alarms[0].Minute = 7, 0
+	h := newAlarmHarness(t, late)
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 0))
+
+	moved := weekdayDoc()
+	moved.Alarms[0].Minute = 32
+	h.save(t, moved)
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 33))
+	if got := h.firedCount(); got != 0 {
+		t.Errorf("an alarm moved to a minute ago fired %d times", got)
+	}
+}
+
+// The acknowledgement is per alarm: saving a second, unrelated alarm at 06:31
+// must not swallow the 06:30 one that has not fired yet.
+func TestAlarmUntouchedByASaveStillFires(t *testing.T) {
+	h := newAlarmHarness(t, weekdayDoc())
+	h.settled(berlinTime(t, 2026, time.September, 7, 6, 0))
+
+	two := weekdayDoc()
+	two.Alarms = append(two.Alarms, alarm.Alarm{
+		ID: "evening", Enabled: true, Hour: 19, Minute: 0, Days: []int{1}, Slot: 1,
+	})
+	h.save(t, two)
+	now := berlinTime(t, 2026, time.September, 7, 6, 31)
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	if !waitFor(func() bool { return h.firedCount() == 1 }) {
+		t.Errorf("the untouched 06:30 alarm did not fire after an unrelated save: %d recalls", h.firedCount())
 	}
 }
 

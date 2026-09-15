@@ -146,6 +146,13 @@ type Server struct {
 	// alarmZoneWarned rate-limits the unknown-zone warning. Touched only by the
 	// scheduler goroutine.
 	alarmZoneWarned bool
+	// alarmSeen is the document the scheduler evaluated last time, so it can
+	// tell which alarms an editor just added, re-enabled or moved (see
+	// acknowledgeAlarmEdits). alarmSeeded is whether it has been taken at all:
+	// the first evaluation after a start records the document as the baseline
+	// rather than treating every stored alarm as new. Scheduler goroutine only.
+	alarmSeen   alarm.Document
+	alarmSeeded bool
 	// alarmMu guards the clock-trust bookkeeping, which the status endpoint
 	// reads from another goroutine.
 	alarmMu sync.Mutex

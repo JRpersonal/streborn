@@ -71,6 +71,23 @@ type Alarm struct {
 	AutoOff int `json:"autoOff,omitempty"`
 }
 
+// SameSchedule reports whether a and b are due at the same wall-clock moments:
+// the same time on the same weekdays. Name, slot, volume and switch-off are
+// deliberately not compared, because changing them does not move an alarm.
+// Days are compared as sets; Validate sorts them, but a caller comparing a
+// stored document with a freshly decoded one must not depend on that.
+func (a Alarm) SameSchedule(b Alarm) bool {
+	if a.Hour != b.Hour || a.Minute != b.Minute || len(a.Days) != len(b.Days) {
+		return false
+	}
+	for _, d := range a.Days {
+		if !b.Fires(time.Weekday(d)) {
+			return false
+		}
+	}
+	return true
+}
+
 // Document is the whole per-speaker file.
 type Document struct {
 	// Zone is an IANA name ("Europe/Berlin"). Empty means UTC, and the editor

@@ -19,6 +19,39 @@ func weekdayAlarm() Alarm {
 	return Alarm{ID: "a", Enabled: true, Hour: 6, Minute: 30, Days: []int{1, 2, 3, 4, 5}, Slot: 3}
 }
 
+func TestSameSchedule(t *testing.T) {
+	base := weekdayAlarm()
+	tests := []struct {
+		name string
+		edit func(a *Alarm)
+		want bool
+	}{
+		{"unchanged", func(*Alarm) {}, true},
+		{"renamed", func(a *Alarm) { a.Name = "Work" }, true},
+		{"other slot", func(a *Alarm) { a.Slot = 5 }, true},
+		{"other volume", func(a *Alarm) { a.Volume = 40 }, true},
+		{"other switch-off", func(a *Alarm) { a.AutoOff = 30 }, true},
+		{"days in another order", func(a *Alarm) { a.Days = []int{5, 4, 3, 2, 1} }, true},
+		{"other hour", func(a *Alarm) { a.Hour = 7 }, false},
+		{"other minute", func(a *Alarm) { a.Minute = 45 }, false},
+		{"one day fewer", func(a *Alarm) { a.Days = []int{1, 2, 3, 4} }, false},
+		{"one day more", func(a *Alarm) { a.Days = []int{1, 2, 3, 4, 5, 6} }, false},
+		{"other days, same count", func(a *Alarm) { a.Days = []int{0, 2, 3, 4, 5} }, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			edited := weekdayAlarm()
+			tc.edit(&edited)
+			if got := base.SameSchedule(edited); got != tc.want {
+				t.Errorf("SameSchedule = %v, want %v", got, tc.want)
+			}
+			if got := edited.SameSchedule(base); got != tc.want {
+				t.Errorf("SameSchedule is not symmetric: reversed = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidateAccepts(t *testing.T) {
 	d := Document{Zone: "Europe/Berlin", Alarms: []Alarm{weekdayAlarm()}}
 	if err := d.Validate(); err != nil {

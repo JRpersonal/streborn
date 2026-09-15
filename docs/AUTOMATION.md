@@ -262,6 +262,10 @@ whose clock repair lands just after the alarm, which is the morning somebody
 most wants waking. A box first plugged in at 09:00 stays quiet.
 The phone card says so in as many words when the clock is not yet known.
 
+An alarm you add, re-enable or move inside those five minutes after its own
+time does not go off at once: the save counts as your answer to that one, and
+its first fire is the next one.
+
 The diagnostic bundle's `alarms` section shows the document, the resolved zone,
 whether the clock is trusted, the next fire and the last one.
 

@@ -33,6 +33,16 @@ import (
 // The extra rule only ever ate a legitimate alarm whose clock repair landed a
 // few minutes late - power restored at 06:31 for an 06:30 alarm - which is
 // exactly the morning someone wants to be woken.
+//
+// One thing the two rules cannot do on their own is tell "the agent restarted
+// at 06:33" from "the user pressed Save at 06:33". A new alarm has no fired
+// record, and a disabled one is never marked, so an alarm added, re-enabled or
+// moved inside its own grace window went off at once. The runner therefore
+// remembers the document it evaluated last time and, before firing anything,
+// acknowledges every alarm the editor just changed: its current due instant is
+// recorded exactly as a fire would record it, so its first real fire is the
+// next one. A restart takes the stored document as its baseline instead, and
+// so still fires the alarm the power cut missed. See acknowledgeAlarmEdits.
 var (
 	// alarmGrace is how late a due alarm may still fire. Long enough to cover
 	// an agent restart or an OTA plus the wake itself, short enough that a late
@@ -137,10 +147,15 @@ func (s *Server) evaluateAlarms(now time.Time) {
 	if s.alarms == nil || s.alarmState == nil {
 		return
 	}
+	doc := s.alarms.Get()
+	if !s.alarmSeeded {
+		// Whatever is on NAND at start is the baseline, clock or no clock: a
+		// restart must not read its own stored alarms as freshly saved.
+		s.alarmSeen, s.alarmSeeded = doc, true
+	}
 	if !s.alarmClockUsable(now) {
 		return
 	}
-	doc := s.alarms.Get()
 	loc, err := doc.Location()
 	if err != nil {
 		// A zone that no longer resolves schedules nothing rather than quietly
@@ -158,6 +173,7 @@ func (s *Server) evaluateAlarms(now time.Time) {
 		keep[a.ID] = true
 	}
 	s.alarmState.Prune(keep)
+	s.acknowledgeAlarmEdits(doc, now, loc)
 
 	for _, a := range doc.Alarms {
 		if !a.Enabled {
@@ -171,6 +187,48 @@ func (s *Server) evaluateAlarms(now time.Time) {
 			continue
 		}
 		s.fireAlarm(a, due)
+	}
+}
+
+// acknowledgeAlarmEdits records the current due instant of every alarm the
+// editor just added, re-enabled or moved, when that instant is still inside
+// the grace window and has not fired: the save is the user's answer to it, so
+// the first real fire is the next one. An alarm the editor did not touch is
+// left alone, so saving a second alarm at 06:31 cannot swallow the 06:30 one.
+//
+// Called only once the clock is usable and the zone resolves. A save made
+// while the box still believes it is 2015 is therefore acknowledged on the
+// first trustworthy evaluation, against real due instants, rather than lost.
+// The mark goes through the same MarkFired a fire uses, so it survives a
+// restart and this stays the only goroutine that writes the state file.
+func (s *Server) acknowledgeAlarmEdits(doc alarm.Document, now time.Time, loc *time.Location) {
+	prev := make(map[string]alarm.Alarm, len(s.alarmSeen.Alarms))
+	for _, a := range s.alarmSeen.Alarms {
+		prev[a.ID] = a
+	}
+	zoneChanged := doc.Zone != s.alarmSeen.Zone
+	s.alarmSeen = doc
+
+	for _, a := range doc.Alarms {
+		if !a.Enabled {
+			continue
+		}
+		old, had := prev[a.ID]
+		if had && old.Enabled && !zoneChanged && old.SameSchedule(a) {
+			continue
+		}
+		due, ok := a.MostRecentDue(now, loc)
+		if !ok || now.Sub(due) > alarmGrace {
+			continue
+		}
+		if !s.alarmState.FiredFor(a.ID).Before(due) {
+			continue
+		}
+		s.logger.Info("alarm: saved inside its own window, the first fire is the next one",
+			"id", a.ID, "due", due)
+		if err := s.alarmState.MarkFired(a.ID, due); err != nil {
+			s.logger.Warn("alarm: could not record the save, it may go off after a restart", "id", a.ID, "err", err)
+		}
 	}
 }
 
