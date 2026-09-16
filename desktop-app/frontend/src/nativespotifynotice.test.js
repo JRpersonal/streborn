@@ -31,4 +31,13 @@ describe('native Spotify notice', () => {
     expect(block).toContain('spotifyWarnKey');
     expect(block).not.toContain('nativeSpotifyWarned = true');
   });
+
+  it('needs an account that can actually use that key', () => {
+    // The first fix required a speaker that is playing and a saved Spotify
+    // key. The reporter had both, on the release that carried that fix, and
+    // still got told to press a key his free account cannot use (#973).
+    // Whether the key exists was never the question.
+    expect(block).toContain('!state.spotifyPremiumRequired');
+    expect(src).toContain('state.spotifyPremiumRequired = !!np.premiumRequired');
+  });
 });

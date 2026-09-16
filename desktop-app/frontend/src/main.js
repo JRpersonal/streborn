@@ -7636,7 +7636,13 @@ async function refreshStatus() {
     // cannot create at all, so it sent a free-account user looking for a button
     // that does not exist. It now needs a speaker that is really playing and a
     // key that really exists, and it is remembered per speaker, not globally.
-    const spotifyKeySaved = (state.presets || []).some(p => p && p.type === 'spotify');
+    // Two conditions were not enough. The reporter HAS a saved Spotify key
+    // and his speaker WAS playing, so both gates passed and he still got a
+    // notice telling him to press a key that a free account cannot use
+    // (#973, on v0.9.83 which already had the first fix). The key existing
+    // was never the question; being able to use it is.
+    const spotifyKeySaved = (state.presets || []).some(p => p && p.type === 'spotify')
+      && !state.spotifyPremiumRequired;
     const spotifyWarnKey = (state.currentBox && state.currentBox.host) || '';
     if (src === 'SPOTIFY' && ps === 'PLAY_STATE' && spotifyKeySaved) {
       if (state.nativeSpotifyWarned !== spotifyWarnKey) {
@@ -7696,6 +7702,9 @@ async function refreshStatus() {
           state.nowSpotifyCover = np.cover || '';
           state.nowSpotifyContext = np.context || '';
           state.nowSpotifyAccount = np.account || '';
+          // A free account cannot start a playlist from a preset key, so any
+          // message that tells the user to press one is wrong for them (#973).
+          state.spotifyPremiumRequired = !!np.premiumRequired;
           // Spotify refused the audio key for track after track. Without this
           // the playlist just races past in silence and the speaker looks
           // broken, when in fact Spotify is refusing this engine for this
