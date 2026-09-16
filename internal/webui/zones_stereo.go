@@ -1130,6 +1130,15 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 // Connect credential, so the desktop app should only move it between the user's
 // own speakers.
 func (s *Server) handleSpotifyCredential(w http.ResponseWriter, r *http.Request) {
+	// The comment above has said "LAN-only" since this was written and the
+	// handler never checked. It does now. The CORS narrowing is what actually
+	// closes the drive-by read (a browser on the LAN passes this check), but a
+	// reusable account credential should not be one middleware away from
+	// anyone who can route to the speaker.
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "spotify credential is LAN only", http.StatusForbidden)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		if s.spotifyExportCred == nil {

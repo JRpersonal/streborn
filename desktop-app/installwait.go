@@ -287,11 +287,39 @@ func (a *App) agentNotUp(res InstallResult, host, model, genericMsg string) Inst
 // English on purpose: InstallResult.Message reaches the UI verbatim like every
 // other install message; the localized checklist under it comes from Code.
 func speakerNotBackMessage(model string) string {
+	// The SoundTouch 300 is the one model where "wait, it will come back" is
+	// wrong. After an install or an OTA it drops into its alternating yellow
+	// blink and stays there: it does not finish booting on its own, and no
+	// amount of waiting changes that. The owner has to interrupt power once.
+	//
+	// The app has had that sentence since the ST300 blink was confirmed, but
+	// only on the UPDATE path. A first install told the owner the opposite
+	// (mail, 2026-09-15: an ST20 and an ST300 installed back to back, the ST20
+	// done in three minutes, the ST300 silent from 22:03 and still silent at
+	// 22:10, with the report saying ST Reborn would keep looking).
+	//
+	// Said first, before the generic reassurance, because it is the only thing
+	// on this screen the owner has to act on.
+	if isST300(model) {
+		return "STR was installed, and the SoundTouch 300 will not come back on its own: " +
+			"after an install it blinks and stays unreachable until it is power-cycled. " +
+			"Unplug the soundbar from power for about ten seconds and plug it back in. " +
+			"It then finishes booting and ST Reborn picks it up by itself. " +
+			"Your network is not the problem: ST Reborn ran the install over it a few minutes ago."
+	}
 	msg := "STR was installed, but the speaker is not back on the network yet: right now it answers nothing at all, not even a ping, so it is still restarting, reconnecting to Wi-Fi, or finishing its own setup. "
 	if slowBootModel(model) {
 		msg += "On Portable / BCO models that can take several minutes. "
 	}
 	return msg + "Your network is not the problem: ST Reborn ran the install over it a few minutes ago. ST Reborn keeps looking by itself and will say so here when the speaker answers."
+}
+
+// isST300 reports whether model is a SoundTouch 300, the one model that needs a
+// power cycle to finish an install or an update. Substring on "300" is what the
+// frontend already uses (main.js), and no other supported model's name contains
+// it: SoundTouch 10/20/30, Portable, Wave, Lifestyle, CineMate, SA-4, SA-5.
+func isST300(model string) bool {
+	return strings.Contains(model, "300")
 }
 
 // speakerInSetupMessage is the user-facing sentence for speakerInSetupCode.
