@@ -206,6 +206,25 @@ button.btn:active { background:var(--press); }
 .sponsors { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:340px; margin:0 auto 8px; }
 .sponsors a.btn { min-height:44px; font-size:13px; background:transparent; border-color:var(--line); color:var(--muted); font-weight:500; }
 @media (hover:hover) { .sponsors a.btn:hover { background:var(--card2); color:var(--fg); } }
+/* Recommend STR: buttons come resolved from /share.json (generated from the
+   website registry), so nothing here knows a platform. --sb is the registry
+   brand colour and only tints the icon chip. */
+#shareRow { margin-top:10px; }
+.share-g + .share-g { margin-top:12px; }
+.share-gh { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0 0 6px; }
+.share-list { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:8px; }
+.share-item { display:flex; flex-direction:column; align-items:flex-start; gap:4px; max-width:100%; }
+.share-btn { min-height:44px; gap:8px; padding:6px 12px 6px 6px; font-size:13px; text-decoration:none; }
+.share-ic { width:28px; height:28px; border-radius:7px; display:grid; place-items:center; color:#fff; background:var(--sb, var(--accent)); flex:none; }
+.share-ic svg { width:16px; height:16px; }
+.share-note { margin:0; font-size:12px; line-height:1.4; color:var(--muted); }
+.share-reset { background:none; border:0; padding:4px 0; color:var(--muted); font:inherit; font-size:12px; text-decoration:underline; cursor:pointer; }
+.share-form { display:flex; flex-direction:column; gap:6px; font-size:13px; width:100%; }
+.share-form input, .share-fallback input { min-height:44px; padding:6px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card2); color:var(--fg); font:inherit; width:100%; box-sizing:border-box; }
+.share-form input[aria-invalid="true"] { border-color:var(--accent); }
+.share-form-btns { display:flex; gap:8px; flex-wrap:wrap; }
+.share-fallback { margin-top:10px; font-size:13px; }
+.share-status { margin:8px 0 0; font-size:13px; color:var(--muted); min-height:1.2em; }
 footer { margin-top:18px; text-align:center; font-size:12px; color:var(--muted); }
 /* The language picker sits in the footer on purpose: it is a setting you touch
    once, not a control you use. Sized for a thumb like everything else here. */
@@ -632,11 +651,14 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <a class="btn" href="https://ko-fi.com/streborn" target="_blank" rel="noopener">&#9749; Ko-fi</a>
 <a class="btn" href="https://paypal.me/JR31337" target="_blank" rel="noopener">PayPal</a>
 </div>
-<button class="btn" id="shareTrigger" onclick="toggleShare(this)" aria-expanded="false" style="width:100%;margin-top:10px;border-style:dashed;border-color:var(--accent);color:var(--accent);gap:6px">&#9829; <span id="lblShareTrigger">Share ST Reborn</span> <span id="shareChev">&#9662;</span></button>
-<div id="shareRow" style="display:none;margin-top:8px">
-<div class="label" id="lblShareHead" style="margin-bottom:8px">…and if you really love it?</div>
-<div class="sponsors" id="shareBtns"></div>
 </div>
+
+<!-- Recommend STR. Deliberately its own card, not part of the donate card:
+     sharing is not tied to donating. Stays hidden until the speaker has
+     delivered the buttons (/share.json), then folds open on request. -->
+<div class="card" id="shareCard" hidden>
+<button class="btn" id="shareTrigger" type="button" onclick="toggleShare(this)" aria-expanded="false" aria-controls="shareRow" style="width:100%;gap:6px"><span id="lblShareTrigger"></span> <span id="shareChev" aria-hidden="true">&#9662;</span></button>
+<div id="shareRow" hidden></div>
 </div>
 
 <footer>
@@ -818,7 +840,7 @@ function applyStaticI18n() {
   var shb = document.getElementById('btnShuffle'); if (shb) { shb.setAttribute('aria-label', T.shuffle); shb.title = T.shuffle; }
   var rpb = document.getElementById('btnRepeat'); if (rpb) { rpb.setAttribute('aria-label', T.repeatw); rpb.title = T.repeatw; }
   var st = document.getElementById('status'); if (st) st.innerHTML = '<span class="now">' + escapeHtml(T.loading) + '</span>';
-  set('lblSupport', T.shareDonate); set('lblShareTrigger', T.shareTrigger); set('lblShareHead', T.shareHead);
+  set('lblSupport', T.shareDonate);
   // Tab shell and the sections it made room for.
   set('tlPlay', T.tPlay); set('tlBrowse', T.tFind); set('tlSpeakers', T.tSpk); set('tlMore', T.tMore);
   [['tabPlay',T.tPlay],['tabBrowse',T.tFind],['tabSpeakers',T.tSpk],['tabMore',T.tMore]].forEach(function(p){
@@ -842,37 +864,155 @@ function applyStaticI18n() {
   buildShareButtons();
 }
 
-// Social share (phone remote): no QR here - the user is already on their phone,
-// so a tap opens the platform's app directly with the post pre-filled. The
-// message is localized; the target is the project site, never this speaker.
-var SHARE_PLATFORMS = [
-  {n:'WhatsApp', u:function(url,msg,ttl){ return 'https://wa.me/?text=' + encodeURIComponent(msg); }},
-  {n:'Facebook', u:function(url,msg,ttl){ return 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url); }},
-  {n:'Telegram', u:function(url,msg,ttl){ return 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(ttl); }},
-  {n:'Bluesky', u:function(url,msg,ttl){ return 'https://bsky.app/intent/compose?text=' + encodeURIComponent(msg); }},
-  {n:'LinkedIn', u:function(url,msg,ttl){ return 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(url); }},
-  {n:'Reddit', u:function(url,msg,ttl){ return 'https://www.reddit.com/submit?url=' + encodeURIComponent(url) + '&title=' + encodeURIComponent(ttl); }}
-];
-function buildShareButtons() {
-  var box = document.getElementById('shareBtns');
-  if (!box) return;
-  var site = 'https://st-reborn.de';
-  var msg = (T.shareMsg || 'ST Reborn revives my Bose SoundTouch without the Bose cloud.') + ' ' + site;
-  box.innerHTML = '';
-  SHARE_PLATFORMS.forEach(function(p){
-    var a = document.createElement('a');
-    a.className = 'btn'; a.target = '_blank'; a.rel = 'noopener';
-    a.href = p.u(site, msg, 'ST Reborn');
-    a.textContent = p.n;
-    box.appendChild(a);
+// Recommend STR (phone remote). No share targets are listed here: the agent
+// serves them from /share.json, already resolved for the page language from
+// the website's share registry and the desktop app's texts (generated by
+// `make share-targets`, see docs/social-share.md). This only draws them.
+// Every target is a plain link or a local copy; nothing is counted or sent.
+var SHARE_INSTANCE_KEY = 'str-mastodon-instance';
+var shareLang = '';
+function shareEl(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function shareReadInstance() { try { return localStorage.getItem(SHARE_INSTANCE_KEY) || ''; } catch (e) { return ''; } }
+function shareWriteInstance(h) {
+  try { if (h) localStorage.setItem(SHARE_INSTANCE_KEY, h); else localStorage.removeItem(SHARE_INSTANCE_KEY); } catch (e) {}
+}
+// Only a bare host name, the same rule as the desktop app and the website.
+function shareCleanHost(v) {
+  var h = String(v || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^@?[^@]*@/, '').toLowerCase();
+  return /^[a-z0-9.-]+\.[a-z]{2,}(:\d+)?$/.test(h) ? h : '';
+}
+// This page runs on plain http from the speaker, where navigator.clipboard
+// does not exist, so the old execCommand path is the real one here.
+async function shareCopy(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) {}
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (e) { return false; }
+}
+async function buildShareButtons() {
+  var card = document.getElementById('shareCard');
+  var row = document.getElementById('shareRow');
+  if (!card || !row) return;
+  var lang = document.documentElement.lang || 'en';
+  if (shareLang === lang) return;
+  var data = null;
+  try {
+    var r = await fetch('/share.json?lang=' + encodeURIComponent(lang));
+    if (r.ok) data = await r.json();
+  } catch (e) {}
+  if (!data || !data.lang || !data.lang.groups) { card.hidden = true; return; }
+  shareLang = lang;
+  var ui = data.lang.ui || {}, icons = data.icons || {};
+  document.getElementById('lblShareTrigger').textContent = ui.menu || '';
+  row.textContent = '';
+  var status = shareEl('p', 'share-status');
+  status.setAttribute('role', 'status');
+  var fallback = shareEl('label', 'share-fallback');
+  fallback.hidden = true;
+  fallback.appendChild(shareEl('span', '', ui.copyFailed || ''));
+  var fbInput = shareEl('input');
+  fbInput.type = 'text'; fbInput.readOnly = true;
+  fallback.appendChild(fbInput);
+  var statusTimer = null;
+  function say(msg) { status.textContent = msg; clearTimeout(statusTimer); statusTimer = setTimeout(function(){ status.textContent = ''; }, 2600); }
+  function openUrl(u) { window.open(u, '_blank', 'noopener'); }
+  data.lang.groups.forEach(function(g, gi){
+    var box = shareEl('div', 'share-g');
+    box.setAttribute('role', 'group');
+    var h = shareEl('h3', 'share-gh', g.title);
+    h.id = 'shareG' + gi;
+    box.setAttribute('aria-labelledby', h.id);
+    box.appendChild(h);
+    var ul = shareEl('ul', 'share-list');
+    g.targets.forEach(function(x){
+      var li = shareEl('li', 'share-item');
+      var link = !!x.href;
+      var b = shareEl(link ? 'a' : 'button', 'btn share-btn');
+      if (link) {
+        b.href = x.href;
+        if (x.kind !== 'mailto') { b.target = '_blank'; b.rel = 'noopener'; }
+      } else {
+        b.type = 'button';
+      }
+      b.setAttribute('aria-label', x.label);
+      if (x.color && /^#[0-9a-f]{3,8}$/i.test(x.color)) b.style.setProperty('--sb', x.color);
+      var ic = shareEl('span', 'share-ic');
+      ic.setAttribute('aria-hidden', 'true');
+      ic.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" focusable="false">' +
+        (Object.prototype.hasOwnProperty.call(icons, x.icon) ? icons[x.icon] : (icons.native || '')) + '</svg>';
+      b.appendChild(ic);
+      b.appendChild(shareEl('span', '', x.name));
+      li.appendChild(b);
+      if (x.note) {
+        var note = shareEl('p', 'share-note', x.note);
+        note.id = 'shareNote-' + x.id;
+        b.setAttribute('aria-describedby', note.id);
+        li.appendChild(note);
+      }
+      if (x.kind === 'copy') {
+        b.onclick = async function(){
+          if (await shareCopy(x.shareUrl)) { fallback.hidden = true; say(ui.copied || ''); }
+          else { fallback.hidden = false; fbInput.value = x.shareUrl; fbInput.focus(); fbInput.select(); }
+        };
+      } else if (x.kind === 'instance-prompt') {
+        // Asked once inline, remembered on this phone, forgettable.
+        var form = shareEl('form', 'share-form');
+        form.hidden = true;
+        var lbl = shareEl('label', '');
+        lbl.appendChild(shareEl('span', '', ui.mastodonPrompt || ''));
+        var inp = shareEl('input');
+        inp.type = 'text'; inp.inputMode = 'url'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.placeholder = 'mastodon.social';
+        lbl.appendChild(inp);
+        form.appendChild(lbl);
+        var fb = shareEl('span', 'share-form-btns');
+        var ok = shareEl('button', 'btn', x.label); ok.type = 'submit';
+        var cancel = shareEl('button', 'btn', ui.cancel || ''); cancel.type = 'button';
+        fb.appendChild(ok); fb.appendChild(cancel); form.appendChild(fb);
+        var reset = shareEl('button', 'share-reset', ui.mastodonChange || '');
+        reset.type = 'button';
+        reset.hidden = !shareReadInstance();
+        var go = function(host){ openUrl(x.template.replace('{instance}', host)); };
+        var closeForm = function(){ form.hidden = true; inp.value = ''; inp.removeAttribute('aria-invalid'); b.focus(); };
+        b.onclick = function(){
+          var host = shareReadInstance();
+          if (host) { go(host); return; }
+          form.hidden = false; inp.focus();
+        };
+        form.onsubmit = function(e){
+          e.preventDefault();
+          var host = shareCleanHost(inp.value);
+          if (!host) { inp.setAttribute('aria-invalid', 'true'); inp.select(); return; }
+          shareWriteInstance(host); reset.hidden = false; closeForm(); go(host);
+        };
+        cancel.onclick = closeForm;
+        reset.onclick = function(){ shareWriteInstance(''); reset.hidden = true; form.hidden = false; inp.focus(); };
+        li.appendChild(form); li.appendChild(reset);
+      }
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    row.appendChild(box);
   });
+  row.appendChild(status);
+  row.appendChild(fallback);
+  card.hidden = false;
 }
 function toggleShare(btn) {
   var row = document.getElementById('shareRow');
   var chev = document.getElementById('shareChev');
   if (!row) return;
-  var open = row.style.display === 'none';
-  row.style.display = open ? 'block' : 'none';
+  var open = row.hidden;
+  row.hidden = !open;
   if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }
