@@ -358,7 +358,7 @@ import {
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
 import { renderRecent, initRecentView } from './views/recent.js';
-import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
+import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
@@ -1070,7 +1070,9 @@ async function renderFooter() {
   // knowing the project is on GitHub and finding it there, which a user who
   // installed the app from the website has no reason to know.
   links.push(`<a href="#" id="footerReport" class="footer-link">${escapeHtml(t('footer.reportProblem'))}</a>`);
-  links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.footer'))}</a>`);
+  // Recommend STR: the permanent, quiet way to the share buttons. Deliberately
+  // not next to the donate buttons, sharing is not tied to donating.
+  links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.menu'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   // Clicking the version opens the release notes. For a clean tagged
   // build that is the matching GitHub release page (which carries the
@@ -1190,12 +1192,9 @@ function renderDonateSidebar() {
     <div class="donate-icon">&#9749;</div>
     <div class="donate-slogan">${escapeHtml(slogan)}</div>
     ${donateButtonsHTML()}
-    ${shareTriggerHTML()}
   `;
 
   wireDonateButtons(side);
-  const shareBtn = $('shareTrigger');
-  if (shareBtn) shareBtn.onclick = openShareModal;
 }
 
 // showDonate opens the same three buttons as a dialog, from the footer link.
@@ -8935,7 +8934,6 @@ function formatDuration(sec) {
 }
 
 renderFooter();
-wireShareModal();
 
 // Prefill from the cache first so the UI shows the last selected
 // speaker immediately. discoverBoxes refreshes the real list in the

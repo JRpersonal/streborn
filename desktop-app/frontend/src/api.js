@@ -151,7 +151,7 @@ export {
   SyncSpotifyLogin,
 } from '../wailsjs/go/main/App';
 
-export { BrowserOpenURL, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
+export { BrowserOpenURL, ClipboardSetText, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 // Optional bindings. The wailsjs bindings are regenerated only when the Go
 // backend and the frontend are built together, so a frontend change that

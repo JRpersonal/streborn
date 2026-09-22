@@ -1,66 +1,81 @@
-# Social share buttons — spec for the website
+# Share buttons ("Recommend STR")
 
-The desktop app and the phone remote show a "share ST Reborn" panel under the
-donate buttons (an escalation: *you like it* -> donate, *you love it* -> share).
-This document is the handoff so the website (`st-reborn.de`) can offer the same
-buttons for parity. Nothing here is app-specific; it is plain share-intent URLs
-plus a QR.
+## Single source of truth
 
-## Copy
+Share targets are defined in exactly one place: the website registry
+`website/src/data/share-targets.json` in `JRpersonal/streborn-website`,
+published as `https://st-reborn.de/share-targets.json`. Its schema and
+build-time rules live next to it in `website/src/lib/share.ts`.
 
-Two escalating headings (localize per site language; English / German shown):
-
-| Section | English | German |
-| --- | --- | --- |
-| Donate heading | `You like ST Reborn?` | `Dir gefällt STR?` |
-| Share heading | `…and if you really love it?` | `…und wenn es dir so richtig gefällt?` |
-
-Share message (localize; English default):
+The desktop app has no list of its own. A copy of the registry is committed at
+`desktop-app/frontend/src/data/share-targets.json` and refreshed with
 
 ```
-ST Reborn brings my Bose SoundTouch back to life without the Bose cloud.
+make share-targets                                   # from st-reborn.de
+make share-targets SHARE_TARGETS_FILE=<path>         # from a website checkout
 ```
 
-Shared target URL (everywhere): `https://st-reborn.de`
+The sync script (`desktop-app/frontend/scripts/sync-share-targets.mjs`) checks
+the file with the same rules as the website build
+(`desktop-app/frontend/src/shareRegistry.js`) and aborts without touching the
+committed copy on any error. The app therefore makes no network request for the
+registry at runtime. A new target, a changed order or `enabled: false` reaches
+the app with a sync and a rebuild, no code change.
 
-## Platforms and share-intent URLs
+A new entry that uses `label` or `note` needs its text key in every app bundle
+first (`share.labels.<label>`, `share.notes.<note>`); the sync refuses the
+registry until the English bundle has it.
 
-URL-encode the parts: `u` = target URL, `text` = message + " " + target URL,
-`title` = a short title (e.g. "ST Reborn").
+## Where the app shows the buttons
 
-| Platform | Share-intent URL |
-| --- | --- |
-| WhatsApp | `https://wa.me/?text=<text>` |
-| Facebook | `https://www.facebook.com/sharer/sharer.php?u=<u>` |
-| Telegram | `https://t.me/share/url?url=<u>&text=<title>` |
-| Bluesky | `https://bsky.app/intent/compose?text=<text>` |
-| LinkedIn | `https://www.linkedin.com/sharing/share-offsite/?url=<u>` |
-| Reddit | `https://www.reddit.com/submit?url=<u>&title=<title>` |
+- **Footer menu item "Recommend STR"**: always there, opens a dialog with the
+  targets grouped as in the registry (social, messenger, forum, direct).
+- **Install success**: one quiet line plus the buttons under the success
+  message, the first time an install succeeds on this computer. The decision is
+  stored in `localStorage` (`shareOfferShown`); if storage is unavailable the
+  row is not shown at all rather than risk showing it twice.
 
-Order used in the app (most-used first): WhatsApp, Facebook, Telegram, Bluesky,
-LinkedIn, Reddit. Plus a "copy link" that copies `https://st-reborn.de`.
-
-Brand colours: WhatsApp `#25D366`, Facebook `#1877F2`, Telegram `#229ED9`,
-Bluesky `#0085FF`, LinkedIn `#0A66C2`, Reddit `#FF4500`.
-
-### Instagram — not offered
-Instagram has no web or QR share-intent (you cannot pre-fill an Instagram post
-from a URL; their platform only allows in-app Story sharing). So Instagram can
-only be a "Follow on Instagram" profile link, not a share. It is left out of the
-app; the website can do the same or add a profile link.
-
-## QR codes (desktop only)
-
-On a desktop, each platform tile also shows a QR that encodes **that platform's
-share-intent URL**. A phone scan opens that platform's post pre-filled, so a
-visitor logged in on their phone just taps Send. Any QR library works
-(error-correction level M); the payload is a plain URL, so the QR works offline.
-The phone remote does not show QRs — the user is already on their phone there, so
-the buttons open the native app directly.
+Nothing else: no banner, nothing at app start, no reminder, no coupling to
+donations, updates or features.
 
 ## Behaviour
 
-- The panel is not permanent: it is behind a single dashed, accent-tinted button
-  and folds away until the user opens it.
-- Buttons open in a new tab / the system browser.
-- Theme-aware; matches the surrounding footer.
+- Links open in the system browser via Wails `BrowserOpenURL`, like every other
+  external link in the app. Values are encoded strictly (see
+  `mailtourl.test.js`) so Wails accepts every URL.
+- The shared URL is the website start page in the UI language
+  (`https://st-reborn.de/` for English, `https://st-reborn.de/<lang>/`
+  otherwise, `zh-Hant` maps to `/zh-tw/`), without any parameter.
+- `copy`: clipboard with a visible confirmation; if both the web and the native
+  clipboard fail, a read-only field with the link is shown and selected.
+- `instance-prompt` (Mastodon): asks once inline for the instance, accepts only
+  a bare host name, remembers it (`str-mastodon-instance`) and offers to forget
+  it.
+- `note`: shown as text under its target and linked via `aria-describedby`. The
+  Reddit note shows whenever the UI language differs from `shareLocale`.
+- Every button has a visible name and an accessible label ("Share on X"); the
+  dialog traps Tab, closes on Escape and returns focus.
+
+## Hard rules
+
+- Reddit targets keep `allowBody: false`. Identical prewritten posts with the
+  same link are treated as coordinated spam and get the domain banned. Both the
+  website build and the app sync enforce it.
+- No auto posting, platform APIs, login or OAuth. Every target is a link.
+- No click counting in the app. The website counts its own clicks with
+  GoatCounter; the app sends nothing.
+
+## Texts
+
+The app bundles carry the website's share texts under `share.*` (`on`,
+`copied`, `copyFailed`, `mastodonPrompt`, `mastodonChange`, `postTitle`, `text`,
+`labels.*`, `notes.*`, `groups.*`), taken from
+`website/src/i18n/share.ts`, plus two app-only keys: `share.menu` and
+`share.successLine`. `share.test.js` fails if any UI language misses one.
+
+## Known gap
+
+The phone remote served by the agent (`internal/webui/assets/index.html`) still
+renders its own hard-coded share buttons. It is a single self-contained page on
+the speaker with its own i18n table, so moving it onto the registry is a
+separate change.

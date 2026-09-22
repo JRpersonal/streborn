@@ -75,6 +75,7 @@ import {
   PhoneQR,
   boxFetch,
 } from '../api.js';
+import { takeShareOffer, wireShareOffer } from '../share.js';
 
 // Official Bose SoundTouch app store listings (verified live 2026-07-09). The
 // app's local Wi-Fi setup still works after the cloud shutdown, so it is the
@@ -2282,7 +2283,9 @@ async function verifyInstalledState(box, onState) {
           if (rr && rr.ok) {
             render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>`
               + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`
-              + powerCycleAdviceHtml(foundBox));
+              + powerCycleAdviceHtml(foundBox)
+              + takeShareOffer());
+            wireShareOffer();
             deps.discoverBoxes();
             try { deps.celebrateProvision(foundBox); } catch {}
           } else {
@@ -2595,7 +2598,10 @@ async function verifyInstalledState(box, onState) {
              `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
              `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
            `</div>` +
-           powerCycleAdviceHtml(foundBox));
+           powerCycleAdviceHtml(foundBox) +
+           // Quiet share row, once per computer, below the actual result.
+           takeShareOffer());
+    wireShareOffer();
     const goMusic = $('installGoMusic');
     if (goMusic) goMusic.onclick = () => deps.switchView('box');
     deps.discoverBoxes();

@@ -137,7 +137,14 @@ export function onLocaleChange(fn) {
 // as {{name}} placeholders. Missing keys fall back through English to
 // the raw key so they show up obviously in the UI.
 export function t(key, params) {
-  let v = BUNDLES[currentLocale] && BUNDLES[currentLocale][key];
+  return tIn(currentLocale, key, params);
+}
+
+// tIn is t() for an explicit locale instead of the active one. The share
+// targets need it: a registry entry can pin the language of its post title
+// (Reddit is always English), whatever the UI language is.
+export function tIn(locale, key, params) {
+  let v = BUNDLES[locale] && BUNDLES[locale][key];
   if (v == null) v = BUNDLES[FALLBACK] && BUNDLES[FALLBACK][key];
   if (v == null) return key;
   if (params && typeof v === 'string') {
