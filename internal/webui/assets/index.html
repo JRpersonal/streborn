@@ -206,6 +206,25 @@ button.btn:active { background:var(--press); }
 .sponsors { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:340px; margin:0 auto 8px; }
 .sponsors a.btn { min-height:44px; font-size:13px; background:transparent; border-color:var(--line); color:var(--muted); font-weight:500; }
 @media (hover:hover) { .sponsors a.btn:hover { background:var(--card2); color:var(--fg); } }
+/* Recommend STR: buttons come resolved from /share.json (generated from the
+   website registry), so nothing here knows a platform. --sb is the registry
+   brand colour and only tints the icon chip. */
+#shareRow { margin-top:10px; }
+.share-g + .share-g { margin-top:12px; }
+.share-gh { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0 0 6px; }
+.share-list { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:8px; }
+.share-item { display:flex; flex-direction:column; align-items:flex-start; gap:4px; max-width:100%; }
+.share-btn { min-height:44px; gap:8px; padding:6px 12px 6px 6px; font-size:13px; text-decoration:none; }
+.share-ic { width:28px; height:28px; border-radius:7px; display:grid; place-items:center; color:#fff; background:var(--sb, var(--accent)); flex:none; }
+.share-ic svg { width:16px; height:16px; }
+.share-note { margin:0; font-size:12px; line-height:1.4; color:var(--muted); }
+.share-reset { background:none; border:0; padding:4px 0; color:var(--muted); font:inherit; font-size:12px; text-decoration:underline; cursor:pointer; }
+.share-form { display:flex; flex-direction:column; gap:6px; font-size:13px; width:100%; }
+.share-form input, .share-fallback input { min-height:44px; padding:6px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card2); color:var(--fg); font:inherit; width:100%; box-sizing:border-box; }
+.share-form input[aria-invalid="true"] { border-color:var(--accent); }
+.share-form-btns { display:flex; gap:8px; flex-wrap:wrap; }
+.share-fallback { margin-top:10px; font-size:13px; }
+.share-status { margin:8px 0 0; font-size:13px; color:var(--muted); min-height:1.2em; }
 footer { margin-top:18px; text-align:center; font-size:12px; color:var(--muted); }
 /* The language picker sits in the footer on purpose: it is a setting you touch
    once, not a control you use. Sized for a thumb like everything else here. */
@@ -614,11 +633,14 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <a class="btn" href="https://ko-fi.com/streborn" target="_blank" rel="noopener">&#9749; Ko-fi</a>
 <a class="btn" href="https://paypal.me/JR31337" target="_blank" rel="noopener">PayPal</a>
 </div>
-<button class="btn" id="shareTrigger" onclick="toggleShare(this)" aria-expanded="false" style="width:100%;margin-top:10px;border-style:dashed;border-color:var(--accent);color:var(--accent);gap:6px">&#9829; <span id="lblShareTrigger">Share ST Reborn</span> <span id="shareChev">&#9662;</span></button>
-<div id="shareRow" style="display:none;margin-top:8px">
-<div class="label" id="lblShareHead" style="margin-bottom:8px">…and if you really love it?</div>
-<div class="sponsors" id="shareBtns"></div>
 </div>
+
+<!-- Recommend STR. Deliberately its own card, not part of the donate card:
+     sharing is not tied to donating. Stays hidden until the speaker has
+     delivered the buttons (/share.json), then folds open on request. -->
+<div class="card" id="shareCard" hidden>
+<button class="btn" id="shareTrigger" type="button" onclick="toggleShare(this)" aria-expanded="false" aria-controls="shareRow" style="width:100%;gap:6px"><span id="lblShareTrigger"></span> <span id="shareChev" aria-hidden="true">&#9662;</span></button>
+<div id="shareRow" hidden></div>
 </div>
 
 <footer>
@@ -651,18 +673,18 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 // Bluetooth, AUX) and the box's own device name stay as-is. Keep this language
 // set in step with the "Aa" menu dictionary (A11Y_I18N) below.
 var I18N = {
-  en:{langAuto:"Automatic",now:"Now playing",offline:"The speaker is not reachable right now.",loading:"Loading…",vol:"Volume",mute:"Mute",quieter:"Quieter",louder:"Louder",bass:"Bass",wedgeTitle:"Speaker not responding",wedgeText:"The speaker is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",input:"Input",findSources:"Find radio & music",standby:"Standby",playback:"Playback",pause:"Pause",play:"Play",stop:"Stop",presets:"Presets",peers:"Speakers & groups",support:"Support ST Reborn",tip:"Tip: in your browser menu choose “Add to Home screen” (not Bookmark) to keep this as an app.",empty:"empty",presetWord:"Preset",starting:"Starting",pleaseWait:"please wait",cantStart:"Could not start",tapAgain:"tap again",idle:"Idle",playing:"Playing",paused:"Paused",stopped:"Stopped",buffering:"Buffering",power:"Power",prev:"Previous",next:"Next",shuffle:"Shuffle",repeatw:"Repeat",shareDonate:"You like ST Reborn?",shareTrigger:"Share ST Reborn",shareHead:"…and if you really love it?",shareMsg:"ST Reborn revives my Bose SoundTouch without the Bose cloud."},
-  de:{langAuto:"Automatisch",now:"Wird gespielt",offline:"Der Lautsprecher ist gerade nicht erreichbar.",loading:"Lädt…",vol:"Lautstärke",mute:"Stumm",quieter:"Leiser",louder:"Lauter",bass:"Bass",wedgeTitle:"Lautsprecher reagiert nicht",wedgeText:"Der Lautsprecher nimmt gerade keine Wiedergabe an. Zieh kurz den Netzstecker, steck ihn wieder ein - danach funktioniert er wieder normal.",input:"Eingang",findSources:"Sender und Musik suchen",standby:"Standby",playback:"Wiedergabe",pause:"Pause",play:"Wiedergabe",stop:"Stopp",presets:"Voreinstellungen",peers:"Lautsprecher & Gruppen",support:"ST Reborn unterstützen",tip:"Tipp: im Browser-Menü „Zum Startbildschirm hinzufügen“ wählen (nicht Lesezeichen), um dies als App zu behalten.",empty:"leer",presetWord:"Voreinstellung",starting:"Starte",pleaseWait:"bitte warten",cantStart:"Start fehlgeschlagen",tapAgain:"nochmal tippen",idle:"Bereit",playing:"Wiedergabe",paused:"Pausiert",stopped:"Gestoppt",buffering:"Puffert",power:"Ein/Aus",prev:"Zurück",next:"Weiter",shuffle:"Zufall",repeatw:"Wiederholen",shareDonate:"Dir gefällt STR?",shareTrigger:"STR teilen",shareHead:"…und wenn es dir so richtig gefällt?",shareMsg:"ST Reborn erweckt meine Bose SoundTouch ohne die Bose-Cloud wieder zum Leben."},
-  nl:{langAuto:"Automatisch",now:"Speelt nu",offline:"De speaker is momenteel niet bereikbaar.",loading:"Laden…",vol:"Volume",mute:"Dempen",quieter:"Zachter",louder:"Harder",bass:"Bas",wedgeTitle:"Speaker reageert niet",wedgeText:"De speaker accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",input:"Ingang",findSources:"Radio en muziek zoeken",standby:"Stand-by",playback:"Afspelen",pause:"Pauze",play:"Afspelen",stop:"Stop",presets:"Presets",peers:"Speakers & groepen",support:"Steun ST Reborn",tip:"Tip: kies in het browsermenu „Toevoegen aan startscherm“ (niet Favoriet) om dit als app te bewaren.",empty:"leeg",presetWord:"Preset",starting:"Starten",pleaseWait:"even geduld",cantStart:"Kan niet starten",tapAgain:"tik opnieuw",idle:"Inactief",playing:"Speelt af",paused:"Gepauzeerd",stopped:"Gestopt",buffering:"Bufferen",power:"Aan/uit",prev:"Vorige",next:"Volgende",shuffle:"Willekeurig",repeatw:"Herhalen",shareDonate:"Vind je ST Reborn leuk?",shareTrigger:"STR delen",shareHead:"…en als je het echt geweldig vindt?",shareMsg:"ST Reborn brengt mijn Bose SoundTouch weer tot leven zonder de Bose-cloud."},
-  fr:{langAuto:"Automatique",now:"Lecture en cours",offline:"L'enceinte n'est pas joignable pour le moment.",loading:"Chargement…",vol:"Volume",mute:"Muet",quieter:"Moins fort",louder:"Plus fort",bass:"Graves",wedgeTitle:"L'enceinte ne répond pas",wedgeText:"L'enceinte n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",input:"Entrée",findSources:"Chercher radio et musique",standby:"Veille",playback:"Lecture",pause:"Pause",play:"Lecture",stop:"Arrêt",presets:"Préréglages",peers:"Enceintes et groupes",support:"Soutenir ST Reborn",tip:"Astuce : dans le menu du navigateur, choisissez « Ajouter à l’écran d’accueil » (pas Favori) pour la garder comme app.",empty:"vide",presetWord:"Préréglage",starting:"Démarrage",pleaseWait:"veuillez patienter",cantStart:"Démarrage impossible",tapAgain:"appuyez à nouveau",idle:"Inactif",playing:"Lecture",paused:"En pause",stopped:"Arrêté",buffering:"Mise en mémoire tampon",power:"Marche/Arrêt",prev:"Précédent",next:"Suivant",shuffle:"Aléatoire",repeatw:"Répéter",shareDonate:"Vous aimez ST Reborn ?",shareTrigger:"Partager STR",shareHead:"…et si vous l'adorez vraiment ?",shareMsg:"ST Reborn redonne vie à mes Bose SoundTouch sans le cloud Bose."},
-  es:{langAuto:"Automático",now:"Reproduciendo",offline:"El altavoz no está accesible en este momento.",loading:"Cargando…",vol:"Volumen",mute:"Silenciar",quieter:"Más bajo",louder:"Más alto",bass:"Graves",wedgeTitle:"El altavoz no responde",wedgeText:"El altavoz no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",input:"Entrada",findSources:"Buscar radio y música",standby:"Reposo",playback:"Reproducción",pause:"Pausa",play:"Reproducir",stop:"Detener",presets:"Presintonías",peers:"Altavoces y grupos",support:"Apoya ST Reborn",tip:"Consejo: en el menú del navegador elige «Añadir a pantalla de inicio» (no Marcador) para conservarlo como app.",empty:"vacío",presetWord:"Presintonía",starting:"Iniciando",pleaseWait:"espera",cantStart:"No se pudo iniciar",tapAgain:"toca de nuevo",idle:"Inactivo",playing:"Reproduciendo",paused:"En pausa",stopped:"Detenido",buffering:"Almacenando en búfer",power:"Encendido",prev:"Anterior",next:"Siguiente",shuffle:"Aleatorio",repeatw:"Repetir",shareDonate:"¿Te gusta ST Reborn?",shareTrigger:"Compartir STR",shareHead:"…¿y si te encanta de verdad?",shareMsg:"ST Reborn revive mis Bose SoundTouch sin la nube de Bose."},
-  pl:{langAuto:"Automatycznie",now:"Teraz odtwarzane",offline:"Głośnik jest w tej chwili nieosiągalny.",loading:"Ładowanie…",vol:"Głośność",mute:"Wycisz",quieter:"Ciszej",louder:"Głośniej",bass:"Basy",wedgeTitle:"Głośnik nie odpowiada",wedgeText:"Głośnik obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",input:"Wejście",findSources:"Szukaj radia i muzyki",standby:"Czuwanie",playback:"Odtwarzanie",pause:"Pauza",play:"Odtwórz",stop:"Stop",presets:"Presety",peers:"Głośniki i grupy",support:"Wesprzyj ST Reborn",tip:"Wskazówka: w menu przeglądarki wybierz „Dodaj do ekranu głównego“ (nie Zakładkę), aby zachować jako aplikację.",empty:"puste",presetWord:"Preset",starting:"Uruchamianie",pleaseWait:"proszę czekać",cantStart:"Nie udało się uruchomić",tapAgain:"dotknij ponownie",idle:"Bezczynny",playing:"Odtwarzanie",paused:"Wstrzymano",stopped:"Zatrzymano",buffering:"Buforowanie",power:"Zasilanie",prev:"Poprzedni",next:"Następny",shuffle:"Losowo",repeatw:"Powtarzaj",shareDonate:"Podoba Ci się ST Reborn?",shareTrigger:"Udostępnij STR",shareHead:"…a jeśli naprawdę je pokochasz?",shareMsg:"ST Reborn przywraca moje Bose SoundTouch do życia bez chmury Bose."},
-  tr:{langAuto:"Otomatik",now:"Şimdi çalıyor",offline:"Hoparlöre şu anda ulaşılamıyor.",loading:"Yükleniyor…",vol:"Ses",mute:"Sessiz",quieter:"Daha kısık",louder:"Daha yüksek",bass:"Bas",wedgeTitle:"Hoparlör yanıt vermiyor",wedgeText:"Hoparlör şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",input:"Giriş",findSources:"Radyo ve müzik ara",standby:"Bekleme",playback:"Oynatma",pause:"Duraklat",play:"Oynat",stop:"Durdur",presets:"Ön ayarlar",peers:"Hoparlörler ve gruplar",support:"ST Reborn'a destek ol",tip:"İpucu: tarayıcı menüsünde „Ana ekrana ekle“ seçin (Yer İşareti değil), uygulama olarak saklamak için.",empty:"boş",presetWord:"Ön ayar",starting:"Başlatılıyor",pleaseWait:"lütfen bekleyin",cantStart:"Başlatılamadı",tapAgain:"tekrar dokunun",idle:"Boşta",playing:"Çalıyor",paused:"Duraklatıldı",stopped:"Durduruldu",buffering:"Arabelleğe alınıyor",power:"Güç",prev:"Önceki",next:"Sonraki",shuffle:"Karışık",repeatw:"Tekrarla",shareDonate:"ST Reborn'u beğendin mi?",shareTrigger:"STR'yi paylaş",shareHead:"…ya gerçekten bayıldıysan?",shareMsg:"ST Reborn, Bose SoundTouch'ımı Bose bulutu olmadan yeniden hayata döndürüyor."},
-  ar:{langAuto:"تلقائي",now:"قيد التشغيل الآن",offline:"السمّاعة غير متاحة في الوقت الحالي.",loading:"جارٍ التحميل…",vol:"مستوى الصوت",mute:"كتم الصوت",quieter:"أخفض",louder:"أعلى",bass:"الجهير",wedgeTitle:"السمّاعة لا تستجيب",wedgeText:"السمّاعة لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً.",input:"المدخل",findSources:"ابحث عن الراديو والموسيقى",standby:"وضع الاستعداد",playback:"التشغيل",pause:"إيقاف مؤقت",play:"تشغيل",stop:"إيقاف",presets:"الإعدادات المسبقة",peers:"مكبرات الصوت والمجموعات",support:"ادعم ST Reborn",tip:"نصيحة: من قائمة المتصفح اختر «إضافة إلى الشاشة الرئيسية» (وليس إشارة مرجعية) للاحتفاظ به كتطبيق.",empty:"فارغ",presetWord:"إعداد مسبق",starting:"جارٍ البدء",pleaseWait:"يرجى الانتظار",cantStart:"تعذّر البدء",tapAgain:"انقر مرة أخرى",idle:"خامل",playing:"قيد التشغيل",paused:"متوقف مؤقتًا",stopped:"متوقف",buffering:"جارٍ التخزين المؤقت",power:"الطاقة",prev:"السابق",next:"التالي",shuffle:"تشغيل عشوائي",repeatw:"تكرار",shareDonate:"هل يعجبك ST Reborn؟",shareTrigger:"مشاركة STR",shareHead:"…وإذا أعجبك حقًا؟",shareMsg:"\u200fST Reborn يعيد إحياء مكبرات Bose SoundTouch لديّ دون سحابة Bose."},
-  ja:{langAuto:"自動",now:"再生中",offline:"スピーカーに現在接続できません。",loading:"読み込み中…",vol:"音量",mute:"ミュート",quieter:"小さく",louder:"大きく",bass:"低音",wedgeTitle:"スピーカーが応答しません",wedgeText:"スピーカーが再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",input:"入力",findSources:"ラジオと音楽を探す",standby:"スタンバイ",playback:"再生",pause:"一時停止",play:"再生",stop:"停止",presets:"プリセット",peers:"スピーカーとグループ",support:"ST Reborn を支援",tip:"ヒント: ブラウザのメニューで「ホーム画面に追加」を選ぶと（ブックマークではなく）アプリとして保存できます。",empty:"空き",presetWord:"プリセット",starting:"開始中",pleaseWait:"お待ちください",cantStart:"開始できませんでした",tapAgain:"もう一度タップ",idle:"待機中",playing:"再生中",paused:"一時停止中",stopped:"停止",buffering:"バッファ中",power:"電源",prev:"前へ",next:"次へ",shuffle:"シャッフル",repeatw:"リピート",shareDonate:"ST Reborn は気に入りましたか？",shareTrigger:"STR をシェア",shareHead:"…そして本当に気に入ったら？",shareMsg:"ST Reborn は Bose クラウドなしで私の Bose SoundTouch を復活させます。"},
-  lt:{langAuto:"Automatiškai",now:"Dabar grojama",offline:"Garsiakalbis šiuo metu nepasiekiamas.",loading:"Įkeliama…",vol:"Garsumas",mute:"Nutildyti",quieter:"Tyliau",louder:"Garsiau",bass:"Žemieji dažniai",wedgeTitle:"Garsiakalbis nereaguoja",wedgeText:"Garsiakalbis šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",input:"Įvestis",findSources:"Ieškoti radijo ir muzikos",standby:"Budėjimas",playback:"Atkūrimas",pause:"Pristabdyti",play:"Groti",stop:"Stabdyti",presets:"Išankstiniai nustatymai",peers:"Garsiakalbiai ir grupės",support:"Paremkite ST Reborn",tip:"Patarimas: naršyklės meniu pasirinkite „Pridėti prie pradžios ekrano“ (ne žymę), kad išsaugotumėte kaip programėlę.",empty:"tuščia",presetWord:"Nustatymas",starting:"Paleidžiama",pleaseWait:"palaukite",cantStart:"Nepavyko paleisti",tapAgain:"bakstelėkite dar kartą",idle:"Neaktyvus",playing:"Grojama",paused:"Pristabdyta",stopped:"Sustabdyta",buffering:"Buferiuojama",power:"Maitinimas",prev:"Ankstesnis",next:"Kitas",shuffle:"Maišyti",repeatw:"Kartoti",shareDonate:"Patinka ST Reborn?",shareTrigger:"Dalytis STR",shareHead:"…o jei tikrai jį pamėgai?",shareMsg:"ST Reborn atgaivina mano Bose SoundTouch be Bose debesies."},
-  lv:{langAuto:"Automātiski",now:"Tagad atskaņo",offline:"Skaļrunis pašlaik nav sasniedzams.",loading:"Ielādē…",vol:"Skaļums",mute:"Izslēgt skaņu",quieter:"Klusāk",louder:"Skaļāk",bass:"Basi",wedgeTitle:"Skaļrunis nereaģē",wedgeText:"Skaļrunis pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",input:"Ievade",findSources:"Meklēt radio un mūziku",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",play:"Atskaņot",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Skaļruņi un grupas",support:"Atbalstīt ST Reborn",tip:"Padoms: pārlūka izvēlnē izvēlieties „Pievienot sākuma ekrānam“ (nevis grāmatzīmi), lai saglabātu kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana",prev:"Iepriekšējais",next:"Nākamais",shuffle:"Jaukt",repeatw:"Atkārtot",shareDonate:"Vai tev patīk ST Reborn?",shareTrigger:"Kopīgot STR",shareHead:"…un ja tas tev tiešām patīk?",shareMsg:"ST Reborn atdzīvina manas Bose SoundTouch bez Bose mākoņa."},
-  uk:{langAuto:"Автоматично",now:"Зараз грає",offline:"Динамік зараз недоступний.",loading:"Завантаження…",vol:"Гучність",mute:"Без звуку",quieter:"Тихіше",louder:"Гучніше",bass:"Баси",wedgeTitle:"Динамік не відповідає",wedgeText:"Динамік зараз не приймає відтворення. На мить вимкніть його з розетки та увімкніть знову - після цього він працюватиме нормально.",input:"Вхід",findSources:"Шукати радіо та музику",standby:"Очікування",playback:"Відтворення",pause:"Пауза",play:"Відтворити",stop:"Стоп",presets:"Пресети",peers:"Динаміки та групи",support:"Підтримати ST Reborn",tip:"Порада: у меню браузера виберіть „Додати на головний екран“ (не Закладку), щоб зберегти як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення",prev:"Назад",next:"Далі",shuffle:"Перемішати",repeatw:"Повторити",shareDonate:"Тобі подобається ST Reborn?",shareTrigger:"Поділитися STR",shareHead:"…а якщо він тобі справді до вподоби?",shareMsg:"ST Reborn повертає до життя мої Bose SoundTouch без хмари Bose."}
+  en:{langAuto:"Automatic",now:"Now playing",offline:"The speaker is not reachable right now.",loading:"Loading…",vol:"Volume",mute:"Mute",quieter:"Quieter",louder:"Louder",bass:"Bass",wedgeTitle:"Speaker not responding",wedgeText:"The speaker is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",input:"Input",findSources:"Find radio & music",standby:"Standby",playback:"Playback",pause:"Pause",play:"Play",stop:"Stop",presets:"Presets",peers:"Speakers & groups",support:"Support ST Reborn",tip:"Tip: in your browser menu choose “Add to Home screen” (not Bookmark) to keep this as an app.",empty:"empty",presetWord:"Preset",starting:"Starting",pleaseWait:"please wait",cantStart:"Could not start",tapAgain:"tap again",idle:"Idle",playing:"Playing",paused:"Paused",stopped:"Stopped",buffering:"Buffering",power:"Power",prev:"Previous",next:"Next",shuffle:"Shuffle",repeatw:"Repeat",shareDonate:"You like ST Reborn?"},
+  de:{langAuto:"Automatisch",now:"Wird gespielt",offline:"Der Lautsprecher ist gerade nicht erreichbar.",loading:"Lädt…",vol:"Lautstärke",mute:"Stumm",quieter:"Leiser",louder:"Lauter",bass:"Bass",wedgeTitle:"Lautsprecher reagiert nicht",wedgeText:"Der Lautsprecher nimmt gerade keine Wiedergabe an. Zieh kurz den Netzstecker, steck ihn wieder ein - danach funktioniert er wieder normal.",input:"Eingang",findSources:"Sender und Musik suchen",standby:"Standby",playback:"Wiedergabe",pause:"Pause",play:"Wiedergabe",stop:"Stopp",presets:"Voreinstellungen",peers:"Lautsprecher & Gruppen",support:"ST Reborn unterstützen",tip:"Tipp: im Browser-Menü „Zum Startbildschirm hinzufügen“ wählen (nicht Lesezeichen), um dies als App zu behalten.",empty:"leer",presetWord:"Voreinstellung",starting:"Starte",pleaseWait:"bitte warten",cantStart:"Start fehlgeschlagen",tapAgain:"nochmal tippen",idle:"Bereit",playing:"Wiedergabe",paused:"Pausiert",stopped:"Gestoppt",buffering:"Puffert",power:"Ein/Aus",prev:"Zurück",next:"Weiter",shuffle:"Zufall",repeatw:"Wiederholen",shareDonate:"Dir gefällt STR?"},
+  nl:{langAuto:"Automatisch",now:"Speelt nu",offline:"De speaker is momenteel niet bereikbaar.",loading:"Laden…",vol:"Volume",mute:"Dempen",quieter:"Zachter",louder:"Harder",bass:"Bas",wedgeTitle:"Speaker reageert niet",wedgeText:"De speaker accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",input:"Ingang",findSources:"Radio en muziek zoeken",standby:"Stand-by",playback:"Afspelen",pause:"Pauze",play:"Afspelen",stop:"Stop",presets:"Presets",peers:"Speakers & groepen",support:"Steun ST Reborn",tip:"Tip: kies in het browsermenu „Toevoegen aan startscherm“ (niet Favoriet) om dit als app te bewaren.",empty:"leeg",presetWord:"Preset",starting:"Starten",pleaseWait:"even geduld",cantStart:"Kan niet starten",tapAgain:"tik opnieuw",idle:"Inactief",playing:"Speelt af",paused:"Gepauzeerd",stopped:"Gestopt",buffering:"Bufferen",power:"Aan/uit",prev:"Vorige",next:"Volgende",shuffle:"Willekeurig",repeatw:"Herhalen",shareDonate:"Vind je ST Reborn leuk?"},
+  fr:{langAuto:"Automatique",now:"Lecture en cours",offline:"L'enceinte n'est pas joignable pour le moment.",loading:"Chargement…",vol:"Volume",mute:"Muet",quieter:"Moins fort",louder:"Plus fort",bass:"Graves",wedgeTitle:"L'enceinte ne répond pas",wedgeText:"L'enceinte n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",input:"Entrée",findSources:"Chercher radio et musique",standby:"Veille",playback:"Lecture",pause:"Pause",play:"Lecture",stop:"Arrêt",presets:"Préréglages",peers:"Enceintes et groupes",support:"Soutenir ST Reborn",tip:"Astuce : dans le menu du navigateur, choisissez « Ajouter à l’écran d’accueil » (pas Favori) pour la garder comme app.",empty:"vide",presetWord:"Préréglage",starting:"Démarrage",pleaseWait:"veuillez patienter",cantStart:"Démarrage impossible",tapAgain:"appuyez à nouveau",idle:"Inactif",playing:"Lecture",paused:"En pause",stopped:"Arrêté",buffering:"Mise en mémoire tampon",power:"Marche/Arrêt",prev:"Précédent",next:"Suivant",shuffle:"Aléatoire",repeatw:"Répéter",shareDonate:"Vous aimez ST Reborn ?"},
+  es:{langAuto:"Automático",now:"Reproduciendo",offline:"El altavoz no está accesible en este momento.",loading:"Cargando…",vol:"Volumen",mute:"Silenciar",quieter:"Más bajo",louder:"Más alto",bass:"Graves",wedgeTitle:"El altavoz no responde",wedgeText:"El altavoz no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",input:"Entrada",findSources:"Buscar radio y música",standby:"Reposo",playback:"Reproducción",pause:"Pausa",play:"Reproducir",stop:"Detener",presets:"Presintonías",peers:"Altavoces y grupos",support:"Apoya ST Reborn",tip:"Consejo: en el menú del navegador elige «Añadir a pantalla de inicio» (no Marcador) para conservarlo como app.",empty:"vacío",presetWord:"Presintonía",starting:"Iniciando",pleaseWait:"espera",cantStart:"No se pudo iniciar",tapAgain:"toca de nuevo",idle:"Inactivo",playing:"Reproduciendo",paused:"En pausa",stopped:"Detenido",buffering:"Almacenando en búfer",power:"Encendido",prev:"Anterior",next:"Siguiente",shuffle:"Aleatorio",repeatw:"Repetir",shareDonate:"¿Te gusta ST Reborn?"},
+  pl:{langAuto:"Automatycznie",now:"Teraz odtwarzane",offline:"Głośnik jest w tej chwili nieosiągalny.",loading:"Ładowanie…",vol:"Głośność",mute:"Wycisz",quieter:"Ciszej",louder:"Głośniej",bass:"Basy",wedgeTitle:"Głośnik nie odpowiada",wedgeText:"Głośnik obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",input:"Wejście",findSources:"Szukaj radia i muzyki",standby:"Czuwanie",playback:"Odtwarzanie",pause:"Pauza",play:"Odtwórz",stop:"Stop",presets:"Presety",peers:"Głośniki i grupy",support:"Wesprzyj ST Reborn",tip:"Wskazówka: w menu przeglądarki wybierz „Dodaj do ekranu głównego“ (nie Zakładkę), aby zachować jako aplikację.",empty:"puste",presetWord:"Preset",starting:"Uruchamianie",pleaseWait:"proszę czekać",cantStart:"Nie udało się uruchomić",tapAgain:"dotknij ponownie",idle:"Bezczynny",playing:"Odtwarzanie",paused:"Wstrzymano",stopped:"Zatrzymano",buffering:"Buforowanie",power:"Zasilanie",prev:"Poprzedni",next:"Następny",shuffle:"Losowo",repeatw:"Powtarzaj",shareDonate:"Podoba Ci się ST Reborn?"},
+  tr:{langAuto:"Otomatik",now:"Şimdi çalıyor",offline:"Hoparlöre şu anda ulaşılamıyor.",loading:"Yükleniyor…",vol:"Ses",mute:"Sessiz",quieter:"Daha kısık",louder:"Daha yüksek",bass:"Bas",wedgeTitle:"Hoparlör yanıt vermiyor",wedgeText:"Hoparlör şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",input:"Giriş",findSources:"Radyo ve müzik ara",standby:"Bekleme",playback:"Oynatma",pause:"Duraklat",play:"Oynat",stop:"Durdur",presets:"Ön ayarlar",peers:"Hoparlörler ve gruplar",support:"ST Reborn'a destek ol",tip:"İpucu: tarayıcı menüsünde „Ana ekrana ekle“ seçin (Yer İşareti değil), uygulama olarak saklamak için.",empty:"boş",presetWord:"Ön ayar",starting:"Başlatılıyor",pleaseWait:"lütfen bekleyin",cantStart:"Başlatılamadı",tapAgain:"tekrar dokunun",idle:"Boşta",playing:"Çalıyor",paused:"Duraklatıldı",stopped:"Durduruldu",buffering:"Arabelleğe alınıyor",power:"Güç",prev:"Önceki",next:"Sonraki",shuffle:"Karışık",repeatw:"Tekrarla",shareDonate:"ST Reborn'u beğendin mi?"},
+  ar:{langAuto:"تلقائي",now:"قيد التشغيل الآن",offline:"السمّاعة غير متاحة في الوقت الحالي.",loading:"جارٍ التحميل…",vol:"مستوى الصوت",mute:"كتم الصوت",quieter:"أخفض",louder:"أعلى",bass:"الجهير",wedgeTitle:"السمّاعة لا تستجيب",wedgeText:"السمّاعة لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً.",input:"المدخل",findSources:"ابحث عن الراديو والموسيقى",standby:"وضع الاستعداد",playback:"التشغيل",pause:"إيقاف مؤقت",play:"تشغيل",stop:"إيقاف",presets:"الإعدادات المسبقة",peers:"مكبرات الصوت والمجموعات",support:"ادعم ST Reborn",tip:"نصيحة: من قائمة المتصفح اختر «إضافة إلى الشاشة الرئيسية» (وليس إشارة مرجعية) للاحتفاظ به كتطبيق.",empty:"فارغ",presetWord:"إعداد مسبق",starting:"جارٍ البدء",pleaseWait:"يرجى الانتظار",cantStart:"تعذّر البدء",tapAgain:"انقر مرة أخرى",idle:"خامل",playing:"قيد التشغيل",paused:"متوقف مؤقتًا",stopped:"متوقف",buffering:"جارٍ التخزين المؤقت",power:"الطاقة",prev:"السابق",next:"التالي",shuffle:"تشغيل عشوائي",repeatw:"تكرار",shareDonate:"هل يعجبك ST Reborn؟"},
+  ja:{langAuto:"自動",now:"再生中",offline:"スピーカーに現在接続できません。",loading:"読み込み中…",vol:"音量",mute:"ミュート",quieter:"小さく",louder:"大きく",bass:"低音",wedgeTitle:"スピーカーが応答しません",wedgeText:"スピーカーが再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",input:"入力",findSources:"ラジオと音楽を探す",standby:"スタンバイ",playback:"再生",pause:"一時停止",play:"再生",stop:"停止",presets:"プリセット",peers:"スピーカーとグループ",support:"ST Reborn を支援",tip:"ヒント: ブラウザのメニューで「ホーム画面に追加」を選ぶと（ブックマークではなく）アプリとして保存できます。",empty:"空き",presetWord:"プリセット",starting:"開始中",pleaseWait:"お待ちください",cantStart:"開始できませんでした",tapAgain:"もう一度タップ",idle:"待機中",playing:"再生中",paused:"一時停止中",stopped:"停止",buffering:"バッファ中",power:"電源",prev:"前へ",next:"次へ",shuffle:"シャッフル",repeatw:"リピート",shareDonate:"ST Reborn は気に入りましたか？"},
+  lt:{langAuto:"Automatiškai",now:"Dabar grojama",offline:"Garsiakalbis šiuo metu nepasiekiamas.",loading:"Įkeliama…",vol:"Garsumas",mute:"Nutildyti",quieter:"Tyliau",louder:"Garsiau",bass:"Žemieji dažniai",wedgeTitle:"Garsiakalbis nereaguoja",wedgeText:"Garsiakalbis šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",input:"Įvestis",findSources:"Ieškoti radijo ir muzikos",standby:"Budėjimas",playback:"Atkūrimas",pause:"Pristabdyti",play:"Groti",stop:"Stabdyti",presets:"Išankstiniai nustatymai",peers:"Garsiakalbiai ir grupės",support:"Paremkite ST Reborn",tip:"Patarimas: naršyklės meniu pasirinkite „Pridėti prie pradžios ekrano“ (ne žymę), kad išsaugotumėte kaip programėlę.",empty:"tuščia",presetWord:"Nustatymas",starting:"Paleidžiama",pleaseWait:"palaukite",cantStart:"Nepavyko paleisti",tapAgain:"bakstelėkite dar kartą",idle:"Neaktyvus",playing:"Grojama",paused:"Pristabdyta",stopped:"Sustabdyta",buffering:"Buferiuojama",power:"Maitinimas",prev:"Ankstesnis",next:"Kitas",shuffle:"Maišyti",repeatw:"Kartoti",shareDonate:"Patinka ST Reborn?"},
+  lv:{langAuto:"Automātiski",now:"Tagad atskaņo",offline:"Skaļrunis pašlaik nav sasniedzams.",loading:"Ielādē…",vol:"Skaļums",mute:"Izslēgt skaņu",quieter:"Klusāk",louder:"Skaļāk",bass:"Basi",wedgeTitle:"Skaļrunis nereaģē",wedgeText:"Skaļrunis pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",input:"Ievade",findSources:"Meklēt radio un mūziku",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",play:"Atskaņot",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Skaļruņi un grupas",support:"Atbalstīt ST Reborn",tip:"Padoms: pārlūka izvēlnē izvēlieties „Pievienot sākuma ekrānam“ (nevis grāmatzīmi), lai saglabātu kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana",prev:"Iepriekšējais",next:"Nākamais",shuffle:"Jaukt",repeatw:"Atkārtot",shareDonate:"Vai tev patīk ST Reborn?"},
+  uk:{langAuto:"Автоматично",now:"Зараз грає",offline:"Динамік зараз недоступний.",loading:"Завантаження…",vol:"Гучність",mute:"Без звуку",quieter:"Тихіше",louder:"Гучніше",bass:"Баси",wedgeTitle:"Динамік не відповідає",wedgeText:"Динамік зараз не приймає відтворення. На мить вимкніть його з розетки та увімкніть знову - після цього він працюватиме нормально.",input:"Вхід",findSources:"Шукати радіо та музику",standby:"Очікування",playback:"Відтворення",pause:"Пауза",play:"Відтворити",stop:"Стоп",presets:"Пресети",peers:"Динаміки та групи",support:"Підтримати ST Reborn",tip:"Порада: у меню браузера виберіть „Додати на головний екран“ (не Закладку), щоб зберегти як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення",prev:"Назад",next:"Далі",shuffle:"Перемішати",repeatw:"Повторити",shareDonate:"Тобі подобається ST Reborn?"}
 };
 // Strings for the tab shell and the sections it made room for. Kept as a second
 // dictionary rather than extended into the one above: those lines are already
@@ -799,7 +821,7 @@ function applyStaticI18n() {
   var shb = document.getElementById('btnShuffle'); if (shb) { shb.setAttribute('aria-label', T.shuffle); shb.title = T.shuffle; }
   var rpb = document.getElementById('btnRepeat'); if (rpb) { rpb.setAttribute('aria-label', T.repeatw); rpb.title = T.repeatw; }
   var st = document.getElementById('status'); if (st) st.innerHTML = '<span class="now">' + escapeHtml(T.loading) + '</span>';
-  set('lblSupport', T.shareDonate); set('lblShareTrigger', T.shareTrigger); set('lblShareHead', T.shareHead);
+  set('lblSupport', T.shareDonate);
   // Tab shell and the sections it made room for.
   set('tlPlay', T.tPlay); set('tlBrowse', T.tFind); set('tlSpeakers', T.tSpk); set('tlMore', T.tMore);
   [['tabPlay',T.tPlay],['tabBrowse',T.tFind],['tabSpeakers',T.tSpk],['tabMore',T.tMore]].forEach(function(p){
@@ -823,37 +845,155 @@ function applyStaticI18n() {
   buildShareButtons();
 }
 
-// Social share (phone remote): no QR here - the user is already on their phone,
-// so a tap opens the platform's app directly with the post pre-filled. The
-// message is localized; the target is the project site, never this speaker.
-var SHARE_PLATFORMS = [
-  {n:'WhatsApp', u:function(url,msg,ttl){ return 'https://wa.me/?text=' + encodeURIComponent(msg); }},
-  {n:'Facebook', u:function(url,msg,ttl){ return 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url); }},
-  {n:'Telegram', u:function(url,msg,ttl){ return 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(ttl); }},
-  {n:'Bluesky', u:function(url,msg,ttl){ return 'https://bsky.app/intent/compose?text=' + encodeURIComponent(msg); }},
-  {n:'LinkedIn', u:function(url,msg,ttl){ return 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(url); }},
-  {n:'Reddit', u:function(url,msg,ttl){ return 'https://www.reddit.com/submit?url=' + encodeURIComponent(url) + '&title=' + encodeURIComponent(ttl); }}
-];
-function buildShareButtons() {
-  var box = document.getElementById('shareBtns');
-  if (!box) return;
-  var site = 'https://st-reborn.de';
-  var msg = (T.shareMsg || 'ST Reborn revives my Bose SoundTouch without the Bose cloud.') + ' ' + site;
-  box.innerHTML = '';
-  SHARE_PLATFORMS.forEach(function(p){
-    var a = document.createElement('a');
-    a.className = 'btn'; a.target = '_blank'; a.rel = 'noopener';
-    a.href = p.u(site, msg, 'ST Reborn');
-    a.textContent = p.n;
-    box.appendChild(a);
+// Recommend STR (phone remote). No share targets are listed here: the agent
+// serves them from /share.json, already resolved for the page language from
+// the website's share registry and the desktop app's texts (generated by
+// `make share-targets`, see docs/social-share.md). This only draws them.
+// Every target is a plain link or a local copy; nothing is counted or sent.
+var SHARE_INSTANCE_KEY = 'str-mastodon-instance';
+var shareLang = '';
+function shareEl(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function shareReadInstance() { try { return localStorage.getItem(SHARE_INSTANCE_KEY) || ''; } catch (e) { return ''; } }
+function shareWriteInstance(h) {
+  try { if (h) localStorage.setItem(SHARE_INSTANCE_KEY, h); else localStorage.removeItem(SHARE_INSTANCE_KEY); } catch (e) {}
+}
+// Only a bare host name, the same rule as the desktop app and the website.
+function shareCleanHost(v) {
+  var h = String(v || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^@?[^@]*@/, '').toLowerCase();
+  return /^[a-z0-9.-]+\.[a-z]{2,}(:\d+)?$/.test(h) ? h : '';
+}
+// This page runs on plain http from the speaker, where navigator.clipboard
+// does not exist, so the old execCommand path is the real one here.
+async function shareCopy(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) {}
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (e) { return false; }
+}
+async function buildShareButtons() {
+  var card = document.getElementById('shareCard');
+  var row = document.getElementById('shareRow');
+  if (!card || !row) return;
+  var lang = document.documentElement.lang || 'en';
+  if (shareLang === lang) return;
+  var data = null;
+  try {
+    var r = await fetch('/share.json?lang=' + encodeURIComponent(lang));
+    if (r.ok) data = await r.json();
+  } catch (e) {}
+  if (!data || !data.lang || !data.lang.groups) { card.hidden = true; return; }
+  shareLang = lang;
+  var ui = data.lang.ui || {}, icons = data.icons || {};
+  document.getElementById('lblShareTrigger').textContent = ui.menu || '';
+  row.textContent = '';
+  var status = shareEl('p', 'share-status');
+  status.setAttribute('role', 'status');
+  var fallback = shareEl('label', 'share-fallback');
+  fallback.hidden = true;
+  fallback.appendChild(shareEl('span', '', ui.copyFailed || ''));
+  var fbInput = shareEl('input');
+  fbInput.type = 'text'; fbInput.readOnly = true;
+  fallback.appendChild(fbInput);
+  var statusTimer = null;
+  function say(msg) { status.textContent = msg; clearTimeout(statusTimer); statusTimer = setTimeout(function(){ status.textContent = ''; }, 2600); }
+  function openUrl(u) { window.open(u, '_blank', 'noopener'); }
+  data.lang.groups.forEach(function(g, gi){
+    var box = shareEl('div', 'share-g');
+    box.setAttribute('role', 'group');
+    var h = shareEl('h3', 'share-gh', g.title);
+    h.id = 'shareG' + gi;
+    box.setAttribute('aria-labelledby', h.id);
+    box.appendChild(h);
+    var ul = shareEl('ul', 'share-list');
+    g.targets.forEach(function(x){
+      var li = shareEl('li', 'share-item');
+      var link = !!x.href;
+      var b = shareEl(link ? 'a' : 'button', 'btn share-btn');
+      if (link) {
+        b.href = x.href;
+        if (x.kind !== 'mailto') { b.target = '_blank'; b.rel = 'noopener'; }
+      } else {
+        b.type = 'button';
+      }
+      b.setAttribute('aria-label', x.label);
+      if (x.color && /^#[0-9a-f]{3,8}$/i.test(x.color)) b.style.setProperty('--sb', x.color);
+      var ic = shareEl('span', 'share-ic');
+      ic.setAttribute('aria-hidden', 'true');
+      ic.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" focusable="false">' +
+        (Object.prototype.hasOwnProperty.call(icons, x.icon) ? icons[x.icon] : (icons.native || '')) + '</svg>';
+      b.appendChild(ic);
+      b.appendChild(shareEl('span', '', x.name));
+      li.appendChild(b);
+      if (x.note) {
+        var note = shareEl('p', 'share-note', x.note);
+        note.id = 'shareNote-' + x.id;
+        b.setAttribute('aria-describedby', note.id);
+        li.appendChild(note);
+      }
+      if (x.kind === 'copy') {
+        b.onclick = async function(){
+          if (await shareCopy(x.shareUrl)) { fallback.hidden = true; say(ui.copied || ''); }
+          else { fallback.hidden = false; fbInput.value = x.shareUrl; fbInput.focus(); fbInput.select(); }
+        };
+      } else if (x.kind === 'instance-prompt') {
+        // Asked once inline, remembered on this phone, forgettable.
+        var form = shareEl('form', 'share-form');
+        form.hidden = true;
+        var lbl = shareEl('label', '');
+        lbl.appendChild(shareEl('span', '', ui.mastodonPrompt || ''));
+        var inp = shareEl('input');
+        inp.type = 'text'; inp.inputMode = 'url'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.placeholder = 'mastodon.social';
+        lbl.appendChild(inp);
+        form.appendChild(lbl);
+        var fb = shareEl('span', 'share-form-btns');
+        var ok = shareEl('button', 'btn', x.label); ok.type = 'submit';
+        var cancel = shareEl('button', 'btn', ui.cancel || ''); cancel.type = 'button';
+        fb.appendChild(ok); fb.appendChild(cancel); form.appendChild(fb);
+        var reset = shareEl('button', 'share-reset', ui.mastodonChange || '');
+        reset.type = 'button';
+        reset.hidden = !shareReadInstance();
+        var go = function(host){ openUrl(x.template.replace('{instance}', host)); };
+        var closeForm = function(){ form.hidden = true; inp.value = ''; inp.removeAttribute('aria-invalid'); b.focus(); };
+        b.onclick = function(){
+          var host = shareReadInstance();
+          if (host) { go(host); return; }
+          form.hidden = false; inp.focus();
+        };
+        form.onsubmit = function(e){
+          e.preventDefault();
+          var host = shareCleanHost(inp.value);
+          if (!host) { inp.setAttribute('aria-invalid', 'true'); inp.select(); return; }
+          shareWriteInstance(host); reset.hidden = false; closeForm(); go(host);
+        };
+        cancel.onclick = closeForm;
+        reset.onclick = function(){ shareWriteInstance(''); reset.hidden = true; form.hidden = false; inp.focus(); };
+        li.appendChild(form); li.appendChild(reset);
+      }
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    row.appendChild(box);
   });
+  row.appendChild(status);
+  row.appendChild(fallback);
+  card.hidden = false;
 }
 function toggleShare(btn) {
   var row = document.getElementById('shareRow');
   var chev = document.getElementById('shareChev');
   if (!row) return;
-  var open = row.style.display === 'none';
-  row.style.display = open ? 'block' : 'none';
+  var open = row.hidden;
+  row.hidden = !open;
   if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }

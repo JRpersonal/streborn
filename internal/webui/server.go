@@ -1073,6 +1073,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/manifest.webmanifest", s.handleManifest)
 	mux.HandleFunc("/icon.png", s.handleIcon)
+	mux.HandleFunc("/share.json", s.handleShare)
 	mux.HandleFunc("/icon-large.png", s.handleIconLarge)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/peers/seed", s.handlePeerSeed)

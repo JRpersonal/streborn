@@ -21,8 +21,9 @@
 #   make wails-build        production build of the desktop app
 #                           with embedded helpers and version stamp.
 #   make share-targets      pull the share target registry from
-#                           st-reborn.de into the desktop app (checked
-#                           against the website's rules, then committed).
+#                           st-reborn.de into the desktop app and the
+#                           phone remote (checked against the website's
+#                           rules, then committed).
 #                           SHARE_TARGETS_FILE=<path> reads a local copy.
 #   make test               go test ./...
 #   make vet                go vet ./...
@@ -200,8 +201,9 @@ ca-roots:
 
 
 # The app never fetches the share registry at runtime. This refreshes the
-# committed copy in desktop-app/frontend/src/data/share-targets.json; a new
-# website target reaches the app with this and a rebuild, no code change.
+# committed copies in desktop-app/frontend/src/data/share-targets.json and
+# internal/webui/assets/share.json; a new website target reaches the app and
+# the phone remote with this and a rebuild, no code change.
 share-targets:
 	cd desktop-app/frontend && node scripts/sync-share-targets.mjs $(if $(SHARE_TARGETS_FILE),--file $(abspath $(SHARE_TARGETS_FILE)))
 

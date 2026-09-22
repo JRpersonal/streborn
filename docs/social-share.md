@@ -73,9 +73,18 @@ The app bundles carry the website's share texts under `share.*` (`on`,
 `website/src/i18n/share.ts`, plus two app-only keys: `share.menu` and
 `share.successLine`. `share.test.js` fails if any UI language misses one.
 
-## Known gap
+## Phone remote
 
-The phone remote served by the agent (`internal/webui/assets/index.html`) still
-renders its own hard-coded share buttons. It is a single self-contained page on
-the speaker with its own i18n table, so moving it onto the registry is a
-separate change.
+The phone remote served by the agent (`internal/webui/assets/index.html`) has
+no list of its own either. The sync script also writes
+`internal/webui/assets/share.json`: the buttons already resolved per remote
+language, with the same `resolveShareTargets` and the app texts, plus the
+glyphs in use. The agent embeds that file and serves one language at a time
+on `GET /share.json?lang=xx`; the page only draws what it gets, in its own
+"Recommend STR" card (collapsed, separate from the donate card). Links open in
+a new tab, copy falls back to a selectable field (the remote runs on plain
+http, where the async clipboard API does not exist), Mastodon asks once inline.
+
+`share.test.js` fails when `share.json` no longer matches registry and texts,
+and `internal/webui/share_test.go` fails when a remote language has no buttons
+or a share intent URL appears in the page. Either way: `make share-targets`.

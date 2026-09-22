@@ -19,7 +19,8 @@ globalThis.localStorage = {
 };
 
 const { tIn, setLocale } = await import('./i18n/index.js');
-const { validateRegistry, resolveShareTargets, cleanInstanceHost } = await import('./shareRegistry.js');
+const { validateRegistry, resolveShareTargets, cleanInstanceHost, buildRemoteShareData, remoteLocalesOf } = await import('./shareRegistry.js');
+const { SHARE_ICONS } = await import('./shareIcons.js');
 const { takeShareOffer } = await import('./share.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -189,5 +190,25 @@ describe('install success row', () => {
     } finally {
       globalThis.localStorage.setItem = orig;
     }
+  });
+});
+
+describe('phone remote share data', () => {
+  const webui = join(here, '..', '..', '..', 'internal', 'webui', 'assets');
+  it('internal/webui/assets/share.json matches the registry and the app texts', () => {
+    const committed = JSON.parse(readFileSync(join(webui, 'share.json'), 'utf-8'));
+    const locales = remoteLocalesOf(readFileSync(join(webui, 'index.html'), 'utf-8'));
+    expect(locales.length).toBeGreaterThan(0);
+    const fresh = buildRemoteShareData(registry, bundles, locales, SHARE_ICONS);
+    // Stale after a registry or text change: run `make share-targets`.
+    expect(committed).toEqual(JSON.parse(JSON.stringify(fresh)));
+  });
+
+  it('gives the remote the same Reddit link as the app', () => {
+    const committed = JSON.parse(readFileSync(join(webui, 'share.json'), 'utf-8'));
+    const remote = committed.langs.de.groups.flatMap((g) => g.targets).find((x) => x.id === 'reddit');
+    const app = flat(resolve(registry.targets, 'de')).find((x) => x.id === 'reddit');
+    expect(remote.href).toBe(app.href);
+    expect(remote.note).toBe(app.note);
   });
 });
