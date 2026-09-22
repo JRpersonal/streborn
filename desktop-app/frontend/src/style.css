@@ -173,11 +173,6 @@ body {
   color: var(--brand-text);
   line-height: 1.4;
 }
-/* Transition line between the donate buttons and the share trigger ("and if
-   you really like STR: share it"). Slightly set off from the buttons above. */
-.donate-side .donate-share-lead {
-  margin-top: 10px;
-}
 /* Three donate buttons, each branded per the provider's official
    guidelines. Common shell: 130px wide, 32px tall, inline icon + text.
    The brand-specific class overrides background / text / border. */
@@ -248,31 +243,6 @@ body {
 
 .donate-side small { color: var(--c-faint); font-size: 10px; }
 
-/* Share trigger under the donate buttons: the escalation from "you like it"
-   (donate) to "you love it" (share). Dashed + accent-tinted so it catches the
-   eye without competing with the branded donate buttons; opens the share modal,
-   so it is never a permanent wall of buttons. */
-.donate-side .share-trigger {
-  width: 130px;
-  margin-top: 4px;
-  padding: 7px 8px;
-  border-radius: 18px;
-  border: 1px dashed var(--brand);
-  background: color-mix(in srgb, var(--brand) 10%, transparent);
-  color: var(--brand-text);
-  font-weight: 600;
-  font-size: 11.5px;
-  line-height: 1.25;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  transition: transform 0.12s ease, background 0.12s ease;
-}
-.donate-side .share-trigger:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--brand) 18%, transparent); }
-.donate-side .share-trigger .share-heart { color: var(--brand); }
-
 /* The donate rail is an overlay: it is position: fixed and reserves no space,
    so the centered app column runs straight under it as soon as the window is
    not wide enough for both. It is therefore HIDDEN BY DEFAULT and shown only
@@ -307,43 +277,107 @@ body {
   .layout { padding-left: 11.5rem; padding-right: 11.5rem; }
 }
 
-/* Share modal: one tile per platform. Each tile opens the browser share on this
-   PC and carries a QR that opens the same platform's post on a phone. */
-.share-modal { max-width: 560px; }
-.share-tiles {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 14px;
+/* Share buttons (share.js). Rendered from the website registry, so nothing
+   here knows a platform: the brand colour arrives as --share-brand on each
+   button and tints only its icon chip. Every button carries its visible name,
+   notes sit right under their target, and focus uses the global ring. */
+.share-modal { max-width: 560px; max-height: 90vh; overflow-y: auto; }
+.share-modal .share-block { margin-top: 12px; }
+.share-block { margin-bottom: 12px; }
+/* The flex rules below would otherwise override the hidden attribute. */
+.share-block [hidden] { display: none; }
+.share-group + .share-group { margin-top: 14px; }
+.share-group-h {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-muted);
 }
-@media (max-width: 520px) { .share-tiles { grid-template-columns: repeat(2, 1fr); } }
-.share-tile {
-  border: 1px solid var(--c-surface);
-  background: var(--c-bg);
-  border-radius: 12px;
-  padding: 12px 8px 9px;
-  text-decoration: none;
-  color: var(--c-text);
+.share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.share-item {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 18rem;
+}
+.share-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  transition: transform 0.12s ease, border-color 0.12s ease;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--c-surface);
+  border-radius: 8px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+  --share-brand: var(--brand); /* overridden inline by the registry colour */
 }
-.share-tile:hover { transform: translateY(-2px); border-color: var(--brand); }
-.share-tile .share-ic {
-  width: 30px; height: 30px; border-radius: 9px;
-  display: grid; place-items: center; color: #fff; background: var(--brand);
+.share-btn:hover { border-color: var(--share-brand); }
+.share-ic {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--share-brand);
+  flex-shrink: 0;
 }
-.share-tile .share-ic svg { width: 18px; height: 18px; }
-.share-tile .share-name { font-size: 12.5px; font-weight: 700; }
-.share-tile .share-qr {
-  width: 96px; height: 96px; background: #fff; border-radius: 9px;
-  padding: 7px; color: #0d1420;
+.share-ic svg { width: 16px; height: 16px; }
+.share-note { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--c-muted); }
+.share-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-muted);
+  font: inherit;
+  font-size: 11.5px;
+  text-decoration: underline;
+  cursor: pointer;
 }
-.share-tile .share-qr svg { width: 100%; height: 100%; display: block; }
-.share-tile .share-scan { font-size: 10.5px; color: var(--c-muted); letter-spacing: 0.02em; }
+/* An open instance form takes the whole row instead of stretching one cell. */
+.share-item:has(.share-instance:not([hidden])) { flex-basis: 100%; max-width: none; }
+.share-instance { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.share-instance-lbl { display: flex; flex-direction: column; gap: 4px; }
+.share-instance input,
+.share-fallback input {
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.share-instance input[aria-invalid="true"] { border-color: var(--signal-red); }
+.share-instance-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.share-status { min-height: 1.2em; margin: 8px 0 0; font-size: 12px; color: var(--c-muted); }
+.share-status:empty { margin: 0; min-height: 0; }
+.share-fallback label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.share-fallback input { width: 100%; max-width: 28rem; }
 .share-foot { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* The one-time row under the install success message: set off by a thin rule
+   and kept small, so it never competes with the result above it. */
+.share-offer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-surface);
+}
+.share-offer-line { margin: 0 0 8px; font-size: 12.5px; color: var(--c-muted); }
 
 #app {
   max-width: 720px;
