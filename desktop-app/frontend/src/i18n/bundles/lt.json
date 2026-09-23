@@ -686,6 +686,7 @@
   "share.labels.email": "Dalintis el. paštu",
   "share.labels.copy": "Kopijuoti nuorodą",
   "share.scan": "Nuskaityk, kad paskelbtum",
+  "share.qrHint": "Užvesk pelę ant platformos ir pamatysi QR kodą, kurį nuskaitęs galėsi paskelbti iš telefono.",
   "share.notes.englishForum": "Reddit yra angliškas. Todėl dalijamasi anglišku puslapiu, įrašą rašykite angliškai.",
   "share.groups.social": "Socialiniai tinklai",
   "share.groups.messenger": "Pokalbių programos",

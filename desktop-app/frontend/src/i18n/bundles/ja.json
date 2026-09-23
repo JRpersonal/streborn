@@ -686,6 +686,7 @@
   "share.labels.email": "メールで共有",
   "share.labels.copy": "リンクをコピー",
   "share.scan": "スキャンして投稿",
+  "share.qrHint": "プラットフォームにマウスを合わせると、スマホから投稿するための QR コードが表示されます。",
   "share.notes.englishForum": "Reddit は英語のコミュニティです。そのため英語版のページが共有されます。投稿は英語で書いてください。",
   "share.groups.social": "ソーシャルネットワーク",
   "share.groups.messenger": "メッセンジャー",

@@ -732,6 +732,7 @@
   "share.labels.email": "Share by email",
   "share.labels.copy": "Copy link",
   "share.scan": "Scan to post",
+  "share.qrHint": "Point at a platform with the mouse to see a QR code for posting from your phone.",
   "share.notes.englishForum": "Reddit is English speaking. The English page is shared, so please write your post in English.",
   "share.groups.social": "Social networks",
   "share.groups.messenger": "Messengers",

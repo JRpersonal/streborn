@@ -53,12 +53,14 @@ donations, updates or features.
   it.
 - `note`: shown as text under its target and linked via `aria-describedby`. The
   Reddit note shows whenever the UI language differs from `shareLocale`.
-- QR codes: in the "Recommend STR" dialog every `url-template` target also
-  shows a scannable code, so the post can be opened on the phone where the user
-  is logged in. The code is made locally by the Go backend (`PhoneQR`, the same
-  generator as the phone QR in Settings) from exactly the link the button
-  opens. Mastodon (no instance yet), copy and email get none, and neither does
-  the one-time row after the install.
+- QR code: the "Recommend STR" dialog has ONE code popover. It appears next
+  to the `url-template` button under the mouse or with keyboard focus, names
+  the platform above the code, and disappears on leave or blur, so there is
+  never more than one code on screen and a phone cannot pick up the wrong one.
+  The code is made locally by the Go backend (`PhoneQR`, the same generator as
+  the phone QR in Settings) from exactly the link the button opens, on first
+  use, then cached. Mastodon (no instance yet), copy and email get none, and
+  the one-time row after the install has no codes at all.
 - Every button has a visible name and an accessible label ("Share on X"); the
   dialog traps Tab, closes on Escape and returns focus.
 

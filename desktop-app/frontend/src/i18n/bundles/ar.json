@@ -686,6 +686,7 @@
   "share.labels.email": "المشاركة عبر البريد الإلكتروني",
   "share.labels.copy": "نسخ الرابط",
   "share.scan": "امسح للنشر",
+  "share.qrHint": "مرّر الفأرة فوق منصة ليظهر رمز QR للنشر من هاتفك.",
   "share.notes.englishForum": "Reddit منصة باللغة الإنجليزية. لذلك تتم مشاركة الصفحة الإنجليزية، اكتب منشورك بالإنجليزية من فضلك.",
   "share.groups.social": "الشبكات الاجتماعية",
   "share.groups.messenger": "تطبيقات المراسلة",

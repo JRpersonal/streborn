@@ -732,6 +732,7 @@
   "share.labels.email": "以電子郵件分享",
   "share.labels.copy": "複製連結",
   "share.scan": "掃描發文",
+  "share.qrHint": "將滑鼠移到平台上，就會出現可用手機發文的 QR 碼。",
   "share.notes.englishForum": "Reddit 是英語社群，因此分享的是英文頁面，請用英文撰寫貼文。",
   "share.groups.social": "社群網路",
   "share.groups.messenger": "通訊軟體",

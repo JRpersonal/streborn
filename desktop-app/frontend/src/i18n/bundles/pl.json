@@ -686,6 +686,7 @@
   "share.labels.email": "Udostępnij e-mailem",
   "share.labels.copy": "Kopiuj link",
   "share.scan": "Zeskanuj, aby opublikować",
+  "share.qrHint": "Najedź myszą na platformę, a pojawi się kod QR do publikowania z telefonu.",
   "share.notes.englishForum": "Reddit jest anglojęzyczny. Dlatego udostępniana jest angielska strona, napisz post po angielsku.",
   "share.groups.social": "Sieci społecznościowe",
   "share.groups.messenger": "Komunikatory",

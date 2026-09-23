@@ -686,6 +686,7 @@
   "share.labels.email": "Dalīties e-pastā",
   "share.labels.copy": "Kopēt saiti",
   "share.scan": "Skenē, lai publicētu",
+  "share.qrHint": "Norādi ar peli uz platformu, un parādīsies QR kods publicēšanai no tālruņa.",
   "share.notes.englishForum": "Reddit ir angļu valodā. Tāpēc tiek kopīgota angliskā lapa, raksti ierakstu angliski.",
   "share.groups.social": "Sociālie tīkli",
   "share.groups.messenger": "Ziņapmaiņas lietotnes",
