@@ -44,6 +44,20 @@ const (
 	defaultDiscover = 5 * time.Second
 )
 
+// SOAPClientCeiling is the last-resort timeout on a ContentDirectory SOAP call.
+// It exists ONLY for a caller that passed a ctx with no deadline. Every real
+// caller sets one, and the caller's deadline is what should decide, because only
+// the caller knows whether this is one user tap or one share of a fan-out.
+//
+// So it has to stay ABOVE the longest caller budget, or it silently overrides
+// it. That is the bug it is named for: a hard-coded 10s cap here cut a library
+// browse off at 10.1s while internal/webui deliberately allowed 70s for exactly
+// the slow NAS the reporter had, and the failure came back as Go's own
+// client-timeout text, which reads like the media server giving up (#960).
+// DescribeServer had the same cap and got the same fix for a WD Twonky (#733);
+// Browse and Search were missed then.
+const SOAPClientCeiling = 90 * time.Second
+
 // Server is a single discovered DLNA MediaServer on the LAN.
 type Server struct {
 	// UDN is the unique device identifier (uuid:...), stable across
@@ -625,7 +639,7 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
 	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"`)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: SOAPClientCeiling}
 	resp, err := client.Do(req)
 	if err != nil {
 		return BrowseResult{}, err
@@ -702,7 +716,7 @@ func searchWithCriteria(ctx context.Context, srv Server, criteria string, count 
 	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
 	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Search"`)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: SOAPClientCeiling}
 	resp, err := client.Do(req)
 	if err != nil {
 		return BrowseResult{}, err
