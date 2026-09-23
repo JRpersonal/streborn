@@ -44,10 +44,7 @@ function writeInstance(host) {
   } catch { /* storage blocked: then it simply asks each time */ }
 }
 
-// withQr: a scannable code under a link target, so the post can be opened on
-// the phone where the user is logged in. Only plain share links get one:
-// Mastodon needs an instance first, copy and email have nothing to post.
-function targetHTML(trg, prefix, withQr) {
+function targetHTML(trg, prefix) {
   const noteId = trg.note ? `${prefix}-note-${trg.id}` : '';
   const describedBy = noteId ? ` aria-describedby="${noteId}"` : '';
   let extra = '';
@@ -70,10 +67,6 @@ function targetHTML(trg, prefix, withQr) {
         <span class="share-ic">${iconSVG(trg.icon)}</span><span class="share-name">${escapeHtml(trg.name)}</span>
       </button>
       ${trg.note ? `<p class="share-note" id="${noteId}">${escapeHtml(trg.note)}</p>` : ''}
-      ${withQr && trg.kind === 'url-template' ? `<figure class="share-qr" data-share-qr="${escapeAttr(trg.id)}" hidden>
-        <img alt="${escapeAttr(trg.label)}" width="96" height="96">
-        <figcaption>${escapeHtml(t('share.scan'))}</figcaption>
-      </figure>` : ''}
       ${extra}
     </li>`;
 }
@@ -87,10 +80,19 @@ export function shareButtonsHTML(prefix, { grouped = false } = {}) {
   const body = grouped
     ? groups.map((g) => `<div class="share-group" role="group" aria-labelledby="${prefix}-g-${g.group}">
         <h4 class="share-group-h" id="${prefix}-g-${g.group}">${escapeHtml(t('share.groups.' + g.group))}</h4>
-        <ul class="share-list">${g.targets.map((trg) => targetHTML(trg, prefix, true)).join('')}</ul>
+        <ul class="share-list">${g.targets.map((trg) => targetHTML(trg, prefix)).join('')}</ul>
       </div>`).join('')
-    : `<ul class="share-list">${groups.flatMap((g) => g.targets).map((trg) => targetHTML(trg, prefix, false)).join('')}</ul>`;
+    : `<ul class="share-list">${groups.flatMap((g) => g.targets).map((trg) => targetHTML(trg, prefix)).join('')}</ul>`;
+  // The dialog gets ONE QR popover for all share links (see showShareQr). One
+  // code at a time, labelled with its platform, so a phone never picks up the
+  // wrong one. The install success row stays without codes.
+  const qr = grouped ? `<p class="share-qr-hint">${escapeHtml(t('share.qrHint'))}</p>
+      <figure class="share-qr-pop" data-share-qr-pop hidden>
+        <figcaption><strong></strong><span>${escapeHtml(t('share.scan'))}</span></figcaption>
+        <img alt="" width="132" height="132">
+      </figure>` : '';
   return `<div class="share-block" data-share-root="${escapeAttr(prefix)}">
+      ${qr}
       ${body}
       <p class="share-status" role="status" aria-live="polite"></p>
       <div class="share-fallback" hidden>
@@ -110,20 +112,68 @@ async function copyText(text) {
   try { return !!(await ClipboardSetText(text)); } catch { return false; }
 }
 
-// paintShareQrs fills the QR slots of a block with codes from the Go backend
-// (PhoneQR, the same local generator as the phone QR in Settings, no external
-// service). Each code carries exactly the link its button opens. A code that
-// cannot be made just stays hidden; the button still works.
-export async function paintShareQrs(block, byId) {
-  const slots = [...block.querySelectorAll('[data-share-qr]')];
-  await Promise.all(slots.map(async (fig) => {
-    const trg = byId.get(fig.dataset.shareQr);
-    if (!trg || !trg.href) return;
-    try {
-      fig.querySelector('img').src = await PhoneQR(trg.href);
-      fig.hidden = false;
-    } catch { /* no code, button only */ }
-  }));
+// qrFor returns the code for a share link, made by the Go backend (PhoneQR,
+// the same local generator as the phone QR in Settings, no external service)
+// from exactly the link the button opens. Made on first use and kept, so
+// moving the mouse back and forth does not ask the backend again. Only plain
+// share links get a code: Mastodon needs an instance first, copy and email
+// have nothing to post.
+const qrCache = new Map();
+export function qrFor(trg) {
+  if (!trg || trg.kind !== 'url-template' || !trg.href) return null;
+  if (!qrCache.has(trg.href)) {
+    const p = PhoneQR(trg.href);
+    p.catch(() => qrCache.delete(trg.href));
+    qrCache.set(trg.href, p);
+  }
+  return qrCache.get(trg.href);
+}
+
+// wireShareQr shows the single QR popover next to the button the mouse is on
+// or that has keyboard focus, and hides it again on leave or blur. The last
+// event wins, so there is never more than one code on screen.
+function wireShareQr(block, byId) {
+  const pop = block.querySelector('[data-share-qr-pop]');
+  if (!pop) return;
+  const img = pop.querySelector('img');
+  const name = pop.querySelector('strong');
+  let active = null;
+  const place = (btn) => {
+    // Fixed to the viewport so the scrolling dialog cannot clip it: below the
+    // button, or above it when there is no room below.
+    const r = btn.getBoundingClientRect();
+    const h = pop.offsetHeight;
+    const top = r.bottom + 6 + h > window.innerHeight ? r.top - 6 - h : r.bottom + 6;
+    const w = pop.offsetWidth;
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+    pop.style.top = Math.max(8, top) + 'px';
+    pop.style.left = left + 'px';
+  };
+  const show = async (btn) => {
+    const trg = byId.get(btn.dataset.shareId);
+    const code = qrFor(trg);
+    if (!code) { hide(); return; }
+    active = btn;
+    let src;
+    try { src = await code; } catch { if (active === btn) hide(); return; }
+    if (active !== btn) return; // the pointer moved on while the code was made
+    img.src = src;
+    img.alt = trg.label;
+    name.textContent = trg.name;
+    pop.hidden = false;
+    place(btn);
+  };
+  const hide = (btn) => {
+    if (btn && active !== btn) return;
+    active = null;
+    pop.hidden = true;
+  };
+  block.querySelectorAll('.share-btn[data-share-id]').forEach((btn) => {
+    btn.addEventListener('mouseenter', () => { show(btn); });
+    btn.addEventListener('mouseleave', () => hide(btn));
+    btn.addEventListener('focus', () => { show(btn); });
+    btn.addEventListener('blur', () => hide(btn));
+  });
 }
 
 // wireShareButtons attaches the behaviour to one rendered share block.
@@ -131,7 +181,7 @@ export function wireShareButtons(root) {
   const block = root && (root.matches('[data-share-root]') ? root : root.querySelector('[data-share-root]'));
   if (!block) return;
   const byId = new Map(currentTargets().flatMap((g) => g.targets).map((trg) => [trg.id, trg]));
-  paintShareQrs(block, byId).catch(() => {});
+  wireShareQr(block, byId);
   const status = block.querySelector('.share-status');
   const fallback = block.querySelector('.share-fallback');
   let statusTimer = null;
