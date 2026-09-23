@@ -202,6 +202,16 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// entry keeps working on the same account, so the message has to say
 		// that too or it reads as "Spotify is broken".
 		AudioKeyRefused bool `json:"audioKeyRefused"`
+		// CanRecall is whether a Spotify preset key on this speaker could play
+		// at all: a live device session OR a persisted credential. The apps need
+		// it because PremiumRequired cannot answer the question on its own. It is
+		// deliberately conservative and stays false on "unknown", and "unknown"
+		// is exactly a speaker that was never picked in Spotify, where a preset
+		// key is equally unusable. A notice telling such a user to press their
+		// saved key is wrong for the same reason it is wrong on a free account
+		// (#973). Absent on an agent older than this, which the apps read as
+		// "cannot tell" and treat as before.
+		CanRecall bool `json:"canRecall"`
 	}{
 		Ready:           m.Ready(),
 		Bitrate:         m.Bitrate(),
@@ -212,6 +222,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Context:         context,
 		Account:         m.currentUsername(r.Context()),
 		PremiumRequired: m.PremiumRequired(),
+		CanRecall:       m.CanRecall(r.Context()),
 		LowDisk:         lowDisk,
 		LowDiskFreeKB:   lowDiskFreeKB,
 		AudioKeyRefused: m.AudioKeyRefused(),

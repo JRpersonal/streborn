@@ -127,6 +127,12 @@ type SpotifyNow struct {
 	// Nothing on the speaker causes it and nothing on the speaker fixes it, so
 	// the app's job is only to say what happened.
 	AudioKeyRefused bool `json:"audioKeyRefused"`
+	// CanRecall reports whether a Spotify preset key on this speaker could play
+	// at all (a live session or a stored credential). A POINTER on purpose: an
+	// agent older than this field sends nothing, and nil has to stay
+	// distinguishable from a real false, or every speaker on an older agent
+	// would silently be treated as unable to recall.
+	CanRecall *bool `json:"canRecall"`
 }
 
 func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
