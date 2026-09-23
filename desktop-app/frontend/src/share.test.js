@@ -8,7 +8,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-vi.mock('./api.js', () => ({ BrowserOpenURL: () => {}, ClipboardSetText: async () => true }));
+const qrAsked = [];
+vi.mock('./api.js', () => ({
+  BrowserOpenURL: () => {},
+  ClipboardSetText: async () => true,
+  PhoneQR: async (url) => { qrAsked.push(url); return 'data:image/png;base64,AAAA'; },
+}));
 
 // A minimal localStorage so share.js can remember the one-time offer.
 const store = new Map();
@@ -21,7 +26,7 @@ globalThis.localStorage = {
 const { tIn, setLocale } = await import('./i18n/index.js');
 const { validateRegistry, resolveShareTargets, cleanInstanceHost, buildRemoteShareData, remoteLocalesOf } = await import('./shareRegistry.js');
 const { SHARE_ICONS } = await import('./shareIcons.js');
-const { takeShareOffer } = await import('./share.js');
+const { takeShareOffer, shareButtonsHTML, paintShareQrs } = await import('./share.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registry = JSON.parse(readFileSync(join(here, 'data', 'share-targets.json'), 'utf-8'));
@@ -141,7 +146,7 @@ describe('Mastodon instance', () => {
 
 describe('share texts', () => {
   const keys = [
-    'share.menu', 'share.successLine', 'share.on', 'share.copied', 'share.copyFailed',
+    'share.menu', 'share.successLine', 'share.scan', 'share.on', 'share.copied', 'share.copyFailed',
     'share.mastodonPrompt', 'share.mastodonChange', 'share.postTitle', 'share.text',
     'share.labels.email', 'share.labels.copy', 'share.notes.englishForum',
     'share.groups.social', 'share.groups.messenger', 'share.groups.forum', 'share.groups.direct',
@@ -210,5 +215,38 @@ describe('phone remote share data', () => {
     const app = flat(resolve(registry.targets, 'de')).find((x) => x.id === 'reddit');
     expect(remote.href).toBe(app.href);
     expect(remote.note).toBe(app.note);
+  });
+});
+
+describe('QR codes in the share dialog', () => {
+  it('the dialog has a code slot for every share link, and only for those', () => {
+    setLocale('de');
+    const html = shareButtonsHTML('t', { grouped: true });
+    const slots = [...html.matchAll(/data-share-qr="([^"]+)"/g)].map((m) => m[1]).sort();
+    const links = flat(resolve(registry.targets, 'de')).filter((x) => x.kind === 'url-template').map((x) => x.id).sort();
+    expect(slots).toEqual(links);
+    expect(slots).not.toContain('mastodon');
+    expect(slots).not.toContain('copy');
+    expect(slots).not.toContain('email');
+  });
+
+  it('the install success row carries no codes', () => {
+    expect(shareButtonsHTML('t')).not.toContain('data-share-qr');
+  });
+
+  it('each code encodes exactly the link its button opens', async () => {
+    const byId = new Map(flat(resolve(registry.targets, 'de')).map((x) => [x.id, x]));
+    const figs = ['reddit', 'bluesky'].map((id) => {
+      const img = { src: '' };
+      return { dataset: { shareQr: id }, hidden: true, querySelector: () => img, img };
+    });
+    qrAsked.length = 0;
+    await paintShareQrs({ querySelectorAll: () => figs }, byId);
+    expect(qrAsked).toEqual([byId.get('reddit').href, byId.get('bluesky').href]);
+    expect(qrAsked[0]).not.toContain('text=');
+    for (const f of figs) {
+      expect(f.hidden).toBe(false);
+      expect(f.img.src).toMatch(/^data:image\/png;base64,/);
+    }
   });
 });

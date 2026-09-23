@@ -338,6 +338,9 @@ body {
   flex-shrink: 0;
 }
 .share-ic svg { width: 16px; height: 16px; }
+.share-qr { margin: 2px 0 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.share-qr img { width: 96px; height: 96px; background: #fff; border-radius: 8px; padding: 5px; box-sizing: border-box; }
+.share-qr figcaption { font-size: 10.5px; color: var(--c-muted); }
 .share-note { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--c-muted); }
 .share-reset {
   padding: 0;
