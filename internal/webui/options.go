@@ -294,7 +294,7 @@ func WithPeerForget(fn func(host string) bool) Option {
 // Spotify URI on a given account in go-librespot (the Spotify-preset
 // control plane). An empty account plays with the current login; shuffle
 // selects a fresh random start over the default resume-where-left-off.
-func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuffle bool) error) Option {
+func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuffle, repeat bool) error) Option {
 	return func(s *Server) { s.spotifyPlay = play }
 }
 
@@ -318,6 +318,15 @@ func WithSpotifyContext(ctxURI func() string) Option {
 // that replayed the identical track order on every press.
 func WithSpotifyShuffle(shuffle func(ctx context.Context) bool) Option {
 	return func(s *Server) { s.spotifyShuffle = shuffle }
+}
+
+// WithSpotifyRepeat registers the resolver for go-librespot's live repeat
+// state, used by the preset-save path to stamp the repeat flag onto a Spotify
+// preset saved from the running playback. Without it a listener who wants a
+// playlist to loop all evening had to set repeat by hand in the Spotify app
+// after every single preset press.
+func WithSpotifyRepeat(repeat func(ctx context.Context) bool) Option {
+	return func(s *Server) { s.spotifyRepeat = repeat }
 }
 
 // WithSpotifySkipBoundary registers the resolver for when a user skip's track

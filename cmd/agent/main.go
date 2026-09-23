@@ -773,12 +773,13 @@ func run() error {
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv),
 		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
-		webui.WithSpotifyControl(func(ctx context.Context, uri, account string, shuffle bool) error {
-			return spotifyMgr.PlayAccount(ctx, uri, account, spotify.PlayOptions{Shuffle: shuffle})
+		webui.WithSpotifyControl(func(ctx context.Context, uri, account string, shuffle, repeat bool) error {
+			return spotifyMgr.PlayAccount(ctx, uri, account, spotify.PlayOptions{Shuffle: shuffle, Repeat: repeat})
 		}),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
 		webui.WithSpotifyShuffle(spotifyMgr.ShufflingContext),
+		webui.WithSpotifyRepeat(spotifyMgr.RepeatingContext),
 		webui.WithSpotifySkipBoundary(spotifyMgr.LastSkipBoundary),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		// "Streaming" must mean audio is actually flowing, not merely that the

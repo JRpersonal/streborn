@@ -35,6 +35,10 @@ type Preset struct {
 	// whole transfer.
 	Shuffle bool            `json:"shuffle,omitempty"`
 	Items   json.RawMessage `json:"items,omitempty"`
+	// Repeat: a Spotify preset saved while the playlist was looping. Mirrored
+	// here for the same reason Shuffle is, so a box-to-box copy carries it
+	// instead of quietly handing the target a preset that stops at the end.
+	Repeat bool `json:"repeat,omitempty"`
 }
 
 // presetAPIPath is the agent's preset REST route; the slot is appended for

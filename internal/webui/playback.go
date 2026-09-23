@@ -403,7 +403,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "", "") // #135
 		// normalizeSpotifyURI on recall heals presets that stored an ephemeral
 		// station context before the save-side unwrap existed.
-		uri, name, art, account, shuffle := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle
+		uri, name, art, account, shuffle, repeat := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle, p.Repeat
 		go func() {
 			bg := context.Background()
 			t0 := time.Now()
@@ -415,7 +415,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			keyDenied := false
-			playErr := s.spotifyPlay(bg, uri, account, shuffle)
+			playErr := s.spotifyPlay(bg, uri, account, shuffle, repeat)
 			if playErr != nil {
 				// An audio-key denial means Spotify refuses this account/session
 				// the decryption keys: every additional Play just triggers
@@ -446,7 +446,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				// never on an audio-key denial, where it would only amplify the
 				// skip storm.
 				if lastAttempt && !keyDenied {
-					_ = s.spotifyPlay(ctx, uri, account, shuffle)
+					_ = s.spotifyPlay(ctx, uri, account, shuffle, repeat)
 				}
 				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
 			}, s.spotifyStreaming)

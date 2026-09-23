@@ -156,7 +156,7 @@ func TestSpotifyPresetRecallSurvivesCancelledRequest(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetSlot: %v", err)
 	}
-	s.spotifyPlay = func(ctx context.Context, uri, account string, shuffle bool) error { return nil }
+	s.spotifyPlay = func(ctx context.Context, uri, account string, shuffle, repeat bool) error { return nil }
 	// Reports "can recall" only on a live context, like the real probe: on the
 	// raw cancelled request context this returns false and the handler answers
 	// a bogus 422 instead of playing.
