@@ -429,9 +429,13 @@ async function libraryPlay(item) {
   try {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
+    // The duration goes with it: without it the box answers total=0 and neither
+    // the app nor the phone page can draw a progress bar or see the track end
+    // (#845, #844). The folder path has always sent it, which is why a folder
+    // drew a bar and a single click never did.
     await PlayURL(target.host, target.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '',
-      item.mimeType || guessAudioMime(item.streamURL), '', '');
+      item.mimeType || guessAudioMime(item.streamURL), '', '', item.durationSec || 0);
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;

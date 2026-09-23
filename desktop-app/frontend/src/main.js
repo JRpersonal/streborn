@@ -8521,7 +8521,9 @@ async function playStation(s) {
 
     let fail = null;
     try {
-      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '', cur.codec || '');
+      // 0: a radio station has no length, which is exactly what the field is
+      // for. The box then answers total=0 and no bar is drawn, correctly.
+      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '', cur.codec || '', 0);
       // Remember the station the APP itself just started. A long-press save
       // must prefer this over the box-reported now-playing: on a speaker that
       // was asleep, the agent's wake resume can race the play and briefly put

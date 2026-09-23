@@ -157,15 +157,23 @@ func (a *App) waitAgentReady(host string, port int) bool {
 // the "play direct" marker, #139) and stays empty for radio; codec is
 // radio-browser's station codec ("MP3", "AAC+"), which the agent maps to the
 // DIDL MIME so AAC stations do not decode to silence (#252).
-func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage, codec string) error {
-	body, _ := json.Marshal(map[string]string{
-		"url":      streamURL,
-		"title":    title,
-		"icon":     icon,
-		"uuid":     uuid,
-		"mime":     mime,
-		"homepage": homepage,
-		"codec":    codec,
+//
+// durationSec is the track length, 0 for radio and anything of unknown length.
+// It is not decoration: the firmware answers `<time total="0">` unless the DIDL
+// it was handed carries a duration, and with total 0 there is no bar to fill and
+// no end of track to detect. A folder has always sent it, which is why a folder
+// drew a bar per track while a single track never did, in BOTH UIs, because both
+// only read back what the DIDL carried (#845, #844).
+func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage, codec string, durationSec int) error {
+	body, _ := json.Marshal(map[string]any{
+		"url":          streamURL,
+		"title":        title,
+		"icon":         icon,
+		"uuid":         uuid,
+		"mime":         mime,
+		"homepage":     homepage,
+		"codec":        codec,
+		"duration_sec": durationSec,
 	})
 	resp, err := a.playPost(host, port, "/api/play", string(body))
 	if err != nil {

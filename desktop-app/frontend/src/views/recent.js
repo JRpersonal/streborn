@@ -330,7 +330,9 @@ function wireCard(c, i) {
           // PlayURL with the stored MIME makes the box play it straight instead.
           const box = c.box || state.currentBox;
           const art = (c.art || '').split('|')[0].trim();
-          await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '');
+          // 0: a Recently-played card stores no duration, so a replay still
+          // draws no bar. Tracked with the rest of the replay gap in #817.
+          await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', 0);
           showToast(t('recent.playing', { name: c.name || '' }));
         } else {
           await deps.playStation(cardStation(c));
