@@ -12,7 +12,7 @@
 import registry from './data/share-targets.json';
 import { t, tIn, getLocale } from './i18n/index.js';
 import { escapeHtml, escapeAttr } from './utils.js';
-import { BrowserOpenURL, ClipboardSetText } from './api.js';
+import { BrowserOpenURL, ClipboardSetText, PhoneQR } from './api.js';
 import { resolveShareTargets, cleanInstanceHost } from './shareRegistry.js';
 import { SHARE_ICONS as ICONS } from './shareIcons.js';
 
@@ -44,7 +44,10 @@ function writeInstance(host) {
   } catch { /* storage blocked: then it simply asks each time */ }
 }
 
-function targetHTML(trg, prefix) {
+// withQr: a scannable code under a link target, so the post can be opened on
+// the phone where the user is logged in. Only plain share links get one:
+// Mastodon needs an instance first, copy and email have nothing to post.
+function targetHTML(trg, prefix, withQr) {
   const noteId = trg.note ? `${prefix}-note-${trg.id}` : '';
   const describedBy = noteId ? ` aria-describedby="${noteId}"` : '';
   let extra = '';
@@ -67,6 +70,10 @@ function targetHTML(trg, prefix) {
         <span class="share-ic">${iconSVG(trg.icon)}</span><span class="share-name">${escapeHtml(trg.name)}</span>
       </button>
       ${trg.note ? `<p class="share-note" id="${noteId}">${escapeHtml(trg.note)}</p>` : ''}
+      ${withQr && trg.kind === 'url-template' ? `<figure class="share-qr" data-share-qr="${escapeAttr(trg.id)}" hidden>
+        <img alt="${escapeAttr(trg.label)}" width="96" height="96">
+        <figcaption>${escapeHtml(t('share.scan'))}</figcaption>
+      </figure>` : ''}
       ${extra}
     </li>`;
 }
@@ -80,9 +87,9 @@ export function shareButtonsHTML(prefix, { grouped = false } = {}) {
   const body = grouped
     ? groups.map((g) => `<div class="share-group" role="group" aria-labelledby="${prefix}-g-${g.group}">
         <h4 class="share-group-h" id="${prefix}-g-${g.group}">${escapeHtml(t('share.groups.' + g.group))}</h4>
-        <ul class="share-list">${g.targets.map((trg) => targetHTML(trg, prefix)).join('')}</ul>
+        <ul class="share-list">${g.targets.map((trg) => targetHTML(trg, prefix, true)).join('')}</ul>
       </div>`).join('')
-    : `<ul class="share-list">${groups.flatMap((g) => g.targets).map((trg) => targetHTML(trg, prefix)).join('')}</ul>`;
+    : `<ul class="share-list">${groups.flatMap((g) => g.targets).map((trg) => targetHTML(trg, prefix, false)).join('')}</ul>`;
   return `<div class="share-block" data-share-root="${escapeAttr(prefix)}">
       ${body}
       <p class="share-status" role="status" aria-live="polite"></p>
@@ -103,11 +110,28 @@ async function copyText(text) {
   try { return !!(await ClipboardSetText(text)); } catch { return false; }
 }
 
+// paintShareQrs fills the QR slots of a block with codes from the Go backend
+// (PhoneQR, the same local generator as the phone QR in Settings, no external
+// service). Each code carries exactly the link its button opens. A code that
+// cannot be made just stays hidden; the button still works.
+export async function paintShareQrs(block, byId) {
+  const slots = [...block.querySelectorAll('[data-share-qr]')];
+  await Promise.all(slots.map(async (fig) => {
+    const trg = byId.get(fig.dataset.shareQr);
+    if (!trg || !trg.href) return;
+    try {
+      fig.querySelector('img').src = await PhoneQR(trg.href);
+      fig.hidden = false;
+    } catch { /* no code, button only */ }
+  }));
+}
+
 // wireShareButtons attaches the behaviour to one rendered share block.
 export function wireShareButtons(root) {
   const block = root && (root.matches('[data-share-root]') ? root : root.querySelector('[data-share-root]'));
   if (!block) return;
   const byId = new Map(currentTargets().flatMap((g) => g.targets).map((trg) => [trg.id, trg]));
+  paintShareQrs(block, byId).catch(() => {});
   const status = block.querySelector('.share-status');
   const fallback = block.querySelector('.share-fallback');
   let statusTimer = null;
