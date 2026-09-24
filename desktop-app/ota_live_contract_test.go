@@ -79,6 +79,25 @@ func TestLiveUpdateContract(t *testing.T) {
 		last = v
 		t.Logf("  waiting: version=%s build=%s engine=%s", v["version"], v["build"], v["goLibrespot"])
 		if v["goLibrespot"] == "missing" {
+			// Only once the agent has actually reached the build this app
+			// carries. The app's own update flow pushes the engine after the
+			// box is CONFIRMED on the new build and has settled
+			// (main.js: phase('confirmed') then waitForStableAgent), and the
+			// difference is not cosmetic: before the swap the engine has
+			// already been reclaimed while the old binary still holds its
+			// blocks, which is the tightest moment of the whole OTA.
+			//
+			// Pushing there produced a guaranteed refusal on 2 of 5 speakers in
+			// the 2026-09-24 fleet roll, including a Portable that missed by
+			// 159 KB, and the resulting "insufficient NAND space" line reads as
+			// a product defect. It is not one; it was this harness asking at a
+			// moment the app never asks at. A test that exercises a path the
+			// app does not take reports failures users cannot have.
+			if !agentReached(v, before["version"], before["build"]) {
+				t.Logf("  engine missing but the agent is still mid-swap (version=%s); waiting, the app would too",
+					v["version"])
+				continue
+			}
 			res, eerr := a.EnsureSpotifyEngine(host, port)
 			t.Logf("  engine delivery -> %q (err=%v)", res, eerr)
 			// A dev build embeds a 0-byte engine stub. There is then nothing to

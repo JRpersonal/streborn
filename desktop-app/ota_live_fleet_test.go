@@ -115,6 +115,15 @@ func TestLiveFleetUpdate(t *testing.T) {
 			}
 			last = v
 			if v["goLibrespot"] == "missing" {
+				// Same gate as the contract harness: the app pushes the engine
+				// only after the box is confirmed on the new build and settled.
+				// Before the swap the engine has already been reclaimed while
+				// the old binary still holds its blocks, so the push is refused
+				// for space on any speaker near the line, and the run then
+				// carries a failure the app would never have produced.
+				if !agentReached(v, r.before, r.buildBefore) {
+					continue
+				}
 				res, _ := a.EnsureSpotifyEngine(host, port)
 				if strings.Contains(strings.ToLower(res), "no embedded engine") {
 					r.note = "build carries no engine"
