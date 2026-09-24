@@ -7412,7 +7412,14 @@ function renderNowPlayingBar() {
   // the same line rather than falling through to the generic "some source is
   // active" case, which is why a speaker playing through it showed nothing
   // useful at all (#491).
-  if (srcU === 'AUX' || srcU === 'LOCAL') { displayName = t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  // `name || generic`, not the generic outright. The box names its own socket
+  // in <itemName> and the app had already parsed and stored it one line above,
+  // then overwrote it here, so a speaker with two or three inputs showed the
+  // same "AUX input" for all of them while the phone remote printed the real
+  // name (#274). The generic label stays as the FALLBACK: a CineMate reported
+  // no name at all and fell through to "some source is active", which was
+  // worse than a generic one (#491).
+  if (srcU === 'AUX' || srcU === 'LOCAL') { displayName = name || t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (srcU === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (isAirplay) { displayName = t('status.airplay'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && ps !== 'STOP_STATE' && !stateLabel && !displayName) {
