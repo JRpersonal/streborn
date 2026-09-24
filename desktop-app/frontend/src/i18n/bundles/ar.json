@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "لا توجد مساحة كافية للمحرك",
   "updateAll.noteStick": "{{name}}: يوجد محرك USB متصل (سيتم تحديثه تلقائيًا).",
   "updateAll.noteWeakWifi": "{{name}}: شبكة Wi-Fi ضعيفة، قد يستغرق التحديث وقتًا أطول.",
+  "updateAll.noteTightNand": "{{name}}: مساحة التخزين ضيقة ({{freeMB}} ميجابايت متاحة، ونحتاج نحو {{needMB}} ميجابايت). سيستمر التحديث وسيعاد تثبيت محرك Spotify بعده.",
   "updateAll.batchLabel": "جميع مكبرات الصوت",
   "updateAll.doneToast": "تم: {{done}} محدّث، {{deferred}} مؤجل، {{failed}} فشل.",
   "updateAll.phase.queued": "في الانتظار",

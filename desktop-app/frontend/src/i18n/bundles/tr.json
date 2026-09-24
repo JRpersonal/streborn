@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Motor için yeterli alan yok",
   "updateAll.noteStick": "{{name}}: bir USB bellek takılı (otomatik olarak yenilenecek).",
   "updateAll.noteWeakWifi": "{{name}}: zayıf Wi-Fi, güncelleme daha uzun sürebilir.",
+  "updateAll.noteTightNand": "{{name}}: depolama alanı az ({{freeMB}} MB boş, yaklaşık {{needMB}} MB gerekli). Güncelleme yine de çalışır ve Spotify motoru sonrasında yeniden yüklenir.",
   "updateAll.batchLabel": "tüm hoparlörler",
   "updateAll.doneToast": "Tamam: {{done}} güncellendi, {{deferred}} ertelendi, {{failed}} başarısız.",
   "updateAll.phase.queued": "Sırada",

@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Замало місця для рушія",
   "updateAll.noteStick": "{{name}}: вставлено USB-флешку (її буде оновлено автоматично).",
   "updateAll.noteWeakWifi": "{{name}}: слабкий Wi-Fi, оновлення може тривати довше.",
+  "updateAll.noteTightNand": "{{name}}: мало вільного місця ({{freeMB}} MB вільно, потрібно близько {{needMB}} MB). Оновлення все одно відбудеться, а рушій Spotify буде встановлено знову.",
   "updateAll.batchLabel": "усі колонки",
   "updateAll.doneToast": "Готово: {{done}} оновлено, {{deferred}} відкладено, {{failed}} з помилкою.",
   "updateAll.phase.queued": "У черзі",

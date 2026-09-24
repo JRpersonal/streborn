@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "儲存空間不夠放引擎",
   "updateAll.noteStick": "{{name}}：插著 USB 隨身碟（會自動更新裡面的內容）。",
   "updateAll.noteWeakWifi": "{{name}}：Wi-Fi 訊號弱，更新可能久一點。",
+  "updateAll.noteTightNand": "{{name}}：儲存空間不足（剩餘 {{freeMB}} MB，約需 {{needMB}} MB）。更新仍會進行，Spotify 引擎會在之後重新安裝。",
   "updateAll.batchLabel": "所有喇叭",
   "updateAll.doneToast": "完成：{{done}} 台已更新、{{deferred}} 台稍後、{{failed}} 台失敗。",
   "updateAll.phase.queued": "等待中",
