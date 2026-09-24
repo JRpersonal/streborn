@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Zu wenig Speicher für die Engine",
   "updateAll.noteStick": "{{name}}: ein USB-Stick steckt (wird automatisch aufgefrischt).",
   "updateAll.noteWeakWifi": "{{name}}: schwaches WLAN, das Update kann länger dauern.",
+  "updateAll.noteTightNand": "{{name}}: der Speicher ist knapp ({{freeMB}} MB frei, etwa {{needMB}} MB nötig). Das Update läuft trotzdem, die Spotify-Engine wird danach neu aufgespielt.",
   "updateAll.batchLabel": "alle Lautsprecher",
   "updateAll.doneToast": "Fertig: {{done}} aktualisiert, {{deferred}} später, {{failed}} fehlgeschlagen.",
   "updateAll.phase.queued": "Wartet",

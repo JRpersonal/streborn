@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Not enough space for the engine",
   "updateAll.noteStick": "{{name}}: a USB stick is plugged in (it will be refreshed automatically).",
   "updateAll.noteWeakWifi": "{{name}}: weak Wi-Fi, the update may take longer.",
+  "updateAll.noteTightNand": "{{name}}: storage is tight ({{freeMB}} MB free, about {{needMB}} MB needed). The update still runs and the Spotify engine is reinstalled afterwards.",
   "updateAll.batchLabel": "all speakers",
   "updateAll.doneToast": "Done: {{done}} updated, {{deferred}} deferred, {{failed}} failed.",
   "updateAll.phase.queued": "Queued",

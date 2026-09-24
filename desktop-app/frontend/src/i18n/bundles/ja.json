@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "エンジン用の空き容量が不足",
   "updateAll.noteStick": "{{name}}：USB スティックが挿入されています（自動的に更新されます）。",
   "updateAll.noteWeakWifi": "{{name}}：Wi-Fi が弱いため、更新に時間がかかる場合があります。",
+  "updateAll.noteTightNand": "{{name}}: 空き容量が少なくなっています（空き {{freeMB}} MB、必要 約{{needMB}} MB）。更新は続行され、Spotify エンジンは後で再インストールされます。",
   "updateAll.batchLabel": "すべてのスピーカー",
   "updateAll.doneToast": "完了：{{done}} 更新、{{deferred}} 保留、{{failed}} 失敗。",
   "updateAll.phase.queued": "待機中",

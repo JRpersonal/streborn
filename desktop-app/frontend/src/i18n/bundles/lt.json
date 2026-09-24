@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Nepakanka vietos varikliui",
   "updateAll.noteStick": "{{name}}: įkišta USB atmintinė (ji bus atnaujinta automatiškai).",
   "updateAll.noteWeakWifi": "{{name}}: silpnas Wi-Fi, atnaujinimas gali užtrukti ilgiau.",
+  "updateAll.noteTightNand": "{{name}}: mažai laisvos vietos ({{freeMB}} MB laisva, reikia apie {{needMB}} MB). Atnaujinimas vis tiek vyks, o Spotify variklis bus įdiegtas iš naujo.",
   "updateAll.batchLabel": "visos kolonėlės",
   "updateAll.doneToast": "Atlikta: {{done}} atnaujinta, {{deferred}} atidėta, {{failed}} nepavyko.",
   "updateAll.phase.queued": "Eilėje",

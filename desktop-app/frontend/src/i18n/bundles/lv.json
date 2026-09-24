@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Nepietiek vietas dzinējam",
   "updateAll.noteStick": "{{name}}: ievietota USB atmiņa (tā tiks automātiski atjaunināta).",
   "updateAll.noteWeakWifi": "{{name}}: vājš Wi-Fi, atjaunināšana var aizņemt ilgāku laiku.",
+  "updateAll.noteTightNand": "{{name}}: maz brīvas vietas ({{freeMB}} MB brīvi, nepieciešami apmēram {{needMB}} MB). Atjaunināšana turpināsies, un Spotify dzinējs tiks uzstādīts no jauna.",
   "updateAll.batchLabel": "visi skaļruņi",
   "updateAll.doneToast": "Pabeigts: {{done}} atjaunināti, {{deferred}} atlikti, {{failed}} neizdevās.",
   "updateAll.phase.queued": "Rindā",

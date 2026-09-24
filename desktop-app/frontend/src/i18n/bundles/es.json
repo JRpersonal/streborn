@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Espacio insuficiente para el motor",
   "updateAll.noteStick": "{{name}}: hay un USB conectado (se actualizará automáticamente).",
   "updateAll.noteWeakWifi": "{{name}}: Wi-Fi débil, la actualización puede tardar más.",
+  "updateAll.noteTightNand": "{{name}}: queda poco espacio ({{freeMB}} MB libres, unos {{needMB}} MB necesarios). La actualización continúa y el motor de Spotify se reinstala después.",
   "updateAll.batchLabel": "todos los altavoces",
   "updateAll.doneToast": "Listo: {{done}} actualizados, {{deferred}} pendientes, {{failed}} fallidos.",
   "updateAll.phase.queued": "En cola",

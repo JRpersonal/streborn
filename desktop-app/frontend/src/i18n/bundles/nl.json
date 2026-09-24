@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Te weinig ruimte voor de engine",
   "updateAll.noteStick": "{{name}}: er zit een USB-stick in (wordt automatisch ververst).",
   "updateAll.noteWeakWifi": "{{name}}: zwakke wifi, de update kan langer duren.",
+  "updateAll.noteTightNand": "{{name}}: weinig opslag ({{freeMB}} MB vrij, ongeveer {{needMB}} MB nodig). De update gaat door en de Spotify-engine wordt daarna opnieuw geplaatst.",
   "updateAll.batchLabel": "alle speakers",
   "updateAll.doneToast": "Klaar: {{done}} bijgewerkt, {{deferred}} uitgesteld, {{failed}} mislukt.",
   "updateAll.phase.queued": "In wachtrij",

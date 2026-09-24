@@ -24,6 +24,7 @@
   "updateAll.phase.engineTooFull": "Za mało miejsca na silnik",
   "updateAll.noteStick": "{{name}}: włożony jest pendrive USB (zostanie odświeżony automatycznie).",
   "updateAll.noteWeakWifi": "{{name}}: słabe Wi-Fi, aktualizacja może potrwać dłużej.",
+  "updateAll.noteTightNand": "{{name}}: mało miejsca ({{freeMB}} MB wolne, potrzeba około {{needMB}} MB). Aktualizacja i tak się wykona, a silnik Spotify zostanie potem zainstalowany ponownie.",
   "updateAll.batchLabel": "wszystkie głośniki",
   "updateAll.doneToast": "Gotowe: {{done}} zaktualizowane, {{deferred}} odłożone, {{failed}} nieudane.",
   "updateAll.phase.queued": "W kolejce",

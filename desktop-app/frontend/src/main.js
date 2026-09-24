@@ -4809,6 +4809,26 @@ async function runUpdateAllBoxes(onStart) {
       const sig = conn && conn.signal;
       if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
     } catch { /* signal unknown: do not block */ }
+    try {
+      // Storage, the one thing this pre-scan never looked at. The single-box
+      // update has asked since #ST30 and stops to confirm when it is tight;
+      // the batch wrote the same speakers without ever mentioning it, so the
+      // owner of a tight box got a warning or no warning depending purely on
+      // which button he pressed. Same Go gate, so the two paths cannot drift:
+      // nothing is computed here, this renders what BoxStoragePreflight says.
+      //
+      // A note and not a confirm: the batch already asks once for the whole
+      // run, and the update is the right thing to do anyway. Tight NAND costs
+      // a re-delivered engine after the reboot, which the flow handles by
+      // itself, so the user needs to KNOW rather than to decide.
+      const pf = await BoxStoragePreflight(b.host, b.port);
+      if (pf && pf.tight) {
+        const mb = (n) => ((n || 0) / 1048576).toFixed(1);
+        notes.push(t('updateAll.noteTightNand', {
+          name: getBoxLabel(b), freeMB: mb(pf.freeBytes), needMB: mb(pf.needBytes),
+        }));
+      }
+    } catch { /* headroom unknown (older agent): never block a batch */ }
   }
   hideToast();
   // The prompt used to be one plain string with "\n" separators pushed through
