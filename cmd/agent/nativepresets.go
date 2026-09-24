@@ -69,6 +69,14 @@ var nativeReady struct {
 	// cannot take puts it straight back on the UPnP form, so the hardware keys
 	// keep working throughout.
 	failures int
+	// disabledAt is when the latch went on. A latch that never comes off needs
+	// a reboot to clear, and two field bundles showed exactly what that costs:
+	// the fallback is only better than native if the fallback WORKS, and on
+	// those two speakers it did not (one answered 1036 to every recall, the
+	// other 404 to every UPnP push, from install day). Both owners lost all six
+	// keys, one for two days and one for a week, on speakers whose native form
+	// had been fine. So the latch is a timeout now, not a verdict.
+	disabledAt time.Time
 }
 
 // nativeFailureBudget is how many consecutive sweeps may fail to store a native
@@ -86,6 +94,7 @@ func disableNativePresets(reason string) {
 	if n >= nativeFailureBudget {
 		nativeReady.disabled = true
 		nativeReady.why = reason
+		nativeReady.disabledAt = nativeNow()
 	}
 	nativeReady.Unlock()
 	l := nativeReadyLogger
@@ -121,9 +130,25 @@ const nativeDropOwnMissWindow = 10 * time.Second
 // up a proxy and a preset store to make it happen.
 var lastSlotMiss = streamproxy.LastSlotMiss
 
+// nativeDropWindow is how far back a drop still counts. Without it the counter
+// only ever grows, so four drops spread over a week read the same as four in a
+// minute and latch the speaker just as hard. "Repeatedly abandoned a station it
+// had accepted" has to mean repeatedly, and a speaker that drops once a day is
+// not the storm this budget was measured against (twelve presses, twelve drops,
+// SoundTouch 20, v0.9.30).
+const nativeDropWindow = 30 * time.Minute
+
 var nativeDrops struct {
 	sync.Mutex
-	n int
+	at []time.Time
+}
+
+// resetNativeDrops clears the drop history, so a speaker coming off a latch
+// starts with a full budget instead of latching again on its first stumble.
+func resetNativeDrops() {
+	nativeDrops.Lock()
+	nativeDrops.at = nil
+	nativeDrops.Unlock()
 }
 
 // noteNativeStreamDropped records the box leaving a native station on its own.
@@ -152,9 +177,16 @@ func noteNativeStreamDropped() {
 		}
 		return
 	}
+	now := nativeNow()
 	nativeDrops.Lock()
-	nativeDrops.n++
-	n := nativeDrops.n
+	kept := nativeDrops.at[:0]
+	for _, t := range nativeDrops.at {
+		if now.Sub(t) < nativeDropWindow {
+			kept = append(kept, t)
+		}
+	}
+	nativeDrops.at = append(kept, now)
+	n := len(nativeDrops.at)
 	nativeDrops.Unlock()
 	if n < nativeDropBudget {
 		return
@@ -178,7 +210,47 @@ func forceDisableNativePresets(reason string) {
 	nativeReady.Lock()
 	nativeReady.disabled = true
 	nativeReady.why = reason
+	nativeReady.disabledAt = nativeNow()
 	nativeReady.Unlock()
+}
+
+// nativeLatchCoolOff is how long a latch stands before the native form is tried
+// again.
+//
+// The latch was written as "off for this run", on the assumption that the UPnP
+// fallback keeps the hardware keys working. That assumption failed in the field
+// on two speakers at once, and when it fails the owner has no working keys at
+// all until the agent is restarted. An hour bounds that to an hour. If the
+// speaker really does keep abandoning stations, it earns its latch back after
+// the next four drops, and a station that falls over and is re-pushed is a far
+// better state than six keys that do nothing.
+const nativeLatchCoolOff = time.Hour
+
+// nativeNow is the clock, as a variable so the latch tests do not have to sleep.
+var nativeNow = time.Now
+
+// expireNativeLatchLocked lifts a latch that has stood longer than the cool-off
+// and gives the speaker a clean slate: a fresh write budget, a fresh drop
+// budget, and a re-probe of the source registration. Caller holds nativeReady.
+func expireNativeLatchLocked() {
+	if !nativeReady.disabled || nativeReady.disabledAt.IsZero() {
+		return
+	}
+	if nativeNow().Sub(nativeReady.disabledAt) < nativeLatchCoolOff {
+		return
+	}
+	was := nativeReady.why
+	nativeReady.disabled = false
+	nativeReady.why = ""
+	nativeReady.disabledAt = time.Time{}
+	nativeReady.failures = 0
+	// Re-probe: the verdict that put the slots on the slower form is stale now.
+	nativeReady.checked = time.Time{}
+	resetNativeDrops()
+	if l := nativeReadyLogger; l != nil {
+		l.Info("native presets: the fallback has had its hour, trying the native form again",
+			"coolOff", nativeLatchCoolOff, "latchedBecause", was)
+	}
 }
 
 // noteNativeWriteLanded records a sweep whose native writes stuck, clearing the
@@ -194,6 +266,7 @@ func noteNativeWriteLanded() {
 func nativePresetsDisabled() (bool, string) {
 	nativeReady.Lock()
 	defer nativeReady.Unlock()
+	expireNativeLatchLocked()
 	return nativeReady.disabled, nativeReady.why
 }
 

@@ -63,12 +63,12 @@ func withSlotMiss(t *testing.T, slot int, ago time.Duration, ok bool) {
 func withNoDropsRecorded(t *testing.T) {
 	t.Helper()
 	nativeDrops.Lock()
-	prev := nativeDrops.n
-	nativeDrops.n = 0
+	prev := nativeDrops.at
+	nativeDrops.at = nil
 	nativeDrops.Unlock()
 	t.Cleanup(func() {
 		nativeDrops.Lock()
-		nativeDrops.n = prev
+		nativeDrops.at = prev
 		nativeDrops.Unlock()
 	})
 }
@@ -76,5 +76,5 @@ func withNoDropsRecorded(t *testing.T) {
 func recordedDrops() int {
 	nativeDrops.Lock()
 	defer nativeDrops.Unlock()
-	return nativeDrops.n
+	return len(nativeDrops.at)
 }
