@@ -137,7 +137,7 @@ export function PhoneQR(arg1:string):Promise<string>;
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 
-export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string):Promise<void>;
+export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number):Promise<void>;
 
 export function Prev(arg1:string,arg2:number):Promise<void>;
 
