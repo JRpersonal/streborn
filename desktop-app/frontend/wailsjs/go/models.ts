@@ -430,6 +430,7 @@ export namespace main {
 	    track: string;
 	    account: string;
 	    homepage: string;
+	    mime?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RecentItem(source);
@@ -446,6 +447,7 @@ export namespace main {
 	        this.track = source["track"];
 	        this.account = source["account"];
 	        this.homepage = source["homepage"];
+	        this.mime = source["mime"];
 	    }
 	}
 	export class SetupAPPushResult {

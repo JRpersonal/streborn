@@ -22,6 +22,11 @@ type RecentItem struct {
 	Track    string `json:"track"`    // song / track title (radio ICY, Spotify); may be empty
 	Account  string `json:"account"`  // sourceAccount (which Spotify account)
 	Homepage string `json:"homepage"` // station website, for the card's "website" link (radio)
+	// Mime is the media-server file's type. It is what routes a replay past the
+	// endless-radio relay and straight to the file, and it was missing here, so
+	// the agent's value was dropped at this boundary and recent.js always sent
+	// an empty string (#817).
+	Mime string `json:"mime,omitempty"`
 }
 
 // RecentPlayed reads one box's recently-played ring (GET /api/recent),

@@ -155,6 +155,18 @@ func (s *Store) Add(e Entry) {
 				if last.Account == "" && e.Account != "" {
 					last.Account = e.Account
 				}
+				// Mime and Homepage were the two the fold never filled, and Mime
+				// is the one that decides how a replay PLAYS: without it the
+				// track goes through the endless-radio relay instead of being
+				// fetched from the media server. A card written once without it
+				// therefore stayed broken for good, even when the very next play
+				// of the same card carried it (#817).
+				if last.Mime == "" && e.Mime != "" {
+					last.Mime = e.Mime
+				}
+				if last.Homepage == "" && e.Homepage != "" {
+					last.Homepage = e.Homepage
+				}
 				s.markDirtyLocked()
 				return
 			}
