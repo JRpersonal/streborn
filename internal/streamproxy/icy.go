@@ -105,6 +105,10 @@ func (s *Server) noteStreamStart(url string) {
 	}
 	s.titleGens[url]++
 	s.titleMu.Unlock()
+	// The health section hangs off the same moment: this is the one hook every
+	// proxy path already goes through, so recording the station here is what
+	// stops a perfectly healthy stream reporting an empty radio_stream_health.
+	s.noteHealthStart(url)
 }
 
 // clearTitleOnEnd drops the title when the proxy stops carrying url. Without
