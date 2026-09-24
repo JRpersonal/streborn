@@ -7570,6 +7570,36 @@ async function pollTrackPosition() {
   }
 }
 
+// spotifyKeyUsableFor answers one question for the built-in-Spotify notice:
+// could a saved Spotify key on THIS speaker play anything at all? Only the
+// speaker knows, so it is asked, once, and the answer cached per host.
+//
+// Returns true, false, or undefined while no answer has arrived yet. The caller
+// shows the notice only on true, so a speaker that has not answered stays
+// silent for a poll rather than repeating an instruction that already went out
+// wrong twice (#973).
+//
+// canRecall absent means the agent predates the field, not "no". Reading it as
+// no would hide the notice from everyone who has not updated their speaker.
+function spotifyKeyUsableFor(box) {
+  if (!box || !box.host) return undefined;
+  const cache = state.spotifyKeyUsable || (state.spotifyKeyUsable = {});
+  if (box.host in cache) return cache[box.host];
+  if (state.spotifyKeyUsablePending === box.host) return undefined;
+  state.spotifyKeyUsablePending = box.host;
+  SpotifyNowPlaying(box.host, box.port)
+    .then(np => {
+      state.spotifyKeyUsablePending = '';
+      if (!np) return;
+      const canRecall = np.canRecall === null || np.canRecall === undefined ? true : !!np.canRecall;
+      cache[box.host] = canRecall && !np.premiumRequired;
+    })
+    .catch(() => {
+      state.spotifyKeyUsablePending = '';
+    });
+  return undefined;
+}
+
 async function refreshStatus() {
   if (!state.currentBox || state.view !== 'box') return;
   // Reflect hardware-button volume changes back into the slider.
@@ -7636,15 +7666,34 @@ async function refreshStatus() {
     // cannot create at all, so it sent a free-account user looking for a button
     // that does not exist. It now needs a speaker that is really playing and a
     // key that really exists, and it is remembered per speaker, not globally.
+    // Two conditions were not enough. The reporter HAS a saved Spotify key
+    // and his speaker WAS playing, so both gates passed and he still got a
+    // notice telling him to press a key he cannot use (#973, on v0.9.83 which
+    // already had the first fix). The key existing was never the question;
+    // being able to use it is.
+    //
+    // The third attempt has to ask the SPEAKER, and it has to ask here.
+    // state.spotifyPremiumRequired looked like the answer, but it is only ever
+    // written while STR's own stream is the thing playing (isSpotifyNow, below),
+    // and that is false exactly when this notice fires, because what is playing
+    // is the box's OWN receiver. The flag was therefore always undefined at this
+    // point. A free account is also only half of it: a speaker that was never
+    // picked in Spotify at all cannot use the key either, and reports
+    // premiumRequired=false because it has no account to judge.
     const spotifyKeySaved = (state.presets || []).some(p => p && p.type === 'spotify');
     const spotifyWarnKey = (state.currentBox && state.currentBox.host) || '';
     if (src === 'SPOTIFY' && ps === 'PLAY_STATE' && spotifyKeySaved) {
-      if (state.nativeSpotifyWarned !== spotifyWarnKey) {
+      // Silent until the speaker has answered. One poll's delay on a hint is
+      // cheaper than a third wrong instruction to the same person.
+      if (state.nativeSpotifyWarned !== spotifyWarnKey && spotifyKeyUsableFor(state.currentBox) === true) {
         state.nativeSpotifyWarned = spotifyWarnKey;
         showToast(t('play.nativeSpotifyHint'));
       }
     } else if (src !== 'SPOTIFY') {
       state.nativeSpotifyWarned = '';
+      // Forget the verdict too: the user may go and tap the speaker in Spotify
+      // precisely because the key did not work, and the app must notice.
+      state.spotifyKeyUsable = {};
     }
     const loc = decodeXmlEntities((xml.match(/location="([^"]+)"/) || [])[1] || '');
     // Extract the art URL from the <art ...>URL</art> tag. Bose
@@ -7696,6 +7745,9 @@ async function refreshStatus() {
           state.nowSpotifyCover = np.cover || '';
           state.nowSpotifyContext = np.context || '';
           state.nowSpotifyAccount = np.account || '';
+          // A free account cannot start a playlist from a preset key, so any
+          // message that tells the user to press one is wrong for them (#973).
+          state.spotifyPremiumRequired = !!np.premiumRequired;
           // Spotify refused the audio key for track after track. Without this
           // the playlist just races past in silence and the speaker looks
           // broken, when in fact Spotify is refusing this engine for this
