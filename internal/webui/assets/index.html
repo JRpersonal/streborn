@@ -3264,9 +3264,15 @@ async function playRecent(idx, btn) {
   var e = recentCards[idx];
   if (!e) return;
   press(btn);
+  /* mime routes a media-server file past the endless-radio relay, exactly as
+     playLibTrack and playBrowseTrack do. Leaving it out was deliberate parity
+     with the desktop app, which turns out to have been dropping it too, so
+     "parity" meant both paths were wrong (#817): the Wave labelled the track as
+     internet radio, the bitrate read as a dash, the track never ended and the
+     card was re-filed under Radio. The card carries it; send it. */
   var ok = await api('/api/play', 'POST', {
     url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
-    homepage: e.homepage || ''
+    mime: e.mime || '', homepage: e.homepage || ''
   });
   if (ok) { setNow(T.starting + ' ' + (e.cardName || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(loadRecent, 4000); }
 }
