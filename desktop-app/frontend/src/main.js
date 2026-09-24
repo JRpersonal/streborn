@@ -4940,7 +4940,16 @@ async function runUpdateAllBoxes(onStart) {
   const showMiniIfStillRunning = () => {
     if (!mini) return;
     const c = counts();
-    const left = rows.length - (c.done + c.failed + c.deferred);
+    // c.fail and c.defer, not c.failed/c.deferred: counts() has never returned
+    // those names, so the sum was NaN, `left <= 0` was false (every NaN
+    // comparison is), and closing the panel mid-run put up a strip reading
+    // "Still updating NaN speaker(s)" (reported with a bundle, 2026-09-15).
+    //
+    // targets.length, not rows.length: rows holds every speaker the run
+    // INSPECTED, including the ones that turned out to need nothing. Counting
+    // those made the strip claim more speakers were still going than were ever
+    // being updated. renderSummary already uses targets.length for this reason.
+    const left = targets.length - (c.done + c.fail + c.defer);
     if (left <= 0) { mini.classList.add('hidden'); return; }
     mini.textContent = t('updateAll.stillRunning', { n: left });
     mini.classList.remove('hidden');
