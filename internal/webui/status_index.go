@@ -413,13 +413,21 @@ func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/manifest+json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"name":             name,
-		"short_name":       short,
-		"description":      "Control your Bose SoundTouch speaker",
-		"start_url":        "/",
-		"scope":            "/",
-		"display":          "standalone",
-		"orientation":      "portrait",
+		"name":        name,
+		"short_name":  short,
+		"description": "Control your Bose SoundTouch speaker",
+		"start_url":   "/",
+		"scope":       "/",
+		"display":     "standalone",
+		// "any", not "portrait": the lock only binds the INSTALLED home-screen
+		// app, and it locked out the one setup that needs the other rotation.
+		// A user mounted a tablet on the wall in landscape, added the remote to
+		// its home screen, and the page turned itself upright on a screen that
+		// cannot turn with it (reported by mail, 2026-09-20). The layout does
+		// not care: body is capped at 620px and centred, so a wide screen just
+		// gets margins. Leaving rotation to the device is also what a phone
+		// user gets from every other page they open.
+		"orientation":      "any",
 		"background_color": "#1a1a1a",
 		"theme_color":      "#1a1a1a",
 		"icons": []map[string]string{
