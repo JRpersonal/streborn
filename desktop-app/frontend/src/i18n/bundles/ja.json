@@ -341,6 +341,7 @@
   "preset.noCurrentStation": "現在再生中の放送局がないため、長押しは無効です。",
   "preset.copiedToKey": "キー {{n}} にコピーしました: {{name}}",
   "preset.savedToKey": "キー {{n}} に保存しました: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "保存しました。このスピーカーにはまだ Spotify のログインがないため、キーは再生されません。Spotify を開いてこのスピーカーを一度選ぶと、キーが使えるようになります。",
   "preset.alreadyOnKey": "この局はすでにキー {{n}} に登録されています。",
   "preset.alreadyOnKeyNamed": "「{{name}}」はすでにキー {{n}} にあります。保存したいものを先にスピーカーで再生してから保存してください。",
   "preset.moveTitle": "この局はすでに別のキーに登録されています",

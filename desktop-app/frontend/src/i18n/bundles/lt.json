@@ -341,6 +341,7 @@
   "preset.noCurrentStation": "Šiuo metu negroja jokia stotis, todėl palaikymas neturi poveikio.",
   "preset.copiedToKey": "Nukopijuota į mygtuką {{n}}: {{name}}",
   "preset.savedToKey": "Išsaugota mygtuke {{n}}: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Įrašyta. Ši kolonėlė dar neprisijungusi prie Spotify, todėl mygtukas negros. Atidaryk Spotify, kartą pasirink šią kolonėlę, tada mygtukas veiks.",
   "preset.alreadyOnKey": "Ši stotis jau priskirta klavišui {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" jau yra ties mygtuku {{n}}. Pirma paleisk kolonėlėje tai, ką nori išsaugoti, tada saugok.",
   "preset.moveTitle": "Ši stotis jau priskirta kitam klavišui",

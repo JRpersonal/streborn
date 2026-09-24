@@ -341,6 +341,7 @@
   "preset.noCurrentStation": "لا توجد محطة قيد التشغيل الآن، لذا لا أثر للضغط المطوّل.",
   "preset.copiedToKey": "نُسخ إلى الزر {{n}}: {{name}}",
   "preset.savedToKey": "حُفظ في الزر {{n}}: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "تم الحفظ. لا يوجد تسجيل دخول إلى Spotify على هذا السماعة بعد، لذلك لن يعمل الزر. افتح Spotify واختر هذه السماعة مرة واحدة، بعدها يعمل الزر.",
   "preset.alreadyOnKey": "هذه المحطة موجودة بالفعل على الزر {{n}}.",
   "preset.alreadyOnKeyNamed": "«{{name}}» موجود بالفعل على الزر {{n}}. شغّل أولًا ما تريد حفظه على السماعة، ثم احفظه.",
   "preset.moveTitle": "هذه المحطة موجودة بالفعل على زر آخر",

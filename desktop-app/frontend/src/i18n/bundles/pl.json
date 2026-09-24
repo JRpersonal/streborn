@@ -341,6 +341,7 @@
   "preset.noCurrentStation": "Żadna stacja teraz nie gra, więc przytrzymanie nie ma efektu.",
   "preset.copiedToKey": "Skopiowano do przycisku {{n}}: {{name}}",
   "preset.savedToKey": "Zapisano na przycisku {{n}}: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Zapisano. Ten głośnik nie ma jeszcze logowania Spotify, więc przycisk nie zagra. Otwórz Spotify, wybierz ten głośnik raz, potem przycisk zadziała.",
   "preset.alreadyOnKey": "Ta stacja jest już przypisana do przycisku {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" jest już na przycisku {{n}}. Najpierw włącz na głośniku to, co chcesz zapisać, a potem zapisz.",
   "preset.moveTitle": "Ta stacja jest już na innym przycisku",

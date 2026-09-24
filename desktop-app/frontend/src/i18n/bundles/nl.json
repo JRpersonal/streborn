@@ -341,6 +341,7 @@
   "preset.noCurrentStation": "Er speelt nu geen zender, dus ingedrukt houden heeft geen effect.",
   "preset.copiedToKey": "Gekopieerd naar toets {{n}}: {{name}}",
   "preset.savedToKey": "Opgeslagen op toets {{n}}: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Opgeslagen. Deze speaker heeft nog geen Spotify-login, dus de knop speelt nog niet. Open Spotify, kies deze speaker één keer, daarna werkt de knop.",
   "preset.alreadyOnKey": "Deze zender staat al op toets {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" staat al op toets {{n}}. Start eerst op de luidspreker wat je wilt opslaan, en sla het dan op.",
   "preset.moveTitle": "Deze zender staat al op een andere toets",

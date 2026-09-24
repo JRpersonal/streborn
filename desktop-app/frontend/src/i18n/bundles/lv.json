@@ -341,6 +341,7 @@
   "preset.noCurrentStation": "Pašlaik neatskaņo neviena stacija, tāpēc turēšanai nav efekta.",
   "preset.copiedToKey": "Nokopēts pogā {{n}}: {{name}}",
   "preset.savedToKey": "Saglabāts pogā {{n}}: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Saglabāts. Šim skaļrunim vēl nav Spotify pieteikšanās, tāpēc taustiņš neatskaņos. Atver Spotify, vienreiz izvēlies šo skaļruni, tad taustiņš darbosies.",
   "preset.alreadyOnKey": "Šī stacija jau ir piešķirta taustiņam {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" jau ir uz taustiņa {{n}}. Vispirms atskaņo skaļrunī to, ko gribi saglabāt, un tad saglabā.",
   "preset.moveTitle": "Šī stacija jau ir uz cita taustiņa",
