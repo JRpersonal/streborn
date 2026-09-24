@@ -110,6 +110,61 @@ func TestSaveLoadSpotifyRoundtrip(t *testing.T) {
 	}
 }
 
+// A Spotify preset that loops must still loop after the box reboots. Repeat
+// lives in the disk format as its own field, and the load path decodes into
+// rawPreset first: a field missing THERE is read back as false and the playlist
+// silently stops at the end again, which is the exact complaint the flag exists
+// to answer (Patrick, 2026-09-09).
+func TestSaveLoadKeepsSpotifyRepeatAndShuffle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(new): %v", err)
+	}
+	want := Preset{Slot: 6, Name: "Jens Chill", Type: "spotify", URI: "spotify:playlist:0DpRrxVcm2yvD3iEW1kH5E", Account: "jensukk", Shuffle: true, Repeat: true}
+	if err := s.SetSlot(want); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(reload): %v", err)
+	}
+	got, ok := reloaded.Get(6)
+	if !ok {
+		t.Fatal("slot 6 missing after reload")
+	}
+	if !got.Repeat {
+		t.Errorf("Repeat lost across the reload: %+v", got)
+	}
+	if !got.Shuffle {
+		t.Errorf("Shuffle lost across the reload: %+v", got)
+	}
+}
+
+// A preset saved before Repeat existed carries no such key. It must load as a
+// plain non-looping preset, which is the behaviour it already had.
+func TestLoadPresetWithoutRepeatKeyIsNotLooping(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	old := `[{"slot":6,"name":"Jens Chill","type":"spotify","uri":"spotify:playlist:0DpRrxVcm2yvD3iEW1kH5E","shuffle":true}]`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, ok := s.Get(6)
+	if !ok {
+		t.Fatal("slot 6 missing")
+	}
+	if got.Repeat {
+		t.Errorf("a preset saved before Repeat existed must not come back looping: %+v", got)
+	}
+	if !got.Shuffle {
+		t.Errorf("the old shuffle flag must still load: %+v", got)
+	}
+}
+
 // makeItems builds n distinct queue items for the cap tests.
 func makeItems(n int) []PresetItem {
 	out := make([]PresetItem, n)

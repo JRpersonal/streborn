@@ -47,7 +47,10 @@ func TestPlayWarmShuffleFastPath(t *testing.T) {
 		t.Fatalf("Play: %v", err)
 	}
 
-	want := []string{"/player/shuffle_context", "/player/shuffle_context", "/player/next", "/player/resume"}
+	// repeat_context rides along now: a preset carries its own repeat state
+	// and the fast path is exactly where it used to be lost (Patrick,
+	// 2026-09-09, having to set repeat by hand every evening).
+	want := []string{"/player/shuffle_context", "/player/shuffle_context", "/player/next", "/player/repeat_context", "/player/resume"}
 	got := pathsOf(calls())
 	if len(got) != len(want) {
 		t.Fatalf("warm shuffle calls = %v, want %v", got, want)

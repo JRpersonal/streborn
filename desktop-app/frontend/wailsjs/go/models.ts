@@ -336,6 +336,7 @@ export namespace main {
 	    homepage?: string;
 	    shuffle?: boolean;
 	    items?: number[];
+	    repeat?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -356,6 +357,7 @@ export namespace main {
 	        this.homepage = source["homepage"];
 	        this.shuffle = source["shuffle"];
 	        this.items = source["items"];
+	        this.repeat = source["repeat"];
 	    }
 	}
 	export class RadioSearchOpts {

@@ -466,6 +466,20 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			}
 			cancel()
 		}
+		// Same for repeat, and for the same reason: the engine keeps repeat per
+		// session, so a playlist the user had looping went back to stopping at
+		// the end on the next press and he had to set it again in the Spotify
+		// app, every evening (Patrick, 2026-09-09 and again on the 15th).
+		// Upgrade-only in the same way: an explicit repeat carried in by the
+		// client survives, and a failed read never clears one.
+		if savingLiveContext && !p.Repeat && s.spotifyRepeat != nil {
+			rctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if s.spotifyRepeat(rctx) {
+				p.Repeat = true
+				s.logger.Info("preset save: carried the live repeat state onto the preset", "slot", slot)
+			}
+			cancel()
+		}
 		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
 		// real name (the playlist title), so the box display and the tile show
 		// e.g. "Jens Chill" instead of a bare "Spotify". Only fills empties / a

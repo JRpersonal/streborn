@@ -1261,7 +1261,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	h.triggerPairAsync(6 * time.Second)
 	// Load the playlist (audio): a default preset resumes where the user left off
 	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
-	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle}); err != nil {
+	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle, Repeat: p.Repeat}); err != nil {
 		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 	} else if h.repushAfterRecall != nil {
 		// The context loaded: mirror the app path's conditional post-boundary
@@ -1658,7 +1658,7 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 		// where the playlist never loaded at all.
 		if attempt == 3 {
 			h.logger.Warn("spotify recall not playing, full re-Play (last resort)", "slot", slot)
-			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle})
+			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle, Repeat: p.Repeat})
 		} else {
 			h.logger.Warn("spotify recall not playing yet, re-pointing box", "slot", slot, "attempt", attempt)
 		}

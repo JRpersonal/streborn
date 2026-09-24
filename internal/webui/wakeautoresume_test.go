@@ -95,7 +95,7 @@ func TestASpotifyRecallThatCannotSucceedNeverReachesTheSpeaker(t *testing.T) {
 		{
 			name: "speaker never picked in Spotify",
 			setup: func(s *Server) {
-				s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+				s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 				s.spotifyCanRecall = func(context.Context) bool { return false }
 			},
 			wantCode: http.StatusUnprocessableEntity,
@@ -104,7 +104,7 @@ func TestASpotifyRecallThatCannotSucceedNeverReachesTheSpeaker(t *testing.T) {
 		{
 			name: "free account",
 			setup: func(s *Server) {
-				s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+				s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 				s.spotifyCanRecall = func(context.Context) bool { return true }
 				s.spotifyPremiumRequired = func() bool { return true }
 			},
@@ -150,7 +150,7 @@ func TestASpotifyRecallThatCannotSucceedNeverReachesTheSpeaker(t *testing.T) {
 // on a speaker that CAN recall, both fall through to the normal path.
 func TestTheSpotifyGateOnlyRefusesSpotifyRecallsThatCannotWork(t *testing.T) {
 	s, _ := newPlayTestServer(t)
-	s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+	s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 	s.spotifyCanRecall = func(context.Context) bool { return true }
 	s.spotifyPremiumRequired = func() bool { return false }
 
@@ -201,7 +201,7 @@ func TestTheOtherDoomedRecallsAlsoLeaveTheSpeakerAsleep(t *testing.T) {
 // refusal.
 func TestTheLegacyHealSurvivesTheMoveIntoTheGate(t *testing.T) {
 	s, _ := newPlayTestServer(t)
-	s.spotifyPlay = func(context.Context, string, string, bool) error { return nil }
+	s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 	s.spotifyCanRecall = func(context.Context) bool { return true }
 
 	p := presets.Preset{Slot: 6, Name: "Old mix", Type: "radio",

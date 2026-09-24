@@ -67,6 +67,14 @@ type Preset struct {
 	// optional/additive: every other preset type leaves them empty.
 	Shuffle bool         `json:"shuffle,omitempty"`
 	Items   []PresetItem `json:"items,omitempty"`
+	// Repeat keeps a Spotify preset looping its playlist. Saved with the
+	// preset and applied on every recall, because the engine remembers repeat
+	// per session and a recall that does not say leaves whatever the last
+	// session left: a listener who wants a playlist to run all evening had to
+	// set it by hand in the Spotify app every single time (Patrick,
+	// 2026-09-09). Optional/additive: every preset saved before this is false,
+	// which is the behaviour those presets already had.
+	Repeat bool `json:"repeat,omitempty"`
 }
 
 // PresetItem is one track in a queue preset (Type=="queue"). It mirrors the
@@ -116,6 +124,7 @@ type rawPreset struct {
 	Source    string       `json:"source"`
 	Homepage  string       `json:"homepage"`
 	Shuffle   bool         `json:"shuffle"`
+	Repeat    bool         `json:"repeat"`
 	Items     []PresetItem `json:"items"`
 }
 
@@ -232,6 +241,7 @@ func normalize(in []rawPreset) []Preset {
 			Source:    p.Source,
 			Homepage:  p.Homepage,
 			Shuffle:   p.Shuffle,
+			Repeat:    p.Repeat,
 			Items:     p.Items,
 		})
 	}

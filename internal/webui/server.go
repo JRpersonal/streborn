@@ -148,7 +148,7 @@ type Server struct {
 	// go-librespot's current login (see manager PlayAccount / SwitchAccount).
 	// nil when Spotify is not configured. Injected as a func for decoupling.
 	// shuffle selects a fresh random start vs the default resume-where-left-off.
-	spotifyPlay func(ctx context.Context, uri, account string, shuffle bool) error
+	spotifyPlay func(ctx context.Context, uri, account string, shuffle, repeat bool) error
 	// peerSeedFn accepts speakers pushed from the desktop app (see WithPeerSeed).
 	peerSeedFn func([]PeerSeed)
 	// peerForgetFn removes one sticky-picker entry (see WithPeerForget).
@@ -173,6 +173,10 @@ type Server struct {
 	// preset-save path to stamp the shuffle flag onto a Spotify preset saved
 	// from the running playback. nil when Spotify is not configured.
 	spotifyShuffle func(ctx context.Context) bool
+	// spotifyRepeat reports go-librespot's live repeat state, used by the
+	// preset-save path the same way spotifyShuffle is. nil when Spotify is not
+	// configured, and a nil resolver simply leaves the preset's repeat alone.
+	spotifyRepeat func(ctx context.Context) bool
 	// spotifyMeta resolves a stable cover image URL and the human title for a
 	// Spotify context URI (the playlist image + name), stamped onto a newly
 	// saved Spotify preset so its tile has a steady logo and a real name (not a

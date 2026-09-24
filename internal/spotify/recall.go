@@ -37,6 +37,11 @@ type PlayOptions struct {
 	// Spotify Connect "continue where you left off" behaviour) with shuffle OFF,
 	// so the speaker's remote next/prev walk the playlist in order.
 	Shuffle bool
+	// Repeat loops the context. Like Shuffle it is applied EXPLICITLY on every
+	// recall, including when false: the engine keeps repeat per session, so a
+	// recall that stays silent inherits whatever the previous one left, and a
+	// preset saved without repeat would keep looping because an earlier one did.
+	Repeat bool
 }
 
 // Play asks go-librespot to start playing a Spotify context (playlist/album/
@@ -196,6 +201,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		fmt.Sprintf(`{"shuffle_context":%t}`, opts.Shuffle)); err != nil {
 		m.logger.Debug("spotify: shuffle_context failed", "err", err, "shuffle", opts.Shuffle)
 	}
+	m.setRepeat(ctx, opts.Repeat)
 	if opts.Shuffle {
 		// shuffle_context only randomises the UPCOMING queue (the current track
 		// stays the context's first), so one skip lands on a random track. Still
@@ -241,14 +247,39 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions) 
 		m.clearSkipCut()
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
 	}
+	// The fast path exists to skip the cold staging, and it skipped this with
+	// it: pressing the key while the same playlist already plays is exactly
+	// when a listener expects the preset's own repeat setting to win.
+	m.setRepeat(ctx, opts.Repeat)
 	// No-op while playing; recovers an engine another controller paused.
 	_ = m.apiPost(ctx, "/player/resume", "")
-	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle)
+	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle, "repeat", opts.Repeat)
 	// Debounce the will_play repoint exactly like the cold path does.
 	m.mu.Lock()
 	m.lastActivate = time.Now()
 	m.mu.Unlock()
 	return nil
+}
+
+// setRepeat puts the engine's repeat state where the preset wants it.
+//
+// go-librespot has two switches: repeat_context loops the playlist, repeat_track
+// loops the one song. A preset means the playlist, so repeat_track is cleared
+// whenever repeat is asked for, or a session left on single-track repeat would
+// play one song all evening and look like the feature is broken.
+//
+// Best-effort on purpose: an engine build without these endpoints must not fail
+// a recall that is otherwise fine, so a miss is logged and the music plays.
+func (m *Manager) setRepeat(ctx context.Context, on bool) {
+	if err := m.apiPost(ctx, "/player/repeat_context",
+		fmt.Sprintf(`{"repeat_context":%t}`, on)); err != nil {
+		m.logger.Debug("spotify: repeat_context failed", "err", err, "repeat", on)
+	}
+	if on {
+		if err := m.apiPost(ctx, "/player/repeat_track", `{"repeat_track":false}`); err != nil {
+			m.logger.Debug("spotify: repeat_track clear failed", "err", err)
+		}
+	}
 }
 
 // waitContextLoaded polls go-librespot's /status until a track is loaded (the
@@ -365,6 +396,29 @@ func (m *Manager) ShufflingContext(ctx context.Context) bool {
 		return false
 	}
 	return st.ShuffleContext
+}
+
+// RepeatingContext reports whether the live go-librespot session currently
+// loops its context, straight from GET /status. The preset-save path stamps it
+// onto a Spotify preset saved from the running playback, so a playlist the user
+// listens to on repeat recalls on repeat instead of making him set it by hand in
+// the Spotify app every evening (Patrick, 2026-09-09 and again on the 15th).
+//
+// Only repeat_context counts. repeat_track loops the single song, which is not
+// what a playlist preset means, and the recall clears it for that reason.
+// False on any error: a failed read must never invent a repeat preset.
+func (m *Manager) RepeatingContext(ctx context.Context) bool {
+	b, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return false
+	}
+	var st struct {
+		RepeatContext bool `json:"repeat_context"`
+	}
+	if json.Unmarshal(b, &st) != nil {
+		return false
+	}
+	return st.RepeatContext
 }
 
 // ErrNoSpotifySession is returned by PlayAccount when the speaker holds no live
