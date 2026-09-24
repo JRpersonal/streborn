@@ -342,6 +342,7 @@
   "preset.noCurrentStation": "Şu anda çalan bir istasyon yok, bu yüzden basılı tutmanın etkisi yok.",
   "preset.copiedToKey": "{{n}} tuşuna kopyalandı: {{name}}",
   "preset.savedToKey": "{{n}} tuşuna kaydedildi: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Kaydedildi. Bu hoparlörde henüz Spotify oturumu yok, bu yüzden tuş çalmaz. Spotify'ı aç, bu hoparlörü bir kez seç, sonra tuş çalışır.",
   "preset.alreadyOnKey": "Bu istasyon zaten {{n}} tuşunda kayıtlı.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" zaten {{n}} numaralı tuşta. Önce kaydetmek istediğini hoparlörde başlat, sonra kaydet.",
   "preset.moveTitle": "Bu istasyon zaten başka bir tuşta",

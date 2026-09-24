@@ -6832,11 +6832,16 @@ async function saveCurrentToSlot(slot) {
     // speaker now instead of trusting the cache.
     let ctxUri = state.nowSpotifyContext;
     let acct = state.nowSpotifyAccount || '';
+    // Whether a key on THIS speaker could play at all. The same read already
+    // happens here, so asking costs nothing. undefined means the speaker's
+    // agent predates the field, and "cannot tell" must never become a warning.
+    let canRecall;
     try {
       const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
       if (np) {
         if (np.context) ctxUri = np.context;
         if (np.account) acct = np.account;
+        if (np.canRecall !== null && np.canRecall !== undefined) canRecall = !!np.canRecall;
       }
     } catch {}
     // Fallback: go-librespot's /spotify/info can report an empty context even
@@ -6866,6 +6871,15 @@ async function saveCurrentToSlot(slot) {
         slot, sname, ctxUri, acct
       );
       showToast(t('preset.savedToKey', { n: slot, name: sname }));
+      // The speaker already knows this key will be refused when it is pressed:
+      // both recall paths gate on the same question, and only the SAVE side had
+      // no gate, so the app reported success for a key that cannot play (#976).
+      // Said after the save, not instead of it: the key becomes good the moment
+      // the speaker is picked in Spotify once, so refusing to store it would
+      // throw away work the user will want.
+      if (canRecall === false) {
+        showToast(t('preset.spotifyKeyNeedsLogin'), 12000);
+      }
       await loadPresets();
       return;
     } catch (err) {

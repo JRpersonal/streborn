@@ -370,6 +370,7 @@
   "preset.noCurrentStation": "Kein Sender läuft gerade, daher hat Long Press keinen Effekt.",
   "preset.copiedToKey": "Auf Taste {{n}} kopiert: {{name}}",
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Gespeichert. Dieser Lautsprecher hat noch keine Spotify-Anmeldung, die Taste spielt also noch nicht. Öffne Spotify, wähl den Lautsprecher einmal aus, danach geht die Taste.",
   "preset.alreadyOnKey": "Dieser Sender liegt schon auf Taste {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" liegt schon auf Taste {{n}}. Starte erst das, was du speichern willst, auf dem Lautsprecher, dann sichere es.",
   "preset.moveTitle": "Dieser Sender liegt schon auf einer anderen Taste",

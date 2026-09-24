@@ -342,6 +342,7 @@
   "preset.noCurrentStation": "Aucune station ne joue actuellement, l'appui long n'a donc aucun effet.",
   "preset.copiedToKey": "Copié sur la touche {{n}} : {{name}}",
   "preset.savedToKey": "Enregistré sur la touche {{n}} : {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Enregistré. Ce haut-parleur n'a pas encore de connexion Spotify, la touche ne jouera donc pas. Ouvre Spotify, sélectionne ce haut-parleur une fois, ensuite la touche fonctionne.",
   "preset.alreadyOnKey": "Cette station est déjà sur la touche {{n}}.",
   "preset.alreadyOnKeyNamed": "« {{name}} » est déjà sur la touche {{n}}. Lancez d’abord sur l’enceinte ce que vous voulez enregistrer, puis enregistrez-le.",
   "preset.moveTitle": "Cette station est déjà sur une autre touche",

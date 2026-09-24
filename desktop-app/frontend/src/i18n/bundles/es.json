@@ -342,6 +342,7 @@
   "preset.noCurrentStation": "No hay ninguna emisora sonando ahora, así que mantener pulsado no tiene efecto.",
   "preset.copiedToKey": "Copiado a la tecla {{n}}: {{name}}",
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
+  "preset.spotifyKeyNeedsLogin": "Guardado. Este altavoz aún no tiene sesión de Spotify, así que la tecla no sonará. Abre Spotify, elige este altavoz una vez y después la tecla funciona.",
   "preset.alreadyOnKey": "Esta emisora ya está en la tecla {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" ya está en la tecla {{n}}. Pon primero en el altavoz lo que quieras guardar y guárdalo entonces.",
   "preset.moveTitle": "Esta emisora ya está en otra tecla",
