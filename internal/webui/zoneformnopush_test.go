@@ -2,6 +2,9 @@ package webui
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -137,5 +140,23 @@ func TestTheProxyHostBridgesTheTwoEncodings(t *testing.T) {
 	if ok, why := s.everyMemberCarriesTheGroup(context.Background(),
 		[]boxapi.ZoneMember{{IP: "192.0.2.2"}}, groupLoc); !ok {
 		t.Fatalf("a member on the master's proxy host was not recognised: %s", why)
+	}
+}
+
+// A member with no address cannot be asked, so it is doubt, and doubt means
+// push. It used to be skipped, which let one verified member vouch for a second
+// nobody had checked: exactly the silent speaker this function exists to catch.
+func TestAMemberWithNoAddressCountsAsDoubt(t *testing.T) {
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.1"}
+	members := []boxapi.ZoneMember{
+		{DeviceID: "MASTER", IP: "192.0.2.1"},
+		{DeviceID: "NOADDR", IP: "   "},
+	}
+	served, why := s.everyMemberCarriesTheGroup(context.Background(), members, "http://192.0.2.1:8888/stream/1")
+	if served {
+		t.Fatalf("a member nobody could ask was reported as served: %s", why)
+	}
+	if !strings.Contains(why, "NOADDR") {
+		t.Errorf("the reason does not name the member: %q", why)
 	}
 }
