@@ -81,3 +81,30 @@ describe('the new message exists in every bundle', () => {
     expect(de['settingsView.clockFormatUnknownState']).toMatch(/[äöüß]/);
   });
 });
+
+describe('a slow read cannot overwrite a choice the user already made', () => {
+  it('the preselect steps aside once the dropdown has been touched', () => {
+    expect(block).toContain('let userTouchedFormat = false;');
+    expect(block).toContain("clockFormat.addEventListener('input', () => { userTouchedFormat = true; });");
+    const then = block.slice(block.indexOf('GetClockFormat24(boseHost).then'));
+    expect(then.slice(0, 260)).toContain('if (userTouchedFormat) return;');
+  });
+});
+
+describe('the on/off highlight tells the truth after a failed write', () => {
+  it('the press remembers the state it came from and puts it back', () => {
+    expect(block).toContain('const before = clockState;');
+    expect(block).toContain('if (!ok) paintClock(before);');
+  });
+
+  it('postClock reports whether the speaker took it', () => {
+    const post = block.slice(block.indexOf('const postClock = async'), block.indexOf('const pressClock'));
+    expect(post).toContain('return true;');
+    expect(post).toContain('return false;');
+  });
+
+  it('both buttons go through the same press', () => {
+    expect(block).toContain('clockOn.onclick = () => pressClock(clockOn, true);');
+    expect(block).toContain('clockOff.onclick = () => pressClock(clockOff, false);');
+  });
+});
