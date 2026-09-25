@@ -37,14 +37,13 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // langOptionsHtml + wireCombobox are exported by the settings view (the Bose
 // language dropdown and the name combobox are shared between Settings and Setup);
 // reuse them rather than duplicating.
+import { langOptionsHtml, wireCombobox } from './settings.js';
 import {
-  langOptionsHtml,
-  wireCombobox,
   boseFwArticles,
   firmwareOlderThanLatest,
   BOSE_FW_USB_URL,
   LATEST_BOSE_FIRMWARE,
-} from './settings.js';
+} from '../firmware.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,

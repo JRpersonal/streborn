@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 // and the section slices below keyed on a newline. That cut a different amount
 // of text on each platform, so a real assertion passed on one and failed on the
 // other for a reason that had nothing to do with the code under test.
-const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8')
+const src = readFileSync(new URL('./firmware.js', import.meta.url), 'utf8')
   .replace(/\r\n/g, '\n');
 
 // The models the app tracks a latest firmware for. Any model listed there can
@@ -43,6 +43,13 @@ function articleBlock() {
 describe('Bose firmware support links', () => {
   it('no longer sends every model to one hardcoded article', () => {
     expect(src).not.toContain('BOSE_FW_SUPPORT_URL');
+  });
+
+  it('lives outside the views, where both of them can import it', () => {
+    const settings = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+    const setup = readFileSync(new URL('./views/setup.js', import.meta.url), 'utf8');
+    expect(settings).toContain("from '../firmware.js'");
+    expect(setup).toContain("from '../firmware.js'");
   });
 
   it('has an article for every model that can show the outdated banner', () => {
@@ -80,7 +87,8 @@ describe('Bose firmware support links', () => {
   // Wired by class, because a model with two series renders two links and two
   // elements cannot share an id.
   it('wires the guide links by class rather than by id', () => {
-    expect(src).toContain('fw-guide-link');
-    expect(src).not.toContain(`$('fwGuideLink')`);
+    const view = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+    expect(view).toContain('fw-guide-link');
+    expect(view).not.toContain(`$('fwGuideLink')`);
   });
 });
