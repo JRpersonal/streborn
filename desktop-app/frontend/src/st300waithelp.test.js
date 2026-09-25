@@ -58,7 +58,11 @@ describe('the waiting screen shows the 300 its one remaining step', () => {
     const draw = setup.slice(setup.indexOf('const st300 = isSoundTouch300(foundBox)'),
       setup.indexOf("const save = $('setupWaitSaveLogs')"));
     expect(draw).toContain('powerCycleAdviceHtml(foundBox)');
-    expect(draw).toMatch(/\+ st300 \+ wait \+ help/);
+    // Above the countdown and above the checklist. Asserted by position rather
+    // than by an exact string so another block joining the same render call
+    // does not read as this one moving.
+    expect(draw).toContain('+ st300 +');
+    expect(draw.indexOf('+ st300 +')).toBeLessThan(draw.indexOf('wait + help'));
   });
 
   it('shows it to no other model', () => {

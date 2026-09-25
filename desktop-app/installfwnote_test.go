@@ -47,10 +47,16 @@ func TestTheNoteIsEmptyForACurrentSpeaker(t *testing.T) {
 	if i < 0 {
 		t.Fatal("the firmware note text is gone; if it moved, move this test with it")
 	}
-	// It is only filled behind the outdated check.
-	before := src[max(0, i-900):i]
-	if !strings.Contains(before, "fw.Outdated") {
-		t.Error("the note is filled without checking that the firmware is actually outdated")
+	// It is only filled behind the outdated check. Anchored on the guard itself
+	// rather than on a byte window before the assignment: the window was 900
+	// bytes and a comment growing above the line was enough to push the guard out
+	// of it and fail a test about something else entirely.
+	guard := strings.Index(src, `if fw.Outdated && fw.Short != ""`)
+	if guard < 0 {
+		t.Fatal("the outdated guard is gone; the note would reach a current speaker")
+	}
+	if guard > i {
+		t.Error("the note is filled before the firmware is checked for being outdated")
 	}
 }
 

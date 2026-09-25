@@ -3227,23 +3227,54 @@ const BOSE_FW_ARTICLES = {
   ],
 };
 
-// boseFwArticles returns the support articles for a speaker type. An unknown
-// type falls back to the SoundTouch 10 article rather than to nothing: the steps
-// are close enough to be useful, and a dead end helps nobody.
-function boseFwArticles(type) {
-  return BOSE_FW_ARTICLES[type] || BOSE_FW_ARTICLES['SoundTouch 10'];
+// boseFwArticles returns the support articles for a speaker type, and NOTHING
+// for a type that has none.
+//
+// It used to fall back to the SoundTouch 10 article on the reasoning that the
+// steps are close enough. They are, between speakers. They are not between a
+// speaker and a CineMate, a Lifestyle console, an SA-5 amplifier, a Wireless
+// Link adapter or a soundbar, and all five reach this code: the install path
+// reads the firmware of whatever answers on the LAN. Sending one of those owners
+// to a page showing a small round speaker is the same mistake, one model family
+// further out, that the paragraph above documents fixing for the ST10.
+//
+// A model with no article is not left with a dead end: the Bose Software Updater
+// page (BOSE_FW_USB_URL) is model-independent and is the route that still works
+// since the cloud shutdown, so it stays on screen either way.
+export function boseFwArticles(type) {
+  return BOSE_FW_ARTICLES[type] || [];
+}
+
+// LATEST_BOSE_FIRMWARE mirrors latestBoseFirmware in desktop-app/app_firmware.go,
+// the last firmware Bose shipped for any SoundTouch (Sep 2022). Model-independent
+// on purpose: the install path has to judge a CineMate or a soundbar too, and
+// LATEST_FW above only lists the four speakers the settings banner covers.
+export const LATEST_BOSE_FIRMWARE = '27.0.6';
+
+// firmwareOlderThanLatest reports whether a short version ("10.0.11") is behind
+// the last Bose firmware. Mirrors firmwareOlder in app_firmware.go so the two
+// sides of the app cannot disagree about the same speaker.
+export function firmwareOlderThanLatest(short) {
+  const have = fwVersionTuple(short || '');
+  const want = fwVersionTuple(LATEST_BOSE_FIRMWARE);
+  if (!have || !want) return false;
+  for (let i = 0; i < 3; i++) {
+    if (have[i] < want[i]) return true;
+    if (have[i] > want[i]) return false;
+  }
+  return false;
 }
 // Bose's official "Bose Software Updater" download page, referenced in step 4
 // and made clickable so the user does not have to retype it. The old direct
 // USB directory (downloads.bose.com/ced/soundtouch/soundtouch_usb/) went dead:
 // empty listing, index answers 403 even with a browser user agent (checked
 // 2026-07-31). btu.bose.com is the page Bose itself points users to.
-const BOSE_FW_USB_URL = 'https://btu.bose.com/';
+export const BOSE_FW_USB_URL = 'https://btu.bose.com/';
 
 // The website FAQ, which carries the downgrade workaround for a firmware
 // update that hangs. The German site is a first-class translation, everyone
 // else gets the English page.
-function strFaqURL() {
+export function strFaqURL() {
   return getLocale() === 'de' ? 'https://st-reborn.de/de/#faq' : 'https://st-reborn.de/#faq';
 }
 
@@ -3376,10 +3407,12 @@ function fwUpdateHint(info) {
           <li>${escapeHtml(t('fw.step3'))}</li>
           <li>${t('fw.step4')} <a href="#" class="link" id="fwUsbLink" data-url="${escapeHtml(BOSE_FW_USB_URL)}">btu.bose.com</a></li>
         </ol>
-        <p>${boseFwArticles(info.type).map(([series, url]) =>
-          `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeHtml(url)}">`
-          + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
-          + '</a>').join(' ')}</p>
+        ${boseFwArticles(info.type).length
+    ? `<p>${boseFwArticles(info.type).map(([series, url]) =>
+      `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeHtml(url)}">`
+      + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
+      + '</a>').join(' ')}</p>`
+    : ''}
         <small class="muted small">${escapeHtml(t('fw.hint'))}</small>
         <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
       </div>

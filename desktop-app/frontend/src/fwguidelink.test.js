@@ -9,13 +9,29 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+// Newlines are normalised: a Windows checkout has CRLF here and a Linux one LF,
+// and the section slices below keyed on a newline. That cut a different amount
+// of text on each platform, so a real assertion passed on one and failed on the
+// other for a reason that had nothing to do with the code under test.
+const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8')
+  .replace(/\r\n/g, '\n');
 
 // The models the app tracks a latest firmware for. Any model listed there can
 // show the outdated banner, so any model listed there needs an article.
 function modelsWithLatestFw() {
   const block = src.slice(src.indexOf('const LATEST_FW'), src.indexOf('};', src.indexOf('const LATEST_FW')));
   return [...block.matchAll(/'(SoundTouch[^']*)'/g)].map(m => m[1]);
+}
+
+// modelSection returns one model's entry from the article table: from its key up
+// to the next key or the end of the table. Slicing to the first '],' instead cut
+// a two-series model off after its first article.
+function modelSection(block, model) {
+  const from = block.indexOf(`'${model}'`);
+  expect(from, `${model} is not in the article table`).toBeGreaterThan(-1);
+  const after = from + model.length + 2;
+  const next = block.slice(after).search(/\n\s*'/);
+  return next < 0 ? block.slice(from) : block.slice(from, after + next);
 }
 
 function articleBlock() {
@@ -45,9 +61,7 @@ describe('Bose firmware support links', () => {
       'SoundTouch Portable': 'soundtouch-portable-updating',
     };
     for (const [model, slug] of Object.entries(want)) {
-      const from = block.indexOf(`'${model}'`);
-      const section = block.slice(from, block.indexOf('],', from));
-      expect(section, `${model} must link its own article`).toContain(slug);
+      expect(modelSection(block, model), `${model} must link its own article`).toContain(slug);
     }
   });
 
@@ -57,8 +71,7 @@ describe('Bose firmware support links', () => {
   it('offers both series where the model exists twice', () => {
     const block = articleBlock();
     for (const model of ['SoundTouch 20', 'SoundTouch 30']) {
-      const from = block.indexOf(`'${model}'`);
-      const section = block.slice(from, block.indexOf('],\n', from));
+      const section = modelSection(block, model);
       expect(section, `${model} must offer the Series II article`).toContain('Series II');
       expect(section, `${model} must offer the Series III article`).toContain('Series III');
     }

@@ -37,7 +37,14 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // langOptionsHtml + wireCombobox are exported by the settings view (the Bose
 // language dropdown and the name combobox are shared between Settings and Setup);
 // reuse them rather than duplicating.
-import { langOptionsHtml, wireCombobox } from './settings.js';
+import {
+  langOptionsHtml,
+  wireCombobox,
+  boseFwArticles,
+  firmwareOlderThanLatest,
+  BOSE_FW_USB_URL,
+  LATEST_BOSE_FIRMWARE,
+} from './settings.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
@@ -1812,6 +1819,48 @@ const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'ne
 const ST300_STUCK_CODES = ['speaker-not-back', 'agent-not-up', 'install-timeout',
   'not-reachable', 'control-unresponsive'];
 
+// outdatedFirmwareHtml is the firmware route, rendered where the owner of a
+// still-stock speaker can actually reach it.
+//
+// The install-failure note has told such an owner since 2026-08-10 that "the
+// Firmware section in the speaker settings has the steps and the link". It does,
+// and a stock speaker can never open it: the settings pane short-circuits a box
+// with kind 'stock' to an empty state with a Setup button and returns before any
+// section is rendered. So the one screen that knows the firmware is too old
+// pointed at a place reachable only by speakers that do not have the problem. A
+// SoundTouch 30 owner on the 2015 firmware spent a week in the SoundTouch app
+// and the community downgrade guide for want of this block.
+//
+// short comes from InstallResult.Firmware, which install_str.go reads off
+// :8090/info before it touches the speaker, so it is available even when the
+// speaker has since gone quiet.
+function outdatedFirmwareHtml(box, short) {
+  if (!short || !firmwareOlderThanLatest(short)) return '';
+  const type = String((box && (box.model || box.type)) || '');
+  const guides = boseFwArticles(type).map(([series, url]) =>
+    `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeAttr(url)}">`
+    + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
+    + '</a>').join(' ');
+  return `<div class="fw-update-banner" id="setupFwBanner">`
+    + `<b>${escapeHtml(t('fw.outdatedTitle'))}</b>`
+    + `<div>${escapeHtml(t('setup.fwTooOldLine', { fw: short, latest: LATEST_BOSE_FIRMWARE }))}</div>`
+    + `<ol><li>${escapeHtml(t('fw.step4'))} `
+    + `<a href="#" class="link" id="setupFwUsbLink" data-url="${escapeAttr(BOSE_FW_USB_URL)}">btu.bose.com</a></li></ol>`
+    + (guides ? `<p>${guides}</p>` : '')
+    + `<small class="muted small">${escapeHtml(t('fw.hint'))}</small></div>`;
+}
+
+// wireOutdatedFirmwareLinks opens the two links in the user's browser. The guide
+// buttons are wired by class, because a model with two series renders two of them
+// and two elements cannot share an id.
+function wireOutdatedFirmwareLinks() {
+  const usb = $('setupFwUsbLink');
+  if (usb) usb.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(usb.dataset.url); } catch {} };
+  document.querySelectorAll('#setupFwBanner .fw-guide-link').forEach(el => {
+    el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
+  });
+}
+
 // installHelpHtml renders the localized help checklist for a failure code.
 // isNetwork picks the OTA-appropriate step list (no USB-stick advice), and box
 // is needed because on one model the code alone gives the wrong instructions.
@@ -2315,12 +2364,17 @@ async function verifyInstalledState(box, onState) {
     const inSetup = !!(result && result.code === 'speaker-in-setup');
     const waiting = inSetup || !!(result && result.code === 'speaker-not-back');
     if (waiting) {
-      renderInstallWaiting(inSetup, msg, help, log);
+      renderInstallWaiting(inSetup, msg, help, log,
+        outdatedFirmwareHtml(foundBox, result && result.firmware));
       return;
     }
     const headline = t('setup.installFailed', { msg });
+    // The firmware route, right here, because a stock speaker cannot open the
+    // settings section the message points at (see outdatedFirmwareHtml).
+    const fwBlock = outdatedFirmwareHtml(foundBox, result && result.firmware);
     render(`<div class="setup-err">${escapeHtml(headline)}</div>`
-      + help + repairBtn + powerCycleHint + installFailureReportHtml() + log);
+      + fwBlock + help + repairBtn + powerCycleHint + installFailureReportHtml() + log);
+    wireOutdatedFirmwareLinks();
     wireInstallFailureReport(foundBox);
     fillFailReport(foundBox, 'install:' + ((result && result.code) || 'unknown'), msg);
     // If the network path genuinely cannot proceed (no install window, box not
@@ -2381,7 +2435,7 @@ async function verifyInstalledState(box, onState) {
   // checklist says "use the button below", and there has to be a button), and
   // stop waiting, which goes straight to the give-up screen instead of leaving
   // the user with a quarter of an hour of spinner and no control.
-  function renderInstallWaiting(inSetup, msg, help, log) {
+  function renderInstallWaiting(inSetup, msg, help, log, fwBlock) {
     let offLate = null, offWaiting = null;
     const stopAll = () => {
       for (const off of [offLate, offWaiting]) { if (off) { try { off(); } catch {} } }
@@ -2414,7 +2468,8 @@ async function verifyInstalledState(box, onState) {
     const giveUp = () => {
       baseHtml = '';
       render(`<div class="setup-err">${escapeHtml(t('setup.installWaitGaveUp'))}</div>`
-        + help + powerCycleAdviceHtml(foundBox) + installFailureReportHtml() + (log || ''));
+        + (fwBlock || '') + help + powerCycleAdviceHtml(foundBox) + installFailureReportHtml() + (log || ''));
+      wireOutdatedFirmwareLinks();
       wireInstallFailureReport(foundBox);
       fillFailReport(foundBox, 'install:' + (inSetup ? 'speaker-in-setup' : 'speaker-not-back'), msg);
     };
@@ -2428,11 +2483,12 @@ async function verifyInstalledState(box, onState) {
       const st300 = isSoundTouch300(foundBox) ? powerCycleAdviceHtml(foundBox) : '';
       render(`<div id="setupWaitPanel" class="setup-warn">${escapeHtml(head)}</div>`
         + (inSetup ? `<div class="muted small">${escapeHtml(t('setup.installInSetupPhase'))}</div>` : '')
-        + st300 + wait + help
+        + st300 + (fwBlock || '') + wait + help
         + `<div class="failreport-actions" style="margin-top:12px">`
         + `<button class="btn btn-mini" id="setupWaitSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button> `
         + `<button class="btn btn-mini" id="setupWaitStop">${escapeHtml(t('setup.installWaitStopBtn'))}</button>`
         + `</div>`);
+      wireOutdatedFirmwareLinks();
       const save = $('setupWaitSaveLogs');
       if (save) save.onclick = () => saveFailReportBundle(save, foundBox, null);
       const stop = $('setupWaitStop');
