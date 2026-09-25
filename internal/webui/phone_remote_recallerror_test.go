@@ -54,7 +54,7 @@ func TestPhoneRemoteLocalesCarryTheRecallRefusal(t *testing.T) {
 		t.Fatal("could not find any locale bundle in indexHTML")
 	}
 	for _, key := range []string{"spNeedPick", "spNeedPremium", "closeW"} {
-		got := len(regexp.MustCompile(key + `:"`).FindAllString(indexHTML, -1))
+		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
 		}
