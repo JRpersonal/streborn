@@ -582,10 +582,6 @@ export function UpdateFailureReport(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['UpdateFailureReport'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function VoteStation(arg1, arg2, arg3) {
-  return window['go']['main']['App']['VoteStation'](arg1, arg2, arg3);
-}
-
 export function WakeBox(arg1, arg2) {
   return window['go']['main']['App']['WakeBox'](arg1, arg2);
 }

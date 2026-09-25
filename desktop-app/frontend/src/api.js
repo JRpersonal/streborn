@@ -21,7 +21,6 @@ export {
   QueueShuffle,
   QueueRepeat,
   GetQueue,
-  VoteStation,
   PhoneQR,
   RebootBox,
   RecordUpdateIntent,
