@@ -27,8 +27,11 @@ describe('the install counts as running while the wait panel is up', () => {
   });
 
   it('the panel claims the flag when it is drawn and releases it when it stops', () => {
-    const fn = setup.slice(setup.indexOf('function renderInstallWaiting'),
-      setup.indexOf('const mine = () =>'));
+    // Search the end anchor FROM the start offset. waitForBoxAfterSetup grew a
+    // 'const mine' of its own further up the file, and the unanchored indexOf
+    // found that one instead and sliced backwards into an empty string.
+    const at = setup.indexOf('function renderInstallWaiting');
+    const fn = setup.slice(at, setup.indexOf('const mine = () =>', at));
     expect(fn).toContain('installWaitPanelLive = true;');
     const stop = setup.slice(setup.indexOf('const stopAll = () => {', setup.indexOf('function renderInstallWaiting')));
     expect(stop.slice(0, 400)).toContain('installWaitPanelLive = false;');
@@ -49,8 +52,11 @@ describe('the install counts as running while the wait panel is up', () => {
 
 describe('the Install button stays out of reach under the wait panel', () => {
   it('the panel disables it', () => {
-    const fn = setup.slice(setup.indexOf('function renderInstallWaiting'),
-      setup.indexOf('const mine = () =>'));
+    // Search the end anchor FROM the start offset. waitForBoxAfterSetup grew a
+    // 'const mine' of its own further up the file, and the unanchored indexOf
+    // found that one instead and sliced backwards into an empty string.
+    const at = setup.indexOf('function renderInstallWaiting');
+    const fn = setup.slice(at, setup.indexOf('const mine = () =>', at));
     expect(fn).toContain("$('setupHeroInstall')");
     expect(fn).toContain('disabled = true');
   });
