@@ -1625,7 +1625,16 @@ async function watchForSpeakerReady({ ssid, pass, html, generation }) {
     if (!mine()) return;
     liveSearchKey = null; btn.textContent = label; btn.disabled = false; btn.onclick = onclick;
   };
-  const handoff = () => { btn.disabled = true; aborted = true; stopTicker(); waitForBoxAfterSetup({ ssid, pass, html }); };
+  const handoff = () => {
+    btn.disabled = true; aborted = true; stopTicker();
+    // The stick is in the speaker and the wizard that wrote it is over. Folding
+    // that section away puts the install panel, which sits above it, back within
+    // a screen of where the user is looking. A failure that genuinely needs the
+    // stick re-opens the section itself.
+    const stickDetails = $('setupStickDetails');
+    if (stickDetails) stickDetails.open = false;
+    waitForBoxAfterSetup({ ssid, pass, html });
+  };
 
   while (Date.now() < deadline && !ready && !aborted && mine()) {
     let list = [];

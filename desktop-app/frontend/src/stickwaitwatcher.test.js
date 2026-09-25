@@ -125,3 +125,17 @@ describe('the install is shown where the user is looking', () => {
     expect(fn).toContain('setupResult.scrollIntoView(');
   });
 });
+
+describe('the stick wizard folds away when the install starts', () => {
+  it('the handoff collapses the section it is done with', () => {
+    const hand = setup.slice(setup.indexOf('const handoff = () => {'),
+      setup.indexOf('while (Date.now() < deadline'));
+    expect(hand).toContain("const stickDetails = $('setupStickDetails');");
+    expect(hand).toContain('stickDetails.open = false;');
+  });
+
+  it('a failure that needs the stick can still re-open it', () => {
+    // The failure path opens the section again for the codes that call for it.
+    expect(setup).toContain('if (stickDetails) stickDetails.open = true;');
+  });
+});
