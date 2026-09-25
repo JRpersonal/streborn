@@ -1557,8 +1557,19 @@ function showAwaitBoxReadyPanel({ ssid, pass, html }) {
     `<button class="btn btn-primary" id="setupSpeakerReady" disabled>${escapeHtml(t('setup.awaitConfirmWaiting'))}</button>` +
     `</div>`;
   try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
-  watchForSpeakerReady({ ssid, pass, html });
+  // Retiring any watcher already running is not optional. This panel is reached
+  // from five places, including a link inside the watcher itself, and the loop
+  // only ends on ready, abort or its own six-minute deadline. Two of them alive
+  // at once share one status line and one confirm button: they overwrite each
+  // other's text, and the older one can unlock the button for a speaker the
+  // newer one has already moved on from.
+  watchGeneration++;
+  watchForSpeakerReady({ ssid, pass, html, generation: watchGeneration });
 }
+
+// watchGeneration retires an earlier watcher when a new panel takes over. Only
+// the newest one owns the status line and the confirm button.
+let watchGeneration = 0;
 
 // watchForSpeakerReady is the idiot-proof background watcher for the final setup
 // step. It polls every ~3s and classifies the speaker into one of several plain
@@ -1576,10 +1587,13 @@ function showAwaitBoxReadyPanel({ ssid, pass, html }) {
 //   - ready (SSH open) / already STR / a factory-fresh setup network,
 //   - wrong/multiple speakers (a pinned target that is not the one online).
 // A separate 1s ticker keeps the countdown live between polls.
-async function watchForSpeakerReady({ ssid, pass, html }) {
+async function watchForSpeakerReady({ ssid, pass, html, generation }) {
   const statusEl = $('setupAwaitStatus');
   const btn = $('setupSpeakerReady');
   if (!statusEl || !btn) return;
+  // mine() is false the moment a newer panel has taken over, and every write to
+  // the shared status line and the shared button goes through it.
+  const mine = () => generation === watchGeneration;
 
   const wantedHost = (state.setupTarget && state.setupTarget.box) ? state.setupTarget.box.host : '';
   const watcherStart = Date.now();
@@ -1607,6 +1621,7 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
   let aborted = false; // a link (try-anyway / choose-different) took over
 
   const setStatus = (cls, txt, extraHtml) => {
+    if (!mine()) return;
     statusEl.innerHTML = `<span class="${cls}">${escapeHtml(txt)}</span>` + (extraHtml || '');
   };
 
@@ -1626,10 +1641,22 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
     try { const f = await GetBoxFirmware(host); if (f && f.reachable) { fwCache[host] = { at: Date.now(), info: f }; return f; } } catch {}
     return null;
   };
-  const arm = (label, onclick) => { liveSearchKey = null; btn.textContent = label; btn.disabled = false; btn.onclick = onclick; };
-  const handoff = () => { btn.disabled = true; aborted = true; stopTicker(); waitForBoxAfterSetup({ ssid, pass, html }); };
+  const arm = (label, onclick) => {
+    if (!mine()) return;
+    liveSearchKey = null; btn.textContent = label; btn.disabled = false; btn.onclick = onclick;
+  };
+  const handoff = () => {
+    btn.disabled = true; aborted = true; stopTicker();
+    // The stick is in the speaker and the wizard that wrote it is over. Folding
+    // that section away puts the install panel, which sits above it, back within
+    // a screen of where the user is looking. A failure that genuinely needs the
+    // stick re-opens the section itself.
+    const stickDetails = $('setupStickDetails');
+    if (stickDetails) stickDetails.open = false;
+    waitForBoxAfterSetup({ ssid, pass, html });
+  };
 
-  while (Date.now() < deadline && !ready && !aborted) {
+  while (Date.now() < deadline && !ready && !aborted && mine()) {
     let list = [];
     try { list = (await DiscoverBoxes(4)) || []; } catch {}
     // No target pinned: match only an STR-FREE (stock) speaker, the one we are
@@ -1741,7 +1768,7 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
     await sleep(3000);
   }
 
-  if (ready || aborted) { stopTicker(); return; }
+  if (ready || aborted || !mine()) { stopTicker(); return; }
 
   // Timeout: context-aware recovery based on whether we ever saw it on the network.
   stopTicker();
@@ -1931,6 +1958,15 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
   const setupResult = $('setupResult');
   if (!setupResult) return;
   const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
+
+  // The await panel deliberately renders BELOW the stick wizard, because a user
+  // looking at the button they just pressed never scrolls up. The install then
+  // renders here, ABOVE it, so from this moment the progress was off screen
+  // while the now-finished "do this on the speaker now" steps stayed on it. Take
+  // the old panel down and bring the user to where the work actually is.
+  const awaitPanel = $('setupAwaitResult');
+  if (awaitPanel && awaitPanel !== setupResult) awaitPanel.innerHTML = '';
+  try { setupResult.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
 
   // 5 minutes max. Computed up front so progressLine + tick share
   // the same deadline.

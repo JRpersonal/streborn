@@ -82,3 +82,60 @@ describe('the new message exists everywhere and names the speaker', () => {
       .not.toMatch(/\b(fuer|ueber|koennen|muessen|waehrend|naechste|groesser|laeuft|noetig|zurueck)\b/i);
   });
 });
+
+describe('only the newest watcher owns the screen', () => {
+  it('a new panel retires the one already running', () => {
+    expect(setup).toContain('watchGeneration++;');
+    expect(setup).toContain('watchForSpeakerReady({ ssid, pass, html, generation: watchGeneration });');
+    expect(setup).toContain('const mine = () => generation === watchGeneration;');
+  });
+
+  it('a retired watcher writes neither the status line nor the button', () => {
+    const status = setup.slice(setup.indexOf('const setStatus = (cls, txt, extraHtml) => {'));
+    expect(status.slice(0, 200)).toContain('if (!mine()) return;');
+    const arm = setup.slice(setup.indexOf('const arm = (label, onclick) => {'));
+    expect(arm.slice(0, 200)).toContain('if (!mine()) return;');
+  });
+
+  it('a retired watcher stops polling and stops its ticker', () => {
+    expect(setup).toContain('while (Date.now() < deadline && !ready && !aborted && mine()) {');
+    expect(setup).toContain('if (ready || aborted || !mine()) { stopTicker(); return; }');
+  });
+});
+
+// The await panel renders BELOW the stick wizard on purpose, because a user
+// looking at the button they just pressed never scrolls up to find it. The
+// install then renders ABOVE it, in a different element, so from the moment the
+// user confirmed, the progress was off screen while the finished "do this on the
+// speaker now" steps stayed on it.
+describe('the install is shown where the user is looking', () => {
+  const fn = setup.slice(setup.indexOf('async function waitForBoxAfterSetup'),
+    setup.indexOf('const deadline = Date.now() + 5 * 60 * 1000'));
+
+  it('takes the finished await panel down', () => {
+    expect(fn).toContain("const awaitPanel = $('setupAwaitResult');");
+    expect(fn).toContain("awaitPanel.innerHTML = '';");
+  });
+
+  it('never clears the element it is about to render into', () => {
+    expect(fn).toContain('awaitPanel !== setupResult');
+  });
+
+  it('brings the user to the progress', () => {
+    expect(fn).toContain('setupResult.scrollIntoView(');
+  });
+});
+
+describe('the stick wizard folds away when the install starts', () => {
+  it('the handoff collapses the section it is done with', () => {
+    const hand = setup.slice(setup.indexOf('const handoff = () => {'),
+      setup.indexOf('while (Date.now() < deadline'));
+    expect(hand).toContain("const stickDetails = $('setupStickDetails');");
+    expect(hand).toContain('stickDetails.open = false;');
+  });
+
+  it('a failure that needs the stick can still re-open it', () => {
+    // The failure path opens the section again for the codes that call for it.
+    expect(setup).toContain('if (stickDetails) stickDetails.open = true;');
+  });
+});
