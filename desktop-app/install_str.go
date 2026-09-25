@@ -176,11 +176,18 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			// on 10.0.11 followed it for a week, went through the community
 			// downgrade guide as well, and his speaker never moved off the 2015
 			// firmware, because the one route that still works was never named.
-			// The Firmware section in the speaker settings already says this
-			// properly, with the link; the note points there rather than
-			// repeating a shortened version of it.
+			// It also does NOT point at the Firmware section in the speaker
+			// settings, which is where this note sent people from 2026-08-10
+			// until 2026-09-25. That section does carry the steps and the link,
+			// and a speaker without STR on it can never open it: the settings
+			// pane short-circuits a stock box to an empty state with a Setup
+			// button. Every owner who gets this note has exactly such a box, so
+			// the signpost pointed at a room only the unaffected can enter. The
+			// route is named here instead, and the setup screen renders the
+			// steps and the model's guide beside this message
+			// (outdatedFirmwareHtml in views/setup.js).
 			fwNote = " The speaker firmware is " + fw.Short + ", older than Bose's last firmware " + latestBoseFirmware +
-				", and STR needs it updated first. Since the Bose cloud shut down the SoundTouch app usually cannot deliver a firmware update any more, so use Bose's USB update tool: the Firmware section in the speaker settings has the steps and the link."
+				", and STR needs it updated first. Since the Bose cloud shut down the SoundTouch app usually cannot deliver a firmware update any more, so use Bose's own USB update tool from btu.bose.com: the steps and your model's guide are linked below."
 		}
 	}
 	// Every message this function can end on gets the firmware note, and that
