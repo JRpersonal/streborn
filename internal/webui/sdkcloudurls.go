@@ -187,13 +187,29 @@ func liveForeignCloudURL() string {
 // was built to stop making. The files answer only when the firmware has not
 // been heard from yet.
 func foreignCloudURL() string {
-	if live := liveForeignCloudURL(); live != "" {
-		return live
+	_, urls := effectiveSDKCloudURLs()
+	parts := make([]string, 0, len(sdkCloudTags))
+
+	// margeServerUrl: the firmware's own answer wins when there is one.
+	if live := liveMargeURLFn(); live != "" {
+		if live != stockCloudURLs[sdkMargeTag] {
+			parts = append(parts, sdkMargeTag+"="+live)
+		}
+	} else if v := urls[sdkMargeTag]; v != "" && v != stockCloudURLs[sdkMargeTag] {
+		parts = append(parts, sdkMargeTag+"="+v)
 	}
-	if liveMargeURLFn() != "" {
-		return "" // the firmware itself reports the stock host
+
+	// bmxRegistryUrl and statsServerUrl: /info reports neither, so the config
+	// files are the only view there is. Judging them by the live margeURL, as
+	// this function did at first, meant a box whose BMX registry pointed at a
+	// mod's server was reported healthy the moment its marge host happened to
+	// be stock, which is the commonest half-migrated shape there is.
+	for _, tag := range []string{sdkBmxTag, sdkStatsTag} {
+		if v := urls[tag]; v != "" && v != stockCloudURLs[tag] {
+			parts = append(parts, tag+"="+v)
+		}
 	}
-	return foreignCloudURLFiles()
+	return strings.Join(parts, " ")
 }
 
 // healedSDKConfig rewrites every non-empty cloud URL tag in an SDK config to
@@ -321,29 +337,43 @@ func healSDKCloudURLs() sdkCloudHealResult {
 	return res
 }
 
-// writeNANDFile writes content via a sibling temp file and a rename, so a
-// power cut during the write cannot leave the firmware reading half a config.
-// Falls back to an in-place truncate write when the rename fails, the same
-// pattern hosts.writeAtomic uses for the tmpfs-over-ro mounts on this box.
+// writeNANDFile writes content via a sibling temp file and a rename, so a power
+// cut during the write cannot leave the firmware reading half a config.
+//
+// There is deliberately NO truncate-in-place fallback. It was copied from
+// hosts.writeAtomic, which needs one because /etc/hosts is a tmpfs file over a
+// read-only rootfs where rename cannot work. /mnt/nv is ordinary read-write
+// UBIFS, so a failed write there means the volume is full or read-only, and
+// truncating the live SDK config at that moment would destroy the box's only
+// copy of its cloud configuration to replace it with nothing. The temp file is
+// removed on every failure path, including a partial write, so a full NAND is
+// not left carrying a stray .new either.
 func writeNANDFile(path string, content []byte) error {
 	tmp := path + ".new"
-	if err := os.WriteFile(tmp, content, 0o644); err == nil {
-		if err := os.Rename(tmp, path); err == nil {
-			return nil
-		}
-		_ = os.Remove(tmp)
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
-	_, writeErr := f.Write(content)
-	closeErr := f.Close()
-	if writeErr != nil {
-		return writeErr
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		_ = os.Remove(tmp)
+		return err
 	}
-	if closeErr != nil {
-		return closeErr
+	// fsync before the rename: on UBIFS the rename can otherwise be durable
+	// while the bytes behind it are not, which is the one way this could still
+	// hand the firmware an empty config after a power cut.
+	if err := f.Sync(); err != nil {
+		f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
 	return nil
 }

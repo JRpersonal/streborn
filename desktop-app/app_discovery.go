@@ -1697,8 +1697,12 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 			// reply. A missed probe relabels a flashed speaker as "needs
 			// install", so the answer is worth waiting for; a host that is
 			// not there still fails in about a second, at the dial.
-			body, err := httpGetSmall(ctx, url, probeAnswerBudget, 1024)
-			if err != nil || !strings.Contains(string(body), `"version"`) {
+			// 8 KB and a real decode, for the reason in agentVersionAnswered:
+			// the agent's optional flags used to push "version" past a small
+			// cap, and here that would relabel a flashed speaker as "needs
+			// install", which is worse than the play refusal it also caused.
+			body, err := httpGetSmall(ctx, url, probeAnswerBudget, 8192)
+			if err != nil || !agentVersionAnswered(body) {
 				hits <- result{}
 				return
 			}

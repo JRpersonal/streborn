@@ -334,3 +334,84 @@ func TestWithNoAnswerFromTheSpeakerTheFilesDecide(t *testing.T) {
 		t.Error("with no live answer the config files must still raise the flag")
 	}
 }
+
+// A foreign BMX registry or stats host has to be reported even when the
+// firmware's live margeURL is the stock one. /info reports only margeURL, so
+// judging the other two tags by it meant a half-migrated box, the commonest
+// shape there is, was called healthy.
+func TestAForeignBmxOrStatsHostIsReportedEvenWhenMargeIsStock(t *testing.T) {
+	redirectSDKPaths(t)
+	withLiveMargeURL(t, stockCloudURLs[sdkMargeTag])
+	cfg := `<SdkPrivateCfg>
+  <margeServerUrl>` + stockCloudURLs[sdkMargeTag] + `</margeServerUrl>
+  <bmxRegistryUrl>http://192.0.2.108/bmx/registry/v1/services</bmxRegistryUrl>
+  <statsServerUrl>` + stockCloudURLs[sdkStatsTag] + `</statsServerUrl>
+</SdkPrivateCfg>`
+	if err := os.WriteFile(sdkOverridePath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := foreignCloudURL()
+	if !strings.Contains(got, sdkBmxTag) {
+		t.Errorf("foreignCloudURL = %q, want the foreign bmxRegistryUrl named", got)
+	}
+	if strings.Contains(got, sdkMargeTag) {
+		t.Errorf("the stock marge host was reported as foreign: %q", got)
+	}
+}
+
+// The firmware's own answer still wins for margeServerUrl: a box healed on disk
+// but not yet restarted is still asking the dead host right now.
+func TestTheLiveMargeAnswerStillWinsForItsOwnTag(t *testing.T) {
+	redirectSDKPaths(t)
+	if err := os.WriteFile(sdkOverridePath, []byte(sdkCfg(stockCloudURLs[sdkMargeTag])), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withLiveMargeURL(t, octMargeURL)
+	got := foreignCloudURL()
+	if !strings.Contains(got, octMargeURL) {
+		t.Errorf("foreignCloudURL = %q, want the host the firmware is still asking", got)
+	}
+}
+
+// A write that cannot complete must leave the box's only copy of its cloud
+// configuration alone. The first version fell through to an in-place truncate,
+// which would have emptied the live config on a full or read-only NAND.
+func TestAFailedWriteNeverTruncatesTheLiveConfig(t *testing.T) {
+	dir := redirectSDKPaths(t)
+	original := sdkCfg(stockCloudURLs[sdkMargeTag])
+	if err := os.WriteFile(sdkOverridePath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the temp file wants to be: the write cannot succeed,
+	// and on every OS this is a plain failure rather than a special case.
+	if err := os.Mkdir(sdkOverridePath+".new", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeNANDFile(sdkOverridePath, []byte("replacement")); err == nil {
+		t.Error("a write that cannot create its temp file reported success")
+	}
+	b, err := os.ReadFile(sdkOverridePath)
+	if err != nil {
+		t.Fatalf("the live config is gone: %v", err)
+	}
+	if string(b) != original {
+		t.Errorf("the live config was modified by a failed write:\n%s", string(b))
+	}
+	_ = os.Remove(sdkOverridePath + ".new")
+	_ = dir
+}
+
+// A successful write leaves no .new behind.
+func TestASuccessfulWriteLeavesNoTempFile(t *testing.T) {
+	redirectSDKPaths(t)
+	if err := writeNANDFile(sdkOverridePath, []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sdkOverridePath + ".new"); err == nil {
+		t.Error("the temp file survived a successful write")
+	}
+	b, _ := os.ReadFile(sdkOverridePath)
+	if string(b) != "content" {
+		t.Errorf("wrote %q", string(b))
+	}
+}

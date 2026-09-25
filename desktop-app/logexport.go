@@ -509,7 +509,10 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// ~6 s on scm/BCO chassis (the firmware /getGroup hang), which is why
 		// no group bundle from those fleets ever carried strZoneJson.
 		s.STRZone = httpGetTextTimeout(base+"/api/box/zone", 4096, 10*time.Second)
-		raw := httpGetText(base+"/api/agent/version", 1024)
+		// 8 KB: this one Unmarshals the body, so a cap that truncates it makes
+		// the parse fail and STRDetected go false, i.e. the bundle of a box
+		// carrying several agent flags would claim STR is not installed on it.
+		raw := httpGetText(base+"/api/agent/version", 8192)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
 		}
