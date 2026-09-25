@@ -96,19 +96,26 @@ func (s *Server) clearTitleForNewURL(url string) {
 // successor and goes blank after the grace, so #274 stays fixed.
 const titleEndGrace = 5 * time.Second
 
-// noteStreamStart marks a handler taking (over) url; called at every proxy
-// handler start so a pending end-of-stream title wipe knows it is stale.
-func (s *Server) noteStreamStart(url string) {
+// noteStreamStart marks a handler taking (over) url and returns the generation
+// it was given; called at every proxy handler start so a pending end-of-stream
+// title wipe knows it is stale.
+//
+// The caller keeps that number and hands it back to clearTitleOnEnd, which is
+// what makes the takeover test work. See the comment there for what reading it
+// at the end instead did to a mirror group.
+func (s *Server) noteStreamStart(url string) uint64 {
 	s.titleMu.Lock()
 	if s.titleGens == nil {
 		s.titleGens = make(map[string]uint64)
 	}
 	s.titleGens[url]++
+	gen := s.titleGens[url]
 	s.titleMu.Unlock()
 	// The health section hangs off the same moment: this is the one hook every
 	// proxy path already goes through, so recording the station here is what
 	// stops a perfectly healthy stream reporting an empty radio_stream_health.
 	s.noteHealthStart(url)
+	return gen
 }
 
 // clearTitleOnEnd drops the title when the proxy stops carrying url. Without
@@ -120,10 +127,14 @@ func (s *Server) noteStreamStart(url string) {
 // URL so a handler that outlived a station switch cannot wipe the successor's
 // title, and DELAYED by titleEndGrace so a box re-fetch of the same stream
 // (display push, brief flap) keeps the title instead of re-firing it.
-func (s *Server) clearTitleOnEnd(url string) {
-	s.titleMu.Lock()
-	gen := s.titleGens[url]
-	s.titleMu.Unlock()
+//
+// gen is the generation this handler was given at its START. Reading it here
+// instead defeated the takeover test in the one case it exists for: a successor
+// has already bumped the counter by the time a handler ends, so the ending
+// handler matched the successor's value and wiped a title that was still
+// playing. In a mirror group every member fetches the same proxy URL, so one
+// member leaving blanked the track on all the others.
+func (s *Server) clearTitleOnEnd(url string, gen uint64) {
 	time.AfterFunc(titleEndGrace, func() { s.wipeTitleIfUnclaimed(url, gen) })
 }
 
