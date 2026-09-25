@@ -14,6 +14,39 @@ import "time"
 // intermittent dropout without hand-counting log lines (Erich, ORF Vorarlberg,
 // 2026-08-28): reason=eof at a steady cadence points at CDN token expiry;
 // reason=read-fail with erratic timing points at the box's own uplink.
+// noteHealthStart records the station a proxied stream is serving, the moment
+// it starts rather than the first time it drops. Called from noteStreamStart,
+// which already runs at every proxy handler start, so every path is covered.
+//
+// Until this existed, every field of radio_stream_health was written only by
+// noteReconnect, so a station that had been playing happily for hours reported
+// an empty upstreamURL and zeroes across the board. In a diagnostic bundle that
+// reads as "no radio is playing", which is the opposite of the truth and is
+// exactly the wrong way round for a dropout report: the healthy stretch is
+// invisible and only the trouble is recorded.
+//
+// It cost a live misreading on 2026-09-24, where the empty section was taken as
+// proof that a test stream was not running through the proxy at all while the
+// log showed it plainly.
+//
+// A station switch restarts the tally here too, by the same rule noteReconnect
+// uses, so the numbers always describe the station currently playing.
+func (s *Server) noteHealthStart(url string) {
+	if url == "" {
+		return
+	}
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	if url != s.healthURL {
+		s.healthURL = url
+		s.forwardedBytes = 0
+		s.reconnectCount = 0
+		s.lastDisconnectReason = ""
+		s.lastGapMs = 0
+	}
+	s.playingSince = time.Now()
+}
+
 func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap time.Duration) {
 	s.healthMu.Lock()
 	if url != s.healthURL { // a station switch restarts the tally
@@ -40,11 +73,20 @@ func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap
 func (s *Server) HealthSnapshot() any {
 	s.healthMu.Lock()
 	defer s.healthMu.Unlock()
-	return map[string]any{
+	out := map[string]any{
 		"reconnectCount":       s.reconnectCount,
 		"lastDisconnectReason": s.lastDisconnectReason,
 		"lastGapMs":            s.lastGapMs,
 		"upstreamURL":          s.healthURL,
-		"forwardedBytes":       s.forwardedBytes,
+		// forwardedBytes only tallies CONNECTIONS THAT HAVE ENDED, because it is
+		// summed when one closes. A stream still running contributes nothing to
+		// it yet, so 0 next to a live upstreamURL means "no drop so far", not
+		// "no audio".
+		"forwardedBytes": s.forwardedBytes,
 	}
+	if !s.playingSince.IsZero() {
+		out["playingSince"] = s.playingSince.UTC().Format(time.RFC3339)
+		out["playingForSec"] = int(time.Since(s.playingSince).Seconds())
+	}
+	return out
 }

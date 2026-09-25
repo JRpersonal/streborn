@@ -168,7 +168,11 @@ type Server struct {
 	lastDisconnectReason string
 	lastGapMs            int64
 	healthURL            string
-	forwardedBytes       int64
+	// playingSince is when the current station started through the proxy, so a
+	// bundle can say "playing for three hours without a drop" instead of
+	// showing an empty section for a stream that is perfectly fine.
+	playingSince   time.Time
+	forwardedBytes int64
 	// lastConnBytes / lastConnDur describe the most recent upstream
 	// connection, so the retry loops can tell "this one played for a while and
 	// then the token expired" from "this one failed immediately". See
