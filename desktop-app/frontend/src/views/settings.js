@@ -2301,8 +2301,17 @@ function renderBoxSettings(s, box) {
     // follows it so a format change that cannot be applied can be put back
     // instead of leaving the dropdown claiming something the speaker never got.
     let lastFormat = clockFormat ? clockFormat.value : '24';
+    // The preselect must not overwrite a choice the user has already made. That
+    // read goes to the speaker and can take seconds, and the dropdown shows the
+    // static default meanwhile, so somebody who picks 12h while it is in flight
+    // had their pick, and lastFormat with it, reset to whatever the speaker
+    // answered. The format they never chose was then posted, and the dropdown
+    // snapped back with nothing said.
+    let userTouchedFormat = false;
     if (clockFormat) {
+      clockFormat.addEventListener('input', () => { userTouchedFormat = true; });
       GetClockFormat24(boseHost).then(is24 => {
+        if (userTouchedFormat) return;
         clockFormat.value = is24 ? '24' : '12';
         lastFormat = clockFormat.value;
       }).catch(() => {});
@@ -2345,10 +2354,24 @@ function renderBoxSettings(s, box) {
         await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
         showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
         await refreshClock();
-      } catch (e) { showError(e); }
+        return true;
+      } catch (e) { showError(e); return false; }
     };
-    if (clockOn) clockOn.onclick = () => { paintClock(true); withButtonPending(clockOn, () => postClock(true)); };
-    if (clockOff) clockOff.onclick = () => { paintClock(false); withButtonPending(clockOff, () => postClock(false)); };
+    // The highlight moves before the speaker has answered, so the panel feels
+    // immediate. It has to move BACK when the write fails, or the panel claims a
+    // state the speaker refused: a failed write behind a dismissed error modal
+    // left "On" lit on a clock that was still off, and the next thing that
+    // happened was a bug report about the clock.
+    const pressClock = (btn, enable) => {
+      const before = clockState;
+      paintClock(enable);
+      withButtonPending(btn, async () => {
+        const ok = await postClock(enable);
+        if (!ok) paintClock(before);
+      });
+    };
+    if (clockOn) clockOn.onclick = () => pressClock(clockOn, true);
+    if (clockOff) clockOff.onclick = () => pressClock(clockOff, false);
     // Send the 12/24h format to the box immediately on dropdown change, keeping
     // the current on/off state (no need to click "On" again).
     //
