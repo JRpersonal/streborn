@@ -1540,6 +1540,9 @@ function showAwaitBoxReadyPanel({ ssid, pass, html }) {
 // only unlocks when the speaker is genuinely ready. Key cases it tells apart:
 //   - still searching / stalled (speaker not on the network yet),
 //   - found but just booting (grace window, do not blame the stick yet),
+//   - on the network but silent (listed by discovery, :8090 never answered past
+//     the grace): nothing can be said about its firmware, so say that instead of
+//     repeating "still booting" for six minutes,
 //   - booted WITHOUT the stick (on the network, SSH off, firmware current): the
 //     most common drop-out; reseat + power-cycle and it auto-recovers,
 //   - firmware too old (on the network, SSH off, firmware outdated/unparsable):
@@ -1557,7 +1560,22 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
   const deadline = watcherStart + 6 * 60 * 1000;
   const GRACE_MS = 90 * 1000;
   const fwCache = {}; // host -> { at, info }; firmware does not change mid-watch
+  // TWO timestamps, and the difference between them is the whole point.
+  //
+  // firstSeenOnNetwork is when discovery first listed the speaker. It is never
+  // reset while it keeps being listed, so the grace below actually elapses.
+  //
+  // lastAnsweredBosePort is when its :8090 last answered, which separates a
+  // speaker restarting mid-watch from one that has never spoken at all. Only one
+  // variable used to exist, it held the second meaning, and it was set back to 0
+  // on every :8090 miss. A speaker that is listed but never answers therefore restarted
+  // the 90-second grace 120 times over the six-minute budget and read "it is
+  // still booting" the whole way, which is the reassuring message, while the two
+  // states that carry an instruction (firmware too old, booted without the
+  // stick) were reachable only by a speaker that WAS answering. The longer it
+  // was broken, the calmer the screen got.
   let firstSeenOnNetwork = 0;
+  let lastAnsweredBosePort = 0;
   let lastSeenState = '';
   let ready = false;
   let aborted = false; // a link (try-anyway / choose-different) took over
@@ -1632,8 +1650,10 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
       const f = await getFw(cand.host);
       const model = (f && f.model) || cand.model || 'SoundTouch';
       const fw = (f && f.short) || '';
-      if (f) { if (!firstSeenOnNetwork) firstSeenOnNetwork = Date.now(); }
-      else { firstSeenOnNetwork = 0; } // discovery listed it but :8090 blipped mid-reboot
+      // Discovery has it, so it is on the network; that clock starts now and
+      // does not restart when :8090 blips mid-reboot.
+      if (!firstSeenOnNetwork) firstSeenOnNetwork = Date.now();
+      if (f) lastAnsweredBosePort = Date.now();
       let sshOk = false;
       try { sshOk = await BoxInstallReachable(cand.host); } catch {}
       if (sshOk) {
@@ -1642,13 +1662,28 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
         arm(t('setup.awaitConfirmBtn'), handoff);
         ready = true; break;
       }
-      if (!firstSeenOnNetwork || (Date.now() - firstSeenOnNetwork) < GRACE_MS) {
+      if ((Date.now() - firstSeenOnNetwork) < GRACE_MS) {
         liveSearchKey = null; lastSeenState = 'booting';
         setStatus('muted small', t('setup.awaitStillBooting'));
         await sleep(3000); continue;
       }
-      // Grace elapsed, SSH still off: firmware too old vs booted without the stick.
+      // Grace elapsed, SSH still off. Three cases, and the third one used to be
+      // invisible: the speaker is listed but its Bose port never answered, so
+      // nothing can be said about its firmware and "still booting" is no longer
+      // an honest reading after a minute and a half.
       liveSearchKey = null;
+      if (!f) {
+        // It answered a moment ago and has gone quiet: that is a restart, and
+        // the reassuring message is the right one for another grace window.
+        if (lastAnsweredBosePort && (Date.now() - lastAnsweredBosePort) < GRACE_MS) {
+          liveSearchKey = null; lastSeenState = 'booting';
+          setStatus('muted small', t('setup.awaitStillBooting'));
+          await sleep(3000); continue;
+        }
+        lastSeenState = 'silent';
+        setStatus('setup-warn', t('setup.awaitOnNetworkSilent', { model }));
+        await sleep(3000); continue;
+      }
       if (f && (f.outdated || !f.short)) {
         lastSeenState = 'firmware';
         setStatus('setup-warn', t('setup.awaitFirmwareTooOld', { model, fw: fw || '?' }),
@@ -1684,7 +1719,8 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
 
   // Timeout: context-aware recovery based on whether we ever saw it on the network.
   stopTicker();
-  const wasOnNetwork = lastSeenState === 'no-stick' || lastSeenState === 'firmware' || lastSeenState === 'booting';
+  const wasOnNetwork = lastSeenState === 'no-stick' || lastSeenState === 'firmware'
+    || lastSeenState === 'booting' || lastSeenState === 'silent';
   setStatus('setup-warn', t(wasOnNetwork ? 'setup.awaitTimeoutWasOnNetwork' : 'setup.awaitTimeoutNeverSeen'));
   btn.textContent = t('setup.awaitSearchAgain');
   btn.disabled = false;

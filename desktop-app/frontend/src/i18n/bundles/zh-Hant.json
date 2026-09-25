@@ -1191,6 +1191,7 @@
   "setup.awaitSearchingStalled": "還在尋找你的喇叭。有三件事可以快速檢查：隨身碟插到底了沒、喇叭有沒有開機，還有喇叭和這台電腦是不是用同一個 Wi-Fi。我會繼續找，所以你現在處理好，狀態就會自己更新。（還剩 {{remaining}}）",
   "setup.awaitSetupNetwork": "找到一台全新的喇叭，它還沒加入你的 Wi-Fi，正放送自己的臨時 'Bose SoundTouch' 網路。這沒問題：隨身碟會在設定過程中把它接進你家的 Wi-Fi，你現在可以繼續。",
   "setup.awaitStillBooting": "找到你的喇叭了。它正在啟動收尾，最多可能要一分鐘。你不用做什麼，狀態會自己變綠。",
+  "setup.awaitOnNetworkSilent": "{{model}} 已經在你的網路上，但沒有回應 ST Reborn。通常是因為它沒插安裝碟就開機，或者還沒開完。把安裝碟插穩，再把喇叭關掉重開。如果它還是不出聲，請在視窗下方存下日誌並寄給我。",
   "setup.awaitBootedWithoutStick": "你的喇叭 '{{model}}' 已經在你的 Wi-Fi 上，但它開機時沒有讀到隨身碟，所以設定還沒辦法繼續。這是最常見的小狀況。把喇叭完全關掉，把隨身碟插到底，再開機。它一讀到隨身碟，這裡就會自己變綠。",
   "setup.awaitFirmwareTooOld": "你的喇叭 '{{model}}' 已經在你的 Wi-Fi 上，但它跑的是設定隨身碟無法搭配的舊版 Bose 軟體（{{fw}}）。請先用官方的 Bose SoundTouch 應用程式更新喇叭，然後插著隨身碟把它關機再開機。更新完成後，這裡的設定會自己繼續。",
   "setup.awaitFirmwareTryAnyway": "仍要嘗試安裝",
