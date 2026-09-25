@@ -58,26 +58,34 @@ func TestTheFormSettleStateIsLoggedOnEveryPath(t *testing.T) {
 	}
 }
 
-// The decision must be untouched: this change is instrumentation, and the zone
-// path has regressed here repeatedly. The skip still asks boxPlayState and still
-// requires busy and not standby, exactly as before.
-func TestTheSettleLogDidNotChangeTheDecision(t *testing.T) {
+// The settle reading feeds the decision now, so the earlier "changed nothing"
+// assertion has been replaced by the invariants that must survive the change.
+//
+// The gate is still the box's own play state, the confirmed-incremental skip is
+// untouched, and the fresh-form path asks the MEMBERS rather than inferring
+// from the master. That last one is the whole guard against Martin's silent
+// members coming back.
+func TestTheFreshFormSkipStillAsksTheBoxAndTheMembers(t *testing.T) {
 	src := srcOf(t, "zones_stereo.go")
 	at := strings.Index(src, "func (s *Server) resumeAfterZoneForm")
-	body := src[at : at+3000]
+	body := src[at : at+4200]
 
-	branchAt := strings.Index(body, "if rz.survivorReachesMembers {")
-	if branchAt < 0 {
-		t.Fatal("the survivor branch is gone")
+	gateAt := strings.Index(body, "if standby, busy := s.boxPlayState(); busy && !standby {")
+	if gateAt < 0 {
+		t.Fatal("the outer gate no longer asks the box for busy AND not standby")
 	}
-	decision := body[branchAt : branchAt+320]
-	if !strings.Contains(decision, "s.boxPlayState()") {
-		t.Error("the skip no longer asks the box its play state")
+	incrAt := strings.Index(body, "if rz.survivorReachesMembers {")
+	if incrAt < 0 || incrAt < gateAt {
+		t.Fatal("the confirmed-incremental skip is gone or no longer sits inside the play-state gate")
 	}
-	if !strings.Contains(decision, "busy && !standby") {
-		t.Error("the skip condition changed; it must still be busy AND not standby")
+	if !strings.Contains(body[incrAt:incrAt+320], "stream survived the group change") {
+		t.Error("the incremental skip's log line is gone, so a bundle can no longer see it happen")
 	}
-	if !strings.Contains(decision, "stream survived the group change") {
-		t.Error("the skip's own log line is gone, so a bundle can no longer see the skip happen")
+	// The fresh-form half.
+	if !strings.Contains(body, "everyMemberCarriesTheGroup") {
+		t.Error("the fresh-form path does not ask the members; that is the only thing keeping Martin's case safe")
+	}
+	if !strings.Contains(body, "masterResumeForZone(settleNP, rz.ref)") {
+		t.Error("the fresh-form path does not re-check the master through masterResumeForZone; a string compare would be wrong across the two location encodings")
 	}
 }

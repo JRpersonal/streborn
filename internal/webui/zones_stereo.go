@@ -981,7 +981,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// change that held as an incremental join may skip the push when the
 		// master's stream survived; on a fresh (or re-formed) zone the members
 		// have nothing yet (Martin, 2026-08-24).
-		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental})
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental, members: z2.Members})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
@@ -1006,6 +1006,11 @@ type zoneResume struct {
 	// partner-derived capture, which never was this box's lastPlay, still gets
 	// exactly that guard instead of always looking superseded.
 	ref *lastPlayInfo
+	// members are the speakers this change actually put in the group, so the
+	// resume can ASK them whether they are already hearing the master instead
+	// of inferring it from the master alone. Empty means "not known", which is
+	// read as not-served and therefore always pushes.
+	members []boxapi.ZoneMember
 	// survivorReachesMembers says a stream that survived the group change is
 	// already reaching every member, so a re-push would only be an audible gap:
 	// true for an incremental join over a live zone (the firmware keeps the
@@ -1100,10 +1105,41 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 		"source", settleNP.Source, "playStatus", settleNP.PlayStatus,
 		"location", settleNP.Location, "wouldPush", lp.boxURL)
 
-	if rz.survivorReachesMembers {
-		if standby, busy := s.boxPlayState(); busy && !standby {
+	if standby, busy := s.boxPlayState(); busy && !standby {
+		if rz.survivorReachesMembers {
+			// A confirmed incremental join, or a firmware stereo pair: the
+			// caller already knows the surviving stream reaches everyone.
 			s.logger.Info("zone: stream survived the group change, not restarting playback")
 			return
+		}
+		// A FRESH form. The master is still playing, which is precisely why the
+		// push hurts: it stops a stream nobody asked to stop (measured on a
+		// SoundTouch 10, 2026-09-24: PLAY_STATE 1.5 s after the form, push sent
+		// anyway, ~2.5 s of silence). It was made unconditional because a skip
+		// here once left freshly joined members silent while the master played
+		// on (Martin, 2026-08-24), and from the master alone those two states
+		// are indistinguishable.
+		//
+		// So ask, in two steps, and push on anything short of a clear yes.
+		//
+		// First the master: is it still on the very stream we were about to
+		// push? This CANNOT be a string compare. A natively started station
+		// reports an orion-encoded location while lastPlay holds the loopback
+		// proxy URL, and the same station therefore looks different in the two
+		// forms (live capture, 2026-09-24). masterResumeForZone is the pure
+		// helper that unpacks it, and it is the one the capture already used.
+		stillOurs, blocked, _ := masterResumeForZone(settleNP, rz.ref)
+		if !blocked && stillOurs != nil && stillOurs.boxURL == lp.boxURL {
+			// Then the members, because Martin's case and this one differ only
+			// in what THEY are doing.
+			served, why := s.everyMemberCarriesTheGroup(context.Background(), rz.members, settleNP.Location)
+			if served {
+				s.logger.Info("zone: the stream survived the form and every member carries it, not restarting playback",
+					"members", len(rz.members), "reason", why)
+				return
+			}
+			s.logger.Info("zone: restarting after the form, a member is not carrying the stream yet",
+				"members", len(rz.members), "reason", why)
 		}
 	}
 	s.boxCmdMu.Lock()
