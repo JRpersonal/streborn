@@ -349,6 +349,18 @@ jobs:
         working-directory: desktop-app/frontend
         run: npm run lint
 
+      # The 600+ vitest tests ran nowhere in CI until 2026-09-25: no workflow
+      # invoked vitest, so a red frontend was only ever caught by somebody
+      # running the suite by hand on their own machine. One consequence sat in
+      # the tree for weeks: fwguidelink.test.js sliced source on a bare newline,
+      # which matches under LF and not under CRLF, so it read a different amount
+      # of text depending on the checkout and passed on Windows while failing on
+      # Linux. It runs before the build, because a failing assertion is cheaper
+      # to read than a bundle that builds and behaves wrongly.
+      - name: Test frontend
+        working-directory: desktop-app/frontend
+        run: npm test
+
       - name: Build frontend
         working-directory: desktop-app/frontend
         run: npm run build
