@@ -30,6 +30,7 @@ import {
   showToast,
   formatRemaining,
   boxModelSupport,
+  isSoundTouch300,
 } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -351,14 +352,14 @@ function mountSetupShell() {
 // AUX, or hold AUX + volume-down); every mains-powered speaker keeps the
 // unplug-from-the-wall advice.
 function powerCycleAdviceHtml(box) {
-  const m = String((box && box.model) || '').toLowerCase().replace(/[\s_]+/g, '');
+  const m = String((box && (box.model || box.type)) || '').toLowerCase().replace(/[\s_]+/g, '');
   const v = String((box && box.variant) || '').toLowerCase();
   // The SoundTouch 300 is not a "still stuck?" case: after an install or agent
   // OTA it ALWAYS sits in the alternating-yellow blink state, unreachable,
   // until it is unplugged once. As a muted tip people skipped it and thought
   // the soundbar was bricked (Michal 2026-07, Richard 2026-08-30), so for the
   // 300 this is a mandatory red step, not advice.
-  if (m.includes('300')) {
+  if (isSoundTouch300(box)) {
     return `<div class="setup-warn setup-powercycle">${escapeHtml(t('update.st300PowerCycle'))}</div>`;
   }
   const isPortable = m.includes('portable') || v === 'taigan';
@@ -1769,9 +1770,30 @@ const INSTALL_HELP_STEPS_NET = {
 };
 const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'];
 
+// ST300_STUCK_CODES are the failure codes whose symptom on a SoundTouch 300 is
+// its alternating-yellow blink state: the install ran, the soundbar rebooted
+// into the blink, and every port on it is dead until somebody unplugs it once.
+const ST300_STUCK_CODES = ['speaker-not-back', 'agent-not-up', 'install-timeout',
+  'not-reachable', 'control-unresponsive'];
+
 // installHelpHtml renders the localized help checklist for a failure code.
-// isNetwork picks the OTA-appropriate step list (no USB-stick advice).
-function installHelpHtml(code, isNetwork) {
+// isNetwork picks the OTA-appropriate step list (no USB-stick advice), and box
+// is needed because on one model the code alone gives the wrong instructions.
+function installHelpHtml(code, isNetwork, box) {
+  // A blinking SoundTouch 300 is not a network problem, and the checklist must
+  // not suggest it is. The headline above it has said "unplug the soundbar"
+  // since v0.9.84 and the red step is rendered beside this list on all three
+  // screens, but the checklist still said check the speaker is on the network,
+  // check the Wi-Fi, check the cable. The third 300 owner in a week
+  // (2026-09-24) did exactly that, twice: factory-reset the soundbar and
+  // re-entered his Wi-Fi in the Bose app, while the one action that would have
+  // finished his install was a ten-second power interrupt. So for this model on
+  // these codes the network steps are REMOVED, not merely demoted.
+  if (isSoundTouch300(box) && ST300_STUCK_CODES.indexOf(code) >= 0) {
+    const only = `<li>${escapeHtml(t('setup.help.' + (isNetwork ? 'netLogs' : 'logs')))}</li>`;
+    return `<div class="setup-help"><b>${escapeHtml(t('setup.helpTitle'))}</b><ul>${only}</ul>`
+      + `<p class="small">${escapeHtml(t('setup.helpLogsInstruction'))}</p></div>`;
+  }
   const steps = isNetwork
     ? (INSTALL_HELP_STEPS_NET[code] || NET_HELP_DEFAULT)
     : (INSTALL_HELP_STEPS[code] || ['freshBoot', 'wifi', 'stick', 'logs']);
@@ -2223,7 +2245,7 @@ async function verifyInstalledState(box, onState) {
   if (offProgress) offProgress();
   if (!result || !result.ok) {
     const msg = (result && result.message) || 'unknown';
-    const help = installHelpHtml(result && result.code, !!knownBox);
+    const help = installHelpHtml(result && result.code, !!knownBox, foundBox);
     const log = (result && result.log)
       ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
       : '';
@@ -2303,10 +2325,20 @@ async function verifyInstalledState(box, onState) {
   // not failed: the software is on the speaker, the speaker is not answering
   // yet, and the backend is still looking (installwait.go's watcher).
   //
-  // What it deliberately does NOT show: a failure report, a repair button, a
-  // power-cycle block, or any invitation to install again. Reporter A read a
-  // checklist telling him to press Install, pressed it, and got a second and
-  // much worse failure out of a speaker that was working the whole time.
+  // What it deliberately does NOT show: a failure report, a repair button, or
+  // any invitation to install again. Reporter A read a checklist telling him to
+  // press Install, pressed it, and got a second and much worse failure out of a
+  // speaker that was working the whole time.
+  //
+  // The ONE exception is the SoundTouch 300, and it is not a judgement call.
+  // That soundbar always ends an install in the alternating-yellow blink state
+  // with every port dead, and it does not come back until it is unplugged once.
+  // On that speaker "we are still looking, check your Wi-Fi" is a wait with no
+  // end: the third 300 owner in a week (2026-09-24) reset his soundbar and
+  // re-entered his Wi-Fi in the Bose app twice over, because the one instruction
+  // that would have finished the install was on a screen he never reached. So a
+  // 300 gets the mandatory power-cycle step here, above the checklist. Nothing
+  // else about this screen changes, and no other model sees it.
   //
   // It is NOT a screen with no way out, either. It carries the two actions the
   // help text under it already promises: save the diagnostic logs (the
@@ -2355,9 +2387,12 @@ async function verifyInstalledState(box, onState) {
       const wait = remainingMs > 0
         ? `<div class="muted small">${escapeHtml(t('setup.installStillWaiting', { remaining: formatRemaining(remainingMs) }))}</div>`
         : '';
+      // The 300's power-cycle step comes before the "still waiting" line and
+      // the checklist, because on that model it IS the next step.
+      const st300 = isSoundTouch300(foundBox) ? powerCycleAdviceHtml(foundBox) : '';
       render(`<div id="setupWaitPanel" class="setup-warn">${escapeHtml(head)}</div>`
         + (inSetup ? `<div class="muted small">${escapeHtml(t('setup.installInSetupPhase'))}</div>` : '')
-        + wait + help
+        + st300 + wait + help
         + `<div class="failreport-actions" style="margin-top:12px">`
         + `<button class="btn btn-mini" id="setupWaitSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button> `
         + `<button class="btn btn-mini" id="setupWaitStop">${escapeHtml(t('setup.installWaitStopBtn'))}</button>`

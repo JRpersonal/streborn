@@ -88,6 +88,22 @@ export function boxModelSupport(model) {
   return 'unknown';
 }
 
+// isSoundTouch300 reports whether a box record is a SoundTouch 300 soundbar.
+// It exists because that one model behaves differently from every other speaker
+// after an install or an agent update: it drops into the alternating-yellow
+// blink state with every port dead and does NOT come back until it is unplugged
+// once (confirmed repeatedly since 2026-07). Any screen that tells such an owner
+// to check the Wi-Fi or to wait is sending them down a road with no end.
+//
+// Both fields are read: a stock speaker discovered before the install often
+// carries only `type` (the Bose /info field), and keying on `model` alone
+// silently fell through to the generic advice for exactly those owners. The
+// model number is matched as a whole token so "SoundTouch 30" is never caught.
+export function isSoundTouch300(box) {
+  const m = String((box && (box.model || box.type)) || '').toLowerCase();
+  return /soundtouch\s*300\b/.test(m) || /\bsoundbar\s*300\b/.test(m);
+}
+
 // decodeXmlEntities decodes the five named XML entity sequences plus
 // numeric character references that the Bose /now_playing XML
 // occasionally emits. Without this, "Bryan Adams &amp; Tina Turner"
