@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Activé par défaut. Quand tu allumes l'enceinte, elle redémarre la dernière station, comme le faisait Bose. Si l'enceinte se réveille toute seule (par exemple dans une paire stéréo), elle reste silencieuse. Désactive ceci si tu veux le silence à l'allumage.",
   "settingsView.resumeOnPowerSavedToast": "Reprise à l'allumage enregistrée.",
   "settingsView.clockSavedToast": "Affichage de l'heure réglé sur {{v}}.",
+  "settingsView.clockFormatUnknownState": "L'enceinte n'a pas dit si son affichage de l'heure est activé, donc le format n'a pas été changé. Appuie sur Activé ou Désactivé pour l'appliquer.",
   "settingsView.clockNotSupported": "non pris en charge sur ce modèle",
   "settingsView.clockUnknown": "inconnu",
   "settingsView.airplayOptHeading": "Optimisation AirPlay",

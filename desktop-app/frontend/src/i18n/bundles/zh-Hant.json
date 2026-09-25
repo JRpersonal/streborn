@@ -827,6 +827,7 @@
   "settingsView.announceCopy": "複製",
   "settingsView.announceCopiedToast": "指令已複製。",
   "settingsView.clockSavedToast": "時鐘顯示已設為 {{v}}。",
+  "settingsView.clockFormatUnknownState": "喇叭沒有回答時鐘顯示是否開啟，所以沒有更改格式。請按開或關來套用。",
   "settingsView.clockNotSupported": "這個機型不支援",
   "settingsView.clockUnknown": "未知",
   "settingsView.airplayOptHeading": "AirPlay 最佳化",

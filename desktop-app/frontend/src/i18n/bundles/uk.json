@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Увімкнено за замовчуванням. Коли ви вмикаєте колонку, знову запускається остання станція, як це робив Bose. Якщо колонка вмикається сама (наприклад, як частина стереопари), вона лишається без звуку. Вимкніть це, якщо хочете тишу при ввімкненні колонки.",
   "settingsView.resumeOnPowerSavedToast": "Відновлення при ввімкненні збережено.",
   "settingsView.clockSavedToast": "Відображення годинника встановлено на {{v}}.",
+  "settingsView.clockFormatUnknownState": "Гучномовець не сказав, увімкнений чи його годинник, тому формат не змінено. Натисни Увімк. або Викл., щоб застосувати його.",
   "settingsView.clockNotSupported": "не підтримується на цій моделі",
   "settingsView.clockUnknown": "невідомо",
   "settingsView.airplayOptHeading": "Оптимізація AirPlay",

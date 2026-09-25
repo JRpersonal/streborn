@@ -827,6 +827,7 @@
   "settingsView.announceCopy": "Kopieren",
   "settingsView.announceCopiedToast": "Befehl kopiert.",
   "settingsView.clockSavedToast": "Uhrzeit-Anzeige auf {{v}} gesetzt.",
+  "settingsView.clockFormatUnknownState": "Der Lautsprecher hat nicht gesagt, ob seine Uhr an ist, deshalb wurde das Format nicht geändert. Tippe auf An oder Aus, um es zu übernehmen.",
   "settingsView.clockNotSupported": "auf diesem Modell nicht unterstützt",
   "settingsView.clockUnknown": "unbekannt",
   "settingsView.airplayOptHeading": "AirPlay-Optimierung",

@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Pagal numatymą įjungta. Įjungus garsiakalbį, vėl paleidžiama paskutinė stotis, kaip darydavo Bose. Jei garsiakalbis pabunda pats (pavyzdžiui, kaip stereo poros dalis), jis lieka tylus. Išjunkite tai, jei norite tylos įjungę garsiakalbį.",
   "settingsView.resumeOnPowerSavedToast": "Tęsimas įjungus išsaugotas.",
   "settingsView.clockSavedToast": "Laikrodžio rodymas nustatytas į {{v}}.",
+  "settingsView.clockFormatUnknownState": "Kolonėlė nepasakė, ar jos laikrodis įjungtas, todėl formatas nebuvo pakeistas. Paspausk Įjungti arba Išjungti, kad jį pritaikytum.",
   "settingsView.clockNotSupported": "nepalaikoma šiame modelyje",
   "settingsView.clockUnknown": "nežinoma",
   "settingsView.airplayOptHeading": "AirPlay optimizavimas",

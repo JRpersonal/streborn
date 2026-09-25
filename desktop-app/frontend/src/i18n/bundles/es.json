@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Activado por defecto. Al encender el altavoz, vuelve a iniciar la última emisora, como hacía Bose. Si el altavoz se enciende solo (por ejemplo, como parte de una pareja estéreo), permanece en silencio. Desactívalo si quieres silencio al encender el altavoz.",
   "settingsView.resumeOnPowerSavedToast": "Reanudación al encender guardada.",
   "settingsView.clockSavedToast": "Visualización de la hora establecida en {{v}}.",
+  "settingsView.clockFormatUnknownState": "El altavoz no dijo si su reloj está encendido, así que el formato no se ha cambiado. Pulsa Sí o No para aplicarlo.",
   "settingsView.clockNotSupported": "no compatible en este modelo",
   "settingsView.clockUnknown": "desconocido",
   "settingsView.airplayOptHeading": "Optimización de AirPlay",

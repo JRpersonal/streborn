@@ -827,6 +827,7 @@
   "settingsView.announceCopy": "Copy",
   "settingsView.announceCopiedToast": "Command copied.",
   "settingsView.clockSavedToast": "Clock display set to {{v}}.",
+  "settingsView.clockFormatUnknownState": "The speaker did not say whether its clock display is on, so the format was left alone. Press On or Off to apply it.",
   "settingsView.clockNotSupported": "not supported on this model",
   "settingsView.clockUnknown": "unknown",
   "settingsView.airplayOptHeading": "AirPlay optimization",

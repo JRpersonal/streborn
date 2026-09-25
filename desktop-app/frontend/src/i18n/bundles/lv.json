@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Pēc noklusējuma ieslēgts. Kad ieslēdzat skaļruni, tas atkal sāk pēdējo staciju, tāpat kā darīja Bose. Ja skaļrunis pamostas pats (piemēram, kā stereo pāra daļa), tas paliek kluss. Izslēdziet to, ja vēlaties klusumu, ieslēdzot skaļruni.",
   "settingsView.resumeOnPowerSavedToast": "Atsākšana ieslēdzot saglabāta.",
   "settingsView.clockSavedToast": "Pulksteņa rādījums iestatīts uz {{v}}.",
+  "settingsView.clockFormatUnknownState": "Skaļrunis nepateica, vai tā pulkstenis ir ieslēgts, tāpēc formāts netika mainīts. Nospied Ieslēgt vai Izslēgt, lai to piemērotu.",
   "settingsView.clockNotSupported": "netiek atbalstīts šajā modelī",
   "settingsView.clockUnknown": "nezināms",
   "settingsView.airplayOptHeading": "AirPlay optimizācija",
