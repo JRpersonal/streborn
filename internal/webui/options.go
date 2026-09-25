@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/alarm"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
@@ -193,6 +194,13 @@ func WithWebhooks(w *webhooks.Store) Option {
 // (#863), served at /api/groupkeys.
 func WithGroupKeys(g *groupkeys.Store) Option {
 	return func(s *Server) { s.groupKeys = g }
+}
+
+// WithAlarms wires the alarm clock: the document an editor saves, served at
+// /api/alarms, and the separate file recording what has already been fired.
+// Both or neither - the scheduler does not run without the state store.
+func WithAlarms(a *alarm.Store, st *alarm.StateStore) Option {
+	return func(s *Server) { s.alarms, s.alarmState = a, st }
 }
 
 // WithSpotifySwitchedAway wires the Spotify manager's source-switch hook, called
