@@ -359,8 +359,8 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("stream proxy raw start", append([]any{"url", url}, requestFacts(r)...)...)
-	s.noteStreamStart(url)
-	defer s.clearTitleOnEnd(url)
+	titleGen := s.noteStreamStart(url)
+	defer func() { s.clearTitleOnEnd(url, titleGen) }()
 	start := time.Now()
 	s.resetAudioGap()
 	headersSent := false
@@ -395,7 +395,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var boseAlive bool
-		boseAlive, lastErr = s.streamOne(r.Context(), w, r, s.edgeFor(url), !headersSent)
+		boseAlive, lastErr = s.streamOne(r.Context(), w, r, s.edgeFor(url), url, !headersSent)
 		if errors.Is(lastErr, errPlaylistIsHLS) && !headersSent {
 			// The URL had no .m3u8 suffix but its body is an HLS playlist; demux
 			// it (#252). serveHLS only errors before writing audio, so http.Error
@@ -557,8 +557,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.noteStreamStart(p.StreamURL)
-	defer s.clearTitleOnEnd(p.StreamURL)
+	titleGen := s.noteStreamStart(p.StreamURL)
+	defer func() { s.clearTitleOnEnd(p.StreamURL, titleGen) }()
 
 	// We do exactly one GET to the CDN and copy bytes to Bose. When the CDN
 	// returns EOF (token expiry), we reconnect internally and keep streaming —
@@ -628,7 +628,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		curURL := s.resolvePresetURL(slot, curStream)
-		boseAlive, err := s.streamOne(r.Context(), w, r, s.edgeFor(curURL), !headersSent)
+		boseAlive, err := s.streamOne(r.Context(), w, r, s.edgeFor(curURL), p.StreamURL, !headersSent)
 		lastErr = err
 		if errors.Is(err, errPlaylistIsHLS) && !headersSent {
 			// A preset whose URL had no .m3u8 suffix but serves an HLS playlist
@@ -690,8 +690,8 @@ var errUpstreamFileComplete = errors.New("upstream file delivered completely")
 // return value is the last upstream error of this attempt (nil on a clean
 // EOF or a normal Bose disconnect); the caller logs it at stream end so a
 // box stop can be told apart from outbound problems.
-func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool) (bool, error) {
-	return s.streamOneDepth(ctx, w, r, url, sendHeaders, 0)
+func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url, station string, sendHeaders bool) (bool, error) {
+	return s.streamOneDepth(ctx, w, r, url, station, sendHeaders, 0)
 }
 
 // Reconnecting to the SAME edge server, not just to the same station.
@@ -772,7 +772,7 @@ func (s *Server) dropEdgePinByEdge(edge string) {
 // audio/x-mpegurl response that turns out to be a plain M3U/PLS pointer file is
 // re-fetched at its first real stream URL (depth+1), capped so a playlist that
 // points at itself or at another playlist cannot loop forever.
-func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool, depth int) (bool, error) {
+func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *http.Request, url, station string, sendHeaders bool, depth int) (bool, error) {
 	if err := safeHTTPURL(url); err != nil {
 		s.logger.Warn("stream proxy refusing url", "url", url, "err", err)
 		if sendHeaders {
@@ -890,7 +890,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			s.logger.Info("stream proxy: resolved playlist pointer to stream URL",
 				"playlist", url, "stream", media, "depth", depth+1)
 			resp.Body.Close()
-			return s.streamOneDepth(ctx, w, r, media, sendHeaders, depth+1)
+			return s.streamOneDepth(ctx, w, r, media, station, sendHeaders, depth+1)
 		}
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy: playlist content-type not resolvable", "url", url, "contentType", ct)
@@ -922,7 +922,15 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// ICY metadata spacing. When set, the upstream interleaves StreamTitle
 	// blocks every metaint bytes.
 	metaint := icyMetaint(resp.Header)
-	s.clearTitleForNewURL(url)
+	// The title belongs to the STATION the user picked, not to the edge or
+	// media URL this fetch happens to land on. Filing it under the resolved URL
+	// meant the end-of-stream wipe, which is keyed on the station, never matched
+	// for a redirecting station or a playlist pointer, so the last radio track
+	// was still on display under whatever played next. That is #274 returning
+	// through the back door, and it covers most real stations: streamtheworld
+	// pins an edge host, and an m3u pointer like Absolut Relax resolves one
+	// level deeper still.
+	s.clearTitleForNewURL(station)
 
 	// Did the box itself ask for ICY metadata? If so it can de-interleave and
 	// display StreamTitle natively, with no stream re-fetch (the gap-free path,
@@ -994,7 +1002,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	if metaint > 0 && !boxWantsICY {
 		src = newICYReader(resp.Body, metaint, func(meta string) {
 			if title, ok := parseStreamTitle(meta); ok {
-				s.setTitle(url, title)
+				s.setTitle(station, title)
 			}
 		})
 	}
@@ -1231,7 +1239,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				// how often a station forces a reconnect.
 				s.logger.Info("stream proxy upstream EOF, will reconnect", "url", url,
 					"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
-				s.noteReconnect(url, "eof", connBytes, time.Since(connStart), s.audioGap())
+				s.noteReconnect(station, "eof", connBytes, time.Since(connStart), s.audioGap())
 				return true, nil
 			}
 			// Network-level read error mid-stream: this is the dropout cause for
@@ -1239,7 +1247,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			// much it delivered, so the bundle pins the drop without a capture.
 			s.logger.Warn("stream proxy upstream read fail, will reconnect", "url", url, "err", readErr,
 				"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
-			s.noteReconnect(url, "read-fail", connBytes, time.Since(connStart), s.audioGap())
+			s.noteReconnect(station, "read-fail", connBytes, time.Since(connStart), s.audioGap())
 			return true, readErr
 		}
 	}

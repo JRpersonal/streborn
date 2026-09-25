@@ -172,7 +172,7 @@ func TestUpstreamStallForcesReconnect(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/raw", nil)
 	rw := httptest.NewRecorder()
 	start := time.Now()
-	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
+	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, up.URL, true)
 	// The production threshold is upstreamStallAfter (15 s since #823, where
 	// 5 s turned a box with a half-minute buffer into a reconnect every twenty
 	// seconds). Assert against the field rather than a literal, so the test
@@ -275,7 +275,7 @@ func TestCompletedFileEndsWithoutReconnect(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/raw", nil)
 	rw := httptest.NewRecorder()
-	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
+	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, up.URL, true)
 	if boseAlive {
 		t.Fatalf("a completely delivered file must not ask for a reconnect")
 	}
@@ -303,7 +303,7 @@ func TestEOFWithoutRangesStillReconnects(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/raw", nil)
 	rw := httptest.NewRecorder()
-	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
+	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, up.URL, true)
 	if !boseAlive || err != nil {
 		t.Fatalf("a live-stream EOF must request a reconnect with no error, got boseAlive=%v err=%v", boseAlive, err)
 	}
