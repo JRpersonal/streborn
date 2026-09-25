@@ -1607,7 +1607,37 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
     return null;
   };
   const arm = (label, onclick) => { liveSearchKey = null; btn.textContent = label; btn.disabled = false; btn.onclick = onclick; };
-  const handoff = () => { btn.disabled = true; aborted = true; stopTicker(); waitForBoxAfterSetup({ ssid, pass, html }); };
+  // handoff ends the waiting step and starts the install, and BOTH halves of the
+  // screen have to move for that, or the user is left watching a panel that will
+  // never change again.
+  //
+  // waitForBoxAfterSetup renders into #setupResult, which sits above the stick
+  // wizard, i.e. several screens off the top of the viewport that
+  // showAwaitBoxReadyPanel deliberately scrolled down to this panel. Leave the
+  // await panel standing as well and the last thing under the user's eyes reads
+  // "speaker found and ready" beside a button that just greyed itself out, while
+  // the live phase checklist, the failure headline, the firmware route, the
+  // repair button and the Save-diagnostics button are all painted where nobody
+  // is looking. That is the "I press confirm and the app does nothing" report,
+  // and on a still-stock speaker it hides the one screen that would have
+  // finished the install.
+  const handoff = () => {
+    btn.disabled = true; aborted = true; stopTicker();
+    // The await panel has done its job. Clear it so no stale "ready" line
+    // outlives the step it belonged to.
+    const awaitPanel = $('setupAwaitResult');
+    if (awaitPanel) awaitPanel.innerHTML = '';
+    // The stick is in the speaker; the wizard that wrote it is over. Folding it
+    // away puts the install panel back within one screen of the target card. A
+    // failure that genuinely needs the stick re-opens the section itself.
+    const stickDetails = $('setupStickDetails');
+    if (stickDetails) stickDetails.open = false;
+    // The install's first render is synchronous, so the panel already has
+    // content by the time we scroll it into view.
+    waitForBoxAfterSetup({ ssid, pass, html });
+    const res = $('setupResult');
+    if (res) { try { res.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ } }
+  };
 
   while (Date.now() < deadline && !ready && !aborted) {
     let list = [];
