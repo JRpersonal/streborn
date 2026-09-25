@@ -31,7 +31,7 @@ export function hostnameOf(url) {
 // "Play this stream URL" card shown when the pasted URL is not in the
 // radio-browser directory. Shaped like a radio-browser Station where it
 // matters: playStation reads url_resolved/url/name/codec/bitrate, the
-// long-press preset save tolerates the empty uuid/codec (VoteStation and
+// long-press preset save tolerates the empty uuid/codec (RadioVote and
 // RadioClick are both guarded on a non-empty/valid UUID), and favorites key
 // off name|url when there is no UUID.
 export function syntheticStationForURL(url) {

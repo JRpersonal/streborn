@@ -130,23 +130,6 @@ func (a *App) RemoveConflictingMod(host string, port int) (string, error) {
 	return string(b), nil
 }
 
-// VoteStation gives a station a thumbs-up on radio-browser.
-// Best effort; the error is returned but does not have to be shown.
-func (a *App) VoteStation(host string, port int, uuid string) error {
-	if uuid == "" {
-		return nil
-	}
-	resp, err := a.boxDo(host, port, http.MethodPost, "/api/radio/vote/"+uuid, "application/json", "")
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("vote status %d", resp.StatusCode)
-	}
-	return nil
-}
-
 // friendlyError extracts the `detail` field from the Stick API error
 // response, if present. Fallback: the raw body.
 func friendlyError(resp *http.Response) string {

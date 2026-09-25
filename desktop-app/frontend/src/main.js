@@ -10,7 +10,6 @@ import {
   MovePreset,
   PlaySlot,
   PlayURL,
-  VoteStation,
   RebootBox,
   RecordUpdateIntent,
   UpdateFailureReport,
@@ -103,6 +102,7 @@ import {
   isMissingBinding,
   RadioTags,
   RadioLanguages,
+  RadioVote,
   RadioClick,
   TrueFactoryReset,
   UninstallSTR,
@@ -6938,7 +6938,7 @@ async function saveCurrentToSlot(slot) {
         showToast(t('preset.savedToKey', { n: slot, name: aname }));
         await loadPresets();
         if (app.uuid) {
-          VoteStation(state.currentBox.host, state.currentBox.port, app.uuid).catch(() => {});
+          RadioVote(app.uuid).catch(() => {});
         }
       } catch (err) {
         showPresetSaveError(err, slot);
@@ -7030,7 +7030,7 @@ async function saveCurrentToSlot(slot) {
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
     if (state.nowUUID) {
-      VoteStation(state.currentBox.host, state.currentBox.port, state.nowUUID).catch(() => {});
+      RadioVote(state.nowUUID).catch(() => {});
     }
   } catch (err) {
     showPresetSaveError(err, slot);
@@ -8946,7 +8946,7 @@ function openPick(station) {
       const logo = stationLogoChain(station);
       await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '', station.codec || '');
       if (station.stationuuid) {
-        VoteStation(state.currentBox.host, state.currentBox.port, station.stationuuid).catch(() => {});
+        RadioVote(station.stationuuid).catch(() => {});
       }
       showToast(t('preset.savedToKey', { n: i, name: station.name }));
     },

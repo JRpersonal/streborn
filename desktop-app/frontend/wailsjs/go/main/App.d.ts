@@ -295,8 +295,6 @@ export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;
 
 export function UpdateFailureReport(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<string>;
 
-export function VoteStation(arg1:string,arg2:number,arg3:string):Promise<void>;
-
 export function WakeBox(arg1:string,arg2:number):Promise<void>;
 
 export function WriteLangConfig(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
