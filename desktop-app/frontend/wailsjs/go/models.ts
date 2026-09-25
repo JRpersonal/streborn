@@ -43,6 +43,7 @@ export namespace main {
 	    otaPending?: boolean;
 	    boxHealth?: string;
 	    conflictingMod?: string;
+	    foreignCloudURL?: string;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
@@ -74,6 +75,7 @@ export namespace main {
 	        this.otaPending = source["otaPending"];
 	        this.boxHealth = source["boxHealth"];
 	        this.conflictingMod = source["conflictingMod"];
+	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];
@@ -536,6 +538,7 @@ export namespace main {
 	    needBytes: number;
 	    reclaimableBytes: number;
 	    conflictingMod?: string;
+	    foreignCloudURL?: string;
 	    foreignDirs?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -549,6 +552,7 @@ export namespace main {
 	        this.needBytes = source["needBytes"];
 	        this.reclaimableBytes = source["reclaimableBytes"];
 	        this.conflictingMod = source["conflictingMod"];
+	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.foreignDirs = source["foreignDirs"];
 	    }
 	}

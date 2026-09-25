@@ -909,7 +909,26 @@ picture.
                                     agent itself when it differs from the
                                     copy embedded in the binary.
 /mnt/nv/OverrideSdkPrivateCfg.xml   firmware-owned; STR heals the cloud host
-                                    in it at install and at every boot
+                                    in it at install and at every boot. It
+                                    OVERRIDES the read-only rootfs copy at
+                                    /opt/Bose/etc/SoundTouchSdkPrivateCfg.xml,
+                                    which is why the cloud host can be repaired
+                                    without ever remounting the rootfs. On a box
+                                    that has no override file, the repair builds
+                                    one from the box's own config (see below).
+/mnt/nv/*SdkPrivateCfg.xml*.oct-backup
+                                    OpenCloudTouch's backup of the SDK config it
+                                    replaced, i.e. the box's PRE-MOD config. The
+                                    filename varies (a measured ST30 carries
+                                    SoundTouchSdkPrivateCfg.xml.oct-backup), so
+                                    it is matched by pattern; it is also the best
+                                    template for the repair, so it is deleted
+                                    only AFTER the cloud host is stock again.
+/mnt/nv/hosts_backup                OpenCloudTouch's copy of the pristine
+                                    /etc/hosts. Corroborating marker only: it
+                                    never raises the warning on its own, because
+                                    a marker that turns out to be Bose-native
+                                    pins a banner nobody can clear (v0.9.6).
 /mnt/nv/BoseApp-Persistence/        firmware-owned. STR rewrites only the
                                     priority attributes in NetworkProfiles.xml
                                     (and AirplayConfiguration.xml on BCO)

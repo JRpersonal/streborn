@@ -131,6 +131,14 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if mod := detectConflictingMod(); mod != "" {
 		out["conflictingMod"] = mod
 	}
+	// A cloud URL STR's /etc/hosts redirect can never catch (#986). Two file
+	// reads, no request to the speaker, and emitted only when there is
+	// something wrong, so the polled response stays small. This is the flag
+	// whose absence cost #986 three days: the box looked healthy from every
+	// angle the app could see while it asked a dead server for everything.
+	if f := foreignCloudURL(); f != "" {
+		out["foreignCloudURL"] = f
+	}
 	// Ongoing 1036 storm: the box is refusing essentially every recall, so
 	// nothing the user presses will play until the state is cleared. Emitted
 	// only while it lasts, and carrying the age so the app can say how long it
@@ -1146,13 +1154,13 @@ func detectAfterTouch() bool {
 	return false
 }
 
-// octBackupPath and hostsLivePath / hostsOriginalPath are vars so the
-// OpenCloudTouch detection test can point them at a temp tree; in production
-// they are the real paths. hostsOriginalPath is run.sh's verbatim boot copy
-// of the persistent /etc/hosts, taken BEFORE the OCT block is stripped from
-// the live copy, so it is where the leftover stays visible for diagnostics.
+// hostsLivePath / hostsOriginalPath are vars so the OpenCloudTouch detection
+// test can point them at a temp tree; in production they are the real paths.
+// hostsOriginalPath is run.sh's verbatim boot copy of the persistent
+// /etc/hosts, taken BEFORE the OCT block is stripped from the live copy, so it
+// is where the leftover stays visible for diagnostics. The mod's SDK-config
+// backup is matched by octBackupGlob in sdkcloudurls.go.
 var (
-	octBackupPath     = "/mnt/nv/OverrideSdkPrivateCfg.xml.oct-backup"
 	hostsLivePath     = "/etc/hosts"
 	hostsOriginalPath = "/tmp/hosts.original"
 )
@@ -1172,8 +1180,15 @@ var (
 // forever: the persistent block sits on the read-only rootfs and removing it
 // would need a rw remount, firmware bending, off the table by standing rule.
 // The boot copy is still surfaced in /api/debug/state for bundles.
+//
+// #986: the SDK-config backup is matched by PATTERN, not by one literal name.
+// The literal used until now (/mnt/nv/OverrideSdkPrivateCfg.xml.oct-backup)
+// was copied from a suggestion in #698 and never seen on a box; the measured
+// ST30 carries /mnt/nv/SoundTouchSdkPrivateCfg.xml.oct-backup, so detection
+// missed it, the cleanup button deleted nothing, and the reporter was told
+// "removed" while his speaker went on asking the mod's dead server.
 func detectOpenCloudTouch() bool {
-	if _, err := os.Stat(octBackupPath); err == nil {
+	if len(octBackupFiles()) > 0 {
 		return true
 	}
 	if b, err := os.ReadFile(hostsLivePath); err == nil && hosts.ContainsOCTBlock(b) {
@@ -1199,7 +1214,11 @@ func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	mod := detectConflictingMod()
-	if mod == "" {
+	// A foreign cloud URL is reason enough to run, even with every marker file
+	// already gone: it is the part that actually keeps the speaker away from
+	// STR, it outlives the files, and on #986's ST30 it outlived a factory
+	// reset as well.
+	if mod == "" && foreignCloudURL() == "" && foreignCloudURLFiles() == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "mod": "", "removed": []string{}})
 		return
 	}
@@ -1244,31 +1263,85 @@ func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Reque
 			removed = append(removed, fmt.Sprintf("rc.local (%d line)", dropped))
 		}
 	}
-	// 4. OpenCloudTouch's SDK-config backup on NAND (#698). Its OTHER
-	// fingerprint, the redirect block in the persistent /etc/hosts, is NOT
-	// removable from here: the file sits on the read-only rootfs and cleaning
-	// it would mean remounting the rootfs rw, which is firmware bending and
-	// off the table by standing rule (the reporter's own workaround did
-	// exactly that; do not "improve" this handler that way). The block is
-	// neutralized instead: run.sh strips it from the live hosts copy at boot
-	// and hosts.Apply filters it at agent start, and detectOpenCloudTouch
-	// only counts the LIVE file, so removing this backup is enough for
-	// stillDetected to converge to false on a healthy box.
-	if _, err := os.Stat(octBackupPath); err == nil {
-		if err := os.Remove(octBackupPath); err != nil {
-			http.Error(w, "could not remove OCT backup: "+err.Error(), http.StatusInternalServerError)
-			return
+	// 4. OpenCloudTouch. The cloud URL comes FIRST and the files go second,
+	// because the mod's SDK-config backup is the box's pristine pre-mod config
+	// and therefore the best template for the healed override: deleting it
+	// first would throw away the restore source. Until #986 this handler did
+	// exactly that and nothing else, so a box whose margeServerUrl pointed at
+	// the mod's dead server kept pointing there after a "successful" cleanup.
+	heal := healSDKCloudURLs()
+	if heal.Healed {
+		removed = append(removed, "cloud URL -> "+stockCloudURLs[sdkMargeTag])
+		s.logger.Info("conflicting-mod cleanup: healed the SDK cloud URLs back to stock",
+			"wrote", heal.Path, "from", heal.From, "tags", heal.Tags, "issue", "#986")
+	} else if heal.Note != "" {
+		s.logger.Warn("conflicting-mod cleanup: could not heal the SDK cloud URLs",
+			"note", heal.Note, "issue", "#986")
+	}
+	// The inert leftovers, removed only once the cloud URL is actually stock.
+	// The mod's OTHER fingerprint, the redirect block in the persistent
+	// /etc/hosts, is NOT removable from here: that file sits on the read-only
+	// rootfs and cleaning it would mean remounting the rootfs rw, which is
+	// firmware bending and off the table by standing rule (the reporter's own
+	// workaround did exactly that; do not "improve" this handler that way).
+	// The block is neutralized instead: run.sh strips it from the live hosts
+	// copy at boot and hosts.Apply filters it at agent start, and
+	// detectOpenCloudTouch only counts the LIVE file, so removing these files
+	// is enough for stillDetected to converge to false on a healthy box.
+	if foreignCloudURLFiles() == "" {
+		for _, p := range octBackupFiles() {
+			if err := os.Remove(p); err != nil {
+				http.Error(w, "could not remove OCT backup: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			removed = append(removed, filepath.Base(p))
 		}
-		removed = append(removed, filepath.Base(octBackupPath))
+		// Corroborated by the SDK backup or the live block above, never a
+		// trigger on its own; see octHostsBackupPath.
+		if _, err := os.Stat(octHostsBackupPath); err == nil {
+			if err := os.Remove(octHostsBackupPath); err == nil {
+				removed = append(removed, filepath.Base(octHostsBackupPath))
+			}
+		}
 	}
 	_ = exec.Command("sync").Run()
-	s.logger.Info("removed conflicting-mod leftovers", "mod", mod, "removed", removed)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":        "ok",
-		"mod":           mod,
-		"removed":       removed,
-		"stillDetected": detectConflictingMod() != "",
-	})
+	// Two views, deliberately. stillForeign is what the FILES say, i.e. what
+	// this handler could still do something about. The firmware's own live view
+	// can lag it by one restart, so it must not read as a failed repair.
+	stillForeign := foreignCloudURLFiles()
+	liveForeign := liveForeignCloudURL()
+	s.logger.Info("removed conflicting-mod leftovers", "mod", mod, "removed", removed,
+		"cloudURLHealed", heal.Healed, "filesForeign", stillForeign, "liveForeign", liveForeign)
+	out := map[string]any{
+		"status":  "ok",
+		"mod":     mod,
+		"removed": removed,
+		// stillDetected stays true while anything the box acts on is left, the
+		// foreign cloud URL included: the app shows this verbatim, and #986
+		// proved how much a cheerful "removed (0)" costs when it is wrong.
+		"stillDetected":  detectConflictingMod() != "" || stillForeign != "",
+		"cloudURLHealed": heal.Healed,
+	}
+	if heal.Healed || heal.RestartPending {
+		// The firmware reads the SDK config once, at boot.
+		out["rebootRequired"] = true
+	}
+	if heal.Healed {
+		out["cloudURLFile"] = heal.Path
+	}
+	if heal.RestartPending {
+		out["cloudURLRestartPending"] = true
+	}
+	if stillForeign != "" {
+		out["foreignCloudURL"] = stillForeign
+	}
+	if liveForeign != "" {
+		out["liveCloudURL"] = liveForeign
+	}
+	if heal.Note != "" {
+		out["cloudURLNote"] = heal.Note
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // wlanCredsWarningWarranted reports whether the "no Wi-Fi saved in STR"

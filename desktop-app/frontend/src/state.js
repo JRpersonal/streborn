@@ -169,7 +169,7 @@ function isRoutableHost(h) {
 // Anything that says how a speaker is doing RIGHT NOW is not, and discovery
 // fills it in a moment later anyway.
 const TRANSIENT_BOX_FIELDS = ['storm1036', 'storm1036SinceSec', 'recallRefusal',
-  'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'updateAvailable',
+  'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'foreignCloudURL', 'updateAvailable',
   'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'otaPending'];
 
 function withoutTransientState(b) {
