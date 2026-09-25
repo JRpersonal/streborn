@@ -1077,6 +1077,29 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 	// (Martin, 2026-08-24). So the survived-stream skip only applies when the
 	// caller knows the surviving stream reaches the members. An unreadable or
 	// idle box falls through to the push, the historical safe behavior.
+	// What the master actually reports once the form has settled, on EVERY path.
+	//
+	// Until now this state was read only INSIDE the survivor branch below, so a
+	// fresh full form left no trace of it at all: a bundle could say the group
+	// was formed and that a re-push followed, and nothing about whether the
+	// master had kept playing through it. That is exactly the question a user
+	// reporting "forming a two-speaker group interrupts the music" needs
+	// answered, and answering it from the code alone is guesswork, because
+	// whether /setZone tears the master's session down is a property of the
+	// chassis and differs between them.
+	//
+	// Read-only and deliberately outside the decision: the branch below is
+	// unchanged, so this cannot alter what anybody's speakers do. It only means
+	// the next diagnostic can tell a firmware tear-down apart from our own
+	// re-push, which today it cannot.
+	npCtx, npCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	settleNP := fetchNowPlaying(npCtx, s.boxHost)
+	npCancel()
+	s.logger.Info("zone: master state after the form settle",
+		"incremental", rz.survivorReachesMembers,
+		"source", settleNP.Source, "playStatus", settleNP.PlayStatus,
+		"location", settleNP.Location, "wouldPush", lp.boxURL)
+
 	if rz.survivorReachesMembers {
 		if standby, busy := s.boxPlayState(); busy && !standby {
 			s.logger.Info("zone: stream survived the group change, not restarting playback")
