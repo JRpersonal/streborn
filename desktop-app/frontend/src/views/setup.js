@@ -766,7 +766,24 @@ let networkInstallRunning = false;
 
 // installRunActive tells main.js's periodic background refresh whether an
 // install is running, so the refresh never probes a speaker mid-install.
-export function installRunActive() { return networkInstallRunning; }
+export function installRunActive() { return networkInstallRunning || installWaitPanelLive; }
+
+// installWaitPanelLive is true while the "the speaker has not answered yet"
+// panel is on screen and its backend watcher is still running.
+//
+// It exists because startNetworkInstall's await returns as soon as that panel is
+// DRAWN, not when it resolves: renderInstallWaiting wires two listeners and
+// returns, so the finally clause cleared the guard while the install was still
+// in flight. Two things followed, both reported from the field. main.js's
+// periodic refresh empties #setupResult whenever installRunActive() is false, so
+// switching to another tab and back wiped the panel, and the next event then
+// found its marker gone and dropped both listeners: the install:late rescue,
+// which is the whole reason the watcher keeps looking, could never render. And
+// the hero Install button was re-enabled under a panel whose entire purpose is
+// to stop a second install, so a SoundTouch 300 owner looking at "unplug it
+// once" could press Install again on a soundbar that was blinking with every
+// port dead. One did, twice, in the week of 2026-09-24.
+let installWaitPanelLive = false;
 
 // renderPrimaryAction paints the OTA-first primary action above the (collapsed)
 // USB-stick wizard. For a reachable stock box it shows the network-install hero
@@ -984,8 +1001,11 @@ async function startNetworkInstall(box) {
     await waitForBoxAfterSetup({ ssid: '', pass: '', html: lead, knownBox: box, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox });
   } finally {
     networkInstallRunning = false;
+    // Not while the wait panel is up: the await above returns when that panel
+    // is drawn, not when it resolves, so re-enabling here would hand the button
+    // back under the one screen that exists to keep it out of reach.
     const b2 = $('setupHeroInstall');
-    if (b2) b2.disabled = false;
+    if (b2 && !installWaitPanelLive) b2.disabled = false;
   }
 }
 
@@ -2436,9 +2456,17 @@ async function verifyInstalledState(box, onState) {
   // the user with a quarter of an hour of spinner and no control.
   function renderInstallWaiting(inSetup, msg, help, log, fwBlock) {
     let offLate = null, offWaiting = null;
+    // The install is still in flight for as long as this panel is: the backend
+    // watcher is looking, and a late answer still has somewhere to land.
+    installWaitPanelLive = true;
+    const heroNow = $('setupHeroInstall');
+    if (heroNow) heroNow.disabled = true;
     const stopAll = () => {
       for (const off of [offLate, offWaiting]) { if (off) { try { off(); } catch {} } }
       offLate = offWaiting = null;
+      installWaitPanelLive = false;
+      const hero = $('setupHeroInstall');
+      if (hero) hero.disabled = false;
     };
     // The panel owns a marker element, so a screen the user has navigated away
     // from is never overwritten by a late event.
