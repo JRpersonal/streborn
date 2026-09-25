@@ -80,8 +80,15 @@ type Info struct {
 	Variant          string `json:"variant"`
 	ModuleType       string `json:"moduleType"`
 	MargeAccountUUID string `json:"margeAccountUUID"`
-	IP               string `json:"ipAddress"`
-	CountryCode      string `json:"countryCode"`
+	// MargeURL is the cloud host the firmware ITSELF says it is using for the
+	// marge account/preset service. STR redirects only the stock hostname to
+	// its own listeners via /etc/hosts, so a box reporting anything else here
+	// can never reach STR's stub: #986's ST30 reported an OpenCloudTouch host
+	// and answered 1036 for every preset for three days while looking healthy
+	// everywhere else.
+	MargeURL    string `json:"margeURL,omitempty"`
+	IP          string `json:"ipAddress"`
+	CountryCode string `json:"countryCode"`
 }
 
 // SetupStatus is the response from /setup. State is e.g. "SETUP_AP_OOB"
@@ -278,6 +285,7 @@ func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 		Name             string `xml:"name"`
 		Type             string `xml:"type"`
 		MargeAccountUUID string `xml:"margeAccountUUID"`
+		MargeURL         string `xml:"margeURL"`
 		ModuleType       string `xml:"moduleType"`
 		Variant          string `xml:"variant"`
 		CountryCode      string `xml:"countryCode"`
@@ -298,6 +306,7 @@ func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 		Name:             strings.TrimSpace(raw.Name),
 		Type:             strings.TrimSpace(raw.Type),
 		MargeAccountUUID: strings.TrimSpace(raw.MargeAccountUUID),
+		MargeURL:         strings.TrimSpace(raw.MargeURL),
 		ModuleType:       strings.TrimSpace(raw.ModuleType),
 		Variant:          strings.TrimSpace(raw.Variant),
 		CountryCode:      strings.TrimSpace(raw.CountryCode),

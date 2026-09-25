@@ -13,17 +13,27 @@ import (
 )
 
 // redirectOCTPaths points the detection at a temp tree and restores the
-// production paths afterwards.
+// production paths afterwards. The backup name is the one MEASURED on #986's
+// ST30, not the literal the code used to carry: the point of the glob is that
+// this exact filename is found.
 func redirectOCTPaths(t *testing.T) (backup, live, original string) {
 	t.Helper()
 	dir := t.TempDir()
-	backup = filepath.Join(dir, "OverrideSdkPrivateCfg.xml.oct-backup")
+	backup = filepath.Join(dir, "SoundTouchSdkPrivateCfg.xml.oct-backup")
 	live = filepath.Join(dir, "hosts.live")
 	original = filepath.Join(dir, "hosts.original")
-	oldB, oldL, oldO := octBackupPath, hostsLivePath, hostsOriginalPath
-	octBackupPath, hostsLivePath, hostsOriginalPath = backup, live, original
+	oldG, oldL, oldO := octBackupGlob, hostsLivePath, hostsOriginalPath
+	oldOv, oldRf, oldHB := sdkOverridePath, sdkRootfsPath, octHostsBackupPath
+	octBackupGlob = filepath.Join(dir, "*SdkPrivateCfg.xml*.oct-backup")
+	hostsLivePath, hostsOriginalPath = live, original
+	// Point the SDK config paths into the temp tree too, so a dev machine's
+	// (nonexistent) /mnt/nv cannot influence the result either way.
+	sdkOverridePath = filepath.Join(dir, "OverrideSdkPrivateCfg.xml")
+	sdkRootfsPath = filepath.Join(dir, "SoundTouchSdkPrivateCfg.xml")
+	octHostsBackupPath = filepath.Join(dir, "hosts_backup")
 	t.Cleanup(func() {
-		octBackupPath, hostsLivePath, hostsOriginalPath = oldB, oldL, oldO
+		octBackupGlob, hostsLivePath, hostsOriginalPath = oldG, oldL, oldO
+		sdkOverridePath, sdkRootfsPath, octHostsBackupPath = oldOv, oldRf, oldHB
 	})
 	return backup, live, original
 }

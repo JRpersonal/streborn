@@ -307,6 +307,15 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		"hosts_original": readTail(hostsOriginalPath),
 		"hosts_filtered": hosts.ForeignFiltered(),
 		"proc_mounts":    readTail("/proc/mounts"),
+		// The three Bose cloud URLs, the file they come from, and whether STR's
+		// /etc/hosts redirect can catch them (#986). The redirect only covers
+		// the STOCK hostnames, so a leftover value from a rival mod makes the
+		// speaker unreachable for STR while every other field in the bundle
+		// looks healthy: the reporter's ST30 had margeServerUrl on an
+		// OpenCloudTouch host and its presets answered 1036 for three days.
+		// Establishing that took a hand-read of /info, because nothing here
+		// carried it.
+		"sdk_cloud_urls": s.sdkCloudURLDebug(),
 		// Writable-volume usage: df for /mnt/nv + / and the per-entry sizes that
 		// answer "is this box genuinely tighter or carrying foreign firmware
 		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).

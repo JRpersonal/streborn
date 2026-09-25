@@ -173,10 +173,47 @@ func (m *Manager) IsPaired(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	noteLiveMargeURL(body)
 	return hasMargeUUID(body), nil
 }
 
 var uuidRe = regexp.MustCompile(`<margeAccountUUID>([^<]+)</margeAccountUUID>`)
+
+// margeURLRe pulls the cloud host the firmware says it is using out of the
+// /info body this package already fetches.
+var margeURLRe = regexp.MustCompile(`<margeURL>([^<]*)</margeURL>`)
+
+// liveMargeURL is the firmware's OWN last-seen answer to "which host am I
+// asking for the cloud". It is recorded here because IsPaired already reads the
+// whole /info body every few minutes, so nothing else has to ask the speaker
+// (#986). The value matters because STR redirects only the stock hostname to
+// its own listeners: a box naming anything else never reaches STR at all, its
+// presets answer 1036, and no other field the app can see says why. It is also
+// the only way to know a config repair has actually taken effect, since the
+// firmware reads its config once, at boot.
+var (
+	liveMargeURLMu sync.Mutex
+	liveMargeURL   string
+)
+
+func noteLiveMargeURL(body []byte) {
+	m := margeURLRe.FindSubmatch(body)
+	if m == nil {
+		return
+	}
+	v := strings.TrimSpace(string(m[1]))
+	liveMargeURLMu.Lock()
+	liveMargeURL = v
+	liveMargeURLMu.Unlock()
+}
+
+// LiveMargeURL returns the cloud host the firmware last reported, or "" when
+// no /info read has succeeded yet (or the firmware does not report the field).
+func LiveMargeURL() string {
+	liveMargeURLMu.Lock()
+	defer liveMargeURLMu.Unlock()
+	return liveMargeURL
+}
 
 func hasMargeUUID(body []byte) bool {
 	m := uuidRe.FindSubmatch(body)

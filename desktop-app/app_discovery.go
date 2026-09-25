@@ -173,6 +173,14 @@ type BoxInfo struct {
 	// cloud redirect, OLED, Wi-Fi and presets; the UI warns the user to remove it
 	// (#270). Empty on an STR-only box.
 	ConflictingMod string `json:"conflictingMod,omitempty"`
+	// ForeignCloudURL is the Bose cloud address the speaker is set to ask when
+	// that address is not the stock one, e.g. a leftover from an earlier
+	// OpenCloudTouch install. STR redirects only the stock hostnames to its own
+	// listeners, so such a speaker never reaches STR at all: its presets answer
+	// "not logged in" and nothing plays, while every other field here looks
+	// healthy (#986). Empty on a healthy box. The Settings action that removes a
+	// rival mod's leftovers also resets this.
+	ForeignCloudURL string `json:"foreignCloudURL,omitempty"`
 	// Storm1036 is true while the box rejects essentially every preset recall
 	// (Bose error 1036, "not logged in"). Nothing the user presses will play
 	// until the state clears, and the remedy people reach for on their own,
@@ -1132,6 +1140,7 @@ func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (recor
 	// Serve the cached record without them; the next confirmed probe re-sets
 	// whatever is really true.
 	cached.ConflictingMod = ""
+	cached.ForeignCloudURL = ""
 	cached.WLANCredsMissing = false
 	cached.Storm1036 = false
 	cached.Storm1036SinceSec = 0
@@ -1230,6 +1239,7 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.OTAPending = false
 	b.BoxHealth = ""
 	b.ConflictingMod = ""
+	b.ForeignCloudURL = ""
 	b.WLANCredsMissing = false
 	b.Storm1036 = false
 	b.Storm1036SinceSec = 0
@@ -1337,6 +1347,7 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		// out already carries a's values verbatim
 	case b.PortVerified:
 		out.ConflictingMod = b.ConflictingMod
+		out.ForeignCloudURL = b.ForeignCloudURL
 		out.WLANCredsMissing = b.WLANCredsMissing
 		out.BoxHealth = b.BoxHealth
 		out.Storm1036 = b.Storm1036
@@ -1346,6 +1357,9 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 	default:
 		if out.ConflictingMod == "" {
 			out.ConflictingMod = b.ConflictingMod
+		}
+		if out.ForeignCloudURL == "" {
+			out.ForeignCloudURL = b.ForeignCloudURL
 		}
 		if !out.Storm1036 {
 			out.Storm1036 = b.Storm1036
@@ -1718,11 +1732,12 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		// labelled straight from this one verified probe, even when the
 		// :8090 /info enrichment below fails because the box is busy right
 		// after an OTA restart. Without this the box showed as "str-<ip>".
-		FriendlyName:   jsonStringField(s, "friendlyName"),
-		Model:          jsonStringField(s, "model"),
-		BoxHealth:      jsonStringField(s, "boxHealth"),
-		ConflictingMod: jsonStringField(s, "conflictingMod"),
-		Storm1036:      jsonStringField(s, "preset1036Storm") == "active",
+		FriendlyName:    jsonStringField(s, "friendlyName"),
+		Model:           jsonStringField(s, "model"),
+		BoxHealth:       jsonStringField(s, "boxHealth"),
+		ConflictingMod:  jsonStringField(s, "conflictingMod"),
+		ForeignCloudURL: jsonStringField(s, "foreignCloudURL"),
+		Storm1036:       jsonStringField(s, "preset1036Storm") == "active",
 		Storm1036SinceSec: func() int {
 			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))
 			return n

@@ -1480,6 +1480,8 @@ function renderBoxSettings(s, box) {
         <p class="muted small">${escapeHtml(t('settingsView.rebootHelp'))}</p>
         ${box && box.conflictingMod ? `<button class="btn btn-mini btn-warning" id="boxRemoveConflictBtn">${escapeHtml(t('settingsView.removeConflictBtn', { mod: box.conflictingMod }))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.removeConflictHelp', { mod: box.conflictingMod }))}</p>` : ''}
+        ${box && !box.conflictingMod && box.foreignCloudURL ? `<button class="btn btn-mini btn-warning" id="boxRemoveConflictBtn">${escapeHtml(t('settingsView.healCloudURLBtn'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.healCloudURLHelp', { url: box.foreignCloudURL }))}</p>` : ''}
         <hr class="actions-divider" />
         <button class="btn btn-mini btn-danger" id="boxTrueFactoryResetBtn">${escapeHtml(t('settingsView.trueFactoryResetBtn'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelpShort'))}</p>
@@ -2054,18 +2056,30 @@ function renderBoxSettings(s, box) {
     };
   }
 
-  // Remove the leftovers of a rival cloud-free SoundTouch tool (AfterTouch) that
-  // clash with STR. One click, no SSH; the box-issue banner points here. Only
-  // rendered when the box actually carries such leftovers (box.conflictingMod).
+  // Remove the leftovers of a rival cloud-free SoundTouch tool (AfterTouch,
+  // OpenCloudTouch) that clash with STR, and put the box's Bose cloud address
+  // back to the standard one. One click, no SSH; the box-issue banner points
+  // here. Rendered when the box carries such leftovers (box.conflictingMod) or
+  // asks a non-standard cloud address (box.foreignCloudURL, #986), which is the
+  // half that survives both a file cleanup and a factory reset.
   const rmConflictBtn = $('boxRemoveConflictBtn');
   if (rmConflictBtn) {
     rmConflictBtn.onclick = async () => {
-      const mod = (box && box.conflictingMod) || 'AfterTouch';
-      const ok = await confirmWarn(
-        t('settingsView.removeConflictBtn', { mod }),
-        t('settingsView.removeConflictConfirm', { mod, name: box.friendlyName || box.name || box.host })
-      );
+      const mod = (box && box.conflictingMod) || '';
+      const cloudOnly = !mod && !!(box && box.foreignCloudURL);
+      const ok = cloudOnly
+        ? await confirmWarn(
+          t('settingsView.healCloudURLBtn'),
+          t('settingsView.healCloudURLHelp', { url: box.foreignCloudURL })
+        )
+        : await confirmWarn(
+          t('settingsView.removeConflictBtn', { mod: mod || 'AfterTouch' }),
+          t('settingsView.removeConflictConfirm', { mod: mod || 'AfterTouch', name: box.friendlyName || box.name || box.host })
+        );
       if (!ok) return;
+      const idleLabel = cloudOnly
+        ? t('settingsView.healCloudURLBtn')
+        : t('settingsView.removeConflictBtn', { mod: mod || 'AfterTouch' });
       rmConflictBtn.disabled = true;
       rmConflictBtn.textContent = t('settingsView.removeConflictRunning');
       try {
@@ -2073,8 +2087,36 @@ function renderBoxSettings(s, box) {
         let res = {};
         try { res = JSON.parse(raw); } catch { /* keep empty */ }
         const removed = res.removed || [];
-        showToast(t('settingsView.removeConflictDoneToast', { mod, n: removed.length }));
-        // A reboot fully clears the rival tool's already-running processes.
+        // Say what actually happened. Until #986 this always toasted success,
+        // so a cleanup that matched no file at all reported "leftovers removed
+        // (0)" and the reporter reasonably believed his speaker was clean while
+        // it went on asking a dead server for every preset.
+        const notes = [];
+        // cloudURLRestartPending: the address on disk is already the standard
+        // one and only the running firmware is still on the old one, because it
+        // reads its config once, at boot. That is a pending restart, not a
+        // failure, so it must not come out as "nothing found to remove".
+        if (res.cloudURLHealed || res.cloudURLRestartPending) {
+          notes.push(t('settingsView.removeConflictCloudToast'));
+        } else if (!removed.length) {
+          notes.push(t('settingsView.removeConflictNothingToast'));
+        } else {
+          notes.push(t('settingsView.removeConflictDoneToast', { mod: mod || 'AfterTouch', n: removed.length }));
+        }
+        if (res.stillDetected) {
+          notes.push(t('settingsView.removeConflictStillToast', {
+            detail: res.foreignCloudURL || res.cloudURLNote || res.mod || '',
+          }));
+        }
+        // Bad news gets the modal the user has to dismiss, good news a toast.
+        if (res.stillDetected || (!removed.length && !res.cloudURLHealed && !res.cloudURLRestartPending)) {
+          showError(notes.join('\n'));
+        } else {
+          showToast(notes.join(' '));
+        }
+        // A reboot fully clears the rival tool's already-running processes, and
+        // a healed cloud address only takes effect when the firmware re-reads
+        // its config, which it does once, at boot.
         const wantReboot = await confirmWarn(
           t('settingsView.removeConflictRebootTitle'),
           t('settingsView.removeConflictRebootBody', { name: box.friendlyName || box.name || box.host })
@@ -2092,7 +2134,7 @@ function renderBoxSettings(s, box) {
         showError(e);
       } finally {
         rmConflictBtn.disabled = false;
-        rmConflictBtn.textContent = t('settingsView.removeConflictBtn', { mod });
+        rmConflictBtn.textContent = idleLabel;
       }
     };
   }

@@ -2463,6 +2463,11 @@ function checkBoxIssueBanner() {
   if (!el) return;
   const boxes = state.boxes || [];
   const conflict = boxes.filter(b => b && b.conflictingMod && !warnDismissed(b, 'conflict'));
+  // A speaker asking a non-standard Bose cloud address (#986). NOT dismissible
+  // and not folded into the conflict line: the marker files may be long gone
+  // (they do not survive a factory reset, this does) and nothing plays on such a
+  // speaker at all, so it is worth its own sentence naming the address.
+  const foreignCloud = boxes.filter(b => b && b.foreignCloudURL && !b.conflictingMod);
   const noWifi = boxes.filter(b => b && b.wlanCredsMissing && !warnDismissed(b, 'nowifi'));
   // A speaker refusing essentially every preset recall (Bose error 1036). This
   // one is NOT dismissible: nothing the user presses will play until it clears,
@@ -2476,6 +2481,12 @@ function checkBoxIssueBanner() {
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.conflictModBanner', { name: names, mod: conflict[0].conflictingMod })));
+  }
+  if (foreignCloud.length) {
+    const names = foreignCloud.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.foreignCloudBanner', {
+      name: names, url: foreignCloud[0].foreignCloudURL,
+    })));
   }
   if (noWifi.length) {
     const names = noWifi.map(b => getBoxLabel(b)).join(', ');

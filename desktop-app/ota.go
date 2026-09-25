@@ -224,7 +224,10 @@ type StoragePreflight struct {
 	// software with ONE round trip. The name mapping stays in the frontend
 	// (foreignSoftwareLabel), which is where the display table lives.
 	ConflictingMod string `json:"conflictingMod,omitempty"`
-	ForeignDirs    string `json:"foreignDirs,omitempty"`
+	// ForeignCloudURL: the speaker is set to ask a non-stock Bose cloud address
+	// (a leftover from a rival mod), so STR's redirect never catches it (#986).
+	ForeignCloudURL string `json:"foreignCloudURL,omitempty"`
+	ForeignDirs     string `json:"foreignDirs,omitempty"`
 }
 
 // storagePreflight is the pure decision behind BoxStoragePreflight, kept
@@ -239,8 +242,9 @@ type StoragePreflight struct {
 // That is inherent to running without the embeds, not a bug to chase.
 func storagePreflight(ver map[string]string, agentLen, engineLen int64) StoragePreflight {
 	pf := StoragePreflight{
-		ConflictingMod: ver["conflictingMod"],
-		ForeignDirs:    ver["foreignDirs"],
+		ConflictingMod:  ver["conflictingMod"],
+		ForeignCloudURL: ver["foreignCloudURL"],
+		ForeignDirs:     ver["foreignDirs"],
 	}
 	// Same ParseInt-and-ignore-the-error sequence as every other gate: a
 	// missing or garbled nandFreeBytes lands on 0, which nandFits reads as
