@@ -5238,6 +5238,25 @@ async function refreshPresetsIfChanged() {
   loadBoxPresets();
 }
 
+// isMeasurableStreamPreset reports whether a measured bitrate is worth storing
+// on this key at all.
+//
+// It is worth it for a live radio stream, where the rate is a property of the
+// broadcast and the directory often has none. It is meaningless for a file on a
+// media server, whose rate is a property of the file and which the library
+// already reads, and it is actively harmful there: persisting it runs the key
+// through a radio-shaped write that drops the source field, so the next press
+// went through the radio relay instead of fetching the file (#978). On one
+// reporter's speaker that rewrote the same slot about twenty times in
+// twenty-five minutes, which is flash wear for a number that means nothing.
+function isMeasurableStreamPreset(p) {
+  if (!p) return false;
+  if (p.type === 'spotify' || p.type === 'queue') return false;
+  if (p.source) return false;                       // from a media server
+  if (p.items && p.items.length) return false;      // a saved folder
+  return true;
+}
+
 // setPresetIfUnchanged persists a METADATA self-heal (a measured bitrate, a
 // healed logo) for a slot, but only after re-reading the store and proving the
 // slot still holds the station the patch was computed for. The cached preset
@@ -5254,7 +5273,16 @@ async function setPresetIfUnchanged(box, cached, patch) {
   } catch { return false; }
   if (state.currentBox !== box) return false;
   const live = fresh.find(x => x.slot === cached.slot);
-  const held = live && live.type !== 'spotify' &&
+  // A metadata heal must not be able to change WHAT a key is. SetPreset sends a
+  // fixed type=radio and exactly seven fields, so writing it onto a key that
+  // carries anything else silently flattens it: a media-library key lost the
+  // source field that decides whether the track is fetched from the server or
+  // pulled through the radio relay, and a folder key would lose its track list.
+  // Guarded here rather than at each caller, because this is the only place
+  // that has the LIVE preset in hand (#978).
+  const flattenable = live && (live.type === 'spotify' || live.type === 'queue' ||
+    live.source || live.uri || (live.items && live.items.length));
+  const held = live && !flattenable &&
     live.stream_url === cached.stream_url && live.name === cached.name;
   if (!held) {
     // The slot changed under us (or the read raced a save): show reality
@@ -6456,7 +6484,7 @@ function renderPresets() {
         tileBitrate = state.nowBitrate;
         // Persist the corrected bitrate, but NEVER for Spotify presets:
         // SetPreset is radio-only and would overwrite the Spotify URI.
-        if ((p.bitrate || 0) !== state.nowBitrate && p.type !== 'spotify') {
+        if ((p.bitrate || 0) !== state.nowBitrate && isMeasurableStreamPreset(p)) {
           p.bitrate = state.nowBitrate;
           // Guarded: never rewrite a slot another client changed meanwhile (#758).
           setPresetIfUnchanged(state.currentBox, p, { bitrate: state.nowBitrate });
@@ -7227,7 +7255,7 @@ function scheduleLiveBitrate() {
           playingName: typeof orionNow.name === 'string' ? orionNow.name : '',
           playingUrl: orionNow.streamUrl ? decodeProxyUrl(orionNow.streamUrl) : '',
         });
-        if (p && !stale && p.bitrate !== br) {
+        if (p && !stale && p.bitrate !== br && isMeasurableStreamPreset(p)) {
           p.bitrate = br;
           // Persist for radio only. SetPreset is radio-only (type=radio, no
           // uri), so persisting a Spotify preset would wipe its URI. The
