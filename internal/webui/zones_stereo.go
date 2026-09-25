@@ -874,6 +874,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	readBackFailed := false
 	if !usedIncremental {
 		if err := c.SetZone(ctx, master, slaves); err != nil {
 			s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
@@ -884,9 +885,22 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	}
 	z2, err := c.GetZone(ctx)
 	if err != nil {
-		s.logger.Warn("zone: formed but getZone read-back failed", "err", err)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
-		return
+		// A failed read-back says nothing about whether the group formed, and
+		// returning here skipped the two things that make it audible: the
+		// follower verification and, worse, the post-form resume. The group was
+		// then live with nobody pushing the stream to it, and the app was told
+		// everything was fine. The firmware's own zone read is exactly what
+		// hangs on some chassis, so this is not a rare path.
+		//
+		// Carry on with what was ASKED for instead. The members the caller
+		// requested are the right stand-in: everyMemberCarriesTheGroup is
+		// pessimistic, so a member that turns out not to be carrying the stream
+		// gets a push, which is the safe direction. The answer says the
+		// read-back did not happen rather than claiming a verified group.
+		s.logger.Warn("zone: formed but getZone read-back failed, continuing with the requested members",
+			"err", err, "master", master.DeviceID, "requestedSlaves", len(slaves))
+		z2 = boxapi.Zone{Master: master.DeviceID, Members: slaves}
+		readBackFailed = true
 	}
 	// The master's optimistic member list is not proof a slave joined (#70): the
 	// firmware lists a member it announced to before the slave's own zone reflects
@@ -928,9 +942,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if z2, err = c.GetZone(ctx); err != nil {
-			s.logger.Warn("zone: formed but getZone read-back failed", "err", err)
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
-			return
+			// Same as the first read-back: carry on with what was asked for
+			// rather than returning past the resume and leaving the group
+			// silent while reporting success.
+			s.logger.Warn("zone: re-formed but getZone read-back failed, continuing with the requested members",
+				"err", err, "master", master.DeviceID, "requestedSlaves", len(slaves))
+			z2 = boxapi.Zone{Master: master.DeviceID, Members: slaves}
+			readBackFailed = true
 		}
 		missing, unverifiable = verifyFollowersJoined(ctx, s.logger, z2.Master, slaves, fetchFollower)
 	}
@@ -983,12 +1001,19 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// have nothing yet (Martin, 2026-08-24).
 		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental, members: z2.Members})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
 		"members": z2.Members, "requested": len(slaves),
 		"verified": verified, "missing": missing, "unverifiable": unverifiable,
 		"masterMissing": masterMissing,
-	})
+	}
+	if readBackFailed {
+		// Say it plainly: the group was formed and the stream was pushed, but
+		// the speaker never confirmed its own zone, so none of the numbers
+		// above were read back from it.
+		out["readBack"] = "failed"
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // zoneResume is what resumeAfterZoneForm needs to restore playback after a

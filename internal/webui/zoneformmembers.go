@@ -50,8 +50,17 @@ func (s *Server) everyMemberCarriesTheGroup(ctx context.Context, members []boxap
 	asked := 0
 	for _, m := range members {
 		ip := strings.TrimSpace(m.IP)
-		if ip == "" || ip == s.boxHost {
-			continue // no address, or the master itself
+		if ip == s.boxHost {
+			continue // the master itself is not a member to ask
+		}
+		// A member with no address cannot be asked, and this function is
+		// deliberately pessimistic: anything it cannot confirm is doubt, and
+		// doubt means push. Skipping it meant one verified member could vouch
+		// for a second nobody had checked, which is the one outcome this check
+		// exists to prevent, a speaker left silent in a group that reported
+		// itself served.
+		if ip == "" {
+			return false, "member " + m.DeviceID + " has no address to ask"
 		}
 		asked++
 		st := memberNowPlaying(ctx, ip)
