@@ -106,3 +106,71 @@ func TestAnEmptyURLIsIgnored(t *testing.T) {
 		t.Fatalf("upstreamURL = %v, want the real station kept", got["upstreamURL"])
 	}
 }
+
+// Both halves of the tally key on the STATION. They used not to: the start hook
+// recorded the station and the reconnect hook the resolved edge host, so the
+// first drop of a redirecting station looked like a station switch, threw away
+// the bytes of the healthy stretch, and left the bundle reporting a CDN address
+// instead of the station the listener chose.
+func TestTheTallySurvivesTheFirstDropOfARedirectingStation(t *testing.T) {
+	s := healthTestServer(t)
+	const station = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO538AAC.aac"
+
+	s.noteStreamStart(station)
+	// Two drops of the same station, as a CDN token expiry produces.
+	s.noteReconnect(station, "eof", 4096, time.Second, 200*time.Millisecond)
+	s.noteReconnect(station, "read-fail", 8192, time.Second, 300*time.Millisecond)
+
+	m := snap(t, s)
+	if got := count(t, m, "reconnectCount"); got != 2 {
+		t.Errorf("reconnectCount = %v after two drops of one station, want 2", got)
+	}
+	if got := count(t, m, "forwardedBytes"); got != 12288 {
+		t.Errorf("forwardedBytes = %v, want both connections counted", got)
+	}
+	if got := m["upstreamURL"]; got != station {
+		t.Errorf("upstreamURL = %v, want the station the listener chose", got)
+	}
+}
+
+// A re-fetch of the SAME station is not a new stream: the box re-issues the URI
+// after a display push and on a brief flap. Neither the tally nor the clock may
+// restart, or a station that has played for hours reports seconds.
+func TestARefetchOfTheSameStationKeepsTheTallyAndTheClock(t *testing.T) {
+	s := healthTestServer(t)
+	const station = "http://192.0.2.1:8888/stream/raw?u=abc"
+
+	s.noteStreamStart(station)
+	s.noteReconnect(station, "eof", 4096, time.Second, 200*time.Millisecond)
+	first := snap(t, s)["playingSince"]
+
+	// The box drops and re-fetches the same stream.
+	s.noteStreamStart(station)
+
+	m := snap(t, s)
+	if got := count(t, m, "reconnectCount"); got != 1 {
+		t.Errorf("reconnectCount = %v after a re-fetch, want the tally kept", got)
+	}
+	if got := m["lastDisconnectReason"]; got != "eof" {
+		t.Errorf("lastDisconnectReason = %v after a re-fetch, want it kept", got)
+	}
+	if got := m["playingSince"]; got != first {
+		t.Errorf("the clock restarted on a re-fetch: %v, want %v", got, first)
+	}
+}
+
+// A real station switch still starts everything over.
+func TestASwitchToAnotherStationStartsTheTallyOver(t *testing.T) {
+	s := healthTestServer(t)
+	s.noteStreamStart("http://radio/a")
+	s.noteReconnect("http://radio/a", "eof", 4096, time.Second, 0)
+
+	s.noteStreamStart("http://radio/b")
+	m := snap(t, s)
+	if got := count(t, m, "reconnectCount"); got != 0 {
+		t.Errorf("reconnectCount = %v after a station switch, want 0", got)
+	}
+	if got := m["upstreamURL"]; got != "http://radio/b" {
+		t.Errorf("upstreamURL = %v, want the new station", got)
+	}
+}

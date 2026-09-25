@@ -1239,7 +1239,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				// how often a station forces a reconnect.
 				s.logger.Info("stream proxy upstream EOF, will reconnect", "url", url,
 					"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
-				s.noteReconnect(url, "eof", connBytes, time.Since(connStart), s.audioGap())
+				s.noteReconnect(station, "eof", connBytes, time.Since(connStart), s.audioGap())
 				return true, nil
 			}
 			// Network-level read error mid-stream: this is the dropout cause for
@@ -1247,7 +1247,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			// much it delivered, so the bundle pins the drop without a capture.
 			s.logger.Warn("stream proxy upstream read fail, will reconnect", "url", url, "err", readErr,
 				"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
-			s.noteReconnect(url, "read-fail", connBytes, time.Since(connStart), s.audioGap())
+			s.noteReconnect(station, "read-fail", connBytes, time.Since(connStart), s.audioGap())
 			return true, readErr
 		}
 	}

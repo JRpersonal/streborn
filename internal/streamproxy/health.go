@@ -43,10 +43,26 @@ func (s *Server) noteHealthStart(url string) {
 		s.reconnectCount = 0
 		s.lastDisconnectReason = ""
 		s.lastGapMs = 0
+		s.playingSince = time.Now()
+		return
 	}
-	s.playingSince = time.Now()
+	// The SAME station starting again is a re-fetch, not a new stream: the box
+	// re-issues the URI after an on-display track push, and it drops and
+	// re-fetches on a brief flap. Restarting the clock there would report a
+	// station that has played for hours as having started seconds ago, which is
+	// the reading this field exists to make possible.
+	if s.playingSince.IsZero() {
+		s.playingSince = time.Now()
+	}
 }
 
+// The url here is the STATION, the same identity noteHealthStart records. It
+// used to be the resolved edge host, because that is what the copy loop has in
+// hand, and the two halves then disagreed about what "the current stream" meant:
+// the first drop of a redirecting station looked like a station switch and threw
+// away the healthy stretch, the bundle reported a CDN address instead of the
+// station the user chose, and every re-fetch of that station wiped the tally
+// again.
 func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap time.Duration) {
 	s.healthMu.Lock()
 	if url != s.healthURL { // a station switch restarts the tally
