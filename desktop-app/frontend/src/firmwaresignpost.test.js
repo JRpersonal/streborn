@@ -15,13 +15,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { boseFwArticles, firmwareOlderThanLatest, LATEST_BOSE_FIRMWARE } from './views/settings.js';
+import { boseFwArticles, firmwareOlderThanLatest, LATEST_BOSE_FIRMWARE } from './firmware.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const setup = readFileSync(join(here, 'views', 'setup.js'), 'utf8').replace(/\r\n/g, '\n');
 const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8').replace(/\r\n/g, '\n');
 const installGo = readFileSync(join(here, '..', '..', 'install_str.go'), 'utf8').replace(/\r\n/g, '\n');
 const firmwareGo = readFileSync(join(here, '..', '..', 'app_firmware.go'), 'utf8').replace(/\r\n/g, '\n');
+const firmware = readFileSync(join(here, 'firmware.js'), 'utf8').replace(/\r\n/g, '\n');
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 
@@ -86,6 +87,19 @@ describe('an unknown model gets no article rather than the wrong one', () => {
     // The guide paragraph is conditional; the btu.bose.com step is not.
     expect(settings).toContain('BOSE_FW_USB_URL');
     expect(settings).toContain('boseFwArticles(info.type).length');
+  });
+
+  // The helpers live outside the views because a view reads navigator at module
+  // level, which Node 20 does not define: importing settings.js from a test
+  // passed on a machine with Node 21+ and failed on the CI runner with
+  // "ReferenceError: navigator is not defined".
+  it('is importable without a browser', () => {
+    // The comments name navigator on purpose; the code must not touch it.
+    const code = firmware.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+    expect(code).not.toContain('navigator');
+    expect(code).not.toContain('document.');
+    expect(code).not.toContain('window.');
+    expect(code).not.toMatch(/^import /m);
   });
 });
 
