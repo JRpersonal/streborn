@@ -120,6 +120,17 @@ func (d *Document) Validate() error {
 	if len(d.Alarms) > MaxAlarms {
 		return fmt.Errorf("at most %d alarms", MaxAlarms)
 	}
+	// Every id the document already carries is taken, wherever it sits. This
+	// has to be collected BEFORE any id is handed out, because an alarm with
+	// no id may sit in front of one that already holds the id it would
+	// otherwise be given.
+	taken := make(map[string]bool, len(d.Alarms))
+	for i := range d.Alarms {
+		d.Alarms[i].ID = strings.TrimSpace(d.Alarms[i].ID)
+		if id := d.Alarms[i].ID; id != "" {
+			taken[id] = true
+		}
+	}
 	seen := map[string]bool{}
 	for i := range d.Alarms {
 		a := &d.Alarms[i]
@@ -161,9 +172,9 @@ func (d *Document) Validate() error {
 		sort.Ints(a.Days)
 		// An id the editor did not supply is assigned here rather than
 		// required of the client: it only has to be stable and unique.
-		a.ID = strings.TrimSpace(a.ID)
 		if a.ID == "" {
-			a.ID = fmt.Sprintf("%02d%02d-%d", a.Hour, a.Minute, i)
+			a.ID = freeID(taken, a.Hour, a.Minute, i)
+			taken[a.ID] = true
 		}
 		if seen[a.ID] {
 			return fmt.Errorf("two alarms share the id %q", a.ID)
@@ -174,6 +185,26 @@ func (d *Document) Validate() error {
 		d.Alarms = []Alarm{}
 	}
 	return nil
+}
+
+// freeID returns a readable id no other alarm in the document holds.
+//
+// The position is only a starting guess, never the answer: deleting an alarm
+// shifts every later one down, so the stored ids drift out of step with the
+// positions they were named after. Two alarms at 07:00, the first one deleted,
+// and the next alarm added at 07:00 lands on the index the survivor was named
+// from: without this search the save would be rejected with "two alarms share
+// the id", and a retry would produce exactly the same clash, so the user could
+// never add that alarm at all.
+//
+// The loop always terminates: at most MaxAlarms ids can be taken.
+func freeID(taken map[string]bool, hour, minute, from int) string {
+	for n := from; ; n++ {
+		id := fmt.Sprintf("%02d%02d-%d", hour, minute, n)
+		if !taken[id] {
+			return id
+		}
+	}
 }
 
 // Store is the NAND-persisted document.

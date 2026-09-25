@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -198,7 +199,66 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if msg, err := os.ReadFile(swapFailMarker); err == nil && len(msg) > 0 {
 		out["otaSwapFailed"] = strings.TrimSpace(string(msg))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeAgentVersion(w, out)
+}
+
+// writeAgentVersion emits the version payload with "version" and "build" as the
+// FIRST keys on the wire, whatever else the map carries.
+//
+// writeJSON marshals the map, and encoding/json SORTS a map's keys, which put
+// "version" second to last: every optional flag sorts before it and shoved it
+// further right. The desktop app's play-readiness probe reads only the first
+// 512 bytes of this response and decides on strings.Contains(body, `"version"`)
+// (waitAgentReady in desktop-app/app_playback.go), so a box carrying enough
+// flags answered a body whose version key fell outside that window, the probe
+// never matched, and every play and preset copy to that speaker was refused as
+// "still starting" for as long as the flags were set.
+//
+// Measured on live hardware 2026-09-25: a healthy speaker puts the key at
+// offset 419 to 435, leaving 77 to 93 bytes. An OpenCloudTouch box adds
+// conflictingMod (33 bytes) AND foreignCloudURL (66) by construction, since
+// both have the same cause, so the box the flag exists to diagnose is exactly
+// the one that stopped playing. The app half of this is fixed too, but the
+// agent must not depend on the user having a new app.
+func writeAgentVersion(w http.ResponseWriter, out map[string]string) {
+	first := []string{"version", "build"}
+	rest := make([]string, 0, len(out))
+	for k := range out {
+		if k != "version" && k != "build" {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+
+	var b bytes.Buffer
+	b.WriteByte('{')
+	n := 0
+	writePair := func(k string) {
+		v, ok := out[k]
+		if !ok {
+			return
+		}
+		if n > 0 {
+			b.WriteByte(',')
+		}
+		n++
+		kb, _ := json.Marshal(k)
+		vb, _ := json.Marshal(v)
+		b.Write(kb)
+		b.WriteByte(':')
+		b.Write(vb)
+	}
+	for _, k := range first {
+		writePair(k)
+	}
+	for _, k := range rest {
+		writePair(k)
+	}
+	b.WriteByte('}')
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(b.Bytes())
 }
 
 // agentBinNANDPath is the NAND path of the agent binary — the only binary a

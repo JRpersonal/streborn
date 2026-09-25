@@ -99,6 +99,24 @@ func (a *App) playPost(host string, port int, path, body string) (*http.Response
 	return resp, nil
 }
 
+// agentVersionAnswered reports whether a body is the agent's version payload.
+//
+// It DECODES rather than searching for a key name, so the verdict cannot depend
+// on how many optional flags the speaker happened to include or on where they
+// landed in a size-capped read. A non-empty "version" is the whole test: the
+// two other answers this probe meets are a bare 400 from the box's own listener
+// while the agent is still down, and a stock-firmware 404, neither of which
+// parses as an object carrying that field.
+func agentVersionAnswered(body []byte) bool {
+	var v struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		return false
+	}
+	return strings.TrimSpace(v.Version) != ""
+}
+
 // waitAgentReady probes the agent's version endpoint (the same cheap
 // endpoint discovery uses) with a short per-try timeout, briefly
 // retrying so a box whose :17008->:8888 redirect and agent are still
@@ -121,9 +139,20 @@ func (a *App) waitAgentReady(host string, port int) bool {
 		for _, p := range a.candidatePorts(host, port) {
 			url := fmt.Sprintf("http://%s:%d/api/agent/version", host, p)
 			ctx, cancel := context.WithTimeout(a.appCtx(), 1200*time.Millisecond)
-			body, err := httpGetSmall(ctx, url, 1200*time.Millisecond, 512)
+			// 8 KB, and the readiness test decodes the answer instead of
+			// searching a truncated prefix for a key name. At 512 bytes the
+			// probe depended on where encoding/json happened to place
+			// "version": the agent marshals a map, map keys are sorted, and
+			// every optional flag sorts before "version" and pushed it right.
+			// A healthy speaker measured 419 to 435 bytes to that key, and a
+			// box carrying the conflicting-mod and foreign-cloud-URL flags
+			// together added 99, so the key fell outside the window and every
+			// play on the one box that needed help was refused as "still
+			// starting" (2026-09-25). The agent now emits version first as
+			// well; this side stops the whole class.
+			body, err := httpGetSmall(ctx, url, 1200*time.Millisecond, 8192)
 			cancel()
-			if err == nil && strings.Contains(string(body), `"version"`) {
+			if err == nil && agentVersionAnswered(body) {
 				a.rememberPort(host, p)
 				return true
 			}

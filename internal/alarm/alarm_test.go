@@ -294,3 +294,68 @@ func TestStoreRoundTripsTheSwitchOff(t *testing.T) {
 		t.Errorf("switch-off came back as %d, want 90", got)
 	}
 }
+
+// TestValidateAssignsAnIDAroundDeletedPositions walks the exact sequence a
+// phone produces: add two alarms at the same time, delete the first, add a
+// third at that time again. The survivor keeps the id it was given at its old
+// position, so an index-derived id would clash with it and the save would be
+// refused for good.
+func TestValidateAssignsAnIDAroundDeletedPositions(t *testing.T) {
+	at7 := func() Alarm {
+		return Alarm{Enabled: true, Hour: 7, Minute: 0, Days: []int{1, 2, 3, 4, 5}, Slot: 1}
+	}
+	d := Document{Alarms: []Alarm{at7(), at7()}}
+	if err := d.Validate(); err != nil {
+		t.Fatalf("two fresh alarms: %v", err)
+	}
+	survivor := d.Alarms[1].ID
+	// The editor splices the deleted alarm out, so the survivor moves to 0
+	// while keeping the id it was assigned at 1.
+	d.Alarms = []Alarm{d.Alarms[1], at7()}
+	if err := d.Validate(); err != nil {
+		t.Fatalf("adding an alarm after a deletion has to work: %v", err)
+	}
+	if d.Alarms[0].ID != survivor {
+		t.Errorf("the surviving alarm lost its id: %q, want %q", d.Alarms[0].ID, survivor)
+	}
+	if d.Alarms[1].ID == survivor || d.Alarms[1].ID == "" {
+		t.Errorf("the new alarm got the id %q, which is not free", d.Alarms[1].ID)
+	}
+}
+
+// TestValidateDoesNotStealAnIDFromLater is the same collision from the other
+// side: the alarm with no id comes FIRST, so the ids already in the document
+// have to be known before any is handed out.
+func TestValidateDoesNotStealAnIDFromLater(t *testing.T) {
+	held := Alarm{ID: "0700-0", Enabled: true, Hour: 7, Minute: 0, Days: []int{0}, Slot: 2}
+	fresh := Alarm{Enabled: true, Hour: 7, Minute: 0, Days: []int{0}, Slot: 3}
+	d := Document{Alarms: []Alarm{fresh, held}}
+	if err := d.Validate(); err != nil {
+		t.Fatalf("an unnamed alarm in front of a named one: %v", err)
+	}
+	if d.Alarms[0].ID == d.Alarms[1].ID {
+		t.Fatalf("both alarms ended up with the id %q", d.Alarms[0].ID)
+	}
+	if d.Alarms[1].ID != "0700-0" {
+		t.Errorf("the stored id was not kept: %q", d.Alarms[1].ID)
+	}
+}
+
+// TestValidateFillsAFullDocument checks the search still terminates and stays
+// unique when every slot is contested.
+func TestValidateFillsAFullDocument(t *testing.T) {
+	d := Document{}
+	for i := 0; i < MaxAlarms; i++ {
+		d.Alarms = append(d.Alarms, Alarm{Enabled: true, Hour: 7, Minute: 0, Days: []int{3}, Slot: 1})
+	}
+	if err := d.Validate(); err != nil {
+		t.Fatalf("a full document of identical times: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, a := range d.Alarms {
+		if a.ID == "" || ids[a.ID] {
+			t.Fatalf("id %q is empty or repeated", a.ID)
+		}
+		ids[a.ID] = true
+	}
+}
