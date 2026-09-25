@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "デフォルトでオンです。スピーカーの電源を入れると、Boseと同じように最後の放送局が再び再生されます。スピーカーが（ステレオペアの一部などで）自動的に起動した場合は無音のままです。電源オン時に無音にしたい場合はオフにしてください。",
   "settingsView.resumeOnPowerSavedToast": "電源オン時の再開を保存しました。",
   "settingsView.clockSavedToast": "時刻表示を {{v}} に設定しました。",
+  "settingsView.clockFormatUnknownState": "スピーカーが時計表示のオンオフを答えなかったため、表示形式は変更していません。適用するにはオンまたはオフを押してください。",
   "settingsView.clockNotSupported": "この機種では非対応",
   "settingsView.clockUnknown": "不明",
   "settingsView.airplayOptHeading": "AirPlay最適化",

@@ -2247,9 +2247,15 @@ function renderBoxSettings(s, box) {
       if (clockOn) clockOn.classList.toggle('active', enabled === true);
       if (clockOff) clockOff.classList.toggle('active', enabled === false);
     };
-    // Preselect the box's current 12/24h format in the dropdown.
+    // Preselect the box's current 12/24h format in the dropdown. lastFormat
+    // follows it so a format change that cannot be applied can be put back
+    // instead of leaving the dropdown claiming something the speaker never got.
+    let lastFormat = clockFormat ? clockFormat.value : '24';
     if (clockFormat) {
-      GetClockFormat24(boseHost).then(is24 => { clockFormat.value = is24 ? '24' : '12'; }).catch(() => {});
+      GetClockFormat24(boseHost).then(is24 => {
+        clockFormat.value = is24 ? '24' : '12';
+        lastFormat = clockFormat.value;
+      }).catch(() => {});
     }
     // refreshClock reads the current /clockDisplay state. Previously
     // any non-200 / fetch failure surfaced "not supported on this
@@ -2260,13 +2266,18 @@ function renderBoxSettings(s, box) {
     // settings panel as "permanently unsupported" even though POST
     // toggles work fine. Don't draw conclusions from a single GET:
     // unknown means unknown, not unsupported.
-    let clockEnabled = false; // tracked so a format change re-sends with the right on/off state
+    // Tri-state, and the third state is the point: true, false, or null for "the
+    // speaker did not say". This used to be a plain boolean initialised to false,
+    // which made "unknown" and "off" the same thing on the one path that writes
+    // without the user choosing an on/off (see the format dropdown below).
+    let clockState = null;
     const refreshClock = async () => {
       try {
         const s = await GetClockDisplay(boseHost);
-        clockEnabled = (s === 'true');
-        paintClock(s === 'true' ? true : (s === 'false' ? false : null));
+        clockState = s === 'true' ? true : (s === 'false' ? false : null);
+        paintClock(clockState);
       } catch {
+        clockState = null;
         paintClock(null);
       }
     };
@@ -2288,9 +2299,30 @@ function renderBoxSettings(s, box) {
     };
     if (clockOn) clockOn.onclick = () => { paintClock(true); withButtonPending(clockOn, () => postClock(true)); };
     if (clockOff) clockOff.onclick = () => { paintClock(false); withButtonPending(clockOff, () => postClock(false)); };
-    // Send the 12/24h format to the box immediately on dropdown change,
-    // keeping the current on/off state (no need to click "On" again).
-    if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
+    // Send the 12/24h format to the box immediately on dropdown change, keeping
+    // the current on/off state (no need to click "On" again).
+    //
+    // The Bose body carries userEnable and timeFormat in ONE write, so the format
+    // cannot be changed without asserting on or off. Until now the state came
+    // from a boolean that started false and was only ever set by a SUCCESSFUL
+    // GET, so a speaker whose /clockDisplay read failed, which is the documented
+    // reason the unknown state exists at all (the box drops the request during a
+    // BoseApp restart), was sent userEnable="false": a user who picked 24h
+    // switched his clock display off and nothing said so. The state is now
+    // re-read at the moment of the change, and an unknown answer stops the write
+    // instead of guessing the destructive half of it.
+    if (clockFormat) {
+      clockFormat.onchange = async () => {
+        await refreshClock();
+        if (clockState === null) {
+          clockFormat.value = lastFormat;
+          showError(t('settingsView.clockFormatUnknownState'));
+          return;
+        }
+        lastFormat = clockFormat.value;
+        await postClock(clockState);
+      };
+    }
   }
 
   // Resume last station on power-on (all models, default on). GET reports the

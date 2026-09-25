@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Standaard aan. Als je de speaker inschakelt, start hij de laatste zender opnieuw, zoals Bose deed. Wordt de speaker vanzelf wakker (bijvoorbeeld als deel van een stereopaar), dan blijft hij stil. Zet dit uit als je stilte wilt bij het inschakelen.",
   "settingsView.resumeOnPowerSavedToast": "Hervatten bij inschakelen opgeslagen.",
   "settingsView.clockSavedToast": "Klokweergave ingesteld op {{v}}.",
+  "settingsView.clockFormatUnknownState": "De speaker zei niet of zijn klokweergave aan staat, dus het formaat is niet gewijzigd. Druk op Aan of Uit om het toe te passen.",
   "settingsView.clockNotSupported": "niet ondersteund op dit model",
   "settingsView.clockUnknown": "onbekend",
   "settingsView.airplayOptHeading": "AirPlay-optimalisatie",

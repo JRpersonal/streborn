@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "مفعّل افتراضيًا. عند تشغيل السمّاعة، تبدأ آخر محطة مجدّدًا، كما كان يفعل Bose. إذا استيقظت السمّاعة من تلقاء نفسها (مثلًا ضمن اقتران استريو)، تبقى صامتة. عطّل هذا إذا كنت تريد الصمت عند تشغيل السمّاعة.",
   "settingsView.resumeOnPowerSavedToast": "حُفظ استئناف التشغيل.",
   "settingsView.clockSavedToast": "ضُبط عرض الساعة على {{v}}.",
+  "settingsView.clockFormatUnknownState": "لم تقل السماعة ما إن كان عرض الساعة مفعّلاً، لذلك لم يُغيّر التنسيق. اضغط تشغيل أو إيقاف لتطبيقه.",
   "settingsView.clockNotSupported": "غير مدعوم على هذا الطراز",
   "settingsView.clockUnknown": "غير معروف",
   "settingsView.airplayOptHeading": "تحسين AirPlay",

@@ -759,6 +759,7 @@
   "settingsView.resumeOnPowerHelp": "Domyślnie włączone. Po włączeniu głośnika ponownie uruchamia się ostatnia stacja, tak jak robił to Bose. Jeśli głośnik wybudzi się sam (na przykład jako część pary stereo), pozostaje wyciszony. Wyłącz to, jeśli chcesz ciszę po włączeniu głośnika.",
   "settingsView.resumeOnPowerSavedToast": "Zapisano wznawianie po włączeniu.",
   "settingsView.clockSavedToast": "Wyświetlanie zegara ustawione na {{v}}.",
+  "settingsView.clockFormatUnknownState": "Głośnik nie powiedział, czy jego zegar jest włączony, dlatego format nie został zmieniony. Naciśnij Włącz lub Wyłącz, aby go zastosować.",
   "settingsView.clockNotSupported": "nieobsługiwane na tym modelu",
   "settingsView.clockUnknown": "nieznane",
   "settingsView.airplayOptHeading": "Optymalizacja AirPlay",
