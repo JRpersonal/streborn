@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,12 +27,29 @@ import (
 // API). The restart takes ~3s, shorter than the box's playback buffer, so the
 // switch is audibly seamless. Same-account recall does not switch or restart.
 
+// spotifyMeURL is the one Web API call STR makes. Everything else it needs comes
+// from the engine's own API.
+const spotifyMeURL = "https://api.spotify.com/v1/me"
+
 // accountProduct returns the Spotify account product type ("premium"/"free"/
-// "open") via go-librespot's authenticated Web API proxy (GET /web-api/v1/me),
-// cached for a few minutes. Returns "" when unknown (the zeroconf token may lack
-// the user-read-private scope, in which case /v1/me omits product), so callers
-// fall back to the log signal. Best-effort.
+// "open"), cached for a few minutes. Returns "" when unknown (the zeroconf token
+// may lack the user-read-private scope, in which case /v1/me omits product), so
+// callers fall back to the log signal. Best-effort.
+//
+// The engine used to proxy this (GET /web-api/v1/me). Upstream removed that
+// passthrough on 2026-08-29 and offers the session's access token instead, which
+// is the better shape anyway: one endpoint that hands out a token beats a
+// catch-all proxy. So the speaker asks the engine for a token and makes the one
+// call itself. It costs the speaker its own TLS handshake with Spotify, which is
+// why this stays strictly best-effort: a speaker that cannot make it simply
+// reports "unknown" and the log signal decides.
 func (m *Manager) accountProduct(ctx context.Context) string {
+	return m.accountProductAt(ctx, spotifyMeURL)
+}
+
+// accountProductAt is accountProduct with the endpoint as a parameter, so a test
+// can answer as Spotify without the test being a copy of the logic.
+func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	m.mu.Lock()
 	if m.productType != "" && time.Since(m.productCheckedAt) < 5*time.Minute {
 		p := m.productType
@@ -38,8 +57,9 @@ func (m *Manager) accountProduct(ctx context.Context) string {
 		return p
 	}
 	m.mu.Unlock()
-	data, err := m.apiGet(ctx, "/web-api/v1/me")
+	data, err := m.spotifyWebGet(ctx, meURL)
 	if err != nil {
+		m.logger.Debug("spotify: could not read the account product type", "err", err)
 		return ""
 	}
 	var me struct {
@@ -435,4 +455,38 @@ func (m *Manager) AudioKeyRefused() bool {
 		last = m.keyRefusalGaveUpAt
 	}
 	return time.Since(last) < 10*time.Minute
+}
+
+// spotifyWebGet makes ONE authenticated Spotify Web API call, using an access
+// token the engine hands out for its own live session (GET /token).
+//
+// Deliberately stateless: a fresh token per call. The engine renews its token
+// itself and the calls here are rare (a product-type read every few minutes at
+// most), so caching a bearer token on the speaker would add an expiry to get
+// wrong for no measurable saving.
+func (m *Manager) spotifyWebGet(ctx context.Context, url string) ([]byte, error) {
+	raw, err := m.apiGet(ctx, "/token")
+	if err != nil {
+		return nil, fmt.Errorf("no access token from the engine: %w", err)
+	}
+	var tok struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(raw, &tok); err != nil || tok.Token == "" {
+		return nil, fmt.Errorf("the engine returned no usable access token")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok.Token)
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("spotify answered %d", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 }

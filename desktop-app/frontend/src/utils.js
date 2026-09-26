@@ -614,6 +614,17 @@ export function balanceLabel(v) {
              : t('controls.balanceRight', { n: v }));
 }
 
+// balanceStateLabel is the same reading WITHOUT the word Balance in front of it,
+// for the place that already carries a Balance heading above the slider. The
+// speaker settings used to show "Balance: centred" under a "Volume" heading with
+// no heading of its own, which is what #709 reported.
+export function balanceStateLabel(v) {
+  return v === 0
+    ? t('controls.balanceCentreShort')
+    : (v < 0 ? t('controls.balanceLeftShort', { n: Math.abs(v) })
+             : t('controls.balanceRightShort', { n: v }));
+}
+
 // bassControlsDisabled is the ONE gate every bass control in the settings view
 // reads: the slider, the "default" reset button next to it, and the reset
 // handler itself.

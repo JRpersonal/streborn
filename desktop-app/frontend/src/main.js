@@ -90,6 +90,7 @@ import {
   StreamTitle,
   SpotifyBitrate,
   SpotifyNowPlaying,
+  LogSpotifySaveGate,
   SaveSpotifyPreset,
   SaveLibraryPreset,
   RecentPlayed,
@@ -6978,14 +6979,21 @@ async function saveCurrentToSlot(slot) {
     // happens here, so asking costs nothing. undefined means the speaker's
     // agent predates the field, and "cannot tell" must never become a warning.
     let canRecall;
+    // And whether the account behind it can do an on-demand recall at all. A free
+    // Spotify account cannot, so the key stores fine and then never plays: that is
+    // the entitlement half of #976, which the login check alone never covered.
+    let premiumRequired;
+    let gateRead = 'unknown';
     try {
       const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
       if (np) {
+        gateRead = 'yes';
         if (np.context) ctxUri = np.context;
         if (np.account) acct = np.account;
         if (np.canRecall !== null && np.canRecall !== undefined) canRecall = !!np.canRecall;
+        if (np.premiumRequired !== null && np.premiumRequired !== undefined) premiumRequired = !!np.premiumRequired;
       }
-    } catch {}
+    } catch { gateRead = 'no'; }
     // Fallback: go-librespot's /spotify/info can report an empty context even
     // while a real playlist is playing (it depends on how playback was started).
     // The box's own now-playing still carries the URI STR wrote into its
@@ -7019,9 +7027,28 @@ async function saveCurrentToSlot(slot) {
       // Said after the save, not instead of it: the key becomes good the moment
       // the speaker is picked in Spotify once, so refusing to store it would
       // throw away work the user will want.
+      // Same order the speaker applies when the key is pressed (recallgate.go):
+      // picked-once first, then the plan. Both stay silent when the speaker could
+      // not be asked, because "cannot tell" must never become a warning.
+      let notice = 'none';
       if (canRecall === false) {
+        notice = 'needs-login';
         showToast(t('preset.spotifyKeyNeedsLogin'), 12000);
+      } else if (premiumRequired === true) {
+        notice = 'needs-premium';
+        showToast(t('preset.spotifyKeyNeedsPremium'), 12000);
       }
+      // Which notice was shown, and what it was decided from. Without this a
+      // report of "two different notices for one long press" cannot be read out
+      // of a bundle at all (#976).
+      // An older build has no such binding, and logging must never be the reason
+      // a save reports a failure, so the rejection is swallowed.
+      try {
+        LogSpotifySaveGate(state.currentBox.host, slot,
+          canRecall === undefined ? 'unknown' : (canRecall ? 'yes' : 'no'),
+          premiumRequired === undefined ? 'unknown' : (premiumRequired ? 'yes' : 'no'),
+          gateRead === 'yes' ? notice : notice + ' (speaker not readable)')?.catch(() => {});
+      } catch {}
       await loadPresets();
       return;
     } catch (err) {
@@ -7532,6 +7559,18 @@ function resetNowPlaying() {
 // appearing on the next poll. Since 2026-08-23 this bar is the only place the
 // running title is shown. Guarded on the rendered HTML so it does not restart
 // the marquee animation when nothing changed.
+// spotifyContextLabelKey names what is playing by what the URI says it is. The
+// line used to say "Playlist" for everything, so an album played from the Spotify
+// app was announced as a playlist (#709). Anything unrecognised keeps the old
+// word rather than inventing one.
+function spotifyContextLabelKey(uri) {
+  const kind = String(uri || '').split(':')[1] || '';
+  if (kind === 'album') return 'status.albumLabel';
+  if (kind === 'artist') return 'status.artistLabel';
+  if (kind === 'show' || kind === 'episode') return 'status.podcastLabel';
+  return 'status.playlistLabel';
+}
+
 function renderNowPlayingBar() {
   const bar = $('statusBar');
   if (!bar) return;
@@ -7566,7 +7605,7 @@ function renderNowPlayingBar() {
   const spotifyArtist = state.nowBoxSpotify ? state.nowBoxSpotify.artist : state.nowSpotifyArtist;
   if (spotifyTrack) {
     const song = spotifyArtist ? `${spotifyArtist} - ${spotifyTrack}` : spotifyTrack;
-    displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
+    displayName = name ? `${t(spotifyContextLabelKey(state.nowSpotifyContext || spotifyURIFromContainer(loc)))}: "${name}" · ${song}` : song;
   } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
     // The same predicate as the title poller above, and it has to be the same
     // one: fixing only the poll would fetch a title that this line then refused

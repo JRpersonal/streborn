@@ -3685,10 +3685,37 @@ async function playRecent(idx, btn) {
      "parity" meant both paths were wrong (#817): the Wave labelled the track as
      internet radio, the bitrate read as a dash, the track never ended and the
      card was re-filed under Radio. The card carries it; send it. */
-  var ok = await api('/api/play', 'POST', {
-    url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
-    mime: e.mime || '', homepage: e.homepage || ''
-  });
+  /* A FOLDER card is not a track: its key names the media server and the
+     container it was played from, so the speaker can browse that folder again and
+     start the whole queue. The stored URL is only the first track, and playing it
+     clears the queue, so a replayed folder played one song and then stopped with
+     the indicator amber (#978). This page could never replay a folder at all
+     before; now it asks the speaker to do it. */
+  var ok;
+  if ((e.cardKey || '').indexOf('queue:') === 0) {
+    var r = await apiDetail('/api/queue/replay-card', 'POST', {
+      key: e.cardKey, name: e.cardName || '', art: e.cardArt || ''
+    });
+    ok = !!(r && r.ok && r.data && !r.data.error && !r.data.offline);
+    if (!ok && r && r.data && (r.data.error || r.data.offline)) {
+      showPlayNotice(r.data.error || (T.offline || ''));
+      return;
+    }
+    /* 404 here means the media server is no longer one of the registered music
+       sources (this page and the agent always ship together, so it is never a
+       version gap). Replay the one track the card holds, as before. */
+    if (!ok && r && r.status === 404) {
+      ok = await api('/api/play', 'POST', {
+        url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
+        mime: e.mime || '', homepage: e.homepage || ''
+      });
+    }
+  } else {
+    ok = await api('/api/play', 'POST', {
+      url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
+      mime: e.mime || '', homepage: e.homepage || ''
+    });
+  }
   if (ok) { setNow(T.starting + ' ' + (e.cardName || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(loadRecent, 4000); }
 }
 

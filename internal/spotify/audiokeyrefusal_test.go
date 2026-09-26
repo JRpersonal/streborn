@@ -3,6 +3,9 @@ package spotify
 import (
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,5 +70,69 @@ func TestTheMessageExpires(t *testing.T) {
 	m.mu.Unlock()
 	if m.AudioKeyRefused() {
 		t.Error("the message was still showing eleven minutes later")
+	}
+}
+
+// A run of refusals must also STOP the engine, not only be reported.
+//
+// Letting it walk the rest of the playlist plays nothing and is not harmless:
+// on a two-speaker household measured on 2026-09-26 the engine crashed and was
+// relaunched four times in three minutes while racing through a refused
+// playlist, each crash inside its own skip-to-next path. What the listener sees
+// is a playlist tearing past and starting over, rather than a speaker that has
+// stopped.
+func TestARunOfRefusalsPausesTheEngine(t *testing.T) {
+	paused := make(chan string, 4)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case paused <- r.URL.Path:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	m := refusalManager()
+	m.client = ts.Client()
+	m.apiAddr = strings.TrimPrefix(ts.URL, "http://")
+
+	for i := 0; i < keyRefusalRunTrips; i++ {
+		m.noteLibrespotLine(refusalLine)
+	}
+	select {
+	case path := <-paused:
+		if path != "/player/pause" {
+			t.Fatalf("engine was asked for %q, want /player/pause", path)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a run of refused tracks left the engine running through the rest of the playlist")
+	}
+}
+
+// One refusal short of the run must leave playback alone: a single unavailable
+// track in an otherwise fine playlist is normal, and stopping there would be a
+// louder bug than the one this guards against.
+func TestOneRefusalShortLeavesPlaybackAlone(t *testing.T) {
+	touched := make(chan string, 4)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case touched <- r.URL.Path:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	m := refusalManager()
+	m.client = ts.Client()
+	m.apiAddr = strings.TrimPrefix(ts.URL, "http://")
+
+	for i := 0; i < keyRefusalRunTrips-1; i++ {
+		m.noteLibrespotLine(refusalLine)
+	}
+	select {
+	case path := <-touched:
+		t.Fatalf("playback was touched (%s) before the run was complete", path)
+	case <-time.After(1500 * time.Millisecond):
 	}
 }

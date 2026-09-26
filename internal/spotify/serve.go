@@ -92,9 +92,29 @@ func (m *Manager) Streaming() bool {
 // returns false and leaves the cache untouched if /status is unreachable or
 // carries no track, so the caller falls back to the cached values.
 func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover string, ok bool) {
+	t, a, c, state := m.liveNowPlayingState(ctx)
+	return t, a, c, state == liveStatusTrack
+}
+
+// liveTrackState is what go-librespot's /status says about a loaded track. The
+// distinction matters because "I could not ask" and "there is nothing loaded"
+// are opposite answers to the question a preset save asks, and both used to
+// arrive here as a plain false.
+type liveTrackState int
+
+const (
+	// liveStatusUnknown: the engine did not answer. Trust the cache.
+	liveStatusUnknown liveTrackState = iota
+	// liveStatusNoTrack: the engine answered and has nothing loaded.
+	liveStatusNoTrack
+	// liveStatusTrack: a track is loaded and its details are live.
+	liveStatusTrack
+)
+
+func (m *Manager) liveNowPlayingState(ctx context.Context) (track, artist, cover string, state liveTrackState) {
 	data, err := m.apiGet(ctx, "/status")
 	if err != nil {
-		return "", "", "", false
+		return "", "", "", liveStatusUnknown
 	}
 	var st struct {
 		Track *struct {
@@ -104,8 +124,11 @@ func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover stri
 			AlbumCoverURL string   `json:"album_cover_url"`
 		} `json:"track"`
 	}
-	if json.Unmarshal(data, &st) != nil || st.Track == nil || st.Track.Name == "" {
-		return "", "", "", false
+	if json.Unmarshal(data, &st) != nil {
+		return "", "", "", liveStatusUnknown
+	}
+	if st.Track == nil || st.Track.Name == "" {
+		return "", "", "", liveStatusNoTrack
 	}
 	track = st.Track.Name
 	artist = strings.Join(st.Track.ArtistNames, ", ")
@@ -118,7 +141,7 @@ func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover stri
 	m.mu.Unlock()
 	m.notifyTrack()
 	m.noteResume()
-	return track, artist, cover, true
+	return track, artist, cover, liveStatusTrack
 }
 
 // SetOnTrack registers the recently-played hook (webui.NoteRecentSpotifyTrack).
@@ -174,8 +197,23 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	lowDisk, lowDiskFreeKB := m.lowDisk, m.lowDiskFreeKB
 	m.mu.Unlock()
 	// Prefer the live track from /status over the laggy cached metadata events.
-	if lt, la, lc, ok := m.liveNowPlaying(r.Context()); ok {
+	lt, la, lc, state := m.liveNowPlayingState(r.Context())
+	switch state {
+	case liveStatusTrack:
 		track, artist, cover = lt, la, lc
+	case liveStatusNoTrack:
+		// The engine answered and has NOTHING loaded, so the remembered context
+		// is a memory of an older session. lastContext has no clearing site at
+		// all, and this field is what a preset save writes onto a key: handing it
+		// out here puts the wrong playlist on the key, or collides with the key
+		// that already holds it and the save is refused as "already on key N".
+		//
+		// Measured on a two-speaker fleet on 2026-09-26: on the speaker where
+		// every track was being refused by Spotify, the engine never had a track
+		// loaded, so every save captured the playlist already sitting on key 2.
+		// The display keeps the cached track, which is only cosmetic; what is
+		// about to be WRITTEN must not be a guess.
+		context = ""
 	}
 	resp := struct {
 		Ready   bool   `json:"ready"`

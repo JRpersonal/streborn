@@ -190,6 +190,22 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// ReplayFolderCard replays a Recently-played FOLDER card as the whole folder
+// again instead of as its first track. Optional binding, per the note above; a
+// speaker whose agent predates the endpoint rejects it with
+// folder_replay_unsupported and the caller falls back to the old single play.
+export function ReplayFolderCard(host, port, key, name, art) {
+  return callOptionalBinding('ReplayFolderCard', [host, port, key, name, art]);
+}
+
+// LogSpotifySaveGate records what the app knew about the speaker's Spotify state
+// when it saved a key, so a report about the warning that appeared can be read out
+// of a diagnostic bundle. Optional binding, per the note above; logging must never
+// be the reason a save fails, so callers ignore the rejection.
+export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notice) {
+  return callOptionalBinding('LogSpotifySaveGate', [host, slot, canRecall, premiumRequired, notice]);
+}
+
 // PushFavorites stores the starred stations on one speaker, so the phone page
 // shows the same list. Optional binding, per the note above.
 export function PushFavorites(host, port, favoritesJSON) {

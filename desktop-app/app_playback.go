@@ -246,6 +246,58 @@ func (a *App) StartQueue(host string, port int, payloadJSON string) error {
 	return nil
 }
 
+// folderReplayUnsupported is what ReplayFolderCard returns when the speaker's
+// agent is older than the endpoint. The frontend treats it as "fall back to the
+// old single-track replay" rather than as a failure, so a speaker that has not
+// been updated yet behaves exactly as it did before.
+const folderReplayUnsupported = "folder_replay_unsupported"
+
+// ReplayFolderCard replays a Recently-played FOLDER card as the whole folder.
+//
+// The card itself only stores the first track's URL, and replaying that through
+// the single-track path clears the queue, so the folder used to play one song and
+// stop (#978, reported 2026-09-26). The speaker knows how to rebuild the queue
+// from the card key, which carries the media server and the container, so the
+// whole job is one call and the phone remote gets the same fix.
+func (a *App) ReplayFolderCard(host string, port int, key, name, art string) error {
+	body, _ := json.Marshal(map[string]string{"key": key, "name": name, "art": art})
+	resp, err := a.playPost(host, port, "/api/queue/replay-card", string(body))
+	if err != nil {
+		a.logger.Info("queue: folder card replay failed", "host", host, "key", key, "err", err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		// Either the agent predates the endpoint, or the media server is no
+		// longer a registered music source. Both are cases where the old
+		// behaviour (play the one track the card holds) is better than an error.
+		a.logger.Info("queue: folder card replay not available on this speaker", "host", host, "status", resp.StatusCode)
+		return fmt.Errorf("%s", folderReplayUnsupported)
+	}
+	if resp.StatusCode >= 400 {
+		msg := friendlyError(resp)
+		a.logger.Info("queue: folder card replay rejected", "host", host, "status", resp.StatusCode, "err", msg)
+		return fmt.Errorf("%s", msg)
+	}
+	var out struct {
+		Tracks  int    `json:"tracks"`
+		Error   string `json:"error"`
+		Offline bool   `json:"offline"`
+		Server  string `json:"server"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.Offline {
+		a.logger.Info("queue: folder card replay found the media server offline", "host", host, "server", out.Server)
+		return fmt.Errorf("the music server %s is not reachable right now", strings.TrimSpace(out.Server))
+	}
+	if out.Error != "" {
+		a.logger.Info("queue: folder card replay refused", "host", host, "err", out.Error)
+		return fmt.Errorf("%s", out.Error)
+	}
+	a.logger.Info("queue: folder card replayed", "host", host, "tracks", out.Tracks)
+	return nil
+}
+
 // QueueNext / QueuePrev skip within the active queue.
 func (a *App) QueueNext(host string, port int) error {
 	return a.queuePost(host, port, "/api/queue/next", "")

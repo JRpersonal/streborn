@@ -85,6 +85,11 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	if !ok || p.Type != "queue" {
 		return false
 	}
+	// The saved tracks carry the music server's address. When the router hands
+	// that server a different lease, every folder key pointing at it goes dead at
+	// once, which is what a static-lease workaround is really for (#977). Correct
+	// the key from the media-server store before the queue is built.
+	s.healQueuePresetIfMoved(ctx, slot, &p)
 	items := presetItemsToQueue(p.Items)
 	if len(items) == 0 {
 		return false

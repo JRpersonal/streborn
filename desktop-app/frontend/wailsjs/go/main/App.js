@@ -254,6 +254,10 @@ export function LogClientError(arg1) {
   return window['go']['main']['App']['LogClientError'](arg1);
 }
 
+export function LogSpotifySaveGate(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['LogSpotifySaveGate'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function MovePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['MovePreset'](arg1, arg2, arg3, arg4);
 }
@@ -392,6 +396,10 @@ export function RenamePreset(arg1, arg2, arg3, arg4) {
 
 export function RepairInstallViaSSH(arg1, arg2) {
   return window['go']['main']['App']['RepairInstallViaSSH'](arg1, arg2);
+}
+
+export function ReplayFolderCard(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['ReplayFolderCard'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function RescuedSpeakerCount() {

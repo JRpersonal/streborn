@@ -32,6 +32,19 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	b.WriteString("audio_output_pipe: /dev/stdout\n")
 	b.WriteString("audio_output_pipe_format: s16le\n")
 	b.WriteString("audio_output_pipe_passthrough: true\n")
+	// Loudness normalisation OFF, and not as a matter of taste: in passthrough
+	// the raw Ogg reaches the speaker untouched, so the factor the engine
+	// computes is thrown away anyway. Computing it is not free, though: the
+	// engine crashes on a track whose normalisation metadata is absent
+	// (calculateNormalisationFactor dereferences a nil params, fixed upstream on
+	// 2026-08-29 and not yet in the build STR ships), and that takes the whole
+	// engine down mid-playlist. Measured four times in one diagnostic from a
+	// two-speaker household on 2026-09-26, which is what the listener saw as a
+	// playlist racing past and starting over.
+	//
+	// An older engine simply ignores the key: go-librespot's config loader is
+	// not strict about unknown fields.
+	b.WriteString("normalisation_disabled: true\n")
 	// Volume bridge: the box owns the actual volume (passthrough Ogg can't be
 	// scaled by go-librespot), so external_volume makes go-librespot forward
 	// Connect volume changes as /events instead of applying them; the manager
@@ -55,6 +68,12 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	// dir, so an enabled cache would resolve its XDG default directory onto
 	// NAND with a 1 GB size limit and grind the box's flash. Older engine
 	// builds without the key ignore it (non-strict koanf loader).
+	// Pin the new track-metadata cache OFF for the same reason as the audio
+	// cache above: its own default is already false, but a default is not a
+	// decision. Upstream sizes it for a desktop (1000 tracks), and the speaker
+	// has about 35 MB of RAM to run everything in. Older engines ignore the key.
+	b.WriteString("metadata:\n")
+	b.WriteString("  enabled: false\n")
 	b.WriteString("cache:\n")
 	b.WriteString("  enabled: false\n")
 	b.WriteString("credentials:\n")
