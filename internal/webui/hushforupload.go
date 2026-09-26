@@ -43,7 +43,7 @@ const hushBudget = 6 * time.Second
 // nothing. Production always uses the real implementations.
 var (
 	hushReadNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
-		return fetchNowPlaying(ctx, host)
+		return fetchNowPlayingPeer(ctx, host)
 	}
 	hushStop = func(ctx context.Context, s *Server) error {
 		if s.renderer == nil {

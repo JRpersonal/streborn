@@ -99,8 +99,20 @@ func hostPortOf(raw string) string {
 // yields an empty snapshot (Source == ""), which every caller treats as
 // "state unreadable — do nothing".
 func fetchNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
+	return fetchNowPlayingWith(ctx, host, boxGet)
+}
+
+// fetchNowPlayingPeer is the same read aimed at ANOTHER speaker, whose address
+// came from outside this agent (a zone member, a group the app formed). It goes
+// through the guarded dialer; see boxGetPeer.
+func fetchNowPlayingPeer(ctx context.Context, host string) nowPlayingSnapshot {
+	return fetchNowPlayingWith(ctx, host, boxGetPeer)
+}
+
+func fetchNowPlayingWith(ctx context.Context, host string,
+	get func(context.Context, string, int64) ([]byte, error)) nowPlayingSnapshot {
 	var snap nowPlayingSnapshot
-	b, err := boxGet(ctx, "http://"+host+":8090/now_playing", 16<<10)
+	b, err := get(ctx, "http://"+host+":8090/now_playing", 16<<10)
 	if err != nil {
 		return snap
 	}

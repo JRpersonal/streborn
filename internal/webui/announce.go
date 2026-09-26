@@ -12,6 +12,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
 // Audio-notification ("announcement") support (#125), the cloud-free replacement
@@ -433,13 +434,31 @@ func clampVolume(v int) int {
 	return v
 }
 
-// boxGet is a small GET helper for the box's read-only :8090 endpoints.
+// boxGet is a small GET helper for the box's read-only :8090 endpoints, for the
+// speaker this agent runs ON. Its host comes from the agent's own configuration,
+// so there is nothing for a caller to steer.
 func boxGet(ctx context.Context, u string, limit int64) ([]byte, error) {
+	return boxGetWith(ctx, &http.Client{Timeout: 4 * time.Second}, u, limit)
+}
+
+// boxGetPeer is the same read aimed at ANOTHER speaker, whose address arrived
+// from outside: a zone member, a group the app formed, anything that reached the
+// agent's unauthenticated LAN port. The port and path are fixed, so the worst a
+// caller could do is point the speaker at a host of their choosing, and the
+// dialer refuses the ones that matter (loopback, link-local, metadata). Private
+// LAN addresses stay allowed, because that is where the other speakers live.
+//
+// Same rule as the artwork proxy earned on 2026-08-04: guard at DIAL time, not
+// on the URL string, so a name that resolves inwards is caught too.
+func boxGetPeer(ctx context.Context, u string, limit int64) ([]byte, error) {
+	return boxGetWith(ctx, netutil.GuardedClient(4*time.Second), u, limit)
+}
+
+func boxGetWith(ctx context.Context, cl *http.Client, u string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
-	cl := &http.Client{Timeout: 4 * time.Second}
 	resp, err := cl.Do(req)
 	if err != nil {
 		return nil, err

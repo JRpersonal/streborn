@@ -96,7 +96,7 @@ func writeWlanTargetAt(path string, t wlanTarget) error {
 		return err
 	}
 	if _, werr := f.Write(b); werr != nil {
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(tmp)
 		return werr
 	}
