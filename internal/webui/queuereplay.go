@@ -45,30 +45,69 @@ const (
 	queueReplayBudget = 60 * time.Second
 )
 
-// parseQueueCardKey splits "queue:<udn>:<container>" into its two halves.
+// splitQueueCardKey splits a folder card key, "queue:<udn>:<container>", into
+// its two halves.
 //
-// The UDN carries colons of its own ("uuid:4d696e69-..."), the container id
-// normally does not, so the container is what follows the LAST colon. A key
-// whose container half is empty still resolves, to the server root: that is what
-// the desktop app writes when the folder it played WAS the root.
-func parseQueueCardKey(key string) (udn, container string, ok bool) {
+// Neither half is colon-free, which is what makes this more than a Cut. A UDN is
+// "uuid:<guid>", and a ContentDirectory object id is whatever the server likes:
+// a FRITZ!Box names its pop folder "4:cont2:578:AVM GmbH0:3:Pop". Splitting on
+// the last colon put the whole id but its final word into the UDN and asked the
+// speaker for a server called "...:3", which answered as "not a registered music
+// source". Found on a live FRITZ!Box on 2026-09-26, after the unit tests passed
+// on a key shaped the way I assumed ids are shaped.
+//
+// So the split is made against the servers this speaker actually knows, which is
+// exact, and only falls back to a guess when none of them matches. That fallback
+// still has to be right for the useful case (an unregistered server answers 404
+// either way, but the log line should name the real UDN).
+func (s *Server) splitQueueCardKey(key string) (udn, container string, ok bool) {
 	rest, found := strings.CutPrefix(strings.TrimSpace(key), queueCardKeyPrefix)
-	if !found {
+	if !found || rest == "" {
 		return "", "", false
 	}
-	i := strings.LastIndex(rest, ":")
-	if i < 0 {
+	if s.mediaServers != nil {
+		for _, reg := range s.mediaServers.List() {
+			for _, cand := range []string{reg.ID, "uuid:" + udnKey(reg.ID)} {
+				if cand == "" || cand == "uuid:" {
+					continue
+				}
+				if tail, hit := strings.CutPrefix(rest, cand+":"); hit {
+					return cand, containerOrRoot(tail), true
+				}
+			}
+		}
+	}
+	// Nothing registered matched. A UDN is "uuid:<guid>" in every key the app
+	// writes, so cut after the guid; anything else is a bare id and cuts at its
+	// first colon.
+	if tail, hit := strings.CutPrefix(rest, "uuid:"); hit {
+		guid, cont, split := strings.Cut(tail, ":")
+		if guid == "" {
+			return "", "", false
+		}
+		if !split {
+			return "uuid:" + guid, "0", true
+		}
+		return "uuid:" + guid, containerOrRoot(cont), true
+	}
+	name, cont, split := strings.Cut(rest, ":")
+	if name == "" {
 		return "", "", false
 	}
-	udn = strings.TrimSpace(rest[:i])
-	container = strings.TrimSpace(rest[i+1:])
-	if udn == "" {
-		return "", "", false
+	if !split {
+		return name, "0", true
 	}
-	if container == "" {
-		container = "0"
+	return name, containerOrRoot(cont), true
+}
+
+// containerOrRoot: an empty container half means the folder played WAS the
+// server root, which is what the desktop app writes for it.
+func containerOrRoot(c string) string {
+	c = strings.TrimSpace(c)
+	if c == "" {
+		return "0"
 	}
-	return udn, container, true
+	return c
 }
 
 type queueReplayRequest struct {
@@ -91,7 +130,7 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<16, &req) {
 		return
 	}
-	udn, container, ok := parseQueueCardKey(req.Key)
+	udn, container, ok := s.splitQueueCardKey(req.Key)
 	if !ok {
 		http.Error(w, "not a folder card", http.StatusBadRequest)
 		return

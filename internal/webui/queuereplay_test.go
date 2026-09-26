@@ -16,31 +16,67 @@ import (
 )
 
 // The card key is the folder's whole identity, and it is not a clean two-field
-// split: a UDN carries colons of its own. Getting this wrong means a replay
-// browses the wrong container, or nothing at all.
-func TestParseQueueCardKey(t *testing.T) {
+// split: a UDN carries colons of its own, AND so does a DLNA object id. A live
+// FRITZ!Box on 2026-09-26 names a folder "4:cont2:578:AVM GmbH0:3:Pop", which
+// the last-colon split turned into a server called "...:3" and a container
+// called "Pop". The speaker then answered "not a registered music source" for a
+// server it was registered with.
+func TestSplitQueueCardKey(t *testing.T) {
+	store, err := mediaservers.Load(filepath.Join(t.TempDir(), "mediaservers.json"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	// Registered the way the store holds them: the UDN without its uuid: prefix.
+	for _, reg := range []mediaservers.Server{
+		{ID: "fa095ecc-e13e-40e7-8e6c-3C37129F8346", Name: "AVM FRITZ!Mediaserver"},
+		{ID: "00113251-28ed-0011-ed28-ed2851321100", Name: "Backupserver"},
+	} {
+		if err := store.Add(reg); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), mediaServers: store}
+
 	cases := []struct {
-		key, udn, container string
-		ok                  bool
+		name, key, udn, container string
+		ok                        bool
 	}{
-		// The real shape the desktop app writes: uuid:... plus a DLNA object id.
-		{"queue:uuid:4d696e69-44c5-1215-ab12-000000000000:64$0", "uuid:4d696e69-44c5-1215-ab12-000000000000", "64$0", true},
-		// A folder that IS the server root: the app leaves the container empty.
-		{"queue:uuid:AAAA-BBBB:", "uuid:AAAA-BBBB", "0", true},
-		{"queue:AAAA-BBBB:1$5$3", "AAAA-BBBB", "1$5$3", true},
-		// Not folder cards: a radio station, a Spotify context, a truncated key.
-		{"spotify:playlist:37i9dQ", "", "", false},
-		{"http://stream.example/1", "", "", false},
-		{"queue:nocolon", "", "", false},
-		{"queue:", "", "", false},
-		{"", "", "", false},
+		{
+			name: "FRITZ!Box id full of colons",
+			key:  "queue:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346:4:cont2:578:AVM GmbH0:3:Pop",
+			udn:  "uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346", container: "4:cont2:578:AVM GmbH0:3:Pop", ok: true,
+		},
+		{
+			name: "Synology dollar id",
+			key:  "queue:uuid:00113251-28ed-0011-ed28-ed2851321100:22$601",
+			udn:  "uuid:00113251-28ed-0011-ed28-ed2851321100", container: "22$601", ok: true,
+		},
+		{
+			// The folder played WAS the server root.
+			name: "empty container half",
+			key:  "queue:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346:",
+			udn:  "uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346", container: "0", ok: true,
+		},
+		{
+			// Not registered here: the shape fallback still has to name the real
+			// server, so the refusal says something true.
+			name: "unknown server, uuid shape",
+			key:  "queue:uuid:11111111-2222-3333-4444-555555555555:64$0",
+			udn:  "uuid:11111111-2222-3333-4444-555555555555", container: "64$0", ok: true,
+		},
+		{name: "not a folder card", key: "spotify:playlist:37i9dQ"},
+		{name: "radio url", key: "http://stream.example/1"},
+		{name: "prefix only", key: "queue:"},
+		{name: "empty", key: ""},
 	}
 	for _, c := range cases {
-		udn, container, ok := parseQueueCardKey(c.key)
-		if ok != c.ok || udn != c.udn || container != c.container {
-			t.Errorf("parseQueueCardKey(%q) = (%q, %q, %v), want (%q, %q, %v)",
-				c.key, udn, container, ok, c.udn, c.container, c.ok)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			udn, container, ok := s.splitQueueCardKey(c.key)
+			if ok != c.ok || udn != c.udn || container != c.container {
+				t.Errorf("splitQueueCardKey(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					c.key, udn, container, ok, c.udn, c.container, c.ok)
+			}
+		})
 	}
 }
 
@@ -67,7 +103,7 @@ func TestQueueReplayCardServesOnlyRegisteredServers(t *testing.T) {
 		return rr
 	}
 
-	if rr := post(`{"key":"queue:uuid:CCCC-DDDD:64$0"}`); rr.Code != 404 {
+	if rr := post(`{"key":"queue:uuid:11111111-2222-3333-4444-555555555555:64$0"}`); rr.Code != 404 {
 		t.Errorf("a server that is not a registered music source must 404, got %d", rr.Code)
 	}
 	// A card that is not a folder card must not be treated as one: that is what

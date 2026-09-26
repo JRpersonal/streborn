@@ -51,44 +51,65 @@ func TestLiveFolderReplay(t *testing.T) {
 	}
 	var udn, container, folderName string
 	var items []map[string]any
+	// Breadth-first, bounded: a real music tree is not two levels deep in any
+	// predictable way (Music > Artist > Album > tracks on one server, a folder
+	// hierarchy on the next), so walk until a container with two playable tracks
+	// turns up rather than assuming a shape.
+	const maxBrowses = 250
+	var fallbackUDN, fallbackID string
+	var fallbackItems []map[string]any
 	for _, srv := range servers {
-		root, err := a.BrowseLibrary(srv.UDN, "0", 0, 60)
-		if err != nil {
-			continue
-		}
-		// One level down is enough: the root of a music server is folders.
-		for _, c := range root.Containers {
-			page, err := a.BrowseLibrary(srv.UDN, c.ID, 0, 60)
+		t.Logf("server %q (%s)", srv.FriendlyName, srv.UDN)
+		queue := []string{"0"}
+		browses := 0
+		for len(queue) > 0 && browses < maxBrowses && udn == "" {
+			id := queue[0]
+			queue = queue[1:]
+			browses++
+			page, err := a.BrowseLibrary(srv.UDN, id, 0, 60)
 			if err != nil {
+				t.Logf("  browse %q: %v", id, err)
 				continue
 			}
-			for _, sub := range page.Containers {
-				deep, err := a.BrowseLibrary(srv.UDN, sub.ID, 0, 60)
-				if err != nil || len(deep.Items) < 2 {
+			t.Logf("  browse %q: %d folders, %d items", id, len(page.Containers), len(page.Items))
+			playable := make([]map[string]any, 0, len(page.Items))
+			for _, it := range page.Items {
+				if it.StreamURL == "" {
 					continue
 				}
-				udn, container, folderName = srv.UDN, sub.ID, sub.Title
-				for _, it := range deep.Items {
-					if it.StreamURL == "" {
-						continue
-					}
-					items = append(items, map[string]any{
-						"url": it.StreamURL, "title": it.Title, "art": it.AlbumArtURL,
-						"mime": it.MimeType, "duration_sec": it.DurationSec,
-					})
-				}
+				playable = append(playable, map[string]any{
+					"url": it.StreamURL, "title": it.Title, "art": it.AlbumArtURL,
+					"mime": it.MimeType, "duration_sec": it.DurationSec,
+				})
+			}
+			// Two tracks is what proves auto-advance, so prefer it. One is still
+			// worth taking: after the OLD single-URL replay the speaker holds no
+			// queue at all, so an ACTIVE queue is already the discriminator.
+			if len(playable) >= 2 {
+				udn, container, items = srv.UDN, id, playable
+				folderName = "Folder " + id
 				break
 			}
-			if udn != "" {
-				break
+			if len(playable) == 1 && udn == "" && len(items) == 0 {
+				fallbackUDN, fallbackID, fallbackItems = srv.UDN, id, playable
+			}
+			for _, c := range page.Containers {
+				queue = append(queue, c.ID)
 			}
 		}
 		if udn != "" {
+			t.Logf("found a folder after %d browses on %q", browses, srv.FriendlyName)
 			break
 		}
+		t.Logf("nothing playable within %d browses on %q", browses, srv.FriendlyName)
 	}
-	if udn == "" || len(items) < 2 {
-		t.Skip("no folder with two or more playable tracks found on this LAN")
+	if udn == "" && fallbackUDN != "" {
+		udn, container, items = fallbackUDN, fallbackID, fallbackItems
+		folderName = "Folder " + container
+		t.Logf("no folder with two tracks on this LAN; using a one-track folder, which still tells a queue from a single play")
+	}
+	if udn == "" || len(items) == 0 {
+		t.Skip("no playable folder found on this LAN")
 	}
 	key := "queue:" + udn + ":" + container
 	t.Logf("folder %q on %s, %d tracks, card key %s", folderName, udn, len(items), key)
@@ -126,7 +147,7 @@ func TestLiveFolderReplay(t *testing.T) {
 	// 6. The speaker must hold a QUEUE now, not a single track. This is the whole
 	// difference: before the fix the replay pushed one URL and cleared the queue.
 	n := liveQueueLen(t, a, host, port)
-	if n < 2 {
+	if n < len(items) {
 		t.Fatalf("after the replay the speaker holds %d queue tracks, want the whole folder (%d)", n, len(items))
 	}
 	t.Logf("replayed as a queue of %d tracks", n)
