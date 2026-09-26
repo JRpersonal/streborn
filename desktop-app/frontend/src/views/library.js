@@ -683,11 +683,21 @@ function libraryFilteredItems() {
     || (it.album || '').toLowerCase().includes(f));
 }
 
+// libraryFilteredContainers applies the same search to the SUB-FOLDERS. They used
+// to be emitted in full whatever was typed, so in an album or artist list, which
+// is folders and nothing else, the search box did visibly nothing (#1026).
+function libraryFilteredContainers() {
+  const all = (libState.page && libState.page.containers) || [];
+  const f = (libState.filter || '').trim().toLowerCase();
+  if (!f) return all;
+  return all.filter((c) => (c.title || '').toLowerCase().includes(f));
+}
+
 // libraryListInnerHTML builds the folder/track <li> rows (containers always,
 // tracks filtered by the search). Shared by the full render and the search
 // refilter so the two never drift.
 function libraryListInnerHTML() {
-  const containers = ((libState.page && libState.page.containers) || []).map((c) => `
+  const containers = libraryFilteredContainers().map((c) => `
       <li class="library-row library-row-folder" data-cid="${escapeAttr(c.id)}">
         <span class="library-icon">&#128194;</span>
         <span class="library-title">${escapeHtml(c.title)}</span>
@@ -713,11 +723,25 @@ function libraryListInnerHTML() {
   return containers + items;
 }
 
+// cappedKey picks the wording for the "only the first LIB_MAX are here" note. The
+// cap counts folders AND tracks, but the note only ever said "tracks", so a user
+// who hit it on an album list was told he was looking at 2500 tracks when they
+// were 2500 albums (#1026).
+function cappedKey(nContainers, nItems) {
+  if (nItems === 0) return 'library.cappedFolders';
+  if (nContainers === 0) return 'library.capped';
+  return 'library.cappedMixed';
+}
+
 // libraryCountText: "shown / total" for tracks, with a "+" while more are still
 // loading or the folder was capped, so the user knows the list is partial.
 function libraryCountText() {
-  const total = ((libState.page && libState.page.items) || []).length;
-  const shown = libraryFilteredItems().length;
+  // Folders count as rows. In an album list the old track-only count read "0"
+  // next to 2500 albums (#1026).
+  const items = (libState.page && libState.page.items) || [];
+  const containers = (libState.page && libState.page.containers) || [];
+  const total = items.length + containers.length;
+  const shown = libraryFilteredItems().length + libraryFilteredContainers().length;
   const more = libState.loadingMore || libState.capped ? '+' : '';
   return (libState.filter ? `${shown} / ${total}${more}` : `${total}${more}`);
 }
@@ -886,14 +910,19 @@ function renderLibrary() {
         <button class="btn btn-mini toggle-btn lib-queue-shuffle${libState.shuffle ? ' active' : ''}" title="${escapeAttr(t('controls.shuffle'))}">&#128256; ${escapeHtml(t('controls.shuffle'))}</button>
         <button class="btn btn-mini toggle-btn lib-queue-repeat${libState.repeat !== 'off' ? ' active' : ''}" title="${escapeAttr(t('controls.repeat'))}">&#128257; ${escapeHtml(t('controls.repeat'))}${libState.repeat === 'one' ? ' ¹' : ''}</button>
       </div>` : '';
-    const searchRow = nItems > 0 ? `
+    // The search row used to be tied to nItems, so a folder holding only
+    // sub-folders (every "by Album" / "by Artist" list there is) had no search
+    // box at all, while the capped note below still told the user to use it. That
+    // is what #1026 reported: 2500 albums, a note pointing at a control that was
+    // not on screen. Any row at all is reason enough to offer the filter.
+    const searchRow = (nItems > 0 || nContainers > 0) ? `
       <div class="library-search-row">
         <input type="search" class="library-search" id="libSearch" placeholder="${escapeAttr(t('library.searchPlaceholder'))}" value="${escapeAttr(libState.filter || '')}">
         <span class="library-count" id="libCount">${escapeHtml(libraryCountText())}</span>
       </div>` : '';
     const moreNote = libState.loadingMore
       ? `<p class="library-loading-more">${escapeHtml(t('library.loadingMore'))}</p>`
-      : (libState.capped ? `<p class="library-loading-more">${escapeHtml(t('library.capped', { n: LIB_MAX }))}</p>` : '');
+      : (libState.capped ? `<p class="library-loading-more">${escapeHtml(t(cappedKey(nContainers, nItems), { n: LIB_MAX }))}</p>` : '');
     const empty = (nContainers === 0 && nItems === 0)
       ? `<p class="library-empty-folder">${escapeHtml(t('library.emptyFolder'))}</p>` : '';
 
