@@ -171,8 +171,33 @@ func (a *App) SaveFolderPreset(host string, port int, slot int, payloadJSON stri
 // the Spotify logo, and did not recall the playlist). The agent fills the
 // account and a stable playlist cover when they are empty.
 func (a *App) SaveSpotifyPreset(host string, port int, slot int, name, uri, account string) error {
-	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+	err := a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
 		Preset{Slot: slot, Name: name, Type: "spotify", URI: uri, Account: account})
+	// A save left no trace at all in str.log, which is why "I saw two different
+	// notices for the same long press" could not be answered from a diagnostic
+	// bundle (#976, 2026-09-26): nothing recorded that a save had even happened,
+	// let alone which warning the app decided to show.
+	if a.logger != nil {
+		if err != nil {
+			a.logger.Info("spotify preset save: refused", "host", host, "slot", slot, "name", name, "err", err)
+		} else {
+			a.logger.Info("spotify preset save: stored", "host", host, "slot", slot, "name", name, "uri", uri, "account", account)
+		}
+	}
+	return err
+}
+
+// LogSpotifySaveGate records what the app knew about this speaker's Spotify state
+// when it decided whether to warn after a save. The three fields are "yes", "no"
+// or "unknown", because "the speaker could not be asked" must stay separate from
+// "the speaker said no": only the latter is a reason to warn, and the difference
+// is invisible in a log that records neither (#976).
+func (a *App) LogSpotifySaveGate(host string, slot int, canRecall, premiumRequired, notice string) {
+	if a.logger == nil {
+		return
+	}
+	a.logger.Info("spotify preset save gate", "host", host, "slot", slot,
+		"canRecall", canRecall, "premiumRequired", premiumRequired, "notice", notice)
 }
 
 // CopyPresetsAcrossBoxes copies every preset (slots 1-6) from a source speaker
