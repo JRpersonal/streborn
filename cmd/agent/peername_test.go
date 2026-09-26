@@ -40,7 +40,7 @@ func TestPeerKeepsItsNameAcrossAnAddressChange(t *testing.T) {
 		"192.0.2.10": {name: "Kitchen", deviceID: "AABBCC001122", port: 8888},
 	}
 
-	e := adoptPeerEntryLocked("192.0.2.99", "AABBCC001122")
+	e := adoptPeerEntryLocked("192.0.2.99", "AABBCC001122", "")
 
 	if e.name != "Kitchen" {
 		t.Fatalf("the moved speaker must keep its known name, got %q", e.name)
@@ -68,7 +68,7 @@ func TestUnknownPeerGetsItsOwnEntry(t *testing.T) {
 		"192.0.2.10": {name: "Kitchen", deviceID: "AABBCC001122"},
 	}
 
-	e := adoptPeerEntryLocked("192.0.2.50", "DDEEFF334455")
+	e := adoptPeerEntryLocked("192.0.2.50", "DDEEFF334455", "")
 
 	if e.name != "" {
 		t.Fatalf("a speaker we have never seen must not inherit a name, got %q", e.name)
@@ -87,7 +87,7 @@ func TestPeerWithoutDeviceIDDoesNotAdopt(t *testing.T) {
 		"192.0.2.10": {name: "Kitchen", deviceID: "AABBCC001122"},
 	}
 
-	e := adoptPeerEntryLocked("192.0.2.77", "")
+	e := adoptPeerEntryLocked("192.0.2.77", "", "")
 
 	if e.name != "" {
 		t.Fatalf("an unidentified speaker must not adopt a name, got %q", e.name)

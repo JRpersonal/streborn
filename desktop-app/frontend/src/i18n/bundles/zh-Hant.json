@@ -1384,6 +1384,7 @@
   "speaker.conflictRemoveBtn": "移除殘餘檔案",
   "speaker.noWifiBanner": "{{name}}：STR 還沒有儲存這台喇叭的 Wi-Fi。目前這樣用完全沒問題。如果你把 Wi-Fi 儲存起來，停電或網路中斷之後喇叭就能自己重新連上。",
   "speaker.stormBanner": "{{name}} 現在拒絕播放每一個電台。它和 STR 本機用來取代 Bose 雲端的服務之間的登入掉了。這純粹是內部的事：不牽涉你的任何帳號，你也不用輸入什麼。重新啟動就會好。請不要拔電源，那會把喇叭的時鐘歸零，只會更糟。",
+  "speaker.groupKeyErrorBanner": "{{name}}：喇叭拒絕了遙控器上群組鍵的最後一次按壓。原因：{{reason}}",
   "speaker.stormRestartBtn": "重新啟動喇叭",
   "speaker.stormRestarting": "正在重新啟動 {{name}}，大約要一分鐘。",
   "speaker.wifiSaveBtn": "儲存 Wi-Fi",

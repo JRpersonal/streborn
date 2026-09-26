@@ -33,10 +33,23 @@ type peerEntry struct {
 	// (cable to Wi-Fi, a new DHCP lease) arrives as a brand new entry under a
 	// stand-in name while its old entry lingers alongside, and the owner sees
 	// both a wrong name and a duplicate until the stale one ages out (#494).
-	deviceID  string
-	port      int // last web port that answered (0 = never reached)
-	lastSeen  time.Time
-	reachable bool // answered a web-port probe on the most recent sweep
+	deviceID string
+	// boxDeviceID is the FIRMWARE's own id for the same speaker, announced
+	// alongside the agent id over mDNS.
+	//
+	// On a two-chip chassis the two differ, and both are legitimate names for
+	// one speaker. Keeping only the agent id is what killed every group-key
+	// press on those boxes: the desktop app deliberately stores the FIRMWARE
+	// id in a template member, the guard in groupkeys compared it against the
+	// announced id, they never matched, and every press was refused with
+	// "another speaker answers at this address now" on a LAN where nothing had
+	// moved. Measured 2026-09-26 on three ST10s (sm2, ids differ) against an
+	// ST30 and a Portable (scm, ids identical), so the split is the chassis,
+	// not the model.
+	boxDeviceID string
+	port        int // last web port that answered (0 = never reached)
+	lastSeen    time.Time
+	reachable   bool // answered a web-port probe on the most recent sweep
 }
 
 var (
@@ -57,11 +70,16 @@ const peersStorePath = "/mnt/nv/streborn/peers.json"
 
 // peerDiskEntry is the JSON shape of one persisted peer.
 type peerDiskEntry struct {
-	IP       string    `json:"ip"`
-	Name     string    `json:"name"`
-	DeviceID string    `json:"deviceID,omitempty"`
-	Port     int       `json:"port"`
-	LastSeen time.Time `json:"lastSeen"`
+	IP       string `json:"ip"`
+	Name     string `json:"name"`
+	DeviceID string `json:"deviceID,omitempty"`
+	// BoxDeviceID persists the firmware id too. Without it the roster loses
+	// that half at every reboot and only regains it on the next mDNS sweep, so
+	// a group-key press in the boot window would be refused again for exactly
+	// the reason this field exists to prevent.
+	BoxDeviceID string    `json:"boxDeviceID,omitempty"`
+	Port        int       `json:"port"`
+	LastSeen    time.Time `json:"lastSeen"`
 }
 
 // adoptPeerEntryLocked returns the roster entry for ip, moving an existing
@@ -77,7 +95,7 @@ type peerDiskEntry struct {
 // already known.
 //
 // Caller holds peersMu.
-func adoptPeerEntryLocked(ip, deviceID string) *peerEntry {
+func adoptPeerEntryLocked(ip, deviceID, boxDeviceID string) *peerEntry {
 	e := peersByIP[ip]
 	if e == nil {
 		if deviceID != "" {
@@ -96,6 +114,9 @@ func adoptPeerEntryLocked(ip, deviceID string) *peerEntry {
 	}
 	if deviceID != "" {
 		e.deviceID = deviceID
+	}
+	if boxDeviceID != "" {
+		e.boxDeviceID = boxDeviceID
 	}
 	return e
 }
@@ -127,7 +148,11 @@ func peerIPByDeviceID(deviceID string) string {
 	defer peersMu.Unlock()
 	best := ""
 	for ip, e := range peersByIP {
-		if !strings.EqualFold(e.deviceID, deviceID) {
+		// Either id names the speaker. A template member carries the FIRMWARE
+		// id, so matching only the announced one meant a speaker that moved
+		// could never be found again on a two-chip chassis.
+		if !strings.EqualFold(e.deviceID, deviceID) &&
+			!strings.EqualFold(e.boxDeviceID, deviceID) {
 			continue
 		}
 		if e.reachable {
@@ -149,6 +174,28 @@ func peerDeviceIDAt(ip string) string {
 		return e.deviceID
 	}
 	return ""
+}
+
+// peerDeviceIDsAt returns every id the roster knows the speaker at ip by: the
+// announced agent id and, on a two-chip chassis, the firmware's own id.
+//
+// Both are the same speaker. A caller that holds one of them must be able to
+// recognise the other, which is exactly what the group-key guard could not do.
+func peerDeviceIDsAt(ip string) []string {
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	e := peersByIP[strings.TrimSpace(ip)]
+	if e == nil {
+		return nil
+	}
+	out := make([]string, 0, 2)
+	if e.deviceID != "" {
+		out = append(out, e.deviceID)
+	}
+	if e.boxDeviceID != "" && !strings.EqualFold(e.boxDeviceID, e.deviceID) {
+		out = append(out, e.boxDeviceID)
+	}
+	return out
 }
 
 // ownLANIPv4 returns this speaker's own LAN address: the lowest non-loopback
@@ -187,7 +234,7 @@ func loadPersistedPeers(logger *slog.Logger) {
 		if d.IP == "" || now.Sub(d.LastSeen) > peerTTL {
 			continue
 		}
-		peersByIP[d.IP] = &peerEntry{name: d.Name, deviceID: d.DeviceID, port: d.Port, lastSeen: d.LastSeen}
+		peersByIP[d.IP] = &peerEntry{name: d.Name, deviceID: d.DeviceID, boxDeviceID: d.BoxDeviceID, port: d.Port, lastSeen: d.LastSeen}
 		n++
 	}
 	peersMu.Unlock()
@@ -204,11 +251,11 @@ func savePersistedPeersLocked(logger *slog.Logger) {
 	list := make([]peerDiskEntry, 0, len(peersByIP))
 	fp := ""
 	for ip, e := range peersByIP {
-		list = append(list, peerDiskEntry{IP: ip, Name: e.name, DeviceID: e.deviceID, Port: e.port, LastSeen: e.lastSeen})
+		list = append(list, peerDiskEntry{IP: ip, Name: e.name, DeviceID: e.deviceID, BoxDeviceID: e.boxDeviceID, Port: e.port, LastSeen: e.lastSeen})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].IP < list[j].IP })
 	for _, d := range list {
-		fp += d.IP + "|" + d.Name + "|" + d.DeviceID + "|" + strconv.Itoa(d.Port) + ";"
+		fp += d.IP + "|" + d.Name + "|" + d.DeviceID + "|" + d.BoxDeviceID + "|" + strconv.Itoa(d.Port) + ";"
 	}
 	if fp == peersSavedFP && time.Since(peersSavedAt) < 6*time.Hour {
 		return
@@ -533,8 +580,8 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		ch, err := discovery.Browse(bctx, logger)
 		mine := ownIPv4s()
 		type found struct {
-			ip, name, deviceID string
-			port               int
+			ip, name, deviceID, boxDeviceID string
+			port                            int
 		}
 		var fresh []found
 		if err == nil {
@@ -579,7 +626,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 						name = friendly
 					}
 				}
-				fresh = append(fresh, found{ip: ip, name: name, deviceID: inst.DeviceID, port: reachableWebPort(ip)})
+				fresh = append(fresh, found{ip: ip, name: name, deviceID: inst.DeviceID, boxDeviceID: inst.BoxDeviceID, port: reachableWebPort(ip)})
 			}
 		} else {
 			logger.Debug("peers browse failed", "err", err)
@@ -589,7 +636,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		peersMu.Lock()
 		now := time.Now()
 		for _, f := range fresh {
-			e := adoptPeerEntryLocked(f.ip, f.deviceID)
+			e := adoptPeerEntryLocked(f.ip, f.deviceID, f.boxDeviceID)
 			// Never let a placeholder overwrite a name we already know: mDNS can
 			// answer with the instance name only, and replacing "Kitchen" with
 			// "str-192.0.2.5" is the #494 defect arriving by the back door.

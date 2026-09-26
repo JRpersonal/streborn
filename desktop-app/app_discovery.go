@@ -181,6 +181,10 @@ type BoxInfo struct {
 	// healthy (#986). Empty on a healthy box. The Settings action that removes a
 	// rival mod's leftovers also resets this.
 	ForeignCloudURL string `json:"foreignCloudURL,omitempty"`
+	// GroupKeyError is the reason the last thumbs-key press was refused, when
+	// it was recent. Before this the refusal was invisible: the owner pressed
+	// the key, nothing happened, and only a diagnostic bundle explained why.
+	GroupKeyError string `json:"groupKeyError,omitempty"`
 	// Storm1036 is true while the box rejects essentially every preset recall
 	// (Bose error 1036, "not logged in"). Nothing the user presses will play
 	// until the state clears, and the remedy people reach for on their own,
@@ -1741,6 +1745,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		BoxHealth:       jsonStringField(s, "boxHealth"),
 		ConflictingMod:  jsonStringField(s, "conflictingMod"),
 		ForeignCloudURL: jsonStringField(s, "foreignCloudURL"),
+		GroupKeyError:   jsonStringField(s, "groupKeyError"),
 		Storm1036:       jsonStringField(s, "preset1036Storm") == "active",
 		Storm1036SinceSec: func() int {
 			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))

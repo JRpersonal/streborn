@@ -355,7 +355,8 @@ func run() error {
 			}
 			return peerIPByDeviceID(id)
 		},
-		PeerDeviceID: peerDeviceIDAt,
+		PeerDeviceID:  peerDeviceIDAt,
+		PeerDeviceIDs: peerDeviceIDsAt,
 	}))
 	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
 

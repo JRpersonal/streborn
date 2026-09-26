@@ -1384,6 +1384,7 @@
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: na tym głośniku nie ma zapisanej kopii Wi-Fi od STR. Zwykle łączy się on sam; z kopią (jednorazowo w ustawieniach głośnika) głośnik może przy włączeniu sam naprawić swoje Wi-Fi, gdyby je utracił.",
   "speaker.stormBanner": "{{name}} odrzuca teraz każdą stację. Głośnik utracił logowanie, które wykonuje do lokalnego zamiennika chmury Bose w STR. To sprawa wewnętrzna: nie dotyczy żadnego twojego konta i nie musisz nic wpisywać. Ponowne uruchomienie to naprawia. Nie wyciągaj wtyczki, to cofa zegar głośnika i pogarsza sprawę.",
+  "speaker.groupKeyErrorBanner": "{{name}}: głośnik odrzucił ostatnie naciśnięcie przycisku grupy na pilocie. Powód: {{reason}}",
   "speaker.stormRestartBtn": "Uruchom głośnik ponownie",
   "speaker.stormRestarting": "Ponowne uruchamianie {{name}}, to potrwa około minuty.",
   "speaker.wifiSaveBtn": "Zapisz Wi-Fi",

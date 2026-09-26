@@ -140,6 +140,22 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if f := foreignCloudURL(); f != "" {
 		out["foreignCloudURL"] = f
 	}
+	// A group-key press that was refused. Until now the reason lived only in
+	// the debugState snapshot, so the owner pressed the thumbs key, nothing
+	// happened, and nothing anywhere said why. Two users spent days re-saving
+	// a group that was never at fault (2026-09-26). Emitted only while it is
+	// recent, so the polled response stays small and a long-fixed failure does
+	// not haunt the speaker for ever.
+	if s.groupKeys != nil {
+		if a, ok := s.groupKeys.LastError(); ok && time.Since(a.At) < groupKeyErrorWindow {
+			out["groupKeyError"] = a.Error
+			out["groupKeyErrorKey"] = a.Key
+			out["groupKeyErrorAgeSec"] = strconv.FormatInt(int64(time.Since(a.At).Seconds()), 10)
+			if a.Template != "" {
+				out["groupKeyErrorTemplate"] = a.Template
+			}
+		}
+	}
 	// Ongoing 1036 storm: the box is refusing essentially every recall, so
 	// nothing the user presses will play until the state is cleared. Emitted
 	// only while it lasts, and carrying the age so the app can say how long it
@@ -1188,6 +1204,11 @@ func hasSavedWLANCreds() bool {
 // #698 added OpenCloudTouch (SoundTouch Hybrid). If both tools somehow left
 // artifacts, AfterTouch wins the single return value; the desktop app shows
 // the string verbatim, so no i18n is involved.
+// groupKeyErrorWindow is how recent a refused press must be to still be
+// reported to the app. A press is a human action and the owner is standing
+// there; an hour later it is history, not news.
+const groupKeyErrorWindow = time.Hour
+
 func detectConflictingMod() string {
 	if detectAfterTouch() {
 		return "AfterTouch"

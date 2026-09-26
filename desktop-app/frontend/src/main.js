@@ -2478,6 +2478,11 @@ function checkBoxIssueBanner() {
   // recallRefusal is the storm's quiet sibling (no 1036 ever fires, the box
   // just drops its source for every recall); same remedy, same banner.
   const storm = boxes.filter(b => b && (b.storm1036 || b.recallRefusal));
+  // A thumbs-key press the speaker refused. Not dismissible and worth its own
+  // line: the press produced NOTHING visible before this, so two owners spent
+  // days re-saving a group that was never the problem (2026-09-26). The
+  // speaker's own reason is shown verbatim rather than paraphrased.
+  const keyErr = boxes.filter(b => b && b.groupKeyError);
   const msgs = [];
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
@@ -2496,6 +2501,12 @@ function checkBoxIssueBanner() {
   if (storm.length) {
     const names = storm.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
+  }
+  if (keyErr.length) {
+    const names = keyErr.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
+      name: names, reason: keyErr[0].groupKeyError,
+    })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }
   // When a speaker has no saved Wi-Fi, give the user a direct way to act on it

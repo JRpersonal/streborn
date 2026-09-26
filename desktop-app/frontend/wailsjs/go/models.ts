@@ -44,6 +44,7 @@ export namespace main {
 	    boxHealth?: string;
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
+	    groupKeyError?: string;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
@@ -76,6 +77,7 @@ export namespace main {
 	        this.boxHealth = source["boxHealth"];
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
+	        this.groupKeyError = source["groupKeyError"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];
