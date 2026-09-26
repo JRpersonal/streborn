@@ -190,6 +190,14 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// ReplayFolderCard replays a Recently-played FOLDER card as the whole folder
+// again instead of as its first track. Optional binding, per the note above; a
+// speaker whose agent predates the endpoint rejects it with
+// folder_replay_unsupported and the caller falls back to the old single play.
+export function ReplayFolderCard(host, port, key, name, art) {
+  return callOptionalBinding('ReplayFolderCard', [host, port, key, name, art]);
+}
+
 // PushFavorites stores the starred stations on one speaker, so the phone page
 // shows the same list. Optional binding, per the note above.
 export function PushFavorites(host, port, favoritesJSON) {

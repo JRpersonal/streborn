@@ -201,6 +201,8 @@ export function RenamePreset(arg1:string,arg2:number,arg3:number,arg4:string):Pr
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
+export function ReplayFolderCard(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
+
 export function RescuedSpeakerCount():Promise<number>;
 
 export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;

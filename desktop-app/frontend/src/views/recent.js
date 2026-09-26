@@ -16,7 +16,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status } from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, isMissingBinding } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
@@ -304,6 +304,26 @@ function recentCardHTML(c, i, nowPlaying) {
     + `<div class="rc-actions">${actions}</div></div>${tracks}</div>`;
 }
 
+// replayFolderCard starts a folder card as a whole queue again. Returns true when
+// it took the play, false when this card is not a folder card or the speaker
+// cannot do it yet, in which case the caller replays the single stored track.
+async function replayFolderCard(c, box) {
+  if (!box || !String(c.cardKey || '').startsWith('queue:')) return false;
+  const art = (c.art || '').split('|')[0].trim();
+  try {
+    await ReplayFolderCard(box.host, box.port, c.cardKey, c.name || '', art);
+    showToast(t('recent.playing', { name: c.name || '' }));
+    return true;
+  } catch (err) {
+    const msg = String(err && err.message ? err.message : err);
+    if (isMissingBinding(err) || msg.includes('folder_replay_unsupported')) return false;
+    // A real refusal (server offline, folder gone) is the user's answer. Playing
+    // the one stored track instead would hide it and look like the old bug.
+    showError(err);
+    return true;
+  }
+}
+
 function wireCard(c, i) {
   const playBtn = document.getElementById('recPlay' + i);
   const pickBtn = document.getElementById('recPick' + i);
@@ -330,6 +350,13 @@ function wireCard(c, i) {
           // PlayURL with the stored MIME makes the box play it straight instead.
           const box = c.box || state.currentBox;
           const art = (c.art || '').split('|')[0].trim();
+          // A FOLDER card is not a track. Its key names the media server and the
+          // container, so the speaker can rebuild the whole queue; the stored URL
+          // is only its first track, and playing that clears the queue, which is
+          // why a replayed folder used to play one song and then stop with the
+          // indicator sitting amber (#978). Falls back to the single track when
+          // the speaker's agent is older than the endpoint.
+          if (await replayFolderCard(c, box)) return;
           // 0: a Recently-played card stores no duration, so a replay still
           // draws no bar. Tracked with the rest of the replay gap in #817.
           await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', 0);

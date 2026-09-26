@@ -495,14 +495,7 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 	// Only REGISTERED servers are browsable, the same rule the search applies:
 	// this endpoint answers an unauthenticated LAN GET, and it must not turn
 	// the speaker into a generic proxy for probing arbitrary UPnP devices.
-	registered := false
-	for _, reg := range s.mediaServers.List() {
-		if udnKey(reg.ID) == udnKey(udn) {
-			registered = true
-			break
-		}
-	}
-	if !registered {
+	if !s.mediaServerRegistered(udn) {
 		http.Error(w, "not a registered music source", http.StatusNotFound)
 		return
 	}

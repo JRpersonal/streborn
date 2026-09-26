@@ -394,6 +394,10 @@ export function RepairInstallViaSSH(arg1, arg2) {
   return window['go']['main']['App']['RepairInstallViaSSH'](arg1, arg2);
 }
 
+export function ReplayFolderCard(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['ReplayFolderCard'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function RescuedSpeakerCount() {
   return window['go']['main']['App']['RescuedSpeakerCount']();
 }
