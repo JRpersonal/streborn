@@ -195,6 +195,8 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	track, artist, cover, context := m.curName, m.curArtist, m.curCover, m.lastContext
 	lowDisk, lowDiskFreeKB := m.lowDisk, m.lowDiskFreeKB
+	// Whatever is cached, never a fetch: this handler is polled.
+	product := m.productType
 	m.mu.Unlock()
 	// Prefer the live track from /status over the laggy cached metadata events.
 	lt, la, lc, state := m.liveNowPlayingState(r.Context())
@@ -250,6 +252,14 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// (#973). Absent on an agent older than this, which the apps read as
 		// "cannot tell" and treat as before.
 		CanRecall bool `json:"canRecall"`
+		// Product is what the speaker believes the account plan is: "premium",
+		// "free", "open", or absent when it could not find out. The third state
+		// is the point: premiumRequired false means EITHER a Premium account or
+		// a question that went unanswered, and until this field existed a
+		// diagnostic could not tell those apart. Since the plan is read by the
+		// speaker itself (a token from the engine, then one call to Spotify),
+		// "absent" now also covers a speaker that cannot reach out at all.
+		Product string `json:"product,omitempty"`
 	}{
 		Ready:           m.Ready(),
 		Bitrate:         m.Bitrate(),
@@ -261,6 +271,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Account:         m.currentUsername(r.Context()),
 		PremiumRequired: m.PremiumRequired(),
 		CanRecall:       m.CanRecall(r.Context()),
+		Product:         product,
 		LowDisk:         lowDisk,
 		LowDiskFreeKB:   lowDiskFreeKB,
 		AudioKeyRefused: m.AudioKeyRefused(),

@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -147,4 +148,39 @@ func productTestManager(t *testing.T, engineURL string) *Manager {
 	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	m.apiAddr = strings.TrimPrefix(engineURL, "http://")
 	return m
+}
+
+// The three states have to be visible from outside, or a diagnostic cannot tell
+// a Premium account from a question nobody could answer: both leave
+// premiumRequired false.
+func TestInfoReportsWhatItBelievesTheAccountPlanIs(t *testing.T) {
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer engine.Close()
+	m := productTestManager(t, engine.URL)
+
+	// Nothing known yet: the field is absent rather than a guess.
+	rr := httptest.NewRecorder()
+	m.ServeInfo(rr, httptest.NewRequest("GET", "/spotify/info", nil))
+	var got map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, present := got["product"]; present {
+		t.Errorf("an unknown plan must not be reported as one: %v", got["product"])
+	}
+
+	m.mu.Lock()
+	m.productType = "premium"
+	m.mu.Unlock()
+
+	rr = httptest.NewRecorder()
+	m.ServeInfo(rr, httptest.NewRequest("GET", "/spotify/info", nil))
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["product"] != "premium" {
+		t.Errorf("product = %v, want premium", got["product"])
+	}
 }
