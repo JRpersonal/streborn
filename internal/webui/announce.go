@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
 // Audio-notification ("announcement") support (#125), the cloud-free replacement
@@ -433,13 +435,49 @@ func clampVolume(v int) int {
 	return v
 }
 
-// boxGet is a small GET helper for the box's read-only :8090 endpoints.
+// boxGet is a small GET helper for the box's read-only :8090 endpoints, for the
+// speaker this agent runs ON. Its host comes from the agent's own configuration,
+// so there is nothing for a caller to steer.
 func boxGet(ctx context.Context, u string, limit int64) ([]byte, error) {
+	return boxGetWith(ctx, &http.Client{Timeout: 4 * time.Second}, u, limit)
+}
+
+// boxGetPeer is the same read aimed at ANOTHER speaker, whose address arrived
+// from outside: a zone member, a group the app formed, anything that reached the
+// agent's unauthenticated LAN port. The port and path are fixed, so the worst a
+// caller could do is point the speaker at a host of their choosing, and the
+// dialer refuses the ones that matter (loopback, link-local, metadata). Private
+// LAN addresses stay allowed, because that is where the other speakers live.
+//
+// Same rule as the artwork proxy earned on 2026-08-04: guard at DIAL time, not
+// on the URL string, so a name that resolves inwards is caught too.
+func boxGetPeer(ctx context.Context, u string, limit int64) ([]byte, error) {
+	return boxGetWith(ctx, netutil.GuardedClient(4*time.Second), u, limit)
+}
+
+// peerBoxURL builds the :8090 URL for ANOTHER speaker, joining the host instead
+// of interpolating it.
+//
+// The dial guard alone is not enough here, and that is worth spelling out. It
+// asks which ADDRESS is being connected to; it cannot ask whether the address
+// was smuggled. A member address of "192.0.2.9:80/removeGroup?x=" concatenated
+// into "http://" + host + ":8090/now_playing" parses as host 192.0.2.9:80, path
+// /removeGroup, and the guard is perfectly happy: that is a normal LAN address.
+// Verified by running it on 2026-09-26. So the host is checked for being a bare
+// address at the point where the URL is built, and "" comes back when it is not,
+// which every caller turns into a request it cannot make.
+func peerBoxURL(host, path string) string {
+	if !isLANPeer(host) {
+		return ""
+	}
+	return "http://" + net.JoinHostPort(host, "8090") + path
+}
+
+func boxGetWith(ctx context.Context, cl *http.Client, u string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
-	cl := &http.Client{Timeout: 4 * time.Second}
 	resp, err := cl.Do(req)
 	if err != nil {
 		return nil, err

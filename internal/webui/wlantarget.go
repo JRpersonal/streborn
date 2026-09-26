@@ -3,12 +3,11 @@
 package webui
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
-	"strconv"
 	"time"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // wlanTargetPath holds the STANDING intent: the network the user last moved
@@ -96,7 +95,7 @@ func writeWlanTargetAt(path string, t wlanTarget) error {
 		return err
 	}
 	if _, werr := f.Write(b); werr != nil {
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(tmp)
 		return werr
 	}
@@ -240,6 +239,16 @@ func ssidTag(s string) string {
 	if s == "" {
 		return "none"
 	}
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])[:6] + ":" + strconv.Itoa(len(s))
+	// Salted, and the length is gone.
+	//
+	// This tag exists so a log line can say WHICH network was meant without
+	// writing the name. Unsalted it did more than that: 46 of 72 sample bundles
+	// carried one, 58 distinct tags in the corpus, and the most common joined 15
+	// bundles into a single household that anyone downloading the attachments
+	// could follow across unrelated reports (#971). The length made it worse, by
+	// narrowing a guess before it started.
+	//
+	// The salt belongs to this speaker and never leaves it, so the tag still
+	// distinguishes networks inside one log and says nothing to a stranger.
+	return "ssid:" + anonymise.HashShort(s)
 }

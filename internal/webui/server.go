@@ -866,7 +866,7 @@ func quietWakeNeeded(np nowPlayingSnapshot) bool {
 // reached through it (same pattern as hushforupload.go and
 // dissolvestragglers.go). Production always uses the real implementation.
 var quietWakeNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
-	return fetchNowPlaying(ctx, host)
+	return fetchNowPlayingPeer(ctx, host)
 }
 
 // quietWake wakes the speaker for a group operation, not for listening to

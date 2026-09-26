@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/sticksetup"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // App is the central state struct.
@@ -187,6 +190,18 @@ func (a *App) startup(ctx context.Context) {
 	// and the installers the update cache no longer needs.
 	a.cleanupOldBinary()
 	a.pruneStagedUpdates(appVersion)
+	// The salt behind every pseudonym in an exported bundle. Generated once for
+	// this installation and kept beside the app's own state, never inside a
+	// bundle: without it the DEV# and MAC# tokens were a 24-bit sweep away from
+	// the real addresses, and a list of common room names recovered 14% of the
+	// speaker names in a 72-bundle corpus (#971). A failure here leaves the old
+	// unsalted behaviour rather than breaking an export, so it is logged and
+	// carried on from.
+	if dir, err := os.UserConfigDir(); err == nil {
+		if serr := anonymise.LoadOrCreateSalt(filepath.Join(dir, "ST Reborn")); serr != nil {
+			a.logger.Warn("could not establish the bundle anonymisation salt", "err", serr)
+		}
+	}
 	// Route the dlna package's logs through our file logger so the
 	// per-interface SSDP M-SEARCH summary lines land in str.log next
 	// to the STR discovery cycles. Without this, a media server scan
