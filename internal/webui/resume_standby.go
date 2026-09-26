@@ -240,6 +240,10 @@ func (s *Server) ResumeLastPlay() {
 			return
 		}
 		s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
+		// The per-box start level, when the owner set one. Only here, on the
+		// automatic resume: a level the user chose while the music plays is
+		// theirs and is never overwritten.
+		s.applyStartVolume("wake resume")
 	}()
 }
 

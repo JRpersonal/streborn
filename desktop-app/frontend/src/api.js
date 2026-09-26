@@ -190,6 +190,22 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// PushFavorites stores the starred stations on one speaker, so the phone page
+// shows the same list. Optional binding, per the note above.
+export function PushFavorites(host, port, favoritesJSON) {
+  return callOptionalBinding('PushFavorites', [host, port, favoritesJSON]);
+}
+
+// GetStartVolume / SetStartVolume drive the per-box level the speaker returns
+// to when it wakes and plays again. Optional bindings, per the note above.
+export function GetStartVolume(host, port) {
+  return callOptionalBinding('GetStartVolume', [host, port]);
+}
+
+export function SetStartVolume(host, port, volume) {
+  return callOptionalBinding('SetStartVolume', [host, port, volume]);
+}
+
 // BoxForeignInfluence / UndoForeignFinding are the safe-haven view: what other
 // tools have done to this speaker, and taking one of those things back.
 // Optional bindings, per the note above.

@@ -543,6 +543,9 @@ type Server struct {
 	// while Spotify runs is the common one, and until now it left no trace the
 	// owner could see, so the key simply snapped back.
 	heldRefusalFn func() (time.Time, int, string, string, bool)
+	// startVolumePath overrides the NAND file holding the per-box start
+	// level, so a test can point it at a temp tree.
+	startVolumePath string
 
 	// balanceWriteFn sends a stereo-balance write on the box WebSocket (see
 	// SetBalanceWriteFn). nil means no socket is available, and the balance
@@ -1190,6 +1193,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
 	mux.HandleFunc("/api/box/restore-cloud-url", s.handleRestoreCloudURL)
+	mux.HandleFunc("/api/box/start-volume", s.handleStartVolume)
+	mux.HandleFunc("/api/favorites", s.handleFavorites)
 	mux.HandleFunc("/api/box/foreign-influence", s.handleForeignInfluence)
 	mux.HandleFunc("/api/box/wake", s.handleBoxWake)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)

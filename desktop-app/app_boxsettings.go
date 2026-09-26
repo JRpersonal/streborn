@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // BoxSettings fetches name/volume/bass/network/sources of the box via the stick.
@@ -309,4 +310,69 @@ func (a *App) UndoForeignFinding(host string, port int, id string) (map[string]a
 	a.logger.Info("foreign influence: undo", "host", host, "id", id,
 		"status", out["status"], "remaining", out["remaining"])
 	return out, nil
+}
+
+// --- Start volume: the level a speaker returns to after a rest -----------
+//
+// Asked for on 2026-09-26 by an owner whose Portable and ST20 do not keep
+// their level over a power cycle. Off by default and applied only on the
+// automatic resume, never on a play the user started.
+
+// GetStartVolume reads the per-box start level -> {supported, volume}.
+// volume 0 means off, which is the default.
+func (a *App) GetStartVolume(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/start-volume", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetStartVolume stores the per-box start level. 0 turns it off.
+func (a *App) SetStartVolume(host string, port int, volume int) error {
+	body, _ := json.Marshal(map[string]int{"volume": volume})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/start-volume",
+		"application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	a.logger.Info("start volume set", "host", host, "volume", volume)
+	return nil
+}
+
+// PushFavorites stores the starred stations on ONE speaker, so every phone
+// that opens that speaker's page sees the same list.
+//
+// The stars used to live only in this app's own storage on one PC, which is
+// why a user asked on 2026-09-26 where to find them on his phone. Nowhere was
+// the honest answer.
+//
+// The agent ignores an unchanged list rather than writing it again, so calling
+// this on every discovery cycle costs nothing on the speaker's flash.
+func (a *App) PushFavorites(host string, port int, favoritesJSON string) error {
+	body := strings.TrimSpace(favoritesJSON)
+	if body == "" {
+		body = "[]"
+	}
+	resp, err := a.boxDo(host, port, http.MethodPut, "/api/favorites", "application/json", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
 }

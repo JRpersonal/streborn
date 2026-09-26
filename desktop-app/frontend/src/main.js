@@ -12,6 +12,7 @@ import {
   PlayURL,
   RebootBox,
   RestoreSTRCloud,
+  PushFavorites,
   RecordUpdateIntent,
   UpdateFailureReport,
   SetOTARunning,
@@ -8342,6 +8343,28 @@ function loadFavStore() {
 }
 function saveFavStore(arr) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(arr)); } catch {}
+  // And onto the speakers, so the phone page shows the same list. Until this
+  // the stars lived only here, on one PC, and a user asking where to find them
+  // on his phone got the honest answer: nowhere (2026-09-26).
+  pushFavoritesToBoxes(arr);
+}
+
+// pushFavoritesToBoxes stores the list on every speaker that runs STR.
+//
+// Every speaker, not one: whichever speaker's page the phone opens has to show
+// the same stars, and there is no central place to put them. The agent ignores
+// an unchanged list instead of writing it again, so this is cheap to repeat
+// and costs nothing on the speakers' flash.
+//
+// Best effort by design. A speaker that is asleep or off simply misses this
+// round and gets the list on the next save or the next app start; a failure
+// here must never make starring a station look broken.
+function pushFavoritesToBoxes(arr) {
+  const json = JSON.stringify(arr || []);
+  (state.boxes || []).forEach((b) => {
+    if (!b || b.offline || b.kind === 'stock') return;
+    PushFavorites(b.host, b.port, json).catch(() => {});
+  });
 }
 function favMinimal(s) {
   return {

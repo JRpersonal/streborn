@@ -206,6 +206,10 @@ export function GetResumeOnPowerOn(arg1, arg2) {
   return window['go']['main']['App']['GetResumeOnPowerOn'](arg1, arg2);
 }
 
+export function GetStartVolume(arg1, arg2) {
+  return window['go']['main']['App']['GetStartVolume'](arg1, arg2);
+}
+
 export function GetStereoPairName(arg1) {
   return window['go']['main']['App']['GetStereoPairName'](arg1);
 }
@@ -288,6 +292,10 @@ export function ProbeSetupAP() {
 
 export function ProbeTrackDelivery(arg1) {
   return window['go']['main']['App']['ProbeTrackDelivery'](arg1);
+}
+
+export function PushFavorites(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PushFavorites'](arg1, arg2, arg3);
 }
 
 export function PushStereoPairNameToBox(arg1, arg2, arg3) {
@@ -500,6 +508,10 @@ export function SetResumeOnPowerOn(arg1, arg2, arg3) {
 
 export function SetSpotifyQuality(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetSpotifyQuality'](arg1, arg2, arg3);
+}
+
+export function SetStartVolume(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetStartVolume'](arg1, arg2, arg3);
 }
 
 export function SetStereoPairName(arg1, arg2) {
