@@ -31,6 +31,29 @@ func jsonString(s string) string {
 	return string(b)
 }
 
+// apiPostJSON posts to the engine and returns the response body. The engine
+// registers some READ endpoints as POST (/token is one), so a plain apiGet
+// there comes back 405 with a plain-text body that looks like an empty answer.
+func (m *Manager) apiPostJSON(ctx context.Context, path string) ([]byte, error) {
+	if m.client == nil {
+		return nil, fmt.Errorf("go-librespot %s: no engine client", path)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+m.apiAddr+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("go-librespot %s: status %d", path, resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
 func (m *Manager) apiPost(ctx context.Context, path string, body string) error {
 	return m.apiPostC(ctx, m.client, path, body)
 }

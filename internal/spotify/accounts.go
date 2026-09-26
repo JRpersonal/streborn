@@ -7,11 +7,14 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,6 +33,48 @@ import (
 // spotifyMeURL is the one Web API call STR makes. Everything else it needs comes
 // from the engine's own API.
 const spotifyMeURL = "https://api.spotify.com/v1/me"
+
+// errSpotifyRateLimited marks the one answer that has to change behaviour
+// rather than merely be logged.
+var errSpotifyRateLimited = errors.New("spotify answered 429, too many requests")
+
+// rateLimitError carries how long Spotify asked to be left alone.
+type rateLimitError struct{ after time.Duration }
+
+func (e rateLimitError) Error() string {
+	return fmt.Sprintf("%v (retry after %s)", errSpotifyRateLimited, e.after)
+}
+func (e rateLimitError) Unwrap() error { return errSpotifyRateLimited }
+
+const (
+	// productRateLimitQuiet is the fallback when Spotify rate-limits without
+	// saying for how long.
+	productRateLimitQuiet = 30 * time.Minute
+	// productRateLimitMin / Max bound what a Retry-After header can ask for:
+	// low enough that a short cooldown is honoured as the short cooldown it is
+	// (measured: Spotify asked for 42 seconds), high enough that a silly value
+	// cannot make the speaker ask in a loop or stop asking for a week.
+	productRateLimitMin = 30 * time.Second
+	productRateLimitMax = 6 * time.Hour
+)
+
+// parseRetryAfter reads the header both ways the spec allows, seconds or an
+// HTTP date, and keeps the result inside the bounds above. Spotify sends
+// seconds; the date form is here because the spec allows it and a surprise in
+// this direction costs a speaker its plan check for a day.
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return productRateLimitQuiet
+	}
+	d := productRateLimitQuiet
+	if secs, err := strconv.Atoi(v); err == nil {
+		d = time.Duration(secs) * time.Second
+	} else if when, err := http.ParseTime(v); err == nil {
+		d = time.Until(when)
+	}
+	return min(max(d, productRateLimitMin), productRateLimitMax)
+}
 
 // accountProduct returns the Spotify account product type ("premium"/"free"/
 // "open"), cached for a few minutes. Returns "" when unknown (the zeroconf token
@@ -56,20 +101,68 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 		m.mu.Unlock()
 		return p
 	}
+	quiet := m.productQuietUntil
 	m.mu.Unlock()
+	if time.Now().Before(quiet) {
+		return ""
+	}
 	data, err := m.spotifyWebGet(ctx, meURL)
 	if err != nil {
-		m.logger.Debug("spotify: could not read the account product type", "err", err)
+		// Info, not Debug: a plan that cannot be read is why a Premium warning
+		// does not appear, and Debug is off on a speaker, so the one line that
+		// explains it was invisible exactly when it was needed. Bounded by the
+		// 30 s retry gate in PremiumRequired, so it cannot become chatter.
+		var limited rateLimitError
+		if errors.As(err, &limited) {
+			// Each refusal is also an escalation: measured on a real account,
+			// Spotify asked for 37 s, then 47 s, then 57 s as the speaker kept
+			// coming back the moment each window expired. Honouring the header
+			// alone therefore keeps feeding the throttle. Double the previous
+			// wait instead, with the header as the floor.
+			// Spotify said "too often", and it also said for how long. Honour
+			// that: the first version of this waited six hours on a header that
+			// asked for forty-two seconds, which trades one wrong answer for
+			// another.
+			m.mu.Lock()
+			wait := limited.after
+			if grown := 2 * m.productQuietFor; grown > wait {
+				wait = grown
+			}
+			if wait > productRateLimitMax {
+				wait = productRateLimitMax
+			}
+			m.productQuietFor = wait
+			m.productQuietUntil = time.Now().Add(wait)
+			m.mu.Unlock()
+			m.logger.Info("spotify: leaving the account plan alone for a while", "wait", wait)
+		}
+		m.logger.Info("spotify: could not read the account plan from Spotify", "err", err)
 		return ""
 	}
 	var me struct {
 		Product string `json:"product"`
 	}
-	if json.Unmarshal(data, &me) != nil || me.Product == "" {
+	if err := json.Unmarshal(data, &me); err != nil || me.Product == "" {
+		// The silent third way to fail, and the one that cost an evening: the
+		// call SUCCEEDS and the answer simply carries no product field, which
+		// happens when the token's scopes do not include user-read-private.
+		// Log the FIELD NAMES that did arrive, never their values: this
+		// response carries the account holder's display name and email.
+		var fields map[string]json.RawMessage
+		keys := make([]string, 0, 8)
+		if json.Unmarshal(data, &fields) == nil {
+			for k := range fields {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+		}
+		m.logger.Info("spotify: the account answer carried no plan",
+			"err", err, "fieldsSeen", strings.Join(keys, ","), "bytes", len(data))
 		return ""
 	}
 	m.mu.Lock()
 	m.productType, m.productCheckedAt = me.Product, time.Now()
+	m.productQuietFor = 0
 	m.mu.Unlock()
 	return me.Product
 }
@@ -95,7 +188,14 @@ func (m *Manager) PremiumRequired() bool {
 		m.productTriedAt = time.Now()
 		m.mu.Unlock()
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			// Generous, and it has to be: this is no longer a call into the
+			// engine next door but the speaker's own TLS handshake with
+			// Spotify, on a CPU that does softfloat arithmetic. Four seconds
+			// was enough for the old proxy and was not enough for this
+			// (measured on the Portable, 2026-09-26: the answer never arrived
+			// and the plan stayed unknown). It runs in the background, so the
+			// only thing a longer budget costs is a goroutine that waits.
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			m.accountProduct(ctx)
 		}()
@@ -465,7 +565,13 @@ func (m *Manager) AudioKeyRefused() bool {
 // most), so caching a bearer token on the speaker would add an expiry to get
 // wrong for no measurable saving.
 func (m *Manager) spotifyWebGet(ctx context.Context, url string) ([]byte, error) {
-	raw, err := m.apiGet(ctx, "/token")
+	// POST, not GET. The engine's own router registers this one as
+	// `POST /token` (daemon/api_gen.go), whatever the read-shaped name
+	// suggests, and a GET comes back 405 with a plain-text body that parses as
+	// no token at all. Measured on the Portable on 2026-09-26: the plan stayed
+	// unknown on a healthy, playing, Premium speaker until the method was
+	// right, which is the sort of thing only a real speaker says out loud.
+	raw, err := m.apiPostJSON(ctx, "/token")
 	if err != nil {
 		return nil, fmt.Errorf("no access token from the engine: %w", err)
 	}
@@ -485,6 +591,9 @@ func (m *Manager) spotifyWebGet(ctx context.Context, url string) ([]byte, error)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, rateLimitError{after: parseRetryAfter(resp.Header.Get("Retry-After"))}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("spotify answered %d", resp.StatusCode)
 	}

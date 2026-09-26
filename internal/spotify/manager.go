@@ -155,13 +155,21 @@ type Manager struct {
 	// than in the callback, so no caller can get it wrong. See ServeOgg.
 	onSinkDetach func(attachedMs int64)
 	// Spotify account product type, used to warn that preset recall needs Premium
-	// (#45). productType is cached from go-librespot's /web-api/v1/me ("premium"/
+	// (#45). productType is cached from Spotify's /v1/me ("premium"/
 	// "free"/"open"); sawFreeAccountLog is set when go-librespot logs that it does
 	// not support a free account. Either non-premium signal makes PremiumRequired
 	// true. Reset on each go-librespot (re)launch so an account switch re-detects.
-	productType       string
-	productCheckedAt  time.Time
-	productTriedAt    time.Time
+	productType      string
+	productCheckedAt time.Time
+	productTriedAt   time.Time
+	// productQuietUntil is set when Spotify rate-limits the plan read. The
+	// answer changes about as often as somebody changes their subscription, so
+	// being told to wait is a reason to wait a long time, not to try again in
+	// half a minute and stay throttled.
+	productQuietUntil time.Time
+	// productQuietFor is the last wait that was applied, so consecutive refusals
+	// grow it instead of asking again the moment the header expires.
+	productQuietFor   time.Duration
 	sawFreeAccountLog bool
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
