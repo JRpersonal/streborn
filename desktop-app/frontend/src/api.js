@@ -190,6 +190,22 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// BoxSpeakerLevels / SetBoxSpeakerLevel drive the front-centre and
+// rear-surround levels of a home theater system. Optional bindings, per the
+// note above: both are brand new, so naming them in the re-export list at the
+// top would break the frontend build against an older generated App module.
+//
+// The rejection is also the right behaviour at runtime. An app whose bindings
+// predate these methods simply shows no surround section, which is the same
+// thing every speaker without surrounds shows.
+export function BoxSpeakerLevels(host, port) {
+  return callOptionalBinding('BoxSpeakerLevels', [host, port]);
+}
+
+export function SetBoxSpeakerLevel(host, port, level, value) {
+  return callOptionalBinding('SetBoxSpeakerLevel', [host, port, level, value]);
+}
+
 // RadioSearchDetailed is RadioSearch plus a relaxed flag: same opts object,
 // returns {stations, relaxed} where relaxed=true means the backend had to
 // drop the quality filters to find anything.
