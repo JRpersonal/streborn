@@ -1176,6 +1176,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
 	mux.HandleFunc("/api/box/bass", s.handleBoxBass)
+	mux.HandleFunc("/api/box/levels", s.handleBoxSpeakerLevels)
 	mux.HandleFunc("/api/box/source", s.handleBoxSource)
 	mux.HandleFunc("/api/box/power", s.handleBoxPower)
 	mux.HandleFunc("/api/region", s.handleRegion)
