@@ -7559,6 +7559,18 @@ function resetNowPlaying() {
 // appearing on the next poll. Since 2026-08-23 this bar is the only place the
 // running title is shown. Guarded on the rendered HTML so it does not restart
 // the marquee animation when nothing changed.
+// spotifyContextLabelKey names what is playing by what the URI says it is. The
+// line used to say "Playlist" for everything, so an album played from the Spotify
+// app was announced as a playlist (#709). Anything unrecognised keeps the old
+// word rather than inventing one.
+function spotifyContextLabelKey(uri) {
+  const kind = String(uri || '').split(':')[1] || '';
+  if (kind === 'album') return 'status.albumLabel';
+  if (kind === 'artist') return 'status.artistLabel';
+  if (kind === 'show' || kind === 'episode') return 'status.podcastLabel';
+  return 'status.playlistLabel';
+}
+
 function renderNowPlayingBar() {
   const bar = $('statusBar');
   if (!bar) return;
@@ -7593,7 +7605,7 @@ function renderNowPlayingBar() {
   const spotifyArtist = state.nowBoxSpotify ? state.nowBoxSpotify.artist : state.nowSpotifyArtist;
   if (spotifyTrack) {
     const song = spotifyArtist ? `${spotifyArtist} - ${spotifyTrack}` : spotifyTrack;
-    displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
+    displayName = name ? `${t(spotifyContextLabelKey(state.nowSpotifyContext || spotifyURIFromContainer(loc)))}: "${name}" · ${song}` : song;
   } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
     // The same predicate as the title poller above, and it has to be the same
     // one: fixing only the poll would fetch a title that this line then refused

@@ -25,6 +25,7 @@ import {
   compareVerBuild,
   getBoxLabel,
   balanceLabel,
+  balanceStateLabel,
   encodeURIStrict,
   bassControlsDisabled,
   bassSliderProps,
@@ -1134,6 +1135,7 @@ function renderBoxSettings(s, box) {
         <input type="range" id="boxVolume" min="0" max="100" value="${vol.actual || 0}" />
         <span class="setting-value" id="boxVolumeVal">${vol.actual || 0}</span>
       </div>
+      <h3 id="boxBalanceHead" hidden>${escapeHtml(t('controls.balanceHead'))}</h3>
       <div class="setting-row" id="boxBalanceRow" hidden>
         <input type="range" id="boxBalanceSlider" min="-7" max="7" step="1" value="0" hidden />
         <span class="setting-value" id="boxBalance"></span>
@@ -3528,16 +3530,20 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
   const row = document.getElementById('boxBalanceRow');
   const el = document.getElementById('boxBalance');
   if (!row || !el) return;
+  // The heading and the row are one thing: a "Balance" heading over a hidden
+  // slider would be a label for nothing.
+  const head = document.getElementById('boxBalanceHead');
+  const show = (on) => { row.hidden = !on; if (head) head.hidden = !on; };
   const slider = document.getElementById('boxBalanceSlider');
   const centre = document.getElementById('boxBalanceCentre');
   const src = balanceSourceBox(box, pair, boxes) || box;
-  if (!src || src.kind === 'stock') { row.hidden = true; return; }
+  if (!src || src.kind === 'stock') { show(false); return; }
   const b = await readBoxBalanceInfo(src);
-  if (!b) { row.hidden = true; setBalanceNote(''); return; }
+  if (!b) { show(false); setBalanceNote(''); return; }
 
-  el.textContent = balanceLabel(b.actual);
+  el.textContent = balanceStateLabel(b.actual);
   el.title = t(b.settable ? 'controls.balanceSetTitle' : 'controls.balanceTitle');
-  row.hidden = false;
+  show(true);
   setBalanceNote('');
   if (!slider || !centre) return;
 
@@ -3559,11 +3565,11 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
   // value travels over a WebSocket to the speaker and is then read back to
   // confirm, and firing that per pixel of slider travel would put a queue of
   // writes on the speaker's own bus for one gesture.
-  slider.oninput = () => { el.textContent = balanceLabel(parseInt(slider.value, 10)); };
+  slider.oninput = () => { el.textContent = balanceStateLabel(parseInt(slider.value, 10)); };
   slider.onchange = () => applyBalance(src, parseInt(slider.value, 10));
   centre.onclick = () => {
     slider.value = String(b.default || 0);
-    el.textContent = balanceLabel(b.default || 0);
+    el.textContent = balanceStateLabel(b.default || 0);
     applyBalance(src, b.default || 0);
   };
 }
