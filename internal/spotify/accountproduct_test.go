@@ -213,7 +213,7 @@ func TestARateLimitedPlanReadGoesQuiet(t *testing.T) {
 	defer engine.Close()
 	spotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		meCalls.Add(1)
-		w.Header().Set("Retry-After", "3600")
+		w.Header().Set("Retry-After", "42")
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer spotify.Close()
@@ -237,5 +237,32 @@ func TestARateLimitedPlanReadGoesQuiet(t *testing.T) {
 	_ = m.accountProductAt(context.Background(), spotify.URL)
 	if n := meCalls.Load(); n != 2 {
 		t.Fatalf("after the quiet window the speaker must ask again, got %d calls", n)
+	}
+}
+
+// Spotify says how long it wants to be left alone, and the speaker has to
+// believe it. The first version waited six hours on a header asking for
+// forty-two seconds, which is the same mistake as not waiting at all, pointed
+// the other way.
+func TestRetryAfterIsHonoured(t *testing.T) {
+	cases := []struct {
+		header string
+		want   time.Duration
+	}{
+		{"42", 42 * time.Second},
+		{"600", 10 * time.Minute},
+		{"", productRateLimitQuiet},         // no header: a sane fallback
+		{"nonsense", productRateLimitQuiet}, // unparseable: the same
+		{"1", productRateLimitMin},          // too eager to be believed
+		{"999999", productRateLimitMax},     // too long to be useful
+	}
+	for _, c := range cases {
+		if got := parseRetryAfter(c.header); got != c.want {
+			t.Errorf("parseRetryAfter(%q) = %v, want %v", c.header, got, c.want)
+		}
+	}
+	// The date form the spec also allows.
+	if got := parseRetryAfter(time.Now().Add(5 * time.Minute).UTC().Format(http.TimeFormat)); got < 4*time.Minute || got > 5*time.Minute {
+		t.Errorf("an HTTP-date Retry-After gave %v, want about five minutes", got)
 	}
 }
