@@ -54,6 +54,13 @@ func (m *Manager) apiPostC(ctx context.Context, client *http.Client, path string
 }
 
 func (m *Manager) apiPostRawC(ctx context.Context, client *http.Client, path string, body string) error {
+	// A Manager without a wired client is a Manager whose engine was never
+	// started. Callers reach here from log-line handlers that run before that,
+	// and a nil dereference inside the agent is a far worse outcome than a
+	// command that quietly goes nowhere.
+	if client == nil {
+		return fmt.Errorf("go-librespot %s: no engine client", path)
+	}
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)

@@ -573,6 +573,21 @@ func (m *Manager) noteLibrespotLine(line string) {
 		if run == keyRefusalRunTrips {
 			m.logger.Warn("spotify: Spotify is refusing the audio key for track after track, so nothing plays through this engine; the speaker's own Spotify entry is unaffected",
 				"tracksInARow", run)
+			// And stop it there. Letting the engine walk the rest of the playlist
+			// achieves nothing (not one of those tracks will play) and it is not
+			// harmless: on a fleet measured on 2026-09-26 the engine crashed and
+			// was relaunched four times in three minutes while racing through a
+			// refused playlist, each crash inside its own skip-to-next path. The
+			// listener sees a playlist tearing past and starting over instead of
+			// a speaker that has simply stopped.
+			//
+			// Quiet and best-effort: an engine that is already dead does not need
+			// to be told, and this must never become an error of its own.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+				defer cancel()
+				_ = m.apiPostQuiet(ctx, "/player/pause", "")
+			}()
 		}
 	}
 	// The engine gave up on a whole run. This is the moment the user is left
