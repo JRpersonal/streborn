@@ -354,6 +354,26 @@ func (s *Store) Snapshot() any {
 	return out
 }
 
+// LastError returns the most recent failed press: how long ago it was, which
+// key, and the reason, or ok=false when no press has failed.
+//
+// It exists because a refused press was previously INVISIBLE. The reason lived
+// only in the debugState snapshot, so the owner pressed the key, nothing
+// happened, and only a diagnostic bundle could explain why. Two users spent
+// days re-saving a group that was never the problem (2026-09-26). The agent
+// version response carries this now, so the app can say it out loud.
+func (s *Store) LastError() (Action, bool) {
+	if s == nil {
+		return Action{}, false
+	}
+	s.togMu.Lock()
+	defer s.togMu.Unlock()
+	if s.lastError.At.IsZero() {
+		return Action{}, false
+	}
+	return s.lastError, true
+}
+
 // Toggle is the press handler. It reads the main speaker's live zone and
 // decides: the template's group is live -> dissolve it; another bound
 // template's group is live -> dissolve that and form this one; otherwise ->

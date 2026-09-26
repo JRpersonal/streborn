@@ -12,6 +12,7 @@ import {
   PlayURL,
   RebootBox,
   RestoreSTRCloud,
+  PushFavorites,
   RecordUpdateIntent,
   UpdateFailureReport,
   SetOTARunning,
@@ -2478,6 +2479,15 @@ function checkBoxIssueBanner() {
   // recallRefusal is the storm's quiet sibling (no 1036 ever fires, the box
   // just drops its source for every recall); same remedy, same banner.
   const storm = boxes.filter(b => b && (b.storm1036 || b.recallRefusal));
+  // A thumbs-key press the speaker refused. Not dismissible and worth its own
+  // line: the press produced NOTHING visible before this, so two owners spent
+  // days re-saving a group that was never the problem (2026-09-26). The
+  // speaker's own reason is shown verbatim rather than paraphrased.
+  const keyErr = boxes.filter(b => b && b.groupKeyError);
+  // A long press the speaker made and STR could not keep. Same shape as the
+  // key error: it happened, it was refused, and nothing visible said so, so
+  // the key appeared to snap back to the old station on its own.
+  const holdErr = boxes.filter(b => b && b.holdRefusedSource);
   const msgs = [];
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
@@ -2496,6 +2506,18 @@ function checkBoxIssueBanner() {
   if (storm.length) {
     const names = storm.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
+  }
+  if (keyErr.length) {
+    const names = keyErr.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
+      name: names, reason: keyErr[0].groupKeyError,
+    })));
+  }
+  if (holdErr.length) {
+    const names = holdErr.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.holdRefusedBanner', {
+      name: names, slot: holdErr[0].holdRefusedSlot || '?',
+    })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }
   // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
@@ -8321,6 +8343,28 @@ function loadFavStore() {
 }
 function saveFavStore(arr) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(arr)); } catch {}
+  // And onto the speakers, so the phone page shows the same list. Until this
+  // the stars lived only here, on one PC, and a user asking where to find them
+  // on his phone got the honest answer: nowhere (2026-09-26).
+  pushFavoritesToBoxes(arr);
+}
+
+// pushFavoritesToBoxes stores the list on every speaker that runs STR.
+//
+// Every speaker, not one: whichever speaker's page the phone opens has to show
+// the same stars, and there is no central place to put them. The agent ignores
+// an unchanged list instead of writing it again, so this is cheap to repeat
+// and costs nothing on the speakers' flash.
+//
+// Best effort by design. A speaker that is asleep or off simply misses this
+// round and gets the list on the next save or the next app start; a failure
+// here must never make starring a station look broken.
+function pushFavoritesToBoxes(arr) {
+  const json = JSON.stringify(arr || []);
+  (state.boxes || []).forEach((b) => {
+    if (!b || b.offline || b.kind === 'stock') return;
+    PushFavorites(b.host, b.port, json).catch(() => {});
+  });
 }
 function favMinimal(s) {
   return {

@@ -240,6 +240,10 @@ func (s *Server) ResumeLastPlay() {
 			return
 		}
 		s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
+		// The per-box start level, when the owner set one. Only here, on the
+		// automatic resume: a level the user chose while the music plays is
+		// theirs and is never overwritten.
+		s.applyStartVolume("wake resume")
 	}()
 }
 
@@ -1154,6 +1158,12 @@ func (s *Server) SetUserActivityFn(fn func() time.Time) {
 // ongoing "the box refuses every recall" state to the app.
 func (s *Server) SetStorm1036Fn(fn func() (bool, int, time.Time)) {
 	s.storm1036Fn = fn
+}
+
+// SetHeldRefusalFn wires the marge stub's record of the last hold-to-store
+// gesture STR could not keep, so the version envelope can report it.
+func (s *Server) SetHeldRefusalFn(fn func() (time.Time, int, string, string, bool)) {
+	s.heldRefusalFn = fn
 }
 
 // SetSuppress1036Fn wires boxws.Suppress1036Until so the paths that PROVOKE a

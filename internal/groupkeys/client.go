@@ -41,6 +41,15 @@ type HTTPOptions struct {
 	// the stored address is used, unless the roster says another speaker sits
 	// there now: then the press is refused rather than sent to the wrong box.
 	PeerDeviceID func(ip string) string
+	// PeerDeviceIDs returns EVERY id the roster knows the speaker at ip by:
+	// the announced agent id and, on a two-chip chassis, the firmware's own.
+	//
+	// Both name the same speaker, and the desktop app deliberately stores the
+	// FIRMWARE id in a template member. Comparing against the announced id
+	// alone therefore refused every press on such a chassis, on a LAN where
+	// nothing had moved. Optional: when nil, PeerDeviceID is used and the old
+	// single-id behaviour applies.
+	PeerDeviceIDs func(ip string) []string
 	// SelfDeviceID is the id this speaker announces (the one IsSelf matches
 	// by). When set and IsSelf matches a member by address only, the member's
 	// id is checked against the firmware id over loopback: a two-chip chassis
@@ -116,12 +125,52 @@ func (c *httpClient) resolve(ctx context.Context, m Member) (Member, error) {
 		}
 		return m, nil
 	}
-	if m.IP != "" && c.opts.PeerDeviceID != nil {
-		if id := strings.TrimSpace(c.opts.PeerDeviceID(m.IP)); id != "" && !strings.EqualFold(id, m.DeviceID) {
+	// The address is checked against every id the roster holds for that
+	// speaker, not just the announced one. A two-chip chassis answers to two,
+	// and the member almost certainly carries the firmware one: the guard a
+	// few lines up already makes that allowance for THIS speaker, and its
+	// absence here is what made the whole feature dead on those boxes.
+	if m.IP != "" {
+		if known := c.peerIDsAt(m.IP); len(known) > 0 && !idIn(known, m.DeviceID) {
 			return m, fmt.Errorf("another speaker answers at %s now (addresses changed?), save the group again", m.IP)
 		}
 	}
 	return m, nil
+}
+
+// peerIDsAt returns the ids the roster holds for ip, preferring the multi-id
+// lookup and falling back to the single-id one so an older wiring still works.
+func (c *httpClient) peerIDsAt(ip string) []string {
+	if c.opts.PeerDeviceIDs != nil {
+		out := make([]string, 0, 2)
+		for _, id := range c.opts.PeerDeviceIDs(ip) {
+			if id = strings.TrimSpace(id); id != "" {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	if c.opts.PeerDeviceID == nil {
+		return nil
+	}
+	if id := strings.TrimSpace(c.opts.PeerDeviceID(ip)); id != "" {
+		return []string{id}
+	}
+	return nil
+}
+
+// idIn reports whether want is one of ids, case-insensitively.
+func idIn(ids []string, want string) bool {
+	want = strings.TrimSpace(want)
+	if want == "" {
+		return false
+	}
+	for _, id := range ids {
+		if strings.EqualFold(id, want) {
+			return true
+		}
+	}
+	return false
 }
 
 // bases lists the base URLs to try for master, in order.

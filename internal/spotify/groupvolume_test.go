@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -96,5 +98,42 @@ func TestSelfVolSuppression(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	if m.selfVolActive() {
 		t.Fatal("expired selfVolUntil must report inactive")
+	}
+}
+
+// A volume event caused by STR's OWN seed/nudge must not be written back to
+// the speaker either, not just kept out of the group fan-out.
+//
+// syncVolumeFromBox deliberately sends vol, then vol-1, then vol, because the
+// Spotify app refreshes its slider only on a CHANGE. Each of those echoed back
+// as an ordinary volume event and was mirrored straight onto the box, so every
+// Spotify activation audibly dropped the speaker one step and put it back.
+// Reported 2026-09-25 as "lauter/leiser springt hoch-runter", with all three
+// writes visible in the reporter's own log.
+//
+// The guard existed for the group fan-out and simply never covered the speaker
+// itself, which is the one that makes a sound. This pins the source, because
+// the event loop needs a live go-librespot socket to exercise directly.
+func TestOwnVolumeNudgeIsNotWrittenToTheBox(t *testing.T) {
+	src, err := os.ReadFile("volume.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	at := strings.Index(s, "volume event is our own seed/nudge")
+	if at < 0 {
+		t.Fatal("the self-caused guard in front of the box write is gone")
+	}
+	// It must sit BEFORE the box write, and skip the whole event.
+	head := s[at:]
+	skip := strings.Index(head, "continue")
+	write := strings.Index(head, "m.box.SetVolume")
+	if skip < 0 || write < 0 || skip > write {
+		t.Errorf("the guard must skip the event before the box write (skip=%d write=%d)", skip, write)
+	}
+	// And the nudge that caused it must still be there, or the slider goes
+	// back to showing 100 until the user touches it.
+	if !strings.Contains(s, "nudge := vol - 1") {
+		t.Error("the slider nudge itself must stay; only writing it back is wrong")
 	}
 }

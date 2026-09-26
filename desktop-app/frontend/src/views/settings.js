@@ -92,6 +92,8 @@ import {
   BoxSpeakerLevels,
   SetBoxSpeakerLevel,
   BoxForeignInfluence,
+  GetStartVolume,
+  SetStartVolume,
   UndoForeignFinding,
   ListWiFiProfiles,
   BoxWifiScan,
@@ -515,6 +517,7 @@ export async function loadBoxSettings() {
       // markup exists, because it is a separate read and the common answer is
       // "nothing", which hides the whole section.
       refreshForeignInfluence(state.settingsBox).catch(() => {});
+      refreshStartVolume(state.settingsBox).catch(() => {});
       return;
     } catch (e) {
       lastErr = e;
@@ -1135,6 +1138,14 @@ function renderBoxSettings(s, box) {
         <input type="range" id="boxBalanceSlider" min="-7" max="7" step="1" value="0" hidden />
         <span class="setting-value" id="boxBalance"></span>
         <button class="btn btn-mini" id="boxBalanceCentre" hidden>${escapeHtml(t('controls.balanceCentreBtn'))}</button>
+      </div>
+      <div class="setting-row" id="boxStartVolRow" hidden>
+        <label for="boxStartVol">${escapeHtml(t('settingsView.startVolLabel'))}</label>
+        <input type="range" id="boxStartVol" min="0" max="100" step="1" value="0" />
+        <span class="setting-value" id="boxStartVolVal"></span>
+      </div>
+      <div class="setting-row" id="boxStartVolHelpRow" hidden>
+        <small class="muted small">${escapeHtml(t('settingsView.startVolHelp'))}</small>
       </div>
       <div class="setting-row" id="boxBalanceNoteRow" hidden>
         <small class="muted small" id="boxBalanceNote"></small>
@@ -3555,6 +3566,57 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
     el.textContent = balanceLabel(b.default || 0);
     applyBalance(src, b.default || 0);
   };
+}
+
+// The start level: what the speaker returns to when it wakes and plays again.
+//
+// Asked for by an owner whose Portable and ST20 do not keep their level over a
+// power cycle, so every morning began at whatever the firmware had kept. Mine
+// do keep it, which is why I first told him it was not a problem. He was right.
+//
+// Off by default (0), because a speaker that quietly changes its own volume is
+// worse than one that forgets. It applies ONLY to the automatic resume after a
+// rest; a level set while the music plays belongs to the user.
+export async function refreshStartVolume(box) {
+  const row = document.getElementById('boxStartVolRow');
+  const helpRow = document.getElementById('boxStartVolHelpRow');
+  const slider = document.getElementById('boxStartVol');
+  const label = document.getElementById('boxStartVolVal');
+  if (!row || !slider || !label) return;
+  row.hidden = true;
+  if (helpRow) helpRow.hidden = true;
+  if (!box || box.kind === 'stock') return;
+  let data;
+  try {
+    data = await GetStartVolume(box.host, box.port);
+  } catch (e) {
+    // An older agent has no such route; the row simply is not there.
+    return;
+  }
+  if (!data || data.supported !== true) return;
+  const vol = Number(data.volume) || 0;
+  slider.value = String(vol);
+  label.textContent = startVolLabel(vol);
+  row.hidden = false;
+  if (helpRow) helpRow.hidden = false;
+  slider.oninput = () => { label.textContent = startVolLabel(slider.value); };
+  slider.onchange = async () => {
+    const want = parseInt(slider.value, 10);
+    try {
+      await SetStartVolume(box.host, box.port, want);
+    } catch (e) {
+      showError(e);
+      slider.value = String(vol);
+      label.textContent = startVolLabel(vol);
+    }
+  };
+}
+
+// 0 is not a volume, it is "off", and saying so beats showing a 0 the user
+// would read as silence.
+function startVolLabel(v) {
+  const n = Number(v) || 0;
+  return n === 0 ? t('settingsView.startVolOff') : String(n);
 }
 
 // The safe-haven view: what OTHER tools have done to this speaker.

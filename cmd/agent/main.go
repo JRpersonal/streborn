@@ -355,7 +355,8 @@ func run() error {
 			}
 			return peerIPByDeviceID(id)
 		},
-		PeerDeviceID: peerDeviceIDAt,
+		PeerDeviceID:  peerDeviceIDAt,
+		PeerDeviceIDs: peerDeviceIDsAt,
 	}))
 	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
 
@@ -1265,6 +1266,15 @@ func run() error {
 	// offer a soft reboot, which clears it, instead of leaving the user with
 	// the plug pull they would otherwise try (#419 Finding 4).
 	webuiSrv.SetStorm1036Fn(wsClient.Storm1036)
+	// The last hold-to-store the firmware made and STR could not keep, so the
+	// app can say so instead of leaving the key to snap back in silence.
+	webuiSrv.SetHeldRefusalFn(func() (time.Time, int, string, string, bool) {
+		r, ok := margeSrv.LastHeldRefusal()
+		if !ok {
+			return time.Time{}, 0, "", "", false
+		}
+		return r.At, r.Slot, r.Source, r.Name, true
+	})
 	// ...and keep the rejections STR PROVOKES out of that count, or the banner
 	// fires on a healthy speaker. Two paths provoke them: the firmware answers
 	// its own power-on self-resume with 1036 (it restarts a source it does not

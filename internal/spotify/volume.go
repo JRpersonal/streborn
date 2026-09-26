@@ -416,6 +416,24 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			if vd.Max > 0 {
 				pct = vd.Value * 100 / vd.Max
 			}
+			// Our OWN seed/nudge echoes back as an ordinary volume event, and
+			// it must not be written anywhere.
+			//
+			// syncVolumeFromBox deliberately sends vol, then vol-1, then vol,
+			// because the Spotify app only refreshes its slider on a CHANGE.
+			// That middle value was being mirrored straight onto the speaker,
+			// so every Spotify activation audibly dropped the volume by one
+			// step and put it back. Reported as "lauter/leiser springt
+			// hoch-runter", with the three writes visible in his own log
+			// (2026-09-25).
+			//
+			// The guard already existed one block down, protecting the group
+			// fan-out for exactly this reason. It simply never covered the
+			// speaker itself, which is the one that makes a sound.
+			if m.selfVolActive() {
+				m.logger.Debug("spotify: volume event is our own seed/nudge, not writing it back", "pct", pct)
+				continue
+			}
 			sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 			if err := m.box.SetVolume(sctx, pct); err != nil {
 				m.logger.Debug("spotify: box SetVolume from Spotify event failed", "err", err, "pct", pct)
@@ -423,16 +441,9 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			cancel()
 			m.logger.Info("spotify: volume mirrored to box", "pct", pct)
 			// A group's volume must reach every follower, not just the master
-			// this go-librespot runs on. Only for GENUINE Connect changes:
-			// the manager's own seed/nudge echoes back as the same event, and
-			// fanning that out rewrote every follower's individually-set
-			// level on each device activation. Handed to a worker so a slow/
-			// offline follower can never stall this event loop.
-			if m.selfVolActive() {
-				m.logger.Debug("spotify: volume event caused by own seed/nudge, not fanning out to group", "pct", pct)
-			} else {
-				m.requestGroupVolume(pct)
-			}
+			// this go-librespot runs on. Handed to a worker so a slow/offline
+			// follower can never stall this event loop.
+			m.requestGroupVolume(pct)
 		}
 	}
 }
