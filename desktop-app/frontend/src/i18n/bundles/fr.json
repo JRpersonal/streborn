@@ -1385,6 +1385,7 @@
   "speaker.noWifiBanner": "{{name}} : aucune sauvegarde Wi-Fi de STR n'est stockée sur cette enceinte. Elle se reconnecte généralement seule ; avec une sauvegarde (à configurer une fois dans les réglages de l'enceinte), l'enceinte peut réparer elle-même son Wi-Fi à l'allumage s'il est perdu.",
   "speaker.stormBanner": "{{name}} refuse actuellement toutes les stations. L'enceinte a perdu la connexion qu'elle établit auprès du remplaçant local de STR pour le cloud Bose. C'est interne : aucun compte à vous n'est concerné et vous n'avez rien à saisir. Un redémarrage règle le problème. Ne débranchez pas l'enceinte, cela remet son horloge à zéro et aggrave la situation.",
   "speaker.groupKeyErrorBanner": "{{name}} : la dernière pression sur une touche de groupe de la télécommande a été refusée par l'enceinte. Raison : {{reason}}",
+  "speaker.holdRefusedBanner": "{{name}} : un appui long sur la touche {{slot}} n'a pas pu être conservé, la touche garde donc ce qu'elle avait avant. Par ce chemin, STR ne peut conserver qu'une station de radio. Pour mettre une playlist Spotify sur une touche, maintiens la touche dans l'application pendant que la playlist joue.",
   "speaker.stormRestartBtn": "Redémarrer l’enceinte",
   "speaker.stormRestarting": "Redémarrage de {{name}}, cela prend environ une minute.",
   "speaker.wifiSaveBtn": "Enregistrer le Wi-Fi",

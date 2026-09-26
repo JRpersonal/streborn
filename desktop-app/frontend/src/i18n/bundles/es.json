@@ -1385,6 +1385,7 @@
   "speaker.noWifiBanner": "{{name}}: en este altavoz no hay guardada una copia del Wi-Fi de STR. Normalmente se reconecta solo; con una copia (se configura una vez en los ajustes del altavoz) el propio altavoz puede reparar su Wi-Fi al encenderse si alguna vez lo pierde.",
   "speaker.stormBanner": "{{name}} está rechazando todas las emisoras. El altavoz ha perdido el inicio de sesión que hace con el sustituto local de STR para la nube de Bose. Es algo interno: no interviene ninguna cuenta tuya y no tienes que introducir nada. Un reinicio lo soluciona. No desenchufes el altavoz, eso reinicia su reloj y lo empeora.",
   "speaker.groupKeyErrorBanner": "{{name}}: el altavoz rechazó la última pulsación de una tecla de grupo del mando. Motivo: {{reason}}",
+  "speaker.holdRefusedBanner": "{{name}}: una pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes. Por esta vía STR solo puede guardar una emisora de radio. Para poner una lista de Spotify en una tecla, mantén pulsada la tecla en la aplicación mientras suena la lista.",
   "speaker.stormRestartBtn": "Reiniciar altavoz",
   "speaker.stormRestarting": "Reiniciando {{name}}, tarda alrededor de un minuto.",
   "speaker.wifiSaveBtn": "Guardar Wi-Fi",

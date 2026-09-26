@@ -293,6 +293,12 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 	if err := keeper(item); err != nil {
 		// The boot-time sync and a retried gesture can repeat this for the
 		// same slot; one line per slot and minute is plenty for a bundle.
+		// Remembered, not only logged. A long press on a key while Spotify
+		// plays lands here: STR has no preset form for it, so the firmware
+		// keeps the old station and the owner sees the key snap back with no
+		// explanation anywhere. It was in the log all along and nowhere a user
+		// would look (reported 2026-09-25 as "presets barely savable").
+		s.noteHeldRefusal(slot, item.Source, item.ItemName)
 		if s.presetRefusalLogAllowed(slot) {
 			s.logger.Warn("marge preset store: the box asked to keep an item STR cannot map onto a preset, keeping the old answer",
 				slog.String("comp", "marge"), slog.Int("slot", slot),
@@ -307,6 +313,35 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(presetElementXML(item, time.Now())))
 	return true
+}
+
+// HeldRefusal is the last hold-to-store gesture STR could not keep.
+type HeldRefusal struct {
+	At     time.Time
+	Slot   int
+	Source string
+	Name   string
+}
+
+// noteHeldRefusal records the most recent refusal for the agent to report.
+func (s *Server) noteHeldRefusal(slot int, source, name string) {
+	s.mu.Lock()
+	s.lastHeldRefusal = HeldRefusal{At: time.Now(), Slot: slot, Source: source, Name: name}
+	s.mu.Unlock()
+}
+
+// LastHeldRefusal returns the most recent hold-to-store gesture STR could not
+// keep, ok=false when there has been none.
+func (s *Server) LastHeldRefusal() (HeldRefusal, bool) {
+	if s == nil {
+		return HeldRefusal{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.lastHeldRefusal.At.IsZero() {
+		return HeldRefusal{}, false
+	}
+	return s.lastHeldRefusal, true
 }
 
 // presetRefusalLogAllowed rate-limits the refusal WARN to one per slot and

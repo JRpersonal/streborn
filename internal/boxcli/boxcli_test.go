@@ -5,6 +5,8 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -157,5 +159,61 @@ func TestTapLabel(t *testing.T) {
 		if got := tapLabel(c.in, "Preset 3"); got != c.want {
 			t.Errorf("tapLabel(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// A rejected AddPreset must be reported as a failure, not swallowed.
+//
+// The TAP CLI answers a refusal with an error line and a clean socket, so
+// "no transport error" never meant the slot was written. AddPreset threw the
+// reply away entirely, so the firmware's "AddPreset - failed due to invalid
+// SourceID" counted as success: the forced reconcile that had just waited five
+// minutes for the music to stop believed the hardware keys were registered
+// while nothing had been stored, and nothing retried. Six dead keys and a
+// preset that keeps coming back as it was (reported 2026-09-25).
+//
+// The native path learned this in 2026-08. This pins the same lesson one
+// function up.
+func TestAddPresetReportsAFirmwareRefusal(t *testing.T) {
+	cases := []struct {
+		name    string
+		reply   string
+		wantErr bool
+	}{
+		{"the refusal that was reported", "AddPreset - failed due to invalid SourceID", true},
+		{"a usage line", "Usage: ws AddPreset <SOURCE> ...", true},
+		{"wrong state", "Command not allowed in wrong state", true},
+		{"a plain acknowledgement", "OK", false},
+		{"an empty reply", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := nativeAddRejected(c.reply); got != c.wantErr {
+				t.Errorf("nativeAddRejected(%q) = %v, want %v", c.reply, got, c.wantErr)
+			}
+		})
+	}
+}
+
+// And the call site must actually consult it rather than discarding the reply.
+func TestAddPresetDoesNotDiscardTheReply(t *testing.T) {
+	src, err := os.ReadFile("boxcli.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	at := strings.Index(s, "ws AddPreset UPNP audio")
+	if at < 0 {
+		t.Fatal("the UPnP AddPreset command is gone")
+	}
+	body := s[at:]
+	if end := strings.Index(body, "\n}"); end > 0 {
+		body = body[:end]
+	}
+	if strings.Contains(body, "_, err := Send(") {
+		t.Error("the reply is being discarded again; a refusal would read as success")
+	}
+	if !strings.Contains(body, "nativeAddRejected(") {
+		t.Error("the reply must be checked for a firmware refusal")
 	}
 }

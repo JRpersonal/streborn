@@ -41,7 +41,11 @@ type Server struct {
 	// presetKeeper stores what the firmware's own hold-to-store gesture PUTs
 	// to a preset slot (see presetstore.go). nil keeps the pre-existing answer.
 	// presetRefusalLogged rate-limits the refusal log per slot.
-	presetKeeper        PresetKeeper
+	presetKeeper PresetKeeper
+	// lastHeldRefusal is the most recent hold-to-store gesture STR had no
+	// preset form for, so the agent can tell the owner instead of leaving the
+	// key to snap back without a word.
+	lastHeldRefusal     HeldRefusal
 	presetRefusalLogged map[int]time.Time
 
 	// recentSeq numbers the recents records the firmware POSTs, so each answer

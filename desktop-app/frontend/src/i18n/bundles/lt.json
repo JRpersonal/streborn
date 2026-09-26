@@ -1385,6 +1385,7 @@
   "speaker.noWifiBanner": "{{name}}: šiame garsiakalbyje nėra išsaugotos STR Wi-Fi atsarginės kopijos. Paprastai jis prisijungia pats; su atsargine kopija (vieną kartą nustatoma garsiakalbio nustatymuose) garsiakalbis įjungtas gali pats atkurti savo Wi-Fi, jei jis dingtų.",
   "speaker.stormBanner": "{{name}} šiuo metu atmeta kiekvieną stotį. Kolonėlė prarado prisijungimą, kurį ji atlieka prie vietinio STR Bose debesies pakaitalo. Tai vidinis dalykas: jokia jūsų paskyra čia nedalyvauja ir nieko įvesti nereikia. Paleidus iš naujo tai išsisprendžia. Neištraukite kištuko, tai atstato kolonėlės laikrodį ir tik pablogina padėtį.",
   "speaker.groupKeyErrorBanner": "{{name}}: garsiakalbis atmetė paskutinį grupės klavišo paspaudimą pulte. Priežastis: {{reason}}",
+  "speaker.holdRefusedBanner": "{{name}}: ilgo {{slot}} klavišo paspaudimo nepavyko išsaugoti, todėl klavišas tebelaiko tai, kas buvo anksčiau. Tokiu būdu STR gali išsaugoti tik radijo stotį. Kad įdėtum Spotify grojaraštį į klavišą, palaikyk klavišą programėlėje, kol grojaraštis groja.",
   "speaker.stormRestartBtn": "Paleisti kolonėlę iš naujo",
   "speaker.stormRestarting": "{{name}} paleidžiama iš naujo, tai užtruks apie minutę.",
   "speaker.wifiSaveBtn": "Išsaugoti Wi-Fi",

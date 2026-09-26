@@ -2483,6 +2483,10 @@ function checkBoxIssueBanner() {
   // days re-saving a group that was never the problem (2026-09-26). The
   // speaker's own reason is shown verbatim rather than paraphrased.
   const keyErr = boxes.filter(b => b && b.groupKeyError);
+  // A long press the speaker made and STR could not keep. Same shape as the
+  // key error: it happened, it was refused, and nothing visible said so, so
+  // the key appeared to snap back to the old station on its own.
+  const holdErr = boxes.filter(b => b && b.holdRefusedSource);
   const msgs = [];
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
@@ -2506,6 +2510,12 @@ function checkBoxIssueBanner() {
     const names = keyErr.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
       name: names, reason: keyErr[0].groupKeyError,
+    })));
+  }
+  if (holdErr.length) {
+    const names = holdErr.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.holdRefusedBanner', {
+      name: names, slot: holdErr[0].holdRefusedSlot || '?',
     })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }

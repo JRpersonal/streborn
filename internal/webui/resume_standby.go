@@ -1156,6 +1156,12 @@ func (s *Server) SetStorm1036Fn(fn func() (bool, int, time.Time)) {
 	s.storm1036Fn = fn
 }
 
+// SetHeldRefusalFn wires the marge stub's record of the last hold-to-store
+// gesture STR could not keep, so the version envelope can report it.
+func (s *Server) SetHeldRefusalFn(fn func() (time.Time, int, string, string, bool)) {
+	s.heldRefusalFn = fn
+}
+
 // SetSuppress1036Fn wires boxws.Suppress1036Until so the paths that PROVOKE a
 // 1036 can say so, instead of the storm detector reading STR's own footprints
 // as a box that refuses everything (see suppress1036For).

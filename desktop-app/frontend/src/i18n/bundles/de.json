@@ -1386,6 +1386,7 @@
   "speaker.noWifiBanner": "{{name}}: STR hat das WLAN dieses Lautsprechers noch nicht gespeichert. Im Normalbetrieb läuft alles. Wenn du das WLAN speicherst, kann sich der Lautsprecher nach einem Stromausfall oder einer Störung selbst wieder verbinden.",
   "speaker.stormBanner": "{{name}} lehnt gerade jeden Sender ab. Der Lautsprecher hat die Anmeldung verloren, die er bei STRs lokalem Ersatz für die Bose-Cloud macht. Das ist rein intern: es gehört kein Konto von dir dazu und du musst nirgends etwas eingeben. Ein Neustart behebt es. Zieh bitte nicht den Stecker, das stellt die Uhr des Lautsprechers zurück und macht es schlimmer.",
   "speaker.groupKeyErrorBanner": "{{name}}: Der letzte Druck auf eine Gruppen-Taste der Fernbedienung wurde vom Lautsprecher abgewiesen. Grund: {{reason}}",
+  "speaker.holdRefusedBanner": "{{name}}: Ein langer Druck auf Taste {{slot}} konnte nicht übernommen werden, die Taste hält also weiter das, was vorher darauf lag. Auf diesem Weg kann STR nur einen Radiosender übernehmen. Eine Spotify-Playlist legst du auf eine Taste, indem du die Taste in der App lange drückst, während die Playlist läuft.",
   "speaker.stormRestartBtn": "Lautsprecher neu starten",
   "speaker.stormRestarting": "{{name}} wird neu gestartet, das dauert etwa eine Minute.",
   "speaker.issueDismiss": "Ausblenden",

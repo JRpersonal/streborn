@@ -1385,6 +1385,7 @@
   "speaker.noWifiBanner": "{{name}}: op deze speaker is geen wifi-back-up van STR opgeslagen. Meestal verbindt hij toch vanzelf; met een back-up (eenmalig instellen in de speakerinstellingen) kan de speaker zijn wifi bij het inschakelen zelf herstellen als die ooit wegvalt.",
   "speaker.stormBanner": "{{name}} weigert momenteel elke zender. De speaker is de aanmelding kwijt die hij doet bij STR's lokale vervanger van de Bose-cloud. Dat is intern: er is geen account van jou bij betrokken en je hoeft nergens iets in te vullen. Een herstart lost het op. Trek alsjeblieft niet de stekker eruit, dat zet de klok van de speaker terug en maakt het erger.",
   "speaker.groupKeyErrorBanner": "{{name}}: de laatste druk op een groepstoets van de afstandsbediening is door de speaker geweigerd. Reden: {{reason}}",
+  "speaker.holdRefusedBanner": "{{name}}: een lange druk op toets {{slot}} kon niet worden bewaard, de toets houdt dus wat er eerder op stond. Op deze manier kan STR alleen een radiozender bewaren. Een Spotify playlist zet je op een toets door de toets in de app ingedrukt te houden terwijl de playlist speelt.",
   "speaker.stormRestartBtn": "Luidspreker opnieuw opstarten",
   "speaker.stormRestarting": "{{name}} wordt opnieuw opgestart, dit duurt ongeveer een minuut.",
   "speaker.wifiSaveBtn": "Wifi opslaan",

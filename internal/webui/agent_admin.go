@@ -146,6 +146,21 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// a group that was never at fault (2026-09-26). Emitted only while it is
 	// recent, so the polled response stays small and a long-fixed failure does
 	// not haunt the speaker for ever.
+	// A long press the speaker made but STR could not keep. Same problem as
+	// the group key above: it happened, it was refused, and nothing the owner
+	// can see said so. The commonest case is a hold while Spotify plays, which
+	// STR has no preset form for, so the firmware keeps the old station and
+	// the key appears to snap back on its own.
+	if s.heldRefusalFn != nil {
+		if at, slot, source, name, ok := s.heldRefusalFn(); ok && time.Since(at) < heldRefusalWindow {
+			out["holdRefusedSlot"] = strconv.Itoa(slot)
+			out["holdRefusedSource"] = source
+			out["holdRefusedAgeSec"] = strconv.FormatInt(int64(time.Since(at).Seconds()), 10)
+			if name != "" {
+				out["holdRefusedName"] = name
+			}
+		}
+	}
 	if s.groupKeys != nil {
 		if a, ok := s.groupKeys.LastError(); ok && time.Since(a.At) < groupKeyErrorWindow {
 			out["groupKeyError"] = a.Error
@@ -1208,6 +1223,10 @@ func hasSavedWLANCreds() bool {
 // reported to the app. A press is a human action and the owner is standing
 // there; an hour later it is history, not news.
 const groupKeyErrorWindow = time.Hour
+
+// heldRefusalWindow matches it: a long press is a human action and the owner
+// is standing at the speaker. An hour later it is history, not news.
+const heldRefusalWindow = time.Hour
 
 func detectConflictingMod() string {
 	if detectAfterTouch() {

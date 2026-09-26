@@ -538,6 +538,11 @@ type Server struct {
 	// poisons the next boot, while a soft reboot clears the state (#419
 	// Finding 4). nil = not wired (no storm reported).
 	storm1036Fn func() (bool, int, time.Time)
+	// heldRefusalFn reports the last hold-to-store gesture STR had no preset
+	// form for: when, which slot, and what the box was playing. A long press
+	// while Spotify runs is the common one, and until now it left no trace the
+	// owner could see, so the key simply snapped back.
+	heldRefusalFn func() (time.Time, int, string, string, bool)
 
 	// balanceWriteFn sends a stereo-balance write on the box WebSocket (see
 	// SetBalanceWriteFn). nil means no socket is available, and the balance

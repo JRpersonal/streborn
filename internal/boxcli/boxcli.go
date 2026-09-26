@@ -308,8 +308,26 @@ func AddPreset(ctx context.Context, host string, slot int, name, streamURL strin
 	// LOCATION should have no quotes.
 	cmd := fmt.Sprintf(`ws AddPreset UPNP audio %s "%s" UPnPUserName %d`,
 		streamURL, tapLabel(name, fmt.Sprintf("Preset %d", slot)), slot)
-	_, err := Send(ctx, host, cmd)
-	return err
+	out, err := Send(ctx, host, cmd)
+	if err != nil {
+		return err
+	}
+	// The TAP CLI answers a REJECTED AddPreset with an error line and a clean
+	// socket, so "no transport error" does not mean the slot was written. The
+	// native path below learned this in 2026-08 and checks its reply; this one
+	// never did, and threw the answer away entirely.
+	//
+	// What that cost: the firmware refuses this write while the box sits on a
+	// source it will not take a UPnP preset for, answering "AddPreset - failed
+	// due to invalid SourceID". STR counted it as done, so the forced pass
+	// that had just waited five minutes for the music to stop believed the
+	// hardware keys were registered when nothing had been stored, and nothing
+	// retried. The owner sees six keys that do nothing and a preset that keeps
+	// coming back as it was (reported 2026-09-25).
+	if reply := strings.TrimSpace(out); nativeAddRejected(reply) {
+		return fmt.Errorf("box refused the preset for slot %d: %s", slot, firstLine(reply))
+	}
+	return nil
 }
 
 // AddPresetRaw writes a preset for an arbitrary source/type/location/account,
