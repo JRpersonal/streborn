@@ -49,6 +49,29 @@ updates:
   # When the /website folder is removed from this repo, drop nothing
   # else here - this section already does not exist.
 
+  # The desktop app frontend: build and test tooling only (vite, vitest,
+  # eslint, stylelint), no runtime dependency ships to a user. It went
+  # unwatched until 2026-09-26, when a review of what Dependabot can and
+  # cannot see turned it up. Monthly and grouped, because dev tooling that
+  # opens four PRs a week gets ignored, and ignored PRs are how a real one
+  # goes unnoticed.
+  - package-ecosystem: "npm"
+    directory: "/desktop-app/frontend"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      frontend-tooling:
+        update-types: ["minor", "patch"]
+
   # Keep GitHub Actions themselves up to date.
   - package-ecosystem: "github-actions"
     directory: "/"

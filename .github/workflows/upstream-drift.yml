@@ -1,0 +1,148 @@
+name: upstream drift
+
+# How far the sources STR builds from have moved ahead of the version STR ships.
+#
+# Dependabot watches what is declared in a manifest: the two Go modules, the npm
+# frontend, the actions. It cannot see the one dependency that matters most here,
+# because that one is not a dependency at all in the manifest sense: the Spotify
+# engine is BUILT FROM SOURCE out of a fork, and a fork falls silent by design.
+# Nothing tells you when the project you forked fixed something.
+#
+# The bill for that arrived on 2026-09-26. A speaker's diagnostic showed the
+# engine crashing four times in three minutes on a nil dereference that upstream
+# had fixed on 2026-08-29: 28 days in which every STR user could have had the
+# fix, and the only reason anybody looked was that a user wrote in about the
+# symptom.
+#
+# So this runs weekly and keeps ONE issue per source up to date with what is
+# sitting in the gap. It edits that issue rather than opening new ones, because
+# a report that arrives every Monday is a report nobody reads by November. It
+# comments, once, only when something in the gap reads like it matters: a crash,
+# a race, a leak, a security fix. Everything else waits for the next time
+# somebody opens the issue on purpose.
+
+on:
+  schedule:
+    # Monday morning, before the week has an opinion.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Measure the gap and report it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+
+          # One line per tracked source:
+          #   <name>|<the repo STR builds>|<its branch>|<the project it forked>|<its branch>
+          # Adding a source is adding a line.
+          SOURCES='go-librespot|JRpersonal/go-librespot|master|devgianlu/go-librespot|master'
+
+          # What makes a commit worth interrupting for. Deliberately about
+          # BREAKAGE, not features: a feature can wait for the next merge, a
+          # crash that is already fixed upstream cannot.
+          ALERT='panic|[^a-z]nil[^a-z]|segv|sigsegv|race|deadlock|crash|leak|memory|audio key|security|cve|corrupt|stall|hang|freeze'
+
+          # The label has to exist before the first run.
+          gh label create upstream-drift --repo "$REPO" --color ededed \
+            --description "A source STR builds from has moved ahead of what STR ships" \
+            2>/dev/null || true
+
+          echo "$SOURCES" | while IFS='|' read -r name ours ourref theirs theirref; do
+            [ -n "$name" ] || continue
+            echo "::group::$name"
+            rm -rf work && git clone -q --filter=blob:none "https://github.com/$ours" work
+            cd work
+            git remote add upstream "https://github.com/$theirs"
+            git fetch -q upstream "$theirref"
+            git fetch -q origin "$ourref"
+
+            behind=$(git rev-list --count "origin/$ourref..upstream/$theirref")
+            base=$(git merge-base "origin/$ourref" "upstream/$theirref")
+            basedate=$(git log -1 --format=%ad --date=short "$base")
+
+            # The subjects in the gap, user-facing types only: a chore or a doc
+            # commit is not a reason to merge.
+            gap=$(git log --no-merges --format='%h %ad %s' --date=short \
+                    --perl-regexp --grep='^(feat|fix|perf)' \
+                    "origin/$ourref..upstream/$theirref" || true)
+            oldest=$(echo "$gap" | tail -1 | awk '{print $2}')
+            hits=$(echo "$gap" | grep -Ei "$ALERT" || true)
+            cd ..
+
+            title="$name: upstream has moved on"
+            {
+              echo "**$behind commits** in \`$theirs@$theirref\` are not in \`$ours@$ourref\`."
+              echo
+              echo "The two last shared a commit on **$basedate**."
+              [ -n "$oldest" ] && echo "The oldest unmerged fix or feature is from **$oldest**."
+              echo
+              if [ -n "$hits" ]; then
+                echo "### Worth reading first"
+                echo
+                echo "These mention a crash, a race, a leak or a security fix:"
+                echo
+                echo '```'
+                echo "$hits"
+                echo '```'
+                echo
+              fi
+              echo "### Everything user-facing in the gap"
+              echo
+              echo '```'
+              echo "${gap:-nothing: only chores, docs and tests}"
+              echo '```'
+              echo
+              echo "_Measured $(date -u +%Y-%m-%d). This issue is rewritten each Monday; it is not a to-do list, it is a mirror._"
+            } > body.md
+
+            existing=$(gh issue list --repo "$REPO" --state open --label upstream-drift \
+                         --search "$title in:title" --json number --jq '.[0].number // empty')
+
+            if [ "$behind" = "0" ]; then
+              if [ -n "$existing" ]; then
+                gh issue close "$existing" --repo "$REPO" \
+                  --comment "Nothing left in the gap: $ours@$ourref now carries everything $theirs@$theirref has."
+              fi
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [ -z "$existing" ]; then
+              gh issue create --repo "$REPO" --title "$title" \
+                --label upstream-drift --body-file body.md
+            else
+              gh issue edit "$existing" --repo "$REPO" --body-file body.md
+              echo "updated issue #$existing"
+              # The one case worth a notification: something that reads like
+              # breakage appeared since the last report. Compared against the
+              # last alert comment so the same crash is not announced weekly.
+              if [ -n "$hits" ]; then
+                last=$(gh issue view "$existing" --repo "$REPO" --json comments \
+                         --jq '[.comments[] | select(.body | startswith("Worth a look"))] | last | .body // ""')
+                new=$(echo "$hits" | while read -r line; do
+                        case "$last" in *"$(echo "$line" | awk '{print $1}')"*) ;; *) echo "$line";; esac
+                      done)
+                if [ -n "$new" ]; then
+                  {
+                    echo "Worth a look: new in the gap since the last report."
+                    echo
+                    echo '```'
+                    echo "$new"
+                    echo '```'
+                  } | gh issue comment "$existing" --repo "$REPO" --body-file -
+                fi
+              fi
+            fi
+            echo "::endgroup::"
+          done
