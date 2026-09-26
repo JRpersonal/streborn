@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -452,6 +453,24 @@ func boxGet(ctx context.Context, u string, limit int64) ([]byte, error) {
 // on the URL string, so a name that resolves inwards is caught too.
 func boxGetPeer(ctx context.Context, u string, limit int64) ([]byte, error) {
 	return boxGetWith(ctx, netutil.GuardedClient(4*time.Second), u, limit)
+}
+
+// peerBoxURL builds the :8090 URL for ANOTHER speaker, joining the host instead
+// of interpolating it.
+//
+// The dial guard alone is not enough here, and that is worth spelling out. It
+// asks which ADDRESS is being connected to; it cannot ask whether the address
+// was smuggled. A member address of "192.0.2.9:80/removeGroup?x=" concatenated
+// into "http://" + host + ":8090/now_playing" parses as host 192.0.2.9:80, path
+// /removeGroup, and the guard is perfectly happy: that is a normal LAN address.
+// Verified by running it on 2026-09-26. So the host is checked for being a bare
+// address at the point where the URL is built, and "" comes back when it is not,
+// which every caller turns into a request it cannot make.
+func peerBoxURL(host, path string) string {
+	if !isLANPeer(host) {
+		return ""
+	}
+	return "http://" + net.JoinHostPort(host, "8090") + path
 }
 
 func boxGetWith(ctx context.Context, cl *http.Client, u string, limit int64) ([]byte, error) {

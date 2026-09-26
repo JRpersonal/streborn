@@ -99,20 +99,28 @@ func hostPortOf(raw string) string {
 // yields an empty snapshot (Source == ""), which every caller treats as
 // "state unreadable — do nothing".
 func fetchNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
-	return fetchNowPlayingWith(ctx, host, boxGet)
+	// The speaker this agent runs on: the host comes from its own configuration.
+	return fetchNowPlayingURL(ctx, "http://"+host+":8090/now_playing", boxGet)
 }
 
 // fetchNowPlayingPeer is the same read aimed at ANOTHER speaker, whose address
-// came from outside this agent (a zone member, a group the app formed). It goes
-// through the guarded dialer; see boxGetPeer.
+// came from outside this agent (a zone member, a group the app formed). Two
+// separate things guard it, because they answer different questions: the URL is
+// built by JOINING a validated bare address, so a host cannot smuggle its own
+// port and path, and the dial goes through the guarded dialer, so a name that
+// resolves inwards is refused at connect time.
 func fetchNowPlayingPeer(ctx context.Context, host string) nowPlayingSnapshot {
-	return fetchNowPlayingWith(ctx, host, boxGetPeer)
+	u := peerBoxURL(host, "/now_playing")
+	if u == "" {
+		return nowPlayingSnapshot{}
+	}
+	return fetchNowPlayingURL(ctx, u, boxGetPeer)
 }
 
-func fetchNowPlayingWith(ctx context.Context, host string,
+func fetchNowPlayingURL(ctx context.Context, u string,
 	get func(context.Context, string, int64) ([]byte, error)) nowPlayingSnapshot {
 	var snap nowPlayingSnapshot
-	b, err := get(ctx, "http://"+host+":8090/now_playing", 16<<10)
+	b, err := get(ctx, u, 16<<10)
 	if err != nil {
 		return snap
 	}

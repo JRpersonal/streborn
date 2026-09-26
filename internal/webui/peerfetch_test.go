@@ -60,3 +60,34 @@ func TestPeerReadsAllowPrivateAddresses(t *testing.T) {
 func dialGuardFor(ip string) error {
 	return netutil.DialGuardSSRF("tcp", net.JoinHostPort(ip, "8090"), nil)
 }
+
+// The dial guard answers "which address" and cannot answer "was this address
+// smuggled". A member address of "192.0.2.9:80/removeGroup?x=" concatenated into
+// the URL parses as host 192.0.2.9:80 and path /removeGroup, which the guard is
+// perfectly happy with: it is an ordinary LAN address. Verified by running it on
+// 2026-09-26, on :8090 endpoints that ACT on a plain GET.
+func TestAPeerAddressCannotCarryItsOwnPathOrPort(t *testing.T) {
+	escapes := []string{
+		"192.168.178.9:80/removeGroup?x=",
+		"192.168.178.9/removeGroup",
+		"192.168.178.9:22",
+		"speaker.local", // a name: it can resolve elsewhere later
+		"127.0.0.1",     // our own services
+		"8.8.8.8",       // not on this LAN at all
+		"",
+	}
+	for _, host := range escapes {
+		if got := peerBoxURL(host, "/now_playing"); got != "" {
+			t.Errorf("peer %q built %q; only a bare LAN address may build a URL", host, got)
+		}
+		if snap := fetchNowPlayingPeer(context.Background(), host); snap.Source != "" {
+			t.Errorf("peer %q produced a reading", host)
+		}
+	}
+
+	for _, host := range []string{"192.168.178.31", "10.0.0.5", "172.16.4.9"} {
+		if got := peerBoxURL(host, "/now_playing"); got == "" {
+			t.Errorf("a real speaker at %s was refused", host)
+		}
+	}
+}

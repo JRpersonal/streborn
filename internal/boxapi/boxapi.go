@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -846,8 +847,38 @@ func (c *Client) AddWirelessProfile(ctx context.Context, ssid, password string) 
 
 // ---------- helpers ----------
 
+// url builds a request URL for the speaker this client talks to.
+//
+// The host is JOINED, never interpolated, and that is the whole point. Several
+// callers get their host from a request body on the agent's unauthenticated LAN
+// port (a zone member list, for one), and string interpolation let such a host
+// carry its own port, path and query: a "member address" of
+// "192.0.2.9:80/removeGroup?x=" turned this into a request to /removeGroup on
+// port 80 of a host of the caller's choosing. Verified by running it on
+// 2026-09-26. This client also POSTs, so that was a write primitive, not only a
+// read.
+//
+// A host that is not a bare address yields an empty URL, and every caller of
+// url() treats that as a request it cannot build.
 func (c *Client) url(path string) string {
-	return fmt.Sprintf("http://%s:8090%s", c.Host, path)
+	if !isBareHost(c.Host) {
+		return ""
+	}
+	return "http://" + net.JoinHostPort(c.Host, "8090") + path
+}
+
+// isBareHost reports whether host is JUST an address: an IP literal, or a name
+// with nothing in it that a URL parser would read as a separator. Anything
+// carrying / : ? # @ or whitespace is refused, because those are exactly the
+// characters that let a host field become a whole URL.
+func isBareHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	return !strings.ContainsAny(host, "/:?#@ \t\r\n[]")
 }
 
 // SiteSurvey kicks the box radio into a ~5 s scan via /performWirelessSiteSurvey
