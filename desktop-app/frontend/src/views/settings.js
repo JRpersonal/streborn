@@ -509,6 +509,10 @@ export async function loadBoxSettings() {
       // is a capability probe on the speaker, not something /api/box/settings
       // carries. The section stays hidden everywhere else.
       refreshBoxLevelRows(state.settingsBox).catch(() => {});
+      // What other tools have done to this speaker. Also filled after the
+      // markup exists, because it is a separate read and the common answer is
+      // "nothing", which hides the whole section.
+      refreshForeignInfluence(state.settingsBox).catch(() => {});
       return;
     } catch (e) {
       lastErr = e;
@@ -1520,6 +1524,12 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini btn-danger" id="boxRemoveSTRBtn">${escapeHtml(t('settingsView.removeSTRBtn'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.removeSTRHelp'))}</p>
       </div>
+    </div>
+    <div class="settings-section" id="foreignSection" hidden>
+      <h3>${escapeHtml(t('settingsView.foreignHeading'))}</h3>
+      ${helpBlock(t('settingsView.foreignHelp'), 'p', 'muted small')}
+      <div id="foreignList"></div>
+      <div id="foreignResult" class="muted small" style="margin-top:8px"></div>
     </div>
     <div class="settings-section" id="backupSection">
       <h3>${escapeHtml(t('settingsView.backupHeading'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
@@ -3543,6 +3553,119 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
     el.textContent = balanceLabel(b.default || 0);
     applyBalance(src, b.default || 0);
   };
+}
+
+// The safe-haven view: what OTHER tools have done to this speaker.
+//
+// Users try several tools and keep trying them, and afterwards nobody can tell
+// which one caused which effect. STR is the only thing in that picture that can
+// look at the speaker and say so, so it shows every trace it can see and offers
+// to take back the ones it can.
+//
+// Hidden when there is nothing, which is the normal case. A section that is
+// always there, always empty, is a section nobody reads on the day it matters.
+export async function refreshForeignInfluence(box) {
+  const section = document.getElementById('foreignSection');
+  const list = document.getElementById('foreignList');
+  if (!section || !list) return;
+  section.hidden = true;
+  list.innerHTML = '';
+  if (!box || box.kind === 'stock') return;
+  let data;
+  try {
+    data = await BoxForeignInfluence(box.host, box.port);
+  } catch (e) {
+    // An older agent has no such route. Not worth a message: the section is
+    // simply not there.
+    return;
+  }
+  const findings = (data && data.findings) || [];
+  if (!findings.length) return;
+  findings.forEach((f) => list.appendChild(foreignRow(box, f)));
+  section.hidden = false;
+}
+
+// foreignRow renders one finding. Every row says what it is and what STR can
+// do about it, including the rows where the answer is "nothing, and here is
+// why": a row with no explanation reads as a broken button.
+function foreignRow(box, f) {
+  const row = document.createElement('div');
+  row.className = 'setting-row';
+  row.style.flexDirection = 'column';
+  row.style.alignItems = 'flex-start';
+
+  const head = document.createElement('div');
+  const tool = f.tool || t('settingsView.foreignUnknownTool');
+  head.innerHTML = `<b>${escapeHtml(tool)}</b> &middot; `
+    + escapeHtml(t(f.active ? 'settingsView.foreignActive' : 'settingsView.foreignLeftover'));
+  row.appendChild(head);
+
+  if (f.detail) {
+    const d = document.createElement('div');
+    d.className = 'muted small';
+    d.textContent = f.detail;
+    row.appendChild(d);
+  }
+  // The explanation for a row STR cannot act on, straight from the speaker.
+  if (f.note) {
+    const n = document.createElement('div');
+    n.className = 'muted small';
+    n.textContent = f.note;
+    row.appendChild(n);
+  }
+  if (f.undo && f.undo !== 'none') {
+    const b = document.createElement('button');
+    b.className = 'btn btn-mini';
+    b.style.marginTop = '6px';
+    b.textContent = t('settingsView.foreignUndoBtn');
+    b.addEventListener('click', () => undoForeign(box, f, b));
+    row.appendChild(b);
+  }
+  return row;
+}
+
+async function undoForeign(box, f, btn) {
+  const out = document.getElementById('foreignResult');
+  const say = (msg) => { if (out) out.textContent = msg || ''; };
+  // A restart is the cure for the runtime shape, so say so before doing it,
+  // and say the thing that matters more: while the other app runs it sets its
+  // address again the moment the speaker comes back.
+  if (f.undo === 'reboot' || f.undo === 'rewrite') {
+    const ok = await confirmWarn(
+      t('speaker.cloudRestoreTitle'),
+      `<p>${escapeHtml(t('speaker.cloudRestoreBody', { name: getBoxLabel(box), n: 1 }))}</p>`
+      + `<p><b>${escapeHtml(t('speaker.cloudRestoreAppWarning'))}</b></p>`,
+    );
+    if (!ok) return;
+  }
+  btn.disabled = true;
+  say(t('settingsView.foreignWorking'));
+  try {
+    const res = await UndoForeignFinding(box.host, box.port, f.id);
+    if (res && res.status === 'use-endpoint') {
+      // The older, more careful removal owns this one. Point at it rather
+      // than doing half of it here.
+      say(t('settingsView.foreignUseActions'));
+      return;
+    }
+    if (res && res.rebootRequired) {
+      await RebootBox(box.host, box.port);
+      say(t('settingsView.foreignRestarting', { name: getBoxLabel(box) }));
+      setTimeout(() => refreshForeignInfluence(box).catch(() => {}), 90000);
+      return;
+    }
+    // Never claim more than happened: the speaker reports what is still left
+    // and that is what the user is told.
+    const remaining = (res && res.remaining) || '';
+    say(remaining
+      ? t('settingsView.foreignRemaining', { detail: remaining })
+      : t('settingsView.foreignClean'));
+    refreshForeignInfluence(box).catch(() => {});
+  } catch (e) {
+    say(String(e));
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // The separate centre and surround levels of a home theater system.

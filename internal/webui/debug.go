@@ -316,6 +316,14 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// Establishing that took a hand-read of /info, because nothing here
 		// carried it.
 		"sdk_cloud_urls": s.sdkCloudURLDebug(),
+		// What OTHER tools have done to this speaker, one list, each row
+		// saying whether STR can take it back. In the bundle on purpose: the
+		// ST Remote Pro hijack of 2026-09-26 touched no file at all, so a
+		// bundle taken after the next reboot showed nothing, and the only
+		// lasting record was the agent log. This section plus the greppable
+		// "foreign influence:" lines in that log are what let a later sweep
+		// search across users instead of guessing.
+		"foreign_influence": collectForeignInfluence(),
 		// Writable-volume usage: df for /mnt/nv + / and the per-entry sizes that
 		// answer "is this box genuinely tighter or carrying foreign firmware
 		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).

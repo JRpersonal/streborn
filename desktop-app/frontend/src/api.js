@@ -190,6 +190,17 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// BoxForeignInfluence / UndoForeignFinding are the safe-haven view: what other
+// tools have done to this speaker, and taking one of those things back.
+// Optional bindings, per the note above.
+export function BoxForeignInfluence(host, port) {
+  return callOptionalBinding('BoxForeignInfluence', [host, port]);
+}
+
+export function UndoForeignFinding(host, port, id) {
+  return callOptionalBinding('UndoForeignFinding', [host, port, id]);
+}
+
 // RestoreSTRCloud puts STR's cloud address back on the given speakers, one at
 // a time, restarting each and verifying it afterwards. Optional binding, per
 // the note above: brand new, so a named re-export would break the frontend

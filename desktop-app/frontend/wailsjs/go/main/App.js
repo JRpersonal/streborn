@@ -30,6 +30,10 @@ export function BoxAgentVersion(arg1, arg2) {
   return window['go']['main']['App']['BoxAgentVersion'](arg1, arg2);
 }
 
+export function BoxForeignInfluence(arg1, arg2) {
+  return window['go']['main']['App']['BoxForeignInfluence'](arg1, arg2);
+}
+
 export function BoxInstallReachable(arg1) {
   return window['go']['main']['App']['BoxInstallReachable'](arg1);
 }
@@ -580,6 +584,10 @@ export function TrueFactoryReset(arg1) {
 
 export function TryWiFiPassword(arg1) {
   return window['go']['main']['App']['TryWiFiPassword'](arg1);
+}
+
+export function UndoForeignFinding(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UndoForeignFinding'](arg1, arg2, arg3);
 }
 
 export function UninstallSTR(arg1) {

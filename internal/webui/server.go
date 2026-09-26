@@ -1185,6 +1185,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
 	mux.HandleFunc("/api/box/restore-cloud-url", s.handleRestoreCloudURL)
+	mux.HandleFunc("/api/box/foreign-influence", s.handleForeignInfluence)
 	mux.HandleFunc("/api/box/wake", s.handleBoxWake)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)

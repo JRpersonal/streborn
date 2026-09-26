@@ -19,6 +19,8 @@ export function ApplyUpdate(arg1:string):Promise<void>;
 
 export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, string>>;
 
+export function BoxForeignInfluence(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function BoxInstallReachable(arg1:string):Promise<boolean>;
 
 export function BoxPresets(arg1:string,arg2:number):Promise<Array<main.BoxPresetInfo>>;
@@ -294,6 +296,8 @@ export function Translate(arg1:string,arg2:string):Promise<string>;
 export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResult>;
 
 export function TryWiFiPassword(arg1:string):Promise<string>;
+
+export function UndoForeignFinding(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
 export function UninstallSTR(arg1:string):Promise<main.UninstallSTRResult>;
 
