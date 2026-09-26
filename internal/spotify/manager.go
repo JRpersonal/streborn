@@ -167,6 +167,9 @@ type Manager struct {
 	// being told to wait is a reason to wait a long time, not to try again in
 	// half a minute and stay throttled.
 	productQuietUntil time.Time
+	// productQuietFor is the last wait that was applied, so consecutive refusals
+	// grow it instead of asking again the moment the header expires.
+	productQuietFor   time.Duration
 	sawFreeAccountLog bool
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real

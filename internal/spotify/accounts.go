@@ -114,13 +114,27 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 		// 30 s retry gate in PremiumRequired, so it cannot become chatter.
 		var limited rateLimitError
 		if errors.As(err, &limited) {
+			// Each refusal is also an escalation: measured on a real account,
+			// Spotify asked for 37 s, then 47 s, then 57 s as the speaker kept
+			// coming back the moment each window expired. Honouring the header
+			// alone therefore keeps feeding the throttle. Double the previous
+			// wait instead, with the header as the floor.
 			// Spotify said "too often", and it also said for how long. Honour
 			// that: the first version of this waited six hours on a header that
 			// asked for forty-two seconds, which trades one wrong answer for
 			// another.
 			m.mu.Lock()
-			m.productQuietUntil = time.Now().Add(limited.after)
+			wait := limited.after
+			if grown := 2 * m.productQuietFor; grown > wait {
+				wait = grown
+			}
+			if wait > productRateLimitMax {
+				wait = productRateLimitMax
+			}
+			m.productQuietFor = wait
+			m.productQuietUntil = time.Now().Add(wait)
 			m.mu.Unlock()
+			m.logger.Info("spotify: leaving the account plan alone for a while", "wait", wait)
 		}
 		m.logger.Info("spotify: could not read the account plan from Spotify", "err", err)
 		return ""
@@ -148,6 +162,7 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	}
 	m.mu.Lock()
 	m.productType, m.productCheckedAt = me.Product, time.Now()
+	m.productQuietFor = 0
 	m.mu.Unlock()
 	return me.Product
 }

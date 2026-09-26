@@ -266,3 +266,44 @@ func TestRetryAfterIsHonoured(t *testing.T) {
 		t.Errorf("an HTTP-date Retry-After gave %v, want about five minutes", got)
 	}
 }
+
+// Honouring the header is not enough on its own: Spotify escalates. Measured on
+// a real account on 2026-09-26, it asked for 37 s, then 47 s, then 57 s, because
+// the speaker came back the moment each window expired. Each refusal has to cost
+// more than the last, or the speaker keeps feeding the throttle.
+func TestRepeatedRefusalsBackOffFurtherEachTime(t *testing.T) {
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
+	}))
+	defer engine.Close()
+	spotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "40")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer spotify.Close()
+
+	m := productTestManager(t, engine.URL)
+	waits := []time.Duration{}
+	for i := 0; i < 4; i++ {
+		m.mu.Lock()
+		m.productQuietUntil = time.Time{} // the window has passed
+		m.mu.Unlock()
+		_ = m.accountProductAt(context.Background(), spotify.URL)
+		m.mu.Lock()
+		waits = append(waits, m.productQuietFor)
+		m.mu.Unlock()
+	}
+	for i := 1; i < len(waits); i++ {
+		if waits[i] <= waits[i-1] {
+			t.Fatalf("waits did not grow: %v", waits)
+		}
+	}
+	if waits[len(waits)-1] > productRateLimitMax {
+		t.Fatalf("the backoff ran past its ceiling: %v", waits)
+	}
+	t.Logf("waits: %v", waits)
+}
