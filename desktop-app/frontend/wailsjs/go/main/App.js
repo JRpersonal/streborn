@@ -398,6 +398,10 @@ export function RestoreBoxSnapshot(arg1, arg2, arg3) {
   return window['go']['main']['App']['RestoreBoxSnapshot'](arg1, arg2, arg3);
 }
 
+export function RestoreSTRCloud(arg1) {
+  return window['go']['main']['App']['RestoreSTRCloud'](arg1);
+}
+
 export function Resume(arg1, arg2) {
   return window['go']['main']['App']['Resume'](arg1, arg2);
 }

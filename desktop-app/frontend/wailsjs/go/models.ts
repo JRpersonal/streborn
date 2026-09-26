@@ -138,6 +138,46 @@ export namespace main {
 	        this.lost = source["lost"];
 	    }
 	}
+	export class CloudRestoreResult {
+	    host: string;
+	    name: string;
+	    rebooted: boolean;
+	    cameBack: boolean;
+	    restored: boolean;
+	    stillForeign?: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CloudRestoreResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.name = source["name"];
+	        this.rebooted = source["rebooted"];
+	        this.cameBack = source["cameBack"];
+	        this.restored = source["restored"];
+	        this.stillForeign = source["stillForeign"];
+	        this.error = source["error"];
+	    }
+	}
+	export class CloudRestoreTarget {
+	    host: string;
+	    port: number;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CloudRestoreTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.name = source["name"];
+	    }
+	}
 	export class FirmwareInfo {
 	    reachable: boolean;
 	    model: string;

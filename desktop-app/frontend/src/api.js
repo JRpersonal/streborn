@@ -190,6 +190,14 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// RestoreSTRCloud puts STR's cloud address back on the given speakers, one at
+// a time, restarting each and verifying it afterwards. Optional binding, per
+// the note above: brand new, so a named re-export would break the frontend
+// build against an older generated App module.
+export function RestoreSTRCloud(targets) {
+  return callOptionalBinding('RestoreSTRCloud', [targets]);
+}
+
 // BoxSpeakerLevels / SetBoxSpeakerLevel drive the front-centre and
 // rear-surround levels of a home theater system. Optional bindings, per the
 // note above: both are brand new, so naming them in the re-export list at the

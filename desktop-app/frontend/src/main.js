@@ -11,6 +11,7 @@ import {
   PlaySlot,
   PlayURL,
   RebootBox,
+  RestoreSTRCloud,
   RecordUpdateIntent,
   UpdateFailureReport,
   SetOTARunning,
@@ -2515,8 +2516,20 @@ function checkBoxIssueBanner() {
   const stormBtn = storm.length
     ? `<button class="btn btn-primary btn-mini" id="boxIssueStormBtn">${escapeHtml(t('speaker.stormRestartBtn'))}</button>`
     : '';
+  // One press puts STR back on every hijacked speaker at once.
+  //
+  // The per-speaker Actions page cannot do this. Its repair rewrites the cloud
+  // address FILE, and a rival app that sets the address at runtime leaves that
+  // file untouched, so the repair healed nothing and said it had worked. The
+  // cure is a restart, because the firmware reads the file once at boot.
+  // Measured across five speakers on 2026-09-26 after the ST Remote Pro iOS app
+  // was started; one reboot each brought every one back stock and paired.
+  const cloudBtn = foreignCloud.length
+    ? `<button class="btn btn-primary btn-mini" id="boxIssueCloudBtn">${escapeHtml(t('speaker.cloudRestoreBtn', { n: foreignCloud.length }))}</button>`
+    : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${cloudBtn}
     ${stormBtn}
     ${conflictBtn}
     ${wifiBtn}
@@ -2534,6 +2547,8 @@ function checkBoxIssueBanner() {
       sb.disabled = false;
     }
   };
+  const cloudB = $('boxIssueCloudBtn');
+  if (cloudB) cloudB.onclick = () => runCloudRestore(foreignCloud, cloudB);
   const wb = $('boxIssueWifiBtn');
   if (wb) wb.onclick = () => { selectBox(noWifi[0]); switchView('settings'); };
   const cb = $('boxIssueConflictBtn');
@@ -2546,6 +2561,59 @@ function checkBoxIssueBanner() {
     el.classList.add('hidden');
   };
   el.classList.remove('hidden');
+}
+
+// runCloudRestore puts STR back on every speaker a rival app has taken over.
+//
+// The confirmation carries the warning that matters more than the restart: as
+// long as the other app runs, it sets the address again, including right after
+// the speaker comes back. That is not a theory, it is what happened on
+// 2026-09-26: the hijack itself restarted all five speakers, and they came back
+// still pointing at the other service because the app was still open. Restart
+// them while it runs and the whole thing simply repeats.
+async function runCloudRestore(boxes, btn) {
+  if (!boxes || !boxes.length) return;
+  const names = boxes.map(b => getBoxLabel(b)).join(', ');
+  const ok = await confirmWarn(
+    t('speaker.cloudRestoreTitle'),
+    `<p>${escapeHtml(t('speaker.cloudRestoreBody', { name: names, n: boxes.length }))}</p>`
+    + `<p><b>${escapeHtml(t('speaker.cloudRestoreAppWarning'))}</b></p>`,
+  );
+  if (!ok) return;
+  btn.disabled = true;
+  // The progress line names the speaker being worked on. One at a time, so a
+  // fleet takes a few minutes and silence would read as a hang.
+  const off = EventsOn('cloudrestore:progress', (p) => {
+    if (!p) return;
+    showToast(t('speaker.cloudRestoreProgress', {
+      name: p.name || '', done: p.done || 0, total: p.total || boxes.length,
+    }));
+  });
+  try {
+    const results = await RestoreSTRCloud(boxes.map(b => ({
+      host: b.host, port: b.port, name: getBoxLabel(b),
+    })));
+    const done = (results || []).filter(r => r && r.restored);
+    const failed = (results || []).filter(r => r && !r.restored);
+    if (!failed.length) {
+      showToast(t('speaker.cloudRestoreDone', { n: done.length }));
+    } else {
+      // Name the speakers that are still wrong and why. A partial repair
+      // reported as success is the mistake this whole path exists to undo.
+      const detail = failed
+        .map(r => `${r.name || r.host}: ${r.error || r.stillForeign || '?'}`)
+        .join('; ');
+      showError(t('speaker.cloudRestorePartial', {
+        ok: done.length, bad: failed.length, detail,
+      }));
+    }
+    discoverBoxes();
+  } catch (e) {
+    showError(String(e));
+  } finally {
+    try { off(); } catch {}
+    btn.disabled = false;
+  }
 }
 
 // manualIpInputBusy reports whether a manual connect-by-IP input is in use
