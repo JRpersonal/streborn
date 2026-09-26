@@ -321,6 +321,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// use the *Locked variant (startQueue would re-lock and deadlock).
 	if p.Type == "queue" {
 		// Emptiness was answered before the wake, in recallRefusedBeforeWake.
+		// The tracks carry the music server's address, so a server that moved
+		// takes every folder key with it (#977). Put the key on the address the
+		// server answers at now before the queue is built from it.
+		s.healQueuePresetIfMoved(playCtx, slot, &p)
 		items := presetItemsToQueue(p.Items)
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 		// Bind the slot before the queue starts so a box-native /stream/<slot>

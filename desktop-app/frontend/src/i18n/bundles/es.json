@@ -141,7 +141,7 @@
   "multiroom.stereoName": "Nombre",
   "multiroom.stereoNamePlaceholder": "p. ej. Salón",
   "multiroom.stereoNameSaveBtn": "Guardar nombre",
-  "multiroom.stereoCreateBtn": "Crear par estéreo (experimental)",
+  "multiroom.stereoCreateBtn": "Crear pareja estéreo",
   "multiroom.stereoDissolveBtn": "Deshacer el par estéreo",
   "multiroom.stereoSamePicked": "Elige dos altavoces distintos para izquierda y derecha.",
   "multiroom.stereoFormed": "Par estéreo creado. Dale unos segundos. Si un altavoz se queda en silencio o ambos reproducen el mismo canal, envía los registros.",

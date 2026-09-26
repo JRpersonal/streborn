@@ -145,7 +145,7 @@
   "multiroom.stereoName": "Name",
   "multiroom.stereoNamePlaceholder": "e.g. Living room",
   "multiroom.stereoNameSaveBtn": "Save name",
-  "multiroom.stereoCreateBtn": "Create stereo pair (experimental)",
+  "multiroom.stereoCreateBtn": "Create stereo pair",
   "multiroom.stereoDissolveBtn": "Undo stereo pair",
   "multiroom.stereoSamePicked": "Pick two different speakers for left and right.",
   "multiroom.stereoFormed": "Stereo pair created. Give it a few seconds. If a speaker stays silent or both play the same channel, send logs.",

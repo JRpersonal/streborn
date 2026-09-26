@@ -145,7 +145,7 @@
   "multiroom.stereoName": "Name",
   "multiroom.stereoNamePlaceholder": "z. B. Wohnzimmer",
   "multiroom.stereoNameSaveBtn": "Name speichern",
-  "multiroom.stereoCreateBtn": "Stereo-Paar erstellen (experimentell)",
+  "multiroom.stereoCreateBtn": "Stereo-Paar erstellen",
   "multiroom.stereoDissolveBtn": "Stereopaar auflösen",
   "multiroom.stereoSamePicked": "Wähle zwei verschiedene Lautsprecher für links und rechts.",
   "multiroom.stereoFormed": "Stereo-Paar erstellt. Gib ihm ein paar Sekunden. Falls ein Lautsprecher stumm bleibt oder beide denselben Kanal spielen, bitte Logs senden.",

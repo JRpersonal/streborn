@@ -141,7 +141,7 @@
   "multiroom.stereoName": "Naam",
   "multiroom.stereoNamePlaceholder": "bijv. Woonkamer",
   "multiroom.stereoNameSaveBtn": "Naam opslaan",
-  "multiroom.stereoCreateBtn": "Stereopaar maken (experimenteel)",
+  "multiroom.stereoCreateBtn": "Stereopaar maken",
   "multiroom.stereoDissolveBtn": "Stereopaar opheffen",
   "multiroom.stereoSamePicked": "Kies twee verschillende speakers voor links en rechts.",
   "multiroom.stereoFormed": "Stereopaar gemaakt. Geef het een paar seconden. Als een speaker stil blijft of beide hetzelfde kanaal afspelen, stuur dan de logs.",

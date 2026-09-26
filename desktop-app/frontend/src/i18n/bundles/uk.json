@@ -141,7 +141,7 @@
   "multiroom.stereoName": "Назва",
   "multiroom.stereoNamePlaceholder": "напр. Вітальня",
   "multiroom.stereoNameSaveBtn": "Зберегти назву",
-  "multiroom.stereoCreateBtn": "Створити стереопару (експериментально)",
+  "multiroom.stereoCreateBtn": "Створити стереопару",
   "multiroom.stereoDissolveBtn": "Роз’єднати стереопару",
   "multiroom.stereoSamePicked": "Виберіть дві різні колонки для лівої й правої.",
   "multiroom.stereoFormed": "Стереопару створено. Зачекайте кілька секунд. Якщо колонка мовчить або обидві відтворюють той самий канал, надішліть журнали.",

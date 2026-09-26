@@ -141,7 +141,7 @@
   "multiroom.stereoName": "Nom",
   "multiroom.stereoNamePlaceholder": "p. ex. Salon",
   "multiroom.stereoNameSaveBtn": "Enregistrer le nom",
-  "multiroom.stereoCreateBtn": "Créer une paire stéréo (expérimental)",
+  "multiroom.stereoCreateBtn": "Créer une paire stéréo",
   "multiroom.stereoDissolveBtn": "Défaire la paire stéréo",
   "multiroom.stereoSamePicked": "Choisis deux enceintes différentes pour la gauche et la droite.",
   "multiroom.stereoFormed": "Paire stéréo créée. Patientez quelques secondes. Si une enceinte reste muette ou si les deux jouent le même canal, envoie-moi les journaux.",

@@ -141,7 +141,7 @@
   "multiroom.stereoName": "Nazwa",
   "multiroom.stereoNamePlaceholder": "np. Salon",
   "multiroom.stereoNameSaveBtn": "Zapisz nazwę",
-  "multiroom.stereoCreateBtn": "Utwórz parę stereo (eksperymentalne)",
+  "multiroom.stereoCreateBtn": "Utwórz parę stereo",
   "multiroom.stereoDissolveBtn": "Rozłącz parę stereo",
   "multiroom.stereoSamePicked": "Wybierz dwa różne głośniki dla lewego i prawego.",
   "multiroom.stereoFormed": "Para stereo utworzona. Daj jej kilka sekund. Jeśli głośnik milczy albo oba odtwarzają ten sam kanał, prześlij logi.",

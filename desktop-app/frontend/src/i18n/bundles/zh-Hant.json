@@ -145,7 +145,7 @@
   "multiroom.stereoName": "名稱",
   "multiroom.stereoNamePlaceholder": "例如：客廳",
   "multiroom.stereoNameSaveBtn": "儲存名稱",
-  "multiroom.stereoCreateBtn": "建立立體聲配對（實驗性）",
+  "multiroom.stereoCreateBtn": "建立立體聲配對",
   "multiroom.stereoDissolveBtn": "解除立體聲配對",
   "multiroom.stereoSamePicked": "左右請選兩台不同的喇叭。",
   "multiroom.stereoFormed": "立體聲配對建好了。等幾秒鐘。如果有一台沒聲音，或兩台播的是同一個聲道，請把紀錄寄過來。",

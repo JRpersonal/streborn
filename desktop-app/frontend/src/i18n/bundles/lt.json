@@ -141,7 +141,7 @@
   "multiroom.stereoName": "Pavadinimas",
   "multiroom.stereoNamePlaceholder": "pvz. Svetainė",
   "multiroom.stereoNameSaveBtn": "Išsaugoti pavadinimą",
-  "multiroom.stereoCreateBtn": "Sukurti stereo porą (eksperimentinė)",
+  "multiroom.stereoCreateBtn": "Sukurti stereo porą",
   "multiroom.stereoDissolveBtn": "Išardyti stereo porą",
   "multiroom.stereoSamePicked": "Kairei ir dešinei pasirinkite du skirtingus garsiakalbius.",
   "multiroom.stereoFormed": "Stereo pora sukurta. Palaukite kelias sekundes. Jei garsiakalbis tyli arba abu groja tą patį kanalą, atsiųskite žurnalus.",
