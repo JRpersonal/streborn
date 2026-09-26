@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // Whether the Spotify account is Premium or free decides whether a saved key is
@@ -27,6 +28,14 @@ func TestAccountProductReadsTheProductThroughTheToken(t *testing.T) {
 	var tokenCalls, meCalls atomic.Int32
 	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/token" {
+			// The engine registers this READ as a POST (daemon/api_gen.go), and
+			// answering a GET with a token would let the test pass while a real
+			// speaker returns 405 and the plan stays unknown. That happened.
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", "POST")
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
 			tokenCalls.Add(1)
 			_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
 			return
@@ -97,6 +106,10 @@ func TestAccountProductStaysUnknownWhenAnythingGoesWrong(t *testing.T) {
 			engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if c.engineHandler != nil {
 					c.engineHandler(w, r)
+					return
+				}
+				if r.Method != http.MethodPost {
+					http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 					return
 				}
 				_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
@@ -182,5 +195,47 @@ func TestInfoReportsWhatItBelievesTheAccountPlanIs(t *testing.T) {
 	}
 	if got["product"] != "premium" {
 		t.Errorf("product = %v, want premium", got["product"])
+	}
+}
+
+// Being rate-limited has to change what the speaker does, not just what it
+// logs. Measured on the Portable on 2026-09-26: a 30 s retry on every unknown
+// plan kept asking through a 429 and stayed throttled.
+func TestARateLimitedPlanReadGoesQuiet(t *testing.T) {
+	var meCalls atomic.Int32
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
+	}))
+	defer engine.Close()
+	spotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		meCalls.Add(1)
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer spotify.Close()
+
+	m := productTestManager(t, engine.URL)
+	if got := m.accountProductAt(context.Background(), spotify.URL); got != "" {
+		t.Fatalf("product = %q, want unknown", got)
+	}
+	// Every further read inside the quiet window must not touch Spotify again.
+	for i := 0; i < 5; i++ {
+		_ = m.accountProductAt(context.Background(), spotify.URL)
+	}
+	if n := meCalls.Load(); n != 1 {
+		t.Fatalf("Spotify was asked %d times after a 429; the speaker must wait instead", n)
+	}
+
+	// And the window does end: it is a pause, not a permanent surrender.
+	m.mu.Lock()
+	m.productQuietUntil = time.Now().Add(-time.Second)
+	m.mu.Unlock()
+	_ = m.accountProductAt(context.Background(), spotify.URL)
+	if n := meCalls.Load(); n != 2 {
+		t.Fatalf("after the quiet window the speaker must ask again, got %d calls", n)
 	}
 }

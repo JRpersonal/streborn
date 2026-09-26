@@ -7,6 +7,7 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,16 @@ import (
 // spotifyMeURL is the one Web API call STR makes. Everything else it needs comes
 // from the engine's own API.
 const spotifyMeURL = "https://api.spotify.com/v1/me"
+
+// errSpotifyRateLimited marks the one answer that has to change behaviour
+// rather than merely be logged.
+var errSpotifyRateLimited = errors.New("spotify answered 429, too many requests")
+
+// productRateLimitQuiet is how long the speaker leaves the plan alone after
+// being rate-limited. Long on purpose: a subscription does not change hourly,
+// and the engine's own free-account log signal still covers the case that
+// matters while the speaker waits.
+const productRateLimitQuiet = 6 * time.Hour
 
 // accountProduct returns the Spotify account product type ("premium"/"free"/
 // "open"), cached for a few minutes. Returns "" when unknown (the zeroconf token
@@ -56,10 +67,26 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 		m.mu.Unlock()
 		return p
 	}
+	quiet := m.productQuietUntil
 	m.mu.Unlock()
+	if time.Now().Before(quiet) {
+		return ""
+	}
 	data, err := m.spotifyWebGet(ctx, meURL)
 	if err != nil {
-		m.logger.Debug("spotify: could not read the account product type", "err", err)
+		// Info, not Debug: a plan that cannot be read is why a Premium warning
+		// does not appear, and Debug is off on a speaker, so the one line that
+		// explains it was invisible exactly when it was needed. Bounded by the
+		// 30 s retry gate in PremiumRequired, so it cannot become chatter.
+		if errors.Is(err, errSpotifyRateLimited) {
+			// Spotify said "too often". Asking again in half a minute keeps the
+			// speaker throttled and teaches it nothing: a subscription is not
+			// news that breaks hourly.
+			m.mu.Lock()
+			m.productQuietUntil = time.Now().Add(productRateLimitQuiet)
+			m.mu.Unlock()
+		}
+		m.logger.Info("spotify: could not read the account plan from Spotify", "err", err)
 		return ""
 	}
 	var me struct {
@@ -95,7 +122,14 @@ func (m *Manager) PremiumRequired() bool {
 		m.productTriedAt = time.Now()
 		m.mu.Unlock()
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			// Generous, and it has to be: this is no longer a call into the
+			// engine next door but the speaker's own TLS handshake with
+			// Spotify, on a CPU that does softfloat arithmetic. Four seconds
+			// was enough for the old proxy and was not enough for this
+			// (measured on the Portable, 2026-09-26: the answer never arrived
+			// and the plan stayed unknown). It runs in the background, so the
+			// only thing a longer budget costs is a goroutine that waits.
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			m.accountProduct(ctx)
 		}()
@@ -465,7 +499,13 @@ func (m *Manager) AudioKeyRefused() bool {
 // most), so caching a bearer token on the speaker would add an expiry to get
 // wrong for no measurable saving.
 func (m *Manager) spotifyWebGet(ctx context.Context, url string) ([]byte, error) {
-	raw, err := m.apiGet(ctx, "/token")
+	// POST, not GET. The engine's own router registers this one as
+	// `POST /token` (daemon/api_gen.go), whatever the read-shaped name
+	// suggests, and a GET comes back 405 with a plain-text body that parses as
+	// no token at all. Measured on the Portable on 2026-09-26: the plan stayed
+	// unknown on a healthy, playing, Premium speaker until the method was
+	// right, which is the sort of thing only a real speaker says out loud.
+	raw, err := m.apiPostJSON(ctx, "/token")
 	if err != nil {
 		return nil, fmt.Errorf("no access token from the engine: %w", err)
 	}
@@ -485,6 +525,9 @@ func (m *Manager) spotifyWebGet(ctx context.Context, url string) ([]byte, error)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("%w (retry-after %q)", errSpotifyRateLimited, resp.Header.Get("Retry-After"))
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("spotify answered %d", resp.StatusCode)
 	}
