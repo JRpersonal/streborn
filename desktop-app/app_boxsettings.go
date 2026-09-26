@@ -258,3 +258,55 @@ func (a *App) TestWebhookAction(host string, port int, actionJSON string) (map[s
 	}
 	return out, nil
 }
+
+// --- Foreign influence: what other tools did to this speaker -------------
+//
+// The safe-haven view. Users try several tools and keep trying them, and
+// afterwards nobody can tell which one caused which effect; STR is the only
+// thing in that picture that can look at the speaker and say so.
+//
+// The case that made it necessary touched no file at all: the ST Remote Pro
+// iOS app pointed five speakers at its own cloud at runtime on 2026-09-26, and
+// every file-based check reported them clean.
+
+// BoxForeignInfluence lists what other tools have done to this speaker, each
+// row carrying an honest verdict on whether STR can take it back.
+func (a *App) BoxForeignInfluence(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/foreign-influence", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UndoForeignFinding undoes exactly ONE row. One at a time on purpose: a single
+// "clean everything" button that quietly skips the half it cannot do is the
+// mistake this area keeps making, and the answer always carries what is still
+// left so the app can never claim more than happened.
+func (a *App) UndoForeignFinding(host string, port int, id string) (map[string]any, error) {
+	body, _ := json.Marshal(map[string]string{"id": id})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/foreign-influence",
+		"application/json", string(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	a.logger.Info("foreign influence: undo", "host", host, "id", id,
+		"status", out["status"], "remaining", out["remaining"])
+	return out, nil
+}

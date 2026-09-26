@@ -1379,7 +1379,16 @@ func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Reque
 		// stillDetected stays true while anything the box acts on is left, the
 		// foreign cloud URL included: the app shows this verbatim, and #986
 		// proved how much a cheerful "removed (0)" costs when it is wrong.
-		"stillDetected":  detectConflictingMod() != "" || stillForeign != "",
+		//
+		// The LIVE view belongs in it, not just the files. A rival app can set
+		// the address at runtime and leave the config untouched, which is what
+		// the ST Remote Pro iOS app did to a five-speaker fleet on 2026-09-26:
+		// files pristine, firmware naming stremotepro.com, nothing paired. With
+		// only the file view here, this handler reported everything cleaned up
+		// on a speaker that was still hijacked, which is exactly the #986
+		// mistake in a new shape. A restart cures it and rebootRequired below
+		// already says so.
+		"stillDetected":  detectConflictingMod() != "" || stillForeign != "" || liveForeign != "",
 		"cloudURLHealed": heal.Healed,
 	}
 	if heal.Healed || heal.RestartPending {
