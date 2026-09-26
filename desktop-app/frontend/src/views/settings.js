@@ -91,6 +91,8 @@ import {
   SetBoxBass,
   BoxSpeakerLevels,
   SetBoxSpeakerLevel,
+  BoxForeignInfluence,
+  UndoForeignFinding,
   ListWiFiProfiles,
   BoxWifiScan,
   TryWiFiPassword,
