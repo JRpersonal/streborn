@@ -89,6 +89,8 @@ import {
   SetBoxName,
   SetBoxVolume,
   SetBoxBass,
+  BoxSpeakerLevels,
+  SetBoxSpeakerLevel,
   ListWiFiProfiles,
   BoxWifiScan,
   TryWiFiPassword,
@@ -503,6 +505,10 @@ export async function loadBoxSettings() {
       refreshBoxBalanceRow(state.settingsBox,
         stereoPairsOf(state.zoneLive || {}).find(p => inStereoPair(state.settingsBox, p)) || null, state.boxes)
         .catch(() => {});
+      // Same deal: only a home theater system has these, and whether it does
+      // is a capability probe on the speaker, not something /api/box/settings
+      // carries. The section stays hidden everywhere else.
+      refreshBoxLevelRows(state.settingsBox).catch(() => {});
       return;
     } catch (e) {
       lastErr = e;
@@ -1128,6 +1134,24 @@ function renderBoxSettings(s, box) {
         <small class="muted small" id="boxBalanceNote"></small>
       </div>
       ${vol.muted ? `<small class="muted small">${escapeHtml(t('settingsView.muted'))}</small>` : ''}
+    </div>
+
+    <div class="settings-section" id="boxLevelsSection" hidden>
+      <h3>${escapeHtml(t('settingsView.levelsHeading'))}</h3>
+      <div class="setting-row" id="boxLevelCentreRow" hidden>
+        <label for="boxLevelCentre">${escapeHtml(t('settingsView.levelCentre'))}</label>
+        <input type="range" id="boxLevelCentre" />
+        <span class="setting-value" id="boxLevelCentreVal"></span>
+      </div>
+      <div class="setting-row" id="boxLevelSurroundRow" hidden>
+        <label for="boxLevelSurround">${escapeHtml(t('settingsView.levelSurround'))}</label>
+        <input type="range" id="boxLevelSurround" />
+        <span class="setting-value" id="boxLevelSurroundVal"></span>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.levelsHelp'))}</small>
+      <div class="setting-row" id="boxLevelsNoteRow" hidden>
+        <small class="muted small" id="boxLevelsNote"></small>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -3519,6 +3543,81 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
     el.textContent = balanceLabel(b.default || 0);
     applyBalance(src, b.default || 0);
   };
+}
+
+// The separate centre and surround levels of a home theater system.
+//
+// A SoundTouch 300 owner with Virtually Invisible 300 surrounds on two bars
+// wrote on 2026-09-25 that the surrounds can only be turned up together with
+// the bar. That was true of STR: the surrounds hang off the bar's own wireless
+// link and never appear on the network, so the only thing to address is the
+// bar. The bar has the knob though, and the agent now reads it.
+//
+// Hidden on every ordinary speaker, and that is the common case: supported is
+// false unless the speaker itself advertises the capability. Each level is
+// shown on its own, because a bar with surrounds but no separate centre
+// reports only the one.
+export async function refreshBoxLevelRows(box) {
+  const section = document.getElementById('boxLevelsSection');
+  if (!section) return;
+  section.hidden = true;
+  if (!box || box.kind === 'stock') return;
+  let lv;
+  try {
+    lv = await BoxSpeakerLevels(box.host, box.port);
+  } catch (e) {
+    // An older agent has no such route. Not an error worth a message: the
+    // section simply is not there.
+    return;
+  }
+  if (!lv || !lv.supported) return;
+  const any = wireLevelRow(box, 'frontCenter', lv.frontCenter, 'boxLevelCentre')
+    | wireLevelRow(box, 'rearSurrounds', lv.rearSurrounds, 'boxLevelSurround');
+  section.hidden = !any;
+}
+
+// wireLevelRow paints and wires one level, and reports whether it was shown.
+function wireLevelRow(box, level, info, idBase) {
+  const row = document.getElementById(idBase + 'Row');
+  const slider = document.getElementById(idBase);
+  const label = document.getElementById(idBase + 'Val');
+  if (!row || !slider || !label) return 0;
+  if (!info || !info.available) { row.hidden = true; return 0; }
+  // Bounds and granularity from the speaker, never a constant: the firmware
+  // refuses a write off its own grid.
+  slider.min = String(info.min);
+  slider.max = String(info.max);
+  slider.step = String(info.step || 1);
+  slider.value = String(info.value);
+  label.textContent = formatRel(info.value);
+  row.hidden = false;
+  // While dragging only the label moves; the write goes out on release. One
+  // write per pixel of travel would put a queue of them on the speaker.
+  slider.oninput = () => { label.textContent = formatRel(slider.value); };
+  slider.onchange = () => applySpeakerLevel(box, level, parseInt(slider.value, 10), slider, label, info);
+  return 1;
+}
+
+// applySpeakerLevel writes one level and puts the value back if it was refused,
+// so the slider never sits at a number the speaker does not hold.
+async function applySpeakerLevel(box, level, value, slider, label, info) {
+  const note = document.getElementById('boxLevelsNote');
+  const noteRow = document.getElementById('boxLevelsNoteRow');
+  const say = (msg) => {
+    if (!note || !noteRow) return;
+    note.textContent = msg || '';
+    noteRow.hidden = !msg;
+  };
+  say('');
+  try {
+    await SetBoxSpeakerLevel(box.host, box.port, level, value);
+  } catch (e) {
+    slider.value = String(info.value);
+    label.textContent = formatRel(info.value);
+    say(t('settingsView.levelsFailed'));
+    return;
+  }
+  info.value = value;
 }
 
 // applyBalance sends one balance write and says what came back.

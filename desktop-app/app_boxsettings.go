@@ -42,6 +42,38 @@ func (a *App) SetBoxBass(host string, port int, value int) error {
 	return a.boxPut(host, port, "/api/box/bass", map[string]int{"value": value})
 }
 
+// BoxSpeakerLevels reads the front-center and rear-surround levels of a home
+// theater system -> {supported, frontCenter:{value,min,max,step,available},
+// rearSurrounds:{...}}.
+//
+// supported=false is the normal answer on an ordinary speaker and is NOT an
+// error: only a soundbar or console with separately driven speakers has these.
+// Asked for by a SoundTouch 300 owner whose Virtually Invisible 300 surrounds
+// could only be turned up together with the bar (mail 2026-09-25); the bar has
+// had the knob all along, STR just never asked for it.
+func (a *App) BoxSpeakerLevels(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/levels", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetBoxSpeakerLevel writes ONE level, "frontCenter" or "rearSurrounds". Only
+// the named one is sent, so a level changed meanwhile on the Bose remote is
+// not overwritten by a stale value still on screen here.
+func (a *App) SetBoxSpeakerLevel(host string, port int, level string, value int) error {
+	return a.boxPut(host, port, "/api/box/levels", map[string]any{"level": level, "value": value})
+}
+
 // SelectBoxSource switches the box to one of its own sources ("AUX", "LOCAL",
 // "PRODUCT", "BLUETOOTH", "STANDBY", ...). The Stick Agent translates that into
 // the matching /select or /key call to the Bose REST API, and refuses anything

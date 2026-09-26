@@ -27,6 +27,8 @@ export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>
 
 export function BoxSnapshot(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function BoxSpeakerLevels(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function BoxStoragePreflight(arg1:string,arg2:number):Promise<main.StoragePreflight>;
 
 export function BoxWifiScan(arg1:string,arg2:number):Promise<Array<string>>;
@@ -232,6 +234,8 @@ export function SetBoxBass(arg1:string,arg2:number,arg3:number):Promise<void>;
 export function SetBoxLanguage(arg1:string,arg2:number):Promise<void>;
 
 export function SetBoxName(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function SetBoxSpeakerLevel(arg1:string,arg2:number,arg3:string,arg4:number):Promise<void>;
 
 export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 

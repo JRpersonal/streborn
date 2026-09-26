@@ -46,6 +46,10 @@ export function BoxSnapshot(arg1, arg2) {
   return window['go']['main']['App']['BoxSnapshot'](arg1, arg2);
 }
 
+export function BoxSpeakerLevels(arg1, arg2) {
+  return window['go']['main']['App']['BoxSpeakerLevels'](arg1, arg2);
+}
+
 export function BoxStoragePreflight(arg1, arg2) {
   return window['go']['main']['App']['BoxStoragePreflight'](arg1, arg2);
 }
@@ -456,6 +460,10 @@ export function SetBoxLanguage(arg1, arg2) {
 
 export function SetBoxName(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxName'](arg1, arg2, arg3);
+}
+
+export function SetBoxSpeakerLevel(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetBoxSpeakerLevel'](arg1, arg2, arg3, arg4);
 }
 
 export function SetBoxVolume(arg1, arg2, arg3) {
