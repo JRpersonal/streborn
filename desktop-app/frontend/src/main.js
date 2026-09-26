@@ -6111,7 +6111,20 @@ async function runGroupMemberToggle(edits) {
         // HTTP 200 with ok:false means the firmware formed NOTHING (#70).
         // Treating it as success painted checked chips and a group volume
         // slider that controlled a phantom group.
-        showError(t('multiroom.formedNone'));
+        //
+        // But ok:false is not always the firmware shrugging. FormZone also
+        // REFUSES on purpose, with a reason, when a participant is half of a
+        // live stereo pair (#792): that shape starves the audio, so the app
+        // never even asks the box. The Multi-Room view has said so since then;
+        // this one did not, and answered a deliberate refusal with "try Mirror
+        // mode, hit Refresh, or update the speakers, then send logs". A user
+        // with a stereo pair on his terrace followed exactly that advice and
+        // sent the logs (mail 2026-09-25), which is a round trip he should
+        // never have been sent on.
+        const inPair = Array.isArray(res.inPair) && res.inPair.length;
+        showError(inPair
+          ? t('multiroom.pairNotGroupable')
+          : ((res.error && String(res.error)) || t('multiroom.formedNone')));
         refreshMusicZones(true);
         renderGroupControl();
         return;
