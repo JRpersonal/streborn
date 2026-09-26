@@ -28,3 +28,26 @@ func TestEngineConfigTurnsNormalisationOff(t *testing.T) {
 		t.Error("normalisation must stay off: in passthrough its result is discarded, and computing it can crash the engine")
 	}
 }
+
+// Everything the engine can be told to keep in memory or on flash is pinned
+// here, explicitly, whatever its own default happens to be. A default is not a
+// decision, and this speaker has about 35 MB of RAM and a few MB of flash to
+// spend, against an upstream that reasonably sizes its caches for a desktop.
+func TestEngineConfigPinsTheCachesOff(t *testing.T) {
+	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	got := m.configYAML("Kitchen", 20)
+
+	for _, want := range []string{
+		"cache:",
+		"  enabled: false",
+		"metadata:",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the engine config no longer carries %q", want)
+		}
+	}
+	// Both blocks, not one of them twice.
+	if strings.Count(got, "  enabled: false") < 2 {
+		t.Error("the audio cache and the metadata cache must each be pinned off")
+	}
+}

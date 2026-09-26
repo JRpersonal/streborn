@@ -68,6 +68,12 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	// dir, so an enabled cache would resolve its XDG default directory onto
 	// NAND with a 1 GB size limit and grind the box's flash. Older engine
 	// builds without the key ignore it (non-strict koanf loader).
+	// Pin the new track-metadata cache OFF for the same reason as the audio
+	// cache above: its own default is already false, but a default is not a
+	// decision. Upstream sizes it for a desktop (1000 tracks), and the speaker
+	// has about 35 MB of RAM to run everything in. Older engines ignore the key.
+	b.WriteString("metadata:\n")
+	b.WriteString("  enabled: false\n")
 	b.WriteString("cache:\n")
 	b.WriteString("  enabled: false\n")
 	b.WriteString("credentials:\n")
