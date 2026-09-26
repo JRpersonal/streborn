@@ -103,11 +103,22 @@ func main() {
 	}
 }
 
-// previousTag returns the most recent tag reachable from before ref, or
-// "" when there is none (the first release). Errors are treated as "no
+// previewTagGlob matches the tags of the preview channel, which go to a handful
+// of testers and never to everyone.
+//
+// They must not bound a release's notes. A preview tagged between two real
+// releases is the newest tag by every measure git knows, so the next real
+// release would list only what changed since the preview and silently drop
+// everything before it: exactly the changes the preview existed to try out,
+// missing from the notes of the release that finally carries them.
+const previewTagGlob = "*-preview.*"
+
+// previousTag returns the most recent non-preview tag reachable from before
+// ref, or "" when there is none (the first release). Errors are treated as "no
 // previous tag" so a fresh repo still produces notes.
 func previousTag(ref string) string {
-	out, err := exec.Command("git", "describe", "--tags", "--abbrev=0", ref+"^").Output()
+	out, err := exec.Command("git", "describe", "--tags", "--abbrev=0",
+		"--exclude", previewTagGlob, ref+"^").Output()
 	if err != nil {
 		return ""
 	}

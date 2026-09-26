@@ -51,6 +51,29 @@ on:
         required: false
         default: true
         type: boolean
+      preview:
+        # The preview channel: a signed, installable build for a handful of
+        # testers, without it becoming everyone's download.
+        #
+        # It publishes a GitHub pre-release under vX.Y.Z-preview.N. Everything
+        # that decides what the public gets asks GitHub for the LATEST release,
+        # and GitHub's "latest" excludes pre-releases: the website download
+        # page, the stable /releases/latest/download/<file> links, and the
+        # in-app update check (which reads the website's api/update.json, built
+        # from the same source). So a preview is reachable by its link and by
+        # nothing else.
+        #
+        # The one thing that would break that is the website dispatch, which
+        # PINS the tag it is handed and would deploy the preview as the download
+        # for everybody. It is skipped here, and so is its verification step.
+        #
+        # Signing and notarization run exactly as for a release: a build testers
+        # cannot install is not a test. SmartScreen blocks an unsigned exe,
+        # which is why a dry-run artifact is no substitute.
+        description: 'Preview build: publish as a pre-release for testers, leave the website and the in-app update alone.'
+        required: false
+        default: false
+        type: boolean
   schedule:
     # Weekly automatic dry-run, Sundays 04:30 UTC. Catches breakage
     # introduced by Dependabot bumps of release-only actions
@@ -84,6 +107,29 @@ jobs:
     outputs:
       sign_windows: ${{ steps.signgate.outputs.enabled }}
     steps:
+      # The two channels must not be confusable, in either direction. A real
+      # release tagged -preview would reach nobody; a preview tagged as a plain
+      # version would become everyone's download the moment it published. Both
+      # are one checkbox away, so the version string has to agree with the box.
+      - name: Channel matches the version
+        if: inputs.version != ''
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          IS_PREVIEW: ${{ inputs.preview }}
+        run: |
+          case "${RELEASE_VERSION}" in
+            *-preview.*) tagged=true ;;
+            *)           tagged=false ;;
+          esac
+          if [ "${IS_PREVIEW}" = "true" ] && [ "${tagged}" != "true" ]; then
+            echo "::error::a preview must be tagged vX.Y.Z-preview.N, got ${RELEASE_VERSION}"
+            exit 1
+          fi
+          if [ "${IS_PREVIEW}" != "true" ] && [ "${tagged}" = "true" ]; then
+            echo "::error::${RELEASE_VERSION} looks like a preview tag but the preview box is not ticked; it would publish as everyone's download"
+            exit 1
+          fi
+          echo "channel ok: version=${RELEASE_VERSION} preview=${IS_PREVIEW}"
       - name: Signing gate
         id: signgate
         env:
@@ -1586,10 +1632,21 @@ jobs:
           # Gatekeeper opens without a word.
           MAC_CONFIGURED: ${{ needs.build-desktop-macos.outputs.configured }}
           MAC_NOTARIZED: ${{ needs.build-desktop-macos.outputs.notarized }}
+          IS_PREVIEW: ${{ inputs.preview }}
         run: |
           {
             echo "## STR ${VERSION}"
             echo
+            # A tester arriving from a link should not have to work out what
+            # they are holding, so it says so up front, plus the two things
+            # that differ from a release: it is not what the website offers,
+            # and the app will not offer it as an update either.
+            if [ "${IS_PREVIEW}" = "true" ]; then
+              echo "> **Preview build.** Signed and installable like any release, but published for testing rather than for everyone."
+              echo "> It is not the download on st-reborn.de, and the app's update check will not offer it, so an installed preview"
+              echo "> stays put until you replace it yourself. Tell me what breaks."
+              echo
+            fi
             echo "**Built from commit:** \`${GITHUB_SHA}\`"
             echo "**Workflow run:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
@@ -1760,7 +1817,12 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: false
           draft: false
-          prerelease: false
+          # This is what keeps a preview out of everyone's way: GitHub's
+          # "latest" (the website download, the stable
+          # /releases/latest/download links, and the in-app update check that
+          # reads from them) skips pre-releases entirely.
+          prerelease: ${{ inputs.preview == true }}
+          make_latest: ${{ inputs.preview == true && 'false' || 'legacy' }}
 
       # Releases created via the default GITHUB_TOKEN deliberately do
       # NOT fire `release: published` workflow triggers downstream — a
@@ -1769,10 +1831,17 @@ jobs:
       # after a tag-driven release. Dispatch directly from here using
       # a fine-grained PAT instead; the website repo's deploy listens
       # for repository_dispatch / app-release-published.
+      # Skipped for a preview. This dispatch PINS the tag it is handed
+      # (RELEASE_TAG in the website's release fetch), so firing it would deploy
+      # the preview as the download for everybody and feed it to the in-app
+      # update check. That is the one route the pre-release flag cannot close
+      # on its own.
       - name: Notify streborn-website
         if: |
-          startsWith(github.ref, 'refs/tags/') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+          inputs.preview != true && (
+            startsWith(github.ref, 'refs/tags/') ||
+            (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+          )
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ secrets.WEBSITE_DISPATCH_PAT }}
@@ -1804,10 +1873,13 @@ jobs:
       # To restore real verification, give the PAT read+write `actions` on
       # streborn-website; then the 403 path stops firing and the check below
       # does its job.
+      # Nothing was dispatched for a preview, so there is nothing to verify.
       - name: Verify the website build started
         if: |
-          startsWith(github.ref, 'refs/tags/') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+          inputs.preview != true && (
+            startsWith(github.ref, 'refs/tags/') ||
+            (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+          )
         env:
           GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_PAT }}
         run: |

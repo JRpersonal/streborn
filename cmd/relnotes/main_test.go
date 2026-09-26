@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -264,5 +265,63 @@ func TestAWellFormedBodyWarnsAboutNothing(t *testing.T) {
 	}
 	if len(noteTrailerProblems) != 0 {
 		t.Fatalf("a clean body produced warnings: %v", noteTrailerProblems)
+	}
+}
+
+// A preview tag must not bound the next release's notes.
+//
+// Previews go to a handful of testers under vX.Y.Z-preview.N. Such a tag is the
+// newest one git knows about, so without the exclusion the next real release
+// would start its notes at the preview and drop everything that came before it,
+// which is precisely the work the preview was testing.
+func TestPreviousTagIgnoresPreviewTags(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	commit := func(msg string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "f"), []byte(msg), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run("add", "f")
+		run("commit", "-m", msg)
+	}
+	run("init", "-q", "-b", "main")
+	commit("feat(a): one")
+	run("tag", "v0.9.86")
+	commit("fix(b): two")
+	run("tag", "v0.9.87-preview.1")
+	commit("fix(c): three")
+	run("tag", "v0.9.87")
+
+	// previousTag shells out to git in the process working directory.
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	if got := previousTag("v0.9.87"); got != "v0.9.86" {
+		t.Errorf("previousTag = %q, want v0.9.86 (the preview must be skipped)", got)
+	}
+	// And the notes then span both commits, not just the one after the preview.
+	changes, err := collect("v0.9.86", "v0.9.87")
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(changes) != 2 {
+		t.Errorf("want both changes since the last real release, got %d: %+v", len(changes), changes)
 	}
 }
