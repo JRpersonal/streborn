@@ -233,17 +233,27 @@ func applyPendingBoxName(ctx context.Context, boxHost, path string, logger *slog
 	logger.Warn("could not set box name from setup, giving up", "path", path)
 }
 
-// ensureSshdRunning keeps the box reachable via SSH whether the agent
-// boot came in via a fresh stick run.sh (which has its own
-// ensure_sshd_running shell function) or via OTA-only update (which
-// replaces only the binary and leaves the on-NAND run-override.sh
-// untouched). Without this the OTA path loses the diagnostic channel
-// the first time the agent crashes, and `SaveDiagnosticBundle`'s
-// SSH-fallback layer comes back empty.
+// ensureSshdRunning starts sshd when, and only when, this speaker has been
+// opted in to it.
 //
-// Pre-1.0 we explicitly prefer diagnostic access over the residual
-// risk of a known-default Bose root password; tracked under the
-// existing box-security-hardening roadmap.
+// It used to try unconditionally, on the stated pre-1.0 preference for
+// diagnostic access over the residual risk of the known-default Bose root
+// password. In practice that preference was not being honoured: Bose's
+// /etc/init.d/sshd gates on a remote_services marker and exits 0 while
+// declining to start, the loop read the exit status as success and returned,
+// and sshd stayed down. The log said "sshd started" the whole time.
+//
+// Fixing that log line turned the silent no-op into a real start, because the
+// loop then fell through to /usr/sbin/sshd, which has no gate. Five speakers
+// in the reference household came up with port 22 open, and the app told their
+// owner to reboot to close it, which the next boot would have undone
+// (2026-09-28). A logging fix is not the place to change what a speaker
+// exposes to its network.
+//
+// So it is an opt-in now, keyed on the same two markers the app already reads
+// to decide whether SSH is deliberately open: /mnt/nv/streborn/enable-ssh and
+// /mnt/nv/remote_services. A speaker nobody asked keeps its port closed, and
+// the diagnostic channel is one deliberate action away rather than always on.
 //
 // bootstrapTargets lists the on-NAND files the agent will replace
 // when their disk content differs from what is embedded in the
@@ -554,9 +564,32 @@ func stampVersionFiles(logger *slog.Logger) {
 // Best-effort: if sshd is already running, the init script
 // no-ops; if no sshd init script exists (unexpected on Bose
 // firmware), we just log and continue.
+// sshOptInMarkers are the files that mean "this speaker is meant to be
+// reachable over SSH". Both live on NAND and survive a reboot, and both are
+// what internal/webui reads to tell the app that SSH is deliberately open.
+var sshOptInMarkers = []string{
+	"/mnt/nv/streborn/enable-ssh",
+	"/mnt/nv/remote_services",
+}
+
+// sshOptedIn reports whether one of those markers is present.
+func sshOptedIn() bool {
+	for _, p := range sshOptInMarkers {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func ensureSshdRunning(logger *slog.Logger) {
+	if !sshOptedIn() {
+		// Nothing to say on the happy path: this is every speaker, every boot,
+		// and a line per boot on every box in the field is wear for no reader.
+		return
+	}
 	// Cheap pre-check: avoid spawning the init script if sshd is
-	// already up — saves a fork on every agent restart.
+	// already up - saves a fork on every agent restart.
 	if out, err := exec.Command("pidof", "sshd").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
 		return
 	}

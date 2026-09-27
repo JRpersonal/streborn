@@ -86,3 +86,53 @@ func TestMissingProcfsIsNotAListener(t *testing.T) {
 		t.Error("an unreadable procfs was treated as proof of a listener")
 	}
 }
+
+// Whether a speaker opens its SSH port at all.
+//
+// It used to try on every boot, on the stated pre-1.0 preference for diagnostic
+// access. That preference was not actually in effect: Bose's init script gates on
+// a remote_services marker and exits 0 while declining, the loop read the exit
+// status as success and returned, and sshd stayed down.
+//
+// Fixing that log line turned the silent no-op into a real start, because the
+// loop then fell through to /usr/sbin/sshd, which has no gate. Five speakers in
+// one household came up with port 22 open and the app told their owner to reboot
+// to close it, which the next boot would have undone. A logging fix is not the
+// place to change what a speaker exposes to its network.
+
+func withMarkerDir(t *testing.T, present ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	var markers []string
+	for _, name := range []string{"enable-ssh", "remote_services"} {
+		p := filepath.Join(dir, name)
+		markers = append(markers, p)
+	}
+	for _, name := range present {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := sshOptInMarkers
+	sshOptInMarkers = markers
+	t.Cleanup(func() { sshOptInMarkers = old })
+}
+
+func TestASpeakerNobodyAskedKeepsItsSSHPortClosed(t *testing.T) {
+	withMarkerDir(t) // no markers at all: the ordinary speaker
+	if sshOptedIn() {
+		t.Fatal("a speaker with no marker was treated as opted in, so every box in the field opens port 22")
+	}
+}
+
+func TestEitherMarkerOptsIn(t *testing.T) {
+	for _, name := range []string{"enable-ssh", "remote_services"} {
+		t.Run(name, func(t *testing.T) {
+			withMarkerDir(t, name)
+			if !sshOptedIn() {
+				t.Errorf("%s is present and the speaker still reads as not opted in", name)
+			}
+		})
+	}
+}
