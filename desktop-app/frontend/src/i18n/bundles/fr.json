@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Avancé",
   "settingsView.phoneHeading": "Commander cette enceinte depuis votre téléphone",
   "settingsView.phoneHelp": "Scannez avec l'appareil photo, puis utilisez Ajouter à l'écran d'accueil pour une télécommande en un toucher.",
+  "settingsView.phoneUseAddress": "Le nom ne fonctionne pas ? QR avec l'adresse IP",
+  "settingsView.phoneUseName": "QR avec le nom (reste valide)",
   "a11y.title": "Affichage et accessibilité",
   "a11y.textSize": "Taille du texte",
   "a11y.size.normal": "Normale",

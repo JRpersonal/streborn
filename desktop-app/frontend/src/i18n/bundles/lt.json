@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Išplėstiniai",
   "settingsView.phoneHeading": "Valdykite šią kolonėlę telefonu",
   "settingsView.phoneHelp": "Nuskenuokite kamera, tada naudokite Pridėti į pagrindinį ekraną, kad gautumėte nuotolinį valdymą vienu palietimu.",
+  "settingsView.phoneUseAddress": "Vardas neveikia? QR su IP adresu",
+  "settingsView.phoneUseName": "QR su vardu (lieka galiojantis)",
   "a11y.title": "Rodymas ir prieinamumas",
   "a11y.textSize": "Teksto dydis",
   "a11y.size.normal": "Normalus",

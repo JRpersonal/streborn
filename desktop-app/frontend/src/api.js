@@ -22,6 +22,7 @@ export {
   QueueRepeat,
   GetQueue,
   PhoneQR,
+  PhoneAddressFor,
   RebootBox,
   RecordUpdateIntent,
   ClearUpdateIntent,

@@ -376,6 +376,26 @@ export namespace main {
 	        this.bytes = source["bytes"];
 	    }
 	}
+	export class PhoneAddress {
+	    url: string;
+	    name?: string;
+	    addressUrl: string;
+	    source: string;
+	    note?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PhoneAddress(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.name = source["name"];
+	        this.addressUrl = source["addressUrl"];
+	        this.source = source["source"];
+	        this.note = source["note"];
+	    }
+	}
 	export class Preset {
 	    slot: number;
 	    name: string;

@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Geavanceerd",
   "settingsView.phoneHeading": "Bedien deze speaker vanaf je telefoon",
   "settingsView.phoneHelp": "Scan met je camera, gebruik daarna Toevoegen aan beginscherm voor een afstandsbediening met één tik.",
+  "settingsView.phoneUseAddress": "Naam werkt niet? QR met het IP-adres",
+  "settingsView.phoneUseName": "QR met de naam (blijft geldig)",
   "a11y.title": "Weergave en toegankelijkheid",
   "a11y.textSize": "Tekstgrootte",
   "a11y.size.normal": "Normaal",

@@ -697,6 +697,9 @@ func run() error {
 				// the desktop app takes the address out of the service answer
 				// instead of looking the name up.
 				mdnsHostLabel = resp.Label()
+				// Tell the HTTP surface too: the desktop app reads this back to put a
+				// name on the phone-remote QR code instead of an address.
+				webui.SetMDNSHostName(resp.Name())
 				mdnsHostResp = resp
 				// Put the counters in the diagnostic bundle. The open question
 				// they answer: a SoundTouch 30 here is missing from four

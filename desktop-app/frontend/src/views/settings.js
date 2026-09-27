@@ -54,6 +54,7 @@ import {
   BoxSettings,
   BoxAgentVersion,
   PhoneQR,
+  PhoneAddressFor,
   RebootBox,
   SetPreset,
   SyncBoxPresets,
@@ -1583,6 +1584,7 @@ function renderBoxSettings(s, box) {
           <code id="phoneUrl" class="phone-url"></code>
           <button class="btn btn-mini" id="phoneUrlCopy">${escapeHtml(t('common.copy'))}</button>
         </div>
+        <small class="muted small phone-url-alt" id="phoneUrlAlt" hidden></small>
       </div>
       ${phoneHomeScreenBlock()}
     </div>
@@ -1600,7 +1602,23 @@ function renderBoxSettings(s, box) {
   (async () => {
     const urlEl = $('phoneUrl');
     if (!urlEl || !box || !box.host) return;
-    const url = `http://${box.host}:${box.port || 8888}/`;
+    // The address is what the code used to carry, and an address is the thing
+    // that changes: a new DHCP lease and the page somebody has on their home
+    // screen points at nothing, with no clue as to why. So the app asks for a
+    // NAME that it has resolved back to this speaker and reached the speaker
+    // through, and falls back to the address when there is no such name.
+    //
+    // This PC resolving a name says nothing about the phone, though: a phone
+    // with a private-DNS setting, or on a guest network, resolves neither the
+    // router's name nor a .local one. So the address stays one tap away below
+    // the code rather than being replaced by it.
+    const addr = `http://${box.host}:${box.port || 8888}/`;
+    let picked = { url: addr, addressUrl: addr, source: 'address' };
+    try {
+      const r = await PhoneAddressFor(box.host, box.port || 8888);
+      if (r && r.url) picked = r;
+    } catch { /* the address form is already in place */ }
+    let url = picked.url;
     urlEl.textContent = url;
     const copyBtn = $('phoneUrlCopy');
     if (copyBtn) {
@@ -1612,10 +1630,35 @@ function renderBoxSettings(s, box) {
         } catch { /* clipboard blocked: the URL is still selectable */ }
       };
     }
-    try {
-      const data = await PhoneQR(url);
+    const renderQR = async (target) => {
+      const data = await PhoneQR(target);
       const img = $('phoneQrImg');
       if (img && data) img.src = data;
+    };
+    // One line under the code, offering whichever form is NOT on it. Named
+    // rather than hidden behind a settings switch: a person standing in front
+    // of a phone that will not open the name needs the address now.
+    const alt = $('phoneUrlAlt');
+    const paintAlt = () => {
+      if (!alt) return;
+      const onName = url !== picked.addressUrl;
+      if (!picked.name) { alt.hidden = true; return; }
+      alt.hidden = false;
+      const key = onName ? 'settingsView.phoneUseAddress' : 'settingsView.phoneUseName';
+      alt.innerHTML = `<a href="#" id="phoneUrlSwap">${escapeHtml(t(key))}</a>`;
+      const a = $('phoneUrlSwap');
+      if (a) a.onclick = async (e) => {
+        e.preventDefault();
+        url = onName ? picked.addressUrl : picked.url;
+        urlEl.textContent = url;
+        try { await renderQR(url); } catch {}
+        paintAlt();
+      };
+    };
+    paintAlt();
+    try {
+      await renderQR(url);
+      const img = $('phoneQrImg');
       // Tapping the code opens the instructions underneath. People point a
       // phone at it first and look for the next step second, and the summary
       // line was the only way in.

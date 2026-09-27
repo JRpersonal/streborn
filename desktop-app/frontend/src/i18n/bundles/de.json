@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Erweitert",
   "settingsView.phoneHeading": "Diesen Lautsprecher auf deinem Smartphone steuern",
   "settingsView.phoneHelp": "Mit der Handy-Kamera scannen, dann „Zum Home-Bildschirm hinzufügen\" für eine Ein-Tipp-Fernbedienung.",
+  "settingsView.phoneUseAddress": "Name geht nicht? QR mit IP-Adresse",
+  "settingsView.phoneUseName": "QR mit Name (bleibt gültig)",
   "a11y.title": "Anzeige und Barrierefreiheit",
   "a11y.textSize": "Textgröße",
   "a11y.size.normal": "Normal",

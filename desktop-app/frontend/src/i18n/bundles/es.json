@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Avanzado",
   "settingsView.phoneHeading": "Controla este altavoz desde tu móvil",
   "settingsView.phoneHelp": "Escanea con la cámara, luego usa Añadir a pantalla de inicio para un mando de un toque.",
+  "settingsView.phoneUseAddress": "¿El nombre no funciona? QR con la dirección IP",
+  "settingsView.phoneUseName": "QR con el nombre (sigue siendo válido)",
   "a11y.title": "Pantalla y accesibilidad",
   "a11y.textSize": "Tamaño del texto",
   "a11y.size.normal": "Normal",

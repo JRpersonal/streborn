@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Zaawansowane",
   "settingsView.phoneHeading": "Steruj tym głośnikiem z telefonu",
   "settingsView.phoneHelp": "Zeskanuj aparatem, a następnie użyj Dodaj do ekranu głównego, aby mieć pilota jednym dotknięciem.",
+  "settingsView.phoneUseAddress": "Nazwa nie działa? Kod QR z adresem IP",
+  "settingsView.phoneUseName": "Kod QR z nazwą (pozostaje ważny)",
   "a11y.title": "Wyświetlanie i dostępność",
   "a11y.textSize": "Rozmiar tekstu",
   "a11y.size.normal": "Normalny",
