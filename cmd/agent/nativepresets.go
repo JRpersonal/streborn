@@ -130,6 +130,11 @@ const nativeDropOwnMissWindow = 10 * time.Second
 // up a proxy and a preset store to make it happen.
 var lastSlotMiss = streamproxy.LastSlotMiss
 
+// nothingDelivered is the proxy's record of a station it is serving for which
+// not one byte has ever arrived. Same shape as lastSlotMiss, and a variable
+// for the same reason.
+var nothingDelivered = streamproxy.NothingDeliveredYet
+
 // nativeDropWindow is how far back a drop still counts. Without it the counter
 // only ever grows, so four drops spread over a week read the same as four in a
 // minute and latch the speaker just as hard. "Repeatedly abandoned a station it
@@ -174,6 +179,25 @@ func noteNativeStreamDropped() {
 		if l := nativeReadyLogger; l != nil {
 			l.Info("native presets: the station was dropped after our own proxy refused the fetch, not counting it against the speaker",
 				"slot", slot, "ago", ago.Round(time.Millisecond))
+		}
+		return
+	}
+	// And a station that never produced a byte is not evidence about the box
+	// either. The box gave up waiting on a fetch that never answered, which is
+	// a fault somewhere upstream of the speaker: on a SoundTouch 20 whose own
+	// resolver list made every lookup take ten seconds, about fifty attempts
+	// produced no upstream response at all, and this latch read the resulting
+	// drops as "the firmware rejects native stations" and moved four slots onto
+	// the slower form for good (2026-09-27).
+	//
+	// Moving them cannot help: the failure is upstream of BOTH forms, so the
+	// downgrade buys nothing and costs the speaker its native radio source,
+	// which also makes its now-playing report isPresetable=false. The latch is
+	// for a speaker that abandons audio it was actually given.
+	if since, ok := nothingDelivered(); ok {
+		if l := nativeReadyLogger; l != nil {
+			l.Info("native presets: the station was dropped without a single byte ever arriving, so this is not the speaker refusing it",
+				"waitingFor", since.Round(time.Second))
 		}
 		return
 	}

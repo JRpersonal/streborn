@@ -53,8 +53,57 @@ func TestAHealthyStreamNamesItsStation(t *testing.T) {
 	if n := count(t, got, "reconnectCount"); n != 0 {
 		t.Errorf("reconnectCount = %d, want 0 on a stream that has not dropped", n)
 	}
+	// Told to play, nothing delivered yet. It is NOT "playing" at this point,
+	// and the field that used to say so was the one that lied: see
+	// TestAStreamThatNeverDeliveredIsNotReportedAsPlaying below.
+	if _, ok := got["startedAt"]; !ok {
+		t.Error("startedAt missing: a bundle cannot say when this station was asked for")
+	}
+	if got["everDelivered"] != false {
+		t.Errorf("everDelivered = %v before a single byte, want false", got["everDelivered"])
+	}
+
+	// One byte through, and now it is playback.
+	s.noteReconnect("http://stream.example/ndr2", "eof", 4096, time.Second, 200*time.Millisecond)
+	got = snap(t, s)
 	if _, ok := got["playingSince"]; !ok {
-		t.Error("playingSince missing: a bundle cannot say how long it has been fine")
+		t.Error("playingSince missing after audio was delivered: a bundle cannot say how long it has been fine")
+	}
+	if got["everDelivered"] != true {
+		t.Error("everDelivered is false although bytes were forwarded")
+	}
+}
+
+// The number that sent a day of diagnosis in the wrong direction.
+//
+// playingSince is set when the box is TOLD to start, and nothing checked
+// whether a byte ever arrived. A SoundTouch 20 that had failed fifteen times in
+// a row, with no upstream response at all, reported 314 seconds of playback in
+// its diagnostic bundle (2026-09-27). That is the first field anybody reads to
+// answer "is this speaker playing", and it said yes.
+func TestAStreamThatNeverDeliveredIsNotReportedAsPlaying(t *testing.T) {
+	s := healthTestServer(t)
+	s.noteStreamStart("http://stream.example/dead")
+	// Fifteen attempts, every one ending with nothing carried, exactly as the
+	// box does when it gives up before the station answers.
+	for i := 0; i < 15; i++ {
+		s.noteReconnect("http://stream.example/dead", "bose disconnected", 0, 5*time.Second, 0)
+	}
+	got := snap(t, s)
+	if _, ok := got["playingForSec"]; ok {
+		t.Error("playingForSec is reported for a station that has delivered nothing")
+	}
+	if _, ok := got["playingSince"]; ok {
+		t.Error("playingSince is reported for a station that has delivered nothing")
+	}
+	if got["everDelivered"] != false {
+		t.Error("everDelivered is true although no byte was ever forwarded")
+	}
+	if _, ok := got["askedToPlayForSec"]; !ok {
+		t.Error("askedToPlayForSec missing: the bundle now says nothing at all about this stream")
+	}
+	if n := count(t, got, "reconnectCount"); n != 15 {
+		t.Errorf("reconnectCount = %d, want 15", n)
 	}
 }
 

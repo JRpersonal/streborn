@@ -44,6 +44,8 @@ func (s *Server) noteHealthStart(url string) {
 		s.lastDisconnectReason = ""
 		s.lastGapMs = 0
 		s.playingSince = time.Now()
+		s.deliveredAny = false
+		noteDeliveryStart(url)
 		return
 	}
 	// The SAME station starting again is a re-fetch, not a new stream: the box
@@ -54,6 +56,7 @@ func (s *Server) noteHealthStart(url string) {
 	if s.playingSince.IsZero() {
 		s.playingSince = time.Now()
 	}
+	noteDeliveryStart(url)
 }
 
 // The url here is the STATION, the same identity noteHealthStart records. It
@@ -69,11 +72,16 @@ func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap
 		s.healthURL = url
 		s.forwardedBytes = 0
 		s.reconnectCount = 0
+		s.deliveredAny = false
 	}
 	s.reconnectCount++
 	s.lastDisconnectReason = reason
 	s.lastGapMs = gap.Milliseconds()
 	s.forwardedBytes += connBytes
+	if connBytes > 0 {
+		s.deliveredAny = true
+		noteDelivered(url)
+	}
 	count, total := s.reconnectCount, s.forwardedBytes
 	s.healthMu.Unlock()
 
@@ -100,9 +108,22 @@ func (s *Server) HealthSnapshot() any {
 		// "no audio".
 		"forwardedBytes": s.forwardedBytes,
 	}
+	// "Playing" only when something actually arrived. playingSince is set when
+	// the box is TOLD to start, so on a speaker whose upstream never answers it
+	// measures how long the failure has been going on. Reported under that name
+	// it read as healthy playback on a speaker that had not decoded a single
+	// frame in five minutes, and that is the number a triager reaches for first.
+	out["everDelivered"] = s.deliveredAny
 	if !s.playingSince.IsZero() {
-		out["playingSince"] = s.playingSince.UTC().Format(time.RFC3339)
-		out["playingForSec"] = int(time.Since(s.playingSince).Seconds())
+		out["startedAt"] = s.playingSince.UTC().Format(time.RFC3339)
+		secs := int(time.Since(s.playingSince).Seconds())
+		if s.deliveredAny {
+			out["playingSince"] = s.playingSince.UTC().Format(time.RFC3339)
+			out["playingForSec"] = secs
+		} else {
+			out["askedToPlayForSec"] = secs
+			out["note"] = "the box was told to play this and nothing has arrived from the station yet"
+		}
 	}
 	return out
 }

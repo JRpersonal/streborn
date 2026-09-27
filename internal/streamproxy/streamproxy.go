@@ -173,6 +173,12 @@ type Server struct {
 	// showing an empty section for a stream that is perfectly fine.
 	playingSince   time.Time
 	forwardedBytes int64
+	// deliveredAny records whether ONE byte of this station has ever reached
+	// the speaker. Without it playingSince is a measure of how long the box
+	// was told to play, which is not the same thing and reads as the same
+	// thing: a speaker that had failed fifteen times in a row reported 314
+	// seconds of healthy playback (2026-09-27).
+	deliveredAny bool
 	// lastConnBytes / lastConnDur describe the most recent upstream
 	// connection, so the retry loops can tell "this one played for a while and
 	// then the token expired" from "this one failed immediately". See

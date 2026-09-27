@@ -52,18 +52,50 @@ func LogFilePath() string {
 	return filepath.Join(base, logDirName, logFileName)
 }
 
-// rotateLogOnStartup keeps the log small and bounded across sessions:
-// it moves an existing log to <name>.1 (overwriting an older .1) so the
-// live file starts fresh on each launch and never grows run after run,
-// while the immediately previous session (e.g. one that just crashed)
-// stays available for diagnosis. Best-effort; called once at startup.
+// logGenerations is how many previous sessions are kept beside the live log.
+//
+// It used to be one, and one is not enough for the situation these logs exist
+// for. Somebody whose update looks stuck restarts the app, which is the
+// reasonable thing to do and also what destroys the evidence: the run that
+// went wrong becomes .1, the next restart overwrites it, and by the time they
+// save a diagnostic the session that caused the problem is gone. A reporter
+// whose speakers lost their Spotify engine across four re-pushes sent a bundle
+// in which not one of those four runs survived (2026-09-27).
+//
+// Five at 2 MB each is 10 MB on a desktop machine, which is nothing, against a
+// class of report that cannot otherwise be answered at all.
+const logGenerations = 5
+
+// rotateLogOnStartup keeps the log small and bounded across sessions: the live
+// file starts fresh on each launch and never grows run after run, while the
+// last few sessions stay available for diagnosis. Best-effort; called once at
+// startup.
 func rotateLogOnStartup() {
 	path := LogFilePath()
 	st, err := os.Stat(path)
 	if err != nil || st.Size() == 0 {
 		return
 	}
+	// Oldest first, so nothing is overwritten before it has been moved up.
+	for i := logGenerations - 1; i >= 1; i-- {
+		_ = os.Rename(fmt.Sprintf("%s.%d", path, i), fmt.Sprintf("%s.%d", path, i+1))
+	}
 	_ = os.Rename(path, path+".1")
+}
+
+// PreviousLogPaths lists the kept sessions, newest first, skipping any that are
+// not there. The bundle ships all of them: the one that matters is rarely the
+// most recent, because the act of noticing a problem is usually a restart.
+func PreviousLogPaths() []string {
+	path := LogFilePath()
+	var out []string
+	for i := 1; i <= logGenerations; i++ {
+		p := fmt.Sprintf("%s.%d", path, i)
+		if st, err := os.Stat(p); err == nil && st.Size() > 0 {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // openLogFile prepares the log file: ensures the directory exists,
