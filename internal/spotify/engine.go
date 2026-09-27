@@ -245,6 +245,11 @@ func (m *Manager) Run(ctx context.Context) {
 	// REST API answers (it is usually not up when config is first written), then
 	// restart go-librespot so the Spotify app sees the right volume, not 100%.
 	go m.refreshVolumeConfigOnce(ctx)
+	// A stereo pair has to appear in the Spotify app as ONE device, the way the
+	// Bose firmware shows it. This notices a pair forming or dissolving and
+	// makes the engine match; see stereoidentity.go for why the follower is
+	// suspended rather than reconfigured (#976).
+	go m.watchStereoIdentity(ctx)
 	var rapidCrashes int
 	var lastClockSync time.Time
 	for ctx.Err() == nil {
@@ -258,6 +263,16 @@ func (m *Manager) Run(ctx context.Context) {
 		if !m.Ready() {
 			m.logger.Info("spotify: engine binary is gone (dropped for an update), waiting for it to be delivered again")
 			if !m.waitForBinary(ctx) {
+				return
+			}
+			rapidCrashes = 0
+		}
+		// The following half of a stereo pair does not run the engine at all.
+		// Its Connect entry could only ever be picked by mistake, the master's
+		// engine is what plays, and the firmware carries the audio across. Not a
+		// crash and not an error: wait for the pair to change.
+		if m.suspendedForStereo() {
+			if !m.waitWhileStereoFollower(ctx) {
 				return
 			}
 			rapidCrashes = 0

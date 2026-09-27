@@ -25,7 +25,10 @@ import (
 func (m *Manager) configYAML(name string, initialVol int) string {
 	host, port := splitHostPort(m.apiAddr)
 	var b strings.Builder
-	fmt.Fprintf(&b, "device_name: %q\n", advertisedName(name))
+	// connectName, not the bare box name: while a stereo pair is formed the
+	// master advertises the PAIR under its own name, so the Spotify app shows
+	// one device for the pair the way the Bose firmware does (#976).
+	fmt.Fprintf(&b, "device_name: %q\n", advertisedName(m.connectName(name)))
 	b.WriteString("device_type: speaker\n")
 	fmt.Fprintf(&b, "bitrate: %d\n", m.bitr)
 	b.WriteString("audio_backend: pipe\n")
@@ -309,8 +312,14 @@ func (m *Manager) watchDeviceName(ctx context.Context) {
 // tripped every cycle by the suffix.
 func (m *Manager) DeviceName() string {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	return advertisedName(m.name)
+	name := m.name
+	m.mu.Unlock()
+	// connectName, for the reason this function exists at all: the STR UI and
+	// the Connect picker have to agree. While a stereo pair is formed the engine
+	// advertises the PAIR, so reporting the bare box name here would put a name
+	// in the app that Spotify never shows. Caught on hardware, where the status
+	// endpoint said "Kueche (STR)" while the config carried the pair.
+	return advertisedName(m.connectName(name))
 }
 
 func splitHostPort(addr string) (host, port string) {

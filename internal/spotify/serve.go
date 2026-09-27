@@ -260,6 +260,11 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// speaker itself (a token from the engine, then one call to Spotify),
 		// "absent" now also covers a speaker that cannot reach out at all.
 		Product string `json:"product,omitempty"`
+		// Stereo says whether this speaker is half of a stereo pair and what it is
+		// therefore advertising to Spotify. Present so the pair behaviour can be
+		// READ rather than inferred: on its first hardware run there was no way to
+		// tell a working pair advert from a no-op.
+		Stereo StereoStatus `json:"stereo"`
 	}{
 		Ready:           m.Ready(),
 		Bitrate:         m.Bitrate(),
@@ -275,6 +280,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		LowDisk:         lowDisk,
 		LowDiskFreeKB:   lowDiskFreeKB,
 		AudioKeyRefused: m.AudioKeyRefused(),
+		Stereo:          m.StereoStatusNow(),
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

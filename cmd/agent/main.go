@@ -661,6 +661,42 @@ func run() error {
 	// the engine's RSS onto its seam lines so a bundle can tell firmware
 	// retention from the engine holding the track.
 	spotifyMgr.MemAvailKB = func() int64 { a, _ := readMemKB(); return a }
+	// Where this speaker stands in a stereo pair, so the Spotify app shows the
+	// PAIR as one device instead of its two halves (#976).
+	//
+	// The marge group record is the source, NOT the zone store. A marge group IS
+	// a stereo pair by construction (validateGroup refuses a document without a
+	// masterDeviceId and exactly two roles), and a pair formed through STR leaves
+	// zones.json empty: measured on two ST10s on 2026-09-27, where the zone store
+	// carried nothing at all while marge_group.present was true on both halves.
+	// Reading the zone store would have made this whole change a no-op.
+	//
+	// The pair name comes from the same record, which is the one the Bose app
+	// reads and writes, so a rename in either shows up in the other.
+	//
+	// The self id is read from marge too rather than from the startup guess: that
+	// guess takes a MAC off the first interface it finds and a two-interface
+	// speaker has two, so correctDeviceIDFromBox replaces it with the box's own
+	// answer. Comparing the pair master against the wrong MAC would make a master
+	// think it is a follower and take its own Connect entry down, which is the one
+	// failure that leaves a pair with no Spotify entry at all.
+	spotifyMgr.SetStereoFn(func() (spotify.StereoRole, string) {
+		master, name, ok := margeSrv.GroupPair()
+		if !ok || master == "" {
+			return spotify.StereoNone, ""
+		}
+		self := margeSrv.DeviceID()
+		if self == "" {
+			// Not knowing who we are is not a reason to guess at a role. The box
+			// answers within the first couple of minutes and the watcher picks it
+			// up on its next tick.
+			return spotify.StereoNone, ""
+		}
+		if strings.EqualFold(master, self) {
+			return spotify.StereoMaster, name
+		}
+		return spotify.StereoFollower, name
+	})
 	spotifyMgr.EngineRSSKB = func(pid int) int64 {
 		rss, _ := readProcStatus(fmt.Sprintf("/proc/%d/status", pid))
 		return rss
