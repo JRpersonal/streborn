@@ -203,3 +203,39 @@ func (m *Manager) waitWhileStereoFollower(ctx context.Context) bool {
 		}
 	}
 }
+
+// StereoStatus is what the pair state looks like from outside, for
+// /spotify/info and the diagnostic bundle.
+//
+// It exists because the first hardware run of this change could not be judged:
+// the status endpoint reported the box name whatever the engine was actually
+// advertising, and the only other evidence was a log line that is written on a
+// CHANGE and therefore absent on a pair that was already formed before the
+// agent started. Two speakers, no way to tell a working fix from a no-op.
+type StereoStatus struct {
+	Role      string `json:"role"`
+	PairName  string `json:"pairName,omitempty"`
+	Advertise string `json:"advertise"`
+	Suspended bool   `json:"suspended"`
+}
+
+// StereoStatusNow reports the pair state and what this speaker is advertising
+// because of it.
+func (m *Manager) StereoStatusNow() StereoStatus {
+	role, pair := m.stereoIdentity()
+	m.mu.Lock()
+	name := m.name
+	m.mu.Unlock()
+	out := StereoStatus{Role: "none", PairName: pair}
+	switch role {
+	case StereoMaster:
+		out.Role = "master"
+	case StereoFollower:
+		out.Role = "follower"
+		out.Suspended = true
+	}
+	if !out.Suspended {
+		out.Advertise = advertisedName(m.connectName(name))
+	}
+	return out
+}

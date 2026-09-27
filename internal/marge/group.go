@@ -379,3 +379,21 @@ func (s *Server) deleteMargeGroup(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><response status="OK"/>`))
 }
+
+// GroupPair reports the stored stereo pair: the deviceID of its master and its
+// display name. ok is false when no pair is stored.
+//
+// A marge group record IS a stereo pair, not a multiroom zone: validateGroup
+// refuses a document that does not carry a masterDeviceId and exactly two roles.
+// That makes this the one honest answer to "is this speaker half of a pair", and
+// the zone store is not: a pair formed through STR leaves zones.json empty and
+// lives only here. Measured on two ST10s on 2026-09-27, where reading the zone
+// store instead would have reported no pair at all.
+func (s *Server) GroupPair() (masterDeviceID, name string, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.group == nil {
+		return "", "", false
+	}
+	return s.group.MasterDeviceID, s.group.Name, true
+}
