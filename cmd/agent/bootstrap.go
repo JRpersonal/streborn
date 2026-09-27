@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -564,10 +565,69 @@ func ensureSshdRunning(logger *slog.Logger) {
 		{"/usr/sbin/sshd"},
 	} {
 		cmd := exec.Command(attempt[0], attempt[1:]...)
-		if err := cmd.Run(); err == nil {
+		if err := cmd.Run(); err != nil {
+			continue
+		}
+		// Exit zero is not the same as a running sshd, and on this firmware it
+		// regularly is not: Bose's /etc/init.d/sshd gates on a remote_services
+		// marker and exits 0 while declining to start. The agent believed it and
+		// logged "sshd started" on three speakers that had nothing listening on
+		// 22 at all, which is a diagnostic saying the opposite of the truth and a
+		// desktop action (Reset speaker setup) walking into a handshake that
+		// could never connect. So the claim is now checked before it is made.
+		if sshdListening() {
 			logger.Info("sshd started", "via", attempt[0])
 			return
 		}
+		logger.Warn("sshd start: the init script reported success but nothing is listening on 22; SSH stays unavailable",
+			"via", attempt[0])
 	}
 	logger.Warn("sshd start: no usable init script found, SSH will not come up from agent")
+}
+
+// sshdListening reports whether something is actually accepting on port 22.
+//
+// pidof is not enough on its own: the process can exist while the daemon has
+// declined to bind. The listener table is the thing the desktop app's SSH
+// paths will meet, so it is the thing worth checking.
+func sshdListening() bool {
+	// A short grace: an init script returns before its daemon has bound.
+	for i := 0; i < 6; i++ {
+		if tcpPortListening(22) {
+			return true
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return false
+}
+
+// procNetTCPPaths is where the listener table is read from. A var so a test
+// can hand it a table instead of the running kernel's.
+var procNetTCPPaths = []string{"/proc/net/tcp", "/proc/net/tcp6"}
+
+// tcpPortListening reads /proc/net/tcp for a socket in LISTEN on port.
+// Procfs rather than a dial, so a firewall rule cannot turn a listening
+// daemon into "not listening".
+func tcpPortListening(port int) bool {
+	for _, path := range procNetTCPPaths {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(body), "\n")[1:] {
+			f := strings.Fields(line)
+			if len(f) < 4 || f[3] != "0A" { // 0A = TCP_LISTEN
+				continue
+			}
+			local := f[1]
+			i := strings.LastIndex(local, ":")
+			if i < 0 {
+				continue
+			}
+			if v, err := strconv.ParseInt(local[i+1:], 16, 32); err == nil && int(v) == port {
+				return true
+			}
+		}
+	}
+	return false
 }
