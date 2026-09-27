@@ -117,14 +117,45 @@ func agentVersionAnswered(body []byte) bool {
 	return strings.TrimSpace(v.Version) != ""
 }
 
+// The readiness budgets, split for the reason spelled out on waitAgentReady:
+// a speaker that is not there must fail fast, a speaker that is there and
+// busy is worth waiting for. Deliberately the same values discovery arrived
+// at independently (probeDialTimeout / probeAnswerBudget), because it is the
+// same question asked of the same endpoint.
+const (
+	readyDialTimeout   = 1200 * time.Millisecond
+	readyAnswerBudget  = 8 * time.Second
+	readyOverallBudget = 12 * time.Second
+)
+
 // waitAgentReady probes the agent's version endpoint (the same cheap
-// endpoint discovery uses) with a short per-try timeout, briefly
-// retrying so a box whose :17008->:8888 redirect and agent are still
-// coming up gets a moment to answer. Returns true the instant it
-// responds (so a ready box adds only one sub-second round trip), false
-// if it stays unreachable within the budget.
+// endpoint discovery uses), briefly retrying so a box whose :17008->:8888
+// redirect and agent are still coming up gets a moment to answer. Returns
+// true the instant it responds (so a ready box adds only one sub-second
+// round trip), false if it stays unreachable within the budget.
+//
+// The two timeouts are SPLIT, the way discovery split them, and for the same
+// reason. Reaching a speaker that is not there must fail fast, so the dial
+// keeps its 1.2 s. Waiting for a reply from a speaker that has already
+// answered the connection is a different question: under box load (BoseApp
+// churning, loadavg 3 to 4) the agent can take seconds to serve its own
+// version, and it is demonstrably alive while it does.
+//
+// One 1.2 s budget for both is what made this path refuse speakers that were
+// running. Measured in a reporter's bundle: the app logged "agent readiness
+// probe gave up, reporting the box as not ready" with four ports tried in
+// 5.2 s, while the speaker's own log shows the agent healing presets at that
+// same second and answering the box. Fourteen seconds later the identical
+// play was accepted. Their music library and a radio station had both been
+// refused as box_not_ready in the minutes before, and the speaker played that
+// exact station from its own preset button 23 s later.
+//
+// discovery/app_discovery.go already carries this lesson as probeDialTimeout
+// and probeAnswerBudget; this path simply never got it.
 func (a *App) waitAgentReady(host string, port int) bool {
-	deadline := time.Now().Add(4 * time.Second)
+	// Long enough that a loaded speaker gets one unhurried answer per port,
+	// rather than four hurried refusals.
+	deadline := time.Now().Add(readyOverallBudget)
 	started := time.Now()
 	// Kept for the give-up log line: without them a "box_not_ready" is a
 	// dead end in a bundle, because it names neither the ports that were
@@ -138,7 +169,7 @@ func (a *App) waitAgentReady(host string, port int) bool {
 		// is where a box that switched ports (reboot/freeze) gets re-pinned.
 		for _, p := range a.candidatePorts(host, port) {
 			url := fmt.Sprintf("http://%s:%d/api/agent/version", host, p)
-			ctx, cancel := context.WithTimeout(a.appCtx(), 1200*time.Millisecond)
+			ctx, cancel := context.WithTimeout(a.appCtx(), readyAnswerBudget)
 			// 8 KB, and the readiness test decodes the answer instead of
 			// searching a truncated prefix for a key name. At 512 bytes the
 			// probe depended on where encoding/json happened to place
@@ -150,7 +181,7 @@ func (a *App) waitAgentReady(host string, port int) bool {
 			// play on the one box that needed help was refused as "still
 			// starting" (2026-09-25). The agent now emits version first as
 			// well; this side stops the whole class.
-			body, err := httpGetSmall(ctx, url, 1200*time.Millisecond, 8192)
+			body, err := httpGetSmall(ctx, url, readyDialTimeout, 8192)
 			cancel()
 			if err == nil && agentVersionAnswered(body) {
 				a.rememberPort(host, p)
