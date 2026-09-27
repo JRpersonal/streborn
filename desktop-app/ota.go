@@ -571,34 +571,61 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		a.noteOTAUnconfirmed(host, "unreachable")
 		return "unreachable"
 	}
-	// The binary the box is RUNNING, before any stamp. The agent reports the
-	// hash of its own running binary, so this is the one answer a clock cannot
-	// spoil: on v0.9.88 the app and its embedded agent were stamped a minute
-	// apart, and a perfectly successful update was then journalled as "the
-	// update did not take effect", with the loop breaker armed and the user told
-	// to stop retrying.
 	sum := sha256.Sum256(agentbin.Bytes())
-	embedded := hex.EncodeToString(sum[:])
-	if len(agentbin.Bytes()) > 0 && ver["agentBinarySha256"] == embedded && ver["otaSwapFailed"] == "" {
-		a.recordOTA(host, "outcome: confirmed late - box runs the agent this build carries")
-		a.forgetOTAVerify(host)
-		return "confirmed"
+	embedded := ""
+	if len(agentbin.Bytes()) > 0 {
+		embedded = hex.EncodeToString(sum[:])
 	}
-	if ver["build"] == appBuild && appBuild != "" {
-		a.recordOTA(host, "outcome: confirmed late - box is on build "+ver["build"])
+	verdict, line := classifyAgentVersion(ver, embedded, appBuild)
+	a.recordOTA(host, line)
+	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
-		return "confirmed"
+	}
+	return verdict
+}
+
+// classifyAgentVersion is the whole decision, with no network and no embed in
+// it, so the matrix it has to get right can be written down as a test. It
+// returns the verdict and the journal line that belongs to it.
+//
+// Two hashes, and the difference between them IS the verdict.
+//
+// agentRunningSha256 is the binary the agent currently is. It is the one answer
+// a clock cannot spoil, and v0.9.88 is why that matters: the release stamped
+// the app and the agent it embeds a minute apart, so the build comparison
+// called every successful update a failure. Eleven speakers in one household,
+// all of them on the new build, all journalled as "the update did not take
+// effect" with the loop breaker armed and the user told to stop retrying. Three
+// separate users wrote in about it on 2026-09-27.
+//
+// agentBinarySha256 is the binary on the box's DISK, which is a different
+// question and must not be mistaken for this one. They differ for exactly one
+// reason: a push that reached the disk and then did not boot (#381). Taking the
+// on-disk hash as confirmation would report that rollback as a success and
+// disarm the loop breaker written to stop it repeating forever, so the running
+// hash confirms and the on-disk hash is only ever the evidence for
+// landed-not-running.
+func classifyAgentVersion(ver map[string]string, embedded, wantBuild string) (verdict, journal string) {
+	running, onDisk := ver["agentRunningSha256"], ver["agentBinarySha256"]
+	if embedded != "" && running == embedded && ver["otaSwapFailed"] == "" {
+		return "confirmed", "outcome: confirmed late - box runs the agent this build carries"
+	}
+	if wantBuild != "" && ver["build"] == wantBuild {
+		return "confirmed", "outcome: confirmed late - box is on build " + ver["build"]
 	}
 	if msg := ver["otaSwapFailed"]; msg != "" {
-		a.recordOTA(host, "outcome: NOT CONFIRMED - the box reports a failed binary swap: "+msg)
-		return "swap-failed"
+		return "swap-failed", "outcome: NOT CONFIRMED - the box reports a failed binary swap: " + msg
 	}
-	if ver["agentBinarySha256"] == embedded {
-		a.recordOTA(host, "outcome: NOT CONFIRMED - the pushed binary IS on the box's disk but the running agent is still "+ver["version"]+" build "+ver["build"]+"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help")
-		return "landed-not-running"
+	// The disk carries what was pushed and the agent is running something else.
+	// An agent too old to report what it runs cannot tell this apart from a stamp
+	// skew, so for it the on-disk hash alone still means what it meant before.
+	if embedded != "" && onDisk == embedded && running != embedded {
+		return "landed-not-running", "outcome: NOT CONFIRMED - the pushed binary IS on the box's disk but the running agent is still " +
+			ver["version"] + " build " + ver["build"] +
+			"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help"
 	}
-	a.recordOTA(host, "outcome: NOT CONFIRMED - box still runs "+ver["version"]+" build "+ver["build"]+" and does not report the pushed binary on disk")
-	return "not-landed"
+	return "not-landed", "outcome: NOT CONFIRMED - box still runs " + ver["version"] + " build " + ver["build"] +
+		" and does not report the pushed binary on disk"
 }
 
 // boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as

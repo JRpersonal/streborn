@@ -39,6 +39,7 @@ export namespace main {
 	    version: string;
 	    build: string;
 	    agentBinarySha256?: string;
+	    agentRunningSha256?: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
 	    strNotRunning?: boolean;
@@ -75,6 +76,7 @@ export namespace main {
 	        this.version = source["version"];
 	        this.build = source["build"];
 	        this.agentBinarySha256 = source["agentBinarySha256"];
+	        this.agentRunningSha256 = source["agentRunningSha256"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
 	        this.strNotRunning = source["strNotRunning"];

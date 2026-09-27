@@ -36,6 +36,7 @@ func theFlagsAnUnhealthyBoxEmits() map[string]string {
 		"goLibrespotSha256":    strings.Repeat("6d", 32),
 		"goLibrespotSizeBytes": "15990968",
 		"agentBinarySha256":    strings.Repeat("44", 32),
+		"agentRunningSha256":   strings.Repeat("55", 32),
 		"engineHotSwap":        "true",
 		"conflictingMod":       "OpenCloudTouch",
 		"foreignCloudURL":      "margeServerUrl=http://content.api.bose.io:7777",
@@ -121,5 +122,27 @@ func TestTheOrderIsStableAcrossRuns(t *testing.T) {
 		if got != want {
 			t.Fatalf("the answer changed between runs:\n%s\n%s", want[:100], got[:100])
 		}
+	}
+}
+
+// The two hashes are different questions and the desktop app needs both. The
+// on-disk one says what was pushed, the running one says what the box actually
+// booted, and only the pair can tell a successful update apart from a push that
+// landed and rolled back (#381). v0.9.88 shipped with only the first, so the app
+// had to fall back to comparing build stamps, and a release that stamped its two
+// halves a minute apart then reported every successful update as a failure.
+func TestTheAgentSaysWhichBinaryItIsRunning(t *testing.T) {
+	if got := runningBinaryStamp(); len(got) != 64 {
+		t.Fatalf("runningBinaryStamp() = %q, want a 64-char hex hash of this executable", got)
+	}
+	// Stable: the app compares it against a hash it computed itself, so a value
+	// that moved between two polls would make every update look unconfirmed.
+	if a, b := runningBinaryStamp(), runningBinaryStamp(); a != b {
+		t.Errorf("the running hash is not stable: %q then %q", a, b)
+	}
+	// And it is the hash of THIS binary, not of whatever lies on a NAND path
+	// that does not exist on a test machine.
+	if runningBinaryStamp() == agentBinaryStamp() && agentBinaryStamp() != "" {
+		t.Error("the running hash equals the on-disk hash here, so one of them is not reading what it claims")
 	}
 }

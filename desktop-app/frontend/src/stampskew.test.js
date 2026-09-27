@@ -41,13 +41,13 @@ describe('whether a speaker needs an update', () => {
   it('says no when the speaker runs exactly the agent this app carries', () => {
     // The v0.9.88 case, exactly: same version, stamps a minute apart.
     const app = { version: 'v0.9.88', build: '2026-09-26-2023', agentSha256: SHA };
-    const box = { kind: 'str', version: 'v0.9.88', build: '2026-09-26-2022', agentBinarySha256: SHA };
+    const box = { kind: 'str', version: 'v0.9.88', build: '2026-09-26-2022', agentRunningSha256: SHA };
     expect(needsUpdate(app, box)).toBe(false);
   });
 
   it('still says yes when the speaker runs a different binary', () => {
     const app = { version: 'v0.9.88', build: '2026-09-26-2023', agentSha256: SHA };
-    const box = { kind: 'str', version: 'v0.9.87', build: '2026-09-25-1715', agentBinarySha256: 'b'.repeat(64) };
+    const box = { kind: 'str', version: 'v0.9.87', build: '2026-09-25-1715', agentRunningSha256: 'b'.repeat(64) };
     expect(needsUpdate(app, box)).toBe(true);
   });
 
@@ -58,6 +58,25 @@ describe('whether a speaker needs an update', () => {
     expect(needsUpdate(app, { kind: 'str', version: 'v0.9.88', build: '2026-09-26-2023' })).toBe(false);
   });
 
+  it('still offers the update when the binary landed but the box boots the old one', () => {
+    // The #381 case. The disk carries exactly this build, the agent runs
+    // something else. Reading the DISK hash as "current" would hide a speaker
+    // that genuinely needs help, and it is why the two fields are separate.
+    const app = { version: 'v0.9.88', build: '2026-09-26-2023', agentSha256: SHA };
+    const box = {
+      kind: 'str', version: 'v0.9.87', build: '2026-09-25-1715',
+      agentBinarySha256: SHA, agentRunningSha256: 'b'.repeat(64),
+    };
+    expect(needsUpdate(app, box)).toBe(true);
+  });
+
+  it('trusts the on-disk hash only from an agent too old to say what it runs', () => {
+    // No agentRunningSha256 at all: the field is new. The on-disk hash is then
+    // the best evidence there is, and better than a stamp.
+    const app = { version: 'v0.9.88', build: '2026-09-26-2023', agentSha256: SHA };
+    const box = { kind: 'str', version: 'v0.9.88', build: '2026-09-26-2022', agentBinarySha256: SHA };
+    expect(needsUpdate(app, box)).toBe(false);
+  });
   it('never offers a downgrade', () => {
     // The speaker is ahead of the app: that is an app update, not a speaker one.
     const app = { version: 'v0.9.87', build: '2026-09-25-1715', agentSha256: SHA };

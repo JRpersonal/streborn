@@ -3524,8 +3524,16 @@ function boxNeedsUpdate(b) {
   // the agent it embeds carried 2026-09-26-2022: one minute apart, same commit.
   // The comparison below then declared every speaker on earth out of date and
   // kept the badge lit no matter how often the user updated.
+  // The binary the speaker RUNS, when it says. A speaker whose disk carries this
+  // build but boots something older (#381) still needs help, so the on-disk hash
+  // is only used when the agent is too old to report what it runs, where it is
+  // still better than a stamp.
   const appSha = state.appInfo && state.appInfo.agentSha256;
-  if (appSha && b.agentBinarySha256 && b.agentBinarySha256 === appSha) return false;
+  if (appSha && b.agentRunningSha256) {
+    if (b.agentRunningSha256 === appSha) return false;
+  } else if (appSha && b.agentBinarySha256 && b.agentBinarySha256 === appSha) {
+    return false;
+  }
   // Light the badge only when THIS app can actually upgrade the box, i.e. the
   // app (and its embedded agent) is NEWER than the box. When the box is newer
   // than the app, an OTA would push the app's older embedded agent and
@@ -4086,12 +4094,15 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   const appSha = state.appInfo && state.appInfo.agentSha256;
   const updated = (v) => {
     if (!v) return false;
-    // The binary first. A speaker running exactly the agent this build carries
-    // is updated, whatever the stamps say. Without this, the v0.9.88 stamp skew
-    // made a successful update wait out the whole 360 s window and then report
-    // "the update did not take effect", which was false and told the user to
-    // stop trying.
-    if (appSha && v.agentBinarySha256 === appSha) return true;
+    // The binary the speaker is RUNNING, first, because that is the only answer
+    // a clock cannot spoil. Without it the v0.9.88 stamp skew made a successful
+    // update wait out the whole 360 s window and then report "the update did not
+    // take effect", which was false and told the user to stop trying.
+    //
+    // Not agentBinarySha256: that is what lies on the box's DISK, and the one
+    // case where the two differ is a push that landed and then did not boot
+    // (#381). Reading the disk here would report that rollback as a success.
+    if (appSha && v.agentRunningSha256 === appSha) return true;
     if (appBuild && v.build === appBuild) return true;
     if (preBuild && v.build && v.build !== preBuild) return true;
     if (preVersion && v.version && v.version !== preVersion) return true;
