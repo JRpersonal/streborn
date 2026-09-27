@@ -3516,6 +3516,16 @@ function boxNeedsUpdate(b) {
   const appVer   = state.appInfo && state.appInfo.version;
   const appBuild = state.appInfo && state.appInfo.build;
   if (!appVer) return false;
+  // The binary itself, before any clock. A speaker that is already running the
+  // exact agent this build carries is current, whatever the stamps say.
+  //
+  // v0.9.88 is why this comes first. Its release workflow took the build stamp
+  // inside a three-leg matrix, so the app shipped stamped 2026-09-26-2023 while
+  // the agent it embeds carried 2026-09-26-2022: one minute apart, same commit.
+  // The comparison below then declared every speaker on earth out of date and
+  // kept the badge lit no matter how often the user updated.
+  const appSha = state.appInfo && state.appInfo.agentSha256;
+  if (appSha && b.agentBinarySha256 && b.agentBinarySha256 === appSha) return false;
   // Light the badge only when THIS app can actually upgrade the box, i.e. the
   // app (and its embedded agent) is NEWER than the box. When the box is newer
   // than the app, an OTA would push the app's older embedded agent and
@@ -4073,8 +4083,15 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   }
   phase('rebooting');
   const deadlineMs = Date.now() + 360_000;
+  const appSha = state.appInfo && state.appInfo.agentSha256;
   const updated = (v) => {
     if (!v) return false;
+    // The binary first. A speaker running exactly the agent this build carries
+    // is updated, whatever the stamps say. Without this, the v0.9.88 stamp skew
+    // made a successful update wait out the whole 360 s window and then report
+    // "the update did not take effect", which was false and told the user to
+    // stop trying.
+    if (appSha && v.agentBinarySha256 === appSha) return true;
     if (appBuild && v.build === appBuild) return true;
     if (preBuild && v.build && v.build !== preBuild) return true;
     if (preVersion && v.version && v.version !== preVersion) return true;

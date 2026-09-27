@@ -106,7 +106,22 @@ jobs:
     # meaningful; real releases still hard-require the signature.
     outputs:
       sign_windows: ${{ steps.signgate.outputs.enabled }}
+      # ONE build stamp for the whole release, taken here, once.
+      #
+      # It used to be taken inside build-agent, which is a three-leg matrix, so
+      # `date` ran three times on three runners and the job output was whatever
+      # leg finished last. On v0.9.88 the amd64 leg queued 37 seconds behind and
+      # crossed a minute boundary: the desktop apps were stamped
+      # 2026-09-26-2023 while the ARM agent they embed and push carried
+      # 2026-09-26-2022. Same commit, one minute apart, and every speaker in
+      # the field then looked permanently out of date to its own app.
+      build_stamp: ${{ steps.stamp.outputs.stamp }}
     steps:
+      # One clock reading for the whole release. Everything downstream, the
+      # three agent legs and all three desktop builds, is stamped from this.
+      - name: Take the build stamp, once
+        id: stamp
+        run: echo "stamp=$(date -u '+%Y-%m-%d-%H%M')" >> "$GITHUB_OUTPUT"
       # The two channels must not be confusable, in either direction. A real
       # release tagged -preview would reach nobody; a preview tagged as a plain
       # version would become everyone's download the moment it published. Both
@@ -247,6 +262,7 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
+          BUILD_STAMP: ${{ needs.verify-source.outputs.build_stamp }}
         run: |
           # Three ways to enter this workflow:
           #   1. push of a vX.Y.Z tag      → use the tag
@@ -273,7 +289,8 @@ jobs:
               exit 1
             fi
           fi
-          BUILD_STAMP="$(date -u '+%Y-%m-%d-%H%M')"
+          # From verify-source, so all three matrix legs and every desktop
+          # build carry the SAME stamp. See the build_stamp output there.
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "build_stamp=${BUILD_STAMP}" >> "$GITHUB_OUTPUT"
 
@@ -550,6 +567,22 @@ jobs:
           cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/ usb-stick/str-shim.so
 
+      # The stamp the app is about to get MUST be the one inside the agent it
+      # just embedded. They are built in different jobs, and on v0.9.88 they
+      # came out a minute apart, which made every speaker in the field look
+      # permanently out of date to its own app. A release is the wrong place
+      # to discover that, so it fails here instead.
+      - name: The embedded agent must carry this build stamp
+        shell: bash
+        env:
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
+        run: |
+          if ! grep -q "${BUILD_STAMP}" desktop-app/agentbin/streborn-armv7l; then
+            echo "::error::the embedded agent does not carry the app build stamp ${BUILD_STAMP}"
+            exit 1
+          fi
+          echo "embedded agent carries ${BUILD_STAMP}"
+
       # Build the winformat helper the desktop app embeds via
       # go:embed. Without this step the empty stub in
       # sticksetup/embedded/winformat.exe ends up inside the
@@ -784,6 +817,22 @@ jobs:
           cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/
 
+      # The stamp the app is about to get MUST be the one inside the agent it
+      # just embedded. They are built in different jobs, and on v0.9.88 they
+      # came out a minute apart, which made every speaker in the field look
+      # permanently out of date to its own app. A release is the wrong place
+      # to discover that, so it fails here instead.
+      - name: The embedded agent must carry this build stamp
+        shell: bash
+        env:
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
+        run: |
+          if ! grep -q "${BUILD_STAMP}" desktop-app/agentbin/streborn-armv7l; then
+            echo "::error::the embedded agent does not carry the app build stamp ${BUILD_STAMP}"
+            exit 1
+          fi
+          echo "embedded agent carries ${BUILD_STAMP}"
+
       - name: Build Linux desktop app
         working-directory: desktop-app
         env:
@@ -956,6 +1005,22 @@ jobs:
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
           cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/
+
+      # The stamp the app is about to get MUST be the one inside the agent it
+      # just embedded. They are built in different jobs, and on v0.9.88 they
+      # came out a minute apart, which made every speaker in the field look
+      # permanently out of date to its own app. A release is the wrong place
+      # to discover that, so it fails here instead.
+      - name: The embedded agent must carry this build stamp
+        shell: bash
+        env:
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
+        run: |
+          if ! grep -q "${BUILD_STAMP}" desktop-app/agentbin/streborn-armv7l; then
+            echo "::error::the embedded agent does not carry the app build stamp ${BUILD_STAMP}"
+            exit 1
+          fi
+          echo "embedded agent carries ${BUILD_STAMP}"
 
       - name: Build macOS desktop app (universal)
         working-directory: desktop-app

@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +14,9 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"streborn-app/agentbin"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,6 +41,20 @@ type AppInfo struct {
 	DonateURL         string `json:"donateUrl"`
 	DonateSlogan      string `json:"donateSlogan"`
 	UpdateManifestURL string `json:"updateManifestUrl"`
+	// AgentSha256 is the hex SHA256 of the ARM agent this build carries. It is
+	// what decides whether a speaker is current, because it is the only answer
+	// that cannot drift: the speaker reports the same hash for the binary it
+	// runs (agentBinarySha256).
+	//
+	// The version and build stamp alone were not enough, and v0.9.88 is why.
+	// The release workflow took its build stamp inside a three-leg matrix, so
+	// the app was stamped 2026-09-26-2023 while the agent it embeds and pushes
+	// carried 2026-09-26-2022, one minute apart, same commit. Every speaker on
+	// earth then looked permanently out of date to its own app, and a retry ran
+	// the full wait and ended in "the update did not take effect", which was
+	// false. The stamp is fixed at the source too, but a clock should not have
+	// been the authority in the first place.
+	AgentSha256 string `json:"agentSha256"`
 	// No agent-binary size here on purpose. It used to be exported so the
 	// frontend could run its own pre-OTA storage check, and that check compared
 	// the RAW size against the box's free figure and told a user his update
@@ -56,12 +74,13 @@ var (
 
 func (a *App) AppInfo() AppInfo {
 	return AppInfo{
-		Version:    appVersion,
-		Build:      appBuild,
-		Author:     "Jens Roggenfelder (JRpersonal)",
-		GitHubURL:  "https://github.com/JRpersonal/streborn",
-		WebsiteURL: "https://st-reborn.de",
-		DonateURL:  "", // populated once the PayPal link on the website is live
+		Version:     appVersion,
+		Build:       appBuild,
+		AgentSha256: embeddedAgentSha256(),
+		Author:      "Jens Roggenfelder (JRpersonal)",
+		GitHubURL:   "https://github.com/JRpersonal/streborn",
+		WebsiteURL:  "https://st-reborn.de",
+		DonateURL:   "", // populated once the PayPal link on the website is live
 		// DonateSlogan is left empty so the frontend renders the
 		// locale-aware fallback from the i18n bundle. Hardcoding
 		// German here would shadow the bundle for every locale.
@@ -227,3 +246,18 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 	}
 	return m, nil
 }
+
+// embeddedAgentSha256 is the hash of the ARM agent compiled into this build,
+// computed once. An empty string on a dev build whose embed slot is the tracked
+// stub, which is correct: nothing to compare against, so the caller falls back
+// to the version and stamp.
+var embeddedAgentShaOnce = sync.OnceValue(func() string {
+	b := agentbin.Bytes()
+	if len(b) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+})
+
+func embeddedAgentSha256() string { return embeddedAgentShaOnce() }
