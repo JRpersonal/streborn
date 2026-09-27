@@ -1667,6 +1667,16 @@ func run() error {
 	// STR owns needs the very thing that is missing (#487). Repairing the
 	// resolver first unlocks all three. No-op on a healthy box.
 	dnsboot.EnsureResolver(logger.With("comp", "dnsboot"))
+	// And keep watching it. The bootstrap above runs before the interface is
+	// necessarily up, and with no default gateway it can only write the public
+	// fallbacks; udhcpc then appends the household resolver BEHIND them. Go asks
+	// nameservers in order with a five second timeout each, so every lookup on
+	// such a boot costs ten seconds before the resolver that answers is reached,
+	// and the firmware gives a station five to ten. The speaker then plays
+	// nothing at all, which is what an ST20 was found doing while the ST10 beside
+	// it played the same station (2026-09-27). This moves the household resolver
+	// back in front as soon as it appears.
+	go dnsboot.MaintainResolver(ctx, logger.With("comp", "dnsboot"))
 	noteBootClock(logger)
 	func() {
 		sctx, cancel := context.WithTimeout(ctx, 6*time.Second)

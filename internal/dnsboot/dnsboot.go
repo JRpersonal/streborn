@@ -34,11 +34,15 @@ import (
 
 const (
 	resolvPath = "/etc/resolv.conf"
-	// ourResolv lives in tmpfs: the rootfs is mounted read-only on these
-	// chassis, so the file we bind-mount from must be somewhere writable.
-	ourResolv = "/tmp/streborn-resolv.conf"
-	routePath = "/proc/net/route"
+	routePath  = "/proc/net/route"
 )
+
+// ourResolv lives in tmpfs: the rootfs is mounted read-only on these chassis,
+// so the file we bind-mount from must be somewhere writable.
+//
+// A var rather than a const so a test can point the resolver maintenance at a
+// temporary file. Nothing in the agent reassigns it.
+var ourResolv = "/tmp/streborn-resolv.conf"
 
 // publicFallbacks are appended after the router so name resolution still works
 // when the gateway does not answer DNS itself.
