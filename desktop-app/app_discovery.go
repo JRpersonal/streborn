@@ -137,6 +137,11 @@ type BoxInfo struct {
 	// build stamp. Empty for an older agent that does not report it, in which
 	// case the version and stamp decide as before.
 	AgentBinarySha256 string `json:"agentBinarySha256,omitempty"`
+	// AgentRunningSha256 is the hash of the binary the agent IS running, as
+	// opposed to the one on its disk. The pair is what tells a successful update
+	// apart from a push that landed and did not boot; either one alone gets one
+	// of those two cases wrong.
+	AgentRunningSha256 string `json:"agentRunningSha256,omitempty"`
 	// Offline marks a speaker that was seen earlier but has missed every probe
 	// for longer than its reboot grace window (e.g. it is rebooting for a long
 	// time, powered off, or off the LAN). The tile stays listed greyed out
@@ -1187,6 +1192,9 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 		if out.AgentBinarySha256 == "" {
 			out.AgentBinarySha256 = prev.AgentBinarySha256
 		}
+		if out.AgentRunningSha256 == "" {
+			out.AgentRunningSha256 = prev.AgentRunningSha256
+		}
 		if prev.PortVerified && !out.PortVerified && prev.Port != 0 {
 			out.Port = prev.Port
 			out.PortVerified = true
@@ -1218,6 +1226,9 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 	}
 	if out.AgentBinarySha256 == "" {
 		out.AgentBinarySha256 = prev.AgentBinarySha256
+	}
+	if out.AgentRunningSha256 == "" {
+		out.AgentRunningSha256 = prev.AgentRunningSha256
 	}
 	// BoxHealth: a fresh verdict wins; an empty one (stock sighting or an
 	// older agent) keeps the last known state so the pull-the-plug hint does
@@ -1781,7 +1792,8 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		// the only answer about "is this box current" that no clock can spoil,
 		// and v0.9.88 needed it: the release stamped the app one minute later
 		// than the agent it embeds, so every speaker looked permanently behind.
-		AgentBinarySha256: jsonStringField(s, "agentBinarySha256"),
+		AgentBinarySha256:  jsonStringField(s, "agentBinarySha256"),
+		AgentRunningSha256: jsonStringField(s, "agentRunningSha256"),
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable

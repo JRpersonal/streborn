@@ -224,6 +224,16 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if sha := agentBinaryStamp(); sha != "" {
 		out["agentBinarySha256"] = sha
 	}
+	// And the binary this process IS, which is a different question. The two
+	// differ for exactly one reason and it is the reason both fields exist: a
+	// push that reached the disk and then did not boot (#381). Only the running
+	// hash can confirm an update, and only the pair can tell a rollback from a
+	// clock: v0.9.88 stamped the app and the agent it embeds a minute apart, so a
+	// stamp comparison called every successful update a failure, and reading the
+	// ON-DISK hash instead would have called every rollback a success.
+	if sha := runningBinaryStamp(); sha != "" {
+		out["agentRunningSha256"] = sha
+	}
 	// A failed tier-3 RAM-staged swap leaves a marker instead of rebooting
 	// into a silently-old binary; surface it so the failure is visible on a
 	// stickless box where nothing else is.
@@ -308,6 +318,24 @@ var agentBinShaCache struct {
 
 // agentBinaryStamp returns the hex SHA256 of the agent binary on NAND, or ""
 // when it cannot be read.
+// runningBinaryStamp is the hash of the executable this process was started
+// from. Computed once: the file cannot change underneath a running process in
+// a way that matters here, and the agent runs on a NAND that is worth sparing.
+var runningShaOnce = sync.OnceValue(func() string {
+	path, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+})
+
+func runningBinaryStamp() string { return runningShaOnce() }
+
 func agentBinaryStamp() string {
 	fi, err := os.Stat(agentBinNANDPath)
 	if err != nil {
