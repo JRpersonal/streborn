@@ -808,10 +808,27 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		}
 	}
 
+	started := time.Now()
 	resp, err := s.client.Do(req)
 	if err != nil {
 		// If Bose has closed the connection, a retry makes no sense.
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			// It makes no sense to RETRY, and it used to make no sense to the
+			// reader either: this returned silently, so a station that never
+			// delivered a byte left only "bose disconnected, lastErr=" in the
+			// log and nothing at all about WHERE it hung. A listener with a
+			// station that hands out a different edge server on every request
+			// then had a silent speaker and a diagnostic that could not say
+			// whether the name lookup, the connection or the TLS handshake was
+			// the part that stalled (#960, two bundles nine hours apart).
+			//
+			// So say how far it got before the speaker gave up. One line per
+			// abandoned fetch, and only when it had been waiting long enough to
+			// be interesting.
+			if waited := time.Since(started); waited > time.Second {
+				s.logger.Info("stream proxy: the speaker gave up before the station answered",
+					"url", url, "waitedMs", waited.Milliseconds(), "phase", fetchPhase(err), "err", err)
+			}
 			return false, nil
 		}
 		// Dedupe identical failures: Bose's UPnP player re-hits the
@@ -1251,4 +1268,31 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			return true, readErr
 		}
 	}
+}
+
+// fetchPhase names how far an abandoned upstream fetch got, from the error the
+// transport left behind. It is a best-effort reading of text, which is the only
+// thing available once the round trip is cancelled, and it is worth having
+// anyway: "dns" and "tls" send a reader to completely different places, and
+// until this existed a diagnostic said neither.
+func fetchPhase(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "dns"
+	}
+	s := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(s, "no such host"), strings.Contains(s, "dns"):
+		return "dns"
+	case strings.Contains(s, "tls"), strings.Contains(s, "handshake"), strings.Contains(s, "certificate"):
+		return "tls"
+	case strings.Contains(s, "connection refused"), strings.Contains(s, "connect:"), strings.Contains(s, "dial"):
+		return "connect"
+	case strings.Contains(s, "timeout"), strings.Contains(s, "deadline"):
+		return "waiting for the first header"
+	}
+	return "unknown"
 }
