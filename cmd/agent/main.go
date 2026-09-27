@@ -1191,6 +1191,13 @@ func run() error {
 	// the two origins (cmd/agent/powergate.go); the standby gate is the
 	// dispatcher's own (STR's source was the active one).
 	keyTrace.SetPowerHandler(wsHandler.OnBoxPowerEvent)
+	// The same ring carries the firmware saying it got no audio out. Until now
+	// those lines were classified for the bundle and delivered to nobody, so a
+	// first press that produced silence was visible afterwards and unanswerable
+	// at the time. See cmd/agent/firstpressrescue.go.
+	host := *boxHost
+	wsHandler.playingNow = func(context.Context) bool { return boxIsPlaying(host) }
+	keyTrace.SetPlayFailureHandler(wsHandler.OnPlayFailure)
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it
 	// arrives with the key stamp the standby classifier reads); the ring's

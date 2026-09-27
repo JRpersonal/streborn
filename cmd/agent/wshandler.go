@@ -36,7 +36,13 @@ type presetWsHandler struct {
 	renderer *upnp.Renderer
 	autoPair *autopair.Manager
 	boxHost  string
-	spotify  *spotify.Manager
+	// firstPress tracks the last native preset activation so a playback
+	// failure just after it can be answered with one more press.
+	firstPress firstPressRescue
+	// playingNow answers whether the speaker is producing audio right now, so
+	// a rescue press stands down when the box found its feet by itself.
+	playingNow func(context.Context) bool
+	spotify    *spotify.Manager
 	// onUserStop is invoked when the box reports a deliberate playback stop
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
@@ -558,6 +564,10 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	if isNativeRadioLocation(location) {
 		h.logger.Info("hardware preset: native radio preset, the box activates it itself",
 			"slot", slot, "location", location)
+		// Standing back is right, and it is not the same as looking away: if
+		// the firmware then tells its own log that it got no first frame, this
+		// press is the one that failed (see firstpressrescue.go).
+		h.firstPress.noteNativeActivation(slot, time.Now())
 		if p, ok := h.store.Get(slot); ok {
 			if h.noteRecentPreset != nil {
 				h.noteRecentPreset(p)
