@@ -399,6 +399,11 @@ type Manager struct {
 	lowDisk          bool
 	lowDiskFreeKB    int64
 	lastLowDiskLogAt time.Time
+	// stereoFn reports whether this speaker is half of a stereo pair, and which
+	// half. Set by the agent, which owns the zone store. See stereoidentity.go:
+	// a pair has to appear in the Spotify app as one device, the way the Bose
+	// firmware shows it, not as two halves nobody should pick (#976).
+	stereoFn StereoFn
 }
 
 // New returns a Manager. binPath is the go-librespot binary, configDir

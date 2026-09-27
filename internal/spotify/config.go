@@ -25,7 +25,10 @@ import (
 func (m *Manager) configYAML(name string, initialVol int) string {
 	host, port := splitHostPort(m.apiAddr)
 	var b strings.Builder
-	fmt.Fprintf(&b, "device_name: %q\n", advertisedName(name))
+	// connectName, not the bare box name: while a stereo pair is formed the
+	// master advertises the PAIR under its own name, so the Spotify app shows
+	// one device for the pair the way the Bose firmware does (#976).
+	fmt.Fprintf(&b, "device_name: %q\n", advertisedName(m.connectName(name)))
 	b.WriteString("device_type: speaker\n")
 	fmt.Fprintf(&b, "bitrate: %d\n", m.bitr)
 	b.WriteString("audio_backend: pipe\n")

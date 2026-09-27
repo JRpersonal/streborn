@@ -661,6 +661,42 @@ func run() error {
 	// the engine's RSS onto its seam lines so a bundle can tell firmware
 	// retention from the engine holding the track.
 	spotifyMgr.MemAvailKB = func() int64 { a, _ := readMemKB(); return a }
+	// Where this speaker stands in a stereo pair, so the Spotify app shows the
+	// PAIR as one device instead of its two halves (#976). Both facts come from
+	// state the agent already holds: the zone store says whether this is a pair
+	// and who leads it, and the pair's display name lives in the marge group
+	// record, which is the same place the Bose app reads, so a rename in one
+	// shows up in the other.
+	//
+	// The self id is read from marge rather than from the startup guess: the
+	// guess takes a MAC off the first interface it finds and a two-interface
+	// speaker has two, so correctDeviceIDFromBox replaces it with the box's own
+	// answer. Comparing a zone master against the wrong MAC would make a master
+	// think it is a follower and take its own Connect entry down.
+	spotifyMgr.SetStereoFn(func() (spotify.StereoRole, string) {
+		if zonesStore == nil {
+			return spotify.StereoNone, ""
+		}
+		z, ok := zonesStore.Get()
+		if !ok || !z.Stereo {
+			return spotify.StereoNone, ""
+		}
+		self := margeSrv.DeviceID()
+		if self == "" {
+			// Not knowing who we are is not a reason to guess at a role. The
+			// box answers within the first couple of minutes and the watcher
+			// picks it up on its next tick.
+			return spotify.StereoNone, ""
+		}
+		name := margeSrv.GroupName()
+		if name == "" {
+			name = z.Name
+		}
+		if z.IsMaster(self) {
+			return spotify.StereoMaster, name
+		}
+		return spotify.StereoFollower, name
+	})
 	spotifyMgr.EngineRSSKB = func(pid int) int64 {
 		rss, _ := readProcStatus(fmt.Sprintf("/proc/%d/status", pid))
 		return rss
