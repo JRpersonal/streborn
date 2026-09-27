@@ -495,6 +495,11 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
      renderMoveOffer. It sits under the keys because that is what it is about;
      the search tab renders the same offer into its own result list. -->
 <div class="card" id="moveCard" style="display:none"></div>
+<!-- What a hold on a key had to say. It is NOT the now-playing line: that
+     line is repainted by the 5 s status poll, so every message the hold
+     wrote was gone before it could be read, which is how a refused save
+     reached the user as nothing happening at all. -->
+<div class="card" id="holdNote" style="display:none"></div>
 
 <div class="card" id="recentCard" style="display:none">
 <div class="label" id="lblRecent">Recently played</div>
@@ -1820,6 +1825,31 @@ async function doPresetMove(fromSlot, toSlot, opts) {
    comes fresh from the speaker (/spotify/info), the shown name from the box's
    own now-playing, and the agent fills account + a stable cover on save. When
    nothing suitable plays, the hold says so instead of guessing. */
+// holdNote shows the outcome of a hold where the status poll cannot reach it,
+// and takes it back down by itself. A save either worked or it did not, and
+// either way the person holding the key has to be told which.
+var holdNoteTimer = null;
+function holdNote(msg) {
+  var el = document.getElementById('holdNote');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = '';
+  if (holdNoteTimer) clearTimeout(holdNoteTimer);
+  holdNoteTimer = setTimeout(function(){ el.style.display = 'none'; holdNoteTimer = null; }, 8000);
+}
+function hideHoldNote() {
+  var el = document.getElementById('holdNote');
+  if (el) el.style.display = 'none';
+  if (holdNoteTimer) { clearTimeout(holdNoteTimer); holdNoteTimer = null; }
+}
+
+// The station the Find tab last started. A hold saves what is PLAYING, and
+// what is playing after a search is this, which the page otherwise forgets
+// the moment the Play tab comes up. Reported as a hold that leaves the key
+// empty with no error: the hold only ever handled Spotify, and a station
+// started from Find is not Spotify.
+var lastPlayedStation = null;
+
 var HOLD_SAVE_MS = 1100;
 function attachHoldSave(el, slot) {
   var timer = null;
@@ -1830,6 +1860,8 @@ function attachHoldSave(el, slot) {
   var start = function(e) {
     if (e.button !== undefined && e.button !== 0) return;
     cancel();
+    // A new hold supersedes whatever the last one had to say.
+    hideHoldNote();
     el.classList.add('holding');
     timer = setTimeout(async function(){
       timer = null;
@@ -1864,14 +1896,19 @@ async function saveSpotifyToSlot(slot) {
   var info = await api('/spotify/info');
   var ctxUri = (info && info.context) || '';
   if (!/^spotify:(playlist|album|artist|show|track):/.test(ctxUri)) {
-    setNow(T.lpNoSpotify, '');
+    // Not Spotify. A station started from the Find tab is the other thing a
+    // hold is reached for, and it used to do nothing at all: the gesture only
+    // ever handled Spotify, and the sentence saying so was painted over by
+    // the status poll within five seconds.
+    if (lastPlayedStation) { await saveStationToSlot(slot, lastPlayedStation); return; }
+    holdNote(T.lpNoSpotify);
     return;
   }
   var body = { slot: slot, name: name || (info && info.track) || 'Spotify', type: 'spotify', uri: ctxUri, account: (info && info.account) || '' };
   var r = await putPresetSlot(slot, body);
   if (r.ok) {
     hideMoveOffer();
-    setNow(fmt(T.saved, { n: slot }), body.name);
+    holdNote(fmt(T.saved, { n: slot }));
     lastPresetSig = null;
     loadPresets();
     return;
@@ -1887,7 +1924,34 @@ async function saveSpotifyToSlot(slot) {
     showMoveOffer(c, slot);
     return;
   }
-  setNow(T.saveFail, '');
+  holdNote(T.saveFail);
+}
+
+// saveStationToSlot puts a RUNNING radio station on a key, which is what a
+// hold means when no Spotify playlist is going. Same body the Find tab's
+// Save builds, so the key ends up identical however it was filled, and the
+// same already-on-another-key offer when the speaker refuses (#836).
+async function saveStationToSlot(slot, st) {
+  var body = {
+    slot: slot, type: 'radio',
+    name: st.name || '',
+    stream_url: st.url_resolved || st.url,
+    art: st.favicon || '',
+    codec: st.codec || '',
+    homepage: st.homepage || ''
+  };
+  if (st.bitrate) body.bitrate = st.bitrate;
+  var r = await putPresetSlot(slot, body);
+  if (r.ok) {
+    hideMoveOffer();
+    holdNote(fmt(T.saved, { n: slot }));
+    lastPresetSig = null;
+    loadPresets();
+    return;
+  }
+  var c = presetConflict(r);
+  if (c) { showMoveOffer(c, slot); return; }
+  holdNote(T.saveFail);
 }
 
 // playRefusal turns the agent's refusal into the sentence that tells the user
@@ -3071,7 +3135,12 @@ async function playStation(idx, btn) {
     homepage: st.homepage || '',
     codec: st.codec || ''
   });
-  if (ok) { showTab('Play'); setNow(T.starting + ' ' + (st.name || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
+  if (ok) {
+    // Remembered so a hold on a key can save it: see saveHeldSlot.
+    lastPlayedStation = st;
+    showTab('Play'); setNow(T.starting + ' ' + (st.name || ''), T.pleaseWait);
+    setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500);
+  }
   else { searchMsg(T.cantStart, true); }
 }
 
