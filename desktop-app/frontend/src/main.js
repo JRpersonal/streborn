@@ -3749,7 +3749,14 @@ async function checkBoxUpdate() {
     // newer than the app, which would have downgraded the box and confused the
     // user (#105: an old app v0.6.22 next to a box on v0.7.32).
     const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
-    if (cmp === 0) {
+    // A missing engine gets its repair button whatever the version comparison
+    // says. It used to live only in the cmp===0 branch, so the one control that
+    // puts an engine back was hidden on exactly the speakers that had lost one:
+    // the v0.9.88 stamp skew made cmp 1 for every speaker on earth, so the only
+    // button on screen was the update, which drops the engine again. A reporter
+    // described running it "a few times on a couple of speakers", each run doing
+    // more damage, with no way to tell.
+    if (cmp === 0 || engineMissing) {
       if (engineMissing) {
         banner.innerHTML = `
           <div class="update-msg">
@@ -3761,8 +3768,14 @@ async function checkBoxUpdate() {
         banner.classList.remove('hidden');
         const eb = $('boxInstallEngineBtn');
         if (eb && !otaElsewhere) eb.onclick = () => installSpotifyEngineVisible(state.currentBox);
+        // A speaker that is BEHIND and has no engine needs both things said.
+        // The update line below replaces this banner in that case, because an
+        // update delivers the engine as one of its steps; the repair button is
+        // for the speaker that has nothing else outstanding.
+        if (cmp === 0) return;
+      } else {
+        return;
       }
-      return;
     }
     // When only the build stamp differs (same version string), show the build on
     // both sides so the line is not the confusing "v0.8.1 -> v0.8.1" (Jens,
@@ -3969,7 +3982,18 @@ async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeS
 // build and only finished minutes later. Users hit the same on slow speakers.
 function speakerReachedTarget(live, preVersion, wantEngine) {
   if (!live) return { done: false, missing: 'unreachable' };
-  const agentDone = !!live.version && (!preVersion || live.version !== preVersion);
+  // The binary the speaker is RUNNING first, then the version string.
+  //
+  // "the version string moved" cannot be satisfied by a push of the SAME
+  // version, and such a push is not harmless: a speaker that has the Spotify
+  // engine is by definition NAND-tight, so the agent drops the engine to make
+  // the update fit. Judging by the string then returns before the engine is
+  // put back, and a working Spotify install is destroyed by a re-push that was
+  // meant to change nothing. Four of six speakers in one household ended up
+  // that way after the v0.9.88 stamp skew invited re-push after re-push.
+  const appSha = state.appInfo && state.appInfo.agentSha256;
+  const agentDone = (!!appSha && live.agentRunningSha256 === appSha) ||
+    (!!live.version && (!preVersion || live.version !== preVersion));
   const engineDone = !wantEngine || live.goLibrespot === 'present';
   if (!agentDone) return { done: false, missing: 'agent' };
   if (!engineDone) return { done: false, missing: 'engine' };
