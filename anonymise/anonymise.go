@@ -29,14 +29,77 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // === Sanitization ===
 
 var ipv4Regex = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 var macRegex = regexp.MustCompile(`(?i)\b([0-9A-F]{2}[:-]){5}[0-9A-F]{2}\b`)
-var deviceIDRegex = regexp.MustCompile(`(?i)\b[0-9A-F]{12}\b`)
+
+// hexRunRegex matches a whole run of hex digits and dashes rather than a bare
+// 12-hex group, because the group alone cannot see what it is sitting in.
+//
+// The old pattern was a blind 12-hex match, and a UUID ends in exactly that:
+// the last group of 5435f503-c9e0-4ac0-ac67-58d3491f4b1a was cut out and
+// replaced with a DEV# token while the rest of the UUID stayed, in two field
+// families across the 72-bundle corpus in #971. That destroys the one value the
+// media-server analysis is read for (#733, a server that regenerates its UUID)
+// and it invents device keys that merge unrelated households.
+//
+// Matching the run and deciding in Go fixes both directions at once, including
+// the case a naive "leave anything with a dash alone" rule would have broken: a
+// Bose speaker's UPnP UDN is BO5EBO5E-F00D-F00D-FEED-<the MAC>, so its last
+// group must still be hashed, and hashed to the same token as the deviceID
+// beside it.
+var hexRunRegex = regexp.MustCompile(`(?i)\b[0-9A-F][0-9A-F-]*[0-9A-F]\b`)
+
+// uuidShapeRegex is the 8-4-4-4-12 form.
+var uuidShapeRegex = regexp.MustCompile(`(?i)^[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}$`)
+
+// boseUDNPrefix is the fixed head of a SoundTouch speaker's UPnP UDN. What
+// follows the last dash is the MAC, so that group is a device identifier and
+// nothing else in the UUID is.
+const boseUDNPrefix = "BO5EBO5E-F00D-F00D-FEED-"
+
+// scrubHexRuns hashes the hardware identifiers in s and leaves the rest of
+// every run it finds intact.
+func scrubHexRuns(s string) string {
+	return hexRunRegex.ReplaceAllStringFunc(s, func(m string) string {
+		if !strings.Contains(m, "-") {
+			// A bare 12-hex token is a Bose deviceID, which is the speaker MAC.
+			if len(m) == 12 {
+				return "DEV#" + hashShort(m)
+			}
+			return m
+		}
+		if !uuidShapeRegex.MatchString(m) {
+			// Not a UUID, so nothing here says the whole run is one identifier.
+			// Any 12-hex GROUP inside it still is one, and the rest of the run
+			// survives: that is what the old pattern got right and what a plain
+			// "leave anything dashed alone" rule would have thrown away.
+			parts := strings.Split(m, "-")
+			for i, g := range parts {
+				if len(g) == 12 {
+					parts[i] = "DEV#" + hashShort(g)
+				}
+			}
+			return strings.Join(parts, "-")
+		}
+		if strings.EqualFold(m[:len(boseUDNPrefix)], boseUDNPrefix) {
+			// Keep the prefix readable and hash the MAC. The token equals the
+			// deviceID token elsewhere in the same bundle, which is how a reader
+			// sees that the UDN and the device are one speaker.
+			return m[:len(boseUDNPrefix)] + "DEV#" + hashShort(m[len(boseUDNPrefix):])
+		}
+		// Any other UUID belongs to the user's equipment (a media server, a
+		// renderer) and is hashed WHOLE, so two bundles can still be compared on
+		// it without a fragment of it being published.
+		return "UUID#" + hashShort(strings.ToLower(m))
+	})
+}
 
 // ssidRedactRegex is the SINGLE pass that removes network names and Wi-Fi
 // secrets from anything leaving the host. One pass, not three, because the
@@ -117,6 +180,225 @@ var friendlyNameJSONRegex = regexp.MustCompile(`(?i)("friendlyName"\s*:\s*")([^"
 // "logFile=/Users/<name>/Library/..." until v0.9.7.
 var userPathRegex = regexp.MustCompile(`(?i)([/\\]+(?:Users|home)[/\\]+)([^/\\\s"',;]+)`)
 
+// userPathSpacedRegex is the same segment when the account name contains a
+// space, which the pattern above truncates at that space: 9 of the 72 bundles
+// in #971 shipped a surname that way, and one household was confirmed twice
+// because the same name was also its DNS search domain.
+//
+// A name with a space is only accepted when a path separator follows it, so a
+// match cannot run off into the rest of a log line, and at most two spaces are
+// allowed: enough for "First Last" or "First Middle Last", not a sentence.
+var userPathSpacedRegex = regexp.MustCompile(`(?i)([/\\]+(?:Users|home)[/\\]+)([^/\\\s"',;]+(?: [^/\\\s"',;]+){1,2})([/\\])`)
+
+// localNames are the strings this machine knows identify its own owner: the OS
+// account name and the name of the home directory.
+//
+// They exist because every pattern in this file anchors on something the text
+// has to provide, and a first name in a path with no /Users/ or /home/ in it
+// provides nothing to anchor on. Six of the 72 bundles in #971 carried one that
+// way, in a stick or library path on another drive. The exporting machine does
+// not have to guess: it knows its own account name, so it can strike that exact
+// string wherever it appears.
+var localNames []string
+
+// genericAccountNames are names too common to strike. Replacing "root", "user"
+// or "bose" everywhere would gut a log rather than anonymise it, and none of
+// them identifies a person.
+var genericAccountNames = map[string]bool{
+	"root": true, "user": true, "users": true, "admin": true, "administrator": true,
+	"guest": true, "default": true, "public": true, "home": true, "media": true,
+	"bose": true, "pi": true, "nobody": true, "shared": true, "owner": true,
+}
+
+// SetLocalNames installs the account names of the machine that exports. Each is
+// struck from every text that leaves, wherever it appears. Names shorter than
+// four characters and names on the generic list are ignored, because striking
+// those does more damage to the diagnostic than the leak they prevent.
+func SetLocalNames(names ...string) {
+	localNames = nil
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if i := strings.LastIndexAny(n, "/\\"); i >= 0 {
+			n = n[i+1:]
+		}
+		if len(n) < 4 || genericAccountNames[strings.ToLower(n)] {
+			continue
+		}
+		if !slices.Contains(localNames, n) {
+			localNames = append(localNames, n)
+		}
+	}
+	// Longest first, so a name that contains another is struck whole.
+	slices.SortFunc(localNames, func(a, b string) int { return len(b) - len(a) })
+}
+
+// scrubLocalNames strikes the exporting account name wherever it appears,
+// case-insensitively, without needing a path around it.
+func scrubLocalNames(s string) string {
+	for _, n := range localNames {
+		if !containsFold(s, n) {
+			continue
+		}
+		s = replaceFold(s, n, "<user>")
+	}
+	return s
+}
+
+func containsFold(s, sub string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
+}
+
+// replaceFold replaces every case-insensitive occurrence of old in s.
+func replaceFold(s, old, new string) string {
+	ls, lo := strings.ToLower(s), strings.ToLower(old)
+	var b strings.Builder
+	for {
+		i := strings.Index(ls, lo)
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		b.WriteString(s[:i])
+		b.WriteString(new)
+		s, ls = s[i+len(old):], ls[i+len(lo):]
+	}
+}
+
+// emailRegex catches an address anywhere in text. A mail address is a personal
+// identifier (CLAUDE.md) and it is also the commonest shape of a streaming
+// account id, so it is hashed as an account rather than as a device.
+var emailRegex = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+
+// spotifyUserRegex catches the account inside a Spotify URI. Seven of the 72
+// bundles in #971 carried a Spotify identity in clear, one of them a
+// spotify:user: URI in firstname.lastname shape, because the /sources pass that
+// judges account fields never runs over log text.
+var spotifyUserRegex = regexp.MustCompile(`(?i)(spotify:user:)([A-Z0-9._%+#-]+)`)
+
+// accountLogRegex catches an account id written as a log attribute, which is
+// the shape the structured passes cannot see: account=..., username=...,
+// "account":"...". The value ends at a quote, at the next attribute, or at the
+// end of the line, so a match cannot swallow the rest of a log entry.
+// Two families, because they carry different risks. account / sourceAccount
+// also hold a physical socket label (AUX, TV, CBL-Sat) that the bundle is read
+// for, so those are judged by LooksLikeAccountIdentity. username / login / a
+// user id never label a socket, so those are masked whatever they hold.
+var accountLogRegex = regexp.MustCompile(`(?im)("?\b(?:account|sourceAccount)"?\s*[:=]\s*"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+
+var userNameLogRegex = regexp.MustCompile(`(?im)("?\b(?:username|userName|user_name|userId|user_id|login)"?\s*[:=]\s*"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+
+// friendlyNameLogRegex catches the speaker name as a log attribute. The JSON and
+// XML forms are covered above; this is the third, and it is how a default name
+// shipped in clear: the firmware writes friendlyName=Bose SoundTouch FD438B into
+// a state-change line, and those last six hex are half the MAC.
+var friendlyNameLogRegex = regexp.MustCompile(`(?im)(friendlyName[:=])([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+
+// scrubAccounts hashes the account identities that only appear as free text.
+// allDigitsRegex is a numeric service id (Deezer reports one).
+var allDigitsRegex = regexp.MustCompile(`^[0-9]+$`)
+
+// LooksLikeAccountIdentity decides whether a value identifies a person rather
+// than a socket. Getting it wrong has a cost in both directions, so the rule is
+// written around what real boxes report:
+//
+//   - Names ending in "UserName" are firmware placeholders for an unlinked slot
+//     (QPlay1UserName, SpotifyConnectUserName, StoredMusicUserName,
+//     AirPlay2DefaultUserName). They name nobody and must survive, because the
+//     input filter keys on exactly this suffix.
+//   - A linked service reports the real account: a Deezer numeric id, a Spotify
+//     user id, a firstname.lastname handle, or an address. Those are hashed.
+//   - A physical socket's account is its own short label (AUX, AUX1, TV,
+//     CBL-Sat). Those survive, and they are the reason to capture /sources at
+//     all: hashing them would leave the bundle unable to answer which inputs a
+//     soundbar has.
+//
+// It lived in the desktop app, where only the structured /sources passes could
+// reach it. The same judgement is needed over log TEXT, where an account id is
+// written as an attribute and nothing structured ever sees it: that is hole 4 of
+// #971, 7 of 72 bundles. One predicate, two callers, for the same reason the
+// rest of this package exists.
+func LooksLikeAccountIdentity(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.HasSuffix(v, "UserName") {
+		return false
+	}
+	// An already masked value still IS an identity. Saying otherwise would tell
+	// the /sources pass that the object beside it is impersonal, and the
+	// nickname next to a masked id would then survive.
+	if strings.HasPrefix(v, "ACCT#") {
+		return true
+	}
+	if strings.Contains(v, "@") || allDigitsRegex.MatchString(v) {
+		return true
+	}
+	// A dot between words is a handle (firstname.lastname), which is the shape
+	// the leaked Spotify identity in #971 had. No socket label carries one.
+	if strings.Contains(v, ".") && !strings.ContainsAny(v, " \t") {
+		return true
+	}
+	// Opaque service ids are long and unbroken; socket labels are short.
+	return len(v) >= 16 && !strings.ContainsAny(v, " \t")
+}
+
+// MaskAccount hashes an account identity, and hands back anything already
+// masked, so a value can pass through more than one anonymising pass.
+func MaskAccount(v string) string { return maskAccountValue(v) }
+
+// maskAccountValue hashes one attribute value, and hands back anything that is
+// empty or already masked exactly as it was, so the passes stay idempotent.
+// isVendorBuildAddress recognises the one address family that is not personal
+// data: the build host inside the kernel banner
+// ("Linux version 3.14.43+ (epdbuild@hepdswbld04.bose.com)"). Found by running
+// the new pass over real bundles, where it hashed that string and took the
+// firmware fingerprint with it - docs/MODEL-VARIANTS.md matches incoming
+// diagnostics on the exact kernel line.
+func isVendorBuildAddress(addr string) bool {
+	return strings.HasSuffix(strings.ToLower(addr), ".bose.com")
+}
+
+func maskAccountValue(v string) string {
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" || trimmed == ssidRedacted || trimmed == "<REDACTED>" || trimmed == "<user>" {
+		return v
+	}
+	// A value that is already a token stays that token. Hashing it again would
+	// both break idempotence and cut a link a reader needs: a media server
+	// reports its UUID as its username, and masking that a second time left
+	// id=UUID#... and username=ACCT#... looking like two different things
+	// (seen in a real bundle while this was being written).
+	for _, p := range []string{"ACCT#", "NAME#", "UUID#", "DEV#", "MAC#"} {
+		if strings.HasPrefix(trimmed, p) {
+			return v
+		}
+	}
+	return "ACCT#" + hashShort(strings.ToLower(trimmed))
+}
+
+func scrubAccounts(s string) string {
+	s = spotifyUserRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := spotifyUserRegex.FindStringSubmatch(m)
+		return sub[1] + maskAccountValue(sub[2])
+	})
+	s = emailRegex.ReplaceAllStringFunc(s, func(m string) string {
+		if isVendorBuildAddress(m) {
+			return m
+		}
+		return "ACCT#" + hashShort(strings.ToLower(m))
+	})
+	s = accountLogRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := accountLogRegex.FindStringSubmatch(m)
+		if !LooksLikeAccountIdentity(sub[2]) {
+			return m
+		}
+		return sub[1] + maskAccountValue(sub[2]) + sub[3]
+	})
+	s = userNameLogRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := userNameLogRegex.FindStringSubmatch(m)
+		return sub[1] + maskAccountValue(sub[2]) + sub[3]
+	})
+	return s
+}
+
 // scrubPII is the single sanitization pass shared by every text blob that can
 // leave the host (the app log, box-side logs pulled over SSH, the /api/debug
 // state, /api/status). Keeping one function means a field added to the bundle
@@ -126,7 +408,11 @@ var userPathRegex = regexp.MustCompile(`(?i)([/\\]+(?:Users|home)[/\\]+)([^/\\\s
 // proxyPayloadRegex finds the base64 upstream STR's stream proxy carries in its
 // own URLs, /stream/raw?u=<payload>. Both encodings appear in the field, and a
 // payload can itself wrap another proxy URL, so the unwrapper below loops.
-var proxyPayloadRegex = regexp.MustCompile(`(/stream/raw\?u=)([A-Za-z0-9+/_-]+={0,2})`)
+// The second shape is /playback/container/<base64 spotify URI>, which has the
+// same hole one level down and was not unwrapped: a container key can carry a
+// spotify:user:<name> URI, so an account identity survived inside it. Third
+// time an encoded value has got out this way (#971, hole 6).
+var proxyPayloadRegex = regexp.MustCompile(`(/stream/raw\?u=|/playback/container/)([A-Za-z0-9+/_-]+={0,2})`)
 
 // scrubProxyPayloads rewrites the addresses hidden INSIDE those payloads.
 //
@@ -166,7 +452,15 @@ func decodeProxyPayload(payload string) (string, *base64.Encoding, bool) {
 	} {
 		if dec, err := enc.DecodeString(payload); err == nil {
 			s := string(dec)
-			if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+			if !utf8.ValidString(s) {
+				continue
+			}
+			// A URL, a Spotify URI, or anything carrying an address. Everything
+			// else is left byte for byte: a bundle is evidence, and mangling a
+			// value nobody can read is worse than leaving it.
+			switch {
+			case strings.HasPrefix(s, "http://"), strings.HasPrefix(s, "https://"),
+				strings.HasPrefix(s, "spotify:"), ipv4Regex.MatchString(s):
 				return s, enc, true
 			}
 		}
@@ -199,7 +493,7 @@ func scrubPII(s string) string {
 // the fix is a shared pass rather than a second copy of the regex list.
 func scrubIdentities(s string) string {
 	s = macRegex.ReplaceAllStringFunc(s, func(m string) string { return "MAC#" + hashShort(m) })
-	s = deviceIDRegex.ReplaceAllStringFunc(s, func(m string) string { return "DEV#" + hashShort(m) })
+	s = scrubHexRuns(s)
 	s = nameTagRegex.ReplaceAllStringFunc(s, func(m string) string {
 		sub := nameTagRegex.FindStringSubmatch(m)
 		return "<" + sub[1] + ">NAME#" + hashShort(sub[2]) + "</" + sub[1] + ">"
@@ -208,8 +502,23 @@ func scrubIdentities(s string) string {
 		sub := friendlyNameJSONRegex.FindStringSubmatch(m)
 		return sub[1] + "NAME#" + hashShort(sub[2]) + sub[3]
 	})
+	s = friendlyNameLogRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := friendlyNameLogRegex.FindStringSubmatch(m)
+		val := strings.TrimSpace(sub[2])
+		if val == "" || strings.HasPrefix(val, "NAME#") || val == ssidRedacted {
+			return m
+		}
+		return sub[1] + "NAME#" + hashShort(val) + sub[3]
+	})
+	s = scrubAccounts(s)
 	s = redactSSIDs(s)
+	// Spaced first: the narrower pattern below would otherwise cut the name at
+	// its space and leave the surname standing.
+	s = userPathSpacedRegex.ReplaceAllString(s, "${1}<user>${3}")
 	s = userPathRegex.ReplaceAllString(s, "${1}<user>")
+	// Last, and not anchored on anything: the account name of the machine that
+	// exports, wherever it sits.
+	s = scrubLocalNames(s)
 	return s
 }
 

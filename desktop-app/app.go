@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sync"
 	"time"
@@ -202,6 +203,23 @@ func (a *App) startup(ctx context.Context) {
 			a.logger.Warn("could not establish the bundle anonymisation salt", "err", serr)
 		}
 	}
+	// The account name of this machine, so it can be struck from a bundle
+	// wherever it sits rather than only inside a /Users/ or /home/ path. Six of
+	// those 72 bundles carried a first name in a stick or library path on
+	// another drive, where no pattern had anything to anchor on. The exporting
+	// machine does not have to guess at its own owner, and short or generic
+	// names are ignored inside SetLocalNames.
+	var names []string
+	if u, uerr := user.Current(); uerr == nil {
+		names = append(names, u.Username)
+		if u.Name != "" {
+			names = append(names, u.Name)
+		}
+	}
+	if home, herr := os.UserHomeDir(); herr == nil {
+		names = append(names, home)
+	}
+	anonymise.SetLocalNames(names...)
 	// Route the dlna package's logs through our file logger so the
 	// per-interface SSDP M-SEARCH summary lines land in str.log next
 	// to the STR discovery cycles. Without this, a media server scan
