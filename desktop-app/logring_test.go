@@ -120,3 +120,25 @@ func TestNoPreviousSessionsIsNotAnError(t *testing.T) {
 	}
 	rotateLogOnStartup() // must not panic with no log at all
 }
+
+// A restart is the most disruptive thing the app does to a speaker, and it used
+// to leave no trace on this side. Reconstructing one incident meant reading the
+// SPEAKER's log to discover that the app had rebooted it.
+//
+// The journal rather than the plain logger, because ota-history.log is
+// host-keyed and never rotated, and recordOTA mirrors into the logger anyway.
+func TestARebootTheAppTriggeredIsRecorded(t *testing.T) {
+	journal := useTempJournal(t)
+	a := fastTestApp()
+	// A port nothing answers on: the failure leg must be recorded too, because a
+	// reboot that did NOT happen is exactly as worth knowing as one that did.
+	_ = a.rebootBoxFor("127.0.0.1", deadPort(t), "a test")
+
+	got := readJournal(t, journal)
+	if !strings.Contains(got, "reboot: STR asked the speaker to restart") {
+		t.Errorf("the journal does not say STR restarted the speaker:\n%s", got)
+	}
+	if !strings.Contains(got, "a test") {
+		t.Errorf("the journal does not say why:\n%s", got)
+	}
+}

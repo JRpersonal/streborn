@@ -130,13 +130,14 @@ func (a *App) restoreOneCloudURL(t CloudRestoreTarget) CloudRestoreResult {
 
 	// 2. The restart. This is the actual cure and there is no quieter one: the
 	// firmware reads the cloud address once, at boot.
-	rb, err := a.boxDoTimeout(t.Host, t.Port, http.MethodPost,
-		"/api/box/reboot", "application/json", "", 15*time.Second)
-	if err != nil {
+	// Through the shared door, so this restart is in the journal like every
+	// other one. It used to be a bare POST: no record, and no SSH invalidation
+	// either, so the next SSH command after it failed once for no visible
+	// reason.
+	if err := a.rebootBoxFor(t.Host, t.Port, "restoring the speaker to Bose's cloud address"); err != nil {
 		res.Error = "could not restart the speaker: " + err.Error()
 		return res
 	}
-	rb.Body.Close()
 	res.Rebooted = true
 
 	// 3. Wait for it, then check. Waiting for it to GO first matters: the agent

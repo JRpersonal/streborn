@@ -62,15 +62,35 @@ func (a *App) PhoneQR(url string) (string, error) {
 // RebootBox triggers a restart of the Bose box (via the Stick Agent
 // shell `reboot`). This makes fresh setup-wizard configs on the
 // USB stick take effect immediately, without continuous polling in the agent.
+//
+// Bound to the frontend, so reason is filled in by rebootBoxFor for the
+// internal callers that know why they are doing it.
 func (a *App) RebootBox(host string, port int) error {
+	return a.rebootBoxFor(host, port, "the user asked for it")
+}
+
+// rebootBoxFor restarts a speaker and records that STR did it.
+//
+// The journal, not just the logger, and for a reason worth stating: a restart
+// is the single most disruptive thing the app does to a speaker, and it used to
+// leave no trace on this side at all. Reconstructing one incident meant reading
+// the SPEAKER's log to discover that the app had rebooted it, because the only
+// record was the agent's own "Box reboot requested by user". recordOTA mirrors
+// into the logger anyway, so one call lands in both, and ota-history.log is
+// host-keyed and never rotated, which str.log is.
+func (a *App) rebootBoxFor(host string, port int, reason string) error {
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/reboot", "application/json", "")
 	if err != nil {
+		a.recordOTA(host, "reboot: STR asked the speaker to restart ("+reason+") and the request failed: "+err.Error())
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return readHTTPError(resp)
+		rerr := readHTTPError(resp)
+		a.recordOTA(host, "reboot: STR asked the speaker to restart ("+reason+") and it refused: "+rerr.Error())
+		return rerr
 	}
+	a.recordOTA(host, "reboot: STR asked the speaker to restart ("+reason+")")
 	// The box is going down: drop any cached SSH connection to it so the next
 	// SSH command after the reboot dials fresh instead of failing once first.
 	boxSSHClients.invalidateHost(host)

@@ -665,8 +665,9 @@ func run() error {
 	// PAIR as one device instead of its two halves (#976).
 	//
 	// The marge group record is the source, NOT the zone store. A marge group IS
-	// a stereo pair by construction (validateGroup refuses a document without a
-	// masterDeviceId and exactly two roles), and a pair formed through STR leaves
+	// a stereo pair by construction (describesPair refuses a document without a
+	// masterDeviceId and exactly two roles, and nothing failing it is stored or
+	// answered with), and a pair formed through STR leaves
 	// zones.json empty: measured on two ST10s on 2026-09-27, where the zone store
 	// carried nothing at all while marge_group.present was true on both halves.
 	// Reading the zone store would have made this whole change a no-op.

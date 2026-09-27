@@ -625,7 +625,13 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 				e = discEntry{box: b, seen: now}
 				delete(a.strKnown, b.DeviceID)
 				if a.logger != nil {
-					a.logger.Info("discovery: STR agent silent while the stock Bose port answers; box degraded to STR not running",
+					// Says only what was measured. The old wording asserted that the
+					// stock Bose port answered, and the path that reaches here never
+					// contacts :8090: an mDNS announcement with no successful probe
+					// qualifies, which is also what a speaker that is switched off
+					// looks like while the host OS still serves its cached
+					// announcement. Telling that owner to reinstall STR is wrong.
+					a.logger.Info("discovery: STR agent has not answered for the full window; box degraded to STR not running",
 						"host", b.Host, "misses", prev.strMisses+1, "since", prev.strMissSince.Format(time.RFC3339))
 				}
 			}
@@ -1117,6 +1123,14 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 		}()
 	}
 	wg.Wait()
+	// Count what this cycle REACHED before merging, because the merge writes
+	// into seen. The log below used to read len(seen) afterwards and call it
+	// "live", so a three-speaker fleet with one speaker asleep reported
+	// "count=3 live=3 offline=1": three speakers, three of them live, and one
+	// offline as well. That reads as a fourth speaker appearing from nowhere,
+	// and it is how an evening went looking for a phantom cache entry that does
+	// not exist (2026-09-28). Two reached, one did not.
+	reached := len(seen)
 	a.mergeDiscoveryCacheWith(seen, presenceOnly)
 	out := make([]BoxInfo, 0, len(seen)+len(offline))
 	for h, b := range seen {
@@ -1134,7 +1148,9 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 			out = append(out, b)
 		}
 	}
-	a.logger.Info("refresh known boxes done", "count", len(out), "live", len(seen), "offline", len(offline))
+	a.logger.Info("refresh known boxes done",
+		"count", len(out), "reached", reached, "fromCache", len(seen)-reached,
+		"unreachable", len(offline))
 	return out, nil
 }
 

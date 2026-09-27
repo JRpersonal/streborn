@@ -198,12 +198,35 @@ func (s *Server) GroupName() string {
 // flow on this box, or relayed from the master's agent via the desktop app for
 // the partner). From now on firmware posts that disagree on the master are
 // answered with this document instead of stored (see createMargeGroup).
+// describesPair reports whether a record can be a stereo pair at all: a master
+// and exactly two roles.
+//
+// This rule already existed, inline in SetCanonicalGroup, which meant it applied
+// to documents STR installs and to nothing else. Every document the FIRMWARE
+// posts went straight into the store unchecked, and the firmware posts one on
+// every boot-time re-register, from its own point of view. A six-speaker bundle
+// on 2026-09-27 caught the result: both halves of one pair holding a record that
+// named ITSELF as master with zero roles, with different group ids, for about
+// twenty minutes.
+//
+// A record like that is not a pair, and every reader downstream believed it was
+// one. GroupPair answered yes to both halves, so both told Spotify they were the
+// master of the pair and neither stood down, which is exactly the two-entries
+// symptom #976 was about.
+//
+// Two comments in this tree claimed a validateGroup function enforced this. No
+// such function exists; the claim was mine and it was wrong. This is the
+// function those comments described.
+func describesPair(g *groupRecord) bool {
+	return g != nil && strings.TrimSpace(g.MasterDeviceID) != "" && len(g.Roles) == 2
+}
+
 func (s *Server) SetCanonicalGroup(xmlDoc string) error {
 	var g groupRecord
 	if err := xml.Unmarshal([]byte(xmlDoc), &g); err != nil {
 		return fmt.Errorf("parse group document: %w", err)
 	}
-	if strings.TrimSpace(g.MasterDeviceID) == "" || len(g.Roles) != 2 {
+	if !describesPair(&g) {
 		return fmt.Errorf("group document needs a masterDeviceId and exactly two roles (got master=%q roles=%d)", g.MasterDeviceID, len(g.Roles))
 	}
 	if strings.TrimSpace(g.ID) == "" {
@@ -316,6 +339,20 @@ func (s *Server) createMargeGroup(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("marge group create: firmware re-created the pair, keeping the canonical document",
 				slog.String("comp", "marge"), slog.String("master", stored.MasterDeviceID))
 		}
+	} else if !describesPair(stored) {
+		// Echo it back below, because that reply is what makes the firmware adopt
+		// a shared view and must not change, but do not keep it. A document with
+		// no roles is the firmware re-registering itself at boot, not a pair, and
+		// storing it is how both halves of a real pair ended up each believing it
+		// led a group of one.
+		prev := s.group
+		s.mu.Unlock()
+		if prev == nil {
+			s.logger.Warn("marge group create: the firmware posted a document that is not a pair, not storing it",
+				slog.String("comp", "marge"),
+				slog.String("postedMaster", g.MasterDeviceID),
+				slog.Int("roles", len(g.Roles)))
+		}
 	} else {
 		s.group = stored
 		s.persistGroupLocked()
@@ -383,8 +420,9 @@ func (s *Server) deleteMargeGroup(w http.ResponseWriter, _ *http.Request) {
 // GroupPair reports the stored stereo pair: the deviceID of its master and its
 // display name. ok is false when no pair is stored.
 //
-// A marge group record IS a stereo pair, not a multiroom zone: validateGroup
-// refuses a document that does not carry a masterDeviceId and exactly two roles.
+// A marge group record IS a stereo pair, not a multiroom zone: describesPair
+// refuses a document that does not carry a masterDeviceId and exactly two
+// roles, and nothing that fails it is stored or answered with.
 // That makes this the one honest answer to "is this speaker half of a pair", and
 // the zone store is not: a pair formed through STR leaves zones.json empty and
 // lives only here. Measured on two ST10s on 2026-09-27, where reading the zone
@@ -392,7 +430,10 @@ func (s *Server) deleteMargeGroup(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) GroupPair() (masterDeviceID, name string, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.group == nil {
+	// describesPair, not just non-nil. A record naming itself master with no
+	// roles is not a pair, and answering yes to one made BOTH halves of a split
+	// pair claim they led it.
+	if !describesPair(s.group) {
 		return "", "", false
 	}
 	return s.group.MasterDeviceID, s.group.Name, true
