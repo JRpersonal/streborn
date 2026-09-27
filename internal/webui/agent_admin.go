@@ -234,6 +234,13 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if sha := runningBinaryStamp(); sha != "" {
 		out["agentRunningSha256"] = sha
 	}
+	// The name this speaker answers for itself, so the desktop app can put a
+	// name on the phone-remote QR code rather than an address that changes with
+	// the next DHCP lease. Absent while no responder is running, which is the
+	// only honest answer.
+	if n := mdnsHostName; n != "" {
+		out["mdnsName"] = n
+	}
 	// A failed tier-3 RAM-staged swap leaves a marker instead of rebooting
 	// into a silently-old binary; surface it so the failure is visible on a
 	// stickless box where nothing else is.

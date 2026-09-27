@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Gelişmiş",
   "settingsView.phoneHeading": "Bu hoparlörü telefonunuzdan kontrol edin",
   "settingsView.phoneHelp": "Kamerayla tarayın, ardından tek dokunuşla kumanda için Ana Ekrana Ekle secenegini kullanın.",
+  "settingsView.phoneUseAddress": "Ad çalışmıyor mu? IP adresli QR",
+  "settingsView.phoneUseName": "Adlı QR (adres değişse de geçerli)",
   "a11y.title": "Görüntü ve erişilebilirlik",
   "a11y.textSize": "Yazı boyutu",
   "a11y.size.normal": "Normal",

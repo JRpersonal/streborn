@@ -141,6 +141,8 @@ export function Pause(arg1:string,arg2:number):Promise<void>;
 
 export function PendingUpdateIntent(arg1:string,arg2:number):Promise<Record<string, string>>;
 
+export function PhoneAddressFor(arg1:string,arg2:number):Promise<main.PhoneAddress>;
+
 export function PhoneQR(arg1:string):Promise<string>;
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;

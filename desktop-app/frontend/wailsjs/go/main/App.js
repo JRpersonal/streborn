@@ -274,6 +274,10 @@ export function PendingUpdateIntent(arg1, arg2) {
   return window['go']['main']['App']['PendingUpdateIntent'](arg1, arg2);
 }
 
+export function PhoneAddressFor(arg1, arg2) {
+  return window['go']['main']['App']['PhoneAddressFor'](arg1, arg2);
+}
+
 export function PhoneQR(arg1) {
   return window['go']['main']['App']['PhoneQR'](arg1);
 }

@@ -107,6 +107,23 @@ func SetAgentVersion(v string) { agentVersion = func() string { return v } }
 // SetAgentBuild sets the build stamp (date/commit) as additional info.
 func SetAgentBuild(b string) { agentBuild = func() string { return b } }
 
+// mdnsHostName is the name this speaker answers address queries for, set at
+// startup once the responder is actually running. Empty until then, and empty
+// forever on a box whose responder could not start, which is the only correct
+// answer there: a name nothing answers for is worse than no name.
+var mdnsHostName string
+
+// SetMDNSHostName records the name from internal/mdnshost so the desktop app can
+// read it back off /api/agent/version.
+//
+// The app needs it to put a NAME on the phone-remote QR code instead of an
+// address, because an address is the thing that changes: a new DHCP lease and
+// the page somebody has on their home screen points at nothing. The app cannot
+// derive the name itself (mdnshost is under internal/, and it is a separate
+// module), and a second copy of that derivation is exactly the drift this
+// codebase has paid for elsewhere. So the speaker says it.
+func SetMDNSHostName(n string) { mdnsHostName = n }
+
 // debugSections holds extra named providers merged into the /api/debug/state
 // JSON. main.go registers agent-side forensics here (the marge request trail,
 // the boot clock verdict) without webui needing to know their types; each fn is

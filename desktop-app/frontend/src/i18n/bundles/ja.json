@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "詳細設定",
   "settingsView.phoneHeading": "このスピーカーをスマホで操作",
   "settingsView.phoneHelp": "カメラでスキャンし、「ホーム画面に追加」でワンタップのリモコンに。",
+  "settingsView.phoneUseAddress": "名前で開けない場合は IP アドレスの QR",
+  "settingsView.phoneUseName": "名前の QR（アドレスが変わっても有効）",
   "a11y.title": "表示とアクセシビリティ",
   "a11y.textSize": "文字サイズ",
   "a11y.size.normal": "標準",

@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "進階",
   "settingsView.phoneHeading": "用手機控制這台喇叭",
   "settingsView.phoneHelp": "用手機相機掃描，再選「加入主畫面」，就有一鍵遙控器。",
+  "settingsView.phoneUseAddress": "名稱無法使用？使用 IP 位址的 QR",
+  "settingsView.phoneUseName": "使用名稱的 QR（位址改變仍有效）",
   "a11y.title": "顯示與無障礙",
   "a11y.textSize": "文字大小",
   "a11y.size.normal": "正常",

@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Papildu",
   "settingsView.phoneHeading": "Vadiet šo skaļruni no telefona",
   "settingsView.phoneHelp": "Skenējiet ar kameru, pēc tam izmantojiet Pievienot sākuma ekrānam, lai iegūtu tālvadību ar vienu pieskārienu.",
+  "settingsView.phoneUseAddress": "Nosaukums nedarbojas? QR ar IP adresi",
+  "settingsView.phoneUseName": "QR ar nosaukumu (paliek derīgs)",
   "a11y.title": "Attēlojums un pieejamība",
   "a11y.textSize": "Teksta izmērs",
   "a11y.size.normal": "Normāls",

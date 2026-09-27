@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Розширені",
   "settingsView.phoneHeading": "Керуйте цією колонкою з телефона",
   "settingsView.phoneHelp": "Відскануйте камерою, потім скористайтеся Додати на головний екран для пульта в один дотик.",
+  "settingsView.phoneUseAddress": "Ім’я не працює? QR з IP-адресою",
+  "settingsView.phoneUseName": "QR з іменем (залишається дійсним)",
   "a11y.title": "Відображення та доступність",
   "a11y.textSize": "Розмір тексту",
   "a11y.size.normal": "Звичайний",

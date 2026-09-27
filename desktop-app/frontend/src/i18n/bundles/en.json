@@ -1368,6 +1368,8 @@
   "settingsView.groupAdvanced": "Advanced",
   "settingsView.phoneHeading": "Control this speaker on your phone",
   "settingsView.phoneHelp": "Scan this with your phone camera, then use Add to Home Screen for a one-tap remote.",
+  "settingsView.phoneUseAddress": "Name not working? QR with the IP address",
+  "settingsView.phoneUseName": "QR with the name (survives an address change)",
   "a11y.title": "Display & accessibility",
   "a11y.textSize": "Text size",
   "a11y.size.normal": "Normal",
