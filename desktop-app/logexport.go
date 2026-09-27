@@ -143,12 +143,20 @@ Contents:
   manifest.json         summary
 
 Privacy:
-  When Anonymized=true (default), LAN IPs are masked to 192.0.2.x,
-  MAC addresses / device IDs / serial numbers / friendly names are
-  hashed (first 8 chars of SHA256), linked streaming accounts appear
-  as ACCT#<hash> instead of the account name, and SSID-looking strings
-  in the app log are scrubbed. Even so, please skim the files before
-  attaching to a public issue.
+  When Anonymized=true (default):
+    LAN addresses      masked to 192.0.2.x
+    MAC / device id    MAC#<hash> / DEV#<hash>
+    speaker names      NAME#<hash>
+    UPnP UUIDs         UUID#<hash>, whole, so two reports can still be
+                       compared on them
+    streaming accounts ACCT#<hash>, including mail addresses and a
+                       Spotify account written anywhere in a log line
+    Wi-Fi              network names and keys removed, not hashed
+    this PC's account  replaced with <user>, in a path or anywhere else
+  The hashes are salted with a value this installation keeps and never
+  puts in a bundle, so the same speaker carries the same token across
+  reports while nobody else can turn a token back into an address.
+  Even so, please skim the files before attaching to a public issue.
 `, time.Now().UTC().Format(time.RFC3339), runtime.GOOS, runtime.GOARCH, appVersion, req.Anonymize, len(req.BoxHosts), boxSummary.String())
 	if err := writeZipEntry(zw, "README.txt", []byte(readme)); err != nil {
 		return LogExportResult{}, err
@@ -685,6 +693,11 @@ var (
 	redactSSIDs     = anonymise.RedactSSIDs
 	maskIP          = anonymise.MaskIP
 	hashShort       = anonymise.HashShort
+	// The judgement that tells an account identity from a socket label, and the
+	// masker that writes the ACCT# token. Shared with the text pass, which needs
+	// exactly the same judgement over a log attribute (#971, hole 4).
+	looksLikeAccountIdentity = anonymise.LooksLikeAccountIdentity
+	maskAccount              = anonymise.MaskAccount
 )
 
 func sanitizeLog(b []byte) []byte {
@@ -790,11 +803,11 @@ func hashAccountFields(v any) any {
 			s, isStr := inner.(string)
 			switch {
 			case isStr && accountKeys[k] && looksLikeAccountIdentity(s):
-				t[k] = "ACCT#" + hashShort(s)
+				t[k] = maskAccount(s)
 			case isStr && k == "displayName" && (personal || looksLikeAccountIdentity(s)):
-				t[k] = "ACCT#" + hashShort(s)
+				t[k] = maskAccount(s)
 			case isStr && k == "name" && looksLikeAccountIdentity(s):
-				t[k] = "ACCT#" + hashShort(s)
+				t[k] = maskAccount(s)
 			default:
 				t[k] = hashAccountFields(inner)
 			}
@@ -900,32 +913,6 @@ var sourceItemRegex = regexp.MustCompile(`<sourceItem\b[^>]*(?:/>|>[^<]*</source
 var sourceAccountAttrRegex = regexp.MustCompile(`sourceAccount="([^"]*)"`)
 var sourceItemTextRegex = regexp.MustCompile(`>([^<>]+)</sourceItem>`)
 var allDigitsRegex = regexp.MustCompile(`^[0-9]{6,}$`)
-
-// looksLikeAccountIdentity decides whether a /sources value identifies a person
-// rather than a socket. Getting this wrong in either direction has a cost, so
-// the rule is written around what real boxes report:
-//
-//   - Names ending in "UserName" are firmware placeholders for an unlinked slot
-//     (QPlay1UserName, SpotifyConnectUserName, StoredMusicUserName,
-//     AirPlay2DefaultUserName). They name nobody and must survive, because the
-//     input filter keys on exactly this suffix.
-//   - A linked service reports the real account: a Deezer numeric id, a Spotify
-//     user id, or an address. Those are hashed.
-//   - A physical socket's account is its own short label (AUX, AUX1, TV,
-//     CBL-Sat). Those survive, and they are the reason to capture /sources at
-//     all: hashing them would leave the bundle unable to answer which inputs a
-//     soundbar has.
-func looksLikeAccountIdentity(v string) bool {
-	v = strings.TrimSpace(v)
-	if v == "" || strings.HasSuffix(v, "UserName") {
-		return false
-	}
-	if strings.Contains(v, "@") || allDigitsRegex.MatchString(v) {
-		return true
-	}
-	// Opaque service ids are long and unbroken; socket labels are short.
-	return len(v) >= 16 && !strings.ContainsAny(v, " \t")
-}
 
 // anonymizeBoseSourcesXML hashes the account identities in /sources and leaves
 // the structure intact. The deviceID attribute, IPs and MACs are handled by the
