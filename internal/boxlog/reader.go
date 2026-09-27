@@ -90,6 +90,9 @@ type Reader struct {
 	// powerHandler receives one PowerEvent per standby/wake transition the
 	// firmware logs (see power.go). Guarded by mu; nil disables the hook.
 	powerHandler PowerHandler
+	// playFailHandler receives each playback failure the firmware logs, so
+	// the agent can act on one instead of only recording it.
+	playFailHandler PlayFailureHandler
 }
 
 // New returns a reader that will call handler for every key event.
@@ -252,6 +255,7 @@ func (r *Reader) handleLine(line string, now time.Time) {
 			r.logger.Info("boxlog: setup episode tail frozen", "lines", lines, "trigger", string(trigger))
 		}
 		r.firePower(fev)
+		r.firePlayFailure(fev)
 	}
 	ev, ok := ParseKeyLine(line, now)
 	if !ok {

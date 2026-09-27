@@ -131,6 +131,12 @@ type BoxInfo struct {
 	// Used by the frontend update indicators to flag stamp drift
 	// even when version strings match.
 	Build string `json:"build"`
+	// AgentBinarySha256 is the hash of the agent binary the speaker runs, from
+	// its own /api/agent/version. Compared against the hash of the agent THIS
+	// app carries, it answers "is this speaker current" without trusting a
+	// build stamp. Empty for an older agent that does not report it, in which
+	// case the version and stamp decide as before.
+	AgentBinarySha256 string `json:"agentBinarySha256,omitempty"`
 	// Offline marks a speaker that was seen earlier but has missed every probe
 	// for longer than its reboot grace window (e.g. it is rebooting for a long
 	// time, powered off, or off the LAN). The tile stays listed greyed out
@@ -1178,6 +1184,9 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 		if out.Build == "" {
 			out.Build = prev.Build
 		}
+		if out.AgentBinarySha256 == "" {
+			out.AgentBinarySha256 = prev.AgentBinarySha256
+		}
 		if prev.PortVerified && !out.PortVerified && prev.Port != 0 {
 			out.Port = prev.Port
 			out.PortVerified = true
@@ -1206,6 +1215,9 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 	}
 	if out.Build == "" {
 		out.Build = prev.Build
+	}
+	if out.AgentBinarySha256 == "" {
+		out.AgentBinarySha256 = prev.AgentBinarySha256
 	}
 	// BoxHealth: a fresh verdict wins; an empty one (stock sighting or an
 	// older agent) keeps the last known state so the pull-the-plug hint does
@@ -1765,6 +1777,11 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 			return n
 		}(),
 		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",
+		// The hash of the agent binary this speaker is actually running. It is
+		// the only answer about "is this box current" that no clock can spoil,
+		// and v0.9.88 needed it: the release stamped the app one minute later
+		// than the agent it embeds, so every speaker looked permanently behind.
+		AgentBinarySha256: jsonStringField(s, "agentBinarySha256"),
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable

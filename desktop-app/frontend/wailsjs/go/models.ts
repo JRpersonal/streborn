@@ -9,6 +9,7 @@ export namespace main {
 	    donateUrl: string;
 	    donateSlogan: string;
 	    updateManifestUrl: string;
+	    agentSha256: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -24,6 +25,7 @@ export namespace main {
 	        this.donateUrl = source["donateUrl"];
 	        this.donateSlogan = source["donateSlogan"];
 	        this.updateManifestUrl = source["updateManifestUrl"];
+	        this.agentSha256 = source["agentSha256"];
 	    }
 	}
 	export class BoxInfo {
@@ -36,6 +38,7 @@ export namespace main {
 	    model: string;
 	    version: string;
 	    build: string;
+	    agentBinarySha256?: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
 	    strNotRunning?: boolean;
@@ -71,6 +74,7 @@ export namespace main {
 	        this.model = source["model"];
 	        this.version = source["version"];
 	        this.build = source["build"];
+	        this.agentBinarySha256 = source["agentBinarySha256"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
 	        this.strNotRunning = source["strNotRunning"];

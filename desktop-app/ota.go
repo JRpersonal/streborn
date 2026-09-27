@@ -571,6 +571,19 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		a.noteOTAUnconfirmed(host, "unreachable")
 		return "unreachable"
 	}
+	// The binary the box is RUNNING, before any stamp. The agent reports the
+	// hash of its own running binary, so this is the one answer a clock cannot
+	// spoil: on v0.9.88 the app and its embedded agent were stamped a minute
+	// apart, and a perfectly successful update was then journalled as "the
+	// update did not take effect", with the loop breaker armed and the user told
+	// to stop retrying.
+	sum := sha256.Sum256(agentbin.Bytes())
+	embedded := hex.EncodeToString(sum[:])
+	if len(agentbin.Bytes()) > 0 && ver["agentBinarySha256"] == embedded && ver["otaSwapFailed"] == "" {
+		a.recordOTA(host, "outcome: confirmed late - box runs the agent this build carries")
+		a.forgetOTAVerify(host)
+		return "confirmed"
+	}
 	if ver["build"] == appBuild && appBuild != "" {
 		a.recordOTA(host, "outcome: confirmed late - box is on build "+ver["build"])
 		a.forgetOTAVerify(host)
@@ -580,8 +593,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		a.recordOTA(host, "outcome: NOT CONFIRMED - the box reports a failed binary swap: "+msg)
 		return "swap-failed"
 	}
-	sum := sha256.Sum256(agentbin.Bytes())
-	if ver["agentBinarySha256"] == hex.EncodeToString(sum[:]) {
+	if ver["agentBinarySha256"] == embedded {
 		a.recordOTA(host, "outcome: NOT CONFIRMED - the pushed binary IS on the box's disk but the running agent is still "+ver["version"]+" build "+ver["build"]+"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help")
 		return "landed-not-running"
 	}
