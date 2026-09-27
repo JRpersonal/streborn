@@ -130,7 +130,10 @@ Boxes asked: %d
 %s
 Contents:
   README.txt            this file
-  app.log               desktop app log (rolling, up to 2 MB)
+  app.log               desktop app log, THIS session (rolling, up to 2 MB)
+  app.prev*.log         the previous sessions, newest first. The one that
+                        matters is often not the most recent: noticing a
+                        problem usually means restarting the app first.
   box-<n>.json          per-box snapshot (Bose /info + /sources + STR /api/status + /api/agent/version + /api/box/zone)
                         plus the agent's debugState: its own log, the NAND and stick listings, and
                         two copies out of the speaker firmware's RAM-only syslog ring:
@@ -176,17 +179,34 @@ Privacy:
 		return LogExportResult{}, err
 	}
 
-	// 2b. Previous-session app log + the persistent OTA journal. str.log is
-	// rotated to <name>.1 on each launch and app.log above is only the current
-	// session, so an update-failure exported in a LATER session has lost the
-	// attempt. The previous session (often where it happened) is in app.prev.log,
-	// and every speaker-update attempt with its outcome is in ota-history.log,
-	// which is never rotated away. Both best-effort, omitted when absent.
-	if prev, perr := os.ReadFile(LogFilePath() + ".1"); perr == nil && len(prev) > 0 {
+	// 2b. The kept previous sessions + the persistent OTA journal. app.log above
+	// is only the CURRENT session, so an update failure exported later has lost
+	// the attempt that caused it.
+	//
+	// All of them, not just the last one, because the act of noticing a problem
+	// is usually a restart: somebody whose update looks stuck restarts the app,
+	// which is reasonable and also what used to push the interesting run out of
+	// the single slot that was kept. A reporter whose speakers lost their
+	// Spotify engine across four re-pushes sent a bundle in which none of those
+	// four runs survived (2026-09-27).
+	//
+	// Every speaker-update attempt with its outcome is in ota-history.log, which
+	// is never rotated away. All best-effort, omitted when absent.
+	for i, prevPath := range PreviousLogPaths() {
+		prev, perr := os.ReadFile(prevPath)
+		if perr != nil || len(prev) == 0 {
+			continue
+		}
 		if req.Anonymize {
 			prev = sanitizeLog(prev)
 		}
-		_ = writeZipEntry(zw, "app.prev.log", prev)
+		// The first one keeps its old name so anything that reads a bundle by
+		// that name still finds it.
+		name := "app.prev.log"
+		if i > 0 {
+			name = fmt.Sprintf("app.prev.%d.log", i+1)
+		}
+		_ = writeZipEntry(zw, name, prev)
 	}
 	if oj, oerr := os.ReadFile(otaJournalPath()); oerr == nil && len(oj) > 0 {
 		if req.Anonymize {
@@ -469,6 +489,42 @@ type sshFallback struct {
 	Probed      []string `json:"probedMountPaths"`
 }
 
+// stampSnapshotAge writes the capture's age into the document, in days, so a
+// reader does not have to convert an epoch to find out they are looking at
+// history.
+//
+// This file is the state of the speaker BEFORE STR took it over, written once
+// at install and never again. It sits in the bundle next to live readings and
+// looks exactly like them. On 2026-09-27 a triage read its six stations as the
+// speaker's current presets and spent a while wondering why they did not match
+// anything else; the capture was three weeks old.
+//
+// Best-effort in both directions: a body that is not JSON, or carries no
+// capturedAt, is handed back exactly as it came. Mangling evidence to annotate
+// it would be the worse trade.
+func stampSnapshotAge(body string) string {
+	if strings.TrimSpace(body) == "" {
+		return body
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		return body
+	}
+	sec, ok := m["capturedAt"].(float64)
+	if !ok || sec <= 0 {
+		return body
+	}
+	at := time.Unix(int64(sec), 0)
+	m["_note"] = "this is the speaker's state BEFORE STR was installed, captured once and never updated; it is history, not a current reading"
+	m["_capturedAtLocal"] = at.Format(time.RFC3339)
+	m["_ageDays"] = int(time.Since(at).Hours() / 24)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return string(out)
+}
+
 func captureBoxSnapshot(host string) boxSnapshot {
 	s := boxSnapshot{Host: host}
 	s.Reachable8090 = portOpen(host, 8090, 1200)
@@ -510,7 +566,7 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// The pre-takeover capture. Best-effort: agents older than the snapshot
 		// answer 404, and a box whose capture never completed answers
 		// {"captured":false}, which is itself worth having in the bundle.
-		s.BoxSnapshot = httpGetText(base+"/api/box/snapshot", 16*1024)
+		s.BoxSnapshot = stampSnapshotAge(httpGetText(base+"/api/box/snapshot", 16*1024))
 		// Live multiroom zone, best-effort (empty on stock boxes, agents
 		// without the zone API, or a zone read the box firmware rejects).
 		// 10 s, not the 4 s default: agents up to v0.9.49 answer this after

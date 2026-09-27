@@ -860,12 +860,35 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				"before", srcBefore, "after", srcAfter, "slots", len(missing),
 				"firstSlot", missing[0].Slot, "forced", forceFull)
 		}
+		// "Accepted by the CLI" is not "on the box". The firmware takes an
+		// AddPreset it will not keep and stores nothing, and it does that in
+		// bulk while it is between sources: a speaker whose write ledger reads
+		// addpreset@INVALID_SOURCE eight times over had four slots logged as
+		// healed and four dead hardware keys (2026-09-27). The log said the
+		// opposite of the truth, which cost a day of looking in the wrong place.
+		//
+		// So nothing claims to have healed until the box has been read back. The
+		// native path below does its own readback and re-write on top; this one
+		// covers every form, which is what was missing, because the UPnP form
+		// got no verification at all.
+		var accepted []boxcli.PresetSpec
 		for _, spec := range missing {
 			if serr, failed := errs[spec.Slot]; failed {
 				syncFailed = true
 				logger.Warn("preset reconcile: AddPreset failed", "slot", spec.Slot, "err", serr)
-			} else {
-				logger.Info("preset reconcile healed", "slot", spec.Slot)
+				continue
+			}
+			accepted = append(accepted, spec)
+		}
+		if len(accepted) > 0 {
+			landed, lost := splitWritesByWhatTheBoxKept(boxHost, accepted)
+			for _, slot := range landed {
+				logger.Info("preset reconcile healed", "slot", slot)
+			}
+			if len(lost) > 0 {
+				syncFailed = true
+				logger.Warn("preset reconcile: the box accepted these writes and kept none of them; the hardware keys for them are dead until a retry lands",
+					"slots", lost, "source", boxNowPlayingSource(boxHost))
 			}
 		}
 		// Read the slots back before believing the sweep, and re-write the ones
