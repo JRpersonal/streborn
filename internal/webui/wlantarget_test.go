@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // useTempWlanTarget points the intent record at a temp file for one test.
@@ -190,8 +192,14 @@ func TestBootGuardIgnoresAnAgentRespawn(t *testing.T) {
 }
 
 // The tag is what makes a bundle decidable: it separates two networks without
-// naming either. Stability across calls is the whole value, because bundles
-// are compared to each other and to other speakers.
+// naming either. Stability across calls is the value, because a log line is
+// compared against other lines in the same log.
+//
+// The contract CHANGED on 2026-09-26 and this test changed with it. It used to
+// be an unsalted hash plus the SSID's length, and that made it a household join
+// key: 46 of 72 sample bundles carried one, and the most common tag tied 15
+// bundles into a single home that anyone downloading the attachments could
+// follow (#971). The length narrowed a guess before it began. Both are gone.
 func TestSSIDTag(t *testing.T) {
 	const ssid = "HomeNet"
 
@@ -199,20 +207,26 @@ func TestSSIDTag(t *testing.T) {
 	if tag != ssidTag(ssid) {
 		t.Error("ssidTag is not stable across calls")
 	}
-	hash, length, found := strings.Cut(tag, ":")
-	if !found {
-		t.Fatalf("ssidTag(%q) = %q, want <hash>:<length>", ssid, tag)
+	if !strings.HasPrefix(tag, "ssid:") {
+		t.Fatalf("ssidTag(%q) = %q, want an ssid: prefix", ssid, tag)
 	}
-	if len(hash) != 6 {
-		t.Errorf("hash part of %q is %d chars, want 6", tag, len(hash))
-	}
+	hash := strings.TrimPrefix(tag, "ssid:")
 	for _, r := range hash {
 		if !strings.ContainsRune("0123456789abcdef", r) {
 			t.Fatalf("hash part of %q is not lowercase hex", tag)
 		}
 	}
-	if n, err := strconv.Atoi(length); err != nil || n != len(ssid) {
-		t.Errorf("length part of %q = %q, want %d", tag, length, len(ssid))
+	// The length must NOT be recoverable from the tag.
+	if strings.Contains(tag, strconv.Itoa(len(ssid))) && len(hash) < 8 {
+		t.Errorf("the tag %q still carries the network name's length", tag)
+	}
+	// Salted: the same network on another speaker must not produce this tag.
+	before := tag
+	anonymise.SetSalt([]byte("another-speaker"))
+	after := ssidTag(ssid)
+	anonymise.SetSalt(nil)
+	if before == after {
+		t.Error("two speakers produced the same tag for one network, which is the join key this replaced")
 	}
 
 	// Different networks must be distinguishable, including two of the same
@@ -232,8 +246,10 @@ func TestSSIDTag(t *testing.T) {
 		t.Errorf("ssidTag(\"\") = %q, want %q", got, "none")
 	}
 
-	// A multi-byte SSID is measured in bytes, the way 802.11 measures it.
-	if got := ssidTag("Küche"); !strings.HasSuffix(got, ":6") {
-		t.Errorf("ssidTag(%q) = %q, want a 6-byte length", "Küche", got)
+	// A multi-byte network name is handled like any other and says nothing about
+	// its own size. The byte length used to be part of the tag, which is one of
+	// the things that made it guessable.
+	if got := ssidTag("Küche"); !strings.HasPrefix(got, "ssid:") || strings.Contains(got, "6") && len(got) < 10 {
+		t.Errorf("ssidTag(%q) = %q, want a plain salted tag", "Küche", got)
 	}
 }

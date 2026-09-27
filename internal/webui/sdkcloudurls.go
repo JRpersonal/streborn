@@ -355,7 +355,7 @@ func writeNANDFile(path string, content []byte) error {
 		return err
 	}
 	if _, err := f.Write(content); err != nil {
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(tmp)
 		return err
 	}
@@ -363,7 +363,7 @@ func writeNANDFile(path string, content []byte) error {
 	// while the bytes behind it are not, which is the one way this could still
 	// hand the firmware an empty config after a power cut.
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(tmp)
 		return err
 	}

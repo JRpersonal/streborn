@@ -15,8 +15,13 @@
 // into the agent would have set up the next drift; the comment above
 // ScrubIdentities already warned about exactly that.
 //
-// The hashes are unsalted SHA256 prefixes, so the same speaker hashes to the
-// same DEV# on both paths and a bundle can still be followed across reports.
+// The hashes are SHA256 prefixes over a salt the exporting machine keeps and
+// never ships. Within one exporter the old property holds, so the same speaker
+// carries the same DEV# across reports months apart. Between the two exporters
+// the tokens differ, because the PC and the speaker each hold their own salt,
+// and that is the price of the tokens no longer being reversible: a MAC was a
+// 24-bit sweep, about 25 seconds, and a list of common room names recovered 14%
+// of the speaker names in a 72-bundle corpus (#971).
 package anonymise
 
 import (
@@ -208,12 +213,34 @@ func scrubIdentities(s string) string {
 	return s
 }
 
+// salt is mixed into every pseudonym. It is set once by the program that
+// exports a bundle and never appears in one.
+//
+// It exists because the unsalted form was a pseudonym in name only. A MAC is a
+// 24-bit sweep once the vendor prefix is known, which is about 25 seconds of
+// plain Python, and a 306-word list of common room names recovered 14% of the
+// speaker names in one corpus in under a millisecond. Measured over 72 real
+// bundles in #971, all of them carrying "Anonymized: true".
+//
+// The property the unsalted hash was chosen for is kept: the same speaker still
+// carries the same token across reports months apart, because the salt belongs
+// to the machine that exports, not to the moment. What goes away is a stranger
+// being able to turn that token back into an address, or to join two households
+// who happen to have a speaker called Kitchen.
+var salt []byte
+
+// SetSalt installs the per-installation salt. Call it once at startup with a
+// value that is stored locally and never exported.
+func SetSalt(b []byte) { salt = append([]byte(nil), b...) }
+
 func hashShort(s string) string {
 	if s == "" {
 		return ""
 	}
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])[:8]
+	h := sha256.New()
+	h.Write(salt)
+	h.Write([]byte(s))
+	return hex.EncodeToString(h.Sum(nil))[:8]
 }
 
 func maskIP(ip string) string {
@@ -347,7 +374,8 @@ func MaskIPs(s string) string {
 	return ipv4Regex.ReplaceAllStringFunc(s, func(ip string) string { return maskIP(ip) })
 }
 
-// HashShort is the stable pseudonym for an identifier: the first 8 hex chars
-// of its SHA256. Unsalted on purpose, so the same speaker is recognisable
-// across two reports months apart without anyone knowing whose it is.
+// HashShort is the stable pseudonym for an identifier: the first 8 hex chars of
+// a salted SHA256. Stable for as long as the exporting machine keeps its salt,
+// so the same speaker is recognisable across two reports months apart, and
+// meaningless to anybody who does not have that salt.
 func HashShort(s string) string { return hashShort(s) }

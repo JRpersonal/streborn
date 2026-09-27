@@ -47,6 +47,8 @@ import (
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/webui"
 	"github.com/JRpersonal/streborn/internal/zones"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // version is the semver version. The build date is set separately via
@@ -773,6 +775,14 @@ func run() error {
 			_ = browsePeers(context.Background(), logger.With("comp", "peers"))
 		}
 	}()
+
+	// The salt behind the pseudonyms in anything this speaker exports (the
+	// phone's diagnostic button, the debug state a bundle carries). Generated
+	// once and kept on NAND, never inside an export: unsalted, a MAC token was
+	// a 24-bit sweep away from the address itself (#971).
+	if err := anonymise.LoadOrCreateSalt("/mnt/nv/streborn"); err != nil {
+		logger.Warn("could not establish the anonymisation salt, exports fall back to unsalted tokens", "err", err)
+	}
 
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),

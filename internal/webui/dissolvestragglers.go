@@ -62,7 +62,7 @@ const groupSlaveSource = "GROUP_SLAVE"
 // and assert nothing at all. Production always uses the real implementations.
 var (
 	playingStateFn = func(ctx context.Context, host string) playingState {
-		np := fetchNowPlaying(ctx, host)
+		np := fetchNowPlayingPeer(ctx, host)
 		switch np.PlayStatus {
 		case "PLAY_STATE", "BUFFERING_STATE":
 			return playingState{Source: np.Source, Location: np.Location}
