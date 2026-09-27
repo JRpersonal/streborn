@@ -106,6 +106,14 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	if time.Now().Before(quiet) {
 		return ""
 	}
+	// No engine, no question. The plan is read with a token the engine hands
+	// out, so a speaker whose engine is not there has nobody to ask, and asking
+	// anyway writes a log line every thirty seconds saying so: 31 of them on a
+	// speaker that had lost its engine for six hours (2026-09-27). The engine
+	// coming back re-arms this by itself.
+	if !m.Ready() {
+		return ""
+	}
 	data, err := m.spotifyWebGet(ctx, meURL)
 	if err != nil {
 		// Info, not Debug: a plan that cannot be read is why a Premium warning

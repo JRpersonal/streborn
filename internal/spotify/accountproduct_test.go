@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -158,9 +159,40 @@ func TestAccountProductSurvivesAnUnreachableSpotify(t *testing.T) {
 
 func productTestManager(t *testing.T, engineURL string) *Manager {
 	t.Helper()
-	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	dir := t.TempDir()
+	// The plan read is gated on the engine being installed, so the helper has
+	// to look like a speaker that has one. The file is never executed here.
+	bin := filepath.Join(dir, "go-librespot")
+	if err := os.WriteFile(bin, []byte("not a real engine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := New(bin, filepath.Join(dir, "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	m.apiAddr = strings.TrimPrefix(engineURL, "http://")
 	return m
+}
+
+// A speaker whose engine is gone has nobody to ask for a token, and it used to
+// ask anyway: 31 failed plan reads in the log of a speaker that had lost its
+// engine for six hours (2026-09-27).
+func TestNoEngineMeansNoPlanRead(t *testing.T) {
+	var calls atomic.Int32
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
+	}))
+	defer engine.Close()
+
+	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.apiAddr = strings.TrimPrefix(engine.URL, "http://")
+
+	for i := 0; i < 3; i++ {
+		if got := m.accountProductAt(context.Background(), engine.URL); got != "" {
+			t.Fatalf("accountProduct = %q on a speaker with no engine, want \"\"", got)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("the engine was asked %d times although it is not installed", calls.Load())
+	}
 }
 
 // The three states have to be visible from outside, or a diagnostic cannot tell
