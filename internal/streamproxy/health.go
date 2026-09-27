@@ -45,6 +45,7 @@ func (s *Server) noteHealthStart(url string) {
 		s.lastGapMs = 0
 		s.playingSince = time.Now()
 		s.deliveredAny = false
+		noteDeliveryStart(url)
 		return
 	}
 	// The SAME station starting again is a re-fetch, not a new stream: the box
@@ -55,6 +56,7 @@ func (s *Server) noteHealthStart(url string) {
 	if s.playingSince.IsZero() {
 		s.playingSince = time.Now()
 	}
+	noteDeliveryStart(url)
 }
 
 // The url here is the STATION, the same identity noteHealthStart records. It
@@ -78,6 +80,7 @@ func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap
 	s.forwardedBytes += connBytes
 	if connBytes > 0 {
 		s.deliveredAny = true
+		noteDelivered(url)
 	}
 	count, total := s.reconnectCount, s.forwardedBytes
 	s.healthMu.Unlock()
