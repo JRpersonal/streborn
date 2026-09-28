@@ -90,6 +90,8 @@ export {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  BoxSSHStatus,
+  SetBoxSSHPersistent,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
   GetDisplayTrack,
