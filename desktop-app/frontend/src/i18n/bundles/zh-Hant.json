@@ -243,7 +243,7 @@
   "library.notAnsweringWarnBody": "{{name}} 在上次掃描時沒有回應，所以應用程式只是從記憶中知道它。你仍然可以把它加到喇叭上。在伺服器開機並回到網路之前，每一部喇叭的瀏覽都會失敗。",
   "banner.recommendation": "建議：",
   "banner.sshRecommend": "這台喇叭的 SSH 存取是開啟的。把喇叭重新開機一次就會關閉，否則網路上的其他人也連得進去。",
-  "banner.sshPersistentNote": "這台喇叭刻意讓 SSH 一直開著（持續的 remote_services 標記）。刪除 /mnt/nv/remote_services（以及 /mnt/nv/streborn/enable-ssh），下次重新開機時就會關閉。",
+  "banner.sshPersistentNote": "此揚聲器的 SSH 存取是刻意開啟的。你可以在揚聲器設定中的「此揚聲器的 SSH 存取」將它關閉。",
   "banner.appUpdateAvail": "有新的應用程式版本：",
   "banner.dismiss": "隱藏",
   "banner.dismissTitle": "隱藏這則提示。之後有新版本時會再出現。",
@@ -1534,5 +1534,12 @@
   "setup.help.setupWait": "什麼都別做，等大約十五分鐘。指示燈還在閃爍時不要再執行一次安裝，那沒有幫助。如果之後仍在閃爍，請拔掉喇叭電源十秒再插回去。",
   "updateAll.phase.boxInSetup": "喇叭正在完成自己的設定，稍後再確認。",
   "update.boxInSetupNote": "{{name}} 正忙著自己的設定，期間會離開網路，因此無法確認更新。多半已經成功了。請在大約十五分鐘後再確認一次。",
-  "setup.installWaitStopBtn": "停止等待並顯示詳細資訊"
+  "setup.installWaitStopBtn": "停止等待並顯示詳細資訊",
+  "settingsView.sshHeading": "此揚聲器的 SSH 存取",
+  "settingsView.sshHelp": "關閉時，揚聲器不允許任何人透過 SSH 連線。開啟時，重新啟動後存取仍然開啟。只有在你想自己操作揚聲器時才需要這個。關閉時，進行中的連線會保留；埠從下次重新啟動起關閉。",
+  "settingsView.sshBoseMarker": "此揚聲器上還有 Bose 自己的授權檔案（remote_services）。只要它存在，即使這個開關關閉，埠仍然開啟，STR 不會動那個檔案。",
+  "settingsView.sshConfirmTitle": "要讓 SSH 存取保持開啟嗎？",
+  "settingsView.sshConfirmBody": "你網路上任何知道揚聲器密碼的人都能登入它，重新啟動後也一樣。如果你不確定自己要用來做什麼，就保持關閉。",
+  "settingsView.sshOnToast": "SSH 存取已開啟並會保持",
+  "settingsView.sshOffToast": "SSH 存取將從下次重新啟動起關閉"
 }

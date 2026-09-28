@@ -230,7 +230,7 @@
   "library.notAnsweringWarnBody": "{{name}} pēdējā meklēšanā neatbildēja, tāpēc lietotne to zina tikai no atmiņas. Tu tomēr vari to pievienot saviem skaļruņiem. Pārlūkošana neizdosies nevienā skaļrunī, kamēr serveris nebūs ieslēgts un atkal tīklā.",
   "banner.recommendation": "Ieteikums:",
   "banner.sshRecommend": "SSH piekļuve šim skaļrunim ir atvērta. Vienreiz pārstartējiet skaļruni, lai to atkal aizvērtu, citādi tam var piekļūt citi jūsu tīklā.",
-  "banner.sshPersistentNote": "SSH piekļuve šajā skaļrunī ir apzināti atstāta pastāvīgi atvērta (pastāvīgs remote_services marķieris). Izdzēsiet /mnt/nv/remote_services (un /mnt/nv/streborn/enable-ssh), lai to aizvērtu nākamajā restartā.",
+  "banner.sshPersistentNote": "SSH piekļuve šai skandāi ir atstāta atvērta apzināti. To vari izslēgt skandās iestatījumos sadaļā „SSH piekļuve šai skandāi”.",
   "banner.appUpdateAvail": "Pieejama jauna lietotnes versija:",
   "banner.dismiss": "Slēpt",
   "banner.dismissTitle": "Slēpt šo paziņojumu. Tas atgriezīsies ar vēlāku versiju.",
@@ -1534,5 +1534,12 @@
   "setup.help.setupWait": "Nogaidi aptuveni piecpadsmit minūtes un neko nedari. Nepalaid uzstādīšanu vēlreiz, kamēr gaismiņa mirgo: tas nepalīdzēs. Ja pēc tam tā joprojām mirgo, atvieno skaļruni no strāvas uz desmit sekundēm un pievieno atpakaļ.",
   "updateAll.phase.boxInSetup": "Skaļrunis pabeidz savu iestatīšanu, pārbaudi vēlāk.",
   "update.boxInSetupNote": "{{name}} ir aizņemts ar savu iestatīšanu un šajā laikā pamet tīklu, tāpēc atjauninājumu nevarēja apstiprināt. Visticamāk, tas izdevās. Pārbaudi vēlreiz pēc aptuveni piecpadsmit minūtēm.",
-  "setup.installWaitStopBtn": "Beigt gaidīt un rādīt sīkāku informāciju"
+  "setup.installWaitStopBtn": "Beigt gaidīt un rādīt sīkāku informāciju",
+  "settingsView.sshHeading": "SSH piekļuve šai skandāi",
+  "settingsView.sshHelp": "Izslēgts — skandā nevienu neielaiž caur SSH. Ieslēgts — piekļuve paliek atvērta arī pēc restartēšanas. Tas vajadzīgs tikai tad, ja vēlies pats strādāt ar skandāu. Izslēdzot esošais savienojums paliek; ports ir slēgts no nākamās restartēšanas.",
+  "settingsView.sshBoseMarker": "Šajā skandāā ir arī Bose paša atļaujas fails (remote_services). Kamēr tas ir klāt, ports paliek atvērts arī ar izslēgtu šo slēdzi, un STR šo failu neaizskar.",
+  "settingsView.sshConfirmTitle": "Atstāt SSH piekļuvi atvērtu?",
+  "settingsView.sshConfirmBody": "Jebkurš tavā tīklā, kas zina skandās paroli, varēs tajā pieteikties, arī pēc restartēšanas. Atstāj izslēgtu, ja nezini, kam to izmantotu.",
+  "settingsView.sshOnToast": "SSH piekļuve ir atvērta un tāda paliks",
+  "settingsView.sshOffToast": "SSH piekļuve būs slēgta no nākamās restartēšanas"
 }

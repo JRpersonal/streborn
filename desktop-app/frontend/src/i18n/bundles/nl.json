@@ -230,7 +230,7 @@
   "library.notAnsweringWarnBody": "{{name}} heeft bij de laatste scan niet geantwoord, dus de app kent hem alleen uit het geheugen. Je kunt hem toch aan je speakers toevoegen. Het doorzoeken mislukt dan op elke speaker totdat de server aan staat en weer in het netwerk zit.",
   "banner.recommendation": "Aanbeveling:",
   "banner.sshRecommend": "SSH-toegang tot deze speaker staat open. Start de speaker één keer opnieuw op om die weer te sluiten, anders is hij bereikbaar voor anderen op je netwerk.",
-  "banner.sshPersistentNote": "SSH-toegang is op deze speaker bewust permanent open (persistente remote_services-marker). Verwijder /mnt/nv/remote_services (en /mnt/nv/streborn/enable-ssh) om hem bij de volgende herstart te sluiten.",
+  "banner.sshPersistentNote": "SSH-toegang tot deze speaker staat bewust open. Je kunt hem weer uitzetten bij de speakerinstellingen, onder \"SSH-toegang tot deze speaker\".",
   "banner.appUpdateAvail": "Nieuwe app-versie beschikbaar:",
   "banner.dismiss": "Verbergen",
   "banner.dismissTitle": "Verberg deze melding. Hij komt terug bij een latere versie.",
@@ -1534,5 +1534,12 @@
   "setup.help.setupWait": "Wacht ongeveer een kwartier zonder iets te doen. Start de installatie niet opnieuw zolang het lampje knippert: dat helpt niet. Knippert het daarna nog steeds, haal dan tien seconden de stekker eruit en steek hem er weer in.",
   "updateAll.phase.boxInSetup": "Speaker rondt zijn eigen installatie af, kijk later nog eens.",
   "update.boxInSetupNote": "{{name}} is bezig met zijn eigen installatie en verlaat daarbij het netwerk, daarom kon de update niet bevestigd worden. Waarschijnlijk is het gelukt. Kijk over ongeveer een kwartier nog eens.",
-  "setup.installWaitStopBtn": "Stop met wachten en toon details"
+  "setup.installWaitStopBtn": "Stop met wachten en toon details",
+  "settingsView.sshHeading": "SSH-toegang tot deze speaker",
+  "settingsView.sshHelp": "Uit, en de speaker laat niemand binnen via SSH. Aan, en de toegang blijft open, ook na een herstart. Dit heb je alleen nodig als je zelf op de speaker wilt werken. Zet je het uit, dan blijft een lopende verbinding staan; dicht is hij vanaf de volgende herstart.",
+  "settingsView.sshBoseMarker": "Op deze speaker staat ook Bose’s eigen toestemmingsbestand (remote_services). Zolang dat er is blijft de poort open, ook met deze schakelaar uit, en STR raakt dat bestand niet aan.",
+  "settingsView.sshConfirmTitle": "SSH-toegang open laten?",
+  "settingsView.sshConfirmBody": "Iedereen op je netwerk die het wachtwoord van de speaker kent kan er dan op inloggen, ook na een herstart. Laat dit uit als je niet weet waarvoor je het zou gebruiken.",
+  "settingsView.sshOnToast": "SSH-toegang is open en blijft open",
+  "settingsView.sshOffToast": "SSH-toegang is dicht vanaf de volgende herstart"
 }

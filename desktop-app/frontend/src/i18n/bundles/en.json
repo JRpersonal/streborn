@@ -243,7 +243,7 @@
   "library.notAnsweringWarnBody": "{{name}} did not answer the last scan, so the app only knows it from memory. You can still add it to your speakers. Browsing it will fail on every speaker until the server is switched on and back on the network.",
   "banner.recommendation": "Recommendation:",
   "banner.sshRecommend": "SSH access to this speaker is open. Restart the speaker once to close it again, otherwise it can be reached by others on your network.",
-  "banner.sshPersistentNote": "SSH access is deliberately left open on this speaker (persistent remote_services marker). Remove /mnt/nv/remote_services (and /mnt/nv/streborn/enable-ssh) to close it on the next restart.",
+  "banner.sshPersistentNote": "SSH access to this speaker is deliberately open. You can switch it off again in the speaker settings, under \"SSH access to this speaker\".",
   "banner.appUpdateAvail": "New app version available:",
   "banner.dismiss": "Dismiss",
   "banner.dismissTitle": "Hide this notice. It comes back with a later version.",
@@ -1534,5 +1534,12 @@
   "setup.help.setupWait": "Wait about fifteen minutes without touching anything. Do not start the install again while the light is blinking: it cannot help. If the light is still blinking afterwards, unplug the speaker for ten seconds and plug it back in.",
   "updateAll.phase.boxInSetup": "Speaker is finishing its own setup, check again later.",
   "update.boxInSetupNote": "{{name}} is busy with its own setup and leaves the network while it does, so the update could not be confirmed. It probably worked. Check again in about fifteen minutes.",
-  "setup.installWaitStopBtn": "Stop waiting and show details"
+  "setup.installWaitStopBtn": "Stop waiting and show details",
+  "settingsView.sshHeading": "SSH access to this speaker",
+  "settingsView.sshHelp": "Off, and the speaker lets nobody in over SSH. On, and access stays open across restarts. You only need this if you want to work on the speaker yourself. Switching it off leaves a running connection alone; the port is shut from the next restart on.",
+  "settingsView.sshBoseMarker": "This speaker also carries Bose’s own permission file (remote_services). While that is there the port stays open even with this switch off, and STR does not touch that file.",
+  "settingsView.sshConfirmTitle": "Leave SSH access open?",
+  "settingsView.sshConfirmBody": "Anyone on your network who knows the speaker’s password will be able to log in to it, including after a restart. Leave this off if you do not know what you would use it for.",
+  "settingsView.sshOnToast": "SSH access is open and stays open",
+  "settingsView.sshOffToast": "SSH access is shut from the next restart"
 }

@@ -243,7 +243,7 @@
   "library.notAnsweringWarnBody": "{{name}} hat beim letzten Suchlauf nicht geantwortet, die App kennt ihn also nur aus der Erinnerung. Du kannst ihn trotzdem zu deinen Lautsprechern hinzufügen. Das Durchsuchen scheitert dann auf jedem Lautsprecher, bis der Server eingeschaltet und wieder im Netzwerk ist.",
   "banner.recommendation": "Empfehlung:",
   "banner.sshRecommend": "Der SSH-Zugang zu diesem Lautsprecher ist offen. Starte den Lautsprecher einmal neu, um ihn wieder zu schließen. Sonst kann er von anderen im Netzwerk erreicht werden.",
-  "banner.sshPersistentNote": "Der SSH-Zugang ist auf diesem Lautsprecher bewusst dauerhaft offen (persistenter remote_services-Marker). Lösche /mnt/nv/remote_services (und /mnt/nv/streborn/enable-ssh), um ihn beim nächsten Neustart zu schließen.",
+  "banner.sshPersistentNote": "Der SSH-Zugang zu diesem Lautsprecher ist bewusst offen. Du kannst ihn in den Lautsprecher-Einstellungen unter \"SSH-Zugang zum Lautsprecher\" wieder ausschalten.",
   "banner.appUpdateAvail": "Neue App-Version verfügbar:",
   "banner.dismiss": "Ausblenden",
   "banner.dismissTitle": "Diesen Hinweis ausblenden. Er kommt mit einer späteren Version wieder.",
@@ -1534,5 +1534,12 @@
   "setup.help.setupWait": "Warte etwa fünfzehn Minuten, ohne etwas zu tun. Starte die Installation nicht noch einmal, solange die Leuchte blinkt: Das hilft nicht. Blinkt sie danach immer noch, zieh den Stecker für zehn Sekunden und steck ihn wieder ein.",
   "updateAll.phase.boxInSetup": "Lautsprecher schließt seine eigene Einrichtung ab, später noch einmal prüfen.",
   "update.boxInSetupNote": "{{name}} ist mit der eigenen Einrichtung beschäftigt und verlässt dabei das Netzwerk, deshalb konnte das Update nicht bestätigt werden. Wahrscheinlich hat es geklappt. Schau in etwa fünfzehn Minuten noch einmal nach.",
-  "setup.installWaitStopBtn": "Nicht mehr warten und Details anzeigen"
+  "setup.installWaitStopBtn": "Nicht mehr warten und Details anzeigen",
+  "settingsView.sshHeading": "SSH-Zugang zum Lautsprecher",
+  "settingsView.sshHelp": "Aus, und der Lautsprecher lässt niemanden über SSH herein. An, und der Zugang bleibt auch nach einem Neustart offen. Das brauchst du nur, wenn du selbst auf dem Lautsprecher arbeiten willst. Beim Ausschalten bleibt eine laufende Verbindung bestehen, zu ist er ab dem nächsten Neustart.",
+  "settingsView.sshBoseMarker": "Auf diesem Lautsprecher liegt zusätzlich Boses eigene Freigabe (remote_services). Solange die da ist, bleibt der Zugang offen, auch wenn der Schalter hier aus steht. Diese Datei fasst STR nicht an.",
+  "settingsView.sshConfirmTitle": "SSH-Zugang dauerhaft öffnen?",
+  "settingsView.sshConfirmBody": "Danach kann jeder in deinem Netzwerk, der das Passwort des Lautsprechers kennt, sich auf ihm anmelden, auch nach einem Neustart. Lass das aus, wenn du nicht weißt, wozu du es brauchst.",
+  "settingsView.sshOnToast": "SSH-Zugang ist offen und bleibt es",
+  "settingsView.sshOffToast": "SSH-Zugang ist ab dem nächsten Neustart zu"
 }

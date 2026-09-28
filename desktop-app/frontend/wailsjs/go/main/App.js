@@ -42,6 +42,10 @@ export function BoxPresets(arg1, arg2) {
   return window['go']['main']['App']['BoxPresets'](arg1, arg2);
 }
 
+export function BoxSSHStatus(arg1, arg2) {
+  return window['go']['main']['App']['BoxSSHStatus'](arg1, arg2);
+}
+
 export function BoxSettings(arg1, arg2) {
   return window['go']['main']['App']['BoxSettings'](arg1, arg2);
 }
@@ -488,6 +492,10 @@ export function SetBoxLanguage(arg1, arg2) {
 
 export function SetBoxName(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxName'](arg1, arg2, arg3);
+}
+
+export function SetBoxSSHPersistent(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetBoxSSHPersistent'](arg1, arg2, arg3);
 }
 
 export function SetBoxSpeakerLevel(arg1, arg2, arg3, arg4) {

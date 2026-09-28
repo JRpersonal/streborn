@@ -230,7 +230,7 @@
   "library.notAnsweringWarnBody": "{{name}} son taramada yanıt vermedi, bu yüzden uygulama onu yalnızca hafızasından biliyor. Yine de hoparlörlerine ekleyebilirsin. Sunucu açılıp ağa geri dönene kadar göz atma her hoparlörde başarısız olur.",
   "banner.recommendation": "Öneri:",
   "banner.sshRecommend": "Bu hoparlöre SSH erişimi açık. Tekrar kapatmak için hoparlörü bir kez yeniden başlatın, aksi halde ağınızdaki başkaları ona erişebilir.",
-  "banner.sshPersistentNote": "Bu hoparlörde SSH erişimi bilinçli olarak kalıcı biçimde açık bırakıldı (kalıcı remote_services işareti). Bir sonraki yeniden başlatmada kapatmak için /mnt/nv/remote_services (ve /mnt/nv/streborn/enable-ssh) dosyalarını silin.",
+  "banner.sshPersistentNote": "Bu hoparlöre SSH erişimi bilerek açık bırakılmış. Hoparlör ayarlarında “Bu hoparlöre SSH erişimi” altından yeniden kapatabilirsin.",
   "banner.appUpdateAvail": "Yeni uygulama sürümü mevcut:",
   "banner.dismiss": "Gizle",
   "banner.dismissTitle": "Bu bildirimi gizle. Daha sonraki bir sürümde tekrar görünür.",
@@ -1534,5 +1534,12 @@
   "setup.help.setupWait": "Hiçbir şey yapmadan yaklaşık on beş dakika bekle. Işık yanıp sönerken kurulumu tekrar başlatma: faydası olmaz. Sonrasında hâlâ yanıp sönüyorsa hoparlörün fişini on saniye çek ve tekrar tak.",
   "updateAll.phase.boxInSetup": "Hoparlör kendi kurulumunu tamamlıyor, daha sonra tekrar bak.",
   "update.boxInSetupNote": "{{name}} kendi kurulumuyla meşgul ve bu sırada ağdan çıkıyor, bu yüzden güncelleme doğrulanamadı. Muhtemelen başarılı oldu. Yaklaşık on beş dakika sonra tekrar bak.",
-  "setup.installWaitStopBtn": "Beklemeyi bırak ve ayrıntıları göster"
+  "setup.installWaitStopBtn": "Beklemeyi bırak ve ayrıntıları göster",
+  "settingsView.sshHeading": "Bu hoparlöre SSH erişimi",
+  "settingsView.sshHelp": "Kapalıyken hoparlör SSH üzerinden kimseyi içeri almaz. Açıkken erişim yeniden başlatmadan sonra da açık kalır. Buna yalnızca hoparlör üzerinde kendin çalışmak istiyorsan ihtiyaç duyarsın. Kapattığında süren bağlantı korunur; port bir sonraki yeniden başlatmadan itibaren kapalıdır.",
+  "settingsView.sshBoseMarker": "Bu hoparlörde ayrıca Bose’un kendi izin dosyası (remote_services) bulunuyor. O orada olduğu sürece bu anahtar kapalı olsa bile port açık kalır ve STR o dosyaya dokunmaz.",
+  "settingsView.sshConfirmTitle": "SSH erişimi açık bırakılsın mı?",
+  "settingsView.sshConfirmBody": "Ağındaki, hoparlörün parolasını bilen herkes ona oturum açabilir, yeniden başlatmadan sonra da. Ne işe yarayacağını bilmiyorsan kapalı bırak.",
+  "settingsView.sshOnToast": "SSH erişimi açık ve açık kalacak",
+  "settingsView.sshOffToast": "SSH erişimi bir sonraki yeniden başlatmadan itibaren kapalı"
 }

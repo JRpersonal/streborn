@@ -81,6 +81,8 @@ import {
   Translate,
   GetAirplayOpt,
   SetAirplayOpt,
+  BoxSSHStatus,
+  SetBoxSSHPersistent,
   GetWebhooks,
   GetGroupKeys,
   SaveWebhookConfig,
@@ -1296,6 +1298,16 @@ function renderBoxSettings(s, box) {
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
       <small class="muted small" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.airplayOptRecommend'))}</small>
+    </div>
+
+    <div class="settings-section hidden" id="sshSection">
+      <h3>${escapeHtml(t('settingsView.sshHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="sshOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="sshOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.sshHelp'))}</small>
+      <small class="muted small hidden" id="sshBoseNote" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.sshBoseMarker'))}</small>
     </div>
 
     <details class="settings-section settings-expert" id="announceSection">
@@ -2669,6 +2681,54 @@ function renderBoxSettings(s, box) {
     };
     aoOn.onclick = () => setAO(true);
     aoOff.onclick = () => setAO(false);
+  }
+
+  // The speaker's SSH port. Off by default since the opt-in landed, but two
+  // users run it deliberately (#1061) and the only way to say so used to be a
+  // file on the speaker reachable only over SSH, which is a circle. Hidden on an
+  // agent too old to know the endpoint rather than shown dead.
+  const sshSection = $('sshSection');
+  const sshOn = $('sshOn');
+  const sshOff = $('sshOff');
+  const sshBoseNote = $('sshBoseNote');
+  const paintSSH = (on) => {
+    if (sshOn) sshOn.classList.toggle('active', on === true);
+    if (sshOff) sshOff.classList.toggle('active', on === false);
+  };
+  if (sshSection && sshOn && sshOff) {
+    const applyState = (r) => {
+      paintSSH(r.persistent === true);
+      // Bose's own marker keeps the port open whatever this switch says, and
+      // STR does not delete a file it did not write. Say so instead of
+      // promising to close something it cannot.
+      if (sshBoseNote) sshBoseNote.classList.toggle('hidden', r.boseMarker !== true);
+    };
+    (async () => {
+      try {
+        const r = await BoxSSHStatus(box.host, box.port);
+        if (r && r.supported) {
+          sshSection.classList.remove('hidden');
+          applyState(r);
+        }
+      } catch { /* leave the section hidden on error */ }
+    })();
+    const setSSH = async (on) => {
+      if (on) {
+        const ok = await confirmWarn(
+          t('settingsView.sshConfirmTitle'),
+          t('settingsView.sshConfirmBody'),
+        );
+        if (!ok) return;
+      }
+      paintSSH(on);
+      try {
+        const r = await SetBoxSSHPersistent(box.host, box.port, on);
+        applyState(r);
+        showToast(on ? t('settingsView.sshOnToast') : t('settingsView.sshOffToast'));
+      } catch (e) { showError(e); }
+    };
+    sshOn.onclick = () => setSSH(true);
+    sshOff.onclick = () => setSSH(false);
   }
 
   // Smart-home / webhook: the remote thumbs keys (up and down are

@@ -25,6 +25,8 @@ export function BoxInstallReachable(arg1:string):Promise<boolean>;
 
 export function BoxPresets(arg1:string,arg2:number):Promise<Array<main.BoxPresetInfo>>;
 
+export function BoxSSHStatus(arg1:string,arg2:number):Promise<main.BoxSSHState>;
+
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function BoxSnapshot(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -248,6 +250,8 @@ export function SetBoxBass(arg1:string,arg2:number,arg3:number):Promise<void>;
 export function SetBoxLanguage(arg1:string,arg2:number):Promise<void>;
 
 export function SetBoxName(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function SetBoxSSHPersistent(arg1:string,arg2:number,arg3:boolean):Promise<main.BoxSSHState>;
 
 export function SetBoxSpeakerLevel(arg1:string,arg2:number,arg3:string,arg4:number):Promise<void>;
 
