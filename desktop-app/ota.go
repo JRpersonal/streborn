@@ -348,6 +348,10 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// post-OTA discovery pin is set here too so it covers the whole window.
 	a.notePostOTA(host)
 	a.refreshStick(host)
+	// Remember the multiroom group this speaker is in BEFORE the push, because
+	// the reboot two steps down wipes the firmware zone and nothing else in the
+	// flow would know a group had ever existed (otazonerestore.go).
+	a.noteZoneBeforeOTA(host, port)
 
 	// Pre-v0.9.26 agents cannot SURVIVE the HTTP push: they collect an upload
 	// via growth-doubling ReadAll, so the ~13.6 MB agent body peaks near 27 MB
@@ -580,6 +584,9 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
+		// The box is back on the new build. If STR took a group apart getting it
+		// here, put it back together.
+		a.restoreZoneAfterOTA(host, port)
 	}
 	return verdict
 }
