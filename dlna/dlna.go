@@ -217,11 +217,22 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 			_ = conn.SetReadDeadline(deadline)
 		}
 		localHits := 0
+		// One line per distinct answer, not per packet. A single media server
+		// answers each M-SEARCH several times from several ephemeral ports, and
+		// across the probe rounds that added up to 665 log lines out of 776 in
+		// one field diagnostic (2026-09-28): the repetition crowded out the
+		// lines a diagnosis actually needs, across all three retained log
+		// generations. The question this logging exists to answer - did the NAS
+		// answer at all, from which interface - is answered by the first
+		// sighting; the rest is the same fact again. The count goes into the
+		// probe-done line so the volume is still visible.
+		seen := map[string]bool{}
+		responses := 0
 		buf := make([]byte, 4096)
 		for {
 			select {
 			case <-dctx.Done():
-				Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits)
+				Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits, "responses", responses, "distinct", len(seen))
 				return
 			default:
 			}
@@ -240,12 +251,18 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 			// answer ssdp:all with an ST of ContentDirectory or a vendor URN and
 			// were silently dropped here despite serving a valid MediaServer
 			// device.xml. The real gate is the post-fetch CDSControlURL check (#110).
-			Logger.Info("dlna: SSDP response", "src", raddr.String(), "st", st, "location", loc)
+			responses++
+			// Keyed WITHOUT the source port: the port is a fresh ephemeral one
+			// per answer and would make every repeat look distinct.
+			if key := raddr.IP.String() + "|" + st + "|" + loc; !seen[key] {
+				seen[key] = true
+				Logger.Info("dlna: SSDP response", "src", raddr.IP.String(), "st", st, "location", loc)
+			}
 			if enqueue(loc) {
 				localHits++
 			}
 		}
-		Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits)
+		Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits, "responses", responses, "distinct", len(seen))
 	}
 
 	var ifaceWg sync.WaitGroup
