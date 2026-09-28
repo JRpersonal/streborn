@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Iedereen op je netwerk die het wachtwoord van de speaker kent kan er dan op inloggen, ook na een herstart. Laat dit uit als je niet weet waarvoor je het zou gebruiken.",
   "settingsView.sshOnToast": "SSH-toegang is open en blijft open",
   "settingsView.sshOffToast": "SSH-toegang is dicht vanaf de volgende herstart",
-  "library.serverFallbackName": "De muziekserver"
+  "library.serverFallbackName": "De muziekserver",
+  "worldMap.pinPrompt": "🌍 Zet je pin op de wereldkaart, dan is te zien waar de muziek weer speelt."
 }

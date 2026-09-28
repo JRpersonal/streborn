@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Cualquiera en tu red que conozca la contraseña del altavoz podrá iniciar sesión en él, también después de reiniciar. Déjalo desactivado si no sabes para qué lo usarías.",
   "settingsView.sshOnToast": "El acceso SSH está abierto y seguirá así",
   "settingsView.sshOffToast": "El acceso SSH quedará cerrado tras el siguiente reinicio",
-  "library.serverFallbackName": "El servidor de música"
+  "library.serverFallbackName": "El servidor de música",
+  "worldMap.pinPrompt": "🌍 Pon tu chincheta en el mapa mundial, para que se vea dónde vuelve a sonar la música."
 }

@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Toute personne de votre réseau connaissant le mot de passe de l’enceinte pourra s’y connecter, y compris après un redémarrage. Laissez ceci désactivé si vous ne savez pas à quoi cela vous servirait.",
   "settingsView.sshOnToast": "L’accès SSH est ouvert et le reste",
   "settingsView.sshOffToast": "L’accès SSH se fermera au prochain redémarrage",
-  "library.serverFallbackName": "Le serveur de musique"
+  "library.serverFallbackName": "Le serveur de musique",
+  "worldMap.pinPrompt": "🌍 Ajoutez votre épingle à la carte du monde, pour montrer où la musique rejoue."
 }

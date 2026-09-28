@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Każdy w twojej sieci, kto zna hasło głośnika, będzie mógł się na niego zalogować, także po restarcie. Zostaw to wyłączone, jeśli nie wiesz, do czego byś tego użył.",
   "settingsView.sshOnToast": "Dostęp SSH jest otwarty i taki pozostanie",
   "settingsView.sshOffToast": "Dostęp SSH będzie zamknięty od następnego restartu",
-  "library.serverFallbackName": "Serwer muzyczny"
+  "library.serverFallbackName": "Serwer muzyczny",
+  "worldMap.pinPrompt": "🌍 Dodaj swoją pinezkę na mapie świata, żeby było widać, gdzie znowu gra muzyka."
 }

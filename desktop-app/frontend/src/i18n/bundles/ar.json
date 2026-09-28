@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "سيتمكن أي شخص على شبكتك يعرف كلمة مرور المكبر من تسجيل الدخول إليه، وكذلك بعد إعادة التشغيل. اتركه موقوفًا إن كنت لا تعرف فيم ستستخدمه.",
   "settingsView.sshOnToast": "وصول SSH مفتوح وسيبقى كذلك",
   "settingsView.sshOffToast": "سيُغلق وصول SSH ابتداءً من إعادة التشغيل التالية",
-  "library.serverFallbackName": "خادم الموسيقى"
+  "library.serverFallbackName": "خادم الموسيقى",
+  "worldMap.pinPrompt": "🌍 ضع دبوسك على خريطة العالم، ليظهر أين عادت الموسيقى تُعزف."
 }

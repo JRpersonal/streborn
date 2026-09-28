@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Danach kann jeder in deinem Netzwerk, der das Passwort des Lautsprechers kennt, sich auf ihm anmelden, auch nach einem Neustart. Lass das aus, wenn du nicht weißt, wozu du es brauchst.",
   "settingsView.sshOnToast": "SSH-Zugang ist offen und bleibt es",
   "settingsView.sshOffToast": "SSH-Zugang ist ab dem nächsten Neustart zu",
-  "library.serverFallbackName": "Der Musikserver"
+  "library.serverFallbackName": "Der Musikserver",
+  "worldMap.pinPrompt": "🌍 Setz deinen Pin auf die Weltkarte, damit man sieht, wo überall wieder Musik läuft."
 }

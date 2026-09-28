@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "スピーカーのパスワードを知っているネットワーク内の誰もが、再起動後も含めてログインできるようになります。何に使うか分からない場合はオフのままにしてください。",
   "settingsView.sshOnToast": "SSH 接続は開いており、そのままになります",
   "settingsView.sshOffToast": "SSH 接続は次の再起動から閉じられます",
-  "library.serverFallbackName": "ミュージックサーバー"
+  "library.serverFallbackName": "ミュージックサーバー",
+  "worldMap.pinPrompt": "🌍 世界地図にピンを立てて、どこでまた音楽が鳴っているか見せてください。"
 }

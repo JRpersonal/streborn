@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "你網路上任何知道揚聲器密碼的人都能登入它，重新啟動後也一樣。如果你不確定自己要用來做什麼，就保持關閉。",
   "settingsView.sshOnToast": "SSH 存取已開啟並會保持",
   "settingsView.sshOffToast": "SSH 存取將從下次重新啟動起關閉",
-  "library.serverFallbackName": "音樂伺服器"
+  "library.serverFallbackName": "音樂伺服器",
+  "worldMap.pinPrompt": "🌍 在世界地圖上放下你的圖釘，讓大家看到哪裡又響起了音樂。"
 }

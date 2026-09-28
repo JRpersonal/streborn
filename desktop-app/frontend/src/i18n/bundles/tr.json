@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Ağındaki, hoparlörün parolasını bilen herkes ona oturum açabilir, yeniden başlatmadan sonra da. Ne işe yarayacağını bilmiyorsan kapalı bırak.",
   "settingsView.sshOnToast": "SSH erişimi açık ve açık kalacak",
   "settingsView.sshOffToast": "SSH erişimi bir sonraki yeniden başlatmadan itibaren kapalı",
-  "library.serverFallbackName": "Müzik sunucusu"
+  "library.serverFallbackName": "Müzik sunucusu",
+  "worldMap.pinPrompt": "🌍 Dünya haritasına iğneni koy, müziğin yeniden nerelerde çaldığı görünsün."
 }

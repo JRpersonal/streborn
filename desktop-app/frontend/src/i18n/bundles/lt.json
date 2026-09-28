@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Bet kas tavo tinkle, kas žino kolonėlės slaptažodį, galės prie jos prisijungti, taip pat po paleidimo iš naujo. Palik išjungtą, jei nežinai, kam to reiktų.",
   "settingsView.sshOnToast": "SSH prieiga atvira ir tokia liks",
   "settingsView.sshOffToast": "SSH prieiga bus uždaryta nuo kito paleidimo",
-  "library.serverFallbackName": "Muzikos serveris"
+  "library.serverFallbackName": "Muzikos serveris",
+  "worldMap.pinPrompt": "🌍 Pridėk savo smeigtuką pasaulio žemėlapyje, kad matytųsi, kur vėl groja muzika."
 }

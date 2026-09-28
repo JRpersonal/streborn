@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Anyone on your network who knows the speaker’s password will be able to log in to it, including after a restart. Leave this off if you do not know what you would use it for.",
   "settingsView.sshOnToast": "SSH access is open and stays open",
   "settingsView.sshOffToast": "SSH access is shut from the next restart",
-  "library.serverFallbackName": "The music server"
+  "library.serverFallbackName": "The music server",
+  "worldMap.pinPrompt": "🌍 Add your pin to the world map, so it shows where the music is playing again."
 }

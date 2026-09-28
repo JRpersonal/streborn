@@ -1542,5 +1542,6 @@
   "settingsView.sshConfirmBody": "Jebkurš tavā tīklā, kas zina skandās paroli, varēs tajā pieteikties, arī pēc restartēšanas. Atstāj izslēgtu, ja nezini, kam to izmantotu.",
   "settingsView.sshOnToast": "SSH piekļuve ir atvērta un tāda paliks",
   "settingsView.sshOffToast": "SSH piekļuve būs slēgta no nākamās restartēšanas",
-  "library.serverFallbackName": "Mūzikas serveris"
+  "library.serverFallbackName": "Mūzikas serveris",
+  "worldMap.pinPrompt": "🌍 Pievieno savu adatu pasaules kartē, lai redzams, kur atkal skan mūzika."
 }
