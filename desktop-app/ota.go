@@ -347,7 +347,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// the new version. Best-effort: a stick failure does not block the OTA. The
 	// post-OTA discovery pin is set here too so it covers the whole window.
 	a.notePostOTA(host)
-	a.refreshStick(host)
+	a.refreshStick(host, port)
 	// Remember the multiroom group this speaker is in BEFORE the push, because
 	// the reboot two steps down wipes the firmware zone and nothing else in the
 	// flow would know a group had ever existed (otazonerestore.go).
@@ -997,7 +997,14 @@ func otaSidecarEnsureBackoff(attempt int) time.Duration {
 // (project_deploy_stick_overwrites_nand). The write is durable-flushed so it
 // survives the reboot (project_durable_stick_write). Never fatal: a failure here
 // is logged and the OTA still proceeds.
-func (a *App) refreshStick(host string) {
+func (a *App) refreshStick(host string, port int) {
+	// Open SSH first. Every step below rides on it, and since the SSH opt-in
+	// (v0.9.91) a speaker keeps its port closed unless it was asked, so this
+	// whole step would otherwise fail on every box from that release on and the
+	// stick would keep its older files. The marker the agent writes lives in
+	// tmpfs, so the OTA reboot a few steps down closes SSH again by itself; the
+	// old-agent OTA path already relies on exactly that.
+	a.enableAgentSSH(host, port)
 	// Locate the stick and make sure it is mounted before writing. Some
 	// speakers (the Portable, live 2026-06-11) do NOT auto-mount the USB stick
 	// at /media/sda1 after boot: /dev/sda1 was present and carried the full STR
