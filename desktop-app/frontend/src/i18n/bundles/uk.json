@@ -187,7 +187,7 @@
   "library.title": "Бібліотека",
   "library.forSpeaker": "Для колонки",
   "library.noSpeaker": "Колонок не знайдено",
-  "library.subtitle": "Переглядайте музичні сервери у вашій мережі (FRITZ!Box, Synology, Plex, miniDLNA) і відтворюйте треки на SoundTouch.",
+  "library.subtitle": "Переглядайте музичні сервери у вашій мережі (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) і відтворюйте треки на SoundTouch.",
   "library.server": "Музичний сервер",
   "library.refresh": "Пересканувати",
   "library.loading": "Пошук музичних серверів і тек...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "У мережі не знайдено жодної колонки ST Reborn.",
   "library.removeServerBtn": "Видалити цей доданий вручну сервер",
   "library.addServerError": "За цією адресою медіасервер не знайдено",
-  "library.serverNotAnswering": "не відповідає",
+  "library.serverNotAnswering": "{{name}} не відповідає. Зазвичай це означає, що комп’ютер, на якому він працює, вимкнений або спить. Розбуди його і спробуй ще раз.",
   "library.serverNotAnsweringNote": "Цей сервер не відповів під час останнього сканування. Він у списку з пам'яті попереднього сканування. Перегляд знову працюватиме, коли сервер буде увімкнено і він повернеться до мережі.",
   "library.notAnsweringWarnTitle": "Цей музичний сервер не відповідає",
   "library.notAnsweringWarnBody": "{{name}} не відповів під час останнього сканування, тому додаток знає його лише з пам'яті. Ти все одно можеш додати його до своїх колонок. Перегляд не вдаватиметься на жодній колонці, доки сервер не буде увімкнено і він не повернеться до мережі.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "Залишити SSH-доступ відкритим?",
   "settingsView.sshConfirmBody": "Будь-хто у твоїй мережі, хто знає пароль колонки, зможе увійти на неї, також після перезавантаження. Залиш це вимкненим, якщо не знаєш, навіщо це тобі.",
   "settingsView.sshOnToast": "SSH-доступ відкритий і таким залишиться",
-  "settingsView.sshOffToast": "SSH-доступ буде закритий від наступного перезавантаження"
+  "settingsView.sshOffToast": "SSH-доступ буде закритий від наступного перезавантаження",
+  "library.serverFallbackName": "Музичний сервер"
 }

@@ -187,7 +187,7 @@
   "library.title": "Biblioteka",
   "library.forSpeaker": "Kolonėlei",
   "library.noSpeaker": "Kolonėlių nerasta",
-  "library.subtitle": "Naršykite muzikos serverius savo tinkle (FRITZ!Box, Synology, Plex, miniDLNA) ir grokite kūrinius per SoundTouch.",
+  "library.subtitle": "Naršykite muzikos serverius savo tinkle (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) ir grokite kūrinius per SoundTouch.",
   "library.server": "Muzikos serveris",
   "library.refresh": "Skenuoti iš naujo",
   "library.loading": "Ieškoma muzikos serverių ir aplankų...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Tinkle nerasta nė vieno ST Reborn garsiakalbio.",
   "library.removeServerBtn": "Pašalinti šį rankiniu būdu pridėtą serverį",
   "library.addServerError": "Šiuo adresu medijos serverio nerasta",
-  "library.serverNotAnswering": "neatsako",
+  "library.serverNotAnswering": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą.",
   "library.serverNotAnsweringNote": "Šis serveris per paskutinę paiešką neatsakė. Sąraše jis yra iš ankstesnės paieškos atminties. Kai serveris bus įjungtas ir vėl tinkle, naršymas vėl veiks.",
   "library.notAnsweringWarnTitle": "Šis muzikos serveris neatsako",
   "library.notAnsweringWarnBody": "{{name}} per paskutinę paiešką neatsakė, todėl programa jį žino tik iš atminties. Vis tiek gali jį pridėti prie savo garsiakalbių. Naršymas nepavyks nė viename garsiakalbyje, kol serveris nebus įjungtas ir vėl tinkle.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "Palikti SSH prieigą atvirą?",
   "settingsView.sshConfirmBody": "Bet kas tavo tinkle, kas žino kolonėlės slaptažodį, galės prie jos prisijungti, taip pat po paleidimo iš naujo. Palik išjungtą, jei nežinai, kam to reiktų.",
   "settingsView.sshOnToast": "SSH prieiga atvira ir tokia liks",
-  "settingsView.sshOffToast": "SSH prieiga bus uždaryta nuo kito paleidimo"
+  "settingsView.sshOffToast": "SSH prieiga bus uždaryta nuo kito paleidimo",
+  "library.serverFallbackName": "Muzikos serveris"
 }

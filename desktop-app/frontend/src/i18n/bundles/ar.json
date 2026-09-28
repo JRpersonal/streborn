@@ -187,7 +187,7 @@
   "library.title": "المكتبة",
   "library.forSpeaker": "لمكبر الصوت",
   "library.noSpeaker": "لم يتم العثور على مكبر صوت",
-  "library.subtitle": "تصفّح خوادم الموسيقى على شبكتك (FRITZ!Box وSynology وPlex وminiDLNA) وشغّل المقاطع على سمّاعة SoundTouch.",
+  "library.subtitle": "تصفّح خوادم الموسيقى على شبكتك (FRITZ!Box وSynology وPlex وMinimServer, miniDLNA) وشغّل المقاطع على سمّاعة SoundTouch.",
   "library.server": "خادم الموسيقى",
   "library.refresh": "إعادة الفحص",
   "library.loading": "جارٍ البحث عن خوادم الموسيقى والمجلدات...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "لم يتم العثور على مكبر صوت ST Reborn في الشبكة.",
   "library.removeServerBtn": "إزالة هذا الخادم المضاف يدويًا",
   "library.addServerError": "لم يتم العثور على خادم وسائط على هذا العنوان",
-  "library.serverNotAnswering": "لا يستجيب",
+  "library.serverNotAnswering": "{{name}} لا يستجيب. غالبًا يعني ذلك أن الحاسوب الذي يعمل عليه مُطفأ أو نائم. أيقظه ثم أعد المحاولة.",
   "library.serverNotAnsweringNote": "لم يستجب هذا الخادم في آخر عملية بحث. يظهر في القائمة من ذاكرة بحث سابق. سيعمل التصفح مرة أخرى بعد تشغيل الخادم وعودته إلى الشبكة.",
   "library.notAnsweringWarnTitle": "خادم الموسيقى هذا لا يستجيب",
   "library.notAnsweringWarnBody": "لم يستجب {{name}} في آخر عملية بحث، لذلك لا يعرفه التطبيق إلا من الذاكرة. يمكنك إضافته إلى مكبرات الصوت على أي حال. سيفشل التصفح على كل مكبر صوت حتى يتم تشغيل الخادم وعودته إلى الشبكة.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "هل تترك وصول SSH مفتوحًا؟",
   "settingsView.sshConfirmBody": "سيتمكن أي شخص على شبكتك يعرف كلمة مرور المكبر من تسجيل الدخول إليه، وكذلك بعد إعادة التشغيل. اتركه موقوفًا إن كنت لا تعرف فيم ستستخدمه.",
   "settingsView.sshOnToast": "وصول SSH مفتوح وسيبقى كذلك",
-  "settingsView.sshOffToast": "سيُغلق وصول SSH ابتداءً من إعادة التشغيل التالية"
+  "settingsView.sshOffToast": "سيُغلق وصول SSH ابتداءً من إعادة التشغيل التالية",
+  "library.serverFallbackName": "خادم الموسيقى"
 }

@@ -187,7 +187,7 @@
   "library.title": "Biblioteka",
   "library.forSpeaker": "Dla głośnika",
   "library.noSpeaker": "Nie znaleziono głośnika",
-  "library.subtitle": "Przeglądaj serwery muzyczne w sieci (FRITZ!Box, Synology, Plex, miniDLNA) i odtwarzaj utwory na SoundTouch.",
+  "library.subtitle": "Przeglądaj serwery muzyczne w sieci (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) i odtwarzaj utwory na SoundTouch.",
   "library.server": "Serwer muzyczny",
   "library.refresh": "Skanuj ponownie",
   "library.loading": "Szukanie serwerów muzycznych i folderów...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Nie znaleziono głośnika ST Reborn w sieci.",
   "library.removeServerBtn": "Usuń ten ręcznie dodany serwer",
   "library.addServerError": "Nie znaleziono serwera multimediów pod tym adresem",
-  "library.serverNotAnswering": "nie odpowiada",
+  "library.serverNotAnswering": "{{name}} nie odpowiada. Zwykle oznacza to, że komputer, na którym działa, jest wyłączony albo śpi. Obudź go i spróbuj ponownie.",
   "library.serverNotAnsweringNote": "Ten serwer nie odpowiedział podczas ostatniego skanowania. Jest na liście na podstawie wcześniejszego skanowania. Przeglądanie zadziała ponownie, gdy serwer będzie włączony i wróci do sieci.",
   "library.notAnsweringWarnTitle": "Ten serwer muzyczny nie odpowiada",
   "library.notAnsweringWarnBody": "{{name}} nie odpowiedział podczas ostatniego skanowania, więc aplikacja zna go tylko z pamięci. Możesz go i tak dodać do swoich głośników. Przeglądanie nie będzie się udawać na żadnym głośniku, dopóki serwer nie będzie włączony i nie wróci do sieci.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "Zostawić dostęp SSH otwarty?",
   "settingsView.sshConfirmBody": "Każdy w twojej sieci, kto zna hasło głośnika, będzie mógł się na niego zalogować, także po restarcie. Zostaw to wyłączone, jeśli nie wiesz, do czego byś tego użył.",
   "settingsView.sshOnToast": "Dostęp SSH jest otwarty i taki pozostanie",
-  "settingsView.sshOffToast": "Dostęp SSH będzie zamknięty od następnego restartu"
+  "settingsView.sshOffToast": "Dostęp SSH będzie zamknięty od następnego restartu",
+  "library.serverFallbackName": "Serwer muzyczny"
 }

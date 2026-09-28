@@ -187,7 +187,7 @@
   "library.title": "Bibliothèque",
   "library.forSpeaker": "Pour l'enceinte",
   "library.noSpeaker": "Aucune enceinte trouvée",
-  "library.subtitle": "Parcourez les serveurs musicaux de votre réseau (FRITZ!Box, Synology, Plex, miniDLNA) et lisez des titres sur votre SoundTouch.",
+  "library.subtitle": "Parcourez les serveurs musicaux de votre réseau (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) et lisez des titres sur votre SoundTouch.",
   "library.server": "Serveur musical",
   "library.refresh": "Rescanner",
   "library.loading": "Recherche de serveurs musicaux et de dossiers...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Aucune enceinte ST Reborn trouvée sur le réseau.",
   "library.removeServerBtn": "Supprimer ce serveur ajouté manuellement",
   "library.addServerError": "Aucun serveur multimédia trouvé à cette adresse",
-  "library.serverNotAnswering": "ne répond pas",
+  "library.serverNotAnswering": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez.",
   "library.serverNotAnsweringNote": "Ce serveur n'a pas répondu lors de la dernière recherche. Il figure dans la liste grâce à une recherche précédente. La navigation fonctionnera à nouveau dès que le serveur sera allumé et de retour sur le réseau.",
   "library.notAnsweringWarnTitle": "Ce serveur de musique ne répond pas",
   "library.notAnsweringWarnBody": "{{name}} n'a pas répondu lors de la dernière recherche, l'application le connaît donc seulement de mémoire. Vous pouvez quand même l'ajouter à vos enceintes. La navigation échouera sur chaque enceinte jusqu'à ce que le serveur soit allumé et de retour sur le réseau.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "Laisser l’accès SSH ouvert ?",
   "settingsView.sshConfirmBody": "Toute personne de votre réseau connaissant le mot de passe de l’enceinte pourra s’y connecter, y compris après un redémarrage. Laissez ceci désactivé si vous ne savez pas à quoi cela vous servirait.",
   "settingsView.sshOnToast": "L’accès SSH est ouvert et le reste",
-  "settingsView.sshOffToast": "L’accès SSH se fermera au prochain redémarrage"
+  "settingsView.sshOffToast": "L’accès SSH se fermera au prochain redémarrage",
+  "library.serverFallbackName": "Le serveur de musique"
 }

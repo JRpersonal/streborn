@@ -187,7 +187,7 @@
   "library.title": "Bibliotheek",
   "library.forSpeaker": "Voor speaker",
   "library.noSpeaker": "Geen speaker gevonden",
-  "library.subtitle": "Blader door muziekservers op je netwerk (FRITZ!Box, Synology, Plex, miniDLNA) en speel nummers af op je SoundTouch.",
+  "library.subtitle": "Blader door muziekservers op je netwerk (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) en speel nummers af op je SoundTouch.",
   "library.server": "Muziekserver",
   "library.refresh": "Opnieuw scannen",
   "library.loading": "Zoeken naar muziekservers en mappen...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Geen ST Reborn speaker in het netwerk gevonden.",
   "library.removeServerBtn": "Deze handmatig toegevoegde server verwijderen",
   "library.addServerError": "Geen mediaserver gevonden op dit adres",
-  "library.serverNotAnswering": "antwoordt niet",
+  "library.serverNotAnswering": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw.",
   "library.serverNotAnsweringNote": "Deze server heeft bij de laatste scan niet geantwoord. Hij staat in de lijst op basis van een eerdere scan. Zodra de server aan staat en weer in het netwerk zit, werkt het doorzoeken weer.",
   "library.notAnsweringWarnTitle": "Deze muziekserver antwoordt niet",
   "library.notAnsweringWarnBody": "{{name}} heeft bij de laatste scan niet geantwoord, dus de app kent hem alleen uit het geheugen. Je kunt hem toch aan je speakers toevoegen. Het doorzoeken mislukt dan op elke speaker totdat de server aan staat en weer in het netwerk zit.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "SSH-toegang open laten?",
   "settingsView.sshConfirmBody": "Iedereen op je netwerk die het wachtwoord van de speaker kent kan er dan op inloggen, ook na een herstart. Laat dit uit als je niet weet waarvoor je het zou gebruiken.",
   "settingsView.sshOnToast": "SSH-toegang is open en blijft open",
-  "settingsView.sshOffToast": "SSH-toegang is dicht vanaf de volgende herstart"
+  "settingsView.sshOffToast": "SSH-toegang is dicht vanaf de volgende herstart",
+  "library.serverFallbackName": "De muziekserver"
 }

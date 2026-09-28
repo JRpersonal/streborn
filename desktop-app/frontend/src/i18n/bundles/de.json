@@ -200,7 +200,7 @@
   "library.title": "Mediathek",
   "library.forSpeaker": "Für Lautsprecher",
   "library.noSpeaker": "Kein Lautsprecher gefunden",
-  "library.subtitle": "Musikserver im Netzwerk (FRITZ!Box, Synology, Plex, miniDLNA) durchsuchen und Titel auf der SoundTouch abspielen.",
+  "library.subtitle": "Musikserver im Netzwerk (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) durchsuchen und Titel auf der SoundTouch abspielen.",
   "library.server": "Musikserver",
   "library.refresh": "Neu suchen",
   "library.loading": "Suche Musikserver und Ordner...",
@@ -237,7 +237,7 @@
   "library.onSpeakersNoBoxes": "Kein ST Reborn Lautsprecher im Netzwerk gefunden.",
   "library.removeServerBtn": "Diesen manuell hinzugefügten Server entfernen",
   "library.addServerError": "Unter dieser Adresse wurde kein Medienserver gefunden",
-  "library.serverNotAnswering": "antwortet nicht",
+  "library.serverNotAnswering": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal.",
   "library.serverNotAnsweringNote": "Dieser Server hat beim letzten Suchlauf nicht geantwortet. Er steht hier aus der Erinnerung an einen früheren Suchlauf. Sobald er eingeschaltet und wieder im Netzwerk ist, funktioniert das Durchsuchen wieder.",
   "library.notAnsweringWarnTitle": "Dieser Musikserver antwortet nicht",
   "library.notAnsweringWarnBody": "{{name}} hat beim letzten Suchlauf nicht geantwortet, die App kennt ihn also nur aus der Erinnerung. Du kannst ihn trotzdem zu deinen Lautsprechern hinzufügen. Das Durchsuchen scheitert dann auf jedem Lautsprecher, bis der Server eingeschaltet und wieder im Netzwerk ist.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "SSH-Zugang dauerhaft öffnen?",
   "settingsView.sshConfirmBody": "Danach kann jeder in deinem Netzwerk, der das Passwort des Lautsprechers kennt, sich auf ihm anmelden, auch nach einem Neustart. Lass das aus, wenn du nicht weißt, wozu du es brauchst.",
   "settingsView.sshOnToast": "SSH-Zugang ist offen und bleibt es",
-  "settingsView.sshOffToast": "SSH-Zugang ist ab dem nächsten Neustart zu"
+  "settingsView.sshOffToast": "SSH-Zugang ist ab dem nächsten Neustart zu",
+  "library.serverFallbackName": "Der Musikserver"
 }

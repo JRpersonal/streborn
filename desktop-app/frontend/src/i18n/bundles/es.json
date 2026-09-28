@@ -187,7 +187,7 @@
   "library.title": "Biblioteca",
   "library.forSpeaker": "Para el altavoz",
   "library.noSpeaker": "No se encontró ningún altavoz",
-  "library.subtitle": "Explora servidores de música de tu red (FRITZ!Box, Synology, Plex, miniDLNA) y reproduce pistas en tu SoundTouch.",
+  "library.subtitle": "Explora servidores de música de tu red (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) y reproduce pistas en tu SoundTouch.",
   "library.server": "Servidor de música",
   "library.refresh": "Reescanear",
   "library.loading": "Buscando servidores de música y carpetas...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "No se encontró ningún altavoz ST Reborn en la red.",
   "library.removeServerBtn": "Quitar este servidor añadido manualmente",
   "library.addServerError": "No se encontró ningún servidor multimedia en esta dirección",
-  "library.serverNotAnswering": "no responde",
+  "library.serverNotAnswering": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo.",
   "library.serverNotAnsweringNote": "Este servidor no respondió en el último análisis. Aparece en la lista por lo que se recordó de un análisis anterior. La exploración volverá a funcionar cuando el servidor esté encendido y de nuevo en la red.",
   "library.notAnsweringWarnTitle": "Este servidor de música no responde",
   "library.notAnsweringWarnBody": "{{name}} no respondió en el último análisis, así que la aplicación solo lo conoce por lo que recuerda. Puedes añadirlo a tus altavoces igualmente. La exploración fallará en todos los altavoces hasta que el servidor esté encendido y de nuevo en la red.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "¿Dejar el acceso SSH abierto?",
   "settingsView.sshConfirmBody": "Cualquiera en tu red que conozca la contraseña del altavoz podrá iniciar sesión en él, también después de reiniciar. Déjalo desactivado si no sabes para qué lo usarías.",
   "settingsView.sshOnToast": "El acceso SSH está abierto y seguirá así",
-  "settingsView.sshOffToast": "El acceso SSH quedará cerrado tras el siguiente reinicio"
+  "settingsView.sshOffToast": "El acceso SSH quedará cerrado tras el siguiente reinicio",
+  "library.serverFallbackName": "El servidor de música"
 }

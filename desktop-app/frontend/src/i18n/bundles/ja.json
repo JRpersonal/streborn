@@ -187,7 +187,7 @@
   "library.title": "ライブラリ",
   "library.forSpeaker": "対象スピーカー",
   "library.noSpeaker": "スピーカーが見つかりません",
-  "library.subtitle": "ネットワーク上の音楽サーバー (FRITZ!Box、Synology、Plex、miniDLNA) を参照し、SoundTouchで曲を再生します。",
+  "library.subtitle": "ネットワーク上の音楽サーバー (FRITZ!Box、Synology、Plex、MinimServer, miniDLNA) を参照し、SoundTouchで曲を再生します。",
   "library.server": "音楽サーバー",
   "library.refresh": "再スキャン",
   "library.loading": "音楽サーバーとフォルダーを検索中...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "ネットワークに ST Reborn スピーカーが見つかりません。",
   "library.removeServerBtn": "手動で追加したこのサーバーを削除",
   "library.addServerError": "このアドレスにメディアサーバーが見つかりませんでした",
-  "library.serverNotAnswering": "応答なし",
+  "library.serverNotAnswering": "{{name}} が応答しません。多くの場合、それが動いているコンピューターの電源が切れているかスリープしています。起こしてからもう一度お試しください。",
   "library.serverNotAnsweringNote": "このサーバーは前回の検索で応答しませんでした。以前の検索で覚えていた情報からリストに表示されています。サーバーの電源が入り、ネットワークに戻れば再び閲覧できます。",
   "library.notAnsweringWarnTitle": "この音楽サーバーは応答していません",
   "library.notAnsweringWarnBody": "{{name}} は前回の検索で応答しなかったため、アプリは記憶からしか知りません。それでもスピーカーに追加できます。サーバーの電源が入ってネットワークに戻るまで、どのスピーカーでも閲覧は失敗します。",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "SSH 接続を開いたままにしますか？",
   "settingsView.sshConfirmBody": "スピーカーのパスワードを知っているネットワーク内の誰もが、再起動後も含めてログインできるようになります。何に使うか分からない場合はオフのままにしてください。",
   "settingsView.sshOnToast": "SSH 接続は開いており、そのままになります",
-  "settingsView.sshOffToast": "SSH 接続は次の再起動から閉じられます"
+  "settingsView.sshOffToast": "SSH 接続は次の再起動から閉じられます",
+  "library.serverFallbackName": "ミュージックサーバー"
 }

@@ -187,7 +187,7 @@
   "library.title": "Bibliotēka",
   "library.forSpeaker": "Skaļrunim",
   "library.noSpeaker": "Skaļruņi nav atrasti",
-  "library.subtitle": "Pārlūkojiet mūzikas serverus tīklā (FRITZ!Box, Synology, Plex, miniDLNA) un atskaņojiet ierakstus caur SoundTouch.",
+  "library.subtitle": "Pārlūkojiet mūzikas serverus tīklā (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) un atskaņojiet ierakstus caur SoundTouch.",
   "library.server": "Mūzikas serveris",
   "library.refresh": "Skenēt vēlreiz",
   "library.loading": "Tiek meklēti mūzikas serveri un mapes...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Tīklā nav atrasts neviens ST Reborn skaļrunis.",
   "library.removeServerBtn": "Noņemt šo manuāli pievienoto serveri",
   "library.addServerError": "Šajā adresē multivides serveris netika atrasts",
-  "library.serverNotAnswering": "neatbild",
+  "library.serverNotAnswering": "{{name}} neatbild. Parasti tas nozīmē, ka dators, uz kura tas darbojas, ir izslēgts vai guļ. Pamodini to un mēģini vēlreiz.",
   "library.serverNotAnsweringNote": "Šis serveris pēdējā meklēšanā neatbildēja. Sarakstā tas ir no iepriekšējās meklēšanas atmiņas. Kad serveris būs ieslēgts un atkal tīklā, pārlūkošana atkal darbosies.",
   "library.notAnsweringWarnTitle": "Šis mūzikas serveris neatbild",
   "library.notAnsweringWarnBody": "{{name}} pēdējā meklēšanā neatbildēja, tāpēc lietotne to zina tikai no atmiņas. Tu tomēr vari to pievienot saviem skaļruņiem. Pārlūkošana neizdosies nevienā skaļrunī, kamēr serveris nebūs ieslēgts un atkal tīklā.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "Atstāt SSH piekļuvi atvērtu?",
   "settingsView.sshConfirmBody": "Jebkurš tavā tīklā, kas zina skandās paroli, varēs tajā pieteikties, arī pēc restartēšanas. Atstāj izslēgtu, ja nezini, kam to izmantotu.",
   "settingsView.sshOnToast": "SSH piekļuve ir atvērta un tāda paliks",
-  "settingsView.sshOffToast": "SSH piekļuve būs slēgta no nākamās restartēšanas"
+  "settingsView.sshOffToast": "SSH piekļuve būs slēgta no nākamās restartēšanas",
+  "library.serverFallbackName": "Mūzikas serveris"
 }

@@ -187,7 +187,7 @@
   "library.title": "Kitaplık",
   "library.forSpeaker": "Hoparlör için",
   "library.noSpeaker": "Hoparlör bulunamadı",
-  "library.subtitle": "Ağınızdaki müzik sunucularına (FRITZ!Box, Synology, Plex, miniDLNA) göz atın ve parçaları SoundTouch üzerinden çalın.",
+  "library.subtitle": "Ağınızdaki müzik sunucularına (FRITZ!Box, Synology, Plex, MinimServer, miniDLNA) göz atın ve parçaları SoundTouch üzerinden çalın.",
   "library.server": "Müzik sunucusu",
   "library.refresh": "Yeniden tara",
   "library.loading": "Müzik sunucuları ve klasörler aranıyor...",
@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Ağda ST Reborn hoparlörü bulunamadı.",
   "library.removeServerBtn": "Elle eklenen bu sunucuyu kaldır",
   "library.addServerError": "Bu adreste medya sunucusu bulunamadı",
-  "library.serverNotAnswering": "yanıt vermiyor",
+  "library.serverNotAnswering": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene.",
   "library.serverNotAnsweringNote": "Bu sunucu son taramada yanıt vermedi. Daha önceki bir taramadan hatırlandığı için listede görünüyor. Sunucu açılıp ağa geri döndüğünde göz atma yeniden çalışır.",
   "library.notAnsweringWarnTitle": "Bu müzik sunucusu yanıt vermiyor",
   "library.notAnsweringWarnBody": "{{name}} son taramada yanıt vermedi, bu yüzden uygulama onu yalnızca hafızasından biliyor. Yine de hoparlörlerine ekleyebilirsin. Sunucu açılıp ağa geri dönene kadar göz atma her hoparlörde başarısız olur.",
@@ -1541,5 +1541,6 @@
   "settingsView.sshConfirmTitle": "SSH erişimi açık bırakılsın mı?",
   "settingsView.sshConfirmBody": "Ağındaki, hoparlörün parolasını bilen herkes ona oturum açabilir, yeniden başlatmadan sonra da. Ne işe yarayacağını bilmiyorsan kapalı bırak.",
   "settingsView.sshOnToast": "SSH erişimi açık ve açık kalacak",
-  "settingsView.sshOffToast": "SSH erişimi bir sonraki yeniden başlatmadan itibaren kapalı"
+  "settingsView.sshOffToast": "SSH erişimi bir sonraki yeniden başlatmadan itibaren kapalı",
+  "library.serverFallbackName": "Müzik sunucusu"
 }
