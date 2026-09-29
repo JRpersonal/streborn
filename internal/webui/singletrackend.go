@@ -80,10 +80,18 @@ func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string
 			return
 		}
 
-		ps, pos, total, standby := s.pollNowPlaying()
+		ps, pos, total, standby, tornDown := s.pollNowPlaying()
 		if standby {
 			// Powered off mid-track. Never a track end, and STR must not send
 			// anything to a sleeping box (#219).
+			return
+		}
+		if tornDown {
+			// The box dropped the source instead of playing. Same shape as the
+			// queue case: nothing was heard, and waiting out the rest of the
+			// track's nominal length would just be silence with a ticking
+			// progress bar. There is no next track here, so end the watch.
+			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
 			return
 		}
 		if total > obsTotal {
