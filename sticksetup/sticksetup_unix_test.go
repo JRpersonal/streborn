@@ -15,8 +15,13 @@ import (
 // different USB stick" with nothing plugged in at all.
 func TestHiddenMountsAreNotOfferedAsDrives(t *testing.T) {
 	root := t.TempDir()
+	// Each mount carries a subdirectory, because on Linux scanMounts descends one
+	// level (/media/<user>/<volume>) while elsewhere the mount itself is the
+	// drive. Built this way the case is meaningful on both: on Linux it also
+	// proves the filter bites BEFORE the descent, so the hidden folder cannot
+	// contribute its children either.
 	for _, name := range []string{".timemachine", ".Spotlight-V100", "STR-STICK"} {
-		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, name, "vol"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -29,14 +34,14 @@ func TestHiddenMountsAreNotOfferedAsDrives(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, d := range got {
-		if strings.HasPrefix(filepath.Base(d.Path), ".") {
+		if strings.Contains(d.Path, string(filepath.Separator)+".") {
 			t.Errorf("a hidden entry is offered as a drive: %s", d.Path)
 		}
 	}
 	if len(got) != 1 {
-		t.Fatalf("drives = %d, want only the real volume: %+v", len(got), got)
+		t.Fatalf("drives = %d, want only the one real volume: %+v", len(got), got)
 	}
-	if filepath.Base(got[0].Path) != "STR-STICK" {
+	if !strings.Contains(got[0].Path, "STR-STICK") {
 		t.Errorf("the real volume is missing, got %s", got[0].Path)
 	}
 }
