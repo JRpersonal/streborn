@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "ネットワークに ST Reborn スピーカーが見つかりません。",
   "library.removeServerBtn": "手動で追加したこのサーバーを削除",
   "library.addServerError": "このアドレスにメディアサーバーが見つかりませんでした",
-  "library.serverNotAnswering": "{{name}} が応答しません。多くの場合、それが動いているコンピューターの電源が切れているかスリープしています。起こしてからもう一度お試しください。",
+  "library.serverNotAnswering": "応答なし",
   "library.serverNotAnsweringNote": "このサーバーは前回の検索で応答しませんでした。以前の検索で覚えていた情報からリストに表示されています。サーバーの電源が入り、ネットワークに戻れば再び閲覧できます。",
   "library.notAnsweringWarnTitle": "この音楽サーバーは応答していません",
   "library.notAnsweringWarnBody": "{{name}} は前回の検索で応答しなかったため、アプリは記憶からしか知りません。それでもスピーカーに追加できます。サーバーの電源が入ってネットワークに戻るまで、どのスピーカーでも閲覧は失敗します。",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH 接続は開いており、そのままになります",
   "settingsView.sshOffToast": "SSH 接続は次の再起動から閉じられます",
   "library.serverFallbackName": "ミュージックサーバー",
-  "worldMap.pinPrompt": "🌍 世界地図にピンを立てて、どこでまた音楽が鳴っているか見せてください。"
+  "worldMap.pinPrompt": "🌍 世界地図にピンを立てて、どこでまた音楽が鳴っているか見せてください。",
+  "library.serverAsleep": "{{name}} が応答しません。多くの場合、それが動いているコンピューターの電源が切れているかスリープしています。起こしてからもう一度お試しください。"
 }

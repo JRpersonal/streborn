@@ -392,7 +392,7 @@ async function libraryBrowseCurrent() {
     // a friendly sentence for an unknown fault would hide it.
     const srv = libState.servers.find(x => x.udn === libState.currentUDN);
     if (looksUnreachable(e)) {
-      showError(t('library.serverNotAnswering', {
+      showError(t('library.serverAsleep', {
         name: (srv && srv.friendlyName) || t('library.serverFallbackName'),
       }));
     } else {

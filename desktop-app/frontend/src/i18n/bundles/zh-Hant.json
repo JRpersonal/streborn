@@ -237,7 +237,7 @@
   "library.onSpeakersNoBoxes": "網路上找不到 ST Reborn 喇叭。",
   "library.removeServerBtn": "移除這個手動加入的伺服器",
   "library.addServerError": "這個位址上找不到媒體伺服器",
-  "library.serverNotAnswering": "{{name}} 沒有回應。通常表示執行它的電腦已關機或睡眠中。喚醒它後再試一次。",
+  "library.serverNotAnswering": "沒有回應",
   "library.serverNotAnsweringNote": "這個伺服器在上次掃描時沒有回應。它是依照先前掃描記住的資料列在清單中。等伺服器開機並回到網路上，瀏覽就會再次正常。",
   "library.notAnsweringWarnTitle": "這個音樂伺服器沒有回應",
   "library.notAnsweringWarnBody": "{{name}} 在上次掃描時沒有回應，所以應用程式只是從記憶中知道它。你仍然可以把它加到喇叭上。在伺服器開機並回到網路之前，每一部喇叭的瀏覽都會失敗。",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH 存取已開啟並會保持",
   "settingsView.sshOffToast": "SSH 存取將從下次重新啟動起關閉",
   "library.serverFallbackName": "音樂伺服器",
-  "worldMap.pinPrompt": "🌍 在世界地圖上放下你的圖釘，讓大家看到哪裡又響起了音樂。"
+  "worldMap.pinPrompt": "🌍 在世界地圖上放下你的圖釘，讓大家看到哪裡又響起了音樂。",
+  "library.serverAsleep": "{{name}} 沒有回應。通常表示執行它的電腦已關機或睡眠中。喚醒它後再試一次。"
 }

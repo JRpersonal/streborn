@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Nie znaleziono głośnika ST Reborn w sieci.",
   "library.removeServerBtn": "Usuń ten ręcznie dodany serwer",
   "library.addServerError": "Nie znaleziono serwera multimediów pod tym adresem",
-  "library.serverNotAnswering": "{{name}} nie odpowiada. Zwykle oznacza to, że komputer, na którym działa, jest wyłączony albo śpi. Obudź go i spróbuj ponownie.",
+  "library.serverNotAnswering": "nie odpowiada",
   "library.serverNotAnsweringNote": "Ten serwer nie odpowiedział podczas ostatniego skanowania. Jest na liście na podstawie wcześniejszego skanowania. Przeglądanie zadziała ponownie, gdy serwer będzie włączony i wróci do sieci.",
   "library.notAnsweringWarnTitle": "Ten serwer muzyczny nie odpowiada",
   "library.notAnsweringWarnBody": "{{name}} nie odpowiedział podczas ostatniego skanowania, więc aplikacja zna go tylko z pamięci. Możesz go i tak dodać do swoich głośników. Przeglądanie nie będzie się udawać na żadnym głośniku, dopóki serwer nie będzie włączony i nie wróci do sieci.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "Dostęp SSH jest otwarty i taki pozostanie",
   "settingsView.sshOffToast": "Dostęp SSH będzie zamknięty od następnego restartu",
   "library.serverFallbackName": "Serwer muzyczny",
-  "worldMap.pinPrompt": "🌍 Dodaj swoją pinezkę na mapie świata, żeby było widać, gdzie znowu gra muzyka."
+  "worldMap.pinPrompt": "🌍 Dodaj swoją pinezkę na mapie świata, żeby było widać, gdzie znowu gra muzyka.",
+  "library.serverAsleep": "{{name}} nie odpowiada. Zwykle oznacza to, że komputer, na którym działa, jest wyłączony albo śpi. Obudź go i spróbuj ponownie."
 }

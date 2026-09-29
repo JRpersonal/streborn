@@ -237,7 +237,7 @@
   "library.onSpeakersNoBoxes": "Kein ST Reborn Lautsprecher im Netzwerk gefunden.",
   "library.removeServerBtn": "Diesen manuell hinzugefügten Server entfernen",
   "library.addServerError": "Unter dieser Adresse wurde kein Medienserver gefunden",
-  "library.serverNotAnswering": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal.",
+  "library.serverNotAnswering": "antwortet nicht",
   "library.serverNotAnsweringNote": "Dieser Server hat beim letzten Suchlauf nicht geantwortet. Er steht hier aus der Erinnerung an einen früheren Suchlauf. Sobald er eingeschaltet und wieder im Netzwerk ist, funktioniert das Durchsuchen wieder.",
   "library.notAnsweringWarnTitle": "Dieser Musikserver antwortet nicht",
   "library.notAnsweringWarnBody": "{{name}} hat beim letzten Suchlauf nicht geantwortet, die App kennt ihn also nur aus der Erinnerung. Du kannst ihn trotzdem zu deinen Lautsprechern hinzufügen. Das Durchsuchen scheitert dann auf jedem Lautsprecher, bis der Server eingeschaltet und wieder im Netzwerk ist.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH-Zugang ist offen und bleibt es",
   "settingsView.sshOffToast": "SSH-Zugang ist ab dem nächsten Neustart zu",
   "library.serverFallbackName": "Der Musikserver",
-  "worldMap.pinPrompt": "🌍 Setz deinen Pin auf die Weltkarte, damit man sieht, wo überall wieder Musik läuft."
+  "worldMap.pinPrompt": "🌍 Setz deinen Pin auf die Weltkarte, damit man sieht, wo überall wieder Musik läuft.",
+  "library.serverAsleep": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal."
 }

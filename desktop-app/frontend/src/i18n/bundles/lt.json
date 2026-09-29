@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Tinkle nerasta nė vieno ST Reborn garsiakalbio.",
   "library.removeServerBtn": "Pašalinti šį rankiniu būdu pridėtą serverį",
   "library.addServerError": "Šiuo adresu medijos serverio nerasta",
-  "library.serverNotAnswering": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą.",
+  "library.serverNotAnswering": "neatsako",
   "library.serverNotAnsweringNote": "Šis serveris per paskutinę paiešką neatsakė. Sąraše jis yra iš ankstesnės paieškos atminties. Kai serveris bus įjungtas ir vėl tinkle, naršymas vėl veiks.",
   "library.notAnsweringWarnTitle": "Šis muzikos serveris neatsako",
   "library.notAnsweringWarnBody": "{{name}} per paskutinę paiešką neatsakė, todėl programa jį žino tik iš atminties. Vis tiek gali jį pridėti prie savo garsiakalbių. Naršymas nepavyks nė viename garsiakalbyje, kol serveris nebus įjungtas ir vėl tinkle.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH prieiga atvira ir tokia liks",
   "settingsView.sshOffToast": "SSH prieiga bus uždaryta nuo kito paleidimo",
   "library.serverFallbackName": "Muzikos serveris",
-  "worldMap.pinPrompt": "🌍 Pridėk savo smeigtuką pasaulio žemėlapyje, kad matytųsi, kur vėl groja muzika."
+  "worldMap.pinPrompt": "🌍 Pridėk savo smeigtuką pasaulio žemėlapyje, kad matytųsi, kur vėl groja muzika.",
+  "library.serverAsleep": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą."
 }

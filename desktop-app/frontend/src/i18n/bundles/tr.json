@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Ağda ST Reborn hoparlörü bulunamadı.",
   "library.removeServerBtn": "Elle eklenen bu sunucuyu kaldır",
   "library.addServerError": "Bu adreste medya sunucusu bulunamadı",
-  "library.serverNotAnswering": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene.",
+  "library.serverNotAnswering": "yanıt vermiyor",
   "library.serverNotAnsweringNote": "Bu sunucu son taramada yanıt vermedi. Daha önceki bir taramadan hatırlandığı için listede görünüyor. Sunucu açılıp ağa geri döndüğünde göz atma yeniden çalışır.",
   "library.notAnsweringWarnTitle": "Bu müzik sunucusu yanıt vermiyor",
   "library.notAnsweringWarnBody": "{{name}} son taramada yanıt vermedi, bu yüzden uygulama onu yalnızca hafızasından biliyor. Yine de hoparlörlerine ekleyebilirsin. Sunucu açılıp ağa geri dönene kadar göz atma her hoparlörde başarısız olur.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH erişimi açık ve açık kalacak",
   "settingsView.sshOffToast": "SSH erişimi bir sonraki yeniden başlatmadan itibaren kapalı",
   "library.serverFallbackName": "Müzik sunucusu",
-  "worldMap.pinPrompt": "🌍 Dünya haritasına iğneni koy, müziğin yeniden nerelerde çaldığı görünsün."
+  "worldMap.pinPrompt": "🌍 Dünya haritasına iğneni koy, müziğin yeniden nerelerde çaldığı görünsün.",
+  "library.serverAsleep": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene."
 }

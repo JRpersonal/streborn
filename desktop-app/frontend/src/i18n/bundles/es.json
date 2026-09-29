@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "No se encontró ningún altavoz ST Reborn en la red.",
   "library.removeServerBtn": "Quitar este servidor añadido manualmente",
   "library.addServerError": "No se encontró ningún servidor multimedia en esta dirección",
-  "library.serverNotAnswering": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo.",
+  "library.serverNotAnswering": "no responde",
   "library.serverNotAnsweringNote": "Este servidor no respondió en el último análisis. Aparece en la lista por lo que se recordó de un análisis anterior. La exploración volverá a funcionar cuando el servidor esté encendido y de nuevo en la red.",
   "library.notAnsweringWarnTitle": "Este servidor de música no responde",
   "library.notAnsweringWarnBody": "{{name}} no respondió en el último análisis, así que la aplicación solo lo conoce por lo que recuerda. Puedes añadirlo a tus altavoces igualmente. La exploración fallará en todos los altavoces hasta que el servidor esté encendido y de nuevo en la red.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "El acceso SSH está abierto y seguirá así",
   "settingsView.sshOffToast": "El acceso SSH quedará cerrado tras el siguiente reinicio",
   "library.serverFallbackName": "El servidor de música",
-  "worldMap.pinPrompt": "🌍 Pon tu chincheta en el mapa mundial, para que se vea dónde vuelve a sonar la música."
+  "worldMap.pinPrompt": "🌍 Pon tu chincheta en el mapa mundial, para que se vea dónde vuelve a sonar la música.",
+  "library.serverAsleep": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo."
 }

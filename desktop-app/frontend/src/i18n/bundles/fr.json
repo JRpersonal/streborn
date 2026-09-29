@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Aucune enceinte ST Reborn trouvée sur le réseau.",
   "library.removeServerBtn": "Supprimer ce serveur ajouté manuellement",
   "library.addServerError": "Aucun serveur multimédia trouvé à cette adresse",
-  "library.serverNotAnswering": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez.",
+  "library.serverNotAnswering": "ne répond pas",
   "library.serverNotAnsweringNote": "Ce serveur n'a pas répondu lors de la dernière recherche. Il figure dans la liste grâce à une recherche précédente. La navigation fonctionnera à nouveau dès que le serveur sera allumé et de retour sur le réseau.",
   "library.notAnsweringWarnTitle": "Ce serveur de musique ne répond pas",
   "library.notAnsweringWarnBody": "{{name}} n'a pas répondu lors de la dernière recherche, l'application le connaît donc seulement de mémoire. Vous pouvez quand même l'ajouter à vos enceintes. La navigation échouera sur chaque enceinte jusqu'à ce que le serveur soit allumé et de retour sur le réseau.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "L’accès SSH est ouvert et le reste",
   "settingsView.sshOffToast": "L’accès SSH se fermera au prochain redémarrage",
   "library.serverFallbackName": "Le serveur de musique",
-  "worldMap.pinPrompt": "🌍 Ajoutez votre épingle à la carte du monde, pour montrer où la musique rejoue."
+  "worldMap.pinPrompt": "🌍 Ajoutez votre épingle à la carte du monde, pour montrer où la musique rejoue.",
+  "library.serverAsleep": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez."
 }

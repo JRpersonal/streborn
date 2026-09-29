@@ -224,7 +224,7 @@
   "library.onSpeakersNoBoxes": "Geen ST Reborn speaker in het netwerk gevonden.",
   "library.removeServerBtn": "Deze handmatig toegevoegde server verwijderen",
   "library.addServerError": "Geen mediaserver gevonden op dit adres",
-  "library.serverNotAnswering": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw.",
+  "library.serverNotAnswering": "geeft geen antwoord",
   "library.serverNotAnsweringNote": "Deze server heeft bij de laatste scan niet geantwoord. Hij staat in de lijst op basis van een eerdere scan. Zodra de server aan staat en weer in het netwerk zit, werkt het doorzoeken weer.",
   "library.notAnsweringWarnTitle": "Deze muziekserver antwoordt niet",
   "library.notAnsweringWarnBody": "{{name}} heeft bij de laatste scan niet geantwoord, dus de app kent hem alleen uit het geheugen. Je kunt hem toch aan je speakers toevoegen. Het doorzoeken mislukt dan op elke speaker totdat de server aan staat en weer in het netwerk zit.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH-toegang is open en blijft open",
   "settingsView.sshOffToast": "SSH-toegang is dicht vanaf de volgende herstart",
   "library.serverFallbackName": "De muziekserver",
-  "worldMap.pinPrompt": "🌍 Zet je pin op de wereldkaart, dan is te zien waar de muziek weer speelt."
+  "worldMap.pinPrompt": "🌍 Zet je pin op de wereldkaart, dan is te zien waar de muziek weer speelt.",
+  "library.serverAsleep": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw."
 }

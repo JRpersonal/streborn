@@ -237,7 +237,7 @@
   "library.onSpeakersNoBoxes": "No ST Reborn speaker found on the network.",
   "library.removeServerBtn": "Remove this manually added server",
   "library.addServerError": "No media server found at this address",
-  "library.serverNotAnswering": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again.",
+  "library.serverNotAnswering": "not answering",
   "library.serverNotAnsweringNote": "This server did not answer the last scan. It is on the list from memory of an earlier one, and browsing works again once the server is switched on and back on the network.",
   "library.notAnsweringWarnTitle": "This music server is not answering",
   "library.notAnsweringWarnBody": "{{name}} did not answer the last scan, so the app only knows it from memory. You can still add it to your speakers. Browsing it will fail on every speaker until the server is switched on and back on the network.",
@@ -1543,5 +1543,6 @@
   "settingsView.sshOnToast": "SSH access is open and stays open",
   "settingsView.sshOffToast": "SSH access is shut from the next restart",
   "library.serverFallbackName": "The music server",
-  "worldMap.pinPrompt": "🌍 Add your pin to the world map, so it shows where the music is playing again."
+  "worldMap.pinPrompt": "🌍 Add your pin to the world map, so it shows where the music is playing again.",
+  "library.serverAsleep": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again."
 }
