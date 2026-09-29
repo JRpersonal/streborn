@@ -92,6 +92,14 @@ func (a *App) playPost(host string, port int, path, body string) (*http.Response
 	resp, err := a.boxDo(host, port, http.MethodPost, path, "application/json", body)
 	if err != nil {
 		if isTransportNotReady(err) {
+			// Say what happened. The readiness probe logs when IT gives up, but
+			// this second path had no line at all, so a bundle showed a bare
+			// "box_not_ready" with nothing behind it. One report carried over
+			// eighty of them across four log generations and not one said why
+			// (2026-09-29); the cause turned out to be on the speaker, which had
+			// answered the probe and then refused to leave standby.
+			a.logger.Warn("play: the speaker answered the readiness probe but dropped the play request",
+				"host", host, "port", port, "path", path, "err", err)
 			return nil, fmt.Errorf("box_not_ready")
 		}
 		return nil, err
