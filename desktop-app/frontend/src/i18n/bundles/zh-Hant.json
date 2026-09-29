@@ -396,7 +396,7 @@
   "preset.spotifyContextUnknown": "無法從喇叭讀到 Spotify 播放清單。請確認喇叭是最新版本，開啟一個播放清單或專輯，再試一次。",
   "play.errNoInternet": "沒有網路？",
   "play.errSpeakerTimeout": "喇叭沒有回應",
-  "play.errBoxStarting": "喇叭還在啟動，等一下再試一次",
+  "play.errBoxStarting": "揚聲器還沒有回應。請稍候，不要馬上再按一次：重複按可能會讓它再次關閉。若仍無效，請直接在揚聲器上開機。",
   "play.errSpeakerRefused": "喇叭拒絕了",
   "play.errNotPlayable": "電台無法播放",
   "play.errSpotifyPremium": "Spotify 預設需要 Premium",

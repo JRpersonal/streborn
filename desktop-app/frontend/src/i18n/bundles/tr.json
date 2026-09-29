@@ -359,7 +359,7 @@
   "preset.saveFailed": "Kaydedilemedi: {{err}}",
   "play.errNoInternet": "internet yok mu?",
   "play.errSpeakerTimeout": "hoparlör yanıt vermiyor",
-  "play.errBoxStarting": "hoparlör hâlâ başlıyor, yakında tekrar deneyin",
+  "play.errBoxStarting": "Hoparlör henüz yanıt vermiyor. Tekrar basmak yerine ona bir an tanı: art arda basmak onu yeniden kapatabilir. Bu yardımcı olmazsa hoparlörün kendi üzerinden aç.",
   "play.errSpeakerRefused": "hoparlör reddetti",
   "play.errNotPlayable": "istasyon çalınamıyor",
   "play.errServer500": "istasyon hatası",

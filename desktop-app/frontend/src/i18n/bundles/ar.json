@@ -359,7 +359,7 @@
   "preset.saveFailed": "فشل الحفظ: {{err}}",
   "play.errNoInternet": "لا يوجد إنترنت؟",
   "play.errSpeakerTimeout": "السمّاعة لا تستجيب",
-  "play.errBoxStarting": "السمّاعة ما زالت تبدأ، أعد المحاولة بعد لحظة",
+  "play.errBoxStarting": "لا يستجيب المكبر بعد. امنحه لحظة بدلاً من الضغط مرة أخرى: الضغط المتكرر قد يعيد إطفاءه. إن لم ينفع ذلك، شغّله من المكبر نفسه.",
   "play.errSpeakerRefused": "رفضت السمّاعة",
   "play.errNotPlayable": "المحطة غير قابلة للتشغيل",
   "play.errServer500": "خطأ في المحطة",

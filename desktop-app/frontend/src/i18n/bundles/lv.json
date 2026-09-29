@@ -359,7 +359,7 @@
   "preset.saveFailed": "Saglabāt neizdevās: {{err}}",
   "play.errNoInternet": "nav interneta?",
   "play.errSpeakerTimeout": "skaļrunis neatbild",
-  "play.errBoxStarting": "skaļrunis vēl startē, mēģiniet drīz vēlreiz",
+  "play.errBoxStarting": "Skaļrunis vēl neatbild. Dod tam mirkli, nevis spied vēlreiz: atkārtota spiešana var to atkal izslēgt. Ja tas nelīdz, ieslēdz to uz paša skaļruņa.",
   "play.errSpeakerRefused": "skaļrunis noraidīja",
   "play.errNotPlayable": "staciju nevar atskaņot",
   "play.errServer500": "stacijas kļūda",

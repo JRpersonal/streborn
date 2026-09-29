@@ -359,7 +359,7 @@
   "preset.saveFailed": "Zapis nie powiódł się: {{err}}",
   "play.errNoInternet": "brak internetu?",
   "play.errSpeakerTimeout": "głośnik nie odpowiada",
-  "play.errBoxStarting": "głośnik się jeszcze uruchamia, spróbuj za chwilę",
+  "play.errBoxStarting": "Głośnik jeszcze nie reaguje. Daj mu chwilę zamiast naciskać ponownie: wielokrotne naciśnięcie może go znowu wyłączyć. Jeśli to nie pomoże, włącz go na samym głośniku.",
   "play.errSpeakerRefused": "głośnik odrzucił połączenie",
   "play.errNotPlayable": "stacji nie można odtworzyć",
   "play.errServer500": "błąd stacji",

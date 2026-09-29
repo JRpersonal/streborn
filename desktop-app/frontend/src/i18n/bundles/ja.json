@@ -359,7 +359,7 @@
   "preset.saveFailed": "保存に失敗しました: {{err}}",
   "play.errNoInternet": "インターネットなし?",
   "play.errSpeakerTimeout": "スピーカーが応答しません",
-  "play.errBoxStarting": "スピーカーはまだ起動中です。少し待って再試行してください",
+  "play.errBoxStarting": "スピーカーがまだ応答していません。すぐに押し直さず、少し待ってください。繰り返し押すと再び電源が切れることがあります。それでも変わらないときは、スピーカー本体で電源を入れてください。",
   "play.errSpeakerRefused": "スピーカーが拒否しました",
   "play.errNotPlayable": "放送局を再生できません",
   "play.errServer500": "放送局のエラー",
