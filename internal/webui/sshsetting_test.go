@@ -24,6 +24,7 @@ func useTempNAND(t *testing.T) string {
 func postSSH(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/api/agent/ssh", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
 	r.RemoteAddr = "192.168.1.5:5000"
 	w := httptest.NewRecorder()
 	s.handleAgentSSH(w, r)
@@ -122,5 +123,92 @@ func TestTheEndpointRefusesNonLANCallers(t *testing.T) {
 	s.handleAgentSSH(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status %d, want 403", w.Code)
+	}
+}
+
+// closeNow takes back a port STR opened for this boot, but must never shut one
+// the owner opted into: the update-failure path fires it on speakers whose owner
+// deliberately runs SSH, and closing there would be STR undoing a user's choice.
+func TestCloseNowLeavesAnOptedInSpeakerOpen(t *testing.T) {
+	dir := useTempNAND(t)
+	s := quietServer("127.0.0.1")
+	marker := filepath.Join(dir, "streborn", "enable-ssh")
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := postSSH(t, s, `{"closeNow":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("closeNow removed the owner's opt-in marker: %v", err)
+	}
+	var got sshState
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Persistent {
+		t.Error("the answer no longer reports the speaker as opted in")
+	}
+}
+
+// Bose's own marker counts the same way: STR does not close a port that file
+// keeps open, and it never deletes that file.
+func TestCloseNowRespectsBosesOwnMarker(t *testing.T) {
+	dir := useTempNAND(t)
+	s := quietServer("127.0.0.1")
+	bose := filepath.Join(dir, "remote_services")
+	if err := os.WriteFile(bose, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if w := postSSH(t, s, `{"closeNow":true}`); w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	if _, err := os.Stat(bose); err != nil {
+		t.Errorf("closeNow deleted a file STR did not write: %v", err)
+	}
+}
+
+// A body with neither field is still a bad request: reading it as "close" would
+// let an empty POST shut the port.
+func TestAnEmptyBodyIsStillRejected(t *testing.T) {
+	useTempNAND(t)
+	s := quietServer("127.0.0.1")
+	for _, body := range []string{`{}`, `{"closeNow":false}`, ``} {
+		if w := postSSH(t, s, body); w.Code != http.StatusBadRequest {
+			t.Errorf("body %q: status %d, want 400", body, w.Code)
+		}
+	}
+}
+
+// A form POSTed by a page the owner visits on the LAN must not be able to open
+// root SSH on a speaker. The agent carries no CSRF token, so the content type is
+// what stands between a browser form and this marker.
+func TestABrowserFormCannotFlipTheSSHMarker(t *testing.T) {
+	dir := useTempNAND(t)
+	s := quietServer("127.0.0.1")
+	for _, ct := range []string{
+		"application/x-www-form-urlencoded",
+		"multipart/form-data; boundary=x",
+		"text/plain;charset=UTF-8",
+		"",
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/api/agent/ssh", strings.NewReader(`{"persistent":true}`))
+		r.RemoteAddr = "192.168.1.5:5000"
+		if ct != "" {
+			r.Header.Set("Content-Type", ct)
+		}
+		w := httptest.NewRecorder()
+		s.handleAgentSSH(w, r)
+		if w.Code != http.StatusUnsupportedMediaType {
+			t.Errorf("content type %q: status %d, want 415", ct, w.Code)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "streborn", "enable-ssh")); !os.IsNotExist(err) {
+		t.Error("a form-shaped POST placed the opt-in marker")
 	}
 }

@@ -20,9 +20,12 @@ package webui
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // strSSHMarker is the opt-in file run.sh and the agent bootstrap read. On NAND,
@@ -34,6 +37,21 @@ func strSSHMarker() string {
 // boseSSHMarker is Bose's own gate, which STR reads and never writes.
 func boseSSHMarker() string {
 	return filepath.Join(nvRoot, "remote_services")
+}
+
+// transientSSHMarker is the tmpfs file handleAgentEnableSSH writes. It does
+// not survive a reboot, which is the whole point of it.
+func transientSSHMarker() string {
+	return "/tmp/remote_services"
+}
+
+// stopSSHD kills the running daemon. Best-effort: a speaker that cannot stop
+// it closes the port on its next restart anyway, since the marker is gone.
+func stopSSHD(logger *slog.Logger) {
+	if out, err := exec.Command("killall", "sshd").CombinedOutput(); err != nil {
+		logger.Info("ssh setting: could not stop sshd, it closes on the next restart",
+			"err", err, "out", strings.TrimSpace(string(out)))
+	}
 }
 
 // sshState is what the app needs to draw the switch and say something true
@@ -68,11 +86,43 @@ func (s *Server) handleAgentSSH(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, currentSSHState())
 	case http.MethodPost:
+		// Require a JSON content type. The agent has no CSRF token anywhere, so a
+		// page the owner happens to visit on the same LAN can POST to it; this is
+		// repo-wide and older than this endpoint, but this endpoint is the one that
+		// flips a reboot-surviving root-SSH marker, which makes it worth closing
+		// here rather than waiting for the general fix. A plain HTML form can only
+		// send urlencoded, multipart or text/plain bodies, and anything else forces
+		// a CORS preflight that a foreign origin does not survive.
+		if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			http.Error(w, "ssh settings need a JSON body", http.StatusUnsupportedMediaType)
+			return
+		}
 		var body struct {
 			Persistent *bool `json:"persistent"`
+			// CloseNow shuts the port for this boot: it removes the transient
+			// tmpfs marker and stops sshd. STR uses it to take back the SSH it
+			// opened for a stick refresh when the update then failed before its
+			// reboot, which is what used to close the port by itself.
+			CloseNow bool `json:"closeNow"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil || body.Persistent == nil {
-			http.Error(w, "expected {\"persistent\": true|false}", http.StatusBadRequest)
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil || (body.Persistent == nil && !body.CloseNow) {
+			http.Error(w, "expected {\"persistent\": true|false} or {\"closeNow\": true}", http.StatusBadRequest)
+			return
+		}
+		if body.CloseNow {
+			// Never touch the NAND markers here: closeNow is about this boot, and
+			// a speaker deliberately opted in must stay open across it.
+			if fileExists(strSSHMarker()) || fileExists(boseSSHMarker()) {
+				s.logger.Info("ssh setting: close requested, but this speaker is opted in, so the port stays open")
+				writeJSON(w, http.StatusOK, currentSSHState())
+				return
+			}
+			if err := os.Remove(transientSSHMarker()); err != nil && !os.IsNotExist(err) {
+				s.logger.Warn("ssh setting: could not remove the transient marker", "err", err)
+			}
+			stopSSHD(s.logger)
+			s.logger.Info("ssh setting: the port opened for this boot is closed again")
+			writeJSON(w, http.StatusOK, currentSSHState())
 			return
 		}
 		if *body.Persistent {
