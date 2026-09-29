@@ -17,6 +17,7 @@ func TestPlanZoneRestore(t *testing.T) {
 		name    string
 		before  zoneRecord
 		now     zoneRecord
+		playing bool
 		restore bool
 		saysAny []string
 	}{{
@@ -28,42 +29,55 @@ func TestPlanZoneRestore(t *testing.T) {
 		name:    "a group of three that came back empty is rebuilt",
 		before:  zoneRecord{MasterIP: "192.0.2.33", MasterDevice: "dev-m", Members: three},
 		now:     zoneRecord{},
+		playing: true,
 		restore: true,
 		saysAny: []string{"dropped the group", "192.0.2.33"},
 	}, {
 		name:    "a group that survived the reboot is left alone",
 		before:  zoneRecord{MasterIP: "192.0.2.33", Members: three},
 		now:     zoneRecord{MasterIP: "192.0.2.33", Members: three},
+		playing: true,
 		restore: false,
 		saysAny: []string{"survived the update"},
 	}, {
 		name:    "a group that came back with MORE members is left alone",
 		before:  zoneRecord{MasterIP: "192.0.2.33", Members: three[:1]},
 		now:     zoneRecord{MasterIP: "192.0.2.33", Members: three},
+		playing: true,
 		restore: false,
 		saysAny: []string{"survived the update"},
 	}, {
 		name:    "a partly dropped group is rebuilt",
 		before:  zoneRecord{MasterIP: "192.0.2.33", Members: three},
 		now:     zoneRecord{MasterIP: "192.0.2.33", Members: three[:1]},
+		playing: true,
 		restore: true,
 		saysAny: []string{"1 of 3"},
+	}, {
+		name:    "a silent speaker is left alone, because rebuilding would wake the house",
+		before:  zoneRecord{MasterIP: "192.0.2.33", Members: three},
+		now:     zoneRecord{},
+		playing: false,
+		restore: false,
+		saysAny: []string{"silent", "nobody asked for"},
 	}, {
 		name:    "a stereo pair is never rebuilt as a plain zone",
 		before:  zoneRecord{MasterIP: "192.0.2.33", Members: three[:1], Stereo: true},
 		now:     zoneRecord{},
+		playing: true,
 		restore: false,
 		saysAny: []string{"stereo pair"},
 	}, {
 		name:    "a permanent group re-forms itself, so STR does not",
 		before:  zoneRecord{MasterIP: "192.0.2.33", Members: three, Permanent: true},
 		now:     zoneRecord{},
+		playing: true,
 		restore: false,
 		saysAny: []string{"permanent"},
 	}}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := planZoneRestore(c.before, c.now)
+			got := planZoneRestore(c.before, c.now, c.playing)
 			if got.Restore != c.restore {
 				t.Errorf("restore = %v, want %v (why: %q)", got.Restore, c.restore, got.Why)
 			}
@@ -146,8 +160,35 @@ func TestZoneRecordFromDocOnAStandaloneSpeaker(t *testing.T) {
 		if rec.MasterIP != "" || len(rec.Members) != 0 {
 			t.Errorf("doc %v read as a live group: %+v", doc, rec)
 		}
-		if plan := planZoneRestore(rec, zoneRecord{}); plan.Restore || plan.Why != "" {
+		if plan := planZoneRestore(rec, zoneRecord{}, true); plan.Restore || plan.Why != "" {
 			t.Errorf("doc %v produced a plan: %+v", doc, plan)
+		}
+	}
+}
+
+// The now_playing shapes taken from real diagnostic bundles. Getting this
+// backwards is the dangerous direction: a false "playing" authorises the
+// rebuild, which wakes every member of the group.
+func TestAudiblyPlayingOnRealNowPlayingShapes(t *testing.T) {
+	playing := []string{
+		`<nowPlaying deviceID="DEV#1" source="LOCAL_INTERNET_RADIO"><playStatus>PLAY_STATE</playStatus></nowPlaying>`,
+		`<nowPlaying source="SPOTIFY"><playStatus>BUFFERING_STATE</playStatus></nowPlaying>`,
+	}
+	silent := []string{
+		"",
+		`<nowPlaying deviceID="DEV#1" source="STANDBY"><ContentItem source="STANDBY" isPresetable="false" /></nowPlaying>`,
+		`<nowPlaying source="LOCAL_INTERNET_RADIO"><playStatus>STOP_STATE</playStatus></nowPlaying>`,
+		`<nowPlaying source="LOCAL_INTERNET_RADIO"><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		`<nowPlaying source="INVALID_SOURCE" />`,
+	}
+	for _, x := range playing {
+		if !audiblyPlaying(x) {
+			t.Errorf("read as silent, so the group would never be rebuilt: %s", x)
+		}
+	}
+	for _, x := range silent {
+		if audiblyPlaying(x) {
+			t.Errorf("read as playing, so a silent house would be woken: %s", x)
 		}
 	}
 }

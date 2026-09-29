@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,7 +61,7 @@ type zoneRestorePlan struct {
 //
 // before is the zone as it stood just before STR pushed the binary; now is what
 // the leader reports once the box is back.
-func planZoneRestore(before zoneRecord, now zoneRecord) zoneRestorePlan {
+func planZoneRestore(before zoneRecord, now zoneRecord, masterPlaying bool) zoneRestorePlan {
 	switch {
 	case before.MasterIP == "" || len(before.Members) == 0:
 		// The box was standing alone. Nothing was taken from the user, so
@@ -76,6 +77,21 @@ func planZoneRestore(before zoneRecord, now zoneRecord) zoneRestorePlan {
 		// A permanent group re-forms itself when the master next plays. Forming
 		// it here as well would form it twice.
 		return zoneRestorePlan{false, "zone: the group is a permanent one and re-forms itself on the next play; left alone"}
+	case !masterPlaying:
+		// Forming a zone WAKES the leader and every member, and a speaker woken
+		// with an internet-radio preset as its last source resumes that preset by
+		// itself. Two seconds later the group-forming code reads the leader as
+		// audibly playing and hands its station to everyone (#975, still open in
+		// the case where the leader cannot see that STR woke a member a moment
+		// earlier). Rebuilding a silent group would therefore start music nobody
+		// asked for, in every room, at whatever hour the update ran. A fleet
+		// update once woke a household at 03:28 that way.
+		//
+		// So the group is rebuilt only while the leader is already audible: then
+		// the zone spreads music that is playing anyway, and wakes nothing. A
+		// silent group is left dissolved, which is the safe failure: nobody is
+		// listening to it at that moment, and forming one costs a tap.
+		return zoneRestorePlan{false, "zone: the group was dropped by the update reboot, but the speaker is silent; rebuilding it would wake every member and start playback nobody asked for, so it is left alone"}
 	case len(now.Members) >= len(before.Members):
 		// The zone came through the reboot. Some firmware does hold it, and a
 		// speaker that kept its group must not be re-formed underneath the user.
@@ -83,6 +99,17 @@ func planZoneRestore(before zoneRecord, now zoneRecord) zoneRestorePlan {
 	default:
 		return zoneRestorePlan{true, fmt.Sprintf("zone: the update reboot dropped the group (%d of %d members left); rebuilding it from %s", len(now.Members), len(before.Members), before.MasterIP)}
 	}
+}
+
+// audiblyPlaying reports whether a speaker's now_playing document describes
+// sound coming out of it right now. Matched on the raw XML rather than parsed,
+// because the field is a flat attribute and the document shape differs between
+// firmware sources; a parse that silently yields the zero value would read as
+// "not playing", which is the answer that suppresses the restore, so a parser
+// mistake here would be invisible.
+func audiblyPlaying(nowPlayingXML string) bool {
+	return strings.Contains(nowPlayingXML, "PLAY_STATE") ||
+		strings.Contains(nowPlayingXML, "BUFFERING_STATE")
 }
 
 // zoneRecordFromDoc reads what GetZoneState returned into a zoneRecord. host is
@@ -193,7 +220,14 @@ func (a *App) restoreZoneAfterOTA(host string, port int) {
 		return
 	}
 	now := zoneRecordFromDoc(nowDoc, before.MasterIP)
-	plan := planZoneRestore(before, now)
+	// Ask the leader whether it is audible before deciding. A read that fails
+	// counts as silent: the restore is the action with a side effect, so an
+	// unknown answer must not authorise it.
+	npXML, nperr := a.Status(before.MasterIP, masterPort)
+	if nperr != nil {
+		a.logger.Info("zone after update: could not read what the group leader is playing, treating it as silent", "master", before.MasterIP, "err", nperr)
+	}
+	plan := planZoneRestore(before, now, audiblyPlaying(npXML))
 	if plan.Why != "" {
 		a.recordOTA(host, plan.Why)
 	}
