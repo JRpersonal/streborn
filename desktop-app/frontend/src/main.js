@@ -1,4 +1,5 @@
 import './style.css';
+import { pinPromptKey } from './worldmapinvite.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -51,6 +52,7 @@ import {
   EnsureSpotifyEngine,
   RecordOTAOutcome,
   ClassifyOTAResult,
+  RestoreGroupAfterUpdate,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,
@@ -4223,6 +4225,12 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   }
   clearOTAStuck(box);
   try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
+  // Put back the multiroom group the update reboot took apart. This is the one
+  // point EVERY confirmed update reaches, in-window or late, which is why it
+  // lives here and not next to the late-only ClassifyOTAResult call above.
+  // Fire and forget: a speaker whose group cannot be rebuilt must not hold up
+  // the rest of the update.
+  try { RestoreGroupAfterUpdate(box.host, box.port); } catch {}
   // The agent half is done and proven. Say so now rather than at the very end:
   // the engine step below can run for another ten minutes, and a user watching a
   // single speaker has earned the news that the update itself landed.
@@ -8226,10 +8234,16 @@ async function inviteWorldMapOnce(flag, variant) {
     try { already = localStorage.getItem(flag) === '1'; } catch {}
   }
   if (already) return;
-  // Persist to BOTH stores before showing, so a crash right after still suppresses it.
+  // Show FIRST, then persist, and only if it really appeared. The old order
+  // burned the flag before showing, so an invite that returned early (another
+  // one still on screen, which is what a second speaker finishing its install 20
+  // seconds later runs into) was recorded as seen and never came back for that
+  // speaker. The re-entry the old order guarded against is already covered by
+  // the synchronous worldMapInviteHandled latch and by the DOM check inside
+  // showWorldMapInvite.
+  if (!showWorldMapInvite(variant)) return;
   try { localStorage.setItem(flag, '1'); } catch {}
   try { await SetAppFlag(flag); } catch {}
-  showWorldMapInvite(variant);
 }
 
 async function maybeInviteWorldMap() {
@@ -8337,8 +8351,11 @@ function worldMapPreviewSVG() {
     + `</g></g></svg>`;
 }
 
+// Returns true when the invite was actually put on screen. The caller burns the
+// once-ever flag only on a true, because an invite that silently did not appear
+// must not count as one the user has seen.
 function showWorldMapInvite(variant) {
-  if (document.getElementById('worldMapInvite')) return;
+  if (document.getElementById('worldMapInvite')) return false;
   const headline = variant === 'all' ? t('worldMap.inviteTextAll') : t('worldMap.inviteText');
   const el = document.createElement('div');
   el.id = 'worldMapInvite';
@@ -8351,7 +8368,7 @@ function showWorldMapInvite(variant) {
     `</button>` +
     `<div class="wmi-body">` +
       `<div class="wmi-text">${escapeHtml(headline)}</div>` +
-      `<div class="wmi-count hidden" id="wmiCount"></div>` +
+      `<div class="wmi-count" id="wmiCount">${escapeHtml(t('worldMap.pinPrompt'))}</div>` +
       `<button class="btn btn-mini btn-primary wmi-share" id="wmiShare">${escapeHtml(t('worldMap.inviteBtn'))}</button>` +
     `</div>`;
   document.body.appendChild(el);
@@ -8361,14 +8378,15 @@ function showWorldMapInvite(variant) {
   // Live "rescued worldwide" count, fetched server-side from the website's pin
   // API (graceful: the line stays hidden on 0 or any error). Motivates the user
   // to add their pin and push the counter higher.
+  // The count is an upgrade to the prompt, never its precondition: the line is
+  // already on screen asking for a pin, and a number simply makes it warmer.
+  // Every failure here leaves the plain ask standing.
   (async () => {
-    try {
-      const n = await RescuedSpeakerCount();
-      if (n && n > 0) {
-        const c = el.querySelector('#wmiCount');
-        if (c) { c.textContent = t('worldMap.countLine', { n }); c.classList.remove('hidden'); }
-      }
-    } catch { /* no count, just the celebration */ }
+    let n = 0;
+    try { n = await RescuedSpeakerCount(); } catch { /* keep the plain ask */ }
+    const line = pinPromptKey(n);
+    const c = el.querySelector('#wmiCount');
+    if (c) c.textContent = t(line.key, line.params);
   })();
   const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
   const openMap = () => { try { BrowserOpenURL(worldMapURL()); } catch {} close(); };
@@ -8384,6 +8402,7 @@ function showWorldMapInvite(variant) {
   // persistent World map footer link is always there if the user wants back in, so
   // missing this window is no longer a dead end. A calmer 45 s gives time to react.
   setTimeout(close, 45000);
+  return true;
 }
 
 // spawnConfetti drops a brief, CSS-animated emoji confetti burst above the invite

@@ -150,6 +150,24 @@ export namespace main {
 	        this.lost = source["lost"];
 	    }
 	}
+	export class BoxSSHState {
+	    running: boolean;
+	    persistent: boolean;
+	    boseMarker: boolean;
+	    supported: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BoxSSHState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.persistent = source["persistent"];
+	        this.boseMarker = source["boseMarker"];
+	        this.supported = source["supported"];
+	    }
+	}
 	export class CloudRestoreResult {
 	    host: string;
 	    name: string;

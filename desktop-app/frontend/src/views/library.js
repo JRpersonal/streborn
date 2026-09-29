@@ -321,6 +321,19 @@ async function libraryPickServer(udn) {
   await libraryBrowseCurrent();
 }
 
+// looksUnreachable reports whether an error means the server did not answer,
+// as opposed to answering with a refusal. Matched on the text because the error
+// crosses the Wails boundary as a string and its type is gone by the time it
+// gets here.
+export function looksUnreachable(e) {
+  const m = String((e && e.message) || e || "").toLowerCase();
+  return [
+    'deadline exceeded', 'timeout', 'timed out', 'connection refused',
+    'actively refused', 'connection reset', 'no route to host',
+    'no such host', 'unreachable', 'eof',
+  ].some(x => m.includes(x));
+}
+
 async function libraryBrowseCurrent() {
   if (!libState.currentUDN) return;
   const top = libState.stack[libState.stack.length - 1];
@@ -370,7 +383,21 @@ async function libraryBrowseCurrent() {
       await libraryBrowseCurrent();
       return;
     }
-    showError(`BrowseLibrary: ${e}`);
+    // A sleeping or switched-off server is the commonest reason a browse
+    // fails, and until now the user got the raw Go error, "context deadline
+    // exceeded", which says nothing about what to do (shorty310, #1047 and
+    // #1065, who reached this state deliberately by letting the host sleep).
+    // Name the server and the likely reason instead; anything that is not a
+    // reachability failure still shows the underlying error, because inventing
+    // a friendly sentence for an unknown fault would hide it.
+    const srv = libState.servers.find(x => x.udn === libState.currentUDN);
+    if (looksUnreachable(e)) {
+      showError(t('library.serverAsleep', {
+        name: (srv && srv.friendlyName) || t('library.serverFallbackName'),
+      }));
+    } else {
+      showError(`BrowseLibrary: ${e}`);
+    }
   } finally {
     if (token === libState.browseToken) {
       libState.loading = false;

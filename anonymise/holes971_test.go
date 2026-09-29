@@ -291,3 +291,46 @@ func TestTheKernelBuildHostIsNotAnAccount(t *testing.T) {
 		t.Errorf("the firmware fingerprint was hashed:\n in: %s\nout: %s", in, got)
 	}
 }
+
+// Two speaker-name leaks measured in bundles that were attached to PUBLIC GitHub
+// issues, 2026-09-29. Both had been shipping for a while: the first because slog
+// quotes any value with a space in it, the second because nothing looked at the
+// firmware's own hostname at all.
+func TestSpeakerNamesDoNotLeaveInClear(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		// slog writes this whenever the chosen name contains a space, which is
+		// most of them: "Living Room", "Kinderzimmer oben".
+		{"a quoted friendlyName", `time=2026-09-28T10:00:00Z level=INFO msg="box named" friendlyName="Living Room" port=8888`},
+		{"an unquoted friendlyName", `msg="box named" friendlyName=Kitchen port=8888`},
+		{"a quoted pair name", `msg="pair formed" pair="Wohnzimmer Stereo" role=master`},
+		// The firmware's own hostname, straight out of the box syslog.
+		{"the firmware hostname", `Sep 28 11:25:11 hostname:SoundTouch-Kitchen daemon.info BoseApp: ready`},
+		{"a hostname with a hyphen in the name", `hostname:SoundTouch-Living-Room daemon.info`},
+	}
+	secrets := []string{"Living Room", "Kitchen", "Wohnzimmer Stereo", "Living-Room"}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ScrubPII(c.in)
+			for _, secret := range secrets {
+				if strings.Contains(c.in, secret) && strings.Contains(got, secret) {
+					t.Errorf("the speaker name %q survives into a public bundle:\n  in:  %s\n  out: %s", secret, c.in, got)
+				}
+			}
+			if !strings.Contains(got, "NAME#") {
+				t.Errorf("nothing was masked at all:\n  in:  %s\n  out: %s", c.in, got)
+			}
+		})
+	}
+}
+
+// The vendor default carries half the MAC, so it is an identifier too and gets
+// the same treatment.
+func TestTheVendorDefaultHostnameIsMaskedToo(t *testing.T) {
+	got := ScrubPII(`hostname:SoundTouch-FD438B daemon.info`)
+	if strings.Contains(got, "FD438B") {
+		t.Errorf("the MAC tail survives: %s", got)
+	}
+}

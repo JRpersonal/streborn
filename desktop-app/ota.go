@@ -326,6 +326,11 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		switch {
 		case err != nil:
 			a.recordOTA(host, "outcome: reported failure: "+err.Error())
+			// The stick refresh asked the speaker to open SSH, and what closes it
+			// again is this update's own reboot. There is no reboot now, so take
+			// it back. A speaker the user deliberately opted in stays open; the
+			// agent decides that, not us.
+			a.closeAgentSSH(host, port)
 			// The attempt failed before anything landed on the box, so the
 			// post-OTA pin's premise is gone; keeping it would annotate the
 			// box as mid-update for the full grace window (#775).
@@ -347,7 +352,11 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// the new version. Best-effort: a stick failure does not block the OTA. The
 	// post-OTA discovery pin is set here too so it covers the whole window.
 	a.notePostOTA(host)
-	a.refreshStick(host)
+	a.refreshStick(host, port)
+	// Remember the multiroom group this speaker is in BEFORE the push, because
+	// the reboot two steps down wipes the firmware zone and nothing else in the
+	// flow would know a group had ever existed (otazonerestore.go).
+	a.noteZoneBeforeOTA(host, port)
 
 	// Pre-v0.9.26 agents cannot SURVIVE the HTTP push: they collect an upload
 	// via growth-doubling ReadAll, so the ~13.6 MB agent body peaks near 27 MB
@@ -580,6 +589,11 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
+		// The group restore does NOT hang here. ClassifyOTAResult is reached only
+		// when the verify window expired without a confirmation, so a speaker that
+		// came back on time would never have triggered it. The frontend calls
+		// RestoreGroupAfterUpdate at the one point every confirmed update passes
+		// through (otazonerestore.go).
 	}
 	return verdict
 }
@@ -990,7 +1004,14 @@ func otaSidecarEnsureBackoff(attempt int) time.Duration {
 // (project_deploy_stick_overwrites_nand). The write is durable-flushed so it
 // survives the reboot (project_durable_stick_write). Never fatal: a failure here
 // is logged and the OTA still proceeds.
-func (a *App) refreshStick(host string) {
+func (a *App) refreshStick(host string, port int) {
+	// Open SSH first. Every step below rides on it, and since the SSH opt-in
+	// (v0.9.91) a speaker keeps its port closed unless it was asked, so this
+	// whole step would otherwise fail on every box from that release on and the
+	// stick would keep its older files. The marker the agent writes lives in
+	// tmpfs, so the OTA reboot a few steps down closes SSH again by itself; the
+	// old-agent OTA path already relies on exactly that.
+	a.enableAgentSSH(host, port)
 	// Locate the stick and make sure it is mounted before writing. Some
 	// speakers (the Portable, live 2026-06-11) do NOT auto-mount the USB stick
 	// at /media/sda1 after boot: /dev/sda1 was present and carried the full STR
@@ -1430,6 +1451,21 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 // it from the new file. Each step's failure is reported with concrete
 // context so the desktop's error toast tells the user what to look at
 // instead of "ssh: exit 1".
+// closeAgentSSH takes back an SSH port STR opened for this boot. Used when an
+// update failed before the reboot that would have closed it by itself. The
+// agent refuses on a speaker whose owner opted in, so this cannot shut a port
+// somebody wants open. Silent on an older agent that has no such endpoint:
+// there the port closes on the next restart, as it always did.
+func (a *App) closeAgentSSH(host string, port int) {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/agent/ssh", "application/json", `{"closeNow":true}`)
+	if err != nil {
+		a.logger.Info("close-ssh: the speaker did not answer, the port closes on its next restart", "host", host, "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	a.logger.Info("close-ssh: asked the speaker to close the port opened for the stick refresh", "host", host, "status", resp.StatusCode)
+}
+
 // enableAgentSSH asks the running agent to start the box's sshd via its
 // /api/agent/enable-ssh endpoint (LAN-gated agent-side; the marker it writes
 // lives in tmpfs, so sshd stays closed again after the next reboot). Used

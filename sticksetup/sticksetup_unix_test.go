@@ -2,74 +2,46 @@
 
 package sticksetup
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
-// TestMacParentWholeDiskParsesPlist locks in the regex/string parsing
-// of `diskutil info -plist` output against a representative snapshot.
-// The whole point of the fix for issue #58 is that we MUST resolve a
-// volume path to /dev/diskN before calling diskutil eraseDisk.
-func TestMacParentWholeDiskParsesPlist(t *testing.T) {
-	// Trimmed real-world output from `diskutil info -plist /Volumes/BOSE`
-	// on macOS 14. Only the keys this code inspects are kept.
-	plist := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>DeviceIdentifier</key>
-	<string>disk4s1</string>
-	<key>ParentWholeDisk</key>
-	<string>disk4</string>
-	<key>VolumeName</key>
-	<string>BOSE</string>
-</dict>
-</plist>
-`
-	got := extractParentWholeDisk(plist)
-	if got != "/dev/disk4" {
-		t.Fatalf("expected /dev/disk4, got %q", got)
-	}
-}
-
-// extractParentWholeDisk mirrors the parsing logic in
-// macParentWholeDisk but takes a plist string directly so tests can
-// run without invoking diskutil. Keep the parser in lockstep with
-// the production path.
-func extractParentWholeDisk(plist string) string {
-	idx := indexOf(plist, "<key>ParentWholeDisk</key>")
-	if idx < 0 {
-		return ""
-	}
-	tail := plist[idx:]
-	openIdx := indexOf(tail, "<string>")
-	closeIdx := indexOf(tail, "</string>")
-	if openIdx < 0 || closeIdx < 0 || closeIdx <= openIdx {
-		return ""
-	}
-	disk := trimSpace(tail[openIdx+len("<string>") : closeIdx])
-	if disk == "" {
-		return ""
-	}
-	if !hasPrefix(disk, "/dev/") {
-		disk = "/dev/" + disk
-	}
-	return disk
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
+// macOS keeps a hidden /Volumes/.timemachine firmlink. With no stick inserted it
+// was the only entry the wizard found, so it got auto-selected and the user was
+// told "this stick cannot be written to, check the small lock switch, try a
+// different USB stick" with nothing plugged in at all.
+func TestHiddenMountsAreNotOfferedAsDrives(t *testing.T) {
+	root := t.TempDir()
+	// Each mount carries a subdirectory, because on Linux scanMounts descends one
+	// level (/media/<user>/<volume>) while elsewhere the mount itself is the
+	// drive. Built this way the case is meaningful on both: on Linux it also
+	// proves the filter bites BEFORE the descent, so the hidden folder cannot
+	// contribute its children either.
+	for _, name := range []string{".timemachine", ".Spotlight-V100", "STR-STICK"} {
+		if err := os.MkdirAll(filepath.Join(root, name, "vol"), 0o755); err != nil {
+			t.Fatal(err)
 		}
 	}
-	return -1
-}
-func trimSpace(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\n' || s[0] == '\r') {
-		s = s[1:]
+	if err := os.WriteFile(filepath.Join(root, "notadir"), nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
-		s = s[:len(s)-1]
+
+	got, err := scanMounts(root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return s
+	for _, d := range got {
+		if strings.Contains(d.Path, string(filepath.Separator)+".") {
+			t.Errorf("a hidden entry is offered as a drive: %s", d.Path)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("drives = %d, want only the one real volume: %+v", len(got), got)
+	}
+	if !strings.Contains(got[0].Path, "STR-STICK") {
+		t.Errorf("the real volume is missing, got %s", got[0].Path)
+	}
 }
-func hasPrefix(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }
