@@ -291,7 +291,21 @@ var userNameLogRegex = regexp.MustCompile(`(?im)("?\b(?:username|userName|user_n
 // XML forms are covered above; this is the third, and it is how a default name
 // shipped in clear: the firmware writes friendlyName=Bose SoundTouch FD438B into
 // a state-change line, and those last six hex are half the MAC.
-var friendlyNameLogRegex = regexp.MustCompile(`(?im)(friendlyName[:=])([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+//
+// The optional quote after the separator is load-bearing. slog quotes any
+// value containing a space, so friendlyName=Kitchen was struck while
+// friendlyName="Living Room" was not: the pattern matched an empty value up
+// to the opening quote and left the name itself standing. Measured in a real
+// bundle on 2026-09-29. pair= carries a speaker name the same way.
+var friendlyNameLogRegex = regexp.MustCompile(`(?im)((?:friendlyName|pair)[:=]"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+
+// boseHostnameRegex catches the speaker name inside the firmware's own
+// hostname. The firmware builds it as SoundTouch-<the name the owner chose>,
+// and it appears in syslog lines no other pattern touches, so a bundle
+// attached to a public issue shipped "hostname:SoundTouch-Kitchen" in clear
+// (2026-09-29). The vendor default is SoundTouch-<6 hex of the MAC>, which is
+// an identifier too, so both shapes are masked.
+var boseHostnameRegex = regexp.MustCompile(`(?i)(SoundTouch-)([A-Za-z0-9_][A-Za-z0-9_-]{1,40})`)
 
 // scrubAccounts hashes the account identities that only appear as free text.
 // allDigitsRegex is a numeric service id (Deezer reports one).
@@ -395,6 +409,10 @@ func scrubAccounts(s string) string {
 	s = userNameLogRegex.ReplaceAllStringFunc(s, func(m string) string {
 		sub := userNameLogRegex.FindStringSubmatch(m)
 		return sub[1] + maskAccountValue(sub[2]) + sub[3]
+	})
+	s = boseHostnameRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := boseHostnameRegex.FindStringSubmatch(m)
+		return sub[1] + "NAME#" + hashShort(sub[2])
 	})
 	return s
 }
