@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH prieiga bus uždaryta nuo kito paleidimo",
   "library.serverFallbackName": "Muzikos serveris",
   "worldMap.pinPrompt": "🌍 Pridėk savo smeigtuką pasaulio žemėlapyje, kad matytųsi, kur vėl groja muzika.",
-  "library.serverAsleep": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą."
+  "library.serverAsleep": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą.",
+  "play.errBoxStuckTryPower": "Kolonėlė neišeina iš budėjimo režimo. Ištrauk kištuką dešimčiai sekundžių ir vėl įkišk, tai paprastai padeda.",
+  "play.errBoxStuckSendLog": "STR negali pažadinti šios kolonėlės. Kolonėlės nustatymų apačioje eksportuok diagnostiką ir atsiųsk ją iškart po bandymo."
 }

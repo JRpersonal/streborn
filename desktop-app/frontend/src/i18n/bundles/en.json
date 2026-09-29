@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH access is shut from the next restart",
   "library.serverFallbackName": "The music server",
   "worldMap.pinPrompt": "🌍 Add your pin to the world map, so it shows where the music is playing again.",
-  "library.serverAsleep": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again."
+  "library.serverAsleep": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again.",
+  "play.errBoxStuckTryPower": "The speaker will not come out of standby. Unplug it for ten seconds and plug it back in, that usually clears this.",
+  "play.errBoxStuckSendLog": "STR cannot get this speaker out of standby. Please export a diagnostic at the bottom of the speaker settings and send it, right after an attempt."
 }

@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "L’accès SSH se fermera au prochain redémarrage",
   "library.serverFallbackName": "Le serveur de musique",
   "worldMap.pinPrompt": "🌍 Ajoutez votre épingle à la carte du monde, pour montrer où la musique rejoue.",
-  "library.serverAsleep": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez."
+  "library.serverAsleep": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez.",
+  "play.errBoxStuckTryPower": "L'enceinte ne sort pas de veille. Débranchez-la dix secondes puis rebranchez-la, cela suffit presque toujours.",
+  "play.errBoxStuckSendLog": "STR n'arrive pas à sortir cette enceinte de veille. Exportez un diagnostic en bas des réglages de l'enceinte et envoyez-le, juste après un essai."
 }

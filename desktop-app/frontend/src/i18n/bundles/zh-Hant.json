@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH 存取將從下次重新啟動起關閉",
   "library.serverFallbackName": "音樂伺服器",
   "worldMap.pinPrompt": "🌍 在世界地圖上放下你的圖釘，讓大家看到哪裡又響起了音樂。",
-  "library.serverAsleep": "{{name}} 沒有回應。通常表示執行它的電腦已關機或睡眠中。喚醒它後再試一次。"
+  "library.serverAsleep": "{{name}} 沒有回應。通常表示執行它的電腦已關機或睡眠中。喚醒它後再試一次。",
+  "play.errBoxStuckTryPower": "揚聲器無法離開待機狀態。請拔掉電源插頭十秒再插回去，通常這樣就好了。",
+  "play.errBoxStuckSendLog": "STR 無法讓這台揚聲器離開待機狀態。請在揚聲器設定下方匯出診斷檔，並在嘗試後立刻寄給我。"
 }

@@ -1,5 +1,6 @@
 import './style.css';
 import { pinPromptKey } from './worldmapinvite.js';
+import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -7326,6 +7327,9 @@ async function play(slot) {
   }
   try {
     await PlaySlot(state.currentBox.host, state.currentBox.port, slot);
+    // The speaker took the command, so it is awake: any run of wake failures
+    // it had is over, and the next one starts counting from the beginning.
+    noteWakeSucceeded(state.currentBox.host);
     delete state.presetErrors[slot];
     if (wasIdle) reapplyDesiredVolume();
     refreshStatus();
@@ -7342,6 +7346,7 @@ async function play(slot) {
       if (mb && state.currentBox && mb.host !== state.currentBox.host) {
         try {
           await PlaySlot(mb.host, mb.port, slot);
+          noteWakeSucceeded(mb.host);
           delete state.presetErrors[slot];
           if (wasIdle) reapplyDesiredVolume();
           refreshStatus();
@@ -7356,7 +7361,7 @@ async function play(slot) {
     state.nowPlayState = '';
     state.nowLocation = '';
     state.optimisticUntil = 0;
-    state.presetErrors[slot] = friendlyPlayError(errStr);
+    state.presetErrors[slot] = friendlyPlayError(errStr, (state.currentBox && state.currentBox.host) || "");
     renderPresets();
     // The tile label is too small for the multi-step Spotify Connect how-to, so
     // also show it as a (localized) toast. Use the i18n help text, not the raw
@@ -7370,9 +7375,14 @@ async function play(slot) {
 
 // friendlyPlayError turns a technical error string into a short
 // user-facing hint shown on the preset label.
-function friendlyPlayError(s) {
+//
+// host is passed so a speaker that keeps refusing to wake gets a DIFFERENT
+// sentence on the third attempt than on the first. One sentence for every
+// attempt is a dead end: a reporter read the same line over eighty times
+// (2026-09-29) and had nowhere to go from it.
+function friendlyPlayError(s, host) {
   const l = String(s).toLowerCase();
-  if (l.includes('box_not_ready')) return t('play.errBoxStarting');
+  if (l.includes('box_not_ready')) return t(escalationForCount(noteNotReady(host)));
   // Spotify recall refused because the speaker was never picked as the Spotify
   // Connect device (no go-librespot credential). Key off the stable backend code,
   // not the English message, so rewording the backend never breaks this (#45).
