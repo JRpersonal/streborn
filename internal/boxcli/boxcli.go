@@ -104,6 +104,31 @@ func powerToggleHook() func() {
 // play on an idle box with no user press.
 const selfWakeGrace = 2500 * time.Millisecond
 
+// toggleEvery is how long a toggled box is left alone before a second
+// toggle is considered. `sys power` is a TOGGLE, so re-sending it at a box
+// that is slowly waking switches it back off.
+const toggleEvery = 4 * time.Second
+
+// minWakeBudget is the shortest deadline under which this function can do
+// what it is written to do. Below selfWakeGrace + toggleEvery the second
+// toggle is unreachable: the deadline fires first, every time, and a speaker
+// that ignored the first toggle is reported as still asleep after exactly one
+// attempt.
+//
+// Five of the nine callers passed 6 s, which is under that sum, so for them
+// the retry was dead code. What made it worse is that the user retries by
+// hand: each press sends another toggle at a box that may be mid-wake, which
+// is precisely what the single-toggle design avoids internally. One speaker
+// took over eighty presses in a session that way, its agent logging "box
+// stays in STANDBY after 1 attempts" each time (2026-09-29).
+//
+// A caller asking for less is raised to this rather than refused: every one
+// of them wants the box awake, and none of them chose 6 s for a reason that
+// survives knowing the arithmetic. Waking early still returns early, so this
+// costs nothing on a speaker that wakes on the first toggle, which is most
+// of them.
+const minWakeBudget = selfWakeGrace + toggleEvery + 2*time.Second
+
 // WakeAndWait makes sure the box is out of standby. It first watches briefly for
 // the box to wake on its own (a user button press already waking it); only if it
 // stays in standby does it send the `sys power` toggle, polling `/now_playing`
@@ -130,7 +155,12 @@ func WakeAndWaitAbort(ctx context.Context, host string, maxWait time.Duration, l
 		host = "127.0.0.1"
 	}
 	if maxWait <= 0 {
-		maxWait = 8 * time.Second
+		maxWait = minWakeBudget
+	}
+	if maxWait < minWakeBudget {
+		// Not an error: the caller wants the box awake, and this is what that
+		// costs when the first toggle is ignored.
+		maxWait = minWakeBudget
 	}
 	deadline := time.Now().Add(maxWait)
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -182,7 +212,6 @@ func WakeAndWaitAbort(ctx context.Context, host string, maxWait time.Duration, l
 	// recovery-blink state, which only a manual power-cycle clears (Jens' ST300,
 	// 2026-07-15). The fast SoundTouch 10/20/30 wake within the first poll, so
 	// they still take a single toggle and this changes nothing for them.
-	const toggleEvery = 4 * time.Second
 	for i := 0; ; i++ {
 		state, err := readSource(ctx, client, infoURL)
 		if err == nil && state != "STANDBY" {
