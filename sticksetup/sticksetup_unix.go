@@ -40,6 +40,14 @@ func scanMounts(root string) ([]Drive, error) {
 		if !e.IsDir() {
 			continue
 		}
+		// Skip hidden entries. macOS keeps a /Volumes/.timemachine firmlink there,
+		// and with no stick inserted it was the ONLY entry, so the wizard selected
+		// it and told the user "this stick cannot be written to, check the small
+		// lock switch, try a different USB stick" while no stick was plugged in at
+		// all. No removable volume a user would pick is named with a leading dot.
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
 		path := filepath.Join(root, e.Name())
 		// Subdirectory at /media/<user>/<volume>
 		if runtime.GOOS == "linux" {
