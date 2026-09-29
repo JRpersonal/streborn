@@ -52,6 +52,7 @@ import {
   EnsureSpotifyEngine,
   RecordOTAOutcome,
   ClassifyOTAResult,
+  RestoreGroupAfterUpdate,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,
@@ -4224,6 +4225,12 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   }
   clearOTAStuck(box);
   try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
+  // Put back the multiroom group the update reboot took apart. This is the one
+  // point EVERY confirmed update reaches, in-window or late, which is why it
+  // lives here and not next to the late-only ClassifyOTAResult call above.
+  // Fire and forget: a speaker whose group cannot be rebuilt must not hold up
+  // the rest of the update.
+  try { RestoreGroupAfterUpdate(box.host, box.port); } catch {}
   // The agent half is done and proven. Say so now rather than at the very end:
   // the engine step below can run for another ten minutes, and a user watching a
   // single speaker has earned the news that the update itself landed.

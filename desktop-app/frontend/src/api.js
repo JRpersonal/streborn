@@ -92,6 +92,7 @@ export {
   SetAirplayOpt,
   BoxSSHStatus,
   SetBoxSSHPersistent,
+  RestoreGroupAfterUpdate,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
   GetDisplayTrack,

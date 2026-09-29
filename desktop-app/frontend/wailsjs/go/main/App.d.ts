@@ -217,6 +217,8 @@ export function ResolveUpdateAsset(arg1:string):Promise<main.UpdateAsset>;
 
 export function RestoreBoxSnapshot(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
+export function RestoreGroupAfterUpdate(arg1:string,arg2:number):Promise<void>;
+
 export function RestoreSTRCloud(arg1:Array<main.CloudRestoreTarget>):Promise<Array<main.CloudRestoreResult>>;
 
 export function Resume(arg1:string,arg2:number):Promise<void>;

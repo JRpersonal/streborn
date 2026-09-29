@@ -426,6 +426,10 @@ export function RestoreBoxSnapshot(arg1, arg2, arg3) {
   return window['go']['main']['App']['RestoreBoxSnapshot'](arg1, arg2, arg3);
 }
 
+export function RestoreGroupAfterUpdate(arg1, arg2) {
+  return window['go']['main']['App']['RestoreGroupAfterUpdate'](arg1, arg2);
+}
+
 export function RestoreSTRCloud(arg1) {
   return window['go']['main']['App']['RestoreSTRCloud'](arg1);
 }

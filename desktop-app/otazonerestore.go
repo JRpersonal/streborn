@@ -46,6 +46,12 @@ var zonesBeforeOTA struct {
 	m map[string]zoneRecord
 }
 
+// zoneRecordTTL bounds how long a remembered zone stays worth acting on. An
+// update that never confirmed leaves its record behind, and without this a
+// later update of the same speaker in the same session would rebuild a group
+// the user may have dissolved hours ago.
+const zoneRecordTTL = 30 * time.Minute
+
 // zoneRestorePlan is what should happen to a zone after the box came back, and
 // why. The why is not decoration: it goes into the OTA journal, so a report
 // three weeks later still says whether STR rebuilt a group, deliberately left
@@ -73,9 +79,16 @@ func planZoneRestore(before zoneRecord, now zoneRecord, masterPlaying bool) zone
 		// has its own re-form path. Rebuilding it as a plain zone would leave a
 		// pair playing in mono and a one-sided leftover to clean up.
 		return zoneRestorePlan{false, "zone: the speaker was in a stereo pair, which re-forms through its own path; left alone"}
-	case before.Permanent:
+	case before.Permanent || now.Permanent:
 		// A permanent group re-forms itself when the master next plays. Forming
 		// it here as well would form it twice.
+		//
+		// The LEADER's flag matters as much as the updated speaker's. Updating a
+		// FOLLOWER of a permanent group reads permanent=false from that follower,
+		// and re-forming from there posts the group without Permanent and without
+		// its Name, overwriting the leader's stored permanent template with an
+		// ordinary one. The user would lose the durable choice by updating the
+		// wrong speaker.
 		return zoneRestorePlan{false, "zone: the group is a permanent one and re-forms itself on the next play; left alone"}
 	case !masterPlaying:
 		// Forming a zone WAKES the leader and every member, and a speaker woken
@@ -185,6 +198,10 @@ func (a *App) noteZoneBeforeOTA(host string, port int) {
 	rec := zoneRecordFromDoc(doc, host)
 	rec.At = time.Now()
 	if rec.MasterIP == "" || len(rec.Members) == 0 {
+		// This speaker stands alone NOW, so any record from an earlier update in
+		// this session describes a group that no longer exists. Returning without
+		// clearing it would let the next confirmed update rebuild it.
+		forgetZoneBeforeOTA(host)
 		return
 	}
 	zonesBeforeOTA.Lock()
@@ -197,17 +214,40 @@ func (a *App) noteZoneBeforeOTA(host string, port int) {
 	a.logger.Info("zone before update: remembered the group so the update reboot cannot lose it", "host", host, "master", rec.MasterIP, "members", len(rec.Members), "permanent", rec.Permanent)
 }
 
-// restoreZoneAfterOTA rebuilds the zone the update reboot dropped. Called once
-// the box is CONFIRMED back on the new build, because a box that never came back
-// has a bigger problem than its group membership.
+// forgetZoneBeforeOTA drops the remembered zone for a host. Consuming the record
+// is a decision in itself, so it happens only where one was actually reached.
+func forgetZoneBeforeOTA(host string) {
+	zonesBeforeOTA.Lock()
+	delete(zonesBeforeOTA.m, host)
+	zonesBeforeOTA.Unlock()
+}
+
+// RestoreGroupAfterUpdate rebuilds the multiroom group the update reboot
+// dropped. Bound for the frontend, which calls it at the ONE point every
+// confirmed update passes through, whether the speaker came back inside the
+// verify window or late.
+//
+// The first version hung off ClassifyOTAResult, which the frontend calls only
+// when the verify window expired WITHOUT a confirmation. A speaker that came
+// back on time never reached it, which is every normal update: the fix would
+// have done nothing for almost everybody, and doing nothing looks exactly like
+// the bug it was written to fix.
+func (a *App) RestoreGroupAfterUpdate(host string, port int) {
+	a.restoreZoneAfterOTA(host, port)
+}
+
+// restoreZoneAfterOTA rebuilds the zone the update reboot dropped.
 func (a *App) restoreZoneAfterOTA(host string, port int) {
 	zonesBeforeOTA.Lock()
 	before, ok := zonesBeforeOTA.m[host]
-	if ok {
-		delete(zonesBeforeOTA.m, host)
-	}
 	zonesBeforeOTA.Unlock()
 	if !ok {
+		return
+	}
+	if !before.At.IsZero() && time.Since(before.At) > zoneRecordTTL {
+		forgetZoneBeforeOTA(host)
+		a.logger.Info("zone after update: the remembered group is too old to act on, dropping it",
+			"host", host, "age", time.Since(before.At).Round(time.Second).String())
 		return
 	}
 	// Ask the LEADER what the group looks like now, not the box that rebooted: a
@@ -216,7 +256,12 @@ func (a *App) restoreZoneAfterOTA(host string, port int) {
 	masterPort := a.agentPortInUse(before.MasterIP, port)
 	nowDoc, err := a.GetZoneState(before.MasterIP, masterPort)
 	if err != nil {
-		a.logger.Info("zone after update: the group leader did not answer, leaving the group alone", "host", host, "master", before.MasterIP, "err", err)
+		// The record is KEPT. A leader that is itself mid-update answers nothing
+		// for a few minutes, and consuming the record here would lose the group
+		// for good with only a log line to show for it. The next confirmed update
+		// in this session retries; the TTL above stops it living forever.
+		a.logger.Info("zone after update: the group leader did not answer, keeping the remembered group for a later attempt",
+			"host", host, "master", before.MasterIP, "err", err)
 		return
 	}
 	now := zoneRecordFromDoc(nowDoc, before.MasterIP)
@@ -225,25 +270,68 @@ func (a *App) restoreZoneAfterOTA(host string, port int) {
 	// unknown answer must not authorise it.
 	npXML, nperr := a.Status(before.MasterIP, masterPort)
 	if nperr != nil {
-		a.logger.Info("zone after update: could not read what the group leader is playing, treating it as silent", "master", before.MasterIP, "err", nperr)
+		a.logger.Info("zone after update: could not read what the group leader is playing, treating it as silent",
+			"master", before.MasterIP, "err", nperr)
 	}
 	plan := planZoneRestore(before, now, audiblyPlaying(npXML))
+	// A decision was reached, so the record has done its job either way.
+	forgetZoneBeforeOTA(host)
 	if plan.Why != "" {
 		a.recordOTA(host, plan.Why)
 	}
 	if !plan.Restore {
 		return
 	}
-	a.logger.Info("zone after update: rebuilding the group the update reboot dropped", "host", host, "master", before.MasterIP, "members", len(before.Members))
+	a.logger.Info("zone after update: rebuilding the group the update reboot dropped",
+		"host", host, "master", before.MasterIP, "members", len(before.Members))
 	spec := ZoneSpec{
 		Master: ZoneMember{DeviceID: before.MasterDevice, IP: before.MasterIP},
 		Slaves: before.slavesFor(),
 		Mode:   "native",
 	}
-	if _, ferr := a.FormZone(before.MasterIP, masterPort, spec); ferr != nil {
+	out, ferr := a.FormZone(before.MasterIP, masterPort, spec)
+	if ferr != nil {
 		a.recordOTA(host, "zone: rebuilding the group after the update failed: "+ferr.Error())
-		a.logger.Warn("zone after update: could not rebuild the group", "host", host, "master", before.MasterIP, "err", ferr)
+		a.logger.Warn("zone after update: could not rebuild the group",
+			"host", host, "master", before.MasterIP, "err", ferr)
+		return
+	}
+	// A nil error is NOT success. FormZone refuses in four shapes without
+	// returning one: no slave ready, the leader is half of a stereo pair, every
+	// member is, or the agent itself answered ok:false. Journalling "the group is
+	// back together" on any of those would put a false success into the one
+	// record a later report gets read from.
+	if why, good := formZoneSucceeded(out); !good {
+		a.recordOTA(host, "zone: rebuilding the group after the update did not take: "+why)
+		a.logger.Warn("zone after update: the group was not rebuilt",
+			"host", host, "master", before.MasterIP, "why", why, "result", out)
 		return
 	}
 	a.recordOTA(host, "zone: the group is back together after the update")
+}
+
+// formZoneSucceeded reads FormZone's result document. FormZone answers a nil
+// error with ok:false whenever the readiness gate or the firmware refused, so
+// the error alone cannot tell success from a polite no.
+func formZoneSucceeded(out map[string]any) (why string, ok bool) {
+	if out == nil {
+		return "the speaker returned no result", false
+	}
+	if v, has := out["ok"].(bool); has && !v {
+		switch nr := out["notReady"].(type) {
+		case []string:
+			if len(nr) > 0 {
+				return fmt.Sprintf("%d member(s) were still starting", len(nr)), false
+			}
+		case []any:
+			if len(nr) > 0 {
+				return fmt.Sprintf("%d member(s) were still starting", len(nr)), false
+			}
+		}
+		return "the speaker refused to form the group", false
+	}
+	if m, has := out["members"].([]any); has && len(m) == 0 {
+		return "the group came back with no members", false
+	}
+	return "", true
 }
