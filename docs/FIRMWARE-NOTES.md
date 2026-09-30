@@ -534,6 +534,68 @@ of times an hour instead of rebooting at minute 20. Kill switch:
 `/mnt/nv/streborn/spotify-chain-mb` = `0`. The memory guard stays as the
 backstop.
 
+## NetManager owns wpa_supplicant, and the conf file holds no credential
+
+Measured on a SoundTouch 10 (rhino/sm2, FW 27.0.6) on 2026-09-30.
+
+The stock `/etc/wpa_supplicant.conf` is a vendor template carrying thirteen
+global directives and **not one `network={}` block**:
+
+```
+ap_scan  config_methods  ctrl_interface  device_name  disassoc_low_ack
+driver_param  eapol_version  fast_reauth  manufacturer  model_name
+model_number  serial_number  update_config
+```
+
+Yet the speaker is associated, and `wpa_cli list_networks` reports a network as
+`[CURRENT]`. Both are true at once because **NetManager is wpa_supplicant's
+parent process**: it spawns it with `-c /etc/wpa_supplicant.conf`, then injects
+its own stored profile into the running daemon over the control socket. The
+credential lives in NetManager's store
+(`/mnt/nv/BoseApp-Persistence/*/NetworkProfiles.xml`, passphrase AES-encrypted),
+never in the conf file.
+
+```
+1868  NetManager --autoswitching=true
+2381  wpa_supplicant -i wlan0 -s -c /etc/wpa_supplicant.conf -D nl80211
+      PPid: 1868
+/var/run/wpa_supplicant/   wlan0, p2p-dev-wlan0
+```
+
+### What follows for anything that writes that file
+
+- **It is a template, not a store.** Rewriting it from scratch drops whatever
+  the speaker had. Six of those globals are the box's WPS/P2P identity
+  (`device_name`, `manufacturer`, `model_name`, `model_number`,
+  `serial_number`, `config_methods`) and five are radio behaviour (`ap_scan`,
+  `driver_param`, `disassoc_low_ack`, `eapol_version`, `fast_reauth`).
+  `buildWPAConfigFrom` in `internal/webui/wlan.go` preserves them and replaces
+  only the network blocks.
+- **The write does not win on its own.** NetManager's injected profiles carry
+  the firmware's ranking, and an added block at the implicit priority 0 loses
+  the selection (#697). Hence the explicit `priority=10`, plus
+  `assert_profile_priority` in `run.sh` and `raiseFirmwareProfilePriority` in
+  the agent, which reorder the XML store itself.
+- **`ctrl_interface` accepts both spellings.** Bose writes the bare path
+  `/var/run/wpa_supplicant`; the `DIR=... GROUP=root` form is the explicit
+  equivalent. `GROUP=` cannot lock the firmware out of the socket, because
+  NetManager runs as root.
+- **`/etc` is read-only on rhino/scm**, so a write lands as a bind mount over
+  the path and does not survive a reboot. `writeWPAConfAt` tries the direct
+  write first and falls back to the mount.
+- **Restarting wpa_supplicant replaces NetManager's child** with one parented
+  elsewhere. That is deliberate in the M3 escalation stage, which exists
+  because a bare `reconfigure` does not dislodge a config NetManager reverted
+  (#288). It should not happen anywhere else by accident.
+
+### Probing this yourself
+
+`wpa_cli` lives in `/usr/local/sbin`, which a non-interactive SSH session's
+PATH does not include: `ssh root@box "wpa_cli status"` answers `command not
+found` on a box where the tool is present and working. Use absolute paths. The
+agent's own PATH differs again, so a probe shell can never tell you what
+`exec.LookPath` finds.
+
 ## See also
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component map, ports,
