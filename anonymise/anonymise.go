@@ -292,12 +292,21 @@ var userNameLogRegex = regexp.MustCompile(`(?im)("?\b(?:username|userName|user_n
 // shipped in clear: the firmware writes friendlyName=Bose SoundTouch FD438B into
 // a state-change line, and those last six hex are half the MAC.
 //
+// The leading word boundary is load-bearing, and leaving it out was a
+// regression of mine on the day this line was written: a bare `pair`
+// alternative matches INSIDE `repair:`, so every log message whose prefix
+// ends in those five letters had its text replaced by a hash. "trust store
+// repair:", "wrong-state repair:", "resume repair:", "autopair:", "unpair:"
+// -- over twenty messages across four files, and exactly the ones that say
+// whether a repair worked. Caught the same evening, in a bundle whose erased
+// ERROR was the line reporting that the CA store could NOT be repaired.
+//
 // The optional quote after the separator is load-bearing. slog quotes any
 // value containing a space, so friendlyName=Kitchen was struck while
 // friendlyName="Living Room" was not: the pattern matched an empty value up
 // to the opening quote and left the name itself standing. Measured in a real
 // bundle on 2026-09-29. pair= carries a speaker name the same way.
-var friendlyNameLogRegex = regexp.MustCompile(`(?im)((?:friendlyName|pair)[:=]"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+var friendlyNameLogRegex = regexp.MustCompile(`(?im)(\b(?:friendlyName|pair)[:=]"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
 
 // boseHostnameRegex catches the speaker name inside the firmware's own
 // hostname. The firmware builds it as SoundTouch-<the name the owner chose>,

@@ -34,6 +34,16 @@ type Server struct {
 	sources  []SourceItem
 	deviceID string
 
+	// partnerGoneIP/ID name the OTHER half of a restored stereo pair when it did
+	// not answer at agent start. The firmware refuses every source activation
+	// while a pair is incomplete, so a speaker in this state cannot play at all
+	// and the owner otherwise sees only "the speaker is not responding"
+	// (measured 2026-09-29, partner absent eighteen days). Recorded, never acted
+	// on: dissolving a pair on one missed probe would take a working setup away
+	// from somebody whose partner was merely restarting.
+	partnerGoneIP string
+	partnerGoneID string
+
 	// presetSource, when set, provides the preset list live on every request
 	// (wired to the stick preset store). See WithPresetSource.
 	presetSource func() []Preset

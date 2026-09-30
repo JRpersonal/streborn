@@ -334,3 +334,46 @@ func TestTheVendorDefaultHostnameIsMaskedToo(t *testing.T) {
 		t.Errorf("the MAC tail survives: %s", got)
 	}
 }
+
+// My own regression, introduced the same day. Adding `pair` as a bare
+// alternative to the name pattern made it match inside `repair:`, so every log
+// message whose prefix ends in those five letters had its text replaced by a
+// hash: "trust store repair:", "wrong-state repair:", "resume repair:",
+// "autopair:", "unpair:". Over twenty messages across four files.
+//
+// The damage is to me, not the user: a bundle arrives with the trust-store and
+// wrong-state verdicts blanked, which are exactly the lines that say whether a
+// repair worked.
+func TestRepairMessagesSurviveTheNameScrubber(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		keep string
+	}{
+		{"trust store repair", `msg="trust store repair: the firmware bundle holds no public roots either" restoreErr=""`, "firmware bundle holds no public roots"},
+		{"wrong-state repair", `msg="wrong-state repair: the box answered STOP" slot=3`, "the box answered STOP"},
+		{"resume repair", `msg="resume repair: recalling the preset cleanly" slot=1`, "recalling the preset cleanly"},
+		{"autopair", `msg="autopair: the box accepted the account" attempt=2`, "the box accepted the account"},
+		{"unpair", `msg="unpair: clearing the stored group" role=RIGHT`, "clearing the stored group"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ScrubPII(c.in)
+			if !strings.Contains(got, c.keep) {
+				t.Errorf("the message text was scrubbed away:\n  in:  %s\n  out: %s", c.in, got)
+			}
+		})
+	}
+}
+
+// And the thing the pattern is actually for must keep working: a genuine pair
+// attribute carries a speaker name and has to be masked.
+func TestAGenuinePairAttributeIsStillMasked(t *testing.T) {
+	got := ScrubPII(`msg="pair formed" pair="Wohnzimmer Stereo" role=master`)
+	if strings.Contains(got, "Wohnzimmer Stereo") {
+		t.Errorf("the pair name survives: %s", got)
+	}
+	if !strings.Contains(got, "NAME#") {
+		t.Errorf("nothing was masked: %s", got)
+	}
+}
