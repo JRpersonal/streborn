@@ -1950,14 +1950,117 @@ current_sta_lease() {
     fi
     return 1
 }
+current_sta_ssid() {
+    # Prints the network the box is ACTUALLY associated to, or nothing.
+    #
+    # Two sources, because the two chassis answer differently (both measured on
+    # a five-box fleet, 2026-09-30):
+    #
+    #   sm2/rhino   wpa_supplicant is running and wpa_cli status carries
+    #               "ssid=<name>". This is the supplicant's own selection, so it
+    #               is the authority wherever it exists.
+    #   scm/BCO     no wpa_cli at all; the chip is presented as eth0 and
+    #               /networkInfo reports it as an ETHERNET interface. It fills
+    #               in the ssid attribute anyway, which is what makes this
+    #               answerable on an ST30 or a Portable.
+    #
+    # Deliberately does its OWN wpa_cli lookup rather than reading HAS_WPA_CLI:
+    # that variable is set inside the WLAN subshell and is not visible to every
+    # caller. Note wpa_cli can live in /usr/local/sbin, so an absolute fallback
+    # follows the PATH lookup.
+    _css_cli=""
+    if command -v wpa_cli >/dev/null 2>&1; then
+        _css_cli=wpa_cli
+    elif [ -x /usr/local/sbin/wpa_cli ]; then
+        _css_cli=/usr/local/sbin/wpa_cli
+    fi
+    # STR_SYSFS_ROOT is a test seam and nothing else: on the speaker it is
+    # always /sys/class/net. Same idea as writeWPAConfAt on the Go side, whose
+    # path is injectable so the write path can be exercised off-box.
+    _css_sys="${STR_SYSFS_ROOT:-/sys/class/net}"
+    if [ -n "$_css_cli" ]; then
+        for _css_if in wlan0 wlan1; do
+            [ -d "$_css_sys/$_css_if" ] || continue
+            _css=$("$_css_cli" -i "$_css_if" status 2>/dev/null | sed -n 's/^ssid=\(.*\)$/\1/p' | head -1)
+            if [ -n "$_css" ]; then printf '%s' "$_css"; return 0; fi
+        done
+    fi
+    # The ssid attribute of the first interface that reports one. Safe on the
+    # coprocessor chassis, which has exactly one; on a wpa chassis the branch
+    # above answered already, so a DISCONNECTED second radio (which also
+    # carries a name) cannot win here.
+    if command -v wget >/dev/null 2>&1; then
+        _css=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null \
+            | sed -n 's/.*ssid="\([^"]*\)".*/\1/p' | head -1)
+        if [ -n "$_css" ]; then printf '%s' "$_css"; return 0; fi
+    fi
+    return 1
+}
+forget_sta_lease() {
+    # Drops the last-known-good lease so the next read has to come from a live
+    # source. Every verdict about a stage that just touched the radio needs
+    # this; the REDIRECT watchdog deliberately does NOT, because there the
+    # last-known-good IP is the right answer while /networkInfo is momentarily
+    # mute (spotty #90).
+    rm -f /tmp/.streborn-last-lease 2>/dev/null || true
+}
+lease_is_on_ssid() {
+    # $1 = wanted network. True when the box holds a real lease and that lease
+    # belongs to $1. Used where there is no budget to wait (M6's post-teardown
+    # checks), so it forgets the cache first: the whole question there is
+    # whether the address survived the teardown.
+    forget_sta_lease
+    current_sta_lease >/dev/null || return 1
+    [ -z "${1:-}" ] && return 0
+    _lis=$(current_sta_ssid 2>/dev/null) || _lis=""
+    # Nothing on this box can name the network: keep the old, lenient verdict
+    # rather than strand a speaker over a missing diagnostic.
+    [ -z "$_lis" ] && return 0
+    [ "$_lis" = "${1:-}" ]
+}
 wait_for_sta_lease() {
     # $1 = total seconds to wait, polling every 5s.
+    # $2 = OPTIONAL wanted network. When given, a lease alone is not a pass:
+    #      it has to be a lease on THAT network.
+    #
+    # Without $2 this is the old behaviour, kept for the callers where no
+    # network is meant (the hands-off replay probe, ethernet-only boxes).
     _budget="$1"
+    # ${2:-} not "$2": the no-network form passes nothing, and a caller
+    # running under `set -u` would abort on an unset positional.
+    _want="${2:-}"
+    _saw_unnameable=""
+    if [ -n "$_want" ]; then
+        # This call exists to produce a FRESH verdict about a stage that just
+        # touched the radio, so a cached address from before it ran must not
+        # answer for it.
+        forget_sta_lease
+    fi
     while [ "$_budget" -gt 0 ]; do
-        if current_sta_lease >/dev/null; then return 0; fi
+        if current_sta_lease >/dev/null; then
+            if [ -z "$_want" ]; then return 0; fi
+            _got=$(current_sta_ssid 2>/dev/null) || _got=""
+            if [ -n "$_got" ] && [ "$_got" = "$_want" ]; then return 0; fi
+            if [ -z "$_got" ]; then
+                # Remember it, but keep waiting: a source that is mute at boot
+                # (BoseApp under load) often answers a few seconds later, and
+                # the whole point is to spend the budget trying to CONFIRM.
+                _saw_unnameable=1
+            fi
+        fi
         sleep 5
         _budget=$((_budget - 5))
     done
+    if [ -n "$_saw_unnameable" ]; then
+        # A lease was held the whole time and nothing could say which network
+        # it belongs to. Pass, because refusing would strand a speaker over a
+        # missing diagnostic, but mark the run so the summary does not go on to
+        # re-rank the firmware's profiles on an unconfirmed match, and so the
+        # log stops claiming more than it knows.
+        WLAN_VERDICT_UNVERIFIED=1
+        setup_log "lease held but no source on this box can name the network: accepting the stage UNVERIFIED (wanted name_length=${#_want})"
+        return 0
+    fi
     return 1
 }
 
@@ -2034,6 +2137,19 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         *replay*)
             if wait_for_sta_lease 90; then
                 setup_log "hands-off: box came online by itself ($(current_sta_lease 2>/dev/null)) - no boot-time Wi-Fi provisioning (v0.9.7)"
+                # Whether that is the network the user last asked for is a
+                # different question, and until now an invisible one: a box
+                # sitting on the OLD network with new credentials in NAND
+                # looks identical here to one that did what it was told.
+                # Behaviour is unchanged on purpose (this branch is
+                # hands-off by design, see the comment above and #270); it
+                # just stops being undiagnosable.
+                _ho_live=$(current_sta_ssid 2>/dev/null) || _ho_live=""
+                if [ -z "$_ho_live" ]; then
+                    setup_log "hands-off: cannot name the live network on this box, intent match unknown"
+                elif [ -n "${SSID:-}" ] && [ "$_ho_live" != "$SSID" ]; then
+                    setup_log "hands-off: MISMATCH, the box is on a different network than the stored intent (live name_length=${#_ho_live} intent name_length=${#SSID}); staying hands-off"
+                fi
                 # LAN-cable-only exception: a box that is online WITHOUT any
                 # stored Wi-Fi profile gets the known network seeded as a
                 # failover, non-destructively (see wifi_failover_seed). A
@@ -2648,7 +2764,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 "http://$JB_HIT/goform/aformHandlerConfigureProfileSettings" 2>&1)
             setup_log "M_jukebox: goform rc=$? resp='$(printf '%s' "$JB_RESP" | tr -d '\r\n' | head -c 200)' (a reset/timeout here is the EXPECTED setup-AP teardown)"
             persist_wlan_creds
-            if wait_for_sta_lease 90; then
+            if wait_for_sta_lease 90 "$SSID"; then
                 WINNER="M_jukebox-goform"
                 setup_log "M_jukebox: result=YES lease=$(current_sta_lease) via on-box GoForm @ $JB_HIT"
             else
@@ -2965,7 +3081,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
             setup_log "M1: API persisted profile (NetManager DB updated)"
         fi
-        if wait_for_sta_lease 60; then
+        if wait_for_sta_lease 60 "$SSID"; then
             RES=$(current_sta_lease)
             WINNER="M1-http"
             setup_log "M1: result=YES lease=$RES"
@@ -3033,7 +3149,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             # profile to associate. If it does we treat as M0a-late
             # and refuse to provision at all. If not, fall through
             # to M3..M6 which do not wipe the profile DB.
-            if wait_for_sta_lease 90; then
+            if wait_for_sta_lease 90 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M0a-late"
                 setup_log "M2: STA lease appeared during deferred wait — $RES (treating as already-on-wifi)"
@@ -3102,7 +3218,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                || echo "$TAP_OUT" | grep -qiF "mode set to auto"; then
                 setup_log "M2: NetManager accepted the sequence"
             fi
-            if wait_for_sta_lease 60; then
+            if wait_for_sta_lease 60 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M2-tap"
                 setup_log "M2: result=YES lease=$RES"
@@ -3160,7 +3276,7 @@ WPAEOF
             else
                 setup_log "M3: wpa_supplicant not running (Bose may bring it up later)"
             fi
-            if wait_for_sta_lease 30; then
+            if wait_for_sta_lease 30 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M3-confwrite"
                 setup_log "M3: result=YES lease=$RES"
@@ -3206,7 +3322,7 @@ WPAEOF
                     fi
                 fi
             fi
-            if wait_for_sta_lease 30; then
+            if wait_for_sta_lease 30 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M4-wpacli"
                 setup_log "M4: result=YES lease=$RES"
@@ -3243,7 +3359,7 @@ WPAEOF
                 ) | $TAP_CMD 2>&1
             )
             setup_log "M5: response (first 400c)='$(echo "$NUDGE" | tr '\n' '|' | head -c 400)'"
-            if wait_for_sta_lease 30; then
+            if wait_for_sta_lease 30 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M5-tapnudge"
                 setup_log "M5: result=YES lease=$RES"
@@ -3286,7 +3402,7 @@ WPAEOF
             fi
             for wait in 6 10 15 20; do
                 sleep "$wait"
-                if current_sta_lease >/dev/null; then
+                if lease_is_on_ssid "$SSID"; then
                     setup_log "M6: result=YES lease=$(current_sta_lease) after teardown"
                     return 0
                 fi
@@ -3299,7 +3415,7 @@ WPAEOF
                     sleep 1
                 done
                 sleep 6
-                if current_sta_lease >/dev/null; then
+                if lease_is_on_ssid "$SSID"; then
                     setup_log "M6-burst: result=YES lease=$(current_sta_lease)"
                     return 0
                 fi
@@ -3308,7 +3424,7 @@ WPAEOF
                     printf 'sys presetkey %d p\n' "$slot" | nc -w 2 127.0.0.1 17000 >/dev/null 2>&1
                     setup_log "M6-burst: slot $slot sent"
                     sleep 12
-                    if current_sta_lease >/dev/null; then
+                    if lease_is_on_ssid "$SSID"; then
                         setup_log "M6-burst: result=YES lease=$(current_sta_lease) after slot $slot"
                         return 0
                     fi
@@ -3354,7 +3470,20 @@ WPAEOF
     # TFR left the box with no credential source at all.
     case "$WINNER" in
         none|ethernet-only) ;;
-        *) persist_wlan_creds; assert_profile_priority ;;
+        *)
+            persist_wlan_creds
+            # assert_profile_priority demotes every profile whose name is
+            # not the wanted one to priority="0". On a win nothing could
+            # confirm, that would stamp 0 on the only profile the box has,
+            # which is worse than leaving the ranking alone. The creds are
+            # still persisted: losing them is the unrecoverable Setup-AP
+            # trap described above.
+            if [ -n "${WLAN_VERDICT_UNVERIFIED:-}" ]; then
+                setup_log "profile-priority: SKIPPED, the winning stage could not be confirmed on the wanted network (winner=$WINNER)"
+            else
+                assert_profile_priority
+            fi
+            ;;
     esac
 
     # Last-resort AirplayConfiguration reboot for NON-BCO boxes: if no
@@ -4290,7 +4419,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip current_sta_lease iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done
