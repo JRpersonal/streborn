@@ -209,10 +209,14 @@ jobs:
       # told to join", so a network change reported success while the speaker
       # stayed put. The harness extracts the functions straight out of run.sh,
       # stubs their inputs and asserts the answers, under the speaker's own
-      # shell. It also guards the hands-off replay probe, which must keep
+      # shell. They also guard the hands-off replay probe, which must keep
       # passing on ANY lease (#270).
-      - name: wlan provisioning verdict behaviour
-        run: busybox sh usb-stick/tests/wlan_verdict_test.sh
+      - name: on-box script behaviour
+        run: |
+          for t in usb-stick/tests/*_test.sh; do
+            echo "--- $t"
+            busybox sh "$t"
+          done
 
   # Lint the workflow files themselves: expression typos, dangling
   # needs/outputs references and invalid runner labels surface at PR

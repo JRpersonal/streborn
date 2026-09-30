@@ -1005,14 +1005,26 @@ fi
 # heals a box whose NAND rc.local is an older release that skipped
 # the self-update block entirely.
 if [ -f "$STICK/rc.local" ]; then
-    cp "$STICK/rc.local" /mnt/nv/rc.local 2>/dev/null
-    chmod +x /mnt/nv/rc.local 2>/dev/null
-    log "redeployed /mnt/nv/rc.local from stick (effective next boot)"
+    install_boot_script "$STICK/rc.local" /mnt/nv/rc.local
+    case $? in
+        0) log "redeployed /mnt/nv/rc.local from stick (effective next boot)" ;;
+        2) log "did NOT redeploy /mnt/nv/rc.local: the stick copy is far shorter than the working one, kept the working one" ;;
+        *) log "did NOT redeploy /mnt/nv/rc.local: the stick copy did not validate, kept the working one" ;;
+    esac
 fi
 if [ -f "$STICK/run.sh" ]; then
-    cp "$STICK/run.sh" /mnt/nv/streborn/run-override.sh 2>/dev/null
-    chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
-    log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
+    # This replaces the script THIS shell is executing from. Safe only
+    # because install_boot_script renames rather than truncates: the running
+    # interpreter keeps reading the old inode through its open fd. A plain cp
+    # here shifted every byte offset past this point whenever the stick copy
+    # differed in size, and the boot died mid-statement before it ever
+    # reached Wi-Fi provisioning or start_agent.
+    install_boot_script "$STICK/run.sh" /mnt/nv/streborn/run-override.sh
+    case $? in
+        0) log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)" ;;
+        2) log "did NOT redeploy run-override.sh: the stick copy is far shorter than the working one, kept the working one" ;;
+        *) log "did NOT redeploy run-override.sh: the stick copy did not validate, kept the working one" ;;
+    esac
 fi
 
 # === Early low-power Wi-Fi one-shot (BEFORE the heavy stick->NAND copy) ===
@@ -1996,6 +2008,56 @@ current_sta_ssid() {
     fi
     return 1
 }
+install_boot_script() {
+    # Stage, validate, then rename a boot script into place.
+    #
+    # KEEP BYTE-IDENTICAL to its twin in the other file. usb-stick/rc.local
+    # and usb-stick/run.sh both need this, they cannot share one copy
+    # (rc.local runs before anything is sourceable, and a sourced helper
+    # would add a failure mode to the thing being hardened), and
+    # usb-stick/tests/boot_install_test.sh fails if the two drift.
+    #
+    # $1 = source, $2 = destination. Returns 0 only when $2 now holds the
+    # whole of $1, 2 when a suspiciously short replacement was refused, and
+    # 1 on any other failure. Logs nothing, so both callers log in their own
+    # style.
+    #
+    # Why rename instead of cp: cp opens the destination with O_TRUNC before
+    # reading a byte of the source, so an interrupted read leaves a truncated
+    # file that is still chmod +x and the boot execs it. rename is atomic, so
+    # the destination is either the old script or the whole new one. It also
+    # makes it safe to replace a script that is CURRENTLY EXECUTING: the
+    # running shell keeps reading the old inode through its open fd instead of
+    # having the bytes shift underneath it mid-statement.
+    [ -r "$1" ] || return 1
+    _ibs_new="$2.new"
+    rm -f "$_ibs_new" 2>/dev/null
+    cp "$1" "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    _ibs_ssz=$(wc -c < "$1" 2>/dev/null | tr -d " \t")
+    _ibs_nsz=$(wc -c < "$_ibs_new" 2>/dev/null | tr -d " \t")
+    # A short read is the failure this function exists for.
+    if [ -z "$_ibs_nsz" ] || [ "$_ibs_nsz" = "0" ] || [ "$_ibs_nsz" != "$_ibs_ssz" ]; then
+        rm -f "$_ibs_new" 2>/dev/null
+        return 1
+    fi
+    # A script the box's own shell cannot parse must never become the boot
+    # path. This is what catches a SOURCE that is itself half-written.
+    sh -n "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    # A stick truncated at a statement boundary still parses, so also refuse
+    # a replacement that is drastically shorter than the working script.
+    if [ -s "$2" ]; then
+        _ibs_osz=$(wc -c < "$2" 2>/dev/null | tr -d " \t")
+        if [ -n "$_ibs_osz" ] && [ "$_ibs_nsz" -lt $(( _ibs_osz / 2 )) ]; then
+            rm -f "$_ibs_new" 2>/dev/null
+            return 2
+        fi
+    fi
+    chmod +x "$_ibs_new" 2>/dev/null
+    mv -f "$_ibs_new" "$2" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    sync 2>/dev/null
+    return 0
+}
+
 wpa_globals_only() {
     # $1 = a wpa_supplicant.conf. Prints every line OUTSIDE a network block,
     # verbatim, and drops the network blocks.
