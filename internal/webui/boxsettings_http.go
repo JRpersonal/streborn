@@ -667,6 +667,35 @@ func (s *Server) handleResumeOnPowerOn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// displayTrackActiveNow reports whether the track-title setting can do anything
+// on this speaker at this moment, and if not, why.
+//
+// While a speaker is a FOLLOWER in a group the firmware refuses every display
+// write with UPnP 501 "Can't control member of group", so the stored setting is
+// real but dormant, and only the group master's setting has any effect. The app
+// used to report plain success either way, which told a reporter his change had
+// taken when it could not (2026-09-29).
+//
+// An unreadable zone counts as active: the setting usually IS live, and claiming
+// otherwise on a failed read would be a new kind of wrong answer.
+func (s *Server) displayTrackActiveNow(ctx context.Context) (active bool, why string) {
+	if s.boxHost == "" {
+		return true, ""
+	}
+	c := boxapi.New(s.boxHost)
+	zctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	z, err := c.GetZone(zctx)
+	if err != nil {
+		return true, ""
+	}
+	follower, known := zoneRoleFromMaster(z.Master, s.localDeviceID(zctx, c, ""))
+	if !known || !follower {
+		return true, ""
+	}
+	return false, "follower-in-group"
+}
+
 // handleDisplayTrack reads or sets the per-box "show the live radio track on the
 // speaker's display" opt-in (default OFF). Stored as a plain NAND flag file
 // ("1"/"0"). GET returns {supported, enabled}; POST {enabled} persists it.
@@ -679,7 +708,18 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"supported": true, "enabled": s.displayTrackEnabled(), "mode": s.displayTrackMode()})
+		active, why := s.displayTrackActiveNow(r.Context())
+		writeJSON(w, http.StatusOK, map[string]any{
+			"supported": true,
+			"enabled":   s.displayTrackEnabled(),
+			"mode":      s.displayTrackMode(),
+			// activeNow says whether the setting can do anything on THIS speaker
+			// right now. A follower in a group refuses every display write, so
+			// the stored choice is real but dormant and only the master's
+			// setting drives the group.
+			"activeNow":   active,
+			"inactiveWhy": why,
+		})
 	case http.MethodPost:
 		var body struct {
 			Enabled bool   `json:"enabled"`
