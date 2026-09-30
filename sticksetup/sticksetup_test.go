@@ -75,3 +75,39 @@ func TestWriteWLANConfigSpecialCharacters(t *testing.T) {
 }
 
 func bytesContains(b []byte, s string) bool { return strings.Contains(string(b), s) }
+
+// A speaker name gets the same treatment, and for the same reason. This writer
+// was left on plain json.Marshal when WriteWLANConfig was fixed on 2026-08-30,
+// so a box named "Bad & Kueche" reached the speaker with the literal
+// six-character escape in its name: run.sh reads name.conf with a sed capture
+// that does no JSON unescaping, writes the captured bytes to name.txt and POSTs
+// them to the box.
+func TestWriteNameConfigSpecialCharacters(t *testing.T) {
+	dir := t.TempDir()
+	cfg := NameConfig{Name: `Bad & Küche <oben> "Ecke"`}
+	if err := WriteNameConfig(dir, cfg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "name.raw"))
+	if err != nil || string(raw) != cfg.Name {
+		t.Fatalf("name.raw = %q, %v; want the exact name", raw, err)
+	}
+
+	conf, err := os.ReadFile(filepath.Join(dir, "name.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytesContains(conf, `\u0026`) || bytesContains(conf, `\u003c`) || bytesContains(conf, `\u003e`) {
+		t.Fatalf("name.conf still HTML-escapes: %s", conf)
+	}
+	// The ampersand has to be in there as itself, or the sed parser on the
+	// stick reads something other than what the user typed.
+	if !bytesContains(conf, "&") {
+		t.Fatalf("name.conf lost the ampersand entirely: %s", conf)
+	}
+
+	if err := WriteNameConfig(dir, NameConfig{Name: ""}); err == nil {
+		t.Fatal("an empty name must be refused")
+	}
+}

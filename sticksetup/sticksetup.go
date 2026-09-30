@@ -478,12 +478,27 @@ func WriteNameConfig(targetPath string, cfg NameConfig) error {
 	if cfg.Name == "" {
 		return fmt.Errorf("name must not be empty")
 	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
+	// json.Marshal HTML-escapes &, < and > into unicode escapes, and the
+	// stick's sed parser reads those LITERALLY: a speaker named "Bad &
+	// Kueche" reached the box with the six-character escape in its name.
+	// Identical to the wlan.conf bug fixed on 2026-08-30 (see
+	// WriteWLANConfig above); this writer never got the same treatment.
+	// So: encode without HTML escaping, and additionally write the name as
+	// a raw single-line sidecar that the stick's run.sh prefers. The
+	// sidecar is immune to JSON escaping entirely, quotes and backslashes
+	// included, and the same stick carries the run.sh that reads it so the
+	// pair cannot drift.
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(targetPath, "name.raw"), []byte(cfg.Name)); err != nil {
 		return err
 	}
 	dst := filepath.Join(targetPath, "name.conf")
-	return writeFile(dst, data)
+	return writeFile(dst, []byte(buf.String()))
 }
 
 // LangConfig holds the signals from the setup wizard (active app UI

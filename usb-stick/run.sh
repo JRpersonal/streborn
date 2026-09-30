@@ -3767,7 +3767,19 @@ fi
 # nach NAND, der Agent wendet ihn beim ersten Boot auf die Box an + UID.
 NAME_CONF="$STICK/name.conf"
 NAME_NAND="$PERSIST/name.txt"
-if [ -f "$NAME_CONF" ]; then
+# Raw sidecar first, written by the same app run that wrote this stick:
+# exact bytes, no JSON escaping. The sed parse below misreads every value
+# json.Marshal escaped, so a name with an ampersand or a quote arrived
+# mangled or cut short. Same pattern and same reason as wlan.ssid/wlan.pass.
+NAME_RAW="$STICK/name.raw"
+if [ -f "$NAME_RAW" ]; then
+    NAME=$(head -c 128 "$NAME_RAW" | tr -d '\r\n')
+    if [ -n "$NAME" ]; then
+        echo "$NAME" > "$NAME_NAND"
+        log "box name from name.raw persisted to NAND (name_length=${#NAME})"
+        rm -f "$NAME_RAW" "$NAME_CONF" 2>/dev/null
+    fi
+elif [ -f "$NAME_CONF" ]; then
     NAME=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$NAME_CONF" | head -1)
     if [ -n "$NAME" ]; then
         echo "$NAME" > "$NAME_NAND"
@@ -4024,11 +4036,20 @@ iptables_install_streborn_fw() {
         w=$((w + 1))
     done
     if [ $w -ge 60 ]; then
-        setup_log "iptables filter table never came up after 60 s, skipping INPUT ACCEPT"
-        exit 0
+        # Do NOT exit. This subshell is the ONLY caller of
+        # iptables_install_streborn_fw in the whole script, so giving up
+        # here left the box with no INPUT ACCEPT rules AND no self-heal
+        # watchdog for its entire uptime. The table can still appear
+        # later (Bose's Firewall init is slow on a cold boot and it
+        # restarts), and the re-assert loop below installs the rules the
+        # moment it does. Retrying costs no NAND log growth: the
+        # installer dedups its own log line by signature for exactly the
+        # permanently-failing case.
+        setup_log "iptables filter table not up after 60 s: continuing into the re-assert watchdog, which installs the rules as soon as it appears"
+    else
+        # First install pass.
+        iptables_install_streborn_fw
     fi
-    # First install pass.
-    iptables_install_streborn_fw
     # Watchdog: re-assert every 30 s in case Bose's Firewall init
     # script flushes the chain after we set up. iptables -C inside
     # iptables_install_streborn_fw makes this a no-op when our rules
@@ -4069,7 +4090,13 @@ fi
 # still alive AND holding the listener fd (kill -KILL not yet
 # delivered, or shell waiting on TERM grace).
 ports_busy() {
-    for p in 8081 8888 9080 8091 8080; do
+    # STR's own listeners only. :8091 (Bose UPnP AVTransport) and :8080
+    # (Bose gabbo WebSocket) were in this list and are bound for the whole
+    # uptime of the box, so this could never report clear: wait_ports_clear
+    # always burned its full timeout and then logged "gave up" as though
+    # STR's own ports were stuck. run.sh states the split itself: STR has
+    # 8888/9080/8081/443, Bose has 8080/8090/8091/17008/17002/17000.
+    for p in 8081 8888 9080 8443; do
         if command -v ss >/dev/null 2>&1; then
             ss -ltn 2>/dev/null | grep -q ":$p "
             if [ $? = 0 ]; then return 0; fi

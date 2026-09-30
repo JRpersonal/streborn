@@ -461,7 +461,15 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// cut ST30 first installs off mid-script ("install.sh ssh timeout after
 	// 1m0s", #119) even though the SSH session was healthy.
 	res.Step = "run-install"
-	out, err := boxSSHOutput(host, "sh "+stickPath+"/install.sh install 2>&1", installRunBudget(model))
+	// STR_STICK, because install.sh does not derive its source directory
+	// from $0: it hardcodes STICK="${STR_STICK:-/media/sda1}". We probed
+	// sixteen mount points plus a scan of /media, /mnt and /run/media to
+	// find this stick, and then used to run the script without telling it
+	// where that was, so on any box whose stick is not at /media/sda1 it
+	// read from a path that does not exist. Same unquoted form the staged
+	// install path already uses a few hundred lines below; stickPath is also
+	// already interpolated unquoted in the command itself.
+	out, err := boxSSHOutput(host, "STR_STICK="+stickPath+" sh "+stickPath+"/install.sh install 2>&1", installRunBudget(model))
 	res.Log = out
 	if err != nil {
 		res.Code = "install-error"
