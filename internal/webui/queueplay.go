@@ -131,8 +131,13 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 const (
 	queuePollInterval = 4 * time.Second  // how often the watcher reads now_playing
 	queueEndEpsilon   = 12 * time.Second // progress within this of the end == "ended"
-	queueTimerMargin  = 6 * time.Second  // grace past the track length before the net trips
-	queueStallTimeout = 25 * time.Second // a track that never starts is skipped
+	// queueDeadTrackLimit is how many tracks in a row the box may drop without
+	// playing before the queue gives up. One is a bad file and worth skipping;
+	// three in a row is the server having gone away, and racing through the
+	// remaining fifty tracks to prove it helps nobody.
+	queueDeadTrackLimit = 3
+	queueTimerMargin    = 6 * time.Second  // grace past the track length before the net trips
+	queueStallTimeout   = 25 * time.Second // a track that never starts is skipped
 	// queueFrozenTimeout advances when the box sits in PLAY_STATE with its
 	// position frozen and the track length is UNKNOWN. Some DLNA servers (a
 	// FRITZ!Box mediaserver) expose no duration AND the box reports no total, so
@@ -379,6 +384,11 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		lastPosAt time.Time     // when lastPos last increased (frozen-position net)
 		obsTotal  time.Duration // largest total the box reported for this track
 		sawPlay   bool
+		// deadInARow counts tracks the box dropped without playing them. It
+		// deliberately survives the per-track reset below: one dead track is a bad
+		// file, several in a row is a server that has gone away, and only the
+		// second reading is worth stopping for.
+		deadInARow int
 	)
 	for {
 		select {
@@ -400,7 +410,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			gen, lastPos, lastPosAt, obsTotal, sawPlay = curGen, 0, time.Time{}, 0, false
 		}
 
-		ps, pos, total, standby := s.pollNowPlaying()
+		ps, pos, total, standby, tornDown := s.pollNowPlaying()
 		if standby {
 			// The box was powered off mid-queue (top switch, remote, or the app's
 			// Standby button -> now_playing source=STANDBY). A standby is never a
@@ -409,6 +419,25 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			s.logger.Info("queue watcher: box entered standby, stopping queue (not advancing)")
 			s.stopQueue("the box went into standby")
 			return
+		}
+		// The box dropped the source while we believed it was playing. That is the
+		// firmware's answer to a stream that starved or was refused, and it is the
+		// opposite of a track ending: nothing was heard. Without this the wall-clock
+		// net below sits out the REST of the track's nominal length in silence and
+		// then logs the dead track as a natural end (11 m 43 s of silence inside one
+		// 33-minute queue, 2026-09-28), and with repeat=all that never stops.
+		if tornDown && sawPlay {
+			deadInARow++
+			if deadInARow >= queueDeadTrackLimit {
+				s.logger.Info("queue watcher: the speaker dropped several tracks in a row without playing them, stopping the queue",
+					"deadInARow", deadInARow)
+				s.stopQueue("the music server stopped delivering; several tracks in a row did not play")
+				return
+			}
+			s.logger.Info("queue watcher: the speaker dropped this track without playing it, skipping to the next",
+				"deadInARow", deadInARow, "trackSec", int(dur.Seconds()))
+			s.advanceAndPlay(true, curGen, "the speaker dropped the track without playing it")
+			continue
 		}
 		if total > obsTotal {
 			obsTotal = total // remember it even after the box later reports 0
@@ -424,6 +453,11 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		switch ps {
 		case "PLAY_STATE", "BUFFERING_STATE":
 			sawPlay = true
+			// Audible progress means the server is answering again, so a previous
+			// run of dead tracks is over.
+			if pos > 0 {
+				deadInARow = 0
+			}
 			// Track the MAX position and when it last advanced: the box's position
 			// climbs each second while playing and then freezes at EOF, so a
 			// position that stops moving is the finished-track signal for the
@@ -542,6 +576,17 @@ func nowPlayingStandby(body string) bool {
 	return false
 }
 
+// nowPlayingSourceTornDown reports whether the box has dropped the source it
+// was playing. The firmware answers a starved or rejected stream by tearing
+// the source down to INVALID_SOURCE, and such a document carries no
+// <playStatus> at all, which is why the watcher used to see nothing.
+func nowPlayingSourceTornDown(body string) bool {
+	if m := reNowPlaySource.FindStringSubmatch(body); m != nil {
+		return strings.Contains(m[1], "INVALID_SOURCE")
+	}
+	return false
+}
+
 // nowPlayingStatus reads the play status out of a now_playing body, empty when
 // the box reported none (a box that has just left standby, and the source
 // teardown while it is in progress). The typed element first so a track title
@@ -567,25 +612,30 @@ func nowPlayingStatus(body string) string {
 // pollNowPlaying reads the box's now_playing once and returns the play status,
 // the current/total position, and whether the box is in standby. Zero values on
 // any error.
-func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby bool) {
+func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby, tornDown bool) {
 	// Test seam, the same one boxPlayStateDetail has: the end detection is a
 	// state machine over what the box reports, and it is only testable if the
 	// reports can be scripted.
 	if s.nowPlayingFn != nil {
-		return s.nowPlayingFn()
+		// The test seam predates the torn-down flag and scripts four values; a
+		// scripted box is never reported as torn down, which keeps every existing
+		// end-detection test meaning exactly what it did before.
+		st, p, t, sb := s.nowPlayingFn()
+		return st, p, t, sb, false
 	}
 	if s.boxHost == "" {
-		return "", 0, 0, false
+		return "", 0, 0, false, false
 	}
 	cl := &http.Client{Timeout: 3 * time.Second}
 	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
 	if err != nil {
-		return "", 0, 0, false
+		return "", 0, 0, false, false
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	resp.Body.Close()
 	body := string(b)
 	standby = nowPlayingStandby(body)
+	tornDown = nowPlayingSourceTornDown(body)
 	status = nowPlayingStatus(body)
 	if m := reNowPlayTime.FindStringSubmatch(body); m != nil {
 		if t, err := strconv.Atoi(m[1]); err == nil {
@@ -595,7 +645,7 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 			pos = time.Duration(c) * time.Second
 		}
 	}
-	return status, pos, total, standby
+	return status, pos, total, standby, tornDown
 }
 
 // --- HTTP handlers -------------------------------------------------------

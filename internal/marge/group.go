@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // groupRole is one <groupRole> entry inside a stereo-pair group descriptor.
@@ -124,6 +125,62 @@ func (s *Server) loadGroup() {
 	s.logger.Info("marge group: restored persisted record",
 		slog.String("comp", "marge"), slog.String("groupId", g.ID),
 		slog.String("master", g.MasterDeviceID), slog.Bool("canonical", pg.Canonical))
+	// The record is restored whatever the answer: a partner that is rebooting
+	// or briefly off the network must never cost somebody their pair. But a
+	// partner that is GONE makes the firmware refuse every source activation
+	// with EVT_SYSTEM_GROUP_STATE_IN_ERROR, and the speaker is then unusable
+	// with nothing anywhere saying why (measured 2026-09-29: eighteen days
+	// absent, the owner saw only "box_not_ready"). One probe, in the
+	// background, so a slow or absent partner cannot delay the agent start.
+	go s.notePartnerReachability(&g)
+}
+
+// PartnerUnreachable reports the pair partner STR could not reach at startup,
+// empty when the partner answered or when there is no pair. Read by the zone
+// endpoint so the app can name the real reason a speaker will not play.
+func (s *Server) PartnerUnreachable() (ip, deviceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.partnerGoneIP, s.partnerGoneID
+}
+
+// notePartnerReachability asks the OTHER half of a restored pair whether it is
+// there. It is a single, short-lived probe per agent start: no timer and no
+// polling, because this runs on every speaker and NAND and CPU are finite.
+//
+// A failure is recorded, never acted on. Dissolving a pair because one probe
+// missed would take a working stereo setup away from somebody whose partner
+// was merely restarting, which is far worse than the silence this replaces.
+func (s *Server) notePartnerReachability(g *groupRecord) {
+	self := strings.TrimSpace(s.deviceID)
+	var ip, id string
+	for _, r := range g.Roles {
+		if strings.TrimSpace(r.IP) == "" {
+			continue
+		}
+		if self != "" && strings.EqualFold(strings.TrimSpace(r.DeviceID), self) {
+			continue // this half is us
+		}
+		ip, id = strings.TrimSpace(r.IP), strings.TrimSpace(r.DeviceID)
+	}
+	if ip == "" {
+		return
+	}
+	c := &http.Client{Timeout: 4 * time.Second}
+	resp, err := c.Get("http://" + ip + ":8090/info")
+	if err == nil {
+		resp.Body.Close()
+		s.mu.Lock()
+		s.partnerGoneIP, s.partnerGoneID = "", ""
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Lock()
+	s.partnerGoneIP, s.partnerGoneID = ip, id
+	s.mu.Unlock()
+	s.logger.Warn("marge group: the other half of the stereo pair did not answer; the firmware refuses to play while a pair is incomplete",
+		slog.String("comp", "marge"), slog.String("partner", ip),
+		slog.String("partnerDeviceId", id), slog.String("err", err.Error()))
 }
 
 // persistGroupLocked writes (or removes) the on-NAND copy of the current

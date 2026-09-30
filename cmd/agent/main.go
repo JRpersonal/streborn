@@ -839,6 +839,7 @@ func run() error {
 			return spotifyMgr.PlayAccount(ctx, uri, account, spotify.PlayOptions{Shuffle: shuffle, Repeat: repeat})
 		}),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
+		webui.WithPairPartnerGone(margeSrv.PartnerUnreachable),
 		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
 		webui.WithSpotifyShuffle(spotifyMgr.ShufflingContext),
 		webui.WithSpotifyRepeat(spotifyMgr.RepeatingContext),

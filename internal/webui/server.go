@@ -192,6 +192,9 @@ type Server struct {
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.
 	spotifyUser func(ctx context.Context) string
+	// pairPartnerGone names the missing half of a restored stereo pair, so
+	// the zone answer can say why a speaker refuses to play.
+	pairPartnerGone func() (ip, deviceID string)
 	// spotifyContext returns the Spotify context URI go-librespot is currently
 	// playing, used by the preset-save path to stamp the LIVE account when the
 	// saved preset is the content that is playing right now (so a preset saved

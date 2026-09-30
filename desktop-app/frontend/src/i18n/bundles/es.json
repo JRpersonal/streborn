@@ -359,7 +359,7 @@
   "preset.saveFailed": "Error al guardar: {{err}}",
   "play.errNoInternet": "¿sin internet?",
   "play.errSpeakerTimeout": "el altavoz no responde",
-  "play.errBoxStarting": "el altavoz aún se está iniciando, inténtalo de nuevo en un momento",
+  "play.errBoxStarting": "El altavoz aún no responde. Dale un momento en vez de volver a pulsar: pulsar repetidamente puede apagarlo de nuevo. Si eso no ayuda, enciéndelo en el propio altavoz.",
   "play.errSpeakerRefused": "el altavoz rechazó la conexión",
   "play.errNotPlayable": "emisora no reproducible",
   "play.errServer500": "error de la emisora",
@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "El acceso SSH quedará cerrado tras el siguiente reinicio",
   "library.serverFallbackName": "El servidor de música",
   "worldMap.pinPrompt": "🌍 Pon tu chincheta en el mapa mundial, para que se vea dónde vuelve a sonar la música.",
-  "library.serverAsleep": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo."
+  "library.serverAsleep": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo.",
+  "play.errBoxStuckTryPower": "El altavoz no sale del modo de espera. Desenchúfalo diez segundos y vuelve a enchufarlo, eso suele resolverlo.",
+  "play.errBoxStuckSendLog": "STR no consigue sacar este altavoz del modo de espera. Exporta un diagnóstico al final de los ajustes del altavoz y envíalo, justo después de un intento."
 }

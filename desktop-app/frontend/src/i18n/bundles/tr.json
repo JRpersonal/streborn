@@ -359,7 +359,7 @@
   "preset.saveFailed": "Kaydedilemedi: {{err}}",
   "play.errNoInternet": "internet yok mu?",
   "play.errSpeakerTimeout": "hoparlör yanıt vermiyor",
-  "play.errBoxStarting": "hoparlör hâlâ başlıyor, yakında tekrar deneyin",
+  "play.errBoxStarting": "Hoparlör henüz yanıt vermiyor. Tekrar basmak yerine ona bir an tanı: art arda basmak onu yeniden kapatabilir. Bu yardımcı olmazsa hoparlörün kendi üzerinden aç.",
   "play.errSpeakerRefused": "hoparlör reddetti",
   "play.errNotPlayable": "istasyon çalınamıyor",
   "play.errServer500": "istasyon hatası",
@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH erişimi bir sonraki yeniden başlatmadan itibaren kapalı",
   "library.serverFallbackName": "Müzik sunucusu",
   "worldMap.pinPrompt": "🌍 Dünya haritasına iğneni koy, müziğin yeniden nerelerde çaldığı görünsün.",
-  "library.serverAsleep": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene."
+  "library.serverAsleep": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene.",
+  "play.errBoxStuckTryPower": "Hoparlör bekleme modundan çıkmıyor. Fişini on saniye çekip tekrar tak, bu genellikle çözer.",
+  "play.errBoxStuckSendLog": "STR bu hoparlörü bekleme modundan çıkaramıyor. Hoparlör ayarlarının altından bir tanılama dışa aktarıp gönder, denemenin hemen ardından."
 }

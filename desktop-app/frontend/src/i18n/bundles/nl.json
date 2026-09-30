@@ -359,7 +359,7 @@
   "preset.saveFailed": "Opslaan mislukt: {{err}}",
   "play.errNoInternet": "geen internet?",
   "play.errSpeakerTimeout": "speaker reageert niet",
-  "play.errBoxStarting": "speaker start nog op, probeer het zo opnieuw",
+  "play.errBoxStarting": "De speaker reageert nog niet. Geef hem even de tijd in plaats van opnieuw te drukken: herhaald drukken kan hem weer uitschakelen. Helpt dat niet, zet hem dan aan op de speaker zelf.",
   "play.errSpeakerRefused": "speaker geweigerd",
   "play.errNotPlayable": "zender niet afspeelbaar",
   "play.errServer500": "zenderfout",
@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH-toegang is dicht vanaf de volgende herstart",
   "library.serverFallbackName": "De muziekserver",
   "worldMap.pinPrompt": "🌍 Zet je pin op de wereldkaart, dan is te zien waar de muziek weer speelt.",
-  "library.serverAsleep": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw."
+  "library.serverAsleep": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw.",
+  "play.errBoxStuckTryPower": "De speaker komt niet uit stand-by. Haal de stekker er tien seconden uit en steek hem er weer in, dat lost dit meestal op.",
+  "play.errBoxStuckSendLog": "STR krijgt deze speaker niet uit stand-by. Exporteer onderaan bij de speakerinstellingen een diagnose en stuur die op, direct na een poging."
 }

@@ -359,7 +359,7 @@
   "preset.saveFailed": "Saglabāt neizdevās: {{err}}",
   "play.errNoInternet": "nav interneta?",
   "play.errSpeakerTimeout": "skaļrunis neatbild",
-  "play.errBoxStarting": "skaļrunis vēl startē, mēģiniet drīz vēlreiz",
+  "play.errBoxStarting": "Skaļrunis vēl neatbild. Dod tam mirkli, nevis spied vēlreiz: atkārtota spiešana var to atkal izslēgt. Ja tas nelīdz, ieslēdz to uz paša skaļruņa.",
   "play.errSpeakerRefused": "skaļrunis noraidīja",
   "play.errNotPlayable": "staciju nevar atskaņot",
   "play.errServer500": "stacijas kļūda",
@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH piekļuve būs slēgta no nākamās restartēšanas",
   "library.serverFallbackName": "Mūzikas serveris",
   "worldMap.pinPrompt": "🌍 Pievieno savu adatu pasaules kartē, lai redzams, kur atkal skan mūzika.",
-  "library.serverAsleep": "{{name}} neatbild. Parasti tas nozīmē, ka dators, uz kura tas darbojas, ir izslēgts vai guļ. Pamodini to un mēģini vēlreiz."
+  "library.serverAsleep": "{{name}} neatbild. Parasti tas nozīmē, ka dators, uz kura tas darbojas, ir izslēgts vai guļ. Pamodini to un mēģini vēlreiz.",
+  "play.errBoxStuckTryPower": "Skaļrunis neiznāk no gaidstāves. Izvelc kontaktdakšu uz desmit sekundēm un iespraud atpakaļ, tas parasti palīdz.",
+  "play.errBoxStuckSendLog": "STR nespēj izvest šo skaļruni no gaidstāves. Skaļruņa iestatījumu lejasdaļā eksportē diagnostiku un nosūti to uzreiz pēc mēģinājuma."
 }

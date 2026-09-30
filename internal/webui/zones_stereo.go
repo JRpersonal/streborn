@@ -109,23 +109,7 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	if full, ok := s.leaderZone(ctx, z); ok {
 		z.Members = full
 	}
-	out := struct {
-		boxapi.Zone
-		Stereo *boxapi.Group `json:"stereo,omitempty"`
-		// Remembered is the persisted zone membership (zones.json) when NO zone
-		// is live: the follower IPs and names, so a client can offer "play
-		// together again" with one tap. The desktop always showed the
-		// remembered group; the phone page could not, and a three-speaker
-		// household read that as the group being gone (mail report,
-		// 2026-08-25). Only the desktop's own store, no probes.
-		Remembered []rememberedMember `json:"remembered,omitempty"`
-		// Permanent says the remembered group is the user's durable choice
-		// (re-formed on the master's next play). The desktop shows such a
-		// group as a stored frame when it is not live, so the user can see
-		// it exists and remove it; without the flag the group was invisible
-		// between plays (2026-09-06).
-		Permanent bool `json:"permanent,omitempty"`
-	}{Zone: z}
+	out := zoneAnswer{Zone: z}
 	if len(z.Members) == 0 {
 		out.Remembered = s.rememberedZoneMembers()
 	}
@@ -155,7 +139,42 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 			out.Stereo = &g
 		}
 	}
+	// A pair whose other half is gone is the one state that makes a healthy,
+	// reachable speaker refuse to play anything at all.
+	if s.pairPartnerGone != nil {
+		if ip, id := s.pairPartnerGone(); ip != "" {
+			out.PairPartnerGone, out.PairPartnerGoneID = ip, id
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// zoneAnswer is what GET /api/box/zone returns. Named rather than anonymous so
+// its JSON shape can be asserted without a live speaker on :8090.
+type zoneAnswer struct {
+	boxapi.Zone
+	Stereo *boxapi.Group `json:"stereo,omitempty"`
+	// Remembered is the persisted zone membership (zones.json) when NO zone is
+	// live: the follower IPs and names, so a client can offer "play together
+	// again" with one tap. The desktop always showed the remembered group; the
+	// phone page could not, and a three-speaker household read that as the group
+	// being gone (mail report, 2026-08-25). Only the desktop's own store, no
+	// probes.
+	Remembered []rememberedMember `json:"remembered,omitempty"`
+	// Permanent says the remembered group is the user's durable choice (re-formed
+	// on the master's next play). The desktop shows such a group as a stored
+	// frame when it is not live, so the user can see it exists and remove it;
+	// without the flag the group was invisible between plays (2026-09-06).
+	Permanent bool `json:"permanent,omitempty"`
+	// PairPartnerGone names the other half of a stereo pair that did not answer.
+	// While a pair is incomplete the firmware refuses every source activation, so
+	// the speaker wakes and is back in standby five seconds later and nothing it
+	// plays ever starts. Without this the app can only report that the speaker is
+	// not responding, which sends the owner looking at his speaker, his network
+	// and his presets (2026-09-29: a partner absent since 11 September, over
+	// eighty failed presses).
+	PairPartnerGone   string `json:"pairPartnerGone,omitempty"`
+	PairPartnerGoneID string `json:"pairPartnerGoneId,omitempty"`
 }
 
 // rememberedMember is one follower of the persisted (not currently live) zone.

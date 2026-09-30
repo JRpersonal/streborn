@@ -396,7 +396,7 @@
   "preset.spotifyContextUnknown": "Konnte keine Spotify-Playlist vom Lautsprecher lesen. Stelle sicher, dass der Lautsprecher aktuell ist, öffne eine Playlist oder ein Album und versuche es erneut.",
   "play.errNoInternet": "kein Internet?",
   "play.errSpeakerTimeout": "Lautsprecher reagiert nicht",
-  "play.errBoxStarting": "Lautsprecher startet noch, gleich nochmal versuchen",
+  "play.errBoxStarting": "Der Lautsprecher reagiert noch nicht. Warte einen Moment, statt gleich noch einmal zu drücken: mehrfaches Drücken kann ihn wieder ausschalten. Hilft das nicht, schalte ihn am Gerät selbst ein.",
   "play.errSpeakerRefused": "Lautsprecher lehnt ab",
   "play.errNotPlayable": "Sender nicht abspielbar",
   "play.errSpotifyPremium": "Spotify-Recall braucht Premium",
@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH-Zugang ist ab dem nächsten Neustart zu",
   "library.serverFallbackName": "Der Musikserver",
   "worldMap.pinPrompt": "🌍 Setz deinen Pin auf die Weltkarte, damit man sieht, wo überall wieder Musik läuft.",
-  "library.serverAsleep": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal."
+  "library.serverAsleep": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal.",
+  "play.errBoxStuckTryPower": "Der Lautsprecher kommt nicht aus dem Standby. Zieh den Stecker für zehn Sekunden und steck ihn wieder ein, das löst so etwas meistens.",
+  "play.errBoxStuckSendLog": "STR bekommt den Lautsprecher nicht aus dem Standby. Exportiere bitte unten bei den Lautsprecher-Einstellungen eine Diagnose und schick sie mir, direkt nach einem Versuch."
 }

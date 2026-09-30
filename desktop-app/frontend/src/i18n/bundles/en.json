@@ -396,7 +396,7 @@
   "preset.spotifyContextUnknown": "Couldn't read a Spotify playlist from the speaker. Make sure the speaker is up to date, open a playlist or album, then try again.",
   "play.errNoInternet": "no internet?",
   "play.errSpeakerTimeout": "speaker not responding",
-  "play.errBoxStarting": "speaker is still starting, try again in a moment",
+  "play.errBoxStarting": "The speaker is not responding yet. Give it a moment rather than pressing again: repeated presses can switch it back off. If that does not help, switch it on at the speaker itself.",
   "play.errSpeakerRefused": "speaker refused",
   "play.errNotPlayable": "station not playable",
   "play.errSpotifyPremium": "Spotify recall needs Premium",
@@ -1544,5 +1544,7 @@
   "settingsView.sshOffToast": "SSH access is shut from the next restart",
   "library.serverFallbackName": "The music server",
   "worldMap.pinPrompt": "🌍 Add your pin to the world map, so it shows where the music is playing again.",
-  "library.serverAsleep": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again."
+  "library.serverAsleep": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again.",
+  "play.errBoxStuckTryPower": "The speaker will not come out of standby. Unplug it for ten seconds and plug it back in, that usually clears this.",
+  "play.errBoxStuckSendLog": "STR cannot get this speaker out of standby. Please export a diagnostic at the bottom of the speaker settings and send it, right after an attempt."
 }

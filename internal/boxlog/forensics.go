@@ -81,6 +81,13 @@ const (
 	ClassWake       Class = "wake"        // HSM: ChangeState(Standby >> ...)
 	ClassPowerEvent Class = "power_event" // scmmond: low power notification
 	ClassPowerSleep Class = "power_sleep" // scmmond: sleep stage / processor clock
+	// ClassGroupError is the firmware refusing to activate a source because
+	// its group is not whole: EVT_SYSTEM_GROUP_STATE_IN_ERROR, which lands it
+	// straight back in standby. Measured on a speaker that is the RIGHT half
+	// of a stereo pair whose LEFT partner had been off the network for 18
+	// days (2026-09-29). The speaker woke on every attempt and was asleep
+	// again five seconds later, and nothing in STR named the pair.
+	ClassGroupError Class = "group_error" // HSM: EVT_SYSTEM_GROUP_STATE_IN_ERROR
 	// Wi-Fi (once a minute on the sm2 chassis; ring only, never the agent log).
 	ClassWiFiStatus  Class = "wifi_status"
 	ClassWiFiQuality Class = "wifi_quality"
@@ -198,6 +205,12 @@ func Classify(l Line) (Class, bool) {
 		return ClassPlayUnderrun, true
 	case strings.Contains(m, "CAudioInterface::Select("):
 		return ClassPlaySelect, true
+	// Before the ChangeState family on purpose: this line carries a
+	// ChangeState clause of its own ("ChangeState(SrcActivate >> Standby)")
+	// and would otherwise be filed as an ordinary standby transition, which
+	// is precisely how a broken group stayed invisible.
+	case strings.Contains(m, "EVT_SYSTEM_GROUP_STATE_IN_ERROR"):
+		return ClassGroupError, true
 	// The setup gates come BEFORE the ChangeState one on purpose: the
 	// firmware's Wi-Fi state machine logs through the same ChangeState shape,
 	// and that case deliberately drops everything whose facility is not HSM.
