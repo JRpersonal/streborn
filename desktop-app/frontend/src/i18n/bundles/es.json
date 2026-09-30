@@ -1546,5 +1546,6 @@
   "worldMap.pinPrompt": "🌍 Pon tu chincheta en el mapa mundial, para que se vea dónde vuelve a sonar la música.",
   "library.serverAsleep": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo.",
   "play.errBoxStuckTryPower": "El altavoz no sale del modo de espera. Desenchúfalo diez segundos y vuelve a enchufarlo, eso suele resolverlo.",
-  "play.errBoxStuckSendLog": "STR no consigue sacar este altavoz del modo de espera. Exporta un diagnóstico al final de los ajustes del altavoz y envíalo, justo después de un intento."
+  "play.errBoxStuckSendLog": "STR no consigue sacar este altavoz del modo de espera. Exporta un diagnóstico al final de los ajustes del altavoz y envíalo, justo después de un intento.",
+  "banner.appCheckKeepsFailing": "STR lleva varios arranques sin poder comprobar si hay una versión nueva. Puede que un cortafuegos o un antivirus esté bloqueando la petición. Echa un vistazo tú mismo en st-reborn.de de vez en cuando."
 }

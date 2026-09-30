@@ -1546,5 +1546,6 @@
   "worldMap.pinPrompt": "🌍 Dodaj swoją pinezkę na mapie świata, żeby było widać, gdzie znowu gra muzyka.",
   "library.serverAsleep": "{{name}} nie odpowiada. Zwykle oznacza to, że komputer, na którym działa, jest wyłączony albo śpi. Obudź go i spróbuj ponownie.",
   "play.errBoxStuckTryPower": "Głośnik nie wychodzi z trybu czuwania. Wyciągnij wtyczkę na dziesięć sekund i włóż ją z powrotem, to zwykle pomaga.",
-  "play.errBoxStuckSendLog": "STR nie potrafi wybudzić tego głośnika. Wyeksportuj diagnostykę na dole ustawień głośnika i wyślij ją, zaraz po próbie."
+  "play.errBoxStuckSendLog": "STR nie potrafi wybudzić tego głośnika. Wyeksportuj diagnostykę na dole ustawień głośnika i wyślij ją, zaraz po próbie.",
+  "banner.appCheckKeepsFailing": "STR od kilku uruchomień nie może sprawdzić, czy jest nowa wersja. Być może zapora lub program antywirusowy blokuje zapytanie. Zaglądaj czasem sam na st-reborn.de."
 }

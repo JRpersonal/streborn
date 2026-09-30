@@ -1546,5 +1546,6 @@
   "worldMap.pinPrompt": "🌍 Ajoutez votre épingle à la carte du monde, pour montrer où la musique rejoue.",
   "library.serverAsleep": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez.",
   "play.errBoxStuckTryPower": "L'enceinte ne sort pas de veille. Débranchez-la dix secondes puis rebranchez-la, cela suffit presque toujours.",
-  "play.errBoxStuckSendLog": "STR n'arrive pas à sortir cette enceinte de veille. Exportez un diagnostic en bas des réglages de l'enceinte et envoyez-le, juste après un essai."
+  "play.errBoxStuckSendLog": "STR n'arrive pas à sortir cette enceinte de veille. Exportez un diagnostic en bas des réglages de l'enceinte et envoyez-le, juste après un essai.",
+  "banner.appCheckKeepsFailing": "STR n'a pas pu vérifier s'il existe une nouvelle version depuis plusieurs démarrages. Un pare-feu ou un antivirus bloque peut-être la requête. Jetez un œil vous-même sur st-reborn.de de temps en temps."
 }

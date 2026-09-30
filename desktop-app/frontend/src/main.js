@@ -1,6 +1,7 @@
 import './style.css';
 import { pinPromptKey } from './worldmapinvite.js';
 import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
+import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -1267,6 +1268,9 @@ async function checkAppUpdate(manual) {
   const banner = $('appUpdateBanner');
   try {
     const m = await CheckAppUpdate();
+    // The question was reachable, whatever the answer. That is what the run
+    // counts, not whether an update exists.
+    noteCheckSucceeded();
     if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) {
       // Nothing newer. Say so when the user asked; otherwise just leave the
       // way back on screen.
@@ -1346,6 +1350,18 @@ async function checkAppUpdate(manual) {
     // proxy, firewall, DNS) looks exactly like "no update exists", and one
     // user pressed through several releases believing that.
     try { renderAppUpdateCheckLink(banner, manual ? t('banner.appCheckFailed') : ''); } catch {}
+    // A silent automatic check that ALWAYS fails looks exactly like "you are up
+    // to date", forever. One user sat on a June build until the end of
+    // September, 142 releases behind, and nothing on his screen was ever about
+    // the app itself. After a run long enough to rule out a bad afternoon, say
+    // it once, quietly, with the way out beside it.
+    if (!manual) {
+      try {
+        if (shouldSayChecksAreFailing(noteCheckFailed())) {
+          showToast(t('banner.appCheckKeepsFailing'));
+        }
+      } catch { /* never let the notice break the startup */ }
+    }
   }
 }
 
