@@ -1683,6 +1683,24 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// wakes it (handleZoneForm): in #705 the standby master dragged the whole
 	// fresh pair into standby. As there, a failed wake alone is not a reason to
 	// stop; only a speaker that answers nothing at all is.
+	//
+	// And wake it QUIETLY, exactly as handleZoneForm does. This path mirrored
+	// that one when it was written, but only the plain wake: the quiet one was
+	// added to the sibling later and never copied here. A plain wake lets the
+	// firmware resume the master's last source, so pairing two IDLE speakers
+	// started music by itself, with whichever preset happened to be last
+	// showing as selected (#1074, reported with a log on 2026-09-30: "wake
+	// phase: STANDBY, sending sys power" and six seconds later the box was
+	// playing LOCAL_INTERNET_RADIO). The resume this function wants was already
+	// captured above, so muting and stopping the firmware's own resume here
+	// costs nothing: the pair still restarts what the user was listening to.
+	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "STANDBY" {
+		if err := s.quietWake(ctx); err != nil {
+			s.logger.Warn("stereo: quiet wake of the sleeping master failed, trying the plain wake", "err", err)
+		} else {
+			s.logger.Info("stereo: woke the sleeping master quietly so pairing does not start its last source")
+		}
+	}
 	if err := s.ensureBoxReadyErr(ctx); err != nil {
 		perr := s.speakerStaysSilent(ctx, c)
 		if perr != nil {
