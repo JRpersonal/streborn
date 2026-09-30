@@ -1996,6 +1996,24 @@ current_sta_ssid() {
     fi
     return 1
 }
+wpa_globals_only() {
+    # $1 = a wpa_supplicant.conf. Prints every line OUTSIDE a network block,
+    # verbatim, and drops the network blocks.
+    #
+    # The globals are the point: the vendor conf was measured on an ST10
+    # (2026-09-30) to carry thirteen of them and NO network block at all, and
+    # seven are lost by any fixed preamble (the box's WPS/P2P identity plus
+    # driver_param and disassoc_low_ack). Other block types (cred, p2p) are
+    # left alone: only the network blocks are ours to replace. Twin of
+    # wpaGlobalLines in internal/webui/wlan.go.
+    [ -r "${1:-}" ] || return 1
+    awk '
+        /^[ \t]*network[ \t]*=[ \t]*[{]/ { inblock = 1; next }
+        inblock && /^[ \t]*[}]/            { inblock = 0; next }
+        inblock                             { next }
+                                            { print }
+    ' "$1" 2>/dev/null
+}
 forget_sta_lease() {
     # Drops the last-known-good lease so the next read has to come from a live
     # source. Every verdict about a stage that just touched the radio needs
@@ -3244,18 +3262,54 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             WPA_SCAN=""
             if [ "$HIDDEN" = "1" ]; then WPA_SCAN="
     scan_ssid=1"; fi
-            cat > "$TMP" <<WPAEOF
+            # Keep the speaker's OWN global directives instead of writing a
+            # fixed preamble over them. The vendor conf was measured on an
+            # ST10 (2026-09-30) to carry THIRTEEN globals, and the fixed
+            # preamble dropped seven: device_name, manufacturer, model_name,
+            # model_number, serial_number (the box's WPS/P2P identity) plus
+            # driver_param and disassoc_low_ack (radio behaviour). It also
+            # replaced the box's own config_methods with a hardcoded value.
+            # The agent side was fixed the same way (buildWPAConfigFrom);
+            # this path had drifted away from it.
+            #
+            # awk keeps every line OUTSIDE a network block, verbatim, and
+            # drops the network blocks, which are the part being replaced.
+            : > "$TMP"
+            wpa_globals_only "$WPA_CONF" >> "$TMP" 2>/dev/null || true
+            if ! grep -q "[^[:space:]]" "$TMP" 2>/dev/null; then
+                # Nothing to preserve: the conf was unreadable, or held only
+                # network blocks. Fall back to the preamble this stage has
+                # always written, so a box with no template is no worse off.
+                cat > "$TMP" <<'WPAPRE'
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root
 update_config=1
 eapol_version=1
 ap_scan=1
 fast_reauth=1
 config_methods=virtual_display virtual_push_button keypad
+WPAPRE
+            fi
+            # Only add what the box did not already have: two ctrl_interface
+            # lines are a conf wpa_supplicant may reject. Bose writes the
+            # bare-path form and wpa_supplicant accepts both spellings.
+            if ! grep -q "^ctrl_interface=" "$TMP" 2>/dev/null; then
+                echo "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root" >> "$TMP"
+            fi
+            if ! grep -q "^update_config=" "$TMP" 2>/dev/null; then
+                echo "update_config=1" >> "$TMP"
+            fi
+            # priority=10 for the same reason the agent sets it (#697):
+            # NetManager injects its stored profiles into the RUNNING
+            # supplicant on top of this conf, carrying the firmware ranking,
+            # so a block at the implicit 0 loses the selection to the old
+            # network.
+            cat >> "$TMP" <<WPAEOF
 
 network={
     ssid="$SSID"$WPA_SCAN
     psk="$PASS"
     key_mgmt=WPA-PSK
+    priority=10
 }
 WPAEOF
             cp "$WPA_CONF" "$PERSIST/wpa_supplicant.conf.bak" 2>/dev/null
@@ -3306,6 +3360,14 @@ WPAEOF
                 if [ "$HIDDEN" = "1" ]; then
                     wpa_cli -i "$_WI" set_network "$NETID" scan_ssid 1     >/dev/null 2>&1
                 fi
+                # Without an explicit priority the added block sits at 0,
+                # BELOW the profiles NetManager injects from its own store
+                # (priority 1 observed in #697: the old SSID ended up
+                # [CURRENT] over the freshly added one). Set it before
+                # enable/select so save_config persists the winning rank in
+                # the same write. Same value as the agent's
+                # wlanChosenPriority; this path had drifted away from it.
+                wpa_cli -i "$_WI" set_network "$NETID" priority 10         >/dev/null 2>&1
                 wpa_cli -i "$_WI" enable_network "$NETID"                  >/dev/null 2>&1; R4=$?
                 wpa_cli -i "$_WI" select_network "$NETID"                  >/dev/null 2>&1; R5=$?
                 wpa_cli -i "$_WI" save_config                              >/dev/null 2>&1; R6=$?
@@ -4419,7 +4481,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done

@@ -58,7 +58,7 @@ extract() {
 
 EXTRACTED="$HERE/.extracted.sh"
 : > "$EXTRACTED"
-for fn in current_sta_ssid forget_sta_lease lease_is_on_ssid wait_for_sta_lease; do
+for fn in current_sta_ssid forget_sta_lease lease_is_on_ssid wait_for_sta_lease wpa_globals_only; do
     extract "$fn" >> "$EXTRACTED"
     if ! grep -q "^$fn() {" "$EXTRACTED"; then
         echo "FAIL: could not extract $fn from run.sh"
@@ -225,6 +225,117 @@ eval "$(extract current_sta_ssid)"
 GOT=$(PATH="$STUBDIR:$PATH" STR_SYSFS_ROOT="$STUBDIR/sysfs" current_sta_ssid 2>/dev/null || true)
 if [ "$GOT" = "RealNet" ]; then ok; else fail "wpa_cli status parse got '$GOT', want RealNet"; fi
 rm -rf "$STUBDIR"
+
+# ---- wpa_globals_only: the conf rewrite must keep the vendor globals -------
+#
+# The vendor conf carries thirteen global directives and NO network block. Any
+# fixed preamble loses seven of them, including the box's WPS/P2P identity.
+
+CONFDIR=$(mktemp -d 2>/dev/null || echo "$HERE/.confs")
+mkdir -p "$CONFDIR"
+
+cat > "$CONFDIR/vendor.conf" <<'VENDOR'
+# Bose wpa_supplicant configuration
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+eapol_version=1
+ap_scan=1
+fast_reauth=1
+disassoc_low_ack=1
+driver_param=placeholder
+device_name=SoundTouch
+manufacturer=Bose Corporation
+model_name=SoundTouch 10
+model_number=placeholder
+serial_number=placeholder
+config_methods=virtual_push_button
+VENDOR
+
+GOT=$(wpa_globals_only "$CONFDIR/vendor.conf")
+MISSING=""
+for d in ctrl_interface update_config eapol_version ap_scan fast_reauth          disassoc_low_ack driver_param device_name manufacturer model_name          model_number serial_number config_methods; do
+    case "$GOT" in
+        *"$d="*) ;;
+        *) MISSING="$MISSING $d" ;;
+    esac
+done
+if [ -z "$MISSING" ]; then ok; else fail "globals dropped:$MISSING"; fi
+case "$GOT" in
+    *"# Bose wpa_supplicant configuration"*) ok ;;
+    *) fail "the leading comment was dropped" ;;
+esac
+case "$GOT" in
+    *"manufacturer=Bose Corporation"*) ok ;;
+    *) fail "a preserved global lost its value" ;;
+esac
+
+# STR's own previous write: globals plus one network block. The block goes, the
+# globals stay, so a second switch cannot accumulate dead networks.
+cat > "$CONFDIR/prev.conf" <<'PREV'
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root
+update_config=1
+device_name=SoundTouch
+
+network={
+    ssid="OldNet"
+    psk="oldpassword"
+    key_mgmt=WPA-PSK
+    priority=10
+}
+PREV
+GOT=$(wpa_globals_only "$CONFDIR/prev.conf")
+case "$GOT" in
+    *OldNet*|*oldpassword*) fail "the old network survived the rewrite" ;;
+    *) ok ;;
+esac
+case "$GOT" in
+    *device_name=SoundTouch*) ok ;;
+    *) fail "a global was lost alongside the network block" ;;
+esac
+
+# Two blocks, a one-line block, and a cred block that is NOT ours to touch.
+cat > "$CONFDIR/mixed.conf" <<'MIXED'
+ap_scan=1
+cred={
+    realm="example"
+}
+network={
+    ssid="A"
+}
+device_name=SoundTouch
+network = {
+    ssid="B"
+}
+fast_reauth=1
+MIXED
+GOT=$(wpa_globals_only "$CONFDIR/mixed.conf")
+case "$GOT" in
+    *'ssid="A"'*|*'ssid="B"'*) fail "a network block leaked into the globals" ;;
+    *) ok ;;
+esac
+case "$GOT" in
+    *'cred={'*) ok ;;
+    *) fail "the cred block was dropped; it is not ours to remove" ;;
+esac
+case "$GOT" in
+    *'realm="example"'*) ok ;;
+    *) fail "the cred block lost its contents" ;;
+esac
+# The cred block's closing brace must survive, or the conf will not parse.
+BRACES=$(printf '%s' "$GOT" | tr -cd '}' | wc -c | tr -d ' ')
+if [ "$BRACES" = "1" ]; then ok; else fail "want exactly 1 closing brace kept, got $BRACES"; fi
+case "$GOT" in
+    *ap_scan=1*) case "$GOT" in *fast_reauth=1*) ok ;; *) fail "a global after the last block was lost" ;; esac ;;
+    *) fail "a global before the first block was lost" ;;
+esac
+
+wpa_globals_only "$CONFDIR/does-not-exist.conf" >/dev/null 2>&1
+check "an unreadable conf reports failure" 1 $?
+
+wpa_globals_only "" >/dev/null 2>&1
+check "an empty path reports failure" 1 $?
+
+rm -rf "$CONFDIR"
 
 # ---- result ----------------------------------------------------------------
 
