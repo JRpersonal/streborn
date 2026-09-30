@@ -74,6 +74,12 @@ type wlanConfigured struct {
 	// repeats what Networks already holds, on purpose: the field then means one
 	// single thing everywhere rather than "sometimes present".
 	Stored []wlanNetwork `json:"stored"`
+	// Live is the association the firmware itself reports, and the only
+	// liveness signal that exists on a coprocessor chassis, where nothing
+	// flags a stored profile as the one in use. nil when the box reported no
+	// associated interface, which on a speaker that is answering this request
+	// over the network is itself a finding. See wlanlive.go.
+	Live *wlanLive `json:"live,omitempty"`
 	// FileBlocks counts network={} blocks in the persisted config, so the two
 	// sources can be compared at a glance.
 	FileBlocks int    `json:"fileBlocks"`

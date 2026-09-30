@@ -262,7 +262,7 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// phone remote's "Save diagnostic file" button downloads verbatim, and
 		// that file gets mailed in and attached to public issues; the desktop
 		// app's field-keyed scrub never sees it.
-		"wlan_configured": listConfiguredWLANs(context.Background(), wpaConfPath).redacted(),
+		"wlan_configured": s.wlanConfiguredDebug(context.Background()),
 		// Which network the user CHOSE for this speaker, and what the last
 		// power-on concluded about whether it actually came up on it. Redacted
 		// at the source for the same reason as the file above: the record holds
