@@ -803,14 +803,31 @@ cleanup_nand() {
 # back as an illegal instruction -> SIGILL crash-loop, live-seen on a tight
 # ST20, #302). The BIN selection then runs the agent from a RAM copy of the
 # stick binary instead. Unset/0 on a healthy or stickless boot.
+# BIN_CORRUPT_MARK persists that verdict across the reboot. NAND_BIN_CORRUPT
+# used to live only in this shell, so the boot AFTER a failed flash-verify
+# learned nothing: a stickless boot skips the deploy block entirely, read 0,
+# and selected the unverified binary as if it were fine.
+BIN_CORRUPT_MARK="$PERSIST/agent-bin-unverified"
 NAND_BIN_CORRUPT=0
+[ -f "$BIN_CORRUPT_MARK" ] && NAND_BIN_CORRUPT=1
 sync_stick_to_nand_always() {
     # The AGENT BINARY is essential and goes FIRST, before the optional
     # Spotify engine, so a tight NAND can never let go-librespot crowd the
     # agent out (the old order wrote the 16 MB engine first and left no room
     # for the 12 MB agent to commit -> corrupt agent, #302).
     if [ -r "$STICK_BIN" ]; then
-        if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null && chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
+        # Identical binary already cached: no copy. The old code rewrote 12 MB
+        # onto NAND on every single stick boot, destroying and re-risking a
+        # working agent for no change at all, while the go-librespot path a few
+        # lines below has had this short-circuit all along.
+        _pre_sm5=$(md5sum "$STICK_BIN" 2>/dev/null | awk '{print $1}')
+        _pre_cm5=""
+        [ -s "$CACHED_BIN" ] && _pre_cm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
+        if [ -n "$_pre_sm5" ] && [ "$_pre_sm5" = "$_pre_cm5" ] && [ -x "$CACHED_BIN" ]; then
+            setup_log "binary deploy: the NAND cache is already identical to the stick ($_pre_sm5), no rewrite"
+            NAND_BIN_CORRUPT=0
+            rm -f "$BIN_CORRUPT_MARK" 2>/dev/null
+        elif cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null && chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
             log "stick binary deployed to NAND cache ($(wc -c < "$CACHED_BIN") bytes)"
             # Verify against FLASH, not the page cache. Without the sync +
             # drop_caches the md5 reads back the bytes we just wrote from RAM
@@ -824,12 +841,22 @@ sync_stick_to_nand_always() {
             _nm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
             if [ -n "$_sm5" ] && [ "$_sm5" = "$_nm5" ]; then
                 setup_log "binary deploy: md5 OK (flash-verified) $_nm5 ($(wc -c < "$CACHED_BIN") bytes)"
+                NAND_BIN_CORRUPT=0
+                rm -f "$BIN_CORRUPT_MARK" 2>/dev/null
                 if [ -r "$STICK_VER_FILE" ]; then
                     cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
                     log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
                 fi
             else
                 NAND_BIN_CORRUPT=1
+                # Deliberately NOT removed, unlike the go-librespot engine
+                # below. The engine is optional and the agent re-delivers it
+                # over the air; this binary is the agent. Deleting the only
+                # cached copy leaves a stickless boot with no agent at all and
+                # no way to get one, which is worse than a loudly-logged
+                # attempt at an unverified one. The marker makes the next boot
+                # prefer the stick copy instead.
+                : > "$BIN_CORRUPT_MARK" 2>/dev/null
                 setup_log "binary deploy: md5 MISMATCH after flash sync stick=$_sm5 nand=$_nm5 — the NAND write did not commit (full NAND?); the agent will be run from a RAM copy instead (see RAM-exec)"
             fi
         else
@@ -1518,6 +1545,17 @@ shim_late_swap() {
 if [ "$NAND_BIN_CORRUPT" = "1" ] && stage_ram_binary; then
     BIN="$RAM_BIN"
     log "running the agent from RAM ($BIN): the NAND copy did not commit to flash"
+elif [ "$NAND_BIN_CORRUPT" = "1" ] && [ -x "$STICK_BIN" ]; then
+    # Known-good beats known-bad. This arm used to sit AFTER the plain
+    # [ -x "$CACHED_BIN" ] test, so when no RAM copy could be staged the
+    # script ran the binary it had declared corrupt two log lines earlier, in
+    # preference to the stick copy it had just verified as that binary's own
+    # source. The two arms were three lines apart and in the wrong order.
+    BIN="$STICK_BIN"
+    log "the NAND copy did not commit and no RAM copy could be staged; running the agent from the stick instead"
+elif [ "$NAND_BIN_CORRUPT" = "1" ] && [ -x "$CACHED_BIN" ]; then
+    BIN="$CACHED_BIN"
+    log "WARNING: running the UNVERIFIED NAND agent ($BIN): no RAM copy could be staged and no stick is present. If it crash-loops, reinstall from a stick"
 elif [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
 elif [ -x "$STICK_BIN" ]; then
@@ -1532,10 +1570,16 @@ fi
 if [ -f "$PIDFILE" ]; then
     OLDPID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
-        log "previous agent still running (PID $OLDPID), stopping it"
-        kill -TERM "$OLDPID" 2>/dev/null
-        sleep 2
-        kill -KILL "$OLDPID" 2>/dev/null
+        if pid_is_our_agent "$OLDPID" "$BIN"; then
+            log "previous agent still running (PID $OLDPID), stopping it"
+            kill -TERM "$OLDPID" 2>/dev/null
+            sleep 2
+            kill -KILL "$OLDPID" 2>/dev/null
+        else
+            # The pidfile survived a reboot and that number now belongs to
+            # something else. Signalling it would kill an unrelated process.
+            log "stale pidfile: PID $OLDPID is not our agent any more, not signalling it"
+        fi
     fi
     rm -f "$PIDFILE"
 fi
@@ -2058,6 +2102,36 @@ install_boot_script() {
     return 0
 }
 
+pid_is_our_agent() {
+    # $1 = pid, $2 = the agent binary this boot intends to run.
+    #
+    # kill -0 proves only that SOMETHING owns that pid. The pidfile lives on
+    # NAND and survives the reboot, and nothing clears it at shutdown (the
+    # watchdogs use a failing kill -0 as their restart trigger), so every boot
+    # reads the previous boot's number while Linux hands the same numbers out
+    # again from 1. Confirm from /proc before signalling anything.
+    #
+    # Matched on the BINARY name, not on "streborn": the boot script itself
+    # lives at /mnt/nv/streborn/run-override.sh, so a looser match could send
+    # KILL to our own supervisor.
+    #
+    # PROC_ROOT is a test seam and nothing else; on the speaker it is /proc.
+    [ -n "${1:-}" ] || return 1
+    [ "$1" -gt 0 ] 2>/dev/null || return 1
+    _pioa_want="${2##*/}"
+    [ -n "$_pioa_want" ] || _pioa_want="streborn-armv7l"
+    # Guarded: a pid that is gone makes the redirect itself fail, and the
+    # shell reports that on stderr regardless of the 2>/dev/null on tr, which
+    # would put noise in the boot log for the commonest case of all.
+    _pioa_cf="${PROC_ROOT:-/proc}/$1/cmdline"
+    [ -r "$_pioa_cf" ] || return 1
+    _pioa_cmd=$(tr '\0' ' ' < "$_pioa_cf" 2>/dev/null)
+    [ -n "$_pioa_cmd" ] || return 1
+    case "$_pioa_cmd" in
+        *"/$_pioa_want"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 wpa_globals_only() {
     # $1 = a wpa_supplicant.conf. Prints every line OUTSIDE a network block,
     # verbatim, and drops the network blocks.
@@ -4543,7 +4617,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done

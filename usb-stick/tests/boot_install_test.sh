@@ -35,10 +35,10 @@ fail() {
 check() { if [ "$2" = "$3" ]; then ok; else fail "$1 (want rc=$2, got rc=$3)"; fi; }
 
 extract() {
-    awk '
-        /^install_boot_script\(\) \{/ { inside = 1 }
-        inside                        { print }
-        inside && $0 == "}"           { exit }
+    awk -v fn="${2:-install_boot_script}" '
+        $0 == fn "() {"     { inside = 1 }
+        inside              { print }
+        inside && $0 == "}" { exit }
     ' "$1"
 }
 
@@ -171,6 +171,67 @@ make_script "$WORK/fresh.sh" 40
 install_boot_script "$WORK/fresh.sh" "$WORK/brandnew.sh"
 check "installing where nothing existed succeeds" 0 $?
 if [ -x "$WORK/brandnew.sh" ]; then ok; else fail "the fresh install is not executable"; fi
+
+# ---- pid_is_our_agent: never signal a reused PID -------------------------
+#
+# The pidfile lives on NAND and survives the reboot, and nothing clears it at
+# shutdown (the watchdogs use a failing kill -0 as their restart trigger). So
+# every boot reads the previous boot's number while Linux hands the same
+# numbers out again from 1. kill -0 alone was taken as proof of identity before
+# escalating to TERM and KILL.
+
+eval "$(extract "$RUN" pid_is_our_agent)"
+
+FAKEPROC="$WORK/proc"
+mk_pid() {
+    # $1 = pid, $2 = cmdline (spaces stand in for the NUL separators)
+    mkdir -p "$FAKEPROC/$1"
+    # /proc/<pid>/cmdline is NUL-separated, and a NUL cannot travel through
+    # argv, so this is built with awk rather than handed to tr.
+    printf '%s' "$2" | awk 'BEGIN{RS=" "} {printf "%s%c", $0, 0}' > "$FAKEPROC/$1/cmdline"
+}
+
+mk_pid 111 "/mnt/nv/streborn/bin/streborn-armv7l"
+mk_pid 222 "/mnt/nv/streborn/run-override.sh"
+mk_pid 333 "/opt/Bose/NetManager --autoswitching=true"
+mk_pid 444 "/mnt/nv/streborn/bin/streborn-armv7l -listen :8888"
+mk_pid 555 "/media/sda1/streborn"
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 111 "/mnt/nv/streborn/bin/streborn-armv7l"
+check "our own agent is recognised" 0 $?
+
+# The one that matters: the boot script itself lives under a path containing
+# "streborn", so a looser match would send KILL to our own supervisor.
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 222 "/mnt/nv/streborn/bin/streborn-armv7l"
+check "the boot script is NOT mistaken for the agent" 1 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 333 "/mnt/nv/streborn/bin/streborn-armv7l"
+check "a firmware daemon is not mistaken for the agent" 1 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 444 "/mnt/nv/streborn/bin/streborn-armv7l"
+check "the agent with arguments is recognised" 0 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 555 "/media/sda1/streborn"
+check "the stick binary name is recognised when that is what we run" 0 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 999 "/mnt/nv/streborn/bin/streborn-armv7l"
+check "a pid with no /proc entry is refused" 1 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent "" "/mnt/nv/streborn/bin/streborn-armv7l"
+check "an empty pid is refused" 1 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 0 "/mnt/nv/streborn/bin/streborn-armv7l"
+check "pid 0 is refused" 1 $?
+
+PROC_ROOT="$FAKEPROC" pid_is_our_agent "notanumber" "/mnt/nv/streborn/bin/streborn-armv7l"
+check "a non-numeric pid is refused" 1 $?
+
+# With no expected binary given it falls back to the agent's usual name, so the
+# check still works rather than matching everything.
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 111 ""
+check "the fallback name still recognises the agent" 0 $?
+PROC_ROOT="$FAKEPROC" pid_is_our_agent 222 ""
+check "the fallback name still rejects the boot script" 1 $?
 
 cleanup
 
