@@ -180,7 +180,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/rc.local setup/run.sh
+          shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/tests/*.sh usb-stick/rc.local setup/run.sh
 
       # CI's own shell, held to a stricter standard than the on-box scripts.
       # These run on a GitHub runner with real bash, not the speaker's BusyBox,
@@ -198,8 +198,24 @@ jobs:
       - name: busybox ash parse gate
         run: |
           sudo apt-get update && sudo apt-get install -y busybox-static
-          for f in usb-stick/*.sh usb-stick/rc.local setup/run.sh; do
+          for f in usb-stick/*.sh usb-stick/tests/*.sh usb-stick/rc.local setup/run.sh; do
             busybox sh -n "$f" && echo "ok: $f"
+          done
+
+      # Behaviour gate, not a syntax one. Both checks above pass happily on a
+      # verdict function that answers the wrong question, which is exactly what
+      # run.sh did: every Wi-Fi provisioning stage judged itself by "does the
+      # box hold an address" instead of "is that address on the network we were
+      # told to join", so a network change reported success while the speaker
+      # stayed put. The harness extracts the functions straight out of run.sh,
+      # stubs their inputs and asserts the answers, under the speaker's own
+      # shell. They also guard the hands-off replay probe, which must keep
+      # passing on ANY lease (#270).
+      - name: on-box script behaviour
+        run: |
+          for t in usb-stick/tests/*_test.sh; do
+            echo "--- $t"
+            busybox sh "$t"
           done
 
   # Lint the workflow files themselves: expression typos, dangling

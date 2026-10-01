@@ -470,6 +470,31 @@ type zoneFormReq struct {
 	DefineOnly bool `json:"defineOnly"`
 }
 
+// sameMasterZone reports whether two zone records are led by the same speaker.
+func sameMasterZone(a, b zones.Zone) bool {
+	return a.Master != "" && a.Master == b.Master
+}
+
+// sameMembers reports whether two zone records carry the same member set,
+// order ignored. Used only to decide whether a replacement is worth shouting
+// about, so a re-form of the identical group stays quiet.
+func sameMembers(a, b zones.Zone) bool {
+	if len(a.Slaves) != len(b.Slaves) {
+		return false
+	}
+	seen := make(map[string]int, len(a.Slaves))
+	for _, m := range a.Slaves {
+		seen[m.DeviceID]++
+	}
+	for _, m := range b.Slaves {
+		seen[m.DeviceID]--
+		if seen[m.DeviceID] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // handleZoneForm creates (or replaces) a group with this box as master (#70 beta).
 // Two user-switchable modes: "native" drives the Bose /setZone family so the
 // firmware syncs the slaves (tightest, when the firmware accepts STR's source);
@@ -730,6 +755,21 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
 	}
 	if s.zones != nil {
+		// The store holds ONE record per master, so this Set replaces whatever
+		// standing group the user had: members and the permanent flag together.
+		// A reporter lost a permanent pair that way on 2026-09-30, to a group
+		// key press that formed a different group with the same master, and had
+		// no way to tell what had happened because nothing said so.
+		//
+		// Say it, loudly, with both member sets. Whether the right answer is to
+		// refuse, to keep two records, or to ask, needs a bundle from somebody it
+		// happened to, and until now a bundle could not show it either.
+		if prev, ok := s.zones.Get(); ok && prev.Permanent && sameMasterZone(prev, z) && !sameMembers(prev, z) {
+			s.logger.Warn("zone: REPLACING the standing permanent group of this speaker with a different one",
+				"master", z.Master,
+				"previousMembers", len(prev.Slaves), "previousPermanent", prev.Permanent, "previousName", prev.Name,
+				"newMembers", len(z.Slaves), "newPermanent", z.Permanent, "newName", z.Name)
+		}
 		if err := s.zones.Set(z); err != nil {
 			s.logger.Warn("zone: persist failed", "err", err)
 		}
@@ -1683,6 +1723,24 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// wakes it (handleZoneForm): in #705 the standby master dragged the whole
 	// fresh pair into standby. As there, a failed wake alone is not a reason to
 	// stop; only a speaker that answers nothing at all is.
+	//
+	// And wake it QUIETLY, exactly as handleZoneForm does. This path mirrored
+	// that one when it was written, but only the plain wake: the quiet one was
+	// added to the sibling later and never copied here. A plain wake lets the
+	// firmware resume the master's last source, so pairing two IDLE speakers
+	// started music by itself, with whichever preset happened to be last
+	// showing as selected (#1074, reported with a log on 2026-09-30: "wake
+	// phase: STANDBY, sending sys power" and six seconds later the box was
+	// playing LOCAL_INTERNET_RADIO). The resume this function wants was already
+	// captured above, so muting and stopping the firmware's own resume here
+	// costs nothing: the pair still restarts what the user was listening to.
+	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "STANDBY" {
+		if err := s.quietWake(ctx); err != nil {
+			s.logger.Warn("stereo: quiet wake of the sleeping master failed, trying the plain wake", "err", err)
+		} else {
+			s.logger.Info("stereo: woke the sleeping master quietly so pairing does not start its last source")
+		}
+	}
 	if err := s.ensureBoxReadyErr(ctx); err != nil {
 		perr := s.speakerStaysSilent(ctx, c)
 		if perr != nil {

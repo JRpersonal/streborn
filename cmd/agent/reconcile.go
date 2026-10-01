@@ -82,6 +82,12 @@ var (
 	// repeat within a minute reads as a human retrying a dead key, not a
 	// phantom frame. presetResyncStandbyOK grants that ask ONE execution
 	// despite a STANDBY reading (the user is demonstrably at the box).
+	// fullPresetWriteAt is when a full pass last wrote every slot to the box.
+	// Two writers exist and neither knew about the other: the reconcile, which
+	// compares against the box first, and initialBoxPresetSync, which writes
+	// unconditionally 30 s after start. They landed fifteen seconds apart and
+	// stored every preset twice, on every speaker, on every start (2026-09-29).
+	fullPresetWriteAt     atomic.Int64
 	standbyThumbLast      atomic.Int64
 	presetResyncStandbyOK atomic.Bool
 )
@@ -209,6 +215,22 @@ func boxPresetURL(p presets.Preset) string {
 // firmware needs ~60 s after a cold boot before /info on 8090 responds and
 // the marge state is ready. 12 s was optimistic.
 // 12 retry slots with a 10 s pause each = ~2 minutes of total runway.
+// fullPresetWriteWindow is how recently a full pass must have written every
+// slot for the initial sync to stand down. Two minutes covers the measured
+// fifteen-second overlap with room to spare, and is far short of anything that
+// would suppress a legitimate sync after a reboot.
+const fullPresetWriteWindow = 120 * time.Second
+
+// initialSyncShouldStandDown reports whether a full pass has just written every
+// slot this sync would write.
+func initialSyncShouldStandDown() bool {
+	last := fullPresetWriteAt.Load()
+	if last == 0 {
+		return false
+	}
+	return time.Since(time.Unix(last, 0)) < fullPresetWriteWindow
+}
+
 func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Logger) {
 	time.Sleep(30 * time.Second)
 	specs := make([]boxcli.PresetSpec, 0, 6)
@@ -219,6 +241,15 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 		})
 	}
 	if len(specs) == 0 {
+		return
+	}
+	// A full pass in the last couple of minutes has already written every slot
+	// this would write, and writing them again is pure NAND wear on hardware
+	// nobody can replace. The retry runway below is untouched: it exists for a
+	// firmware that is not ready at boot, which is a different problem.
+	if initialSyncShouldStandDown() {
+		logger.Info("initial box preset sync: a full re-sync just wrote every slot, standing down",
+			"secondsAgo", time.Now().Unix()-fullPresetWriteAt.Load(), "slots", len(specs))
 		return
 	}
 	logger.Info("starting initial box preset sync", "count", len(specs))
@@ -837,6 +868,8 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if len(missing) > 0 {
 		if forceFull {
 			logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
+			// Tell the initial sync it has nothing left to do.
+			fullPresetWriteAt.Store(time.Now().Unix())
 		} else {
 			logger.Info("preset reconcile: missing slots on box, syncing", "missing", len(missing))
 		}

@@ -232,6 +232,7 @@
   "banner.sshRecommend": "L'accès SSH à cette enceinte est ouvert. Redémarrez l'enceinte une fois pour le refermer, sinon elle reste accessible aux autres sur votre réseau.",
   "banner.sshPersistentNote": "L’accès SSH à cette enceinte est volontairement ouvert. Vous pouvez le désactiver dans les réglages de l’enceinte, sous « Accès SSH à cette enceinte ».",
   "banner.appUpdateAvail": "Nouvelle version de l'application disponible :",
+  "banner.appUpdateAlreadyHere": "Le fichier plus récent est déjà dans ce dossier : {{file}}. Fermez ST Reborn et lancez ce fichier à la place.",
   "banner.dismiss": "Masquer",
   "banner.dismissTitle": "Masquer cet avis. Il revient avec une version ultérieure.",
   "banner.download": "Télécharger",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Attention : pour mettre le texte à jour, l'enceinte doit retamponner le flux, donc la musique se coupera environ une seconde à chaque changement de titre ou de texte. Le morceau est toujours affiché ici dans l'app sans aucune interruption. Activer quand même ?",
   "settingsView.displayTrackConfirmTitle": "Afficher le morceau sur l'écran de l'enceinte ?",
   "settingsView.displayTrackHeading": "Afficher le morceau en cours sur l'écran de l'enceinte",
-  "settingsView.displayTrackHelp": "Désactivé par défaut. Quand c'est activé, le morceau en cours d'une station de radio s'affiche sur l'écran de l'enceinte, comme avant avec la radio internet. L'enceinte doit retamponner pour mettre le texte à jour, donc l'audio se coupe brièvement à chaque changement. Le morceau est toujours affiché dans cette app sans aucune interruption, alors laisse ceci désactivé si tu préfères un son sans coupure.",
+  "settingsView.displayTrackHelp": "Désactivé par défaut. Quand c'est activé, le morceau en cours d'une station de radio s'affiche sur l'écran de l'enceinte, comme avant avec la radio internet. L'enceinte doit retamponner pour mettre le texte à jour, donc l'audio se coupe brièvement à chaque changement. Le morceau est toujours affiché dans cette app sans aucune interruption, alors laisse ceci désactivé si tu préfères un son sans coupure. Sur une enceinte avec écran, cela remplace aussi ce qu'elle affiche d'habitude, le numéro de présélection et la station.",
   "settingsView.displayTrackModeArtist": "Artiste",
   "settingsView.displayTrackModeBoth": "Les deux",
   "settingsView.displayTrackModeLabel": "Afficher :",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Ajoutez votre épingle à la carte du monde, pour montrer où la musique rejoue.",
   "library.serverAsleep": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez.",
   "play.errBoxStuckTryPower": "L'enceinte ne sort pas de veille. Débranchez-la dix secondes puis rebranchez-la, cela suffit presque toujours.",
-  "play.errBoxStuckSendLog": "STR n'arrive pas à sortir cette enceinte de veille. Exportez un diagnostic en bas des réglages de l'enceinte et envoyez-le, juste après un essai."
+  "play.errBoxStuckSendLog": "STR n'arrive pas à sortir cette enceinte de veille. Exportez un diagnostic en bas des réglages de l'enceinte et envoyez-le, juste après un essai.",
+  "banner.appCheckKeepsFailing": "STR n'a pas pu vérifier s'il existe une nouvelle version depuis plusieurs démarrages. Un pare-feu ou un antivirus bloque peut-être la requête. Jetez un œil vous-même sur st-reborn.de de temps en temps."
 }

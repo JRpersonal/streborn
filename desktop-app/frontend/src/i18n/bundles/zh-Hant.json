@@ -245,6 +245,7 @@
   "banner.sshRecommend": "這台喇叭的 SSH 存取是開啟的。把喇叭重新開機一次就會關閉，否則網路上的其他人也連得進去。",
   "banner.sshPersistentNote": "此揚聲器的 SSH 存取是刻意開啟的。你可以在揚聲器設定中的「此揚聲器的 SSH 存取」將它關閉。",
   "banner.appUpdateAvail": "有新的應用程式版本：",
+  "banner.appUpdateAlreadyHere": "較新的檔案已經在這個資料夾裡：{{file}}。請關閉 ST Reborn，改為啟動該檔案。",
   "banner.dismiss": "隱藏",
   "banner.dismissTitle": "隱藏這則提示。之後有新版本時會再出現。",
   "banner.download": "下載",
@@ -820,7 +821,7 @@
   "settingsView.resumeOnPowerSavedToast": "開機續播設定已儲存。",
   "settingsView.displayTrackHeading": "在喇叭螢幕上顯示目前曲目",
   "settingsView.displayTrackWarn": "開啟後，每次顯示的文字改變（例如換了一首歌），音樂都會中斷大約一秒。",
-  "settingsView.displayTrackHelp": "預設是關閉。開啟後，電台正在播的歌會顯示在喇叭自己的螢幕上，就像以前的網路電台一樣。喇叭必須重新緩衝才能更新文字，所以每次變動時聲音都會短暫中斷。在這個應用程式裡曲目一直都看得到，而且完全不會中斷，所以如果你比較在意聲音不要斷，就讓它保持關閉。",
+  "settingsView.displayTrackHelp": "預設是關閉。開啟後，電台正在播的歌會顯示在喇叭自己的螢幕上，就像以前的網路電台一樣。喇叭必須重新緩衝才能更新文字，所以每次變動時聲音都會短暫中斷。在這個應用程式裡曲目一直都看得到，而且完全不會中斷，所以如果你比較在意聲音不要斷，就讓它保持關閉。 在有顯示幕的喇叭上，這也會取代它平常顯示的預設編號與電台。",
   "settingsView.displayTrackConfirmTitle": "要在喇叭螢幕上顯示曲目嗎？",
   "settingsView.displayTrackConfirmBody": "提醒你：為了更新文字，喇叭必須重新緩衝串流，所以每次歌曲或文字改變時，音樂都會中斷大約一秒。在應用程式裡曲目一直都看得到，而且不會中斷。還是要開啟嗎？",
   "settingsView.displayTrackModeLabel": "顯示：",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 在世界地圖上放下你的圖釘，讓大家看到哪裡又響起了音樂。",
   "library.serverAsleep": "{{name}} 沒有回應。通常表示執行它的電腦已關機或睡眠中。喚醒它後再試一次。",
   "play.errBoxStuckTryPower": "揚聲器無法離開待機狀態。請拔掉電源插頭十秒再插回去，通常這樣就好了。",
-  "play.errBoxStuckSendLog": "STR 無法讓這台揚聲器離開待機狀態。請在揚聲器設定下方匯出診斷檔，並在嘗試後立刻寄給我。"
+  "play.errBoxStuckSendLog": "STR 無法讓這台揚聲器離開待機狀態。請在揚聲器設定下方匯出診斷檔，並在嘗試後立刻寄給我。",
+  "banner.appCheckKeepsFailing": "STR 已連續幾次啟動都無法檢查是否有新版本。可能是防火牆或防毒軟體擋住了請求。請偶爾自己到 st-reborn.de 看看。"
 }

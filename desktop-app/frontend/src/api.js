@@ -75,6 +75,7 @@ export {
   DisableBoxMediaServer,
   CurrentWiFi,
   CheckAppUpdate,
+  NewerCopyNextToThisOne,
   ExportBackup,
   ImportBackup,
   ResolveStationLogo,

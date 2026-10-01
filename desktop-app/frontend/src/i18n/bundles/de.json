@@ -245,6 +245,7 @@
   "banner.sshRecommend": "Der SSH-Zugang zu diesem Lautsprecher ist offen. Starte den Lautsprecher einmal neu, um ihn wieder zu schließen. Sonst kann er von anderen im Netzwerk erreicht werden.",
   "banner.sshPersistentNote": "Der SSH-Zugang zu diesem Lautsprecher ist bewusst offen. Du kannst ihn in den Lautsprecher-Einstellungen unter \"SSH-Zugang zum Lautsprecher\" wieder ausschalten.",
   "banner.appUpdateAvail": "Neue App-Version verfügbar:",
+  "banner.appUpdateAlreadyHere": "Die neuere Datei liegt schon in diesem Ordner: {{file}}. Schließe ST Reborn und starte stattdessen diese Datei.",
   "banner.dismiss": "Ausblenden",
   "banner.dismissTitle": "Diesen Hinweis ausblenden. Er kommt mit einer späteren Version wieder.",
   "banner.download": "Download",
@@ -820,7 +821,7 @@
   "settingsView.resumeOnPowerSavedToast": "Einschalt-Wiedergabe gespeichert.",
   "settingsView.displayTrackHeading": "Aktuellen Titel am Lautsprecher-Display anzeigen",
   "settingsView.displayTrackWarn": "Wenn aktiviert, wird die Musik bei jedem Wechsel des angezeigten Texts (z.B. ein neuer Titel) für etwa eine Sekunde unterbrochen.",
-  "settingsView.displayTrackHelp": "Standardmäßig aus. Wenn an, wird der aktuelle Song eines Radiosenders am Display des Lautsprechers angezeigt, wie früher beim Internetradio. Zum Aktualisieren muss der Lautsprecher den Stream neu puffern, daher setzt der Ton bei jeder Änderung kurz aus. In dieser App wird der Titel immer ohne Unterbrechung angezeigt, lass das also aus, wenn du lückenlosen Ton bevorzugst.",
+  "settingsView.displayTrackHelp": "Standardmäßig aus. Wenn an, wird der aktuelle Song eines Radiosenders am Display des Lautsprechers angezeigt, wie früher beim Internetradio. Zum Aktualisieren muss der Lautsprecher den Stream neu puffern, daher setzt der Ton bei jeder Änderung kurz aus. In dieser App wird der Titel immer ohne Unterbrechung angezeigt, lass das also aus, wenn du lückenlosen Ton bevorzugst. Auf einem Lautsprecher mit Display ersetzt das auch seine normale Anzeige, also Presetnummer und Sender.",
   "settingsView.displayTrackConfirmTitle": "Titel am Lautsprecher-Display anzeigen?",
   "settingsView.displayTrackConfirmBody": "Achtung: Zum Aktualisieren des Texts muss der Lautsprecher den Stream neu puffern, daher setzt die Musik bei jedem Song- oder Textwechsel für etwa eine Sekunde aus. In der App wird der Titel immer ohne Unterbrechung angezeigt. Trotzdem aktivieren?",
   "settingsView.displayTrackModeLabel": "Anzeigen:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Setz deinen Pin auf die Weltkarte, damit man sieht, wo überall wieder Musik läuft.",
   "library.serverAsleep": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal.",
   "play.errBoxStuckTryPower": "Der Lautsprecher kommt nicht aus dem Standby. Zieh den Stecker für zehn Sekunden und steck ihn wieder ein, das löst so etwas meistens.",
-  "play.errBoxStuckSendLog": "STR bekommt den Lautsprecher nicht aus dem Standby. Exportiere bitte unten bei den Lautsprecher-Einstellungen eine Diagnose und schick sie mir, direkt nach einem Versuch."
+  "play.errBoxStuckSendLog": "STR bekommt den Lautsprecher nicht aus dem Standby. Exportiere bitte unten bei den Lautsprecher-Einstellungen eine Diagnose und schick sie mir, direkt nach einem Versuch.",
+  "banner.appCheckKeepsFailing": "STR konnte seit mehreren Starts nicht nach einer neuen Version schauen. Vielleicht blockiert eine Firewall oder ein Virenscanner die Anfrage. Schau gelegentlich selbst auf st-reborn.de nach."
 }

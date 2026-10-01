@@ -1,6 +1,9 @@
 import './style.css';
 import { pinPromptKey } from './worldmapinvite.js';
 import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
+import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
+import { spotifyAccountLabel } from './spotifyaccountlabel.js';
+import { statusTickScope } from './statusrefreshscope.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -64,6 +67,7 @@ import {
   TryWiFiPassword,
   CurrentWiFi,
   CheckAppUpdate,
+  NewerCopyNextToThisOne,
   DownloadUpdate,
   ApplyUpdate,
   RevealUpdateFile,
@@ -1267,6 +1271,9 @@ async function checkAppUpdate(manual) {
   const banner = $('appUpdateBanner');
   try {
     const m = await CheckAppUpdate();
+    // The question was reachable, whatever the answer. That is what the run
+    // counts, not whether an update exists.
+    noteCheckSucceeded();
     if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) {
       // Nothing newer. Say so when the user asked; otherwise just leave the
       // way back on screen.
@@ -1322,6 +1329,22 @@ async function checkAppUpdate(manual) {
       <button class="banner-close" id="appUpdateDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('banner.dismissTitle'))}">&times;</button>
     `;
     banner.classList.remove('hidden');
+    // There is no Windows installer: the release is a bare
+    // STR-Windows-vX.Y.Z.exe, so "updating" means downloading a second file
+    // into the same folder and nothing replaces anything. A reporter spent
+    // three rounds of mail on that (2026-10-01), downloading the new version
+    // again and again while starting the old one, until he deleted the old
+    // file by hand. If the newer file is already sitting next to this one,
+    // say so, because downloading it a fourth time will not help.
+    NewerCopyNextToThisOne().then((file) => {
+      if (!file) return;
+      const line = document.createElement('div');
+      line.className = 'app-update-text';
+      line.textContent = t('banner.appUpdateAlreadyHere', { file });
+      banner.insertBefore(line, banner.firstChild);
+      const btn = $('appUpdateBtn');
+      if (btn) btn.hidden = true;
+    }).catch(() => {});
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');
@@ -1346,6 +1369,18 @@ async function checkAppUpdate(manual) {
     // proxy, firewall, DNS) looks exactly like "no update exists", and one
     // user pressed through several releases believing that.
     try { renderAppUpdateCheckLink(banner, manual ? t('banner.appCheckFailed') : ''); } catch {}
+    // A silent automatic check that ALWAYS fails looks exactly like "you are up
+    // to date", forever. One user sat on a June build until the end of
+    // September, 142 releases behind, and nothing on his screen was ever about
+    // the app itself. After a run long enough to rule out a bad afternoon, say
+    // it once, quietly, with the way out beside it.
+    if (!manual) {
+      try {
+        if (shouldSayChecksAreFailing(noteCheckFailed())) {
+          showToast(t('banner.appCheckKeepsFailing'));
+        }
+      } catch { /* never let the notice break the startup */ }
+    }
   }
 }
 
@@ -6673,7 +6708,7 @@ function renderPresets() {
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
-            ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
+            ${p.type === 'spotify' && spotifyAccountLabel(p.account) ? `<div class="preset-account">${escapeHtml(spotifyAccountLabel(p.account))}</div>` : ''}
             ${p.source ? `<div class="preset-source" title="${escapeAttr(p.source)}">${escapeHtml(t('preset.sourceBadge', { source: p.source }))}</div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
@@ -7849,7 +7884,9 @@ function renderTrackProgress() {
 }
 
 async function pollTrackPosition() {
-  if (trackPos.polling || !state.currentBox || state.view !== 'box') return;
+  // No view gate here any more. The bar this feeds is on screen in every tab,
+  // and refreshStatus decides what a tick is allowed to cost (#845).
+  if (trackPos.polling || !state.currentBox) return;
   const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
   if (!playing) { trackPos.at = 0; renderTrackProgress(); return; }
   trackPos.polling = true;
@@ -7902,14 +7939,29 @@ function spotifyKeyUsableFor(box) {
 }
 
 async function refreshStatus() {
-  if (!state.currentBox || state.view !== 'box') return;
+  if (!state.currentBox) return;
+  // The status bar is visible in EVERY tab: it hangs off boxControls, which is
+  // gated only on having a speaker. This function used to return immediately
+  // outside the box view, so on the Library or Recently-played tab the bar sat
+  // frozen. No play state, no track position, and the progress bar hid itself
+  // because its last reading never refreshed, which is exactly where single
+  // tracks get started from. Reported as "the desktop app does not show a
+  // progress bar" while the phone remote did, and the phone has one view and
+  // therefore never skipped a tick (#845).
+  //
+  // Outside the box view only what the visible bar needs is refreshed. The
+  // queue, the preset tiles and the volume slider belong to controls that are
+  // not on screen, and this polls a speaker whose NAND and CPU nobody can
+  // replace. The cadence out there stays the slow one; the bar interpolates
+  // between readings once a second, so it still moves like a clock.
+  const barOnly = !statusTickScope({ hasBox: true, view: state.view }).controls;
   // Reflect hardware-button volume changes back into the slider.
   // Fired in parallel with the Status fetch so a slow Status call
   // does not delay the volume update. Cheap, drag-aware.
-  syncMusicTabVolumeFromBox();
+  if (!barOnly) syncMusicTabVolumeFromBox();
   // Keep the queue transport controls in step with the box. Fired alongside the
   // Status fetch (not awaited) so it shares the poll cadence without delaying it.
-  refreshQueue();
+  if (!barOnly) refreshQueue();
   // Track position rides the same cadence, not awaited so a slow AVTransport
   // read cannot delay the status poll.
   pollTrackPosition();
@@ -7917,7 +7969,7 @@ async function refreshStatus() {
   // to the same speaker, and until now the tiles here kept whatever they were
   // loaded with, so a key reassigned from the phone showed the old station
   // until the speaker was reselected.
-  refreshPresetsIfChanged();
+  if (!barOnly) refreshPresetsIfChanged();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     _statusFailCount = 0; // the box answered: it is reachable at its current IP

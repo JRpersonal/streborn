@@ -232,6 +232,7 @@
   "banner.sshRecommend": "SSH-toegang tot deze speaker staat open. Start de speaker één keer opnieuw op om die weer te sluiten, anders is hij bereikbaar voor anderen op je netwerk.",
   "banner.sshPersistentNote": "SSH-toegang tot deze speaker staat bewust open. Je kunt hem weer uitzetten bij de speakerinstellingen, onder \"SSH-toegang tot deze speaker\".",
   "banner.appUpdateAvail": "Nieuwe app-versie beschikbaar:",
+  "banner.appUpdateAlreadyHere": "Het nieuwere bestand staat al in deze map: {{file}}. Sluit ST Reborn af en start dat bestand.",
   "banner.dismiss": "Verbergen",
   "banner.dismissTitle": "Verberg deze melding. Hij komt terug bij een latere versie.",
   "banner.download": "Downloaden",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Let op: om de tekst bij te werken moet de luidspreker de stream opnieuw bufferen, dus de muziek valt elke keer ongeveer een seconde weg als het nummer of de tekst verandert. Het nummer wordt hier in de app altijd zonder onderbreking getoond. Toch inschakelen?",
   "settingsView.displayTrackConfirmTitle": "Het nummer op het luidsprekerdisplay tonen?",
   "settingsView.displayTrackHeading": "Het huidige nummer op het luidsprekerdisplay tonen",
-  "settingsView.displayTrackHelp": "Standaard uit. Als dit aan staat, wordt het actuele nummer van een radiozender op het eigen display van de luidspreker getoond, zoals vroeger bij internetradio. De luidspreker moet opnieuw bufferen om de tekst bij te werken, dus de audio valt bij elke wijziging even weg. Het nummer wordt in deze app altijd zonder onderbreking getoond, dus laat dit uit als je liever ononderbroken geluid hebt.",
+  "settingsView.displayTrackHelp": "Standaard uit. Als dit aan staat, wordt het actuele nummer van een radiozender op het eigen display van de luidspreker getoond, zoals vroeger bij internetradio. De luidspreker moet opnieuw bufferen om de tekst bij te werken, dus de audio valt bij elke wijziging even weg. Het nummer wordt in deze app altijd zonder onderbreking getoond, dus laat dit uit als je liever ononderbroken geluid hebt. Op een speaker met display vervangt dit ook wat er normaal staat, het presetnummer en de zender.",
   "settingsView.displayTrackModeArtist": "Artiest",
   "settingsView.displayTrackModeBoth": "Beide",
   "settingsView.displayTrackModeLabel": "Tonen:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Zet je pin op de wereldkaart, dan is te zien waar de muziek weer speelt.",
   "library.serverAsleep": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw.",
   "play.errBoxStuckTryPower": "De speaker komt niet uit stand-by. Haal de stekker er tien seconden uit en steek hem er weer in, dat lost dit meestal op.",
-  "play.errBoxStuckSendLog": "STR krijgt deze speaker niet uit stand-by. Exporteer onderaan bij de speakerinstellingen een diagnose en stuur die op, direct na een poging."
+  "play.errBoxStuckSendLog": "STR krijgt deze speaker niet uit stand-by. Exporteer onderaan bij de speakerinstellingen een diagnose en stuur die op, direct na een poging.",
+  "banner.appCheckKeepsFailing": "STR heeft al een aantal keren niet kunnen kijken of er een nieuwe versie is. Mogelijk blokkeert een firewall of virusscanner het verzoek. Kijk af en toe zelf op st-reborn.de."
 }

@@ -232,6 +232,7 @@
   "banner.sshRecommend": "SSH prieiga prie šio garsiakalbio yra atvira. Vieną kartą paleiskite garsiakalbį iš naujo, kad ją vėl uždarytumėte, kitaip jį gali pasiekti kiti jūsų tinkle.",
   "banner.sshPersistentNote": "SSH prieiga prie šios kolonėlės palikta atvira sąmoningai. Ją gali išjungti kolonėlės nustatymuose, dalyje „SSH prieiga prie šios kolonėlės“.",
   "banner.appUpdateAvail": "Galima nauja programos versija:",
+  "banner.appUpdateAlreadyHere": "Naujesnis failas jau yra šiame aplanke: {{file}}. Uždarykite ST Reborn ir paleiskite tą failą.",
   "banner.dismiss": "Slėpti",
   "banner.dismissTitle": "Slėpti šį pranešimą. Jis vėl pasirodys su vėlesne versija.",
   "banner.download": "Atsisiųsti",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Atkreipk dėmesį: kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti srautą, todėl muzika nutrūks maždaug sekundei kaskart, kai pasikeičia daina ar tekstas. Programoje takelis visada rodomas be jokių pertrūkių. Vis tiek įjungti?",
   "settingsView.displayTrackConfirmTitle": "Rodyti takelį garsiakalbio ekrane?",
   "settingsView.displayTrackHeading": "Rodyti dabartinį takelį garsiakalbio ekrane",
-  "settingsView.displayTrackHelp": "Pagal numatytuosius nustatymus išjungta. Kai įjungta, radijo stoties grojama daina rodoma paties garsiakalbio ekrane, kaip anksčiau su interneto radiju. Kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti, todėl garsas trumpam nutrūksta kaskart pasikeitus. Šioje programoje takelis visada rodomas be jokių pertrūkių, tad palik tai išjungta, jei nori garso be pertrūkių.",
+  "settingsView.displayTrackHelp": "Pagal numatytuosius nustatymus išjungta. Kai įjungta, radijo stoties grojama daina rodoma paties garsiakalbio ekrane, kaip anksčiau su interneto radiju. Kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti, todėl garsas trumpam nutrūksta kaskart pasikeitus. Šioje programoje takelis visada rodomas be jokių pertrūkių, tad palik tai išjungta, jei nori garso be pertrūkių. Kolonėlėje su ekranu tai taip pat pakeičia įprastą vaizdą, nustatymo numerį ir stotį.",
   "settingsView.displayTrackModeArtist": "Atlikėjas",
   "settingsView.displayTrackModeBoth": "Abu",
   "settingsView.displayTrackModeLabel": "Rodyti:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Pridėk savo smeigtuką pasaulio žemėlapyje, kad matytųsi, kur vėl groja muzika.",
   "library.serverAsleep": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą.",
   "play.errBoxStuckTryPower": "Kolonėlė neišeina iš budėjimo režimo. Ištrauk kištuką dešimčiai sekundžių ir vėl įkišk, tai paprastai padeda.",
-  "play.errBoxStuckSendLog": "STR negali pažadinti šios kolonėlės. Kolonėlės nustatymų apačioje eksportuok diagnostiką ir atsiųsk ją iškart po bandymo."
+  "play.errBoxStuckSendLog": "STR negali pažadinti šios kolonėlės. Kolonėlės nustatymų apačioje eksportuok diagnostiką ir atsiųsk ją iškart po bandymo.",
+  "banner.appCheckKeepsFailing": "STR jau kelis paleidimus negali patikrinti, ar yra nauja versija. Gali būti, kad užklausą blokuoja ugniasienė arba antivirusinė. Kartkartėmis pats užsuk į st-reborn.de."
 }

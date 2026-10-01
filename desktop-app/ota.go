@@ -642,6 +642,21 @@ func classifyAgentVersion(ver map[string]string, embedded, wantBuild string) (ve
 		" and does not report the pushed binary on disk"
 }
 
+// nandCauseClause names the speaker's free space as the likely reason a push
+// landed on disk and never ran, when the space is what the pre-flight check
+// already called TIGHT.
+//
+// The check ran, said "a second copy for the atomic write may not fit", wrote
+// that to the journal and pushed anyway (fail-open, by design: "may not fit"
+// is not "will not"). But the VERDICT a few minutes later blamed a boot
+// rollback and said an identical re-push cannot help, with no mention of the
+// one thing the same run had already measured. So the user read a generic
+// failure and had nothing to act on.
+//
+// Live case, 2026-09-30: a SoundTouch 20 with 11 MB free for a 16 MB binary
+// failed this way twice in one morning and had been stuck on a build from the
+// 12th of September for weeks, while its owner's four other speakers updated
+// fine. He only found out because the speaker stopped answering altogether.
 // boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as
 // opposed to STR's agent. /info is the cheapest endpoint the Bose firmware
 // serves and it answers on every model and every chassis, firewalled or not,

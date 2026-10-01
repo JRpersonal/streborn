@@ -232,6 +232,7 @@
   "banner.sshRecommend": "El acceso SSH a este altavoz está abierto. Reinicia el altavoz una vez para cerrarlo de nuevo; de lo contrario, otras personas de tu red pueden acceder a él.",
   "banner.sshPersistentNote": "El acceso SSH a este altavoz está abierto a propósito. Puedes desactivarlo en los ajustes del altavoz, en «Acceso SSH a este altavoz».",
   "banner.appUpdateAvail": "Nueva versión de la aplicación disponible:",
+  "banner.appUpdateAlreadyHere": "El archivo más nuevo ya está en esta carpeta: {{file}}. Cierra ST Reborn y abre ese archivo.",
   "banner.dismiss": "Ocultar",
   "banner.dismissTitle": "Oculta este aviso. Vuelve a aparecer con una versión posterior.",
   "banner.download": "Descargar",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Aviso: para actualizar el texto, el altavoz tiene que volver a cargar el búfer del stream, así que la música se cortará alrededor de un segundo cada vez que cambie la canción o el texto. La pista siempre se muestra aquí en la app sin ninguna interrupción. ¿Activar de todos modos?",
   "settingsView.displayTrackConfirmTitle": "¿Mostrar la pista en la pantalla del altavoz?",
   "settingsView.displayTrackHeading": "Mostrar la pista actual en la pantalla del altavoz",
-  "settingsView.displayTrackHelp": "Desactivado por defecto. Cuando está activado, la canción en directo de una emisora de radio se muestra en la propia pantalla del altavoz, como antes con la radio por internet. El altavoz tiene que volver a cargar el búfer para actualizar el texto, así que el audio se corta brevemente con cada cambio. La pista siempre se muestra en esta app sin ninguna interrupción, así que déjalo desactivado si prefieres un audio sin cortes.",
+  "settingsView.displayTrackHelp": "Desactivado por defecto. Cuando está activado, la canción en directo de una emisora de radio se muestra en la propia pantalla del altavoz, como antes con la radio por internet. El altavoz tiene que volver a cargar el búfer para actualizar el texto, así que el audio se corta brevemente con cada cambio. La pista siempre se muestra en esta app sin ninguna interrupción, así que déjalo desactivado si prefieres un audio sin cortes. En un altavoz con pantalla, también sustituye lo que muestra normalmente, el número de preselección y la emisora.",
   "settingsView.displayTrackModeArtist": "Intérprete",
   "settingsView.displayTrackModeBoth": "Ambos",
   "settingsView.displayTrackModeLabel": "Mostrar:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Pon tu chincheta en el mapa mundial, para que se vea dónde vuelve a sonar la música.",
   "library.serverAsleep": "{{name}} no responde. Normalmente eso significa que el ordenador en el que se ejecuta está apagado o en suspensión. Despiértalo e inténtalo de nuevo.",
   "play.errBoxStuckTryPower": "El altavoz no sale del modo de espera. Desenchúfalo diez segundos y vuelve a enchufarlo, eso suele resolverlo.",
-  "play.errBoxStuckSendLog": "STR no consigue sacar este altavoz del modo de espera. Exporta un diagnóstico al final de los ajustes del altavoz y envíalo, justo después de un intento."
+  "play.errBoxStuckSendLog": "STR no consigue sacar este altavoz del modo de espera. Exporta un diagnóstico al final de los ajustes del altavoz y envíalo, justo después de un intento.",
+  "banner.appCheckKeepsFailing": "STR lleva varios arranques sin poder comprobar si hay una versión nueva. Puede que un cortafuegos o un antivirus esté bloqueando la petición. Echa un vistazo tú mismo en st-reborn.de de vez en cuando."
 }

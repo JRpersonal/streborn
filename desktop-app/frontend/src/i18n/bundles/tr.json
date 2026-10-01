@@ -232,6 +232,7 @@
   "banner.sshRecommend": "Bu hoparlöre SSH erişimi açık. Tekrar kapatmak için hoparlörü bir kez yeniden başlatın, aksi halde ağınızdaki başkaları ona erişebilir.",
   "banner.sshPersistentNote": "Bu hoparlöre SSH erişimi bilerek açık bırakılmış. Hoparlör ayarlarında “Bu hoparlöre SSH erişimi” altından yeniden kapatabilirsin.",
   "banner.appUpdateAvail": "Yeni uygulama sürümü mevcut:",
+  "banner.appUpdateAlreadyHere": "Daha yeni dosya zaten bu klasörde: {{file}}. ST Reborn uygulamasını kapatıp o dosyayı başlatın.",
   "banner.dismiss": "Gizle",
   "banner.dismissTitle": "Bu bildirimi gizle. Daha sonraki bir sürümde tekrar görünür.",
   "banner.download": "İndir",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Dikkat: Metni güncellemek için hoparlörün akışı yeniden ara belleğe alması gerekir, bu yüzden şarkı veya metin her değiştiğinde müzik yaklaşık bir saniye kesilir. Parça burada uygulamada her zaman kesintisiz gösterilir. Yine de açılsın mı?",
   "settingsView.displayTrackConfirmTitle": "Parça hoparlör ekranında gösterilsin mi?",
   "settingsView.displayTrackHeading": "Çalan parçayı hoparlör ekranında göster",
-  "settingsView.displayTrackHelp": "Varsayılan olarak kapalı. Açıkken, bir radyo istasyonunun anlık şarkısı, eskiden internet radyosunda olduğu gibi hoparlörün kendi ekranında gösterilir. Metni güncellemek için hoparlörün yeniden ara belleğe alması gerekir, bu yüzden her değişiklikte ses kısa süre kesilir. Parça bu uygulamada her zaman kesintisiz gösterilir, bu yüzden kesintisiz ses istiyorsan bunu kapalı bırak.",
+  "settingsView.displayTrackHelp": "Varsayılan olarak kapalı. Açıkken, bir radyo istasyonunun anlık şarkısı, eskiden internet radyosunda olduğu gibi hoparlörün kendi ekranında gösterilir. Metni güncellemek için hoparlörün yeniden ara belleğe alması gerekir, bu yüzden her değişiklikte ses kısa süre kesilir. Parça bu uygulamada her zaman kesintisiz gösterilir, bu yüzden kesintisiz ses istiyorsan bunu kapalı bırak. Ekranı olan bir hoparlörde, normalde gösterdiği şeyin yerini de alır: ön ayar numarası ve istasyon.",
   "settingsView.displayTrackModeArtist": "Sanatçı",
   "settingsView.displayTrackModeBoth": "İkisi de",
   "settingsView.displayTrackModeLabel": "Göster:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Dünya haritasına iğneni koy, müziğin yeniden nerelerde çaldığı görünsün.",
   "library.serverAsleep": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene.",
   "play.errBoxStuckTryPower": "Hoparlör bekleme modundan çıkmıyor. Fişini on saniye çekip tekrar tak, bu genellikle çözer.",
-  "play.errBoxStuckSendLog": "STR bu hoparlörü bekleme modundan çıkaramıyor. Hoparlör ayarlarının altından bir tanılama dışa aktarıp gönder, denemenin hemen ardından."
+  "play.errBoxStuckSendLog": "STR bu hoparlörü bekleme modundan çıkaramıyor. Hoparlör ayarlarının altından bir tanılama dışa aktarıp gönder, denemenin hemen ardından.",
+  "banner.appCheckKeepsFailing": "STR birkaç açılıştır yeni sürüm olup olmadığına bakamıyor. Bir güvenlik duvarı ya da virüs tarayıcı isteği engelliyor olabilir. Ara sıra st-reborn.de adresine kendin göz at."
 }

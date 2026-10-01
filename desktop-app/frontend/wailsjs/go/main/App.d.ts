@@ -137,6 +137,8 @@ export function LogSpotifySaveGate(arg1:string,arg2:number,arg3:string,arg4:stri
 
 export function MovePreset(arg1:string,arg2:number,arg3:number,arg4:number):Promise<void>;
 
+export function NewerCopyNextToThisOne():Promise<string>;
+
 export function Next(arg1:string,arg2:number):Promise<void>;
 
 export function Pause(arg1:string,arg2:number):Promise<void>;

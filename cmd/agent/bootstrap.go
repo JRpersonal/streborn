@@ -544,7 +544,14 @@ func stampVersionFiles(logger *slog.Logger) {
 	if buildStamp != "" && buildStamp != "dev" {
 		stamp = version + "+" + buildStamp
 	}
-	for _, p := range []string{"/mnt/nv/streborn/version.txt", "/media/sda1/version.txt"} {
+	// NAND only. The stick's version.txt used to be stamped here too, and
+	// that is the one marker the stick carries: STR reads it as the
+	// authority on what the stick HOLDS (the stick version in the
+	// diagnostic). Stamping it with the running agent's version made the
+	// field that exists to reveal stick/agent skew always agree, so a stick
+	// carrying an old binary looked current. The stick is written by the
+	// desktop app, and only the app knows what it put there.
+	for _, p := range []string{"/mnt/nv/streborn/version.txt"} {
 		dir := p[:strings.LastIndex(p, "/")]
 		if _, err := os.Stat(dir); err != nil {
 			continue

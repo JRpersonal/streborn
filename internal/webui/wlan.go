@@ -510,7 +510,10 @@ func (r wpaApplyResult) String() string {
 // read-only on rhino/scm) so a failed switch can roll back. A failed backup never
 // blocks the switch — it only forfeits the rollback.
 func (s *Server) applyWlanWPALive(iface, ssid, password string, hidden bool) wpaApplyResult {
-	if cur, err := os.ReadFile(wpaConfPath); err == nil {
+	// cur outlives the backup block on purpose: it is also the template whose
+	// global directives the new conf must keep (buildWPAConfigFrom).
+	cur, curErr := os.ReadFile(wpaConfPath)
+	if curErr == nil {
 		if werr := os.WriteFile(wpaBackupPath, cur, 0o600); werr != nil {
 			// Read-only NAND would be unexpected, but never let a backup failure
 			// abort the switch (the old /etc backup did, breaking every switch on
@@ -526,7 +529,7 @@ func (s *Server) applyWlanWPALive(iface, ssid, password string, hidden bool) wpa
 		// write-failure path above.
 		_ = os.Remove(wpaBackupPath)
 	}
-	method, err := writeWPAConf(buildWPAConfig(ssid, password, hidden))
+	method, err := writeWPAConf(buildWPAConfigFrom(string(cur), ssid, password, hidden))
 	if err != nil {
 		s.logger.Warn("WLAN: write wpa conf failed, will reboot to apply via boot path", "err", err, "path", wpaConfPath)
 		return wpaCannotApply
@@ -539,11 +542,18 @@ func (s *Server) applyWlanWPALive(iface, ssid, password string, hidden bool) wpa
 	// and roll straight back (#288). Each stage only runs if the previous one did
 	// not associate, and the rollback in applyWLANChange still protects a genuine
 	// failure (e.g. a wrong password), so this can only help, never strand.
-	reloadWPA(iface)
-	if waitWPAAssociated(iface, ssid, 12*time.Second) {
-		return wpaConfirmed
+	// Without wpa_cli there is no in-place reload, and the restart below is the
+	// whole of what the old fallback did anyway. Going straight there skips a
+	// silent duplicate restart and twelve seconds of polling a supplicant that
+	// cannot have been told anything.
+	if reloadWPAInPlace(iface) {
+		if waitWPAAssociated(iface, ssid, 12*time.Second) {
+			return wpaConfirmed
+		}
+		s.logger.Warn("WLAN: reconfigure did not associate, restarting wpa_supplicant (M3)", "ssid", ssid)
+	} else {
+		s.logger.Info("WLAN: no wpa_cli on this speaker, going straight to the wpa_supplicant restart (M3)", "ssid", ssid, "iface", iface)
 	}
-	s.logger.Warn("WLAN: reconfigure did not associate, restarting wpa_supplicant (M3)", "ssid", ssid)
 	restartWPA(iface)
 	if waitWPAAssociated(iface, ssid, 12*time.Second) {
 		return wpaConfirmed
@@ -649,18 +659,31 @@ func writeWPAConfAt(confPath, tmpPath, content string) (string, error) {
 	return "bind", nil
 }
 
-// reloadWPA reloads the new conf in place via wpa_cli (preferred, keeps the
-// daemon up), or restarts wpa_supplicant if wpa_cli is absent. Same commands
-// run.sh uses in its M3/M6 approaches.
+// reloadWPAInPlace makes the running wpa_supplicant re-read the conf without
+// restarting it, the way run.sh does. Returns false when wpa_cli is absent,
+// i.e. when nothing was done and the caller must escalate.
+//
+// Note that wpa_cli can live in /usr/local/sbin, which is NOT on a
+// non-interactive shell's PATH: a probe reporting "command not found" says
+// nothing about what LookPath finds here.
+func reloadWPAInPlace(iface string) bool {
+	if _, err := exec.LookPath("wpa_cli"); err != nil {
+		return false
+	}
+	_ = exec.Command("wpa_cli", "-i", iface, "reconfigure").Run()
+	_ = exec.Command("wpa_cli", "-i", iface, "reassociate").Run()
+	return true
+}
+
+// reloadWPA applies a freshly written conf and does whatever it takes: in
+// place if wpa_cli is there, otherwise a full restart. For the ROLLBACK paths,
+// which have no escalation stage behind them, so a conf that never takes
+// effect leaves the speaker on neither network.
 func reloadWPA(iface string) {
-	if _, err := exec.LookPath("wpa_cli"); err == nil {
-		_ = exec.Command("wpa_cli", "-i", iface, "reconfigure").Run()
-		_ = exec.Command("wpa_cli", "-i", iface, "reassociate").Run()
+	if reloadWPAInPlace(iface) {
 		return
 	}
-	_ = exec.Command("killall", "wpa_supplicant").Run()
-	time.Sleep(time.Second)
-	_ = exec.Command("wpa_supplicant", "-B", "-i", iface, "-s", "-c", wpaConfPath, "-D", "nl80211").Start()
+	restartWPA(iface)
 }
 
 // wpaAssociatedTo reports whether wpa_supplicant is COMPLETED on the given SSID.
@@ -711,14 +734,59 @@ func rebootBox() {
 	_ = exec.Command("sh", "-c", "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &").Start()
 }
 
-// buildWPAConfig generates a minimal wpa_supplicant.conf. With an empty
-// password key_mgmt=NONE is set (open WLAN). hidden adds scan_ssid=1 to the
-// network block so wpa_supplicant sends SSID-specific probe requests, which is
-// the only way to find a network that does not broadcast its SSID.
-func buildWPAConfig(ssid, psk string, hidden bool) string {
+// wpaCtrlInterfaceLine is the control-socket line STR writes when the
+// speaker's own conf carries none. The DIR=/GROUP= spelling is the explicit
+// form of the bare path Bose writes; wpa_supplicant accepts both, and GROUP
+// cannot lock anybody out here because every client on the box is root
+// (measured 2026-09-30: NetManager runs as root and is wpa_supplicant's own
+// parent process).
+const wpaCtrlInterfaceLine = "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root"
+
+// wpaGlobalLines returns every line of an existing wpa_supplicant.conf that
+// sits OUTSIDE a network block, in order and otherwise verbatim. Comments and
+// blank lines are kept; other block types (cred, p2p) are left alone, because
+// only the network blocks are ours to replace.
+func wpaGlobalLines(existing string) []string {
+	var out []string
+	depth := 0
+	for _, raw := range strings.Split(existing, "\n") {
+		line := strings.TrimRight(raw, "\r")
+		t := strings.TrimSpace(line)
+		if depth > 0 {
+			if t == "}" {
+				depth--
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "network=") && strings.Contains(t, "{") {
+			// A one-liner block closes on its own line and opens no depth.
+			if !strings.HasSuffix(t, "}") {
+				depth++
+			}
+			continue
+		}
+		out = append(out, line)
+	}
+	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
+
+// hasWPADirective reports whether one of the kept global lines already sets
+// name, so a preserved value is never duplicated by one of ours.
+func hasWPADirective(lines []string, name string) bool {
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), name+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+// wpaNetworkBlock is the single network={} block for the chosen network.
+func wpaNetworkBlock(ssid, psk string, hidden bool) string {
 	var b strings.Builder
-	b.WriteString("ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root\n")
-	b.WriteString("update_config=1\n")
 	b.WriteString("network={\n")
 	b.WriteString("    ssid=\"" + escapeWPAValue(ssid) + "\"\n")
 	if hidden {
@@ -741,6 +809,54 @@ func buildWPAConfig(ssid, psk string, hidden bool) string {
 	b.WriteString("    priority=" + strconv.Itoa(wlanChosenPriority) + "\n")
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// buildWPAConfigFrom produces the conf to install, keeping every global
+// directive the speaker already had and replacing its network blocks with the
+// one chosen network.
+//
+// This matters because the vendor file is not a credential store. Measured on
+// an ST10 on 2026-09-30: it carries thirteen globals and NO network block at
+// all, while wpa_cli reports an associated network, because NetManager injects
+// its stored profile into the running supplicant. Six of those globals are the
+// box's WPS/P2P identity (device_name, manufacturer, model_name, model_number,
+// serial_number, config_methods) and five are radio behaviour (ap_scan,
+// driver_param, disassoc_low_ack, eapol_version, fast_reauth). Writing a
+// minimal conf dropped all eleven, and since NetManager re-reads this file
+// whenever it respawns wpa_supplicant, the loss would outlive the switch.
+//
+// An unreadable or block-only conf falls back to the minimal form: there is
+// nothing to preserve, and a switch must not fail for want of a template.
+func buildWPAConfigFrom(existing, ssid, psk string, hidden bool) string {
+	globals := wpaGlobalLines(existing)
+	if len(globals) == 0 {
+		return buildWPAConfig(ssid, psk, hidden)
+	}
+	var b strings.Builder
+	for _, l := range globals {
+		b.WriteString(l + "\n")
+	}
+	if !hasWPADirective(globals, "ctrl_interface") {
+		b.WriteString(wpaCtrlInterfaceLine + "\n")
+	}
+	// update_config lets wpa_supplicant persist its own changes (save_config in
+	// the M4 fallback needs it). Bose sets it; keep theirs if so.
+	if !hasWPADirective(globals, "update_config") {
+		b.WriteString("update_config=1\n")
+	}
+	b.WriteString(wpaNetworkBlock(ssid, psk, hidden))
+	return b.String()
+}
+
+// buildWPAConfig generates a minimal wpa_supplicant.conf from nothing: the
+// fallback for a speaker whose own conf could not be read. With an empty
+// password key_mgmt=NONE is set (open WLAN). hidden adds scan_ssid=1 to the
+// network block so wpa_supplicant sends SSID-specific probe requests, which is
+// the only way to find a network that does not broadcast its SSID.
+func buildWPAConfig(ssid, psk string, hidden bool) string {
+	return wpaCtrlInterfaceLine + "\n" +
+		"update_config=1\n" +
+		wpaNetworkBlock(ssid, psk, hidden)
 }
 
 func escapeWPAValue(s string) string {

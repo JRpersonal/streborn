@@ -245,6 +245,7 @@
   "banner.sshRecommend": "SSH access to this speaker is open. Restart the speaker once to close it again, otherwise it can be reached by others on your network.",
   "banner.sshPersistentNote": "SSH access to this speaker is deliberately open. You can switch it off again in the speaker settings, under \"SSH access to this speaker\".",
   "banner.appUpdateAvail": "New app version available:",
+  "banner.appUpdateAlreadyHere": "The newer file is already in this folder: {{file}}. Close ST Reborn and start that file instead.",
   "banner.dismiss": "Dismiss",
   "banner.dismissTitle": "Hide this notice. It comes back with a later version.",
   "banner.download": "Download",
@@ -820,7 +821,7 @@
   "settingsView.resumeOnPowerSavedToast": "Power-on resume saved.",
   "settingsView.displayTrackHeading": "Show the current track on the speaker display",
   "settingsView.displayTrackWarn": "When on, the music is interrupted for about a second each time the shown text changes (e.g. a new track).",
-  "settingsView.displayTrackHelp": "Off by default. When on, the live song of a radio station is shown on the speaker's own display, like internet radio used to. The speaker has to re-buffer to update the text, so the audio drops out briefly on each change. The track is always shown in this app without any interruption, so leave this off if you prefer gap-free audio.",
+  "settingsView.displayTrackHelp": "Off by default. When on, the live song of a radio station is shown on the speaker's own display, like internet radio used to. The speaker has to re-buffer to update the text, so the audio drops out briefly on each change. The track is always shown in this app without any interruption, so leave this off if you prefer gap-free audio. On a speaker with a display it also replaces what it normally shows, the preset number and the station.",
   "settingsView.displayTrackConfirmTitle": "Show the track on the speaker display?",
   "settingsView.displayTrackConfirmBody": "Heads up: to update the text the speaker has to re-buffer the stream, so the music will cut out for about a second every time the song or text changes. The track is always shown here in the app without any interruption. Turn this on anyway?",
   "settingsView.displayTrackModeLabel": "Show:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Add your pin to the world map, so it shows where the music is playing again.",
   "library.serverAsleep": "{{name}} is not answering. Usually that means the computer it runs on is switched off or asleep. Wake it and try again.",
   "play.errBoxStuckTryPower": "The speaker will not come out of standby. Unplug it for ten seconds and plug it back in, that usually clears this.",
-  "play.errBoxStuckSendLog": "STR cannot get this speaker out of standby. Please export a diagnostic at the bottom of the speaker settings and send it, right after an attempt."
+  "play.errBoxStuckSendLog": "STR cannot get this speaker out of standby. Please export a diagnostic at the bottom of the speaker settings and send it, right after an attempt.",
+  "banner.appCheckKeepsFailing": "STR has not been able to check for a new version for several starts now. A firewall or virus scanner may be blocking the request. Have a look at st-reborn.de yourself now and then."
 }

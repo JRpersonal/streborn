@@ -232,6 +232,7 @@
   "banner.sshRecommend": "Dostęp SSH do tego głośnika jest otwarty. Uruchom głośnik raz ponownie, aby go z powrotem zamknąć, w przeciwnym razie inni w sieci mogą się z nim połączyć.",
   "banner.sshPersistentNote": "Dostęp SSH do tego głośnika jest celowo otwarty. Możesz go wyłączyć w ustawieniach głośnika, w sekcji „Dostęp SSH do tego głośnika”.",
   "banner.appUpdateAvail": "Dostępna nowa wersja aplikacji:",
+  "banner.appUpdateAlreadyHere": "Nowszy plik jest już w tym folderze: {{file}}. Zamknij ST Reborn i uruchom ten plik.",
   "banner.dismiss": "Ukryj",
   "banner.dismissTitle": "Ukryj to powiadomienie. Wróci przy późniejszej wersji.",
   "banner.download": "Pobierz",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Uwaga: aby zaktualizować tekst, głośnik musi ponownie buforować strumień, więc muzyka będzie się urywać na około sekundę za każdą zmianą utworu lub tekstu. Utwór jest zawsze pokazywany tutaj w aplikacji bez żadnych przerw. Włączyć mimo to?",
   "settingsView.displayTrackConfirmTitle": "Pokazywać utwór na wyświetlaczu głośnika?",
   "settingsView.displayTrackHeading": "Pokazuj bieżący utwór na wyświetlaczu głośnika",
-  "settingsView.displayTrackHelp": "Domyślnie wyłączone. Gdy włączone, aktualny utwór stacji radiowej jest pokazywany na własnym wyświetlaczu głośnika, jak dawniej w radiu internetowym. Aby zaktualizować tekst, głośnik musi ponownie buforować, więc dźwięk urywa się na chwilę przy każdej zmianie. Utwór jest zawsze pokazywany w tej aplikacji bez żadnych przerw, więc zostaw to wyłączone, jeśli wolisz dźwięk bez przerw.",
+  "settingsView.displayTrackHelp": "Domyślnie wyłączone. Gdy włączone, aktualny utwór stacji radiowej jest pokazywany na własnym wyświetlaczu głośnika, jak dawniej w radiu internetowym. Aby zaktualizować tekst, głośnik musi ponownie buforować, więc dźwięk urywa się na chwilę przy każdej zmianie. Utwór jest zawsze pokazywany w tej aplikacji bez żadnych przerw, więc zostaw to wyłączone, jeśli wolisz dźwięk bez przerw. W głośniku z wyświetlaczem zastępuje to również jego zwykły widok, numer presetu i nazwę stacji.",
   "settingsView.displayTrackModeArtist": "Wykonawca",
   "settingsView.displayTrackModeBoth": "Oba",
   "settingsView.displayTrackModeLabel": "Pokaż:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Dodaj swoją pinezkę na mapie świata, żeby było widać, gdzie znowu gra muzyka.",
   "library.serverAsleep": "{{name}} nie odpowiada. Zwykle oznacza to, że komputer, na którym działa, jest wyłączony albo śpi. Obudź go i spróbuj ponownie.",
   "play.errBoxStuckTryPower": "Głośnik nie wychodzi z trybu czuwania. Wyciągnij wtyczkę na dziesięć sekund i włóż ją z powrotem, to zwykle pomaga.",
-  "play.errBoxStuckSendLog": "STR nie potrafi wybudzić tego głośnika. Wyeksportuj diagnostykę na dole ustawień głośnika i wyślij ją, zaraz po próbie."
+  "play.errBoxStuckSendLog": "STR nie potrafi wybudzić tego głośnika. Wyeksportuj diagnostykę na dole ustawień głośnika i wyślij ją, zaraz po próbie.",
+  "banner.appCheckKeepsFailing": "STR od kilku uruchomień nie może sprawdzić, czy jest nowa wersja. Być może zapora lub program antywirusowy blokuje zapytanie. Zaglądaj czasem sam na st-reborn.de."
 }

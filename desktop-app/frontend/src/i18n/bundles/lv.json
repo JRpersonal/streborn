@@ -232,6 +232,7 @@
   "banner.sshRecommend": "SSH piekļuve šim skaļrunim ir atvērta. Vienreiz pārstartējiet skaļruni, lai to atkal aizvērtu, citādi tam var piekļūt citi jūsu tīklā.",
   "banner.sshPersistentNote": "SSH piekļuve šai skandāi ir atstāta atvērta apzināti. To vari izslēgt skandās iestatījumos sadaļā „SSH piekļuve šai skandāi”.",
   "banner.appUpdateAvail": "Pieejama jauna lietotnes versija:",
+  "banner.appUpdateAlreadyHere": "Jaunākais fails jau ir šajā mapē: {{file}}. Aizveriet ST Reborn un palaidiet to failu.",
   "banner.dismiss": "Slēpt",
   "banner.dismissTitle": "Slēpt šo paziņojumu. Tas atgriezīsies ar vēlāku versiju.",
   "banner.download": "Lejupielādēt",
@@ -1317,7 +1318,7 @@
   "settingsView.displayTrackConfirmBody": "Ievēro: lai atjauninātu tekstu, skaļrunim jāpārbuferē straume, tāpēc mūzika uz aptuveni sekundi pārtrūks ikreiz, kad mainās dziesma vai teksts. Šeit, lietotnē, dziesma vienmēr tiek rādīta bez pārtraukumiem. Tomēr ieslēgt?",
   "settingsView.displayTrackConfirmTitle": "Rādīt dziesmu skaļruņa displejā?",
   "settingsView.displayTrackHeading": "Rādīt pašreizējo dziesmu skaļruņa displejā",
-  "settingsView.displayTrackHelp": "Pēc noklusējuma izslēgts. Kad ieslēgts, radiostacijas dzīvā dziesma tiek rādīta paša skaļruņa displejā, kā agrāk interneta radio. Lai atjauninātu tekstu, skaļrunim jāpārbuferē straume, tāpēc audio uz brīdi pārtrūkst ikreiz, kad notiek izmaiņas. Šajā lietotnē dziesma vienmēr tiek rādīta bez pārtraukumiem, tāpēc atstāj to izslēgtu, ja dod priekšroku audio bez pauzēm.",
+  "settingsView.displayTrackHelp": "Pēc noklusējuma izslēgts. Kad ieslēgts, radiostacijas dzīvā dziesma tiek rādīta paša skaļruņa displejā, kā agrāk interneta radio. Lai atjauninātu tekstu, skaļrunim jāpārbuferē straume, tāpēc audio uz brīdi pārtrūkst ikreiz, kad notiek izmaiņas. Šajā lietotnē dziesma vienmēr tiek rādīta bez pārtraukumiem, tāpēc atstāj to izslēgtu, ja dod priekšroku audio bez pauzēm. Skaļrunī ar displeju tas aizstāj arī parasto rādījumu, iestatījuma numuru un staciju.",
   "settingsView.displayTrackModeArtist": "Izpildītājs",
   "settingsView.displayTrackModeBoth": "Abi",
   "settingsView.displayTrackModeLabel": "Rādīt:",
@@ -1546,5 +1547,6 @@
   "worldMap.pinPrompt": "🌍 Pievieno savu adatu pasaules kartē, lai redzams, kur atkal skan mūzika.",
   "library.serverAsleep": "{{name}} neatbild. Parasti tas nozīmē, ka dators, uz kura tas darbojas, ir izslēgts vai guļ. Pamodini to un mēģini vēlreiz.",
   "play.errBoxStuckTryPower": "Skaļrunis neiznāk no gaidstāves. Izvelc kontaktdakšu uz desmit sekundēm un iespraud atpakaļ, tas parasti palīdz.",
-  "play.errBoxStuckSendLog": "STR nespēj izvest šo skaļruni no gaidstāves. Skaļruņa iestatījumu lejasdaļā eksportē diagnostiku un nosūti to uzreiz pēc mēģinājuma."
+  "play.errBoxStuckSendLog": "STR nespēj izvest šo skaļruni no gaidstāves. Skaļruņa iestatījumu lejasdaļā eksportē diagnostiku un nosūti to uzreiz pēc mēģinājuma.",
+  "banner.appCheckKeepsFailing": "STR jau vairākas palaišanas reizes nespēj pārbaudīt, vai ir jauna versija. Iespējams, pieprasījumu bloķē ugunsmūris vai antivīruss. Ik pa laikam paskaties pats st-reborn.de."
 }

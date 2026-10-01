@@ -803,14 +803,31 @@ cleanup_nand() {
 # back as an illegal instruction -> SIGILL crash-loop, live-seen on a tight
 # ST20, #302). The BIN selection then runs the agent from a RAM copy of the
 # stick binary instead. Unset/0 on a healthy or stickless boot.
+# BIN_CORRUPT_MARK persists that verdict across the reboot. NAND_BIN_CORRUPT
+# used to live only in this shell, so the boot AFTER a failed flash-verify
+# learned nothing: a stickless boot skips the deploy block entirely, read 0,
+# and selected the unverified binary as if it were fine.
+BIN_CORRUPT_MARK="$PERSIST/agent-bin-unverified"
 NAND_BIN_CORRUPT=0
+[ -f "$BIN_CORRUPT_MARK" ] && NAND_BIN_CORRUPT=1
 sync_stick_to_nand_always() {
     # The AGENT BINARY is essential and goes FIRST, before the optional
     # Spotify engine, so a tight NAND can never let go-librespot crowd the
     # agent out (the old order wrote the 16 MB engine first and left no room
     # for the 12 MB agent to commit -> corrupt agent, #302).
     if [ -r "$STICK_BIN" ]; then
-        if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null && chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
+        # Identical binary already cached: no copy. The old code rewrote 12 MB
+        # onto NAND on every single stick boot, destroying and re-risking a
+        # working agent for no change at all, while the go-librespot path a few
+        # lines below has had this short-circuit all along.
+        _pre_sm5=$(md5sum "$STICK_BIN" 2>/dev/null | awk '{print $1}')
+        _pre_cm5=""
+        [ -s "$CACHED_BIN" ] && _pre_cm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
+        if [ -n "$_pre_sm5" ] && [ "$_pre_sm5" = "$_pre_cm5" ] && [ -x "$CACHED_BIN" ]; then
+            setup_log "binary deploy: the NAND cache is already identical to the stick ($_pre_sm5), no rewrite"
+            NAND_BIN_CORRUPT=0
+            rm -f "$BIN_CORRUPT_MARK" 2>/dev/null
+        elif cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null && chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
             log "stick binary deployed to NAND cache ($(wc -c < "$CACHED_BIN") bytes)"
             # Verify against FLASH, not the page cache. Without the sync +
             # drop_caches the md5 reads back the bytes we just wrote from RAM
@@ -824,12 +841,22 @@ sync_stick_to_nand_always() {
             _nm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
             if [ -n "$_sm5" ] && [ "$_sm5" = "$_nm5" ]; then
                 setup_log "binary deploy: md5 OK (flash-verified) $_nm5 ($(wc -c < "$CACHED_BIN") bytes)"
+                NAND_BIN_CORRUPT=0
+                rm -f "$BIN_CORRUPT_MARK" 2>/dev/null
                 if [ -r "$STICK_VER_FILE" ]; then
                     cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
                     log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
                 fi
             else
                 NAND_BIN_CORRUPT=1
+                # Deliberately NOT removed, unlike the go-librespot engine
+                # below. The engine is optional and the agent re-delivers it
+                # over the air; this binary is the agent. Deleting the only
+                # cached copy leaves a stickless boot with no agent at all and
+                # no way to get one, which is worse than a loudly-logged
+                # attempt at an unverified one. The marker makes the next boot
+                # prefer the stick copy instead.
+                : > "$BIN_CORRUPT_MARK" 2>/dev/null
                 setup_log "binary deploy: md5 MISMATCH after flash sync stick=$_sm5 nand=$_nm5 — the NAND write did not commit (full NAND?); the agent will be run from a RAM copy instead (see RAM-exec)"
             fi
         else
@@ -1005,14 +1032,26 @@ fi
 # heals a box whose NAND rc.local is an older release that skipped
 # the self-update block entirely.
 if [ -f "$STICK/rc.local" ]; then
-    cp "$STICK/rc.local" /mnt/nv/rc.local 2>/dev/null
-    chmod +x /mnt/nv/rc.local 2>/dev/null
-    log "redeployed /mnt/nv/rc.local from stick (effective next boot)"
+    install_boot_script "$STICK/rc.local" /mnt/nv/rc.local
+    case $? in
+        0) log "redeployed /mnt/nv/rc.local from stick (effective next boot)" ;;
+        2) log "did NOT redeploy /mnt/nv/rc.local: the stick copy is far shorter than the working one, kept the working one" ;;
+        *) log "did NOT redeploy /mnt/nv/rc.local: the stick copy did not validate, kept the working one" ;;
+    esac
 fi
 if [ -f "$STICK/run.sh" ]; then
-    cp "$STICK/run.sh" /mnt/nv/streborn/run-override.sh 2>/dev/null
-    chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
-    log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
+    # This replaces the script THIS shell is executing from. Safe only
+    # because install_boot_script renames rather than truncates: the running
+    # interpreter keeps reading the old inode through its open fd. A plain cp
+    # here shifted every byte offset past this point whenever the stick copy
+    # differed in size, and the boot died mid-statement before it ever
+    # reached Wi-Fi provisioning or start_agent.
+    install_boot_script "$STICK/run.sh" /mnt/nv/streborn/run-override.sh
+    case $? in
+        0) log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)" ;;
+        2) log "did NOT redeploy run-override.sh: the stick copy is far shorter than the working one, kept the working one" ;;
+        *) log "did NOT redeploy run-override.sh: the stick copy did not validate, kept the working one" ;;
+    esac
 fi
 
 # === Early low-power Wi-Fi one-shot (BEFORE the heavy stick->NAND copy) ===
@@ -1506,6 +1545,17 @@ shim_late_swap() {
 if [ "$NAND_BIN_CORRUPT" = "1" ] && stage_ram_binary; then
     BIN="$RAM_BIN"
     log "running the agent from RAM ($BIN): the NAND copy did not commit to flash"
+elif [ "$NAND_BIN_CORRUPT" = "1" ] && [ -x "$STICK_BIN" ]; then
+    # Known-good beats known-bad. This arm used to sit AFTER the plain
+    # [ -x "$CACHED_BIN" ] test, so when no RAM copy could be staged the
+    # script ran the binary it had declared corrupt two log lines earlier, in
+    # preference to the stick copy it had just verified as that binary's own
+    # source. The two arms were three lines apart and in the wrong order.
+    BIN="$STICK_BIN"
+    log "the NAND copy did not commit and no RAM copy could be staged; running the agent from the stick instead"
+elif [ "$NAND_BIN_CORRUPT" = "1" ] && [ -x "$CACHED_BIN" ]; then
+    BIN="$CACHED_BIN"
+    log "WARNING: running the UNVERIFIED NAND agent ($BIN): no RAM copy could be staged and no stick is present. If it crash-loops, reinstall from a stick"
 elif [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
 elif [ -x "$STICK_BIN" ]; then
@@ -1520,10 +1570,16 @@ fi
 if [ -f "$PIDFILE" ]; then
     OLDPID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
-        log "previous agent still running (PID $OLDPID), stopping it"
-        kill -TERM "$OLDPID" 2>/dev/null
-        sleep 2
-        kill -KILL "$OLDPID" 2>/dev/null
+        if pid_is_our_agent "$OLDPID" "$BIN"; then
+            log "previous agent still running (PID $OLDPID), stopping it"
+            kill -TERM "$OLDPID" 2>/dev/null
+            sleep 2
+            kill -KILL "$OLDPID" 2>/dev/null
+        else
+            # The pidfile survived a reboot and that number now belongs to
+            # something else. Signalling it would kill an unrelated process.
+            log "stale pidfile: PID $OLDPID is not our agent any more, not signalling it"
+        fi
     fi
     rm -f "$PIDFILE"
 fi
@@ -1950,14 +2006,215 @@ current_sta_lease() {
     fi
     return 1
 }
+current_sta_ssid() {
+    # Prints the network the box is ACTUALLY associated to, or nothing.
+    #
+    # Two sources, because the two chassis answer differently (both measured on
+    # a five-box fleet, 2026-09-30):
+    #
+    #   sm2/rhino   wpa_supplicant is running and wpa_cli status carries
+    #               "ssid=<name>". This is the supplicant's own selection, so it
+    #               is the authority wherever it exists.
+    #   scm/BCO     no wpa_cli at all; the chip is presented as eth0 and
+    #               /networkInfo reports it as an ETHERNET interface. It fills
+    #               in the ssid attribute anyway, which is what makes this
+    #               answerable on an ST30 or a Portable.
+    #
+    # Deliberately does its OWN wpa_cli lookup rather than reading HAS_WPA_CLI:
+    # that variable is set inside the WLAN subshell and is not visible to every
+    # caller. Note wpa_cli can live in /usr/local/sbin, so an absolute fallback
+    # follows the PATH lookup.
+    _css_cli=""
+    if command -v wpa_cli >/dev/null 2>&1; then
+        _css_cli=wpa_cli
+    elif [ -x /usr/local/sbin/wpa_cli ]; then
+        _css_cli=/usr/local/sbin/wpa_cli
+    fi
+    # STR_SYSFS_ROOT is a test seam and nothing else: on the speaker it is
+    # always /sys/class/net. Same idea as writeWPAConfAt on the Go side, whose
+    # path is injectable so the write path can be exercised off-box.
+    _css_sys="${STR_SYSFS_ROOT:-/sys/class/net}"
+    if [ -n "$_css_cli" ]; then
+        for _css_if in wlan0 wlan1; do
+            [ -d "$_css_sys/$_css_if" ] || continue
+            _css=$("$_css_cli" -i "$_css_if" status 2>/dev/null | sed -n 's/^ssid=\(.*\)$/\1/p' | head -1)
+            if [ -n "$_css" ]; then printf '%s' "$_css"; return 0; fi
+        done
+    fi
+    # The ssid attribute of the first interface that reports one. Safe on the
+    # coprocessor chassis, which has exactly one; on a wpa chassis the branch
+    # above answered already, so a DISCONNECTED second radio (which also
+    # carries a name) cannot win here.
+    if command -v wget >/dev/null 2>&1; then
+        _css=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null \
+            | sed -n 's/.*ssid="\([^"]*\)".*/\1/p' | head -1)
+        if [ -n "$_css" ]; then printf '%s' "$_css"; return 0; fi
+    fi
+    return 1
+}
+install_boot_script() {
+    # Stage, validate, then rename a boot script into place.
+    #
+    # KEEP BYTE-IDENTICAL to its twin in the other file. usb-stick/rc.local
+    # and usb-stick/run.sh both need this, they cannot share one copy
+    # (rc.local runs before anything is sourceable, and a sourced helper
+    # would add a failure mode to the thing being hardened), and
+    # usb-stick/tests/boot_install_test.sh fails if the two drift.
+    #
+    # $1 = source, $2 = destination. Returns 0 only when $2 now holds the
+    # whole of $1, 2 when a suspiciously short replacement was refused, and
+    # 1 on any other failure. Logs nothing, so both callers log in their own
+    # style.
+    #
+    # Why rename instead of cp: cp opens the destination with O_TRUNC before
+    # reading a byte of the source, so an interrupted read leaves a truncated
+    # file that is still chmod +x and the boot execs it. rename is atomic, so
+    # the destination is either the old script or the whole new one. It also
+    # makes it safe to replace a script that is CURRENTLY EXECUTING: the
+    # running shell keeps reading the old inode through its open fd instead of
+    # having the bytes shift underneath it mid-statement.
+    [ -r "$1" ] || return 1
+    _ibs_new="$2.new"
+    rm -f "$_ibs_new" 2>/dev/null
+    cp "$1" "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    _ibs_ssz=$(wc -c < "$1" 2>/dev/null | tr -d " \t")
+    _ibs_nsz=$(wc -c < "$_ibs_new" 2>/dev/null | tr -d " \t")
+    # A short read is the failure this function exists for.
+    if [ -z "$_ibs_nsz" ] || [ "$_ibs_nsz" = "0" ] || [ "$_ibs_nsz" != "$_ibs_ssz" ]; then
+        rm -f "$_ibs_new" 2>/dev/null
+        return 1
+    fi
+    # A script the box's own shell cannot parse must never become the boot
+    # path. This is what catches a SOURCE that is itself half-written.
+    sh -n "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    # A stick truncated at a statement boundary still parses, so also refuse
+    # a replacement that is drastically shorter than the working script.
+    if [ -s "$2" ]; then
+        _ibs_osz=$(wc -c < "$2" 2>/dev/null | tr -d " \t")
+        if [ -n "$_ibs_osz" ] && [ "$_ibs_nsz" -lt $(( _ibs_osz / 2 )) ]; then
+            rm -f "$_ibs_new" 2>/dev/null
+            return 2
+        fi
+    fi
+    chmod +x "$_ibs_new" 2>/dev/null
+    mv -f "$_ibs_new" "$2" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    sync 2>/dev/null
+    return 0
+}
+
+pid_is_our_agent() {
+    # $1 = pid, $2 = the agent binary this boot intends to run.
+    #
+    # kill -0 proves only that SOMETHING owns that pid. The pidfile lives on
+    # NAND and survives the reboot, and nothing clears it at shutdown (the
+    # watchdogs use a failing kill -0 as their restart trigger), so every boot
+    # reads the previous boot's number while Linux hands the same numbers out
+    # again from 1. Confirm from /proc before signalling anything.
+    #
+    # Matched on the BINARY name, not on "streborn": the boot script itself
+    # lives at /mnt/nv/streborn/run-override.sh, so a looser match could send
+    # KILL to our own supervisor.
+    #
+    # PROC_ROOT is a test seam and nothing else; on the speaker it is /proc.
+    [ -n "${1:-}" ] || return 1
+    [ "$1" -gt 0 ] 2>/dev/null || return 1
+    _pioa_want="${2##*/}"
+    [ -n "$_pioa_want" ] || _pioa_want="streborn-armv7l"
+    # Guarded: a pid that is gone makes the redirect itself fail, and the
+    # shell reports that on stderr regardless of the 2>/dev/null on tr, which
+    # would put noise in the boot log for the commonest case of all.
+    _pioa_cf="${PROC_ROOT:-/proc}/$1/cmdline"
+    [ -r "$_pioa_cf" ] || return 1
+    _pioa_cmd=$(tr '\0' ' ' < "$_pioa_cf" 2>/dev/null)
+    [ -n "$_pioa_cmd" ] || return 1
+    case "$_pioa_cmd" in
+        *"/$_pioa_want"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+wpa_globals_only() {
+    # $1 = a wpa_supplicant.conf. Prints every line OUTSIDE a network block,
+    # verbatim, and drops the network blocks.
+    #
+    # The globals are the point: the vendor conf was measured on an ST10
+    # (2026-09-30) to carry thirteen of them and NO network block at all, and
+    # seven are lost by any fixed preamble (the box's WPS/P2P identity plus
+    # driver_param and disassoc_low_ack). Other block types (cred, p2p) are
+    # left alone: only the network blocks are ours to replace. Twin of
+    # wpaGlobalLines in internal/webui/wlan.go.
+    [ -r "${1:-}" ] || return 1
+    awk '
+        /^[ \t]*network[ \t]*=[ \t]*[{]/ { inblock = 1; next }
+        inblock && /^[ \t]*[}]/            { inblock = 0; next }
+        inblock                             { next }
+                                            { print }
+    ' "$1" 2>/dev/null
+}
+forget_sta_lease() {
+    # Drops the last-known-good lease so the next read has to come from a live
+    # source. Every verdict about a stage that just touched the radio needs
+    # this; the REDIRECT watchdog deliberately does NOT, because there the
+    # last-known-good IP is the right answer while /networkInfo is momentarily
+    # mute (spotty #90).
+    rm -f /tmp/.streborn-last-lease 2>/dev/null || true
+}
+lease_is_on_ssid() {
+    # $1 = wanted network. True when the box holds a real lease and that lease
+    # belongs to $1. Used where there is no budget to wait (M6's post-teardown
+    # checks), so it forgets the cache first: the whole question there is
+    # whether the address survived the teardown.
+    forget_sta_lease
+    current_sta_lease >/dev/null || return 1
+    [ -z "${1:-}" ] && return 0
+    _lis=$(current_sta_ssid 2>/dev/null) || _lis=""
+    # Nothing on this box can name the network: keep the old, lenient verdict
+    # rather than strand a speaker over a missing diagnostic.
+    [ -z "$_lis" ] && return 0
+    [ "$_lis" = "${1:-}" ]
+}
 wait_for_sta_lease() {
     # $1 = total seconds to wait, polling every 5s.
+    # $2 = OPTIONAL wanted network. When given, a lease alone is not a pass:
+    #      it has to be a lease on THAT network.
+    #
+    # Without $2 this is the old behaviour, kept for the callers where no
+    # network is meant (the hands-off replay probe, ethernet-only boxes).
     _budget="$1"
+    # ${2:-} not "$2": the no-network form passes nothing, and a caller
+    # running under `set -u` would abort on an unset positional.
+    _want="${2:-}"
+    _saw_unnameable=""
+    if [ -n "$_want" ]; then
+        # This call exists to produce a FRESH verdict about a stage that just
+        # touched the radio, so a cached address from before it ran must not
+        # answer for it.
+        forget_sta_lease
+    fi
     while [ "$_budget" -gt 0 ]; do
-        if current_sta_lease >/dev/null; then return 0; fi
+        if current_sta_lease >/dev/null; then
+            if [ -z "$_want" ]; then return 0; fi
+            _got=$(current_sta_ssid 2>/dev/null) || _got=""
+            if [ -n "$_got" ] && [ "$_got" = "$_want" ]; then return 0; fi
+            if [ -z "$_got" ]; then
+                # Remember it, but keep waiting: a source that is mute at boot
+                # (BoseApp under load) often answers a few seconds later, and
+                # the whole point is to spend the budget trying to CONFIRM.
+                _saw_unnameable=1
+            fi
+        fi
         sleep 5
         _budget=$((_budget - 5))
     done
+    if [ -n "$_saw_unnameable" ]; then
+        # A lease was held the whole time and nothing could say which network
+        # it belongs to. Pass, because refusing would strand a speaker over a
+        # missing diagnostic, but mark the run so the summary does not go on to
+        # re-rank the firmware's profiles on an unconfirmed match, and so the
+        # log stops claiming more than it knows.
+        WLAN_VERDICT_UNVERIFIED=1
+        setup_log "lease held but no source on this box can name the network: accepting the stage UNVERIFIED (wanted name_length=${#_want})"
+        return 0
+    fi
     return 1
 }
 
@@ -2034,6 +2291,19 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         *replay*)
             if wait_for_sta_lease 90; then
                 setup_log "hands-off: box came online by itself ($(current_sta_lease 2>/dev/null)) - no boot-time Wi-Fi provisioning (v0.9.7)"
+                # Whether that is the network the user last asked for is a
+                # different question, and until now an invisible one: a box
+                # sitting on the OLD network with new credentials in NAND
+                # looks identical here to one that did what it was told.
+                # Behaviour is unchanged on purpose (this branch is
+                # hands-off by design, see the comment above and #270); it
+                # just stops being undiagnosable.
+                _ho_live=$(current_sta_ssid 2>/dev/null) || _ho_live=""
+                if [ -z "$_ho_live" ]; then
+                    setup_log "hands-off: cannot name the live network on this box, intent match unknown"
+                elif [ -n "${SSID:-}" ] && [ "$_ho_live" != "$SSID" ]; then
+                    setup_log "hands-off: MISMATCH, the box is on a different network than the stored intent (live name_length=${#_ho_live} intent name_length=${#SSID}); staying hands-off"
+                fi
                 # LAN-cable-only exception: a box that is online WITHOUT any
                 # stored Wi-Fi profile gets the known network seeded as a
                 # failover, non-destructively (see wifi_failover_seed). A
@@ -2648,7 +2918,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 "http://$JB_HIT/goform/aformHandlerConfigureProfileSettings" 2>&1)
             setup_log "M_jukebox: goform rc=$? resp='$(printf '%s' "$JB_RESP" | tr -d '\r\n' | head -c 200)' (a reset/timeout here is the EXPECTED setup-AP teardown)"
             persist_wlan_creds
-            if wait_for_sta_lease 90; then
+            if wait_for_sta_lease 90 "$SSID"; then
                 WINNER="M_jukebox-goform"
                 setup_log "M_jukebox: result=YES lease=$(current_sta_lease) via on-box GoForm @ $JB_HIT"
             else
@@ -2965,7 +3235,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
             setup_log "M1: API persisted profile (NetManager DB updated)"
         fi
-        if wait_for_sta_lease 60; then
+        if wait_for_sta_lease 60 "$SSID"; then
             RES=$(current_sta_lease)
             WINNER="M1-http"
             setup_log "M1: result=YES lease=$RES"
@@ -3033,7 +3303,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             # profile to associate. If it does we treat as M0a-late
             # and refuse to provision at all. If not, fall through
             # to M3..M6 which do not wipe the profile DB.
-            if wait_for_sta_lease 90; then
+            if wait_for_sta_lease 90 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M0a-late"
                 setup_log "M2: STA lease appeared during deferred wait — $RES (treating as already-on-wifi)"
@@ -3102,7 +3372,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                || echo "$TAP_OUT" | grep -qiF "mode set to auto"; then
                 setup_log "M2: NetManager accepted the sequence"
             fi
-            if wait_for_sta_lease 60; then
+            if wait_for_sta_lease 60 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M2-tap"
                 setup_log "M2: result=YES lease=$RES"
@@ -3128,18 +3398,54 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             WPA_SCAN=""
             if [ "$HIDDEN" = "1" ]; then WPA_SCAN="
     scan_ssid=1"; fi
-            cat > "$TMP" <<WPAEOF
+            # Keep the speaker's OWN global directives instead of writing a
+            # fixed preamble over them. The vendor conf was measured on an
+            # ST10 (2026-09-30) to carry THIRTEEN globals, and the fixed
+            # preamble dropped seven: device_name, manufacturer, model_name,
+            # model_number, serial_number (the box's WPS/P2P identity) plus
+            # driver_param and disassoc_low_ack (radio behaviour). It also
+            # replaced the box's own config_methods with a hardcoded value.
+            # The agent side was fixed the same way (buildWPAConfigFrom);
+            # this path had drifted away from it.
+            #
+            # awk keeps every line OUTSIDE a network block, verbatim, and
+            # drops the network blocks, which are the part being replaced.
+            : > "$TMP"
+            wpa_globals_only "$WPA_CONF" >> "$TMP" 2>/dev/null || true
+            if ! grep -q "[^[:space:]]" "$TMP" 2>/dev/null; then
+                # Nothing to preserve: the conf was unreadable, or held only
+                # network blocks. Fall back to the preamble this stage has
+                # always written, so a box with no template is no worse off.
+                cat > "$TMP" <<'WPAPRE'
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root
 update_config=1
 eapol_version=1
 ap_scan=1
 fast_reauth=1
 config_methods=virtual_display virtual_push_button keypad
+WPAPRE
+            fi
+            # Only add what the box did not already have: two ctrl_interface
+            # lines are a conf wpa_supplicant may reject. Bose writes the
+            # bare-path form and wpa_supplicant accepts both spellings.
+            if ! grep -q "^ctrl_interface=" "$TMP" 2>/dev/null; then
+                echo "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root" >> "$TMP"
+            fi
+            if ! grep -q "^update_config=" "$TMP" 2>/dev/null; then
+                echo "update_config=1" >> "$TMP"
+            fi
+            # priority=10 for the same reason the agent sets it (#697):
+            # NetManager injects its stored profiles into the RUNNING
+            # supplicant on top of this conf, carrying the firmware ranking,
+            # so a block at the implicit 0 loses the selection to the old
+            # network.
+            cat >> "$TMP" <<WPAEOF
 
 network={
     ssid="$SSID"$WPA_SCAN
     psk="$PASS"
     key_mgmt=WPA-PSK
+    priority=10
 }
 WPAEOF
             cp "$WPA_CONF" "$PERSIST/wpa_supplicant.conf.bak" 2>/dev/null
@@ -3160,7 +3466,7 @@ WPAEOF
             else
                 setup_log "M3: wpa_supplicant not running (Bose may bring it up later)"
             fi
-            if wait_for_sta_lease 30; then
+            if wait_for_sta_lease 30 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M3-confwrite"
                 setup_log "M3: result=YES lease=$RES"
@@ -3190,6 +3496,14 @@ WPAEOF
                 if [ "$HIDDEN" = "1" ]; then
                     wpa_cli -i "$_WI" set_network "$NETID" scan_ssid 1     >/dev/null 2>&1
                 fi
+                # Without an explicit priority the added block sits at 0,
+                # BELOW the profiles NetManager injects from its own store
+                # (priority 1 observed in #697: the old SSID ended up
+                # [CURRENT] over the freshly added one). Set it before
+                # enable/select so save_config persists the winning rank in
+                # the same write. Same value as the agent's
+                # wlanChosenPriority; this path had drifted away from it.
+                wpa_cli -i "$_WI" set_network "$NETID" priority 10         >/dev/null 2>&1
                 wpa_cli -i "$_WI" enable_network "$NETID"                  >/dev/null 2>&1; R4=$?
                 wpa_cli -i "$_WI" select_network "$NETID"                  >/dev/null 2>&1; R5=$?
                 wpa_cli -i "$_WI" save_config                              >/dev/null 2>&1; R6=$?
@@ -3206,7 +3520,7 @@ WPAEOF
                     fi
                 fi
             fi
-            if wait_for_sta_lease 30; then
+            if wait_for_sta_lease 30 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M4-wpacli"
                 setup_log "M4: result=YES lease=$RES"
@@ -3243,7 +3557,7 @@ WPAEOF
                 ) | $TAP_CMD 2>&1
             )
             setup_log "M5: response (first 400c)='$(echo "$NUDGE" | tr '\n' '|' | head -c 400)'"
-            if wait_for_sta_lease 30; then
+            if wait_for_sta_lease 30 "$SSID"; then
                 RES=$(current_sta_lease)
                 WINNER="M5-tapnudge"
                 setup_log "M5: result=YES lease=$RES"
@@ -3286,7 +3600,7 @@ WPAEOF
             fi
             for wait in 6 10 15 20; do
                 sleep "$wait"
-                if current_sta_lease >/dev/null; then
+                if lease_is_on_ssid "$SSID"; then
                     setup_log "M6: result=YES lease=$(current_sta_lease) after teardown"
                     return 0
                 fi
@@ -3299,7 +3613,7 @@ WPAEOF
                     sleep 1
                 done
                 sleep 6
-                if current_sta_lease >/dev/null; then
+                if lease_is_on_ssid "$SSID"; then
                     setup_log "M6-burst: result=YES lease=$(current_sta_lease)"
                     return 0
                 fi
@@ -3308,7 +3622,7 @@ WPAEOF
                     printf 'sys presetkey %d p\n' "$slot" | nc -w 2 127.0.0.1 17000 >/dev/null 2>&1
                     setup_log "M6-burst: slot $slot sent"
                     sleep 12
-                    if current_sta_lease >/dev/null; then
+                    if lease_is_on_ssid "$SSID"; then
                         setup_log "M6-burst: result=YES lease=$(current_sta_lease) after slot $slot"
                         return 0
                     fi
@@ -3354,7 +3668,20 @@ WPAEOF
     # TFR left the box with no credential source at all.
     case "$WINNER" in
         none|ethernet-only) ;;
-        *) persist_wlan_creds; assert_profile_priority ;;
+        *)
+            persist_wlan_creds
+            # assert_profile_priority demotes every profile whose name is
+            # not the wanted one to priority="0". On a win nothing could
+            # confirm, that would stamp 0 on the only profile the box has,
+            # which is worse than leaving the ranking alone. The creds are
+            # still persisted: losing them is the unrecoverable Setup-AP
+            # trap described above.
+            if [ -n "${WLAN_VERDICT_UNVERIFIED:-}" ]; then
+                setup_log "profile-priority: SKIPPED, the winning stage could not be confirmed on the wanted network (winner=$WINNER)"
+            else
+                assert_profile_priority
+            fi
+            ;;
     esac
 
     # Last-resort AirplayConfiguration reboot for NON-BCO boxes: if no
@@ -3440,7 +3767,19 @@ fi
 # nach NAND, der Agent wendet ihn beim ersten Boot auf die Box an + UID.
 NAME_CONF="$STICK/name.conf"
 NAME_NAND="$PERSIST/name.txt"
-if [ -f "$NAME_CONF" ]; then
+# Raw sidecar first, written by the same app run that wrote this stick:
+# exact bytes, no JSON escaping. The sed parse below misreads every value
+# json.Marshal escaped, so a name with an ampersand or a quote arrived
+# mangled or cut short. Same pattern and same reason as wlan.ssid/wlan.pass.
+NAME_RAW="$STICK/name.raw"
+if [ -f "$NAME_RAW" ]; then
+    NAME=$(head -c 128 "$NAME_RAW" | tr -d '\r\n')
+    if [ -n "$NAME" ]; then
+        echo "$NAME" > "$NAME_NAND"
+        log "box name from name.raw persisted to NAND (name_length=${#NAME})"
+        rm -f "$NAME_RAW" "$NAME_CONF" 2>/dev/null
+    fi
+elif [ -f "$NAME_CONF" ]; then
     NAME=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$NAME_CONF" | head -1)
     if [ -n "$NAME" ]; then
         echo "$NAME" > "$NAME_NAND"
@@ -3697,11 +4036,20 @@ iptables_install_streborn_fw() {
         w=$((w + 1))
     done
     if [ $w -ge 60 ]; then
-        setup_log "iptables filter table never came up after 60 s, skipping INPUT ACCEPT"
-        exit 0
+        # Do NOT exit. This subshell is the ONLY caller of
+        # iptables_install_streborn_fw in the whole script, so giving up
+        # here left the box with no INPUT ACCEPT rules AND no self-heal
+        # watchdog for its entire uptime. The table can still appear
+        # later (Bose's Firewall init is slow on a cold boot and it
+        # restarts), and the re-assert loop below installs the rules the
+        # moment it does. Retrying costs no NAND log growth: the
+        # installer dedups its own log line by signature for exactly the
+        # permanently-failing case.
+        setup_log "iptables filter table not up after 60 s: continuing into the re-assert watchdog, which installs the rules as soon as it appears"
+    else
+        # First install pass.
+        iptables_install_streborn_fw
     fi
-    # First install pass.
-    iptables_install_streborn_fw
     # Watchdog: re-assert every 30 s in case Bose's Firewall init
     # script flushes the chain after we set up. iptables -C inside
     # iptables_install_streborn_fw makes this a no-op when our rules
@@ -3742,7 +4090,13 @@ fi
 # still alive AND holding the listener fd (kill -KILL not yet
 # delivered, or shell waiting on TERM grace).
 ports_busy() {
-    for p in 8081 8888 9080 8091 8080; do
+    # STR's own listeners only. :8091 (Bose UPnP AVTransport) and :8080
+    # (Bose gabbo WebSocket) were in this list and are bound for the whole
+    # uptime of the box, so this could never report clear: wait_ports_clear
+    # always burned its full timeout and then logged "gave up" as though
+    # STR's own ports were stuck. run.sh states the split itself: STR has
+    # 8888/9080/8081/443, Bose has 8080/8090/8091/17008/17002/17000.
+    for p in 8081 8888 9080 8443; do
         if command -v ss >/dev/null 2>&1; then
             ss -ltn 2>/dev/null | grep -q ":$p "
             if [ $? = 0 ]; then return 0; fi
@@ -4290,7 +4644,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip current_sta_lease iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done
