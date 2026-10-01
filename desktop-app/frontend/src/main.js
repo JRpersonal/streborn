@@ -3,6 +3,7 @@ import { pinPromptKey } from './worldmapinvite.js';
 import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import { spotifyAccountLabel } from './spotifyaccountlabel.js';
+import { statusTickScope } from './statusrefreshscope.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -7866,7 +7867,9 @@ function renderTrackProgress() {
 }
 
 async function pollTrackPosition() {
-  if (trackPos.polling || !state.currentBox || state.view !== 'box') return;
+  // No view gate here any more. The bar this feeds is on screen in every tab,
+  // and refreshStatus decides what a tick is allowed to cost (#845).
+  if (trackPos.polling || !state.currentBox) return;
   const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
   if (!playing) { trackPos.at = 0; renderTrackProgress(); return; }
   trackPos.polling = true;
@@ -7919,14 +7922,29 @@ function spotifyKeyUsableFor(box) {
 }
 
 async function refreshStatus() {
-  if (!state.currentBox || state.view !== 'box') return;
+  if (!state.currentBox) return;
+  // The status bar is visible in EVERY tab: it hangs off boxControls, which is
+  // gated only on having a speaker. This function used to return immediately
+  // outside the box view, so on the Library or Recently-played tab the bar sat
+  // frozen. No play state, no track position, and the progress bar hid itself
+  // because its last reading never refreshed, which is exactly where single
+  // tracks get started from. Reported as "the desktop app does not show a
+  // progress bar" while the phone remote did, and the phone has one view and
+  // therefore never skipped a tick (#845).
+  //
+  // Outside the box view only what the visible bar needs is refreshed. The
+  // queue, the preset tiles and the volume slider belong to controls that are
+  // not on screen, and this polls a speaker whose NAND and CPU nobody can
+  // replace. The cadence out there stays the slow one; the bar interpolates
+  // between readings once a second, so it still moves like a clock.
+  const barOnly = !statusTickScope({ hasBox: true, view: state.view }).controls;
   // Reflect hardware-button volume changes back into the slider.
   // Fired in parallel with the Status fetch so a slow Status call
   // does not delay the volume update. Cheap, drag-aware.
-  syncMusicTabVolumeFromBox();
+  if (!barOnly) syncMusicTabVolumeFromBox();
   // Keep the queue transport controls in step with the box. Fired alongside the
   // Status fetch (not awaited) so it shares the poll cadence without delaying it.
-  refreshQueue();
+  if (!barOnly) refreshQueue();
   // Track position rides the same cadence, not awaited so a slow AVTransport
   // read cannot delay the status poll.
   pollTrackPosition();
@@ -7934,7 +7952,7 @@ async function refreshStatus() {
   // to the same speaker, and until now the tiles here kept whatever they were
   // loaded with, so a key reassigned from the phone showed the old station
   // until the speaker was reselected.
-  refreshPresetsIfChanged();
+  if (!barOnly) refreshPresetsIfChanged();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     _statusFailCount = 0; // the box answered: it is reachable at its current IP
