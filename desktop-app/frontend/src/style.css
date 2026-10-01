@@ -2546,6 +2546,7 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 /* Phone-control QR card (Open on your phone) */
 .phone-card { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .phone-qr { width: 160px; height: 160px; background: #fff; border-radius: 8px; padding: 6px; }
+.phone-url-col { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 200px; }
 .phone-url-row { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 200px; }
 .phone-url { font-size: 12px; color: var(--c-text); background: var(--c-surface-2); border: 1px solid var(--c-border); padding: 6px 8px; border-radius: 5px; word-break: break-all; flex: 1; }
 
@@ -2553,11 +2554,26 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
    sketches, folded away behind a summary so the card stays a QR code for
    everyone who only wants to scan it. */
 .phone-howto { margin-top: 10px; }
+/* This was 12px brand-coloured text with the native marker, and it read as a
+   small link rather than something to press: people did not recognise it as a
+   control at all. Same shape as .sp-details > summary, which does look like
+   one, plus a chevron that turns so the open state is visible too. */
 .phone-howto > summary {
-  cursor: pointer; font-size: 12px; color: var(--brand-text);
-  padding: 4px 0; list-style: revert;
+  cursor: pointer; font-size: 13px; font-weight: 600; color: var(--c-text);
+  padding: 9px 12px; border: 1px solid var(--c-border); border-radius: 8px;
+  background: var(--c-surface); list-style: none;
+  display: flex; align-items: center; gap: 8px;
 }
-.phone-howto > summary:hover { text-decoration: underline; }
+.phone-howto > summary::-webkit-details-marker { display: none; }
+.phone-howto > summary::before {
+  content: "A"; font-size: 16px; line-height: 1; color: var(--c-muted);
+  transition: transform .15s ease; transform: rotate(0deg);
+}
+.phone-howto[open] > summary::before { transform: rotate(90deg); }
+.phone-howto > summary:hover { border-color: var(--c-text-2); }
+/* The scan instruction used to sit above the card as muted small print, which
+   is exactly what people skip, so the QR code stood there unexplained. */
+.phone-scan-hint { font-size: 13px; color: var(--c-text); margin: 0 0 2px; }
 .phone-howto-body { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .phone-paths { display: flex; gap: 12px; flex-wrap: wrap; }
 .phone-path {
