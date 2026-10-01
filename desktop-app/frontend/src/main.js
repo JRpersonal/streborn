@@ -67,6 +67,7 @@ import {
   TryWiFiPassword,
   CurrentWiFi,
   CheckAppUpdate,
+  NewerCopyNextToThisOne,
   DownloadUpdate,
   ApplyUpdate,
   RevealUpdateFile,
@@ -1328,6 +1329,22 @@ async function checkAppUpdate(manual) {
       <button class="banner-close" id="appUpdateDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('banner.dismissTitle'))}">&times;</button>
     `;
     banner.classList.remove('hidden');
+    // There is no Windows installer: the release is a bare
+    // STR-Windows-vX.Y.Z.exe, so "updating" means downloading a second file
+    // into the same folder and nothing replaces anything. A reporter spent
+    // three rounds of mail on that (2026-10-01), downloading the new version
+    // again and again while starting the old one, until he deleted the old
+    // file by hand. If the newer file is already sitting next to this one,
+    // say so, because downloading it a fourth time will not help.
+    NewerCopyNextToThisOne().then((file) => {
+      if (!file) return;
+      const line = document.createElement('div');
+      line.className = 'app-update-text';
+      line.textContent = t('banner.appUpdateAlreadyHere', { file });
+      banner.insertBefore(line, banner.firstChild);
+      const btn = $('appUpdateBtn');
+      if (btn) btn.hidden = true;
+    }).catch(() => {});
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');

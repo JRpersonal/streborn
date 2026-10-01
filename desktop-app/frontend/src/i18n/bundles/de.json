@@ -245,6 +245,7 @@
   "banner.sshRecommend": "Der SSH-Zugang zu diesem Lautsprecher ist offen. Starte den Lautsprecher einmal neu, um ihn wieder zu schließen. Sonst kann er von anderen im Netzwerk erreicht werden.",
   "banner.sshPersistentNote": "Der SSH-Zugang zu diesem Lautsprecher ist bewusst offen. Du kannst ihn in den Lautsprecher-Einstellungen unter \"SSH-Zugang zum Lautsprecher\" wieder ausschalten.",
   "banner.appUpdateAvail": "Neue App-Version verfügbar:",
+  "banner.appUpdateAlreadyHere": "Die neuere Datei liegt schon in diesem Ordner: {{file}}. Schließe ST Reborn und starte stattdessen diese Datei.",
   "banner.dismiss": "Ausblenden",
   "banner.dismissTitle": "Diesen Hinweis ausblenden. Er kommt mit einer späteren Version wieder.",
   "banner.download": "Download",

@@ -232,6 +232,7 @@
   "banner.sshRecommend": "このスピーカーへの SSH アクセスが開いています。スピーカーを一度再起動して閉じてください。そのままだとネットワーク上の他の人からアクセスされる可能性があります。",
   "banner.sshPersistentNote": "このスピーカーの SSH 接続は意図的に開いています。スピーカー設定の「このスピーカーへの SSH 接続」でオフにできます。",
   "banner.appUpdateAvail": "アプリの新しいバージョンがあります:",
+  "banner.appUpdateAlreadyHere": "新しいファイルはすでにこのフォルダーにあります: {{file}}。ST Reborn を閉じて、そのファイルを起動してください。",
   "banner.dismiss": "非表示",
   "banner.dismissTitle": "このお知らせを非表示にします。後のバージョンで再び表示されます。",
   "banner.download": "ダウンロード",

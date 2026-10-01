@@ -232,6 +232,7 @@
   "banner.sshRecommend": "El acceso SSH a este altavoz está abierto. Reinicia el altavoz una vez para cerrarlo de nuevo; de lo contrario, otras personas de tu red pueden acceder a él.",
   "banner.sshPersistentNote": "El acceso SSH a este altavoz está abierto a propósito. Puedes desactivarlo en los ajustes del altavoz, en «Acceso SSH a este altavoz».",
   "banner.appUpdateAvail": "Nueva versión de la aplicación disponible:",
+  "banner.appUpdateAlreadyHere": "El archivo más nuevo ya está en esta carpeta: {{file}}. Cierra ST Reborn y abre ese archivo.",
   "banner.dismiss": "Ocultar",
   "banner.dismissTitle": "Oculta este aviso. Vuelve a aparecer con una versión posterior.",
   "banner.download": "Descargar",

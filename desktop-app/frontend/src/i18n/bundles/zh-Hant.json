@@ -245,6 +245,7 @@
   "banner.sshRecommend": "這台喇叭的 SSH 存取是開啟的。把喇叭重新開機一次就會關閉，否則網路上的其他人也連得進去。",
   "banner.sshPersistentNote": "此揚聲器的 SSH 存取是刻意開啟的。你可以在揚聲器設定中的「此揚聲器的 SSH 存取」將它關閉。",
   "banner.appUpdateAvail": "有新的應用程式版本：",
+  "banner.appUpdateAlreadyHere": "較新的檔案已經在這個資料夾裡：{{file}}。請關閉 ST Reborn，改為啟動該檔案。",
   "banner.dismiss": "隱藏",
   "banner.dismissTitle": "隱藏這則提示。之後有新版本時會再出現。",
   "banner.download": "下載",

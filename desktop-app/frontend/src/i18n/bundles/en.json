@@ -245,6 +245,7 @@
   "banner.sshRecommend": "SSH access to this speaker is open. Restart the speaker once to close it again, otherwise it can be reached by others on your network.",
   "banner.sshPersistentNote": "SSH access to this speaker is deliberately open. You can switch it off again in the speaker settings, under \"SSH access to this speaker\".",
   "banner.appUpdateAvail": "New app version available:",
+  "banner.appUpdateAlreadyHere": "The newer file is already in this folder: {{file}}. Close ST Reborn and start that file instead.",
   "banner.dismiss": "Dismiss",
   "banner.dismissTitle": "Hide this notice. It comes back with a later version.",
   "banner.download": "Download",

@@ -232,6 +232,7 @@
   "banner.sshRecommend": "SSH prieiga prie šio garsiakalbio yra atvira. Vieną kartą paleiskite garsiakalbį iš naujo, kad ją vėl uždarytumėte, kitaip jį gali pasiekti kiti jūsų tinkle.",
   "banner.sshPersistentNote": "SSH prieiga prie šios kolonėlės palikta atvira sąmoningai. Ją gali išjungti kolonėlės nustatymuose, dalyje „SSH prieiga prie šios kolonėlės“.",
   "banner.appUpdateAvail": "Galima nauja programos versija:",
+  "banner.appUpdateAlreadyHere": "Naujesnis failas jau yra šiame aplanke: {{file}}. Uždarykite ST Reborn ir paleiskite tą failą.",
   "banner.dismiss": "Slėpti",
   "banner.dismissTitle": "Slėpti šį pranešimą. Jis vėl pasirodys su vėlesne versija.",
   "banner.download": "Atsisiųsti",

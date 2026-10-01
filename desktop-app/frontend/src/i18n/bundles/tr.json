@@ -232,6 +232,7 @@
   "banner.sshRecommend": "Bu hoparlöre SSH erişimi açık. Tekrar kapatmak için hoparlörü bir kez yeniden başlatın, aksi halde ağınızdaki başkaları ona erişebilir.",
   "banner.sshPersistentNote": "Bu hoparlöre SSH erişimi bilerek açık bırakılmış. Hoparlör ayarlarında “Bu hoparlöre SSH erişimi” altından yeniden kapatabilirsin.",
   "banner.appUpdateAvail": "Yeni uygulama sürümü mevcut:",
+  "banner.appUpdateAlreadyHere": "Daha yeni dosya zaten bu klasörde: {{file}}. ST Reborn uygulamasını kapatıp o dosyayı başlatın.",
   "banner.dismiss": "Gizle",
   "banner.dismissTitle": "Bu bildirimi gizle. Daha sonraki bir sürümde tekrar görünür.",
   "banner.download": "İndir",

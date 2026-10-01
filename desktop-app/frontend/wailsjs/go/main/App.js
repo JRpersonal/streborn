@@ -266,6 +266,10 @@ export function MovePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['MovePreset'](arg1, arg2, arg3, arg4);
 }
 
+export function NewerCopyNextToThisOne() {
+  return window['go']['main']['App']['NewerCopyNextToThisOne']();
+}
+
 export function Next(arg1, arg2) {
   return window['go']['main']['App']['Next'](arg1, arg2);
 }

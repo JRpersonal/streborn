@@ -232,6 +232,7 @@
   "banner.sshRecommend": "Dostęp SSH do tego głośnika jest otwarty. Uruchom głośnik raz ponownie, aby go z powrotem zamknąć, w przeciwnym razie inni w sieci mogą się z nim połączyć.",
   "banner.sshPersistentNote": "Dostęp SSH do tego głośnika jest celowo otwarty. Możesz go wyłączyć w ustawieniach głośnika, w sekcji „Dostęp SSH do tego głośnika”.",
   "banner.appUpdateAvail": "Dostępna nowa wersja aplikacji:",
+  "banner.appUpdateAlreadyHere": "Nowszy plik jest już w tym folderze: {{file}}. Zamknij ST Reborn i uruchom ten plik.",
   "banner.dismiss": "Ukryj",
   "banner.dismissTitle": "Ukryj to powiadomienie. Wróci przy późniejszej wersji.",
   "banner.download": "Pobierz",
