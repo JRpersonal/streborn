@@ -585,7 +585,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 	if len(agentbin.Bytes()) > 0 {
 		embedded = hex.EncodeToString(sum[:])
 	}
-	verdict, line := classifyAgentVersion(ver, embedded, appBuild)
+	verdict, line := classifyAgentVersion(ver, embedded, appBuild, int64(len(agentbin.Bytes())))
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
@@ -619,7 +619,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 // disarm the loop breaker written to stop it repeating forever, so the running
 // hash confirms and the on-disk hash is only ever the evidence for
 // landed-not-running.
-func classifyAgentVersion(ver map[string]string, embedded, wantBuild string) (verdict, journal string) {
+func classifyAgentVersion(ver map[string]string, embedded, wantBuild string, needBytes int64) (verdict, journal string) {
 	running, onDisk := ver["agentRunningSha256"], ver["agentBinarySha256"]
 	if embedded != "" && running == embedded && ver["otaSwapFailed"] == "" {
 		return "confirmed", "outcome: confirmed late - box runs the agent this build carries"
@@ -636,10 +636,44 @@ func classifyAgentVersion(ver map[string]string, embedded, wantBuild string) (ve
 	if embedded != "" && onDisk == embedded && running != embedded {
 		return "landed-not-running", "outcome: NOT CONFIRMED - the pushed binary IS on the box's disk but the running agent is still " +
 			ver["version"] + " build " + ver["build"] +
-			"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help"
+			"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help" +
+			nandCauseClause(ver, needBytes)
 	}
 	return "not-landed", "outcome: NOT CONFIRMED - box still runs " + ver["version"] + " build " + ver["build"] +
 		" and does not report the pushed binary on disk"
+}
+
+// nandCauseClause names the speaker's free space as the likely reason a push
+// landed on disk and never ran, when the space is what the pre-flight check
+// already called TIGHT.
+//
+// The check ran, said "a second copy for the atomic write may not fit", wrote
+// that to the journal and pushed anyway (fail-open, by design: "may not fit"
+// is not "will not"). But the VERDICT a few minutes later blamed a boot
+// rollback and said an identical re-push cannot help, with no mention of the
+// one thing the same run had already measured. So the user read a generic
+// failure and had nothing to act on.
+//
+// Live case, 2026-09-30: a SoundTouch 20 with 11 MB free for a 16 MB binary
+// failed this way twice in one morning and had been stuck on a build from the
+// 12th of September for weeks, while its owner's four other speakers updated
+// fine. He only found out because the speaker stopped answering altogether.
+// needBytes is the size of the binary that was pushed. The agent does NOT
+// report the on-disk agent size (checked against a live speaker: it reports
+// nandFreeBytes, nandTotalBytes and goLibrespotSizeBytes, and no size for its
+// own binary), so taking it from the version map would make this clause dead
+// code that never fires.
+func nandCauseClause(ver map[string]string, needBytes int64) string {
+	free, _ := strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
+	if free <= 0 || needBytes <= 0 {
+		return "" // older agents do not report the space; never guess
+	}
+	if nandFits(free, 0, nandNeedCompressed(needBytes)) {
+		return ""
+	}
+	return fmt.Sprintf("; the speaker has only %d bytes free for a %d byte binary, "+
+		"too little for the second copy the swap needs, which is the likeliest reason "+
+		"it never ran. Free space on the speaker, then update again", free, needBytes)
 }
 
 // boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as

@@ -115,7 +115,7 @@ func TestTheUpdateVerdictReadsTheRunningBinaryNotTheClock(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, journal := classifyAgentVersion(c.ver, c.embedded, appBuild)
+			got, journal := classifyAgentVersion(c.ver, c.embedded, appBuild, 0)
 			if got != c.want {
 				t.Fatalf("verdict = %q, want %q (journal: %s)", got, c.want, journal)
 			}
