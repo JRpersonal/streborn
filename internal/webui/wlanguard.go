@@ -169,7 +169,19 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 
 	cur, assoc := waitAssociationSettled(ctx, iface, wlanGuardSettleBudget)
 	reinited := false
-	if !assoc {
+	if !assoc && s.ownerIsProvisioning(ctx) {
+		// A speaker in its own setup AP is NOT associated, by definition: its
+		// single radio is in AP mode and wpa_supplicant will never report
+		// COMPLETED. Power-cycling the chip here pulls the radio out from under
+		// the owner mid-onboarding, and this runs ABOVE the hasTarget gate, so
+		// it reaches speakers whose owner never touched STR's Wi-Fi feature at
+		// all.
+		//
+		// The same blind spot as the two goform loops in run.sh, found by the
+		// same audit: "no lease" and "no association" are what a deliberate
+		// setup looks like, and nothing asked whose doing it was.
+		s.logger.Info("wlan guard: the speaker is in SETUP, the owner is provisioning it; not touching the radio")
+	} else if !assoc {
 		if s.recoverUnassociatedRadio(iface) {
 			reinited = true
 			cur, assoc = waitAssociationSettled(ctx, iface, wlanReinitRecheckBudget)
@@ -414,6 +426,24 @@ func reinitWLANRadio(logger *slog.Logger) bool {
 // re-download its firmware and let wpa_supplicant re-associate from its existing
 // config. One-shot per boot, never touched on a healthy (already-associated)
 // boot, so a working box takes no radio churn.
+// ownerIsProvisioning reports whether the speaker is in its own out-of-box
+// setup right now, which means the person is standing in front of it and STR
+// must keep its hands off the radio.
+//
+// Two signals, both already in this process. The episode counter is written
+// by the gabbo setupAPUpdated frame and by the poll seeing source=SETUP, so
+// it knows about a setup that started before this check; the live source
+// covers one that started since. Either is enough.
+func (s *Server) ownerIsProvisioning(ctx context.Context) bool {
+	if state, _, _ := s.BoxSetup(); state == "active" {
+		return true
+	}
+	if s.boxHost == "" {
+		return false
+	}
+	np := quietWakeNowPlaying(ctx, s.boxHost)
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(np.Source)), "SETUP")
+}
 func (s *Server) recoverUnassociatedRadio(iface string) bool {
 	s.logger.Warn("wlan guard: box booted with no Wi-Fi association, power-cycling the radio to recover it (#853)", "iface", iface)
 	if !reinitWLANRadio(s.logger) {
