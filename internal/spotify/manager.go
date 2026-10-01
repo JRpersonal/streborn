@@ -221,9 +221,12 @@ type Manager struct {
 	// Latched with a timestamp rather than a bare flag: a single refusal can be
 	// one unavailable track, and a user who fixes the cause must not be told
 	// about it forever.
-	lastKeyRefusalAt   time.Time
-	keyRefusalRun      int
-	keyRefusalGaveUpAt time.Time
+	lastKeyRefusalAt time.Time
+	// lastGroupedRefusalAt is when the speaker last refused transport control
+	// because it is a member of a group. See groupedrefusal.go.
+	lastGroupedRefusalAt time.Time
+	keyRefusalRun        int
+	keyRefusalGaveUpAt   time.Time
 	// the requested resume track (skip_to_uri) because that track is no longer in
 	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
 	// Play uses it to replay the context from the top instead of leaving the box on

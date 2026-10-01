@@ -242,6 +242,13 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// entry keeps working on the same account, so the message has to say
 		// that too or it reads as "Spotify is broken".
 		AudioKeyRefused bool `json:"audioKeyRefused"`
+		// GroupedRefusal is true when this speaker has just refused to be driven
+		// because it is a MEMBER of a multiroom group: the firmware answers
+		// SetAVTransportURI with 501 "Can't control member of group", nothing
+		// plays, and the Spotify app moves playback to another speaker a few
+		// seconds later. Without this the listener sees a speaker that simply
+		// refuses to be used and no reason anywhere (live, 2026-10-01).
+		GroupedRefusal bool `json:"groupedRefusal"`
 		// CanRecall is whether a Spotify preset key on this speaker could play
 		// at all: a live device session OR a persisted credential. The apps need
 		// it because PremiumRequired cannot answer the question on its own. It is
@@ -280,6 +287,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		LowDisk:         lowDisk,
 		LowDiskFreeKB:   lowDiskFreeKB,
 		AudioKeyRefused: m.AudioKeyRefused(),
+		GroupedRefusal:  m.GroupedRefusal(),
 		Stereo:          m.StereoStatusNow(),
 	}
 	_ = json.NewEncoder(w).Encode(resp)
