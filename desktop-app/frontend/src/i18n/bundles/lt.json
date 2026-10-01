@@ -1317,7 +1317,7 @@
   "settingsView.displayTrackConfirmBody": "Atkreipk dėmesį: kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti srautą, todėl muzika nutrūks maždaug sekundei kaskart, kai pasikeičia daina ar tekstas. Programoje takelis visada rodomas be jokių pertrūkių. Vis tiek įjungti?",
   "settingsView.displayTrackConfirmTitle": "Rodyti takelį garsiakalbio ekrane?",
   "settingsView.displayTrackHeading": "Rodyti dabartinį takelį garsiakalbio ekrane",
-  "settingsView.displayTrackHelp": "Pagal numatytuosius nustatymus išjungta. Kai įjungta, radijo stoties grojama daina rodoma paties garsiakalbio ekrane, kaip anksčiau su interneto radiju. Kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti, todėl garsas trumpam nutrūksta kaskart pasikeitus. Šioje programoje takelis visada rodomas be jokių pertrūkių, tad palik tai išjungta, jei nori garso be pertrūkių.",
+  "settingsView.displayTrackHelp": "Pagal numatytuosius nustatymus išjungta. Kai įjungta, radijo stoties grojama daina rodoma paties garsiakalbio ekrane, kaip anksčiau su interneto radiju. Kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti, todėl garsas trumpam nutrūksta kaskart pasikeitus. Šioje programoje takelis visada rodomas be jokių pertrūkių, tad palik tai išjungta, jei nori garso be pertrūkių. Kolonėlėje su ekranu tai taip pat pakeičia įprastą vaizdą, nustatymo numerį ir stotį.",
   "settingsView.displayTrackModeArtist": "Atlikėjas",
   "settingsView.displayTrackModeBoth": "Abu",
   "settingsView.displayTrackModeLabel": "Rodyti:",

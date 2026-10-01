@@ -451,7 +451,26 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		knownFound++
 		upsert(b)
 	}
-	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits, "ssdpHits", ssdpHits, "knownDirect", knownFound)
+	// Say WHICH networks were searched, not just that nothing was found. A
+	// bundle with totalBoxes=0 used to carry no way of telling "the speaker is
+	// off" from "this PC was looking at the wrong network", and that is the
+	// commonest cause of an install that cannot find anything: a guest Wi-Fi, a
+	// VPN or virtual adapter that hides the LAN, or client isolation. Three
+	// rounds of mail with one reporter turned on exactly this question
+	// (2026-10-01), and the log could not answer it.
+	//
+	// The COUNT only, never the addresses. The bundle scrubber rewrites LAN
+	// addresses anyway, so logging them would hand the reader 192.0.2.x and say
+	// nothing. The count survives scrubbing and carries the answer: 0 means this
+	// PC had no private IPv4 network to search at all, and more than 1 means it
+	// sits on several, which is where a VPN or virtual adapter shows up.
+	//
+	// Worth knowing when reading it: the sweep only ever covers the /24s derived
+	// from this PC's OWN addresses, so a speaker on a different subnet is never
+	// probed however long the user waits.
+	nets := localIPv4Subnets()
+	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits, "ssdpHits", ssdpHits, "knownDirect", knownFound,
+		"subnetsSearched", len(nets))
 	a.logger.Info("discovery: returning", "totalBoxes", len(seen), "fromMDNS", mdnsHits)
 
 	// Enrich every box with the serial number and model from

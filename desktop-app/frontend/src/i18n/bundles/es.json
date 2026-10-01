@@ -1317,7 +1317,7 @@
   "settingsView.displayTrackConfirmBody": "Aviso: para actualizar el texto, el altavoz tiene que volver a cargar el búfer del stream, así que la música se cortará alrededor de un segundo cada vez que cambie la canción o el texto. La pista siempre se muestra aquí en la app sin ninguna interrupción. ¿Activar de todos modos?",
   "settingsView.displayTrackConfirmTitle": "¿Mostrar la pista en la pantalla del altavoz?",
   "settingsView.displayTrackHeading": "Mostrar la pista actual en la pantalla del altavoz",
-  "settingsView.displayTrackHelp": "Desactivado por defecto. Cuando está activado, la canción en directo de una emisora de radio se muestra en la propia pantalla del altavoz, como antes con la radio por internet. El altavoz tiene que volver a cargar el búfer para actualizar el texto, así que el audio se corta brevemente con cada cambio. La pista siempre se muestra en esta app sin ninguna interrupción, así que déjalo desactivado si prefieres un audio sin cortes.",
+  "settingsView.displayTrackHelp": "Desactivado por defecto. Cuando está activado, la canción en directo de una emisora de radio se muestra en la propia pantalla del altavoz, como antes con la radio por internet. El altavoz tiene que volver a cargar el búfer para actualizar el texto, así que el audio se corta brevemente con cada cambio. La pista siempre se muestra en esta app sin ninguna interrupción, así que déjalo desactivado si prefieres un audio sin cortes. En un altavoz con pantalla, también sustituye lo que muestra normalmente, el número de preselección y la emisora.",
   "settingsView.displayTrackModeArtist": "Intérprete",
   "settingsView.displayTrackModeBoth": "Ambos",
   "settingsView.displayTrackModeLabel": "Mostrar:",

@@ -1317,7 +1317,7 @@
   "settingsView.displayTrackConfirmBody": "Dikkat: Metni güncellemek için hoparlörün akışı yeniden ara belleğe alması gerekir, bu yüzden şarkı veya metin her değiştiğinde müzik yaklaşık bir saniye kesilir. Parça burada uygulamada her zaman kesintisiz gösterilir. Yine de açılsın mı?",
   "settingsView.displayTrackConfirmTitle": "Parça hoparlör ekranında gösterilsin mi?",
   "settingsView.displayTrackHeading": "Çalan parçayı hoparlör ekranında göster",
-  "settingsView.displayTrackHelp": "Varsayılan olarak kapalı. Açıkken, bir radyo istasyonunun anlık şarkısı, eskiden internet radyosunda olduğu gibi hoparlörün kendi ekranında gösterilir. Metni güncellemek için hoparlörün yeniden ara belleğe alması gerekir, bu yüzden her değişiklikte ses kısa süre kesilir. Parça bu uygulamada her zaman kesintisiz gösterilir, bu yüzden kesintisiz ses istiyorsan bunu kapalı bırak.",
+  "settingsView.displayTrackHelp": "Varsayılan olarak kapalı. Açıkken, bir radyo istasyonunun anlık şarkısı, eskiden internet radyosunda olduğu gibi hoparlörün kendi ekranında gösterilir. Metni güncellemek için hoparlörün yeniden ara belleğe alması gerekir, bu yüzden her değişiklikte ses kısa süre kesilir. Parça bu uygulamada her zaman kesintisiz gösterilir, bu yüzden kesintisiz ses istiyorsan bunu kapalı bırak. Ekranı olan bir hoparlörde, normalde gösterdiği şeyin yerini de alır: ön ayar numarası ve istasyon.",
   "settingsView.displayTrackModeArtist": "Sanatçı",
   "settingsView.displayTrackModeBoth": "İkisi de",
   "settingsView.displayTrackModeLabel": "Göster:",

@@ -820,7 +820,7 @@
   "settingsView.resumeOnPowerSavedToast": "開機續播設定已儲存。",
   "settingsView.displayTrackHeading": "在喇叭螢幕上顯示目前曲目",
   "settingsView.displayTrackWarn": "開啟後，每次顯示的文字改變（例如換了一首歌），音樂都會中斷大約一秒。",
-  "settingsView.displayTrackHelp": "預設是關閉。開啟後，電台正在播的歌會顯示在喇叭自己的螢幕上，就像以前的網路電台一樣。喇叭必須重新緩衝才能更新文字，所以每次變動時聲音都會短暫中斷。在這個應用程式裡曲目一直都看得到，而且完全不會中斷，所以如果你比較在意聲音不要斷，就讓它保持關閉。",
+  "settingsView.displayTrackHelp": "預設是關閉。開啟後，電台正在播的歌會顯示在喇叭自己的螢幕上，就像以前的網路電台一樣。喇叭必須重新緩衝才能更新文字，所以每次變動時聲音都會短暫中斷。在這個應用程式裡曲目一直都看得到，而且完全不會中斷，所以如果你比較在意聲音不要斷，就讓它保持關閉。 在有顯示幕的喇叭上，這也會取代它平常顯示的預設編號與電台。",
   "settingsView.displayTrackConfirmTitle": "要在喇叭螢幕上顯示曲目嗎？",
   "settingsView.displayTrackConfirmBody": "提醒你：為了更新文字，喇叭必須重新緩衝串流，所以每次歌曲或文字改變時，音樂都會中斷大約一秒。在應用程式裡曲目一直都看得到，而且不會中斷。還是要開啟嗎？",
   "settingsView.displayTrackModeLabel": "顯示：",

@@ -820,7 +820,7 @@
   "settingsView.resumeOnPowerSavedToast": "Einschalt-Wiedergabe gespeichert.",
   "settingsView.displayTrackHeading": "Aktuellen Titel am Lautsprecher-Display anzeigen",
   "settingsView.displayTrackWarn": "Wenn aktiviert, wird die Musik bei jedem Wechsel des angezeigten Texts (z.B. ein neuer Titel) für etwa eine Sekunde unterbrochen.",
-  "settingsView.displayTrackHelp": "Standardmäßig aus. Wenn an, wird der aktuelle Song eines Radiosenders am Display des Lautsprechers angezeigt, wie früher beim Internetradio. Zum Aktualisieren muss der Lautsprecher den Stream neu puffern, daher setzt der Ton bei jeder Änderung kurz aus. In dieser App wird der Titel immer ohne Unterbrechung angezeigt, lass das also aus, wenn du lückenlosen Ton bevorzugst.",
+  "settingsView.displayTrackHelp": "Standardmäßig aus. Wenn an, wird der aktuelle Song eines Radiosenders am Display des Lautsprechers angezeigt, wie früher beim Internetradio. Zum Aktualisieren muss der Lautsprecher den Stream neu puffern, daher setzt der Ton bei jeder Änderung kurz aus. In dieser App wird der Titel immer ohne Unterbrechung angezeigt, lass das also aus, wenn du lückenlosen Ton bevorzugst. Auf einem Lautsprecher mit Display ersetzt das auch seine normale Anzeige, also Presetnummer und Sender.",
   "settingsView.displayTrackConfirmTitle": "Titel am Lautsprecher-Display anzeigen?",
   "settingsView.displayTrackConfirmBody": "Achtung: Zum Aktualisieren des Texts muss der Lautsprecher den Stream neu puffern, daher setzt die Musik bei jedem Song- oder Textwechsel für etwa eine Sekunde aus. In der App wird der Titel immer ohne Unterbrechung angezeigt. Trotzdem aktivieren?",
   "settingsView.displayTrackModeLabel": "Anzeigen:",

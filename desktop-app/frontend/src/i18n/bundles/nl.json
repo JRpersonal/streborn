@@ -1317,7 +1317,7 @@
   "settingsView.displayTrackConfirmBody": "Let op: om de tekst bij te werken moet de luidspreker de stream opnieuw bufferen, dus de muziek valt elke keer ongeveer een seconde weg als het nummer of de tekst verandert. Het nummer wordt hier in de app altijd zonder onderbreking getoond. Toch inschakelen?",
   "settingsView.displayTrackConfirmTitle": "Het nummer op het luidsprekerdisplay tonen?",
   "settingsView.displayTrackHeading": "Het huidige nummer op het luidsprekerdisplay tonen",
-  "settingsView.displayTrackHelp": "Standaard uit. Als dit aan staat, wordt het actuele nummer van een radiozender op het eigen display van de luidspreker getoond, zoals vroeger bij internetradio. De luidspreker moet opnieuw bufferen om de tekst bij te werken, dus de audio valt bij elke wijziging even weg. Het nummer wordt in deze app altijd zonder onderbreking getoond, dus laat dit uit als je liever ononderbroken geluid hebt.",
+  "settingsView.displayTrackHelp": "Standaard uit. Als dit aan staat, wordt het actuele nummer van een radiozender op het eigen display van de luidspreker getoond, zoals vroeger bij internetradio. De luidspreker moet opnieuw bufferen om de tekst bij te werken, dus de audio valt bij elke wijziging even weg. Het nummer wordt in deze app altijd zonder onderbreking getoond, dus laat dit uit als je liever ononderbroken geluid hebt. Op een speaker met display vervangt dit ook wat er normaal staat, het presetnummer en de zender.",
   "settingsView.displayTrackModeArtist": "Artiest",
   "settingsView.displayTrackModeBoth": "Beide",
   "settingsView.displayTrackModeLabel": "Tonen:",

@@ -1317,7 +1317,7 @@
   "settingsView.displayTrackConfirmBody": "Uwaga: aby zaktualizować tekst, głośnik musi ponownie buforować strumień, więc muzyka będzie się urywać na około sekundę za każdą zmianą utworu lub tekstu. Utwór jest zawsze pokazywany tutaj w aplikacji bez żadnych przerw. Włączyć mimo to?",
   "settingsView.displayTrackConfirmTitle": "Pokazywać utwór na wyświetlaczu głośnika?",
   "settingsView.displayTrackHeading": "Pokazuj bieżący utwór na wyświetlaczu głośnika",
-  "settingsView.displayTrackHelp": "Domyślnie wyłączone. Gdy włączone, aktualny utwór stacji radiowej jest pokazywany na własnym wyświetlaczu głośnika, jak dawniej w radiu internetowym. Aby zaktualizować tekst, głośnik musi ponownie buforować, więc dźwięk urywa się na chwilę przy każdej zmianie. Utwór jest zawsze pokazywany w tej aplikacji bez żadnych przerw, więc zostaw to wyłączone, jeśli wolisz dźwięk bez przerw.",
+  "settingsView.displayTrackHelp": "Domyślnie wyłączone. Gdy włączone, aktualny utwór stacji radiowej jest pokazywany na własnym wyświetlaczu głośnika, jak dawniej w radiu internetowym. Aby zaktualizować tekst, głośnik musi ponownie buforować, więc dźwięk urywa się na chwilę przy każdej zmianie. Utwór jest zawsze pokazywany w tej aplikacji bez żadnych przerw, więc zostaw to wyłączone, jeśli wolisz dźwięk bez przerw. W głośniku z wyświetlaczem zastępuje to również jego zwykły widok, numer presetu i nazwę stacji.",
   "settingsView.displayTrackModeArtist": "Wykonawca",
   "settingsView.displayTrackModeBoth": "Oba",
   "settingsView.displayTrackModeLabel": "Pokaż:",

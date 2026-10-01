@@ -1317,7 +1317,7 @@
   "settingsView.displayTrackConfirmBody": "Attention : pour mettre le texte à jour, l'enceinte doit retamponner le flux, donc la musique se coupera environ une seconde à chaque changement de titre ou de texte. Le morceau est toujours affiché ici dans l'app sans aucune interruption. Activer quand même ?",
   "settingsView.displayTrackConfirmTitle": "Afficher le morceau sur l'écran de l'enceinte ?",
   "settingsView.displayTrackHeading": "Afficher le morceau en cours sur l'écran de l'enceinte",
-  "settingsView.displayTrackHelp": "Désactivé par défaut. Quand c'est activé, le morceau en cours d'une station de radio s'affiche sur l'écran de l'enceinte, comme avant avec la radio internet. L'enceinte doit retamponner pour mettre le texte à jour, donc l'audio se coupe brièvement à chaque changement. Le morceau est toujours affiché dans cette app sans aucune interruption, alors laisse ceci désactivé si tu préfères un son sans coupure.",
+  "settingsView.displayTrackHelp": "Désactivé par défaut. Quand c'est activé, le morceau en cours d'une station de radio s'affiche sur l'écran de l'enceinte, comme avant avec la radio internet. L'enceinte doit retamponner pour mettre le texte à jour, donc l'audio se coupe brièvement à chaque changement. Le morceau est toujours affiché dans cette app sans aucune interruption, alors laisse ceci désactivé si tu préfères un son sans coupure. Sur une enceinte avec écran, cela remplace aussi ce qu'elle affiche d'habitude, le numéro de présélection et la station.",
   "settingsView.displayTrackModeArtist": "Artiste",
   "settingsView.displayTrackModeBoth": "Les deux",
   "settingsView.displayTrackModeLabel": "Afficher :",
