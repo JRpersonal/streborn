@@ -2132,6 +2132,32 @@ pid_is_our_agent() {
         *) return 1 ;;
     esac
 }
+box_in_setup() {
+    # True while the speaker is in its out-of-box setup, which is a state the
+    # USER puts it into and STR must keep its hands off.
+    #
+    # Nothing in this file asked this question before. Every other mention of
+    # setup here is STR ending it (airplay setupap exit, the M6 teardown), and
+    # the rescue watchdog below pushed the stored credentials at a speaker
+    # somebody was standing in front of, once a minute, because a box in setup
+    # has no lease and that was the only thing being checked.
+    #
+    # The firmware source first: it is the same answer on every chassis.
+    if command -v wget >/dev/null 2>&1; then
+        _bis=$(wget -qO- -T 3 "http://127.0.0.1:8090/now_playing" 2>/dev/null \
+            | sed -n 's/.*source="\([^"]*\)".*/\1/p' | head -1)
+        case "$_bis" in
+            SETUP*) return 0 ;;
+        esac
+    fi
+    # The setup-AP processes as the fallback, the same names M6 kills. Not
+    # universal: taigan runs its AP without hostapd (see M6), which is why
+    # this is second and not the only check.
+    if ps 2>/dev/null | grep -E 'hostapd|udhcpd|dnsmasq|nodogsplash' | grep -qv grep; then
+        return 0
+    fi
+    return 1
+}
 wpa_globals_only() {
     # $1 = a wpa_supplicant.conf. Prints every line OUTSIDE a network block,
     # verbatim, and drops the network blocks.
@@ -2314,12 +2340,24 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 setup_log "hands-off: no lease after 90s - starting the pure-rescue goform watchdog (non-destructive re-push only, no profile writes)"
                 (
                     _rw=0
+                    _rw_said_setup=""
                     while [ "$_rw" -lt 720 ]; do
                         sleep 60
                         _rw=$(( _rw + 60 ))
                         if current_sta_lease >/dev/null 2>&1; then
                             setup_log "hands-off rescue: lease present at +${_rw}s, done"
                             break
+                        fi
+                        # A speaker in SETUP has no lease either, and pushing the
+                        # stored credentials at it is exactly what ends the setup
+                        # the user started. Skip, and keep counting: if they give
+                        # up, the rest of the budget still rescues a stranded box.
+                        if box_in_setup; then
+                            if [ -z "$_rw_said_setup" ]; then
+                                _rw_said_setup=1
+                                setup_log "hands-off rescue: the speaker is in SETUP, the user is provisioning it; not pushing anything at it"
+                            fi
+                            continue
                         fi
                         setup_log "hands-off rescue: still no lease at +${_rw}s, non-destructive goform re-push"
                         goform_wlan_push "$SSID" "$PASS"
@@ -4644,7 +4682,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent box_in_setup iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done
