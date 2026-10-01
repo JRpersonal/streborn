@@ -585,7 +585,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 	if len(agentbin.Bytes()) > 0 {
 		embedded = hex.EncodeToString(sum[:])
 	}
-	verdict, line := classifyAgentVersion(ver, embedded, appBuild, int64(len(agentbin.Bytes())))
+	verdict, line := classifyAgentVersion(ver, embedded, appBuild)
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
@@ -619,7 +619,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 // disarm the loop breaker written to stop it repeating forever, so the running
 // hash confirms and the on-disk hash is only ever the evidence for
 // landed-not-running.
-func classifyAgentVersion(ver map[string]string, embedded, wantBuild string, needBytes int64) (verdict, journal string) {
+func classifyAgentVersion(ver map[string]string, embedded, wantBuild string) (verdict, journal string) {
 	running, onDisk := ver["agentRunningSha256"], ver["agentBinarySha256"]
 	if embedded != "" && running == embedded && ver["otaSwapFailed"] == "" {
 		return "confirmed", "outcome: confirmed late - box runs the agent this build carries"
@@ -636,8 +636,7 @@ func classifyAgentVersion(ver map[string]string, embedded, wantBuild string, nee
 	if embedded != "" && onDisk == embedded && running != embedded {
 		return "landed-not-running", "outcome: NOT CONFIRMED - the pushed binary IS on the box's disk but the running agent is still " +
 			ver["version"] + " build " + ver["build"] +
-			"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help" +
-			nandCauseClause(ver, needBytes)
+			"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help"
 	}
 	return "not-landed", "outcome: NOT CONFIRMED - box still runs " + ver["version"] + " build " + ver["build"] +
 		" and does not report the pushed binary on disk"
@@ -658,24 +657,6 @@ func classifyAgentVersion(ver map[string]string, embedded, wantBuild string, nee
 // failed this way twice in one morning and had been stuck on a build from the
 // 12th of September for weeks, while its owner's four other speakers updated
 // fine. He only found out because the speaker stopped answering altogether.
-// needBytes is the size of the binary that was pushed. The agent does NOT
-// report the on-disk agent size (checked against a live speaker: it reports
-// nandFreeBytes, nandTotalBytes and goLibrespotSizeBytes, and no size for its
-// own binary), so taking it from the version map would make this clause dead
-// code that never fires.
-func nandCauseClause(ver map[string]string, needBytes int64) string {
-	free, _ := strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
-	if free <= 0 || needBytes <= 0 {
-		return "" // older agents do not report the space; never guess
-	}
-	if nandFits(free, 0, nandNeedCompressed(needBytes)) {
-		return ""
-	}
-	return fmt.Sprintf("; the speaker has only %d bytes free for a %d byte binary, "+
-		"too little for the second copy the swap needs, which is the likeliest reason "+
-		"it never ran. Free space on the speaker, then update again", free, needBytes)
-}
-
 // boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as
 // opposed to STR's agent. /info is the cheapest endpoint the Bose firmware
 // serves and it answers on every model and every chassis, firewalled or not,
