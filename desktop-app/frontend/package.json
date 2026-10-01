@@ -18,7 +18,7 @@
     "stylelint": "^17.15.0",
     "stylelint-config-standard": "^40.0.0",
     "stylelint-value-no-unknown-custom-properties": "^6.1.1",
-    "vite": "^8.3.0",
-    "vitest": "5.0.1"
+    "vite": "^8.3.1",
+    "vitest": "5.0.2"
   }
 }
