@@ -3763,12 +3763,31 @@ WPAEOF
     if [ "$BCO_MODE" = "1" ] && [ -n "$SSID" ] && [ -n "$PASS" ]; then
         (
             _rw=0
+            _rw_said_setup=""
             while [ "$_rw" -lt 720 ]; do
                 sleep 60
                 _rw=$(( _rw + 60 ))
                 if current_sta_lease >/dev/null 2>&1; then
                     setup_log "reassoc-watchdog: lease present at +${_rw}s, done"
                     break
+                fi
+                # The twin of the hands-off rescue, and it had the same blind
+                # spot: a speaker in SETUP has no lease either, so this pushed
+                # the stored credentials at a box the owner was standing in
+                # front of, once a minute, ending the setup AP each time. On a
+                # BCO chassis goform is THE channel that programs the radio,
+                # which this function's own header says, so the push is exactly
+                # what undoes an onboarding in progress.
+                #
+                # The stick still wins on an ordinary boot. That is deliberate:
+                # somebody put it there. It just stops winning against the
+                # person at the speaker right now.
+                if box_in_setup; then
+                    if [ -z "$_rw_said_setup" ]; then
+                        _rw_said_setup=1
+                        setup_log "reassoc-watchdog: the speaker is in SETUP, the user is provisioning it; not pushing anything at it"
+                    fi
+                    continue
                 fi
                 setup_log "reassoc-watchdog: no lease at +${_rw}s, non-destructive goform re-push"
                 goform_wlan_push "$SSID" "$PASS"

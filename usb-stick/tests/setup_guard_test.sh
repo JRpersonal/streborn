@@ -127,6 +127,43 @@ else
     fail "box_in_setup is checked after the push (guard=$GUARD_AT push=$PUSH_AT)"
 fi
 
+# Both timer-driven writers to the goform channel must ask. The second one was
+# found by an audit after the first was fixed: same construct, same cadence,
+# same budget, same single exit condition, no guard. Pin BOTH, by name, so a
+# third one cannot be added quietly either.
+
+for block in "hands-off: no lease after 90s" "BCO cold-boot re-association watchdog"; do
+    LOOP=$(awk -v start="$block" 'index($0, start) { on = 1 } on { print } on && /^    fi$/ { exit }' "$RUNSH")
+    case "$(printf '%s' "$LOOP" | grep -v "^[[:space:]]*#")" in
+        *goform_wlan_push*) ok ;;
+        *) fail "could not find the push loop under '$block'; this test is pinned to the wrong place" ;;
+    esac
+    case "$(printf '%s' "$LOOP" | grep -v "^[[:space:]]*#")" in
+        *box_in_setup*) ok ;;
+        *) fail "the loop under '$block' pushes at a speaker without asking whether it is in SETUP" ;;
+    esac
+    # Comments in this file explain goform_wlan_push by name, so look at code
+    # lines only or the prose counts as a call and the order reads backwards.
+    CODE=$(printf '%s' "$LOOP" | grep -v "^[[:space:]]*#")
+    G=$(printf '%s' "$CODE" | grep -n "box_in_setup" | head -1 | cut -d: -f1)
+    P=$(printf '%s' "$CODE" | grep -n "goform_wlan_push" | head -1 | cut -d: -f1)
+    if [ -n "$G" ] && [ -n "$P" ] && [ "$G" -lt "$P" ]; then
+        ok
+    else
+        fail "'$block' asks after it pushes (guard=$G push=$P)"
+    fi
+done
+
+# Nothing else may push on a timer without asking. Counts the calls: two loops,
+# plus the early one-shot and the failover seed, which are single deliberate
+# pushes and not loops.
+PUSHES=$(grep -v "^[[:space:]]*#" "$RUNSH" | grep -c "goform_wlan_push ")
+if [ "$PUSHES" -le 6 ]; then
+    ok
+else
+    fail "there are now $PUSHES goform_wlan_push call sites; a new one may need the same guard"
+fi
+
 rm -rf "$WORK"
 
 if [ "$FAILED" -eq 0 ]; then
