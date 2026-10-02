@@ -302,6 +302,8 @@
   "controls.inputTitle": "{{input}} girişine geç",
   "controls.volume": "Ses",
   "controls.volumeDown": "Daha kısık",
+  "controls.mute": "Sessiz",
+  "controls.unmute": "Sesi aç",
   "controls.volumeUp": "Daha yüksek",
   "controls.volumeWheelHint": "Kaydırıcıya tıklayın, sonra ses düzeyini ayarlamak için kaydırın",
   "toast.source": "Kaynak: {{src}}",

@@ -302,6 +302,8 @@
   "controls.inputTitle": "Overschakelen naar {{input}}",
   "controls.volume": "Volume",
   "controls.volumeDown": "Zachter",
+  "controls.mute": "Dempen",
+  "controls.unmute": "Dempen opheffen",
   "controls.volumeUp": "Harder",
   "controls.volumeWheelHint": "Klik op de schuifregelaar en scrol om het volume aan te passen",
   "toast.source": "Bron: {{src}}",

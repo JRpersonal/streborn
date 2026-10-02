@@ -302,6 +302,8 @@
   "controls.inputTitle": "{{input}} に切り替え",
   "controls.volume": "音量",
   "controls.volumeDown": "小さく",
+  "controls.mute": "ミュート",
+  "controls.unmute": "ミュート解除",
   "controls.volumeUp": "大きく",
   "controls.volumeWheelHint": "スライダーをクリックし、スクロールで音量を調整します",
   "toast.source": "ソース: {{src}}",

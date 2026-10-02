@@ -302,6 +302,8 @@
   "controls.inputTitle": "Basculer sur {{input}}",
   "controls.volume": "Volume",
   "controls.volumeDown": "Moins fort",
+  "controls.mute": "Muet",
+  "controls.unmute": "Rétablir le son",
   "controls.volumeUp": "Plus fort",
   "controls.volumeWheelHint": "Cliquez sur le curseur, puis faites défiler pour régler le volume",
   "toast.source": "Source : {{src}}",

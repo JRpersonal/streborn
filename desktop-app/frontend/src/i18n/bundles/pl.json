@@ -302,6 +302,8 @@
   "controls.inputTitle": "Przełącz na {{input}}",
   "controls.volume": "Głośność",
   "controls.volumeDown": "Ciszej",
+  "controls.mute": "Wycisz",
+  "controls.unmute": "Włącz dźwięk",
   "controls.volumeUp": "Głośniej",
   "controls.volumeWheelHint": "Kliknij suwak, a następnie przewijaj, aby regulować głośność",
   "toast.source": "Źródło: {{src}}",

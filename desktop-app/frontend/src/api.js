@@ -368,6 +368,28 @@ export async function readBoxBalance(box) {
   return b ? b.actual : null;
 }
 
+// setBoxMute silences the speaker, or brings it back.
+//
+// Muting is the speaker's own function, pressed through the agent, not a
+// volume we pull to zero and remember: the speaker's remote and its physical
+// buttons agree with the real thing, and nothing is lost if the app is closed
+// while the speaker is muted.
+//
+// muted may be true, false, or undefined to toggle. The answer carries the
+// state the speaker ended up in, so the caller never has to guess; null means
+// the speaker could not be reached.
+export async function setBoxMute(box, muted) {
+  try {
+    const r = await boxFetch(box, '/api/box/mute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: muted === undefined ? '' : JSON.stringify({ muted: !!muted }),
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
 // writeBoxBalance moves the balance of the pair this speaker masters.
 //
 // Always addressed to the MASTER: only the master reports a balance and only the

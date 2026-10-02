@@ -302,6 +302,8 @@
   "controls.inputTitle": "Pārslēgties uz {{input}}",
   "controls.volume": "Skaļums",
   "controls.volumeDown": "Klusāk",
+  "controls.mute": "Izslēgt skaņu",
+  "controls.unmute": "Ieslēgt skaņu",
   "controls.volumeUp": "Skaļāk",
   "controls.volumeWheelHint": "Noklikšķiniet uz slīdņa un pēc tam ritiniet, lai pielāgotu skaļumu",
   "toast.source": "Avots: {{src}}",

@@ -302,6 +302,8 @@
   "controls.inputTitle": "Перейти на {{input}}",
   "controls.volume": "Гучність",
   "controls.volumeDown": "Тихіше",
+  "controls.mute": "Без звуку",
+  "controls.unmute": "Увімкнути звук",
   "controls.volumeUp": "Гучніше",
   "controls.volumeWheelHint": "Клацніть повзунок, потім прокручуйте, щоб регулювати гучність",
   "toast.source": "Джерело: {{src}}",

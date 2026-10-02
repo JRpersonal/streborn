@@ -327,6 +327,8 @@
   "controls.inputTitle": "Switch to {{input}}",
   "controls.volume": "Volume",
   "controls.volumeDown": "Quieter",
+  "controls.mute": "Mute",
+  "controls.unmute": "Unmute",
   "controls.volumeUp": "Louder",
   "controls.volumeWheelHint": "Click the slider, then scroll to adjust the volume",
   "toast.source": "Source: {{src}}",

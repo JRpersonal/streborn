@@ -302,6 +302,8 @@
   "controls.inputTitle": "Perjungti į {{input}}",
   "controls.volume": "Garsumas",
   "controls.volumeDown": "Tyliau",
+  "controls.mute": "Nutildyti",
+  "controls.unmute": "Įjungti garsą",
   "controls.volumeUp": "Garsiau",
   "controls.volumeWheelHint": "Spustelėkite šliaužiklį, tada slinkite, kad reguliuotumėte garsumą",
   "toast.source": "Šaltinis: {{src}}",

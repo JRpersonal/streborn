@@ -4,6 +4,7 @@ import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescal
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import { spotifyAccountLabel } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
+import { muteView, muteAfterPress } from './mutebutton.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -128,6 +129,7 @@ import {
   EventsOn,
   boxFetch,
   readBoxBalance,
+  setBoxMute,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -1547,7 +1549,7 @@ $('view-box').innerHTML = `
         <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
-        <span class="vol-icon" title="${escapeAttr(t('controls.volume'))}" aria-hidden="true">&#128266;</span>
+        <button class="vol-icon vol-mute" id="volMute" aria-pressed="false" aria-label="${escapeAttr(t('controls.mute'))}" title="${escapeAttr(t('controls.mute'))}">&#128266;</button>
         <button class="btn btn-mini vol-step" id="volDown" aria-label="${escapeAttr(t('controls.volumeDown'))}" title="${escapeAttr(t('controls.volumeDown'))}">&#8722;</button>
         <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
         <button class="btn btn-mini vol-step" id="volUp" aria-label="${escapeAttr(t('controls.volumeUp'))}" title="${escapeAttr(t('controls.volumeUp'))}">+</button>
@@ -1738,6 +1740,51 @@ let musicVolTimer = null;
 let musicVolBox = null;
 const musicVolEl = $('musicVolume');
 const musicVolValEl = $('musicVolumeVal');
+// Mute, which STR could not do at all until a user asked for it and pointed at
+// this very symbol. It is the speaker's own MUTE key, not a volume pulled to
+// zero and remembered here: the box's remote and its physical buttons set the
+// same flag, so they and this icon always agree, and closing the app loses
+// nothing that would have to be restored.
+const volMuteEl = $('volMute');
+// muteUntil holds the 2 s status poll off for a moment after a press, exactly
+// as the slider does. The speaker needs a round trip before it reports the new
+// state, and a poll landing in that gap would flip the icon back, which reads
+// as a button that does not work.
+state.muteUntil = 0;
+// renderMuteState draws what the SPEAKER says, not what we last clicked.
+function renderMuteState(muted) {
+  if (!volMuteEl) return;
+  const v = muteView(muted);
+  volMuteEl.innerHTML = v.glyph;
+  volMuteEl.setAttribute('aria-pressed', v.pressed ? 'true' : 'false');
+  const label = t(v.labelKey);
+  volMuteEl.setAttribute('aria-label', label);
+  volMuteEl.title = label;
+  volMuteEl.classList.toggle('is-muted', v.pressed);
+}
+if (volMuteEl) {
+  volMuteEl.onclick = async () => {
+    const box = state.currentBox;
+    if (!box) return;
+    // Optimistic: the speaker takes a moment to answer, and a button that
+    // looks dead for half a second gets pressed a second time.
+    const want = volMuteEl.getAttribute('aria-pressed') !== 'true';
+    renderMuteState(want);
+    state.muteUntil = Date.now() + 1500;
+    volMuteEl.disabled = true;
+    try {
+      const res = await setBoxMute(box, want);
+      // A speaker switch mid-flight would otherwise paint the old speaker's
+      // answer onto the new one.
+      if (!sameBoxIdentity(state.currentBox, box)) return;
+      // The speaker has the last word. Our guess only filled the gap, and if
+      // it could not be reached the icon must go back rather than lie.
+      renderMuteState(muteAfterPress(res, want));
+    } finally {
+      volMuteEl.disabled = false;
+    }
+  };
+}
 // Drag-busy + grace period so the 2 s periodic refresh in
 // refreshStatus does not yank the thumb out from under the user
 // while they are wischen. musicVolUntil is the timestamp at which
@@ -1843,6 +1890,12 @@ async function syncMusicTabVolumeFromBox() {
     // reply from the previous speaker would show ITS volume for the new one,
     // and the user's first slider touch would then send that stale level.
     if (!sameBoxIdentity(state.currentBox, box)) return;
+    // Mute first, and on its own guard: it has to follow the speaker's own
+    // remote and buttons, and it must still update on a speaker whose volume
+    // the poll is holding off or whose level has not changed.
+    if (Date.now() >= (state.muteUntil || 0)) {
+      renderMuteState(data && data.volume && data.volume.muted);
+    }
     // The user may have started dragging during the round trip; re-check the
     // drag guards so the reply cannot yank the thumb from under them.
     if (state.musicVolBusy || Date.now() < (state.musicVolUntil || 0)) return;
@@ -1911,6 +1964,7 @@ async function loadMusicTabVolume() {
     const vol = (data && data.volume && data.volume.actual) || 0;
     musicVolEl.value = String(vol);
     if (musicVolValEl) musicVolValEl.textContent = String(vol);
+    renderMuteState(data && data.volume && data.volume.muted);
   } catch {}
 }
 $('searchBtn').onclick = () => doSearch();

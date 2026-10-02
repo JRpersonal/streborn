@@ -327,6 +327,8 @@
   "controls.inputTitle": "Auf {{input}} umschalten",
   "controls.volume": "Lautstärke",
   "controls.volumeDown": "Leiser",
+  "controls.mute": "Stumm",
+  "controls.unmute": "Ton an",
   "controls.volumeUp": "Lauter",
   "controls.volumeWheelHint": "Regler anklicken, dann zum Anpassen scrollen",
   "toast.source": "Quelle: {{src}}",

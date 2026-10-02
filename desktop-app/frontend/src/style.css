@@ -1161,6 +1161,22 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 }
 .vol-balance.hidden { display: none; }
 .volume-control .vol-icon { font-size: 16px; opacity: 0.7; }
+/* The speaker symbol is the mute button: a user asked for it exactly there, so
+   it has to stay the icon it already was and gain nothing that looks like a
+   button next to the +/- steppers. Only the cursor and the hover say it can be
+   pressed, and the muted state is carried by the glyph itself (it changes to
+   the crossed-out speaker), not by a colour somebody might not see. */
+.volume-control button.vol-mute {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  margin: 0;
+  color: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.volume-control button.vol-mute:hover { opacity: 1; }
+.volume-control button.vol-mute.is-muted { opacity: 1; color: var(--brand); }
 /* Music tab volume slider: native control with accent-color so the
    filled portion on the left renders in brand blue — matches the
    slider in Box Einstellungen exactly. The previous custom -webkit

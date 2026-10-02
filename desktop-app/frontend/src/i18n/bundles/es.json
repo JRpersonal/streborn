@@ -302,6 +302,8 @@
   "controls.inputTitle": "Cambiar a {{input}}",
   "controls.volume": "Volumen",
   "controls.volumeDown": "Más bajo",
+  "controls.mute": "Silenciar",
+  "controls.unmute": "Activar sonido",
   "controls.volumeUp": "Más alto",
   "controls.volumeWheelHint": "Haz clic en el control deslizante y desplázate para ajustar el volumen",
   "toast.source": "Fuente: {{src}}",

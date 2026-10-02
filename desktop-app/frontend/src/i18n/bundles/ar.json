@@ -302,6 +302,8 @@
   "controls.inputTitle": "التبديل إلى {{input}}",
   "controls.volume": "مستوى الصوت",
   "controls.volumeDown": "أخفض",
+  "controls.mute": "كتم الصوت",
+  "controls.unmute": "إلغاء كتم الصوت",
   "controls.volumeUp": "أعلى",
   "controls.volumeWheelHint": "انقر على شريط التمرير ثم مرّر لضبط مستوى الصوت",
   "toast.source": "المصدر: {{src}}",

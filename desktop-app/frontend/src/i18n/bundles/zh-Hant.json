@@ -327,6 +327,8 @@
   "controls.inputTitle": "切換到 {{input}}",
   "controls.volume": "音量",
   "controls.volumeDown": "調小",
+  "controls.mute": "靜音",
+  "controls.unmute": "取消靜音",
   "controls.volumeUp": "調大",
   "controls.volumeWheelHint": "點一下滑桿，再滾動調整音量",
   "toast.source": "來源：{{src}}",
