@@ -2663,6 +2663,27 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
    spread sideways for a sentence nobody needs to read twice. Under the link it
    wraps into the width the row already has. */
 .phone-scan-hint { font-size: 13px; color: var(--c-text); margin: 2px 0 0; }
+
+/* The start volume, drawn on the volume bar it is about.
+   A flag under the track rather than a second handle on it: two things that
+   look alike on one bar is how you get somebody dragging the wrong one, and the
+   whole point here is that the two are told apart at a glance. The current
+   volume keeps the native handle it has always had, and the start volume is the
+   small marked one below, in the brand colour so it reads as something STR
+   added rather than as part of the speaker's own control. */
+.vol-with-start { position: relative; flex: 1; display: flex; align-items: center; }
+.vol-with-start input[type=range] { flex: 1; accent-color: var(--brand); }
+.startvol-mark {
+  position: absolute; bottom: -3px; width: 12px; height: 12px;
+  margin-left: -6px; /* the left we set is the CENTRE of the marker */
+  background: var(--brand); border: 2px solid var(--c-surface);
+  border-radius: 3px; transform: rotate(45deg);
+  cursor: ew-resize; touch-action: none; /* or a drag scrolls the panel instead */
+}
+.startvol-mark:hover, .startvol-mark:focus-visible { background: var(--c-text); }
+.startvol-mark.hidden { display: none; }
+.startvol-toggle { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.startvol-toggle input { accent-color: var(--brand); }
 .phone-howto-body { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .phone-paths { display: flex; gap: 12px; flex-wrap: wrap; }
 .phone-path {
