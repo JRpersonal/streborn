@@ -1770,6 +1770,31 @@ function renderMuteState(muted) {
   volMuteEl.title = label;
   volMuteEl.classList.toggle('is-muted', v.pressed);
 }
+// Moving the volume while the speaker is muted means "I want to hear this".
+//
+// The firmware does not draw that conclusion. Measured on a speaker: mute, then
+// PUT a volume, and it answers vol=6 muteenabled=true. So the slider moves, the
+// number changes, and nothing comes out, which reads as an app that does not
+// work rather than as a speaker that is doing exactly what it was told.
+//
+// Lifting it here rather than in the agent is deliberate. The agent cannot tell
+// a person reaching for the slider from STR re-asserting a level after a wake,
+// and the second one must not undo a mute somebody meant. At this end the
+// gesture is the evidence.
+function liftMuteForVolumeGesture() {
+  const box = state.currentBox;
+  if (!box || !volMuteEl) return;
+  if (volMuteEl.getAttribute('aria-pressed') !== 'true') return;
+  // Drawn first, which also disarms this for the rest of the drag: a slider
+  // sends an event per pixel and this must fire once, not forty times.
+  renderMuteState(false);
+  state.muteUntil = Date.now() + 1500;
+  setBoxMute(box, false).then((res) => {
+    if (!sameBoxIdentity(state.currentBox, box)) return;
+    renderMuteState(muteAfterPress(res, false));
+  }).catch(() => {});
+}
+
 if (volMuteEl) {
   volMuteEl.onclick = async () => {
     const box = state.currentBox;
@@ -1809,6 +1834,7 @@ if (musicVolEl) {
     if (musicVolValEl) musicVolValEl.textContent = musicVolEl.value;
     const box = state.currentBox;
     if (!box) return;
+    liftMuteForVolumeGesture();
     musicVolBox = box;
     state.desiredVolume = parseInt(musicVolEl.value, 10);
     throttledSetVolume(box.host, box.port, state.desiredVolume);
@@ -1818,6 +1844,7 @@ if (musicVolEl) {
   musicVolEl.onchange = () => {
     musicVolBox = state.currentBox;
     if (!musicVolBox) return;
+    liftMuteForVolumeGesture();
     state.desiredVolume = parseInt(musicVolEl.value, 10);
     throttledSetVolume(musicVolBox.host, musicVolBox.port, state.desiredVolume);
   };
@@ -1849,6 +1876,7 @@ if (musicVolEl) {
     const cur = parseInt(musicVolEl.value, 10) || 0;
     const next = Math.max(0, Math.min(100, cur + delta));
     if (next === cur) return;
+    liftMuteForVolumeGesture();
     musicVolEl.value = String(next);
     if (musicVolValEl) musicVolValEl.textContent = String(next);
     musicVolBox = box;
