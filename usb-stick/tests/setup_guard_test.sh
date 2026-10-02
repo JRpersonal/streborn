@@ -34,27 +34,38 @@ extract() {
 
 eval "$(extract box_in_setup)"
 
-WORK=$(mktemp -d 2>/dev/null || echo "$HERE/.setupwork")
-mkdir -p "$WORK/bin"
-PATH="$WORK/bin:$PATH"
-export PATH
+# wget stands in for the box's own web server, ps for its process list, and
+# both are shell FUNCTIONS rather than scripts dropped on the PATH. That is
+# not a style choice. BusyBox is built standalone: wget and ps are applets
+# inside the same binary, and its shell resolves them from its own applet
+# table before it ever looks at PATH. A stub script in a PATH directory is
+# never reached there, the real applets answer instead, and every positive
+# case quietly reads as "not in setup".
+#
+# That is exactly what happened the first time this file ran on a real
+# BusyBox: six failures, and the negative cases passing for the wrong
+# reason, after months of green runs under bash. The speaker runs BusyBox,
+# so the one shell the stubs could not reach was the only one that matters.
+# A function outranks an applet, a builtin and PATH in every POSIX shell.
+NOW_PLAYING=""
+PS_OUTPUT=""
+wget() { printf '%s' "$NOW_PLAYING"; }
+ps() { printf '%s\n' "$PS_OUTPUT"; }
+set_now_playing() { NOW_PLAYING="$1"; }
+set_processes() { PS_OUTPUT="$1"; }
 
-# wget stands in for the box's own web server, ps for its process list.
-set_now_playing() {
-    cat > "$WORK/bin/wget" <<STUB
-#!/bin/sh
-printf '%s' '$1'
-STUB
-    chmod +x "$WORK/bin/wget"
+# Prove the stubs are in effect before trusting a single verdict. Without
+# this the failure above is silent: the cases still run, they just answer
+# about the machine running the test instead of about the speaker.
+set_now_playing "SENTINEL-NP"
+[ "$(wget -qO- -T 3 http://127.0.0.1:8090/now_playing)" = "SENTINEL-NP" ] || {
+    echo "the wget stub is not in effect: this shell answers from somewhere else"
+    exit 1
 }
-set_processes() {
-    cat > "$WORK/bin/ps" <<STUB
-#!/bin/sh
-cat <<'OUT'
-$1
-OUT
-STUB
-    chmod +x "$WORK/bin/ps"
+set_processes "SENTINEL-PS"
+[ "$(ps)" = "SENTINEL-PS" ] || {
+    echo "the ps stub is not in effect: this shell answers from somewhere else"
+    exit 1
 }
 
 NORMAL_PS='  123 root     /opt/Bose/NetManager --autoswitching=true
@@ -164,7 +175,6 @@ else
     fail "there are now $PUSHES goform_wlan_push call sites; a new one may need the same guard"
 fi
 
-rm -rf "$WORK"
 
 if [ "$FAILED" -eq 0 ]; then
     echo "setup guard: $CASES checks, all passed"
