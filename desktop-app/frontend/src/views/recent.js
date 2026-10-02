@@ -20,6 +20,7 @@ import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, Browser
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
+import { spotifyAccountLabel } from '../spotifyaccountlabel.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -262,8 +263,15 @@ function recentCardHTML(c, i, nowPlaying) {
   const webUrl = cardWebURL(c);
   // Always show which box played it (Jens) plus the source, Spotify account and,
   // like the radio search rows, a "website" link.
+  // The Spotify account goes through the same shortener as the preset tile.
+  // It did not, and that was half a fix: the tile was shortened on 2026-10-01
+  // because a full canonical Spotify user id had reached a support mail and was
+  // about to reach a public screenshot, and this card was never touched. It
+  // then appeared in a public screenshot anyway, on 2026-10-02. One identifier,
+  // two places, and only one of them was looked at.
+  const accountLabel = c.account ? spotifyAccountLabel(c.account) : '';
   const sub = `<span class="rc-src">${escapeHtml(recentSourceLabel(c.source))}</span>`
-    + (c.account ? ` &middot; ${escapeHtml(c.account)}` : '')
+    + (accountLabel ? ` &middot; ${escapeHtml(accountLabel)}` : '')
     + (c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '')
     + (webUrl ? ` &middot; <a href="#" class="rc-site" id="recSite${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : '');
   const tracks = c.tracks.length
