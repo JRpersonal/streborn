@@ -6,7 +6,6 @@ export namespace main {
 	    author: string;
 	    githubUrl: string;
 	    websiteUrl: string;
-	    donateUrl: string;
 	    donateSlogan: string;
 	    updateManifestUrl: string;
 	    agentSha256: string;
@@ -22,7 +21,6 @@ export namespace main {
 	        this.author = source["author"];
 	        this.githubUrl = source["githubUrl"];
 	        this.websiteUrl = source["websiteUrl"];
-	        this.donateUrl = source["donateUrl"];
 	        this.donateSlogan = source["donateSlogan"];
 	        this.updateManifestUrl = source["updateManifestUrl"];
 	        this.agentSha256 = source["agentSha256"];

@@ -1055,7 +1055,7 @@ async function renderFooter() {
   try {
     state.appInfo = await AppInfo();
   } catch {
-    state.appInfo = { version: t('common.unknown'), build: '', author: '', githubUrl: '', donateUrl: '', websiteUrl: '', donateSlogan: '' };
+    state.appInfo = { version: t('common.unknown'), build: '', author: '', githubUrl: '', websiteUrl: '', donateSlogan: '' };
   }
   const i = state.appInfo;
   const links = [];
