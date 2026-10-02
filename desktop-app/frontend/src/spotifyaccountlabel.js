@@ -6,30 +6,30 @@
 // recognises.
 //
 // Modern Spotify accounts do not have one. What arrives is the canonical user
-// id, an opaque string like a25-character run of lowercase letters and digits.
-// Printed on the tile it tells the owner nothing they can use, and it is a
-// personal identifier: it went into a support mail on 2026-09-30 and was about
-// to go into a public GitHub issue, in a screenshot, because the app put it on
-// screen in readable green text.
+// id, an opaque 22-to-28 character run of lowercase letters and digits. Printed
+// on the tile it tells the owner nothing they can use, and it is a personal
+// identifier that resolves to a public profile page: it went into a support mail
+// on 2026-09-30, and on 2026-10-02 it reached a public issue after all, both in
+// a screenshot of this line and in clear inside an attached diagnostic.
 //
-// It also misled the reporter about what STR was doing. Two presets carried two
-// different ids and she read the pair as evidence that the speaker was reusing a
-// cached credential from another account. The ids were simply the two accounts
-// she had actually used.
+// It also misled a reporter about what STR was doing. Two presets carried two
+// different ids and they read the pair as evidence that the speaker was reusing
+// a cached credential from another account. The ids were simply the two accounts
+// they had actually used.
 //
-// So: a readable username still shows in full, because that is the case the
-// feature exists for. An opaque id is reduced to a short tail, which still tells
-// two accounts apart at a glance and is not an identifier anybody can look up or
-// link to a person.
+// The first attempt kept the line and cut an opaque id to a four-character tail.
+// The reporter's answer to that was the right one: four characters of an opaque
+// id are not a name either, and the line still serves no purpose to an owner.
+//
+// So the id does not go on screen at all now, in any length. What goes on screen
+// is the account's DISPLAY NAME, which the speaker remembers the first time
+// Spotify answers for that account and then keeps, so it survives the engine
+// being logged in as somebody else, Spotify being unreachable, and a reboot.
 
 // OPAQUE_MIN_LEN is where "this is a machine-generated id, not a name" starts.
 // Spotify's canonical ids are 22 characters or more; the longest human usernames
 // that show up in the field are well under this.
 const OPAQUE_MIN_LEN = 16;
-
-// TAIL is how much of an opaque id survives. Four characters separate the
-// accounts a person actually has without being a handle anybody can resolve.
-const TAIL = 4;
 
 // looksOpaque reports whether an account string is a machine id rather than a
 // name somebody chose: long, and nothing but lowercase letters and digits. A
@@ -39,11 +39,22 @@ export function looksOpaque(account) {
   return s.length >= OPAQUE_MIN_LEN && /^[a-z0-9]+$/.test(s);
 }
 
-// spotifyAccountLabel is what the tile prints, or an empty string for nothing at
-// all. Never returns the whole of an opaque id.
-export function spotifyAccountLabel(account) {
-  const s = String(account || '').trim();
-  if (!s) return '';
-  if (!looksOpaque(s)) return s;
-  return '…' + s.slice(-TAIL);
+// spotifyAccountName is what the tile prints about the account, or an empty
+// string for nothing at all.
+//
+// names maps account id to the display name the speaker remembered. An old-style
+// username is already a name and stands on its own when nothing was remembered.
+//
+// The id is never a fallback. That is the whole point of this function: an
+// unknown account prints nothing, because nothing is better than an identifier
+// the owner cannot read and a stranger can look up.
+export function spotifyAccountName(account, names) {
+  const id = String(account || '').trim();
+  if (!id) return '';
+  if (names && typeof names === 'object') {
+    const remembered = String(names[id] || '').trim();
+    if (remembered) return remembered;
+  }
+  if (!looksOpaque(id)) return id;
+  return '';
 }

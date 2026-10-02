@@ -1,15 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { spotifyAccountLabel, looksOpaque } from './spotifyaccountlabel.js';
+import { spotifyAccountName, looksOpaque } from './spotifyaccountlabel.js';
 
-// The two real ids from the 2026-09-30 report, which the app printed in full on
-// the preset tiles and which the reporter then pasted into a mail.
-const PREMIUM_ID = 'aci7jtog89nhio3gbk3absjgj';
-const FREE_ID = '31ususfrcgy4ynphm3h5yvubycui';
+// Synthetic ids, shaped like the real thing and belonging to nobody.
+//
+// They used to be two REAL account ids, copied out of a reporter's diagnostic
+// into this file by the very commit that was written to keep that identifier off
+// the screen (6793ed39, 2026-10-01). So the fix published the thing it was
+// protecting, in a public repository, where it is harder to take back than the
+// screenshot ever was. Found 2026-10-02.
+//
+// A test about the SHAPE of an identifier never needs a real one. The first is
+// 25 characters, the second 28 and starting with digits, which is the pattern
+// Spotify's canonical ids come in and all this code reasons about.
+const OPAQUE_ID = 'qm4xvp7z2bnkd6rt1ys8hgwj3';
+const OPAQUE_ID_LONG = '48qpzlmxtreb9vkd2yhsn6wc3gfu';
 
 describe('looksOpaque', () => {
   it('recognises Spotify canonical user ids', () => {
-    expect(looksOpaque(PREMIUM_ID)).toBe(true);
-    expect(looksOpaque(FREE_ID)).toBe(true);
+    expect(looksOpaque(OPAQUE_ID)).toBe(true);
+    expect(looksOpaque(OPAQUE_ID_LONG)).toBe(true);
   });
 
   it('leaves names people chose alone', () => {
@@ -18,49 +27,44 @@ describe('looksOpaque', () => {
     expect(looksOpaque('eileen.wilson')).toBe(false);
     expect(looksOpaque('eileen_w')).toBe(false);
     expect(looksOpaque('jens-r')).toBe(false);
-    expect(looksOpaque('eileen310')).toBe(false);
-    expect(looksOpaque('a@b.com')).toBe(false);
-  });
-
-  it('says no to nothing', () => {
+    expect(looksOpaque('bob')).toBe(false);
     expect(looksOpaque('')).toBe(false);
-    expect(looksOpaque(null)).toBe(false);
-    expect(looksOpaque(undefined)).toBe(false);
   });
 });
 
-describe('spotifyAccountLabel', () => {
-  it('never puts a whole canonical id on screen', () => {
-    for (const id of [PREMIUM_ID, FREE_ID]) {
-      const label = spotifyAccountLabel(id);
-      expect(label).not.toContain(id);
-      expect(id).not.toContain(label.replace('…', '') + 'x');
-      expect(label.length).toBeLessThanOrEqual(5);
+describe('spotifyAccountName', () => {
+  it('prints the remembered display name for an account', () => {
+    expect(spotifyAccountName(OPAQUE_ID, { [OPAQUE_ID]: 'Eileen' })).toBe('Eileen');
+  });
+
+  it('prints NOTHING for an account it knows no name for', () => {
+    // The whole point. A four-character tail of an opaque id is not a name
+    // either, which is what the reporter said when the first attempt shipped
+    // one, and the full id is a personal identifier that resolves to a public
+    // profile page.
+    expect(spotifyAccountName(OPAQUE_ID, {})).toBe('');
+    expect(spotifyAccountName(OPAQUE_ID, null)).toBe('');
+    expect(spotifyAccountName(OPAQUE_ID_LONG, { somebodyElse: 'Eileen' })).toBe('');
+  });
+
+  it('never leaks any part of the id', () => {
+    for (const names of [{}, null, undefined, { other: 'x' }]) {
+      const out = spotifyAccountName(OPAQUE_ID, names);
+      expect(out).toBe('');
+      expect(OPAQUE_ID.includes(out) && out.length > 0).toBe(false);
     }
   });
 
-  it('still tells two accounts apart, which is what the line is for', () => {
-    expect(spotifyAccountLabel(PREMIUM_ID)).not.toBe(spotifyAccountLabel(FREE_ID));
+  it('still shows an old-style username, which is a name somebody chose', () => {
+    // This is the case the line was added for, and it is still worth showing
+    // when no display name has been remembered yet.
+    expect(spotifyAccountName('eileen.wilson', {})).toBe('eileen.wilson');
+    expect(spotifyAccountName('eileen.wilson', { 'eileen.wilson': 'Eileen W' })).toBe('Eileen W');
   });
 
-  it('shows a real username in full', () => {
-    expect(spotifyAccountLabel('SpotifyConnectUserName')).toBe('SpotifyConnectUserName');
-    expect(spotifyAccountLabel('eileen.wilson')).toBe('eileen.wilson');
-  });
-
-  it('is empty when there is no account, so the tile prints no line', () => {
-    expect(spotifyAccountLabel('')).toBe('');
-    expect(spotifyAccountLabel(null)).toBe('');
-    expect(spotifyAccountLabel(undefined)).toBe('');
-    expect(spotifyAccountLabel('   ')).toBe('');
-  });
-
-  it('trims, so a padded value does not defeat the check', () => {
-    expect(spotifyAccountLabel('  ' + PREMIUM_ID + '  ')).toBe(spotifyAccountLabel(PREMIUM_ID));
-  });
-
-  it('keeps the tail stable, so the same account always reads the same', () => {
-    expect(spotifyAccountLabel(PREMIUM_ID)).toBe(spotifyAccountLabel(PREMIUM_ID));
-    expect(spotifyAccountLabel(PREMIUM_ID)).toBe('…' + PREMIUM_ID.slice(-4));
+  it('shows nothing at all when there is no account', () => {
+    expect(spotifyAccountName('', { x: 'y' })).toBe('');
+    expect(spotifyAccountName(null, {})).toBe('');
+    expect(spotifyAccountName(undefined, {})).toBe('');
   });
 });

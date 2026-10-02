@@ -20,7 +20,7 @@ import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, Browser
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
-import { spotifyAccountLabel } from '../spotifyaccountlabel.js';
+import { spotifyAccountName } from '../spotifyaccountlabel.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -269,7 +269,7 @@ function recentCardHTML(c, i, nowPlaying) {
   // about to reach a public screenshot, and this card was never touched. It
   // then appeared in a public screenshot anyway, on 2026-10-02. One identifier,
   // two places, and only one of them was looked at.
-  const accountLabel = c.account ? spotifyAccountLabel(c.account) : '';
+  const accountLabel = c.account ? spotifyAccountName(c.account, state.spotifyAccountNames) : '';
   const sub = `<span class="rc-src">${escapeHtml(recentSourceLabel(c.source))}</span>`
     + (accountLabel ? ` &middot; ${escapeHtml(accountLabel)}` : '')
     + (c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '')

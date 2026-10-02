@@ -2,7 +2,7 @@ import './style.css';
 import { pinPromptKey } from './worldmapinvite.js';
 import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
-import { spotifyAccountLabel } from './spotifyaccountlabel.js';
+import { spotifyAccountName } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
@@ -6781,7 +6781,7 @@ function renderPresets() {
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
-            ${p.type === 'spotify' && spotifyAccountLabel(p.account) ? `<div class="preset-account">${escapeHtml(spotifyAccountLabel(p.account))}</div>` : ''}
+            ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${p.source ? `<div class="preset-source" title="${escapeAttr(p.source)}">${escapeHtml(t('preset.sourceBadge', { source: p.source }))}</div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
