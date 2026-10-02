@@ -86,6 +86,11 @@ type Manager struct {
 	// tests can count/observe fan-outs without a network.
 	groupVolumeSetFn func(ctx context.Context, ip string, pct int) error
 	credStore        string // per-account credential copies for multi-account swap
+	// accountNames maps a Spotify account id to what that account is CALLED,
+	// so the apps never have to print the id. Filled from the /v1/me answer the
+	// Premium check already fetches, kept on the NAND beside the credential
+	// copies, and read back at boot. nil until first use; see accountnames.go.
+	accountNames map[string]string
 	// MemAvailKB reads the box's MemAvailable in KB, negative when unknown.
 	// Wired by the agent from /proc/meminfo before Run; nil in tests. The
 	// chain cutter (oggchain.go) reads it a couple of times a minute while a

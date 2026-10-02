@@ -80,9 +80,18 @@ func (a *App) PhoneAddressFor(host string, port int) PhoneAddress {
 		},
 		identity: a.phoneSpeakerIdentity,
 	}
-	out := pickPhoneAddress(host, port, a.phoneNameCandidates(host, port), p)
-	if a.logger != nil && out.Note != "" {
-		a.logger.Info("phone remote address", "host", host, "chose", out.Source, "why", out.Note)
+	cands := a.phoneNameCandidates(host, port)
+	out := pickPhoneAddress(host, port, cands, p)
+	// Logged on EVERY decision, not only when something went wrong. The old
+	// condition was out.Note != "", and a name chosen cleanly carries no note,
+	// so the one outcome that needed no explanation also left no trace. Asked
+	// on 2026-10-02 why a QR code carried an address instead of a name, the log
+	// could not say whether a name had been rejected, whether none had been
+	// offered, or whether the card had simply not been opened. Three different
+	// answers, one silence.
+	if a.logger != nil {
+		a.logger.Info("phone remote address", "host", host, "chose", out.Source,
+			"name", out.Name, "candidates", len(cands), "why", out.Note)
 	}
 	return out
 }
@@ -196,8 +205,12 @@ func containsHost(ips []string, host string) bool {
 // phoneSpeakerIdentity asks a speaker who it is, through whatever host:port it
 // is given. The agent publishes no device id on this endpoint, so the identity
 // is the tuple that is stable for one speaker and differs between two: its own
-// name, its model, and its uptime rounded hard enough that two calls a moment
-// apart agree while two different speakers almost never do.
+// name, its model, and the hash of the agent binary it is running.
+//
+// That last field replaced a rounded uptime, which was the wrong shape: an
+// uptime moves, so the two probes a few seconds apart could straddle the
+// rounding boundary and declare a perfectly good name to be a different
+// speaker. The hash does not move while the speaker is up.
 func (a *App) phoneSpeakerIdentity(hostport string) (string, error) {
 	host, portStr, err := net.SplitHostPort(hostport)
 	if err != nil {

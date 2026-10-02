@@ -972,7 +972,16 @@ function renderLibrary() {
     boxSel.onchange = () => {
       const box = state.boxes.find(b => (b.deviceID || '') === boxSel.value);
       if (!box) return;
-      state.currentBox = box;
+      // speakerPicked is what sets state.currentBox, and setting it here first
+      // stopped it doing so. Its guard switches only when the host DIFFERS from
+      // the current one, so assigning the new box a line early made that test
+      // false and the whole switch was skipped: no selectBox, and therefore no
+      // loadPresets. "Save as preset" then offered the PREVIOUS speaker's six
+      // slots, with the previous speaker's labels on them, which is a reliable
+      // way to overwrite the wrong key (reported 2026-10-01 against v0.9.92).
+      //
+      // Every other view calls this and leaves the state alone, which is what
+      // the contract in setup.js already says it does.
       deps.speakerPicked(box);
       renderLibrary();
     };

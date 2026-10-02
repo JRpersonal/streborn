@@ -32,6 +32,7 @@
   --c-bg: #1a1a1a;          /* page background */
   --c-surface: #222;        /* cards, bars, raised surfaces */
   --c-surface-2: #2a2a2a;   /* slightly higher surface / soft fills */
+  --c-spotify-text: #1ED760; /* Spotify green, 7.5:1 on this surface */
   --c-surface-3: #333;      /* highest surface / hover */
   --c-border: #444;         /* default borders / dividers */
   --c-border-2: #555;       /* stronger borders */
@@ -72,6 +73,7 @@ html.a11y-light {
   --c-bg: #ffffff;
   --c-surface: #f5f5f6;
   --c-surface-2: #ececee;
+  --c-spotify-text: #0F6B3B; /* 5.6:1 here; the brand green measures 1.63:1 */
   --c-surface-3: #e2e2e5;
   --c-border: #cccccf;
   --c-border-2: #b5b5ba;
@@ -104,6 +106,7 @@ html.a11y-contrast {
   --c-bg: #000000;
   --c-surface: #000000;
   --c-surface-2: #111111;
+  --c-spotify-text: #1ED760; /* 9.4:1 on this one */
   --c-surface-3: #1a1a1a;
   --c-border: #ffffff;
   --c-border-2: #ffffff;
@@ -1370,7 +1373,17 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .preset .num { font-size: 11px; color: var(--c-muted); }
 .preset .name { font-size: 14px; font-weight: 600; margin-top: 2px; }
 .preset-bitrate { font-size: 10px; font-weight: 400; color: var(--c-muted); margin-top: 1px; line-height: 1.1; }
-.preset-account { font-size: 10px; font-weight: 400; color: #1ED760; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
+/* The Spotify account line, at a green that can actually be read.
+   #1ED760 is Spotify's brand green and it works on a dark surface (7.5:1 on
+   #2a2a2a). On the light surface it measures 1.63:1, and 4.5:1 is what 10px
+   text needs, so for half the users this line was a smear. The 0.85 opacity
+   pushed it further down. The same reporter has filed contrast bugs five times
+   before and screenshots in light mode; this is the sixth.
+   So: the brand green stays where it carries, and the light theme gets a darker
+   one that still reads as Spotify (5.6:1 on #ececee). Defined as a token in
+   both palettes, like every other colour here, rather than a literal that only
+   one theme was ever checked against. */
+.preset-account { font-size: 10px; font-weight: 400; color: var(--c-spotify-text); margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* DLNA preset: small muted "from <server>" badge, same shape as the Spotify account line. */
 .preset-source { font-size: 10px; font-weight: 400; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.6; }
 /* Box-native preset (one the box owns, e.g. Deezer): a subtly distinct tile and a
@@ -2638,14 +2651,18 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 }
 .phone-howto > summary::-webkit-details-marker { display: none; }
 .phone-howto > summary::before {
-  content: "A"; font-size: 16px; line-height: 1; color: var(--c-muted);
+  content: "\203A"; font-size: 16px; line-height: 1; color: var(--c-muted);
   transition: transform .15s ease; transform: rotate(0deg);
 }
 .phone-howto[open] > summary::before { transform: rotate(90deg); }
 .phone-howto > summary:hover { border-color: var(--c-text-2); }
 /* The scan instruction used to sit above the card as muted small print, which
    is exactly what people skip, so the QR code stood there unexplained. */
-.phone-scan-hint { font-size: 13px; color: var(--c-text); margin: 0 0 2px; }
+/* The scan instruction sits UNDER the copyable link, not above it. Above, it
+   was the widest thing in the column and set the column's width, so the card
+   spread sideways for a sentence nobody needs to read twice. Under the link it
+   wraps into the width the row already has. */
+.phone-scan-hint { font-size: 13px; color: var(--c-text); margin: 2px 0 0; }
 .phone-howto-body { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .phone-paths { display: flex; gap: 12px; flex-wrap: wrap; }
 .phone-path {
@@ -2938,8 +2955,8 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    whatever was nearby. */
 .help-more > summary { list-style: none; padding: 2px 0; }
 .help-more > summary::-webkit-details-marker { display: none; }
-.help-more > summary::before { content: "B8 "; }
-.help-more[open] > summary::before { content: "BE "; }
+.help-more > summary::before { content: "\25B8 "; }
+.help-more[open] > summary::before { content: "\25BE "; }
 /* A speaker that is not answering reads differently from one that is simply
    not in the group: the first is a fault, the second is a state. */
 .zone-live.zone-live-noanswer { color: var(--c-faint); font-style: italic; }

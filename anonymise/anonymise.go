@@ -281,11 +281,82 @@ var spotifyUserRegex = regexp.MustCompile(`(?i)(spotify:user:)([A-Z0-9._%+#-]+)`
 // end of the line, so a match cannot swallow the rest of a log entry.
 // Two families, because they carry different risks. account / sourceAccount
 // also hold a physical socket label (AUX, TV, CBL-Sat) that the bundle is read
-// for, so those are judged by LooksLikeAccountIdentity. username / login / a
-// user id never label a socket, so those are masked whatever they hold.
-var accountLogRegex = regexp.MustCompile(`(?im)("?\b(?:account|sourceAccount)"?\s*[:=]\s*"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+// for, so those are judged by LooksLikeAccountIdentity. The second family never
+// labels a socket, so it is masked whatever it holds.
+// The KEY only: the value is read by maskAttrValues, which stops at the next
+// attribute without swallowing it.
+var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"?\s*[:=]\s*"?`)
 
-var userNameLogRegex = regexp.MustCompile(`(?im)("?\b(?:username|userName|user_name|userId|user_id|login)"?\s*[:=]\s*"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
+// The second family. Every name here is one the code actually emits, and the
+// list is the whole protection: a key that is not in it is not masked, however
+// personal its value.
+//
+// That is how a Spotify account identity reached a public bundle. The comment
+// above used to claim "username / login / a user id" were covered while the
+// alternation listed neither `user` nor `sessionUser` nor `wantAccount`, and
+// the Spotify code logs exactly those three: accounts.go emits "user" on every
+// credential capture and account switch, recall.go emits "wantAccount" and
+// "sessionUser" on every recall. So a bundle in which the IP addresses, the
+// device IDs and the speaker names were all masked correctly still carried the
+// owner's canonical Spotify user id in clear, which resolves to a public
+// profile page. Found 2026-10-02 in an attachment that was already public.
+//
+// Checked against the emitters rather than guessed: `grep '"user",'` over the
+// whole tree returns three lines, all three of them a Spotify identity, so
+// masking unconditionally costs no debug value. Keep this list and the
+// emitters in step; anonymise_spotify_test.go pins each name.
+var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|sessionUser|wantAccount|login|user)"?\s*[:=]\s*"?`)
+
+// attrBoundary is where a log attribute's value ends because the NEXT attribute
+// begins. Values may contain spaces, so whitespace alone cannot end one.
+var attrBoundary = regexp.MustCompile(`\s+[A-Za-z][A-Za-z0-9_]*\s*[:=]`)
+
+// maskAttrValues masks the value of every attribute whose key matches keyRe,
+// and is the reason this is not one regular expression any more.
+//
+// A single pattern that spells the value's end as "a quote, the next attribute,
+// or the line end" has to CONSUME that next attribute to recognise it, and
+// ReplaceAll then resumes after what it consumed. So the second of two maskable
+// attributes standing side by side was never examined. Live on 2026-10-02:
+//
+//	wantAccount=<spotify id> sessionUser=<spotify id>
+//
+// masked the first and shipped the second in clear, and the same hole applied
+// to account= followed by sourceAccount=. Looping the replacement does not help
+// either, because the already-masked first attribute still matches and still
+// eats its neighbour's key, so the text reaches a fixed point with the leak in
+// it. That is what makes this class quiet: every pass looks like it worked.
+//
+// Finding the keys first and reading each value up to the next boundary removes
+// the question. Nothing is consumed that was not masked.
+func maskAttrValues(s string, keyRe *regexp.Regexp, mask func(string) string) string {
+	locs := keyRe.FindAllStringIndex(s, -1)
+	if len(locs) == 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 16*len(locs))
+	prev := 0
+	for _, loc := range locs {
+		// A key that fell inside the previous attribute's value is not a key.
+		if loc[0] < prev {
+			continue
+		}
+		b.WriteString(s[prev:loc[1]])
+		rest := s[loc[1]:]
+		end := len(rest)
+		if i := strings.IndexAny(rest, "\"\n"); i >= 0 && i < end {
+			end = i
+		}
+		if m := attrBoundary.FindStringIndex(rest); m != nil && m[0] < end {
+			end = m[0]
+		}
+		b.WriteString(mask(rest[:end]))
+		prev = loc[1] + end
+	}
+	b.WriteString(s[prev:])
+	return b.String()
+}
 
 // friendlyNameLogRegex catches the speaker name as a log attribute. The JSON and
 // XML forms are covered above; this is the third, and it is how a default name
@@ -408,17 +479,13 @@ func scrubAccounts(s string) string {
 		}
 		return "ACCT#" + hashShort(strings.ToLower(m))
 	})
-	s = accountLogRegex.ReplaceAllStringFunc(s, func(m string) string {
-		sub := accountLogRegex.FindStringSubmatch(m)
-		if !LooksLikeAccountIdentity(sub[2]) {
-			return m
+	s = maskAttrValues(s, accountLogKeyRegex, func(v string) string {
+		if !LooksLikeAccountIdentity(v) {
+			return v
 		}
-		return sub[1] + maskAccountValue(sub[2]) + sub[3]
+		return maskAccountValue(v)
 	})
-	s = userNameLogRegex.ReplaceAllStringFunc(s, func(m string) string {
-		sub := userNameLogRegex.FindStringSubmatch(m)
-		return sub[1] + maskAccountValue(sub[2]) + sub[3]
-	})
+	s = maskAttrValues(s, userNameLogKeyRegex, maskAccountValue)
 	s = boseHostnameRegex.ReplaceAllStringFunc(s, func(m string) string {
 		sub := boseHostnameRegex.FindStringSubmatch(m)
 		return sub[1] + "NAME#" + hashShort(sub[2])

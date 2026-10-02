@@ -2,7 +2,7 @@ import './style.css';
 import { pinPromptKey } from './worldmapinvite.js';
 import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
-import { spotifyAccountLabel } from './spotifyaccountlabel.js';
+import { spotifyAccountName } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
@@ -1338,14 +1338,22 @@ async function checkAppUpdate(manual) {
     // again and again while starting the old one, until he deleted the old
     // file by hand. If the newer file is already sitting next to this one,
     // say so, because downloading it a fourth time will not help.
+    //
+    // The hint is added, and the Install button STAYS. It used to be hidden,
+    // which made a file name the only thing standing between somebody and
+    // their update: the name is the only evidence there is about a sibling, a
+    // person may rename these files for their own reasons (one does, to see
+    // the version on his desktop), and a file called STR-Windows-v9.9.9.exe
+    // that is actually ancient would have left the banner pointing at it with
+    // no way forward. The update check itself reads the version compiled into
+    // the running build, so it is never fooled; only this hint can be, so this
+    // hint may inform and must not block.
     NewerCopyNextToThisOne().then((file) => {
       if (!file) return;
       const line = document.createElement('div');
       line.className = 'app-update-text';
       line.textContent = t('banner.appUpdateAlreadyHere', { file });
       banner.insertBefore(line, banner.firstChild);
-      const btn = $('appUpdateBtn');
-      if (btn) btn.hidden = true;
     }).catch(() => {});
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
@@ -1762,6 +1770,31 @@ function renderMuteState(muted) {
   volMuteEl.title = label;
   volMuteEl.classList.toggle('is-muted', v.pressed);
 }
+// Moving the volume while the speaker is muted means "I want to hear this".
+//
+// The firmware does not draw that conclusion. Measured on a speaker: mute, then
+// PUT a volume, and it answers vol=6 muteenabled=true. So the slider moves, the
+// number changes, and nothing comes out, which reads as an app that does not
+// work rather than as a speaker that is doing exactly what it was told.
+//
+// Lifting it here rather than in the agent is deliberate. The agent cannot tell
+// a person reaching for the slider from STR re-asserting a level after a wake,
+// and the second one must not undo a mute somebody meant. At this end the
+// gesture is the evidence.
+function liftMuteForVolumeGesture() {
+  const box = state.currentBox;
+  if (!box || !volMuteEl) return;
+  if (volMuteEl.getAttribute('aria-pressed') !== 'true') return;
+  // Drawn first, which also disarms this for the rest of the drag: a slider
+  // sends an event per pixel and this must fire once, not forty times.
+  renderMuteState(false);
+  state.muteUntil = Date.now() + 1500;
+  setBoxMute(box, false).then((res) => {
+    if (!sameBoxIdentity(state.currentBox, box)) return;
+    renderMuteState(muteAfterPress(res, false));
+  }).catch(() => {});
+}
+
 if (volMuteEl) {
   volMuteEl.onclick = async () => {
     const box = state.currentBox;
@@ -1801,6 +1834,7 @@ if (musicVolEl) {
     if (musicVolValEl) musicVolValEl.textContent = musicVolEl.value;
     const box = state.currentBox;
     if (!box) return;
+    liftMuteForVolumeGesture();
     musicVolBox = box;
     state.desiredVolume = parseInt(musicVolEl.value, 10);
     throttledSetVolume(box.host, box.port, state.desiredVolume);
@@ -1810,6 +1844,7 @@ if (musicVolEl) {
   musicVolEl.onchange = () => {
     musicVolBox = state.currentBox;
     if (!musicVolBox) return;
+    liftMuteForVolumeGesture();
     state.desiredVolume = parseInt(musicVolEl.value, 10);
     throttledSetVolume(musicVolBox.host, musicVolBox.port, state.desiredVolume);
   };
@@ -1841,6 +1876,7 @@ if (musicVolEl) {
     const cur = parseInt(musicVolEl.value, 10) || 0;
     const next = Math.max(0, Math.min(100, cur + delta));
     if (next === cur) return;
+    liftMuteForVolumeGesture();
     musicVolEl.value = String(next);
     if (musicVolValEl) musicVolValEl.textContent = String(next);
     musicVolBox = box;
@@ -6773,7 +6809,7 @@ function renderPresets() {
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
-            ${p.type === 'spotify' && spotifyAccountLabel(p.account) ? `<div class="preset-account">${escapeHtml(spotifyAccountLabel(p.account))}</div>` : ''}
+            ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${p.source ? `<div class="preset-source" title="${escapeAttr(p.source)}">${escapeHtml(t('preset.sourceBadge', { source: p.source }))}</div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
@@ -8163,6 +8199,15 @@ async function refreshStatus() {
           state.nowSpotifyCover = np.cover || '';
           state.nowSpotifyContext = np.context || '';
           state.nowSpotifyAccount = np.account || '';
+          // What the speaker has learned each account is CALLED, which is what
+          // a preset tile and a Recently-played card draw. The account id never
+          // goes on screen in any form, so an account with no remembered name
+          // simply shows no line. Merged rather than replaced: two speakers can
+          // each have met a different household account, and a payload without
+          // the field (an older agent) must not wipe what another one told us.
+          if (np.accountNames && typeof np.accountNames === 'object') {
+            state.spotifyAccountNames = { ...(state.spotifyAccountNames || {}), ...np.accountNames };
+          }
           // A free account cannot start a playlist from a preset key, so any
           // message that tells the user to press one is wrong for them (#973).
           state.spotifyPremiumRequired = !!np.premiumRequired;
