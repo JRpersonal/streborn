@@ -226,6 +226,12 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Cover   string `json:"cover"`
 		Context string `json:"context"` // current playlist/album URI (for saving a Spotify preset)
 		Account string `json:"account"` // current go-librespot login (for the preset)
+		// AccountNames maps every account id the speaker has learned a name for
+		// to that name. The apps draw a preset's account from this and print
+		// NOTHING when the id is not in it, so an opaque Spotify user id never
+		// reaches the screen. Empty on a speaker that has never had an answer
+		// from Spotify; see internal/spotify/accountnames.go.
+		AccountNames map[string]string `json:"accountNames,omitempty"`
 		// PremiumRequired is true when the logged-in Spotify account is free/open,
 		// which cannot do the autonomous on-demand playback a preset recall needs
 		// (#45). The UI shows a "recall needs Premium" note when set.
@@ -281,6 +287,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Cover:           cover,
 		Context:         context,
 		Account:         m.currentUsername(r.Context()),
+		AccountNames:    m.AccountNames(),
 		PremiumRequired: m.PremiumRequired(),
 		CanRecall:       m.CanRecall(r.Context()),
 		Product:         product,

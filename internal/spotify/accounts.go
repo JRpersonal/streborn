@@ -149,6 +149,18 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	}
 	var me struct {
 		Product string `json:"product"`
+		// The display name rides along in the answer the plan check already
+		// makes, and was being discarded. It is what the apps draw instead of
+		// the account id; see accountnames.go for why it is then remembered.
+		DisplayName string `json:"display_name"`
+	}
+	// Read the name before the plan is judged below: an answer that carries a
+	// name but no product (the missing-scope case) is still worth learning from,
+	// and the early return under it would otherwise throw the name away too.
+	if json.Unmarshal(data, &me) == nil && me.DisplayName != "" {
+		if user := m.currentUsername(ctx); user != "" {
+			m.rememberAccountName(user, me.DisplayName)
+		}
 	}
 	if err := json.Unmarshal(data, &me); err != nil || me.Product == "" {
 		// The silent third way to fail, and the one that cost an evening: the

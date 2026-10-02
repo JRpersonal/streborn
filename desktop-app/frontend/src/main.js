@@ -8171,6 +8171,15 @@ async function refreshStatus() {
           state.nowSpotifyCover = np.cover || '';
           state.nowSpotifyContext = np.context || '';
           state.nowSpotifyAccount = np.account || '';
+          // What the speaker has learned each account is CALLED, which is what
+          // a preset tile and a Recently-played card draw. The account id never
+          // goes on screen in any form, so an account with no remembered name
+          // simply shows no line. Merged rather than replaced: two speakers can
+          // each have met a different household account, and a payload without
+          // the field (an older agent) must not wipe what another one told us.
+          if (np.accountNames && typeof np.accountNames === 'object') {
+            state.spotifyAccountNames = { ...(state.spotifyAccountNames || {}), ...np.accountNames };
+          }
           // A free account cannot start a playlist from a preset key, so any
           // message that tells the user to press one is wrong for them (#973).
           state.spotifyPremiumRequired = !!np.premiumRequired;
