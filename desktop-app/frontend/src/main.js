@@ -5,6 +5,7 @@ import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from '
 import { spotifyAccountLabel } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
+import { sshBannerShow } from './sshbanner.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -1924,29 +1925,40 @@ async function checkSshBanner() {
   // "Reboot now" button would interrupt the agent exec. Suppress
   // until doBoxUpdate clears the flag (finally{} guaranteed).
   if (state.otaInProgress) { gb.classList.add('hidden'); return; }
+  // Everything below ends in exactly one write of the banner's visibility,
+  // including the failure paths. A verdict left standing because the speaker
+  // could not be asked is the bug this had: the banner says "this speaker", so
+  // a stale yes becomes a false alarm about whichever speaker is selected now,
+  // and it asks the user to reboot one for no reason (Jens, 2026-10-02: the Bad
+  // speaker, whose agent answered running:false with port 22 refusing).
+  let reachable = false;
+  let data = null;
   try {
     const r = await boxFetch(box, '/api/stick/status');
-    if (!r.ok) return;
-    const data = await r.json();
-    // The banner is a "remove the stick now that setup is done, otherwise SSH
-    // stays open" reminder. As of the pre-1.0 hardening run.sh no longer
-    // force-opens sshd on every boot; SSH is open only because a stick is in (the
-    // stick opens sshd via its remote_services marker), and a stickless reboot
-    // closes it. So sshOpen is now an accurate, self-clearing signal again, and
-    // keying on it (not data.mounted) also covers the Portable, where the stick
-    // is in but never auto-mounts so mounted=false (Jens, 2026-06-17). The old
-    // mounted-based gate was a workaround from when sshd was always up (#11).
-    // (Setup view and the OTA window are already excluded above.)
-    // Suppress the nag when SSH is deliberately kept open across reboots via a
-    // persistent NAND marker (remote_services / enable-ssh): the banner's whole
-    // point is "remove the stick to close SSH", which does not apply and cannot
-    // be acted on here (#381/#385). The detailed, correctly-worded note lives in
-    // Speaker Settings. The transient stick-driven case still shows the banner so
-    // non-technical users learn to pull the stick, but it is dismissible per
-    // speaker (the reminder should not reappear on every app start once seen).
-    const show = !!(data && data.sshOpen && !data.sshPersistent) && !warnDismissed(box, 'ssh');
-    gb.classList.toggle('hidden', !show);
-  } catch {}
+    if (r.ok) {
+      data = await r.json();
+      reachable = true;
+    }
+  } catch {
+    // Asleep, unreachable, or a reply that was not JSON. Nothing is known, so
+    // nothing is claimed: reachable stays false and the banner comes down.
+  }
+  // A speaker switch while the request was in flight would otherwise paint the
+  // PREVIOUS speaker's answer under the new speaker's name, the same race the
+  // volume sync guards against.
+  if (!sameBoxIdentity(state.currentBox, box)) return;
+  // The banner is a "remove the stick now that setup is done, otherwise SSH
+  // stays open" reminder. As of the pre-1.0 hardening run.sh no longer
+  // force-opens sshd on every boot; SSH is open only because a stick is in (the
+  // stick opens sshd via its remote_services marker), and a stickless reboot
+  // closes it. So sshOpen is an accurate, self-clearing signal, and keying on it
+  // (not data.mounted) also covers the Portable, where the stick is in but never
+  // auto-mounts so mounted=false (Jens, 2026-06-17). The old mounted-based gate
+  // was a workaround from when sshd was always up (#11). Setup view, the OTA
+  // window, the persistent-marker case and the per-speaker dismissal are all
+  // handled above or inside sshBannerShow, which carries their reasoning.
+  const show = sshBannerShow({ reachable, status: data, dismissed: warnDismissed(box, 'ssh') });
+  gb.classList.toggle('hidden', !show);
 }
 
 // loadMusicTabVolume fetches the current volume on a tab switch so
