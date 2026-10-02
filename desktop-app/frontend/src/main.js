@@ -1338,14 +1338,22 @@ async function checkAppUpdate(manual) {
     // again and again while starting the old one, until he deleted the old
     // file by hand. If the newer file is already sitting next to this one,
     // say so, because downloading it a fourth time will not help.
+    //
+    // The hint is added, and the Install button STAYS. It used to be hidden,
+    // which made a file name the only thing standing between somebody and
+    // their update: the name is the only evidence there is about a sibling, a
+    // person may rename these files for their own reasons (one does, to see
+    // the version on his desktop), and a file called STR-Windows-v9.9.9.exe
+    // that is actually ancient would have left the banner pointing at it with
+    // no way forward. The update check itself reads the version compiled into
+    // the running build, so it is never fooled; only this hint can be, so this
+    // hint may inform and must not block.
     NewerCopyNextToThisOne().then((file) => {
       if (!file) return;
       const line = document.createElement('div');
       line.className = 'app-update-text';
       line.textContent = t('banner.appUpdateAlreadyHere', { file });
       banner.insertBefore(line, banner.firstChild);
-      const btn = $('appUpdateBtn');
-      if (btn) btn.hidden = true;
     }).catch(() => {});
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
