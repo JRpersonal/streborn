@@ -34,6 +34,12 @@ var wlanTargetPath = "/mnt/nv/streborn/wlan-target"
 // network it can never win, forever.
 const maxFailedBoots = 5
 
+// maxOwnerOverrides is how often the owner may put the speaker back on
+// another network, right after the guard moved it, before the guard accepts
+// that this is deliberate and forgets the record. One could be a user who
+// changed their mind twice; two in a row is a decision.
+const maxOwnerOverrides = 2
+
 // wlanTarget is the intent record itself.
 type wlanTarget struct {
 	SSID   string `json:"ssid"`
@@ -56,6 +62,13 @@ type wlanTarget struct {
 	// where the guard stood down without touching anything.
 	BootsFailed int    `json:"bootsFailed"`
 	LastVerdict string `json:"lastVerdict,omitempty"`
+	// Overridden counts the times the owner has put this speaker back on
+	// another network right after the guard moved it. Two is not an
+	// accident, and at that point the record is cleared: the owner has said
+	// where they want the speaker, by doing it twice, and the guard has no
+	// business arguing a third time. Before this existed the only way out
+	// of a standing intent was a switch that failed to associate.
+	Overridden int `json:"overridden,omitempty"`
 }
 
 // wlanBudget says what a verdict does to the failure budget.
