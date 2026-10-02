@@ -4,6 +4,8 @@ import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescal
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import { spotifyAccountLabel } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
+import { muteView, muteAfterPress } from './mutebutton.js';
+import { sshBannerShow } from './sshbanner.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -128,6 +130,7 @@ import {
   EventsOn,
   boxFetch,
   readBoxBalance,
+  setBoxMute,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -368,7 +371,7 @@ import {
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
 import { renderRecent, initRecentView } from './views/recent.js';
-import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
+import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
@@ -1055,7 +1058,7 @@ async function renderFooter() {
   try {
     state.appInfo = await AppInfo();
   } catch {
-    state.appInfo = { version: t('common.unknown'), build: '', author: '', githubUrl: '', donateUrl: '', websiteUrl: '', donateSlogan: '' };
+    state.appInfo = { version: t('common.unknown'), build: '', author: '', githubUrl: '', websiteUrl: '', donateSlogan: '' };
   }
   const i = state.appInfo;
   const links = [];
@@ -1080,7 +1083,9 @@ async function renderFooter() {
   // knowing the project is on GitHub and finding it there, which a user who
   // installed the app from the website has no reason to know.
   links.push(`<a href="#" id="footerReport" class="footer-link">${escapeHtml(t('footer.reportProblem'))}</a>`);
-  links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.footer'))}</a>`);
+  // Recommend STR: the permanent, quiet way to the share buttons. Deliberately
+  // not next to the donate buttons, sharing is not tied to donating.
+  links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.menu'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   // Clicking the version opens the release notes. For a clean tagged
   // build that is the matching GitHub release page (which carries the
@@ -1200,12 +1205,9 @@ function renderDonateSidebar() {
     <div class="donate-icon">&#9749;</div>
     <div class="donate-slogan">${escapeHtml(slogan)}</div>
     ${donateButtonsHTML()}
-    ${shareTriggerHTML()}
   `;
 
   wireDonateButtons(side);
-  const shareBtn = $('shareTrigger');
-  if (shareBtn) shareBtn.onclick = openShareModal;
 }
 
 // showDonate opens the same three buttons as a dialog, from the footer link.
@@ -1547,7 +1549,7 @@ $('view-box').innerHTML = `
         <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
-        <span class="vol-icon" title="${escapeAttr(t('controls.volume'))}" aria-hidden="true">&#128266;</span>
+        <button class="vol-icon vol-mute" id="volMute" aria-pressed="false" aria-label="${escapeAttr(t('controls.mute'))}" title="${escapeAttr(t('controls.mute'))}">&#128266;</button>
         <button class="btn btn-mini vol-step" id="volDown" aria-label="${escapeAttr(t('controls.volumeDown'))}" title="${escapeAttr(t('controls.volumeDown'))}">&#8722;</button>
         <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
         <button class="btn btn-mini vol-step" id="volUp" aria-label="${escapeAttr(t('controls.volumeUp'))}" title="${escapeAttr(t('controls.volumeUp'))}">+</button>
@@ -1738,6 +1740,51 @@ let musicVolTimer = null;
 let musicVolBox = null;
 const musicVolEl = $('musicVolume');
 const musicVolValEl = $('musicVolumeVal');
+// Mute, which STR could not do at all until a user asked for it and pointed at
+// this very symbol. It is the speaker's own MUTE key, not a volume pulled to
+// zero and remembered here: the box's remote and its physical buttons set the
+// same flag, so they and this icon always agree, and closing the app loses
+// nothing that would have to be restored.
+const volMuteEl = $('volMute');
+// muteUntil holds the 2 s status poll off for a moment after a press, exactly
+// as the slider does. The speaker needs a round trip before it reports the new
+// state, and a poll landing in that gap would flip the icon back, which reads
+// as a button that does not work.
+state.muteUntil = 0;
+// renderMuteState draws what the SPEAKER says, not what we last clicked.
+function renderMuteState(muted) {
+  if (!volMuteEl) return;
+  const v = muteView(muted);
+  volMuteEl.innerHTML = v.glyph;
+  volMuteEl.setAttribute('aria-pressed', v.pressed ? 'true' : 'false');
+  const label = t(v.labelKey);
+  volMuteEl.setAttribute('aria-label', label);
+  volMuteEl.title = label;
+  volMuteEl.classList.toggle('is-muted', v.pressed);
+}
+if (volMuteEl) {
+  volMuteEl.onclick = async () => {
+    const box = state.currentBox;
+    if (!box) return;
+    // Optimistic: the speaker takes a moment to answer, and a button that
+    // looks dead for half a second gets pressed a second time.
+    const want = volMuteEl.getAttribute('aria-pressed') !== 'true';
+    renderMuteState(want);
+    state.muteUntil = Date.now() + 1500;
+    volMuteEl.disabled = true;
+    try {
+      const res = await setBoxMute(box, want);
+      // A speaker switch mid-flight would otherwise paint the old speaker's
+      // answer onto the new one.
+      if (!sameBoxIdentity(state.currentBox, box)) return;
+      // The speaker has the last word. Our guess only filled the gap, and if
+      // it could not be reached the icon must go back rather than lie.
+      renderMuteState(muteAfterPress(res, want));
+    } finally {
+      volMuteEl.disabled = false;
+    }
+  };
+}
 // Drag-busy + grace period so the 2 s periodic refresh in
 // refreshStatus does not yank the thumb out from under the user
 // while they are wischen. musicVolUntil is the timestamp at which
@@ -1843,6 +1890,12 @@ async function syncMusicTabVolumeFromBox() {
     // reply from the previous speaker would show ITS volume for the new one,
     // and the user's first slider touch would then send that stale level.
     if (!sameBoxIdentity(state.currentBox, box)) return;
+    // Mute first, and on its own guard: it has to follow the speaker's own
+    // remote and buttons, and it must still update on a speaker whose volume
+    // the poll is holding off or whose level has not changed.
+    if (Date.now() >= (state.muteUntil || 0)) {
+      renderMuteState(data && data.volume && data.volume.muted);
+    }
     // The user may have started dragging during the round trip; re-check the
     // drag guards so the reply cannot yank the thumb from under them.
     if (state.musicVolBusy || Date.now() < (state.musicVolUntil || 0)) return;
@@ -1871,29 +1924,40 @@ async function checkSshBanner() {
   // "Reboot now" button would interrupt the agent exec. Suppress
   // until doBoxUpdate clears the flag (finally{} guaranteed).
   if (state.otaInProgress) { gb.classList.add('hidden'); return; }
+  // Everything below ends in exactly one write of the banner's visibility,
+  // including the failure paths. A verdict left standing because the speaker
+  // could not be asked is the bug this had: the banner says "this speaker", so
+  // a stale yes becomes a false alarm about whichever speaker is selected now,
+  // and it asks the user to reboot one for no reason (Jens, 2026-10-02: the Bad
+  // speaker, whose agent answered running:false with port 22 refusing).
+  let reachable = false;
+  let data = null;
   try {
     const r = await boxFetch(box, '/api/stick/status');
-    if (!r.ok) return;
-    const data = await r.json();
-    // The banner is a "remove the stick now that setup is done, otherwise SSH
-    // stays open" reminder. As of the pre-1.0 hardening run.sh no longer
-    // force-opens sshd on every boot; SSH is open only because a stick is in (the
-    // stick opens sshd via its remote_services marker), and a stickless reboot
-    // closes it. So sshOpen is now an accurate, self-clearing signal again, and
-    // keying on it (not data.mounted) also covers the Portable, where the stick
-    // is in but never auto-mounts so mounted=false (Jens, 2026-06-17). The old
-    // mounted-based gate was a workaround from when sshd was always up (#11).
-    // (Setup view and the OTA window are already excluded above.)
-    // Suppress the nag when SSH is deliberately kept open across reboots via a
-    // persistent NAND marker (remote_services / enable-ssh): the banner's whole
-    // point is "remove the stick to close SSH", which does not apply and cannot
-    // be acted on here (#381/#385). The detailed, correctly-worded note lives in
-    // Speaker Settings. The transient stick-driven case still shows the banner so
-    // non-technical users learn to pull the stick, but it is dismissible per
-    // speaker (the reminder should not reappear on every app start once seen).
-    const show = !!(data && data.sshOpen && !data.sshPersistent) && !warnDismissed(box, 'ssh');
-    gb.classList.toggle('hidden', !show);
-  } catch {}
+    if (r.ok) {
+      data = await r.json();
+      reachable = true;
+    }
+  } catch {
+    // Asleep, unreachable, or a reply that was not JSON. Nothing is known, so
+    // nothing is claimed: reachable stays false and the banner comes down.
+  }
+  // A speaker switch while the request was in flight would otherwise paint the
+  // PREVIOUS speaker's answer under the new speaker's name, the same race the
+  // volume sync guards against.
+  if (!sameBoxIdentity(state.currentBox, box)) return;
+  // The banner is a "remove the stick now that setup is done, otherwise SSH
+  // stays open" reminder. As of the pre-1.0 hardening run.sh no longer
+  // force-opens sshd on every boot; SSH is open only because a stick is in (the
+  // stick opens sshd via its remote_services marker), and a stickless reboot
+  // closes it. So sshOpen is an accurate, self-clearing signal, and keying on it
+  // (not data.mounted) also covers the Portable, where the stick is in but never
+  // auto-mounts so mounted=false (Jens, 2026-06-17). The old mounted-based gate
+  // was a workaround from when sshd was always up (#11). Setup view, the OTA
+  // window, the persistent-marker case and the per-speaker dismissal are all
+  // handled above or inside sshBannerShow, which carries their reasoning.
+  const show = sshBannerShow({ reachable, status: data, dismissed: warnDismissed(box, 'ssh') });
+  gb.classList.toggle('hidden', !show);
 }
 
 // loadMusicTabVolume fetches the current volume on a tab switch so
@@ -1911,6 +1975,7 @@ async function loadMusicTabVolume() {
     const vol = (data && data.volume && data.volume.actual) || 0;
     musicVolEl.value = String(vol);
     if (musicVolValEl) musicVolValEl.textContent = String(vol);
+    renderMuteState(data && data.volume && data.volume.muted);
   } catch {}
 }
 $('searchBtn').onclick = () => doSearch();
@@ -9375,7 +9440,6 @@ function formatDuration(sec) {
 }
 
 renderFooter();
-wireShareModal();
 
 // Prefill from the cache first so the UI shows the last selected
 // speaker immediately. discoverBoxes refreshes the real list in the

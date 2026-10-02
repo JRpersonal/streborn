@@ -1197,7 +1197,18 @@ func run() error {
 		}
 		pctx, cancel := context.WithTimeout(cbCtx, 15*time.Second)
 		if err := renderer.PlayURLMime(pctx, spotifyStreamURL, "Spotify", "", "audio/ogg"); err != nil {
-			logger.Warn("spotify: auto-switch box to Spotify stream failed", "err", err)
+			// A speaker that is a MEMBER of a group refuses transport control
+			// outright, so this can never succeed while the group stands, and
+			// the listener just sees Spotify move to another speaker. Record it
+			// so the apps can say why instead of leaving the silence unexplained.
+			if webui.IsGroupedRejection(err) {
+				spotifyMgr.NoteGroupedRefusal()
+				logger.Warn("spotify: this speaker is a member of a group, so the firmware refuses to point it at the Spotify stream; it cannot be used on its own until the group is dissolved", "err", err)
+			} else {
+				logger.Warn("spotify: auto-switch box to Spotify stream failed", "err", err)
+			}
+		} else {
+			spotifyMgr.ClearGroupedRefusal()
 		}
 		cancel()
 	})

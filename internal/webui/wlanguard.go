@@ -119,6 +119,27 @@ func guardDecision(assoc bool, cur, want string, targetVisible bool, bootsFailed
 	}
 }
 
+// wlanGuardBootMarker lives in tmpfs on purpose: cleared by a real reboot,
+// kept across every agent respawn in between. A var so the tests can point
+// it somewhere writable.
+var wlanGuardBootMarker = "/tmp/.streborn-wlanguard-ran"
+
+// claimWlanGuardBootRun returns true for the FIRST caller after a box boot
+// and false for every later one, so an agent respawn cannot re-run the
+// guard or spend another boot of its budget.
+//
+// Fails OPEN: a box where the marker cannot be written at all still gets
+// its guard, because never running is worse than running twice.
+func claimWlanGuardBootRun() bool {
+	if _, err := os.Stat(wlanGuardBootMarker); err == nil {
+		return false
+	}
+	if err := os.WriteFile(wlanGuardBootMarker, []byte("1\n"), 0o600); err != nil {
+		return true
+	}
+	return true
+}
+
 // StartWLANBootGuard runs the guard once, for a real box boot. Safe to call in
 // a goroutine at agent start; it returns immediately when there is nothing to
 // do.
@@ -127,6 +148,21 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	// firmware did not re-pick a network, so there is nothing to correct and no
 	// reason to put the radio through a site survey.
 	if !strings.HasPrefix(bootReason, "box-boot") {
+		return
+	}
+	// ...and only ONCE per box boot. bootReason comes from the uptime, and
+	// anything under ten minutes counts as a boot, while run.sh respawns the
+	// agent up to six times in the first two minutes and then every ninety
+	// seconds, with an OTA restart landing in the same window. So one power
+	// cycle could run the whole guard several times over: the same radio
+	// power-cycle, up to three live switches each time, and each failing run
+	// burning one of the five BOOTS the budget is documented in.
+	//
+	// tmpfs settles it. The marker is gone after a real reboot and survives
+	// every respawn in between, which is exactly the distinction the uptime
+	// could not make. Same trick, and the same reasoning, as run.sh's lease
+	// cache.
+	if !claimWlanGuardBootRun() {
 		return
 	}
 	iface, mech := detectWlanMechanism()
@@ -169,7 +205,19 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 
 	cur, assoc := waitAssociationSettled(ctx, iface, wlanGuardSettleBudget)
 	reinited := false
-	if !assoc {
+	if !assoc && s.ownerIsProvisioning(ctx) {
+		// A speaker in its own setup AP is NOT associated, by definition: its
+		// single radio is in AP mode and wpa_supplicant will never report
+		// COMPLETED. Power-cycling the chip here pulls the radio out from under
+		// the owner mid-onboarding, and this runs ABOVE the hasTarget gate, so
+		// it reaches speakers whose owner never touched STR's Wi-Fi feature at
+		// all.
+		//
+		// The same blind spot as the two goform loops in run.sh, found by the
+		// same audit: "no lease" and "no association" are what a deliberate
+		// setup looks like, and nothing asked whose doing it was.
+		s.logger.Info("wlan guard: the speaker is in SETUP, the owner is provisioning it; not touching the radio")
+	} else if !assoc {
 		if s.recoverUnassociatedRadio(iface) {
 			reinited = true
 			cur, assoc = waitAssociationSettled(ctx, iface, wlanReinitRecheckBudget)
@@ -189,6 +237,31 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	}
 	visible, surveyOK := s.targetInSurvey(ctx, tgt.SSID)
 	action, reason := guardDecision(assoc, cur, tgt.SSID, visible, tgt.BootsFailed)
+
+	// The speaker is on the wrong network again, one boot after the guard
+	// moved it to the right one. That is not drift, that is the owner
+	// putting it back by a route STR does not own: the Bose app, the stock
+	// setup page, the firmware's own onboarding. Count it, and give way
+	// before this becomes an argument the owner cannot win.
+	//
+	// Until now the record had no expiry and exactly one clearing path, the
+	// rollback after a switch that never associated. clearWlanTarget's own
+	// comment claims a caller for "the user saying this speaker is where I
+	// want it" and there was none. This is that caller, reading the
+	// owner's intent from what they keep doing rather than asking.
+	if action == guardReapply && tgt.LastVerdict == "moved-back" {
+		tgt.Overridden++
+		if tgt.Overridden >= maxOwnerOverrides {
+			s.logger.Warn("wlan guard: the speaker has been put back on another network after every correction; accepting that as the owner's choice and forgetting the stored network",
+				"overrides", tgt.Overridden, "wantTag", ssidTag(tgt.SSID), "gotTag", ssidTag(cur))
+			clearWlanTarget()
+			return
+		}
+		s.logger.Info("wlan guard: the speaker was put back on another network after the last correction",
+			"overrides", tgt.Overridden, "of", maxOwnerOverrides,
+			"wantTag", ssidTag(tgt.SSID), "gotTag", ssidTag(cur))
+		_ = writeWlanTarget(tgt)
+	}
 
 	// One line that decides the next bundle. surveyOK separates "the speaker
 	// looked and the network was not there" from "the speaker could not look",
@@ -414,6 +487,24 @@ func reinitWLANRadio(logger *slog.Logger) bool {
 // re-download its firmware and let wpa_supplicant re-associate from its existing
 // config. One-shot per boot, never touched on a healthy (already-associated)
 // boot, so a working box takes no radio churn.
+// ownerIsProvisioning reports whether the speaker is in its own out-of-box
+// setup right now, which means the person is standing in front of it and STR
+// must keep its hands off the radio.
+//
+// Two signals, both already in this process. The episode counter is written
+// by the gabbo setupAPUpdated frame and by the poll seeing source=SETUP, so
+// it knows about a setup that started before this check; the live source
+// covers one that started since. Either is enough.
+func (s *Server) ownerIsProvisioning(ctx context.Context) bool {
+	if state, _, _ := s.BoxSetup(); state == "active" {
+		return true
+	}
+	if s.boxHost == "" {
+		return false
+	}
+	np := quietWakeNowPlaying(ctx, s.boxHost)
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(np.Source)), "SETUP")
+}
 func (s *Server) recoverUnassociatedRadio(iface string) bool {
 	s.logger.Warn("wlan guard: box booted with no Wi-Fi association, power-cycling the radio to recover it (#853)", "iface", iface)
 	if !reinitWLANRadio(s.logger) {

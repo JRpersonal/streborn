@@ -20,6 +20,11 @@
 #                           command you run for everyday work.
 #   make wails-build        production build of the desktop app
 #                           with embedded helpers and version stamp.
+#   make share-targets      pull the share target registry from
+#                           st-reborn.de into the desktop app and the
+#                           phone remote (checked against the website's
+#                           rules, then committed).
+#                           SHARE_TARGETS_FILE=<path> reads a local copy.
 #   make test               go test ./...
 #   make vet                go vet ./...
 #   make tidy               go mod tidy
@@ -86,7 +91,7 @@ ENGINE_EMBED_OUT := desktop-app/agentbin/go-librespot-armv7l
 
 .PHONY: all build build-arm build-arm64 build-all \
         winformat-embed agent-embed engine-embed winres wails-dev wails-build \
-        test vet tidy clean
+        share-targets test vet tidy clean
 
 all: build
 
@@ -194,6 +199,13 @@ wails-build: winformat-embed agent-embed winres
 ca-roots:
 	python internal/tlsgen/extractroots.py
 
+
+# The app never fetches the share registry at runtime. This refreshes the
+# committed copies in desktop-app/frontend/src/data/share-targets.json and
+# internal/webui/assets/share.json; a new website target reaches the app and
+# the phone remote with this and a rebuild, no code change.
+share-targets:
+	cd desktop-app/frontend && node scripts/sync-share-targets.mjs $(if $(SHARE_TARGETS_FILE),--file $(abspath $(SHARE_TARGETS_FILE)))
 
 test:
 	$(GO) test ./...

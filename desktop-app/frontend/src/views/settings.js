@@ -1589,12 +1589,14 @@ function renderBoxSettings(s, box) {
     </div>
     <div class="settings-section phone-feature" id="phoneCardSection">
       <h3><span class="phone-feature-icon">&#128241;</span> ${escapeHtml(t('settingsView.phoneHeading'))}</h3>
-      <small class="muted small">${escapeHtml(t('settingsView.phoneHelp'))}</small>
       <div class="phone-card">
-        <img id="phoneQrImg" class="phone-qr" alt="QR" />
-        <div class="phone-url-row">
-          <code id="phoneUrl" class="phone-url"></code>
-          <button class="btn btn-mini" id="phoneUrlCopy">${escapeHtml(t('common.copy'))}</button>
+        <img id="phoneQrImg" class="phone-qr" alt="${escapeAttr(t('settingsView.phoneHelp'))}" />
+        <div class="phone-url-col">
+          <p class="phone-scan-hint">${escapeHtml(t('settingsView.phoneHelp'))}</p>
+          <div class="phone-url-row">
+            <code id="phoneUrl" class="phone-url"></code>
+            <button class="btn btn-mini" id="phoneUrlCopy">${escapeHtml(t('common.copy'))}</button>
+          </div>
         </div>
         <small class="muted small phone-url-alt" id="phoneUrlAlt" hidden></small>
       </div>

@@ -38,7 +38,6 @@ type AppInfo struct {
 	Author            string `json:"author"`
 	GitHubURL         string `json:"githubUrl"`
 	WebsiteURL        string `json:"websiteUrl"`
-	DonateURL         string `json:"donateUrl"`
 	DonateSlogan      string `json:"donateSlogan"`
 	UpdateManifestURL string `json:"updateManifestUrl"`
 	// AgentSha256 is the hex SHA256 of the ARM agent this build carries. It is
@@ -80,7 +79,14 @@ func (a *App) AppInfo() AppInfo {
 		Author:      "Jens Roggenfelder (JRpersonal)",
 		GitHubURL:   "https://github.com/JRpersonal/streborn",
 		WebsiteURL:  "https://st-reborn.de",
-		DonateURL:   "", // populated once the PayPal link on the website is live
+		// There is no DonateURL here. The donation links live in the frontend,
+		// in donate.js DONATE_URLS, because the UI renders three branded
+		// buttons rather than one link and each needs its own provider. A
+		// DonateURL field sat here for months, always empty, under a comment
+		// promising it would be "populated once the PayPal link on the website
+		// is live". PayPal has been live in the app the whole time and nothing
+		// ever read the field, so the only thing it did was send readers
+		// looking for a link that was already three files away.
 		// DonateSlogan is left empty so the frontend renders the
 		// locale-aware fallback from the i18n bundle. Hardcoding
 		// German here would shadow the bundle for every locale.
