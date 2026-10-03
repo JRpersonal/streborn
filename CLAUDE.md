@@ -128,8 +128,13 @@ process are in [`SECURITY.md`](SECURITY.md).
 
 ## What v1.0 means
 
-STR is pre-1.0. The bar to ship 1.0 is intentionally low and
-measurable, not aspirational:
+All five criteria below were checked and met on 2026-10-04, so the
+next release is 1.0. **The first 1.0 tag is `v1.0.1`, never `v1.0.0`**:
+`1.0.0` is the default version an UNSTAMPED build reports (agent
+`main.version`, desktop `appVersion`, `sticksetup` fallbacks), and the
+tests and logs treat a "1.0.0" sighting as a missing stamp. A real
+v1.0.0 would be indistinguishable from that. The bar was intentionally
+low and measurable, not aspirational:
 
 1. **At least two speaker models verified end to end.** Met: ST10
    (rhino) and Portable (taigan) are Verified, ST20 (spotty) is
@@ -138,12 +143,13 @@ measurable, not aspirational:
    Current per-model state lives in [`docs/MODELS.md`](docs/MODELS.md).
 2. **Hardware presets 1 to 6 work after a cold boot, a standby cycle,
    and a Wi-Fi outage**: no manual reset required.
-3. **First-install experience is honest.** SmartScreen / Gatekeeper
-   warnings are documented on the website Verify page with the exact
-   click path; SHA256 sums and Sigstore attestations are linked.
+3. **First-install experience is honest.** Both desktop builds are
+   signed (Certum, Apple notarization), so no SmartScreen / Gatekeeper
+   workaround is needed; the website names the Windows firewall prompt
+   and its Verify section links SHA256 sums and Sigstore attestations.
 4. **Threat model published.** `docs/THREAT-MODEL.md` covers the
-   speaker firmware caveats, what STR mitigates, and what it does
-   not.
+   speaker firmware caveats, what STR mitigates, what it does not,
+   and what survives a Bose factory reset.
 5. **Legal pages complete.** Website imprint, privacy policy, and
    their German equivalents have no placeholder text.
 

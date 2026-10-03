@@ -178,6 +178,38 @@ What this means for trust:
 - **It can be refused.** A file at `/mnt/nv/streborn/no-extra-roots` stops it,
   and the diagnostic reports whether anything was added and why not.
 
+## STR survives a Bose factory reset
+
+A Bose factory reset clears what the firmware itself owns: its preset
+database, the account, the friendly name and the Wi-Fi profile. It does not
+touch `/mnt/nv/streborn/`, and that directory holds everything STR consists
+of on the speaker: the agent binary, the boot hook (`run-override.sh`), the
+per-speaker CA and its private key, the preset store, the persisted Spotify
+credential and the SSH opt-in marker if one was set. After a factory reset the
+speaker boots straight back into STR.
+
+What that means for an owner:
+
+- **Passing a speaker on.** A factory reset alone hands the next owner a
+  speaker that still runs STR, with the previous owner's presets and, if
+  Spotify was used, a stored Spotify credential on its NAND. Before a speaker
+  changes hands, use Speaker Settings → **Remove STR** in the desktop app. It
+  deletes `/mnt/nv/streborn/` and the boot hook and returns the speaker to
+  stock firmware; **True Factory Reset** then clears the Bose side as well.
+- **A speaker that came from somebody else.** If it already runs STR, the
+  desktop app shows it as an STR speaker. Remove STR and install it fresh, so
+  the CA, the stored credential and any SSH marker are your own.
+- **Recovery.** The persistence is deliberate: it is what lets a factory reset
+  repair a confused Bose state without losing the install. It is also why the
+  SSH opt-in marker is a file in that directory and not a firmware setting: a
+  marker set once stays set until it is switched off in the app or STR is
+  removed.
+
+STR does not try to detect a factory reset and wipe itself. A reset is the
+first thing owners are told to try when a speaker misbehaves, and an install
+that destroyed itself on that step would turn every support case into a
+reinstall.
+
 ## Hardening roadmap
 
 The following items are planned before STR is recommended for users
