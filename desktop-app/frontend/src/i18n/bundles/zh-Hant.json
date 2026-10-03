@@ -731,6 +731,7 @@
   "footer.worldMap": "世界地圖",
   "footer.credits": "開放原始碼",
   "footer.reportProblem": "回報問題",
+  "footer.voteIdeas": "投票決定下一步",
   "share.menu": "推薦 STR",
   "share.successLine": "如果 STR 在你這裡運作正常，請告訴其他人。大多數 SoundTouch 使用者還不知道有這個東西。",
   "share.on": "分享到 {{name}}",

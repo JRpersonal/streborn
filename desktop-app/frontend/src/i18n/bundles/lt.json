@@ -685,6 +685,7 @@
   "footer.worldMap": "Pasaulio žemėlapis",
   "footer.credits": "Atvirasis kodas",
   "footer.reportProblem": "Pranešti apie problemą",
+  "footer.voteIdeas": "Balsuok, kas bus toliau",
   "share.menu": "Rekomenduoti STR",
   "share.successLine": "Jei STR tau veikia, papasakok apie jį kitiems. Dauguma SoundTouch savininkų dar nežino, kad toks dalykas yra.",
   "share.on": "Dalintis per {{name}}",

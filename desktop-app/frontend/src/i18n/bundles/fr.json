@@ -685,6 +685,7 @@
   "footer.worldMap": "Carte du monde",
   "footer.credits": "Open source",
   "footer.reportProblem": "Signaler un problème",
+  "footer.voteIdeas": "Votez pour la suite",
   "share.menu": "Recommander STR",
   "share.successLine": "Si STR fonctionne chez vous, parlez-en autour de vous. La plupart des propriétaires d'une SoundTouch ne savent pas encore que cela existe.",
   "share.on": "Partager sur {{name}}",

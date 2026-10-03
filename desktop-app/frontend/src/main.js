@@ -320,6 +320,9 @@ import {
   AVAILABLE_LOCALES,
 } from './i18n/index.js';
 
+// The Ideas category sorted by votes: one discussion per open backlog item.
+const IDEAS_VOTE_URL = 'https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop';
+
 // LOCALE_FLAG_CC maps i18n locale codes to ISO-3166 alpha-2 country
 // codes for flag emoji rendering. The "language flag" mapping is a UX
 // convention: English uses the Union Jack rather than US for global
@@ -1086,6 +1089,10 @@ async function renderFooter() {
   // knowing the project is on GitHub and finding it there, which a user who
   // installed the app from the website has no reason to know.
   links.push(`<a href="#" id="footerReport" class="footer-link">${escapeHtml(t('footer.reportProblem'))}</a>`);
+  // Where the open ideas are voted on. Each backlog item has its own discussion
+  // in the Ideas category, sorted by upvotes, so the order of the backlog can
+  // follow what people actually want rather than who wrote last.
+  links.push(`<a href="#" id="footerVoteIdeas" class="footer-link">${escapeHtml(t('footer.voteIdeas'))}</a>`);
   // Recommend STR: the permanent, quiet way to the share buttons. Deliberately
   // not next to the donate buttons, sharing is not tied to donating.
   links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.menu'))}</a>`);
@@ -1119,6 +1126,8 @@ async function renderFooter() {
   // down, not to read a README.
   const reportLink = $('footerReport');
   if (reportLink) reportLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(`${repo}/issues`); };
+  const voteLink = $('footerVoteIdeas');
+  if (voteLink) voteLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(IDEAS_VOTE_URL); };
   const shareLink = $('footerShare');
   if (shareLink) shareLink.onclick = (e) => { e.preventDefault(); openShareModal(); };
   const worldMapLink = $('footerWorldMap');
