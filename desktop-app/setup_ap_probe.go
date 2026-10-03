@@ -58,6 +58,7 @@ const SetupAPHost = "192.168.1.1"
 //  2. SSH probe is now a secondary signal that the caller uses to
 //     decide whether the post-push "install STR" step is possible
 //     from here, but it is not required for surfacing the box.
+//
 // SetupAPProbe is the answer to "is a speaker sitting on its setup network".
 //
 // ONE struct, because Wails drops a second non-error return value: for an
