@@ -1307,7 +1307,7 @@ func (a *App) preflightSettleRetry(host string, port int, perr error) error {
 	}
 	// This machine has no route to the speaker's network, so the probe never
 	// reached the wire. Two minutes of re-polling cannot change that, and the
-	// SSH escalation behind it fails on the same syscall (Eileen Wilson,
+	// SSH escalation behind it fails on the same syscall (a reporter,
 	// 2026-09-10: the app waited the full window and then tried SSH, which
 	// answered "ssh: connect to host ... port 22: Network is unreachable").
 	if noNetworkHere(perr) {

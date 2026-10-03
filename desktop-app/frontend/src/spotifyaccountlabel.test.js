@@ -27,8 +27,8 @@ describe('looksOpaque', () => {
   it('leaves names people chose alone', () => {
     // Capitals, separators and short handles are all names, not ids.
     expect(looksOpaque('SpotifyConnectUserName')).toBe(false);
-    expect(looksOpaque('eileen.wilson')).toBe(false);
-    expect(looksOpaque('eileen_w')).toBe(false);
+    expect(looksOpaque('alex.example')).toBe(false);
+    expect(looksOpaque('alex_e')).toBe(false);
     expect(looksOpaque('jens-r')).toBe(false);
     expect(looksOpaque('bob')).toBe(false);
     expect(looksOpaque('')).toBe(false);
@@ -37,7 +37,7 @@ describe('looksOpaque', () => {
 
 describe('spotifyAccountName', () => {
   it('prints the remembered display name for an account', () => {
-    expect(spotifyAccountName(OPAQUE_ID, { [OPAQUE_ID]: 'Eileen' })).toBe('Eileen');
+    expect(spotifyAccountName(OPAQUE_ID, { [OPAQUE_ID]: 'Alex' })).toBe('Alex');
   });
 
   it('prints NOTHING for an account it knows no name for', () => {
@@ -47,7 +47,7 @@ describe('spotifyAccountName', () => {
     // profile page.
     expect(spotifyAccountName(OPAQUE_ID, {})).toBe('');
     expect(spotifyAccountName(OPAQUE_ID, null)).toBe('');
-    expect(spotifyAccountName(OPAQUE_ID_LONG, { somebodyElse: 'Eileen' })).toBe('');
+    expect(spotifyAccountName(OPAQUE_ID_LONG, { somebodyElse: 'Alex' })).toBe('');
   });
 
   it('never leaks any part of the id', () => {
@@ -61,8 +61,8 @@ describe('spotifyAccountName', () => {
   it('still shows an old-style username, which is a name somebody chose', () => {
     // This is the case the line was added for, and it is still worth showing
     // when no display name has been remembered yet.
-    expect(spotifyAccountName('eileen.wilson', {})).toBe('eileen.wilson');
-    expect(spotifyAccountName('eileen.wilson', { 'eileen.wilson': 'Eileen W' })).toBe('Eileen W');
+    expect(spotifyAccountName('alex.example', {})).toBe('alex.example');
+    expect(spotifyAccountName('alex.example', { 'alex.example': 'Alex E' })).toBe('Alex E');
   });
 
   it('shows nothing at all when there is no account', () => {

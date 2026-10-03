@@ -371,7 +371,7 @@ func reachabilityHint(err error) error {
 	// machine: there is no route to that network, which is what a laptop with
 	// its Wi-Fi off or its adapter gone looks like from in here. A firewall
 	// cannot produce it and neither can the speaker, so the firewall paragraph
-	// is wrong twice over. Eileen Wilson pulled her Mac's Wi-Fi mid-update on
+	// is wrong twice over. A user pulled their Mac's Wi-Fi mid-update on
 	// 2026-09-10 and got it anyway, on all three speakers at once and on SSH
 	// port 22, followed by advice to unplug a speaker that was fine.
 	if noNetworkHere(err) {

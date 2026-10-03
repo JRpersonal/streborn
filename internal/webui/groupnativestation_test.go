@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Eileen Wilson's three grouped SoundTouch 10s, 2026-09-13. She pressed key 6
+// A reporter's three grouped SoundTouch 10s, 2026-09-13. They pressed key 6
 // in the app and got a solid amber LED and silence on all three; the same key
 // played twenty seconds after the group was undone.
 //

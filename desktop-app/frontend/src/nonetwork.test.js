@@ -1,6 +1,6 @@
 // The speaker settings page during a Wi-Fi outage on the USER'S machine.
 //
-// Eileen Wilson pulled her Mac's Wi-Fi in the middle of a speaker update on
+// A user pulled their Mac's Wi-Fi in the middle of a speaker update on
 // 2026-09-10. The page counted down ten retries, then told her the agent on the
 // speaker had died and to unplug the speaker from power, and it stayed on that
 // screen after she restored the network and every speaker was back. Her own

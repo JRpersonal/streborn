@@ -593,7 +593,7 @@ export async function loadBoxSettings() {
     // unplugged. Keep re-checking: while the machine has no route the attempt
     // fails inside the socket layer and never reaches a speaker, so this costs
     // the speakers nothing, and the moment the network is back the panel
-    // replaces itself with the real settings. That is what Eileen asked for:
+    // replaces itself with the real settings. That is what the reporter asked for:
     // "when wifi was restored, shouldn't the notice be updated to reflect that
     // the speakers all came back online?"
     if (noNetworkHere(lastErr)) {
@@ -638,7 +638,7 @@ export async function loadBoxSettings() {
 // speaker's network, so the request never left the machine. It is the one
 // unreachable-speaker cause that is provably NOT the speaker: a firewall cannot
 // produce it and neither can a speaker, and it fails identically for every
-// device at once. Eileen Wilson pulled her Mac's Wi-Fi mid-update on 2026-09-10
+// device at once. A user pulled their Mac's Wi-Fi mid-update on 2026-09-10
 // and this panel told her the agent on the speaker had died and to unplug it.
 //
 // The matching pair lives in Go as noNetworkHere (desktop-app/app_transport.go),
