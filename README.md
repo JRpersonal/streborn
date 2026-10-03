@@ -34,9 +34,9 @@ The desktop app: browse and assign presets, search internet radio, control Spoti
 
 The interface is available in thirteen languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic, Traditional Chinese). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
 
-## Status (August 2026)
+## Status (October 2026)
 
-STR is pre-1.0. This section is the honest snapshot. No marketing.
+STR is at 1.0: every criterion I set myself for it is met (see [1.0](#10) below). This section is the honest snapshot. No marketing.
 
 ### What works
 
@@ -44,11 +44,14 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 - Playback control: play / pause / stop / volume / bass / source switch (AUX, Bluetooth, Standby) via the speaker's existing UPnP AVTransport endpoint on port 8091. I never route audio through the dead Bose cloud.
 - Phone remote: every speaker serves its own remote in the browser. Scan the QR code in the desktop app's speaker settings, add the page to your phone's home screen, and control that speaker, group it, and browse stations and your library from Android or iPhone, with no app store and no account.
 - Radio search via radio-browser.info, queried directly by the desktop app (no API key); only the final stream URL goes to the speaker. HLS-only stations (BBC and co.) are converted on the fly by the agent's stream proxy. On a blocked or dead stream the app automatically tries another listing of the same station.
-- Six preset slots, persisted by the agent on the speaker. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo). Existing non-STR presets (e.g. Deezer) are left untouched. Presets copy from one speaker to the others in one step.
+- Six preset slots, persisted by the agent on the speaker. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo), and they survive a cold boot, a standby cycle and a Wi-Fi outage. Internet radio presets are registered with the speaker's own radio source, so the speaker starts them itself. Keys can be renamed, a station already on another key can be moved to the key you pressed, and existing non-STR presets (e.g. Deezer) are left untouched. Presets copy from one speaker to the others in one step.
+- Favourites beyond the six keys: starred stations are stored on the speaker, so the phone remote shows the same list as the desktop app.
+- Alarm clock: wake up to one of your six presets at a set time and volume, per weekday.
+- Volume details: a fixed start volume per speaker (off by default), mute, left/right balance for a stereo pair, and separate centre and surround levels on a soundbar.
 - Spotify Connect: a supervised go-librespot sidecar on the speaker. Spotify playlists, albums, and tracks save to preset slots and the hardware buttons, with multi-account switching and live now-playing. The raw Ogg stream is decoded by the speaker, never by the dead cloud. Streaming quality is set per speaker (160 or 320 kbps), and one click copies a Spotify login to every speaker so saved Spotify presets play on all of them.
 - Local media library: browse media servers on your home network over DLNA / UPnP AV (SSDP discovery, ContentDirectory browse), including FRITZ!Box, Synology, Plex and miniDLNA, and save any track as a preset. Lossless files (FLAC) play directly; the agent's stream proxy feeds the box.
-- Multiroom zones and stereo pairs: group several speakers to play in sync, or pair two as a left/right stereo pair. Groups persist on the speaker and reform automatically after a reboot, standby cycle, or Wi-Fi outage.
-- Smart-home triggers (webhooks): turn a remote-control key, the power button, or an AUX change into a user-configured HTTP call, UDP packet, or Wake-on-LAN magic packet, so a press can drive Home Assistant, ioBroker, Node-RED, wake a PC, or anything reachable on the network.
+- Multiroom zones and stereo pairs: group several speakers to play in sync, or pair two as a left/right stereo pair under a name of your own. A group can be made permanent: it persists on the speaker, reforms automatically after a reboot, standby cycle, or Wi-Fi outage, and takes members back that dropped out. A saved group can sit on a thumbs key of the remote, one press forms it and the next dissolves it.
+- Smart-home triggers (webhooks): turn a remote-control key (Back, Forward, Thumbs up and down, Play/Pause each on its own), the power button, or an AUX change into a user-configured HTTP call, UDP packet, or Wake-on-LAN magic packet, so a press can drive Home Assistant, ioBroker, Node-RED, wake a PC, or anything reachable on the network.
 - OTA agent updates from the desktop app, with an SSH fallback and a pre-reboot stick refresh so the update cannot be reverted by the boot sync. Build stamp comparison catches version drift.
 - WLAN reconfigure from the desktop app. I rewrite `/etc/wpa_supplicant.conf` in full because appending breaks Wi-Fi.
 - Setup wizard for the install, including preset region, friendly name, box language, and Wi-Fi credentials. The network install is the normal path; the USB stick route (with a bundled FAT32 formatting helper) remains available as a fallback.
@@ -57,11 +60,12 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 - Home Assistant and other automation: STR keeps the speaker's local control API (`:8090`) and UPnP media renderer (`:8091`) alive, so a hub you run at home can control the speakers, send audio or TTS to them, and, via Alexa or Google, do voice control. STR adds its own local REST API on top. No cloud skill of my own. See [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md).
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
 
-### In the works
+### In the works, and what comes next
 
 - **Podcasts**: search a show, play episodes, and subscribe a show to a preset so the newest episode is one button away. Design and feedback in #215.
 - **Deezer**: existing Deezer presets on the box already survive an install untouched. Reading and creating Deezer presets from STR is planned (see [`docs/ROADMAP.md`](./docs/ROADMAP.md)).
 - **More streaming sources**: SoundCloud (#241), SiriusXM (#242), and Pandora (#243) are at the feasibility stage. Like Spotify, each would run through a bridge STR controls, since the speakers' built-in sources died with the cloud.
+- **You decide the order.** Every open idea has its own discussion in the [Ideas category](https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop). Upvote what you want; the curated overview stays in #390.
 
 ### Supported models
 
@@ -94,7 +98,7 @@ Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/M
 ### What is inherited from stock Bose firmware (and I do not change)
 
 - HTTP control on `:8090` and UPnP on `:8091` accept any LAN client without authentication. Standard SoundTouch behaviour, not added by me.
-- The speakers ship with `root` having no password set, and SSH (port 22) is enabled by Bose's own init script when a `remote_services` file is present on a mounted USB stick. **STR does not hold that port open.** On a normal, stickless boot the speaker ends up with SSH closed; STR only force-starts `sshd` when you deliberately ask for it, by placing the marker file `/mnt/nv/streborn/enable-ssh` on the speaker. That keeps the repair channel available when an install or update leaves the agent down, without leaving a passwordless root shell on your LAN the rest of the time. While a setup stick is inserted, Bose's own gate opens SSH, which is why the app reminds you to pull the stick after setup. If you switched the marker on, the app's speaker settings show it and tell you how to switch it off again.
+- The speakers ship with `root` having no password set, and SSH (port 22) is enabled by Bose's own init script when a `remote_services` file is present on a mounted USB stick. **STR does not hold that port open.** On a normal, stickless boot the speaker ends up with SSH closed; STR only force-starts `sshd` when you deliberately ask for it, with the SSH switch in the speaker's settings in the desktop app (it places the marker file `/mnt/nv/streborn/enable-ssh` on the speaker). That keeps the repair channel available when an install or update leaves the agent down, without leaving a passwordless root shell on your LAN the rest of the time. While a setup stick is inserted, Bose's own gate opens SSH, which is why the app reminds you to pull the stick after setup. The same switch turns it off again.
 
 ### Factory reset
 
@@ -102,17 +106,17 @@ A Bose factory reset clears only what Bose itself knows about: the Bose preset d
 
 Implication: a speaker being passed on or sold needs a separate "Uninstall STR" step. That ships in the desktop app: Speaker Settings offers **Remove STR** (removes `/mnt/nv/streborn/` and the boot override, returns the speaker to stock Bose firmware) and a separate **True Factory Reset**. See [`docs/ROADMAP.md`](./docs/ROADMAP.md), "Factory reset wizard", for the remaining level (reset STR data only).
 
-### Pre-1.0 gaps I still owe before tagging 1.0
+### 1.0
 
-Per my own criteria in [`CLAUDE.md`](./CLAUDE.md):
+The bar I set for 1.0 in [`CLAUDE.md`](./CLAUDE.md) was deliberately low and measurable. All five are met:
 
-1. Two models verified end to end: met (ST10 and Portable verified, ST20 contributor-confirmed with the final stability pass pending, ST30 working on both module variants; see [`docs/MODELS.md`](./docs/MODELS.md)).
-2. Hardware preset buttons need to survive cold boot, standby cycle, and Wi-Fi outage. I observe this working, but I do not yet have a regression test that pins it.
-3. First-install experience: SmartScreen and Gatekeeper documentation on the website Verify page with the exact click path and a linked SHA256 plus Sigstore attestation. Partially in place, not finalised.
-4. Threat model document published. Present in [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md). It does not yet cover the persistence-across-factory-reset point above, which I owe.
-5. Legal pages on the website (imprint, privacy, both German). Some sections still contain placeholders.
+1. **Two models verified end to end.** The SoundTouch 10 and the Portable are verified on hardware; the ST20, ST30, ST300, Wave, SA-4, SA-5 and the CineMate/520 family run it in the field (see [`docs/MODELS.md`](./docs/MODELS.md)).
+2. **Hardware presets survive a cold boot, a standby cycle and a Wi-Fi outage** without a manual reset. The agent re-registers the keys whenever the speaker reports an empty list, and tests pin the empty-list, standby-exit and reconnect paths (`internal/boxws`).
+3. **An honest first install.** Both desktop builds are signed (Windows by Certum, macOS notarized by Apple), so there is no SmartScreen or Gatekeeper workaround to explain. The website names the one prompt that does appear (the Windows firewall asking for home-network access), and its Verify section links the SHA256 sums and the Sigstore attestation.
+4. **Threat model published**, including what a Bose factory reset does and does not remove ([`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md)).
+5. **Legal pages complete.** Imprint and privacy policy, in German and English, without placeholder text.
 
-Additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Code signing ships on both desktop platforms already: Windows binaries are Authenticode-signed with a Certum open-source certificate, and the macOS app and disk image are Developer ID signed and notarized by Apple.
+Additional models, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Code signing ships on both desktop platforms already: Windows binaries are Authenticode-signed with a Certum open-source certificate, and the macOS app and disk image are Developer ID signed and notarized by Apple.
 
 ## Quick start for developers
 
