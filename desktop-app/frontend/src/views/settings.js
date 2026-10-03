@@ -3758,10 +3758,14 @@ export async function refreshStartVolume(box) {
 
   check.onchange = () => {
     if (check.checked) {
-      // Turning it on with nothing stored would put the marker at zero, which
-      // is both invisible and the one value that means off. The level the
-      // speaker is at right now is the one the person can already see.
-      vol = saved > 0 ? saved : (parseInt(slider.value, 10) || 30);
+      // A stored level comes back as it was. With nothing stored the mark
+      // appears at 20, which is a quiet level to wake up at and, just as
+      // importantly, somewhere the person can SEE it. Spawning it at the
+      // current volume put it directly under the native handle, which is the
+      // one spot on the bar where a new marker is both hard to notice and
+      // hard to grab. Zero is not an option either: it is invisible at the
+      // far left and it is the value that means off.
+      vol = saved > 0 ? saved : 20;
     } else {
       vol = 0;
     }
