@@ -51,6 +51,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR } from '../boxstate.js';
+import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -2190,75 +2191,25 @@ function renderBoxSettings(s, box) {
     rmConflictBtn.onclick = async () => {
       const mod = (box && box.conflictingMod) || '';
       const cloudOnly = !mod && !!(box && box.foreignCloudURL);
-      const ok = cloudOnly
-        ? await confirmWarn(
-          t('settingsView.healCloudURLBtn'),
-          t('settingsView.healCloudURLHelp', { url: box.foreignCloudURL })
-        )
-        : await confirmWarn(
-          t('settingsView.removeConflictBtn', { mod: mod || 'AfterTouch' }),
-          t('settingsView.removeConflictConfirm', { mod: mod || 'AfterTouch', name: box.friendlyName || box.name || box.host })
-        );
-      if (!ok) return;
       const idleLabel = cloudOnly
         ? t('settingsView.healCloudURLBtn')
         : t('settingsView.removeConflictBtn', { mod: mod || 'AfterTouch' });
-      rmConflictBtn.disabled = true;
-      rmConflictBtn.textContent = t('settingsView.removeConflictRunning');
-      try {
-        const raw = await RemoveConflictingMod(box.host, box.port);
-        let res = {};
-        try { res = JSON.parse(raw); } catch { /* keep empty */ }
-        const removed = res.removed || [];
-        // Say what actually happened. Until #986 this always toasted success,
-        // so a cleanup that matched no file at all reported "leftovers removed
-        // (0)" and the reporter reasonably believed his speaker was clean while
-        // it went on asking a dead server for every preset.
-        const notes = [];
-        // cloudURLRestartPending: the address on disk is already the standard
-        // one and only the running firmware is still on the old one, because it
-        // reads its config once, at boot. That is a pending restart, not a
-        // failure, so it must not come out as "nothing found to remove".
-        if (res.cloudURLHealed || res.cloudURLRestartPending) {
-          notes.push(t('settingsView.removeConflictCloudToast'));
-        } else if (!removed.length) {
-          notes.push(t('settingsView.removeConflictNothingToast'));
-        } else {
-          notes.push(t('settingsView.removeConflictDoneToast', { mod: mod || 'AfterTouch', n: removed.length }));
-        }
-        if (res.stillDetected) {
-          notes.push(t('settingsView.removeConflictStillToast', {
-            detail: res.foreignCloudURL || res.cloudURLNote || res.mod || '',
-          }));
-        }
-        // Bad news gets the modal the user has to dismiss, good news a toast.
-        if (res.stillDetected || (!removed.length && !res.cloudURLHealed && !res.cloudURLRestartPending)) {
-          showError(notes.join('\n'));
-        } else {
-          showToast(notes.join(' '));
-        }
-        // A reboot fully clears the rival tool's already-running processes, and
-        // a healed cloud address only takes effect when the firmware re-reads
-        // its config, which it does once, at boot.
-        const wantReboot = await confirmWarn(
-          t('settingsView.removeConflictRebootTitle'),
-          t('settingsView.removeConflictRebootBody', { name: box.friendlyName || box.name || box.host })
-        );
-        if (wantReboot) {
-          try {
-            await RebootBox(box.host, box.port);
-            showToast(t('speaker.rebootingToast'));
-            setTimeout(deps.discoverBoxes, 35000);
-          } catch (e) { showError(e); }
-        } else if (deps.discoverBoxes) {
-          deps.discoverBoxes();
-        }
-      } catch (e) {
-        showError(e);
-      } finally {
-        rmConflictBtn.disabled = false;
-        rmConflictBtn.textContent = idleLabel;
-      }
+      // The flow itself lives in conflictcleanup.js, shared with the banner's
+      // button (#1083).
+      await runConflictCleanup(box, {
+        t, confirmWarn, showToast, showError,
+        removeConflictingMod: RemoveConflictingMod,
+        rebootBox: RebootBox,
+        rediscover: (afterMs) => {
+          if (!deps.discoverBoxes) return;
+          if (afterMs > 0) setTimeout(deps.discoverBoxes, afterMs);
+          else deps.discoverBoxes();
+        },
+        setBusy: (busy) => {
+          rmConflictBtn.disabled = busy;
+          rmConflictBtn.textContent = busy ? t('settingsView.removeConflictRunning') : idleLabel;
+        },
+      });
     };
   }
 

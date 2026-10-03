@@ -7,6 +7,7 @@ import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
+import { runConflictCleanup } from './conflictcleanup.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -19,6 +20,7 @@ import {
   PlaySlot,
   PlayURL,
   RebootBox,
+  RemoveConflictingMod,
   RestoreSTRCloud,
   PushFavorites,
   RecordUpdateIntent,
@@ -2667,10 +2669,10 @@ function checkBoxIssueBanner() {
   const wifiBtn = noWifi.length
     ? `<button class="btn btn-mini" id="boxIssueWifiBtn">${escapeHtml(t('speaker.wifiSaveBtn'))}</button>`
     : '';
-  // A conflicting-mod (AfterTouch) leftover is now removable in one click under
-  // the speaker's settings > Actions, so point the user there instead of leaving
-  // the banner as a dead end that suggested asking the other project / running an
-  // SSH command most users cannot act on.
+  // A conflicting-mod (AfterTouch, OpenCloudTouch) leftover is removable in one
+  // click, and this button does it right here. It used to only switch to the
+  // speaker's settings page, which its label never said, so an owner pressed it
+  // twice and saw nothing happen (#1083).
   const conflictBtn = conflict.length
     ? `<button class="btn btn-mini" id="boxIssueConflictBtn">${escapeHtml(t('speaker.conflictRemoveBtn'))}</button>`
     : '';
@@ -2715,7 +2717,22 @@ function checkBoxIssueBanner() {
   const wb = $('boxIssueWifiBtn');
   if (wb) wb.onclick = () => { selectBox(noWifi[0]); switchView('settings'); };
   const cb = $('boxIssueConflictBtn');
-  if (cb) cb.onclick = () => { selectBox(conflict[0]); switchView('settings'); };
+  if (cb) cb.onclick = async () => {
+    const label = cb.textContent;
+    await runConflictCleanup(conflict[0], {
+      t, confirmWarn, showToast, showError,
+      removeConflictingMod: RemoveConflictingMod,
+      rebootBox: RebootBox,
+      rediscover: (afterMs) => {
+        if (afterMs > 0) setTimeout(discoverBoxes, afterMs);
+        else discoverBoxes();
+      },
+      setBusy: (busy) => {
+        cb.disabled = busy;
+        cb.textContent = busy ? t('settingsView.removeConflictRunning') : label;
+      },
+    });
+  };
   const d = $('boxIssueDismissBtn');
   if (d) d.onclick = () => {
     const stamp = String(Date.now());
