@@ -685,6 +685,7 @@
   "footer.worldMap": "世界地図",
   "footer.credits": "オープンソース",
   "footer.reportProblem": "問題を報告",
+  "footer.voteIdeas": "次に何を作るか投票",
   "share.menu": "STR を紹介する",
   "share.successLine": "STR が動いているなら、ほかの人にも教えてあげてください。SoundTouch の持ち主の多くは、まだ STR の存在を知りません。",
   "share.on": "{{name}} で共有",
