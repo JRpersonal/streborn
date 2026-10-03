@@ -31,6 +31,7 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 			Art:      it.Art,
 			Mime:     it.Mime,
 			Duration: time.Duration(it.DurationSec) * time.Second,
+			Artist:   it.Artist,
 		})
 	}
 	return out
@@ -152,7 +153,7 @@ const (
 // library file the box can range-read) vs the loopback proxy (radio / HTTPS)
 // exactly like handlePlay, and records it as the last play. The caller must
 // hold boxCmdMu.
-func (s *Server) pushStream(ctx context.Context, url, title, art, mime string, dur time.Duration) error {
+func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist string, dur time.Duration) error {
 	playDirect := mime != "" && isPlainHTTPURL(url)
 	playURL := boxurl.RawStream(url)
 	if playDirect {
@@ -177,7 +178,7 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime string, d
 	s.setLastPlay(playURL, title, art, mime)
 	// Recently-played (#220): hang this queue track under the active folder card.
 	// No-op outside a queue (pushStream is queue-only) or before a card is set.
-	s.recentNoteQueueTrack(title)
+	s.recentNoteQueueTrack(title, artist)
 	return nil
 }
 
@@ -229,7 +230,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 		s.recentClearQueueCard()
 	}
 	s.noteQueueStart(len(items), start, shuffle, rep)
-	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
+	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueueEnd("the first track could not be pushed to the box")
 		return err
 	}
@@ -332,7 +333,7 @@ func (s *Server) advanceAndPlay(natural bool, gen int, why string) {
 		return
 	}
 	s.ClearUserStop()
-	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
+	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		s.logger.Warn("queue advance: play failed", "why", why, "title", it.Title, "err", err)
 		return
@@ -363,7 +364,7 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 		return queueItem{}, false, nil
 	}
 	s.ClearUserStop()
-	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
+	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		return queueItem{}, false, err
 	}
@@ -656,6 +657,7 @@ type queueStartItem struct {
 	Art         string `json:"art"`
 	Mime        string `json:"mime"`
 	DurationSec int    `json:"duration_sec"`
+	Artist      string `json:"artist"`
 }
 
 // queueCard is the optional Recently-played folder identity the desktop app
@@ -691,6 +693,7 @@ func toQueueItems(in []queueStartItem) []queueItem {
 			Art:      it.Art,
 			Mime:     it.Mime,
 			Duration: time.Duration(it.DurationSec) * time.Second,
+			Artist:   it.Artist,
 		})
 	}
 	return out

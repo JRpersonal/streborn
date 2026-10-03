@@ -567,6 +567,8 @@ async function libraryPlayFolder() {
       art: it.albumArtURL || '',
       mime: it.mimeType || '',
       duration_sec: it.durationSec || 0,
+      // Filed as "Artist - Title" in Recently played, like a Spotify song (#1077).
+      artist: it.artist || '',
     }));
   if (items.length === 0) {
     showError(t('library.errorNoURL'));
@@ -626,6 +628,8 @@ function librarySaveFolderAsPreset() {
       art: it.albumArtURL || '',
       mime: it.mimeType || '',
       duration_sec: it.durationSec || 0,
+      // Filed as "Artist - Title" in Recently played, like a Spotify song (#1077).
+      artist: it.artist || '',
     }));
   if (items.length === 0) {
     showError(t('library.errorNoURL'));

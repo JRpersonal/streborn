@@ -17,6 +17,7 @@ type queueItem struct {
 	Art      string
 	Mime     string
 	Duration time.Duration // 0 when the DLNA server did not report one
+	Artist   string        // "" when the media server named none
 }
 
 // repeatMode controls what the queue does at the end of a track / the list.

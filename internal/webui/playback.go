@@ -758,9 +758,17 @@ func (s *Server) recentNoteQueueCard(key, name, art, url, mime string) {
 
 // recentNoteQueueTrack hangs the track the play-queue just started under the
 // current folder card. No-op until a queue card has been recorded.
-func (s *Server) recentNoteQueueTrack(track string) {
+//
+// Stored artist-first ("Artist - Title") when the media server named an artist,
+// exactly like NoteRecentSpotifyTrack, so a library folder and a Spotify playlist
+// read the same in both Recently-played lists instead of the folder showing a
+// bare song title (#1077).
+func (s *Server) recentNoteQueueTrack(track, artist string) {
 	if s.recent == nil || track == "" {
 		return
+	}
+	if artist != "" {
+		track = artist + " - " + track
 	}
 	s.recentMu.Lock()
 	c := s.recentQueueCard
