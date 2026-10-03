@@ -641,10 +641,14 @@ async function renderSetupAPPushPanel() {
   } catch {
     probe = null;
   }
-  // Wails returns multi-value as an array on the JS side; guard for
-  // shape so we don't crash if the binding shape ever changes.
-  const found = Array.isArray(probe) ? probe[1] : probe && probe.found;
-  const box = Array.isArray(probe) ? probe[0] : probe && probe.box;
+  // One object with both fields. The comment that stood here said Wails
+  // returns multi-value as an array, and it does not: a bound method with two
+  // results loses the second unless it is an error, so the answer arrived as
+  // the BoxInfo alone. BoxInfo has neither a found nor a box field, so both of
+  // these read undefined and this panel believed nothing had been found, every
+  // time it ran.
+  const found = !!(probe && probe.found);
+  const box = probe && probe.box;
 
   if (!found || !box) {
     panel.innerHTML = `
@@ -1779,7 +1783,7 @@ async function watchForSpeakerReady({ ssid, pass, html, generation }) {
     if (!wantedHost) {
       let ap = null;
       try { ap = await ProbeSetupAP(); } catch {}
-      if (ap && ap.host) {
+      if (ap && ap.found && ap.box && ap.box.host) {
         lastSeenState = 'setup-ap';
         setStatus('setup-ok', t('setup.awaitSetupNetwork'));
         arm(t('setup.awaitSetupNetworkBtn'), handoff);

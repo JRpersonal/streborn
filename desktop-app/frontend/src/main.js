@@ -7992,7 +7992,15 @@ async function pollTrackPosition() {
   if (!playing) { trackPos.at = 0; renderTrackProgress(); return; }
   trackPos.polling = true;
   try {
-    const [pos, dur] = await TrackPosition(state.currentBox.host, state.currentBox.port);
+    // One object, read by field name. It used to be destructured as a pair,
+    // which Wails cannot return: a bound method with two results keeps the
+    // first and treats the second as an error, so the answer arrived as a
+    // plain number and destructuring it threw on every single tick. The catch
+    // below swallowed that, so the duration stayed 0, no bar was ever drawn,
+    // and the elapsed clock was pure extrapolation rather than a reading.
+    const p = await TrackPosition(state.currentBox.host, state.currentBox.port);
+    const pos = p && typeof p.positionSec === 'number' ? p.positionSec : -1;
+    const dur = p && typeof p.durationSec === 'number' ? p.durationSec : 0;
     if (pos < 0) return; // could not ask: keep the bar where it is
     // Only accept a backwards jump when the track itself changed, which
     // resetTrackProgress has already handled by clearing the reading.
