@@ -272,6 +272,10 @@ func logResourceHealth(logger *slog.Logger, sp *spotify.Manager) {
 		"memTotalKB", total,
 		"loadavg", readLoadAvg(),
 		"agentRSSKB", rss,
+		// The agent's peak since it started. RSS alone missed the #1083 spike:
+		// the agent reached 42-44 MB within two minutes of a boot and was back
+		// near 15 MB before the next five-minute reading.
+		"agentPeakKB", readSelfPeakKB(),
 		"agentThreads", threads,
 		"engineRSSKB", engRSS,
 	}
@@ -433,6 +437,24 @@ func readUptimeSec() int64 {
 
 func readSelfRSS() (rssKB, threads int64) {
 	return readProcStatus("/proc/self/status")
+}
+
+// readSelfPeakKB returns the agent's VmHWM (peak resident set) in KB, or -1.
+func readSelfPeakKB() int64 { return readProcPeakKB("/proc/self/status") }
+
+func readProcPeakKB(path string) int64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return -1
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(line); len(f) >= 2 && f[0] == "VmHWM:" {
+			if v, err := strconv.ParseInt(f[1], 10, 64); err == nil {
+				return v
+			}
+		}
+	}
+	return -1
 }
 
 // engineRSSKB returns the go-librespot process's resident set in KB, or -1
