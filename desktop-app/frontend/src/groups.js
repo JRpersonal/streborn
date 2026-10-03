@@ -357,6 +357,11 @@ export function stereoPairsOf(zoneLive) {
       // are accepted so an older agent keeps working.
       master: String(st.masterDeviceID || st.master || '').toUpperCase(),
       members: st.members || [],
+      // The name the speakers carry in their pair document: the one the Bose
+      // app, the Spotify picker and the phone remote show. The app's own
+      // display name is kept separately (stereoNames.js); healPairNames
+      // compares the two.
+      name: st.name || '',
     };
     const k = stereoPairKey(rec) || (rec.id ? 'id:' + rec.id : '');
     if (!k || seen.has(k)) continue;

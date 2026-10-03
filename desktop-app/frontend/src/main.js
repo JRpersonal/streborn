@@ -278,7 +278,7 @@ import {
   onZoneLive,
   notifyZoneLive,
 } from './groups.js';
-import { pairDisplayName } from './stereoNames.js';
+import { pairDisplayName, healPairNames } from './stereoNames.js';
 
 // The already-on-another-key refusal and the offer to move the station live in
 // presetmove.js, so vitest can drive the whole decision without a DOM.
@@ -3717,6 +3717,10 @@ function updateMultiroomTabBadge() {
   el.setAttribute('aria-label', tip);
 }
 onZoneLive(updateMultiroomTabBadge);
+// A pair whose speakers lost the name STR stored for it (formed again with the
+// field empty) gets it written back, so the Spotify picker and the phone remote
+// match this app again (#1077, issue 5). Rides the same poll, no timer.
+onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxes).catch(() => {}); });
 
 // foreignMod maps a leftover /mnt/nv directory name (as the agent reports it in
 // foreignDirs / conflictingMod) to a human-readable name of the OTHER SoundTouch

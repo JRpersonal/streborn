@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('./api.js', () => ({
   GetStereoPairName: () => new Promise(() => {}),
   SetStereoPairName: async () => {},
+  PushStereoPairNameToBox: async () => {},
 }));
 
 // The suite runs in node, which has no localStorage. This stand-in also
