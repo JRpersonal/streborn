@@ -1153,6 +1153,7 @@ function renderBoxSettings(s, box) {
       <div class="setting-row" id="boxStartVolRow" hidden>
         <label class="startvol-toggle">
           <input type="checkbox" id="boxStartVolOn" />
+          <span class="startvol-chip" aria-hidden="true"></span>
           <span>${escapeHtml(t('settingsView.startVolLabel'))}</span>
         </label>
         <span class="setting-value" id="boxStartVolVal"></span>

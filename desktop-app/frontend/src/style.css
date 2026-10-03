@@ -2705,9 +2705,41 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
   width: 2px; height: 11px;
   background: var(--c-startvol);
 }
+/* A start arrow inside the grip, and the same amber chip beside the checkbox
+   that switches it on. The glyph matters less than the sameness: two identical
+   marks in one panel are read as one thing without anybody working it out, and
+   a label on its own leaves the person to guess which of the two markers on the
+   bar it is talking about.
+
+   Drawn from borders rather than text, so it is a shape at 8 pixels instead of
+   a font's idea of one, and filled with the surface colour so it stays legible
+   on both ambers: near-white on the dark amber of the light theme, near-black
+   on the bright amber of the dark one. */
+.startvol-mark::after,
+.startvol-chip::after {
+  content: ""; position: absolute;
+  left: 50%; top: 50%;
+  width: 0; height: 0;
+  /* A right-pointing triangle looks off-centre when it is centred on its
+     bounding box, so it is nudged back by a pixel. */
+  transform: translate(-40%, -50%);
+  border-left: 5px solid var(--c-surface);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
 .startvol-mark:hover, .startvol-mark:focus-visible { filter: brightness(1.15); }
 .startvol-mark:hover::before, .startvol-mark:focus-visible::before { filter: brightness(1.15); }
 .startvol-mark.hidden { display: none; }
+/* The same mark, beside the switch that turns it on. No needle: this one points
+   at nothing, it only says which thing on the bar the switch belongs to. */
+.startvol-chip {
+  position: relative; display: inline-block;
+  width: 15px; height: 13px;
+  background: var(--c-startvol);
+  border-radius: 3px;
+  flex: none;
+}
+.startvol-chip::after { transform: translate(-40%, -50%) scale(0.8); }
 .startvol-toggle { display: flex; align-items: center; gap: 7px; cursor: pointer; }
 .startvol-toggle input { accent-color: var(--c-startvol); }
 .startvol-toggle span { color: var(--c-text); }
