@@ -6,6 +6,7 @@ import { spotifyAccountName } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
+import { sourceAccountFrom } from './nowsourceaccount.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -8087,8 +8088,11 @@ async function refreshStatus() {
     state.nowSource = src;
     // A speaker with more than one socket of the same kind (an SA-5 reports
     // three AUX inputs) says which one is playing only in the account, so the
-    // input row needs it to light the right button (#274).
-    state.nowSourceAccount = (xml.match(/nowPlaying[^>]*sourceAccount="([^"]*)"/) || [])[1] || '';
+    // input row needs it to light the right button (#274). It is not always in
+    // the same place: UPnP puts it on the outer element AND on the ContentItem,
+    // AUX only on the ContentItem, so reading the outer one alone found nothing
+    // for exactly the speaker that needed it. See nowsourceaccount.js.
+    state.nowSourceAccount = sourceAccountFrom(xml);
     // The speaker's OWN Spotify receiver names the song in the same response,
     // and that is not true of every source: on radio <track> merely repeats the
     // station, which is why the song has always had to come from STR's stream
