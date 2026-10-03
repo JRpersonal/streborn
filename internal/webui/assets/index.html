@@ -2177,6 +2177,18 @@ async function currentSong() {
   } catch (e) { return ''; }
 }
 
+// engineSong returns "Artist · Title" of the song STR's Spotify engine is
+// playing, or ''. Same shape as the line the speaker's own Spotify receiver
+// gets, so the two Spotify paths read alike. Best-effort like currentSong.
+async function engineSong() {
+  var info = await api('/spotify/info');
+  noteSpotifyInfo(info);
+  var tr = (info && info.track ? String(info.track) : '').trim();
+  var ar = (info && info.artist ? String(info.artist) : '').trim();
+  if (!tr) return '';
+  return ar ? ar + ' · ' + tr : tr;
+}
+
 // Which preset key is actually playing, from what the speaker reports.
 //
 // Until now the highlight only ever followed the tile the user tapped HERE, so
@@ -2268,7 +2280,8 @@ async function refreshStatus() {
   if (sc0) sc0.classList.remove('offline');
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
-  markPlaying((t.match(/location="([^"]*)"/) || [])[1] || '');
+  const nowLoc = (t.match(/location="([^"]*)"/) || [])[1] || '';
+  markPlaying(nowLoc);
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
   const name = m ? decodeEntities(m[1]) : '';
   // Track power state for the header toggle: the box is "on" unless it is in
@@ -2317,6 +2330,12 @@ async function refreshStatus() {
     const ba = decodeEntities((t.match(/<artist>([^<]*)<\/artist>/) || [])[1] || '');
     if (bt) song = ba ? ba + ' \u00b7 ' + bt : bt;
   }
+  // A Spotify key played through STR's own engine is a UPnP stream to the
+  // speaker, and the speaker's answer names only the playlist, so the second
+  // line said "Playing" through a whole playlist while the app showed the song
+  // (#1077). The engine knows the song; ask it, and only while it is the one
+  // playing, the same way the app does.
+  if (!song && playing && /\/spotify\/stream/.test(nowLoc)) song = await engineSong();
   if (!song) song = (playing && proxySrc) ? await currentSong() : '';
   // No raw firmware enum on the screen, ever. The old fallback stripped
   // "_STATE" and lower-cased the rest, which turned INVALID_PLAY_STATUS into
@@ -3838,6 +3857,42 @@ function fillLangPick(){
    uses. Loaded once at open and again after a play from this page; no poll,
    the ring only changes when the user plays something. */
 var recentCards = [];
+/* What a Recently-played row may print about the Spotify account (#1077).
+   For a modern account the stored value is the canonical user id, an opaque
+   string that means nothing to its owner and resolves to a public profile page.
+   The app stopped printing it; this list still did. The rule below is the app's
+   spotifyAccountName (desktop-app/frontend/src/spotifyaccountlabel.js), copied
+   because this page is served by the speaker with no bundler, and
+   spotifyaccountlabel.test.js runs this copy against the original so the two
+   cannot drift. The id is never a fallback: an account the speaker has learned
+   no name for prints nothing. */
+var spotifyAccountNames = {};
+function spotifyAccountName(account, names) {
+  var id = String(account || '').trim();
+  if (!id) return '';
+  if (names && typeof names === 'object') {
+    var remembered = String(names[id] || '').trim();
+    if (remembered) return remembered;
+  }
+  if (!(id.length >= 16 && /^[a-z0-9]+$/.test(id))) return id;
+  return '';
+}
+// noteSpotifyInfo keeps the account names a /spotify/info answer carries.
+// Merged, never replaced: an answer without the field must not wipe them.
+function noteSpotifyInfo(info) {
+  if (info && info.accountNames && typeof info.accountNames === 'object') {
+    for (var k in info.accountNames) spotifyAccountNames[k] = info.accountNames[k];
+  }
+}
+// spotifyPresetSlot is the key a Spotify card can be replayed from: the preset
+// holding the same playlist, album or track. The engine recalls Spotify only
+// through a key, so the app offers Play on exactly these cards, and so does
+// this page now.
+function spotifyPresetSlot(e, list) {
+  if (!e || e.source !== 'spotify' || !e.cardKey) return 0;
+  var p = (list || []).find(function(x){ return x && x.type === 'spotify' && x.uri === e.cardKey; });
+  return p ? p.slot : 0;
+}
 async function loadRecent() {
   var card = document.getElementById('recentCard');
   var box = document.getElementById('recentList');
@@ -3857,22 +3912,51 @@ async function loadRecent() {
   });
   cards = cards.slice(0, 6);
   recentCards = cards;
+  // Spotify rows need two things the ring does not carry: the account's name
+  // and the key the card sits on. One read each, and only when such a row is
+  // on screen and the page does not already have the answer.
+  var spCards = cards.filter(function(e){ return e.source === 'spotify'; });
+  if (spCards.some(function(e){ return e.account && !(e.account in spotifyAccountNames); })) {
+    noteSpotifyInfo(await api('/spotify/info'));
+    // An account still unnamed after asking is remembered as such, so the next
+    // re-read does not ask again; a later answer that names it still wins.
+    spCards.forEach(function(e){ if (e.account && !(e.account in spotifyAccountNames)) spotifyAccountNames[e.account] = ''; });
+  }
+  var presetList = lastPresetList;
+  if (spCards.length && !presetList.length) {
+    var pl = await api('/api/presets');
+    if (Array.isArray(pl)) presetList = pl;
+  }
   box.innerHTML = '';
   cards.forEach(function(e, idx){
     var row = document.createElement('div'); row.className = 'station';
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = e.cardName || e.cardURL || '';
     var sub = document.createElement('small');
-    sub.textContent = [e.track, e.account].filter(Boolean).join(' \u00b7 ');
+    var acct = e.source === 'spotify' ? spotifyAccountName(e.account, spotifyAccountNames) : '';
+    sub.textContent = [e.track, acct].filter(Boolean).join(' \u00b7 ');
     nm.appendChild(sub);
     row.appendChild(nm);
     /* Replay what this page can honestly start: a radio card carries a stream
        URL the /api/play path accepts, and a media-server (upnp) card carries its
        NAS HTTP location, which replays through the very same mime-less path the
        desktop app already uses for these cards (true parity, so no new server
-       behaviour). Spotify needs the engine recall (a preset), so those rows stay
-       history, not buttons. */
-    if ((e.source === 'radio' || e.source === 'upnp') && e.cardURL && e.cardURL.indexOf('http') === 0) {
+       behaviour). Spotify needs the engine recall, which only a key can do, so
+       a Spotify row gets Play when its playlist sits on a key, exactly the
+       rule the app's Recently played uses (#1077), and stays history otherwise. */
+    var spSlot = spotifyPresetSlot(e, presetList);
+    if (spSlot) {
+      var sb = document.createElement('button');
+      sb.className = 'btn'; sb.type = 'button';
+      sb.setAttribute('aria-label', T.play + ': ' + (e.cardName || ''));
+      sb.textContent = T.play;
+      sb.addEventListener('click', function(){
+        press(sb);
+        playSlot(spSlot, null, e.cardName || '');
+        setTimeout(loadRecent, 4000);
+      });
+      row.appendChild(sb);
+    } else if ((e.source === 'radio' || e.source === 'upnp') && e.cardURL && e.cardURL.indexOf('http') === 0) {
       var b = document.createElement('button');
       b.className = 'btn'; b.type = 'button';
       b.setAttribute('aria-label', T.play + ': ' + (e.cardName || ''));

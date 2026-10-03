@@ -14,11 +14,9 @@ const state = readFileSync(join(here, 'state.js'), 'utf8');
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 
-// The click handler, from its comment to the label restore.
-const handler = settings.slice(
-  settings.indexOf("const rmConflictBtn = $('boxRemoveConflictBtn')"),
-  settings.indexOf("const tfrBtn = $('boxTrueFactoryResetBtn')"),
-);
+// The flow both cleanup buttons run (#1083 moved it out of the settings view so
+// the banner's button does the same thing instead of only switching pages).
+const handler = readFileSync(join(here, 'conflictcleanup.js'), 'utf8');
 
 describe('the conflicting-mod cleanup says what it actually did', () => {
   it('reports a cleanup that removed nothing as a problem, not a success', () => {

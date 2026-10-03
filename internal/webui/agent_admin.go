@@ -333,13 +333,39 @@ var runningShaOnce = sync.OnceValue(func() string {
 	if err != nil {
 		return ""
 	}
-	b, err := os.ReadFile(path)
+	sha, err := fileSHA256(path)
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
+	return sha
 })
+
+// fileSHA256 hashes a file by streaming it through a small buffer.
+//
+// The three binary hashes behind /api/agent/version used to read their file
+// whole with os.ReadFile: the agent on NAND, the agent this process runs from
+// (usually the same 13 MB file a second time) and, when its marker is stale,
+// the 16 MB Spotify engine. The first version poll after every agent start pays
+// for them, and the desktop app sends that poll the moment it sees the speaker,
+// often on two ports at once. On a speaker with 120 MB of RAM and no swap that
+// put the agent at 42 to 44 MB resident within two minutes of every boot,
+// measured on five speakers (#1083). Go hands the memory back only over the
+// following minutes, and a SoundTouch 20 that was still starting its own
+// processes in that window ran out of memory and rebooted, over and over.
+//
+// Streamed, the hash costs one 32 KB buffer whatever the file size.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.CopyBuffer(h, f, make([]byte, 32<<10)); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
 func runningBinaryStamp() string { return runningShaOnce() }
 
@@ -355,14 +381,13 @@ func agentBinaryStamp() string {
 		fi.Size() == agentBinShaCache.size {
 		return agentBinShaCache.sha
 	}
-	b, err := os.ReadFile(agentBinNANDPath)
+	sha, err := fileSHA256(agentBinNANDPath)
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(b)
 	agentBinShaCache.mtime = fi.ModTime()
 	agentBinShaCache.size = fi.Size()
-	agentBinShaCache.sha = hex.EncodeToString(sum[:])
+	agentBinShaCache.sha = sha
 	return agentBinShaCache.sha
 }
 
@@ -409,11 +434,22 @@ func engineDroppedForUpdate() bool {
 // a present binary with an unreadable hash reports present with an empty sha,
 // which the app treats as "push once" (correct and idempotent).
 func goLibrespotStamp() (present bool, sha string) {
-	fi, err := os.Stat(goLibrespotBinPath)
+	return goLibrespotStampAt(goLibrespotBinPath)
+}
+
+// goLibrespotStampMu serialises the hash: the app probes two ports at once,
+// and without it both requests hashed the same 16 MB engine side by side.
+// The second one now finds the marker the first one just wrote.
+var goLibrespotStampMu sync.Mutex
+
+func goLibrespotStampAt(bin string) (present bool, sha string) {
+	fi, err := os.Stat(bin)
 	if err != nil || fi.Size() < 1024 {
 		return false, ""
 	}
-	marker := goLibrespotBinPath + ".sha256"
+	goLibrespotStampMu.Lock()
+	defer goLibrespotStampMu.Unlock()
+	marker := bin + ".sha256"
 	if mfi, err := os.Stat(marker); err == nil && !mfi.ModTime().Before(fi.ModTime()) {
 		if b, rerr := os.ReadFile(marker); rerr == nil {
 			if h := strings.TrimSpace(string(b)); h != "" {
@@ -421,12 +457,10 @@ func goLibrespotStamp() (present bool, sha string) {
 			}
 		}
 	}
-	data, err := os.ReadFile(goLibrespotBinPath)
+	h, err := fileSHA256(bin)
 	if err != nil {
 		return true, "" // present but hash unknown; app re-pushes once
 	}
-	sum := sha256.Sum256(data)
-	h := hex.EncodeToString(sum[:])
 	_ = os.WriteFile(marker, []byte(h), 0o644)
 	return true, h
 }

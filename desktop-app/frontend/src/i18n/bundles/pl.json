@@ -1330,6 +1330,7 @@
   "settingsView.displayTrackConfirmTitle": "Pokazywać utwór na wyświetlaczu głośnika?",
   "settingsView.displayTrackHeading": "Pokazuj bieżący utwór na wyświetlaczu głośnika",
   "settingsView.displayTrackHelp": "Domyślnie wyłączone. Gdy włączone, aktualny utwór stacji radiowej jest pokazywany na własnym wyświetlaczu głośnika, jak dawniej w radiu internetowym. Aby zaktualizować tekst, głośnik musi ponownie buforować, więc dźwięk urywa się na chwilę przy każdej zmianie. Utwór jest zawsze pokazywany w tej aplikacji bez żadnych przerw, więc zostaw to wyłączone, jeśli wolisz dźwięk bez przerw. W głośniku z wyświetlaczem zastępuje to również jego zwykły widok, numer presetu i nazwę stacji.",
+  "settingsView.displayTrackUnknown": "Głośnik przed chwilą nie odpowiedział, więc to ustawienie jest nieznane (może się właśnie restartować). Otwórz ustawienia ponownie za minutę.",
   "settingsView.displayTrackModeArtist": "Wykonawca",
   "settingsView.displayTrackModeBoth": "Oba",
   "settingsView.displayTrackModeLabel": "Pokaż:",

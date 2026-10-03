@@ -16,6 +16,19 @@ import (
 	"github.com/JRpersonal/streborn/internal/spotify"
 )
 
+func TestReadProcPeakKB(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "status")
+	if err := os.WriteFile(p, []byte("Name:\tstreborn-armv7l\nVmPeak:\t  582288 kB\nVmHWM:\t   43920 kB\nVmRSS:\t   42188 kB\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readProcPeakKB(p); got != 43920 {
+		t.Fatalf("readProcPeakKB = %d, want 43920 (VmHWM, not VmPeak)", got)
+	}
+	if got := readProcPeakKB(filepath.Join(t.TempDir(), "missing")); got != -1 {
+		t.Fatalf("file missing: %d, want -1", got)
+	}
+}
+
 func TestReadProcStatus(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "status")
 	if err := os.WriteFile(p, []byte("Name:\tgo-librespot\nVmPeak:\t   40000 kB\nVmRSS:\t   31240 kB\nThreads:\t9\n"), 0o644); err != nil {

@@ -50,7 +50,8 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState } from '../boxstate.js';
+import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -593,7 +594,7 @@ export async function loadBoxSettings() {
     // unplugged. Keep re-checking: while the machine has no route the attempt
     // fails inside the socket layer and never reaches a speaker, so this costs
     // the speakers nothing, and the moment the network is back the panel
-    // replaces itself with the real settings. That is what Eileen asked for:
+    // replaces itself with the real settings. That is what the reporter asked for:
     // "when wifi was restored, shouldn't the notice be updated to reflect that
     // the speakers all came back online?"
     if (noNetworkHere(lastErr)) {
@@ -638,7 +639,7 @@ export async function loadBoxSettings() {
 // speaker's network, so the request never left the machine. It is the one
 // unreachable-speaker cause that is provably NOT the speaker: a firewall cannot
 // produce it and neither can a speaker, and it fails identically for every
-// device at once. Eileen Wilson pulled her Mac's Wi-Fi mid-update on 2026-09-10
+// device at once. A user pulled their Mac's Wi-Fi mid-update on 2026-09-10
 // and this panel told her the agent on the speaker had died and to unplug it.
 //
 // The matching pair lives in Go as noNetworkHere (desktop-app/app_transport.go),
@@ -1297,6 +1298,7 @@ function renderBoxSettings(s, box) {
         <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -2190,75 +2192,25 @@ function renderBoxSettings(s, box) {
     rmConflictBtn.onclick = async () => {
       const mod = (box && box.conflictingMod) || '';
       const cloudOnly = !mod && !!(box && box.foreignCloudURL);
-      const ok = cloudOnly
-        ? await confirmWarn(
-          t('settingsView.healCloudURLBtn'),
-          t('settingsView.healCloudURLHelp', { url: box.foreignCloudURL })
-        )
-        : await confirmWarn(
-          t('settingsView.removeConflictBtn', { mod: mod || 'AfterTouch' }),
-          t('settingsView.removeConflictConfirm', { mod: mod || 'AfterTouch', name: box.friendlyName || box.name || box.host })
-        );
-      if (!ok) return;
       const idleLabel = cloudOnly
         ? t('settingsView.healCloudURLBtn')
         : t('settingsView.removeConflictBtn', { mod: mod || 'AfterTouch' });
-      rmConflictBtn.disabled = true;
-      rmConflictBtn.textContent = t('settingsView.removeConflictRunning');
-      try {
-        const raw = await RemoveConflictingMod(box.host, box.port);
-        let res = {};
-        try { res = JSON.parse(raw); } catch { /* keep empty */ }
-        const removed = res.removed || [];
-        // Say what actually happened. Until #986 this always toasted success,
-        // so a cleanup that matched no file at all reported "leftovers removed
-        // (0)" and the reporter reasonably believed his speaker was clean while
-        // it went on asking a dead server for every preset.
-        const notes = [];
-        // cloudURLRestartPending: the address on disk is already the standard
-        // one and only the running firmware is still on the old one, because it
-        // reads its config once, at boot. That is a pending restart, not a
-        // failure, so it must not come out as "nothing found to remove".
-        if (res.cloudURLHealed || res.cloudURLRestartPending) {
-          notes.push(t('settingsView.removeConflictCloudToast'));
-        } else if (!removed.length) {
-          notes.push(t('settingsView.removeConflictNothingToast'));
-        } else {
-          notes.push(t('settingsView.removeConflictDoneToast', { mod: mod || 'AfterTouch', n: removed.length }));
-        }
-        if (res.stillDetected) {
-          notes.push(t('settingsView.removeConflictStillToast', {
-            detail: res.foreignCloudURL || res.cloudURLNote || res.mod || '',
-          }));
-        }
-        // Bad news gets the modal the user has to dismiss, good news a toast.
-        if (res.stillDetected || (!removed.length && !res.cloudURLHealed && !res.cloudURLRestartPending)) {
-          showError(notes.join('\n'));
-        } else {
-          showToast(notes.join(' '));
-        }
-        // A reboot fully clears the rival tool's already-running processes, and
-        // a healed cloud address only takes effect when the firmware re-reads
-        // its config, which it does once, at boot.
-        const wantReboot = await confirmWarn(
-          t('settingsView.removeConflictRebootTitle'),
-          t('settingsView.removeConflictRebootBody', { name: box.friendlyName || box.name || box.host })
-        );
-        if (wantReboot) {
-          try {
-            await RebootBox(box.host, box.port);
-            showToast(t('speaker.rebootingToast'));
-            setTimeout(deps.discoverBoxes, 35000);
-          } catch (e) { showError(e); }
-        } else if (deps.discoverBoxes) {
-          deps.discoverBoxes();
-        }
-      } catch (e) {
-        showError(e);
-      } finally {
-        rmConflictBtn.disabled = false;
-        rmConflictBtn.textContent = idleLabel;
-      }
+      // The flow itself lives in conflictcleanup.js, shared with the banner's
+      // button (#1083).
+      await runConflictCleanup(box, {
+        t, confirmWarn, showToast, showError,
+        removeConflictingMod: RemoveConflictingMod,
+        rebootBox: RebootBox,
+        rediscover: (afterMs) => {
+          if (!deps.discoverBoxes) return;
+          if (afterMs > 0) setTimeout(deps.discoverBoxes, afterMs);
+          else deps.discoverBoxes();
+        },
+        setBusy: (busy) => {
+          rmConflictBtn.disabled = busy;
+          rmConflictBtn.textContent = busy ? t('settingsView.removeConflictRunning') : idleLabel;
+        },
+      });
     };
   }
 
@@ -2551,10 +2503,15 @@ function renderBoxSettings(s, box) {
   const dtModeRow = $('displayTrackModeRow');
   const dtModeBtns = { artist: $('displayTrackModeArtist'), title: $('displayTrackModeTitle'), both: $('displayTrackModeBoth') };
   let dtMode = 'both';
+  const dtUnknown = $('displayTrackUnknown');
+  // enabled is true, false, or null for "could not be read". A failed read used
+  // to paint Off, so a speaker that was restarting showed the setting off while
+  // it was on and pushing titles (#1083). Unknown lights neither button.
   const paintDisplayTrack = (enabled) => {
     if (dtOn) dtOn.classList.toggle('active', enabled === true);
     if (dtOff) dtOff.classList.toggle('active', enabled === false);
     if (dtModeRow) dtModeRow.classList.toggle('hidden', enabled !== true);
+    if (dtUnknown) dtUnknown.classList.toggle('hidden', enabled !== null);
   };
   const paintDtMode = () => {
     for (const [m, b] of Object.entries(dtModeBtns)) { if (b) b.classList.toggle('active', m === dtMode); }
@@ -2564,9 +2521,9 @@ function renderBoxSettings(s, box) {
       try {
         const r = await GetDisplayTrack(box.host, box.port);
         if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
-        paintDisplayTrack(r && r.enabled === true);
+        paintDisplayTrack(displayTrackState(r));
         paintDtMode();
-      } catch { paintDisplayTrack(false); }
+      } catch { paintDisplayTrack(null); }
     })();
     const save = async (enabled) => {
       try {

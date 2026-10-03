@@ -1,7 +1,7 @@
 // A Wi-Fi outage on the USER'S machine, and the three wrong things STR did
 // about it.
 //
-// Eileen Wilson pulled her Mac's Wi-Fi in the middle of a speaker update on
+// A user pulled their Mac's Wi-Fi in the middle of a speaker update on
 // 2026-09-10 and mailed in the log. What it shows, on all three of her speakers
 // at once and on SSH port 22 as well, is ENETUNREACH: the operating system
 // saying there is no route to that network, so nothing was ever put on the
@@ -31,7 +31,7 @@ import (
 )
 
 // The exact strings the operating systems produce. The macOS one is copied out
-// of Eileen's bundle; the Windows one is WSAENETUNREACH's own wording, which is
+// of the reporter's bundle; the Windows one is WSAENETUNREACH's own wording, which is
 // the same fault phrased the other way round.
 const (
 	macENETUNREACH = `Get "http://192.0.2.239:8888/api/agent/version": dial tcp 192.0.2.239:8888: connect: network is unreachable (also tried :17008: network is unreachable)`

@@ -17,7 +17,7 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
-import { pairDisplayName, setPairName } from '../stereoNames.js';
+import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -522,7 +522,11 @@ export function renderMultiroom(fetchLive) {
 
   // The pair's own display name, kept app-side (stereoNames.js). Prefilled from
   // the store for the SELECTED pair; the async lookup repaints once it lands.
-  const pairName = formingPair ? (pairDisplayName(formingPair, () => renderMultiroom(false)) || '') : '';
+  // Also for two speakers that are not paired right now: the store is keyed on
+  // the two members, so a pair that is undone and formed again starts with its
+  // old name in the field instead of an empty one (#1077, issue 5).
+  const pickedPair = { members: [{ deviceID: pairPick[0] }, { deviceID: pairPick[1] }] };
+  const pairName = pairDisplayName(formingPair || pickedPair, () => renderMultiroom(false)) || '';
 
   // Two channel cards that show the picked speakers by name and fill in with the
   // --brand highlight the moment the selected pair is actually live (Jens
@@ -1083,6 +1087,16 @@ async function doFormStereo(pairCands, allBoxes) {
   }
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
+    // An empty field still means "the name these two already have". Sent
+    // empty, the agent writes its default "Stereo pair" into the speakers'
+    // pair document, and that is what the Spotify picker and the phone remote
+    // then show, while this app keeps showing the stored name (#1077, issue 5).
+    let pairName = wantName.trim();
+    if (!pairName) {
+      try {
+        pairName = await storedPairName({ members: [{ deviceID: left.deviceID }, { deviceID: right.deviceID }] });
+      } catch {}
+    }
     // The picked left speaker is the master (LEFT channel); the agent assigns
     // the partner the RIGHT channel.
     const res = await FormZone(left.host, left.port, {
@@ -1090,7 +1104,7 @@ async function doFormStereo(pairCands, allBoxes) {
       slaves: [{ deviceID: right.deviceID, ip: right.host }],
       // The typed name goes into the firmware pair document from the start,
       // so the Bose app shows it too instead of "Stereo pair (L+R)".
-      name: wantName.trim(), stereo: true,
+      name: pairName, stereo: true,
     });
     // The agent answers 200 with ok:false when the firmware silently dropped a
     // member (incomplete pair) - and FormZone answers ok:false with notReady

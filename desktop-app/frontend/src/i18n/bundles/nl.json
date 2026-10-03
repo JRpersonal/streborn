@@ -1330,6 +1330,7 @@
   "settingsView.displayTrackConfirmTitle": "Het nummer op het luidsprekerdisplay tonen?",
   "settingsView.displayTrackHeading": "Het huidige nummer op het luidsprekerdisplay tonen",
   "settingsView.displayTrackHelp": "Standaard uit. Als dit aan staat, wordt het actuele nummer van een radiozender op het eigen display van de luidspreker getoond, zoals vroeger bij internetradio. De luidspreker moet opnieuw bufferen om de tekst bij te werken, dus de audio valt bij elke wijziging even weg. Het nummer wordt in deze app altijd zonder onderbreking getoond, dus laat dit uit als je liever ononderbroken geluid hebt. Op een speaker met display vervangt dit ook wat er normaal staat, het presetnummer en de zender.",
+  "settingsView.displayTrackUnknown": "De luidspreker antwoordde net niet, dus deze instelling is onbekend (hij start misschien opnieuw op). Open de instellingen over een minuut opnieuw.",
   "settingsView.displayTrackModeArtist": "Artiest",
   "settingsView.displayTrackModeBoth": "Beide",
   "settingsView.displayTrackModeLabel": "Tonen:",

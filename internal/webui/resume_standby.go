@@ -2059,6 +2059,12 @@ func (s *Server) HandleStreamTitle(title string) {
 		s.logger.Debug("display title push throttled", "title", title)
 		return
 	}
+	// The display already shows this text for this play: a push would re-buffer
+	// the box (an audible gap) and change nothing on screen.
+	if shown := s.displayTrackText(title); s.displayAlreadyShows(shown) {
+		s.logger.Info("display title not pushed: already shown", "shown", shown)
+		return
+	}
 	s.pushDisplayTitle(title)
 }
 
@@ -2105,6 +2111,24 @@ func (s *Server) setDisplayText(shown string) {
 	// shown" firmware case (title pushed, home-cinema display ignores dc:title)
 	// is distinguishable from "never sent" in the bundle.
 	s.logger.Info("display push", "shown", shown, "boxURL", boxURL, "mime", mime)
+	s.noteDisplayShown(lp, shown)
+}
+
+// noteDisplayShown records that shown is on the display for play lp, so an
+// identical follow-up push can be skipped (see displayAlreadyShows).
+func (s *Server) noteDisplayShown(lp *lastPlayInfo, shown string) {
+	s.lastPlayMu.Lock()
+	s.lastDisplayShown, s.lastDisplayFor = shown, lp
+	s.lastPlayMu.Unlock()
+}
+
+// displayAlreadyShows reports whether the last successful display push for the
+// CURRENT play put exactly shown on screen. A new play (a new lastPlay record)
+// never counts as shown, so a station switch always gets its first push.
+func (s *Server) displayAlreadyShows(shown string) bool {
+	s.lastPlayMu.Lock()
+	defer s.lastPlayMu.Unlock()
+	return shown != "" && s.lastPlay != nil && s.lastDisplayFor == s.lastPlay && s.lastDisplayShown == shown
 }
 
 // pushDisplayTitle re-issues the now-playing metadata so the configured display

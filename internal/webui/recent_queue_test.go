@@ -3,6 +3,7 @@ package webui
 import (
 	"testing"
 
+	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 )
 
@@ -16,8 +17,8 @@ func TestRecentQueueCardRecordsFolderAndTracks(t *testing.T) {
 	// startQueue notes the folder card, then the first push records the first
 	// track (which folds into the card placeholder), then auto-advance records more.
 	s.recentNoteQueueCard("queue:srv:42", "Jazz", "art.png", "http://nas/1.mp3", "audio/flac")
-	s.recentNoteQueueTrack("Song A")
-	s.recentNoteQueueTrack("Song B")
+	s.recentNoteQueueTrack("Song A", "")
+	s.recentNoteQueueTrack("Song B", "")
 
 	all := s.recent.All()
 	if len(all) != 2 {
@@ -47,9 +48,42 @@ func TestRecentQueueCardRecordsFolderAndTracks(t *testing.T) {
 	// After the queue stops (single play / stop / runs out), later tracks must not
 	// attach to the now-dead folder card.
 	s.recentClearQueueCard()
-	s.recentNoteQueueTrack("Song C")
+	s.recentNoteQueueTrack("Song C", "")
 	if got := len(s.recent.All()); got != 2 {
 		t.Fatalf("track recorded after the queue card was cleared: want 2 entries, got %d", got)
+	}
+}
+
+// TestRecentQueueTrackFilesArtistFirst covers #1077: a folder track whose media
+// server names an artist is filed "Artist - Title", the shape Spotify songs
+// already use, so both Recently-played lists show the artist for a library
+// playlist too. A track without an artist keeps the bare title.
+func TestRecentQueueTrackFilesArtistFirst(t *testing.T) {
+	s := &Server{recent: recent.New()}
+	s.recentNoteQueueCard("queue:srv:7", "Classic Rock Collection", "", "http://nas/1.mp3", "audio/mpeg")
+	s.recentNoteQueueTrack("Synchronicity I", "The Police")
+	s.recentNoteQueueTrack("Untitled", "")
+
+	all := s.recent.All()
+	if len(all) != 2 {
+		t.Fatalf("want 2 entries, got %d: %+v", len(all), all)
+	}
+	if all[0].Track != "The Police - Synchronicity I" {
+		t.Fatalf("artist not filed first: %q", all[0].Track)
+	}
+	if all[1].Track != "Untitled" {
+		t.Fatalf("a track without an artist must keep its bare title: %q", all[1].Track)
+	}
+}
+
+// TestQueueItemsCarryArtist pins the artist through both ways a folder reaches
+// the queue: a play from the app and a recall of a saved folder preset.
+func TestQueueItemsCarryArtist(t *testing.T) {
+	if got := toQueueItems([]queueStartItem{{URL: "http://nas/1.mp3", Title: "T", Artist: "A"}}); len(got) != 1 || got[0].Artist != "A" {
+		t.Fatalf("toQueueItems dropped the artist: %+v", got)
+	}
+	if got := presetItemsToQueue([]presets.PresetItem{{URL: "http://nas/1.mp3", Title: "T", Artist: "A"}}); len(got) != 1 || got[0].Artist != "A" {
+		t.Fatalf("presetItemsToQueue dropped the artist: %+v", got)
 	}
 }
 
@@ -58,6 +92,6 @@ func TestRecentQueueCardRecordsFolderAndTracks(t *testing.T) {
 func TestRecentQueueCardNilStore(t *testing.T) {
 	s := &Server{}
 	s.recentNoteQueueCard("k", "n", "a", "u", "")
-	s.recentNoteQueueTrack("t")
+	s.recentNoteQueueTrack("t", "")
 	s.recentClearQueueCard()
 }

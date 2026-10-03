@@ -1330,6 +1330,7 @@
   "settingsView.displayTrackConfirmTitle": "Afficher le morceau sur l'écran de l'enceinte ?",
   "settingsView.displayTrackHeading": "Afficher le morceau en cours sur l'écran de l'enceinte",
   "settingsView.displayTrackHelp": "Désactivé par défaut. Quand c'est activé, le morceau en cours d'une station de radio s'affiche sur l'écran de l'enceinte, comme avant avec la radio internet. L'enceinte doit retamponner pour mettre le texte à jour, donc l'audio se coupe brièvement à chaque changement. Le morceau est toujours affiché dans cette app sans aucune interruption, alors laisse ceci désactivé si tu préfères un son sans coupure. Sur une enceinte avec écran, cela remplace aussi ce qu'elle affiche d'habitude, le numéro de présélection et la station.",
+  "settingsView.displayTrackUnknown": "L'enceinte n'a pas répondu à l'instant, ce réglage est donc inconnu (elle redémarre peut-être). Rouvrez les réglages dans une minute.",
   "settingsView.displayTrackModeArtist": "Artiste",
   "settingsView.displayTrackModeBoth": "Les deux",
   "settingsView.displayTrackModeLabel": "Afficher :",

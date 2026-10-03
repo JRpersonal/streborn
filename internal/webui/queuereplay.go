@@ -241,6 +241,7 @@ func (s *Server) browseQueueItems(ctx context.Context, srv dlna.Server, containe
 				Art:      it.AlbumArtURL,
 				Mime:     trackMime(it),
 				Duration: time.Duration(it.DurationSec) * time.Second,
+				Artist:   it.Artist,
 			})
 			if len(out) >= queueReplayMaxItems {
 				return out, nil

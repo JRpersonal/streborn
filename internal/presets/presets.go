@@ -87,6 +87,11 @@ type PresetItem struct {
 	Art         string `json:"art,omitempty"`
 	Mime        string `json:"mime,omitempty"`
 	DurationSec int    `json:"duration_sec,omitempty"`
+	// Artist is the track's artist from the media server, so a folder recalled
+	// from this preset files its songs in Recently played as "Artist - Title",
+	// the same way Spotify songs are filed (#1077). Optional/additive: presets
+	// saved before this carry no artist and their songs show the title alone.
+	Artist string `json:"artist,omitempty"`
 }
 
 // MaxQueueItems bounds how many tracks a queue preset (Type=="queue") stores on

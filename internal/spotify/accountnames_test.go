@@ -21,11 +21,11 @@ func namesManager(t *testing.T) *Manager {
 // everything that would make Spotify unreachable later.
 func TestANameSurvivesARestart(t *testing.T) {
 	m := namesManager(t)
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen")
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex")
 
 	// A second manager over the same store is what a reboot looks like.
 	m2 := &Manager{credStore: m.credStore, logger: m.logger}
-	if got := m2.AccountNames()["qm4xvp7z2bnkd6rt1ys8hgwj3"]; got != "Eileen" {
+	if got := m2.AccountNames()["qm4xvp7z2bnkd6rt1ys8hgwj3"]; got != "Alex" {
 		t.Fatalf("the name did not survive: %q", got)
 	}
 }
@@ -36,19 +36,19 @@ func TestKnownNameIsNotWrittenAgain(t *testing.T) {
 	m := namesManager(t)
 	path := filepath.Join(m.credStore, accountNamesFile)
 
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen")
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex")
 	first, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("nothing was written at all: %v", err)
 	}
 	// Mark the file so a rewrite is detectable without depending on timestamps,
 	// which on a fast machine are identical either way.
-	if err := os.WriteFile(path, []byte(`{"qm4xvp7z2bnkd6rt1ys8hgwj3":"Eileen"}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"qm4xvp7z2bnkd6rt1ys8hgwj3":"Alex"}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	marked, _ := os.Stat(path)
 
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen")
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex")
 	after, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -63,9 +63,9 @@ func TestKnownNameIsNotWrittenAgain(t *testing.T) {
 // Spotify profile is stuck with the old one for ever.
 func TestAChangedNameIsWritten(t *testing.T) {
 	m := namesManager(t)
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen")
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen W")
-	if got := m.AccountNames()["qm4xvp7z2bnkd6rt1ys8hgwj3"]; got != "Eileen W" {
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex")
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex E")
+	if got := m.AccountNames()["qm4xvp7z2bnkd6rt1ys8hgwj3"]; got != "Alex E" {
 		t.Fatalf("the new name did not land: %q", got)
 	}
 }
@@ -74,10 +74,10 @@ func TestAChangedNameIsWritten(t *testing.T) {
 // apart is the reason this line exists on a preset tile at all.
 func TestTwoAccountsKeepTheirOwnNames(t *testing.T) {
 	m := namesManager(t)
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen")
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex")
 	m.rememberAccountName("48qpzlmxtreb9vkd2yhsn6wc3gfu", "Sam")
 	names := m.AccountNames()
-	if names["qm4xvp7z2bnkd6rt1ys8hgwj3"] != "Eileen" || names["48qpzlmxtreb9vkd2yhsn6wc3gfu"] != "Sam" {
+	if names["qm4xvp7z2bnkd6rt1ys8hgwj3"] != "Alex" || names["48qpzlmxtreb9vkd2yhsn6wc3gfu"] != "Sam" {
 		t.Fatalf("one account overwrote the other: %v", names)
 	}
 }
@@ -86,15 +86,15 @@ func TestTwoAccountsKeepTheirOwnNames(t *testing.T) {
 // ends up on a tile and in a JSON payload.
 func TestRubbishIsNotStored(t *testing.T) {
 	m := namesManager(t)
-	m.rememberAccountName("", "Eileen")
+	m.rememberAccountName("", "Alex")
 	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "")
 	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "   ")
 	if n := len(m.AccountNames()); n != 0 {
 		t.Fatalf("stored %d names it should have refused: %v", n, m.AccountNames())
 	}
 
-	m.rememberAccountName("a", "Eileen\nmsg=\"injected\"")
-	if got := m.AccountNames()["a"]; got != "Eileen" {
+	m.rememberAccountName("a", "Alex\nmsg=\"injected\"")
+	if got := m.AccountNames()["a"]; got != "Alex" {
 		t.Errorf("a newline was kept in a label: %q", got)
 	}
 
@@ -119,7 +119,7 @@ func TestABrokenStoreReadsAsEmpty(t *testing.T) {
 // it writes is checked for shape rather than trusted.
 func TestTheStoreHoldsNothingButNames(t *testing.T) {
 	m := namesManager(t)
-	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Eileen")
+	m.rememberAccountName("qm4xvp7z2bnkd6rt1ys8hgwj3", "Alex")
 	data, err := os.ReadFile(filepath.Join(m.credStore, accountNamesFile))
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestTheStoreHoldsNothingButNames(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("the store is not a flat id-to-name map: %v", err)
 	}
-	if len(got) != 1 || got["qm4xvp7z2bnkd6rt1ys8hgwj3"] != "Eileen" {
+	if len(got) != 1 || got["qm4xvp7z2bnkd6rt1ys8hgwj3"] != "Alex" {
 		t.Fatalf("unexpected contents: %v", got)
 	}
 }

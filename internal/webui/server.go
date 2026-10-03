@@ -601,6 +601,15 @@ type Server struct {
 	// StreamTitle between the song and promo/talk lines does not cause a re-buffer
 	// gap every few seconds. Guarded by lastPlayMu.
 	lastDisplayPush time.Time
+	// lastDisplayShown and lastDisplayFor remember what the last display push
+	// put on screen and for which play. A push re-buffers the box, so a title
+	// change that would show the SAME text (artist mode across two songs by one
+	// artist, or a station that blanks its StreamTitle between songs and then
+	// resends the same one) is skipped instead of costing an audible gap for
+	// nothing (#500). Keyed on the lastPlay pointer so a new play always pushes.
+	// Guarded by lastPlayMu.
+	lastDisplayShown string
+	lastDisplayFor   *lastPlayInfo
 	// lastICYTitle is the most recent radio StreamTitle seen, kept so enabling the
 	// display push or changing its mode can show the CURRENT track immediately
 	// instead of waiting for the next title change. Guarded by lastPlayMu.
