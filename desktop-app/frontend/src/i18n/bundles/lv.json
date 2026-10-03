@@ -986,6 +986,7 @@
   "setup.targetCardKindStock": "Oriģinālā Bose programmatūra",
   "setup.targetCardKindFactory": "Jauns vai atiestatīts skaļrunis",
   "setup.targetCardBadgeSTR": "tikai atjaunināt",
+  "setup.targetDoneGroup": "Jau iestatīti ({{n}})",
   "setup.targetCardBadgeStock": "pirmā instalēšana",
   "setup.targetCardBadgeFactory": "vēl nav Wi-Fi tīklā",
   "setup.targetCardFactoryHelp": "Jaunam vai atiestatītam skaļrunim, kas vēl nav jūsu Wi-Fi tīklā: vispirms savienojiet to ar mājas Wi-Fi, izmantojot oficiālo Bose SoundTouch lietotni (saites zemāk). Tiklīdz skaļrunis ir jūsu Wi-Fi tīklā, tas parādās sarakstā, un STR var instalēt bez USB zibatmiņas ar vienu pogas spiedienu: izvēlieties skaļruni un nospiediet Instalēt. Alternatīva: ja skaļrunim ir LAN pieslēgvieta, vienkārši savienojiet to ar maršrutētāju, izmantojot tīkla kabeli, tas pats parādīsies sarakstā un tiks instalēts tāpat.",

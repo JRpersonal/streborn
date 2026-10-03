@@ -33,6 +33,7 @@
   --c-surface: #222;        /* cards, bars, raised surfaces */
   --c-surface-2: #2a2a2a;   /* slightly higher surface / soft fills */
   --c-spotify-text: #1ED760; /* Spotify green, 7.5:1 on this surface */
+  --c-startvol: #f0b429;    /* the start-volume mark, 8.5:1 here and never blue */
   --c-surface-3: #333;      /* highest surface / hover */
   --c-border: #444;         /* default borders / dividers */
   --c-border-2: #555;       /* stronger borders */
@@ -74,6 +75,7 @@ html.a11y-light {
   --c-surface: #f5f5f6;
   --c-surface-2: #ececee;
   --c-spotify-text: #0F6B3B; /* 5.6:1 here; the brand green measures 1.63:1 */
+  --c-startvol: #b06a00;    /* 3.9:1 here; the dark amber washes out on white */
   --c-surface-3: #e2e2e5;
   --c-border: #cccccf;
   --c-border-2: #b5b5ba;
@@ -107,6 +109,7 @@ html.a11y-contrast {
   --c-surface: #000000;
   --c-surface-2: #111111;
   --c-spotify-text: #1ED760; /* 9.4:1 on this one */
+  --c-startvol: #ffc145;    /* loud on black, like everything else in here */
   --c-surface-3: #1a1a1a;
   --c-border: #ffffff;
   --c-border-2: #ffffff;
@@ -1460,7 +1463,12 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .preset-acts { display: flex; align-items: center; gap: 2px; }
 .preset .del { color: var(--c-faint); cursor: pointer; padding: 0 4px; font-size: 16px; }
 .preset .del:hover { color: var(--signal-red); }
-.preset .ren { color: var(--c-faint); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1.2; }
+/* The rename control is a LABEL, not a pencil. A pencil says "edit this
+   thing", and the thing on a preset key is the station, so people read it as
+   the way to change what the key plays. It changes the name only, and that
+   misreading already cost an hour once: a key renamed back to its old title
+   while still holding somebody else's stream. A tag says name. */
+.preset .ren { color: var(--c-faint); cursor: pointer; padding: 0 4px; line-height: 1; display: inline-flex; align-items: center; }
 .preset .ren:hover { color: var(--c-text); }
 /* The name field in the shared modal: full width, because a station name is
    longer than the box a browser gives an input by default. */
@@ -2665,25 +2673,44 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .phone-scan-hint { font-size: 13px; color: var(--c-text); margin: 2px 0 0; }
 
 /* The start volume, drawn on the volume bar it is about.
-   A flag under the track rather than a second handle on it: two things that
-   look alike on one bar is how you get somebody dragging the wrong one, and the
-   whole point here is that the two are told apart at a glance. The current
-   volume keeps the native handle it has always had, and the start volume is the
-   small marked one below, in the brand colour so it reads as something STR
-   added rather than as part of the speaker's own control. */
-.vol-with-start { position: relative; flex: 1; display: flex; align-items: center; }
+   A grip under the track rather than a second handle on it. Two things that
+   look alike on one bar is how somebody drags the wrong one, and the whole
+   point here is that the two are told apart at a glance, so this one differs in
+   all three ways at once: it is square where the native handle is round, it is
+   amber where everything the speaker controls is the brand blue, and it carries
+   a needle, because the square is what you grab while the needle is what points
+   at the value. A grip you can hit and a mark you can read are not the same
+   size, and trying to be both is what made the first version fiddly. */
+.vol-with-start {
+  position: relative; flex: 1; display: flex; align-items: center;
+  /* Room below the track for the grip, so it cannot sit on the next row. */
+  padding-bottom: 20px;
+}
 .vol-with-start input[type=range] { flex: 1; accent-color: var(--brand); }
 .startvol-mark {
-  position: absolute; bottom: -3px; width: 12px; height: 12px;
-  margin-left: -6px; /* the left we set is the CENTRE of the marker */
-  background: var(--brand); border: 2px solid var(--c-surface);
-  border-radius: 3px; transform: rotate(45deg);
-  cursor: ew-resize; touch-action: none; /* or a drag scrolls the panel instead */
+  position: absolute; bottom: 0;
+  width: 18px; height: 16px;
+  margin-left: -9px; /* the left we set is the NEEDLE, i.e. the grip's centre */
+  background: var(--c-startvol);
+  border: 1px solid var(--c-surface);
+  border-radius: 3px;
+  cursor: ew-resize;
+  touch-action: none; /* or dragging it scrolls the panel instead */
 }
-.startvol-mark:hover, .startvol-mark:focus-visible { background: var(--c-text); }
+/* The needle. It reaches from the grip up to the middle of the track, so the
+   value is read where the handle above it is read, not 16 pixels lower. */
+.startvol-mark::before {
+  content: ""; position: absolute;
+  left: 50%; margin-left: -1px; bottom: 100%;
+  width: 2px; height: 11px;
+  background: var(--c-startvol);
+}
+.startvol-mark:hover, .startvol-mark:focus-visible { filter: brightness(1.15); }
+.startvol-mark:hover::before, .startvol-mark:focus-visible::before { filter: brightness(1.15); }
 .startvol-mark.hidden { display: none; }
 .startvol-toggle { display: flex; align-items: center; gap: 7px; cursor: pointer; }
-.startvol-toggle input { accent-color: var(--brand); }
+.startvol-toggle input { accent-color: var(--c-startvol); }
+.startvol-toggle span { color: var(--c-text); }
 .phone-howto-body { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .phone-paths { display: flex; gap: 12px; flex-wrap: wrap; }
 .phone-path {
@@ -3085,3 +3112,23 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .sp-prereq-title { font-weight: 600; margin-bottom: .3rem; }
 .sp-prereq ul { margin: 0; padding-left: 1.1rem; }
 .sp-prereq li { margin: .25rem 0; }
+
+/* The "already set up" group in the setup picker. Closed by default, so the
+   speaker still to be installed is the one in view. Shaped like the other
+   summary controls in the app rather than the browser default, which reads
+   as a link and gets missed. */
+.setup-done-group { margin: 6px 0; }
+.setup-done-group > summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; color: var(--c-text-2);
+  padding: 7px 10px; border: 1px solid var(--c-border); border-radius: 8px;
+  background: var(--c-surface); list-style: none;
+  display: flex; align-items: center; gap: 8px;
+}
+.setup-done-group > summary::-webkit-details-marker { display: none; }
+.setup-done-group > summary::before {
+  content: "\25B8"; font-size: 15px; line-height: 1; color: var(--c-muted);
+  transition: transform .15s ease;
+}
+.setup-done-group[open] > summary::before { transform: rotate(90deg); }
+.setup-done-group > summary:hover { border-color: var(--c-text-2); }
+.setup-done-group[open] > summary { margin-bottom: 6px; }

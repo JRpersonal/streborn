@@ -499,11 +499,30 @@ export function renderSetupTargetPicker() {
       cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
     }
   }
-  for (const b of strBoxes) {
-    const label = b.friendlyName || b.name || b.host;
-    cards += cardHTML('str', b.host, label,
-      boxIdentLine(b, t('setup.targetCardKindSTR')),
-      t('setup.targetCardBadgeSTR'), 'badge-ok');
+  // Speakers that already run STR fold away. A household that has done this
+  // once has four cards saying "done" and one saying "to do", all the same
+  // size and the done ones first, so the eye lands on the wrong thing. They
+  // are one click away, not hidden.
+  //
+  // Open when one of them IS the selection, or the picker would hide the
+  // thing it is a picker for. state.setupDoneOpen remembers a manual toggle,
+  // because this function re-renders on every click and the group would
+  // otherwise snap shut under the hand that opened it.
+  if (strBoxes.length > 0) {
+    const selIsDone = sel && sel.kind === 'str' && sel.box
+      && strBoxes.some(b => b.host === sel.box.host);
+    const open = selIsDone || state.setupDoneOpen === true;
+    let inner = '';
+    for (const b of strBoxes) {
+      const label = b.friendlyName || b.name || b.host;
+      inner += cardHTML('str', b.host, label,
+        boxIdentLine(b, t('setup.targetCardKindSTR')),
+        t('setup.targetCardBadgeSTR'), 'badge-ok');
+    }
+    cards += `<details class="setup-done-group" id="setupDoneGroup"${open ? ' open' : ''}>`
+      + `<summary>${escapeHtml(t('setup.targetDoneGroup', { n: strBoxes.length }))}</summary>`
+      + inner
+      + `</details>`;
   }
   // No "unsupported" list any more: every discovered stock box is an install
   // target above, so there is nothing non-selectable to render here.
@@ -570,6 +589,11 @@ export function renderSetupTargetPicker() {
   // Paint the OTA-first primary action for the current target: a network-install
   // hero for a reachable stock box, or the collapsed stick wizard otherwise.
   renderPrimaryAction();
+
+  // A manual open or close has to outlive the next render, which happens on
+  // every card click.
+  const doneGroup = $('setupDoneGroup');
+  if (doneGroup) doneGroup.ontoggle = () => { state.setupDoneOpen = doneGroup.open; };
 
   body.querySelectorAll('.setup-target-card').forEach(el => {
     el.onclick = () => {

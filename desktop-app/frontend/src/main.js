@@ -6804,7 +6804,7 @@ function renderPresets() {
       // wide enough for the string", user report 2026-08-23). The running title
       // now lives only in that bar, which is the full window wide.
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}">&#9998;</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
+        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}" aria-label="${escapeAttr(t('preset.renameTitle'))}" role="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg></span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
