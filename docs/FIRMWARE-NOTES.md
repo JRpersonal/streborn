@@ -462,6 +462,41 @@ Three routes have been tried and all are closed:
 Do not re-open any of these without new firmware evidence. Deep RE of the
 native path is blocked, see the native-preset notes.
 
+## The track title on the display costs a re-buffer
+
+The only channel that puts a live radio title on the speaker display is a
+fresh `SetAVTransportURI` with the title in the DIDL metadata. The box
+treats that as a new play: it drops the stream connection, throws away its
+buffer and waits for 1.5 s of audio again, so every pushed title change is
+an audible gap (`play_underrun ... minBufferDepth: 1.500000` in the box
+syslog right after the push). This is why the display push is opt-in per
+speaker and rate-limited (`minDisplayPushInterval`), and why a title change
+that would put the same text on screen is not pushed at all.
+
+Routes that would avoid the gap, all closed:
+
+- **ICY inband.** The box never asks for ICY metadata, on the UPnP path or
+  the native LOCAL_INTERNET_RADIO path (`boxWantsICY=false`, empty
+  `Icy-MetaData` request header from the first fetch). It cannot read a
+  title out of the stream itself.
+- **`SetNextAVTransportURI`** (cut the stream into per-song pieces and queue
+  the next one with a new title). The action is listed in the ST20's
+  AVTransport SCPD but answers `UPnPError 401 Invalid Action`, with or
+  without `NextURIMetaData`; after the first piece the box goes to STOPPED.
+  Contributor test on an ST20, FW 27.0.6, 2026-10-03 (#500).
+- **gabbo display frames.** A dead end, see the gabbo display spike.
+
+Side notes from the same test: `GetMediaInfo` reports `CurrentURI` as
+`qplay://` regardless of what plays (the real URI is only in
+`GetPositionInfo` as `TrackURI`), and a box whose UPnP server vanished stays
+in `PLAY_STATE` on the dead URL until a preset key is pressed.
+
+The native radio descriptor (`internal/webui/lir.go`) has no metadata
+field, and the box fetches it once per activation. Whether the retired
+TuneIn client polled a now-playing endpoint on the partner host is open:
+the client's path list contains a `nowPlaying` route, but on 27.0.6 the box
+has never been seen contacting that host (see `internal/marge/tunein.go`).
+
 ## The speaker stores presets itself: hold-to-store and the boot sync
 
 Holding a preset key for about two seconds runs the firmware's OWN store

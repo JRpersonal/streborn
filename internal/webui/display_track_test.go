@@ -50,3 +50,29 @@ func TestDisplayTrackText(t *testing.T) {
 		}
 	}
 }
+
+// A display push re-buffers the box (an audible gap, #500), so a title change
+// that would put the same text on screen for the same play must not push again,
+// while a new play always gets its first push.
+func TestDisplayAlreadyShows(t *testing.T) {
+	s := &Server{}
+	play := &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/3"}
+	s.lastPlay = play
+	if s.displayAlreadyShows("Lobo") {
+		t.Fatal("nothing pushed yet, but reported as shown")
+	}
+	s.noteDisplayShown(play, "Lobo")
+	if !s.displayAlreadyShows("Lobo") {
+		t.Error("same text for the same play should count as shown")
+	}
+	if s.displayAlreadyShows("Die Prinzen") {
+		t.Error("different text must push")
+	}
+	if s.displayAlreadyShows("") {
+		t.Error("empty text is never 'shown'")
+	}
+	s.lastPlay = &lastPlayInfo{boxURL: play.boxURL}
+	if s.displayAlreadyShows("Lobo") {
+		t.Error("a new play must get its first push even with the same text")
+	}
+}
