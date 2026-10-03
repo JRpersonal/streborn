@@ -515,6 +515,14 @@ and redirecting the host in `/etc/hosts` would turn the same loop inward
 and break the lookup on networks where it works today. The answer is an
 exception for the speakers in the filter.
 
+Answering the lookup locally from the agent was considered and dropped
+(2026-10-04). No public project documents the GetCountry request or its
+response, and soundcork's shutdown test (Bose cloud URLs pointed at nothing,
+`docs/Shutdown_Emulation.md` in deborahgu/soundcork) lists iHeart Radio as
+still working: the module talks to iHeart directly. A made-up country answer
+could break native iHeart playback in the countries where it still plays, and
+that cannot be tested from here.
+
 ## The speaker stores presets itself: hold-to-store and the boot sync
 
 Holding a preset key for about two seconds runs the firmware's OWN store
