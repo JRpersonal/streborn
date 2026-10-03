@@ -1078,6 +1078,7 @@
   "setup.targetCardKindStock": "Bose 原廠韌體",
   "setup.targetCardKindFactory": "新的或已重設的喇叭",
   "setup.targetCardBadgeSTR": "只需更新",
+  "setup.targetDoneGroup": "已設定 ({{n}})",
   "setup.targetCardBadgeStock": "首次安裝",
   "setup.targetCardBadgeFactory": "尚未連上 Wi-Fi",
   "setup.targetCardFactoryHelp": "如果喇叭是新的或剛重設過、還沒連上你的 Wi-Fi：先用官方的 Bose SoundTouch app（連結在下面）把它連上家裡的 Wi-Fi。喇叭一連上 Wi-Fi 就會出現在喇叭清單裡，接著按一個鍵就能安裝 STR，不需要 USB 隨身碟：選好喇叭，按安裝。另外，如果你的喇叭有網路孔，也可以直接用網路線接到路由器，它就會自己出現在清單裡，安裝方式一樣。",

@@ -986,6 +986,7 @@
   "setup.targetCardKindStock": "Originali Bose programinė įranga",
   "setup.targetCardKindFactory": "Naujas arba atstatytas garsiakalbis",
   "setup.targetCardBadgeSTR": "tik atnaujinti",
+  "setup.targetDoneGroup": "Jau nustatyti ({{n}})",
   "setup.targetCardBadgeStock": "pirmas įdiegimas",
   "setup.targetCardBadgeFactory": "dar ne Wi-Fi tinkle",
   "setup.targetCardFactoryHelp": "Naujam arba atkurtam garsiakalbiui, kuris dar neprijungtas prie jūsų Wi-Fi: pirmiausia prijunkite jį prie namų Wi-Fi naudodami oficialią „Bose SoundTouch“ programėlę (nuorodos žemiau). Kai tik garsiakalbis atsiras jūsų Wi-Fi tinkle, jis pasirodys sąraše, o STR įdiegsite be USB atmintinės vienu mygtuko paspaudimu: pasirinkite garsiakalbį ir spauskite Įdiegti. Kitas būdas: jei garsiakalbis turi LAN lizdą, tiesiog prijunkite jį tinklo kabeliu prie maršrutizatoriaus, jis pats atsiras sąraše ir bus įdiegtas taip pat.",

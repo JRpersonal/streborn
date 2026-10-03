@@ -33,23 +33,44 @@ func (a *App) StreamBitrate(host string, port int) int {
 	return out.Bitrate
 }
 
-// TrackPosition returns where the speaker is inside the current track, in
-// seconds, plus the track length. A length of 0 means "no end", which is what
-// radio reports and is a normal answer, not a failure: the UI then shows the
-// elapsed time without a bar (#399). Both are -1 when the speaker could not be
-// asked at all, so the caller can leave the previous reading alone instead of
-// snapping the bar back to zero on one missed poll.
+// TrackPos is where the speaker is inside the current track, and how long that
+// track is. A Duration of 0 means "no end", which is what radio reports and is
+// a normal answer, not a failure: the UI then shows the elapsed time without a
+// bar (#399). Both are -1 when the speaker could not be asked at all, so the
+// caller can leave the previous reading alone instead of snapping the bar back
+// to zero on one missed poll.
+type TrackPos struct {
+	PositionSec int `json:"positionSec"`
+	DurationSec int `json:"durationSec"`
+}
+
+// TrackPosition reads both at once.
+//
+// ONE struct, not two return values, and that is the whole bug fix. Wails
+// cannot express a bound method with two results: for an output count of two
+// it keeps the FIRST and treats the second as an error, so a second int is
+// dropped before it ever leaves Go (internal/binding/boundMethod.go). The
+// generated signature said Promise<number|number>, which hid it in plain
+// sight, and the frontend destructured the answer as a pair, which throws on a
+// plain number and was swallowed by the catch around the poll.
+//
+// So the desktop progress bar never had a duration and never drew. Worse, the
+// elapsed time it did show was not a reading at all: the poll failed on every
+// tick, so the clock was pure client-side extrapolation from zero. Reported
+// three times, diagnosed wrong twice, because the duration genuinely IS sent
+// when the track starts and the phone page, which fetches /api/position itself
+// and reads the fields by name, has always drawn the bar correctly (#845).
 //
 // Routed through boxDo like the other agent reads, so it self-heals across
 // :8888 and :17008.
-func (a *App) TrackPosition(host string, port int) (int, int) {
+func (a *App) TrackPosition(host string, port int) TrackPos {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/position", "", "")
 	if err != nil {
-		return -1, -1
+		return TrackPos{-1, -1}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return -1, -1
+		return TrackPos{-1, -1}
 	}
 	var out struct {
 		OK       bool `json:"ok"`
@@ -57,9 +78,9 @@ func (a *App) TrackPosition(host string, port int) (int, int) {
 		Duration int  `json:"durationSec"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || !out.OK {
-		return -1, -1
+		return TrackPos{-1, -1}
 	}
-	return out.Position, out.Duration
+	return TrackPos{out.Position, out.Duration}
 }
 
 // SpotifyBitrate returns the bitrate the agent measured from the live

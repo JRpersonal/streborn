@@ -986,6 +986,7 @@
   "setup.targetCardKindStock": "Oryginalne oprogramowanie Bose",
   "setup.targetCardKindFactory": "Nowy lub zresetowany głośnik",
   "setup.targetCardBadgeSTR": "tylko aktualizacja",
+  "setup.targetDoneGroup": "Już skonfigurowane ({{n}})",
   "setup.targetCardBadgeStock": "pierwsza instalacja",
   "setup.targetCardBadgeFactory": "jeszcze poza Wi-Fi",
   "setup.targetCardFactoryHelp": "Dla nowego lub zresetowanego głośnika, który nie jest jeszcze w Twojej sieci Wi-Fi: najpierw połącz go z domowym Wi-Fi za pomocą oficjalnej aplikacji Bose SoundTouch (linki poniżej). Gdy głośnik będzie w Wi-Fi, pojawi się na liście, a STR zainstalujesz bez pendrive'a jednym przyciskiem: wybierz głośnik i naciśnij Zainstaluj. Alternatywnie, jeśli głośnik ma port LAN, po prostu podłącz go kablem sieciowym do routera: sam pojawi się na liście i zainstaluje się tak samo.",

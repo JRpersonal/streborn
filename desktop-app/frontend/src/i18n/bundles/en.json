@@ -1078,6 +1078,7 @@
   "setup.targetCardKindStock": "Bose stock firmware",
   "setup.targetCardKindFactory": "New or factory-reset speaker",
   "setup.targetCardBadgeSTR": "update only",
+  "setup.targetDoneGroup": "Already set up ({{n}})",
   "setup.targetCardBadgeStock": "first install",
   "setup.targetCardBadgeFactory": "not on Wi-Fi yet",
   "setup.targetCardFactoryHelp": "For a new or factory-reset speaker that is not on your Wi-Fi yet: first connect it to your home Wi-Fi with the official Bose SoundTouch app (links below). As soon as the speaker is on your Wi-Fi it appears in the speaker list, and STR installs without a USB stick at the push of a button: pick the speaker and press Install. Alternatively, if your speaker has a LAN port, just connect it to your router with a network cable: it then shows up in the list by itself and installs the same way.",

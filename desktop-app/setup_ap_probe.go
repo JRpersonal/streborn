@@ -58,8 +58,25 @@ const SetupAPHost = "192.168.1.1"
 //  2. SSH probe is now a secondary signal that the caller uses to
 //     decide whether the post-push "install STR" step is possible
 //     from here, but it is not required for surfacing the box.
-func (a *App) ProbeSetupAP() (BoxInfo, bool) {
-	return probeSetupAPAt(SetupAPHost, 1200*time.Millisecond, 2*time.Second)
+//
+// SetupAPProbe is the answer to "is a speaker sitting on its setup network".
+//
+// ONE struct, because Wails drops a second non-error return value: for an
+// output count of two it keeps the first and treats the second as an error
+// (internal/binding/boundMethod.go). This used to be (BoxInfo, bool) and the
+// frontend read it as `Array.isArray(probe) ? probe[1] : probe.found`, under a
+// comment saying Wails returns multi-value as an array. It does not. The
+// answer arrived as the BoxInfo alone, which has neither a found nor a box
+// field, so both read undefined and the setup-AP panel believed nothing had
+// been found, every time. boundmethods_test.go now refuses the shape.
+type SetupAPProbe struct {
+	Box   BoxInfo `json:"box"`
+	Found bool    `json:"found"`
+}
+
+func (a *App) ProbeSetupAP() SetupAPProbe {
+	box, found := probeSetupAPAt(SetupAPHost, 1200*time.Millisecond, 2*time.Second)
+	return SetupAPProbe{Box: box, Found: found}
 }
 
 func probeSetupAPAt(host string, sshTimeout, infoTimeout time.Duration) (BoxInfo, bool) {

@@ -986,6 +986,7 @@
   "setup.targetCardKindStock": "Firmware original de Bose",
   "setup.targetCardKindFactory": "Altavoz nuevo o restablecido",
   "setup.targetCardBadgeSTR": "solo actualizar",
+  "setup.targetDoneGroup": "Ya configurados ({{n}})",
   "setup.targetCardBadgeStock": "primera instalación",
   "setup.targetCardBadgeFactory": "aún sin Wi-Fi",
   "setup.targetCardFactoryHelp": "Para un altavoz nuevo o restablecido que aún no está en tu Wi-Fi: conéctalo primero a tu Wi-Fi con la aplicación oficial Bose SoundTouch (enlaces abajo). En cuanto el altavoz esté en tu Wi-Fi aparecerá en la lista y STR se instala sin memoria USB con solo pulsar un botón: elige el altavoz y pulsa Instalar. Alternativa: si tu altavoz tiene puerto LAN, conéctalo simplemente al router con un cable de red: aparecerá solo en la lista y se instala de la misma forma.",

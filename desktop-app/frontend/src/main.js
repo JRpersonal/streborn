@@ -6,6 +6,7 @@ import { spotifyAccountName } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
+import { sourceAccountFrom } from './nowsourceaccount.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -6804,7 +6805,7 @@ function renderPresets() {
       // wide enough for the string", user report 2026-08-23). The running title
       // now lives only in that bar, which is the full window wide.
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}">&#9998;</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
+        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}" aria-label="${escapeAttr(t('preset.renameTitle'))}" role="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg></span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
@@ -7992,7 +7993,15 @@ async function pollTrackPosition() {
   if (!playing) { trackPos.at = 0; renderTrackProgress(); return; }
   trackPos.polling = true;
   try {
-    const [pos, dur] = await TrackPosition(state.currentBox.host, state.currentBox.port);
+    // One object, read by field name. It used to be destructured as a pair,
+    // which Wails cannot return: a bound method with two results keeps the
+    // first and treats the second as an error, so the answer arrived as a
+    // plain number and destructuring it threw on every single tick. The catch
+    // below swallowed that, so the duration stayed 0, no bar was ever drawn,
+    // and the elapsed clock was pure extrapolation rather than a reading.
+    const p = await TrackPosition(state.currentBox.host, state.currentBox.port);
+    const pos = p && typeof p.positionSec === 'number' ? p.positionSec : -1;
+    const dur = p && typeof p.durationSec === 'number' ? p.durationSec : 0;
     if (pos < 0) return; // could not ask: keep the bar where it is
     // Only accept a backwards jump when the track itself changed, which
     // resetTrackProgress has already handled by clearing the reading.
@@ -8079,8 +8088,11 @@ async function refreshStatus() {
     state.nowSource = src;
     // A speaker with more than one socket of the same kind (an SA-5 reports
     // three AUX inputs) says which one is playing only in the account, so the
-    // input row needs it to light the right button (#274).
-    state.nowSourceAccount = (xml.match(/nowPlaying[^>]*sourceAccount="([^"]*)"/) || [])[1] || '';
+    // input row needs it to light the right button (#274). It is not always in
+    // the same place: UPnP puts it on the outer element AND on the ContentItem,
+    // AUX only on the ContentItem, so reading the outer one alone found nothing
+    // for exactly the speaker that needed it. See nowsourceaccount.js.
+    state.nowSourceAccount = sourceAccountFrom(xml);
     // The speaker's OWN Spotify receiver names the song in the same response,
     // and that is not true of every source: on radio <track> merely repeats the
     // station, which is why the song has always had to come from STR's stream

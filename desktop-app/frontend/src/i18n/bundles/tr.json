@@ -986,6 +986,7 @@
   "setup.targetCardKindStock": "Orijinal Bose yazılımı",
   "setup.targetCardKindFactory": "Yeni veya sıfırlanmış hoparlör",
   "setup.targetCardBadgeSTR": "yalnızca güncelle",
+  "setup.targetDoneGroup": "Zaten kurulmuş ({{n}})",
   "setup.targetCardBadgeStock": "ilk kurulum",
   "setup.targetCardBadgeFactory": "henüz Wi-Fi dışı",
   "setup.targetCardFactoryHelp": "Henüz Wi-Fi ağınızda olmayan yeni veya sıfırlanmış bir hoparlör için: önce resmi Bose SoundTouch uygulamasıyla ev Wi-Fi ağınıza bağlayın (bağlantılar aşağıda). Hoparlör Wi-Fi ağınıza girer girmez listede görünür ve STR, USB bellek olmadan tek dokunuşla kurulur: hoparlörü seçin ve Kur'a dokunun. Alternatif olarak, hoparlörünüzde LAN girişi varsa onu ağ kablosuyla doğrudan modeme bağlayın: listede kendiliğinden görünür ve aynı şekilde kurulur.",
