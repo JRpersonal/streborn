@@ -50,7 +50,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState } from '../boxstate.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
@@ -1298,6 +1298,7 @@ function renderBoxSettings(s, box) {
         <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -2502,10 +2503,15 @@ function renderBoxSettings(s, box) {
   const dtModeRow = $('displayTrackModeRow');
   const dtModeBtns = { artist: $('displayTrackModeArtist'), title: $('displayTrackModeTitle'), both: $('displayTrackModeBoth') };
   let dtMode = 'both';
+  const dtUnknown = $('displayTrackUnknown');
+  // enabled is true, false, or null for "could not be read". A failed read used
+  // to paint Off, so a speaker that was restarting showed the setting off while
+  // it was on and pushing titles (#1083). Unknown lights neither button.
   const paintDisplayTrack = (enabled) => {
     if (dtOn) dtOn.classList.toggle('active', enabled === true);
     if (dtOff) dtOff.classList.toggle('active', enabled === false);
     if (dtModeRow) dtModeRow.classList.toggle('hidden', enabled !== true);
+    if (dtUnknown) dtUnknown.classList.toggle('hidden', enabled !== null);
   };
   const paintDtMode = () => {
     for (const [m, b] of Object.entries(dtModeBtns)) { if (b) b.classList.toggle('active', m === dtMode); }
@@ -2515,9 +2521,9 @@ function renderBoxSettings(s, box) {
       try {
         const r = await GetDisplayTrack(box.host, box.port);
         if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
-        paintDisplayTrack(r && r.enabled === true);
+        paintDisplayTrack(displayTrackState(r));
         paintDtMode();
-      } catch { paintDisplayTrack(false); }
+      } catch { paintDisplayTrack(null); }
     })();
     const save = async (enabled) => {
       try {

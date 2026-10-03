@@ -14,3 +14,12 @@ export function answersWithoutSTR(rec) {
   if (!rec || rec.offline) return false;
   return !!(rec.strSilent || rec.strNotRunning || rec.kind === 'stock');
 }
+
+// displayTrackState reads the agent's /api/box/display-track answer: true or
+// false when the speaker said, null when it did not. A failed read used to come
+// out as false, so a speaker that was restarting showed "Off" while it was on
+// and pushing titles to its display (#1083).
+export function displayTrackState(r) {
+  if (!r || typeof r.enabled !== 'boolean') return null;
+  return r.enabled;
+}

@@ -1330,6 +1330,7 @@
   "settingsView.displayTrackConfirmTitle": "Rādīt dziesmu skaļruņa displejā?",
   "settingsView.displayTrackHeading": "Rādīt pašreizējo dziesmu skaļruņa displejā",
   "settingsView.displayTrackHelp": "Pēc noklusējuma izslēgts. Kad ieslēgts, radiostacijas dzīvā dziesma tiek rādīta paša skaļruņa displejā, kā agrāk interneta radio. Lai atjauninātu tekstu, skaļrunim jāpārbuferē straume, tāpēc audio uz brīdi pārtrūkst ikreiz, kad notiek izmaiņas. Šajā lietotnē dziesma vienmēr tiek rādīta bez pārtraukumiem, tāpēc atstāj to izslēgtu, ja dod priekšroku audio bez pauzēm. Skaļrunī ar displeju tas aizstāj arī parasto rādījumu, iestatījuma numuru un staciju.",
+  "settingsView.displayTrackUnknown": "Skaļrunis tikko neatbildēja, tāpēc šis iestatījums nav zināms (iespējams, tas tiek restartēts). Atveriet iestatījumus vēlreiz pēc minūtes.",
   "settingsView.displayTrackModeArtist": "Izpildītājs",
   "settingsView.displayTrackModeBoth": "Abi",
   "settingsView.displayTrackModeLabel": "Rādīt:",

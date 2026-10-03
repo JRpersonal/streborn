@@ -1330,6 +1330,7 @@
   "settingsView.displayTrackConfirmTitle": "スピーカーのディスプレイに曲を表示しますか？",
   "settingsView.displayTrackHeading": "スピーカーのディスプレイに現在の曲を表示",
   "settingsView.displayTrackHelp": "デフォルトはオフです。オンにすると、ラジオ局の今流れている曲がスピーカー自身のディスプレイに表示されます。以前のインターネットラジオのようにです。テキストを更新するにはスピーカーが再バッファリングする必要があるため、変わるたびに音が少し途切れます。このアプリ内では曲名が常に途切れなく表示されるので、途切れのない音をお好みならオフのままにしてください。 ディスプレイ付きのスピーカーでは、通常表示されるプリセット番号と放送局も置き換わります。",
+  "settingsView.displayTrackUnknown": "スピーカーが今は応答しなかったため、この設定は不明です（再起動中の可能性があります）。1分後にもう一度設定を開いてください。",
   "settingsView.displayTrackModeArtist": "アーティスト",
   "settingsView.displayTrackModeBoth": "両方",
   "settingsView.displayTrackModeLabel": "表示:",
