@@ -120,6 +120,12 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		if n := a.restorePresetStashAfterInstall(host); n > 0 {
 			res.Message += fmt.Sprintf(" %d preset keys from before the removal were put back onto the speaker.", n)
 		}
+		// Last step, the same one the update flow ends with: the network
+		// install does not carry the Spotify engine onto the speaker itself,
+		// so verify it and push it when it is missing (installengine.go).
+		if why := a.ensureEngineAfterInstall(host); why != "" {
+			res.Message += " Spotify could not be set up yet (" + why + "); updating the speaker once delivers it."
+		}
 	}
 	return res, err
 }
