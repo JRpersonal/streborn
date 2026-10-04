@@ -1561,5 +1561,9 @@
   "library.serverAsleep": "{{name}} ne répond pas. En général cela veut dire que l’ordinateur sur lequel il tourne est éteint ou en veille. Réveillez-le et réessayez.",
   "play.errBoxStuckTryPower": "L'enceinte ne sort pas de veille. Débranchez-la dix secondes puis rebranchez-la, cela suffit presque toujours.",
   "play.errBoxStuckSendLog": "STR n'arrive pas à sortir cette enceinte de veille. Exportez un diagnostic en bas des réglages de l'enceinte et envoyez-le, juste après un essai.",
-  "banner.appCheckKeepsFailing": "STR n'a pas pu vérifier s'il existe une nouvelle version depuis plusieurs démarrages. Un pare-feu ou un antivirus bloque peut-être la requête. Jetez un œil vous-même sur st-reborn.de de temps en temps."
+  "banner.appCheckKeepsFailing": "STR n'a pas pu vérifier s'il existe une nouvelle version depuis plusieurs démarrages. Un pare-feu ou un antivirus bloque peut-être la requête. Jetez un œil vous-même sur st-reborn.de de temps en temps.",
+  "stereoStale.partnerDenies": "{{name}} se croit encore la moitié d'une paire stéréo avec {{partner}}, qui ne la connaît plus. {{name}} ne jouera pas seule tant que l'ancienne paire n'est pas dissoute.",
+  "stereoStale.partnerGone": "{{name}} est la moitié d'une paire stéréo, et son partenaire {{partner}} ne répond pas. Une moitié stéréo ne joue pas seule. Si {{partner}} ne revient pas, dissous l'ancienne paire.",
+  "stereoStale.fixBtn": "Dissoudre l'ancienne paire",
+  "play.errStereoStale": "Moitié d'une ancienne paire stéréo, voir Multi-Room"
 }
