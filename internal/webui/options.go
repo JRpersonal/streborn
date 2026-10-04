@@ -32,6 +32,10 @@ func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 // this after the announcer is up.
 func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
 
+// SetOnlineFn wires the on-demand internet reachability check the display
+// messages use to tell a dead station from a dead connection.
+func (s *Server) SetOnlineFn(fn func() bool) { s.onlineFn = fn }
+
 // SetNetworkChangedFn wires the post-switch state refresh (#697): called after
 // a CONFIRMED live Wi-Fi switch (the wpaConfirmed arm and the boot guard's
 // finishCorrection), once the DHCP renew has been requested. cmd/agent owns

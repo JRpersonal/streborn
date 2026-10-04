@@ -639,6 +639,14 @@ type Server struct {
 	// instead of waiting for the next title change. Guarded by lastPlayMu.
 	lastICYTitle string
 
+	// displayMsg is the bookkeeping for the short messages on the speaker
+	// display when a key cannot play (displaymsg.go).
+	displayMsg displayMsgState
+	// onlineFn reports whether the speaker can reach the internet, asked once
+	// per failed key press to tell "station down" from "no internet". nil
+	// reads as online.
+	onlineFn func() bool
+
 	// announceAudio holds the most recently fetched announcement audio (#125), the
 	// cloud-free replacement for the firmware's /speaker TTS endpoint. It is served
 	// once to the box at /announce/audio WITH a Content-Length so the player stops
@@ -1337,6 +1345,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
+	mux.HandleFunc("/api/box/display-messages", s.handleDisplayMessages)
+	mux.HandleFunc(displayMsgAudioPath, s.handleDisplayMessageAudio)
 	mux.HandleFunc("/api/box/mediaservers", s.handleMediaServers)
 	mux.HandleFunc("/api/library/search", s.handleLibrarySearch)
 	mux.HandleFunc("/api/library/servers", s.handleLibraryServers)

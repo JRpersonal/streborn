@@ -230,3 +230,8 @@ func errStr(err error) string {
 	}
 	return err.Error()
 }
+
+// BoxHasOutbound is boxHasOutbound for callers outside the proxy: the display
+// messages ask it once when a key failed, to tell a dead station from a dead
+// connection. Cached for a few seconds like the original.
+func (s *Server) BoxHasOutbound() bool { return s.boxHasOutbound() }

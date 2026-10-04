@@ -1,8 +1,13 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // The measured case, from an ST30 on 2026-09-27: the owner pressed key 2 on a
@@ -64,4 +69,65 @@ func TestEachPressGetsItsOwnRescue(t *testing.T) {
 	if got := f.claim(second.Add(time.Second)); got != 6 {
 		t.Fatalf("second claim = %d, want 6", got)
 	}
+}
+
+// The rescue is spent and the box failed again: that is the point where the
+// station counts as down (the display message). Exactly once, and never for
+// the firmware's own second log line about the FIRST failure.
+func TestAFailureAfterTheRescueIsReportedOnce(t *testing.T) {
+	var f firstPressRescue
+	press := time.Now()
+	f.noteNativeActivation(2, press)
+	fail1 := press.Add(2100 * time.Millisecond)
+	if got := f.claim(fail1); got != 2 {
+		t.Fatalf("claim = %d", got)
+	}
+	// The companion line of the first failure, 100 ms later.
+	if _, ok := f.failedAfterRescue(fail1.Add(100 * time.Millisecond)); ok {
+		t.Fatal("the first failure's second log line was read as a second failure")
+	}
+	// The rescue press activates the same slot again; it must not re-arm.
+	f.noteNativeActivation(2, fail1.Add(firstPressSettle))
+	if got := f.claim(fail1.Add(firstPressSettle + 2*time.Second)); got != 0 {
+		t.Fatalf("the rescue's own press bought another rescue (%d)", got)
+	}
+	slot, ok := f.failedAfterRescue(fail1.Add(firstPressSettle + 2*time.Second))
+	if !ok || slot != 2 {
+		t.Fatalf("second failure not reported: (%d, %v)", slot, ok)
+	}
+	if _, ok := f.failedAfterRescue(fail1.Add(firstPressSettle + 3*time.Second)); ok {
+		t.Fatal("reported twice")
+	}
+}
+
+// Without a rescue there is nothing to report: a single failure is the
+// rescue's job, not the display's.
+func TestNoReportWithoutARescue(t *testing.T) {
+	var f firstPressRescue
+	press := time.Now()
+	f.noteNativeActivation(5, press)
+	if _, ok := f.failedAfterRescue(press.Add(3 * time.Second)); ok {
+		t.Fatal("reported a failure that the rescue had not handled yet")
+	}
+}
+
+// The handler turns the second failure into the "station not answering"
+// display message (the webui then decides between that and "no internet").
+func TestSecondNativeFailureAsksForTheDisplayMessage(t *testing.T) {
+	var asked []webui.DisplayMsgKind
+	h := &presetWsHandler{
+		logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		showDisplayMessage: func(k webui.DisplayMsgKind) { asked = append(asked, k) },
+	}
+	press := time.Now()
+	h.firstPress.noteNativeActivation(3, press)
+	fail1 := press.Add(2 * time.Second)
+	h.firstPress.claim(fail1) // the rescue took this one
+	h.OnPlayFailure(boxlog.PlayFailure{At: fail1.Add(firstPressSettle + time.Second)})
+	if len(asked) != 1 || asked[0] != webui.DisplayMsgStationDown {
+		t.Fatalf("asked = %v, want one station-unreachable message", asked)
+	}
+	// Without the hook wired nothing breaks.
+	h.showDisplayMessage = nil
+	h.displayMessage(webui.DisplayMsgNoInternet)
 }

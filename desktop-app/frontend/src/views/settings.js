@@ -50,7 +50,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState } from '../boxstate.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
@@ -78,6 +78,8 @@ import {
   SetResumeOnPowerOn,
   GetDisplayTrack,
   SetDisplayTrack,
+  GetDisplayMessages,
+  SetDisplayMessages,
   AnnounceExample,
   SendAnnounce,
   Translate,
@@ -708,6 +710,7 @@ function groupSettingsSections() {
   const byId = {
     resumeOnPowerSection: 'sound',
     displayTrackSection: 'sound',
+    displayMsgSection: 'sound',
     airplayOptSection: 'sound',
   };
   const byHeading = {
@@ -1299,6 +1302,16 @@ function renderBoxSettings(s, box) {
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
       <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
+    </div>
+
+    <div class="settings-section hidden" id="displayMsgSection">
+      <h3>${escapeHtml(t('settingsView.displayMsgHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="displayMsgOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displayMsgOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.displayMsgHelp'))}</small>
+      <small class="muted small hidden" id="displayMsgLast" style="display:block;margin-top:6px"></small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -2543,6 +2556,40 @@ function renderBoxSettings(s, box) {
     for (const [m, b] of Object.entries(dtModeBtns)) {
       if (b) b.onclick = () => { dtMode = m; paintDtMode(); save(true); };
     }
+  }
+
+  // Short message on the speaker display when a key cannot play (default on).
+  // Only shown for a speaker that has a display; elsewhere the setting does
+  // nothing, so the section stays hidden.
+  const dmSection = $('displayMsgSection');
+  const dmOn = $('displayMsgOn');
+  const dmOff = $('displayMsgOff');
+  const dmLast = $('displayMsgLast');
+  const paintDisplayMsg = (enabled) => {
+    if (dmOn) dmOn.classList.toggle('active', enabled === true);
+    if (dmOff) dmOff.classList.toggle('active', enabled === false);
+  };
+  if (dmSection && dmOn && dmOff) {
+    (async () => {
+      try {
+        const st = displayMessagesState(await GetDisplayMessages(box.host, box.port));
+        dmSection.classList.toggle('hidden', !st.show);
+        paintDisplayMsg(st.enabled);
+        if (dmLast) {
+          dmLast.textContent = st.last ? t('settingsView.displayMsgLast', { text: st.last }) : '';
+          dmLast.classList.toggle('hidden', !st.last);
+        }
+      } catch { dmSection.classList.add('hidden'); }
+    })();
+    const saveDM = async (enabled) => {
+      paintDisplayMsg(enabled);
+      try {
+        await SetDisplayMessages(box.host, box.port, enabled);
+        showToast(t('settingsView.displayMsgSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    dmOn.onclick = () => saveDM(true);
+    dmOff.onclick = () => saveDM(false);
   }
 
   // Announcements (#125, beta): a quick test field plus a copy-paste curl command
