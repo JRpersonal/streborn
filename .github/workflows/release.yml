@@ -2047,6 +2047,108 @@ jobs:
   # wartet, bis st-reborn.de wirklich die neue Version ausliefert, und wird
   # sonst ROT. Ein roter Job neben einem gruenen Release ist Absicht: das
   # Release ist da, der Handoff zur Webseite nicht.
+  # Package managers: winget (Windows) and the Homebrew tap (macOS).
+  #
+  # Runs only after a real, non-preview release was published: a preview must
+  # never reach a package manager, for the same reason it never reaches the
+  # website. Each half skips with a notice when its token is not configured,
+  # and the job is continue-on-error: a package-manager hiccup must never turn
+  # a published release red. Setup and the one-time first submission are in
+  # packaging/README.md.
+  package-managers:
+    runs-on: ubuntu-latest
+    needs: [build-agent, release]
+    if: |
+      !cancelled() && needs.release.result == 'success' &&
+      inputs.preview != true && (
+        startsWith(github.ref, 'refs/tags/') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+      )
+    continue-on-error: true
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.build-agent.outputs.version }}
+      HAS_WINGET_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
+      HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - name: Skip notice (winget)
+        if: env.HAS_WINGET_TOKEN != 'true'
+        run: echo "::notice::WINGET_TOKEN is not set, winget was not updated for ${TAG} (see packaging/README.md)"
+
+      # komac is pinned to an exact release and its archive checked against a
+      # recorded SHA256, instead of the winget-releaser action, which installs
+      # cargo-binstall@main and the latest komac on every run.
+      - name: Update winget (komac)
+        if: env.HAS_WINGET_TOKEN == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          KOMAC_FORK_OWNER: JRpersonal
+          KOMAC_VERSION: "2.16.0"
+          KOMAC_SHA256: 7d2707fa6210f2789a3702de49fbd150b736dbf426ee0b9bc8e098736f9fd82d
+        run: |
+          set -eu
+          curl -sSfL -o komac.tar.gz "https://github.com/russellbanks/Komac/releases/download/v${KOMAC_VERSION}/komac-${KOMAC_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${KOMAC_SHA256}  komac.tar.gz" | sha256sum -c -
+          tar -xzf komac.tar.gz
+          KOMAC=$(find . -maxdepth 2 -type f -name komac | head -1)
+          chmod +x "$KOMAC"
+          "$KOMAC" update JRpersonal.STReborn \
+            --version "${TAG#v}" \
+            --release-notes-url "https://github.com/JRpersonal/streborn/releases/tag/${TAG}" \
+            --submit \
+            --urls "https://github.com/JRpersonal/streborn/releases/download/${TAG}/STR-Windows.exe"
+
+      - name: Skip notice (Homebrew)
+        if: env.HAS_TAP_TOKEN != 'true'
+        run: echo "::notice::HOMEBREW_TAP_TOKEN is not set, the Homebrew tap was not updated for ${TAG} (see packaging/README.md)"
+
+      - name: Read the DMG checksum of this release
+        if: env.HAS_TAP_TOKEN == 'true'
+        id: dmg
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern SHA256SUMS --output SHA256SUMS
+          sha=$(awk '$2 == "STR-macOS.dmg" { print $1 }' SHA256SUMS)
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "::error::no SHA256 for STR-macOS.dmg in SHA256SUMS of ${TAG}"
+            exit 1
+          fi
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the Homebrew tap
+        if: env.HAS_TAP_TOKEN == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JRpersonal/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+          persist-credentials: true
+
+      - name: Update the cask
+        if: env.HAS_TAP_TOKEN == 'true'
+        env:
+          SHA256: ${{ steps.dmg.outputs.sha256 }}
+        working-directory: tap
+        run: |
+          set -eu
+          cask=Casks/st-reborn.rb
+          ver="${TAG#v}"
+          sed -i -E "s/^  version \"[^\"]*\"/  version \"${ver}\"/; s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"${SHA256}\"/" "$cask"
+          grep -q "version \"${ver}\"" "$cask"
+          grep -q "sha256 \"${SHA256}\"" "$cask"
+          if git diff --quiet; then
+            echo "cask already at ${ver}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "st-reborn ${ver}"
+          git push
+
   verify-website-live:
     runs-on: ubuntu-latest
     needs: [build-agent, release]
