@@ -1020,13 +1020,69 @@ func otaSidecarEnsureBackoff(attempt int) time.Duration {
 // survives the reboot (project_durable_stick_write). Never fatal: a failure here
 // is logged and the OTA still proceeds.
 func (a *App) refreshStick(host string, port int) {
-	// Open SSH first. Every step below rides on it, and since the SSH opt-in
-	// (v0.9.91) a speaker keeps its port closed unless it was asked, so this
-	// whole step would otherwise fail on every box from that release on and the
-	// stick would keep its older files. The marker the agent writes lives in
-	// tmpfs, so the OTA reboot a few steps down closes SSH again by itself; the
-	// old-agent OTA path already relies on exactly that.
-	a.enableAgentSSH(host, port)
+	a.refreshStickWith(host, stickRefreshSteps{
+		version:  func() (map[string]string, error) { return a.BoxAgentVersion(host, port) },
+		openSSH:  func() { a.enableAgentSSH(host, port) },
+		closeSSH: func() { a.closeAgentSSH(host, port) },
+		write:    func() { a.writeStickFiles(host) },
+	})
+}
+
+// stickRefreshSteps are the side effects of a stick refresh, as functions so
+// the decision and the open/close pairing can be tested without a speaker.
+type stickRefreshSteps struct {
+	version  func() (map[string]string, error)
+	openSSH  func()
+	closeSSH func()
+	write    func()
+}
+
+// stickRefreshNeeded decides from the agent's version answer whether a stick
+// refresh is worth opening SSH for. An agent from this change on reports usbStick: on
+// "absent" there is nothing to refresh. An older agent does not report it, and
+// an unreachable one tells us nothing, so both keep the old behaviour and probe
+// over SSH: skipping them would leave a stick with older files that reverts the
+// update on the next boot.
+func stickRefreshNeeded(ver map[string]string, err error) (bool, string) {
+	if err != nil {
+		return true, "agent version unknown, probing over SSH"
+	}
+	switch strings.TrimSpace(ver["usbStick"]) {
+	case "absent":
+		return false, "no USB stick in the speaker"
+	case "present":
+		return true, "USB stick reported by the agent"
+	}
+	return true, "agent does not report USB sticks, probing over SSH"
+}
+
+// refreshStickWith opens SSH only when a stick may be there, and closes it again
+// right after the refresh on every path. Before 2026-10-04 SSH was opened on
+// every update and stayed open until the reboot, so the app's "SSH access to
+// this speaker is open" warning flashed on speakers without any stick (Jens'
+// ST30 after the v1.0.2 update). Closing straight after the write keeps the
+// window as short as the refresh itself; the agent refuses to close a port the
+// owner opted into, so this cannot shut SSH somebody wants open.
+func (a *App) refreshStickWith(host string, st stickRefreshSteps) {
+	ver, err := st.version()
+	need, why := stickRefreshNeeded(ver, err)
+	if !need {
+		a.logger.Info("OTA stick refresh: skipped, SSH stays closed", "host", host, "why", why)
+		return
+	}
+	a.logger.Info("OTA stick refresh: opening SSH for the stick", "host", host, "why", why)
+	// Every step below rides on SSH, and since the SSH opt-in (v0.9.91) a
+	// speaker keeps its port closed unless it was asked. The marker the agent
+	// writes lives in tmpfs, so even if the close below does not land, the OTA
+	// reboot a few steps down closes SSH by itself.
+	st.openSSH()
+	defer st.closeSSH()
+	st.write()
+}
+
+// writeStickFiles mounts the STR stick over SSH and rewrites its program files.
+// SSH must already be open; the caller closes it again.
+func (a *App) writeStickFiles(host string) {
 	// Locate the stick and make sure it is mounted before writing. Some
 	// speakers (the Portable, live 2026-06-11) do NOT auto-mount the USB stick
 	// at /media/sda1 after boot: /dev/sda1 was present and carried the full STR

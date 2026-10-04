@@ -87,6 +87,9 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyReload != nil {
 		out["engineHotSwap"] = "true"
 	}
+	// Whether a USB stick is plugged in, so the app opens SSH for its stick
+	// refresh only when there is a stick to refresh (usbstick.go).
+	out["usbStick"] = usbStickField()
 	// Box uptime, so the desktop app can sequence the post-OTA engine delivery
 	// deterministically (#466): the first ~2-3 minutes after a post-OTA boot are
 	// reboot-prone (Bose settling, shepherd recovery) and the first 16 MB push
