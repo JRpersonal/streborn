@@ -15,6 +15,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
+	"github.com/JRpersonal/streborn/internal/region"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
@@ -410,10 +411,17 @@ func WithSpotifyCanRecall(f func(ctx context.Context) bool) Option {
 	return func(s *Server) { s.spotifyCanRecall = f }
 }
 
-// WithPandora wires the route-A Pandora opt-in (#243) to /api/pandora and the
+// WithNativeServices wires the firmware's own US services (Pandora,
+// iHeartRadio; #243) to /api/us-services, the account endpoints and the
 // diagnostic bundle. Nil leaves the endpoints answering 501.
-func WithPandora(b PandoraBackend) Option {
-	return func(s *Server) { s.pandora = b }
+func WithNativeServices(b NativeServicesBackend) Option {
+	return func(s *Server) { s.native = b }
+}
+
+// WithRegionResolver wires the region resolver: PUT /api/region feeds it, and
+// /api/agent/version reports the effective region from it.
+func WithRegionResolver(r *region.Resolver) Option {
+	return func(s *Server) { s.regionRes = r }
 }
 
 // WithMargeGroups bridges the marge stereo-pair record (get/set/clear) so the

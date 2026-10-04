@@ -127,10 +127,17 @@ type Server struct {
 	groupProbe FirmwareGroupProbe
 	adopt      adoptState
 
-	// pandoraMarker enables the route-A Pandora opt-in when the file exists;
-	// pandoraStore persists the source the firmware registered (pandora.go).
-	pandoraMarker string
-	pandoraStore  string
+	// The firmware's own US music services (usservices.go). nativeMarker is
+	// the opt-in file that enables them anywhere; nativeStores maps a source
+	// type (PANDORA, IHEART) to the file that persists the source the
+	// firmware registered; region reports the speaker's country, and a US
+	// speaker gets the services without the opt-in. nativePosts is the
+	// recent registration history for the diagnostic bundle (in memory).
+	nativeMarker string
+	nativeStores map[string]string
+	region       func() string
+	nativeMu     sync.Mutex
+	nativePosts  []NativePost
 }
 
 // SpyEntry is a single logged HTTP request.

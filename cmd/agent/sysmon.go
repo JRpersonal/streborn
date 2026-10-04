@@ -18,6 +18,7 @@ import (
 	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/clocksync"
+	strregion "github.com/JRpersonal/streborn/internal/region"
 	"github.com/JRpersonal/streborn/internal/spotify"
 )
 
@@ -98,7 +99,7 @@ func clockStatusSnapshot() any {
 //
 // First round after a short delay, then with a short ticker until the model
 // is detected (race recovery), after which the ticker drops back to 30s.
-func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Announcer, logger *slog.Logger) {
+func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregion.Resolver, ann *discovery.Announcer, logger *slog.Logger) {
 	if boxHost == "" || ann == nil {
 		return
 	}
@@ -118,6 +119,9 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 			logger.Debug("pollBoxInfo fail", "err", err)
 			return
 		}
+		// The firmware's countryCode is the region fallback for the US
+		// music services; written to NAND only when it changes.
+		regionRes.SetBox(s.Info.CountryCode)
 		model := strings.TrimSpace(s.Info.Type)
 		if model != "" && !modelEverFound {
 			logger.Info("box model detected", "type", model)

@@ -87,6 +87,13 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyReload != nil {
 		out["engineHotSwap"] = "true"
 	}
+	// The speaker's effective country and where it came from ("str": the
+	// wizard or app setting, "box": the firmware's countryCode). A US speaker
+	// gets the firmware's own Pandora and iHeartRadio back (usservices.go).
+	if ri := s.regionInfo(); ri.Country != "" {
+		out["region"] = ri.Country
+		out["regionSource"] = ri.Source
+	}
 	// Whether a USB stick is plugged in, so the app opens SSH for its stick
 	// refresh only when there is a stick to refresh (usbstick.go).
 	out["usbStick"] = usbStickField()

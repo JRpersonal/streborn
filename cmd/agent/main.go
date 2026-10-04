@@ -37,6 +37,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
+	strregion "github.com/JRpersonal/streborn/internal/region"
 	"github.com/JRpersonal/streborn/internal/shepherd"
 	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -411,6 +412,12 @@ func run() error {
 	foreignPresets := newForeignPresetStore("/mnt/nv/streborn/foreign-presets.json",
 		logger.With("comp", "foreignpresets"))
 
+	// The speaker's country: the wizard region (set below once region.txt is
+	// read) wins, the firmware's countryCode (fed by pollBoxInfo, cached on
+	// NAND so the first availability answer after a boot is right) is the
+	// fallback. A US speaker gets the firmware's own Pandora and iHeartRadio.
+	regionRes := strregion.New("/mnt/nv/streborn/box-country.txt", logger.With("comp", "region"))
+
 	// Initialize subsystems
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
@@ -425,10 +432,13 @@ func run() error {
 		// in the Bose app survives the first STR boot this way).
 		marge.WithFirmwareGroupProbe(firmwareGroupProbe(*boxHost)),
 		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
-		// Pandora route A (#243): off unless the marker exists. Then the
-		// stand-in reports PANDORA available and keeps the source the
-		// firmware's own client registers (docs/streaming/pandora.md).
+		// The firmware's own Pandora and iHeartRadio (#243): on for a US
+		// speaker, elsewhere only with the opt-in marker. The stand-in then
+		// reports them available and keeps the source the firmware's own
+		// client registers (docs/streaming/us-services.md).
 		marge.WithPandora("/mnt/nv/streborn/pandora-optin", "/mnt/nv/streborn/pandora-source.json"),
+		marge.WithIHeart("/mnt/nv/streborn/iheart-source.json"),
+		marge.WithRegion(regionRes.Country),
 		// The speaker's own hold-to-store gesture PUTs the playing station to
 		// marge; keep it in the STR store so the app shows the key and the
 		// reconcile keeps it registered (see holdstore.go).
@@ -642,6 +652,7 @@ func run() error {
 
 	// Read the region from a file on start (provisioned by the setup wizard).
 	region := loadRegion(*regionFile, logger)
+	regionRes.SetSTR(region)
 
 	// The stream proxy makes Bose ContentItems resistant to token expiry:
 	// instead of the real CDN URL, Bose gets http://127.0.0.1:8888/stream/<slot>
@@ -922,13 +933,16 @@ func run() error {
 		}),
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup, margeSrv.RenameGroup, margeSrv.GroupName),
 		webui.WithMargeForward(margeSrv.SetForward),
-		webui.WithPandora(margeSrv),
+		webui.WithNativeServices(margeSrv),
+		webui.WithRegionResolver(regionRes),
 		webui.WithRecent(recentStore))
 
 	webui.RegisterDebugSection("alarms", webuiSrv.AlarmsSnapshot)
-	// Read only when a diagnostic is taken: the stand-in's masked record plus
-	// the firmware's own PANDORA line from /sources (no timer).
-	webui.RegisterDebugSection("pandora", webuiSrv.PandoraDebugSnapshot)
+	// Read only when a diagnostic is taken (no timer): the region, the
+	// availability list as served, the stand-in's masked records and recent
+	// registrations, and the firmware's own PANDORA and IHEART lines from
+	// /sources.
+	webui.RegisterDebugSection("usServices", webuiSrv.USServicesDebugSnapshot)
 
 	// The preset reconcile has to know when STR woke this speaker for a group:
 	// its own native preset write makes the firmware select the radio source
@@ -1676,7 +1690,7 @@ func run() error {
 		// Background poll: refresh name AND model in mDNS TXT as
 		// soon as /info on :8090 responds, then continue watching
 		// for renames the user might do via the BoseApp HTTP API.
-		go pollBoxInfo(ctx, *boxHost, region, ann, logger)
+		go pollBoxInfo(ctx, *boxHost, region, regionRes, ann, logger)
 	}()
 
 	if *pendingNameFile != "" {

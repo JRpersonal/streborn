@@ -509,10 +509,12 @@ therefore asked once every 5 seconds per speaker (#1084).
 With the host reachable the lookup completes and the module goes quiet:
 three ST10s on an unfiltered network showed no iHeart line at all in
 repeated syslog samples, against two to four per 10 s window on each of
-four ST10s behind the filter. STR neither uses nor advertises iHeart (the
-numeric id in the source-provider catalogue is the firmware's own enum),
-and redirecting the host in `/etc/hosts` would turn the same loop inward
-and break the lookup on networks where it works today. The answer is an
+four ST10s behind the filter. STR never answers this lookup. It only
+advertises iHeart as available on US speakers, and keeps the source the
+firmware registers there (`docs/streaming/us-services.md`); the numeric
+id in the source-provider catalogue is the firmware's own enum.
+Redirecting the host in `/etc/hosts` would turn the same loop inward and
+break the lookup on networks where it works today. The answer is an
 exception for the speakers in the filter.
 
 Answering the lookup locally from the agent was considered and dropped
