@@ -854,7 +854,10 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wake failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
+	// woke tells the app this speaker came out of standby for the group, so the
+	// master does not take what it plays now (its own power-on resume) for
+	// music the group should carry (zoneformwoken.go).
+	writeJSON(w, http.StatusOK, map[string]bool{"awake": true, "woke": quiet && s.QuietWakeEpisodeActive()})
 }
 
 // wakeQuietRequested reads the quiet flag off a wake request. Two spellings,

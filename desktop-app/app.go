@@ -28,6 +28,10 @@ type App struct {
 	logFile    *os.File // kept so ExportDiagnosticLogs can Sync before reading
 	httpClient *http.Client
 
+	// groupWakes records the speakers WakeBox brought out of standby, read by
+	// FormZone (app_groupwake.go).
+	groupWakes groupWakeLog
+
 	// probeSTRFn/portOpenFn are the network probes RefreshKnownBoxes feeds
 	// into classifyKnownBox (probeSTR and portOpen when nil). Injectable so
 	// tests can assert the live/offline eviction contract without sockets:

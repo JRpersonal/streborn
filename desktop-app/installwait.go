@@ -419,6 +419,8 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 				// Same pin the success path sets: the box's stock :8090 answered
 				// before its agent did, and discovery must not offer a reinstall.
 				a.notePostOTA(host)
+				// The late success ends like the prompt one: with the engine.
+				_ = a.ensureEngineAfterInstall(host)
 				a.emitInstallLate(host, true, b.Version)
 				return
 			}

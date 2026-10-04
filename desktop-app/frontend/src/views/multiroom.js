@@ -20,6 +20,7 @@ import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf,
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
 // A speaker stuck as half of an old stereo pair (see stalestereo.js).
 import { staleNoticeText } from '../stalestereo.js';
+import { stereoFormMessage } from '../stereoformmsg.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -1130,23 +1131,12 @@ async function doFormStereo(pairCands, allBoxes) {
     // member (incomplete pair) - and FormZone answers ok:false with notReady
     // when the partner's agent was still starting. Neither is success: only
     // one speaker would play, so show what actually happened.
-    if (res && res.ok === false) {
-      const notReady = Array.isArray(res.notReady) ? res.notReady : [];
-      if (!res.error && notReady.length) {
-        const names = notReady
-          .map(ip => { const b = pairCands.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
-          .join(', ');
-        state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names }))}</div>`;
-      } else if (res.reason === 'partnerUnreachable' || res.reason === 'partnerDidNotStore') {
-        // The agent paired, read both speakers back, found the pair on one
-        // side only and undid it (stereoverify.go). Say why in the user's
-        // language rather than the agent's English sentence.
-        const key = res.reason === 'partnerUnreachable' ? 'multiroom.pairPartnerUnreachable' : 'multiroom.pairPartnerDidNotStore';
-        state.stereoMsg = `<div class="setup-err">${escapeHtml(t(key))}</div>`;
-      } else {
-        const err = res.error || t('multiroom.formedNone');
-        state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err }))}</div>`;
-      }
+    const fail = stereoFormMessage(res, ip => { const b = pairCands.find(x => x.host === ip); return b ? zoneLabel(b) : ''; });
+    if (fail) {
+      // The agent's reason (the pair was undone because it did not form on both
+      // speakers) wins over its English error text; see stereoformmsg.js.
+      const params = fail.key === 'multiroom.formFailed' ? { err: fail.params.err || t('multiroom.formedNone') } : fail.params;
+      state.stereoMsg = `<div class="${fail.cls}">${escapeHtml(t(fail.key, params))}</div>`;
     } else {
       flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`);
       // Persist the user-given name app-side, keyed on the two members. The

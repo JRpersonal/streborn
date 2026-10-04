@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"time"
 )
@@ -174,6 +175,15 @@ func (a *App) candidatePorts(host string, port int) []int {
 // rarely, and a slow success beats a fast lie.
 const zoneCallTimeout = 45 * time.Second
 
+// stereoZoneCallTimeout is the budget for forming or undoing a stereo pair.
+// On top of the member wake (up to 8 s per speaker) and the firmware call, the
+// agent reads the pair back from BOTH speakers for up to 15 s and, when it did
+// not form on both, undoes it on each half and clears the partner's record
+// (up to 10 s more). That path measured 36 s on two SoundTouch 10s
+// (2026-10-04) and, together with the wake, ran past zoneCallTimeout, so the
+// user saw a timeout instead of "the two speakers could not reach each other".
+const stereoZoneCallTimeout = 90 * time.Second
+
 // boxDo performs an HTTP request against the agent with transparent port
 // fallback. It tries each candidate port in turn; the first that connects
 // is cached for the host and its response returned. A transport-level
@@ -225,7 +235,16 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 		if body != "" {
 			rdr = strings.NewReader(body)
 		}
-		req, err := http.NewRequestWithContext(a.appCtx(), method, url, rdr)
+		// wrote records whether the request reached the agent. A write that was
+		// delivered and then timed out must not be repeated on the other port:
+		// the agent on THIS port is still doing the work (a stereo pairing runs
+		// its two-sided check and rollback for up to a minute), the other port
+		// does not exist on that chassis, and retrying there turns the agent's
+		// real answer into "timed out (also tried :17008)" (fleet verify
+		// 2026-10-04, .58 + .59).
+		var wrote bool
+		trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { wrote = true }}
+		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(a.appCtx(), trace), method, url, rdr)
 		if err != nil {
 			if stranger != nil {
 				stranger.Body.Close()
@@ -256,6 +275,15 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 			return resp, nil
 		}
 		failed = append(failed, portFailure{port: p, err: err})
+		if wrote && !idempotentMethod(method) {
+			// The agent on this port took the request; keep the port and hand
+			// back this port's own error, not a cross-port summary.
+			a.rememberPort(host, p)
+			if stranger != nil {
+				stranger.Body.Close()
+			}
+			return nil, fmt.Errorf("the speaker took the request but did not answer in time: %w", err)
+		}
 		if !isTransportNotReady(err) {
 			if stranger != nil {
 				return stranger, nil
@@ -268,6 +296,17 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 		return stranger, nil
 	}
 	return nil, reachabilityHint(allPortsError(failed))
+}
+
+// idempotentMethod reports whether repeating a request on another port is
+// harmless. Reads are; a POST, PUT or DELETE that already reached an agent is
+// not, because that agent may still be carrying it out.
+func idempotentMethod(m string) bool {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
 }
 
 // portFailure is one agent port and why it did not answer.
