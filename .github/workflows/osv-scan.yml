@@ -1,0 +1,37 @@
+# Weekly OSV scan of every dependency manifest, for visibility. Never blocks.
+#
+# Why this exists next to govulncheck (build.yml): govulncheck is a
+# reachability gate. It only reports a Go vulnerability when STR's code
+# actually calls the affected function, which is the right bar for failing a
+# build, and it does not look at npm at all. Dependabot covers npm, but it
+# auto-dismisses alerts on development-only packages. Between the two, five
+# golang.org/x/image advisories and two npm advisories (fast-uri, braces) sat
+# unseen until OpenSSF Scorecard's OSV check listed them on 2026-10-04.
+#
+# This job reports at module level: both go.mod files, the desktop frontend
+# lockfile and the CI scripts' lockfile. Findings land in the Security tab
+# (code scanning, category osv-scanner) and are triaged there; nothing here can
+# turn a build red.
+name: OSV scan
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  osv:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      scan-args: |-
+        --recursive
+        ./
+      fail-on-vuln: false
+      upload-sarif: true
