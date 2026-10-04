@@ -211,6 +211,23 @@ func WithSpotifySwitchedAway(f func(ctx context.Context)) Option {
 	return func(s *Server) { s.spotifySwitchedAway = f }
 }
 
+// WithSpotifyUserStopped wires the Spotify manager's user-stop hook, called on
+// the app's Stop and Pause and when the speaker is switched off, so a Spotify
+// preset stopped inside its recall window does not come back by itself.
+func WithSpotifyUserStopped(f func(ctx context.Context, reason string)) Option {
+	return func(s *Server) { s.spotifyUserStopped = f }
+}
+
+// tellSpotifyUserStopped forwards a user stop to the Spotify manager without
+// holding the caller up: the engine pause is a local HTTP call with its own
+// short deadline.
+func (s *Server) tellSpotifyUserStopped(reason string) {
+	if s.spotifyUserStopped == nil {
+		return
+	}
+	go s.spotifyUserStopped(context.Background(), reason)
+}
+
 // WithSpotifyStream registers the handler that serves go-librespot's
 // live Ogg to the box at /spotify/stream (the Spotify-preset audio
 // plane).

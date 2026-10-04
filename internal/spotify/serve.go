@@ -350,6 +350,9 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	oldSink, _ := m.sink.(*closeNotifyWriter) // previous consumer, if any
 	reattach := m.sink != nil                 // a consumer was already attached = box re-fetched
 	m.sink = cw
+	// The speaker fetching the stream again is a new play intent (a resume
+	// or play after the stop); see stopintent.go.
+	m.noteSinkAttachedLocked(time.Now())
 	sinceLast := time.Duration(0)
 	if !m.lastAttachAt.IsZero() {
 		sinceLast = time.Since(m.lastAttachAt)

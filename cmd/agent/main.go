@@ -915,6 +915,7 @@ func run() error {
 		webui.WithSpotifyReload(spotifyMgr.ReloadBinary),
 		webui.WithSpotifyStop(spotifyMgr.StopEngine),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
+		webui.WithSpotifyUserStopped(spotifyMgr.UserStopped),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
 		}),

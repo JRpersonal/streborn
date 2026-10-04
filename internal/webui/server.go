@@ -174,6 +174,10 @@ type Server struct {
 	// non-Spotify source, so its #14 auto-attach does not yank the box back.
 	// nil when Spotify is not configured.
 	spotifySwitchedAway func(ctx context.Context)
+	// spotifyUserStopped tells the Spotify manager the user stopped or paused
+	// the speaker, so the engine is paused and cannot bring the speaker back by
+	// itself at the next track boundary. nil when Spotify is not configured.
+	spotifyUserStopped func(ctx context.Context, reason string)
 	// spotifyStream serves the live Ogg from the go-librespot manager to
 	// the box over HTTP (registered at /spotify/stream). nil when Spotify
 	// is not configured. Injected as a handler so webui need not import

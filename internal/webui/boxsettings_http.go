@@ -774,6 +774,7 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 // Returns "" on success, else the message for the handler's 502.
 func (s *Server) boxStandby() string {
 	s.NoteUserStop()
+	s.tellSpotifyUserStopped("standby")
 	client := &http.Client{Timeout: 6 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://%s:8090/standby", s.boxHost))
 	if err != nil {

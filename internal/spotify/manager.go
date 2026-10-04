@@ -290,6 +290,17 @@ type Manager struct {
 	// never pauses. Keeping the engine playing across the flap means the box gets
 	// live audio the instant it re-attaches. Guarded by mu.
 	engineHotUntil time.Time
+	// The user-stop latch (stopintent.go). userStopAt is when the user last
+	// stopped or paused the speaker through STR; zero once a real new play
+	// intent arrived. engineRunningAtStop says whether the engine was producing
+	// at that moment, engineEndedSinceStop whether it has since reported a
+	// pause or stop, and engineActive mirrors the last engine state event. All
+	// guarded by mu.
+	userStopAt           time.Time
+	engineRunningAtStop  bool
+	engineEndedSinceStop bool
+	stopHoldLogged       bool
+	engineActive         bool
 	// Per-attachment sink counters. They exist to answer the one question a
 	// bundle could not answer before: did the box actually RECEIVE audio, or
 	// did it sit on an attached-but-silent stream until the Bose transport

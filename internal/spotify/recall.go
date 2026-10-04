@@ -581,6 +581,8 @@ func (m *Manager) noteResume() {
 // a recall, before the box attaches.
 func (m *Manager) SetRecalling() {
 	m.mu.Lock()
+	// A recall is a new play intent: an earlier user stop no longer stands.
+	m.clearUserStopLocked()
 	now := time.Now()
 	m.recallUntil = now.Add(8 * time.Second)
 	// Keep the engine playing across the whole recall + verify window (the

@@ -1055,6 +1055,9 @@ func (s *Server) noteStandbyStop() {
 	s.lastStandbyStop = time.Now()
 	s.standbyStopMu.Unlock()
 	s.NoteUserStop()
+	// Switched off at the speaker: an engine kept running by a recall window
+	// must not decode on to nobody and bring the speaker back.
+	s.tellSpotifyUserStopped("power-off")
 }
 
 // standbyStopDebounce bounds the resume-suppression burst detection for the rapid
