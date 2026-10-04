@@ -295,7 +295,16 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	// firewall drops agent-to-agent HTTP), so when it reports the direct push
 	// failed, the app relays the document — the PC reaches every agent.
 	if spec.Stereo {
-		a.relayStereoGroupDoc(out)
+		// A pairing the agent undid because it did not form on both speakers
+		// (stereoverify.go) carries reason + partnerMargeCleared: relay the
+		// partner's record clear instead of a document for a pair that is gone.
+		if reason, _ := out["reason"].(string); reason != "" {
+			a.logger.Warn("stereo: the pair did not form on both speakers and was undone",
+				"master", spec.Master.DeviceID, "reason", reason, "masterStatus", out["masterStatus"])
+			a.relayStereoPairClear(out)
+		} else {
+			a.relayStereoGroupDoc(out)
+		}
 	}
 	return out, nil
 }

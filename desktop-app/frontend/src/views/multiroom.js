@@ -1137,6 +1137,12 @@ async function doFormStereo(pairCands, allBoxes) {
           .map(ip => { const b = pairCands.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
           .join(', ');
         state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names }))}</div>`;
+      } else if (res.reason === 'partnerUnreachable' || res.reason === 'partnerDidNotStore') {
+        // The agent paired, read both speakers back, found the pair on one
+        // side only and undid it (stereoverify.go). Say why in the user's
+        // language rather than the agent's English sentence.
+        const key = res.reason === 'partnerUnreachable' ? 'multiroom.pairPartnerUnreachable' : 'multiroom.pairPartnerDidNotStore';
+        state.stereoMsg = `<div class="setup-err">${escapeHtml(t(key))}</div>`;
       } else {
         const err = res.error || t('multiroom.formedNone');
         state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err }))}</div>`;

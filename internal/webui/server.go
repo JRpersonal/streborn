@@ -299,10 +299,14 @@ type Server struct {
 	// from its own point of view and the RIGHT box stores itself as master).
 	// The desktop app relays the document to the partner because agent-to-
 	// agent HTTP is blocked between series-I boxes. nil until wired.
-	margeGroupGet    func() (xmlDoc string, canonical bool, ok bool)
-	margeGroupSet    func(xmlDoc string) error
-	margeGroupClear  func(reason string)
-	margeGroupRename func(name string) error
+	margeGroupGet   func() (xmlDoc string, canonical bool, ok bool)
+	margeGroupSet   func(xmlDoc string) error
+	margeGroupClear func(reason string)
+	// stereoVerifyFetch / stereoVerifyTiming are test seams for the
+	// both-halves check after a pairing (stereoverify.go). nil = production.
+	stereoVerifyFetch  groupFetch
+	stereoVerifyTiming *stereoVerifyTiming
+	margeGroupRename   func(name string) error
 	// margeGroupName returns the stored pair's display name so the phone remote
 	// can show a pair under its own name instead of a member box name (#775).
 	margeGroupName func() string
