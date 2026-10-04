@@ -81,8 +81,12 @@ import {
   BrowserOpenURL,
   PhoneQR,
   boxFetch,
+  CheckStereoBeforeInstall,
+  DissolvePairBeforeInstall,
+  RestorePairAfterInstall,
 } from '../api.js';
 import { takeShareOffer, wireShareOffer } from '../share.js';
+import { stereoInstallChoices, dissolveHosts, restoreMessage } from '../stereoinstall.js';
 
 // Official Bose SoundTouch app store listings (verified live 2026-07-09). The
 // app's local Wi-Fi setup still works after the cloud shutdown, so it is the
@@ -1027,6 +1031,11 @@ async function startNetworkInstall(box) {
     lead += `<div class="setup-warn">${escapeHtml(t('setup.wlanNoPass'))}</div>`;
   }
   try {
+    // Half of a stereo pair from the Bose-app days: ask before touching it, so
+    // the install neither breaks the pair nor leaves the other half waiting for
+    // a partner that has let go (see stereoinstall.js). A cancel returns through
+    // the finally below, which hands the Install button back.
+    if (await askAboutStereoPair(box) === 'cancel') return;
     await waitForBoxAfterSetup({ ssid: '', pass: '', html: lead, knownBox: box, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox });
   } finally {
     networkInstallRunning = false;
@@ -1036,6 +1045,68 @@ async function startNetworkInstall(box) {
     const b2 = $('setupHeroInstall');
     if (b2 && !installWaitPanelLive) b2.disabled = false;
   }
+}
+
+// askAboutStereoPair reads the speaker's pair before an install and lets the
+// user choose. Resolves to 'none' (no pair, install as usual), 'both' (keep the
+// pair: install STR on this one now and on the partner next), 'only'/'dissolve'
+// (the pair was dissolved first) or 'cancel'.
+async function askAboutStereoPair(box) {
+  let check = null;
+  try { check = await CheckStereoBeforeInstall(box.host); } catch { return 'none'; }
+  const choice = stereoInstallChoices(check);
+  if (!choice.show) return 'none';
+  const setupResult = $('setupResult');
+  if (!setupResult) return 'none';
+  const pairName = (check.pair && check.pair.name) || t('setup.pairUnnamed');
+  const partner = check.partnerIP || '';
+  const buttons = choice.options.map((o, i) => {
+    const cls = i === 0 ? 'btn btn-primary' : 'btn';
+    const label = o === 'both' ? t('setup.pairKeepBoth') : o === 'only' ? t('setup.pairOnlyThis') : t('setup.pairDissolveThis');
+    return `<button class="${cls}" data-pair-choice="${o}">${escapeHtml(label)}</button>`;
+  }).join(' ');
+  const body = choice.partnerKnown
+    ? t('setup.pairFoundBody', { name: pairName, partner })
+    : t('setup.pairPartnerGoneBody', { name: pairName });
+  setupResult.innerHTML = `<div class="setup-warn"><strong>${escapeHtml(t('setup.pairFoundTitle'))}</strong>`
+    + `<p>${escapeHtml(body)}</p><div class="setup-pair-choices">${buttons} `
+    + `<button class="btn" data-pair-choice="cancel">${escapeHtml(t('setup.pairCancel'))}</button></div></div>`;
+  const picked = await new Promise((resolve) => {
+    setupResult.querySelectorAll('[data-pair-choice]').forEach((btn) => {
+      btn.onclick = () => resolve(btn.getAttribute('data-pair-choice'));
+    });
+  });
+  if (picked === 'cancel' || picked === 'both') {
+    setupResult.innerHTML = '';
+    return picked;
+  }
+  setupResult.innerHTML = `<div class="muted">${escapeHtml(t('setup.pairDissolving'))}</div>`;
+  try {
+    const res = await DissolvePairBeforeInstall(dissolveHosts(picked, box.host, check));
+    if (!res || !res.ok) {
+      setupResult.innerHTML = `<div class="setup-err">${escapeHtml(t('setup.pairDissolveFailed'))}</div>`;
+      return 'cancel';
+    }
+  } catch (e) {
+    setupResult.innerHTML = `<div class="setup-err">${escapeHtml(t('setup.pairDissolveFailed'))}</div>`;
+    return 'cancel';
+  }
+  setupResult.innerHTML = '';
+  return picked;
+}
+
+// showPairAfterInstall tells the user what became of a pair written down before
+// the install: install the partner next, kept, formed again, or failed.
+async function showPairAfterInstall(box) {
+  let res = null;
+  try { res = await RestorePairAfterInstall(box.host); } catch { return; }
+  const msg = restoreMessage(res);
+  const slot = $('pairAfterInstall');
+  if (!msg || !slot) return;
+  slot.innerHTML = `<div class="${msg.cls}">${escapeHtml(t(msg.key, {
+    name: (res && res.name) || t('setup.pairUnnamed'),
+    partner: (res && res.partnerIP) || '',
+  }))}</div>`;
 }
 
 function togglePasswordVisibility() {
@@ -2803,6 +2874,7 @@ async function verifyInstalledState(box, onState) {
     // stands on its own instead of sitting under a stuck progress line (#852).
     baseHtml = '';
     render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+           `<div id="pairAfterInstall"></div>` +
            engineNote +
            (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +
            (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}${failDetails}</div>` : '') +
@@ -2822,6 +2894,7 @@ async function verifyInstalledState(box, onState) {
     wireShareOffer();
     const goMusic = $('installGoMusic');
     if (goMusic) goMusic.onclick = () => deps.switchView('box');
+    showPairAfterInstall(foundBox);
     deps.discoverBoxes();
     // The box is alive again: invite the user to drop a pin on the community world
     // map. The most reliable moment to ask, and the one most users reach.

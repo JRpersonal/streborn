@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} はステレオペアの片方で、相手の {{partner}} が応答しません。ステレオペアの片方は単独では再生しません。{{partner}} が戻らない場合は古いペアを解除してください。",
   "stereoStale.fixBtn": "古いペアを解除",
   "play.errStereoStale": "古いステレオペアの片方です。Multi-Room を確認してください",
-  "update.stableNameNotice": "STR は STR-Windows.exe として動作するようになりました。Windows がもう一度ネットワークへのアクセスを確認することがあります。プライベート ネットワークで許可してください。許可しないとアプリがスピーカーを見つけられません。"
+  "update.stableNameNotice": "STR は STR-Windows.exe として動作するようになりました。Windows がもう一度ネットワークへのアクセスを確認することがあります。プライベート ネットワークで許可してください。許可しないとアプリがスピーカーを見つけられません。",
+  "multiroom.pairPartnerUnreachable": "2台のスピーカーが互いに接続できなかったため、ペアを元に戻しました。同じネットワーク上にあり、直接通信できる必要があります。",
+  "multiroom.pairPartnerDidNotStore": "2台目のスピーカーがペアに参加しなかったため、元に戻しました。両方のスピーカーが同じネットワークにあるか確認して、もう一度お試しください。",
+  "setup.pairFoundTitle": "このスピーカーはステレオペアの片方です",
+  "setup.pairFoundBody": "{{partner}} のスピーカーと「{{name}}」としてペアになっています。ペアを残すには、両方のスピーカーに STR をインストールしてください。まずこのスピーカー、次にもう一方です。このスピーカーだけにインストールする場合は、どちらも相手を待ち続けないよう、先に両方のスピーカーでペアを解除します。",
+  "setup.pairPartnerGoneBody": "「{{name}}」としてペアになっていますが、ペアのもう一方のスピーカーが応答しません。インストール前にこのスピーカーでペアを解除します。解除しないと相手を待ち続け、単独では再生しません。",
+  "setup.pairKeepBoth": "ペアを残す（両方に STR をインストール）",
+  "setup.pairOnlyThis": "このスピーカーだけインストール",
+  "setup.pairDissolveThis": "ペアを解除してインストール",
+  "setup.pairCancel": "キャンセル",
+  "setup.pairDissolving": "ステレオペアを解除しています...",
+  "setup.pairDissolveFailed": "ステレオペアを解除できなかったため、インストールは開始されませんでした。両方のスピーカーを再起動して、もう一度お試しください。",
+  "setup.pairUnnamed": "ステレオペア",
+  "setup.pairInstallPartnerNext": "次に「{{name}}」のもう一方のスピーカー（{{partner}}）にも STR をインストールしてください。両方に STR が入るとペアは維持されます。",
+  "setup.pairKept": "ステレオペア「{{name}}」は両方のスピーカーで維持されています。",
+  "setup.pairRestored": "ステレオペア「{{name}}」を両方のスピーカーで再設定しました。",
+  "setup.pairRestoreFailed": "ステレオペア「{{name}}」を再設定できませんでした。Multi-Room タブで2台をご自身でペアにできます。"
 }

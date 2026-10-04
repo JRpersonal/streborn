@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} es la mitad de un par estéreo y su pareja {{partner}} no responde. Una mitad estéreo no suena sola. Si {{partner}} no vuelve, deshaz el par antiguo.",
   "stereoStale.fixBtn": "Deshacer el par antiguo",
   "play.errStereoStale": "Mitad de un par estéreo antiguo, ver Multi-Room",
-  "update.stableNameNotice": "STR ahora se ejecuta como STR-Windows.exe. Windows puede volver a pedir acceso a la red: permítelo para redes privadas, de lo contrario la app no encuentra tus altavoces."
+  "update.stableNameNotice": "STR ahora se ejecuta como STR-Windows.exe. Windows puede volver a pedir acceso a la red: permítelo para redes privadas, de lo contrario la app no encuentra tus altavoces.",
+  "multiroom.pairPartnerUnreachable": "Los dos altavoces no pudieron comunicarse, así que el par se deshizo de nuevo. Tienen que estar en la misma red y poder hablar directamente entre sí.",
+  "multiroom.pairPartnerDidNotStore": "El segundo altavoz no se unió al par, así que se deshizo de nuevo. Comprueba que ambos altavoces están en la misma red e inténtalo otra vez.",
+  "setup.pairFoundTitle": "Este altavoz forma parte de un par estéreo",
+  "setup.pairFoundBody": "Está emparejado como «{{name}}» con el altavoz en {{partner}}. Para conservar el par, instala STR en ambos altavoces, este ahora y el otro a continuación. Si solo instalas este, el par se deshace primero en ambos altavoces para que ninguno espere al otro.",
+  "setup.pairPartnerGoneBody": "Está emparejado como «{{name}}», pero el otro altavoz del par no responde. El par se deshace en este altavoz antes de instalar; si no, seguiría esperando a su pareja y no sonaría por sí solo.",
+  "setup.pairKeepBoth": "Conservar el par (instalar STR en ambos)",
+  "setup.pairOnlyThis": "Instalar solo este altavoz",
+  "setup.pairDissolveThis": "Deshacer el par e instalar",
+  "setup.pairCancel": "Cancelar",
+  "setup.pairDissolving": "Deshaciendo el par estéreo...",
+  "setup.pairDissolveFailed": "No se pudo deshacer el par estéreo, así que la instalación no empezó. Reinicia ambos altavoces e inténtalo otra vez.",
+  "setup.pairUnnamed": "Par estéreo",
+  "setup.pairInstallPartnerNext": "A continuación, instala STR también en el otro altavoz de «{{name}}» ({{partner}}). El par se conserva en cuanto ambos altavoces tengan STR.",
+  "setup.pairKept": "El par estéreo «{{name}}» está intacto en ambos altavoces.",
+  "setup.pairRestored": "El par estéreo «{{name}}» se volvió a configurar en ambos altavoces.",
+  "setup.pairRestoreFailed": "No se pudo volver a configurar el par estéreo «{{name}}». Puedes emparejar los dos altavoces tú mismo en la pestaña Multi-Room."
 }

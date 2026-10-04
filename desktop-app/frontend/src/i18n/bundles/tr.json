@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} bir stereo çiftin yarısı ve eşi {{partner}} yanıt vermiyor. Stereo çiftin yarısı tek başına çalmaz. {{partner}} geri gelmeyecekse eski çifti çöz.",
   "stereoStale.fixBtn": "Eski çifti çöz",
   "play.errStereoStale": "Eski bir stereo çiftin yarısı, Multi-Room'a bak",
-  "update.stableNameNotice": "STR artık STR-Windows.exe olarak çalışıyor. Windows ağ erişimini bir kez daha sorabilir: özel ağlar için izin ver, aksi halde uygulama hoparlörlerini bulamaz."
+  "update.stableNameNotice": "STR artık STR-Windows.exe olarak çalışıyor. Windows ağ erişimini bir kez daha sorabilir: özel ağlar için izin ver, aksi halde uygulama hoparlörlerini bulamaz.",
+  "multiroom.pairPartnerUnreachable": "İki hoparlör birbirine ulaşamadı, bu yüzden eşleşme geri alındı. Aynı ağda olmaları ve doğrudan iletişim kurabilmeleri gerekir.",
+  "multiroom.pairPartnerDidNotStore": "İkinci hoparlör eşleşmeye katılmadı, bu yüzden geri alındı. İki hoparlörün aynı ağda olduğunu kontrol et ve tekrar dene.",
+  "setup.pairFoundTitle": "Bu hoparlör bir stereo çiftin parçası",
+  "setup.pairFoundBody": "\"{{name}}\" adıyla {{partner}} adresindeki hoparlörle eşleşmiş. Çifti korumak için STR'yi iki hoparlöre de kur, önce bu, sonra diğeri. Yalnızca bunu kurarsan, hiçbiri diğerini beklemesin diye çift önce iki hoparlörde de çözülür.",
+  "setup.pairPartnerGoneBody": "\"{{name}}\" adıyla eşleşmiş, ama çiftin diğer hoparlörü yanıt vermiyor. Kurulumdan önce çift bu hoparlörde çözülür, yoksa eşini beklemeye devam eder ve tek başına çalmaz.",
+  "setup.pairKeepBoth": "Çifti koru (STR'yi ikisine de kur)",
+  "setup.pairOnlyThis": "Yalnızca bu hoparlörü kur",
+  "setup.pairDissolveThis": "Çifti çöz ve kur",
+  "setup.pairCancel": "İptal",
+  "setup.pairDissolving": "Stereo çift çözülüyor...",
+  "setup.pairDissolveFailed": "Stereo çift çözülemedi, bu yüzden kurulum başlamadı. İki hoparlörü de yeniden başlat ve tekrar dene.",
+  "setup.pairUnnamed": "Stereo çift",
+  "setup.pairInstallPartnerNext": "Sonra STR'yi \"{{name}}\" çiftinin diğer hoparlörüne de kur ({{partner}}). İki hoparlörde de STR olunca çift korunur.",
+  "setup.pairKept": "\"{{name}}\" stereo çifti iki hoparlörde de sağlam.",
+  "setup.pairRestored": "\"{{name}}\" stereo çifti iki hoparlörde yeniden kuruldu.",
+  "setup.pairRestoreFailed": "\"{{name}}\" stereo çifti yeniden kurulamadı. İki hoparlörü Multi-Room sekmesinde kendin eşleştirebilirsin."
 }

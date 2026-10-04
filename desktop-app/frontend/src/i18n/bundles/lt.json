@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} yra stereo poros pusė, o partneris {{partner}} neatsako. Stereo poros pusė viena negroja. Jei {{partner}} negrįš, išardykite senąją porą.",
   "stereoStale.fixBtn": "Išardyti senąją porą",
   "play.errStereoStale": "Senos stereo poros pusė, žr. Multi-Room",
-  "update.stableNameNotice": "STR dabar veikia kaip STR-Windows.exe. Windows gali dar kartą paprašyti tinklo prieigos: leisk ją privačiuose tinkluose, kitaip programėlė neras tavo garsiakalbių."
+  "update.stableNameNotice": "STR dabar veikia kaip STR-Windows.exe. Windows gali dar kartą paprašyti tinklo prieigos: leisk ją privačiuose tinkluose, kitaip programėlė neras tavo garsiakalbių.",
+  "multiroom.pairPartnerUnreachable": "Du garsiakalbiai negalėjo pasiekti vienas kito, todėl pora vėl panaikinta. Jie turi būti tame pačiame tinkle ir galėti bendrauti tiesiogiai.",
+  "multiroom.pairPartnerDidNotStore": "Antrasis garsiakalbis neprisijungė prie poros, todėl ji vėl panaikinta. Patikrink, ar abu garsiakalbiai yra tame pačiame tinkle, ir bandyk dar kartą.",
+  "setup.pairFoundTitle": "Šis garsiakalbis yra stereo poros dalis",
+  "setup.pairFoundBody": "Jis susietas kaip „{{name}}“ su garsiakalbiu adresu {{partner}}. Kad pora išliktų, įdiek STR abiejuose garsiakalbiuose, pirmiausia šiame, paskui kitame. Jei įdiegsi tik šiame, pora pirmiausia bus panaikinta abiejuose garsiakalbiuose, kad nė vienas nelauktų kito.",
+  "setup.pairPartnerGoneBody": "Jis susietas kaip „{{name}}“, bet kitas poros garsiakalbis neatsako. Prieš diegiant pora šiame garsiakalbyje bus panaikinta, kitaip jis toliau lauktų partnerio ir negrotų vienas.",
+  "setup.pairKeepBoth": "Išlaikyti porą (įdiegti STR abiejuose)",
+  "setup.pairOnlyThis": "Įdiegti tik šį garsiakalbį",
+  "setup.pairDissolveThis": "Panaikinti porą ir įdiegti",
+  "setup.pairCancel": "Atšaukti",
+  "setup.pairDissolving": "Naikinama stereo pora...",
+  "setup.pairDissolveFailed": "Stereo poros panaikinti nepavyko, todėl diegimas nepradėtas. Perkrauk abu garsiakalbius ir bandyk dar kartą.",
+  "setup.pairUnnamed": "Stereo pora",
+  "setup.pairInstallPartnerNext": "Toliau įdiek STR ir kitame „{{name}}“ garsiakalbyje ({{partner}}). Pora išliks, kai abu garsiakalbiai turės STR.",
+  "setup.pairKept": "Stereo pora „{{name}}“ išliko abiejuose garsiakalbiuose.",
+  "setup.pairRestored": "Stereo pora „{{name}}“ vėl sukurta abiejuose garsiakalbiuose.",
+  "setup.pairRestoreFailed": "Stereo poros „{{name}}“ vėl sukurti nepavyko. Abu garsiakalbius gali susieti pats skirtuke Multi-Room."
 }

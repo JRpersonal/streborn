@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} is de helft van een stereopaar en partner {{partner}} antwoordt niet. Een stereohelft speelt niet alleen. Komt {{partner}} niet terug, hef het oude paar dan op.",
   "stereoStale.fixBtn": "Oude paar opheffen",
   "play.errStereoStale": "Helft van een oud stereopaar, zie Multi-Room",
-  "update.stableNameNotice": "STR draait nu als STR-Windows.exe. Windows kan nog één keer om netwerktoegang vragen: sta die toe voor privénetwerken, anders vindt de app je speakers niet."
+  "update.stableNameNotice": "STR draait nu als STR-Windows.exe. Windows kan nog één keer om netwerktoegang vragen: sta die toe voor privénetwerken, anders vindt de app je speakers niet.",
+  "multiroom.pairPartnerUnreachable": "De twee speakers konden elkaar niet bereiken, daarom is het paar weer ongedaan gemaakt. Ze moeten in hetzelfde netwerk zitten en rechtstreeks met elkaar kunnen praten.",
+  "multiroom.pairPartnerDidNotStore": "De tweede speaker is niet aan het paar toegevoegd, daarom is het weer ongedaan gemaakt. Controleer of beide speakers in hetzelfde netwerk zitten en probeer het opnieuw.",
+  "setup.pairFoundTitle": "Deze speaker is de helft van een stereopaar",
+  "setup.pairFoundBody": "Hij is gekoppeld als \"{{name}}\" met de speaker op {{partner}}. Om het paar te behouden, installeer je STR op beide speakers, deze nu en de andere daarna. Installeer je alleen deze, dan wordt het paar eerst op beide speakers opgeheven, zodat geen van beide op de ander wacht.",
+  "setup.pairPartnerGoneBody": "Hij is gekoppeld als \"{{name}}\", maar de andere speaker van het paar antwoordt niet. Het paar wordt op deze speaker opgeheven voor de installatie, anders blijft hij op zijn partner wachten en speelt hij niet alleen.",
+  "setup.pairKeepBoth": "Paar behouden (STR op beide installeren)",
+  "setup.pairOnlyThis": "Alleen deze speaker installeren",
+  "setup.pairDissolveThis": "Paar opheffen en installeren",
+  "setup.pairCancel": "Annuleren",
+  "setup.pairDissolving": "Stereopaar wordt opgeheven...",
+  "setup.pairDissolveFailed": "Het stereopaar kon niet worden opgeheven, daarom is de installatie niet gestart. Start beide speakers opnieuw op en probeer het opnieuw.",
+  "setup.pairUnnamed": "Stereopaar",
+  "setup.pairInstallPartnerNext": "Installeer STR daarna ook op de andere speaker van \"{{name}}\" ({{partner}}). Het paar blijft behouden zodra beide speakers STR hebben.",
+  "setup.pairKept": "Het stereopaar \"{{name}}\" is op beide speakers intact.",
+  "setup.pairRestored": "Het stereopaar \"{{name}}\" is op beide speakers opnieuw ingesteld.",
+  "setup.pairRestoreFailed": "Het stereopaar \"{{name}}\" kon niet opnieuw worden ingesteld. Je kunt de twee speakers zelf koppelen in het tabblad Multi-Room."
 }

@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} est la moitié d'une paire stéréo, et son partenaire {{partner}} ne répond pas. Une moitié stéréo ne joue pas seule. Si {{partner}} ne revient pas, dissous l'ancienne paire.",
   "stereoStale.fixBtn": "Dissoudre l'ancienne paire",
   "play.errStereoStale": "Moitié d'une ancienne paire stéréo, voir Multi-Room",
-  "update.stableNameNotice": "STR s'exécute désormais sous le nom STR-Windows.exe. Windows peut redemander l'accès au réseau : autorise-le pour les réseaux privés, sinon l'application ne trouve pas tes enceintes."
+  "update.stableNameNotice": "STR s'exécute désormais sous le nom STR-Windows.exe. Windows peut redemander l'accès au réseau : autorise-le pour les réseaux privés, sinon l'application ne trouve pas tes enceintes.",
+  "multiroom.pairPartnerUnreachable": "Les deux enceintes n'ont pas pu se joindre, la paire a donc été annulée. Elles doivent être sur le même réseau et pouvoir communiquer directement.",
+  "multiroom.pairPartnerDidNotStore": "La deuxième enceinte n'a pas rejoint la paire, elle a donc été annulée. Vérifie que les deux enceintes sont sur le même réseau et réessaie.",
+  "setup.pairFoundTitle": "Cette enceinte fait partie d'une paire stéréo",
+  "setup.pairFoundBody": "Elle est associée sous le nom « {{name}} » à l'enceinte {{partner}}. Pour garder la paire, installe STR sur les deux enceintes, celle-ci maintenant et l'autre ensuite. Si tu n'installes que celle-ci, la paire est d'abord dissoute sur les deux enceintes, pour qu'aucune n'attende l'autre.",
+  "setup.pairPartnerGoneBody": "Elle est associée sous le nom « {{name}} », mais l'autre enceinte de la paire ne répond pas. La paire est dissoute sur cette enceinte avant l'installation, sinon elle continuerait d'attendre sa partenaire et ne jouerait pas seule.",
+  "setup.pairKeepBoth": "Garder la paire (installer STR sur les deux)",
+  "setup.pairOnlyThis": "Installer seulement cette enceinte",
+  "setup.pairDissolveThis": "Dissoudre la paire et installer",
+  "setup.pairCancel": "Annuler",
+  "setup.pairDissolving": "Dissolution de la paire stéréo...",
+  "setup.pairDissolveFailed": "La paire stéréo n'a pas pu être dissoute, l'installation n'a donc pas démarré. Redémarre les deux enceintes et réessaie.",
+  "setup.pairUnnamed": "Paire stéréo",
+  "setup.pairInstallPartnerNext": "Installe ensuite STR aussi sur l'autre enceinte de « {{name}} » ({{partner}}). La paire est conservée dès que les deux enceintes ont STR.",
+  "setup.pairKept": "La paire stéréo « {{name}} » est intacte sur les deux enceintes.",
+  "setup.pairRestored": "La paire stéréo « {{name}} » a été recréée sur les deux enceintes.",
+  "setup.pairRestoreFailed": "La paire stéréo « {{name}} » n'a pas pu être recréée. Tu peux associer les deux enceintes toi-même dans l'onglet Multi-Room."
 }

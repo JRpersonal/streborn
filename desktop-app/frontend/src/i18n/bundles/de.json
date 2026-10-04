@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} ist die Hälfte eines Stereopaars, und der Partner {{partner}} antwortet nicht. Eine Stereohälfte spielt nicht allein. Wenn {{partner}} nicht wiederkommt, löse das alte Paar auf.",
   "stereoStale.fixBtn": "Altes Paar auflösen",
   "play.errStereoStale": "Hälfte eines alten Stereopaars, siehe Multi-Room",
-  "update.stableNameNotice": "STR läuft jetzt als STR-Windows.exe. Windows fragt eventuell noch einmal nach Netzwerkzugriff. Erlaube ihn bitte für private Netzwerke, sonst findet die App deine Lautsprecher nicht."
+  "update.stableNameNotice": "STR läuft jetzt als STR-Windows.exe. Windows fragt eventuell noch einmal nach Netzwerkzugriff. Erlaube ihn bitte für private Netzwerke, sonst findet die App deine Lautsprecher nicht.",
+  "multiroom.pairPartnerUnreachable": "Die beiden Lautsprecher konnten sich nicht gegenseitig erreichen, deshalb wurde das Paar wieder aufgelöst. Sie müssen im selben Netzwerk sein und direkt miteinander sprechen können.",
+  "multiroom.pairPartnerDidNotStore": "Der zweite Lautsprecher hat das Paar nicht übernommen, deshalb wurde es wieder aufgelöst. Prüf, ob beide im selben Netzwerk sind, und versuch es noch einmal.",
+  "setup.pairFoundTitle": "Dieser Lautsprecher ist Teil eines Stereopaars",
+  "setup.pairFoundBody": "Er ist als „{{name}}“ mit dem Lautsprecher unter {{partner}} gekoppelt. Damit das Paar bleibt, installiere STR auf beiden, erst auf diesem und danach auf dem anderen. Wenn du nur diesen installierst, wird das Paar vorher auf beiden Lautsprechern aufgelöst, damit keiner auf den anderen wartet.",
+  "setup.pairPartnerGoneBody": "Er ist als „{{name}}“ gekoppelt, aber der andere Lautsprecher des Paars antwortet nicht. Das Paar wird vor der Installation auf diesem Lautsprecher aufgelöst, sonst würde er weiter auf seinen Partner warten und allein nicht spielen.",
+  "setup.pairKeepBoth": "Paar behalten (STR auf beiden installieren)",
+  "setup.pairOnlyThis": "Nur diesen Lautsprecher installieren",
+  "setup.pairDissolveThis": "Paar auflösen und installieren",
+  "setup.pairCancel": "Abbrechen",
+  "setup.pairDissolving": "Stereopaar wird aufgelöst...",
+  "setup.pairDissolveFailed": "Das Stereopaar ließ sich nicht auflösen, deshalb wurde die Installation nicht gestartet. Starte beide Lautsprecher neu und versuch es noch einmal.",
+  "setup.pairUnnamed": "Stereopaar",
+  "setup.pairInstallPartnerNext": "Installiere STR als Nächstes auch auf dem anderen Lautsprecher von „{{name}}“ ({{partner}}). Das Paar bleibt erhalten, sobald beide STR haben.",
+  "setup.pairKept": "Das Stereopaar „{{name}}“ ist auf beiden Lautsprechern erhalten.",
+  "setup.pairRestored": "Das Stereopaar „{{name}}“ wurde auf beiden Lautsprechern wieder eingerichtet.",
+  "setup.pairRestoreFailed": "Das Stereopaar „{{name}}“ ließ sich nicht wieder einrichten. Du kannst die beiden Lautsprecher im Multi-Room-Tab selbst koppeln."
 }
