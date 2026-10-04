@@ -161,6 +161,8 @@ If you want to understand how the agent, the desktop app, and the speaker's stoc
 
 See [st-reborn.de](https://st-reborn.de).
 
+Install with a package manager: `winget install JRpersonal.STReborn` on Windows and `brew install --cask jrpersonal/tap/st-reborn` on macOS are being set up; both work once the first submission is accepted (status and details in [`packaging/README.md`](./packaging/README.md)).
+
 ## Verifying release artifacts
 
 Every release on GitHub Releases is built by the official workflow and ships with build provenance attestations via Sigstore. You can verify any binary with:
