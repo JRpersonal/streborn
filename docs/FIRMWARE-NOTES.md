@@ -497,6 +497,46 @@ TuneIn client polled a now-playing endpoint on the partner host is open:
 the client's path list contains a `nowPlaying` route, but on 27.0.6 the box
 has never been seen contacting that host (see `internal/marge/tunein.go`).
 
+## Writing text to the display: there is no command for it
+
+Asked once and answered, so nobody has to probe for it again: the firmware
+offers no way to put arbitrary text on the display. Checked on a Portable
+(taigan, FW 27.0.6) on 2026-10-04, read-only, all console commands batched
+into a handful of sessions (the console restarts BoseApp after a few dozen
+short sessions in a row, see the clock-display notes).
+
+The `:17000` service console has no help listing; `help`, `?`, `h`, `ls`,
+`commands` and `tap` all answer `Command not found`. An unknown command says
+`Command not found`, a known group with a missing or wrong option says
+`Invalid Command Option`, which is enough to map what exists:
+
+| Command | Answer | What it means |
+| --- | --- | --- |
+| `lcd`, `disp`, `osd`, `ui`, `message`, `msg`, `notify`, `text`, `vfd`, `screen` | `Command not found` | not there |
+| `display` | `Invalid Command Option` | a real group, but none of ~40 tried options (`text`, `string`, `show`, `msg`, `message`, `print`, `write`, `line`, `osd`, `notify`, `popup`, `banner`, `title`, `artist`, `track`, `station`, `nowplaying`, `set`, `update`, `alert`, `error`, `toast`, `caption`, `label`, `status`, `info`, `get`, `list`, `help`, `?`, `mode`, `state`, `dump`, `version`, `brightness`) is accepted; on/off style options were deliberately not tried |
+| `oled <name>` | `Could not copy /opt/Bose/oled_pattern_<name>.raw` | copies a canned factory test bitmap from the read-only rootfs to the panel; no text |
+| `led`, `lightswitch` | `Invalid Command Option` | the LED / touch-panel controller, no text |
+
+On `:8090`, `/supportedURLs` lists only `/clockDisplay` and `/clockTime` as
+display endpoints. `/speaker` is the gated audio notification (403 on the
+Portable). `/notification` answers 404 on GET. Do not GET `/playNotification`
+to see what it is: it answered `200 <status>/playNotification</status>`,
+which looks like an action rather than a read (the speaker was in standby and
+nothing was heard). `/test` and `/criticalError` gave no HTTP answer on GET.
+
+The display capability itself is reported cleanly: `/capabilities` carries
+`<clockDisplay>true</clockDisplay>` on a speaker with a screen (Portable) and
+`false` on one without (ST10). STR uses that flag to decide which speakers get
+display messages.
+
+What STR does instead: the only text the display renders is the now-playing
+title, so a short message travels as the title of a few seconds of digital
+silence the agent serves itself (`internal/webui/displaymsg.go`), stopped
+again after about 10 s. It is used only when a hardware key cannot play
+(Spotify login missing, station not answering, no internet), only on a
+speaker that is awake and not playing, once per message per few minutes, and
+it never touches the volume.
+
 ## A blocked `api2.iheart.com` makes the speaker ask every 5 seconds
 
 The firmware's own iHeartRadio module (in STSCertified, not STR) looks up

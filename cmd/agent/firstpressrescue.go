@@ -32,6 +32,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 const (
@@ -50,9 +51,11 @@ const (
 
 // nativeActivation is the last native preset the box activated by itself.
 type nativeActivation struct {
-	slot    int
-	at      time.Time
-	rescued bool
+	slot      int
+	at        time.Time
+	rescued   bool
+	rescuedAt time.Time
+	reported  bool
 }
 
 type firstPressRescue struct {
@@ -65,7 +68,34 @@ type firstPressRescue struct {
 func (f *firstPressRescue) noteNativeActivation(slot int, at time.Time) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// The rescue's own second press activates the same slot again. That is
+	// still the one press the user made, not a new one: keep its rescue spent
+	// (so a second failure cannot buy a third press) and keep the window
+	// anchored on the rescue, which is what failedAfterRescue measures from.
+	if f.last.rescued && f.last.slot == slot && at.Sub(f.last.rescuedAt) < firstPressWindow {
+		return
+	}
 	f.last = nativeActivation{slot: slot, at: at}
+}
+
+// failedAfterRescue reports whether a failure at t means the rescued press
+// failed a second time, which is the point where the station is taken to be
+// down. It answers true once per activation, and returns the slot.
+func (f *firstPressRescue) failedAfterRescue(t time.Time) (int, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.last.slot == 0 || !f.last.rescued || f.last.reported {
+		return 0, false
+	}
+	// The firmware logs two lines for one silence (no first frame, then
+	// PlaybackFailure). Only a failure after the rescue's own press, which
+	// fires firstPressSettle after the claim, is the second failure.
+	pressedAgain := f.last.rescuedAt.Add(firstPressSettle)
+	if t.Before(pressedAgain) || t.Sub(pressedAgain) > firstPressWindow {
+		return 0, false
+	}
+	f.last.reported = true
+	return f.last.slot, true
 }
 
 // claim decides whether a failure at t belongs to the last activation and
@@ -81,6 +111,7 @@ func (f *firstPressRescue) claim(t time.Time) int {
 		return 0
 	}
 	f.last.rescued = true
+	f.last.rescuedAt = t
 	return f.last.slot
 }
 
@@ -89,6 +120,14 @@ func (f *firstPressRescue) claim(t time.Time) int {
 func (h *presetWsHandler) OnPlayFailure(ev boxlog.PlayFailure) {
 	slot := h.firstPress.claim(ev.At)
 	if slot == 0 {
+		// The rescue already pressed again and the box failed a second time:
+		// the station is not answering (or the speaker is offline). Say so on
+		// the display instead of leaving the user in front of silence.
+		if again, ok := h.firstPress.failedAfterRescue(ev.At); ok {
+			h.logger.Info("native preset failed again after the rescue, telling the user", "slot", again,
+				"reason", string(ev.Class))
+			h.displayMessage(webui.DisplayMsgStationDown)
+		}
 		return
 	}
 	h.logger.Info("first press after a rest produced no audio, pressing the key again",

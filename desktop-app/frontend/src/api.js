@@ -99,6 +99,8 @@ export {
   SetResumeOnPowerOn,
   GetDisplayTrack,
   SetDisplayTrack,
+  GetDisplayMessages,
+  SetDisplayMessages,
   AnnounceExample,
   SendAnnounce,
   Translate,

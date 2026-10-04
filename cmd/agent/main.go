@@ -1004,6 +1004,10 @@ func run() error {
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
 	// last-failure timestamps tell a wedged box apart from a failing station.
 	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)
+	webuiSrv.SetOnlineFn(streamProxySrv.BoxHasOutbound)
+	// The last message the speaker display showed, and the last decision
+	// taken, so a "my speaker said X" report can be matched.
+	webui.RegisterDebugSection("display_message", webuiSrv.DisplayMessageSnapshot)
 	// Surface speaker-side failure states ("wedged", "login-error") in
 	// /api/stream-status, so the app can name the real cause instead of
 	// blaming the station and cycling radio-browser alternates.
@@ -1104,7 +1108,10 @@ func run() error {
 		recallGenFn: webuiSrv.RecallGeneration,
 		// Wedge detection (power-cycle hint) fed from the hardware path too.
 		noteRecallExhausted: webuiSrv.NoteRecallExhausted,
-		noteBoxHealthy:      webuiSrv.NoteBoxHealthy,
+		// A key that cannot play says why on the speaker display (display
+		// models only; the webui applies every guard).
+		showDisplayMessage: webuiSrv.ShowKeyMessage,
+		noteBoxHealthy:     webuiSrv.NoteBoxHealthy,
 		// Record hardware-preset presses into Recently-played (#135); the hardware
 		// recall bypasses the webui play handlers that capture app-driven plays.
 		noteRecentPreset: webuiSrv.NoteRecentPreset,

@@ -1122,3 +1122,29 @@ func (c *Client) GetSysLanguage(ctx context.Context) (int, error) {
 	}
 	return raw.Sys, nil
 }
+
+// displayHosts caches, per box host, whether the speaker has a display. A
+// definite answer only: a failed read stores nothing, so a box that was still
+// booting is asked again next time.
+var displayHosts sync.Map // host string -> bool
+
+// HasDisplay reports whether the speaker has a screen that shows text, read
+// from the firmware's own /capabilities answer: a box with a display advertises
+// <clockDisplay>true</clockDisplay> (it can show the clock), and one without a
+// screen says false. Measured on FW 27.0.6: a Portable (taigan) answers true, an
+// ST10 (rhino, LEDs only) answers false. ok is false when the box did not give
+// a definite answer, so the caller can fall back to the model name.
+func (c *Client) HasDisplay(ctx context.Context) (has, ok bool) {
+	if v, cached := displayHosts.Load(c.Host); cached {
+		return v.(bool), true
+	}
+	var caps struct {
+		ClockDisplay *string `xml:"clockDisplay"`
+	}
+	if err := c.getXML(ctx, "/capabilities", &caps); err != nil || caps.ClockDisplay == nil {
+		return false, false
+	}
+	has = strings.EqualFold(strings.TrimSpace(*caps.ClockDisplay), "true")
+	displayHosts.Store(c.Host, has)
+	return has, true
+}

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -45,5 +45,23 @@ describe('displayTrackState', () => {
     expect(settings).toContain('catch { paintDisplayTrack(null); }');
     expect(settings).not.toContain('catch { paintDisplayTrack(false); }');
     expect(settings).toContain("t('settingsView.displayTrackUnknown')");
+  });
+});
+
+describe('displayMessagesState', () => {
+  it('shows the setting only for a speaker that says it has a display', () => {
+    expect(displayMessagesState({ enabled: true, hasDisplay: true }).show).toBe(true);
+    expect(displayMessagesState({ enabled: true, hasDisplay: false }).show).toBe(false);
+    expect(displayMessagesState({ enabled: true }).show).toBe(false);
+  });
+  it('keeps an unreadable switch unknown instead of off', () => {
+    expect(displayMessagesState(null)).toEqual({ show: false, enabled: null, last: '' });
+    expect(displayMessagesState({ hasDisplay: true }).enabled).toBe(null);
+    expect(displayMessagesState({ hasDisplay: true, enabled: false }).enabled).toBe(false);
+  });
+  it('reports the last message text', () => {
+    const r = { hasDisplay: true, enabled: true, lastShown: { kind: 'no-internet', text: 'No internet connection' } };
+    expect(displayMessagesState(r).last).toBe('No internet connection');
+    expect(displayMessagesState({ hasDisplay: true, enabled: true, lastShown: {} }).last).toBe('');
   });
 });

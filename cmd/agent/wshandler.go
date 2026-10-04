@@ -141,7 +141,11 @@ type presetWsHandler struct {
 	// hardware recall path reports exhausted/successful verifies so the
 	// power-cycle hint also fires when the user only uses the preset keys.
 	noteRecallExhausted func()
-	noteBoxHealthy      func()
+	// showDisplayMessage puts a short message on the speaker display when a
+	// key cannot play (webui.ShowKeyMessage; it applies every guard itself:
+	// display model, standby, something playing, repeat limit). nil = off.
+	showDisplayMessage func(kind webui.DisplayMsgKind)
+	noteBoxHealthy     func()
 	// noteRecentPreset records a hardware-preset press into the recently-played
 	// ring (#135). Wired to webui.NoteRecentPreset. nil-safe.
 	noteRecentPreset func(presets.Preset)
@@ -1210,6 +1214,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// soft/app path in internal/webui (the two recall paths must stay in sync).
 	if !h.spotify.CanRecall(ctx) {
 		h.logger.Warn("spotify preset recall: speaker not logged into Spotify and no live session; log it into Spotify once first", "slot", slot, "name", p.Name)
+		h.displayMessage(webui.DisplayMsgSpotifyLogin)
 		return
 	}
 	if !h.spotify.Ready() {
@@ -1224,6 +1229,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 		}
 		if !h.spotify.Ready() {
 			h.logger.Warn("spotify preset pressed but manager not ready after wait", "slot", slot)
+			h.displayMessage(webui.DisplayMsgIfOffline)
 			return
 		}
 	}
@@ -1294,6 +1300,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 				h.logger.Warn("spotify recall: stopping the speaker after the failed recall did not work", "slot", slot, "err", serr)
 			}
 			cancel()
+			h.displayMessage(webui.DisplayMsgSpotifyLogin)
 			return
 		}
 		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
@@ -1531,6 +1538,16 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 	if h.noteRecallExhausted != nil {
 		h.noteRecallExhausted()
 	}
+	// The station never answered (or the speaker has no internet; the webui
+	// tells the two apart with one reachability check).
+	h.displayMessage(webui.DisplayMsgStationDown)
+}
+
+// displayMessage forwards to the webui's display message, nil-safe.
+func (h *presetWsHandler) displayMessage(kind webui.DisplayMsgKind) {
+	if h.showDisplayMessage != nil {
+		h.showDisplayMessage(kind)
+	}
 }
 
 // sourceRejectProbeDelay is how long verifyPlayURL waits before looking for a
@@ -1718,6 +1735,8 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 			h.logger.Warn("spotify recall still not playing after retries (engine pause failed)", "slot", slot, "err", perr)
 		}
 		pcancel()
+		// Only worth a word on the display when the cause is the connection.
+		h.displayMessage(webui.DisplayMsgIfOffline)
 		return
 	}
 	h.logger.Warn("spotify recall still not playing after retries", append([]any{"slot", slot}, h.boxFailureAttrs()...)...)
