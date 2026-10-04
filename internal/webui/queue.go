@@ -262,6 +262,12 @@ type queueSnapshot struct {
 	Shuffle bool            `json:"shuffle"`
 	Repeat  string          `json:"repeat"`
 	Items   []queueSnapItem `json:"items"`
+	// Card is the Recently-played card key of the folder this queue plays
+	// ("queue:<udn>:<container>" or "queue:slot:N"), set while the queue is
+	// active. The app matches its folder card against it: the card itself only
+	// carries the folder's first track, so a name or URL match lost the "now
+	// playing" mark from the second track on (#1065).
+	Card string `json:"card,omitempty"`
 }
 
 type queueSnapItem struct {
