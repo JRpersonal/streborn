@@ -152,7 +152,7 @@ func (s *Server) ResumeLastPlay() {
 		// yet for boxInZone to find (#900). A quiet wake is STR's own doing by
 		// definition, so a power-on frame arriving inside its window is not a
 		// user pressing power.
-		if s.quietWakeActive() {
+		if s.wokenForGroup() {
 			s.logger.Info("wake resume: STR woke this speaker for a group operation, not auto-resuming (self-wake guard)")
 			return
 		}
@@ -340,7 +340,7 @@ func (s *Server) RecoverAfterReconnect() {
 			s.logger.Info("reconnect recovery: box in a zone / stereo pair, standing down (self-wake guard)")
 			return
 		}
-		if s.quietWakeActive() {
+		if s.wokenForGroup() {
 			s.logger.Info("reconnect recovery: STR woke this speaker for a group operation, standing down (self-wake guard)")
 			return
 		}

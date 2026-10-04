@@ -838,7 +838,9 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+	// Above quietWakeBudget: the quiet wake keeps its own deadlines and must not
+	// be cut short from out here.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), quietWakeBudget+5*time.Second)
 	defer cancel()
 	// A quiet wake is for a group join, not for listening to THIS speaker. The
 	// firmware's power-on resumes the speaker's own last station at its own
@@ -914,7 +916,7 @@ var quietWakeNowPlaying = func(ctx context.Context, host string) nowPlayingSnaps
 // group was created (Jens, 2026-09-06). A speaker that is not in standby is
 // left exactly as it is.
 func (s *Server) quietWake(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), quietWakeBudget)
 	defer cancel()
 	// Only a sleeping speaker gets the quiet treatment (quietWakeNeeded). The
 	// other callers check standby themselves (zones_stereo.go, rejoinDecision),
@@ -937,28 +939,77 @@ func (s *Server) quietWake(ctx context.Context) error {
 	// powers on (measured 2026-09-06: set to 0 in standby, woke at 30).
 	// So a watcher polls for the first sign of life and mutes right then,
 	// a few hundred milliseconds into the resume instead of seconds.
-	muteDone := s.setVolumeOnFirstLife(ctx, 0)
-	err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger)
+	// The wake gets its own deadline and the steps after it get fresh ones.
+	// They used to share one 10 s context, and a SoundTouch 10 needs about
+	// that long to come out of standby: the wake used the whole budget, the
+	// read before the STOP then failed on the expired context, the STOP was
+	// never sent, and the firmware's resumed station became audible the
+	// moment the zone join lifted the mute (fleet run 2026-10-04).
+	wakeCtx, wakeCancel := context.WithTimeout(ctx, quietWakeWakeBudget)
+	muteDone := s.setVolumeOnFirstLife(wakeCtx, 0)
+	err := boxcli.WakeAndWait(wakeCtx, s.boxHost, quietWakeWakeBudget-2*time.Second, s.logger)
+	wakeCancel()
 	<-muteDone
 	if err != nil {
 		if prevVol >= 0 {
-			_ = boxapi.New(s.boxHost).SetVolume(ctx, prevVol)
+			stepCtx, stepCancel := quietWakeStepCtx()
+			_ = boxapi.New(s.boxHost).SetVolume(stepCtx, prevVol)
+			stepCancel()
 		}
 		return err
 	}
 	// Belt and braces: the watcher may have raced the firmware's level
 	// restore, so the mute is written once more now that the box is up.
-	_ = boxapi.New(s.boxHost).SetVolume(ctx, 0)
+	stepCtx, stepCancel := quietWakeStepCtx()
+	_ = boxapi.New(s.boxHost).SetVolume(stepCtx, 0)
+	stepCancel()
 	// Whatever the firmware resumed on power-on is stopped, so the zone
 	// join meets an idle speaker instead of a station still spinning up.
-	if np := quietWakeNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
-		_ = boxapi.New(s.boxHost).Key(ctx, "STOP")
-	}
+	s.stopQuietWakeResume()
 	if prevVol >= 0 {
 		s.armQuietWakeRestore(prevVol)
 	}
 	s.logger.Info("wake: quiet wake for a group operation", "mutedFrom", prevVol)
 	return nil
+}
+
+// quietWakeBudget bounds a whole quiet wake: the wake itself plus the mute and
+// STOP after it. quietWakeWakeBudget is the part the wake may use; a
+// SoundTouch 10 out of standby has been measured at about 10 s.
+const (
+	quietWakeWakeBudget = 15 * time.Second
+	quietWakeStepBudget = 4 * time.Second
+	quietWakeBudget     = quietWakeWakeBudget + 2*quietWakeStepBudget + 2*time.Second
+)
+
+// quietWakeStepCtx is a fresh deadline for one step after the wake, never the
+// leftover of the wake's own.
+func quietWakeStepCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), quietWakeStepBudget)
+}
+
+// quietWakeStop is the STOP seam, for the same reason as quietWakeNowPlaying.
+var quietWakeStop = func(ctx context.Context, host string) error {
+	return boxapi.New(host).Key(ctx, "STOP")
+}
+
+// stopQuietWakeResume sends STOP when the speaker is producing (or about to
+// produce) sound after a quiet wake. One read, at most one key, each on its own
+// deadline.
+func (s *Server) stopQuietWakeResume() {
+	ctx, cancel := quietWakeStepCtx()
+	np := quietWakeNowPlaying(ctx, s.boxHost)
+	cancel()
+	if np.PlayStatus == "" || np.PlayStatus == "STOP_STATE" || np.Source == "STANDBY" {
+		return
+	}
+	ctx, cancel = quietWakeStepCtx()
+	defer cancel()
+	if err := quietWakeStop(ctx, s.boxHost); err != nil {
+		s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err)
+		return
+	}
+	s.logger.Info("wake: stopped what the speaker resumed after the quiet wake", "source", np.Source, "playStatus", np.PlayStatus)
 }
 
 // setVolumeOnFirstLife starts a watcher that writes vol the moment the speaker
@@ -1042,6 +1093,18 @@ func (s *Server) quietWakeActive() bool {
 	s.quietWakeMu.Lock()
 	defer s.quietWakeMu.Unlock()
 	return !s.quietWakeUntil.IsZero()
+}
+
+// wokenForGroup is the self-wake guard of the power-on resume: either a quiet
+// wake still holds the speaker muted, or STR woke it for a group inside the
+// episode window. The second half matters because the restore is armed only at
+// the END of the quiet wake, and a wake out of standby takes about ten seconds;
+// a power-on frame inside those ten seconds found nothing armed and resumed the
+// last station. That play then also read as the user's own (lastPlay is newer
+// than the wake), so the zone form carried it into every room instead of
+// stopping it (fleet run 2026-10-04).
+func (s *Server) wokenForGroup() bool {
+	return s.quietWakeActive() || s.QuietWakeEpisodeActive()
 }
 
 // quietWakeRestoreAfter bounds how long a member stays muted after a quiet

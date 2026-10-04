@@ -30,6 +30,14 @@ func (g *groupWakeLog) note(host string, now time.Time) {
 	g.woke[host] = now
 }
 
+// forget drops a speaker WakeBox recorded up front once its agent says the wake
+// did not bring it out of standby.
+func (g *groupWakeLog) forget(host string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.woke, host)
+}
+
 // zoneFormPayload is the body FormZone posts: the spec plus the members woken
 // for it. Kept out of ZoneSpec itself, which is a Wails-bound type the frontend
 // never fills this field of.
