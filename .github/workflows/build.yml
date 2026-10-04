@@ -318,7 +318,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22  # jsdom 30 (pinned in .github/scripts) needs Node 22+
 
       # A mermaid block GitHub cannot parse renders as a grey error box, and
       # nothing in the build ever said so. Eight of the fourteen diagrams in
