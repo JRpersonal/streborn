@@ -130,8 +130,12 @@ type Server struct {
 
 // SpyEntry is a single logged HTTP request.
 type SpyEntry struct {
-	When    time.Time
-	Method  string
+	When   time.Time
+	Method string
+	// Host is the name the box asked for. Several cloud hosts land on the same
+	// listener (streaming.bose.com, content.api.bose.io, the TuneIn partner
+	// host), and the path alone cannot always say which one was meant.
+	Host    string
 	Path    string
 	Headers http.Header
 	Body    string

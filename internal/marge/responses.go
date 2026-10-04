@@ -110,6 +110,16 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 		if id == "" {
 			continue
 		}
+		// TUNEIN is already in the numbered catalogue below (id 25). Adding it a
+		// second time with its NAME as the id is the shape the comment below
+		// warns about (a reference that resolves to nothing, and an entry
+		// without createdOn/updatedOn), so a reflected TUNEIN (the #500 probe)
+		// is not repeated here. DEEZER keeps its by-name entry: that is the
+		// shape the Deezer reflection has shipped with on users' speakers, and
+		// changing it needs a hardware check of its own.
+		if strings.EqualFold(strings.TrimSpace(r.Source), "TUNEIN") {
+			continue
+		}
 		extra.WriteString(`<sourceprovider id="` + id + `"><name>` + xmlEscapeText(r.Name) + `</name></sourceprovider>`)
 	}
 	// This catalogue is what the account's <sourceproviderid> values resolve

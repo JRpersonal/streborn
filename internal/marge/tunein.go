@@ -28,8 +28,9 @@ import (
 )
 
 // isTuneInRequest detects whether the request goes to the Bose TuneIn partner
-// subdomain. Currently no longer called in the catchall because
-// the box does not contact the endpoint.
+// subdomain. The spy middleware logs such a request at INFO, since none has
+// ever been seen on 27.0.6 and one would answer #500 (does the firmware fetch
+// station titles itself).
 func isTuneInRequest(r *http.Request) bool {
 	host := r.Host
 	if h, _, ok := strings.Cut(host, ":"); ok {
