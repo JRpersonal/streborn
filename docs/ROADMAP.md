@@ -1,13 +1,13 @@
 # STR Roadmap
 
-Forward-looking items beyond the v1.0 gate defined in `CLAUDE.md`.
+Forward-looking items beyond 1.0 (the five criteria are listed in the README, section "1.0").
 This is a wishlist with rough sequencing, not a commitment. Items
 move in and out as reality lands.
 
 For the security-specific roadmap see
 [`docs/THREAT-MODEL.md`](THREAT-MODEL.md#hardening-roadmap).
 
-## Post-1.0 (already named in CLAUDE.md)
+## Post-1.0 (already named in the README)
 
 - In-app self-update on macOS. The download is Developer ID signed and
   notarized since v0.9.33, so Gatekeeper is no longer the blocker;
@@ -39,7 +39,7 @@ i18n, switch the default UI to English.
 | A | Extract leaf modules (`state`, `utils`, `localization`, `logos`, `api`) out of `main.js`. All comments and identifiers English. | **done** — merged via [#40](https://github.com/JRpersonal/streborn/pull/40) |
 | B | Extract view modules + shared services along the existing section-comment seams (see the refactoring backlog below for the concrete module cut). After this `main.js` shrinks to the DOM skeleton + router + bootstrap (~600 lines; the old ~150-line estimate predates the feature growth). | in progress — 7 view modules extracted to `src/views/` (library, multiroom, podcasts, recent, settings, setup, spotify) plus service modules (`api`, `groups`, `searchflow`, `share`); `main.js` still holds over 8000 lines (it has grown with the features, not shrunk), so finishing the cut remains the highest-leverage refactor in the repo |
 | C | i18n system: minimal `t()` helper plus `en` and `de` bundles in `desktop-app/frontend/src/i18n/`. Locale detected from `navigator.language`, with explicit override stored in `localStorage`. **Default is English** per the global-audience rule; German remains a first-class supported locale but is no longer the implicit fallback. | **done** — shipped in #46 and grown to 13 locale bundles (incl. Arabic). All bundles are complete (key-for-key with `en.json`); the completeness gap was closed in #514. |
-| D | Translate the remaining inline German comments and the few mixed-language handler strings still sitting in `main.js` (and any view module that ends up holding them after Phase B). Closes the CLAUDE.md "all code/comments/identifiers in English" rule. | mostly done via the #46 i18n sweep; ~a dozen German comments remain in `main.js` (and the older on-stick scripts are still German, tracked in the backlog below) — finish when Phase B touches those regions |
+| D | Translate the remaining inline German comments and the few mixed-language handler strings still sitting in `main.js` (and any view module that ends up holding them after Phase B). Closes the repo rule that all code, comments and identifiers are in English (CONTRIBUTING.md). | mostly done via the #46 i18n sweep; ~a dozen German comments remain in `main.js` (and the older on-stick scripts are still German, tracked in the backlog below) — finish when Phase B touches those regions |
 
 Why this is on the roadmap rather than just done: Phase A alone
 was ~600 lines of careful diff and surfaced six unrelated bugs
