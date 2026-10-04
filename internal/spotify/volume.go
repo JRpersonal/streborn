@@ -317,14 +317,26 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			// stream if it is on another source (#14), and seed the app's volume
 			// slider with the box's real level so the first slider touch does not
 			// jump the speaker to 100% first.
-			m.maybeActivate()
+			// The volume seed is harmless either way; everything that can
+			// point the speaker back at the stream or lift STR's stop latches
+			// waits for engineStartAllowed (stopintent.go).
 			go m.syncVolumeFromBox(context.Background())
+			if !m.engineStartAllowed(ev.Type) {
+				continue
+			}
+			m.maybeActivate()
 			m.handleEnginePlaybackStart()
 		case "playing":
+			// After the user stopped the speaker, an engine that merely kept
+			// playing must not bring it back at the next track boundary.
+			if !m.engineStartAllowed(ev.Type) {
+				continue
+			}
 			m.maybeActivate()
 			m.handleEnginePlaybackStart()
 			m.repointForPendingContext()
 		case "paused", "stopped", "inactive":
+			m.noteEngineEnded()
 			// The Spotify app paused/stopped playback on this box, or moved it
 			// to another device. Forward as deliberate intent (guarded against
 			// echoes of STR's own staged recalls inside).

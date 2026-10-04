@@ -23,6 +23,7 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	// from the proxy, which fires the same disconnect path. Suppress the resume.
 	s.NoteUserStop()
 	s.NoteExplicitStop()
+	s.tellSpotifyUserStopped("pause")
 	// Where the track stands, read BEFORE the pause so a resume has somewhere to
 	// go back to. A speaker that has thrown its source away cannot be asked
 	// afterwards, and radio simply reports nothing, which stores a zero and
@@ -293,6 +294,7 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	// stop triggers does not race the auto-re-push into restarting the stream.
 	s.NoteUserStop()
 	s.NoteExplicitStop()
+	s.tellSpotifyUserStopped("stop")
 	// A stop ends any active library queue (no auto-advance after the user stops).
 	s.stopQueue("stop was pressed")
 	// Same as Pause: a station the speaker fetches itself is not on the UPnP
