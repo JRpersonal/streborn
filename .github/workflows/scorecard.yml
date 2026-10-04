@@ -38,6 +38,10 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+          # Fine-grained PAT (Administration: read-only) so the Branch-Protection
+          # check can read the classic protection rules. See ossf/scorecard-action
+          # docs/authentication/fine-grained-auth-token.md.
+          repo_token: ${{ secrets.SCORECARD_TOKEN }}
 
       - name: Upload SARIF to code scanning
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
