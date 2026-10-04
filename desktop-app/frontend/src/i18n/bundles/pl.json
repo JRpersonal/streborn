@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} jest połową pary stereo, a partner {{partner}} nie odpowiada. Połowa pary stereo nie gra samodzielnie. Jeśli {{partner}} nie wróci, rozwiąż starą parę.",
   "stereoStale.fixBtn": "Rozwiąż starą parę",
   "play.errStereoStale": "Połowa starej pary stereo, zobacz Multi-Room",
-  "update.stableNameNotice": "STR działa teraz jako STR-Windows.exe. Windows może jeszcze raz zapytać o dostęp do sieci: zezwól na niego dla sieci prywatnych, inaczej aplikacja nie znajdzie twoich głośników."
+  "update.stableNameNotice": "STR działa teraz jako STR-Windows.exe. Windows może jeszcze raz zapytać o dostęp do sieci: zezwól na niego dla sieci prywatnych, inaczej aplikacja nie znajdzie twoich głośników.",
+  "multiroom.pairPartnerUnreachable": "Dwa głośniki nie mogły się połączyć, więc para została cofnięta. Muszą być w tej samej sieci i móc rozmawiać ze sobą bezpośrednio.",
+  "multiroom.pairPartnerDidNotStore": "Drugi głośnik nie dołączył do pary, więc została cofnięta. Sprawdź, czy oba głośniki są w tej samej sieci, i spróbuj ponownie.",
+  "setup.pairFoundTitle": "Ten głośnik jest połową pary stereo",
+  "setup.pairFoundBody": "Jest sparowany jako „{{name}}” z głośnikiem pod adresem {{partner}}. Aby zachować parę, zainstaluj STR na obu głośnikach, najpierw na tym, potem na drugim. Jeśli zainstalujesz tylko ten, para zostanie najpierw rozwiązana na obu głośnikach, żeby żaden nie czekał na drugi.",
+  "setup.pairPartnerGoneBody": "Jest sparowany jako „{{name}}”, ale drugi głośnik pary nie odpowiada. Para zostanie rozwiązana na tym głośniku przed instalacją, inaczej czekałby dalej na partnera i nie grałby sam.",
+  "setup.pairKeepBoth": "Zachowaj parę (zainstaluj STR na obu)",
+  "setup.pairOnlyThis": "Zainstaluj tylko ten głośnik",
+  "setup.pairDissolveThis": "Rozwiąż parę i zainstaluj",
+  "setup.pairCancel": "Anuluj",
+  "setup.pairDissolving": "Rozwiązywanie pary stereo...",
+  "setup.pairDissolveFailed": "Nie udało się rozwiązać pary stereo, więc instalacja się nie rozpoczęła. Uruchom ponownie oba głośniki i spróbuj jeszcze raz.",
+  "setup.pairUnnamed": "Para stereo",
+  "setup.pairInstallPartnerNext": "Następnie zainstaluj STR także na drugim głośniku pary „{{name}}” ({{partner}}). Para zostanie zachowana, gdy oba głośniki będą miały STR.",
+  "setup.pairKept": "Para stereo „{{name}}” jest zachowana na obu głośnikach.",
+  "setup.pairRestored": "Para stereo „{{name}}” została ponownie skonfigurowana na obu głośnikach.",
+  "setup.pairRestoreFailed": "Nie udało się ponownie skonfigurować pary stereo „{{name}}”. Możesz sam sparować oba głośniki w karcie Multi-Room."
 }

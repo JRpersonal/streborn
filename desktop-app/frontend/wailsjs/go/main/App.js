@@ -74,6 +74,10 @@ export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
 }
 
+export function CheckStereoBeforeInstall(arg1) {
+  return window['go']['main']['App']['CheckStereoBeforeInstall'](arg1);
+}
+
 export function CheckStick(arg1) {
   return window['go']['main']['App']['CheckStick'](arg1);
 }
@@ -120,6 +124,10 @@ export function DisableBoxMediaServer(arg1, arg2, arg3, arg4) {
 
 export function DiscoverBoxes(arg1) {
   return window['go']['main']['App']['DiscoverBoxes'](arg1);
+}
+
+export function DissolvePairBeforeInstall(arg1) {
+  return window['go']['main']['App']['DissolvePairBeforeInstall'](arg1);
 }
 
 export function DissolveStereoPair(arg1, arg2) {
@@ -436,6 +444,10 @@ export function RestoreBoxSnapshot(arg1, arg2, arg3) {
 
 export function RestoreGroupAfterUpdate(arg1, arg2) {
   return window['go']['main']['App']['RestoreGroupAfterUpdate'](arg1, arg2);
+}
+
+export function RestorePairAfterInstall(arg1) {
+  return window['go']['main']['App']['RestorePairAfterInstall'](arg1);
 }
 
 export function RestoreSTRCloud(arg1) {

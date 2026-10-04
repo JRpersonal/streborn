@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} is half of a stereo pair, and its partner {{partner}} is not answering. A stereo half does not play on its own. If {{partner}} is gone for good, dissolve the old pair.",
   "stereoStale.fixBtn": "Dissolve the old pair",
   "play.errStereoStale": "Half of an old stereo pair, see Multi-Room",
-  "update.stableNameNotice": "STR now runs as STR-Windows.exe. Windows may ask once more for network access: please allow it for private networks, otherwise the app cannot find your speakers."
+  "update.stableNameNotice": "STR now runs as STR-Windows.exe. Windows may ask once more for network access: please allow it for private networks, otherwise the app cannot find your speakers.",
+  "multiroom.pairPartnerUnreachable": "The two speakers could not reach each other, so the pair was undone again. They need to be on the same network and able to talk to each other directly.",
+  "multiroom.pairPartnerDidNotStore": "The second speaker did not join the pair, so it was undone again. Check that both speakers are on the same network and try again.",
+  "setup.pairFoundTitle": "This speaker is half of a stereo pair",
+  "setup.pairFoundBody": "It is paired as \"{{name}}\" with the speaker at {{partner}}. To keep the pair, install STR on both speakers, this one now and the other one next. If you install only this one, the pair is dissolved on both speakers first, so neither waits for the other.",
+  "setup.pairPartnerGoneBody": "It is paired as \"{{name}}\", but the other speaker of the pair does not answer. The pair is dissolved on this speaker before installing, otherwise it would keep waiting for its partner and not play on its own.",
+  "setup.pairKeepBoth": "Keep the pair (install STR on both)",
+  "setup.pairOnlyThis": "Install only this speaker",
+  "setup.pairDissolveThis": "Dissolve the pair and install",
+  "setup.pairCancel": "Cancel",
+  "setup.pairDissolving": "Dissolving the stereo pair...",
+  "setup.pairDissolveFailed": "The stereo pair could not be dissolved, so the install did not start. Restart both speakers and try again.",
+  "setup.pairUnnamed": "Stereo pair",
+  "setup.pairInstallPartnerNext": "Next, install STR on the other speaker of \"{{name}}\" ({{partner}}) too. The pair is kept once both speakers run STR.",
+  "setup.pairKept": "The stereo pair \"{{name}}\" is intact on both speakers.",
+  "setup.pairRestored": "The stereo pair \"{{name}}\" was set up again on both speakers.",
+  "setup.pairRestoreFailed": "The stereo pair \"{{name}}\" could not be set up again. You can pair the two speakers yourself in the Multi-Room tab."
 }

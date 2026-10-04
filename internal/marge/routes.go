@@ -110,6 +110,14 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/device") && r.Method == http.MethodPost:
 		s.respondAddDevice(w, r)
 		return
+	// The firmware's provider-settings fetch. It fell into the generic account
+	// case below and got the account document, which the firmware rejects:
+	// "GetProviderSettingsCB xml parsing: providerSettings expected, but XML was
+	// 'account'" (a Wave SoundTouch bundle, 2026-10-04). The responder existed
+	// all along; nothing routed to it.
+	case strings.HasPrefix(path, "/streaming/account/") && strings.HasSuffix(strings.TrimSuffix(path, "/"), "/provider_settings"):
+		s.respondProviderSettings(w, r)
+		return
 	case strings.HasPrefix(path, "/streaming/account") || strings.HasPrefix(path, "/streaming/auth"):
 		s.respondMargeAccountFull(w, r)
 		return

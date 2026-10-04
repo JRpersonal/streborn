@@ -440,16 +440,34 @@ func (s *Server) createMargeGroup(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// readMargeGroup answers the periodic group poll. When a pair exists we return
-// it so the box keeps the pair; otherwise we preserve the historical standalone
-// behaviour (the box tolerates the account response as "not grouped").
+// readMargeGroup answers the periodic group poll. When a pair is stored we
+// return it so the box keeps the pair.
+//
+// With nothing stored it used to answer with the ACCOUNT document, on the
+// assumption that the box read that as "not grouped". It does not: it logs
+// "GetGroupCB xml parsing: group expected, but XML was 'account'" and then
+// deletes its own pair (two SoundTouch 10s, 2026-10-04). The firmware is asked
+// first now, see groupadopt.go.
 func (s *Server) readMargeGroup(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	g := s.group
 	s.mu.RUnlock()
 	if g == nil {
-		s.respondMargeAccountFull(w, r)
-		return
+		switch s.verdictForEmptyStore(r.Context()) {
+		case verdictHold:
+			respondGroupHold(w)
+			return
+		case verdictEmpty:
+			respondNoGroup(w)
+			return
+		}
+		s.mu.RLock()
+		g = s.group
+		s.mu.RUnlock()
+		if g == nil {
+			respondNoGroup(w)
+			return
+		}
 	}
 	s.logger.Debug("marge group poll answered from store",
 		slog.String("comp", "marge"), slog.String("groupId", g.ID))

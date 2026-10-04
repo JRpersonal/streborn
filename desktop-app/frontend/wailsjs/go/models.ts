@@ -392,6 +392,22 @@ export namespace main {
 	        this.bytes = source["bytes"];
 	    }
 	}
+	export class PairMember {
+	    deviceID: string;
+	    role: string;
+	    ip: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PairMember(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.deviceID = source["deviceID"];
+	        this.role = source["role"];
+	        this.ip = source["ip"];
+	    }
+	}
 	export class PhoneAddress {
 	    url: string;
 	    name?: string;
@@ -540,6 +556,45 @@ export namespace main {
 	        this.mime = source["mime"];
 	    }
 	}
+	export class SavedPair {
+	    id: string;
+	    name: string;
+	    masterDeviceID: string;
+	    members: PairMember[];
+	    // Go type: time
+	    savedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new SavedPair(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.masterDeviceID = source["masterDeviceID"];
+	        this.members = this.convertValues(source["members"], PairMember);
+	        this.savedAt = this.convertValues(source["savedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SetupAPProbe {
 	    box: BoxInfo;
 	    found: boolean;
@@ -651,6 +706,48 @@ export namespace main {
 	        this.port = source["port"];
 	        this.name = source["name"];
 	    }
+	}
+	export class StereoInstallCheck {
+	    known: boolean;
+	    paired: boolean;
+	    pair: SavedPair;
+	    status: string;
+	    partnerIP: string;
+	    partnerOnline: boolean;
+	    partnerHasSTR: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new StereoInstallCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.known = source["known"];
+	        this.paired = source["paired"];
+	        this.pair = this.convertValues(source["pair"], SavedPair);
+	        this.status = source["status"];
+	        this.partnerIP = source["partnerIP"];
+	        this.partnerOnline = source["partnerOnline"];
+	        this.partnerHasSTR = source["partnerHasSTR"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class StoragePreflight {
 	    tight: boolean;

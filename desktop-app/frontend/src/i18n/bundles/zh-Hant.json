@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} 是立體聲組合的一半，而夥伴 {{partner}} 沒有回應。立體聲組合的一半不會單獨播放。如果 {{partner}} 不會回來，請解除舊組合。",
   "stereoStale.fixBtn": "解除舊組合",
   "play.errStereoStale": "舊立體聲組合的一半，請查看 Multi-Room",
-  "update.stableNameNotice": "STR 現在以 STR-Windows.exe 執行。Windows 可能會再次詢問網路存取權限：請允許私人網路，否則 App 找不到你的喇叭。"
+  "update.stableNameNotice": "STR 現在以 STR-Windows.exe 執行。Windows 可能會再次詢問網路存取權限：請允許私人網路，否則 App 找不到你的喇叭。",
+  "multiroom.pairPartnerUnreachable": "兩台喇叭無法互相連線，因此已取消配對。它們需要在同一個網路上，並能直接互相通訊。",
+  "multiroom.pairPartnerDidNotStore": "第二台喇叭沒有加入配對，因此已取消。請確認兩台喇叭在同一個網路上，然後再試一次。",
+  "setup.pairFoundTitle": "這台喇叭是立體聲配對的其中一半",
+  "setup.pairFoundBody": "它以「{{name}}」的名稱與位於 {{partner}} 的喇叭配對。若要保留配對，請在兩台喇叭上都安裝 STR，先裝這台，再裝另一台。如果只安裝這台，會先在兩台喇叭上解除配對，讓兩邊都不會一直等待對方。",
+  "setup.pairPartnerGoneBody": "它以「{{name}}」的名稱配對，但配對中的另一台喇叭沒有回應。安裝前會先在這台喇叭上解除配對，否則它會一直等待夥伴而無法單獨播放。",
+  "setup.pairKeepBoth": "保留配對（兩台都安裝 STR）",
+  "setup.pairOnlyThis": "只安裝這台喇叭",
+  "setup.pairDissolveThis": "解除配對並安裝",
+  "setup.pairCancel": "取消",
+  "setup.pairDissolving": "正在解除立體聲配對...",
+  "setup.pairDissolveFailed": "無法解除立體聲配對，因此沒有開始安裝。請重新啟動兩台喇叭後再試一次。",
+  "setup.pairUnnamed": "立體聲配對",
+  "setup.pairInstallPartnerNext": "接下來也請在「{{name}}」的另一台喇叭（{{partner}}）上安裝 STR。兩台都有 STR 後，配對就會保留。",
+  "setup.pairKept": "立體聲配對「{{name}}」在兩台喇叭上都完整保留。",
+  "setup.pairRestored": "立體聲配對「{{name}}」已在兩台喇叭上重新設定。",
+  "setup.pairRestoreFailed": "無法重新設定立體聲配對「{{name}}」。你可以在 Multi-Room 分頁自行配對這兩台喇叭。"
 }

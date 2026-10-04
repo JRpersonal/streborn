@@ -1566,5 +1566,21 @@
   "stereoStale.partnerGone": "{{name}} ir stereo pāra puse, un partneris {{partner}} neatbild. Stereo pāra puse viena pati neatskaņo. Ja {{partner}} neatgriezīsies, izjauciet veco pāri.",
   "stereoStale.fixBtn": "Izjaukt veco pāri",
   "play.errStereoStale": "Veca stereo pāra puse, skatiet Multi-Room",
-  "update.stableNameNotice": "STR tagad darbojas kā STR-Windows.exe. Windows var vēlreiz prasīt tīkla piekļuvi: atļauj to privātajiem tīkliem, citādi lietotne neatradīs tavus skaļruņus."
+  "update.stableNameNotice": "STR tagad darbojas kā STR-Windows.exe. Windows var vēlreiz prasīt tīkla piekļuvi: atļauj to privātajiem tīkliem, citādi lietotne neatradīs tavus skaļruņus.",
+  "multiroom.pairPartnerUnreachable": "Abi skaļruņi nevarēja sasniegt viens otru, tāpēc pāris atkal atcelts. Tiem jābūt vienā tīklā un jāspēj sazināties tieši.",
+  "multiroom.pairPartnerDidNotStore": "Otrais skaļrunis nepievienojās pārim, tāpēc tas atkal atcelts. Pārbaudi, vai abi skaļruņi ir vienā tīklā, un mēģini vēlreiz.",
+  "setup.pairFoundTitle": "Šis skaļrunis ir stereo pāra daļa",
+  "setup.pairFoundBody": "Tas ir savienots kā “{{name}}” ar skaļruni adresē {{partner}}. Lai saglabātu pāri, instalē STR abos skaļruņos, vispirms šajā, tad otrā. Ja instalēsi tikai šajā, pāris vispirms tiks atcelts abos skaļruņos, lai neviens negaidītu otru.",
+  "setup.pairPartnerGoneBody": "Tas ir savienots kā “{{name}}”, bet otrs pāra skaļrunis neatbild. Pirms instalēšanas pāris šajā skaļrunī tiks atcelts, citādi tas turpinātu gaidīt partneri un viens pats neskanētu.",
+  "setup.pairKeepBoth": "Saglabāt pāri (instalēt STR abos)",
+  "setup.pairOnlyThis": "Instalēt tikai šo skaļruni",
+  "setup.pairDissolveThis": "Atcelt pāri un instalēt",
+  "setup.pairCancel": "Atcelt",
+  "setup.pairDissolving": "Stereo pāris tiek atcelts...",
+  "setup.pairDissolveFailed": "Stereo pāri neizdevās atcelt, tāpēc instalēšana netika sākta. Restartē abus skaļruņus un mēģini vēlreiz.",
+  "setup.pairUnnamed": "Stereo pāris",
+  "setup.pairInstallPartnerNext": "Pēc tam instalē STR arī otrā “{{name}}” skaļrunī ({{partner}}). Pāris saglabāsies, tiklīdz abos skaļruņos būs STR.",
+  "setup.pairKept": "Stereo pāris “{{name}}” ir saglabāts abos skaļruņos.",
+  "setup.pairRestored": "Stereo pāris “{{name}}” atkal iestatīts abos skaļruņos.",
+  "setup.pairRestoreFailed": "Stereo pāri “{{name}}” neizdevās atkal iestatīt. Abus skaļruņus vari savienot pats cilnē Multi-Room."
 }

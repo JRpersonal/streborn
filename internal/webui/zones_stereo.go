@@ -1914,6 +1914,28 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		}
 	}
 	partnerSynced := s.pushGroupDocToPartner(ctx, partner.IP, canonicalDoc)
+	// Both halves must hold the pair before it is called formed (see
+	// stereoverify.go): a master that read back two members while its partner
+	// stored nothing was reported as paired and then refused to play alone.
+	vctx, vcancel := context.WithTimeout(context.WithoutCancel(ctx), stereoVerifyTimingFor(s).budget+10*time.Second)
+	verdict := verifyStereoPair(vctx, s.stereoGroupFetch(), s.boxHost, partner.IP, master.DeviceID, partner.DeviceID, stereoVerifyTimingFor(s))
+	vcancel()
+	if !verdict.OK {
+		s.logger.Warn("stereo: the pair did not form on both speakers, undoing it",
+			"reason", verdict.Reason, "masterStatus", verdict.MasterStatus, "partnerIP", partner.IP)
+		cleared := s.undoUnconfirmedPair(ctx, c, partner)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": false, "stereo": true, "reason": verdict.Reason,
+			"masterStatus": verdict.MasterStatus, "partnerIP": partner.IP,
+			"partnerMargeCleared": cleared,
+			"error":               stereoFailureText(verdict.Reason),
+		})
+		return
+	}
+	if !verdict.PartnerVerified {
+		s.logger.Info("stereo: paired; the partner's firmware could not be read back, the master reports the pair healthy",
+			"partnerIP", partner.IP, "masterStatus", verdict.MasterStatus)
+	}
 	// Restart what was playing before the pairing (#705). A pair is one logical
 	// device to the firmware, so a master stream that SURVIVED the pairing
 	// already serves both channels (in the #705 bundle the partner flipped to

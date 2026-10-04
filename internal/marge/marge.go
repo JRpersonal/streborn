@@ -121,6 +121,11 @@ type Server struct {
 	// forward relays the box's cloud traffic to a developer machine when set
 	// (see forward.go). Empty = answer locally. Never persisted.
 	forward string
+
+	// groupProbe reads the firmware's own /getGroup so a pair the firmware
+	// already holds is adopted instead of answered away (see groupadopt.go).
+	groupProbe FirmwareGroupProbe
+	adopt      adoptState
 }
 
 // SpyEntry is a single logged HTTP request.

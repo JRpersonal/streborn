@@ -41,6 +41,8 @@ export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):P
 
 export function CheckAppUpdate():Promise<Record<string, string>>;
 
+export function CheckStereoBeforeInstall(arg1:string):Promise<main.StereoInstallCheck>;
+
 export function CheckStick(arg1:string):Promise<sticksetup.StickCheck>;
 
 export function ClassifyOTAResult(arg1:string,arg2:number):Promise<string>;
@@ -64,6 +66,8 @@ export function DeleteRecentCard(arg1:string,arg2:number,arg3:string,arg4:string
 export function DisableBoxMediaServer(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 
 export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
+
+export function DissolvePairBeforeInstall(arg1:Array<string>):Promise<Record<string, any>>;
 
 export function DissolveStereoPair(arg1:string,arg2:number):Promise<void>;
 
@@ -222,6 +226,8 @@ export function ResolveUpdateAsset(arg1:string):Promise<main.UpdateAsset>;
 export function RestoreBoxSnapshot(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
 export function RestoreGroupAfterUpdate(arg1:string,arg2:number):Promise<void>;
+
+export function RestorePairAfterInstall(arg1:string):Promise<Record<string, any>>;
 
 export function RestoreSTRCloud(arg1:Array<main.CloudRestoreTarget>):Promise<Array<main.CloudRestoreResult>>;
 
