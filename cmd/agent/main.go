@@ -575,6 +575,11 @@ func run() error {
 	// group poll can be answered without it.
 	go adoptFirmwarePairAtStartup(context.Background(), margeSrv, *boxHost, logger.With("comp", "groupadopt"))
 	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
+	// display_clock: the firmware's own view of the clock on the display, read
+	// only when a diagnostic is taken (#841: a frozen display clock while the
+	// system clock was correct, and the bundle could not show which).
+	displayClockBase := "http://" + net.JoinHostPort(*boxHost, "8090")
+	webui.RegisterDebugSection("display_clock", func() any { return displayClockSnapshot(displayClockBase, time.Now) })
 	// net_reachability captures the "plays radio but unreachable" fault: the
 	// cheap carrier/IP/gateway-ARP snapshot the health tick watches, plus the
 	// on-demand INPUT chain, routes, ARP table and listeners for a bundle.
