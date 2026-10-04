@@ -15,8 +15,9 @@ import (
 
 // webviewDataDir returns a stable, version-independent folder for the WebView2
 // user-data profile on Windows. Without it WebView2 derives the profile from the
-// running executable, and because STR ships versioned executables
-// (STR-Windows-vX.Y.Z.exe) every update gets a fresh profile, wiping ALL
+// running executable, and because STR shipped versioned executables up to
+// v1.0.1 (STR-Windows-vX.Y.Z.exe; since then STR-Windows.exe, and a second
+// download is still a different path) every new file got a fresh profile, wiping ALL
 // webview localStorage: radio favorites (str.favStations), the selected UI
 // language, the last selected speaker, the radio search-country filter, the
 // cached box list, and the setup region. Pinning the profile next to the

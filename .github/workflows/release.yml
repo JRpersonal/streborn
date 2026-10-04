@@ -2,18 +2,24 @@ name: release
 
 # Triggered by signed tags vX.Y.Z. Produces:
 #   - streborn-armv7l                  (stick agent for the Bose speaker hardware)
-#   - STR-Windows-vX.Y.Z.exe           (desktop app, Windows x64)
-#   - STR-macOS-vX.Y.Z.dmg             (desktop app, universal Mac binary inside a DMG)
-#   - STR-macOS-vX.Y.Z.zip             (same signed app, for the in-app update's bundle swap)
-#   - STR-Linux-x64-vX.Y.Z.tar.gz      (desktop app, Linux x64)
+#   - STR-Windows.exe                  (desktop app, Windows x64)
+#   - STR-macOS.dmg                    (desktop app, universal Mac binary inside a DMG)
+#   - STR-macOS.zip                    (same signed app, for the in-app update's bundle swap)
+#   - STR-Linux-x64.tar.gz             (desktop app, Linux x64)
 #   - SHA256SUMS                       (combined checksums)
 #   - manifest.json                    (machine-readable index for the website)
 # Every artifact is attested via Sigstore (actions/attest-build-provenance).
-# Desktop app filenames carry the version so users can tell builds apart; the
-# website + in-app update resolve them through manifest.json's per-version
-# `url`. The stick agent binaries keep stable names, so
+# No file name carries the version (since 2026-10-04). The Windows in-app
+# update swaps the running .exe in place and keeps its name, so a versioned
+# name ended up describing an old build: STR-Windows-v0.9.80.exe running
+# v1.0.1. The version lives in the app, in the Windows file properties and on
+# the release page instead. Every file therefore has a permanent
 # https://github.com/JRpersonal/streborn/releases/latest/download/<name>
-# still works for them.
+# URL. The website + the in-app update still resolve downloads through
+# manifest.json (artifact keys unchanged), so installed apps keep updating.
+# The provenance files keep the version (STR-<v>.sigstore.json /
+# STR-<v>.intoto.jsonl): they verify one specific release, and keeping
+# several of them side by side must not overwrite each other.
 on:
   # NOTE: there is deliberately NO tag-push trigger. The publish step creates
   # the tag itself, and it does so with a PAT, which (unlike GITHUB_TOKEN) DOES
@@ -1459,25 +1465,6 @@ jobs:
           mv -f "STR-Windows-signed.zip" "STR-Windows.zip"
           ls -la
 
-      - name: Version the desktop download filenames
-        working-directory: dist
-        env:
-          VERSION: ${{ needs.build-agent.outputs.version }}
-        run: |
-          # Put the version in the desktop app filenames so users can tell
-          # builds apart in their Downloads folder. Done here, after the build
-          # jobs attested the files: attestation binds to the file's digest,
-          # not its name, so the rename does not affect `gh attestation verify`.
-          # The agent binaries keep fixed names. The desktop apps therefore no
-          # longer have stable /releases/latest/download/<name> URLs; the
-          # website + the in-app update read manifest.json's per-version `url`.
-          mv "STR-Windows.exe"      "STR-Windows-${VERSION}.exe"
-          mv "STR-Windows.zip"      "STR-Windows-${VERSION}.zip"
-          mv "STR-macOS.dmg"        "STR-macOS-${VERSION}.dmg"
-          mv "STR-macOS.zip"        "STR-macOS-${VERSION}.zip"
-          mv "STR-Linux-x64.tar.gz" "STR-Linux-x64-${VERSION}.tar.gz"
-          ls -la
-
       - name: Combined SHA256SUMS
         working-directory: dist
         run: |
@@ -1490,8 +1477,8 @@ jobs:
 
       - name: Release provenance (one attestation over every published file)
         # The build jobs already attest each artifact, but those attestations
-        # live only in GitHub's attestation store, and the desktop downloads
-        # are renamed and (on Windows) swapped for the signed bytes after that.
+        # live only in GitHub's attestation store, and the Windows download is
+        # swapped for the signed bytes after that.
         # This attests the exact final files, by digest, from SHA256SUMS, and
         # the next step publishes the bundle WITH the release, so it can be
         # verified offline and tools that look at release assets (OpenSSF
@@ -1558,32 +1545,32 @@ jobs:
             "supported_models": ["SoundTouch 10", "SoundTouch 20", "SoundTouch 30", "Wave SoundTouch IV"],
             "artifacts": {
               "desktop_windows": {
-                "url": "${BASE}/STR-Windows-${VERSION}.exe",
-                "sha256": "$(sha STR-Windows-${VERSION}.exe)",
+                "url": "${BASE}/STR-Windows.exe",
+                "sha256": "$(sha STR-Windows.exe)",
                 "platform": "windows",
                 "arch": "amd64",
-                "filename": "STR-Windows-${VERSION}.exe"
+                "filename": "STR-Windows.exe"
               },
               "desktop_macos": {
-                "url": "${BASE}/STR-macOS-${VERSION}.dmg",
-                "sha256": "$(sha STR-macOS-${VERSION}.dmg)",
+                "url": "${BASE}/STR-macOS.dmg",
+                "sha256": "$(sha STR-macOS.dmg)",
                 "platform": "macos",
                 "arch": "universal",
-                "filename": "STR-macOS-${VERSION}.dmg"
+                "filename": "STR-macOS.dmg"
               },
               "desktop_macos_zip": {
-                "url": "${BASE}/STR-macOS-${VERSION}.zip",
-                "sha256": "$(sha STR-macOS-${VERSION}.zip)",
+                "url": "${BASE}/STR-macOS.zip",
+                "sha256": "$(sha STR-macOS.zip)",
                 "platform": "macos",
                 "arch": "universal",
-                "filename": "STR-macOS-${VERSION}.zip"
+                "filename": "STR-macOS.zip"
               },
               "desktop_linux": {
-                "url": "${BASE}/STR-Linux-x64-${VERSION}.tar.gz",
-                "sha256": "$(sha STR-Linux-x64-${VERSION}.tar.gz)",
+                "url": "${BASE}/STR-Linux-x64.tar.gz",
+                "sha256": "$(sha STR-Linux-x64.tar.gz)",
                 "platform": "linux",
                 "arch": "amd64",
-                "filename": "STR-Linux-x64-${VERSION}.tar.gz",
+                "filename": "STR-Linux-x64.tar.gz",
                 "runtime_libs": ["libgtk-3-0", "libwebkit2gtk-4.1-0", "libsoup-3.0"]
               },
               "agent_armv7l": {
@@ -1668,9 +1655,9 @@ jobs:
           # Free public API allows 4 lookups/minute; stay within it.
           request_rate: 4
           files: |
-            dist/STR-Windows-*.exe
-            dist/STR-macOS-*.dmg
-            dist/STR-Linux-x64-*.tar.gz
+            dist/STR-Windows.exe
+            dist/STR-macOS.dmg
+            dist/STR-Linux-x64.tar.gz
 
       - name: VirusTotal gate (stop the release on heavy detection)
         # Waits for the scans of the just-uploaded desktop apps to complete and
@@ -1693,7 +1680,7 @@ jobs:
           RATIO_PCT=15   # ...or at least this percent of all engines do
           DEADLINE=$(( $(date +%s) + 360 ))  # ~6 min for the scans to finish
           fail=0
-          for f in "STR-Windows-${VERSION}.exe" "STR-macOS-${VERSION}.dmg" "STR-Linux-x64-${VERSION}.tar.gz"; do
+          for f in "STR-Windows.exe" "STR-macOS.dmg" "STR-Linux-x64.tar.gz"; do
             sha=$(awk -v n="$f" '$2==n{print $1}' SHA256SUMS)
             if [ -z "$sha" ]; then echo "::warning::no SHA256 for $f, not gating it"; continue; fi
             mal=""; total=""; resp=""
@@ -1772,9 +1759,9 @@ jobs:
 
           | Platform | File |
           |---|---|
-          | Windows desktop app | [STR-Windows-${VERSION}.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Windows-${VERSION}.exe) |
-          | macOS desktop app | [STR-macOS-${VERSION}.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-macOS-${VERSION}.dmg) |
-          | Linux desktop app (x86_64) | [STR-Linux-x64-${VERSION}.tar.gz](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64-${VERSION}.tar.gz) |
+          | Windows desktop app | [STR-Windows.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Windows.exe) |
+          | macOS desktop app | [STR-macOS.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-macOS.dmg) |
+          | Linux desktop app (x86_64) | [STR-Linux-x64.tar.gz](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64.tar.gz) |
           | Stick agent (ARMv7l, real target) | [streborn-armv7l](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-armv7l) |
           | Stick agent (ARM64, reserve) | [streborn-arm64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-arm64) |
           | Stick agent (amd64, test rig) | [streborn-amd64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-amd64) |
@@ -1782,7 +1769,7 @@ jobs:
           | Checksums | [SHA256SUMS](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/SHA256SUMS) |
           | Machine-readable | [manifest.json](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/manifest.json) |
 
-          The website at st-reborn.de fetches \`manifest.json\` to render the current download links. The desktop app filenames carry the version; the stick agent binaries keep stable \`/releases/latest/download/<file>\` URLs for direct linking.
+          The website at st-reborn.de fetches \`manifest.json\` to render the current download links. All file names are stable (no version in the name), so every file, the desktop apps included, has a permanent \`/releases/latest/download/<file>\` URL.
 
           ### System requirements
 
@@ -1802,7 +1789,7 @@ jobs:
           sha256sum -c SHA256SUMS
 
           # Sigstore attestation (requires GitHub CLI)
-          gh attestation verify STR-Windows-${VERSION}.exe --owner ${GITHUB_REPOSITORY_OWNER}
+          gh attestation verify STR-Windows.exe --owner ${GITHUB_REPOSITORY_OWNER}
           \`\`\`
 
           MD
@@ -1835,9 +1822,9 @@ jobs:
           # matches what the website renders from manifest.json's sha256. Only when
           # VT_API_KEY is set (the upload step above ran), else the links would 404.
           if [ -n "${VT_API_KEY}" ]; then
-            wsha=$(awk -v f="STR-Windows-${VERSION}.exe" '$2==f{print $1}' SHA256SUMS)
-            msha=$(awk -v f="STR-macOS-${VERSION}.dmg" '$2==f{print $1}' SHA256SUMS)
-            lsha=$(awk -v f="STR-Linux-x64-${VERSION}.tar.gz" '$2==f{print $1}' SHA256SUMS)
+            wsha=$(awk -v f="STR-Windows.exe" '$2==f{print $1}' SHA256SUMS)
+            msha=$(awk -v f="STR-macOS.dmg" '$2==f{print $1}' SHA256SUMS)
+            lsha=$(awk -v f="STR-Linux-x64.tar.gz" '$2==f{print $1}' SHA256SUMS)
             echo
             echo "### VirusTotal scan"
             echo
@@ -1917,11 +1904,11 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: dist/release-notes.md
           files: |
-            dist/STR-Windows-*.exe
-            dist/STR-Windows-*.zip
-            dist/STR-macOS-*.dmg
-            dist/STR-macOS-*.zip
-            dist/STR-Linux-x64-*.tar.gz
+            dist/STR-Windows.exe
+            dist/STR-Windows.zip
+            dist/STR-macOS.dmg
+            dist/STR-macOS.zip
+            dist/STR-Linux-x64.tar.gz
             dist/streborn-armv7l
             dist/streborn-arm64
             dist/streborn-amd64

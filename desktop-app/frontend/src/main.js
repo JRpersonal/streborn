@@ -1343,9 +1343,11 @@ async function checkAppUpdate(manual) {
       <button class="banner-close" id="appUpdateDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('banner.dismissTitle'))}">&times;</button>
     `;
     banner.classList.remove('hidden');
-    // There is no Windows installer: the release is a bare
-    // STR-Windows-vX.Y.Z.exe, so "updating" means downloading a second file
-    // into the same folder and nothing replaces anything. A reporter spent
+    // There is no Windows installer: the release is a bare exe (versioned
+    // STR-Windows-vX.Y.Z.exe up to v1.0.1, STR-Windows.exe since), so updating
+    // by hand means downloading a second file into the same folder and
+    // nothing replaces anything. The Go side reads a sibling's version from
+    // its Windows version resource, the old name being only the fallback. A reporter spent
     // three rounds of mail on that (2026-10-01), downloading the new version
     // again and again while starting the old one, until he deleted the old
     // file by hand. If the newer file is already sitting next to this one,
@@ -1353,11 +1355,11 @@ async function checkAppUpdate(manual) {
     //
     // The hint is added, and the Install button STAYS. It used to be hidden,
     // which made a file name the only thing standing between somebody and
-    // their update: the name is the only evidence there is about a sibling, a
-    // person may rename these files for their own reasons (one does, to see
-    // the version on his desktop), and a file called STR-Windows-v9.9.9.exe
-    // that is actually ancient would have left the banner pointing at it with
-    // no way forward. The update check itself reads the version compiled into
+    // their update: for files published up to v1.0.1 the name was the only
+    // evidence about a sibling, a person may rename these files for their own
+    // reasons (one does, to see the version on their desktop), and a file
+    // called STR-Windows-v9.9.9.exe that is actually ancient would have left
+    // the banner pointing at it with no way forward. The update check itself reads the version compiled into
     // the running build, so it is never fooled; only this hint can be, so this
     // hint may inform and must not block.
     NewerCopyNextToThisOne().then((file) => {
