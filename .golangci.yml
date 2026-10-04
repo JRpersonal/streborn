@@ -13,6 +13,16 @@ linters:
     - ineffassign
     - staticcheck
     - errorlint
+    - forbidigo
+  settings:
+    forbidigo:
+      forbid:
+        # Logging goes through log/slog, whose TextHandler escapes values. The
+        # standard log package would bypass that, and it is the reason the
+        # CodeQL go/log-injection query can be excluded
+        # (.github/codeql/codeql-config.yml).
+        - pattern: '^log\.(Print|Fatal|Panic)(f|ln)?$'
+          msg: use the slog logger; the log package bypasses slog's value escaping
   exclusions:
     rules:
       # Tests legitimately compare against sentinel errors and format for
