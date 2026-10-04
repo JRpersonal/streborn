@@ -116,10 +116,10 @@ func (s *Server) AdoptFirmwareGroup(fg FirmwareGroup) (bool, string) {
 	hasSelf, hasPartner := false, false
 	for _, r := range fg.Roles {
 		id := strings.ToUpper(strings.TrimSpace(r.DeviceID))
-		switch {
-		case id == "":
+		switch id {
+		case "":
 			return false, "a role without a device id"
-		case id == self:
+		case self:
 			hasSelf = true
 		default:
 			hasPartner = true
