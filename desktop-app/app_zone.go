@@ -265,7 +265,7 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 			}()
 		}
 	}
-	b, err := json.Marshal(spec)
+	b, err := json.Marshal(zoneFormPayload(spec, a.groupWakes.recent(spec.Slaves, time.Now())))
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -127,6 +128,14 @@ func (a *App) WakeBox(host string, port int) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return readHTTPError(resp)
+	}
+	// An agent that woke the speaker out of standby says so; older agents do
+	// not, and FormZone then sends what it always sent.
+	var body struct {
+		Woke bool `json:"woke"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&body) == nil && body.Woke {
+		a.groupWakes.note(host, time.Now())
 	}
 	return nil
 }

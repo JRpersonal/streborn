@@ -471,6 +471,11 @@ type zoneFormReq struct {
 	// play (formDefaultGroupOnPlay), so defining it is silent. Only honoured with
 	// Permanent set.
 	DefineOnly bool `json:"defineOnly"`
+	// WokenFromStandby lists the member addresses the app woke out of standby
+	// for this form. What those members play right now is their own power-on
+	// resume, not music the group should take over (zoneformwoken.go). Older
+	// apps do not send it and get the previous behaviour.
+	WokenFromStandby []string `json:"wokenFromStandby,omitempty"`
 }
 
 // sameMasterZone reports whether two zone records are led by the same speaker.
@@ -830,7 +835,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
 	masterBlocked := false
-	if _, busy := s.boxPlayState(); busy {
+	// A master STR woke for this group is playing its own power-on resume, not
+	// the user's music: stop it instead of carrying it into every room.
+	_, busy := s.boxPlayState()
+	if busy && s.stopGroupWakeSelfResume(ctx, "before forming") {
+		busy = false
+	}
+	if busy {
 		// WHAT the box is playing, not just that it is: a Spotify session runs
 		// on a URL STR never recorded, and re-pushing the recorded one replaced
 		// the user's live playlist with an old station in every room. See
@@ -848,7 +859,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// source STR cannot push: it is still playing, and moving the whole group
 	// onto a member's station would be the same theft from the other side.
 	if resume == nil && !masterBlocked {
-		resume = s.memberResumeForZone(ctx, slaves)
+		resume = s.memberResumeForZone(ctx, membersNotWokenForGroup(slaves, wokenMemberSet(req.WokenFromStandby)))
 	}
 
 	// Never form against a standby master: the firmware then wakes INTO its
@@ -893,6 +904,12 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 		s.logger.Info("zone: the speaker did not report waking, but it is answering, so the group is formed anyway",
 			"wakeErr", err, "master", master.DeviceID)
+	}
+	// The wake above (or the app's, moments ago) may have let the firmware
+	// resume the master's last source after the quiet wake's own STOP check.
+	// With nothing to restart the group forms silent, so that resume goes.
+	if resume == nil {
+		s.stopGroupWakeSelfResume(ctx, "after the wake")
 	}
 
 	// Read the live zone ONCE: it carries both the members the user dropped
@@ -1062,6 +1079,16 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// master's stream survived; on a fresh (or re-formed) zone the members
 		// have nothing yet (Martin, 2026-08-24).
 		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental, members: z2.Members})
+	} else if resume == nil {
+		// A group formed silent out of a group wake gets one more look: the
+		// firmware's resume can start after the zone formed, and the zone then
+		// carries it into every room. One read, no repeating timer.
+		go func() {
+			time.Sleep(lateSelfResumeCheck)
+			lctx, lcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer lcancel()
+			s.stopGroupWakeSelfResume(lctx, "after forming")
+		}()
 	}
 	out := map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
