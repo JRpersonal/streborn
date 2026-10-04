@@ -76,6 +76,7 @@ export {
   CurrentWiFi,
   CheckAppUpdate,
   NewerCopyNextToThisOne,
+  ConsumeStableNameNotice,
   ExportBackup,
   ImportBackup,
   ResolveStationLogo,

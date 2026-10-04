@@ -1561,5 +1561,6 @@
   "library.serverAsleep": "{{name}} antwortet nicht. Meistens heißt das, dass der Rechner, auf dem der Server läuft, ausgeschaltet ist oder schläft. Weck ihn auf und versuch es noch einmal.",
   "play.errBoxStuckTryPower": "Der Lautsprecher kommt nicht aus dem Standby. Zieh den Stecker für zehn Sekunden und steck ihn wieder ein, das löst so etwas meistens.",
   "play.errBoxStuckSendLog": "STR bekommt den Lautsprecher nicht aus dem Standby. Exportiere bitte unten bei den Lautsprecher-Einstellungen eine Diagnose und schick sie mir, direkt nach einem Versuch.",
-  "banner.appCheckKeepsFailing": "STR konnte seit mehreren Starts nicht nach einer neuen Version schauen. Vielleicht blockiert eine Firewall oder ein Virenscanner die Anfrage. Schau gelegentlich selbst auf st-reborn.de nach."
+  "banner.appCheckKeepsFailing": "STR konnte seit mehreren Starts nicht nach einer neuen Version schauen. Vielleicht blockiert eine Firewall oder ein Virenscanner die Anfrage. Schau gelegentlich selbst auf st-reborn.de nach.",
+  "update.stableNameNotice": "STR läuft jetzt als STR-Windows.exe. Windows fragt eventuell noch einmal nach Netzwerkzugriff. Erlaube ihn bitte für private Netzwerke, sonst findet die App deine Lautsprecher nicht."
 }

@@ -6,6 +6,7 @@ import { spotifyAccountName } from './spotifyaccountlabel.js';
 import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
+import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import {
@@ -73,6 +74,7 @@ import {
   CurrentWiFi,
   CheckAppUpdate,
   NewerCopyNextToThisOne,
+  ConsumeStableNameNotice,
   DownloadUpdate,
   ApplyUpdate,
   RevealUpdateFile,
@@ -1164,6 +1166,11 @@ async function renderFooter() {
   // so even if it ever misbehaved it cannot abort startup. checkAppUpdate
   // is itself fully guarded (try/catch + Go-side recover).
   setTimeout(() => { try { checkAppUpdate(); } catch {} }, 8000);
+  // Once after an update moved the app to STR-Windows.exe: Windows asks for
+  // network access again for the new path, and a dismissed prompt leaves the
+  // speaker list empty. Shown a moment after start so the firewall prompt and
+  // the window are both up.
+  setTimeout(() => { maybeShowStableNameNotice({ consume: ConsumeStableNameNotice, showToast, t }).catch(() => {}); }, 2500);
   // Long-running apps re-check every 12 hours (#71): STR often stays open for
   // days on a media PC, and the startup-only check meant such installs never
   // learned about a new release (and its security fixes) until a restart. The

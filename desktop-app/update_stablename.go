@@ -159,6 +159,53 @@ func updateVersionOf(path string) string {
 	return ""
 }
 
+// renamedMarkerName is the file an update leaves in the app's config folder
+// (next to app-state.json) after it moved an old versioned file to the stable
+// name. The new process reads it once, shows the firewall note and deletes it.
+const renamedMarkerName = "renamed-to-stable-exe"
+
+func renamedMarkerPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "ST Reborn", renamedMarkerName), nil
+}
+
+// writeRenamedMarker records the rename for the next start. Best effort: a
+// missing note must never cost the update.
+func writeRenamedMarker(path, oldName string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(oldName+"\n"), 0o644)
+}
+
+// consumeRenamedMarker reports whether the marker existed, and removes it so
+// the note shows exactly once. A marker that cannot be removed is still
+// reported as false, so a stuck file never shows the note on every start.
+func consumeRenamedMarker(path string) bool {
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	return os.Remove(path) == nil
+}
+
+// ConsumeStableNameNotice tells the frontend, once, that the previous update
+// renamed this app to STR-Windows.exe, so it can explain the firewall question
+// Windows asks again for the new path. Always false after the first call.
+func (a *App) ConsumeStableNameNotice() bool {
+	p, err := renamedMarkerPath()
+	if err != nil {
+		return false
+	}
+	shown := consumeRenamedMarker(p)
+	if shown {
+		a.logger.Info("update: showing the one-time note about the stable file name")
+	}
+	return shown
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

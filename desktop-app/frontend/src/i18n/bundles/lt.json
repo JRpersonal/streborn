@@ -1561,5 +1561,6 @@
   "library.serverAsleep": "{{name}} neatsako. Paprastai tai reiškia, kad kompiuteris, kuriame jis veikia, išjungtas arba miega. Pažadink jį ir bandyk dar kartą.",
   "play.errBoxStuckTryPower": "Kolonėlė neišeina iš budėjimo režimo. Ištrauk kištuką dešimčiai sekundžių ir vėl įkišk, tai paprastai padeda.",
   "play.errBoxStuckSendLog": "STR negali pažadinti šios kolonėlės. Kolonėlės nustatymų apačioje eksportuok diagnostiką ir atsiųsk ją iškart po bandymo.",
-  "banner.appCheckKeepsFailing": "STR jau kelis paleidimus negali patikrinti, ar yra nauja versija. Gali būti, kad užklausą blokuoja ugniasienė arba antivirusinė. Kartkartėmis pats užsuk į st-reborn.de."
+  "banner.appCheckKeepsFailing": "STR jau kelis paleidimus negali patikrinti, ar yra nauja versija. Gali būti, kad užklausą blokuoja ugniasienė arba antivirusinė. Kartkartėmis pats užsuk į st-reborn.de.",
+  "update.stableNameNotice": "STR dabar veikia kaip STR-Windows.exe. Windows gali dar kartą paprašyti tinklo prieigos: leisk ją privačiuose tinkluose, kitaip programėlė neras tavo garsiakalbių."
 }

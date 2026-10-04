@@ -1561,5 +1561,6 @@
   "library.serverAsleep": "{{name}} geeft geen antwoord. Meestal betekent dat dat de computer waarop hij draait uit staat of slaapt. Maak hem wakker en probeer het opnieuw.",
   "play.errBoxStuckTryPower": "De speaker komt niet uit stand-by. Haal de stekker er tien seconden uit en steek hem er weer in, dat lost dit meestal op.",
   "play.errBoxStuckSendLog": "STR krijgt deze speaker niet uit stand-by. Exporteer onderaan bij de speakerinstellingen een diagnose en stuur die op, direct na een poging.",
-  "banner.appCheckKeepsFailing": "STR heeft al een aantal keren niet kunnen kijken of er een nieuwe versie is. Mogelijk blokkeert een firewall of virusscanner het verzoek. Kijk af en toe zelf op st-reborn.de."
+  "banner.appCheckKeepsFailing": "STR heeft al een aantal keren niet kunnen kijken of er een nieuwe versie is. Mogelijk blokkeert een firewall of virusscanner het verzoek. Kijk af en toe zelf op st-reborn.de.",
+  "update.stableNameNotice": "STR draait nu als STR-Windows.exe. Windows kan nog één keer om netwerktoegang vragen: sta die toe voor privénetwerken, anders vindt de app je speakers niet."
 }

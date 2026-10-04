@@ -94,6 +94,10 @@ export function ClearUpdateIntent(arg1, arg2) {
   return window['go']['main']['App']['ClearUpdateIntent'](arg1, arg2);
 }
 
+export function ConsumeStableNameNotice() {
+  return window['go']['main']['App']['ConsumeStableNameNotice']();
+}
+
 export function CopyPresetsAcrossBoxes(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['CopyPresetsAcrossBoxes'](arg1, arg2, arg3, arg4);
 }

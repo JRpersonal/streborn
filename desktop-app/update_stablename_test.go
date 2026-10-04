@@ -207,6 +207,22 @@ func TestRemoveStaleOldBinaries(t *testing.T) {
 	}
 }
 
+func TestRenamedMarkerShowsOnce(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ST Reborn", renamedMarkerName)
+	if consumeRenamedMarker(p) {
+		t.Fatal("no marker, no note")
+	}
+	if err := writeRenamedMarker(p, "STR-Windows-v0.9.95.exe"); err != nil {
+		t.Fatal(err)
+	}
+	if !consumeRenamedMarker(p) {
+		t.Fatal("the first start after a rename must show the note")
+	}
+	if consumeRenamedMarker(p) {
+		t.Fatal("the note must show only once")
+	}
+}
+
 func TestShortcutRetargetScriptQuotesPaths(t *testing.T) {
 	s := shortcutRetargetScript(`C:\Users\O'Brien\STR-Windows-v0.9.95.exe`, `C:\Users\O'Brien\STR-Windows.exe`)
 	if !strings.Contains(s, `$old='C:\Users\O''Brien\STR-Windows-v0.9.95.exe'`) ||

@@ -1561,5 +1561,6 @@
   "library.serverAsleep": "{{name}} yanıt vermiyor. Genellikle bu, üzerinde çalıştığı bilgisayarın kapalı ya da uykuda olduğu anlamına gelir. Onu uyandırıp yeniden dene.",
   "play.errBoxStuckTryPower": "Hoparlör bekleme modundan çıkmıyor. Fişini on saniye çekip tekrar tak, bu genellikle çözer.",
   "play.errBoxStuckSendLog": "STR bu hoparlörü bekleme modundan çıkaramıyor. Hoparlör ayarlarının altından bir tanılama dışa aktarıp gönder, denemenin hemen ardından.",
-  "banner.appCheckKeepsFailing": "STR birkaç açılıştır yeni sürüm olup olmadığına bakamıyor. Bir güvenlik duvarı ya da virüs tarayıcı isteği engelliyor olabilir. Ara sıra st-reborn.de adresine kendin göz at."
+  "banner.appCheckKeepsFailing": "STR birkaç açılıştır yeni sürüm olup olmadığına bakamıyor. Bir güvenlik duvarı ya da virüs tarayıcı isteği engelliyor olabilir. Ara sıra st-reborn.de adresine kendin göz at.",
+  "update.stableNameNotice": "STR artık STR-Windows.exe olarak çalışıyor. Windows ağ erişimini bir kez daha sorabilir: özel ağlar için izin ver, aksi halde uygulama hoparlörlerini bulamaz."
 }

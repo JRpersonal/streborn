@@ -525,6 +525,11 @@ func (a *App) applyWindows(newExe string) error {
 		}
 		launch, err := installUnderStableName(exe, newExe, plan, newShortcutRetargeter(), a.logger.Info)
 		if err == nil {
+			if mp, merr := renamedMarkerPath(); merr == nil {
+				if werr := writeRenamedMarker(mp, filepath.Base(exe)); werr != nil {
+					a.logger.Info("update: could not leave the one-time note for the next start", "err", werr)
+				}
+			}
 			a.relaunchAndQuit(launch)
 			return nil
 		}
