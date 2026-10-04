@@ -334,9 +334,16 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 .volrock .btn { min-height:52px; font-size:22px; }
 .volrock #volMute { font-size:18px; padding:6px 14px; }
 .volslide { display:flex; align-items:center; gap:12px; }
-.volslide input[type=range] { flex:1 1 auto; min-width:0; accent-color:var(--accent); height:44px; }
+.volslide input[type=range] { flex:1 1 auto; min-width:0; accent-color:var(--accent); height:44px; background:transparent; }
 .volslide input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); }
 .volslide input[type=range]::-moz-range-thumb { width:24px; height:24px; border:0; border-radius:50%; background:var(--accent); }
+/* Firefox stops painting its native track once the thumb is styled, so without
+   these two rules the slider showed only a floating dot there (#1125). The
+   unfilled part uses --muted, not --line: --line on the dark card is too faint
+   to read as a bar. The transparent background above drops the dark box
+   Firefox otherwise paints behind a range input in the dark theme. */
+.volslide input[type=range]::-moz-range-track { height:4px; border-radius:2px; background:var(--muted); }
+.volslide input[type=range]::-moz-range-progress { height:4px; border-radius:2px; background:var(--accent); }
 .volslide .val { width:40px; text-align:right; font-variant-numeric:tabular-nums; }
 
 /* A line of state under a heading, so a panel can answer without being opened. */
