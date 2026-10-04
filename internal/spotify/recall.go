@@ -456,8 +456,10 @@ func (m *Manager) ensureSession(ctx context.Context) bool {
 	if m.SessionActive(ctx) {
 		return true
 	}
-	if !m.LoggedIn() {
-		return false // never logged in: actionable as "tap this speaker once"
+	if !m.hasUsableCredential() {
+		// Never logged in, or only a login Spotify already refused: restarting
+		// the engine cannot help, the answer is "tap this speaker once".
+		return false
 	}
 	m.logger.Warn("spotify: persisted credential present but no live session; restarting go-librespot to re-auth before recall")
 	m.mu.Lock()
@@ -496,8 +498,12 @@ func (m *Manager) ensureSession(ctx context.Context) bool {
 // when BOTH are false is the recall genuinely impossible, so the "tap this
 // speaker in Spotify once" hint is correct. PlayAccount->ensureSession then
 // handles the live vs cold-restart decision from here.
+//
+// The on-disk half asks hasUsableCredential, not LoggedIn: a login Spotify has
+// already refused is on disk but cannot start anything, and counting it made a
+// doomed recall report "playing" (credreject.go).
 func (m *Manager) CanRecall(ctx context.Context) bool {
-	return m.SessionActive(ctx) || m.LoggedIn()
+	return m.SessionActive(ctx) || m.hasUsableCredential()
 }
 
 // PlayAccount switches to the preset's account (if needed) then plays the URI

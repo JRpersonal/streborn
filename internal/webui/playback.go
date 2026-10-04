@@ -439,6 +439,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				// 2026-07-26: 51-track storms per press). Remember it so the
 				// verify below never fires the recovery re-Play into that state.
 				keyDenied = strings.Contains(playErr.Error(), "audio key denied")
+				if isNoSpotifySession(playErr) {
+					s.abandonSessionlessRecall(gen, recallStart, slot)
+					return
+				}
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", playErr, "keyDenied", keyDenied)
 			}
 			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())

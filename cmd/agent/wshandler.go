@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1282,6 +1283,19 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// Load the playlist (audio): a default preset resumes where the user left off
 	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
 	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle, Repeat: p.Repeat}); err != nil {
+		if errors.Is(err, spotify.ErrNoSpotifySession) {
+			// No login the engine can use (never picked, or Spotify refused the
+			// saved one): a retry only re-points the speaker at a stream that
+			// never carries audio until it gives up on "no source". Stop it and
+			// end the recall; the next press meets the CanRecall gate above.
+			h.logger.Warn("spotify recall: the speaker has no Spotify login it can use, stopping instead of retrying; pick this speaker in the Spotify app once", "slot", slot)
+			stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if serr := h.renderer.Stop(stopCtx); serr != nil {
+				h.logger.Warn("spotify recall: stopping the speaker after the failed recall did not work", "slot", slot, "err", serr)
+			}
+			cancel()
+			return
+		}
 		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 	} else if h.repushAfterRecall != nil {
 		// The context loaded: mirror the app path's conditional post-boundary

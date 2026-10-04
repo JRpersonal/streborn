@@ -310,3 +310,47 @@ func fmtTime(t time.Time) string {
 	}
 	return t.Format(time.RFC3339)
 }
+
+// hasUsableCredential is LoggedIn without the login Spotify already refused on
+// this speaker. LoggedIn only asks whether a credential sits on disk, and a
+// refused one still does whenever setting it aside failed or the account store
+// holds the same blob under another name. Both preset questions, "will this key
+// play?" at save time and "can this recall start?" at press time, asked
+// LoggedIn, so a speaker whose saved login Spotify had stopped accepting
+// answered yes to both: the key was saved without the "pick this speaker in
+// Spotify once" notice, and a press reported playing while the speaker gave up
+// in the background and went amber (field, ST10 stereo pair, 2026-10-04).
+func (m *Manager) hasUsableCredential() bool {
+	if cred, ok := m.readStateCredential(); ok && !m.isRejectedCredential(cred) {
+		return true
+	}
+	if usableCredentialFile(m, filepath.Join(m.configDir, "credentials.json")) {
+		return true
+	}
+	entries, err := os.ReadDir(m.credStore)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".json") && usableCredentialFile(m, filepath.Join(m.credStore, e.Name())) {
+			return true
+		}
+	}
+	return false
+}
+
+// usableCredentialFile reports whether path holds a credential that is not the
+// refused one. An unreadable or unparsable file counts as usable when it
+// exists, the same benefit of the doubt LoggedIn gives it: only a positive
+// match against the refused login takes a credential out of play.
+func usableCredentialFile(m *Manager, path string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var c storedCredential
+	if json.Unmarshal(b, &c) != nil || len(c.Data) == 0 {
+		return true
+	}
+	return !m.isRejectedCredential(c)
+}
