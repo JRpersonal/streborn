@@ -376,15 +376,8 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		fns[k] = fn
 	}
 	debugSectionsMu.Unlock()
-	for k, fn := range fns {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					state[k] = fmt.Sprintf("ERR: provider panicked: %v", r)
-				}
-			}()
-			state[k] = fn()
-		}()
+	for k, v := range collectDebugSections(fns, debugSectionTimeout) {
+		state[k] = v
 	}
 	s.writeDebugState(w, state, r.URL.Query().Get("raw") == "1")
 }

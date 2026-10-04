@@ -281,6 +281,7 @@ import {
   notifyZoneLive,
 } from './groups.js';
 import { pairDisplayName, healPairNames } from './stereoNames.js';
+import { findStalePairs, confirmStalePairs, staleFindingFor, staleNoticeText } from './stalestereo.js';
 
 // The already-on-another-key refusal and the offer to move the station live in
 // presetmove.js, so vitest can drive the whole decision without a DOM.
@@ -3749,6 +3750,40 @@ onZoneLive(updateMultiroomTabBadge);
 // field empty) gets it written back, so the Spotify picker and the phone remote
 // match this app again (#1077, issue 5). Rides the same poll, no timer.
 onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxes).catch(() => {}); });
+
+// A speaker stuck as half of a stereo pair that no longer exists (see
+// stalestereo.js). Recomputed after every zone round from data the poll already
+// has, no request of its own; the tracker makes a finding wait two rounds and
+// ten seconds, so a pair being formed or dissolved never raises it.
+const staleStereoTracker = new Map();
+onZoneLive(() => {
+  state.staleStereo = confirmStalePairs(findStalePairs(state.zoneLive || {}, state.boxes || []), staleStereoTracker);
+});
+
+// stereoStaleForError returns the stale-pair finding a failed play on host is
+// explained by, or null: the agent said so itself (409 stereo-incomplete), or
+// the app had already seen the speaker stuck in an old pair and the play ran
+// into "not ready".
+function stereoStaleForError(errStr, host) {
+  const l = String(errStr || '').toLowerCase();
+  const found = staleFindingFor(host, state.staleStereo);
+  if (l.includes('stereo-incomplete')) {
+    if (found) return found;
+    const box = (state.boxes || []).find(b => b && b.host === host);
+    // The agent's 409 names the partner (partnerIP) or at least the master.
+    let ref = {};
+    const m = String(errStr || '').match(/\{[^{}]*"error"\s*:\s*"stereo-incomplete"[\s\S]*\}/);
+    if (m) { try { ref = JSON.parse(m[0]) || {}; } catch { ref = {}; } }
+    const partner = resolveBoxByRef(ref.partnerIP || ref.partnerID || ref.master, state.boxes);
+    return {
+      holder: box || { host, name: host }, partner,
+      partnerLabel: partner ? (partner.name || partner.host) : (ref.partnerIP || ''),
+      reason: ref.reason === 'partner-gone' ? 'partner-gone' : 'partner-denies', pair: null,
+    };
+  }
+  if (l.includes('box_not_ready') && found) return found;
+  return null;
+}
 
 // foreignMod maps a leftover /mnt/nv directory name (as the agent reports it in
 // foreignDirs / conflictingMod) to a human-readable name of the OTHER SoundTouch
@@ -7538,6 +7573,10 @@ async function play(slot) {
     if (errStr.toLowerCase().includes('spotify-not-logged-in')) {
       showToast(t('play.errSpotifyLoginHelp'));
     }
+    // Half of an old stereo pair: the whole sentence, with where to fix it.
+    // "Not ready" on every key, for an hour, is what this replaces (2026-10-04).
+    const stale = stereoStaleForError(errStr, (state.currentBox && state.currentBox.host) || '');
+    if (stale) showToast(staleNoticeText(stale, t));
     setTimeout(() => refreshStatus(), 2000);
   }
 }
@@ -7551,6 +7590,10 @@ async function play(slot) {
 // (2026-09-29) and had nowhere to go from it.
 function friendlyPlayError(s, host) {
   const l = String(s).toLowerCase();
+  // Before box_not_ready: a speaker stuck as half of an old stereo pair is
+  // "not ready" forever, and the escalation ladder below would send its owner to
+  // pull the plug and mail logs, neither of which helps.
+  if (stereoStaleForError(s, host)) return t('play.errStereoStale');
   if (l.includes('box_not_ready')) return t(escalationForCount(noteNotReady(host)));
   // Spotify recall refused because the speaker was never picked as the Spotify
   // Connect device (no go-librespot credential). Key off the stable backend code,
