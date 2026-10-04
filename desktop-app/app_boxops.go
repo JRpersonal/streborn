@@ -120,8 +120,20 @@ func (a *App) rebootBoxFor(host string, port int, reason string) error {
 // that is the normal path, not an edge case. An old agent ignores a key it does
 // not know and does its plain wake; the agents that gate the quiet treatment on
 // standby understand this name.
+//
+// The speaker is recorded as woken BEFORE the call and forgotten only when the
+// agent answers that it did not wake it. A quiet wake out of standby takes about
+// ten seconds on a SoundTouch 10, longer than the shared 6 s client timeout, and
+// the group-edit path in main.js gives each wake only 4 s before it sends the
+// form anyway. Recording on the answer therefore lost exactly the speakers that
+// needed it: the form went out without them in wokenFromStandby, the master took
+// their power-on resume for the group's music, and a group formed out of idle
+// speakers played (fleet run 2026-10-04). A speaker that was not asleep comes
+// back fast with woke=false and is dropped again; a wrong entry for one that
+// never answered only stops the master borrowing its stream, never starts sound.
 func (a *App) WakeBox(host string, port int) error {
-	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/wake?quietifasleep=1", "application/json", "")
+	a.groupWakes.note(host, time.Now())
+	resp, err := a.boxDoTimeout(host, port, http.MethodPost, "/api/box/wake?quietifasleep=1", "application/json", "", wakeCallTimeout)
 	if err != nil {
 		return err
 	}
@@ -134,11 +146,16 @@ func (a *App) WakeBox(host string, port int) error {
 	var body struct {
 		Woke bool `json:"woke"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&body) == nil && body.Woke {
-		a.groupWakes.note(host, time.Now())
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || !body.Woke {
+		a.groupWakes.forget(host)
 	}
 	return nil
 }
+
+// wakeCallTimeout covers the agent's whole quiet wake (handleBoxWake), which
+// may spend its full wake budget plus the mute and STOP that follow it. Giving
+// up earlier is what dropped the wake record above.
+const wakeCallTimeout = 30 * time.Second
 
 // RemoveConflictingMod removes the leftovers of a rival cloud-free SoundTouch
 // tool (AfterTouch) from the box so they stop clashing with STR. Surfaced as a

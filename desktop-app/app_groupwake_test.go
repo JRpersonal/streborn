@@ -62,3 +62,18 @@ func TestWakeBoxRecordsASpeakerItWokeAndFormZoneSendsIt(t *testing.T) {
 		t.Fatalf("wokenFromStandby missing from %s", raw)
 	}
 }
+
+// A wake the app stops waiting for (the agent is still walking the speaker out
+// of standby) keeps the speaker recorded: dropping it is what let a group formed
+// out of idle speakers play (fleet run 2026-10-04).
+func TestWakeBoxKeepsTheRecordWhenTheWakeDoesNotAnswer(t *testing.T) {
+	a := newTestApp()
+	// Nothing listens on this port, so the call fails at the transport.
+	if err := a.WakeBox("127.0.0.1", 1); err == nil {
+		t.Fatal("expected a transport error")
+	}
+	members := []ZoneMember{{DeviceID: "a", IP: "127.0.0.1"}}
+	if got := a.groupWakes.recent(members, time.Now()); len(got) != 1 {
+		t.Fatalf("a wake without an answer must still count as woken, got %v", got)
+	}
+}
