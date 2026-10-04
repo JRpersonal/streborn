@@ -62,7 +62,7 @@ Users can verify a download with either:
 sha256sum -c SHA256SUMS
 
 # Method 2: GitHub CLI attestation verification
-gh attestation verify STR-Windows-vX.Y.Z.exe \
+gh attestation verify STR-Windows.exe \
     --owner JRpersonal
 ```
 

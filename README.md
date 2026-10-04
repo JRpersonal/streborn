@@ -165,8 +165,10 @@ See [st-reborn.de](https://st-reborn.de).
 Every release on GitHub Releases is built by the official workflow and ships with build provenance attestations via Sigstore. You can verify any binary with:
 
 ```bash
-gh attestation verify STR-Windows-vX.Y.Z.exe --owner JRpersonal
+gh attestation verify STR-Windows.exe --owner JRpersonal
 ```
+
+The desktop downloads have stable names without a version (`STR-Windows.exe`, `STR-macOS.dmg`, `STR-Linux-x64.tar.gz`; releases up to v1.0.1 carried the version in the name). The version is shown in the app and, on Windows, under Properties > Details. Each release also carries its Sigstore bundle as a file, `STR-<version>.sigstore.json`, for offline checks with `gh attestation verify STR-Windows.exe --bundle STR-<version>.sigstore.json --owner JRpersonal`.
 
 Windows builds are additionally Authenticode-signed with a Certum open-source code-signing certificate; check the signature in the file's Properties > Digital Signatures tab or with `signtool verify /pa`.
 
