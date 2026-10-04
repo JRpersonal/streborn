@@ -72,6 +72,25 @@ updates:
       frontend-tooling:
         update-types: ["minor", "patch"]
 
+  # The CI helper scripts (.github/scripts: mermaid + jsdom for the diagram
+  # check). Pinned through their own lockfile since 2026-10-04 so CI can use
+  # npm ci; this keeps those pins from going stale.
+  - package-ecosystem: "npm"
+    directory: "/.github/scripts"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      ci-scripts:
+        update-types: ["minor", "patch"]
+
   # Keep GitHub Actions themselves up to date.
   - package-ecosystem: "github-actions"
     directory: "/"

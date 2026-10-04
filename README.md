@@ -207,7 +207,7 @@ STR is an independent open source project. The abbreviation **ST** references co
 
 STR exists solely to restore functionality of these speakers after the official Bose cloud service shutdown in February 2026. Reverse engineering for interoperability is permitted under EU Directive 2009/24/EC, Article 6, and comparable provisions in other jurisdictions.
 
-The software is provided AS IS, without warranty. Use at your own risk.
+The software is provided AS IS, without warranty. Use at your own risk. The full disclaimer is in [DISCLAIMER.md](./DISCLAIMER.md).
 
 ## Acknowledgements and third-party software
 
@@ -229,4 +229,4 @@ Bundled components keep their own licenses; STR's own code is MIT.
 
 ## License
 
-MIT. See [LICENSE](./LICENSE). The bundled go-librespot binary is GPL-3.0; see the Acknowledgements above.
+MIT. See [LICENSE](./LICENSE), and [DISCLAIMER.md](./DISCLAIMER.md) for the trademark and interoperability notice. The bundled go-librespot binary is GPL-3.0; see the Acknowledgements above.

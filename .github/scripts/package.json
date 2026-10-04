@@ -1,0 +1,9 @@
+{
+  "name": "str-ci-scripts",
+  "private": true,
+  "description": "Pinned dependencies for the CI helper scripts in this folder (check-mermaid.mjs). CI installs them with npm ci, so the exact versions come from package-lock.json.",
+  "dependencies": {
+    "jsdom": "30.1.1",
+    "mermaid": "11.17.2"
+  }
+}
