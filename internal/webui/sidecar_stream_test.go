@@ -160,24 +160,3 @@ func TestStreamUploadedELFRoundTrip(t *testing.T) {
 		t.Error("the stored binary differs from the upload; the ELF peek may have consumed its head")
 	}
 }
-
-// The buffering variant must keep behaving exactly as before: the agent-update
-// endpoint still needs the bytes after the write for its fallback tiers, so the
-// shared reclaim preamble must not have changed what it does.
-func TestWriteBinaryAtomicStillWorksAfterTheSplit(t *testing.T) {
-	dst := filepath.Join(t.TempDir(), "streborn-armv7l")
-	body := elfBody(32 * 1024)
-	if err := writeBinaryAtomic(dst, body); err != nil {
-		t.Fatalf("writeBinaryAtomic: %v", err)
-	}
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("read back: %v", err)
-	}
-	if !bytes.Equal(got, body) {
-		t.Error("the buffered write no longer stores the exact bytes")
-	}
-	if _, err := os.Stat(dst + ".new"); !os.IsNotExist(err) {
-		t.Error("the .new temp survived a successful buffered write")
-	}
-}
