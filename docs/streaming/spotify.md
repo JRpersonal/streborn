@@ -321,6 +321,26 @@ zeroconf. STR therefore likely delivers native Spotify essentially for
 free (to confirm: whether a post-cloud box without STR leaves the source
 disabled).
 
+### When Spotify refuses the saved login (`internal/spotify/credreject.go`)
+
+go-librespot persists the tap's credential in `state.json` and logs in
+with it on every start. When Spotify stops accepting it (password change,
+"sign out everywhere", revoked account), the engine exits fatally with
+`failed authenticating accesspoint with stored credentials: ...
+BadCredentials` before it ever serves a tap. Until v1.0.3 the supervisor
+paced that as an ordinary crash (cap one minute), so the box restarted the
+engine every minute forever and never appeared in the Spotify app again
+(ST10 bundle, 2026-10-04: 150 cycles and counting).
+
+The supervisor now recognises that exit, moves the refused login aside
+(`rejected-credential.json` in the config dir, plus `.rejected` on a
+legacy `credentials.json` and on an identical per-account copy) and
+restarts the engine with no saved login: a tap in the Spotify app logs it
+back in. If the same refused login keeps coming back, or nothing could be
+moved, consecutive refusals back off 1, 2, 4 ... minutes up to 30.
+`ImportCredential` refuses to stage the refused blob again. The
+`spotify_auth` debug section shows the state (no account names).
+
 ## Goal
 
 A SoundTouch speaker running STR should be linkable to one or more

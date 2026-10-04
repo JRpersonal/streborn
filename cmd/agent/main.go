@@ -735,6 +735,11 @@ func run() error {
 		snap["engineRSSKB"] = engineRSSKB(spotifyMgr)
 		return snap
 	})
+	// Whether the engine has a saved Spotify login, and whether Spotify
+	// refusing it was handled (set aside, waiting for a tap). No account names.
+	webui.RegisterDebugSection("spotify_auth", func() any {
+		return spotifyMgr.CredentialSnapshot()
+	})
 
 	// Answer for this speaker's own mDNS name BEFORE the engine is told to
 	// advertise it. The order is the safety property, not a detail: the engine
