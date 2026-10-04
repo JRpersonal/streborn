@@ -425,6 +425,10 @@ func run() error {
 		// in the Bose app survives the first STR boot this way).
 		marge.WithFirmwareGroupProbe(firmwareGroupProbe(*boxHost)),
 		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
+		// Pandora route A (#243): off unless the marker exists. Then the
+		// stand-in reports PANDORA available and keeps the source the
+		// firmware's own client registers (docs/streaming/pandora.md).
+		marge.WithPandora("/mnt/nv/streborn/pandora-optin", "/mnt/nv/streborn/pandora-source.json"),
 		// The speaker's own hold-to-store gesture PUTs the playing station to
 		// marge; keep it in the STR store so the app shows the key and the
 		// reconcile keeps it registered (see holdstore.go).
@@ -918,9 +922,13 @@ func run() error {
 		}),
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup, margeSrv.RenameGroup, margeSrv.GroupName),
 		webui.WithMargeForward(margeSrv.SetForward),
+		webui.WithPandora(margeSrv),
 		webui.WithRecent(recentStore))
 
 	webui.RegisterDebugSection("alarms", webuiSrv.AlarmsSnapshot)
+	// Read only when a diagnostic is taken: the stand-in's masked record plus
+	// the firmware's own PANDORA line from /sources (no timer).
+	webui.RegisterDebugSection("pandora", webuiSrv.PandoraDebugSnapshot)
 
 	// The preset reconcile has to know when STR woke this speaker for a group:
 	// its own native preset write makes the firmware select the radio source

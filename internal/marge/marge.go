@@ -126,6 +126,11 @@ type Server struct {
 	// already holds is adopted instead of answered away (see groupadopt.go).
 	groupProbe FirmwareGroupProbe
 	adopt      adoptState
+
+	// pandoraMarker enables the route-A Pandora opt-in when the file exists;
+	// pandoraStore persists the source the firmware registered (pandora.go).
+	pandoraMarker string
+	pandoraStore  string
 }
 
 // SpyEntry is a single logged HTTP request.
