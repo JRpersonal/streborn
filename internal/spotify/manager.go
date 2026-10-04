@@ -91,6 +91,9 @@ type Manager struct {
 	// Premium check already fetches, kept on the NAND beside the credential
 	// copies, and read back at boot. nil until first use; see accountnames.go.
 	accountNames map[string]string
+	// credReject tracks Spotify refusing the saved login (BadCredentials) and
+	// what the supervisor did about it; see credreject.go. Guarded by mu.
+	credReject credRejectState
 	// MemAvailKB reads the box's MemAvailable in KB, negative when unknown.
 	// Wired by the agent from /proc/meminfo before Run; nil in tests. The
 	// chain cutter (oggchain.go) reads it a couple of times a minute while a

@@ -317,7 +317,16 @@ func (m *Manager) Run(ctx context.Context) {
 		// Healthy playback resets rapidCrashes, so a normal restart still
 		// takes the fast 3 s path.
 		wait := 3 * time.Second
-		if rapidCrashes >= 3 {
+		// Spotify refused the saved login: the engine exits fatally on every
+		// start until that login is out of its way, so this is not a crash to
+		// pace like a network outage. afterEngineExit sets the login aside and
+		// picks the wait (credreject.go). Consulted on every exit, so a run
+		// that ends any other way resets the refusal streak.
+		credWait, credHandled := m.afterEngineExit()
+		if credHandled && ctx.Err() == nil {
+			rapidCrashes = 0
+			wait = credWait
+		} else if rapidCrashes >= 3 {
 			wait = time.Duration(rapidCrashes) * 5 * time.Second
 			if wait > spotifyMaxRestartBackoff {
 				wait = spotifyMaxRestartBackoff
@@ -388,6 +397,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.mu.Lock()
 	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
 	m.mu.Unlock()
+	m.resetCredRejectRun()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)
 	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
 	// Point the engine's Spotify Connect advert at a name this speaker actually
@@ -513,6 +523,9 @@ func parseLoadedTrackDurMs(lc string) int64 {
 
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
+	// Spotify refusing the saved login is handled by the supervisor once the
+	// run has exited (credreject.go).
+	m.noteCredentialLine(lc)
 	// "loaded track" carries the duration the app-skip detector needs (see
 	// loadedTrackDurMs). The prefetch line names a duration too, but
 	// describes a track that may never play, so it is ignored here.

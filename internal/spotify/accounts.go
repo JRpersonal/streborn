@@ -539,6 +539,11 @@ func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
 	// credentials.json (legacy fallback).
 	var cred storedCredential
 	if json.Unmarshal(data, &cred) == nil && cred.Username != "" && len(cred.Data) > 0 {
+		// Spotify already refused exactly this login here (credreject.go).
+		// Staging it again would only send the engine back into the refusal.
+		if m.isRejectedCredential(cred) {
+			return errCredentialRejected
+		}
 		if err := m.writeActiveCredential(cred); err != nil {
 			return err
 		}
