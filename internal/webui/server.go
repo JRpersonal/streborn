@@ -785,6 +785,10 @@ type lastPlayInfo struct {
 	ts                       time.Time
 	rePushes                 int
 	failed                   bool
+	// fromBox marks a station the firmware activated by itself (a native radio
+	// preset, which includes its power-on resume), not one STR started. See
+	// NoteNativeLastPlay and userPlayedSince.
+	fromBox bool
 }
 
 // resumeMaxAge bounds how stale the last station may be and still come back on a
@@ -979,7 +983,7 @@ func (s *Server) quietWake(ctx context.Context) error {
 const (
 	quietWakeWakeBudget = 15 * time.Second
 	quietWakeStepBudget = 4 * time.Second
-	quietWakeBudget     = quietWakeWakeBudget + 2*quietWakeStepBudget + 2*time.Second
+	quietWakeBudget     = quietWakeWakeBudget + quietWakeResumeWatch + 2*quietWakeStepBudget + 2*time.Second
 )
 
 // quietWakeStepCtx is a fresh deadline for one step after the wake, never the
@@ -993,23 +997,47 @@ var quietWakeStop = func(ctx context.Context, host string) error {
 	return boxapi.New(host).Key(ctx, "STOP")
 }
 
-// stopQuietWakeResume sends STOP when the speaker is producing (or about to
-// produce) sound after a quiet wake. One read, at most one key, each on its own
-// deadline.
+// quietWakeResumeWatch is how long after the wake the speaker is watched for
+// the firmware's own resume. The wake reports "awake" the moment the source
+// changes, and the station itself starts a moment later: measured on a
+// SoundTouch 10 (fleet run 2026-10-04), the single read right after the wake
+// saw the station selected but not yet playing, no STOP went out, and it
+// played on muted until the zone join lifted the mute. Bounded and only
+// inside a quiet wake, so no standing poll on the speaker.
+const (
+	quietWakeResumeWatch = 5 * time.Second
+	quietWakeResumePoll  = 400 * time.Millisecond
+)
+
+// stopQuietWakeResume sends STOP once the speaker produces (or is about to
+// produce) sound after a quiet wake. It watches for up to quietWakeResumeWatch
+// and stops early when there is nothing that could resume: no readable state,
+// standby, or no source at all. Every read and the key run on fresh deadlines.
 func (s *Server) stopQuietWakeResume() {
-	ctx, cancel := quietWakeStepCtx()
-	np := quietWakeNowPlaying(ctx, s.boxHost)
-	cancel()
-	if np.PlayStatus == "" || np.PlayStatus == "STOP_STATE" || np.Source == "STANDBY" {
-		return
+	deadline := time.Now().Add(quietWakeResumeWatch)
+	for {
+		ctx, cancel := quietWakeStepCtx()
+		np := quietWakeNowPlaying(ctx, s.boxHost)
+		cancel()
+		switch {
+		case np.Source == "" || np.Source == "STANDBY" || np.Source == "INVALID_SOURCE":
+			return
+		case np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE":
+			ctx, cancel = quietWakeStepCtx()
+			err := quietWakeStop(ctx, s.boxHost)
+			cancel()
+			if err != nil {
+				s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err)
+				return
+			}
+			s.logger.Info("wake: stopped what the speaker resumed after the quiet wake", "source", np.Source, "playStatus", np.PlayStatus)
+			return
+		}
+		if !time.Now().Before(deadline) {
+			return
+		}
+		time.Sleep(quietWakeResumePoll)
 	}
-	ctx, cancel = quietWakeStepCtx()
-	defer cancel()
-	if err := quietWakeStop(ctx, s.boxHost); err != nil {
-		s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err)
-		return
-	}
-	s.logger.Info("wake: stopped what the speaker resumed after the quiet wake", "source", np.Source, "playStatus", np.PlayStatus)
 }
 
 // setVolumeOnFirstLife starts a watcher that writes vol the moment the speaker

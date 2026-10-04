@@ -88,11 +88,13 @@ func (s *Server) groupWakeEpisode() (active bool, since time.Time) {
 }
 
 // userPlayedSince reports whether STR pushed a play to this speaker after t,
-// i.e. the user started something after the group wake.
+// i.e. the user started something after the group wake. A native station the
+// firmware activated by itself does not count: inside a group wake that is its
+// power-on resume (NoteNativeLastPlay).
 func (s *Server) userPlayedSince(t time.Time) bool {
 	s.lastPlayMu.Lock()
 	defer s.lastPlayMu.Unlock()
-	return s.lastPlay != nil && s.lastPlay.ts.After(t)
+	return s.lastPlay != nil && !s.lastPlay.fromBox && s.lastPlay.ts.After(t)
 }
 
 // groupWakeNowPlaying is the read seam for stopGroupWakeSelfResume, the same

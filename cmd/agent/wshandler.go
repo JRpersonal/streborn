@@ -116,6 +116,12 @@ type presetWsHandler struct {
 	// Returns the new recall generation for the supersession check below.
 	// Wired to webui.NoteLastPlay. nil-safe.
 	noteLastPlay func(boxURL, title, art, mime string) uint64
+	// noteNativeLastPlay records a station the FIRMWARE activated by itself
+	// (a native radio preset). Same record as noteLastPlay, marked as not
+	// started through STR, so a group wake can tell the speaker's power-on
+	// resume apart from music the user chose. Wired to
+	// webui.NoteNativeLastPlay; falls back to noteLastPlay when nil.
+	noteNativeLastPlay func(boxURL, title, art, mime string) uint64
 	// recallGenFn reads the webui's current recall generation. A hardware
 	// verify captures the generation its own noteLastPlay returned and stands
 	// down as soon as the live value moves on: a newer play (second hardware
@@ -578,8 +584,12 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 			// record, and leaving it on the PREVIOUS station makes them bring
 			// that older station back. A user reported exactly that, a rare
 			// jump back to the station played before (Portable, v0.9.30).
-			if h.noteLastPlay != nil {
-				h.noteLastPlay(boxPresetURL(p), p.Name, p.Art,
+			note := h.noteNativeLastPlay
+			if note == nil {
+				note = h.noteLastPlay
+			}
+			if note != nil {
+				note(boxPresetURL(p), p.Name, p.Art,
 					upnp.MimeForCodecOrURL(p.Codec, p.StreamURL))
 			}
 		}

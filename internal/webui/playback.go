@@ -678,6 +678,22 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 	return s.setLastPlay(boxURL, title, art, mime)
 }
 
+// NoteNativeLastPlay is NoteLastPlay for a native radio preset the firmware
+// activated by itself. The record is the same, so the power-on resume and the
+// drop recovery still know what is playing, but it is marked as the box's own
+// doing. The firmware's power-on resume of a native station arrives as exactly
+// this frame, and counting it as the user's play is what made the zone form
+// carry a group wake's self-resume into every room (fleet run 2026-10-04).
+func (s *Server) NoteNativeLastPlay(boxURL, title, art, mime string) uint64 {
+	gen := s.NoteLastPlay(boxURL, title, art, mime)
+	s.lastPlayMu.Lock()
+	if s.lastPlay != nil && s.recallGen == gen {
+		s.lastPlay.fromBox = true
+	}
+	s.lastPlayMu.Unlock()
+	return gen
+}
+
 // RecallGeneration returns the current recall generation (bumped by every
 // stream push recorded via setLastPlay, hardware and app alike). The hardware
 // recall verifies in cmd/agent compare it against the generation of their own

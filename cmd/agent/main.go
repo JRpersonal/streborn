@@ -1085,6 +1085,9 @@ func run() error {
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// A native preset the firmware activated itself, which is also what its
+		// power-on resume looks like.
+		noteNativeLastPlay: webuiSrv.NoteNativeLastPlay,
 		// Conditional post-recall re-push (shared with the app path): drop the
 		// box's buffer only when stale pre-boundary audio reached it despite
 		// the armed recall cut.
