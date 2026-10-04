@@ -255,7 +255,11 @@ jobs:
           go-version: "stable"
           cache: true
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # Pinned to the commit of golang.org/x/vuln v1.8.0, so a scan cannot
+        # change behaviour under us between two runs (OpenSSF Scorecard,
+        # Pinned-Dependencies). Dependabot does not update go install lines;
+        # bump this by hand.
+        run: go install golang.org/x/vuln/cmd/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c # v1.8.0
       - name: Scan
         run: govulncheck ./...
       # The desktop app is a second Go module (see desktop-go above);
@@ -325,7 +329,8 @@ jobs:
       - name: Check every mermaid block
         run: |
           set -e
-          npm install --no-save --no-audit --no-fund mermaid@11 jsdom
+          # Versions come from .github/scripts/package-lock.json (npm ci).
+          npm ci --prefix .github/scripts --no-audit --no-fund
           mapfile -t files < <(git ls-files '*.md' | xargs grep -l '```mermaid' || true)
           if [ ${#files[@]} -eq 0 ]; then
             echo "no markdown with mermaid blocks"; exit 0
