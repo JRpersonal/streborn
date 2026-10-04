@@ -45,8 +45,10 @@ import (
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// versionFromFilenameRE pulls a vX.Y.Z out of a release asset filename, e.g.
-// "STR-Windows-v0.7.42.exe" -> "v0.7.42".
+// versionFromFilenameRE pulls a vX.Y.Z out of a file name, e.g.
+// "STR-Windows-v0.7.42.exe" -> "v0.7.42". Releases up to v1.0.1 published
+// versioned names; newer ones publish STR-Windows.exe, whose version is read
+// from the file itself (exeVersionString), with this as the fallback.
 var versionFromFilenameRE = regexp.MustCompile(`v\d+\.\d+\.\d+`)
 
 // resolveSecondInstanceExe turns the SingleInstanceLock second-instance args +
@@ -103,7 +105,13 @@ func (a *App) tryHandOffTo(other string) bool {
 	if pathsEqual(self, other) {
 		return false
 	}
-	ov := versionFromFilenameRE.FindString(filepath.Base(other))
+	// The version comes from the file's own version resource first: since
+	// 2026-10-04 the published name is a stable STR-Windows.exe, and the name
+	// only says something for files published up to v1.0.1.
+	ov := exeVersionString(other)
+	if ov == "" {
+		ov = versionFromFilenameRE.FindString(filepath.Base(other))
+	}
 	if ov == "" || !versionLess(appVersion, ov) {
 		return false
 	}
@@ -331,10 +339,7 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := asset.Filename
-	if name == "" {
-		name = "STReborn-" + version + assetExt()
-	}
+	name := stagedUpdateName(asset.Filename, version)
 	finalPath := filepath.Join(dir, name)
 	partPath := finalPath + ".part"
 
@@ -606,6 +611,31 @@ func (a *App) RevealUpdateFile(path string) error {
 	default:
 		return exec.Command("xdg-open", filepath.Dir(path)).Start()
 	}
+}
+
+// stagedUpdateName is the file name a downloaded update is kept under in the
+// update cache. Releases since 2026-10-04 publish stable names without a
+// version (STR-Windows.exe), but the cache needs the version in the name: the
+// cleanup below decides by it which downloads are spent, and two downloads of
+// different releases must not land on one file. The user never sees this name;
+// the Windows and Linux swap copies the bytes over the running file, which
+// keeps its own name.
+func stagedUpdateName(filename, version string) string {
+	v := strings.TrimSpace(version)
+	if v != "" && !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	if filename == "" {
+		return "STReborn-" + v + assetExt()
+	}
+	if stagedVersionRe.MatchString(filename) || v == "" {
+		return filename // an older release's name already carries it
+	}
+	ext := filepath.Ext(filename)
+	if strings.HasSuffix(strings.ToLower(filename), ".tar.gz") {
+		ext = filename[len(filename)-len(".tar.gz"):]
+	}
+	return strings.TrimSuffix(filename, ext) + "-" + v + ext
 }
 
 // stagedVersionRe pulls the version out of a staged installer's file name,

@@ -10,11 +10,17 @@ import (
 
 // Finding a newer copy of STR sitting next to the one that is running.
 //
-// There is no Windows installer. The release publishes a bare
-// STR-Windows-vX.Y.Z.exe, so "updating" means downloading a second file into
-// the same folder. Nothing overwrites anything, because the two files have
-// different names, and the old one keeps working, keeps its shortcut and keeps
+// There is no Windows installer. Up to v1.0.1 the release published a bare
+// STR-Windows-vX.Y.Z.exe, so "updating" by hand meant downloading a second file
+// into the same folder. Nothing overwrote anything, because the two files had
+// different names, and the old one kept working, kept its shortcut and kept
 // its place on the taskbar.
+//
+// Since 2026-10-04 the file is simply STR-Windows.exe. The in-app update swaps
+// the running file in place and keeps its name, so a versioned name ended up
+// describing an old build (STR-Windows-v0.9.80.exe running v1.0.1). A second
+// download from the browser now arrives as "STR-Windows (1).exe", and the
+// version comes from the file's own version resource instead of its name.
 //
 // A reporter spent three rounds of mail on this (2026-10-01). He downloaded the
 // new version repeatedly, kept starting the old one, and every speaker update he
@@ -26,13 +32,18 @@ import (
 // was that the newer version was ALREADY on his disk, four centimetres away in
 // the same folder, and that all he had to do was start it.
 
-// strExeName matches the published Windows file name and captures its version.
-// Deliberately anchored on the published name: a user's own rename to
-// "STR.exe" carries no version to compare, and guessing one would be worse than
-// staying quiet.
+// strExeName matches the file names published up to v1.0.1 and captures their
+// version. Kept as the fallback for those older files, which still sit in
+// people's Downloads folders.
 var strExeName = regexp.MustCompile(`(?i)^STR-Windows-v(\d+)\.(\d+)\.(\d+)[^/\\]*\.exe$`)
 
-// parseExeVersion returns the three version numbers in a published file name.
+// strExeFamily matches every published Windows file name, old and new,
+// including a browser's duplicate suffix ("STR-Windows (1).exe"). A user's own
+// rename to "STR.exe" is deliberately left out: nothing says it is ours.
+var strExeFamily = regexp.MustCompile(`(?i)^STR-Windows[^/\\]*\.exe$`)
+
+// parseExeVersion returns the three version numbers in an old, versioned file
+// name.
 func parseExeVersion(name string) (maj, min, patch int, ok bool) {
 	m := strExeName.FindStringSubmatch(name)
 	if m == nil {
@@ -84,12 +95,40 @@ func newer(aMaj, aMin, aPatch, bMaj, bMin, bPatch int) bool {
 	return aPatch > bPatch
 }
 
+// versionOfFunc tells the version of one file in the folder, by name.
+type versionOfFunc func(name string) (maj, min, patch int, ok bool)
+
+// versionFromName is the name-only reader: old versioned file names only.
+func versionFromName(name string) (maj, min, patch int, ok bool) {
+	return parseExeVersion(filepath.Base(name))
+}
+
+// siblingVersionReader reads a sibling's version from its Windows version
+// resource first (the only source a stable file name leaves) and falls back to
+// the old versioned name. Only published file names are asked at all.
+func siblingVersionReader(dir string, fromResource func(path string) (int, int, int, bool)) versionOfFunc {
+	return func(name string) (int, int, int, bool) {
+		base := filepath.Base(name)
+		if !strExeFamily.MatchString(base) {
+			return 0, 0, 0, false
+		}
+		if maj, min, patch, ok := fromResource(filepath.Join(dir, base)); ok {
+			return maj, min, patch, true
+		}
+		return parseExeVersion(base)
+	}
+}
+
 // newestNewerSibling picks the highest-versioned published file name in names
-// that is newer than running. Returns "" when there is none, which is the
-// normal case and must stay silent.
-//
-// Pure, so the decision can be tested without a disk.
+// that is newer than running, judging versions by name alone. Returns "" when
+// there is none, which is the normal case and must stay silent.
 func newestNewerSibling(names []string, running string) string {
+	return newestNewerSiblingBy(names, running, versionFromName)
+}
+
+// newestNewerSiblingBy is the decision itself, with the version source
+// injected so it can be tested without a disk.
+func newestNewerSiblingBy(names []string, running string, versionOf versionOfFunc) string {
 	rMaj, rMin, rPatch, ok := parseAppVersion(running)
 	if !ok {
 		// A dev build with no usable version cannot be compared against
@@ -99,7 +138,7 @@ func newestNewerSibling(names []string, running string) string {
 	best := ""
 	bMaj, bMin, bPatch := rMaj, rMin, rPatch
 	for _, n := range names {
-		maj, min, patch, ok := parseExeVersion(filepath.Base(n))
+		maj, min, patch, ok := versionOf(n)
 		if !ok || !newer(maj, min, patch, bMaj, bMin, bPatch) {
 			continue
 		}
@@ -134,5 +173,16 @@ func (a *App) NewerCopyNextToThisOne() string {
 		}
 		names = append(names, e.Name())
 	}
-	return newestNewerSibling(names, appVersion)
+	return newestNewerSiblingBy(names, appVersion, siblingVersionReader(filepath.Dir(self), exeResourceVersion))
+}
+
+// exeVersionString returns the version of the STR executable at path as
+// "vX.Y.Z", read from its version resource or, for files published up to
+// v1.0.1, from its name. "" when neither says anything.
+func exeVersionString(path string) string {
+	maj, min, patch, ok := siblingVersionReader(filepath.Dir(path), exeResourceVersion)(filepath.Base(path))
+	if !ok {
+		return ""
+	}
+	return "v" + strconv.Itoa(maj) + "." + strconv.Itoa(min) + "." + strconv.Itoa(patch)
 }
