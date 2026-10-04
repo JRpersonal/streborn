@@ -554,8 +554,47 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	// box idling in standby (see boostUploadThroughput); the update's reboot
 	// resets the toggle, the deferred restore covers the failure paths.
 	defer s.boostUploadThroughput("agent-update")()
-	body, ok := s.readUploadedELF(w, r, s.logger, "agent-update")
-	if !ok {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		s.refuseNonLAN(w, r, "agent-update")
+		return
+	}
+	// Quieten the speaker before the transfer starts (hushforupload.go).
+	s.hushForUpload("agent-update")
+	const maxSize = 30 * 1024 * 1024
+	if r.ContentLength > maxSize {
+		http.Error(w, errUploadTooBig.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
+	// Log the whole upload lifecycle (#466): a bundle from a push that died
+	// must say whether the request arrived, where it stalled, and how much
+	// memory the speaker had left.
+	memAtStart, memTotal := uploadMemKB()
+	s.logger.Info("upload started", "endpoint", "agent-update",
+		"contentLength", r.ContentLength, "remote", r.RemoteAddr,
+		"memAvailableKB", memAtStart, "memTotalKB", memTotal, "streamed", true)
+	upr := &uploadProgressReader{
+		r: io.LimitReader(r.Body, maxSize+1), start: time.Now(), logger: s.logger, what: "agent-update",
+	}
+	// The ELF gate (#302) needs only the header, so it is checked on a peek
+	// and a body that is not a softfloat ARM binary never reaches the flash.
+	br := bufio.NewReaderSize(upr, 4096)
+	hdr, perr := br.Peek(40)
+	if perr != nil {
+		http.Error(w, "binary too small to be an ELF", http.StatusBadRequest)
+		return
+	}
+	if msg, ok := validSoftfloatARMELF(hdr); !ok {
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+	// Tier 2 (#270), moved in front of the transfer: a NAND that UBIFS parked
+	// read-only is remounted BEFORE the body is read, because a streamed body
+	// cannot be replayed into a second write attempt afterwards.
+	if !nandWritable() && !remountNANDRW(s.logger) {
+		http.Error(w, errNANDReadOnly.Error(), http.StatusInsufficientStorage)
 		return
 	}
 	// From here the engine may be reclaimed at any moment and the process may
@@ -564,90 +603,103 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	// until its next reboot.
 	updateInFlight.Store(true)
 	const dst = agentBinNANDPath
-	err := writeBinaryAtomic(dst, body)
-	// Tier 2 (#270): a NAND that UBIFS parked read-only fails the write (or,
-	// sneakier, fails every reclaim delete so the write path reports "no
-	// space"). Probe, remount rw, retry once; if the volume stays protected,
-	// the truthful error beats another opaque 507.
-	if err != nil && (isReadOnlyFSErr(err) || !nandWritable()) {
-		if remountNANDRW(s.logger) {
-			err = writeBinaryAtomic(dst, body)
-		} else {
-			updateInFlight.Store(false)
-			http.Error(w, errNANDReadOnly.Error(), http.StatusInsufficientStorage)
-			return
-		}
-	}
-	// Tier 3 (#270): the volume writes fine but genuinely cannot hold OLD + NEW
-	// agent side by side even after the reclaim (small ST20 volumes). Stage the
-	// new binary in RAM and let a detached helper swap it in after this process
-	// exits, then reboot — peak NAND need drops to a single copy. Since the
-	// optimistic-write change errInsufficientNAND means a REAL failed write
-	// attempt (ENOSPC / short write), never a pessimistic statfs prediction, so
-	// this tier only engages when the filesystem itself said no.
-	if errors.Is(err, errInsufficientNAND) {
-		if serr := s.stageAndSwapViaRAM(dst, body); serr == nil {
-			writeJSON(w, http.StatusOK, map[string]string{
-				"status": "ok",
-				"action": "reboot",
-				"mode":   "ram-staged",
-			})
-			go func() {
-				// Give the 200 OK time to flush, then exit: the helper waits
-				// for this PID before copying (the running binary is ETXTBSY
-				// and its blocks are pinned until we are gone).
-				time.Sleep(1500 * time.Millisecond)
-				// Refresh a still-inserted stick BEFORE exiting so the boot
-				// sync cannot revert this update (#381). Delaying our exit is
-				// safe: the swap helper waits for this PID.
-				refreshStickAgentBinary(body, s.logger)
-				// Same OTA-reboot marker as the normal reboot path, but fsync'd:
-				// os.Exit skips buffered flushes and the swap helper reboots the
-				// box right after us, so the marker must be on NAND before we go.
-				if f, werr := os.OpenFile(otaRebootMarkerPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); werr == nil {
-					_, _ = f.WriteString(time.Now().UTC().Format(time.RFC3339) + "\n")
-					_ = f.Sync()
-					_ = f.Close()
-				} else {
-					s.logger.Warn("could not write OTA-reboot marker (ram-staged); post-OTA resume may fire", "err", werr)
-				}
-				s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
-				os.Exit(0)
-			}()
-			return
-		} else {
-			s.logger.Warn("RAM-staged swap unavailable, reporting the space failure", "err", serr)
-		}
-	}
+	got, err := receiveAgentBinary(dst, br, r.ContentLength, maxSize)
+	memAfter, _ := uploadMemKB()
 	if err != nil {
 		updateInFlight.Store(false)
-		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
+		var rerr uploadReadError
+		switch {
+		case errors.As(err, &rerr):
+			s.logger.Warn("upload aborted mid-stream", "endpoint", "agent-update",
+				"bytesRead", upr.n, "elapsedMs", time.Since(upr.start).Milliseconds(),
+				"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart,
+				"agentPeakKB", selfPeakKB(), "err", rerr.err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, errUploadTooBig):
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		case errors.Is(err, errUploadTooSmall):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case isReadOnlyFSErr(err) || !nandWritable():
+			// Parked read-only during the write. Remount now so the app's retry
+			// (it repeats every 5xx) lands on a writable volume.
+			_ = remountNANDRW(s.logger)
+			s.logger.Warn("upload write failed on a read-only NAND", "endpoint", "agent-update", "bytes", got.size, "err", err)
+			http.Error(w, errNANDReadOnly.Error(), http.StatusInsufficientStorage)
+		default:
+			s.logger.Warn("upload write failed", "endpoint", "agent-update", "bytes", got.size,
+				"elapsedMs", time.Since(upr.start).Milliseconds(),
+				"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart, "err", err)
+			http.Error(w, err.Error(), nandWriteHTTPStatus(err))
+		}
+		return
+	}
+	s.logger.Info("upload body received", "endpoint", "agent-update",
+		"bytes", got.size, "elapsedMs", time.Since(upr.start).Milliseconds(),
+		"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart,
+		"agentPeakKB", selfPeakKB(), "ramStaged", got.ramStaged)
+
+	// Tier 3 (#270): the volume writes fine but genuinely cannot hold OLD + NEW
+	// agent side by side even after the reclaim (small ST20 volumes). The
+	// upload already went to the RAM stage when the NAND said no mid-stream; a
+	// detached helper swaps it in after this process exits, then reboots, so
+	// peak NAND need drops to a single copy. errInsufficientNAND still means a
+	// REAL failed write (ENOSPC / short write), never a statfs prediction.
+	if got.ramStaged {
+		if serr := s.armRAMStagedSwap(dst, got.size, got.sum); serr != nil {
+			updateInFlight.Store(false)
+			_ = os.Remove(ramStageTarget)
+			s.logger.Warn("RAM-staged swap unavailable, reporting the space failure", "err", serr)
+			http.Error(w, errInsufficientNAND.Error()+": "+serr.Error(), http.StatusInsufficientStorage)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "ok",
+			"action": "reboot",
+			"mode":   "ram-staged",
+		})
+		go func() {
+			// Give the 200 OK time to flush, then exit: the helper waits for
+			// this PID before copying (the running binary is ETXTBSY and its
+			// blocks are pinned until we are gone).
+			time.Sleep(1500 * time.Millisecond)
+			// Refresh a still-inserted stick BEFORE exiting so the boot sync
+			// cannot revert this update (#381). Delaying our exit is safe: the
+			// swap helper waits for this PID.
+			refreshStickAgentBinary(ramStageTarget, got.sum, s.logger)
+			// Same OTA-reboot marker as the normal reboot path, but fsync'd:
+			// os.Exit skips buffered flushes and the swap helper reboots the
+			// box right after us, so the marker must be on NAND before we go.
+			if f, werr := os.OpenFile(otaRebootMarkerPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); werr == nil {
+				_, _ = f.WriteString(time.Now().UTC().Format(time.RFC3339) + "\n")
+				_ = f.Sync()
+				_ = f.Close()
+			} else {
+				s.logger.Warn("could not write OTA-reboot marker (ram-staged); post-OTA resume may fire", "err", werr)
+			}
+			s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
+			os.Exit(0)
+		}()
 		return
 	}
 
 	// Safe-over-fast (#381): prove the binary is ON FLASH before telling the
-	// app anything and before any reboot. The fsync inside writeBinaryAtomic
+	// app anything and before any reboot. The fsync in the streamed write
 	// should make this a formality, but UBIFS + these boxes have burned us:
-	// verify by re-reading past the page cache, retry the write once on a
-	// mismatch, and refuse with a truthful error rather than reboot into the
-	// old binary and let the app loop-push forever.
-	if verr := verifyBinaryOnFlash(dst, body); verr != nil {
-		s.logger.Warn("agent update: flash verify failed, rewriting once", "err", verr)
-		if err := writeBinaryAtomic(dst, body); err != nil {
-			http.Error(w, err.Error(), nandWriteHTTPStatus(err))
-			return
-		}
-		if verr = verifyBinaryOnFlash(dst, body); verr != nil {
-			s.logger.Error("agent update: flash verify failed twice, refusing to reboot", "err", verr)
-			updateInFlight.Store(false)
-			http.Error(w, "update did not persist to flash: "+verr.Error(), http.StatusInternalServerError)
-			return
-		}
+	// verify by re-reading past the page cache against the hash taken while
+	// streaming, and refuse with a truthful error rather than reboot into the
+	// old binary. The bytes are no longer held in memory for a local rewrite,
+	// so a mismatch answers 500 and the app's retry (it repeats every 5xx)
+	// sends the update again.
+	if verr := verifyBinaryOnFlash(dst, got.sum); verr != nil {
+		s.logger.Error("agent update: flash verify failed, refusing to reboot; the app will send it again", "err", verr)
+		updateInFlight.Store(false)
+		http.Error(w, "update did not persist to flash: "+verr.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// A verified write supersedes any earlier tier-3 swap failure.
 	_ = os.Remove(swapFailMarker)
-	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state", "size", len(body))
+	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state", "size", got.size)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
 		"action": "reboot",
@@ -670,7 +722,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		// would silently revert the binary just written to dst (#381). The
 		// desktop app's SSH stick refresh covers this only when SSH is open;
 		// this on-box write needs nothing. The reboot waits for it.
-		refreshStickAgentBinary(body, s.logger)
+		refreshStickAgentBinary(dst, got.sum, s.logger)
 		// Mark this reboot as OUR maintenance OTA so the agent that comes back up
 		// does not immediately blast the room with the automatic power-on resume
 		// (consumed once at the next start, resume_standby.go). A genuine power
@@ -711,10 +763,6 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// readUploadedELF reads and validates a raw ARM ELF binary POSTed to an OTA
-// endpoint: LAN-only, size-bounded, ELF-magic checked. On any problem it writes
-// the HTTP error response and returns ok=false. Shared by handleAgentUpdate and
-// handleAgentSidecar so the two upload endpoints cannot drift on their guards.
 // uploadMemKB reports MemAvailable and MemTotal in KB, or -1 each when
 // /proc/meminfo cannot be read. Logged around every upload so a bundle from a
 // speaker whose push died mid-stream says whether it ran out of memory,
@@ -738,75 +786,6 @@ func uploadMemKB() (avail, total int64) {
 		}
 	}
 	return
-}
-
-func (s *Server) readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger, what string) ([]byte, bool) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return nil, false
-	}
-	if !isLocalLAN(r.RemoteAddr) {
-		s.refuseNonLAN(w, r, what)
-		return nil, false
-	}
-	// Quieten the speaker before the transfer starts, not after: the audio and
-	// the upload otherwise compete for the same radio and the same CPU, and the
-	// audio is what loses. Deliberately after the method and LAN checks, so a
-	// stray request cannot silence a speaker without even being a real upload.
-	// See hushforupload.go.
-	s.hushForUpload(what)
-	const maxSize = 30 * 1024 * 1024
-	// Log the whole upload lifecycle. The #466 bundles showed the app-side
-	// view of a dying post-OTA push (RST after ~107 s) while the box-side log
-	// carried no trace of the upload at all, so the box-side failure mode
-	// (request never arrived vs stream stalled at byte N vs read completed
-	// but reply lost) was undiagnosable. These lines make the next bundle
-	// answer that directly.
-	memAtStart, memTotal := uploadMemKB()
-	logger.Info("upload started", "endpoint", what,
-		"contentLength", r.ContentLength, "remote", r.RemoteAddr,
-		"memAvailableKB", memAtStart, "memTotalKB", memTotal)
-	upr := &uploadProgressReader{
-		r: io.LimitReader(r.Body, maxSize+1), start: time.Now(), logger: logger, what: what,
-	}
-	// Reserve the whole body up front instead of letting io.ReadAll grow by
-	// doubling. The doubling briefly holds the old AND the new buffer, so a
-	// 16 MB engine peaked near 33 MB on a box with about 120 MB of RAM in
-	// total and well under half of it free. Two field reports (2026-07-30)
-	// show the ~16 MB sidecar push dying five times in a row with the box
-	// closing the connection about 100 s in, which is what an agent killed
-	// under memory pressure looks like from the app side. One allocation of
-	// the exact size removes that peak.
-	var buf bytes.Buffer
-	if cl := r.ContentLength; cl > 0 && cl <= maxSize {
-		buf.Grow(int(cl))
-	}
-	_, err := buf.ReadFrom(upr)
-	body := buf.Bytes()
-	if err != nil {
-		memNow, _ := uploadMemKB()
-		logger.Warn("upload aborted mid-stream", "endpoint", what,
-			"bytesRead", upr.n, "elapsedMs", time.Since(upr.start).Milliseconds(),
-			"memAvailableKB", memNow, "memAvailableAtStartKB", memAtStart, "err", err)
-		http.Error(w, "read: "+err.Error(), http.StatusBadRequest)
-		return nil, false
-	}
-	memAfter, _ := uploadMemKB()
-	logger.Info("upload body received", "endpoint", what,
-		"bytes", len(body), "elapsedMs", time.Since(upr.start).Milliseconds(),
-		"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart)
-	if len(body) > maxSize {
-		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
-		return nil, false
-	}
-	if len(body) < 1024 {
-		http.Error(w, "binary too small", http.StatusBadRequest)
-		return nil, false
-	}
-	if msg, ok := validSoftfloatARMELF(body); !ok {
-		http.Error(w, msg, http.StatusBadRequest)
-		return nil, false
-	}
-	return body, true
 }
 
 // validSoftfloatARMELF checks that body is a 32-bit little-endian softfloat ARM
@@ -841,7 +820,8 @@ func validSoftfloatARMELF(body []byte) (msg string, ok bool) {
 
 // uploadProgressReader logs a large upload's progress every few MB so the
 // box-side agent log shows exactly how far a doomed transfer got before its
-// connection died. Wraps the size-limited body reader in readUploadedELF.
+// connection died. Wraps the size-limited body reader of both upload
+// endpoints (handleAgentUpdate and streamUploadedELF).
 type uploadProgressReader struct {
 	r       io.Reader
 	n       int64
@@ -862,7 +842,7 @@ func (u *uploadProgressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// errInsufficientNAND is returned by writeBinaryAtomic when an actually
+// errInsufficientNAND is returned by the NAND writes when an actually
 // attempted .new write (or its rename) failed with a real out-of-space error
 // even after reclaiming regenerable junk. The OTA handlers map it to 507
 // Insufficient Storage so the desktop app can tell "the box is full" apart
@@ -902,46 +882,6 @@ const nandWriteMargin = 3 * 1024 * 1024
 // not configured, in which case the reclaim falls back to a plain os.Remove.
 var engineStopHook func() bool
 
-// writeBinaryAtomic writes body to dst via a .new temp + rename so a partial
-// write never becomes the live binary, creating the parent dir on a fresh box
-// (first OTA after install has no /mnt/nv/streborn/bin yet). 0755 so the file
-// is executable.
-//
-// The box's writable NAND (/mnt/nv) is tiny (~31 MB, shared with the Bose
-// firmware), and the atomic write needs room for a SECOND full copy of the
-// ~10 MB binary beside the live one. On a SoundTouch 30 that tipped /mnt/nv
-// over and the OTA failed with "no space left on device" (Daniel, 2026-06-24),
-// with no way to see what was eating the space because the box was stickless so
-// SSH was closed. Two defences: (1) before writing, drop a stale .new from an
-// earlier interrupted OTA (a half-written temp from a failed attempt otherwise
-// eats the very headroom the retry needs, so every retry keeps failing until
-// the next boot's run.sh cleanup_nand runs) and, if statfs predicts a shortage,
-// reclaim obvious junk; (2) on failure, embed the NAND inventory (df + biggest
-// entries + foreign-firmware dirs) in the error so the desktop app surfaces it
-// verbatim and the user's report tells us whether the ST30 is genuinely tighter
-// or is carrying leftovers from a previous custom firmware.
-//
-// The write itself is OPTIMISTIC: the statfs prediction steers the reclaim
-// cascade but never refuses the write. UBIFS free space is deliberately
-// pessimistic (it assumes incompressible data while the volume compresses
-// transparently, ~1.5x on Go binaries; measured 2026-07-10), so its "no" is
-// frequently wrong for this write while its "yes" is always safe. Only the
-// filesystem's own verdict on the actual write (a real ENOSPC / short write)
-// maps to errInsufficientNAND now.
-func writeBinaryAtomic(dst string, body []byte) error {
-	tmp, dir, st, err := prepareBinaryWrite(dst, int64(len(body)))
-	if err != nil {
-		return err
-	}
-	if err := writeFileSynced(tmp, body, 0o755); err != nil {
-		// A mid-stream ENOSPC leaves a truncated tmp; remove it so no partial
-		// .new survives for the next attempt.
-		_ = os.Remove(tmp)
-		return classifyNANDWriteErr("write tmp", err, dir, int64(len(body)), st.engineStopped, st.engineReclaim, st.predictedFull)
-	}
-	return finishBinaryWrite(tmp, dst, dir, int64(len(body)), st)
-}
-
 // nandWriteState carries what the reclaim preamble learned into the error
 // classification, so a failure can still say whether the engine was dropped
 // and whether statfs had predicted the shortage.
@@ -951,7 +891,7 @@ type nandWriteState struct {
 	predictedFull bool
 }
 
-// prepareBinaryWrite is everything writeBinaryAtomic does BEFORE the bytes
+// prepareBinaryWrite is everything a binary write does BEFORE the bytes
 // move: the parent directory, the stale temp, and the reclaim cascade that
 // makes room. Shared with the streaming variant so the two cannot drift on the
 // space handling, which is the part that took the longest to get right.
@@ -1034,26 +974,6 @@ func finishBinaryWrite(tmp, dst, dir string, need int64, st nandWriteState) erro
 	return nil
 }
 
-// writeFileSynced is os.WriteFile plus an fsync before close, so the data is
-// on flash (not just in the page cache) when it returns. Every binary the OTA
-// path writes is followed by a reboot soon after; an unsynced write on UBIFS
-// simply does not survive that (#381).
-func writeFileSynced(path string, body []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(body); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
-}
-
 // syncDir fsyncs a directory so a just-completed rename is journaled.
 // Best-effort: some filesystems/platforms refuse directory handles.
 func syncDir(dir string) {
@@ -1086,7 +1006,10 @@ func syncDir(dir string) {
 // two ST10s stalled inside this step long enough to blow the app's 180 s
 // response-header timeout and never came back at all. A fixed 512 KB window
 // takes the verify's own cost from 14.6 MB to half a megabyte.
-func verifyBinaryOnFlash(dst string, body []byte) error {
+//
+// wantSum is the hex SHA256 taken while the upload streamed in (#1083: the
+// bytes themselves are no longer held in memory to hash afterwards).
+func verifyBinaryOnFlash(dst, wantSum string) error {
 	_ = exec.Command("sync").Run()
 	// Best-effort: /proc/sys/vm/drop_caches needs root (the agent is root on
 	// the box) but does not exist in tests.
@@ -1101,11 +1024,8 @@ func verifyBinaryOnFlash(dst string, body []byte) error {
 	if err != nil {
 		return fmt.Errorf("flash verify re-read: %w", err)
 	}
-	want := sha256.Sum256(body)
-	var have [sha256.Size]byte
-	copy(have[:], h.Sum(nil))
-	if want != have {
-		return fmt.Errorf("flash verify: on-flash binary differs from the upload (%d vs %d bytes) — the NAND write did not persist", n, len(body))
+	if have := hex.EncodeToString(h.Sum(nil)); have != wantSum {
+		return fmt.Errorf("flash verify: on-flash binary (%d bytes) differs from the upload, the NAND write did not persist", n)
 	}
 	return nil
 }
@@ -1142,7 +1062,7 @@ func classifyNANDWriteErr(step string, err error, dir string, need int64, engine
 		errInsufficientNAND, step, err, need/1024, avail/1024, engineReclaim, engineStopped, predictedFull, nandReportLine())
 }
 
-// nandWriteHTTPStatus maps a writeBinaryAtomic error to an HTTP status: 507
+// nandWriteHTTPStatus maps a NAND write error to an HTTP status: 507
 // Insufficient Storage when the box is out of NAND (so the desktop app can tell a
 // full box apart from a generic failure and surface the inventory), else 500.
 func nandWriteHTTPStatus(err error) int {
@@ -2128,7 +2048,7 @@ func sameSubnetAsAnInterface(ip net.IP) bool {
 //
 // The bytes now go straight to the temp file the atomic write was going to use
 // anyway, so peak memory is a 32 KB copy buffer. The reclaim cascade in front
-// of it is shared verbatim with writeBinaryAtomic, because the space handling
+// of it is shared verbatim with receiveAgentBinary, because the space handling
 // is the part of this path that was hardest to get right and must not fork.
 //
 // need is the expected size (Content-Length) and is used only to make room; the
@@ -2145,7 +2065,7 @@ func streamBinaryAtomic(dst string, src io.Reader, need int64) (sum string, n in
 	}
 	n, err = io.Copy(f, io.TeeReader(src, h))
 	if err == nil {
-		// fsync before close, for the same reason writeFileSynced does it: an
+		// fsync before close, for the same reason receiveAgentBinary does it: an
 		// unsynced write does not survive the reboot that follows an OTA.
 		err = f.Sync()
 	}
@@ -2164,7 +2084,7 @@ func streamBinaryAtomic(dst string, src io.Reader, need int64) (sum string, n in
 	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
-// streamUploadedELF is readUploadedELF for a caller that does not need the
+// streamUploadedELF is the engine upload's receive for a caller that does not need the
 // bytes afterwards: same guards, same logging, but the body goes to dst as it
 // arrives rather than into memory first.
 //
@@ -2204,7 +2124,8 @@ func (s *Server) streamUploadedELF(w http.ResponseWriter, r *http.Request, logge
 	}
 	logger.Info("upload body received", "endpoint", what,
 		"bytes", size, "elapsedMs", time.Since(upr.start).Milliseconds(),
-		"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart)
+		"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart,
+		"agentPeakKB", selfPeakKB())
 	if size > maxSize {
 		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
 		return "", size, false

@@ -1,7 +1,7 @@
 package webui
 
 import (
-	"bytes"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -36,7 +36,13 @@ import (
 // BEFORE the reboot command, so the write always completes first. Best-effort:
 // a stickless box or a failed write only logs; the NAND update stands either
 // way (it just will not survive the next boot with a stale stick inserted).
-func refreshStickAgentBinary(body []byte, logger *slog.Logger) {
+//
+// src is the freshly written binary (on NAND, or in the RAM stage for a tier-3
+// swap) and wantSum its hex SHA256. Both the comparison and the copy stream
+// through a small buffer: reading the stick's copy and the new binary whole
+// held two agents in memory at once on a box that had just received a third
+// (#1083).
+func refreshStickAgentBinary(src, wantSum string, logger *slog.Logger) {
 	mnt := stickMountDir()
 	if mnt == "" {
 		return
@@ -44,12 +50,13 @@ func refreshStickAgentBinary(body []byte, logger *slog.Logger) {
 	dst := filepath.Join(mnt, "streborn-armv7l")
 	// Skip identical content: the desktop app's SSH stick refresh may already
 	// have rewritten the stick before this OTA, and FAT flash wear is real.
-	if cur, err := os.ReadFile(dst); err == nil && bytes.Equal(cur, body) {
+	if cur, err := fileSHA256(dst); err == nil && cur == wantSum {
 		logger.Info("OTA stick refresh: stick already carries this binary, nothing to write", "path", dst)
 		return
 	}
 	tmp := dst + ".new"
-	if err := os.WriteFile(tmp, body, 0o755); err != nil {
+	n, err := copyFileSynced(src, tmp, 0o755)
+	if err != nil {
 		_ = os.Remove(tmp)
 		logger.Warn("OTA stick refresh: write failed; the inserted stick keeps its OLD binary and the next boot's stick->NAND sync will revert this update - remove the stick or re-prepare it (#381)",
 			"path", dst, "err", err)
@@ -80,7 +87,7 @@ func refreshStickAgentBinary(body []byte, logger *slog.Logger) {
 			logger.Warn("OTA stick refresh: could not force the USB cache commit; a stale stick could still revert this OTA on the next boot (#381)", "disk", disk, "err", err)
 		}
 	}
-	logger.Info("OTA stick refresh: stick binary updated so the boot sync keeps this OTA", "path", dst, "bytes", len(body))
+	logger.Info("OTA stick refresh: stick binary updated so the boot sync keeps this OTA", "path", dst, "bytes", n)
 }
 
 // stickDiskBase returns the whole-disk name (e.g. "sda") for a stick mount path
@@ -95,4 +102,26 @@ func stickDiskBase(mnt string) string {
 		return ""
 	}
 	return base
+}
+
+// copyFileSynced copies src to dst through a 64 KB window and fsyncs dst, so
+// the stick refresh never holds a whole agent binary in memory (#1083).
+func copyFileSynced(src, dst string, perm os.FileMode) (int64, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.CopyBuffer(out, in, make([]byte, 64*1024))
+	if err == nil {
+		err = out.Sync()
+	}
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	return n, err
 }

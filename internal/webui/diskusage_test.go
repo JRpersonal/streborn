@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestIsForeignNANDDir(t *testing.T) {
 	}
 }
 
-// TestWriteBinaryAtomic checks the OTA write writes the body, leaves no temp
+// TestWriteBinaryAtomic checks the agent OTA write (now streamed, #1083) writes the body, leaves no temp
 // behind, and clears a stale .new from an earlier interrupted OTA first (the
 // repeat-failure trap on the tight NAND).
 func TestWriteBinaryAtomic(t *testing.T) {
@@ -50,8 +51,8 @@ func TestWriteBinaryAtomic(t *testing.T) {
 	for i := range body {
 		body[i] = byte(i)
 	}
-	if err := writeBinaryAtomic(dst, body); err != nil {
-		t.Fatalf("writeBinaryAtomic: %v", err)
+	if _, err := receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
+		t.Fatalf("receiveAgentBinary: %v", err)
 	}
 
 	got, err := os.ReadFile(dst)

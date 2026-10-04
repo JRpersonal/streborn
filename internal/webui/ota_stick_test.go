@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"os"
@@ -31,6 +33,14 @@ func TestStickDiskBase(t *testing.T) {
 func TestRefreshStickAgentBinary(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	newBin := []byte("NEW-AGENT-BINARY")
+	// The refresh now copies from the file the OTA just wrote (#1083), so the
+	// test stages the new binary as a file and passes its hash.
+	src := filepath.Join(t.TempDir(), "streborn-armv7l.new-ota")
+	if err := os.WriteFile(src, newBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sumArr := sha256.Sum256(newBin)
+	sum := hex.EncodeToString(sumArr[:])
 
 	t.Run("stickless box is a no-op", func(t *testing.T) {
 		sysRoot, medRoot := t.TempDir(), t.TempDir()
@@ -38,7 +48,7 @@ func TestRefreshStickAgentBinary(t *testing.T) {
 		sysBlockRoot, mediaRoot = sysRoot, medRoot
 		t.Cleanup(func() { sysBlockRoot, mediaRoot = oldSys, oldMed })
 
-		refreshStickAgentBinary(newBin, logger) // must not panic or create files
+		refreshStickAgentBinary(src, sum, logger) // must not panic or create files
 		entries, err := os.ReadDir(medRoot)
 		if err != nil || len(entries) != 0 {
 			t.Fatalf("stickless refresh must write nothing, got entries=%v err=%v", entries, err)
@@ -71,7 +81,7 @@ func TestRefreshStickAgentBinary(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		refreshStickAgentBinary(newBin, logger)
+		refreshStickAgentBinary(src, sum, logger)
 
 		got, err := os.ReadFile(dst)
 		if err != nil || string(got) != string(newBin) {
@@ -110,7 +120,7 @@ func TestRefreshStickAgentBinary(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		refreshStickAgentBinary(newBin, logger)
+		refreshStickAgentBinary(src, sum, logger)
 
 		after, err := os.Stat(dst)
 		if err != nil {

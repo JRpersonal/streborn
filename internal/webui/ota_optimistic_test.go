@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -25,12 +26,12 @@ func TestWriteBinaryAtomicOptimisticDespitePessimisticStatfs(t *testing.T) {
 
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "streborn-armv7l")
-	body := []byte("optimistic-write-body")
-	if err := writeBinaryAtomic(dst, body); err != nil {
+	body := patternBytes(4096)
+	if _, err := receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
 		t.Fatalf("optimistic write must succeed when the filesystem has room, got %v", err)
 	}
 	got, err := os.ReadFile(dst)
-	if err != nil || string(got) != string(body) {
+	if err != nil || !bytes.Equal(got, body) {
 		t.Fatalf("dst content mismatch: err=%v got=%q", err, got)
 	}
 	if _, err := os.Stat(dst + ".new"); !os.IsNotExist(err) {
@@ -122,7 +123,8 @@ func TestWriteBinaryAtomicCleansTruncatedTempOnFailure(t *testing.T) {
 		t.Skip("running as root: read-only dir does not fail the write")
 	}
 	dst := filepath.Join(dir, "streborn-armv7l")
-	err := writeBinaryAtomic(dst, []byte("body"))
+	body := patternBytes(4096)
+	_, err := receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if err == nil {
 		t.Fatal("write into a read-only dir must fail")
 	}

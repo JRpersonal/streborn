@@ -2,7 +2,7 @@ package webui
 
 // Last-resort OTA paths for a NAND that cannot take the update (#270).
 //
-// Tier 1 is the reclaim cascade in writeBinaryAtomic (drop stale temps, logs,
+// Tier 1 is the reclaim cascade in prepareBinaryWrite (drop stale temps, logs,
 // the regenerable Spotify engine), followed by an OPTIMISTIC write attempt:
 // the pessimistic UBIFS statfs figure steers the cascade but never refuses the
 // write, so only a real ENOSPC from the filesystem escalates further. Field
@@ -28,8 +28,6 @@ package webui
 //     helper that dies leaves the box recoverable by a power-cycle.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -166,29 +164,30 @@ reboot`,
 // instead of the failure staying invisible on a stickless box.
 const swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
 
-// stageAndSwapViaRAM implements tier 3: write body to the RAM stage, spawn
-// the detached swap helper, and return nil when the caller may answer the
-// client and exit the agent process. The caller MUST exit shortly after (the
-// helper waits for this PID, capped at 90 s).
-func (s *Server) stageAndSwapViaRAM(dst string, body []byte) error {
-	if _, avail, ok := diskFree(ramStageDir); ok && avail < int64(len(body))+(1<<20) {
-		return fmt.Errorf("RAM stage %s too small: need %d, avail %d", ramStageDir, len(body), avail)
+// armRAMStagedSwap implements tier 3 once the upload is complete in the RAM
+// stage (receiveAgentBinary moved it there when the NAND filled up): spawn the
+// detached swap helper and return nil when the caller may answer the client
+// and exit the agent process. The caller MUST exit shortly after (the helper
+// waits for this PID, capped at 90 s). size and sum describe the staged file;
+// the helper checks both before it touches dst.
+func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) error {
+	fi, err := os.Stat(ramStageTarget)
+	if err != nil {
+		return fmt.Errorf("RAM stage %s: %w", ramStageTarget, err)
 	}
-	if err := os.WriteFile(ramStagePath, body, 0o755); err != nil {
-		return fmt.Errorf("write RAM stage: %w", err)
+	if fi.Size() != size {
+		return fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", ramStageTarget, fi.Size(), size)
 	}
-	sum := sha256.Sum256(body)
-	script := swapHelperScript(os.Getpid(), ramStagePath, dst, len(body), hex.EncodeToString(sum[:]))
+	script := swapHelperScript(os.Getpid(), ramStageTarget, dst, int(size), sum)
 	cmd := exec.Command("sh", "-c", script)
 	// Own session: the helper must survive this agent's exit and any process-
 	// group teardown on the way down.
 	cmd.SysProcAttr = sysProcAttrSetsid()
 	if err := cmd.Start(); err != nil {
-		_ = os.Remove(ramStagePath)
 		return fmt.Errorf("start swap helper: %w", err)
 	}
 	// Deliberately not Wait()ed: the helper outlives us by design.
 	s.logger.Warn("OTA: NAND cannot hold two agent copies; RAM-staged swap armed, agent will exit and the helper reboots the box",
-		"stage", ramStagePath, "bytes", len(body), "helperPID", cmd.Process.Pid)
+		"stage", ramStageTarget, "bytes", size, "helperPID", cmd.Process.Pid)
 	return nil
 }
