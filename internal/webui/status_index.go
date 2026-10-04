@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/region"
 )
 
 // countryToLanguage returns the default language code for the radio-browser
@@ -53,6 +55,18 @@ func languageForCountry(cc string) string {
 	return "english"
 }
 
+// regionInfo is the effective region: the resolver when wired (the wizard
+// region, else the firmware's countryCode), otherwise the wizard region alone.
+func (s *Server) regionInfo() region.Info {
+	if s.regionRes != nil {
+		return s.regionRes.Info()
+	}
+	s.regionMu.RLock()
+	cc := s.region
+	s.regionMu.RUnlock()
+	return region.Resolve(cc, "")
+}
+
 // handleRegion returns the region saved by the setup wizard together
 // with the derived default language, or sets it anew via PUT.
 func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +95,8 @@ func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 		s.region = cc
 		path := s.regionFile
 		s.regionMu.Unlock()
+		// The US music services follow the region (internal/region).
+		s.regionRes.SetSTR(cc)
 		if path != "" {
 			if err := os.WriteFile(path, []byte(cc+"\n"), 0o644); err != nil {
 				s.logger.Warn("region.txt write failed", "err", err)

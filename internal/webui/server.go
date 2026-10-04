@@ -24,6 +24,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
+	"github.com/JRpersonal/streborn/internal/region"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
@@ -34,9 +35,13 @@ import (
 type Server struct {
 	addr    string
 	boxHost string
-	// Pandora route-A opt-in (pandora.go). pandoraBoxOverride is a test seam.
-	pandora            PandoraBackend
-	pandoraBoxOverride pandoraBoxAPI
+	// The firmware's own US services, Pandora and iHeartRadio
+	// (usservices.go). nativeBoxOverride is a test seam.
+	native            NativeServicesBackend
+	nativeBoxOverride nativeBoxAPI
+	// regionRes combines the wizard region with the firmware's countryCode
+	// (internal/region); nil on builds that do not wire it.
+	regionRes *region.Resolver
 	// Group volume step bookkeeping (zoneVolumeStep): the levels the last
 	// step wrote per member IP, and when. Guarded by groupStepMu, which also
 	// serialises the steps themselves.
@@ -1211,8 +1216,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
 	mux.HandleFunc("/api/agent/ssh", s.handleAgentSSH)
-	mux.HandleFunc("/api/pandora", s.handlePandora)
-	mux.HandleFunc("/api/pandora/account", s.handlePandoraAccount)
+	mux.HandleFunc("/api/us-services", s.handleUSServices)
+	mux.HandleFunc("/api/pandora", s.handleUSServices)
+	mux.HandleFunc("/api/pandora/account", s.handleNativeAccount("PANDORA"))
+	mux.HandleFunc("/api/iheart/account", s.handleNativeAccount("IHEART"))
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)

@@ -339,6 +339,11 @@ func (s *Server) reflectedFullSourcesXML() string {
 	i := 0
 	for _, r := range s.reflected() {
 		typ := strings.ToUpper(strings.TrimSpace(r.Source))
+		// A carried-over Pandora or iHeartRadio account gives way to the
+		// registration the firmware made with the stand-in (usservices.go).
+		if s.nativeSupersedes(typ) {
+			continue
+		}
 		pid, ok := numericProviderID[typ]
 		if !ok {
 			if j := strings.IndexByte(typ, '_'); j > 0 {
@@ -423,7 +428,7 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, r *http.Request)
 		`<mode>global</mode>` +
 		`<preferredLanguage>en</preferredLanguage>` +
 		`<providerSettings/>` +
-		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML() + s.pandoraFullXML(fromLoopback(r)) + `</sources>` +
+		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML() + s.nativeFullXML(fromLoopback(r)) + `</sources>` +
 		`</account>`))
 }
 
@@ -655,9 +660,15 @@ func (s *Server) respondConfigStatus(w http.ResponseWriter) {
 // box asked for.
 func (s *Server) respondAddSource(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
-	if s.PandoraEnabled() && isPandoraRegistration(string(body)) {
-		s.respondPandoraAddSource(w, r, string(body))
-		return
+	// Pandora and iHeartRadio (usservices.go): kept where enabled, and every
+	// registration for them is recorded either way, so a bundle shows what
+	// the firmware tried.
+	if typ := nativeRegistrationType(string(body)); typ != "" {
+		if s.NativeServiceEnabled(typ) {
+			s.respondNativeAddSource(w, r, typ, string(body))
+			return
+		}
+		s.noteNativeRegistration(typ, r, string(body), false)
 	}
 	username := firstXMLValue(string(body), "username")
 	providerID := firstXMLValue(string(body), "sourceproviderid")
@@ -718,7 +729,7 @@ func (s *Server) respondAccountSources(w http.ResponseWriter, r *http.Request) {
 	for _, r := range regs {
 		b.WriteString(renderAccountSource(format, r))
 	}
-	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String() + s.pandoraListXML(fromLoopback(r))
+	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String() + s.nativeListXML(fromLoopback(r))
 	var body string
 	switch format {
 	case "wrap":
