@@ -578,7 +578,11 @@ body {
 }
 
 /* ---------- Tabs ---------- */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--c-surface-2); margin-bottom: 10px; }
+/* Tab labels are controls, not text: a double click on a wrapped label
+   ("Recently / played" on a narrow window) selected the word and painted the
+   selection highlight over it, which read as a broken second element (#1065).
+   The macOS WebView is WebKit and still wants the prefixed property. */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--c-surface-2); margin-bottom: 10px; -webkit-user-select: none; user-select: none; }
 .tab-btn {
   background: transparent;
   color: var(--c-muted);
