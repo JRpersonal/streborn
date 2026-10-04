@@ -185,7 +185,7 @@ jobs:
 
       - name: Vulnerability scan
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           # Same continue-on-error reasoning as build.yml: setup-go's
           # manifest sometimes lags Go's stdlib patch releases. The
           # scan still runs and posts results; do not block the
@@ -294,6 +294,42 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "build_stamp=${BUILD_STAMP}" >> "$GITHUB_OUTPUT"
 
+      # Build the LD_PRELOAD shim that hijacks Bose's SoftwareUpdate
+      # daemon on :17008 and forwards inbound connections to the STR
+      # webui on 127.0.0.1:8888. It is loaded by the Bose binary on the
+      # speaker and never used on a host architecture. Targets
+      # glibc-2.15 explicitly because Bose firmware ships 2.15;
+      # newer default targets pull in GLIBC_2.34 and refuse to load.
+      # See usb-stick/shim/README.md for the chipset-whitelist story.
+      #
+      # It is built BEFORE the agent, on every matrix leg, and copied over
+      # usb-stick/str-shim.so: the agent embeds the usb-stick folder
+      # (usb-stick/files.go, `*.so`) and writes the shim onto the speaker
+      # during the network install and OTA. Until 2026-10-04 the shim was
+      # built after the agent, so every agent embedded the copy committed to
+      # the repo instead of this attested build. Only the armv7l leg attests
+      # and uploads it; the desktop jobs take that artifact for their own
+      # embed (sticksetup reads the same folder).
+      - name: Setup zig (for shim cross-compile)
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.13.0
+
+      - name: Build shim
+        run: |
+          mkdir -p out
+          zig cc -target arm-linux-gnueabihf.2.15 -shared -fPIC -O2                  -ldl -lpthread                  -o out/str-shim.so usb-stick/shim/shim.c
+          ls -la out/str-shim.so
+          sha256sum out/str-shim.so > out/str-shim.so.sha256
+          # Sanity check the resulting ELF: must be ARM EABI shared object.
+          # `file` is not on the Go runner image by default; head the magic.
+          if [ "$(head -c 4 out/str-shim.so | xxd -p)" != "7f454c46" ]; then
+            echo "::error::shim build produced something that is not ELF"
+            exit 1
+          fi
+          # The agent embeds usb-stick/*.so; make it embed THIS build.
+          cp out/str-shim.so usb-stick/str-shim.so
+
       - name: Build agent
         env:
           GOOS: ${{ matrix.goos }}
@@ -364,35 +400,6 @@ jobs:
           cd out
           sha256sum "streborn-${{ matrix.suffix }}" > "streborn-${{ matrix.suffix }}.sha256"
           cat "streborn-${{ matrix.suffix }}.sha256"
-
-      # Build the LD_PRELOAD shim that hijacks Bose's SoftwareUpdate
-      # daemon on :17008 and forwards inbound connections to the STR
-      # webui on 127.0.0.1:8888. Only the armv7l matrix entry runs
-      # this step — the shim is loaded by the Bose binary on the
-      # speaker and not used on any host architecture. Targets
-      # glibc-2.15 explicitly because Bose firmware ships 2.15;
-      # newer default targets pull in GLIBC_2.34 and refuse to load.
-      # See usb-stick/shim/README.md for the chipset-whitelist story.
-      - name: Setup zig (for shim cross-compile)
-        if: matrix.suffix == 'armv7l'
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.13.0
-
-      - name: Build shim
-        if: matrix.suffix == 'armv7l'
-        run: |
-          zig cc -target arm-linux-gnueabihf.2.15 -shared -fPIC -O2 \
-                 -ldl -lpthread \
-                 -o out/str-shim.so usb-stick/shim/shim.c
-          ls -la out/str-shim.so
-          sha256sum out/str-shim.so > out/str-shim.so.sha256
-          # Sanity check the resulting ELF: must be ARM EABI shared object.
-          # `file` is not on the Go runner image by default; head the magic.
-          if [ "$(head -c 4 out/str-shim.so | xxd -p)" != "7f454c46" ]; then
-            echo "::error::shim build produced something that is not ELF"
-            exit 1
-          fi
 
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -805,17 +812,24 @@ jobs:
           name: agent-armv7l
           path: agent-download
 
+      - name: Download shim
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: shim-armv7l
+          path: shim-download
+
       - name: Download go-librespot
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: go-librespot-armv7l
           path: glr-download
 
-      - name: Embed ARM agent + go-librespot
+      - name: Embed ARM agent + shim + go-librespot
         run: |
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          cp shim-download/str-shim.so usb-stick/str-shim.so
           cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
-          ls -la desktop-app/agentbin/
+          ls -la desktop-app/agentbin/ usb-stick/str-shim.so
 
       # The stamp the app is about to get MUST be the one inside the agent it
       # just embedded. They are built in different jobs, and on v0.9.88 they
@@ -994,17 +1008,24 @@ jobs:
           name: agent-armv7l
           path: agent-download
 
+      - name: Download shim
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: shim-armv7l
+          path: shim-download
+
       - name: Download go-librespot
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: go-librespot-armv7l
           path: glr-download
 
-      - name: Embed ARM agent + go-librespot
+      - name: Embed ARM agent + shim + go-librespot
         run: |
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          cp shim-download/str-shim.so usb-stick/str-shim.so
           cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
-          ls -la desktop-app/agentbin/
+          ls -la desktop-app/agentbin/ usb-stick/str-shim.so
 
       # The stamp the app is about to get MUST be the one inside the agent it
       # just embedded. They are built in different jobs, and on v0.9.88 they
@@ -1467,6 +1488,35 @@ jobs:
           sha256sum streborn-* STR-* str-shim.so go-librespot-armv7l > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Release provenance (one attestation over every published file)
+        # The build jobs already attest each artifact, but those attestations
+        # live only in GitHub's attestation store, and the desktop downloads
+        # are renamed and (on Windows) swapped for the signed bytes after that.
+        # This attests the exact final files, by digest, from SHA256SUMS, and
+        # the next step publishes the bundle WITH the release, so it can be
+        # verified offline and tools that look at release assets (OpenSSF
+        # Scorecard's Signed-Releases check) see it.
+        id: release_attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Attach the provenance bundle as release files
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+          BUNDLE: ${{ steps.release_attest.outputs.bundle-path }}
+        run: |
+          set -eu
+          # The Sigstore bundle as GitHub produced it (verifiable with
+          # `gh attestation verify --bundle` or cosign), plus the DSSE
+          # envelope(s) as in-toto JSON lines, the conventional SLSA
+          # provenance file name.
+          cp "$BUNDLE" "STR-${VERSION}.sigstore.json"
+          jq -c '.dsseEnvelope' "$BUNDLE" > "STR-${VERSION}.intoto.jsonl"
+          test -s "STR-${VERSION}.intoto.jsonl"
+          ls -la "STR-${VERSION}.sigstore.json" "STR-${VERSION}.intoto.jsonl"
+
       - name: Generate change notes
         # Build human-facing release notes from the Conventional Commit
         # subjects since the previous tag. Produces dist/changelog.md
@@ -1879,6 +1929,8 @@ jobs:
             dist/str-shim.so
             dist/SHA256SUMS
             dist/manifest.json
+            dist/STR-*.sigstore.json
+            dist/STR-*.intoto.jsonl
           fail_on_unmatched_files: true
           generate_release_notes: false
           draft: false
@@ -2023,8 +2075,12 @@ jobs:
           set -u
           echo "erwarte $TAG auf https://st-reborn.de/api/update.json"
           for i in $(seq 1 60); do
-            live=$(curl -sS --max-time 15 "https://st-reborn.de/api/update.json?relverify=$(date +%s)" \
-              | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            # Fetch to a file, then parse it: the response is data read by a
+            # JSON parser, never executed (and no curl-to-interpreter pipe).
+            live=""
+            if curl -sS --max-time 15 -o update.json "https://st-reborn.de/api/update.json?relverify=$(date +%s)"; then
+              live=$(python3 -c "import json;print(json.load(open('update.json')).get('version',''))" 2>/dev/null || echo "")
+            fi
             if [ "$live" = "$TAG" ]; then
               echo "Website liefert $TAG (nach etwa $((i*30)) Sekunden)"
               exit 0
