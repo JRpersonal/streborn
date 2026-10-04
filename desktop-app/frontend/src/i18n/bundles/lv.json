@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "Skaļrunis neiznāk no gaidstāves. Izvelc kontaktdakšu uz desmit sekundēm un iespraud atpakaļ, tas parasti palīdz.",
   "play.errBoxStuckSendLog": "STR nespēj izvest šo skaļruni no gaidstāves. Skaļruņa iestatījumu lejasdaļā eksportē diagnostiku un nosūti to uzreiz pēc mēģinājuma.",
   "banner.appCheckKeepsFailing": "STR jau vairākas palaišanas reizes nespēj pārbaudīt, vai ir jauna versija. Iespējams, pieprasījumu bloķē ugunsmūris vai antivīruss. Ik pa laikam paskaties pats st-reborn.de.",
+  "stereoStale.partnerDenies": "{{name}} joprojām uzskata sevi par stereo pāra pusi ar {{partner}}, bet {{partner}} par to vairs nezina. {{name}} viens pats neatskaņos, kamēr vecais pāris nav izjaukts.",
+  "stereoStale.partnerGone": "{{name}} ir stereo pāra puse, un partneris {{partner}} neatbild. Stereo pāra puse viena pati neatskaņo. Ja {{partner}} neatgriezīsies, izjauciet veco pāri.",
+  "stereoStale.fixBtn": "Izjaukt veco pāri",
+  "play.errStereoStale": "Veca stereo pāra puse, skatiet Multi-Room",
   "update.stableNameNotice": "STR tagad darbojas kā STR-Windows.exe. Windows var vēlreiz prasīt tīkla piekļuvi: atļauj to privātajiem tīkliem, citādi lietotne neatradīs tavus skaļruņus."
 }

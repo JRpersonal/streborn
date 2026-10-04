@@ -250,6 +250,27 @@ func TestGetGroupEmptyBody(t *testing.T) {
 	}
 }
 
+// TestGetGroupStatus reads the firmware's verdict on a pair. The broken-pair
+// shape was measured live on 2026-08-10: the half still holding the document
+// answers with <status>GROUP_ERROR</status>.
+func TestGetGroupStatus(t *testing.T) {
+	c, stop := newFakeBox(t, map[string]string{
+		"/getGroup": `<?xml version="1.0" encoding="UTF-8" ?>` +
+			`<group id="str-grp-1"><name>Pair</name><masterDeviceId>AAAAAAAAAAAA</masterDeviceId>` +
+			`<roles><groupRole><deviceId>AAAAAAAAAAAA</deviceId><role>LEFT</role><ipAddress>192.0.2.11</ipAddress></groupRole>` +
+			`<groupRole><deviceId>BBBBBBBBBBBB</deviceId><role>RIGHT</role><ipAddress>192.0.2.12</ipAddress></groupRole></roles>` +
+			`<senderIPAddress>192.0.2.12</senderIPAddress><status>GROUP_ERROR</status></group>`,
+	})
+	defer stop()
+	g, err := c.GetGroup(context.Background())
+	if err != nil {
+		t.Fatalf("GetGroup error: %v", err)
+	}
+	if g.Status != "GROUP_ERROR" {
+		t.Errorf("Status = %q, want GROUP_ERROR", g.Status)
+	}
+}
+
 // TestGetGroupRoles parses the documented stereo-pair schema
 // (roles>groupRole with deviceId/role/ipAddress child elements + masterDeviceId).
 func TestGetGroupRoles(t *testing.T) {

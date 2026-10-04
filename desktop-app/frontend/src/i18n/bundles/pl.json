@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "Głośnik nie wychodzi z trybu czuwania. Wyciągnij wtyczkę na dziesięć sekund i włóż ją z powrotem, to zwykle pomaga.",
   "play.errBoxStuckSendLog": "STR nie potrafi wybudzić tego głośnika. Wyeksportuj diagnostykę na dole ustawień głośnika i wyślij ją, zaraz po próbie.",
   "banner.appCheckKeepsFailing": "STR od kilku uruchomień nie może sprawdzić, czy jest nowa wersja. Być może zapora lub program antywirusowy blokuje zapytanie. Zaglądaj czasem sam na st-reborn.de.",
+  "stereoStale.partnerDenies": "{{name}} nadal uważa się za połowę pary stereo z {{partner}}, który już o tym nie wie. {{name}} nie zagra samodzielnie, dopóki stara para nie zostanie rozwiązana.",
+  "stereoStale.partnerGone": "{{name}} jest połową pary stereo, a partner {{partner}} nie odpowiada. Połowa pary stereo nie gra samodzielnie. Jeśli {{partner}} nie wróci, rozwiąż starą parę.",
+  "stereoStale.fixBtn": "Rozwiąż starą parę",
+  "play.errStereoStale": "Połowa starej pary stereo, zobacz Multi-Room",
   "update.stableNameNotice": "STR działa teraz jako STR-Windows.exe. Windows może jeszcze raz zapytać o dostęp do sieci: zezwól na niego dla sieci prywatnych, inaczej aplikacja nie znajdzie twoich głośników."
 }

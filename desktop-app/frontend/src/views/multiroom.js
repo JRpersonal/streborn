@@ -18,6 +18,8 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
+// A speaker stuck as half of an old stereo pair (see stalestereo.js).
+import { staleNoticeText } from '../stalestereo.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -586,7 +588,14 @@ export function renderMultiroom(fetchLive) {
   // speaker; the fetch runs after paint (see the end of this function).
   const groupKeysHtml = renderGroupKeysSection(strBoxes);
 
-  root.innerHTML = intro + liveFramesHtml + topbar + previewNote + updateWarn +
+  // A speaker stuck as half of a pair that no longer exists does not play at
+  // all, so this goes first: it explains every other symptom on the page.
+  const staleList = state.staleStereo || [];
+  const staleHtml = staleList.map((f, i) =>
+    `<div class="setup-warn stale-stereo">${escapeHtml(staleNoticeText(f, t))}
+       <button class="btn btn-mini stale-stereo-fix" data-stale="${i}">${escapeHtml(t('stereoStale.fixBtn'))}</button></div>`).join('');
+
+  root.innerHTML = intro + staleHtml + liveFramesHtml + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
      ${pairBalance}
@@ -705,6 +714,17 @@ export function renderMultiroom(fetchLive) {
         }
         doDissolveZoneAt(mb);
       }
+    };
+  });
+
+  root.querySelectorAll('.stale-stereo-fix').forEach(btn => {
+    btn.onclick = () => {
+      const f = staleList[Number(btn.dataset.stale)];
+      if (!f) return;
+      // The same fan-out undo the pair frame's x uses: it asks every reachable
+      // half, and the half that still holds the pair is the one that clears it.
+      state.staleStereo = (state.staleStereo || []).filter(x => x !== f);
+      doDissolveStereoPair(f.pair, strBoxes);
     };
   });
 

@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "Kolonėlė neišeina iš budėjimo režimo. Ištrauk kištuką dešimčiai sekundžių ir vėl įkišk, tai paprastai padeda.",
   "play.errBoxStuckSendLog": "STR negali pažadinti šios kolonėlės. Kolonėlės nustatymų apačioje eksportuok diagnostiką ir atsiųsk ją iškart po bandymo.",
   "banner.appCheckKeepsFailing": "STR jau kelis paleidimus negali patikrinti, ar yra nauja versija. Gali būti, kad užklausą blokuoja ugniasienė arba antivirusinė. Kartkartėmis pats užsuk į st-reborn.de.",
+  "stereoStale.partnerDenies": "{{name}} vis dar laiko save stereo poros su {{partner}} puse, bet {{partner}} apie tai nebežino. {{name}} negros vienas, kol senoji pora nebus išardyta.",
+  "stereoStale.partnerGone": "{{name}} yra stereo poros pusė, o partneris {{partner}} neatsako. Stereo poros pusė viena negroja. Jei {{partner}} negrįš, išardykite senąją porą.",
+  "stereoStale.fixBtn": "Išardyti senąją porą",
+  "play.errStereoStale": "Senos stereo poros pusė, žr. Multi-Room",
   "update.stableNameNotice": "STR dabar veikia kaip STR-Windows.exe. Windows gali dar kartą paprašyti tinklo prieigos: leisk ją privačiuose tinkluose, kitaip programėlė neras tavo garsiakalbių."
 }

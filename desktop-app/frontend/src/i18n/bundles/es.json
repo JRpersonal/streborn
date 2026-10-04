@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "El altavoz no sale del modo de espera. Desenchúfalo diez segundos y vuelve a enchufarlo, eso suele resolverlo.",
   "play.errBoxStuckSendLog": "STR no consigue sacar este altavoz del modo de espera. Exporta un diagnóstico al final de los ajustes del altavoz y envíalo, justo después de un intento.",
   "banner.appCheckKeepsFailing": "STR lleva varios arranques sin poder comprobar si hay una versión nueva. Puede que un cortafuegos o un antivirus esté bloqueando la petición. Echa un vistazo tú mismo en st-reborn.de de vez en cuando.",
+  "stereoStale.partnerDenies": "{{name}} todavía cree ser la mitad de un par estéreo con {{partner}}, que ya no lo reconoce. {{name}} no sonará sola hasta que se deshaga el par antiguo.",
+  "stereoStale.partnerGone": "{{name}} es la mitad de un par estéreo y su pareja {{partner}} no responde. Una mitad estéreo no suena sola. Si {{partner}} no vuelve, deshaz el par antiguo.",
+  "stereoStale.fixBtn": "Deshacer el par antiguo",
+  "play.errStereoStale": "Mitad de un par estéreo antiguo, ver Multi-Room",
   "update.stableNameNotice": "STR ahora se ejecuta como STR-Windows.exe. Windows puede volver a pedir acceso a la red: permítelo para redes privadas, de lo contrario la app no encuentra tus altavoces."
 }

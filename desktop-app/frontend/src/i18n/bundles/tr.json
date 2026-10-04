@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "Hoparlör bekleme modundan çıkmıyor. Fişini on saniye çekip tekrar tak, bu genellikle çözer.",
   "play.errBoxStuckSendLog": "STR bu hoparlörü bekleme modundan çıkaramıyor. Hoparlör ayarlarının altından bir tanılama dışa aktarıp gönder, denemenin hemen ardından.",
   "banner.appCheckKeepsFailing": "STR birkaç açılıştır yeni sürüm olup olmadığına bakamıyor. Bir güvenlik duvarı ya da virüs tarayıcı isteği engelliyor olabilir. Ara sıra st-reborn.de adresine kendin göz at.",
+  "stereoStale.partnerDenies": "{{name}} hâlâ {{partner}} ile bir stereo çiftin yarısı olduğunu sanıyor, ancak {{partner}} artık bundan habersiz. Eski çift çözülene kadar {{name}} tek başına çalmaz.",
+  "stereoStale.partnerGone": "{{name}} bir stereo çiftin yarısı ve eşi {{partner}} yanıt vermiyor. Stereo çiftin yarısı tek başına çalmaz. {{partner}} geri gelmeyecekse eski çifti çöz.",
+  "stereoStale.fixBtn": "Eski çifti çöz",
+  "play.errStereoStale": "Eski bir stereo çiftin yarısı, Multi-Room'a bak",
   "update.stableNameNotice": "STR artık STR-Windows.exe olarak çalışıyor. Windows ağ erişimini bir kez daha sorabilir: özel ağlar için izin ver, aksi halde uygulama hoparlörlerini bulamaz."
 }

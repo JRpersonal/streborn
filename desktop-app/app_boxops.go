@@ -167,6 +167,12 @@ func friendlyError(resp *http.Response) string {
 		if c, _ := m["code"].(string); c == "box-grouped" {
 			return string(b)
 		}
+		// Same for a speaker stuck as half of an incomplete stereo pair (409
+		// {"error":"stereo-incomplete","partnerIP":...,"master":...}): the
+		// frontend names the partner from these fields.
+		if e, _ := m["error"].(string); e == "stereo-incomplete" {
+			return string(b)
+		}
 		msg := ""
 		if d, ok := m["detail"].(string); ok && d != "" {
 			msg = d

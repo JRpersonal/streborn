@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "Der Lautsprecher kommt nicht aus dem Standby. Zieh den Stecker für zehn Sekunden und steck ihn wieder ein, das löst so etwas meistens.",
   "play.errBoxStuckSendLog": "STR bekommt den Lautsprecher nicht aus dem Standby. Exportiere bitte unten bei den Lautsprecher-Einstellungen eine Diagnose und schick sie mir, direkt nach einem Versuch.",
   "banner.appCheckKeepsFailing": "STR konnte seit mehreren Starts nicht nach einer neuen Version schauen. Vielleicht blockiert eine Firewall oder ein Virenscanner die Anfrage. Schau gelegentlich selbst auf st-reborn.de nach.",
+  "stereoStale.partnerDenies": "{{name}} hält sich noch für die Hälfte eines Stereopaars mit {{partner}}, aber {{partner}} weiß davon nichts mehr. {{name}} spielt erst wieder allein, wenn das alte Paar aufgelöst ist.",
+  "stereoStale.partnerGone": "{{name}} ist die Hälfte eines Stereopaars, und der Partner {{partner}} antwortet nicht. Eine Stereohälfte spielt nicht allein. Wenn {{partner}} nicht wiederkommt, löse das alte Paar auf.",
+  "stereoStale.fixBtn": "Altes Paar auflösen",
+  "play.errStereoStale": "Hälfte eines alten Stereopaars, siehe Multi-Room",
   "update.stableNameNotice": "STR läuft jetzt als STR-Windows.exe. Windows fragt eventuell noch einmal nach Netzwerkzugriff. Erlaube ihn bitte für private Netzwerke, sonst findet die App deine Lautsprecher nicht."
 }

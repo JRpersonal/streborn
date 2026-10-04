@@ -1562,5 +1562,9 @@
   "play.errBoxStuckTryPower": "スピーカーが待機状態から戻りません。電源プラグを十秒ほど抜いて差し直してください。たいていはこれで直ります。",
   "play.errBoxStuckSendLog": "STR はこのスピーカーを待機状態から戻せません。スピーカー設定の下から診断情報を書き出し、試した直後に送ってください。",
   "banner.appCheckKeepsFailing": "STR は数回の起動にわたって新しいバージョンを確認できていません。ファイアウォールやウイルス対策ソフトが通信を遮っている可能性があります。ときどき st-reborn.de をご自身でご覧ください。",
+  "stereoStale.partnerDenies": "{{name}} はまだ {{partner}} とのステレオペアの片方だと認識していますが、{{partner}} 側はそのペアを把握していません。古いペアを解除するまで {{name}} は単独で再生しません。",
+  "stereoStale.partnerGone": "{{name}} はステレオペアの片方で、相手の {{partner}} が応答しません。ステレオペアの片方は単独では再生しません。{{partner}} が戻らない場合は古いペアを解除してください。",
+  "stereoStale.fixBtn": "古いペアを解除",
+  "play.errStereoStale": "古いステレオペアの片方です。Multi-Room を確認してください",
   "update.stableNameNotice": "STR は STR-Windows.exe として動作するようになりました。Windows がもう一度ネットワークへのアクセスを確認することがあります。プライベート ネットワークで許可してください。許可しないとアプリがスピーカーを見つけられません。"
 }
