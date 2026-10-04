@@ -2080,8 +2080,14 @@ jobs:
       # komac is pinned to an exact release and its archive checked against a
       # recorded SHA256, instead of the winget-releaser action, which installs
       # cargo-binstall@main and the latest komac on every run.
+      # continue-on-error: winget and Homebrew are independent channels, and a
+      # winget failure (the package not yet merged into winget-pkgs, a review
+      # backlog, a komac hiccup) must not keep the Homebrew tap on the old
+      # version. v1.0.3 lost its cask update exactly that way while the first
+      # winget submission was still in Microsoft's manual review.
       - name: Update winget (komac)
         if: env.HAS_WINGET_TOKEN == 'true'
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
           KOMAC_FORK_OWNER: JRpersonal
