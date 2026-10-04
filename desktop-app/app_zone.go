@@ -272,7 +272,11 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	// Zone forming needs its own budget: the agent wakes the speaker first, which
 	// can take most of the default 6 s on its own, and a timeout here leaves the
 	// user with a failure message for a group the box actually went on to form.
-	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodPost, "/api/box/zone", "application/json", string(b), zoneCallTimeout)
+	budget := zoneCallTimeout
+	if spec.Stereo {
+		budget = stereoZoneCallTimeout
+	}
+	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodPost, "/api/box/zone", "application/json", string(b), budget)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +462,7 @@ func (a *App) PushStereoPairNameToBox(host string, port int, name string) error 
 }
 
 func (a *App) DissolveStereoPair(host string, port int) error {
-	resp, err := a.boxDoTimeout(host, port, http.MethodDelete, "/api/box/zone?stereo=1", "", "", zoneCallTimeout)
+	resp, err := a.boxDoTimeout(host, port, http.MethodDelete, "/api/box/zone?stereo=1", "", "", stereoZoneCallTimeout)
 	if err != nil {
 		a.logger.Info("stereo: dissolve failed", "host", host, "err", err)
 		return err
