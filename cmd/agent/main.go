@@ -420,6 +420,10 @@ func run() error {
 		// fallback after a restart is what invited the firmware to re-create
 		// the record from its own point of view).
 		marge.WithGroupPath("/mnt/nv/streborn/marge-group.json"),
+		// With no record stored, the group poll asks the firmware what it holds
+		// and adopts a healthy pair instead of answering it away (a pair formed
+		// in the Bose app survives the first STR boot this way).
+		marge.WithFirmwareGroupProbe(firmwareGroupProbe(*boxHost)),
 		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
 		// The speaker's own hold-to-store gesture PUTs the playing station to
 		// marge; keep it in the STR store so the app shows the key and the
@@ -566,6 +570,10 @@ func run() error {
 			}
 		}()
 	}
+	// A pair the firmware holds but STR does not (first boot after installing
+	// STR on a speaker paired in the Bose app) is adopted before the firmware's
+	// group poll can be answered without it.
+	go adoptFirmwarePairAtStartup(context.Background(), margeSrv, *boxHost, logger.With("comp", "groupadopt"))
 	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
 	// net_reachability captures the "plays radio but unreachable" fault: the
 	// cheap carrier/IP/gateway-ARP snapshot the health tick watches, plus the
