@@ -7,6 +7,7 @@
   <a href="https://github.com/JRpersonal/streborn/actions/workflows/codeql.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://github.com/JRpersonal/streborn/actions/workflows/release.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/JRpersonal/streborn"><img src="https://api.securityscorecards.dev/projects/github.com/JRpersonal/streborn/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://www.bestpractices.dev/projects/15200"><img src="https://www.bestpractices.dev/projects/15200/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://github.com/JRpersonal/streborn/releases/latest"><img src="https://img.shields.io/github/v/release/JRpersonal/streborn" alt="Latest release"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/JRpersonal/streborn" alt="License"></a>
 </p>
