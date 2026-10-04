@@ -181,7 +181,7 @@ Every change is checked automatically and the results are public, so you do not 
 - **OpenSSF Scorecard** audits the supply-chain posture (branch protection, pinned dependencies, signed releases, token hygiene) weekly and publishes the score.
 - **Dependabot** keeps Go, npm, and GitHub Actions dependencies patched; all third-party actions are pinned to a commit SHA.
 - **Secret Scanning with Push Protection** blocks commits that contain a leaked credential.
-- **Releases** are built only by the workflow from a signed tag, with SHA256 sums and Sigstore build-provenance attestations (above). All shipped binaries, including the small speaker shim, are compiled from source by the workflow; no opaque prebuilt binaries are committed.
+- **Releases** are built only by the workflow from a signed tag, with SHA256 sums and Sigstore build-provenance attestations (above). All shipped binaries, including the small speaker shim, are compiled from source by the workflow, and every release carries the Sigstore bundle and the SLSA provenance as files (`STR-<version>.sigstore.json`, `STR-<version>.intoto.jsonl`). One prebuilt binary is still in the repository: `usb-stick/str-shim.so`, which only local developer builds use. Release builds replace it with the workflow-built, attested copy (since v1.0.1), and removing it from the repository is planned.
 
 Findings from Dependabot, CodeQL, and Scorecard surface in the repository's [Security tab](https://github.com/JRpersonal/streborn/security). The full policy is in [SECURITY.md](./SECURITY.md), and hard-won notes about the stock firmware STR runs on top of are in [docs/FIRMWARE-NOTES.md](./docs/FIRMWARE-NOTES.md).
 
