@@ -35,6 +35,12 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 			Headers: r.Header.Clone(),
 			Body:    string(bodyCopy),
 		}
+		// A Pandora registration can carry the account credential. The spy log
+		// (/__spy/log) prints bodies, so the recorded copy is masked; the
+		// handler below still reads the original.
+		if isPandoraRequest(r.URL.Path, entry.Body) {
+			entry.Body = maskCredentials(entry.Body)
+		}
 		s.recordSpy(entry)
 		// The firmware's TuneIn client is believed dead on 27.0.6 (no request
 		// to its partner host has ever been seen), so any request to that host
@@ -48,6 +54,17 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 				slog.String("path", entry.Path),
 				slog.Int("bodyBytes", len(bodyCopy)),
 				slog.String("ua", r.UserAgent()))
+		}
+
+		// Pandora route A (#243): every stand-in request about the speaker's
+		// own Pandora client is logged, so a US tester's bundle shows whether
+		// the firmware registered the source at all. Path and size only, never
+		// the body: it can carry the account credential.
+		if isPandoraRequest(r.URL.Path, string(bodyCopy)) {
+			s.logger.Info("marge: Pandora request from the box",
+				slog.String("method", entry.Method),
+				slog.String("path", entry.Path),
+				slog.Int("bodyBytes", len(bodyCopy)))
 		}
 
 		// At debug level so the periodic Bose Lisa polls (every few min)

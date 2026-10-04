@@ -34,6 +34,9 @@ import (
 type Server struct {
 	addr    string
 	boxHost string
+	// Pandora route-A opt-in (pandora.go). pandoraBoxOverride is a test seam.
+	pandora            PandoraBackend
+	pandoraBoxOverride pandoraBoxAPI
 	// Group volume step bookkeeping (zoneVolumeStep): the levels the last
 	// step wrote per member IP, and when. Guarded by groupStepMu, which also
 	// serialises the steps themselves.
@@ -1205,6 +1208,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
 	mux.HandleFunc("/api/agent/ssh", s.handleAgentSSH)
+	mux.HandleFunc("/api/pandora", s.handlePandora)
+	mux.HandleFunc("/api/pandora/account", s.handlePandoraAccount)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)

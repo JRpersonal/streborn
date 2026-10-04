@@ -378,7 +378,7 @@ func (s *Server) respondProviderSettings(w http.ResponseWriter, _ *http.Request)
 
 // respondMargeAccountFull returns a "configured" Marge account.
 // When the box requests account info, we say "yes, you are logged in".
-func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) respondMargeAccountFull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	// Reflect the box's pre-existing account-linked cloud sources (Deezer
@@ -423,7 +423,7 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 		`<mode>global</mode>` +
 		`<preferredLanguage>en</preferredLanguage>` +
 		`<providerSettings/>` +
-		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML() + `</sources>` +
+		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML() + s.pandoraFullXML(fromLoopback(r)) + `</sources>` +
 		`</account>`))
 }
 
@@ -578,7 +578,7 @@ func (s *Server) respondServiceAvailability(w http.ResponseWriter) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = tpl.Execute(w, struct{ Services []ServiceAvailability }{Services: DefaultServices})
+	_ = tpl.Execute(w, struct{ Services []ServiceAvailability }{Services: s.services()})
 }
 
 func (s *Server) respondSources(w http.ResponseWriter) {
@@ -655,6 +655,10 @@ func (s *Server) respondConfigStatus(w http.ResponseWriter) {
 // box asked for.
 func (s *Server) respondAddSource(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+	if s.PandoraEnabled() && isPandoraRegistration(string(body)) {
+		s.respondPandoraAddSource(w, r, string(body))
+		return
+	}
 	username := firstXMLValue(string(body), "username")
 	providerID := firstXMLValue(string(body), "sourceproviderid")
 	s.logger.Info("addSource callback answered", slog.String("comp", "marge"),
@@ -704,7 +708,7 @@ func firstXMLValue(body, tag string) string {
 //
 // Sources registered through addSource are remembered in memory per account
 // so this list can name them; a reboot re-runs the registration.
-func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) respondAccountSources(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	regs := make([]registeredSource, len(s.registered))
 	copy(regs, s.registered)
@@ -714,7 +718,7 @@ func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
 	for _, r := range regs {
 		b.WriteString(renderAccountSource(format, r))
 	}
-	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String()
+	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String() + s.pandoraListXML(fromLoopback(r))
 	var body string
 	switch format {
 	case "wrap":
