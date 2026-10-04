@@ -61,3 +61,43 @@ describe('cardIsPlaying box scoping', () => {
     expect(playingIdx).toBe(0);
   });
 });
+
+// A folder card carries only the folder's first track, so matching it by name
+// or URL lost the mark from track 2 on and brought it back when the queue
+// wrapped (#1065 Issue 4). While a queue plays, GET /api/queue names the card
+// it belongs to, and the folder card matches on that.
+describe('cardIsPlaying folder cards follow the active queue', () => {
+  const folder = { boxKey: 'DEV-A', source: 'upnp', cardKey: 'queue:uuid:server-1:64$1', name: 'Track one', url: 'http://192.0.2.5/t1.flac' };
+  beforeEach(() => {
+    state.currentBox = boxA;
+    state.nowSpotifySlot = null;
+  });
+
+  it('keeps the mark on the second track of the folder', () => {
+    state.nowName = 'Track two';
+    state.nowLocation = 'http://192.0.2.5/t2.flac';
+    state.queue = { active: true, card: 'queue:uuid:server-1:64$1' };
+    expect(cardIsPlaying(folder)).toBe(true);
+  });
+
+  it('does not mark a different folder while another queue plays', () => {
+    state.nowName = 'Track one';
+    state.nowLocation = 'http://192.0.2.5/t1.flac';
+    state.queue = { active: true, card: 'queue:uuid:server-1:64$2' };
+    expect(cardIsPlaying(folder)).toBe(false);
+  });
+
+  it('falls back to the name match when the agent does not name the card', () => {
+    state.nowName = 'Track one';
+    state.nowLocation = '';
+    state.queue = { active: true };
+    expect(cardIsPlaying(folder)).toBe(true);
+  });
+
+  it('ignores a finished queue', () => {
+    state.nowName = 'Track two';
+    state.nowLocation = 'http://192.0.2.5/t2.flac';
+    state.queue = { active: false, card: 'queue:uuid:server-1:64$1' };
+    expect(cardIsPlaying(folder)).toBe(false);
+  });
+});

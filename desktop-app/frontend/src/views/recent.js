@@ -254,6 +254,14 @@ export function cardIsPlaying(c) {
     const liveSlot = m ? parseInt(m[1], 10) : state.nowSpotifySlot;
     return c.playSlot != null && liveSlot != null && c.playSlot === liveSlot;
   }
+  // A folder card carries only its first track, so the name/URL match below
+  // dropped the mark from the second track on and brought it back when the
+  // queue wrapped (#1065). While a queue plays, the speaker names the card it
+  // belongs to; match on that. An older agent without the field falls through.
+  const q = state.queue;
+  if (String(c.cardKey || '').startsWith('queue:') && q && q.active && q.card) {
+    return q.card === c.cardKey;
+  }
   if (state.nowName && c.name && state.nowName === c.name) return true;
   return !!(c.url && loc && loc === c.url);
 }

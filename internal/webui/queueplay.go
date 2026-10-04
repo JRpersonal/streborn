@@ -703,7 +703,7 @@ func toQueueItems(in []queueStartItem) []queueItem {
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.queue.snapshot())
+		writeJSON(w, http.StatusOK, s.queueSnapshotWithCard())
 	case http.MethodPost:
 		if s.renderer == nil {
 			http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
@@ -1374,4 +1374,16 @@ func (s *Server) handleQueueRepeat(w http.ResponseWriter, r *http.Request) {
 	snap := s.queue.snapshot()
 	s.savePlayMode(snap.Shuffle, parseRepeat(snap.Repeat))
 	writeJSON(w, http.StatusOK, snap)
+}
+
+// queueSnapshotWithCard is the GET /api/queue answer: the queue snapshot plus the
+// Recently-played card key of the folder it plays, while it is active.
+func (s *Server) queueSnapshotWithCard() queueSnapshot {
+	snap := s.queue.snapshot()
+	if snap.Active {
+		s.recentMu.Lock()
+		snap.Card = s.recentQueueCard.key
+		s.recentMu.Unlock()
+	}
+	return snap
 }
