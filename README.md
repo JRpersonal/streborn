@@ -108,7 +108,7 @@ Implication: a speaker being passed on or sold needs a separate "Uninstall STR" 
 
 ### 1.0
 
-The bar I set for 1.0 in [`CLAUDE.md`](./CLAUDE.md) was deliberately low and measurable. All five are met:
+The bar I set myself for 1.0 was deliberately low and measurable. All five are met:
 
 1. **Two models verified end to end.** The SoundTouch 10 and the Portable are verified on hardware; the ST20, ST30, ST300, Wave, SA-4, SA-5 and the CineMate/520 family run it in the field (see [`docs/MODELS.md`](./docs/MODELS.md)).
 2. **Hardware presets survive a cold boot, a standby cycle and a Wi-Fi outage** without a manual reset. The agent re-registers the keys whenever the speaker reports an empty list, and tests pin the empty-list, standby-exit and reconnect paths (`internal/boxws`).
