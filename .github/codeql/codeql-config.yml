@@ -1,0 +1,23 @@
+# CodeQL configuration for the codeql.yml workflow.
+#
+# go/log-injection is excluded on purpose. Every log line in the agent and the
+# desktop app goes through log/slog with a TextHandler (cmd/agent/logging.go,
+# desktop-app/logfile.go), and user-influenced values are passed as key-value
+# attributes, never formatted into the message. The TextHandler quotes and
+# escapes any value containing spaces, quotes or line breaks, so a value cannot
+# start a forged log line. CodeQL does not model that escaping and flags every
+# attribute that carries request data: more than 110 alerts, every one of them
+# dismissed as a false positive by hand, and new ones with each new log line.
+#
+# The one way around the escaping would be logging through the standard library
+# log package or printing user data into a log file directly. golangci-lint's
+# forbidigo rule (.golangci.yml) blocks the log package, so that path stays
+# closed without this query.
+name: STR CodeQL config
+
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  - exclude:
+      id: go/log-injection
