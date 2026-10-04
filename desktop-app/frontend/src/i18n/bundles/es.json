@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} todavía cree ser la mitad de un par estéreo con {{partner}}, que ya no lo reconoce. {{name}} no sonará sola hasta que se deshaga el par antiguo.",
   "stereoStale.partnerGone": "{{name}} es la mitad de un par estéreo y su pareja {{partner}} no responde. Una mitad estéreo no suena sola. Si {{partner}} no vuelve, deshaz el par antiguo.",
   "stereoStale.fixBtn": "Deshacer el par antiguo",
-  "play.errStereoStale": "Mitad de un par estéreo antiguo, ver Multi-Room"
+  "play.errStereoStale": "Mitad de un par estéreo antiguo, ver Multi-Room",
+  "update.stableNameNotice": "STR ahora se ejecuta como STR-Windows.exe. Windows puede volver a pedir acceso a la red: permítelo para redes privadas, de lo contrario la app no encuentra tus altavoces."
 }

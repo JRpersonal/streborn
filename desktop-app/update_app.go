@@ -501,12 +501,40 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 // applyWindows swaps the running .exe with the downloaded one using the
 // rename-then-replace trick (a running .exe cannot be overwritten but can be
 // renamed), then relaunches and quits. The .old is cleaned up on the next start.
+//
+// Running from an old versioned file (STR-Windows-v0.9.95.exe), the update
+// lands under the stable name STR-Windows.exe instead; see update_stablename.go.
+// Any failure on that path falls back to the in-place swap below.
 func (a *App) applyWindows(newExe string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
+	plan := planWindowsInstall(exe, updateVersionOf(newExe), fileExists, exeResourceVersion)
+	a.logger.Info("update: install plan", "running", exe, "target", plan.Target,
+		"renamed", plan.Renamed, "replaceExisting", plan.ReplaceExisting, "handOff", plan.HandOff, "why", plan.Why)
+	if plan.HandOff != "" {
+		a.relaunchAndQuit(plan.HandOff)
+		return nil
+	}
+	if plan.Renamed {
+		if n := firewallRulesNaming(exe); n > 0 {
+			a.logger.Info("update: Windows Firewall allowed the old file by its path; the new file gets the firewall question once on its first start",
+				"rules", n, "oldPath", exe, "newPath", plan.Target)
+		}
+		launch, err := installUnderStableName(exe, newExe, plan, newShortcutRetargeter(), a.logger.Info)
+		if err == nil {
+			if mp, merr := renamedMarkerPath(); merr == nil {
+				if werr := writeRenamedMarker(mp, filepath.Base(exe)); werr != nil {
+					a.logger.Info("update: could not leave the one-time note for the next start", "err", werr)
+				}
+			}
+			a.relaunchAndQuit(launch)
+			return nil
+		}
+		a.logger.Warn("update: could not install under the stable name, swapping in place instead", "err", err)
+	}
 	old := exe + ".old"
 	_ = os.Remove(old)
 	if err := os.Rename(exe, old); err != nil {
@@ -712,6 +740,18 @@ func (a *App) cleanupOldBinary() {
 			a.logger.Info("update cleanup: previous binary still locked, will retry next start", "file", old)
 		} else {
 			a.logger.Info("update cleanup: removed previous binary", "file", old)
+		}
+	}
+	// After an update moved the app to the stable name, the file left behind
+	// is the OLD name's ".old" (STR-Windows-v0.9.95.exe.old), which the line
+	// above never looks for.
+	if runtime.GOOS == "windows" {
+		removed, locked := removeStaleOldBinaries(filepath.Dir(exe))
+		if len(removed) > 0 {
+			a.logger.Info("update cleanup: removed files a previous update left behind", "files", removed)
+		}
+		if len(locked) > 0 {
+			a.logger.Info("update cleanup: some leftovers are still locked, will retry next start", "files", locked)
 		}
 	}
 }

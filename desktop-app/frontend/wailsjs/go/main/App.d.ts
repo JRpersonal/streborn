@@ -51,6 +51,8 @@ export function ClearRecent(arg1:string,arg2:number):Promise<void>;
 
 export function ClearUpdateIntent(arg1:string,arg2:number):Promise<void>;
 
+export function ConsumeStableNameNotice():Promise<boolean>;
+
 export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number):Promise<number>;
 
 export function CurrentWiFi():Promise<string>;

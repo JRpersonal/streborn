@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} hält sich noch für die Hälfte eines Stereopaars mit {{partner}}, aber {{partner}} weiß davon nichts mehr. {{name}} spielt erst wieder allein, wenn das alte Paar aufgelöst ist.",
   "stereoStale.partnerGone": "{{name}} ist die Hälfte eines Stereopaars, und der Partner {{partner}} antwortet nicht. Eine Stereohälfte spielt nicht allein. Wenn {{partner}} nicht wiederkommt, löse das alte Paar auf.",
   "stereoStale.fixBtn": "Altes Paar auflösen",
-  "play.errStereoStale": "Hälfte eines alten Stereopaars, siehe Multi-Room"
+  "play.errStereoStale": "Hälfte eines alten Stereopaars, siehe Multi-Room",
+  "update.stableNameNotice": "STR läuft jetzt als STR-Windows.exe. Windows fragt eventuell noch einmal nach Netzwerkzugriff. Erlaube ihn bitte für private Netzwerke, sonst findet die App deine Lautsprecher nicht."
 }

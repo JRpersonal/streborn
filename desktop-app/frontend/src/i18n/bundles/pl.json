@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} nadal uważa się za połowę pary stereo z {{partner}}, który już o tym nie wie. {{name}} nie zagra samodzielnie, dopóki stara para nie zostanie rozwiązana.",
   "stereoStale.partnerGone": "{{name}} jest połową pary stereo, a partner {{partner}} nie odpowiada. Połowa pary stereo nie gra samodzielnie. Jeśli {{partner}} nie wróci, rozwiąż starą parę.",
   "stereoStale.fixBtn": "Rozwiąż starą parę",
-  "play.errStereoStale": "Połowa starej pary stereo, zobacz Multi-Room"
+  "play.errStereoStale": "Połowa starej pary stereo, zobacz Multi-Room",
+  "update.stableNameNotice": "STR działa teraz jako STR-Windows.exe. Windows może jeszcze raz zapytać o dostęp do sieci: zezwól na niego dla sieci prywatnych, inaczej aplikacja nie znajdzie twoich głośników."
 }

@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} joprojām uzskata sevi par stereo pāra pusi ar {{partner}}, bet {{partner}} par to vairs nezina. {{name}} viens pats neatskaņos, kamēr vecais pāris nav izjaukts.",
   "stereoStale.partnerGone": "{{name}} ir stereo pāra puse, un partneris {{partner}} neatbild. Stereo pāra puse viena pati neatskaņo. Ja {{partner}} neatgriezīsies, izjauciet veco pāri.",
   "stereoStale.fixBtn": "Izjaukt veco pāri",
-  "play.errStereoStale": "Veca stereo pāra puse, skatiet Multi-Room"
+  "play.errStereoStale": "Veca stereo pāra puse, skatiet Multi-Room",
+  "update.stableNameNotice": "STR tagad darbojas kā STR-Windows.exe. Windows var vēlreiz prasīt tīkla piekļuvi: atļauj to privātajiem tīkliem, citādi lietotne neatradīs tavus skaļruņus."
 }

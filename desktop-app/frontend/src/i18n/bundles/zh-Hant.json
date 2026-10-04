@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} 仍認為自己是與 {{partner}} 組成的立體聲組合的一半，但對方已不再記得此組合。在解除舊組合之前，{{name}} 不會單獨播放。",
   "stereoStale.partnerGone": "{{name}} 是立體聲組合的一半，而夥伴 {{partner}} 沒有回應。立體聲組合的一半不會單獨播放。如果 {{partner}} 不會回來，請解除舊組合。",
   "stereoStale.fixBtn": "解除舊組合",
-  "play.errStereoStale": "舊立體聲組合的一半，請查看 Multi-Room"
+  "play.errStereoStale": "舊立體聲組合的一半，請查看 Multi-Room",
+  "update.stableNameNotice": "STR 現在以 STR-Windows.exe 執行。Windows 可能會再次詢問網路存取權限：請允許私人網路，否則 App 找不到你的喇叭。"
 }

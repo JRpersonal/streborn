@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} denkt nog de helft te zijn van een stereopaar met {{partner}}, maar {{partner}} weet daar niets meer van. {{name}} speelt pas weer alleen als het oude paar is opgeheven.",
   "stereoStale.partnerGone": "{{name}} is de helft van een stereopaar en partner {{partner}} antwoordt niet. Een stereohelft speelt niet alleen. Komt {{partner}} niet terug, hef het oude paar dan op.",
   "stereoStale.fixBtn": "Oude paar opheffen",
-  "play.errStereoStale": "Helft van een oud stereopaar, zie Multi-Room"
+  "play.errStereoStale": "Helft van een oud stereopaar, zie Multi-Room",
+  "update.stableNameNotice": "STR draait nu als STR-Windows.exe. Windows kan nog één keer om netwerktoegang vragen: sta die toe voor privénetwerken, anders vindt de app je speakers niet."
 }

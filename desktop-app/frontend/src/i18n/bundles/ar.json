@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "لا يزال {{name}} يعتبر نفسه نصف زوج ستيريو مع {{partner}}، لكن {{partner}} لم يعد يعرف ذلك. لن يعمل {{name}} بمفرده حتى يتم فك الزوج القديم.",
   "stereoStale.partnerGone": "{{name}} هو نصف زوج ستيريو، وشريكه {{partner}} لا يستجيب. نصف زوج الستيريو لا يعمل بمفرده. إذا لم يعد {{partner}}، فقم بفك الزوج القديم.",
   "stereoStale.fixBtn": "فك الزوج القديم",
-  "play.errStereoStale": "نصف زوج ستيريو قديم، راجع Multi-Room"
+  "play.errStereoStale": "نصف زوج ستيريو قديم، راجع Multi-Room",
+  "update.stableNameNotice": "يعمل STR الآن باسم STR-Windows.exe. قد يطلب Windows الوصول إلى الشبكة مرة أخرى: اسمح به للشبكات الخاصة، وإلا فلن يجد التطبيق مكبرات الصوت لديك."
 }

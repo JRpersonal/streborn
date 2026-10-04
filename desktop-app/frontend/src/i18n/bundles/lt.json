@@ -1565,5 +1565,6 @@
   "stereoStale.partnerDenies": "{{name}} vis dar laiko save stereo poros su {{partner}} puse, bet {{partner}} apie tai nebežino. {{name}} negros vienas, kol senoji pora nebus išardyta.",
   "stereoStale.partnerGone": "{{name}} yra stereo poros pusė, o partneris {{partner}} neatsako. Stereo poros pusė viena negroja. Jei {{partner}} negrįš, išardykite senąją porą.",
   "stereoStale.fixBtn": "Išardyti senąją porą",
-  "play.errStereoStale": "Senos stereo poros pusė, žr. Multi-Room"
+  "play.errStereoStale": "Senos stereo poros pusė, žr. Multi-Room",
+  "update.stableNameNotice": "STR dabar veikia kaip STR-Windows.exe. Windows gali dar kartą paprašyti tinklo prieigos: leisk ją privačiuose tinkluose, kitaip programėlė neras tavo garsiakalbių."
 }
