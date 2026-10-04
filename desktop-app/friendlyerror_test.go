@@ -36,6 +36,15 @@ func TestFriendlyErrorPassesBoxGroupedThroughRaw(t *testing.T) {
 	}
 }
 
+// A speaker stuck as half of an incomplete stereo pair: the frontend names the
+// partner from partnerIP / master, so those must survive the reduction.
+func TestFriendlyErrorPassesStereoIncompleteThroughRaw(t *testing.T) {
+	const body = `{"error":"stereo-incomplete","reason":"group-error","master":"DEV#A","partnerIP":"192.0.2.25"}`
+	if got := friendlyError(respWithBody(body)); got != body {
+		t.Errorf("stereo-incomplete body reduced to %q, want the raw JSON passed through", got)
+	}
+}
+
 // Every other error keeps the existing friendly reduction so UI toasts stay
 // readable and the frontend can still branch on "code: message".
 func TestFriendlyErrorKeepsReductionForOtherCodes(t *testing.T) {

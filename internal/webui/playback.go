@@ -132,6 +132,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url required", http.StatusBadRequest)
 		return
 	}
+	if s.refuseIfIncompletePair(w) {
+		return
+	}
 	s.ensureBoxReady(r.Context())
 	// Detach the play from the request context (#252, same pattern as the
 	// preset recall): the standby wake above can outlast the app's HTTP
@@ -282,6 +285,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// nothing from an awake speaker, so asked here they cost one local probe
 	// and the box stays asleep.
 	if s.recallRefusedBeforeWake(w, slot, &p) {
+		return
+	}
+	// Half of an incomplete stereo pair cannot start anything; waking it and
+	// waiting is what used to run every recall into the app's timeout.
+	if s.refuseIfIncompletePair(w) {
 		return
 	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the

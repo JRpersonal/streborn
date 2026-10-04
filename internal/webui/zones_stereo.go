@@ -138,6 +138,9 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		if gerr == nil && (g.ID != "" || len(g.Members) > 0) {
 			out.Stereo = &g
 		}
+		if gerr == nil {
+			s.noteStereoSeen(out.Stereo)
+		}
 	}
 	// A pair whose other half is gone is the one state that makes a healthy,
 	// reachable speaker refuse to play anything at all.

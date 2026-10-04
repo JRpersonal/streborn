@@ -429,6 +429,12 @@ type Group struct {
 	Name           string       `json:"name,omitempty"`
 	MasterDeviceID string       `json:"masterDeviceID,omitempty"`
 	Members        []ZoneMember `json:"members"`
+	// Status is the firmware's own verdict on the pair, e.g. GROUP_OK or
+	// GROUP_ERROR. A pair whose other half let go keeps the document on the
+	// half that still holds it, with GROUP_ERROR here (measured 2026-08-10 on
+	// two SoundTouch 10s). That half refuses every source activation, so this
+	// field is what lets the app and the play path name the real reason.
+	Status string `json:"status,omitempty"`
 }
 
 // GetZone reads /getZone and returns the current multiroom zone.
@@ -483,6 +489,7 @@ func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 		ID             string `xml:"id,attr"`
 		Name           string `xml:"name"`
 		MasterDeviceID string `xml:"masterDeviceId"`
+		Status         string `xml:"status"`
 		Roles          []struct {
 			DeviceID string `xml:"deviceId"`
 			Role     string `xml:"role"`
@@ -497,6 +504,7 @@ func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 		Name:           strings.TrimSpace(raw.Name),
 		MasterDeviceID: strings.TrimSpace(raw.MasterDeviceID),
 		Members:        make([]ZoneMember, 0, len(raw.Roles)),
+		Status:         strings.TrimSpace(raw.Status),
 	}
 	for _, m := range raw.Roles {
 		g.Members = append(g.Members, ZoneMember{

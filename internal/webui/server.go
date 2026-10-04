@@ -195,6 +195,14 @@ type Server struct {
 	// pairPartnerGone names the missing half of a restored stereo pair, so
 	// the zone answer can say why a speaker refuses to play.
 	pairPartnerGone func() (ip, deviceID string)
+	// stereoSeen is the pair document from the last /getGroup read that got an
+	// answer (nil when the speaker answered with no pair), and when it was read.
+	// The play path checks it instead of asking the firmware again: that read
+	// hangs on some chassis, and a recall must not wait on it. See
+	// incompletePairReason.
+	stereoSeenMu sync.Mutex
+	stereoSeen   *boxapi.Group
+	stereoSeenAt time.Time
 	// spotifyContext returns the Spotify context URI go-librespot is currently
 	// playing, used by the preset-save path to stamp the LIVE account when the
 	// saved preset is the content that is playing right now (so a preset saved
