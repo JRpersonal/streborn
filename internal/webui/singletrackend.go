@@ -3,6 +3,8 @@ package webui
 import (
 	"context"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
 // A single library track played on its own never ended.
@@ -34,23 +36,91 @@ import (
 // a goroutine reading the box forever.
 const singleTrackMaxWatch = 3 * time.Hour
 
+// singleTrack is what the end watch needs to know about the file it watches:
+// enough to recognise its end, and enough to play it once more when the
+// speaker's sticky repeat mode says "repeat one".
+type singleTrack struct {
+	boxURL string // the URL the box was handed (direct: the media server's own)
+	title  string
+	art    string
+	mime   string
+	meta   upnp.TrackMeta
+	dur    time.Duration // the length the caller knew, 0 when unknown
+}
+
 // armSingleTrackEnd watches one directly played file and stops the box when it
-// reaches its end. dur is the length the caller knew (0 when unknown, then the
-// box's own reported total is used). gen is the recall generation of this play:
-// any newer play supersedes this watch immediately.
-func (s *Server) armSingleTrackEnd(dur time.Duration, gen uint64, title string) {
+// reaches its end, or plays it again when repeat-one is on. gen is the recall
+// generation of this play: any newer play supersedes this watch immediately.
+func (s *Server) armSingleTrackEnd(tr singleTrack, gen uint64) {
 	if s.renderer == nil {
 		return
 	}
-	go s.watchSingleTrackEnd(dur, gen, title)
+	go s.watchSingleTrackEnd(tr, gen)
 }
 
-func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string) {
+// Repeat one for a lone track (#1065, Issue 5).
+//
+// The repeat toggle on the Library screen is sticky on the SPEAKER: it lands in
+// the play-mode file (playmode.go) whether or not a folder is playing. A folder
+// honoured "repeat one" through the queue, but a single track is deliberately
+// played without a queue, and its end watch stopped the box unconditionally. So
+// a reporter who set "repeat one" and clicked one track got one play, then the
+// SoundTouch light went amber and silence (her workaround was the Bose app's
+// own repeat). The watch now asks the sticky mode at each natural end.
+//
+// Only "one" repeats a lone track. "all" is the folder mode, and letting it loop
+// a single click forever would surprise everybody who set it for their folders.
+func (s *Server) singleTrackRepeatOne() bool {
+	_, rep, ok := s.loadPlayMode()
+	return ok && rep == repeatOne
+}
+
+// replaySingleTrack plays the same file again for repeat-one. It re-checks,
+// under boxCmdMu, that nothing newer took the box while the end was being
+// detected, the same way the queue's advance does. It returns the generation
+// of the new play, which the watch continues under.
+func (s *Server) replaySingleTrack(tr singleTrack, gen uint64) (uint64, bool) {
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	if s.RecallGeneration() != gen || s.queue.isActive() || s.userStoppedRecently() {
+		return 0, false
+	}
+	s.ClearUserStop()
+	if err := s.renderer.PlayURLTrack(s.queueCtx(), tr.boxURL, tr.title, tr.art, tr.mime, tr.meta); err != nil {
+		s.logger.Warn("single track: repeat one could not start the track again", "title", tr.title, "err", err)
+		return 0, false
+	}
+	newGen := s.setLastPlay(tr.boxURL, tr.title, tr.art, tr.mime)
+	s.logger.Info("single track: repeat one, playing it again", "title", tr.title)
+	return newGen, true
+}
+
+func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
+	for {
+		if !s.watchOneSingleTrackPlay(tr, gen) {
+			return
+		}
+		if !s.singleTrackRepeatOne() {
+			return
+		}
+		next, ok := s.replaySingleTrack(tr, gen)
+		if !ok {
+			return
+		}
+		gen = next
+	}
+}
+
+// watchOneSingleTrackPlay watches one play of the file to its end. It returns
+// true when the track ended naturally and repeat-one may play it again, false
+// when the watch ended for any other reason or the box was stopped for good.
+func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 	ctx, cancel := context.WithTimeout(s.queueCtx(), singleTrackMaxWatch)
 	defer cancel()
 	ticker := time.NewTicker(queuePollInterval)
 	defer ticker.Stop()
 
+	title := tr.title
 	start := time.Now()
 	var (
 		lastPos   time.Duration
@@ -61,7 +131,7 @@ func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-ticker.C:
 		}
 		// Anything newer wins: another track, a preset key, a station, a
@@ -69,22 +139,22 @@ func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string
 		// the box now would stop THEIR audio.
 		if s.RecallGeneration() != gen {
 			s.logger.Debug("single track: a newer play superseded the end watch", "title", title)
-			return
+			return false
 		}
 		if s.queue.isActive() {
 			// A folder started meanwhile owns the box; its watcher is the one
 			// that should call the end.
-			return
+			return false
 		}
 		if s.userStoppedRecently() {
-			return
+			return false
 		}
 
 		ps, pos, total, standby, tornDown := s.pollNowPlaying()
 		if standby {
 			// Powered off mid-track. Never a track end, and STR must not send
 			// anything to a sleeping box (#219).
-			return
+			return false
 		}
 		if tornDown {
 			// The box dropped the source instead of playing. Same shape as the
@@ -92,12 +162,12 @@ func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string
 			// track's nominal length would just be silence with a ticking
 			// progress bar. There is no next track here, so end the watch.
 			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
-			return
+			return false
 		}
 		if total > obsTotal {
 			obsTotal = total
 		}
-		end := dur
+		end := tr.dur
 		if obsTotal > end {
 			end = obsTotal
 		}
@@ -117,17 +187,21 @@ func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string
 			if !sawPlay {
 				continue // has not started yet
 			}
-			// The box stopped by itself, so there is nothing to stop. Mark it
-			// as an end anyway, so the auto re-push does not treat the silence
-			// as a dropped stream and start the track over.
-			s.NoteUserStop()
+			// The box stopped by itself at the end, so there is nothing to
+			// stop. With repeat-one the caller plays it again. Otherwise mark it
+			// as an end, so the auto re-push does not treat the silence as a
+			// dropped stream and start the track over.
 			s.logger.Info("single track: the box reported the track stopped", "title", title,
 				"posSec", int(lastPos.Seconds()), "trackSec", int(end.Seconds()))
-			return
+			if s.singleTrackRepeatOne() {
+				return true
+			}
+			s.NoteUserStop()
+			return false
 		default:
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
 				s.logger.Info("single track: it never started, dropping the end watch", "title", title)
-				return
+				return false
 			}
 			continue
 		}
@@ -135,17 +209,30 @@ func (s *Server) watchSingleTrackEnd(dur time.Duration, gen uint64, title string
 		// Wall-clock net, the queue's own: once playback was seen and the
 		// length is known, call the end a margin past it.
 		if sawPlay && end > 0 && time.Since(start) >= end+s.advanceMargin(lastPos, end) {
-			s.endSingleTrack(title, "the track's length elapsed without a stop from the box", lastPos, end)
-			return
+			return s.finishSingleTrack(title, "the track's length elapsed without a stop from the box", lastPos, end)
 		}
 		// Frozen-position net for the unknown-length case only, so a track with
 		// a known length keeps the vetted wall-clock behaviour.
 		if sawPlay && ps == "PLAY_STATE" && end == 0 && lastPos > 0 &&
 			!lastPosAt.IsZero() && time.Since(lastPosAt) >= queueFrozenTimeout {
-			s.endSingleTrack(title, "the box stayed on play with its position frozen", lastPos, end)
-			return
+			return s.finishSingleTrack(title, "the box stayed on play with its position frozen", lastPos, end)
 		}
 	}
+}
+
+// finishSingleTrack handles a natural end the watch detected itself. With
+// repeat-one the box is NOT stopped first: the replay hands it the same file
+// right away, and a Stop in between would only add a gap and a STOP_STATE flash
+// on every display. Without it, the box is stopped as before. It returns true
+// when the caller should play the track again.
+func (s *Server) finishSingleTrack(title, why string, pos, end time.Duration) bool {
+	if s.singleTrackRepeatOne() {
+		s.logger.Info("single track ended, repeat one is on", "title", title, "why", why,
+			"posSec", int(pos.Seconds()), "trackSec", int(end.Seconds()))
+		return true
+	}
+	s.endSingleTrack(title, why, pos, end)
+	return false
 }
 
 // endSingleTrack stops the box the way the queue ends its last track:

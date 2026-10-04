@@ -231,7 +231,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// because the queue watcher calls the end; the single play stops the queue
 	// by design, so it gets its own watch. Radio is excluded: it has no end.
 	if playDirect {
-		s.armSingleTrackEnd(time.Duration(req.DurationSec)*time.Second, playGen, req.Title)
+		s.armSingleTrackEnd(singleTrack{
+			boxURL: playURL, title: req.Title, art: req.Icon, mime: mime, meta: meta,
+			dur: time.Duration(req.DurationSec) * time.Second,
+		}, playGen)
 	}
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
