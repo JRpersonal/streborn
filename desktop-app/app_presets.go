@@ -39,6 +39,10 @@ type Preset struct {
 	// here for the same reason Shuffle is, so a box-to-box copy carries it
 	// instead of quietly handing the target a preset that stops at the end.
 	Repeat bool `json:"repeat,omitempty"`
+	// Native is the speaker's own ContentItem of a Pandora or iHeartRadio key
+	// (Type=="native"). Raw JSON for the reason Items is: the agent owns the
+	// schema and a box-to-box copy must carry it verbatim.
+	Native json.RawMessage `json:"native,omitempty"`
 }
 
 // presetAPIPath is the agent's preset REST route; the slot is appended for
@@ -182,6 +186,23 @@ func (a *App) SaveSpotifyPreset(host string, port int, slot int, name, uri, acco
 			a.logger.Info("spotify preset save: refused", "host", host, "slot", slot, "name", name, "err", err)
 		} else {
 			a.logger.Info("spotify preset save: stored", "host", host, "slot", slot, "name", name, "uri", uri, "account", account)
+		}
+	}
+	return err
+}
+
+// SaveNativePreset stores the Pandora or iHeartRadio station the speaker is
+// playing right now on a key (type=native). The app sends no item: the speaker
+// agent reads it from the speaker's own now-playing, which is the only place
+// the exact item exists, and refuses with 422 when no such station plays.
+func (a *App) SaveNativePreset(host string, port int, slot int, name string) error {
+	err := a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+		Preset{Slot: slot, Name: name, Type: "native"})
+	if a.logger != nil {
+		if err != nil {
+			a.logger.Info("native preset save: refused", "host", host, "slot", slot, "name", name, "err", err)
+		} else {
+			a.logger.Info("native preset save: stored", "host", host, "slot", slot, "name", name)
 		}
 	}
 	return err

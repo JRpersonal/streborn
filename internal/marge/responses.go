@@ -336,6 +336,32 @@ var numericProviderID = map[string]string{
 func (s *Server) reflectedFullSourcesXML() string {
 	const ts = "2020-01-01T00:00:00.000+00:00"
 	var b strings.Builder
+	for _, r := range s.reflectedAccountSources() {
+		b.WriteString(`<source id="` + r.id + `" type="Audio">` +
+			`<createdOn>` + ts + `</createdOn>` +
+			`<credential type="token"></credential>` +
+			`<name>` + xmlEscapeText(r.name) + `</name>` +
+			`<sourceproviderid>` + r.providerID + `</sourceproviderid>` +
+			`<sourcename>` + xmlEscapeText(r.typ) + `</sourcename>` +
+			`<sourceSettings/>` +
+			`<updatedOn>` + ts + `</updatedOn>` +
+			`<username>` + xmlEscapeText(r.account) + `</username>` +
+			`</source>`)
+	}
+	return b.String()
+}
+
+// reflectedAccountSource is one reflected source as /full names it.
+type reflectedAccountSource struct {
+	id, typ, providerID, name, account string
+}
+
+// reflectedAccountSources lists the reflected sources in the order and with
+// the ids /full gives them. One list for the document and for reading an id
+// the firmware quotes back (a preset or recent record names its source by
+// this id), so the two can never disagree.
+func (s *Server) reflectedAccountSources() []reflectedAccountSource {
+	var out []reflectedAccountSource
 	i := 0
 	for _, r := range s.reflected() {
 		typ := strings.ToUpper(strings.TrimSpace(r.Source))
@@ -357,19 +383,12 @@ func (s *Server) reflectedFullSourcesXML() string {
 		if name == "" {
 			name = typ
 		}
-		b.WriteString(`<source id="` + strconv.Itoa(100+i) + `" type="Audio">` +
-			`<createdOn>` + ts + `</createdOn>` +
-			`<credential type="token"></credential>` +
-			`<name>` + xmlEscapeText(name) + `</name>` +
-			`<sourceproviderid>` + pid + `</sourceproviderid>` +
-			`<sourcename>` + xmlEscapeText(typ) + `</sourcename>` +
-			`<sourceSettings/>` +
-			`<updatedOn>` + ts + `</updatedOn>` +
-			`<username>` + xmlEscapeText(r.Account) + `</username>` +
-			`</source>`)
+		out = append(out, reflectedAccountSource{
+			id: strconv.Itoa(100 + i), typ: typ, providerID: pid, name: name, account: r.Account,
+		})
 		i++
 	}
-	return b.String()
+	return out
 }
 
 // respondProviderSettings responds to /streaming/account/<id>/provider_settings.
@@ -502,12 +521,13 @@ func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(recentElementXML(rec, s.nextRecentID(), time.Now())))
+	_, _ = w.Write([]byte(recentElementXML(rec, s.sourceNameForID(rec.sourceID), s.nextRecentID(), time.Now())))
 }
 
 // recentElementXML renders one confirmed recent record in the list dialect
-// the firmware provably parses for presets.
-func recentElementXML(rec flatRecord, id int64, _ time.Time) string {
+// the firmware provably parses for presets. sourceName is the source enum the
+// record's sourceid stands for.
+func recentElementXML(rec flatRecord, sourceName string, id int64, _ time.Time) string {
 	// The firmware's MargePB.recent (its proto table): lastplayedat,
 	// location, name, a full MargeSource element, credential, sourceid and
 	// contentItemType as child elements.
@@ -516,7 +536,7 @@ func recentElementXML(rec flatRecord, id int64, _ time.Time) string {
 		`<lastplayedat>` + xmlEscapeText(rec.lastPlayedAt) + `</lastplayedat>` +
 		`<location>` + xmlEscapeText(rec.location) + `</location>` +
 		`<name>` + xmlEscapeText(rec.name) + `</name>` +
-		margeSourceElementXML(rec.sourceID, sourceNameForAccountID(rec.sourceID)) +
+		margeSourceElementXML(rec.sourceID, sourceName) +
 		`<credential></credential>` +
 		`<sourceid>` + xmlEscapeText(rec.sourceID) + `</sourceid>` +
 		`<contentItemType>` + xmlEscapeText(rec.contentItemType) + `</contentItemType>` +

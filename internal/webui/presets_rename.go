@@ -98,7 +98,7 @@ func (s *Server) handlePresetRename(w http.ResponseWriter, r *http.Request, slot
 	// repaired by the next /api/box/sync-presets.
 	if s.boxHost != "" {
 		boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		if err := s.writeBoxPreset(boxCtx, slot, p.Name, boxPresetURL(slot, p.Type == "spotify"), p.Art, p.Type == "spotify"); err != nil {
+		if err := s.writeStorePresetToBox(boxCtx, p); err != nil {
 			s.logger.Warn("box preset sync failed after a rename", "slot", slot, "err", err)
 		}
 		cancel()

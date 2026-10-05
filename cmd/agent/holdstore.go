@@ -54,6 +54,13 @@ func newHeldPresetKeeper(store *presets.Store, logger *slog.Logger) marge.Preset
 		if had {
 			was = prev.Name
 		}
+		if candidate.IsNative() {
+			logger.Info("hold-to-store: kept a station of a service the speaker plays itself",
+				"slot", item.Slot, "was", was, "now", candidate.Name,
+				"source", candidate.Native.Source, "type", candidate.Native.ItemType,
+				"location", candidate.Native.Location)
+			return nil
+		}
 		logger.Info("hold-to-store: kept the station the speaker stored on a key with its own hold gesture",
 			"slot", item.Slot, "was", was, "now", candidate.Name, "stream", candidate.StreamURL)
 		return nil
@@ -75,6 +82,9 @@ func newHeldPresetKeeper(store *presets.Store, logger *slog.Logger) marge.Preset
 // what the app just declined. Refusing is loss-free; the firmware keeps the
 // key as it was.
 func heldPresetCandidate(store *presets.Store, item marge.HeldItem) (candidate presets.Preset, changed bool, err error) {
+	if _, native := presets.NativeServiceLabel(item.Source); native {
+		return heldNativeCandidate(store, item)
+	}
 	if !strings.EqualFold(strings.TrimSpace(item.Source), "LOCAL_INTERNET_RADIO") {
 		return presets.Preset{}, false, fmt.Errorf("%w: source %s", errNotKeepable, item.Source)
 	}
@@ -127,6 +137,40 @@ func heldPresetCandidate(store *presets.Store, item marge.HeldItem) (candidate p
 		}
 	}
 	if cur, have := store.Get(item.Slot); have && samePresetContent(cur, candidate) {
+		return cur, false, nil
+	}
+	return candidate, true, nil
+}
+
+// heldNativeCandidate maps a held station of a music service the speaker plays
+// by itself (Pandora, iHeartRadio) onto a native preset: the item is kept as
+// the speaker described it, because STR has nothing to proxy and the firmware
+// is the only thing that can play it (docs/streaming/us-services.md).
+//
+// The rules are the station rules: a re-statement of what the key already
+// holds is no write (the boot-time sync PUTs every slot, and the speaker's own
+// name must not undo a rename made in the app), and a station already on
+// another key is refused (#836).
+func heldNativeCandidate(store *presets.Store, item marge.HeldItem) (presets.Preset, bool, error) {
+	native := presets.NativeItem{
+		Source:        item.Source,
+		SourceAccount: item.SourceAccount,
+		Location:      item.Location,
+		ItemType:      item.Type,
+		ItemName:      item.ItemName,
+		ContainerArt:  item.ContainerArt,
+	}
+	candidate, ok := presets.NewNativePreset(item.Slot, native, "")
+	if !ok {
+		return presets.Preset{}, false, fmt.Errorf("%w: %s item without a location", errNotKeepable, item.Source)
+	}
+	for _, other := range store.All() {
+		if other.Slot != item.Slot && other.IsNative() && presets.SameNativeItem(other.Native, candidate.Native) {
+			return presets.Preset{}, false, fmt.Errorf("%w: %q is already on key %d",
+				errNotKeepable, other.Name, other.Slot)
+		}
+	}
+	if cur, have := store.Get(item.Slot); have && cur.IsNative() && presets.SameNativeItem(cur.Native, candidate.Native) {
 		return cur, false, nil
 	}
 	return candidate, true, nil

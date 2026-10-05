@@ -247,6 +247,8 @@ export function SaveGroupKeys(arg1:string,arg2:number,arg3:Record<string, any>):
 
 export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 
+export function SaveNativePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
+
 export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
 
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;

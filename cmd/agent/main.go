@@ -411,6 +411,10 @@ func run() error {
 	// box's own list (see foreignpresets.go).
 	foreignPresets := newForeignPresetStore("/mnt/nv/streborn/foreign-presets.json",
 		logger.With("comp", "foreignpresets"))
+	foreignPresets.ownedByStore = func(slot int, location string) bool {
+		p, ok := store.Get(slot)
+		return ok && p.IsNative() && p.Native.Location == location
+	}
 
 	// The speaker's country: the wizard region (set below once region.txt is
 	// read) wins, the firmware's countryCode (fed by pollBoxInfo, cached on
@@ -455,6 +459,21 @@ func run() error {
 			taken := make(map[int]bool, len(all))
 			for _, p := range all {
 				taken[p.Slot] = true
+				if p.IsNative() {
+					// A Pandora or iHeartRadio station the speaker plays
+					// itself: the cloud view carries its own ContentItem, so
+					// a re-read keeps the key on that station.
+					out = append(out, marge.Preset{
+						ID:            p.Slot,
+						Source:        margeXMLEscape(p.Native.Source),
+						Type:          margeXMLEscape(p.Native.ItemType),
+						Location:      margeXMLEscape(p.Native.Location),
+						SourceAccount: margeXMLEscape(p.Native.SourceAccount),
+						ItemName:      margeXMLEscape(p.Name),
+						ContainerArt:  margeXMLEscape(p.Native.ContainerArt),
+					})
+					continue
+				}
 				out = append(out, marge.Preset{
 					ID:            p.Slot,
 					Source:        "UPNP",

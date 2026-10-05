@@ -1748,7 +1748,10 @@ async function loadPresets() {
       div.setAttribute('role','button'); div.tabIndex = 0;
       div.onclick = () => { if (consumeHold(div)) return; playSlot(i, div, nm); };
       div.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playSlot(i, div, nm); } };
-      div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>';
+      div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>' +
+        // A Pandora or iHeartRadio key names its service (a brand name, the
+        // same in every language): the speaker's own client plays it.
+        (p.type === 'native' && p.source ? '<div class="num">' + escapeHtml(p.source) + '</div>' : '');
       div.appendChild(renameButton(div, i, nm));
     }
     else {
@@ -2036,11 +2039,20 @@ async function saveSpotifyToSlot(slot) {
   // Fresh reads, like the desktop app refreshing before a save: the cached
   // page state can lag the speaker by seconds.
   var name = '';
+  var src = '';
   try {
     var t = await (await fetch('/api/status')).text();
     var m = t.match(/<itemName>([^<]+)<\/itemName>/);
     if (m) name = decodeEntities(m[1]);
+    var sm = t.match(/source="([^"]+)"/);
+    if (sm) src = sm[1].toUpperCase();
   } catch (e) {}
+  // Pandora or iHeartRadio playing: the speaker's own client plays it, and the
+  // speaker reads the exact item from its own now-playing when type is native.
+  if (src === 'PANDORA' || src === 'IHEART' || src === 'IHEARTRADIO') {
+    await saveHeldBody(slot, { slot: slot, name: name, type: 'native' });
+    return;
+  }
   var info = await api('/spotify/info');
   var ctxUri = (info && info.context) || '';
   if (!/^spotify:(playlist|album|artist|show|track):/.test(ctxUri)) {
@@ -2089,6 +2101,13 @@ async function saveStationToSlot(slot, st) {
     homepage: st.homepage || ''
   };
   if (st.bitrate) body.bitrate = st.bitrate;
+  await saveHeldBody(slot, body);
+}
+
+// saveHeldBody writes one hold-saved key and reports the outcome the way every
+// hold does: a note, the move offer on an already-on-another-key refusal, or
+// the save failure.
+async function saveHeldBody(slot, body) {
   var r = await putPresetSlot(slot, body);
   if (r.ok) {
     hideMoveOffer();

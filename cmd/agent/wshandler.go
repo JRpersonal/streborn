@@ -559,6 +559,16 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 		}
 		return
 	}
+	// A Pandora or iHeartRadio key: the firmware's own client plays it with
+	// the account the speaker holds, and there is no stream STR could push.
+	// Stand back exactly like for a native radio station, without the radio
+	// bookkeeping (no last-play record and no Recently-played card: neither
+	// could replay a service STR does not play).
+	if p, ok := h.store.Get(slot); ok && p.IsNative() {
+		h.logger.Info("hardware preset: native service preset, the box plays it itself",
+			"slot", slot, "source", p.Native.Source, "name", p.Name, "location", location)
+		return
+	}
 	// The URL stays the proxy URL (location = http://127.0.0.1:8888/stream/N)
 	// so the stream proxy handles the reconnect on token expiry. Name + icon
 	// come from the stick preset store — the Bose ContentItem metadata has no
