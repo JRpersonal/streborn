@@ -228,6 +228,7 @@
   "library.serverNotAnsweringNote": "Šis serveris per paskutinę paiešką neatsakė. Sąraše jis yra iš ankstesnės paieškos atminties. Kai serveris bus įjungtas ir vėl tinkle, naršymas vėl veiks.",
   "library.notAnsweringWarnTitle": "Šis muzikos serveris neatsako",
   "library.notAnsweringWarnBody": "{{name}} per paskutinę paiešką neatsakė, todėl programa jį žino tik iš atminties. Vis tiek gali jį pridėti prie savo garsiakalbių. Naršymas nepavyks nė viename garsiakalbyje, kol serveris nebus įjungtas ir vėl tinkle.",
+  "library.serverRefusesPC": "Medijos serveris adresu {{address}} atmeta šį kompiuterį, todėl jo negalima parodyti čia. Leisk šį kompiuterį medijos serverio nustatymuose (NAS įrenginyje paprastai tai leidžiamų įrenginių arba medijos imtuvų sąrašas), tada atnaujink.",
   "banner.recommendation": "Rekomendacija:",
   "banner.sshRecommend": "SSH prieiga prie šio garsiakalbio yra atvira. Vieną kartą paleiskite garsiakalbį iš naujo, kad ją vėl uždarytumėte, kitaip jį gali pasiekti kiti jūsų tinkle.",
   "banner.sshPersistentNote": "SSH prieiga prie šios kolonėlės palikta atvira sąmoningai. Ją gali išjungti kolonėlės nustatymuose, dalyje „SSH prieiga prie šios kolonėlės“.",

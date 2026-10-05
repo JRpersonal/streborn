@@ -241,6 +241,7 @@
   "library.serverNotAnsweringNote": "This server did not answer the last scan. It is on the list from memory of an earlier one, and browsing works again once the server is switched on and back on the network.",
   "library.notAnsweringWarnTitle": "This music server is not answering",
   "library.notAnsweringWarnBody": "{{name}} did not answer the last scan, so the app only knows it from memory. You can still add it to your speakers. Browsing it will fail on every speaker until the server is switched on and back on the network.",
+  "library.serverRefusesPC": "The media server at {{address}} refuses this computer, so it cannot be listed here. Allow this PC in the media server's settings (on a NAS usually a list of allowed devices or media receivers), then refresh.",
   "banner.recommendation": "Recommendation:",
   "banner.sshRecommend": "SSH access to this speaker is open. Restart the speaker once to close it again, otherwise it can be reached by others on your network.",
   "banner.sshPersistentNote": "SSH access to this speaker is deliberately open. You can switch it off again in the speaker settings, under \"SSH access to this speaker\".",

@@ -131,6 +131,8 @@ export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallRes
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
 
+export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
+
 export function ListBoxMediaServers(arg1:string,arg2:number):Promise<Array<main.BoxMediaServer>>;
 
 export function ListDrives():Promise<Array<sticksetup.Drive>>;
