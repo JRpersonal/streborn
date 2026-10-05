@@ -44,7 +44,10 @@ type queueEpisode struct {
 
 // noteQueueStart opens an episode. An episode that was still open is closed
 // first: starting a queue while one runs IS how the old one ended.
-func (s *Server) noteQueueStart(tracks, start int, shuffle bool, rep repeatMode) {
+//
+// firstTitle and firstDur are the first track's, for the log line only: a
+// track cut short (#1065) is judged against the length the server claimed.
+func (s *Server) noteQueueStart(tracks, start int, shuffle bool, rep repeatMode, firstTitle string, firstDur time.Duration) {
 	s.queueLogMu.Lock()
 	if s.queueEp != nil {
 		s.closeEpisodeLocked("replaced by a new queue")
@@ -60,14 +63,20 @@ func (s *Server) noteQueueStart(tracks, start int, shuffle bool, rep repeatMode)
 	}
 	s.queueLogMu.Unlock()
 	s.logger.Info("queue start", "tracks", tracks, "startIndex", start,
-		"shuffle", shuffle, "repeat", rep.String())
+		"shuffle", shuffle, "repeat", rep.String(),
+		"title", firstTitle, "lengthSec", int(firstDur.Seconds()))
 }
 
 // noteQueueAdvance records a move to the next track. why names which detector
 // decided it, so a bundle distinguishes a clean STOP frame from the wall-clock
 // net from the frozen-position net; those three mean very different things
 // about the box and the media server.
-func (s *Server) noteQueueAdvance(natural bool, why, title string, dur time.Duration) {
+//
+// title and dur are the NEXT track's; endedTitle and ended describe the track
+// that just ended (its claimed length, the box's last position and total, and
+// how long it ran), which is what tells a wrong server length apart from a box
+// that really finished (#1065).
+func (s *Server) noteQueueAdvance(natural bool, why, title string, dur time.Duration, endedTitle string, ended trackEndReport) {
 	s.queueLogMu.Lock()
 	if ep := s.queueEp; ep != nil {
 		if natural {
@@ -80,8 +89,9 @@ func (s *Server) noteQueueAdvance(natural bool, why, title string, dur time.Dura
 	// The title goes in the LOG line (the reporter's own agent log, which they
 	// choose to send) but never into the debug section, which is the part that
 	// gets pasted into public issues.
-	s.logger.Info("queue advance", "why", why, "natural", natural,
-		"title", title, "lengthSec", int(dur.Seconds()))
+	attrs := append([]any{"why", why, "natural", natural}, ended.logAttrs(endedTitle)...)
+	attrs = append(attrs, "nextTitle", title, "nextLengthSec", int(dur.Seconds()))
+	s.logger.Info("queue advance", attrs...)
 }
 
 // noteQueuePushFailed records an advance whose push to the box did not land.

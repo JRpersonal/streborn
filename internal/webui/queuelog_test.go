@@ -15,7 +15,7 @@ func TestQueueEpisodeRecordsHowItEnded(t *testing.T) {
 		{URL: "http://192.0.2.10:50002/c.mp3", Title: "C", Mime: "audio/mpeg"},
 	}, 0, false, repeatOff)
 	s.setQueueTiming(0)
-	s.noteQueueStart(3, 0, false, repeatOff)
+	s.noteQueueStart(3, 0, false, repeatOff, "", 0)
 
 	cur := currentEpisode(t, s)
 	if cur.Tracks != 3 || cur.EndReason != "" {
@@ -52,8 +52,8 @@ func TestQueueEpisodeRecordsHowItEnded(t *testing.T) {
 // the first episode would sit open forever and the second would overwrite it.
 func TestQueueEpisodeClosedByTheNextQueue(t *testing.T) {
 	s, _ := newPlayTestServer(t)
-	s.noteQueueStart(4, 0, false, repeatOff)
-	s.noteQueueStart(2, 0, true, repeatAll)
+	s.noteQueueStart(4, 0, false, repeatOff, "", 0)
+	s.noteQueueStart(2, 0, true, repeatAll, "", 0)
 
 	past := recentEpisodes(t, s)
 	if len(past) != 1 || past[0].EndReason != "replaced by a new queue" {
@@ -70,7 +70,7 @@ func TestQueueEpisodeClosedByTheNextQueue(t *testing.T) {
 func TestQueueEpisodeHistoryIsBounded(t *testing.T) {
 	s, _ := newPlayTestServer(t)
 	for i := 0; i < queueEpisodeKeep+4; i++ {
-		s.noteQueueStart(1, 0, false, repeatOff)
+		s.noteQueueStart(1, 0, false, repeatOff, "", 0)
 		s.noteQueueEnd("played to the end of the list")
 	}
 	if got := len(recentEpisodes(t, s)); got != queueEpisodeKeep {
