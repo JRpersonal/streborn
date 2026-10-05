@@ -138,6 +138,7 @@ func (m *Manager) liveNowPlayingState(ctx context.Context) (track, artist, cover
 	if st.Track.URI != "" {
 		m.curTrackURI = st.Track.URI
 	}
+	m.noteRecallTrackLocked(st.Track.URI, track, false)
 	m.mu.Unlock()
 	m.notifyTrack()
 	m.noteResume()
@@ -216,6 +217,18 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// The display keeps the cached track, which is only cosmetic; what is
 		// about to be WRITTEN must not be a guess.
 		context = ""
+	}
+	// A recall that has not yet loaded a track of its context: the song fields
+	// above still describe the PREVIOUS context (cache or /status), while the
+	// context already names the new one. One reply must describe one thing, so
+	// report no song until the new one is known (recalldisplay.go, #1077). The
+	// read above runs first on purpose: a /status that shows the new track is
+	// what ends the gate.
+	m.mu.Lock()
+	recallPending := m.recallDisplayPendingLocked(time.Now())
+	m.mu.Unlock()
+	if recallPending {
+		track, artist, cover = "", "", ""
 	}
 	resp := struct {
 		Ready   bool   `json:"ready"`
