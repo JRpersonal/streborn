@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -123,8 +124,15 @@ func (s *Server) handleBMX(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routeBMX(w http.ResponseWriter, r *http.Request) {
-	_ = r
-	writeBMXError(w, http.StatusNotFound, "not implemented")
+	p := r.URL.Path
+	switch {
+	case p == tuneInTokenPath:
+		s.handleTuneInToken(w, r)
+	case strings.HasPrefix(p, tuneInStationPrefix):
+		s.handleTuneInStation(w, r)
+	default:
+		writeBMXError(w, http.StatusNotFound, "not implemented")
+	}
 }
 
 // writeBMXError answers in JSON, never HTML: the firmware parses whatever
