@@ -20,6 +20,12 @@
 //
 // If this is ever reactivated, build a handler here that
 // converts Radio-Browser API stations into the TuneIn OPML format.
+//
+// Not the only TuneIn path any more: with TUNEIN reflected as a source, the
+// firmware's BMX TuneIn adapter asks the remote port for
+// /bmx/tunein/v1/playback/station/<id>, served by internal/webui/bmxtunein.go
+// (#500). That route is experimental and untested on hardware; this stub
+// covers the partner-hash radiotime host only.
 package marge
 
 import (
