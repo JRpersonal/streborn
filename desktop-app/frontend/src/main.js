@@ -7,6 +7,7 @@ import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
+import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
 import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
 import {
@@ -81,6 +82,9 @@ import {
   ConsumeStableNameNotice,
   DownloadUpdate,
   ApplyUpdate,
+  UpdateViaWinget,
+  ConsumeWingetUpgradeFailure,
+  ClipboardSetText,
   RevealUpdateFile,
   ResolveStationLogo,
   BoxSettings,
@@ -1177,6 +1181,12 @@ async function renderFooter() {
   // speaker list empty. Shown a moment after start so the firewall prompt and
   // the window are both up.
   setTimeout(() => { maybeShowStableNameNotice({ consume: ConsumeStableNameNotice, showToast, t }).catch(() => {}); }, 2500);
+  // A winget upgrade started by the previous run that failed: remembered before
+  // the update check (8 s) so its banner carries the note and the command.
+  ConsumeWingetUpgradeFailure().then((f) => {
+    const v = wingetFailureView(f, t);
+    if (v) { state.wingetFailure = v; showToast(v.text + ' ' + v.command, 20000); }
+  }).catch(() => {});
   // Long-running apps re-check every 12 hours (#71): STR often stays open for
   // days on a media PC, and the startup-only check meant such installs never
   // learned about a new release (and its security fixes) until a restart. The
@@ -1349,13 +1359,24 @@ async function checkAppUpdate(manual) {
     // Label makes the target unambiguous: this updates THE APP itself, not the
     // speaker (a non-technical user clicked the speaker-update expecting the app
     // to update, and ended up with two .exe copies downloaded by hand).
-    const installLabel = isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow');
+    // A copy winget installed updates through winget (see wingetupdate.js), and
+    // the button says so before it is pressed.
+    const viaWinget = !!(state.appInfo && state.appInfo.installedViaWinget);
+    const installLabel = viaWinget
+      ? wingetInstallLabel(t)
+      : (isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow'));
     banner.innerHTML = `
       <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#8593;</span><span><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></span></div>
       <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>
       <button class="banner-close" id="appUpdateDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('banner.dismissTitle'))}">&times;</button>
     `;
     banner.classList.remove('hidden');
+    // The winget upgrade the previous run started came back with an error:
+    // say so above the button, with the command to run by hand.
+    if (viaWinget && state.wingetFailure) {
+      banner.insertAdjacentHTML('afterbegin', wingetNoteHTML(state.wingetFailure));
+      wireWingetCopy(banner, state.wingetFailure.command);
+    }
     // There is no Windows installer: the release is a bare exe (versioned
     // STR-Windows-vX.Y.Z.exe up to v1.0.1, STR-Windows.exe since), so updating
     // by hand means downloading a second file into the same folder and
@@ -1385,7 +1406,9 @@ async function checkAppUpdate(manual) {
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');
-    if (dl) dl.onclick = () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || latestUrl);
+    if (dl) dl.onclick = viaWinget
+      ? () => runWingetUpdate(m.version, dl, installLabel)
+      : () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || latestUrl);
     // Clicking it away is allowed and remembered, for THIS version only. The
     // next release is news again and says so; the user dismisses that one in
     // turn or installs it.
@@ -1483,6 +1506,43 @@ function showMacHandoff(path) {
   banner.classList.remove('hidden');
   const rv = $('appUpdateReveal');
   if (rv && path) rv.onclick = () => { RevealUpdateFile(path).catch(() => {}); };
+}
+
+// wingetNoteHTML renders a winget note for the update banner: the text and,
+// when there is one, the command to run by hand with a Copy button.
+function wingetNoteHTML(view) {
+  const cmd = view.command
+    ? `<code class="app-update-cmd">${escapeHtml(view.command)}</code><button class="btn app-update-copy" data-winget-copy>${escapeHtml(t('banner.wingetCopy'))}</button>`
+    : '';
+  return `<div class="app-update-text app-update-winget"><span>${escapeHtml(view.text)}</span>${cmd}</div>`;
+}
+
+function wireWingetCopy(root, command) {
+  const b = root.querySelector('[data-winget-copy]');
+  if (b && command) b.onclick = () => { ClipboardSetText(command).catch(() => {}); };
+}
+
+// runWingetUpdate is runAppUpdate for a copy winget installed. Nothing is
+// downloaded here: the backend asks winget whether it offers the version,
+// starts `winget upgrade` in a hidden helper and quits, and the helper starts
+// the app again when winget is done. When it cannot, the banner shows the
+// command to run by hand.
+async function runWingetUpdate(version, btn, installLabel) {
+  btn.disabled = true;
+  btn.textContent = t('banner.connecting');
+  try {
+    const res = await UpdateViaWinget(version);
+    const view = wingetOutcomeView(res, version, t);
+    const banner = $('appUpdateBanner');
+    if (!banner) { showToast(view.text, 15000); return; }
+    banner.innerHTML = wingetNoteHTML(view);
+    banner.classList.remove('hidden');
+    wireWingetCopy(banner, view.command);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = installLabel;
+    showError(t('banner.updateFailed', { err: String(e) }));
+  }
 }
 
 async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {

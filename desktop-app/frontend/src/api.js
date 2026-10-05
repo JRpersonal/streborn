@@ -107,6 +107,8 @@ export {
   ResolveUpdateAsset,
   DownloadUpdate,
   ApplyUpdate,
+  UpdateViaWinget,
+  ConsumeWingetUpgradeFailure,
   RevealUpdateFile,
   GetAppFlag,
   SetAppFlag,

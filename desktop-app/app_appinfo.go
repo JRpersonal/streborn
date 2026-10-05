@@ -54,6 +54,10 @@ type AppInfo struct {
 	// false. The stamp is fixed at the source too, but a clock should not have
 	// been the authority in the first place.
 	AgentSha256 string `json:"agentSha256"`
+	// InstalledViaWinget is true for a copy winget installed. Its update runs
+	// through winget (UpdateViaWinget) instead of the in-app exe swap, and the
+	// banner says so. See winget.go.
+	InstalledViaWinget bool `json:"installedViaWinget"`
 	// No agent-binary size here on purpose. It used to be exported so the
 	// frontend could run its own pre-OTA storage check, and that check compared
 	// the RAW size against the box's free figure and told a user his update
@@ -72,13 +76,15 @@ var (
 )
 
 func (a *App) AppInfo() AppInfo {
+	_, viaWinget := wingetManagedExe()
 	return AppInfo{
-		Version:     appVersion,
-		Build:       appBuild,
-		AgentSha256: embeddedAgentSha256(),
-		Author:      "Jens Roggenfelder (JRpersonal)",
-		GitHubURL:   "https://github.com/JRpersonal/streborn",
-		WebsiteURL:  "https://st-reborn.de",
+		InstalledViaWinget: viaWinget,
+		Version:            appVersion,
+		Build:              appBuild,
+		AgentSha256:        embeddedAgentSha256(),
+		Author:             "Jens Roggenfelder (JRpersonal)",
+		GitHubURL:          "https://github.com/JRpersonal/streborn",
+		WebsiteURL:         "https://st-reborn.de",
 		// There is no DonateURL here. The donation links live in the frontend,
 		// in donate.js DONATE_URLS, because the UI renders three branded
 		// buttons rather than one link and each needs its own provider. A

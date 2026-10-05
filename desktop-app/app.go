@@ -195,6 +195,10 @@ func (a *App) startup(ctx context.Context) {
 	// and the installers the update cache no longer needs.
 	a.cleanupOldBinary()
 	a.pruneStagedUpdates(appVersion)
+	// winget makes no Start menu entry for a portable app; a winget install
+	// gets one here, once (see winget.go). Off the startup path: it runs a
+	// hidden PowerShell.
+	go a.ensureWingetShortcut()
 	// The salt behind every pseudonym in an exported bundle. Generated once for
 	// this installation and kept beside the app's own state, never inside a
 	// bundle: without it the DEV# and MAC# tokens were a 24-bit sweep away from
@@ -263,6 +267,7 @@ func (a *App) startup(ctx context.Context) {
 		"appPath", selfPath,
 		"selfUpdate", selfOK,
 		"selfUpdateReason", selfReason,
+		"wingetManaged", wingetManagedFlag(),
 		"agentbinAvailable", agentbin.Available())
 	a.fitWindowToScreen()
 }

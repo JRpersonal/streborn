@@ -55,6 +55,8 @@ export function ClearUpdateIntent(arg1:string,arg2:number):Promise<void>;
 
 export function ConsumeStableNameNotice():Promise<boolean>;
 
+export function ConsumeWingetUpgradeFailure():Promise<main.WingetUpgradeFailure>;
+
 export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number):Promise<number>;
 
 export function CurrentWiFi():Promise<string>;
@@ -340,6 +342,8 @@ export function UninstallSTR(arg1:string):Promise<main.UninstallSTRResult>;
 export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;
 
 export function UpdateFailureReport(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<string>;
+
+export function UpdateViaWinget(arg1:string):Promise<main.WingetUpdateResult>;
 
 export function WakeBox(arg1:string,arg2:number):Promise<void>;
 

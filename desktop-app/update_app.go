@@ -325,6 +325,12 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 	// of it replayed on each of the four attempts below. None of it was
 	// written down, so a reporter who watched it sit still and took a
 	// diagnostic sent a log with nothing about the update in it (#935).
+	// A winget install updates through winget (UpdateViaWinget); a downloaded
+	// exe would only be thrown away.
+	if _, managed := wingetManagedExe(); managed {
+		a.logger.Info("app update: winget-managed install, not downloading", "version", version)
+		return "", errWingetManaged
+	}
 	started := time.Now()
 	a.logger.Info("app update: download starting, looking up the release", "version", version)
 	asset, err := a.ResolveUpdateAsset(version)
@@ -467,6 +473,12 @@ func assetExt() string {
 func (a *App) ApplyUpdate(downloadedPath string) error {
 	if _, err := os.Stat(downloadedPath); err != nil {
 		return fmt.Errorf("downloaded file missing: %w", err)
+	}
+	// Never swap the exe behind winget's back: its version record would stay
+	// on the old release (see winget.go).
+	if _, managed := wingetManagedExe(); managed {
+		a.logger.Info("app update: winget-managed install, refusing the in-place swap", "file", downloadedPath)
+		return errWingetManaged
 	}
 	switch runtime.GOOS {
 	case "darwin":
