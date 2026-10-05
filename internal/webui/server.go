@@ -1388,6 +1388,10 @@ func (s *Server) Run(ctx context.Context) error {
 	// real route: without it these fall through to the catchall and the speaker
 	// receives an HTML page where it asked for an image.
 	mux.HandleFunc(bmxIconPrefix, s.handleBMXIcon)
+	// BMX adapter paths outside orion (TuneIn and anything the speaker asks
+	// for that is not implemented): logged, and answered in JSON, never with
+	// the index page (see bmxforensic.go).
+	mux.HandleFunc(bmxPrefix, s.handleBMX)
 	// Station artwork over plain HTTP: the speaker cannot fetch https itself.
 	mux.HandleFunc(artProxyPath, s.handleArt)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)

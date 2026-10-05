@@ -316,6 +316,7 @@ func (s *Server) remoteDisplayName() string {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	s.noteStrayBoxRequest(r)
 	s.notePhoneLanguage(r.Header.Get("Accept-Language"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := indexHTML
