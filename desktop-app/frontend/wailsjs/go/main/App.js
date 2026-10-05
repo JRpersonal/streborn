@@ -102,6 +102,10 @@ export function ConsumeStableNameNotice() {
   return window['go']['main']['App']['ConsumeStableNameNotice']();
 }
 
+export function ConsumeWingetUpgradeFailure() {
+  return window['go']['main']['App']['ConsumeWingetUpgradeFailure']();
+}
+
 export function CopyPresetsAcrossBoxes(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['CopyPresetsAcrossBoxes'](arg1, arg2, arg3, arg4);
 }
@@ -672,6 +676,10 @@ export function UpdateBoxAgent(arg1, arg2) {
 
 export function UpdateFailureReport(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['UpdateFailureReport'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function UpdateViaWinget(arg1) {
+  return window['go']['main']['App']['UpdateViaWinget'](arg1);
 }
 
 export function WakeBox(arg1, arg2) {

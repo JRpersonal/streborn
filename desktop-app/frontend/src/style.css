@@ -2481,6 +2481,19 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .box-wedge-banner { background: #fdba74; color: #431407; }
 .box-wedge-banner b { color: #431407; }
 .app-update-text { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* A winget note: the text, then the command to run by hand, selectable in one
+   click and wrapping instead of pushing the banner wider than the window. */
+.app-update-winget { flex-wrap: wrap; }
+.app-update-cmd {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.08);
+  user-select: all;
+  word-break: break-all;
+}
+.app-update-copy { flex: 0 0 auto; font-size: 12px; padding: 4px 10px; }
 /* The quiet state of the same slot: no banner, just a way back to the update
    notice for anyone who dismissed it or moved back to an older build. It has
    to be findable and must not compete with the speaker list, so it keeps the

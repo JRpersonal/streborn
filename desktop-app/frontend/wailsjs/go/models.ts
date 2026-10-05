@@ -9,6 +9,7 @@ export namespace main {
 	    donateSlogan: string;
 	    updateManifestUrl: string;
 	    agentSha256: string;
+	    installedViaWinget: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -24,6 +25,7 @@ export namespace main {
 	        this.donateSlogan = source["donateSlogan"];
 	        this.updateManifestUrl = source["updateManifestUrl"];
 	        this.agentSha256 = source["agentSha256"];
+	        this.installedViaWinget = source["installedViaWinget"];
 	    }
 	}
 	export class BoxInfo {
@@ -897,6 +899,40 @@ export namespace main {
 	        this.url = source["url"];
 	        this.filename = source["filename"];
 	        this.autoInstall = source["autoInstall"];
+	    }
+	}
+	export class WingetUpdateResult {
+	    started: boolean;
+	    notYet: boolean;
+	    command: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WingetUpdateResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.started = source["started"];
+	        this.notYet = source["notYet"];
+	        this.command = source["command"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class WingetUpgradeFailure {
+	    failed: boolean;
+	    exitCode: string;
+	    command: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WingetUpgradeFailure(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.failed = source["failed"];
+	        this.exitCode = source["exitCode"];
+	        this.command = source["command"];
 	    }
 	}
 	export class ZoneMember {

@@ -79,13 +79,30 @@ with the new version; the winget maintainers merge it.
 
 ## Things worth knowing
 
-- **winget installs the portable exe**: it lands under
-  `%LOCALAPPDATA%\Microsoft\WinGet\Packages\` and is started with the command
-  `streborn` (or `ST Reborn` is pinned by hand). winget does not create a
-  Start menu entry for a portable app.
-- **Both apps also update themselves.** The cask carries `auto_updates true`,
-  so `brew upgrade` leaves an app alone that already updated itself. winget
-  may still list an update until its own version record catches up; running
-  `winget upgrade` then simply installs the same version again.
+- **winget installs the portable exe**: it lands in
+  `%LOCALAPPDATA%\Microsoft\WinGet\Packages\JRpersonal.STReborn_<source>\`
+  (machine scope: `%ProgramFiles%\WinGet\Packages\...`) and is started with
+  the command `streborn`. winget itself does not create a Start menu entry for
+  a portable app, so the app creates `ST Reborn.lnk` in the user's Start menu
+  on its first start from that folder, once: an entry the user deletes stays
+  deleted (flag `wingetStartMenuShortcut` in `app-state.json`).
+- **`winget uninstall` leaves that Start menu entry behind.** winget removes
+  only the files it installed; the shortcut then points at a missing exe and
+  has to be deleted by hand
+  (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\ST Reborn.lnk`).
+- **A winget install updates through winget.** The app recognises the
+  package folder and never swaps its own exe there, because winget's version
+  record would stay on the old release. The update button runs
+  `winget upgrade --id JRpersonal.STReborn --exact --silent
+  --accept-source-agreements --accept-package-agreements` in a hidden helper
+  after the app quits, then starts the app again. It first asks winget whether
+  it already offers the new version: the winget-pkgs pull request is usually
+  merged a few days after a release, and until then the banner says so and
+  shows the command instead of quitting for nothing. If winget is missing or
+  fails, the banner shows the same command to run by hand. A copy installed
+  with `--location` somewhere else is not recognised and updates itself as
+  before.
+- **The Homebrew app also updates itself.** The cask carries `auto_updates
+  true`, so `brew upgrade` leaves an app alone that already updated itself.
 - The tokens expire after a year. GitHub mails a reminder; renew them and
   replace the two secrets.
