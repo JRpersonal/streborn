@@ -156,7 +156,10 @@ func TestRepeatOneAlsoCoversABoxThatStoppedByItself(t *testing.T) {
 
 	np.set("PLAY_STATE", 1*time.Second, 3*time.Second)
 	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * time.Second}, gen)
-	time.Sleep(4 * time.Second)
+	// Past the first 4 s poll, not on it: a sleep of exactly one poll interval
+	// raced the ticker, and a watch whose first poll already saw STOP never saw
+	// playback and waited forever.
+	time.Sleep(queuePollInterval + time.Second)
 	np.set("STOP_STATE", 3*time.Second, 3*time.Second)
 
 	waitForTrackEnd(t, "the track to be played again after the box stopped", func() bool { return rec.countOf("SetAVTransportURI") >= 1 })

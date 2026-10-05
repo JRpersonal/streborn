@@ -147,6 +147,15 @@ const (
 	// cannot fire either, and a folder hung on its first track forever (#380,
 	// #381). A position that has not moved for this long is a finished track.
 	queueFrozenTimeout = 15 * time.Second
+	// queueOverrunSlack is how far the box's position may sit past the track
+	// length before STR concludes the length is wrong. The box reports whole
+	// seconds and a server rounds its duration, so a second or so either side of
+	// the end is noise; more than that is a box still playing audio the length
+	// says does not exist (#1065).
+	queueOverrunSlack = 2 * time.Second
+	// queueOwnEndSlack is how close a still-climbing position must be to the
+	// box's OWN reported total to count as "the box says this is the end".
+	queueOwnEndSlack = 1 * time.Second
 )
 
 // pushStream sends one stream to the box, choosing direct play (a plain-HTTP
@@ -229,7 +238,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	} else {
 		s.recentClearQueueCard()
 	}
-	s.noteQueueStart(len(items), start, shuffle, rep)
+	s.noteQueueStart(len(items), start, shuffle, rep, it.Title, it.Duration)
 	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueueEnd("the first track could not be pushed to the box")
 		return err
@@ -294,6 +303,13 @@ func (s *Server) stopQueue(why string) {
 // the advance re-checks the generation once it holds the lock and aborts when
 // superseded.
 func (s *Server) advanceAndPlay(natural bool, gen int, why string) {
+	s.advanceAndPlayEnded(natural, gen, why, trackEndReport{net: "stop-frame"})
+}
+
+// advanceAndPlayEnded is advanceAndPlay with the ending track's numbers, so the
+// advance log line says which track ended, where the box was in it, and which
+// net decided it (#1065: a track cut at 33 s left no trace of why).
+func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended trackEndReport) {
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
 	s.queueMu.Lock()
@@ -303,6 +319,7 @@ func (s *Server) advanceAndPlay(natural bool, gen int, why string) {
 		s.logger.Info("queue advance: a new queue/track started while this advance waited, standing down", "why", why)
 		return
 	}
+	endedTitle := s.queueCurrentTitle()
 	var (
 		it queueItem
 		ok bool
@@ -313,6 +330,8 @@ func (s *Server) advanceAndPlay(natural bool, gen int, why string) {
 		it, ok = s.queue.next()
 	}
 	if !ok {
+		s.logger.Info("queue: the last track ended",
+			append([]any{"why", why, "natural", natural}, ended.logAttrs(endedTitle)...)...)
 		// Queue exhausted. On a NATURAL end the box is frozen in PLAY_STATE on the
 		// last track (it finished the file but never emitted STOP, #380), so the
 		// app/remote/display keep showing it "playing" until standby. Stop the box
@@ -338,8 +357,16 @@ func (s *Server) advanceAndPlay(natural bool, gen int, why string) {
 		s.logger.Warn("queue advance: play failed", "why", why, "title", it.Title, "err", err)
 		return
 	}
-	s.noteQueueAdvance(natural, why, it.Title, it.Duration)
+	s.noteQueueAdvance(natural, why, it.Title, it.Duration, endedTitle, ended)
 	s.setQueueTiming(it.Duration)
+}
+
+// queueCurrentTitle is the title of the track the queue is on, empty when none.
+func (s *Server) queueCurrentTitle() string {
+	if it, ok := s.queue.current(); ok {
+		return it.Title
+	}
+	return ""
 }
 
 // queueSkip plays the next (forward) or previous track on demand.
@@ -349,6 +376,7 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 	if !s.queue.isActive() {
 		return queueItem{}, false, nil
 	}
+	endedTitle := s.queueCurrentTitle()
 	var (
 		it queueItem
 		ok bool
@@ -368,7 +396,7 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 		s.noteQueuePushFailed()
 		return queueItem{}, false, err
 	}
-	s.noteQueueAdvance(false, "next/previous pressed", it.Title, it.Duration)
+	s.noteQueueAdvance(false, "next/previous pressed", it.Title, it.Duration, endedTitle, trackEndReport{net: "manual"})
 	s.setQueueTiming(it.Duration)
 	return it, true, nil
 }
@@ -385,6 +413,9 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		lastPosAt time.Time     // when lastPos last increased (frozen-position net)
 		obsTotal  time.Duration // largest total the box reported for this track
 		sawPlay   bool
+		// overrunWarned rate-limits the "length is shorter than what the speaker
+		// plays" warning to once per track.
+		overrunWarned bool
 		// deadInARow counts tracks the box dropped without playing them. It
 		// deliberately survives the per-track reset below: one dead track is a bad
 		// file, several in a row is a server that has gone away, and only the
@@ -408,7 +439,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		dur := s.queueTrackDur
 		s.queueMu.Unlock()
 		if curGen != gen {
-			gen, lastPos, lastPosAt, obsTotal, sawPlay = curGen, 0, time.Time{}, 0, false
+			gen, lastPos, lastPosAt, obsTotal, sawPlay, overrunWarned = curGen, 0, time.Time{}, 0, false, false
 		}
 
 		ps, pos, total, standby, tornDown := s.pollNowPlaying()
@@ -482,7 +513,9 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 				prog = time.Since(start) // box reported no position; use elapsed
 			}
 			if nearEnd(prog, end) {
-				s.advanceAndPlay(true, curGen, "the box reported the track stopped at its end")
+				rep := s.trackEndSnapshot(sawPlay, ps, start, dur, obsTotal, lastPos, lastPosAt).report(endNetNone)
+				rep.net = "stop-frame"
+				s.advanceAndPlayEnded(true, curGen, "the box reported the track stopped at its end", rep)
 			} else {
 				// Stopped well before the end: a real stop, not an end.
 				s.logger.Info("queue watcher: the box stopped well before the end of the track, treating it as a stop",
@@ -500,27 +533,166 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			}
 		}
 
-		// Wall-clock safety net, reached on PLAY_STATE and on an unknown status:
-		// once playback was seen and the track length is known, advance a margin
-		// past it. This covers both a missed STOP frame and a box that freezes at
-		// PLAY_STATE on a finite file's EOF (#219), neither of which the STOP path
-		// above can catch.
-		if sawPlay && end > 0 && time.Since(start) >= end+s.advanceMargin(lastPos, end) {
-			s.advanceAndPlay(true, curGen, "the track's length elapsed without a stop from the box")
-			continue
+		if !overrunWarned && dur > 0 && lastPos > dur+queueOverrunSlack {
+			overrunWarned = true
+			s.logger.Warn("queue watcher: the server's track length is shorter than what the speaker plays",
+				"title", s.queueCurrentTitle(), "lengthSec", int(dur.Seconds()),
+				"lastPosSec", int(lastPos.Seconds()), "boxTotalSec", int(obsTotal.Seconds()),
+				"elapsedSec", int(time.Since(start).Seconds()))
 		}
-		// Frozen-position net, for the UNKNOWN-length case only (end==0): the box
-		// stays PLAY_STATE but its position has not advanced for queueFrozenTimeout,
-		// which the wall-clock net above cannot catch without a length. Gated on
-		// end==0 so any queue with a known duration/total keeps the vetted
-		// wall-clock net unchanged (the Synology/#219 path does not regress). A
-		// genuine mid-track stall reports BUFFERING_STATE (excluded here), so this
-		// trips only at a real EOF (#380, #381 FRITZ!Box mediaserver).
-		if sawPlay && ps == "PLAY_STATE" && end == 0 && lastPos > 0 &&
-			!lastPosAt.IsZero() && time.Since(lastPosAt) >= queueFrozenTimeout {
-			s.advanceAndPlay(true, curGen, "the box stayed on play with its position frozen")
+
+		// The wall-clock and frozen-position nets, reached on PLAY_STATE and on an
+		// unknown status. trackEndNet holds the rules.
+		in := s.trackEndSnapshot(sawPlay, ps, start, dur, obsTotal, lastPos, lastPosAt)
+		if net := trackEndNet(in); net != endNetNone {
+			s.advanceAndPlayEnded(true, curGen, net.why(), in.report(net))
 		}
 	}
+}
+
+// trackEndSnapshot packs what the watcher knows about the current track into a
+// trackEndInput.
+func (s *Server) trackEndSnapshot(sawPlay bool, ps string, start time.Time, dur, obsTotal, lastPos time.Duration, lastPosAt time.Time) trackEndInput {
+	in := trackEndInput{
+		sawPlay:  sawPlay,
+		playing:  ps == "PLAY_STATE",
+		elapsed:  time.Since(start),
+		dur:      dur,
+		obsTotal: obsTotal,
+		lastPos:  lastPos,
+	}
+	if !lastPosAt.IsZero() {
+		in.sinceLastPos = time.Since(lastPosAt)
+	}
+	return in
+}
+
+// endNet names which detector decided a track was over.
+type endNet int
+
+const (
+	endNetNone endNet = iota
+	// endNetWallClock: the track's length (plus a margin) elapsed.
+	endNetWallClock
+	// endNetFrozen: the box sat on PLAY_STATE with its position not moving.
+	endNetFrozen
+)
+
+func (n endNet) String() string {
+	switch n {
+	case endNetWallClock:
+		return "wall-clock"
+	case endNetFrozen:
+		return "frozen-position"
+	}
+	return "none"
+}
+
+func (n endNet) why() string {
+	switch n {
+	case endNetWallClock:
+		return "the track's length elapsed without a stop from the box"
+	case endNetFrozen:
+		return "the box stayed on play with its position frozen"
+	}
+	return ""
+}
+
+// trackEndInput is what the watcher knows about the current track on one poll.
+type trackEndInput struct {
+	sawPlay bool
+	playing bool          // the box reported PLAY_STATE on this poll
+	elapsed time.Duration // wall clock since the track was pushed
+	dur     time.Duration // the length the media server claimed (0 = none)
+	// obsTotal is the largest total the box reported for this track.
+	obsTotal time.Duration
+	// lastPos is the highest position the box reported (0 = never reported one).
+	lastPos time.Duration
+	// sinceLastPos is how long ago lastPos last increased. Only meaningful when
+	// lastPos > 0.
+	sinceLastPos time.Duration
+}
+
+// trackEndReport is the ending track's numbers, for the advance log line.
+type trackEndReport struct {
+	net      string
+	length   time.Duration
+	lastPos  time.Duration
+	boxTotal time.Duration
+	elapsed  time.Duration
+}
+
+func (in trackEndInput) report(n endNet) trackEndReport {
+	return trackEndReport{net: n.String(), length: in.dur, lastPos: in.lastPos,
+		boxTotal: in.obsTotal, elapsed: in.elapsed}
+}
+
+// logAttrs renders the ending track for a log line.
+func (r trackEndReport) logAttrs(title string) []any {
+	return []any{"net", r.net, "endedTitle", title,
+		"lengthSec", int(r.length.Seconds()), "lastPosSec", int(r.lastPos.Seconds()),
+		"boxTotalSec", int(r.boxTotal.Seconds()), "elapsedSec", int(r.elapsed.Seconds())}
+}
+
+// trackEndNet decides whether the track is over when the box has not said so
+// with a STOP frame. Two nets:
+//
+// Wall-clock: once playback was seen and the track length is known, advance a
+// margin past it. This covers a missed STOP frame and a box that freezes at
+// PLAY_STATE on a finite file's EOF (#219, #923), neither of which the STOP
+// path can catch.
+//
+// The length is only a claim, though, and the box's position is evidence.
+// #1065: a MinimServer library track was cut at 33 s, six runs in a row, while
+// the speaker was still playing it; later tracks advanced at their real
+// lengths. So, when the box reports a position:
+//   - a position that moved on this very poll and has not reached the box's own
+//     total is a box still playing, and the net holds. Once the position stops
+//     moving (the EOF freeze), the next poll fires; when the box reports a
+//     total and the position sits on it, it fires at once, as before (#923).
+//   - a position that ran past the length and past the box's own total means
+//     the length is wrong. It is dropped, and the frozen-position net decides.
+//
+// A box that reports no position at all keeps the plain wall-clock behaviour:
+// there is nothing to corroborate the length against.
+//
+// Frozen-position: the box stays PLAY_STATE but its position has not advanced
+// for queueFrozenTimeout. For an unknown length (or one proven wrong) that is
+// the only end signal (#380, #381 FRITZ!Box mediaserver); for a known length it
+// fires once the length has elapsed, so an EOF freeze still advances even if
+// the wall-clock net held. A genuine mid-track stall reports BUFFERING_STATE
+// (excluded), so this trips only at a real EOF.
+func trackEndNet(in trackEndInput) endNet {
+	if !in.sawPlay {
+		return endNetNone
+	}
+	// Track length: the queue item's duration, or the box's reported total when
+	// the item carried none (a DLNA server, e.g. Synology, that did not expose
+	// duration in its metadata leaves dur==0). #219
+	end := in.dur
+	if in.obsTotal > end {
+		end = in.obsTotal
+	}
+	posKnown := in.lastPos > 0
+	if posKnown && end > 0 && in.lastPos > end+queueOverrunSlack {
+		// The box has played further than any length anyone claimed: the length
+		// is wrong and cannot time the end. Fall back to the freeze.
+		end = 0
+	}
+	// "Moved on this poll": the watcher stamps the position on the same
+	// iteration it asks this, so a position that just climbed is milliseconds
+	// old and one that did not is at least a poll interval old.
+	climbing := posKnown && in.sinceLastPos < queuePollInterval/2
+	atOwnEnd := in.obsTotal > 0 && in.lastPos >= in.obsTotal-queueOwnEndSlack
+
+	if end > 0 && in.elapsed >= end+advanceMargin(in.lastPos, end) && (!climbing || atOwnEnd) {
+		return endNetWallClock
+	}
+	if in.playing && posKnown && in.sinceLastPos >= queueFrozenTimeout &&
+		(end == 0 || in.elapsed >= end) {
+		return endNetFrozen
+	}
+	return endNetNone
 }
 
 // advanceMargin is how long past the track length the wall-clock net waits.
@@ -541,6 +713,10 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 // poll would run on every speaker all day for one case (see the project rule on
 // sparing the box hardware).
 func (s *Server) advanceMargin(lastPos, end time.Duration) time.Duration {
+	return advanceMargin(lastPos, end)
+}
+
+func advanceMargin(lastPos, end time.Duration) time.Duration {
 	if lastPos > 0 && nearEnd(lastPos, end) {
 		return 0
 	}

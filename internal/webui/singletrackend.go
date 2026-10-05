@@ -206,16 +206,12 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 			continue
 		}
 
-		// Wall-clock net, the queue's own: once playback was seen and the
-		// length is known, call the end a margin past it.
-		if sawPlay && end > 0 && time.Since(start) >= end+s.advanceMargin(lastPos, end) {
-			return s.finishSingleTrack(title, "the track's length elapsed without a stop from the box", lastPos, end)
-		}
-		// Frozen-position net for the unknown-length case only, so a track with
-		// a known length keeps the vetted wall-clock behaviour.
-		if sawPlay && ps == "PLAY_STATE" && end == 0 && lastPos > 0 &&
-			!lastPosAt.IsZero() && time.Since(lastPosAt) >= queueFrozenTimeout {
-			return s.finishSingleTrack(title, "the box stayed on play with its position frozen", lastPos, end)
+		// The queue's own wall-clock and frozen-position nets, including the
+		// rule that a box still climbing past a wrong server length is not cut
+		// off (#1065).
+		in := s.trackEndSnapshot(sawPlay, ps, start, tr.dur, obsTotal, lastPos, lastPosAt)
+		if net := trackEndNet(in); net != endNetNone {
+			return s.finishSingleTrack(title, net.why(), lastPos, end)
 		}
 	}
 }
