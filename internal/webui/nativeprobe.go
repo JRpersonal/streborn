@@ -65,6 +65,12 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 	var name, stream string
 	for _, p := range s.presets.All() {
 		if p.Slot == in.Slot {
+			if p.IsNative() {
+				// The speaker's own Pandora or iHeartRadio item: there is no
+				// STR stream to probe forms for, and the probe would overwrite
+				// the key.
+				break
+			}
 			name = p.Name
 			stream = boxPresetURL(p.Slot, p.Type == "spotify")
 			break

@@ -8,6 +8,7 @@ import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
+import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import {
   DiscoverBoxes,
@@ -107,6 +108,7 @@ import {
   LogSpotifySaveGate,
   SaveSpotifyPreset,
   SaveLibraryPreset,
+  SaveNativePreset,
   RecentPlayed,
   SaveDiagnosticBundle,
   GetLogFilePath,
@@ -5615,6 +5617,7 @@ async function refreshPresetsIfChanged() {
 function isMeasurableStreamPreset(p) {
   if (!p) return false;
   if (p.type === 'spotify' || p.type === 'queue') return false;
+  if (isNativeServicePreset(p)) return false;       // Pandora / iHeartRadio
   if (p.source) return false;                       // from a media server
   if (p.items && p.items.length) return false;      // a saved folder
   return true;
@@ -5644,7 +5647,7 @@ async function setPresetIfUnchanged(box, cached, patch) {
   // Guarded here rather than at each caller, because this is the only place
   // that has the LIVE preset in hand (#978).
   const flattenable = live && (live.type === 'spotify' || live.type === 'queue' ||
-    live.source || live.uri || (live.items && live.items.length));
+    isNativeServicePreset(live) || live.source || live.uri || (live.items && live.items.length));
   const held = live && !flattenable &&
     live.stream_url === cached.stream_url && live.name === cached.name;
   if (!held) {
@@ -5861,6 +5864,7 @@ function boxSourceLabel(source) {
   const map = {
     DEEZER: 'Deezer', SPOTIFY: 'Spotify', AMAZON: 'Amazon Music',
     TUNEIN: 'TuneIn', LOCAL_INTERNET_RADIO: 'Internet radio',
+    PANDORA: nativeServiceLabel('PANDORA'), IHEART: nativeServiceLabel('IHEART'),
     INTERNET_RADIO: 'Internet radio', LOCAL_MUSIC: 'Library', STORED_MUSIC: 'Library',
     BLUETOOTH: 'Bluetooth', AIRPLAY: 'AirPlay',
   };
@@ -5901,8 +5905,10 @@ async function healPresetLogos() {
   // webview draws without firing onerror, so the tile's cascade ends on the
   // chevron anyway. Healing writes a full real chain once and the filter goes
   // false, so this adds no recurring work for healthy keys.
+  // A Pandora or iHeartRadio key is no directory station: looking its name up
+  // in the radio directory could only paint some unrelated station's logo.
   const missing = state.presets.filter(p =>
-    p.name && (!appArtFromBoxArt(p.art) || artCarriesBoxForm(p.art)));
+    p.name && (!appArtFromBoxArt(p.art) || artCarriesBoxForm(p.art)) && !isNativeServicePreset(p));
   if (missing.length === 0) return;
   healingInProgress = true;
   try {
@@ -6760,7 +6766,10 @@ function renderPresets() {
       // Spotify: light the slot we recalled (remembered from the per-slot URL),
       // which survives a next/prev that drops the slot from the now-playing
       // location. Never match on the preset name (see nowSpotifySlot note above).
-      (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot)
+      (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot) ||
+      // Pandora / iHeartRadio: the speaker reports the service's own station
+      // reference, which is exactly what the key stores.
+      nativeServiceActive(p, state.nowLocation)
     );
     // While a native descriptor is playing, drop a slot whose stored station no
     // longer matches the live audio: a preset list re-synced from the box remote
@@ -6856,6 +6865,10 @@ function renderPresets() {
       // feature, or radio-browser had none). Persist it so the tile keeps
       // the value after a reload and the other clients see it too.
       let tileBitrate = p.bitrate || 0;
+      // The "from" badge: a media server's name, or for a Pandora or
+      // iHeartRadio key the service (the bitrate line is left out there, the
+      // speaker's own client plays it and STR measures nothing).
+      const tileBadge = p.source || nativeServiceBadge(p);
       if (isActive && state.nowBitrate > 0) {
         tileBitrate = state.nowBitrate;
         // Persist the corrected bitrate, but NEVER for Spotify presets:
@@ -6885,8 +6898,8 @@ function renderPresets() {
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
-            ${p.source ? `<div class="preset-source" title="${escapeAttr(p.source)}">${escapeHtml(t('preset.sourceBadge', { source: p.source }))}</div>` : ''}
-            <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
+            ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
+            ${isNativeServicePreset(p) ? '' : `<div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>`}
             ${stateLabel}
           </div>
         </div>
@@ -7209,6 +7222,20 @@ function presetMoveOffer(conflict, slot, onBox) {
   });
 }
 
+// saveNativeToSlot keeps the Pandora or iHeartRadio station the speaker is
+// playing on a key. The app sends only the name: the agent reads the exact
+// item from the speaker's own now-playing.
+async function saveNativeToSlot(slot) {
+  const nname = state.nowName || nativeServiceLabel(state.nowSource);
+  try {
+    await SaveNativePreset(state.currentBox.host, state.currentBox.port, slot, nname);
+    showToast(t('preset.savedToKey', { n: slot, name: nname }));
+    await loadPresets();
+  } catch (err) {
+    showPresetSaveError(err, slot);
+  }
+}
+
 // saveCurrentToSlot saves the currently playing station onto the
 // given slot (overwrites whatever was there before). Uses the
 // now_playing data state.nowLocation + state.nowName plus the last
@@ -7221,6 +7248,14 @@ async function saveCurrentToSlot(slot) {
   try { await refreshStatus(); } catch {}
   if (!state.nowLocation) {
     showToast(t('preset.noCurrentStation'));
+    return;
+  }
+
+  // Pandora or iHeartRadio playing: the speaker's own client plays it and the
+  // item lives only on the speaker, so the agent reads it from there and keeps
+  // it on the key as the speaker's own item. No stream URL is involved.
+  if (nativeServiceSaveable(state.nowSource)) {
+    await saveNativeToSlot(slot);
     return;
   }
 
@@ -7518,7 +7553,7 @@ async function play(slot) {
     // the "starting" label appear instantly on click.
     state.nowLocation = p.type === 'spotify'
       ? boxSpotifyDefaultUrl()
-      : (p.stream_url || '');
+      : (isNativeServicePreset(p) && p.native ? (p.native.location || '') : (p.stream_url || ''));
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
     state.nowBitrate = p.bitrate || 0;

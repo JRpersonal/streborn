@@ -281,7 +281,7 @@ func TestRecentAnswerUsesTheContentItemDialect(t *testing.T) {
 	if !ok || rec.lastPlayedAt != "2026-09-06T20:28:30+00:00" || rec.sourceID != "3" {
 		t.Fatalf("parse: ok=%v rec=%+v", ok, rec)
 	}
-	got := recentElementXML(rec, 7, time.Unix(1700000000, 0))
+	got := recentElementXML(rec, sourceNameForAccountID(rec.sourceID), 7, time.Unix(1700000000, 0))
 	for _, want := range []string{`<recent id="7"><lastplayedat>2026-09-06T20:28:30+00:00</lastplayedat>`, `<location>/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9</location><name>MANGORADIO</name>`, `<source id="3" type="Audio">`, `<sourcename>LOCAL_INTERNET_RADIO</sourcename>`, `<credential></credential><sourceid>3</sourceid><contentItemType>stationurl</contentItemType></recent>`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in %s", want, got)

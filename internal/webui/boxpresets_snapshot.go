@@ -16,6 +16,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // boxPresetURL returns the stable agent-loopback URL the box should store for a
@@ -42,7 +43,14 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var specs []boxcli.PresetSpec
+	var nativeKeys []presets.Preset
 	for _, p := range s.presets.All() {
+		if p.IsNative() {
+			// A Pandora or iHeartRadio key goes back as the speaker's own
+			// item, never as a stream URL (nativeservice.go).
+			nativeKeys = append(nativeKeys, p)
+			continue
+		}
 		// Push the agent-loopback proxy URL, NOT p.StreamURL. The raw value is
 		// the CDN URL (or, post-v0.7.16, the self-proxy wrapper); storing it on
 		// the box defeats the whole point of the proxy slot (token-expiry
@@ -66,9 +74,15 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("preset sync failed", "slot", slot, "err", err)
 		}
 	}
+	for _, p := range nativeKeys {
+		if err := s.writeStorePresetToBox(syncCtx, p); err != nil {
+			failed = append(failed, p.Slot)
+			s.logger.Warn("preset sync failed", "slot", p.Slot, "source", p.Native.Source, "err", err)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
-		"synced": len(specs) - len(failed),
+		"synced": len(specs) + len(nativeKeys) - len(failed),
 		"failed": failed,
 	})
 }

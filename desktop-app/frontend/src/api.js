@@ -217,6 +217,13 @@ export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notic
   return callOptionalBinding('LogSpotifySaveGate', [host, slot, canRecall, premiumRequired, notice]);
 }
 
+// SaveNativePreset stores the Pandora or iHeartRadio station the speaker is
+// playing on a key; the speaker agent reads the exact item from the speaker.
+// Optional binding, per the note above.
+export function SaveNativePreset(host, port, slot, name) {
+  return callOptionalBinding('SaveNativePreset', [host, port, slot, name]);
+}
+
 // PushFavorites stores the starred stations on one speaker, so the phone page
 // shows the same list. Optional binding, per the note above.
 export function PushFavorites(host, port, favoritesJSON) {

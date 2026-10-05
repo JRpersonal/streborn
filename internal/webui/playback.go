@@ -363,6 +363,27 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// wall-clock net tripped minutes later, yanked playback from the station
 	// the user explicitly chose back to the next queue track.
 	s.stopQueue("a preset that is not a queue was recalled")
+	// A Pandora or iHeartRadio key: the speaker's own client plays it, so hand
+	// the stored item to the speaker's /select, the same item its key holds.
+	// There is no UPnP fallback: STR has no stream for these.
+	if p.IsNative() {
+		if s.spotifySwitchedAway != nil {
+			s.spotifySwitchedAway(playCtx)
+		}
+		s.logger.Info("preset slot recall (app): native service", "slot", slot, "source", p.Native.Source, "name", p.Name)
+		if err := s.selectNativeItem(playCtx, *p.Native, p.Name); err != nil {
+			s.logger.Warn("preset slot recall (app): the speaker refused the native service item",
+				"slot", slot, "source", p.Native.Source, "err", err)
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "The speaker could not start this station", "detail": err.Error(),
+				"code": "native-select-refused", "slot": slot, "name": p.Name,
+			})
+			return
+		}
+		recallDelivered = true
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": presets.TypeNative})
+		return
+	}
 	// Spotify presets have no playable HTTP StreamURL. Mirror the hardware-press
 	// recall (cmd/agent playSpotifyPreset) so a soft recall behaves identically:
 	//  1. wait out a cold go-librespot (auth not finished) instead of pointing
@@ -869,6 +890,11 @@ func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
 // agent's gabbo handler calls it because the hardware recall goes straight to
 // the renderer, bypassing the webui play handlers.
 func (s *Server) NoteRecentPreset(p presets.Preset) {
+	if p.IsNative() {
+		// Pandora / iHeartRadio: a card could not replay it, STR does not
+		// play these services itself.
+		return
+	}
 	if p.Type == "spotify" {
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "", "")
 		return

@@ -10,8 +10,9 @@
 //	"slot" or "id"                 -> Slot
 //	"name"                          -> Name
 //	"stream_url" or "url"          -> StreamURL
-//	"type"                          -> Type ("radio", "spotify", ...)
+//	"type"                          -> Type ("radio", "spotify", "queue", "native")
 //	"art"                           -> Art (cover image URL, optional)
+//	"native"                        -> Native (the box's own ContentItem, Type "native")
 package presets
 
 import (
@@ -19,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/JRpersonal/streborn/internal/atomicfile"
@@ -75,6 +77,109 @@ type Preset struct {
 	// 2026-09-09). Optional/additive: every preset saved before this is false,
 	// which is the behaviour those presets already had.
 	Repeat bool `json:"repeat,omitempty"`
+	// Native is set on a preset of Type TypeNative: a station of a music
+	// service the speaker's firmware plays by itself (Pandora, iHeartRadio),
+	// kept as the ContentItem the speaker handed over. STR never proxies or
+	// plays these; it stores the item, writes it back onto the key and asks
+	// the speaker to select it. Source above carries the service's display
+	// label for these, which is the cosmetic "from" badge that field already
+	// is. Optional/additive: nil on every other type, and a store written
+	// before it simply has none.
+	Native *NativeItem `json:"native,omitempty"`
+}
+
+// TypeNative is the preset type for a music-service station the speaker plays
+// natively (see Preset.Native).
+const TypeNative = "native"
+
+// NativeItem is the speaker's own ContentItem for a native-service preset,
+// stored verbatim (unescaped) so it can be written back onto the key and
+// selected exactly as the firmware described it.
+type NativeItem struct {
+	// Source is the ContentItem source enum ("PANDORA", "IHEART").
+	Source string `json:"source"`
+	// SourceAccount is the account the item belongs to on the speaker.
+	SourceAccount string `json:"sourceAccount,omitempty"`
+	// Location is the service's own station reference.
+	Location string `json:"location"`
+	// ItemType is the ContentItem type attribute ("stationurl", ...).
+	ItemType string `json:"itemType,omitempty"`
+	// ItemName is the name the speaker gave the item when it was stored.
+	ItemName string `json:"itemName,omitempty"`
+	// ContainerArt is the artwork URL the speaker reported, if any.
+	ContainerArt string `json:"containerArt,omitempty"`
+}
+
+// nativeServices are the sources STR keeps as native presets, with the label
+// the apps show. Only services whose client lives in the speaker firmware and
+// whose account bookkeeping STR's cloud stand-in serves belong here
+// (docs/streaming/us-services.md).
+var nativeServices = map[string]string{
+	"PANDORA": "Pandora",
+	"IHEART":  "iHeartRadio",
+}
+
+// NativeServiceLabel returns the display label of a native-service source and
+// whether STR keeps presets of that source at all. Case-insensitive; the
+// IHEARTRADIO alias is folded onto IHEART.
+func NativeServiceLabel(source string) (string, bool) {
+	label, ok := nativeServices[NormalizeNativeSource(source)]
+	return label, ok
+}
+
+// NormalizeNativeSource upper-cases a source enum and folds known aliases.
+func NormalizeNativeSource(source string) string {
+	src := strings.ToUpper(strings.TrimSpace(source))
+	if src == "IHEARTRADIO" {
+		src = "IHEART"
+	}
+	return src
+}
+
+// IsNative reports whether p is a usable native-service preset: the type says
+// so and the stored item names a source and a location.
+func (p Preset) IsNative() bool {
+	return p.Type == TypeNative && p.Native != nil &&
+		p.Native.Source != "" && p.Native.Location != ""
+}
+
+// SameNativeItem reports whether two native items name the same station of
+// the same service and account. Names and artwork are deliberately ignored: a
+// key the user renamed must still count as the station the speaker re-states.
+func SameNativeItem(a, b *NativeItem) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return NormalizeNativeSource(a.Source) == NormalizeNativeSource(b.Source) &&
+		a.Location == b.Location &&
+		strings.EqualFold(a.SourceAccount, b.SourceAccount)
+}
+
+// NewNativePreset builds the preset for a native-service item on slot. name
+// wins over the item's own name when set (a rename, or the name the app
+// shows); Source gets the service label so every client that already shows
+// the "from" badge names the service without knowing the new type. ok is
+// false for a source STR does not keep or an item without a location.
+func NewNativePreset(slot int, item NativeItem, name string) (Preset, bool) {
+	label, ok := NativeServiceLabel(item.Source)
+	if !ok || strings.TrimSpace(item.Location) == "" {
+		return Preset{}, false
+	}
+	item.Source = NormalizeNativeSource(item.Source)
+	if strings.TrimSpace(name) == "" {
+		name = item.ItemName
+	}
+	if strings.TrimSpace(name) == "" {
+		name = label
+	}
+	return Preset{
+		Slot:   slot,
+		Name:   strings.TrimSpace(name),
+		Type:   TypeNative,
+		Source: label,
+		Art:    item.ContainerArt,
+		Native: &item,
+	}, true
 }
 
 // PresetItem is one track in a queue preset (Type=="queue"). It mirrors the
@@ -131,6 +236,7 @@ type rawPreset struct {
 	Shuffle   bool         `json:"shuffle"`
 	Repeat    bool         `json:"repeat"`
 	Items     []PresetItem `json:"items"`
+	Native    *NativeItem  `json:"native"`
 }
 
 // rawWrapper supports the object format {"presets": [...]}.
@@ -248,6 +354,7 @@ func normalize(in []rawPreset) []Preset {
 			Shuffle:   p.Shuffle,
 			Repeat:    p.Repeat,
 			Items:     p.Items,
+			Native:    p.Native,
 		})
 	}
 	return out

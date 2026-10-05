@@ -51,6 +51,11 @@ type HeldItem struct {
 	SourceAccount string
 	ItemName      string
 	ContainerArt  string
+
+	// Form is the request dialect the item arrived in: "contentitem" (a
+	// ContentItem element) or "flat" (the MargeAddPresetRequest record).
+	// Diagnostic only.
+	Form string
 }
 
 // PresetKeeper stores a HeldItem into the agent's own preset store. A nil
@@ -147,8 +152,10 @@ func parseHeldItem(body []byte) (HeldItem, bool) {
 			SourceAccount: rec.username,
 			ItemName:      rec.name,
 			ContainerArt:  rec.containerArt,
+			Form:          "flat",
 		}, true
 	}
+	item.Form = "contentitem"
 	return item, true
 }
 
@@ -214,7 +221,31 @@ func sourceNameForAccountID(id string) string {
 	case n >= 10 && n < 100:
 		return "STORED_MUSIC"
 	}
+	// The firmware's own Pandora and iHeartRadio, registered with the stand-in
+	// under fixed ids (usservices.go).
+	for _, ns := range nativeServices {
+		if ns.SourceID == id {
+			return ns.Type
+		}
+	}
 	return "SOURCE#" + id
+}
+
+// sourceNameForID is sourceNameForAccountID plus the reflected (carried-over)
+// sources, whose ids depend on what this speaker's account document lists:
+// a preset stored from a Pandora account the speaker brought along quotes
+// the reflected id (100 and up), not the registered one.
+func (s *Server) sourceNameForID(id string) string {
+	name := sourceNameForAccountID(id)
+	if !strings.HasPrefix(name, "SOURCE#") {
+		return name
+	}
+	for _, r := range s.reflectedAccountSources() {
+		if r.id == id {
+			return r.typ
+		}
+	}
+	return name
 }
 
 // presetElementXML renders the single <preset> element the firmware expects
@@ -222,6 +253,27 @@ func sourceNameForAccountID(id string) string {
 // firmware provably parses on the list read). The item is echoed as sent, so a
 // firmware that compares the answer with its request sees its own item.
 func presetElementXML(item HeldItem, now time.Time) string {
+	return presetElementXMLWithSource(item, margeSourceElementXML(item.SourceID, item.Source), now)
+}
+
+// presetElementXMLFor is presetElementXML with the MargeSource element this
+// stand-in actually serves for the item's source. For the firmware's own
+// Pandora and iHeartRadio that is the registered source exactly as /full
+// carries it (same id, provider, account and credential), so the record the
+// firmware gets back names a source it knows; reveal follows the /full rule
+// (only the speaker itself sees the credential).
+func (s *Server) presetElementXMLFor(item HeldItem, reveal bool, now time.Time) string {
+	if n, ok := nativeByType(item.Source); ok && (item.SourceID == "" || item.SourceID == n.SourceID) {
+		if rec, ok := s.nativeRecordFor(n.Type, reveal); ok {
+			return presetElementXMLWithSource(item, nativeSourceXML(n, rec, true), now)
+		}
+	}
+	return presetElementXML(item, now)
+}
+
+// presetElementXMLWithSource renders the <preset> answer around a ready-made
+// MargeSource element.
+func presetElementXMLWithSource(item HeldItem, sourceElement string, now time.Time) string {
 	// The firmware's MargePB.preset (its proto table): buttonNumber as the
 	// attribute it sent, then name, location, a full MargeSource element,
 	// createdOn, updatedOn, contentItemType and containerArt as child
@@ -233,7 +285,7 @@ func presetElementXML(item HeldItem, now time.Time) string {
 		`<preset buttonNumber="` + strconv.Itoa(item.Slot) + `">` +
 		`<name>` + xmlEscapeText(item.ItemName) + `</name>` +
 		`<location>` + xmlEscapeText(item.Location) + `</location>` +
-		margeSourceElementXML(item.SourceID, item.Source) +
+		sourceElement +
 		`<createdOn>` + ts + `</createdOn><updatedOn>` + ts + `</updatedOn>` +
 		`<contentItemType>` + xmlEscapeText(item.Type) + `</contentItemType>` +
 		`<containerArt>` + xmlEscapeText(item.ContainerArt) + `</containerArt>` +
@@ -290,6 +342,24 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 		return false
 	}
 	item.Slot = slot
+	// A flat record names its source by account id. The reflected ids depend
+	// on this speaker's account document, so they are resolved here, where
+	// that document is known.
+	if strings.HasPrefix(item.Source, "SOURCE#") && item.SourceID != "" {
+		item.Source = s.sourceNameForID(item.SourceID)
+	}
+	// Anything other than STR's own radio source is logged in full (account
+	// masked): the exact item the firmware stores for a Pandora or iHeartRadio
+	// station has never been observed, and the next bundle has to show it.
+	if item.Source != "LOCAL_INTERNET_RADIO" {
+		s.logger.Info("marge preset store: the box asked to keep a non-radio item",
+			slog.String("comp", "marge"), slog.Int("slot", slot), slog.String("form", item.Form),
+			slog.String("source", item.Source), slog.String("sourceID", item.SourceID),
+			slog.String("type", item.Type), slog.String("location", item.Location),
+			slog.String("sourceAccount", maskAccount(item.SourceAccount)),
+			slog.String("name", item.ItemName), slog.String("containerArt", item.ContainerArt),
+			slog.Int("bytes", len(body)))
+	}
 	if err := keeper(item); err != nil {
 		// The boot-time sync and a retried gesture can repeat this for the
 		// same slot; one line per slot and minute is plenty for a bundle.
@@ -311,7 +381,7 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 		slog.String("comp", "marge"), slog.Int("slot", slot), slog.String("name", item.ItemName))
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(presetElementXML(item, time.Now())))
+	_, _ = w.Write([]byte(s.presetElementXMLFor(item, fromLoopback(r), time.Now())))
 	return true
 }
 

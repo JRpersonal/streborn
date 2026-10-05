@@ -482,6 +482,10 @@ export function SaveLibraryPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8
   return window['go']['main']['App']['SaveLibraryPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 }
 
+export function SaveNativePreset(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveNativePreset'](arg1, arg2, arg3, arg4);
+}
+
 export function SaveSpotifyPreset(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SaveSpotifyPreset'](arg1, arg2, arg3, arg4, arg5, arg6);
 }

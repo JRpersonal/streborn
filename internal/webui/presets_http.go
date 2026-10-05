@@ -85,6 +85,22 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "spotify" {
 			p.URI = normalizeSpotifyURI(p.URI)
 		}
+		// A Pandora or iHeartRadio key copied from another speaker carries the
+		// item itself; it is checked and normalised like a fresh native save.
+		if p.Type == presets.TypeNative {
+			if err := validNativeItem(p.Native); err != nil {
+				s.logger.Warn("bulk preset write refused: a native service preset in the set is not usable",
+					"slot", p.Slot, "name", p.Name, "err", err,
+					"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This station can't be kept on a key.", "code": "native-item-invalid", "slot": p.Slot,
+				})
+				return
+			}
+			np, _ := presets.NewNativePreset(p.Slot, *p.Native, p.Name)
+			*p = np
+			continue
+		}
 		// Same art rule as the per-slot save: the store keeps the station's
 		// ORIGIN image URL, never this agent's own art-proxy wrapper (#696).
 		p.Art = healSelfArtProxy(p.Art)
@@ -156,7 +172,7 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 	if s.boxHost != "" {
 		for _, p := range in {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-			if err := s.writeBoxPreset(boxCtx, p.Slot, p.Name, boxPresetURL(p.Slot, p.Type == "spotify"), p.Art, p.Type == "spotify"); err != nil {
+			if err := s.writeStorePresetToBox(boxCtx, p); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", p.Slot, "err", err)
 			}
 			cancel()
@@ -209,6 +225,9 @@ func bulkPresetRejection(p presets.Preset) (msg, code string) {
 // field is compared, and an empty field never collides (a queue preset carries
 // neither, so folders never collide with anything).
 func samePresetStation(p, other presets.Preset) bool {
+	if p.Type == presets.TypeNative {
+		return p.IsNative() && other.IsNative() && presets.SameNativeItem(p.Native, other.Native)
+	}
 	if p.Type == "spotify" {
 		return p.URI != "" && other.URI == p.URI
 	}
@@ -265,6 +284,12 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// self-proxy stream heal below; the box side re-wraps at write time
 		// anyway, so the display loses nothing.
 		p.Art = healSelfArtProxy(p.Art)
+		// A Pandora or iHeartRadio station (type native) is the speaker's own
+		// item and has no stream to gate; see nativeservice.go.
+		if p.Type == presets.TypeNative {
+			s.handleNativePresetSave(w, r, slot, p)
+			return
+		}
 		// A queue preset (a saved DLNA folder, #queue-preset) has no single
 		// StreamURL/URI: it carries an ordered Items list and a Shuffle flag and
 		// recalls into the agent play-queue. It skips the radio/spotify URL gates
@@ -653,7 +678,7 @@ func (s *Server) handlePresetMove(w http.ResponseWriter, r *http.Request) {
 	s.forgetBoxPreset(req.From)
 	if s.boxHost != "" {
 		boxCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-		if err := s.writeBoxPreset(boxCtx, moved.Slot, moved.Name, boxPresetURL(moved.Slot, moved.Type == "spotify"), moved.Art, moved.Type == "spotify"); err != nil {
+		if err := s.writeStorePresetToBox(boxCtx, moved); err != nil {
 			s.logger.Warn("box preset sync failed", "slot", moved.Slot, "err", err)
 		}
 		if err := boxcli.RemovePreset(boxCtx, s.boxHost, req.From); err != nil {

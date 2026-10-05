@@ -443,6 +443,7 @@ export namespace main {
 	    shuffle?: boolean;
 	    items?: number[];
 	    repeat?: boolean;
+	    native?: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -464,6 +465,7 @@ export namespace main {
 	        this.shuffle = source["shuffle"];
 	        this.items = source["items"];
 	        this.repeat = source["repeat"];
+	        this.native = source["native"];
 	    }
 	}
 	export class RadioSearchOpts {

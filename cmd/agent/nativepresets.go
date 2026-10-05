@@ -551,6 +551,10 @@ func nativePresetLocation(ctx context.Context, boxHost string, p presets.Preset)
 //
 // Everything else STR stores (radio stations and play queues) is a plain
 // stream from the box's point of view and converts cleanly.
+//
+// A native-service preset (Pandora, iHeartRadio) is not one either: it already
+// IS the speaker's own item and has no stream STR could describe.
 func nativeStorable(p presets.Preset) bool {
-	return !strings.EqualFold(strings.TrimSpace(p.Type), "spotify")
+	typ := strings.TrimSpace(p.Type)
+	return !strings.EqualFold(typ, "spotify") && !strings.EqualFold(typ, presets.TypeNative)
 }

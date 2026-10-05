@@ -387,6 +387,54 @@ func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, locat
 	return err
 }
 
+// AddPresetContentItem writes a key as the speaker's own ContentItem for a
+// music service its firmware plays by itself (Pandora, iHeartRadio): source,
+// type, location and account exactly as the speaker reported them.
+//
+// Unlike AddPresetRaw it never invents a value and never cleans one. The TAP
+// CLI splits its arguments on whitespace and only the label may be quoted, so
+// a value that contains whitespace or a quote cannot be passed through
+// faithfully; such an item is refused here rather than written mangled. An
+// empty account is sent as the literal "none", which the firmware stores as an
+// empty sourceAccount (measured for LOCAL_INTERNET_RADIO, see AddPresetNative).
+// The reply is checked, because the CLI answers a refused AddPreset with an
+// error line on a clean socket.
+func AddPresetContentItem(ctx context.Context, host string, slot int, source, typ, location, name, account string) error {
+	if slot < 1 || slot > 6 {
+		return fmt.Errorf("AddPresetContentItem: slot 1..6 required")
+	}
+	if source == "" || location == "" {
+		return fmt.Errorf("AddPresetContentItem: source and location required")
+	}
+	if typ == "" {
+		typ = "stationurl"
+	}
+	if account == "" {
+		account = "none"
+	}
+	for _, v := range []string{source, typ, location, account} {
+		if !tapToken(v) {
+			return fmt.Errorf("AddPresetContentItem: %q cannot be passed through the speaker's command line unchanged", v)
+		}
+	}
+	cmd := fmt.Sprintf(`ws AddPreset %s %s %s "%s" %s %d`,
+		source, typ, location, tapLabel(name, fmt.Sprintf("Preset %d", slot)), account, slot)
+	out, err := Send(ctx, host, cmd)
+	if err != nil {
+		return err
+	}
+	if reply := strings.TrimSpace(out); nativeAddRejected(reply) {
+		return fmt.Errorf("box refused the %s preset for slot %d: %s", source, slot, firstLine(reply))
+	}
+	return nil
+}
+
+// tapToken reports whether v survives the TAP CLI's argument splitting as one
+// unquoted argument.
+func tapToken(v string) bool {
+	return v != "" && !strings.ContainsAny(v, " \t\r\n\"")
+}
+
 // RemovePreset deletes the box preset slot.
 func RemovePreset(ctx context.Context, host string, slot int) error {
 	_, err := Send(ctx, host, fmt.Sprintf("ws RemovePreset %d", slot))

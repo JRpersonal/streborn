@@ -117,6 +117,36 @@ the error is passed back, and linking in the Bose app is the way.
 The password goes straight from the request to the speaker's `:8090` API
 and is never written or logged by STR.
 
+## Presets
+
+A Pandora or iHeartRadio station can live on preset keys 1 to 6
+(discussion #1101). STR stores it as a preset of type `native` that
+carries the speaker's own ContentItem (`native`: source, sourceAccount,
+location, itemType, itemName, containerArt) and the service name as the
+`source` badge. STR never plays or proxies these stations; the firmware's
+own client does.
+
+- **Holding the key on the speaker** while such a station plays: the
+  firmware PUTs the item to the stand-in, STR keeps it and answers with the
+  preset record (its source element is the registered Pandora/iHeart source
+  from `/full`). A station already on another key is refused, as for radio.
+- **Hold-to-save in the desktop app or the phone remote**: the app sends
+  `{"type":"native","name":...}` and the agent reads the exact item from the
+  speaker's `:8090/now_playing`.
+- **Pressing the key** on the speaker: the firmware plays it itself, STR
+  stands back. **Tapping it in an app**: STR hands the stored item to the
+  speaker's `/select`.
+- **Reconcile**: a key the speaker already holds with the stored item is
+  never rewritten. A missing or overwritten key is written back with
+  `ws AddPreset <SOURCE> <type> <location> "<name>" <account> <slot>`, only
+  while the speaker lists the source as `READY`; otherwise it is logged and
+  left alone (never deleted). A refused write is retried after an hour.
+
+Not yet observed on a real speaker: the exact item the firmware stores for
+these services. Every store request for a source other than STR's own radio
+is logged at INFO as `marge preset store: the box asked to keep a non-radio
+item` with all fields (account masked), so a bundle from a US tester shows it.
+
 ## Agent endpoints (LAN only)
 
 All on the agent's web port (`:8888`, or `:17008` on speakers that use

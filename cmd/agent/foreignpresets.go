@@ -48,6 +48,9 @@ type foreignPresetStore struct {
 	path    string
 	logger  *slog.Logger
 	entries map[int]foreignPreset
+	// ownedByStore reports whether STR's own store holds the box item on this
+	// slot (a native-service preset). Set once at agent start; nil means none.
+	ownedByStore func(slot int, location string) bool
 }
 
 func newForeignPresetStore(path string, logger *slog.Logger) *foreignPresetStore {
@@ -108,6 +111,13 @@ func (s *foreignPresetStore) NoteBoxList(bps []webui.BoxPreset) {
 		reported[p.Slot] = true
 		loc := xmlEntityUnescape(p.Location)
 		if !isForeignBoxPreset(loc) {
+			continue
+		}
+		// A Pandora or iHeartRadio station STR's own store holds on this key
+		// (a native preset) is STR's, not foreign: remembering it here would
+		// bring it back through the marge answer after the user cleared the
+		// key in the app.
+		if s.ownedByStore != nil && s.ownedByStore(p.Slot, loc) {
 			continue
 		}
 		fresh[p.Slot] = foreignPreset{

@@ -40,7 +40,15 @@ func (s *Server) selectNativeStation(ctx context.Context, location, name string)
 	body := `<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="` +
 		escapeXMLAttr(location) + `" sourceAccount="" isPresetable="true"><itemName>` +
 		escapeXMLText(name) + `</itemName></ContentItem>`
+	return s.postSelect(ctx, body)
+}
 
+// postSelect hands a ContentItem to the speaker's own /select and turns a
+// refusal into an error.
+func (s *Server) postSelect(ctx context.Context, body string) error {
+	if s.boxHost == "" {
+		return fmt.Errorf("select: box host not configured")
+	}
 	c, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(c, http.MethodPost,

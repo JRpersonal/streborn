@@ -235,6 +235,12 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	time.Sleep(30 * time.Second)
 	specs := make([]boxcli.PresetSpec, 0, 6)
 	for _, p := range store.All() {
+		if p.IsNative() {
+			// A Pandora or iHeartRadio key is the speaker's own item; the
+			// reconcile writes it back if the speaker lost it (nativeslots.go).
+			// The stream form would overwrite it with a key that plays nothing.
+			continue
+		}
 		specs = append(specs, boxcli.PresetSpec{
 			Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 			NativeLocation: nativePresetLocation(context.Background(), boxHost, p),
@@ -746,6 +752,11 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	migrated, reverted, reowned := 0, 0, 0
 	for _, p := range stick {
 		strSlots[p.Slot] = true
+		if p.IsNative() {
+			// A Pandora or iHeartRadio key: never STR's stream form, see
+			// nativeslots.go. Planned below, after this loop.
+			continue
+		}
 		native := nativePresetLocation(context.Background(), boxHost, p)
 		loc, onBox := boxLocs[p.Slot]
 		boxHasNative := onBox && isNativeRadioLocation(loc)
@@ -845,6 +856,11 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		logger.Info("preset reconcile: rewriting slots the speaker stored itself (hold gesture) onto their own stream proxy",
 			"slots", reowned)
 	}
+	// Native service keys (Pandora, iHeartRadio): written back as their own
+	// ContentItem only when the speaker does not already hold it, and only
+	// while it offers the service. Never deleted.
+	nativeWrites, nativeSkips := planNativeSlots(stick, entries, lazySourceReady(boxHost))
+	logNativeSkips(nativeSkips, logger)
 	syncFailed := false
 	// The FORCED pass is held while the box is on a source somebody picked
 	// (forcedWriteHold, above). The routine pass was not, and it writes too:
@@ -857,13 +873,17 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// the bounded hold, the five-minute ceiling and the log line saying what
 	// was protected, so the key is still registered shortly after the source
 	// frees up, or at the ceiling at the latest.
-	if len(missing) > 0 && !forceFull {
+	if (len(missing) > 0 || len(nativeWrites) > 0) && !forceFull {
 		if src, playing, playKnown := boxSourceAndPlaying(boxHost); forcedWriteBusy(src, playing, playKnown) {
 			logger.Info("preset reconcile: missing slots held, the write would take the box off what it is doing",
-				"reason", forcedHoldReason(src, playing, playKnown), "source", src, "slots", len(missing))
+				"reason", forcedHoldReason(src, playing, playKnown), "source", src, "slots", len(missing)+len(nativeWrites))
 			requestPresetKeyResync(logger, "missing-slots-held")
 			missing = nil
+			nativeWrites = nil
 		}
+	}
+	if len(nativeWrites) > 0 {
+		writeNativeSlots(boxHost, nativeWrites, logger)
 	}
 	if len(missing) > 0 {
 		if forceFull {
