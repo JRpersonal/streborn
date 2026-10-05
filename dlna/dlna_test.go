@@ -2,12 +2,15 @@ package dlna
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // TestPickPlayableRes guards the #139 fix: a DLNA server (Synology) that lists a
@@ -183,6 +186,204 @@ func TestFindServerExitsEarlyOnMatch(t *testing.T) {
 	// window closes", not a benchmark.
 	if took >= window/2 {
 		t.Errorf("FindServer took %v with a %v window: the early exit did not fire", took, window)
+	}
+}
+
+// qnapHost mimics the field case: one NAS announcing a minidlna MediaServer:1
+// on one description AND its admin web server as a NAS:1 device that lists
+// ContentDirectory:1 but answers Browse with an HTML 404. browsable flips the
+// NAS:1 control URL to a real BrowseResponse, for the "a non-MediaServer device
+// that genuinely works stays" half.
+func qnapHost(t *testing.T, browsable bool) *httptest.Server {
+	t.Helper()
+	const mediaXML = `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+    <friendlyName>NAS Media Server</friendlyName>
+    <UDN>uuid:qnap-media-1</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+        <controlURL>/ctl/ContentDir</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>`
+	const nasXML = `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:NAS:1</deviceType>
+    <friendlyName>NAS Admin</friendlyName>
+    <UDN>uuid:qnap-nas-1</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+        <controlURL>/upnpd/control/cds</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>`
+	const browseOK = `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><Result></Result><NumberReturned>0</NumberReturned><TotalMatches>0</TotalMatches></u:BrowseResponse></s:Body></s:Envelope>`
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rootDesc.xml":
+			w.Header().Set("Content-Type", "text/xml")
+			_, _ = w.Write([]byte(mediaXML))
+		case "/upnpd/nas.xml":
+			w.Header().Set("Content-Type", "text/xml")
+			_, _ = w.Write([]byte(nasXML))
+		case "/ctl/ContentDir":
+			w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+			_, _ = w.Write([]byte(browseOK))
+		case "/upnpd/control/cds":
+			if browsable {
+				w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+				_, _ = w.Write([]byte(browseOK))
+				return
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><title>404 - Not Found</title></head><body><h1>404 - Not Found</h1></body></html>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+// TestNASDeviceWithBrokenCDSIsNotOffered guards the QNAP field case: the NAS:1
+// admin device advertised ContentDirectory but every Browse got an HTML 404, and
+// it was the only entry of that NAS the Library offered. Only the MediaServer
+// on the same host may be offered, through both DescribeServer and discovery.
+func TestNASDeviceWithBrokenCDSIsNotOffered(t *testing.T) {
+	srv := qnapHost(t, false)
+	defer srv.Close()
+
+	media, err := DescribeServer(context.Background(), srv.URL+"/rootDesc.xml")
+	if err != nil {
+		t.Fatalf("MediaServer: %v", err)
+	}
+	if media.CDSDeviceType != "urn:schemas-upnp-org:device:MediaServer:1" {
+		t.Errorf("CDSDeviceType = %q, want the MediaServer device type", media.CDSDeviceType)
+	}
+	_, err = DescribeServer(context.Background(), srv.URL+"/upnpd/nas.xml")
+	if !errors.Is(err, ErrNotBrowsable) {
+		t.Fatalf("NAS:1 with an HTML-404 ContentDirectory: err = %v, want ErrNotBrowsable", err)
+	}
+
+	// Discovery: seed both locations through the NOTIFY cache, the input that
+	// needs no live SSDP on the test host.
+	seed := func(usn, nt, loc string) func() {
+		if got := announces.handlePacket(notifyPacket(
+			"CACHE-CONTROL: max-age=1800", "LOCATION: "+loc, "NT: "+nt,
+			"NTS: ssdp:alive", "USN: "+usn), time.Now()); got != "alive" {
+			t.Fatalf("seeding %s: action = %q", loc, got)
+		}
+		return func() {
+			announces.handlePacket(notifyPacket("NT: "+nt, "NTS: ssdp:byebye", "USN: "+usn), time.Now())
+		}
+	}
+	defer seed("uuid:qnap-media-1::urn:schemas-upnp-org:device:MediaServer:1",
+		"urn:schemas-upnp-org:device:MediaServer:1", srv.URL+"/rootDesc.xml")()
+	defer seed("uuid:qnap-nas-1::urn:schemas-upnp-org:service:ContentDirectory:1",
+		"urn:schemas-upnp-org:service:ContentDirectory:1", srv.URL+"/upnpd/nas.xml")()
+
+	found, err := DiscoverServers(context.Background(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("DiscoverServers: %v", err)
+	}
+	var gotMedia, gotNAS bool
+	for _, s := range found {
+		switch s.UDN {
+		case "uuid:qnap-media-1":
+			gotMedia = true
+		case "uuid:qnap-nas-1":
+			gotNAS = true
+		}
+	}
+	if !gotMedia {
+		t.Error("the MediaServer on the NAS was not offered")
+	}
+	if gotNAS {
+		t.Error("the NAS:1 admin device whose Browse answers HTML 404 was offered")
+	}
+}
+
+// TestNonMediaServerDeviceThatBrowsesIsKept is the other half: a device that is
+// not typed MediaServer but answers Browse properly (a user may already have it
+// enabled on a speaker) must keep working.
+func TestNonMediaServerDeviceThatBrowsesIsKept(t *testing.T) {
+	srv := qnapHost(t, true)
+	defer srv.Close()
+	s, err := DescribeServer(context.Background(), srv.URL+"/upnpd/nas.xml")
+	if err != nil {
+		t.Fatalf("browsable NAS:1 device rejected: %v", err)
+	}
+	if s.CDSDeviceType != "urn:schemas-upnp-org:device:NAS:1" || s.CDSControlURL != srv.URL+"/upnpd/control/cds" {
+		t.Errorf("server = %+v", s)
+	}
+}
+
+// TestDescriptionSOAPFaultIsARefusal: the QNAP media server answered the PC's
+// rootDesc.xml fetch with a SOAP envelope (while the speaker got the real
+// description). That must come back as a refusal the UI can explain, and be
+// listed by RecentRefusals until the server describes itself again.
+func TestDescriptionSOAPFaultIsARefusal(t *testing.T) {
+	var refuse atomic.Bool
+	refuse.Store(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if refuse.Load() {
+			w.Header().Set("Content-Type", "text/xml")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>501</errorCode><errorDescription>Action Failed</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><root><device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType><UDN>uuid:refuser</UDN><serviceList><service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><controlURL>/ctl</controlURL></service></serviceList></device></root>`))
+	}))
+	defer srv.Close()
+	loc := srv.URL + "/rootDesc.xml"
+
+	_, err := DescribeServer(context.Background(), loc)
+	var rerr *DescriptionRefusedError
+	if !errors.As(err, &rerr) {
+		t.Fatalf("err = %v, want a DescriptionRefusedError", err)
+	}
+	msg := err.Error()
+	for _, want := range []string{"refuses this computer", "UPnP error 501", "allow this computer"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	listed := func() bool {
+		for _, r := range RecentRefusals() {
+			if r.Location == loc {
+				return true
+			}
+		}
+		return false
+	}
+	if !listed() {
+		t.Error("the refusal is not listed by RecentRefusals")
+	}
+
+	refuse.Store(false)
+	if _, err := DescribeServer(context.Background(), loc); err != nil {
+		t.Fatalf("after the server allows us: %v", err)
+	}
+	if listed() {
+		t.Error("a successful description did not clear the refusal")
+	}
+}
+
+func TestBodySnippet(t *testing.T) {
+	long := strings.Repeat("é", 400) // 2 bytes each: the cut lands mid-rune
+	got := bodySnippet([]byte(long))
+	if len(got) > 300 || !utf8.ValidString(got) {
+		t.Errorf("snippet len %d valid %v", len(got), utf8.ValidString(got))
+	}
+	if got := bodySnippet([]byte("a\r\nb\x00c")); got != "a  b c" {
+		t.Errorf("control chars: got %q", got)
 	}
 }
 

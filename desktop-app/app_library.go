@@ -330,6 +330,30 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 	return out, nil
 }
 
+// LibraryRefusal is a media server that answered this PC's device
+// description request with a SOAP fault instead of the description, so it
+// cannot be listed. The Library names it rather than leaving the user to
+// wonder why a server the speaker sees is missing here.
+type LibraryRefusal struct {
+	Address string `json:"address"`
+	Detail  string `json:"detail"`
+}
+
+// LibraryRefusedServers lists the media servers that refused to describe
+// themselves to this PC during the recent scans. Field case (QNAP NAS): the
+// NAS media server served its description to the speaker but answered every
+// fetch from the PC with a SOAP envelope, most likely because the PC was not
+// on the server's list of allowed media receivers. The only QNAP entry left in
+// the Library was then the NAS's admin device, which cannot be browsed.
+func (a *App) LibraryRefusedServers() []LibraryRefusal {
+	refs := dlna.RecentRefusals()
+	out := make([]LibraryRefusal, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, LibraryRefusal{Address: r.Address, Detail: r.Detail})
+	}
+	return out
+}
+
 // BrowseLibrary returns one page of children under objectID on the
 // server identified by udn. objectID "0" or empty is the server root.
 // Items that are not audio are filtered out so the Library tab only

@@ -228,6 +228,7 @@
   "library.serverNotAnsweringNote": "Bu sunucu son taramada yanıt vermedi. Daha önceki bir taramadan hatırlandığı için listede görünüyor. Sunucu açılıp ağa geri döndüğünde göz atma yeniden çalışır.",
   "library.notAnsweringWarnTitle": "Bu müzik sunucusu yanıt vermiyor",
   "library.notAnsweringWarnBody": "{{name}} son taramada yanıt vermedi, bu yüzden uygulama onu yalnızca hafızasından biliyor. Yine de hoparlörlerine ekleyebilirsin. Sunucu açılıp ağa geri dönene kadar göz atma her hoparlörde başarısız olur.",
+  "library.serverRefusesPC": "{{address}} adresindeki medya sunucusu bu bilgisayarı reddediyor, bu yüzden burada listelenemiyor. Bu bilgisayara medya sunucusunun ayarlarında izin ver (NAS'ta genellikle izin verilen cihazlar veya medya alıcıları listesi), ardından yenile.",
   "banner.recommendation": "Öneri:",
   "banner.sshRecommend": "Bu hoparlöre SSH erişimi açık. Tekrar kapatmak için hoparlörü bir kez yeniden başlatın, aksi halde ağınızdaki başkaları ona erişebilir.",
   "banner.sshPersistentNote": "Bu hoparlöre SSH erişimi bilerek açık bırakılmış. Hoparlör ayarlarında “Bu hoparlöre SSH erişimi” altından yeniden kapatabilirsin.",

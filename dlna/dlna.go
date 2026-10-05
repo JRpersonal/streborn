@@ -17,12 +17,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +84,13 @@ type Server struct {
 	CDSControlURL string
 	// IconURL is the first usable icon URL the device advertised.
 	IconURL string
+	// CDSDeviceType is the deviceType of the (sub-)device that owns the
+	// ContentDirectory service, e.g. urn:schemas-upnp-org:device:MediaServer:1.
+	// A NAS can advertise ContentDirectory from a device that is not a media
+	// server at all (a QNAP's QTS web server answers as NAS:1 and returns an
+	// HTML 404 to every Browse), so discovery only offers such a device after
+	// a validation browse proved it answers (see acceptServer).
+	CDSDeviceType string `json:",omitempty"`
 }
 
 // DiscoverServers sends an SSDP M-SEARCH for MediaServer devices, collects
@@ -201,6 +210,9 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 			fctx, c := context.WithTimeout(fparent, 12*time.Second)
 			defer c()
 			s, err := fetchDeviceDescription(fctx, loc)
+			if err == nil {
+				err = acceptServer(fctx, s)
+			}
 			select {
 			case resCh <- result{s: s, err: err}:
 			case <-fparent.Done():
@@ -459,7 +471,87 @@ func DescribeServer(ctx context.Context, location string) (Server, error) {
 	if s.CDSControlURL == "" {
 		return Server{}, fmt.Errorf("device at %s exposes no ContentDirectory service", location)
 	}
+	if err := acceptServer(ctx, s); err != nil {
+		return Server{}, err
+	}
 	return s, nil
+}
+
+// mediaServerTypePrefix matches every version of the standard MediaServer
+// device type.
+const mediaServerTypePrefix = "urn:schemas-upnp-org:device:MediaServer:"
+
+// IsMediaServerType reports whether deviceType is a standard UPnP MediaServer
+// device (any version).
+func IsMediaServerType(deviceType string) bool {
+	return strings.HasPrefix(strings.TrimSpace(deviceType), mediaServerTypePrefix)
+}
+
+// validateBrowseTimeout bounds the one-item probe browse that decides whether a
+// ContentDirectory owned by something other than a MediaServer device is real.
+const validateBrowseTimeout = 5 * time.Second
+
+// ErrNotBrowsable is returned for a device that advertises a ContentDirectory
+// service but is not a MediaServer device and does not answer a Browse with a
+// valid BrowseResponse.
+var ErrNotBrowsable = errors.New("device advertises ContentDirectory but does not answer Browse")
+
+// acceptServer decides whether a described device may be offered as a media
+// server. A ContentDirectory owned by a MediaServer device is accepted as is.
+// Anything else is only accepted when a one-item root Browse comes back as a
+// real BrowseResponse.
+//
+// Field case (QNAP NAS, desktop v1.0.3): besides its minidlna media server the
+// NAS announces its QTS web server as a NAS:1 device that lists
+// ContentDirectory:1 but answers every Browse with an HTML 404 page. With the
+// real media server refusing that PC, the NAS:1 device was the only QNAP entry
+// in the Library and every browse of it failed. A device a user already
+// enabled on a speaker that genuinely browses keeps working, because the probe
+// passes for it.
+func acceptServer(ctx context.Context, s Server) error {
+	if s.CDSControlURL == "" || IsMediaServerType(s.CDSDeviceType) {
+		return nil
+	}
+	vctx, cancel := context.WithTimeout(ctx, validateBrowseTimeout)
+	defer cancel()
+	raw, status, err := browseRaw(vctx, s, "0", 0, 1)
+	if err == nil && status == http.StatusOK && isBrowseResponse(raw) {
+		Logger.Debug("dlna: non-MediaServer ContentDirectory accepted after validation browse",
+			"location", s.Location, "deviceType", s.CDSDeviceType)
+		return nil
+	}
+	var detail string
+	switch {
+	case err != nil:
+		detail = err.Error()
+	case status != http.StatusOK:
+		detail = fmt.Sprintf("HTTP %d", status)
+	default:
+		detail = "no BrowseResponse in the answer"
+	}
+	if logLimiter.allow("drop|" + s.Location) {
+		Logger.Info("dlna: ignoring device that advertises ContentDirectory but cannot be browsed",
+			"location", s.Location, "deviceType", s.CDSDeviceType, "name", s.FriendlyName,
+			"controlURL", s.CDSControlURL, "probe", detail, "body", bodySnippet(raw))
+	}
+	return fmt.Errorf("%w: %s (%s): %s", ErrNotBrowsable, s.FriendlyName, s.CDSDeviceType, detail)
+}
+
+// isBrowseResponse reports whether raw is a SOAP envelope carrying a
+// BrowseResponse element (as opposed to a fault, or an HTML page).
+func isBrowseResponse(raw []byte) bool {
+	var env struct {
+		Body struct {
+			BrowseResponse *struct{} `xml:"BrowseResponse"`
+		} `xml:"Body"`
+	}
+	if xmlRootName(raw) != "Envelope" {
+		return false
+	}
+	if err := xml.Unmarshal(stripIllegalXMLChars(raw), &env); err != nil {
+		return false
+	}
+	return env.Body.BrowseResponse != nil
 }
 
 func headerValue(packet []byte, header string) string {
@@ -533,9 +625,25 @@ func fetchDeviceDescription(ctx context.Context, location string) (Server, error
 	}
 	var root rootDevice
 	if err := xml.Unmarshal(body, &root); err != nil {
-		Logger.Warn("dlna: device description xml parse failed", "location", location, "err", err.Error())
+		// A SOAP envelope where the description belongs is the server refusing
+		// this client rather than a broken server: a QNAP media server answered
+		// every rootDesc.xml fetch from one PC with an envelope, while the
+		// speaker on the same LAN was served the description normally. A
+		// receiver allow-list on the server is the likely cause.
+		refused := xmlRootName(body) == "Envelope"
+		if logLimiter.allow("desc|" + location) {
+			Logger.Warn("dlna: device description xml parse failed", "location", location,
+				"status", resp.StatusCode, "contentType", resp.Header.Get("Content-Type"),
+				"soapEnvelope", refused, "body", bodySnippet(body), "err", err.Error())
+		}
+		if refused {
+			rerr := &DescriptionRefusedError{Location: location, Detail: soapFaultMessage(body, resp.StatusCode)}
+			refusals.note(location, rerr.Detail, time.Now())
+			return Server{}, rerr
+		}
 		return Server{}, fmt.Errorf("device xml: %w", err)
 	}
+	refusals.clear(location)
 
 	baseURL, _ := url.Parse(location)
 	if root.URLBase != "" {
@@ -555,12 +663,15 @@ func fetchDeviceDescription(ctx context.Context, location string) (Server, error
 
 	// Walk root device + sub-devices to find ContentDirectory and
 	// an icon. FRITZ!Box nests MediaServer under a root device.
+	rawControl := ""
 	var walk func(d device)
 	walk = func(d device) {
 		if s.CDSControlURL == "" {
 			for _, svc := range d.Services {
 				if svc.ServiceType == cdsServiceType {
 					s.CDSControlURL = absURL(baseURL, svc.ControlURL)
+					s.CDSDeviceType = strings.TrimSpace(d.DeviceType)
+					rawControl = svc.ControlURL
 					break
 				}
 			}
@@ -586,7 +697,150 @@ func fetchDeviceDescription(ctx context.Context, location string) (Server, error
 	}
 	walk(root.Device)
 
+	Logger.Debug("dlna: device description resolved", "location", location,
+		"urlBase", root.URLBase, "rootDeviceType", strings.TrimSpace(root.Device.DeviceType),
+		"cdsDeviceType", s.CDSDeviceType, "controlURL", rawControl, "resolvedControlURL", s.CDSControlURL)
 	return s, nil
+}
+
+// xmlRootName returns the local name of the first element in body, or "" when
+// there is none (a body that is not XML at all, an empty body).
+func xmlRootName(body []byte) string {
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	dec.Strict = false
+	for i := 0; i < 64; i++ {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			return se.Name.Local
+		}
+	}
+	return ""
+}
+
+// bodySnippet is the first 300 bytes of a server response for a log line, cut
+// on a rune boundary, with control characters flattened to spaces.
+func bodySnippet(b []byte) string {
+	const maxLen = 300
+	if len(b) > maxLen {
+		b = b[:maxLen]
+		for len(b) > 0 && !utf8.Valid(b) {
+			b = b[:len(b)-1]
+		}
+	}
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, string(b))
+}
+
+// DescriptionRefusedError is returned when a server answers the device
+// description request with a SOAP envelope (usually a fault) instead of the
+// description. Seen from a media server whose client allow-list did not
+// include the asking computer: the server is there, it just will not talk to
+// this one.
+type DescriptionRefusedError struct {
+	Location string
+	Detail   string
+}
+
+func (e *DescriptionRefusedError) Error() string {
+	return fmt.Sprintf("the media server at %s refuses this computer: it answered the device description request with a SOAP fault (%s); allow this computer in the media server's settings",
+		hostOf(e.Location), e.Detail)
+}
+
+func hostOf(location string) string {
+	if u, err := url.Parse(location); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return location
+}
+
+// Refusal is one media server that refused to describe itself to this
+// computer during a recent scan.
+type Refusal struct {
+	// Location is the device-description URL that was refused.
+	Location string
+	// Address is the host:port part of Location.
+	Address string
+	// Detail is the server's fault, made readable.
+	Detail string
+	// At is when the refusal was last seen.
+	At time.Time
+}
+
+// refusalTTL is how long a refusal is reported after it was last seen.
+const refusalTTL = 10 * time.Minute
+
+type refusalBook struct {
+	mu sync.Mutex
+	m  map[string]Refusal
+}
+
+var refusals = &refusalBook{m: map[string]Refusal{}}
+
+func (b *refusalBook) note(location, detail string, now time.Time) {
+	b.mu.Lock()
+	b.m[location] = Refusal{Location: location, Address: hostOf(location), Detail: detail, At: now}
+	b.mu.Unlock()
+}
+
+func (b *refusalBook) clear(location string) {
+	b.mu.Lock()
+	delete(b.m, location)
+	b.mu.Unlock()
+}
+
+func (b *refusalBook) recent(now time.Time) []Refusal {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]Refusal, 0, len(b.m))
+	for k, r := range b.m {
+		if now.Sub(r.At) > refusalTTL {
+			delete(b.m, k)
+			continue
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Location < out[j].Location })
+	return out
+}
+
+// RecentRefusals lists the media servers that answered their device
+// description request with a SOAP envelope instead of the description within
+// the last ten minutes, so a UI can say "this server refuses this computer"
+// instead of silently not listing it. A later successful description of the
+// same location clears the entry.
+func RecentRefusals() []Refusal {
+	return refusals.recent(time.Now())
+}
+
+// logLimiter keeps the per-location warnings that every scan would otherwise
+// repeat down to one line per location per interval.
+var logLimiter = &rateLimiter{every: 10 * time.Minute, last: map[string]time.Time{}}
+
+type rateLimiter struct {
+	mu    sync.Mutex
+	every time.Duration
+	last  map[string]time.Time
+}
+
+func (l *rateLimiter) allow(key string) bool {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if t, ok := l.last[key]; ok && now.Sub(t) < l.every {
+		return false
+	}
+	if len(l.last) > 512 {
+		l.last = map[string]time.Time{}
+	}
+	l.last[key] = now
+	return true
 }
 
 func absURL(base *url.URL, ref string) string {
@@ -637,8 +891,24 @@ type Item struct {
 // is the server root. start is the offset for paging, count the
 // page size (0 means server default).
 func Browse(ctx context.Context, srv Server, objectID string, start, count int) (BrowseResult, error) {
+	raw, status, err := browseRaw(ctx, srv, objectID, start, count)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	if status != http.StatusOK {
+		Logger.Warn("dlna: browse answered non-200", "status", status,
+			"location", srv.Location, "controlURL", srv.CDSControlURL,
+			"deviceType", srv.CDSDeviceType, "body", bodySnippet(raw))
+		return BrowseResult{}, fmt.Errorf("browse failed: %s", soapFaultMessage(raw, status))
+	}
+	return parseBrowseResponse(raw)
+}
+
+// browseRaw posts one ContentDirectory:Browse and returns the raw answer with
+// its HTTP status, leaving the interpretation to the caller.
+func browseRaw(ctx context.Context, srv Server, objectID string, start, count int) ([]byte, int, error) {
 	if srv.CDSControlURL == "" {
-		return BrowseResult{}, fmt.Errorf("server has no ContentDirectory control URL")
+		return nil, 0, fmt.Errorf("server has no ContentDirectory control URL")
 	}
 	if objectID == "" {
 		objectID = "0"
@@ -651,7 +921,7 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.CDSControlURL, strings.NewReader(body))
 	if err != nil {
-		return BrowseResult{}, err
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
 	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"`)
@@ -659,17 +929,14 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 	client := &http.Client{Timeout: SOAPClientCeiling}
 	resp, err := client.Do(req)
 	if err != nil {
-		return BrowseResult{}, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return BrowseResult{}, err
+		return nil, resp.StatusCode, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return BrowseResult{}, fmt.Errorf("browse failed: %s", soapFaultMessage(raw, resp.StatusCode))
-	}
-	return parseBrowseResponse(raw)
+	return raw, resp.StatusCode, nil
 }
 
 // Search calls ContentDirectory:Search on the server, looking for audio items

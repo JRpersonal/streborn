@@ -201,6 +201,14 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// LibraryRefusedServers lists the media servers that refused to describe
+// themselves to this PC in the recent scans (a SOAP fault where the device
+// description belongs), so the Library can say why they are missing. Optional
+// binding, per the note above.
+export function LibraryRefusedServers() {
+  return callOptionalBinding('LibraryRefusedServers', []);
+}
+
 // ReplayFolderCard replays a Recently-played FOLDER card as the whole folder
 // again instead of as its first track. Optional binding, per the note above; a
 // speaker whose agent predates the endpoint rejects it with

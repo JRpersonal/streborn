@@ -336,6 +336,20 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class LibraryRefusal {
+	    address: string;
+	    detail: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LibraryRefusal(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.address = source["address"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class LibraryServer {
 	    udn: string;
 	    friendlyName: string;
