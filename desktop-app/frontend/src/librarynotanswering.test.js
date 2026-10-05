@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 vi.mock('./api.js', () => ({
   ProbeTrackDelivery: vi.fn(),
   ListMediaServers: vi.fn(),
+  LibraryRefusedServers: vi.fn(),
   BrowseLibrary: vi.fn(),
   AddMediaServerByURL: vi.fn(),
   RemoveManualMediaServer: vi.fn(),

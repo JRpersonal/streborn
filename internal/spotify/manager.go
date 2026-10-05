@@ -370,6 +370,13 @@ type Manager struct {
 	// track to actually start.
 	pendingRepointFrom string
 	pendingRepointTo   string
+	// recallWant and friends gate what /spotify/info reports as the current
+	// song while a cold recall is loading a new context. See recalldisplay.go.
+	recallWant      string
+	recallFromTrack string
+	recallFromName  string
+	recallCtxSeen   bool
+	recallWantUntil time.Time
 	// headerPages holds the current track's Ogg header pages (the BOS page
 	// with the Vorbis identification header plus the comment/setup pages).
 	// The drain captures them as they stream past; ServeOgg replays them to

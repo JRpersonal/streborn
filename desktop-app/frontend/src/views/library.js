@@ -20,6 +20,7 @@ import { t } from '../i18n/index.js';
 import {
   ProbeTrackDelivery,
   ListMediaServers,
+  LibraryRefusedServers,
   BrowseLibrary,
   AddMediaServerByURL,
   RemoveManualMediaServer,
@@ -56,6 +57,7 @@ export function initLibraryView(d) {
 // folder navigation breadcrumb, where each entry is {id, title}.
 const libState = {
   servers: [],
+  refused: [],        // media servers that refused to describe themselves to this PC
   currentUDN: '',
   stack: [{ id: '0', title: '' }],
   page: null,
@@ -169,6 +171,14 @@ async function loadMediaServers() {
   try {
     const list = await ListMediaServers(3);
     libState.servers = list || [];
+    // A server that answers this PC's description request with a SOAP fault is
+    // not listed, and without a word about it the user only sees whatever else
+    // that host announces (a QNAP's admin device, which cannot be browsed).
+    try {
+      libState.refused = (await LibraryRefusedServers()) || [];
+    } catch {
+      libState.refused = []; // older build without the binding
+    }
     // Open the server the user actually uses, rather than always asking.
     // Reported by a user whose router offers a media server he never plays
     // from: with two on the network he had to pick the right one every single
@@ -228,6 +238,18 @@ async function libraryAddManualServer(value, btn) {
 // take from memory: nothing answered at its address (the backend's notAnswering).
 export function serverNotAnswering(srv) {
   return !!(srv && srv.notAnswering);
+}
+
+// libraryRefusedNote names the media servers that refused to describe
+// themselves to this PC. They cannot be listed, and the fix is on the server:
+// a QNAP NAS that served the speaker fine answered the PC with a SOAP fault, most
+// likely because the PC was not on its list of allowed media receivers.
+export function libraryRefusedNote(refused) {
+  const list = (refused || []).filter(r => r && r.address);
+  if (!list.length) return '';
+  return list.map(r =>
+    `<div class="library-server-dark-note" title="${escapeAttr(r.detail || '')}">${escapeHtml(t('library.serverRefusesPC', { address: r.address }))}</div>`,
+  ).join('');
 }
 
 // libraryServerLabel is the text the server picker shows for one entry. An entry
@@ -968,7 +990,7 @@ function renderLibrary() {
     body = `<p class="library-pick-server">${escapeHtml(t('library.pickServer'))}</p>`;
   }
 
-  el.innerHTML = intro + serverPicker + manualAdd + body;
+  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + manualAdd + body;
 
   // Wire interactions.
   const boxSel = $('libraryBoxSelect');

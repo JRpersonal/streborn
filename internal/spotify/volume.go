@@ -350,6 +350,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			}
 			if json.Unmarshal(ev.Data, &wp) == nil && wp.ContextURI != "" {
 				m.mu.Lock()
+				m.noteRecallContextLocked(wp.ContextURI)
 				prevContext := m.lastContext
 				playingNow := m.curName
 				// Compare the NORMALIZED contexts: a recall stores the
@@ -403,6 +404,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			if md.URI != "" {
 				m.curTrackURI = md.URI
 			}
+			m.noteRecallTrackLocked(md.URI, md.Name, true)
 			m.mu.Unlock()
 			m.notifyTrack()
 			// metadata arrives for the track that is actually playing, so it

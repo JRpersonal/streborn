@@ -228,6 +228,7 @@
   "library.serverNotAnsweringNote": "Ten serwer nie odpowiedział podczas ostatniego skanowania. Jest na liście na podstawie wcześniejszego skanowania. Przeglądanie zadziała ponownie, gdy serwer będzie włączony i wróci do sieci.",
   "library.notAnsweringWarnTitle": "Ten serwer muzyczny nie odpowiada",
   "library.notAnsweringWarnBody": "{{name}} nie odpowiedział podczas ostatniego skanowania, więc aplikacja zna go tylko z pamięci. Możesz go i tak dodać do swoich głośników. Przeglądanie nie będzie się udawać na żadnym głośniku, dopóki serwer nie będzie włączony i nie wróci do sieci.",
+  "library.serverRefusesPC": "Serwer multimediów pod adresem {{address}} odrzuca ten komputer, więc nie można go tu pokazać. Zezwól na ten komputer w ustawieniach serwera multimediów (na NAS zwykle jest to lista dozwolonych urządzeń lub odbiorników multimediów), a potem odśwież.",
   "banner.recommendation": "Zalecenie:",
   "banner.sshRecommend": "Dostęp SSH do tego głośnika jest otwarty. Uruchom głośnik raz ponownie, aby go z powrotem zamknąć, w przeciwnym razie inni w sieci mogą się z nim połączyć.",
   "banner.sshPersistentNote": "Dostęp SSH do tego głośnika jest celowo otwarty. Możesz go wyłączyć w ustawieniach głośnika, w sekcji „Dostęp SSH do tego głośnika”.",

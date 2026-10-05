@@ -228,6 +228,7 @@
   "library.serverNotAnsweringNote": "Este servidor no respondió en el último análisis. Aparece en la lista por lo que se recordó de un análisis anterior. La exploración volverá a funcionar cuando el servidor esté encendido y de nuevo en la red.",
   "library.notAnsweringWarnTitle": "Este servidor de música no responde",
   "library.notAnsweringWarnBody": "{{name}} no respondió en el último análisis, así que la aplicación solo lo conoce por lo que recuerda. Puedes añadirlo a tus altavoces igualmente. La exploración fallará en todos los altavoces hasta que el servidor esté encendido y de nuevo en la red.",
+  "library.serverRefusesPC": "El servidor multimedia en {{address}} rechaza este ordenador, por lo que no puede mostrarse aquí. Permite este PC en los ajustes del servidor multimedia (en un NAS suele ser una lista de dispositivos o receptores multimedia permitidos) y luego actualiza.",
   "banner.recommendation": "Recomendación:",
   "banner.sshRecommend": "El acceso SSH a este altavoz está abierto. Reinicia el altavoz una vez para cerrarlo de nuevo; de lo contrario, otras personas de tu red pueden acceder a él.",
   "banner.sshPersistentNote": "El acceso SSH a este altavoz está abierto a propósito. Puedes desactivarlo en los ajustes del altavoz, en «Acceso SSH a este altavoz».",

@@ -120,6 +120,9 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// the recall window would record the NEW context against the OLD track and
 	// corrupt the resume store (review, 2026-06-25).
 	m.mu.Lock()
+	// Until the engine shows a track of this context, /spotify/info must not
+	// pair the new context with the old song (recalldisplay.go).
+	m.armRecallDisplayLocked(uri, time.Now())
 	m.lastContext = uri
 	m.curTrackURI = ""
 	m.mu.Unlock()
@@ -146,6 +149,10 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		// The play never happened, so no track boundary (BOS) is coming: an
 		// armed cut would now drop whatever IS still playing for up to 30s.
 		m.clearSkipCut()
+		// Nor is a track of the new context: whatever still plays is the truth.
+		m.mu.Lock()
+		m.clearRecallDisplayLocked()
+		m.mu.Unlock()
 		// The API 500 is bare; the reason (e.g. Spotify's audio-key denial on
 		// a non-Premium account, #311) only appears on go-librespot's stderr.
 		// Attach it so the app's error message explains itself.

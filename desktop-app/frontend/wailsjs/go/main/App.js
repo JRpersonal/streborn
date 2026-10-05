@@ -254,6 +254,10 @@ export function IsBoseStick(arg1) {
   return window['go']['main']['App']['IsBoseStick'](arg1);
 }
 
+export function LibraryRefusedServers() {
+  return window['go']['main']['App']['LibraryRefusedServers']();
+}
+
 export function ListBoxMediaServers(arg1, arg2) {
   return window['go']['main']['App']['ListBoxMediaServers'](arg1, arg2);
 }

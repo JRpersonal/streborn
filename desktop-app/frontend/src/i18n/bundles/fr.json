@@ -228,6 +228,7 @@
   "library.serverNotAnsweringNote": "Ce serveur n'a pas répondu lors de la dernière recherche. Il figure dans la liste grâce à une recherche précédente. La navigation fonctionnera à nouveau dès que le serveur sera allumé et de retour sur le réseau.",
   "library.notAnsweringWarnTitle": "Ce serveur de musique ne répond pas",
   "library.notAnsweringWarnBody": "{{name}} n'a pas répondu lors de la dernière recherche, l'application le connaît donc seulement de mémoire. Vous pouvez quand même l'ajouter à vos enceintes. La navigation échouera sur chaque enceinte jusqu'à ce que le serveur soit allumé et de retour sur le réseau.",
+  "library.serverRefusesPC": "Le serveur multimédia à l'adresse {{address}} refuse cet ordinateur, il ne peut donc pas être affiché ici. Autorisez ce PC dans les réglages du serveur multimédia (sur un NAS, généralement une liste d'appareils ou de récepteurs multimédias autorisés), puis actualisez.",
   "banner.recommendation": "Recommandation :",
   "banner.sshRecommend": "L'accès SSH à cette enceinte est ouvert. Redémarrez l'enceinte une fois pour le refermer, sinon elle reste accessible aux autres sur votre réseau.",
   "banner.sshPersistentNote": "L’accès SSH à cette enceinte est volontairement ouvert. Vous pouvez le désactiver dans les réglages de l’enceinte, sous « Accès SSH à cette enceinte ».",

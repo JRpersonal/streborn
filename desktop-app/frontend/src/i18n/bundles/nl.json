@@ -228,6 +228,7 @@
   "library.serverNotAnsweringNote": "Deze server heeft bij de laatste scan niet geantwoord. Hij staat in de lijst op basis van een eerdere scan. Zodra de server aan staat en weer in het netwerk zit, werkt het doorzoeken weer.",
   "library.notAnsweringWarnTitle": "Deze muziekserver antwoordt niet",
   "library.notAnsweringWarnBody": "{{name}} heeft bij de laatste scan niet geantwoord, dus de app kent hem alleen uit het geheugen. Je kunt hem toch aan je speakers toevoegen. Het doorzoeken mislukt dan op elke speaker totdat de server aan staat en weer in het netwerk zit.",
+  "library.serverRefusesPC": "De mediaserver op {{address}} weigert deze computer, dus hij kan hier niet worden getoond. Sta deze pc toe in de instellingen van de mediaserver (op een NAS meestal een lijst met toegestane apparaten of mediaspelers) en vernieuw daarna.",
   "banner.recommendation": "Aanbeveling:",
   "banner.sshRecommend": "SSH-toegang tot deze speaker staat open. Start de speaker één keer opnieuw op om die weer te sluiten, anders is hij bereikbaar voor anderen op je netwerk.",
   "banner.sshPersistentNote": "SSH-toegang tot deze speaker staat bewust open. Je kunt hem weer uitzetten bij de speakerinstellingen, onder \"SSH-toegang tot deze speaker\".",

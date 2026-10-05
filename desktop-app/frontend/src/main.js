@@ -9,6 +9,9 @@ import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
 import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
+import {
+  acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySongText,
+} from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import {
   DiscoverBoxes,
@@ -7274,14 +7277,14 @@ async function saveCurrentToSlot(slot) {
   // (playlist URI) from /spotify/info.
   if (saveCase === 'spotify') {
     // We can only save a real, recallable Spotify preset when we know the
-    // playlist/album/track context URI. state.nowSpotifyContext is only
+    // playlist/album/track context URI. The state.spotifyNow context is only
     // refreshed by a throttled (>3s) background poll, so at save time it can
     // lag or be momentarily empty even while a real playlist is playing. That
     // made a legitimate save fail with a false "no replayable playlist" (Pierre,
     // #45, was on Premium playing a playlist). Re-read the live context from the
     // speaker now instead of trusting the cache.
-    let ctxUri = state.nowSpotifyContext;
-    let acct = state.nowSpotifyAccount || '';
+    let ctxUri = state.spotifyNow ? state.spotifyNow.context : '';
+    let acct = (state.spotifyNow && state.spotifyNow.account) || '';
     // Whether a key on THIS speaker could play at all. The same read already
     // happens here, so asking costs nothing. undefined means the speaker's
     // agent predates the field, and "cannot tell" must never become a warning.
@@ -7558,6 +7561,17 @@ async function play(slot) {
     state.nowIcon = p.art || '';
     state.nowBitrate = p.bitrate || 0;
     state.nowTitle = ''; // clear so the new station does not briefly show the old track
+    // Same for a Spotify song: drop it, start a new generation so any
+    // /spotify/info reply still in flight is ignored, remember which context
+    // the click wants, and ask again at the next status poll instead of up to
+    // three seconds later. Until a reply about THIS preset arrives the line
+    // shows the preset name alone (#1077, see spotifynowplaying.js).
+    state.spotifyRecall = p.type === 'spotify'
+      ? beginRecall(p.uri, state.spotifyNow, Date.now())
+      : null;
+    state.spotifyNow = null;
+    state.spotifyNowGen = (state.spotifyNowGen || 0) + 1;
+    state.lastSpotifyNowFetch = 0;
     scheduleLiveBitrate();
     scheduleLiveTitle();
     state.nowUUID = '';
@@ -7870,9 +7884,9 @@ function resetNowPlaying() {
   state.nowPlayState = '';
   state.nowIcon = '';
   state.nowBitrate = 0;
-  state.nowSpotifyTrack = '';
-  state.nowSpotifyArtist = '';
-  state.nowSpotifyCover = '';
+  state.spotifyNow = null;
+  state.spotifyRecall = null;
+  state.spotifyNowGen = (state.spotifyNowGen || 0) + 1;
   state.optimisticUntil = 0;
   state.lastStatusHTML = '';
 }
@@ -7923,13 +7937,15 @@ function renderNowPlayingBar() {
   // Either Spotify: the one STR serves through its own proxy, or the one the
   // speaker serves itself after a phone picked it in Connect. Same line, two
   // sources for the song.
-  const spotifyTrack = state.nowBoxSpotify
-    ? state.nowBoxSpotify.track
-    : (/\/spotify\/stream/.test(loc) ? state.nowSpotifyTrack : '');
-  const spotifyArtist = state.nowBoxSpotify ? state.nowBoxSpotify.artist : state.nowSpotifyArtist;
-  if (spotifyTrack) {
-    const song = spotifyArtist ? `${spotifyArtist} - ${spotifyTrack}` : spotifyTrack;
-    displayName = name ? `${t(spotifyContextLabelKey(state.nowSpotifyContext || spotifyURIFromContainer(loc)))}: "${name}" · ${song}` : song;
+  // STR's own Spotify is drawn from ONE snapshot of one /spotify/info reply, so
+  // song, artist and context always describe the same thing (#1077).
+  const snap = state.spotifyNow;
+  const song = state.nowBoxSpotify
+    ? spotifySongText(state.nowBoxSpotify)
+    : (/\/spotify\/stream/.test(loc) ? spotifySongText(snap) : '');
+  if (song) {
+    const spotifyCtx = snap ? snap.context : '';
+    displayName = name ? `${t(spotifyContextLabelKey(spotifyCtx || spotifyURIFromContainer(loc)))}: "${name}" · ${song}` : song;
   } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
     // The same predicate as the title poller above, and it has to be the same
     // one: fixing only the poll would fetch a title that this line then refused
@@ -8320,14 +8336,27 @@ async function refreshStatus() {
       const npBox = state.currentBox;
       if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {
         state.lastSpotifyNowFetch = Date.now();
+        const sentGen = state.spotifyNowGen || 0;
         SpotifyNowPlaying(npBox.host, npBox.port).then(np => {
           if (!np) return;
-          const coverChanged = state.nowSpotifyCover !== (np.cover || '');
-          state.nowSpotifyTrack = np.track || '';
-          state.nowSpotifyArtist = np.artist || '';
-          state.nowSpotifyCover = np.cover || '';
-          state.nowSpotifyContext = np.context || '';
-          state.nowSpotifyAccount = np.account || '';
+          // Only a reply about the preset clicked last may paint the line, and
+          // only as a whole (#1077). A rejected reply leaves the previous
+          // snapshot (none, right after a click) in place and the next status
+          // poll asks again instead of waiting out the throttle. The account
+          // and entitlement fields below are not about the song and are read
+          // either way.
+          let coverChanged = false;
+          if (acceptSpotifyReply(np, {
+            sentGen, currentGen: state.spotifyNowGen || 0, recall: state.spotifyRecall, now: Date.now(),
+          })) {
+            const snap = snapshotFromReply(np);
+            coverChanged = (state.spotifyNow ? state.spotifyNow.cover : '') !== snap.cover;
+            state.spotifyNow = snap;
+            if (recallSettled(snap)) state.spotifyRecall = null;
+            renderNowPlayingBar();
+          } else if (sentGen === (state.spotifyNowGen || 0)) {
+            state.lastSpotifyNowFetch = 0;
+          }
           // What the speaker has learned each account is CALLED, which is what
           // a preset tile and a Recently-played card draw. The account id never
           // goes on screen in any form, so an account with no remembered name
@@ -8362,9 +8391,7 @@ async function refreshStatus() {
         }).catch(() => {});
       }
     } else {
-      state.nowSpotifyTrack = '';
-      state.nowSpotifyArtist = '';
-      state.nowSpotifyCover = '';
+      state.spotifyNow = null;
     }
     // The tile adopts state.nowIcon (and persists it) only while the active
     // preset still has no stored art. That render used to come for free from
