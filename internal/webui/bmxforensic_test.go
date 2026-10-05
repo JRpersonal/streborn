@@ -35,6 +35,9 @@ func assertJSON(t *testing.T, rr *httptest.ResponseRecorder, wantStatus int) map
 	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		t.Fatalf("Content-Type = %q, want JSON", ct)
 	}
+	if rr.Header().Get("X-Content-Type-Options") != "nosniff" || rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("missing nosniff/no-store headers: %v", rr.Header())
+	}
 	var m map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
 		t.Fatalf("body is not JSON: %v (%q)", err, rr.Body.String())

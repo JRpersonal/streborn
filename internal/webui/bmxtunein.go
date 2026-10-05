@@ -116,12 +116,11 @@ func pickTuneInStream(body []opmlEntry) (string, error) {
 }
 
 // handleTuneInStation serves /bmx/tunein/v1/playback/station/<id>.
-func (s *Server) handleTuneInStation(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTuneInStation(r *http.Request) (int, []byte) {
 	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, tuneInStationPrefix), "/")
 	if !tuneInIDRe.MatchString(id) {
 		s.logger.Info("bmx tunein: station request refused, not a TuneIn id", "path", r.URL.Path)
-		writeBMXError(w, http.StatusBadRequest, "invalid station id")
-		return
+		return bmxError(http.StatusBadRequest, "invalid station id")
 	}
 	tune, err := fetchOPML(r, "Tune.ashx", id)
 	var stream string
@@ -130,8 +129,7 @@ func (s *Server) handleTuneInStation(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.logger.Info("bmx tunein: station could not be resolved", "path", r.URL.Path, "id", id, "err", err)
-		writeBMXError(w, http.StatusBadGateway, "station could not be resolved")
-		return
+		return bmxError(http.StatusBadGateway, "station could not be resolved")
 	}
 	// Name and logo are cosmetic: a failed Describe leaves the id as the name
 	// and STR's own logo on the display, and the station still plays.
@@ -156,18 +154,14 @@ func (s *Server) handleTuneInStation(w http.ResponseWriter, r *http.Request) {
 	d.ImageURL = stationImageURL(logo)
 	d.Name = name
 	d.StreamType = "liveRadio"
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
 	s.logger.Info("bmx tunein: station resolved", "path", r.URL.Path, "id", id, "name", name, "streamHost", host)
-	_ = json.NewEncoder(w).Encode(d)
+	return bmxJSON(http.StatusOK, d)
 }
 
 // handleTuneInToken answers the registry's bmx_token link for TuneIn, the same
 // empty token the orion adapter serves: the firmware fetches it before using
 // the service, and TuneIn's public API needs no credentials.
-func (s *Server) handleTuneInToken(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+func (s *Server) handleTuneInToken(r *http.Request) (int, []byte) {
 	s.logger.Info("bmx tunein: token served", "path", r.URL.Path)
-	_, _ = w.Write([]byte(`{"access_token":"","refresh_token":""}`))
+	return http.StatusOK, []byte(`{"access_token":"","refresh_token":""}`)
 }

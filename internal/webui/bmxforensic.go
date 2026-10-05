@@ -18,7 +18,6 @@ package webui
 // path is always logged (that is the evidence), repeats at most once a minute.
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"net"
@@ -71,78 +70,66 @@ var (
 	bmxNow = time.Now
 )
 
-// peekRecorder passes a response through while keeping its status and the
-// first bytes of its body for the log line.
-type peekRecorder struct {
-	http.ResponseWriter
-	status int
-	head   bytes.Buffer
-}
-
-func (p *peekRecorder) WriteHeader(code int) {
-	if p.status == 0 {
-		p.status = code
-	}
-	p.ResponseWriter.WriteHeader(code)
-}
-
-func (p *peekRecorder) Write(b []byte) (int, error) {
-	if p.status == 0 {
-		p.status = http.StatusOK
-	}
-	if room := bmxRespPeek - p.head.Len(); room > 0 {
-		if len(b) < room {
-			room = len(b)
-		}
-		p.head.Write(b[:room])
-	}
-	return p.ResponseWriter.Write(b)
-}
-
 // handleBMX serves everything under /bmx/: the TuneIn adapter routes, and a
 // JSON 404 for anything else. Every request is logged (rate-limited).
+//
+// The route handlers only return a status and a JSON body; this is the one
+// place that writes a BMX response. That keeps the content type fixed to JSON
+// (with nosniff) for every answer, so nothing derived from the request can
+// ever be served as something a browser would render.
 func (s *Server) handleBMX(w http.ResponseWriter, r *http.Request) {
 	bodyLen := 0
 	if r.Body != nil {
 		n, _ := io.Copy(io.Discard, io.LimitReader(r.Body, bmxBodyPeek))
 		bodyLen = int(n)
 	}
-	rec := &peekRecorder{ResponseWriter: w}
-	s.routeBMX(rec, r)
+	status, body := s.routeBMX(r)
+	h := w.Header()
+	h.Set("Content-Type", "application/json; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 	if !bmxLogLimiter.allow(r.URL.Path, bmxNow()) {
 		return
 	}
-	status := rec.status
-	if status == 0 {
-		status = http.StatusOK
+	head := body
+	if len(head) > bmxRespPeek {
+		head = head[:bmxRespPeek]
 	}
 	s.logger.Info("bmx: request from the box on the webui port",
 		"method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery,
 		"userAgent", r.UserAgent(), "accept", r.Header.Get("Accept"),
 		"bodyBytes", bodyLen, "remote", r.RemoteAddr,
-		"status", status, "response", rec.head.String())
+		"status", status, "response", string(head))
 }
 
-func (s *Server) routeBMX(w http.ResponseWriter, r *http.Request) {
+func (s *Server) routeBMX(r *http.Request) (int, []byte) {
 	p := r.URL.Path
 	switch {
 	case p == tuneInTokenPath:
-		s.handleTuneInToken(w, r)
+		return s.handleTuneInToken(r)
 	case strings.HasPrefix(p, tuneInStationPrefix):
-		s.handleTuneInStation(w, r)
+		return s.handleTuneInStation(r)
 	default:
-		writeBMXError(w, http.StatusNotFound, "not implemented")
+		return bmxError(http.StatusNotFound, "not implemented")
 	}
 }
 
-// writeBMXError answers in JSON, never HTML: the firmware parses whatever
-// comes back from a BMX adapter as JSON, and an HTML page turns a clean
-// failure into a parse error that hides the real cause.
-func writeBMXError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+// bmxError builds a JSON error answer, never HTML: the firmware parses
+// whatever comes back from a BMX adapter as JSON, and an HTML page turns a
+// clean failure into a parse error that hides the real cause.
+func bmxError(status int, msg string) (int, []byte) {
+	return bmxJSON(status, map[string]string{"error": msg})
+}
+
+// bmxJSON marshals v as a BMX answer body.
+func bmxJSON(status int, v any) (int, []byte) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return http.StatusInternalServerError, []byte(`{"error":"encoding failed"}`)
+	}
+	return status, append(b, '\n')
 }
 
 // noteStrayBoxRequest logs a request the speaker itself sent to a path the
