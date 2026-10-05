@@ -1215,6 +1215,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				recentBytes = 0
 				recentStart = time.Now()
 			}
+			if !gotData {
+				s.noteFirstDelivery(station)
+			}
 			gotData = true
 			s.markByteDelivery() // records "last byte to box" wall clock across reconnects
 			if !measured && time.Since(streamStart) >= brSettle {
