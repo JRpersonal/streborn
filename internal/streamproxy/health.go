@@ -91,6 +91,27 @@ func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap
 		"gapMs", gap.Milliseconds(), "reconnectCount", count, "forwardedBytesTotal", total)
 }
 
+// noteFirstDelivery records that a connection for station has just forwarded
+// its first byte to the box. Called once per upstream connection from the copy
+// loop, so it costs one lock per connection, not per read.
+//
+// Before this existed, deliveredAny and the package delivery record were set
+// only by noteReconnect, that is, only when a connection ENDED on an upstream
+// drop. A stream that played without a single drop therefore reported
+// everDelivered=false and "nothing has arrived from the station yet" for its
+// whole life. A Wave bundle on 2026-10-05 showed exactly that for a station the
+// proxy had fed 12.9 MB at 194 kbps, and the section was briefly read as "the
+// station sends nothing" when the real cause was a station broadcasting
+// silence.
+func (s *Server) noteFirstDelivery(station string) {
+	s.healthMu.Lock()
+	if station == s.healthURL {
+		s.deliveredAny = true
+	}
+	s.healthMu.Unlock()
+	noteDelivered(station)
+}
+
 // HealthSnapshot backs the radio_stream_health debug section registered in
 // cmd/agent. Read lazily at /api/debug/state fetch time, like the other
 // RegisterDebugSection providers.
