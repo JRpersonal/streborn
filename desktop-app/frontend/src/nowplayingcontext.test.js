@@ -47,7 +47,7 @@ describe('what the now-playing line calls a Spotify context', () => {
   it('reads the context the speaker reports, not only the app cache', () => {
     // shorty310 streams to the speaker's OWN Spotify receiver, so the app has no
     // context of its own and the URI has to come out of the box location.
-    expect(main).toContain('state.nowSpotifyContext || spotifyURIFromContainer(loc)');
+    expect(main).toContain('spotifyCtx || spotifyURIFromContainer(loc)');
   });
 
   it('has the words in every language', () => {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newTestManagerAt builds a Manager pointed at a fake go-librespot API.
@@ -127,4 +128,128 @@ func TestInfoKeepsTheContextWhenTheEngineCannotBeAsked(t *testing.T) {
 	if got.Context != "spotify:playlist:OLD" {
 		t.Errorf("context = %q, want the cached one: a failed read is not proof of an idle engine", got.Context)
 	}
+}
+
+// A preset switch must not pair the new playlist with the old song.
+//
+// A cold recall names the new context at once, while the cache and /status
+// still describe the previous track until the paused load lands. The desktop
+// app printed that reply as it came: `Playlist: "Purpose for Pain" · Rush - Tom
+// Sawyer` for about ten seconds after switching keys (discussion #1077).
+func TestInfoReportsNoSongWhileARecallIsLoading(t *testing.T) {
+	const (
+		oldTrack = `{"track":{"uri":"spotify:track:OLD","name":"Tom Sawyer","artist_names":["Rush"],"album_cover_url":"http://c/old.jpg"}}`
+		newTrack = `{"track":{"uri":"spotify:track:NEW","name":"Purpose","artist_names":["B"],"album_cover_url":"http://c/new.jpg"}}`
+	)
+	cases := []struct {
+		name        string
+		status      string
+		code        int
+		wantTrack   string
+		wantCover   string
+		wantContext string
+	}{
+		{name: "engine still on the old track", status: oldTrack, code: 200, wantContext: "spotify:playlist:NEW"},
+		{name: "engine idle mid-load", status: `{"track":null}`, code: 200},
+		{name: "engine not answering", code: 500, wantContext: "spotify:playlist:NEW"},
+		{name: "new track loaded", status: newTrack, code: 200, wantTrack: "Purpose", wantCover: "http://c/new.jpg", wantContext: "spotify:playlist:NEW"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if c.code != 200 {
+					w.WriteHeader(c.code)
+					return
+				}
+				_, _ = w.Write([]byte(c.status))
+			}))
+			defer srv.Close()
+
+			m := newTestManagerAt(t, srv.URL)
+			m.mu.Lock()
+			m.lastContext = "spotify:playlist:OLD"
+			m.curName, m.curArtist, m.curCover = "Tom Sawyer", "Rush", "http://c/old.jpg"
+			m.curTrackURI = "spotify:track:OLD"
+			// What Play does on a cold recall.
+			m.armRecallDisplayLocked("spotify:playlist:NEW", time.Now())
+			m.lastContext = "spotify:playlist:NEW"
+			m.curTrackURI = ""
+			m.mu.Unlock()
+
+			got := serveInfoOnce(t, m)
+			if got.Track != c.wantTrack || got.Cover != c.wantCover {
+				t.Errorf("track/cover = %q/%q, want %q/%q", got.Track, got.Cover, c.wantTrack, c.wantCover)
+			}
+			if c.wantTrack == "" && got.Artist != "" {
+				t.Errorf("artist = %q, want empty while the recall loads", got.Artist)
+			}
+			if got.Context != c.wantContext {
+				t.Errorf("context = %q, want %q", got.Context, c.wantContext)
+			}
+		})
+	}
+}
+
+// The gate is bounded: a recall that never confirms (the engine resumed the
+// very track that was already playing, an event got lost) must not blank the
+// song for good.
+func TestRecallDisplayGateExpires(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"track":{"uri":"spotify:track:SAME","name":"Song","artist_names":["A"]}}`))
+	}))
+	defer srv.Close()
+	m := newTestManagerAt(t, srv.URL)
+	m.mu.Lock()
+	m.curName, m.curTrackURI = "Song", "spotify:track:SAME"
+	m.armRecallDisplayLocked("spotify:playlist:NEW", time.Now().Add(-recallDisplayWindow-time.Second))
+	m.mu.Unlock()
+	if got := serveInfoOnce(t, m); got.Track != "Song" {
+		t.Errorf("track = %q after the window, want the live one", got.Track)
+	}
+}
+
+// will_play naming the recalled context makes the next metadata event the
+// confirmation, even when that track has the same name as the old one; a
+// metadata event for the OLD track before that does not end the gate.
+func TestRecallDisplayConfirmsOnTheNewContextsMetadata(t *testing.T) {
+	m := newTestManagerAt(t, "http://127.0.0.1:1")
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.curName, m.curTrackURI = "Tom Sawyer", "spotify:track:OLD"
+	m.armRecallDisplayLocked("spotify:playlist:NEW", now)
+
+	m.noteRecallTrackLocked("spotify:track:OLD", "Tom Sawyer", true)
+	if !m.recallDisplayPendingLocked(now) {
+		t.Fatal("a late metadata event for the old track ended the gate")
+	}
+	m.noteRecallContextLocked("spotify:playlist:OTHER")
+	m.noteRecallTrackLocked("spotify:track:OLD", "Tom Sawyer", true)
+	if !m.recallDisplayPendingLocked(now) {
+		t.Fatal("will_play for another context armed the confirmation")
+	}
+	// The engine announces the station wrapper for the same playlist.
+	m.noteRecallContextLocked("spotify:station:playlist:NEW")
+	m.noteRecallTrackLocked("spotify:track:OLD", "Tom Sawyer", true)
+	if m.recallDisplayPendingLocked(now) {
+		t.Fatal("metadata after will_play for the recalled context did not end the gate")
+	}
+}
+
+type infoReply struct {
+	Track   string `json:"track"`
+	Artist  string `json:"artist"`
+	Cover   string `json:"cover"`
+	Context string `json:"context"`
+}
+
+func serveInfoOnce(t *testing.T, m *Manager) infoReply {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	m.ServeInfo(rr, httptest.NewRequest("GET", "/spotify/info", nil))
+	var got infoReply
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (%s)", err, rr.Body.String())
+	}
+	return got
 }
