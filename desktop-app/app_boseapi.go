@@ -321,6 +321,41 @@ func (a *App) SetDisplayMessages(host string, port int, enabled bool) error {
 	return nil
 }
 
+// GetDisplaySplash reads the per-box switch for STR's logo animation on the
+// speaker display (default on). Returns {enabled, supported}; supported is
+// false on a speaker whose panel the agent does not draw on, where the app
+// hides the setting.
+func (a *App) GetDisplaySplash(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/display-splash", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetDisplaySplash switches the logo animation on or off for one box.
+func (a *App) SetDisplaySplash(host string, port int, enabled bool) error {
+	body, _ := json.Marshal(map[string]any{"enabled": enabled})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/display-splash", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // BoxPresetInfo is one of the box's OWN presets (incl. foreign sources like
 // Deezer that STR did not set), from GET /api/box/presets.
 type BoxPresetInfo struct {

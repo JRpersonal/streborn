@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState, displayMessagesState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -63,5 +63,18 @@ describe('displayMessagesState', () => {
     const r = { hasDisplay: true, enabled: true, lastShown: { kind: 'no-internet', text: 'No internet connection' } };
     expect(displayMessagesState(r).last).toBe('No internet connection');
     expect(displayMessagesState({ hasDisplay: true, enabled: true, lastShown: {} }).last).toBe('');
+  });
+});
+
+describe('displaySplashState', () => {
+  it('shows the setting only where the agent can draw on the panel', () => {
+    expect(displaySplashState({ enabled: true, supported: true }).show).toBe(true);
+    expect(displaySplashState({ enabled: true, supported: false }).show).toBe(false);
+    expect(displaySplashState({ enabled: true }).show).toBe(false);
+  });
+  it('keeps an unreadable state unknown instead of off', () => {
+    expect(displaySplashState(null)).toEqual({ show: false, enabled: null });
+    expect(displaySplashState({ supported: true }).enabled).toBe(null);
+    expect(displaySplashState({ supported: true, enabled: false }).enabled).toBe(false);
   });
 });

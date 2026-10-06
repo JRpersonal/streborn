@@ -206,6 +206,10 @@ export function GetDisplayMessages(arg1, arg2) {
   return window['go']['main']['App']['GetDisplayMessages'](arg1, arg2);
 }
 
+export function GetDisplaySplash(arg1, arg2) {
+  return window['go']['main']['App']['GetDisplaySplash'](arg1, arg2);
+}
+
 export function GetDisplayTrack(arg1, arg2) {
   return window['go']['main']['App']['GetDisplayTrack'](arg1, arg2);
 }
@@ -552,6 +556,10 @@ export function SetClockDisplay(arg1, arg2, arg3, arg4, arg5) {
 
 export function SetDisplayMessages(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetDisplayMessages'](arg1, arg2, arg3);
+}
+
+export function SetDisplaySplash(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetDisplaySplash'](arg1, arg2, arg3);
 }
 
 export function SetDisplayTrack(arg1, arg2, arg3, arg4) {

@@ -50,7 +50,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState, displayMessagesState } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState } from '../boxstate.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
@@ -80,6 +80,8 @@ import {
   SetDisplayTrack,
   GetDisplayMessages,
   SetDisplayMessages,
+  GetDisplaySplash,
+  SetDisplaySplash,
   AnnounceExample,
   SendAnnounce,
   Translate,
@@ -711,6 +713,7 @@ function groupSettingsSections() {
     resumeOnPowerSection: 'sound',
     displayTrackSection: 'sound',
     displayMsgSection: 'sound',
+    displaySplashSection: 'sound',
     airplayOptSection: 'sound',
   };
   const byHeading = {
@@ -1312,6 +1315,15 @@ function renderBoxSettings(s, box) {
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.displayMsgHelp'))}</small>
       <small class="muted small hidden" id="displayMsgLast" style="display:block;margin-top:6px"></small>
+    </div>
+
+    <div class="settings-section hidden" id="displaySplashSection">
+      <h3>${escapeHtml(t('settingsView.displaySplashHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="displaySplashOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displaySplashOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.displaySplashHelp'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -2590,6 +2602,35 @@ function renderBoxSettings(s, box) {
     };
     dmOn.onclick = () => saveDM(true);
     dmOff.onclick = () => saveDM(false);
+  }
+
+  // STR logo animation on the speaker display after an install or update, at
+  // start-up and while an update lands (default on). Only shown where the agent
+  // can draw on the panel (the Portable); elsewhere the section stays hidden.
+  const dsSection = $('displaySplashSection');
+  const dsOn = $('displaySplashOn');
+  const dsOff = $('displaySplashOff');
+  const paintDisplaySplash = (enabled) => {
+    if (dsOn) dsOn.classList.toggle('active', enabled === true);
+    if (dsOff) dsOff.classList.toggle('active', enabled === false);
+  };
+  if (dsSection && dsOn && dsOff) {
+    (async () => {
+      try {
+        const st = displaySplashState(await GetDisplaySplash(box.host, box.port));
+        dsSection.classList.toggle('hidden', !st.show);
+        paintDisplaySplash(st.enabled);
+      } catch { dsSection.classList.add('hidden'); }
+    })();
+    const saveDS = async (enabled) => {
+      paintDisplaySplash(enabled);
+      try {
+        await SetDisplaySplash(box.host, box.port, enabled);
+        showToast(t('settingsView.displaySplashSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    dsOn.onclick = () => saveDS(true);
+    dsOff.onclick = () => saveDS(false);
   }
 
   // Announcements (#125, beta): a quick test field plus a copy-paste curl command
