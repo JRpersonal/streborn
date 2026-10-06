@@ -77,7 +77,8 @@ type Starguard struct {
 	moveDir          int
 	keyDown          bool // a thumb is held: no release seen since its press
 	keyAge           int  // steps since the last event of the held key
-	coast            int  // steps the ship keeps gliding after a release
+	coast            int  // steps the ship keeps gliding after a release while moving
+	holdWait         int  // steps after a press before the ship moves continuously
 	heldSteps        int  // steps of continuous movement, for the speed-up
 	sincePress       int  // steps since the last press, for the double-frame filter
 	fireCD           int
@@ -146,10 +147,10 @@ func (g *Starguard) startWave(n int, upgrade string) {
 		}
 	}
 	g.fx = (Width - (sgCols-1)*sgColStep - sgAlienW) / 2
-	g.fy = sgTop + 4 + min(n-1, 4)*2
+	g.fy = sgTop + 6 + min(n-1, 5)*3
 	g.fdir = 1
 	g.marchCD = 0
-	g.bombCD = 60
+	g.bombCD = 40
 	g.shots, g.bombs = nil, nil
 	if g.shieldOwned {
 		g.shield = true
@@ -158,12 +159,13 @@ func (g *Starguard) startWave(n int, upgrade string) {
 	g.bannerText = upgrade
 }
 
-// Key: thumbs down steers left, thumbs up right, for as long as the thumb is
-// held. Remotes report a held key in different ways (one press until the
-// release, repeat events, or press/release pairs about twice a second), so a
-// press or a repeat steers until the release, and after a release the ship
-// coasts a moment, which bridges the gap to the next press of a pair. Held a
-// while, it speeds up.
+// Key: thumbs down steers left, thumbs up right. A tap moves the ship one
+// small step. Held a moment, it moves on smoothly until the release, and held
+// longer it speeds up. Remotes report a held key in different ways (one press
+// until the release, repeat events, or press/release pairs about twice a
+// second), so a press or a repeat keeps it moving, and only a ship that was
+// already moving smoothly coasts a moment after a release, which bridges the
+// gap inside a pair. A tap never coasts.
 func (g *Starguard) Key(key, state int) {
 	if g.over {
 		return
@@ -189,21 +191,35 @@ func (g *Starguard) Key(key, state int) {
 		}
 		if state == KeyPressed {
 			g.sincePress = 0
+			if !g.keyDown && g.coast == 0 {
+				// a fresh press: one step right away, smooth movement only
+				// once the key is still down a moment later
+				g.nudge(d * sgTapStep)
+				g.holdWait = sgHoldDelay
+			}
 		}
 		g.moveDir, g.keyDown, g.keyAge = d, true, 0
 	case KeyReleased:
 		if d == g.moveDir && g.keyDown {
 			g.keyDown = false
-			g.coast = sgCoast
+			if g.holdWait == 0 {
+				g.coast = sgCoast
+			}
 		}
 	}
 }
 
+func (g *Starguard) nudge(dx16 int) {
+	g.shipX16 = max(sgShipHalf*16, min((Width-1-sgShipHalf)*16, g.shipX16+dx16))
+}
+
 const (
 	sgDoubleFrame = 10  // steps (a third of a second)
-	sgCoast       = 16  // steps the ship glides on after a release; bridges a press/release pair
+	sgTapStep     = 96  // one tap: 6 px, in 1/16 px
+	sgHoldDelay   = 6   // steps (0.2 s) a key must stay down before smooth movement
+	sgCoast       = 12  // steps a smoothly moving ship glides on after a release
 	sgKeyStale    = 150 // a held key with no event for 5 s counts as released
-	sgFastFrom    = 15  // steps of holding before the ship speeds up
+	sgFastFrom    = 15  // steps of smooth movement before the ship speeds up
 )
 
 func kindOfRow(row int) int {
@@ -242,18 +258,21 @@ func (g *Starguard) Step() {
 			g.keyDown = false
 		}
 	}
-	if g.keyDown || g.coast > 0 {
+	switch {
+	case g.keyDown && g.holdWait > 0:
+		g.holdWait--
+	case g.keyDown || g.coast > 0:
 		speed := 20
 		if g.heldSteps >= sgFastFrom {
 			speed = 34
 		}
-		g.shipX16 = max(sgShipHalf*16, min((Width-1-sgShipHalf)*16, g.shipX16+g.moveDir*speed))
+		g.nudge(g.moveDir * speed)
 		g.heldSteps++
 		if !g.keyDown {
 			g.coast--
 		}
-	} else {
-		g.heldSteps = 0
+	default:
+		g.heldSteps, g.holdWait = 0, 0
 	}
 	if g.invuln > 0 {
 		g.invuln--
@@ -270,9 +289,13 @@ func (g *Starguard) Step() {
 		g.waves++
 		g.Score += 50 * g.wave
 		g.cue(CueWaveClear)
-		up := sgExtraLife
-		if g.waves <= len(sgUpgrades) {
-			up = sgUpgrades[g.waves-1]
+		// an upgrade for every second cleared wave
+		up := ""
+		if g.waves%2 == 0 {
+			up = sgExtraLife
+			if i := g.waves/2 - 1; i < len(sgUpgrades) {
+				up = sgUpgrades[i]
+			}
 		}
 		switch up {
 		case "RAPID FIRE":
@@ -293,7 +316,7 @@ func (g *Starguard) Step() {
 }
 
 func (g *Starguard) fireInterval() int {
-	return [...]int{14, 10, 7}[min(g.rapid, 2)]
+	return [...]int{16, 12, 8}[min(g.rapid, 2)]
 }
 
 func (g *Starguard) stepShots() {
@@ -382,7 +405,7 @@ func (g *Starguard) stepAliens() {
 		return
 	}
 	// fewer aliens and later waves march faster, and so does the music
-	g.marchCD = max(0, 1+alive*14/(g.rows*sgCols)-min(g.wave-1, 6)/2)
+	g.marchCD = max(0, alive*10/(g.rows*sgCols)-min(g.wave-1, 8)/2)
 	if g.audio != nil {
 		g.audio.SetTempo(100 + 110*(g.rows*sgCols-alive)/(g.rows*sgCols) + 6*min(g.wave-1, 5))
 	}
@@ -398,8 +421,8 @@ func (g *Starguard) stepAliens() {
 	}
 	if (g.fdir > 0 && maxX+1 >= Width) || (g.fdir < 0 && minX-1 <= 0) {
 		g.fdir = -g.fdir
-		g.fy += 3
-		maxY += 3
+		g.fy += 4
+		maxY += 4
 	} else {
 		g.fx += g.fdir
 	}
@@ -414,21 +437,28 @@ func (g *Starguard) stepBombs() {
 	if g.bombCD > 0 {
 		g.bombCD--
 	} else {
-		// the lowest alien of a random occupied column drops a bomb
-		cols := g.r.Perm(sgCols)
-		for _, col := range cols {
+		// the lowest alien of random occupied columns drops a bomb, two at
+		// once from the third wave on
+		want := 1
+		if g.wave >= 3 {
+			want = 2
+		}
+		for _, col := range g.r.Perm(sgCols) {
+			if want == 0 {
+				break
+			}
 			for row := g.rows - 1; row >= 0; row-- {
 				if g.alive[row][col] {
 					x, y := g.alienAt(row, col)
 					g.bombs = append(g.bombs, sgBomb{x + sgAlienW/2, (y + sgAlienH) * 2})
-					goto dropped
+					want--
+					break
 				}
 			}
 		}
-	dropped:
-		g.bombCD = max(12, 50-g.wave*4) + g.r.IntN(30)
+		g.bombCD = max(6, 36-g.wave*4) + g.r.IntN(24)
 	}
-	speed := min(3+g.wave/2, 6) // half pixels per step
+	speed := min(4+g.wave/2, 8) // half pixels per step
 	kept := g.bombs[:0]
 	for _, b := range g.bombs {
 		b.y2 += speed
