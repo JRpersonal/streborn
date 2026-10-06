@@ -74,7 +74,8 @@ func (s *Server) QueueLiveURL(slot int) (url string, recalling bool) {
 }
 
 // RecallSlot handles a hardware preset-button press for a queue preset: if the
-// slot holds a saved DLNA folder it starts the play-queue and returns true.
+// slot holds a saved DLNA folder it starts the play-queue and returns true. A
+// single library track is claimed too and played as the file itself.
 // Otherwise it returns false and the caller falls back to the existing
 // single-track recall. This keeps the queue logic in webui (it owns the queue)
 // without entangling the gabbo handler in cmd/agent.
@@ -83,8 +84,13 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 		return false
 	}
 	p, ok := s.presets.Get(slot)
-	if !ok || p.Type != "queue" {
+	if !ok {
 		return false
+	}
+	if p.Type != "queue" {
+		// A single library track is the queue's one-file sibling: the key
+		// must play the file directly too (#1065, librarykey.go).
+		return s.recallLibraryFileSlot(ctx, slot, p)
 	}
 	// The saved tracks carry the music server's address. When the router hands
 	// that server a different lease, every folder key pointing at it goes dead at
