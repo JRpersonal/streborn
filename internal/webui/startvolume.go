@@ -6,10 +6,15 @@
 // firmware happened to keep. Mine do keep it, which is why I first told him it
 // was not a problem; he was right and I was wrong.
 //
-// Deliberately narrow. It applies to the automatic resume after the speaker was
-// off or asleep, and nowhere else: a volume the user set while the music plays
+// Deliberately narrow. It applies when the speaker starts playing after it was
+// switched on, and nowhere else: a volume the user set while the music plays
 // is theirs and must never be overwritten. Off by default, because a speaker
 // that quietly changes its own volume is worse than one that forgets.
+//
+// "Starts playing after it was switched on" covers both ways that happens:
+// STR's own resume, and the speaker resuming its last station by itself. The
+// Portable does the latter on a power-on with the remote, so STR's resume
+// never ran there and the start level was never set (mail 2026-10-06).
 
 package webui
 
@@ -62,18 +67,62 @@ func (s *Server) startVolume() (int, bool) {
 // started, because then it would fight their own volume knob.
 func (s *Server) applyStartVolume(reason string) {
 	vol, ok := s.startVolume()
-	if !ok || s.boxHost == "" {
+	if !ok || (s.boxHost == "" && s.setVolumeFn == nil) {
 		return
 	}
+	// once per power-on: STR's resume and the power-on watch below can both
+	// notice the same start
+	s.startVolumeMu.Lock()
+	if !s.startVolumeAt.IsZero() && time.Since(s.startVolumeAt) < startVolumeOnce {
+		s.startVolumeMu.Unlock()
+		return
+	}
+	s.startVolumeAt = time.Now()
+	s.startVolumeMu.Unlock()
 	go func() {
 		time.Sleep(startVolumeApplyDelay)
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
-		if err := levelsClient(s.boxHost).SetVolume(ctx, vol); err != nil {
+		set := s.setVolumeFn
+		if set == nil {
+			set = func(ctx context.Context, v int) error { return levelsClient(s.boxHost).SetVolume(ctx, v) }
+		}
+		if err := set(ctx, vol); err != nil {
 			s.logger.Warn("start volume: could not set the level", "err", err, "vol", vol, "reason", reason)
 			return
 		}
 		s.logger.Info("start volume: set the speaker to its start level", "vol", vol, "reason", reason)
+	}()
+}
+
+// startVolumeOnce is how long after one start level another is not applied:
+// one power-on, one level.
+const startVolumeOnce = 30 * time.Second
+
+// Waiting for the speaker to play after a power-on. Vars so tests can shorten
+// them.
+var (
+	startVolumeWatchFor  = 15 * time.Second
+	startVolumeWatchPoll = time.Second
+)
+
+// applyStartVolumeAfterPowerOn watches the first seconds after the speaker
+// was switched on and sets the start level once it plays, whoever started
+// the playback. A speaker that stays silent gets nothing.
+func (s *Server) applyStartVolumeAfterPowerOn() {
+	if _, ok := s.startVolume(); !ok {
+		return
+	}
+	go func() {
+		deadline := time.Now().Add(startVolumeWatchFor)
+		for time.Now().Before(deadline) {
+			time.Sleep(startVolumeWatchPoll)
+			if standby, busy := s.boxPlayState(); busy && !standby {
+				s.applyStartVolume("power-on")
+				return
+			}
+		}
+		s.logger.Info("start volume: the speaker did not start playing after the power-on, nothing to set")
 	}()
 }
 

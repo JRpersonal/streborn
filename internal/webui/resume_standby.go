@@ -1656,6 +1656,9 @@ func (s *Server) armDeferredResume(boxURL, title, art, mime string, capturedTS t
 // instead of STR waking the speaker. All the usual guards still apply: a
 // deliberate stop, a zone, a newer play, an opt-out or an expired arm cancel it.
 func (s *Server) RunDeferredResume() {
+	// the speaker was switched on: its start level applies once it plays,
+	// also when it resumes its station by itself and nothing below runs
+	s.applyStartVolumeAfterPowerOn()
 	s.deferredMu.Lock()
 	d := s.deferred
 	s.deferred = nil

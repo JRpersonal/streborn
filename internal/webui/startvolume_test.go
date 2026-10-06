@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -9,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func startVolServer(t *testing.T) *Server {
@@ -114,5 +117,73 @@ func TestStartVolumeIsOnlyAppliedOnTheWakeResume(t *testing.T) {
 	}
 	if n := strings.Count(string(src), "s.applyStartVolume("); n != 1 {
 		t.Errorf("applyStartVolume should be called once from the wake resume, found %d calls", n)
+	}
+}
+
+// powerOnServer has a start level of 20, a play state the test controls and a
+// volume setter that records what it was asked.
+func powerOnServer(t *testing.T, playing *atomic.Bool) (*Server, *atomic.Int32, *atomic.Int32) {
+	t.Helper()
+	s := startVolServer(t)
+	if err := os.WriteFile(s.startVolumePath, []byte("20"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var calls, last atomic.Int32
+	s.playStateFn = func() (bool, bool) { return !playing.Load(), playing.Load() }
+	s.setVolumeFn = func(_ context.Context, v int) error {
+		calls.Add(1)
+		last.Store(int32(v))
+		return nil
+	}
+	prevFor, prevPoll := startVolumeWatchFor, startVolumeWatchPoll
+	startVolumeWatchFor, startVolumeWatchPoll = 400*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { startVolumeWatchFor, startVolumeWatchPoll = prevFor, prevPoll })
+	return s, &calls, &last
+}
+
+func waitForStartVol(cond func() bool, d time.Duration) bool {
+	end := time.Now().Add(d)
+	for time.Now().Before(end) {
+		if cond() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return cond()
+}
+
+// The Portable resumes its station by itself on a power-on with the remote;
+// the start level must apply then too.
+func TestStartVolumeAppliesWhenTheSpeakerResumesByItself(t *testing.T) {
+	var playing atomic.Bool
+	s, calls, last := powerOnServer(t, &playing)
+	s.applyStartVolumeAfterPowerOn()
+	time.Sleep(60 * time.Millisecond)
+	playing.Store(true)
+	if !waitForStartVol(func() bool { return calls.Load() == 1 }, startVolumeApplyDelay+2*time.Second) || last.Load() != 20 {
+		t.Fatalf("start level set %d times, last %d; want once, 20", calls.Load(), last.Load())
+	}
+}
+
+func TestStartVolumeLeavesASilentSpeakerAlone(t *testing.T) {
+	var playing atomic.Bool
+	s, calls, _ := powerOnServer(t, &playing)
+	s.applyStartVolumeAfterPowerOn()
+	time.Sleep(startVolumeWatchFor + startVolumeApplyDelay + 300*time.Millisecond)
+	if calls.Load() != 0 {
+		t.Fatalf("a speaker that never plays must not get a level, got %d writes", calls.Load())
+	}
+}
+
+// STR's own resume and the power-on watch both see the same start: one write.
+func TestStartVolumeOncePerPowerOn(t *testing.T) {
+	var playing atomic.Bool
+	playing.Store(true)
+	s, calls, _ := powerOnServer(t, &playing)
+	s.applyStartVolumeAfterPowerOn()
+	s.applyStartVolume("wake resume")
+	time.Sleep(startVolumeApplyDelay + 600*time.Millisecond)
+	if calls.Load() != 1 {
+		t.Fatalf("one power-on must set the level once, got %d", calls.Load())
 	}
 }
