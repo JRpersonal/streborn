@@ -13,7 +13,7 @@ import (
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// Blockfall, the hidden game on the Portable's display (internal/oled on the
+// Blockfall, the hidden game on the speaker display (internal/oled on the
 // agent). The agent keeps the scores and the last round's final screen on the
 // speaker; the app shows them once a round has been played and helps post the
 // score in the Blockfall announcement thread on GitHub. Nothing is sent

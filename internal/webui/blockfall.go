@@ -13,7 +13,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/oled"
 )
 
-// Blockfall, the hidden game on the Portable's display (internal/oled). The
+// Blockfall, the hidden game on the speaker display (internal/oled). The
 // remote code starts a round; this side owns everything around it: the music
 // the speaker plays over UPnP loopback, noticing when the user takes the
 // speaker back, saving the score, and putting the speaker back the way it was
