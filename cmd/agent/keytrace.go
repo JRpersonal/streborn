@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 )
 
@@ -73,6 +74,13 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 	if !ev.Pressed() || !ev.Producer.Physical() {
 		return
 	}
+	// During a round of the hidden game (internal/oled) the remote keys are
+	// the game's controls: no webhook, no group toggle. Otherwise every press
+	// also goes to the code detector that starts a round.
+	if oled.GameActive() {
+		return
+	}
+	oled.FeedKey(ev.Name)
 	id := webhooks.KeyTriggerID(ev.Name)
 	if id == "" {
 		return

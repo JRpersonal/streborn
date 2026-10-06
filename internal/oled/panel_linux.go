@@ -93,8 +93,13 @@ func play(frame func(t float64, buf []byte) bool, onQuit func(t float64), maxDur
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	mem, err := syscall.Mmap(int(f.Fd()), 0, FrameSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	// The mapping stays valid without the descriptor, so close it right away
+	// and with its error checked: nothing is written through the file itself.
+	if cerr := f.Close(); err == nil && cerr != nil {
+		_ = syscall.Munmap(mem)
+		return fmt.Errorf("close %s: %w", fbDevice, cerr)
+	}
 	if err != nil {
 		return fmt.Errorf("mmap: %w", err)
 	}
