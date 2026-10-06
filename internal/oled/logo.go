@@ -191,6 +191,15 @@ func (l *Logo) Frame(t float64, buf []byte) {
 	}
 }
 
+// clearRect blanks a rectangle (fillRect skips level 0, so it cannot).
+func clearRect(buf []byte, x0, y0, w, h int) {
+	for y := max(y0, 0); y < min(y0+h, Height); y++ {
+		for x := max(x0, 0); x < min(x0+w, Width); x++ {
+			buf[y*Width+x] = 0
+		}
+	}
+}
+
 func fillRect(buf []byte, x0, y0, w, h, lvl int) {
 	if lvl <= 0 {
 		return

@@ -165,3 +165,29 @@ func TestStarguardFrameFits(t *testing.T) {
 		}
 	}
 }
+
+// The end screen carries the score large and says NEW HIGHSCORE on a record,
+// so the shared screenshot speaks for itself.
+func TestStarguardEndScreen(t *testing.T) {
+	lit := func(g *Starguard) int {
+		buf := make([]byte, FrameSize)
+		g.Frame(buf)
+		n := 0
+		for _, v := range buf[58*Width : 65*Width] {
+			if v == 15 {
+				n++
+			}
+		}
+		return n
+	}
+	g := NewStarguard(8)
+	g.setBest(100)
+	g.Score = 500
+	g.End()
+	record := lit(g)
+	g.Score = 50
+	plain := lit(g)
+	if record == 0 || record == plain {
+		t.Fatalf("NEW HIGHSCORE line must differ from the BEST line: %d vs %d lit", record, plain)
+	}
+}

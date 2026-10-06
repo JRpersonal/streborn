@@ -234,6 +234,11 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 	if ag, ok := g.(interface{ setAudio(*LiveAudio) }); ok && hooks.Live != nil {
 		ag.setAudio(hooks.Live)
 	}
+	// the game shows the record on its end screen, and NEW HIGHSCORE when
+	// this round beats it, so the shared screenshot says it all
+	if bg, ok := g.(interface{ setBest(int) }); ok {
+		bg.setBest(LoadScores(id).Best)
+	}
 	var res Result
 	phase := 0 // 0 intro, 1 game, 2 game over
 	steps := 0 // game steps run so far, at 30 a second of game time

@@ -106,7 +106,10 @@ type Starguard struct {
 	over  bool
 
 	audio *LiveAudio // nil when the round has no live music
+	best  int        // the record before this round
 }
+
+func (g *Starguard) setBest(n int) { g.best = n }
 
 func (g *Starguard) setAudio(la *LiveAudio) { g.audio = la }
 
@@ -565,11 +568,19 @@ func (g *Starguard) Frame(buf []byte) {
 		}
 	}
 	if g.over {
-		fillRect(buf, 20, 36, Width-40, 30, 0)
-		fillRect(buf, 20, 36, Width-40, 1, 8)
-		fillRect(buf, 20, 65, Width-40, 1, 8)
-		drawWord(buf, "GAME OVER", (Width-9*6+1)/2, 40, 1, 15)
-		drawWordNum(buf, "WAVE", g.wave, 53, 9)
+		// end screen: the score large, then the record or NEW HIGHSCORE
+		clearRect(buf, 10, 22, Width-20, 62)
+		fillRect(buf, 10, 22, Width-20, 1, 8)
+		fillRect(buf, 10, 83, Width-20, 1, 8)
+		drawWord(buf, "GAME OVER", (Width-9*6+1)/2, 26, 1, 15)
+		n := len(strconv.Itoa(g.Score))
+		drawDigits(buf, g.Score, (Width-(n*11-1))/2, 37, 2, 15)
+		if g.Score > g.best && g.Score > 0 {
+			drawWord(buf, "NEW HIGHSCORE", (Width-13*6+1)/2, 58, 1, 15)
+		} else {
+			drawWordNum(buf, "BEST", g.best, 58, 9)
+		}
+		drawWordNum(buf, "WAVE", g.wave, 70, 6)
 	}
 }
 
