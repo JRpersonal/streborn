@@ -311,6 +311,19 @@ func ScoresPath(id string) string { return filepath.Join(ScoreDir, id+".json") }
 // ScreenshotPath is where game id keeps its last round's final screen.
 func ScreenshotPath(id string) string { return filepath.Join(ScoreDir, id+"-last.png") }
 
+// LastRoundAt is when the most recent round of any game was saved, zero when
+// none was. It only stats the score files, so the version endpoint can carry
+// it on every probe.
+func LastRoundAt() time.Time {
+	var last time.Time
+	for _, g := range Games {
+		if st, err := os.Stat(ScoresPath(g.ID)); err == nil && st.ModTime().After(last) {
+			last = st.ModTime()
+		}
+	}
+	return last
+}
+
 // Scores is what the app reads back.
 type Scores struct {
 	Best     int       `json:"best"`

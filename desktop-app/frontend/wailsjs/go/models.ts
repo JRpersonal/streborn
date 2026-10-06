@@ -46,6 +46,7 @@ export namespace main {
 	    strSilent?: boolean;
 	    otaPending?: boolean;
 	    boxHealth?: string;
+	    arcadeAt?: string;
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
 	    groupKeyError?: string;
@@ -83,6 +84,7 @@ export namespace main {
 	        this.strSilent = source["strSilent"];
 	        this.otaPending = source["otaPending"];
 	        this.boxHealth = source["boxHealth"];
+	        this.arcadeAt = source["arcadeAt"];
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.groupKeyError = source["groupKeyError"];

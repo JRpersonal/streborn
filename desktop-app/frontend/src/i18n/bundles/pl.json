@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "Zrzut ekranu skopiowany.",
   "settingsView.blockfallShotSavedToast": "Zrzut ekranu zapisany w {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Wynik skopiowany.",
+  "settingsView.arcadeHighscoreToast": "Nowy rekord w {{game}} na {{name}}: {{best}} pkt! Udostępnij go w ustawieniach głośnika.",
   "settingsView.displayMsgLast": "Ostatni komunikat: {{text}}",
   "settingsView.displayTrackWarn": "Gdy włączone, muzyka jest przerywana na około sekundę za każdym razem, gdy zmienia się pokazywany tekst (np. nowy utwór).",
   "settingsView.experimentalBadge": "eksperymentalne",

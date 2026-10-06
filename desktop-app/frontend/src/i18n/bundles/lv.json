@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "Ekrānuzņēmums nokopēts.",
   "settingsView.blockfallShotSavedToast": "Ekrānuzņēmums saglabāts: {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Rezultāts nokopēts.",
+  "settingsView.arcadeHighscoreToast": "Jauns {{game}} rekords skaļrunī {{name}}: {{best}} punkti! Kopīgojiet to skaļruņa iestatījumos.",
   "settingsView.displayMsgLast": "Pēdējais ziņojums: {{text}}",
   "settingsView.displayTrackWarn": "Kad ieslēgts, mūzika tiek pārtraukta uz aptuveni sekundi ikreiz, kad mainās rādītais teksts (piemēram, jauna dziesma).",
   "settingsView.experimentalBadge": "eksperimentāls",

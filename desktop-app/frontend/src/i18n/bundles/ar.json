@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "نُسخت لقطة الشاشة.",
   "settingsView.blockfallShotSavedToast": "حُفظت لقطة الشاشة في {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "نُسخت النتيجة.",
+  "settingsView.arcadeHighscoreToast": "رقم قياسي جديد في {{game}} على {{name}}: {{best}} نقطة! شاركه من إعدادات السماعة.",
   "settingsView.displayMsgLast": "آخر رسالة معروضة: {{text}}",
   "settingsView.displayTrackWarn": "عند التفعيل، تنقطع الموسيقى نحو ثانية في كل مرة يتغيّر فيها النص المعروض (مثل مقطع جديد).",
   "settingsView.experimentalBadge": "تجريبي",

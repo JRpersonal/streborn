@@ -860,6 +860,7 @@
   "settingsView.blockfallShotCopiedToast": "Screenshot kopiert.",
   "settingsView.blockfallShotSavedToast": "Screenshot gespeichert unter {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Punktestand kopiert.",
+  "settingsView.arcadeHighscoreToast": "Neuer {{game}}-Highscore auf {{name}}: {{best}} Punkte! Teilen kannst du ihn in den Einstellungen des Lautsprechers.",
   "settingsView.displayMsgLast": "Zuletzt angezeigt: {{text}}",
   "settingsView.announceHeading": "Durchsagen",
   "settingsView.announceLangLabel": "Sprache der Stimme",

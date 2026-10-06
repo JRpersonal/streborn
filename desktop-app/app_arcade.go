@@ -35,6 +35,8 @@ type arcadeScores struct {
 	Last     int    `json:"last"`
 	LastRows int    `json:"lastRows"`
 	Rounds   int    `json:"rounds"`
+	BestAt   string `json:"bestAt"`
+	LastAt   string `json:"lastAt"`
 }
 
 func (a *App) boxGetJSON(host string, port int, path string, out any) (int, error) {
@@ -108,6 +110,7 @@ func (a *App) GetArcade(host string, port int) ([]map[string]any, error) {
 		e := map[string]any{
 			"id": g.ID, "title": g.Title, "rounds": g.Rounds,
 			"best": g.Best, "last": g.Last, "lastRows": g.LastRows,
+			"bestAt": g.BestAt, "lastAt": g.LastAt,
 		}
 		if png, perr := a.arcadeScreenshot(host, port, g.ID, legacy); perr == nil && len(png) > 0 {
 			e["screenshot"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)

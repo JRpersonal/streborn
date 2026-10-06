@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "Ekran görüntüsü kopyalandı.",
   "settingsView.blockfallShotSavedToast": "Ekran görüntüsü kaydedildi: {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Skor kopyalandı.",
+  "settingsView.arcadeHighscoreToast": "{{name}} üzerinde yeni {{game}} rekoru: {{best}} puan! Hoparlörün ayarlarından paylaşabilirsin.",
   "settingsView.displayMsgLast": "Son gösterilen mesaj: {{text}}",
   "settingsView.displayTrackWarn": "Açıkken, gösterilen metin her değiştiğinde (ör. yeni bir parça) müzik yaklaşık bir saniye kesilir.",
   "settingsView.experimentalBadge": "deneysel",

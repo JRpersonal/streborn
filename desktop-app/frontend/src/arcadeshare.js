@@ -40,3 +40,64 @@ export async function copyScreenshot(dataURL, nav = globalThis.navigator, Item =
     return false;
   }
 }
+
+// A new highscore gets a notice in the app. The agent reports when it saved
+// its last round (box.arcadeAt, unix seconds) in the version answer the app
+// probes every minute anyway, so the scores are fetched only after a new
+// round. Remembered per speaker on this computer; the first sighting of a
+// speaker only sets the baseline, unless that round is fresh.
+const SEEN_KEY = 'str-arcade-seen';
+const FRESH_SEC = 15 * 60;
+
+function readSeen(storage) {
+  try { return JSON.parse(storage.getItem(SEEN_KEY) || '{}') || {}; } catch { return {}; }
+}
+function writeSeen(storage, seen) {
+  try { storage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* storage blocked: no notices */ }
+}
+
+// roundIsNew decides from the box record whether a round happened since the
+// last look. Returns the timestamp to remember, or 0 for nothing new.
+export function roundIsNew(box, seen, nowSec) {
+  const at = Number(box && box.arcadeAt);
+  if (!Number.isFinite(at) || at <= 0) return 0;
+  const key = box.deviceID || box.host;
+  if (!key) return 0;
+  const prev = seen[key];
+  if (prev === undefined) return nowSec - at < FRESH_SEC ? at : -at;
+  return at > prev ? at : 0;
+}
+
+// newHighscore picks the game of the latest round from a GetArcade answer and
+// says whether that round set the highscore.
+export function newHighscore(list) {
+  const games = (Array.isArray(list) ? list : []).filter((g) => g && Number(g.rounds) > 0 && g.lastAt);
+  if (!games.length) return null;
+  const g = games.reduce((a, b) => (Date.parse(b.lastAt) > Date.parse(a.lastAt) ? b : a));
+  if (g.bestAt !== g.lastAt || Number(g.best) !== Number(g.last) || !(Number(g.best) > 0)) return null;
+  const title = String(g.title || g.id);
+  return { id: g.id, title: title.charAt(0) + title.slice(1).toLowerCase(), best: Number(g.best) };
+}
+
+// announceHighscores runs after every refresh of the speaker list.
+export async function announceHighscores(boxes, deps) {
+  const { getArcade, toast, t, storage, nowSec } = deps;
+  const seen = readSeen(storage);
+  let changed = false;
+  for (const box of boxes || []) {
+    const at = roundIsNew(box, seen, nowSec);
+    if (!at) continue;
+    seen[box.deviceID || box.host] = Math.abs(at);
+    changed = true;
+    if (at < 0) continue; // baseline only
+    try {
+      const hs = newHighscore(await getArcade(box.host, box.port));
+      if (hs) {
+        toast(t('settingsView.arcadeHighscoreToast', {
+          game: hs.title, best: hs.best, name: box.friendlyName || box.name || box.host,
+        }), 8000);
+      }
+    } catch { /* the speaker did not answer: the section still shows it later */ }
+  }
+  if (changed) writeSeen(storage, seen);
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pngBlob, copyScreenshot, scoreText } from './arcadeshare.js';
+import { pngBlob, copyScreenshot, scoreText, roundIsNew, newHighscore, announceHighscores } from './arcadeshare.js';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
@@ -38,5 +38,42 @@ describe('scoreText', () => {
       .toBe('My Blockfall highscore on the SoundTouch Portable: **1234 points**. Last round: 800 points, 9 rows.');
     expect(scoreText({ id: 'starguard', title: 'Starguard', best: 5, last: 5, rows: 2 }, ''))
       .toBe('My Starguard highscore on my SoundTouch: **5 points**. Last round: 5 points, 2 waves.');
+  });
+});
+
+describe('highscore notice', () => {
+  const now = 1_800_000_000;
+  it('only reacts to a round newer than the last look', () => {
+    const box = { deviceID: 'D1', arcadeAt: String(now - 30) };
+    expect(roundIsNew(box, { D1: now - 30 }, now)).toBe(0);
+    expect(roundIsNew(box, { D1: now - 600 }, now)).toBe(now - 30);
+    expect(roundIsNew({ deviceID: 'D1' }, {}, now)).toBe(0);
+  });
+  it('a speaker seen for the first time sets a baseline unless its round is fresh', () => {
+    expect(roundIsNew({ deviceID: 'D1', arcadeAt: String(now - 60) }, {}, now)).toBe(now - 60);
+    expect(roundIsNew({ deviceID: 'D1', arcadeAt: String(now - 86400) }, {}, now)).toBe(-(now - 86400));
+  });
+  it('names the game of the latest round only when that round set the highscore', () => {
+    const best = { id: 'starguard', title: 'STARGUARD', rounds: 2, best: 900, last: 900, bestAt: '2026-10-06T14:00:00Z', lastAt: '2026-10-06T14:00:00Z' };
+    const older = { id: 'blockfall', title: 'BLOCKFALL', rounds: 4, best: 50, last: 50, bestAt: '2026-10-06T12:00:00Z', lastAt: '2026-10-06T12:00:00Z' };
+    expect(newHighscore([older, best])).toEqual({ id: 'starguard', title: 'Starguard', best: 900 });
+    const plain = { ...best, last: 300, lastAt: '2026-10-06T15:00:00Z' };
+    expect(newHighscore([older, plain])).toBe(null);
+  });
+  it('toasts once per new highscore and remembers it', async () => {
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    const toasts = [];
+    const deps = {
+      getArcade: async () => [{ id: 'blockfall', title: 'BLOCKFALL', rounds: 1, best: 29, last: 29, bestAt: 'x', lastAt: 'x' }],
+      toast: (m) => toasts.push(m),
+      t: (k, p) => `${k} ${p.game} ${p.best} ${p.name}`,
+      storage,
+      nowSec: now,
+    };
+    const boxes = [{ deviceID: 'D1', host: '192.0.2.1', friendlyName: 'Portable', arcadeAt: String(now - 20) }];
+    await announceHighscores(boxes, deps);
+    await announceHighscores(boxes, deps);
+    expect(toasts).toEqual(['settingsView.arcadeHighscoreToast Blockfall 29 Portable']);
   });
 });

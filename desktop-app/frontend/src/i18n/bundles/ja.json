@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "スクリーンショットをコピーしました。",
   "settingsView.blockfallShotSavedToast": "スクリーンショットを {{path}} に保存しました。",
   "settingsView.blockfallScoreCopiedToast": "スコアをコピーしました。",
+  "settingsView.arcadeHighscoreToast": "{{name}} で {{game}} の新記録：{{best}} 点！スピーカーの設定から共有できます。",
   "settingsView.displayMsgLast": "最後に表示したメッセージ: {{text}}",
   "settingsView.displayTrackWarn": "オンにすると、表示テキストが変わるたびに（例: 新しい曲）音楽が約1秒途切れます。",
   "settingsView.experimentalBadge": "実験的",

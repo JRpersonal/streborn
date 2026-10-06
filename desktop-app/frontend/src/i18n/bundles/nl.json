@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "Screenshot gekopieerd.",
   "settingsView.blockfallShotSavedToast": "Screenshot opgeslagen in {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Score gekopieerd.",
+  "settingsView.arcadeHighscoreToast": "Nieuwe {{game}}-highscore op {{name}}: {{best}} punten! Deel hem via de instellingen van de speaker.",
   "settingsView.displayMsgLast": "Laatst getoonde melding: {{text}}",
   "settingsView.displayTrackWarn": "Als dit aan staat, wordt de muziek ongeveer een seconde onderbroken telkens als de getoonde tekst verandert (bijv. een nieuw nummer).",
   "settingsView.experimentalBadge": "experimenteel",

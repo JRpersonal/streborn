@@ -7,6 +7,7 @@ import { statusTickScope } from './statusrefreshscope.js';
 import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
+import { announceHighscores } from './arcadeshare.js';
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
 import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
@@ -145,6 +146,7 @@ import {
   boxFetch,
   readBoxBalance,
   setBoxMute,
+  GetArcade,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -2312,6 +2314,12 @@ setInterval(() => {
 // identically (current-box re-bind, speaker select, badges, setup picker).
 function applyBoxList(list) {
   state.boxes = applyPendingNames(list || []);
+  // A round of a display game finished since the last look: tell the player
+  // when it set a new highscore (arcadeshare.js).
+  announceHighscores(state.boxes, {
+    getArcade: GetArcade, toast: showToast, t, storage: window.localStorage,
+    nowSec: Math.floor(Date.now() / 1000),
+  }).catch(() => {});
   // Stable display order. mDNS returns boxes in a nondeterministic order that
   // varies between discovery cycles, so the speaker list visibly reshuffled
   // whenever discovery re-ran, most noticeably mid-OTA when the updating box

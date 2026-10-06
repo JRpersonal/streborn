@@ -860,6 +860,7 @@
   "settingsView.blockfallShotCopiedToast": "Screenshot copied.",
   "settingsView.blockfallShotSavedToast": "Screenshot saved to {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Score copied.",
+  "settingsView.arcadeHighscoreToast": "New {{game}} highscore on {{name}}: {{best}} points! Share it from the speaker's settings.",
   "settingsView.displayMsgLast": "Last message shown: {{text}}",
   "settingsView.announceHeading": "Announcements",
   "settingsView.announceLangLabel": "Voice language",

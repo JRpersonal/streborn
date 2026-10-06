@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "Capture copiée.",
   "settingsView.blockfallShotSavedToast": "Capture enregistrée dans {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Score copié.",
+  "settingsView.arcadeHighscoreToast": "Nouveau record à {{game}} sur {{name}} : {{best}} points ! Partage-le depuis les réglages de l'enceinte.",
   "settingsView.displayMsgLast": "Dernier message affiché : {{text}}",
   "settingsView.displayTrackWarn": "Quand c'est activé, la musique est interrompue environ une seconde à chaque changement du texte affiché (par ex. un nouveau morceau).",
   "settingsView.experimentalBadge": "expérimental",

@@ -1356,6 +1356,7 @@
   "settingsView.blockfallShotCopiedToast": "Ekrano kopija nukopijuota.",
   "settingsView.blockfallShotSavedToast": "Ekrano kopija išsaugota: {{path}}.",
   "settingsView.blockfallScoreCopiedToast": "Rezultatas nukopijuotas.",
+  "settingsView.arcadeHighscoreToast": "Naujas {{game}} rekordas garsiakalbyje {{name}}: {{best}} taškų! Pasidalinkite juo garsiakalbio nustatymuose.",
   "settingsView.displayMsgLast": "Paskutinis pranešimas: {{text}}",
   "settingsView.displayTrackWarn": "Kai įjungta, muzika nutrūksta maždaug sekundei kaskart, kai pasikeičia rodomas tekstas (pvz., naujas takelis).",
   "settingsView.experimentalBadge": "eksperimentinis",
