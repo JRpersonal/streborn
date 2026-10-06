@@ -506,31 +506,23 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// stream proxy that stalls a FLAC on Range and garbles it on EOF (#139). The
 	// MIME is re-derived from the URL because the preset store does not keep it;
 	// an unknown extension falls through to the proxy path unchanged.
-	if p.Source != "" && isPlainHTTPURL(p.StreamURL) {
-		if mime := mimeFromURL(p.StreamURL); mime != "" {
-			directURL := p.StreamURL
-			s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime)
-			if err := s.renderer.PlayURLMime(playCtx, directURL, p.Name, p.Art, mime); err != nil {
-				if isGroupedRejection(err) {
-					s.writeGroupedPlayError(w, err)
-					return
-				}
-				writeJSON(w, http.StatusBadGateway, map[string]any{
-					"error": "Track could not be played", "detail": guessErrorReason(err),
-					"slot": slot, "name": p.Name,
-				})
+	if mime := libraryFileMime(p); mime != "" {
+		s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime)
+		if err := s.playLibraryFilePresetLocked(playCtx, p, mime, recallStart); err != nil {
+			if isGroupedRejection(err) {
+				s.writeGroupedPlayError(w, err)
 				return
 			}
-			gen := s.setLastPlay(directURL, p.Name, p.Art, mime)
-			s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "", mime) // #135
-			name, art := p.Name, p.Art
-			go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
-				_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
-			}, nil)
-			recallDelivered = true
-			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Track could not be played", "detail": guessErrorReason(err),
+				"slot": slot, "name": p.Name,
+			})
 			return
 		}
+		s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "", mime) // #135
+		recallDelivered = true
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+		return
 	}
 	// Use the stream proxy URL so playback continues even after token
 	// expiry (Bose sees the stable loopback URL).
