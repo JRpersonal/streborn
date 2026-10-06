@@ -7,8 +7,11 @@ import (
 	"time"
 )
 
-// Game music: our own 4-bar loop in A minor (square lead, triangle bass),
-// streamed as an endless WAV that the speaker itself plays over UPnP.
+// Game music: our own 4-bar loop in A minor (square lead, triangle bass) for
+// the intro and a short falling jingle for the game-over screen, streamed as
+// an endless WAV that the speaker itself plays over UPnP. Nothing plays while
+// the game itself runs: Previous/Skip on the remote are the speaker's own skip
+// keys, and BoseApp tears the UPnP stream down on every press.
 //
 // The speaker's renderer wants 44.1 kHz stereo with 0xFFFFFFFF size fields
 // (22.05 kHz mono was fetched and dropped). The synthesis is integer only:
@@ -35,6 +38,34 @@ var gameLead = []int{
 // gameBass: one root per bar, played root/octave on quarters.
 var gameBass = []int{45, 41, 43, 40}
 
+// overLead / overBass: the game-over jingle, two bars, played once.
+var overLead = []int{
+	76, 0, 72, 0, 69, 0, 68, 0,
+	67, 66, 65, 64, 57, 0, 0, 0,
+}
+
+var overBass = []int{45, 40}
+
+// Track is one piece of music: a lead and a bass line in the formats above.
+// A track that does not loop is followed by silence until the stream stops,
+// so the speaker keeps the same stream and shows no state change.
+type Track struct {
+	Lead, Bass []int
+	Loop       bool
+}
+
+var (
+	// IntroTrack plays under the intro logo.
+	IntroTrack = Track{Lead: gameLead, Bass: gameBass, Loop: true}
+	// OverTrack plays under the game-over screen.
+	OverTrack = Track{Lead: overLead, Bass: overBass}
+)
+
+// Length is how long one pass of the track lasts.
+func (tr Track) Length() time.Duration {
+	return time.Duration(len(tr.Lead)) * time.Second * eighthLen / synthRate
+}
+
 var (
 	noteInc [128]uint32 // phase increment per MIDI note
 	leadEnv [eighthLen]int32
@@ -54,8 +85,9 @@ func init() {
 	}
 }
 
-// Synth renders the music loop sample by sample.
+// Synth renders a track sample by sample.
 type Synth struct {
+	Track          Track
 	t              int
 	leadPh, bassPh uint32
 }
@@ -70,11 +102,16 @@ func triangle(ph uint32) int32 {
 
 // Render fills buf with the next mono samples.
 func (s *Synth) Render(buf []int16) {
+	lead, bass := s.Track.Lead, s.Track.Bass
 	for i := range buf {
 		t := s.t + i
 		step := t / eighthLen
+		if !s.Track.Loop && step >= len(lead) {
+			buf[i] = 0
+			continue
+		}
 		var v int32
-		if n := gameLead[step%len(gameLead)]; n != 0 {
+		if n := lead[step%len(lead)]; n != 0 {
 			s.leadPh += noteInc[n]
 			sq := int32(-12000)
 			if s.leadPh < 1<<30 { // 25 % duty
@@ -82,7 +119,7 @@ func (s *Synth) Render(buf []int16) {
 			}
 			v += sq * leadEnv[t%eighthLen] >> 8
 		}
-		bn := gameBass[(step/8)%len(gameBass)]
+		bn := bass[(step/8)%len(bass)]
 		if (step/2)%2 == 1 {
 			bn += 12
 		}
@@ -111,14 +148,14 @@ func wavHeader() []byte {
 	return h
 }
 
-// StreamMusic writes the endless WAV to w, paced to real time: a 2 s head
+// StreamMusic writes track as an endless WAV to w, paced to real time: a 2 s head
 // start fills the renderer's buffer, then it stays about 1 s ahead. It returns
 // when done closes or a write fails (the speaker hung up).
-func StreamMusic(w io.Writer, flush func(), done <-chan struct{}) error {
+func StreamMusic(w io.Writer, flush func(), done <-chan struct{}, track Track) error {
 	if _, err := w.Write(wavHeader()); err != nil {
 		return err
 	}
-	var s Synth
+	s := Synth{Track: track}
 	buf := make([]int16, 1024)
 	out := make([]byte, 4*len(buf))
 	start := time.Now()

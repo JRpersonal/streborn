@@ -154,14 +154,34 @@ func TestWavHeaderAndSynth(t *testing.T) {
 	if string(h[0:4]) != "RIFF" || binary.LittleEndian.Uint16(h[22:]) != 2 || binary.LittleEndian.Uint32(h[24:]) != 44100 {
 		t.Fatal("the speaker plays 44.1 kHz stereo only")
 	}
-	var s Synth
-	buf := make([]int16, synthRate)
-	s.Render(buf)
-	peak := 0
-	for _, v := range buf {
-		peak = max(peak, int(v), -int(v))
+	for _, tr := range []Track{IntroTrack, OverTrack} {
+		s := Synth{Track: tr}
+		buf := make([]int16, synthRate)
+		s.Render(buf)
+		peak := 0
+		for _, v := range buf {
+			peak = max(peak, int(v), -int(v))
+		}
+		if peak < 16000 {
+			t.Fatalf("mix too quiet for a low speaker volume: peak %d", peak)
+		}
 	}
-	if peak < 16000 {
-		t.Fatalf("mix too quiet for a low speaker volume: peak %d", peak)
+}
+
+// The game-over jingle plays once and then stays silent, so the speaker keeps
+// the stream without repeating it.
+func TestOverTrackPlaysOnce(t *testing.T) {
+	s := Synth{Track: OverTrack}
+	n := int(OverTrack.Length().Seconds()*synthRate) + synthRate/10
+	s.Render(make([]int16, n))
+	tail := make([]int16, synthRate)
+	s.Render(tail)
+	for i, v := range tail {
+		if v != 0 {
+			t.Fatalf("sample %d after the jingle is %d, want silence", i, v)
+		}
+	}
+	if l := OverTrack.Length(); l < 3*time.Second || l > 4*time.Second {
+		t.Fatalf("jingle length %v", l)
 	}
 }

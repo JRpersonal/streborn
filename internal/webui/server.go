@@ -1368,6 +1368,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/announce", s.handleAnnounce)
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
 	mux.HandleFunc("/game/blockfall.wav", s.handleBlockfallMusic)
+	mux.HandleFunc("/game/blockfall-over.wav", s.handleBlockfallMusic)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/balance", s.handleBoxBalance)

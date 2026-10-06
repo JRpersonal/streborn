@@ -100,10 +100,30 @@ type Result struct {
 // ErrBusy means the panel or a round is already in use.
 var ErrBusy = errors.New("display busy")
 
+// RoundHooks lets the caller run the music around a round. Every hook is
+// called from the render loop and must not block. All are optional.
+type RoundHooks struct {
+	// IntroReady reports whether the intro may end: the caller holds it
+	// while the speaker wakes and the intro music starts (capped at introMax).
+	IntroReady func() bool
+	// GameStart runs when the intro ends and the game begins (music off).
+	GameStart func()
+	// GameOver runs when the game-over screen appears (jingle on).
+	GameOver func()
+	// OverHold keeps the game-over screen up past gameOverShown while it
+	// reports true (the jingle is still playing), capped at gameOverMax.
+	OverHold func() bool
+}
+
+const (
+	introMin    = 4.5 // seconds, the logo animation without a wait
+	introMax    = 16.0
+	gameOverMax = 12 * time.Second
+)
+
 // PlayRound runs one round: intro, game, game-over screen. It blocks until the
-// round ends or stop closes. onStart is called once the panel is ours and the
-// round is about to begin (the caller starts the music there).
-func PlayRound(stop <-chan struct{}, onStart func(), logger *slog.Logger) (Result, error) {
+// round ends or stop closes.
+func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Result, error) {
 	if !panelSupported() || !boseAppDisplayReady() {
 		return Result{}, errors.New("no supported panel")
 	}
@@ -132,22 +152,26 @@ func PlayRound(stop <-chan struct{}, onStart func(), logger *slog.Logger) (Resul
 	}()
 
 	seed := uint64(time.Now().UnixNano())
-	intro := NewLogo("BLOCKFALL", 4.5, seed)
+	// The intro holds its logo until the music is up, then zooms out as the
+	// plain animation would.
+	intro := NewLogo("BLOCKFALL", introMin, seed)
+	intro.Hold = true
 	g := NewBlockfall(seed)
 	var res Result
 	phase := 0 // 0 intro, 1 game, 2 game over
 	var gameStart, lastKey, overAt time.Time
-	started := false
 	err := play(func(t float64, buf []byte) bool {
 		now := time.Now()
 		switch phase {
 		case 0:
+			if t >= introMin-zoomLen && (hooks.IntroReady == nil || hooks.IntroReady() || t >= introMax) {
+				intro.Exit(t)
+			}
 			intro.Frame(t, buf)
 			if intro.Done(t) {
 				phase, gameStart, lastKey = 1, now, now
-				if onStart != nil && !started {
-					started = true
-					onStart()
+				if hooks.GameStart != nil {
+					hooks.GameStart()
 				}
 			}
 			return true
@@ -185,11 +209,15 @@ func PlayRound(stop <-chan struct{}, onStart func(), logger *slog.Logger) (Resul
 			if g.Over {
 				phase, overAt = 2, now
 				res.Screen = append([]byte(nil), buf...)
+				if hooks.GameOver != nil {
+					hooks.GameOver()
+				}
 			}
 			return true
 		default:
 			g.Frame(buf)
-			return now.Sub(overAt) < gameOverShown
+			shown := now.Sub(overAt)
+			return shown < gameOverShown || (hooks.OverHold != nil && hooks.OverHold() && shown < gameOverMax)
 		}
 	}, nil, roundMax+time.Minute, stop)
 	res.Score, res.Lines = g.Score, g.Lines
