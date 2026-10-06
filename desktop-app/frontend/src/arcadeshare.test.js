@@ -60,20 +60,19 @@ describe('highscore notice', () => {
     const plain = { ...best, last: 300, lastAt: '2026-10-06T15:00:00Z' };
     expect(newHighscore([older, plain])).toBe(null);
   });
-  it('toasts once per new highscore and remembers it', async () => {
+  it('opens the popup once per new highscore and remembers it', async () => {
     const store = new Map();
     const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
-    const toasts = [];
+    const shown = [];
     const deps = {
-      getArcade: async () => [{ id: 'blockfall', title: 'BLOCKFALL', rounds: 1, best: 29, last: 29, bestAt: 'x', lastAt: 'x' }],
-      toast: (m) => toasts.push(m),
-      t: (k, p) => `${k} ${p.game} ${p.best} ${p.name}`,
+      getArcade: async () => [{ id: 'blockfall', title: 'BLOCKFALL', rounds: 1, best: 29, last: 29, lastRows: 0, bestAt: 'x', lastAt: 'x' }],
+      popup: (game, box) => shown.push(`${game.title} ${game.best} ${box.friendlyName}`),
       storage,
       nowSec: now,
     };
     const boxes = [{ deviceID: 'D1', host: '192.0.2.1', friendlyName: 'Portable', arcadeAt: String(now - 20) }];
     await announceHighscores(boxes, deps);
     await announceHighscores(boxes, deps);
-    expect(toasts).toEqual(['settingsView.arcadeHighscoreToast Blockfall 29 Portable']);
+    expect(shown).toEqual(['Blockfall 29 Portable']);
   });
 });

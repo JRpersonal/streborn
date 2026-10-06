@@ -1,3 +1,5 @@
+import { arcadeState } from './boxstate.js';
+
 // Sharing a hidden game's score: copy buttons for the last round's final
 // screen (as an image, score included) and for a score line, plus the
 // announcement thread.
@@ -79,9 +81,10 @@ export function newHighscore(list) {
   return { id: g.id, title: title.charAt(0) + title.slice(1).toLowerCase(), best: Number(g.best) };
 }
 
-// announceHighscores runs after every refresh of the speaker list.
+// announceHighscores runs after every refresh of the speaker list and opens
+// the popup (deps.popup) for a round that set a new highscore.
 export async function announceHighscores(boxes, deps) {
-  const { getArcade, toast, t, storage, nowSec } = deps;
+  const { getArcade, popup, storage, nowSec } = deps;
   const seen = readSeen(storage);
   let changed = false;
   for (const box of boxes || []) {
@@ -91,12 +94,10 @@ export async function announceHighscores(boxes, deps) {
     changed = true;
     if (at < 0) continue; // baseline only
     try {
-      const hs = newHighscore(await getArcade(box.host, box.port));
-      if (hs) {
-        toast(t('settingsView.arcadeHighscoreToast', {
-          game: hs.title, best: hs.best, name: box.friendlyName || box.name || box.host,
-        }), 8000);
-      }
+      const list = await getArcade(box.host, box.port);
+      const hs = newHighscore(list);
+      const game = hs && arcadeState(list).games.find((g) => g.id === hs.id);
+      if (game) popup(game, box);
     } catch { /* the speaker did not answer: the section still shows it later */ }
   }
   if (changed) writeSeen(storage, seen);

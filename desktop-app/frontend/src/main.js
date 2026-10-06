@@ -8,6 +8,7 @@ import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { announceHighscores } from './arcadeshare.js';
+import { openHighscorePopup } from './arcadepopup.js';
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
 import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
@@ -2317,7 +2318,7 @@ function applyBoxList(list) {
   // A round of a display game finished since the last look: tell the player
   // when it set a new highscore (arcadeshare.js).
   announceHighscores(state.boxes, {
-    getArcade: GetArcade, toast: showToast, t, storage: window.localStorage,
+    getArcade: GetArcade, popup: openHighscorePopup, storage: window.localStorage,
     nowSec: Math.floor(Date.now() / 1000),
   }).catch(() => {});
   // Stable display order. mDNS returns boxes in a nondeterministic order that
