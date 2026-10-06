@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -255,6 +257,9 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 	var res Result
 	phase := 0 // 0 intro, 1 game, 2 game over
 	steps := 0 // game steps run so far, at 30 a second of game time
+	// every key event of the round as key:state@ms, logged at the end: what
+	// the remote really delivers decides how taps and holds must be read
+	var keyLog []string
 	var gameStart, lastKey, overAt time.Time
 	err := play(func(t float64, buf []byte) bool {
 		now := time.Now()
@@ -275,6 +280,9 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 			for drained := false; !drained; {
 				select {
 				case k := <-keys:
+					if len(keyLog) < 400 {
+						keyLog = append(keyLog, fmt.Sprintf("%d:%d@%d", k.Key, k.State, now.Sub(gameStart).Milliseconds()))
+					}
 					if k.State == KeyPressed && takesSpeakerBack(k.Key) {
 						// the speaker handles the key itself (power, a preset,
 						// play, AUX); the round just ends and leaves it to it
@@ -323,6 +331,9 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 		}
 	}, nil, roundMax+time.Minute, stop)
 	_, res.Score, res.Lines = g.State()
+	if len(keyLog) > 0 {
+		logger.Info("game: key events (key:state@ms, state 0 press 1 release 2 repeat)", "events", strings.Join(keyLog, " "))
+	}
 	if res.Reason == "" {
 		res.Reason = "stopped"
 	}
