@@ -109,6 +109,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					playingNow := isStreamingSource(src) && (ps == "PLAY_STATE" || ps == "BUFFERING_STATE")
 					fireSourcePlaying = playingNow && !c.sourcePlaying
 					c.sourcePlaying = playingNow
+					// A speaker that plays is not refusing every station. The
+					// 1036 rejections on the way there (a Spotify key racing
+					// its own UPnP teardown answers with several) are history
+					// the moment music actually plays; keeping them counted
+					// showed the "refusing every station" banner over a
+					// speaker that was playing (#1065, 2026-10-06).
+					if isStreamingSource(src) && ps == "PLAY_STATE" && len(c.err1036Times) > 0 {
+						c.err1036Times = c.err1036Times[:0]
+					}
 				}
 			}
 			c.mu.Unlock()

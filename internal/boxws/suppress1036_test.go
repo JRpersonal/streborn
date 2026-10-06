@@ -146,3 +146,24 @@ func TestSuppressionDoesNotDiscardRejectionsAlreadyCounted(t *testing.T) {
 		t.Fatalf("the rejections counted before the window must survive it, got %d", count)
 	}
 }
+
+// A speaker that plays is not refusing every station: rejections counted on
+// the way to the music are cleared by the music (#1065).
+func TestStorm1036ClearsWhenTheSpeakerPlays(t *testing.T) {
+	c := newTestClient(&recHandler{})
+	for i := 0; i < storm1036Threshold+1; i++ {
+		c.note1036()
+	}
+	if active, _, _ := c.Storm1036(); !active {
+		t.Fatal("setup: the rejections must raise a storm")
+	}
+	// buffering is not playing yet
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="SPOTIFY"><playStatus>BUFFERING_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	if active, _, _ := c.Storm1036(); !active {
+		t.Fatal("buffering must not clear the storm")
+	}
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="SPOTIFY"><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	if active, count, _ := c.Storm1036(); active || count != 0 {
+		t.Fatalf("a playing speaker must clear the storm, got active=%v count=%d", active, count)
+	}
+}
