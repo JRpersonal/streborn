@@ -605,6 +605,7 @@ func scrubIdentities(s string) string {
 		return sub[1] + "NAME#" + hashShort(val) + sub[3]
 	})
 	s = scrubAccounts(s)
+	s = scrubURLCredentials(s)
 	s = redactSSIDs(s)
 	// Spaced first: the narrower pattern below would otherwise cut the name at
 	// its space and leave the surname standing.
@@ -614,6 +615,23 @@ func scrubIdentities(s string) string {
 	// exports, wherever it sits.
 	s = scrubLocalNames(s)
 	return s
+}
+
+// Credentials inside URLs: a stream URL a user saved on a preset can carry
+// its login, either as user:password@host or as query parameters
+// (?username=...&password=...). Found in a public bundle on 2026-10-06, the
+// station URL of a preset with both in the clear. The value is replaced, the
+// parameter name stays, so the bundle still shows that the stream needs a
+// login. The separator may be a plain ampersand, its JSON escape (backslash
+// u0026) or the HTML entity.
+var (
+	urlUserinfoRegex  = regexp.MustCompile(`(?i)\b((?:https?|rtsp|rtmp|mms|icy)://)[^\s/@"'<>\\]+@`)
+	urlCredParamRegex = regexp.MustCompile(`(?i)([?&;]|\\u0026|&amp;)(password|passwd|pass|pwd|passcode|token|access_token|auth|authkey|auth_token|apikey|api_key|secret|username|user|login|email|sid)=([^&\s"'<>\\#]+)`)
+)
+
+func scrubURLCredentials(s string) string {
+	s = urlUserinfoRegex.ReplaceAllString(s, "${1}***@")
+	return urlCredParamRegex.ReplaceAllString(s, "${1}${2}=***")
 }
 
 // salt is mixed into every pseudonym. It is set once by the program that
