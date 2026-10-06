@@ -35,6 +35,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/mdnshost"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/netutil"
+	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	strregion "github.com/JRpersonal/streborn/internal/region"
@@ -561,6 +562,13 @@ func run() error {
 	// the log could only say the process was gone. See crashforensics.go.
 	noteAgentStart(bootReason, logger)
 	webui.RegisterDebugSection("last_exit", lastExitSnapshot)
+	// STR's own splash on the Portable's OLED after an install, an update or
+	// a box boot (internal/oled; a no-op on every other panel and when the
+	// user switched it off). Decided here because the OTA marker is consumed
+	// by webui.New further down; drawn in the background once BoseApp's
+	// display thread is up.
+	splashKind := oled.DecideKind(agentStamp(), webui.OTARebootPending(), strings.HasPrefix(bootReason, "box-boot"))
+	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"))
 	go func() {
 		for {
 			time.Sleep(time.Hour)

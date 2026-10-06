@@ -522,6 +522,13 @@ func (s *Server) consumeOTARebootMarker() {
 		"forSec", int(postOTAResumeSuppressWindow.Seconds()))
 }
 
+// OTARebootPending reports whether the last reboot was an agent update, for
+// callers that run before New() consumes the marker (the OLED splash).
+func OTARebootPending() bool {
+	_, err := os.Stat(otaRebootMarkerPath)
+	return err == nil
+}
+
 // resumeSuppressedPostOTA reports whether we are still inside the post-OTA
 // suppression window. Read-only after New(), so no lock is needed.
 func (s *Server) resumeSuppressedPostOTA() bool {

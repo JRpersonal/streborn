@@ -38,3 +38,15 @@ export function displayMessagesState(r) {
     last,
   };
 }
+
+// displaySplashState reads the agent's /api/box/display-splash answer for the
+// STR logo animation on the speaker display. show is true only when the agent
+// said it can draw on this speaker's panel; enabled is true/false, or null
+// when unreadable (same rule as the display track, #1083).
+export function displaySplashState(r) {
+  if (!r || typeof r !== 'object') return { show: false, enabled: null };
+  return {
+    show: r.supported === true,
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : null,
+  };
+}

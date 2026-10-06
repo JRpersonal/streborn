@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/hosts"
+	"github.com/JRpersonal/streborn/internal/oled"
 )
 
 // handleAgentVersion returns the running stick agent version. Used by
@@ -604,6 +605,16 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, errNANDReadOnly.Error(), http.StatusInsufficientStorage)
 		return
 	}
+	// The STR logo with a running bar on the Portable's OLED while the update
+	// lands (internal/oled; a no-op elsewhere). The reboot ends it with the
+	// process; every path that gives up without rebooting hands the panel back.
+	stopSplash := oled.StartUpdating(s.logger.With("comp", "oled"))
+	rebooting := false
+	defer func() {
+		if !rebooting {
+			stopSplash()
+		}
+	}()
 	// From here the engine may be reclaimed at any moment and the process may
 	// exit. Cleared again only on the paths that give up WITHOUT restarting,
 	// so a failed update does not leave the speaker refusing engine deliveries
@@ -659,6 +670,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, errInsufficientNAND.Error()+": "+serr.Error(), http.StatusInsufficientStorage)
 			return
 		}
+		rebooting = true
 		writeJSON(w, http.StatusOK, map[string]string{
 			"status": "ok",
 			"action": "reboot",
@@ -707,6 +719,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	// A verified write supersedes any earlier tier-3 swap failure.
 	_ = os.Remove(swapFailMarker)
 	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state", "size", got.size)
+	rebooting = true
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
 		"action": "reboot",

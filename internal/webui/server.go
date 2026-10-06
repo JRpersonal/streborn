@@ -1346,6 +1346,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/display-messages", s.handleDisplayMessages)
+	mux.HandleFunc("/api/box/display-splash", s.handleDisplaySplash)
 	mux.HandleFunc(displayMsgAudioPath, s.handleDisplayMessageAudio)
 	mux.HandleFunc("/api/box/mediaservers", s.handleMediaServers)
 	mux.HandleFunc("/api/library/search", s.handleLibrarySearch)

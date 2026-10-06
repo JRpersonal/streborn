@@ -540,10 +540,7 @@ func settleBeforeFragileReboot(logger *slog.Logger) {
 // path). Atomic via tmp + rename; skipped where the parent dir is
 // absent (dev host, no stick).
 func stampVersionFiles(logger *slog.Logger) {
-	stamp := version
-	if buildStamp != "" && buildStamp != "dev" {
-		stamp = version + "+" + buildStamp
-	}
+	stamp := agentStamp()
 	// NAND only. The stick's version.txt used to be stamped here too, and
 	// that is the one marker the stick carries: STR reads it as the
 	// authority on what the stick HOLDS (the stick version in the
@@ -670,4 +667,13 @@ func tcpPortListening(port int) bool {
 		}
 	}
 	return false
+}
+
+// agentStamp is the running build as version.txt records it: the version,
+// plus the build stamp when the binary carries a real one.
+func agentStamp() string {
+	if buildStamp != "" && buildStamp != "dev" {
+		return version + "+" + buildStamp
+	}
+	return version
 }

@@ -101,6 +101,8 @@ export {
   SetDisplayTrack,
   GetDisplayMessages,
   SetDisplayMessages,
+  GetDisplaySplash,
+  SetDisplaySplash,
   AnnounceExample,
   SendAnnounce,
   Translate,

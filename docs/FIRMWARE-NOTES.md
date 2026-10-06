@@ -537,6 +537,59 @@ again after about 10 s. It is used only when a hardware key cannot play
 speaker that is awake and not playing, once per message per few minutes, and
 it never touches the volume.
 
+## Drawing on the Portable's OLED directly
+
+There is no display command, but on the Portable the panel itself is
+reachable (spike 2026-10-06, taigan, FW 27.0.6, public write-up in
+discussion #1168). STR uses this for one thing only: its own logo animation
+after an install, after an update, on a box boot, and while an agent update
+is received (`internal/oled`). It can be switched off per speaker
+(`POST /api/box/display-splash {"enabled":false}`, flag file
+`/mnt/nv/streborn/display-splash`).
+
+**The panel.** `/dev/fb0`, kernel driver `ssdspi`, 128 x 100 pixels, 8 bits
+per pixel, 16 grey levels (0x00 to 0xFF in steps of 0x11), 12,800 bytes per
+frame. The driver refreshes the panel from framebuffer memory on its own
+(SPI DMA about 97 times a second, whether anything changed or not), so
+whatever is in that memory is on the panel; no ioctl is needed and drawing
+adds no SPI traffic. `cat /dev/fb0` reads back exactly what is shown.
+
+**Keeping BoseApp out.** BoseApp renders with DirectFB, and one of its threads,
+`DirectFBFlipTas`, copies the finished frame into the framebuffer about six
+times a second, even in standby. Holding exactly that thread with
+`PTRACE_SEIZE` + `PTRACE_INTERRUPT` (no signal, so the other threads keep
+running and playback goes on) gives the panel to the caller; detaching, or
+the tracer exiting, hands it back and BoseApp repaints within one frame.
+Held for up to several minutes in tests without any side effect. The rest of
+BoseApp is off limits: killing BoseApp reboots the speaker
+(`recovery="reboot"` in the Shepherd config), the kernel has no cgroups
+freezer, and holding the wrong thread is not harmless either: holding
+`DevHelperThread` (key handling, it also serves internal eventfds and a
+timer) rebooted the speaker after about 25 seconds.
+
+**Only the Portable is recognised.** `internal/oled` checks the driver name and
+geometry in `/sys/class/graphics/fb0/` and does nothing on any other panel.
+The other display models (ST20, ST30, ST300, Wave) are untested.
+
+**Cost.** Measured on the Portable in standby (AM335x single core, no
+temperature sensor exposed): the stock standby screen keeps the system about
+13 % busy; a 20 fps animation from a separate process added 4 to 13 % CPU
+(the starfield with line drawing was the most expensive) and 2 MB of memory.
+The splash runs inside the agent for about 7 seconds per event.
+
+**Panel wear.** OLED pixels age with brightness times time. The stock standby
+clock averages 0.53 of 15 grey levels and sits on the same pixels every
+night. The STR splash averages under 1 of 15 while assembled and moves, and
+it is shown for seconds per boot or update, which is negligible next to the
+clock.
+
+**Buttons.** The top buttons do not arrive through `/dev/shelby-keypad`
+(BoseApp holds it exclusively; holding its reader `GPIOInputListen` did not
+stop presses from working). They reach BoseApp's `DevHelperThread` as
+eventfd wake-ups, logged as `IrDevice` key events with Producer 2 (key numbers
+as in the IR notes: 8 power, 10/11 volume, 12 to 17 presets). TAP's `key`
+command is a different path and never shows up there.
+
 ## A blocked `api2.iheart.com` makes the speaker ask every 5 seconds
 
 The firmware's own iHeartRadio module (in STSCertified, not STR) looks up
