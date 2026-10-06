@@ -14,6 +14,7 @@ import {
   acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySongText,
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
+import { applyPositionReading, resetProgress, wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -1194,7 +1195,16 @@ async function renderFooter() {
   setInterval(() => { try { checkAppUpdate(); } catch {} }, 12 * 3600 * 1000);
   // Advance the track progress once a second between speaker polls, so the bar
   // moves like a clock instead of stepping whenever the status poll lands.
-  setInterval(() => { try { renderTrackProgress(); } catch {} }, 1000);
+  // Right after a track change the length is not known yet, and the status
+  // cadence (5 s, 15 s outside the speaker view) made the bar wait that long
+  // to appear. For a short window the tick asks the speaker itself (#845).
+  setInterval(() => {
+    try {
+      const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
+      if (wantsFastPoll(trackPos, playing, Date.now())) pollTrackPosition();
+      renderTrackProgress();
+    } catch {}
+  }, 1000);
   // appInfo may have arrived after the first discovery completed; the
   // badge function defers until both are known. Re-render the box list
   // too so the per-speaker update dot (boxNeedsUpdate) appears once the
@@ -8149,7 +8159,7 @@ async function refreshBalance() {
 // jumps back reads as a bug even when the number is momentarily right. And a
 // track change resets it hard, because that is the one moment when going back
 // to zero is correct.
-const trackPos = { sec: 0, dur: 0, at: 0, key: '', polling: false };
+const trackPos = { sec: 0, dur: 0, at: 0, key: '', resetAt: 0, polling: false };
 
 function fmtClock(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -8159,10 +8169,7 @@ function fmtClock(sec) {
 }
 
 function resetTrackProgress(key) {
-  trackPos.sec = 0;
-  trackPos.dur = 0;
-  trackPos.at = Date.now();
-  trackPos.key = key || '';
+  resetProgress(trackPos, key, Date.now());
   renderTrackProgress();
 }
 
@@ -8195,8 +8202,12 @@ async function pollTrackPosition() {
   // and refreshStatus decides what a tick is allowed to cost (#845).
   if (trackPos.polling || !state.currentBox) return;
   const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
-  if (!playing) { trackPos.at = 0; renderTrackProgress(); return; }
+  if (!playing) { trackPos.at = 0; trackPos.resetAt = 0; renderTrackProgress(); return; }
   trackPos.polling = true;
+  // A reading that lands after the track changed describes the old track.
+  // refreshStatus fires this poll before its own status read, so around a
+  // track change that is the normal order, not a rare race (#845).
+  const keyAtStart = trackPos.key;
   try {
     // One object, read by field name. It used to be destructured as a pair,
     // which Wails cannot return: a bound method with two results keeps the
@@ -8205,16 +8216,10 @@ async function pollTrackPosition() {
     // below swallowed that, so the duration stayed 0, no bar was ever drawn,
     // and the elapsed clock was pure extrapolation rather than a reading.
     const p = await TrackPosition(state.currentBox.host, state.currentBox.port);
-    const pos = p && typeof p.positionSec === 'number' ? p.positionSec : -1;
-    const dur = p && typeof p.durationSec === 'number' ? p.durationSec : 0;
-    if (pos < 0) return; // could not ask: keep the bar where it is
-    // Only accept a backwards jump when the track itself changed, which
-    // resetTrackProgress has already handled by clearing the reading.
-    const drifted = trackPos.sec + (Date.now() - trackPos.at) / 1000;
-    if (trackPos.at !== 0 && pos + 2 < drifted && dur === trackPos.dur) return;
-    trackPos.sec = pos;
-    trackPos.dur = dur;
-    trackPos.at = Date.now();
+    // A failed read, a stale one, or a momentary zero length keeps the last
+    // reading; see trackprogress.js. Hiding the bar on any of those is what
+    // made it blink out for a poll during playback (#845).
+    applyPositionReading(trackPos, p, keyAtStart, Date.now());
   } catch {
     // leave the last reading in place
   } finally {
@@ -8391,6 +8396,12 @@ async function refreshStatus() {
     // its reading so the bar does not stutter on an unrelated status change.
     const trackKey = newLoc + '|' + newName;
     if (trackKey !== trackPos.key) resetTrackProgress(trackKey);
+    else if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') && trackPos.at === 0) {
+      // Playing again with no reading yet (the same track resumed after a
+      // stop): open the fast-poll window so the bar does not wait a full
+      // status interval either.
+      trackPos.resetAt = Date.now();
+    }
     // #810: the Recently-played view now refreshes now-playing itself (recent.js
     // syncCurrentNowPlaying), because refreshStatus returns early on any non-box
     // view, so an "if (state.view === 'recent')" branch here was unreachable.
