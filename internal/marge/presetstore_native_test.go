@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-// The firmware's flat store record for a Pandora station on a US speaker
-// (#1101). The real body was never observed; this is the MargeAddPresetRequest
-// shape the radio stores use, with the source id STR gives Pandora.
+// The firmware's flat store record for a Pandora station on a US speaker,
+// in the shape an ST20 sent (#1101): <username> repeats the station name, it
+// is not the account.
 const pandoraFlatPresetBody = `<?xml version="1.0" encoding="UTF-8" ?><preset buttonNumber="1">` +
-	`<sourceid>200</sourceid><name>Little Big Town Radio</name><username>listener@example.com</username>` +
+	`<sourceid>200</sourceid><name>Little Big Town Radio</name><username>Little Big Town Radio</username>` +
 	`<location>4071226281950183516</location><contentItemType>stationurl</contentItemType>` +
 	`<containerArt>https://example.com/art.jpg</containerArt></preset>`
 
@@ -60,7 +60,7 @@ func TestPandoraPresetStoreIsAnsweredWithTheRegisteredSource(t *testing.T) {
 		}
 	}
 	if got.Source != "PANDORA" || got.SourceID != "200" || got.Location != "4071226281950183516" ||
-		got.SourceAccount != "listener@example.com" || got.Type != "stationurl" || got.Form != "flat" {
+		got.SourceAccount != "" || got.Type != "stationurl" || got.Form != "flat" {
 		t.Fatalf("keeper got %+v", got)
 	}
 }

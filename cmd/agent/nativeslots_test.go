@@ -27,6 +27,8 @@ type recordedWrite struct {
 func recordNativeWrites(t *testing.T, fail error) *[]recordedWrite {
 	t.Helper()
 	var got []recordedWrite
+	origAccounts := boxSourceAccountsFn
+	boxSourceAccountsFn = func(string) map[string][]string { return map[string][]string{} }
 	orig := addPresetContentItemFn
 	addPresetContentItemFn = func(_ context.Context, _ string, slot int, source, typ, location, name, account string) error {
 		got = append(got, recordedWrite{slot, source, typ, location, name, account})
@@ -34,6 +36,7 @@ func recordNativeWrites(t *testing.T, fail error) *[]recordedWrite {
 	}
 	t.Cleanup(func() {
 		addPresetContentItemFn = orig
+		boxSourceAccountsFn = origAccounts
 		nativeSlotState.Lock()
 		nativeSlotState.refusedAt = map[string]time.Time{}
 		nativeSlotState.skipped = map[int]string{}
@@ -133,5 +136,24 @@ func TestLazySourceReadyReadsOnce(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("source list read %d times, want 1", calls)
+	}
+}
+
+// #1101: a key held on the speaker was stored with the station's name as its
+// account. The write-back uses the account the speaker lists for the service
+// instead, so the key comes back after a reboot.
+func TestWriteNativeSlotsUsesTheSpeakersOwnAccount(t *testing.T) {
+	got := recordNativeWrites(t, nil)
+	boxSourceAccountsFn = func(string) map[string][]string {
+		return map[string][]string{"PANDORA": {"listener@example.com"}}
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := nativeTestPreset(2)
+	p.Native.SourceAccount = "Chris Stapleton Radio"
+	if w := writeNativeSlots("192.0.2.1", []presets.Preset{p}, logger); len(w) != 1 {
+		t.Fatalf("written = %v", w)
+	}
+	if len(*got) != 1 || (*got)[0].account != "listener@example.com" {
+		t.Fatalf("writes = %+v", *got)
 	}
 }

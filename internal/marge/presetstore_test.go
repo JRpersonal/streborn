@@ -267,7 +267,7 @@ func TestFlatPresetBodyFromTheFirmwareIsUnderstood(t *testing.T) {
 		t.Fatal("flat preset body not understood")
 	}
 	if item.Source != "LOCAL_INTERNET_RADIO" || item.Type != "stationurl" || item.ItemName != "MANGORADIO" ||
-		item.Location != "/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9" || item.SourceAccount != "MANGORADIO" {
+		item.Location != "/station?data=eyJuYW1lIjoiTUFOR09SQURJTyJ9" || item.SourceAccount != "" {
 		t.Fatalf("got %+v", item)
 	}
 	if _, ok := parseHeldItem([]byte(`<preset buttonNumber="2"><sourceid>3</sourceid><name>x</name></preset>`)); ok {

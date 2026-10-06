@@ -113,3 +113,27 @@ func TestHeldUnknownSourcesStillRefused(t *testing.T) {
 		t.Fatalf("radio slot changed: %+v", p)
 	}
 }
+
+// #1101: the app's hold-to-save stored the key with the account from
+// now_playing, and the speaker's own store record for the same press (which
+// names no account) then replaced it. The record re-states the key now.
+func TestHeldNativeRecordWithoutAccountKeepsTheAppsAccount(t *testing.T) {
+	store := holdTestStore(t)
+	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := keep(heldPandora(2, "175477659894029190", "Chris Stapleton Radio")); err != nil {
+		t.Fatalf("app-saved item refused: %v", err)
+	}
+	fromSpeaker := heldPandora(2, "175477659894029190", "Chris Stapleton Radio")
+	fromSpeaker.SourceAccount = ""
+	if err := keep(fromSpeaker); err != nil {
+		t.Fatalf("speaker record refused: %v", err)
+	}
+	if got, _ := store.Get(2); got.Native == nil || got.Native.SourceAccount != "listener@example.com" {
+		t.Fatalf("stored %+v, want the app's account kept", got.Native)
+	}
+	// And it still counts as the same station for the one-key rule.
+	fromSpeaker.Slot = 4
+	if err := keep(fromSpeaker); !errors.Is(err, errNotKeepable) {
+		t.Fatalf("same station on another key: err = %v", err)
+	}
+}

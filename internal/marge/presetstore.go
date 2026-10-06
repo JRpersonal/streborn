@@ -140,19 +140,25 @@ func parseHeldItem(body []byte) (HeldItem, bool) {
 		//   <username>..</username><location>/station?data=..</location>
 		//   <contentItemType>stationurl</contentItemType>
 		//   <containerArt></containerArt></preset>
+		//
+		// <username> is NOT the account: it is the preset's label, a copy of
+		// <name> in every body seen so far (the Portable's radio store above,
+		// and the ST20's Pandora and iHeartRadio stores of #1101). The record
+		// names its account only through <sourceid>, so SourceAccount stays
+		// empty here and the speaker's own account is looked up where the
+		// item is played or written back (presets.ResolveNativeAccount).
 		rec, ok := parseFlatRecord(body, "preset")
 		if !ok || rec.location == "" {
 			return HeldItem{}, false
 		}
 		return HeldItem{
-			Source:        sourceNameForAccountID(rec.sourceID),
-			SourceID:      rec.sourceID,
-			Type:          rec.contentItemType,
-			Location:      rec.location,
-			SourceAccount: rec.username,
-			ItemName:      rec.name,
-			ContainerArt:  rec.containerArt,
-			Form:          "flat",
+			Source:       sourceNameForAccountID(rec.sourceID),
+			SourceID:     rec.sourceID,
+			Type:         rec.contentItemType,
+			Location:     rec.location,
+			ItemName:     rec.name,
+			ContainerArt: rec.containerArt,
+			Form:         "flat",
 		}, true
 	}
 	item.Form = "contentitem"

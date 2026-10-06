@@ -142,10 +142,26 @@ own client does.
   while the speaker lists the source as `READY`; otherwise it is logged and
   left alone (never deleted). A refused write is retried after an hour.
 
-Not yet observed on a real speaker: the exact item the firmware stores for
-these services. Every store request for a source other than STR's own radio
-is logged at INFO as `marge preset store: the box asked to keep a non-radio
-item` with all fields (account masked), so a bundle from a US tester shows it.
+The account: the speaker's own store record (the flat
+`<preset><sourceid>..<name>..<username>..` body) names no account. Its
+`<username>` repeats the station name (observed on an ST20, #1101: Pandora
+with sourceid 100, iHeartRadio with sourceid 201), so STR stores the item
+without one. Every write-back and every `/select` fills in the account the
+speaker itself lists for the service in `:8090/sources` (a stored account is
+kept only when the speaker lists it). v1.0.4 and v1.0.5 stored the station
+name as the account, which the speaker refused on `/select` (1005
+UNKNOWN_SOURCE_ERROR) and its command line could not carry, so the key was
+gone after every reboot; those presets heal without being saved again.
+
+Known limit: an iHeartRadio location is an XML fragment
+(`<IHeartCILocation id=".." locationType="LIVE_STATION" />`) with spaces and
+quotes, which `ws AddPreset` cannot carry. Such a key cannot be written back
+after the speaker drops its presets on a reboot; tapping it in an app still
+works through `/select`.
+
+Every store request for a source other than STR's own radio is logged at
+INFO as `marge preset store: the box asked to keep a non-radio item` with
+all fields (account masked).
 
 ## Agent endpoints (LAN only)
 
