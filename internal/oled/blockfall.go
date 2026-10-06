@@ -129,8 +129,13 @@ type Blockfall struct {
 	clearing   []int
 	clearTimer int
 	frame      int
-	lastPress  int
-	best       int // the record before this round
+	slideDir   int  // -1 left, 1 right: the column key last pressed
+	slideDown  bool // that key is held
+	slideAge   int  // steps since the held key's last event
+	slideWait  int  // steps left before the held key starts to slide
+	slideCD    int  // steps left to the next column of a slide
+	slid       int  // columns moved in this slide, for the speed-up
+	best       int  // the record before this round
 }
 
 func (g *Blockfall) setBest(n int) { g.best = n }
@@ -222,40 +227,70 @@ func (g *Blockfall) removeCleared() {
 	g.spawn()
 }
 
-// repeatDelay is how long after a press a held key starts to slide (in game
-// steps, 30 per second). The remote's repeats drive the slide: a release can
-// arrive half a second after even a short tap, so timing the slide off the
-// release made single taps move two columns.
-const repeatDelay = 11
+// Previous/Skip move the piece one column per tap. Held, the piece slides on
+// after bfSlideDelay, first at a walking pace and then faster, and stops at
+// the release. The remote sends one press and one release per touch with
+// nothing in between (key log of a round, 2026-10-06): taps last 150 to
+// 470 ms, holds 600 ms and more.
+const (
+	bfSlideDelay = 15  // steps (0.5 s) before a held key starts to slide
+	bfSlideSlow  = 6   // steps between columns at the start of a slide
+	bfSlideFast  = 2   // steps between columns once it has picked up speed
+	bfKeyStale   = 150 // a held key with no event for 5 s counts as released
+)
 
-// Key feeds one key state change (KeyPressed, KeyRepeat, ...).
 func (g *Blockfall) Key(key, state int) {
 	if g.Over {
 		return
 	}
+	d := 0
+	switch key {
+	case KeyPrev:
+		d = -1
+	case KeyNext:
+		d = 1
+	}
 	switch state {
 	case KeyPressed:
 		switch key {
-		case KeyPrev:
-			g.move(-1)
-		case KeyNext:
-			g.move(1)
+		case KeyPrev, KeyNext:
+			g.move(d)
+			g.slideDir, g.slideDown, g.slideAge = d, true, 0
+			g.slideWait, g.slideCD, g.slid = bfSlideDelay, 0, 0
 		case KeyThumbsUp:
 			g.rotate()
 		case KeyThumbsDown:
 			g.fast = true
 		}
-		g.lastPress = g.frame
 	case KeyRepeat:
-		if g.frame-g.lastPress < repeatDelay {
-			return
+		if d != 0 && d == g.slideDir {
+			g.slideDown, g.slideAge = true, 0
 		}
-		switch key {
-		case KeyPrev:
-			g.move(-1)
-		case KeyNext:
-			g.move(1)
+	case KeyReleased:
+		if d != 0 && d == g.slideDir {
+			g.slideDown = false
 		}
+	}
+}
+
+// stepSlide moves a held piece on, faster the longer the key is held.
+func (g *Blockfall) stepSlide() {
+	if !g.slideDown {
+		return
+	}
+	if g.slideAge++; g.slideAge > bfKeyStale {
+		g.slideDown = false
+		return
+	}
+	switch {
+	case g.slideWait > 0:
+		g.slideWait--
+	case g.slideCD > 0:
+		g.slideCD--
+	default:
+		g.move(g.slideDir)
+		g.slid++
+		g.slideCD = max(bfSlideFast, bfSlideSlow-g.slid)
 	}
 }
 
@@ -285,6 +320,7 @@ func (g *Blockfall) Step() {
 	if g.Over {
 		return
 	}
+	g.stepSlide()
 	if g.clearTimer > 0 {
 		g.clearTimer--
 		if g.clearTimer == 0 {

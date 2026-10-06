@@ -77,10 +77,8 @@ type Starguard struct {
 	moveDir          int
 	keyDown          bool // a thumb is held: no release seen since its press
 	keyAge           int  // steps since the last event of the held key
-	coast            int  // steps the ship keeps gliding after a release while moving
 	holdWait         int  // steps after a press before the ship moves continuously
 	heldSteps        int  // steps of continuous movement, for the speed-up
-	sincePress       int  // steps since the last press, for the double-frame filter
 	fireCD           int
 	rapid            int
 	double, spread   bool
@@ -160,12 +158,14 @@ func (g *Starguard) startWave(n int, upgrade string) {
 }
 
 // Key: thumbs down steers left, thumbs up right. A tap moves the ship one
-// small step. Held a moment, it moves on smoothly until the release, and held
-// longer it speeds up. Remotes report a held key in different ways (one press
-// until the release, repeat events, or press/release pairs about twice a
-// second), so a press or a repeat keeps it moving, and only a ship that was
-// already moving smoothly coasts a moment after a release, which bridges the
-// gap inside a pair. A tap never coasts.
+// small step. Held, it moves on smoothly until the release and stops there,
+// and held longer it speeds up.
+//
+// Measured on the remote (key log of a round, 2026-10-06): one press and one
+// release per touch, nothing in between, no repeats and no second frame. Taps
+// last 150 to 470 ms, deliberate holds 600 ms and more, so a press counts as
+// a hold only after sgHoldDelay. Every press is a step of its own, however
+// quickly it follows the one before.
 func (g *Starguard) Key(key, state int) {
 	if g.over {
 		return
@@ -180,31 +180,18 @@ func (g *Starguard) Key(key, state int) {
 		return
 	}
 	switch state {
-	case KeyPressed, KeyRepeat:
-		// the remote sends two frames for one tap, a quarter second apart:
-		// a second press the same way that soon is the same tap
-		if state == KeyPressed && d == g.moveDir && !g.keyDown && g.sincePress < sgDoubleFrame {
-			return
-		}
-		if d != g.moveDir {
-			g.heldSteps = 0
-		}
-		if state == KeyPressed {
-			g.sincePress = 0
-			if !g.keyDown && g.coast == 0 {
-				// a fresh press: one step right away, smooth movement only
-				// once the key is still down a moment later
-				g.nudge(d * sgTapStep)
-				g.holdWait = sgHoldDelay
-			}
-		}
+	case KeyPressed:
+		g.nudge(d * sgTapStep)
 		g.moveDir, g.keyDown, g.keyAge = d, true, 0
+		g.holdWait, g.heldSteps = sgHoldDelay, 0
+	case KeyRepeat:
+		// a remote that does send repeats: still the same hold
+		if d == g.moveDir {
+			g.keyDown, g.keyAge = true, 0
+		}
 	case KeyReleased:
-		if d == g.moveDir && g.keyDown {
+		if d == g.moveDir {
 			g.keyDown = false
-			if g.holdWait == 0 {
-				g.coast = sgCoast
-			}
 		}
 	}
 }
@@ -214,12 +201,10 @@ func (g *Starguard) nudge(dx16 int) {
 }
 
 const (
-	sgDoubleFrame = 10  // steps (a third of a second)
-	sgTapStep     = 96  // one tap: 6 px, in 1/16 px
-	sgHoldDelay   = 6   // steps (0.2 s) a key must stay down before smooth movement
-	sgCoast       = 12  // steps a smoothly moving ship glides on after a release
-	sgKeyStale    = 150 // a held key with no event for 5 s counts as released
-	sgFastFrom    = 15  // steps of smooth movement before the ship speeds up
+	sgTapStep   = 96  // one tap: 6 px, in 1/16 px
+	sgHoldDelay = 15  // steps (0.5 s) a key must stay down before smooth movement
+	sgKeyStale  = 150 // a held key with no event for 5 s counts as released
+	sgFastFrom  = 15  // steps of smooth movement before the ship speeds up
 )
 
 func kindOfRow(row int) int {
@@ -251,7 +236,6 @@ func (g *Starguard) Step() {
 		return
 	}
 	// ship
-	g.sincePress++
 	if g.keyDown {
 		// a lost release must not send the ship into the wall for good
 		if g.keyAge++; g.keyAge > sgKeyStale {
@@ -261,16 +245,13 @@ func (g *Starguard) Step() {
 	switch {
 	case g.keyDown && g.holdWait > 0:
 		g.holdWait--
-	case g.keyDown || g.coast > 0:
+	case g.keyDown:
 		speed := 20
 		if g.heldSteps >= sgFastFrom {
 			speed = 34
 		}
 		g.nudge(g.moveDir * speed)
 		g.heldSteps++
-		if !g.keyDown {
-			g.coast--
-		}
 	default:
 		g.heldSteps, g.holdWait = 0, 0
 	}

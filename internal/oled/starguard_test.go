@@ -17,90 +17,80 @@ func TestStarguardEndsWithoutInput(t *testing.T) {
 	}
 }
 
-func TestStarguardSteering(t *testing.T) {
-	run := func(g *Starguard, steps int) {
-		for range steps {
-			g.Step()
-		}
+// press runs a press of ms milliseconds and then idles for gapMs, at 30
+// steps a second, the way the remote delivered it in the measured key log.
+func press(g *Starguard, key, ms, gapMs int) {
+	g.Key(key, KeyPressed)
+	for range ms * 30 / 1000 {
+		g.Step()
 	}
+	g.Key(key, KeyReleased)
+	for range gapMs * 30 / 1000 {
+		g.Step()
+	}
+}
 
-	// a tap is one small step and nothing more, even with the remote's
-	// second frame a quarter second later
-	for _, extraFrame := range []bool{false, true} {
+func TestStarguardSteering(t *testing.T) {
+	// every tap from the measured log (150 to 470 ms) is exactly one step,
+	// however quickly the next one follows
+	for _, ms := range []int{150, 200, 300, 400, 470} {
 		g := NewStarguard(2)
 		x0 := g.shipX16
-		g.Key(KeyThumbsDown, KeyPressed)
-		run(g, 3)
-		g.Key(KeyThumbsDown, KeyReleased)
-		run(g, 4)
-		if extraFrame {
-			g.Key(KeyThumbsDown, KeyPressed)
-			run(g, 3)
-			g.Key(KeyThumbsDown, KeyReleased)
-		}
-		run(g, 40)
-		if d := g.shipX16 - x0; d != -sgTapStep {
-			t.Fatalf("a tap (extra frame %v) moved %d/16 px, want %d", extraFrame, d, -sgTapStep)
+		press(g, KeyThumbsDown, ms, 350)
+		press(g, KeyThumbsDown, ms, 350)
+		press(g, KeyThumbsDown, ms, 1000)
+		if d := x0 - g.shipX16; d != 3*sgTapStep {
+			t.Fatalf("three %d ms taps moved %d/16 px, want %d", ms, d, 3*sgTapStep)
 		}
 	}
 
-	// held: one press until the release moves the whole time, then stops at once
+	// a hold moves the whole time after the hold delay, then stops at once
 	g := NewStarguard(2)
 	g.shipX16 = 10 * 16
 	g.Key(KeyThumbsUp, KeyPressed)
-	run(g, sgHoldDelay)
+	for range sgHoldDelay {
+		g.Step()
+	}
 	x1 := g.shipX16
 	stops := 0
-	for range 50 {
+	for range 30 {
 		before := g.shipX16
 		g.Step()
 		if g.shipX16 == before {
 			stops++
 		}
 	}
-	if g.shipX16-x1 < 50*20 || stops > 0 {
+	if g.shipX16-x1 < 30*20 || stops > 0 {
 		t.Fatalf("holding must move right the whole time: %d, %d stops", g.shipX16-x1, stops)
 	}
 	g.Key(KeyThumbsUp, KeyReleased)
-	run(g, sgCoast)
 	x2 := g.shipX16
-	run(g, 20)
-	if g.shipX16 != x2 {
-		t.Fatal("after the release it must stop")
-	}
-
-	// a remote that repeats press/release twice a second still moves smoothly
-	g = NewStarguard(2)
-	g.shipX16 = 10 * 16
-	stops = 0
-	for i := 0; i < 90; i++ {
-		switch i % 15 {
-		case 0:
-			g.Key(KeyThumbsUp, KeyPressed)
-		case 9:
-			g.Key(KeyThumbsUp, KeyReleased)
-		}
-		before := g.shipX16
+	for range 20 {
 		g.Step()
-		if i > 15 && g.shipX16 == before && g.shipX16 < (Width-1-sgShipHalf)*16 {
-			stops++
-		}
 	}
-	if stops > 0 {
-		t.Fatalf("press/release pairs while held must not stop the ship: %d stops", stops)
+	if g.shipX16 != x2 {
+		t.Fatal("after the release it must stop at once")
 	}
 
 	// held longer, it speeds up
 	g = NewStarguard(2)
 	g.shipX16 = 10 * 16
 	g.Key(KeyThumbsUp, KeyPressed)
-	run(g, sgHoldDelay)
+	for range sgHoldDelay {
+		g.Step()
+	}
 	a0 := g.shipX16
-	run(g, 5)
+	for range 5 {
+		g.Step()
+	}
 	slow := g.shipX16 - a0
-	run(g, sgFastFrom)
+	for range sgFastFrom {
+		g.Step()
+	}
 	a1 := g.shipX16
-	run(g, 5)
+	for range 5 {
+		g.Step()
+	}
 	if fast := g.shipX16 - a1; fast <= slow {
 		t.Fatalf("holding must speed up: %d then %d", slow, fast)
 	}
@@ -108,7 +98,9 @@ func TestStarguardSteering(t *testing.T) {
 	// a lost release does not drive the ship for good
 	g = NewStarguard(2)
 	g.Key(KeyThumbsDown, KeyPressed)
-	run(g, sgKeyStale+sgCoast+2)
+	for range sgKeyStale + 2 {
+		g.Step()
+	}
 	if g.keyDown {
 		t.Fatal("a key with no events for 5 s must count as released")
 	}
@@ -117,7 +109,9 @@ func TestStarguardSteering(t *testing.T) {
 	g = NewStarguard(2)
 	x0 := g.shipX16
 	g.Key(KeyPrev, KeyPressed)
-	run(g, 10)
+	for range 10 {
+		g.Step()
+	}
 	if g.shipX16 != x0 {
 		t.Fatal("only the thumbs steer")
 	}
