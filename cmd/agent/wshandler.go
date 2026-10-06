@@ -22,6 +22,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
+	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/upnp"
@@ -766,6 +767,11 @@ func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
 	if h.onRemoteSkip == nil {
 		return
 	}
+	// During a round of the hidden game Previous/Skip move the pieces; a queue
+	// skip here stopped the game music on the first press.
+	if oled.GameActive() {
+		return
+	}
 	// Off the gabbo read loop: a skip against a slow/wedged transport held the
 	// loop for up to 8s per press, delaying every queued frame and skewing the
 	// processing-time classification windows (#252). The webui skip serializes
@@ -834,6 +840,9 @@ func (h *presetWsHandler) lastSourceRejectTime() time.Time {
 // firmware; up and down are indistinguishable, so it is a single toggle-style
 // trigger). The detection + debounce live in boxws; here we just fire.
 func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
+	if oled.GameActive() {
+		return // the thumbs keys are the game's controls during a round
+	}
 	// A lone userActivityUpdate is ALSO the only trace a DEAD hardware preset
 	// key leaves: the box's key layer can lose its preset registrations while
 	// /presets still lists every slot (#342, display shows "Action

@@ -97,6 +97,8 @@ export function GetAirplayOpt(arg1:string,arg2:number):Promise<Record<string, bo
 
 export function GetAppFlag(arg1:string):Promise<boolean>;
 
+export function GetBlockfall(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function GetBoxFirmware(arg1:string):Promise<main.FirmwareInfo>;
 
 export function GetBoxLanguage(arg1:string):Promise<string>;
@@ -154,6 +156,8 @@ export function MovePreset(arg1:string,arg2:number,arg3:number,arg4:number):Prom
 export function NewerCopyNextToThisOne():Promise<string>;
 
 export function Next(arg1:string,arg2:number):Promise<void>;
+
+export function OpenBlockfallThread():Promise<void>;
 
 export function Pause(arg1:string,arg2:number):Promise<void>;
 
@@ -242,6 +246,8 @@ export function RestoreSTRCloud(arg1:Array<main.CloudRestoreTarget>):Promise<Arr
 export function Resume(arg1:string,arg2:number):Promise<void>;
 
 export function RevealUpdateFile(arg1:string):Promise<void>;
+
+export function SaveBlockfallScreenshot(arg1:string,arg2:number):Promise<string>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 

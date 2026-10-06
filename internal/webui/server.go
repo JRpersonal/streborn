@@ -22,6 +22,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/netutil"
+	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/region"
@@ -129,6 +130,7 @@ type Server struct {
 	// responses so the box picks them up on its own poll. nil when not wired.
 	publishStoredMusic func([]StoredMusicSource)
 	renderer           *upnp.Renderer
+	blockfall          blockfallMusic
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
 	sleep       sleepState
 	autoPair    *autopair.Manager
@@ -1247,6 +1249,9 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	// resume down briefly so it does not blast the room right after the update
 	// (a genuine power outage leaves no marker and resumes as before).
 	s.consumeOTARebootMarker()
+	// The hidden game's remote code starts a round through this server, which
+	// owns the playback state it has to restore afterwards.
+	oled.SetGameStarter(s.startBlockfall)
 	return s
 }
 
@@ -1347,6 +1352,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/display-messages", s.handleDisplayMessages)
 	mux.HandleFunc("/api/box/display-splash", s.handleDisplaySplash)
+	mux.HandleFunc("/api/box/blockfall", s.handleBlockfallScores)
+	mux.HandleFunc("/api/box/blockfall/screenshot.png", s.handleBlockfallScreenshot)
 	mux.HandleFunc(displayMsgAudioPath, s.handleDisplayMessageAudio)
 	mux.HandleFunc("/api/box/mediaservers", s.handleMediaServers)
 	mux.HandleFunc("/api/library/search", s.handleLibrarySearch)
@@ -1360,6 +1367,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/snapshot/restore", s.handleBoxSnapshotRestore)
 	mux.HandleFunc("/api/announce", s.handleAnnounce)
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
+	mux.HandleFunc("/game/blockfall.wav", s.handleBlockfallMusic)
+	mux.HandleFunc("/game/blockfall-over.wav", s.handleBlockfallMusic)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/balance", s.handleBoxBalance)

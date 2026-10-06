@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, blockfallState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -76,5 +76,21 @@ describe('displaySplashState', () => {
     expect(displaySplashState(null)).toEqual({ show: false, enabled: null });
     expect(displaySplashState({ supported: true }).enabled).toBe(null);
     expect(displaySplashState({ supported: true, enabled: false }).enabled).toBe(false);
+  });
+});
+
+describe('blockfallState', () => {
+  it('stays hidden until a round was played, so the app does not give the game away', () => {
+    expect(blockfallState(null).show).toBe(false);
+    expect(blockfallState({ rounds: 0, best: 0 }).show).toBe(false);
+    expect(blockfallState({}).show).toBe(false);
+  });
+  it('reads the scores once a round exists', () => {
+    const st = blockfallState({ rounds: 2, best: 1200, last: 300, lastRows: 4, screenshot: 'data:image/png;base64,iVBORw0KGgo=' });
+    expect(st).toEqual({ show: true, best: 1200, last: 300, rows: 4, screenshot: 'data:image/png;base64,iVBORw0KGgo=' });
+  });
+  it('drops a screenshot that is not a PNG data URL', () => {
+    expect(blockfallState({ rounds: 1, screenshot: 'javascript:alert(1)' }).screenshot).toBe('');
+    expect(blockfallState({ rounds: 1, screenshot: 'data:image/png;base64,"onerror="x' }).screenshot).toBe('');
   });
 });
