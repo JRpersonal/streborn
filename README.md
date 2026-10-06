@@ -61,7 +61,7 @@ STR is at 1.0: every criterion I set myself for it is met (see [1.0](#10) below)
 - Sleep timer: switch a speaker, or a whole group, off by itself after a set time, from the phone remote.
 - Home Assistant and other automation: STR keeps the speaker's local control API (`:8090`) and UPnP media renderer (`:8091`) alive, so a hub you run at home can control the speakers, send audio or TTS to them, and, via Alexa or Google, do voice control. STR adds its own local REST API on top. No cloud skill of my own. See [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md).
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
-- And one thing that was never in the manual: a game hidden on the SoundTouch Portable's display. How to start it is a riddle in the [Arcade](https://github.com/JRpersonal/streborn/discussions/1173), and that is also where the highscores go.
+- And one thing that was never in the manual: a game hidden on the display of the SoundTouch 20, 30, Portable and Wave. How to start it is a riddle in the [Arcade](https://github.com/JRpersonal/streborn/discussions/1173), and that is also where the highscores go.
 
 ### In the works, and what comes next
 

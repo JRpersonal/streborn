@@ -16,7 +16,7 @@ import (
 
 // The easter egg: in standby or while playing, the remote code
 // thumbs up, thumbs up, thumbs down, thumbs down, previous, skip, previous,
-// skip starts a round of Blockfall on the Portable's display. A round ends by
+// skip starts a round of Blockfall on the speaker's display. A round ends by
 // itself at game over, after 45 s without a key, or after 30 minutes; the
 // caller then puts the speaker back the way it was.
 
