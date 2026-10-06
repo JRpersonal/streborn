@@ -51,16 +51,27 @@ export function displaySplashState(r) {
   };
 }
 
-// blockfallState reads the app's GetBlockfall answer for the hidden game on
-// the speaker display. The section only shows once a round was played there:
-// the game is an easter egg, the app must not give it away. The screenshot
-// is used only when it is a PNG data URL (it ends up in an img src).
-export function blockfallState(r) {
-  if (!r || typeof r !== 'object' || !(Number(r.rounds) > 0)) {
-    return { show: false, best: 0, last: 0, rows: 0, screenshot: '' };
-  }
+// arcadeState reads the app's GetArcade answer for the hidden games on the
+// speaker display. The Go side already lists only games that were played, so
+// the app never names a game before somebody found it; this checks that again
+// and cleans every field. The screenshot is used only when it is a PNG data
+// URL (it ends up in an img src).
+export function arcadeState(list) {
   const num = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : 0);
-  const shot = typeof r.screenshot === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(r.screenshot)
-    ? r.screenshot : '';
-  return { show: true, best: num(r.best), last: num(r.last), rows: num(r.lastRows), screenshot: shot };
+  const games = (Array.isArray(list) ? list : [])
+    .filter((g) => g && typeof g === 'object' && /^[a-z0-9-]+$/.test(g.id || '') && Number(g.rounds) > 0)
+    .map((g) => ({
+      id: g.id,
+      title: titleCase(typeof g.title === 'string' && g.title ? g.title : g.id),
+      best: num(g.best),
+      last: num(g.last),
+      rows: num(g.lastRows),
+      screenshot: typeof g.screenshot === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(g.screenshot)
+        ? g.screenshot : '',
+    }));
+  return { show: games.length > 0, games };
+}
+
+function titleCase(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }

@@ -95,21 +95,42 @@ func TestBlockfallFrameFits(t *testing.T) {
 	}
 }
 
-func TestEggCode(t *testing.T) {
+func TestEggCodes(t *testing.T) {
 	now := time.Now()
-	var p []eggPress
-	for i, k := range eggCode {
-		p = append(p, eggPress{k, now.Add(time.Duration(i) * 500 * time.Millisecond)})
+	for _, g := range Games {
+		var p []eggPress
+		// noise before the code must not stop it from matching
+		p = append(p, eggPress{"PRESET_1", now.Add(-time.Second)})
+		for i, k := range g.Code {
+			p = append(p, eggPress{k, now.Add(time.Duration(i) * 500 * time.Millisecond)})
+		}
+		end := p[len(p)-1].at
+		if got := matchCode(p, end); got != g.ID {
+			t.Fatalf("%s: matched %q", g.ID, got)
+		}
+		if codeMatches(p, g.Code, p[1].at.Add(eggWindow+time.Second)) {
+			t.Fatalf("%s: a code typed too slowly must not match", g.ID)
+		}
+		p[len(p)-2].name = "PRESET_2"
+		if got := matchCode(p, end); got != "" {
+			t.Fatalf("%s: a wrong key matched %q", g.ID, got)
+		}
 	}
-	if !codeMatches(p, p[len(p)-1].at) {
-		t.Fatal("the code must match")
-	}
-	if codeMatches(p, p[0].at.Add(eggWindow+time.Second)) {
-		t.Fatal("a code typed too slowly must not match")
-	}
-	p[3].name = "THUMBS_UP"
-	if codeMatches(p, p[len(p)-1].at) {
-		t.Fatal("a wrong key must not match")
+	// no code may be the tail of another, or the shorter one would win
+	for _, a := range Games {
+		for _, b := range Games {
+			if a.ID == b.ID || len(a.Code) > len(b.Code) {
+				continue
+			}
+			tail := b.Code[len(b.Code)-len(a.Code):]
+			same := true
+			for i := range tail {
+				same = same && tail[i] == a.Code[i]
+			}
+			if same {
+				t.Fatalf("%s ends with the code of %s", b.ID, a.ID)
+			}
+		}
 	}
 }
 
@@ -125,23 +146,27 @@ func TestParseKeyLine(t *testing.T) {
 }
 
 func TestSaveRound(t *testing.T) {
-	dir := t.TempDir()
-	ScoresPath, ScreenshotPath = filepath.Join(dir, "s.json"), filepath.Join(dir, "s.png")
-	defer func() {
-		ScoresPath, ScreenshotPath = "/mnt/nv/streborn/blockfall.json", "/mnt/nv/streborn/blockfall-last.png"
-	}()
+	old := ScoreDir
+	ScoreDir = t.TempDir()
+	defer func() { ScoreDir = old }()
+	if filepath.Base(ScoresPath("blockfall")) != "blockfall.json" || filepath.Base(ScreenshotPath("blockfall")) != "blockfall-last.png" {
+		t.Fatal("Blockfall's files must keep the names v1.0.5 wrote")
+	}
 	screen := make([]byte, FrameSize)
 	screen[0] = 15
-	if s, _ := SaveRound(Result{}, time.Now()); s.Rounds != 0 {
+	if s, _ := SaveRound("blockfall", Result{}, time.Now()); s.Rounds != 0 {
 		t.Fatal("an empty round must not be written")
 	}
-	SaveRound(Result{Score: 120, Lines: 3, Screen: screen}, time.Now())
-	s, _ := SaveRound(Result{Score: 80, Lines: 1, Screen: screen}, time.Now())
+	SaveRound("blockfall", Result{Score: 120, Lines: 3, Screen: screen}, time.Now())
+	s, _ := SaveRound("blockfall", Result{Score: 80, Lines: 1, Screen: screen}, time.Now())
 	if s.Best != 120 || s.Last != 80 || s.Rounds != 2 {
 		t.Fatalf("scores %+v", s)
 	}
-	if got := LoadScores(); got.Best != 120 {
+	if got := LoadScores("blockfall"); got.Best != 120 {
 		t.Fatalf("reload %+v", got)
+	}
+	if got := LoadScores("starguard"); got.Rounds != 0 {
+		t.Fatalf("each game keeps its own scores: %+v", got)
 	}
 	img, err := png.Decode(bytes.NewReader(ScreenPNG(screen)))
 	if err != nil || img.Bounds().Dx() != Width*3 {
@@ -154,7 +179,7 @@ func TestWavHeaderAndSynth(t *testing.T) {
 	if string(h[0:4]) != "RIFF" || binary.LittleEndian.Uint16(h[22:]) != 2 || binary.LittleEndian.Uint32(h[24:]) != 44100 {
 		t.Fatal("the speaker plays 44.1 kHz stereo only")
 	}
-	for _, tr := range []Track{IntroTrack, OverTrack} {
+	for _, tr := range []Track{IntroTrack, OverTrack, sgIntroTrack, sgOverTrack} {
 		s := Synth{Track: tr}
 		buf := make([]int16, synthRate)
 		s.Render(buf)
@@ -171,17 +196,19 @@ func TestWavHeaderAndSynth(t *testing.T) {
 // The game-over jingle plays once and then stays silent, so the speaker keeps
 // the stream without repeating it.
 func TestOverTrackPlaysOnce(t *testing.T) {
-	s := Synth{Track: OverTrack}
-	n := int(OverTrack.Length().Seconds()*synthRate) + synthRate/10
-	s.Render(make([]int16, n))
-	tail := make([]int16, synthRate)
-	s.Render(tail)
-	for i, v := range tail {
-		if v != 0 {
-			t.Fatalf("sample %d after the jingle is %d, want silence", i, v)
+	for _, tr := range []Track{OverTrack, sgOverTrack} {
+		s := Synth{Track: tr}
+		n := int(tr.Length().Seconds()*synthRate) + synthRate/10
+		s.Render(make([]int16, n))
+		tail := make([]int16, synthRate)
+		s.Render(tail)
+		for i, v := range tail {
+			if v != 0 {
+				t.Fatalf("sample %d after the jingle is %d, want silence", i, v)
+			}
 		}
-	}
-	if l := OverTrack.Length(); l < 3*time.Second || l > 4*time.Second {
-		t.Fatalf("jingle length %v", l)
+		if l := tr.Length(); l < 3*time.Second || l > 4*time.Second {
+			t.Fatalf("jingle length %v", l)
+		}
 	}
 }

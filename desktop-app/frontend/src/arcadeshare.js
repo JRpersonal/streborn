@@ -1,16 +1,21 @@
-// Blockfall share: copy buttons for the last round's final screen (as an
-// image, score included) and for a score line, plus the announcement thread.
+// Sharing a hidden game's score: copy buttons for the last round's final
+// screen (as an image, score included) and for a score line, plus the
+// announcement thread.
 // Separate buttons because GitHub's paste takes either an image, which it
 // uploads by itself, or text: an image and text pasted together lose the text.
 
-// scoreText is the line the player pastes into the thread. English on
-// purpose: the thread is read by everyone.
-export function scoreText(st, model) {
+// What each game's second number counts, in the score line.
+const COUNTS = { blockfall: 'rows', starguard: 'waves' };
+
+// scoreText is the line the player pastes into the thread, for one game from
+// arcadeState. English on purpose: the thread is read by everyone.
+export function scoreText(game, model) {
   const where = model ? `the ${model}` : 'my SoundTouch';
-  return `My Blockfall highscore on ${where}: **${st.best} points**. Last round: ${st.last} points, ${st.rows} rows.`;
+  const unit = COUNTS[game.id] || 'rows';
+  return `My ${game.title} highscore on ${where}: **${game.best} points**. Last round: ${game.last} points, ${game.rows} ${unit}.`;
 }
 
-// pngBlob turns the PNG data URL from blockfallState into a Blob, without an
+// pngBlob turns the PNG data URL from arcadeState into a Blob, without an
 // await, so the clipboard write still runs inside the click (Safari's
 // WKWebView refuses a clipboard write after the user gesture has passed).
 export function pngBlob(dataURL) {

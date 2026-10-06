@@ -9,23 +9,68 @@ import (
 	"image/png"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// The easter egg: in standby or while playing, the remote code
-// thumbs up, thumbs up, thumbs down, thumbs down, previous, skip, previous,
-// skip starts a round of Blockfall on the speaker's display. A round ends by
-// itself at game over, after 45 s without a key, or after 30 minutes; the
-// caller then puts the speaker back the way it was.
+// The easter eggs: in standby or while playing, a code on the remote starts a
+// round of one of the games on the speaker's display. A round ends by itself
+// at game over, after 45 s without a key, or after 30 minutes; the caller
+// then puts the speaker back the way it was.
 
-// eggCode is the remote sequence, by the key names of the speaker's own
-// trace (internal/boxlog).
-var eggCode = []string{"THUMBS_UP", "THUMBS_UP", "THUMBS_DOWN", "THUMBS_DOWN", "PREV_TRACK", "NEXT_TRACK", "PREV_TRACK", "NEXT_TRACK"}
+// arcadeGame is one game's rules and drawing. Step runs 30 times a second.
+type arcadeGame interface {
+	Key(key, state int)
+	Step()
+	Frame(buf []byte)
+	// State reports whether the round is over, its score, and its second
+	// number (rows for Blockfall, waves for Starguard).
+	State() (over bool, score, count int)
+	// End finishes the round from outside (idle, time limit).
+	End()
+}
+
+// GameDef describes one game: how it is started and what it sounds like.
+type GameDef struct {
+	ID, Title string
+	Code      []string // remote sequence, by the key names of the speaker's own trace
+	Intro     Track
+	Over      Track
+	newGame   func(seed uint64) arcadeGame
+}
+
+// Games are all games, in the order the app lists them.
+var Games = []GameDef{
+	{
+		ID: "blockfall", Title: "BLOCKFALL",
+		Code:    []string{"THUMBS_UP", "THUMBS_UP", "THUMBS_DOWN", "THUMBS_DOWN", "PREV_TRACK", "NEXT_TRACK", "PREV_TRACK", "NEXT_TRACK"},
+		Intro:   IntroTrack,
+		Over:    OverTrack,
+		newGame: func(seed uint64) arcadeGame { return NewBlockfall(seed) },
+	},
+	{
+		ID: "starguard", Title: "STARGUARD",
+		Code:    []string{"THUMBS_DOWN", "THUMBS_UP", "THUMBS_DOWN", "THUMBS_UP", "NEXT_TRACK", "NEXT_TRACK", "NEXT_TRACK"},
+		Intro:   sgIntroTrack,
+		Over:    sgOverTrack,
+		newGame: func(seed uint64) arcadeGame { return NewStarguard(seed) },
+	},
+}
+
+// Game looks a game up by its ID.
+func Game(id string) (GameDef, bool) {
+	for _, g := range Games {
+		if g.ID == id {
+			return g, true
+		}
+	}
+	return GameDef{}, false
+}
 
 const (
-	eggWindow     = 12 * time.Second // the whole code must fit in this
+	eggWindow     = 12 * time.Second // a whole code must fit in this
 	roundIdle     = 45 * time.Second
 	roundMax      = 30 * time.Minute
 	gameOverShown = 5 * time.Second
@@ -35,7 +80,7 @@ var (
 	gameActive atomic.Bool
 	eggMu      sync.Mutex
 	eggPresses []eggPress
-	eggStart   func()
+	eggStart   func(id string)
 )
 
 type eggPress struct {
@@ -47,16 +92,16 @@ type eggPress struct {
 // group keys) stand down meanwhile.
 func GameActive() bool { return gameActive.Load() }
 
-// SetGameStarter registers what the code starts (the webui's round runner,
-// which owns playback state).
-func SetGameStarter(f func()) {
+// SetGameStarter registers what a code starts (the webui's round runner,
+// which owns playback state). It gets the game's ID.
+func SetGameStarter(f func(id string)) {
 	eggMu.Lock()
 	eggStart = f
 	eggMu.Unlock()
 }
 
 // FeedKey is called for every physical key press the speaker decodes. When
-// the last presses spell the code, the registered starter runs.
+// the last presses spell a game's code, the registered starter runs.
 func FeedKey(name string) {
 	if GameActive() || !Enabled() || !panelSupported() {
 		return
@@ -64,26 +109,44 @@ func FeedKey(name string) {
 	eggMu.Lock()
 	now := time.Now()
 	eggPresses = append(eggPresses, eggPress{name, now})
-	if len(eggPresses) > len(eggCode) {
-		eggPresses = eggPresses[len(eggPresses)-len(eggCode):]
+	longest := 0
+	for _, g := range Games {
+		longest = max(longest, len(g.Code))
 	}
-	match := codeMatches(eggPresses, now)
+	if len(eggPresses) > longest {
+		eggPresses = eggPresses[len(eggPresses)-longest:]
+	}
+	id := matchCode(eggPresses, now)
 	start := eggStart
-	if match {
+	if id != "" {
 		eggPresses = nil
 	}
 	eggMu.Unlock()
-	if match && start != nil {
-		go start()
+	if id != "" && start != nil {
+		go start(id)
 	}
 }
 
-func codeMatches(p []eggPress, now time.Time) bool {
-	if len(p) != len(eggCode) || now.Sub(p[0].at) > eggWindow {
+// matchCode returns the game whose code the most recent presses spell.
+func matchCode(p []eggPress, now time.Time) string {
+	for _, g := range Games {
+		if codeMatches(p, g.Code, now) {
+			return g.ID
+		}
+	}
+	return ""
+}
+
+func codeMatches(p []eggPress, code []string, now time.Time) bool {
+	if len(p) < len(code) {
 		return false
 	}
-	for i, k := range eggCode {
-		if p[i].name != k {
+	tail := p[len(p)-len(code):]
+	if now.Sub(tail[0].at) > eggWindow {
+		return false
+	}
+	for i, k := range code {
+		if tail[i].name != k {
 			return false
 		}
 	}
@@ -121,9 +184,13 @@ const (
 	gameOverMax = 12 * time.Second
 )
 
-// PlayRound runs one round: intro, game, game-over screen. It blocks until the
-// round ends or stop closes.
-func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Result, error) {
+// PlayRound runs one round of game id: intro, game, game-over screen. It
+// blocks until the round ends or stop closes.
+func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Result, error) {
+	def, ok := Game(id)
+	if !ok {
+		return Result{}, errors.New("no such game")
+	}
 	if !panelSupported() || !boseAppDisplayReady() {
 		return Result{}, errors.New("no supported panel")
 	}
@@ -145,7 +212,7 @@ func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Res
 		select {
 		case err := <-keyDone:
 			if err != nil {
-				logger.Info("blockfall: key trace ended", "err", err)
+				logger.Info("game: key trace ended", "err", err)
 			}
 		case <-time.After(3 * time.Second):
 		}
@@ -154,11 +221,12 @@ func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Res
 	seed := uint64(time.Now().UnixNano())
 	// The intro holds its logo until the music is up, then zooms out as the
 	// plain animation would.
-	intro := NewLogo("BLOCKFALL", introMin, seed)
+	intro := NewLogo(def.Title, introMin, seed)
 	intro.Hold = true
-	g := NewBlockfall(seed)
+	g := def.newGame(seed)
 	var res Result
 	phase := 0 // 0 intro, 1 game, 2 game over
+	frames := 0
 	var gameStart, lastKey, overAt time.Time
 	err := play(func(t float64, buf []byte) bool {
 		now := time.Now()
@@ -190,23 +258,25 @@ func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Res
 					drained = true
 				}
 			}
-			// play() runs at 20 fps; the game is tuned for 30 steps a second
+			// play() runs at 20 fps; the games are tuned for 30 steps a second
 			g.Step()
-			if g.frame%2 == 0 {
+			if frames%2 == 0 {
 				g.Step()
 			}
+			frames++
+			over, _, _ := g.State()
 			switch {
-			case g.Over:
+			case over:
 				res.Reason = "game over"
 			case now.Sub(lastKey) > roundIdle:
 				res.Reason = "idle"
-				g.Over = true
+				g.End()
 			case now.Sub(gameStart) > roundMax:
 				res.Reason = "time"
-				g.Over = true
+				g.End()
 			}
 			g.Frame(buf)
-			if g.Over {
+			if over, _, _ = g.State(); over {
 				phase, overAt = 2, now
 				res.Screen = append([]byte(nil), buf...)
 				if hooks.GameOver != nil {
@@ -220,7 +290,7 @@ func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Res
 			return shown < gameOverShown || (hooks.OverHold != nil && hooks.OverHold() && shown < gameOverMax)
 		}
 	}, nil, roundMax+time.Minute, stop)
-	res.Score, res.Lines = g.Score, g.Lines
+	_, res.Score, res.Lines = g.State()
 	if res.Reason == "" {
 		res.Reason = "stopped"
 	}
@@ -231,12 +301,15 @@ func PlayRound(stop <-chan struct{}, hooks RoundHooks, logger *slog.Logger) (Res
 	return res, err
 }
 
-// Score storage on NAND, written once per round so the app can collect it and
-// offer to share it. Vars so tests can redirect them.
-var (
-	ScoresPath     = "/mnt/nv/streborn/blockfall.json"
-	ScreenshotPath = "/mnt/nv/streborn/blockfall-last.png"
-)
+// Score storage on NAND, one file per game, written once per round so the
+// app can collect it and offer to share it. A var so tests can redirect it.
+var ScoreDir = "/mnt/nv/streborn"
+
+// ScoresPath is where game id keeps its scores.
+func ScoresPath(id string) string { return filepath.Join(ScoreDir, id+".json") }
+
+// ScreenshotPath is where game id keeps its last round's final screen.
+func ScreenshotPath(id string) string { return filepath.Join(ScoreDir, id+"-last.png") }
 
 // Scores is what the app reads back.
 type Scores struct {
@@ -248,19 +321,19 @@ type Scores struct {
 	Rounds   int       `json:"rounds"`
 }
 
-// LoadScores reads the stored scores; missing means none yet.
-func LoadScores() Scores {
+// LoadScores reads game id's stored scores; missing means none yet.
+func LoadScores(id string) Scores {
 	var s Scores
-	if b, err := os.ReadFile(ScoresPath); err == nil {
+	if b, err := os.ReadFile(ScoresPath(id)); err == nil {
 		_ = json.Unmarshal(b, &s)
 	}
 	return s
 }
 
-// SaveRound records a finished round and its last screen. Rounds that never
-// started (score 0 and no rows) are not worth a NAND write.
-func SaveRound(r Result, now time.Time) (Scores, error) {
-	s := LoadScores()
+// SaveRound records a finished round of game id and its last screen. Rounds
+// that never started (score 0 and nothing cleared) are not worth a NAND write.
+func SaveRound(id string, r Result, now time.Time) (Scores, error) {
+	s := LoadScores(id)
 	if r.Score == 0 && r.Lines == 0 {
 		return s, nil
 	}
@@ -270,11 +343,11 @@ func SaveRound(r Result, now time.Time) (Scores, error) {
 		s.Best, s.BestAt = r.Score, now
 	}
 	b, _ := json.Marshal(s)
-	if err := writeAtomic(ScoresPath, b); err != nil {
+	if err := writeAtomic(ScoresPath(id), b); err != nil {
 		return s, err
 	}
 	if png := ScreenPNG(r.Screen); png != nil {
-		if err := writeAtomic(ScreenshotPath, png); err != nil {
+		if err := writeAtomic(ScreenshotPath(id), png); err != nil {
 			return s, err
 		}
 	}

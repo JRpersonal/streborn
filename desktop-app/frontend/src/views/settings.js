@@ -50,8 +50,8 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, blockfallState } from '../boxstate.js';
-import { copyScreenshot, scoreText } from '../blockfallshare.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, arcadeState } from '../boxstate.js';
+import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
@@ -83,9 +83,9 @@ import {
   SetDisplayMessages,
   GetDisplaySplash,
   SetDisplaySplash,
-  GetBlockfall,
-  OpenBlockfallThread,
-  SaveBlockfallScreenshot,
+  GetArcade,
+  OpenArcadeThread,
+  SaveArcadeScreenshot,
   ClipboardSetText,
   AnnounceExample,
   SendAnnounce,
@@ -719,7 +719,7 @@ function groupSettingsSections() {
     displayTrackSection: 'sound',
     displayMsgSection: 'sound',
     displaySplashSection: 'sound',
-    blockfallSection: 'sound',
+    arcadeSection: 'sound',
     airplayOptSection: 'sound',
   };
   const byHeading = {
@@ -1332,15 +1332,11 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.displaySplashHelp'))}</small>
     </div>
 
-    <div class="settings-section hidden" id="blockfallSection">
+    <div class="settings-section hidden" id="arcadeSection">
       <h3>${escapeHtml(t('settingsView.blockfallHeading'))}</h3>
-      <p id="blockfallScore"></p>
-      <img id="blockfallShot" class="hidden" alt="${escapeAttr(t('settingsView.blockfallScreenAlt'))}" style="display:block;max-width:100%;width:384px;image-rendering:pixelated;margin:6px 0">
+      <div id="arcadeGames"></div>
       <div class="setting-row">
-        <button class="btn btn-mini hidden" id="blockfallCopyShot">${escapeHtml(t('settingsView.blockfallCopyShot'))}</button>
-        <button class="btn btn-mini hidden" id="blockfallSaveShot">${escapeHtml(t('settingsView.blockfallSaveShot'))}</button>
-        <button class="btn btn-mini" id="blockfallCopyScore">${escapeHtml(t('settingsView.blockfallCopyScore'))}</button>
-        <button class="btn btn-mini" id="blockfallOpenThread">${escapeHtml(t('settingsView.blockfallOpenThread'))}</button>
+        <button class="btn btn-mini" id="arcadeOpenThread">${escapeHtml(t('settingsView.blockfallOpenThread'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.blockfallHelp'))}</small>
     </div>
@@ -2652,54 +2648,63 @@ function renderBoxSettings(s, box) {
     dsOff.onclick = () => saveDS(false);
   }
 
-  // Blockfall, the hidden game on the speaker display: score, last screen and
-  // a GitHub share. Hidden until a round was played on this speaker, so the
-  // app never gives the game away.
-  const bfSection = $('blockfallSection');
-  const bfCopyShot = $('blockfallCopyShot');
-  const bfSaveShot = $('blockfallSaveShot');
-  const bfCopyScore = $('blockfallCopyScore');
-  const bfOpen = $('blockfallOpenThread');
-  if (bfSection && bfCopyShot && bfSaveShot && bfCopyScore && bfOpen) {
-    let bf = null;
+  // The hidden games on the speaker display: per game the score, the last
+  // screen, and buttons to copy or save them for the GitHub thread. Hidden
+  // until a game was played on this speaker, and a game shows up only once it
+  // was played, so the app never gives one away.
+  const arcSection = $('arcadeSection');
+  const arcGames = $('arcadeGames');
+  const arcOpen = $('arcadeOpenThread');
+  if (arcSection && arcGames && arcOpen) {
+    let arc = { show: false, games: [] };
     (async () => {
       try {
-        bf = blockfallState(await GetBlockfall(box.host, box.port));
-        bfSection.classList.toggle('hidden', !bf.show);
-        if (!bf.show) return;
-        const score = $('blockfallScore');
-        if (score) score.textContent = t('settingsView.blockfallScore', { best: bf.best, last: bf.last, rows: bf.rows });
-        const shot = $('blockfallShot');
-        if (shot && bf.screenshot) {
-          shot.src = bf.screenshot;
-          shot.classList.remove('hidden');
-          bfCopyShot.classList.remove('hidden');
-          bfSaveShot.classList.remove('hidden');
-        }
-      } catch { bfSection.classList.add('hidden'); }
+        arc = arcadeState(await GetArcade(box.host, box.port));
+        arcSection.classList.toggle('hidden', !arc.show);
+        arcGames.innerHTML = arc.games.map((g) => {
+          const count = g.id === 'starguard' ? 'settingsView.blockfallScoreWaves' : 'settingsView.blockfallScore';
+          return `<div class="arcade-game" data-game="${escapeAttr(g.id)}" style="margin:8px 0 12px">
+            <h4 style="margin:0 0 4px">${escapeHtml(g.title)}</h4>
+            <p style="margin:0 0 6px">${escapeHtml(t(count, { best: g.best, last: g.last, rows: g.rows }))}</p>
+            ${g.screenshot ? `<img src="${escapeAttr(g.screenshot)}" alt="${escapeAttr(t('settingsView.blockfallScreenAlt'))}" style="display:block;max-width:100%;width:384px;image-rendering:pixelated;margin:6px 0">` : ''}
+            <div class="setting-row">
+              ${g.screenshot ? `<button class="btn btn-mini" data-arcade="copyShot">${escapeHtml(t('settingsView.blockfallCopyShot'))}</button>
+              <button class="btn btn-mini" data-arcade="saveShot">${escapeHtml(t('settingsView.blockfallSaveShot'))}</button>` : ''}
+              <button class="btn btn-mini" data-arcade="copyScore">${escapeHtml(t('settingsView.blockfallCopyScore'))}</button>
+            </div>
+          </div>`;
+        }).join('');
+      } catch { arcSection.classList.add('hidden'); }
     })();
-    const saveShot = async () => {
+    const saveShot = async (id) => {
       try {
-        const path = await SaveBlockfallScreenshot(box.host, box.port);
+        const path = await SaveArcadeScreenshot(box.host, box.port, id);
         if (path) showToast(t('settingsView.blockfallShotSavedToast', { path }));
       } catch (e) { showError(e); }
     };
     // The clipboard write starts first thing in the click; where the webview
     // cannot hold an image, the save dialog opens instead.
-    bfCopyShot.onclick = async () => {
-      if (!bf?.screenshot) return;
-      if (await copyScreenshot(bf.screenshot)) showToast(t('settingsView.blockfallShotCopiedToast'));
-      else await saveShot();
+    arcGames.onclick = async (ev) => {
+      const btn = ev.target.closest('[data-arcade]');
+      const game = arc.games.find((g) => g.id === btn?.closest('[data-game]')?.dataset.game);
+      if (!btn || !game) return;
+      switch (btn.dataset.arcade) {
+        case 'copyShot':
+          if (await copyScreenshot(game.screenshot)) showToast(t('settingsView.blockfallShotCopiedToast'));
+          else await saveShot(game.id);
+          break;
+        case 'saveShot':
+          await saveShot(game.id);
+          break;
+        case 'copyScore':
+          try {
+            await ClipboardSetText(scoreText(game, box.model || ''));
+            showToast(t('settingsView.blockfallScoreCopiedToast'));
+          } catch (e) { showError(e); }
+          break;
+      }
     };
-    bfSaveShot.onclick = saveShot;
-    bfCopyScore.onclick = async () => {
-      if (!bf?.show) return;
-      try {
-        await ClipboardSetText(scoreText(bf, box.model || ''));
-        showToast(t('settingsView.blockfallScoreCopiedToast'));
-      } catch (e) { showError(e); }
-    };
-    bfOpen.onclick = () => OpenBlockfallThread();
+    arcOpen.onclick = () => OpenArcadeThread();
   }
 
   // Announcements (#125, beta): a quick test field plus a copy-paste curl command

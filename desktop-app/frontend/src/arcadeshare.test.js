@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pngBlob, copyScreenshot, scoreText } from './blockfallshare.js';
+import { pngBlob, copyScreenshot, scoreText } from './arcadeshare.js';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
@@ -33,9 +33,10 @@ describe('copyScreenshot', () => {
 });
 
 describe('scoreText', () => {
-  it('names the model and both scores', () => {
-    expect(scoreText({ best: 1234, last: 800, rows: 9 }, 'SoundTouch Portable'))
+  it('names the game, the model and both scores', () => {
+    expect(scoreText({ id: 'blockfall', title: 'Blockfall', best: 1234, last: 800, rows: 9 }, 'SoundTouch Portable'))
       .toBe('My Blockfall highscore on the SoundTouch Portable: **1234 points**. Last round: 800 points, 9 rows.');
-    expect(scoreText({ best: 5, last: 5, rows: 0 }, '')).toContain('on my SoundTouch:');
+    expect(scoreText({ id: 'starguard', title: 'Starguard', best: 5, last: 5, rows: 2 }, ''))
+      .toBe('My Starguard highscore on my SoundTouch: **5 points**. Last round: 5 points, 2 waves.');
   });
 });

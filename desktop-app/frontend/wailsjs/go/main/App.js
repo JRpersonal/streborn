@@ -186,8 +186,8 @@ export function GetAppFlag(arg1) {
   return window['go']['main']['App']['GetAppFlag'](arg1);
 }
 
-export function GetBlockfall(arg1, arg2) {
-  return window['go']['main']['App']['GetBlockfall'](arg1, arg2);
+export function GetArcade(arg1, arg2) {
+  return window['go']['main']['App']['GetArcade'](arg1, arg2);
 }
 
 export function GetBoxFirmware(arg1) {
@@ -306,8 +306,8 @@ export function Next(arg1, arg2) {
   return window['go']['main']['App']['Next'](arg1, arg2);
 }
 
-export function OpenBlockfallThread() {
-  return window['go']['main']['App']['OpenBlockfallThread']();
+export function OpenArcadeThread() {
+  return window['go']['main']['App']['OpenArcadeThread']();
 }
 
 export function Pause(arg1, arg2) {
@@ -486,8 +486,8 @@ export function RevealUpdateFile(arg1) {
   return window['go']['main']['App']['RevealUpdateFile'](arg1);
 }
 
-export function SaveBlockfallScreenshot(arg1, arg2) {
-  return window['go']['main']['App']['SaveBlockfallScreenshot'](arg1, arg2);
+export function SaveArcadeScreenshot(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveArcadeScreenshot'](arg1, arg2, arg3);
 }
 
 export function SaveDiagnosticBundle(arg1, arg2) {

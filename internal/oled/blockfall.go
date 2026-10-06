@@ -137,6 +137,12 @@ func NewBlockfall(seed uint64) *Blockfall {
 
 func (g *Blockfall) piece() []bfPt { return bfRotations[g.kind][g.rot] }
 
+// State reports whether the round is over, its score and the cleared rows.
+func (g *Blockfall) State() (bool, int, int) { return g.Over, g.Score, g.Lines }
+
+// End finishes the round from outside.
+func (g *Blockfall) End() { g.Over = true }
+
 func (g *Blockfall) fits(cells []bfPt, x, y int) bool {
 	for _, c := range cells {
 		px, py := x+c.x, y+c.y
