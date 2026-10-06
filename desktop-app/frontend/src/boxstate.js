@@ -50,3 +50,17 @@ export function displaySplashState(r) {
     enabled: typeof r.enabled === 'boolean' ? r.enabled : null,
   };
 }
+
+// blockfallState reads the app's GetBlockfall answer for the hidden game on
+// the speaker display. The section only shows once a round was played there:
+// the game is an easter egg, the app must not give it away. The screenshot
+// is used only when it is a PNG data URL (it ends up in an img src).
+export function blockfallState(r) {
+  if (!r || typeof r !== 'object' || !(Number(r.rounds) > 0)) {
+    return { show: false, best: 0, last: 0, rows: 0, screenshot: '' };
+  }
+  const num = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : 0);
+  const shot = typeof r.screenshot === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(r.screenshot)
+    ? r.screenshot : '';
+  return { show: true, best: num(r.best), last: num(r.last), rows: num(r.lastRows), screenshot: shot };
+}

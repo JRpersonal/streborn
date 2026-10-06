@@ -50,7 +50,8 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, blockfallState } from '../boxstate.js';
+import { copyScreenshot, scoreText } from '../blockfallshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
   BoxSettings,
@@ -82,6 +83,10 @@ import {
   SetDisplayMessages,
   GetDisplaySplash,
   SetDisplaySplash,
+  GetBlockfall,
+  OpenBlockfallThread,
+  SaveBlockfallScreenshot,
+  ClipboardSetText,
   AnnounceExample,
   SendAnnounce,
   Translate,
@@ -714,6 +719,7 @@ function groupSettingsSections() {
     displayTrackSection: 'sound',
     displayMsgSection: 'sound',
     displaySplashSection: 'sound',
+    blockfallSection: 'sound',
     airplayOptSection: 'sound',
   };
   const byHeading = {
@@ -1324,6 +1330,19 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="displaySplashOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.displaySplashHelp'))}</small>
+    </div>
+
+    <div class="settings-section hidden" id="blockfallSection">
+      <h3>${escapeHtml(t('settingsView.blockfallHeading'))}</h3>
+      <p id="blockfallScore"></p>
+      <img id="blockfallShot" class="hidden" alt="${escapeAttr(t('settingsView.blockfallScreenAlt'))}" style="display:block;max-width:100%;width:384px;image-rendering:pixelated;margin:6px 0">
+      <div class="setting-row">
+        <button class="btn btn-mini hidden" id="blockfallCopyShot">${escapeHtml(t('settingsView.blockfallCopyShot'))}</button>
+        <button class="btn btn-mini hidden" id="blockfallSaveShot">${escapeHtml(t('settingsView.blockfallSaveShot'))}</button>
+        <button class="btn btn-mini" id="blockfallCopyScore">${escapeHtml(t('settingsView.blockfallCopyScore'))}</button>
+        <button class="btn btn-mini" id="blockfallOpenThread">${escapeHtml(t('settingsView.blockfallOpenThread'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.blockfallHelp'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -2631,6 +2650,56 @@ function renderBoxSettings(s, box) {
     };
     dsOn.onclick = () => saveDS(true);
     dsOff.onclick = () => saveDS(false);
+  }
+
+  // Blockfall, the hidden game on the speaker display: score, last screen and
+  // a GitHub share. Hidden until a round was played on this speaker, so the
+  // app never gives the game away.
+  const bfSection = $('blockfallSection');
+  const bfCopyShot = $('blockfallCopyShot');
+  const bfSaveShot = $('blockfallSaveShot');
+  const bfCopyScore = $('blockfallCopyScore');
+  const bfOpen = $('blockfallOpenThread');
+  if (bfSection && bfCopyShot && bfSaveShot && bfCopyScore && bfOpen) {
+    let bf = null;
+    (async () => {
+      try {
+        bf = blockfallState(await GetBlockfall(box.host, box.port));
+        bfSection.classList.toggle('hidden', !bf.show);
+        if (!bf.show) return;
+        const score = $('blockfallScore');
+        if (score) score.textContent = t('settingsView.blockfallScore', { best: bf.best, last: bf.last, rows: bf.rows });
+        const shot = $('blockfallShot');
+        if (shot && bf.screenshot) {
+          shot.src = bf.screenshot;
+          shot.classList.remove('hidden');
+          bfCopyShot.classList.remove('hidden');
+          bfSaveShot.classList.remove('hidden');
+        }
+      } catch { bfSection.classList.add('hidden'); }
+    })();
+    const saveShot = async () => {
+      try {
+        const path = await SaveBlockfallScreenshot(box.host, box.port);
+        if (path) showToast(t('settingsView.blockfallShotSavedToast', { path }));
+      } catch (e) { showError(e); }
+    };
+    // The clipboard write starts first thing in the click; where the webview
+    // cannot hold an image, the save dialog opens instead.
+    bfCopyShot.onclick = async () => {
+      if (!bf?.screenshot) return;
+      if (await copyScreenshot(bf.screenshot)) showToast(t('settingsView.blockfallShotCopiedToast'));
+      else await saveShot();
+    };
+    bfSaveShot.onclick = saveShot;
+    bfCopyScore.onclick = async () => {
+      if (!bf?.show) return;
+      try {
+        await ClipboardSetText(scoreText(bf, box.model || ''));
+        showToast(t('settingsView.blockfallScoreCopiedToast'));
+      } catch (e) { showError(e); }
+    };
+    bfOpen.onclick = () => OpenBlockfallThread();
   }
 
   // Announcements (#125, beta): a quick test field plus a copy-paste curl command
