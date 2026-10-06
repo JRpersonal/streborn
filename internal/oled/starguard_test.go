@@ -18,41 +18,80 @@ func TestStarguardEndsWithoutInput(t *testing.T) {
 }
 
 func TestStarguardSteering(t *testing.T) {
+	wall := (Width - 1 - sgShipHalf) * 16
+	moved := func(g *Starguard, steps int, every int, key int, states ...int) (dist, stopped int) {
+		x0 := g.shipX16
+		for i := 0; i < steps; i++ {
+			if every > 0 && i%every == 0 {
+				for _, st := range states {
+					g.Key(key, st)
+				}
+			}
+			before := g.shipX16
+			g.Step()
+			if g.shipX16 == before && g.shipX16 != wall && g.shipX16 != sgShipHalf*16 {
+				stopped++
+			}
+		}
+		return g.shipX16 - x0, stopped
+	}
+
+	// a tap glides a short way left and stops
 	g := NewStarguard(2)
-	x0 := g.shipX16
 	g.Key(KeyThumbsDown, KeyPressed)
-	for range 12 {
-		g.Step()
-	}
-	tap := x0 - g.shipX16
-	if tap <= 0 {
-		t.Fatalf("thumbs down must steer left: %d -> %d", x0, g.shipX16)
-	}
-	// held: the remote repeats the press about every 15 steps; the ship
-	// keeps gliding, faster, without stopping in between
-	x1 := g.shipX16
-	stopped := 0
-	for i := 0; i < 60; i++ {
-		if i%15 == 0 {
-			g.Key(KeyThumbsUp, KeyPressed)
-		}
-		before := g.shipX16
-		g.Step()
-		if g.shipX16 == before && g.shipX16 < (Width-1-sgShipHalf)*16 {
-			stopped++
-		}
-	}
-	if g.shipX16 <= x1 || stopped > 0 {
-		t.Fatalf("holding thumbs up must glide right without stopping: moved %d, stopped %d steps", g.shipX16-x1, stopped)
-	}
-	// releases and other keys do nothing
-	before := g.shipX16
-	g.moveSteps = 0
-	g.Key(KeyThumbsUp, KeyReleased)
-	g.Key(KeyPrev, KeyPressed)
 	g.Step()
-	if g.shipX16 != before {
-		t.Fatal("only thumbs presses steer")
+	g.Key(KeyThumbsDown, KeyReleased)
+	if d, _ := moved(g, 40, 0, 0); d >= 0 || d < -40*16 {
+		t.Fatalf("a tap must glide a short way left: %d", d)
+	}
+
+	// one press held until the release: moves the whole time, then stops
+	g = NewStarguard(2)
+	g.shipX16 = 10 * 16
+	g.Key(KeyThumbsUp, KeyPressed)
+	if d, stops := moved(g, 60, 0, 0); d < 60*20 || stops > 0 {
+		t.Fatalf("holding (one press) must move right the whole time: %d px/16, %d stops", d, stops)
+	}
+	g.Key(KeyThumbsUp, KeyReleased)
+	moved(g, sgCoast+1, 0, 0)
+	if d, _ := moved(g, 20, 0, 0); d != 0 {
+		t.Fatalf("after the release and the coast it must stop: %d", d)
+	}
+
+	// press/release pairs twice a second and repeat events both count as held
+	for _, states := range [][]int{{KeyPressed, KeyReleased}, {KeyRepeat}} {
+		g = NewStarguard(2)
+		g.shipX16 = 10 * 16
+		g.Key(KeyThumbsUp, KeyPressed)
+		if d, stops := moved(g, 60, 15, KeyThumbsUp, states...); d <= 0 || stops > 0 {
+			t.Fatalf("held as %v must move without stopping: %d, %d stops", states, d, stops)
+		}
+	}
+
+	// held longer, it speeds up
+	g = NewStarguard(2)
+	g.shipX16 = 10 * 16
+	g.Key(KeyThumbsUp, KeyPressed)
+	slow, _ := moved(g, 10, 0, 0)
+	moved(g, sgFastFrom, 0, 0)
+	fast, _ := moved(g, 10, 0, 0)
+	if fast <= slow {
+		t.Fatalf("holding must speed up: %d then %d", slow, fast)
+	}
+
+	// a lost release does not drive the ship for good
+	g = NewStarguard(2)
+	g.Key(KeyThumbsDown, KeyPressed)
+	moved(g, sgKeyStale+sgCoast+2, 0, 0)
+	if g.keyDown {
+		t.Fatal("a key with no events for 5 s must count as released")
+	}
+
+	// other keys do nothing
+	g = NewStarguard(2)
+	g.Key(KeyPrev, KeyPressed)
+	if d, _ := moved(g, 10, 0, 0); d != 0 {
+		t.Fatal("only the thumbs steer")
 	}
 }
 

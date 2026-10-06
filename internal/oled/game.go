@@ -236,7 +236,7 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 	}
 	var res Result
 	phase := 0 // 0 intro, 1 game, 2 game over
-	frames := 0
+	steps := 0 // game steps run so far, at 30 a second of game time
 	var gameStart, lastKey, overAt time.Time
 	err := play(func(t float64, buf []byte) bool {
 		now := time.Now()
@@ -268,12 +268,15 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 					drained = true
 				}
 			}
-			// play() runs at 20 fps; the games are tuned for 30 steps a second
-			g.Step()
-			if frames%2 == 0 {
+			// the games are tuned for 30 steps a second, whatever the frame
+			// rate; a late frame catches up (capped, so a stall does not
+			// fast-forward the game)
+			due := int(now.Sub(gameStart) * 30 / time.Second)
+			for n := 0; steps < due && n < 4; n++ {
 				g.Step()
+				steps++
 			}
-			frames++
+			steps = max(steps, due-4)
 			over, _, _ := g.State()
 			switch {
 			case over:

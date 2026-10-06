@@ -75,9 +75,10 @@ type Starguard struct {
 
 	shipX16          int // ship centre, 1/16 px
 	moveDir          int
-	moveSteps        int
-	moveFast         bool
-	sinceMove        int
+	keyDown          bool // a thumb is held: no release seen since its press
+	keyAge           int  // steps since the last event of the held key
+	coast            int  // steps the ship keeps gliding after a release
+	heldSteps        int  // steps of continuous movement, for the speed-up
 	fireCD           int
 	rapid            int
 	double, spread   bool
@@ -153,12 +154,14 @@ func (g *Starguard) startWave(n int, upgrade string) {
 	g.bannerText = upgrade
 }
 
-// Key: thumbs down steers left, thumbs up right. The remote sends no hold
-// state, only a fresh press about twice a second while a key is held, so a
-// press glides the ship for a moment, and a press that follows the previous
-// one in the same direction counts as holding and glides faster and longer.
+// Key: thumbs down steers left, thumbs up right, for as long as the thumb is
+// held. Remotes report a held key in different ways (one press until the
+// release, repeat events, or press/release pairs about twice a second), so a
+// press or a repeat steers until the release, and after a release the ship
+// coasts a moment, which bridges the gap to the next press of a pair. Held a
+// while, it speeds up.
 func (g *Starguard) Key(key, state int) {
-	if g.over || state != KeyPressed {
+	if g.over {
 		return
 	}
 	d := 0
@@ -170,14 +173,25 @@ func (g *Starguard) Key(key, state int) {
 	default:
 		return
 	}
-	held := d == g.moveDir && g.sinceMove < 12
-	g.moveDir, g.moveFast = d, held
-	g.moveSteps = 16 // bridges the gap to the remote's next repeat
-	if held {
-		g.moveSteps = 18
+	switch state {
+	case KeyPressed, KeyRepeat:
+		if d != g.moveDir {
+			g.heldSteps = 0
+		}
+		g.moveDir, g.keyDown, g.keyAge = d, true, 0
+	case KeyReleased:
+		if d == g.moveDir && g.keyDown {
+			g.keyDown = false
+			g.coast = sgCoast
+		}
 	}
-	g.sinceMove = 0
 }
+
+const (
+	sgCoast    = 16  // steps; longer than the gap inside a press/release pair
+	sgKeyStale = 150 // a held key with no event for 5 s counts as released
+	sgFastFrom = 15  // steps of holding before the ship speeds up
+)
 
 func kindOfRow(row int) int {
 	switch {
@@ -208,16 +222,24 @@ func (g *Starguard) Step() {
 		return
 	}
 	// ship
-	if g.moveSteps > 0 {
+	if g.keyDown {
+		// a lost release must not send the ship into the wall for good
+		if g.keyAge++; g.keyAge > sgKeyStale {
+			g.keyDown = false
+		}
+	}
+	if g.keyDown || g.coast > 0 {
 		speed := 20
-		if g.moveFast {
+		if g.heldSteps >= sgFastFrom {
 			speed = 34
 		}
 		g.shipX16 = max(sgShipHalf*16, min((Width-1-sgShipHalf)*16, g.shipX16+g.moveDir*speed))
-		g.moveSteps--
-		g.sinceMove = 0
+		g.heldSteps++
+		if !g.keyDown {
+			g.coast--
+		}
 	} else {
-		g.sinceMove++
+		g.heldSteps = 0
 	}
 	if g.invuln > 0 {
 		g.invuln--
