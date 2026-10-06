@@ -70,3 +70,25 @@ func TestOTASidecarEnsureBackoff(t *testing.T) {
 		t.Errorf("cumulative sidecar retry backoff %v must stay below otaRebootGrace %v", total, otaRebootGrace)
 	}
 }
+
+func TestAgentDowngradeRefused(t *testing.T) {
+	cases := []struct {
+		app, box string
+		want     bool
+	}{
+		{"v1.0.1", "v1.0.3", true},               // older app, newer speaker (#1154)
+		{"v0.9.40", "v1.0.1", true},              // across a minor boundary
+		{"v1.0.3", "v1.0.1", false},              // normal upgrade
+		{"v1.0.1", "v1.0.1", false},              // same version: repair re-push allowed
+		{"v1.0.1-3-gabc-dirty", "v1.0.1", false}, // dev build off the same tag
+		{"v1.0.1", "", false},                    // speaker version unknown
+		{"", "v1.0.1", false},                    // app version unknown
+		{"1.0.0", "v1.0.3", false},               // unstamped dev build never blocks
+		{"v1.0.1", "dev", false},                 // unparsable speaker version
+	}
+	for _, c := range cases {
+		if got := agentDowngradeRefused(c.app, c.box); got != c.want {
+			t.Errorf("agentDowngradeRefused(%q, %q) = %v, want %v", c.app, c.box, got, c.want)
+		}
+	}
+}

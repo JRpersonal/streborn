@@ -63,6 +63,27 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 	return out, nil
 }
 
+// errSpeakerNewerThanApp is what UpdateBoxAgent returns when the speaker's
+// agent is newer than the agent embedded in this app: pushing would downgrade
+// the speaker (#1154). The text is shown to the user as the update failure.
+var errSpeakerNewerThanApp = errors.New("the speaker already runs a newer STR than this app; update the app first")
+
+// agentDowngradeRefused reports whether an OTA from an app at appVer onto a
+// speaker running boxVer must be refused because it would downgrade the
+// speaker. Only the numeric version is compared (an equal version may be
+// re-pushed as a repair). An unknown speaker version, or an unstamped dev
+// build reporting the default "1.0.0", never blocks.
+func agentDowngradeRefused(appVer, boxVer string) bool {
+	appVer, boxVer = strings.TrimSpace(appVer), strings.TrimSpace(boxVer)
+	if appVer == "" || boxVer == "" || strings.TrimPrefix(appVer, "v") == "1.0.0" {
+		return false
+	}
+	if len(parseVersionParts(appVer)) == 0 || len(parseVersionParts(boxVer)) == 0 {
+		return false
+	}
+	return versionLess(appVer, boxVer)
+}
+
 // recordNANDHeadroom logs the box's writable-volume headroom to the OTA journal
 // before a push. The agent reports nandFreeBytes/nandTotalBytes from /api/agent/
 // version (added 2026-06-24); a box on an older agent simply omits them, in which
@@ -302,6 +323,19 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		return fmt.Errorf("no embedded stick binary available")
 	}
 	a.recordOTA(host, fmt.Sprintf("start: port=%d bytes=%d app=%s build=%s", port, len(bin), appVersion, appBuild))
+	// Never push an older agent over a newer one. The frontend only offers a
+	// speaker update when the app is newer, but an older app on a second
+	// computer (#1154) must not be able to downgrade a speaker through any
+	// other path either. Refused before anything touches the speaker. A failed
+	// version read does not block: the guard is defense in depth, and the
+	// pre-v0.9.26 SSH detour below needs the same read anyway.
+	ver, verr := a.BoxAgentVersion(host, port)
+	if verr == nil {
+		if bv := strings.TrimSpace(ver["version"]); agentDowngradeRefused(appVersion, bv) {
+			a.recordOTA(host, "start: refused, speaker runs agent "+bv+", newer than this app's "+appVersion+"; update the app first")
+			return errSpeakerNewerThanApp
+		}
+	}
 	// Remember which port this update talks to the box on, so the post-OTA
 	// version poll asks that port first (see otaverify.go). The caller's port
 	// is the first guess; the preflight below replaces it with the proven one.
@@ -370,7 +404,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// in tmpfs, so SSH closes itself again on the post-swap reboot. Any
 	// failure here falls through to the normal HTTP path, which is exactly
 	// today's behaviour - this detour can only improve things.
-	if ver, verr := a.BoxAgentVersion(host, port); verr == nil {
+	if verr == nil {
 		if bv := strings.TrimSpace(ver["version"]); bv != "" && versionLess(bv, "v0.9.26") {
 			a.recordOTA(host, "agent "+bv+" predates the streamed upload path (v0.9.26): updating over SSH, the old agent dies receiving large HTTP bodies")
 			a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)

@@ -1323,6 +1323,12 @@ async function checkAppUpdate(manual) {
     // holds either way, and a user who clicked the app notice away has not
     // stopped needing the app first.
     state.appUpdateVersion = m.version;
+    // This check is async and often resolves after discovery already showed
+    // the speaker card or the Speaker Settings banner. Re-evaluate both now so
+    // they follow the app-first rule instead of sitting under the app notice
+    // as a second update prompt (#1154).
+    maybeShowSpeakerUpdateCard();
+    checkBoxUpdate();
     if (noticeDismissed('appUpdate', m.version)) {
       renderAppUpdateCheckLink(banner, '');
       return;
@@ -4094,6 +4100,12 @@ async function checkBoxUpdate() {
       banner.classList.remove('hidden');
       if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
       wireUpdateAllBtn();
+    } else if (state.appUpdateVersion) {
+      // Box newer than the app AND an app update is known: the single app
+      // notice already says what to do. A per-speaker "this app is older" line
+      // under it read like a second offer, to update the speakers (#1154).
+      // App first, speakers last; the banner stays hidden (or keeps the engine
+      // notice rendered above).
     } else {
       // Box newer than the app: an OTA would downgrade it. Point the user at the
       // app update instead and do NOT show the "Aktualisieren" button.
