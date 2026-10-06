@@ -9,6 +9,7 @@ import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { announceHighscores } from './arcadeshare.js';
 import { openHighscorePopup } from './arcadepopup.js';
+import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from './firewallbanner.js';
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { sourceAccountFrom } from './nowsourceaccount.js';
 import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
@@ -149,6 +150,8 @@ import {
   readBoxBalance,
   setBoxMute,
   GetArcade,
+  CheckFirewall,
+  AllowThroughFirewall,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -1185,6 +1188,15 @@ async function renderFooter() {
   // speaker list empty. Shown a moment after start so the firewall prompt and
   // the window are both up.
   setTimeout(() => { maybeShowStableNameNotice({ consume: ConsumeStableNameNotice, showToast, t }).catch(() => {}); }, 2500);
+  // Whether Windows Firewall blocks the app. The backend checks once at start-up
+  // and caches it; this reads that result (waiting for it if it is still
+  // running). A no-op answer on macOS and Linux.
+  setTimeout(() => { checkFirewallBanner(false); }, 3000);
+  // An install that waits for the speaker's callback and gets none (setup.js)
+  // is the firewall's other footprint: look again once.
+  window.addEventListener('str:firewall-suspect', () => {
+    if (firewallSuspect('install')) checkFirewallBanner(true);
+  });
   // A winget upgrade started by the previous run that failed: remembered before
   // the update check (8 s) so its banner carries the note and the command.
   ConsumeWingetUpgradeFailure().then((f) => {
@@ -2239,6 +2251,9 @@ async function discoverBoxes() {
     }
     const list = await DiscoverBoxes(4);
     applyBoxList(list || []);
+    // An empty speaker list is what a firewall block looks like from in here.
+    // Look at the firewall rules again, once per session, not on every sweep.
+    if (!(list || []).length && firewallSuspect('empty')) checkFirewallBanner(true);
     // Recovery burst: if we had speakers and this cycle found NONE, the LAN most
     // likely re-IP'd every box at once (router restart, or a LAN<->Wi-Fi / band
     // switch). Re-sweep on a short burst so the list comes back on its own instead
@@ -2700,6 +2715,62 @@ function checkWedgeBanner() {
   el.classList.remove('hidden');
 }
 
+// Windows Firewall banner (firewallbanner.js). firewallState holds the last
+// backend answer so a re-render (language switch, speaker list repaint) needs
+// no new check; firewallDismissed hides it for this session only, because the
+// block is still there and the app should say so again on the next start.
+let firewallState = null;
+let firewallDismissed = false;
+let firewallBusy = false;
+const firewallSuspect = firewallSuspectGate();
+
+async function checkFirewallBanner(force) {
+  try {
+    firewallState = await CheckFirewall(force);
+  } catch { return; /* older build without the binding, or no answer */ }
+  renderFirewallBanner();
+}
+
+function renderFirewallBanner() {
+  const el = $('firewallBanner');
+  if (!el) return;
+  const v = firewallBannerView(firewallState, t, { dismissed: firewallDismissed });
+  if (!v) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const btn = (b, id, cls) => `<button class="btn ${cls} app-update-btn" id="${id}"${firewallBusy ? ' disabled' : ''}>${escapeHtml(firewallBusy && cls === 'btn-primary' ? t('firewall.working') : b.label)}</button>`;
+  el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(v.title)}</b> ${escapeHtml(v.text)}${v.note ? ' ' + escapeHtml(v.note) : ''}</span></div>`
+    + `<div class="firewall-banner-actions">${btn(v.primary, 'firewallAllow', 'btn-primary')}${v.secondary ? btn(v.secondary, 'firewallAllowPrivate', 'btn-secondary') : ''}`
+    + `<button class="banner-close" id="firewallDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('firewall.dismissTitle'))}">&times;</button></div>`;
+  el.classList.remove('hidden');
+  const allow = $('firewallAllow');
+  if (allow) allow.onclick = () => allowThroughFirewall(v.primary.includePublic);
+  const priv = $('firewallAllowPrivate');
+  if (priv && v.secondary) priv.onclick = () => allowThroughFirewall(v.secondary.includePublic);
+  const close = $('firewallDismiss');
+  if (close) close.onclick = () => { firewallDismissed = true; renderFirewallBanner(); };
+}
+
+async function allowThroughFirewall(includePublic) {
+  if (firewallBusy) return;
+  firewallBusy = true;
+  renderFirewallBanner();
+  showToast(t('firewall.working'), 0);
+  let res = null;
+  try {
+    res = await AllowThroughFirewall(includePublic);
+  } catch (e) {
+    res = { ok: false, error: String(e && e.message ? e.message : e) };
+  } finally {
+    firewallBusy = false;
+  }
+  if (res && res.status) firewallState = res.status;
+  const toast = firewallUnblockToast(res, t);
+  showToast(toast.text, toast.ok ? 6000 : 12000);
+  renderFirewallBanner();
+  // With the block gone, look for the speakers straight away rather than at
+  // the next minute tick.
+  if (toast.ok) { try { discoverBoxes(); } catch { /* the next sweep retries */ } }
+}
+
 // checkBoxIssueBanner is a heads-up when a speaker carries leftovers of a
 // rival cloud-free SoundTouch tool (they can fight STR) or has no STR Wi-Fi
 // backup saved. Global banner, #270. Dismissible per box and warning type:
@@ -3039,6 +3110,7 @@ function renderBoxSelect() {
     updateBoxUiVisibility();
   checkWedgeBanner();
   checkBoxIssueBanner();
+  renderFirewallBanner();
     return;
   }
   // Cluster speakers that share a live multiroom zone into a colored frame
@@ -3371,6 +3443,7 @@ function renderBoxSelect() {
   updateBoxUiVisibility();
   checkWedgeBanner();
   checkBoxIssueBanner();
+  renderFirewallBanner();
 }
 
 // speakerPickedInTab keeps the tabs in lock-step in the other direction: a

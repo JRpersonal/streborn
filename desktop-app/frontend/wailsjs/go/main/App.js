@@ -10,6 +10,10 @@ export function AddMediaServerByURL(arg1) {
   return window['go']['main']['App']['AddMediaServerByURL'](arg1);
 }
 
+export function AllowThroughFirewall(arg1) {
+  return window['go']['main']['App']['AllowThroughFirewall'](arg1);
+}
+
 export function AnnounceExample(arg1, arg2) {
   return window['go']['main']['App']['AnnounceExample'](arg1, arg2);
 }
@@ -72,6 +76,10 @@ export function BrowseLibrary(arg1, arg2, arg3, arg4) {
 
 export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
+}
+
+export function CheckFirewall(arg1) {
+  return window['go']['main']['App']['CheckFirewall'](arg1);
 }
 
 export function CheckStereoBeforeInstall(arg1) {

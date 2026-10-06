@@ -84,6 +84,10 @@ type App struct {
 	// 14:33:43, engine delivered 14:33:53, STR removed 14:34:06).
 	uninstalling sync.Map
 
+	// firewall caches the Windows Firewall check (firewall.go): it runs once
+	// at start-up and again only when the UI asks for it.
+	firewall firewallState
+
 	// libraryServers caches the result of the most recent
 	// ListMediaServers call so subsequent BrowseLibrary calls can
 	// resolve a UDN to a Server without a fresh SSDP sweep on every
@@ -199,6 +203,9 @@ func (a *App) startup(ctx context.Context) {
 	// gets one here, once (see winget.go). Off the startup path: it runs a
 	// hidden PowerShell.
 	go a.ensureWingetShortcut()
+	// Whether Windows Firewall blocks this app (firewall.go), once, off the
+	// startup path: it runs a hidden PowerShell. The UI reads the cached result.
+	go a.CheckFirewall(false)
 	// The salt behind every pseudonym in an exported bundle. Generated once for
 	// this installation and kept beside the app's own state, never inside a
 	// bundle: without it the DEV# and MAC# tokens were a 24-bit sweep away from

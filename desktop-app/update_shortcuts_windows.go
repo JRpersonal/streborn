@@ -37,8 +37,9 @@ func (psShortcutRetargeter) Retarget(oldPath, newPath string) ([]string, error) 
 func newShortcutRetargeter() shortcutRetargeter { return psShortcutRetargeter{} }
 
 // firewallRulesNaming counts Windows Firewall rules whose program is path. Read
-// only: listing rules needs no elevation, changing them does, and STR never
-// asks for elevation. Windows ties an "allow" to the program's PATH, so a file
+// only: listing rules needs no elevation, changing them does, and the update
+// never asks for it (the one elevated step in the app is the user's own
+// "Allow through the firewall" press, firewall.go). Windows ties an "allow" to the program's PATH, so a file
 // that moves to the stable name gets the firewall question once more on its
 // first start; this count is what lets the log say so instead of leaving a
 // silent empty speaker list to explain later. -1 when the list is unreadable.

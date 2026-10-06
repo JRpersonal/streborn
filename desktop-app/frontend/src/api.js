@@ -216,6 +216,17 @@ export function LibraryRefusedServers() {
   return callOptionalBinding('LibraryRefusedServers', []);
 }
 
+// CheckFirewall reports whether Windows Firewall blocks this app (cached on the
+// backend; force asks for a fresh read), AllowThroughFirewall replaces the
+// block with allow rules in one administrator step. Optional bindings, per the
+// note above.
+export function CheckFirewall(force) {
+  return callOptionalBinding('CheckFirewall', [!!force]);
+}
+export function AllowThroughFirewall(includePublic) {
+  return callOptionalBinding('AllowThroughFirewall', [!!includePublic]);
+}
+
 // ReplayFolderCard replays a Recently-played FOLDER card as the whole folder
 // again instead of as its first track. Optional binding, per the note above; a
 // speaker whose agent predates the endpoint rejects it with

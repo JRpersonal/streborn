@@ -2480,6 +2480,9 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
    where the user must physically pull the plug. */
 .box-wedge-banner { background: #fdba74; color: #431407; }
 .box-wedge-banner b { color: #431407; }
+/* Windows Firewall banner: the allow button(s) and the close cross on the
+   right, kept together and wrapping under the text on a narrow window. */
+.firewall-banner-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; flex-wrap: wrap; }
 .app-update-text { display: flex; align-items: center; gap: 8px; min-width: 0; }
 /* A winget note: the text, then the command to run by hand, selectable in one
    click and wrapping instead of pushing the banner wider than the window. */
