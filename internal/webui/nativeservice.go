@@ -26,8 +26,9 @@ import (
 // stream (or native radio) form for everything else.
 func (s *Server) writeStorePresetToBox(ctx context.Context, p presets.Preset) error {
 	if p.IsNative() {
-		return boxcli.AddPresetContentItem(ctx, s.boxHost, p.Slot, p.Native.Source, p.Native.ItemType,
-			p.Native.Location, p.Name, p.Native.SourceAccount)
+		item := s.withSpeakerAccount(ctx, *p.Native)
+		return boxcli.AddPresetContentItem(ctx, s.boxHost, p.Slot, item.Source, item.ItemType,
+			item.Location, p.Name, item.SourceAccount)
 	}
 	isSpotify := p.Type == "spotify"
 	return s.writeBoxPreset(ctx, p.Slot, p.Name, boxPresetURL(p.Slot, isSpotify), p.Art, isSpotify)
@@ -49,7 +50,40 @@ func nativeContentItemXML(item presets.NativeItem, name string) string {
 // selectNativeItem asks the speaker to play a native-service item, the same
 // item its own key holds.
 func (s *Server) selectNativeItem(ctx context.Context, item presets.NativeItem, name string) error {
-	return s.postSelect(ctx, nativeContentItemXML(item, name))
+	return s.postSelect(ctx, nativeContentItemXML(s.withSpeakerAccount(ctx, item), name))
+}
+
+// withSpeakerAccount returns item with the sourceAccount the speaker itself
+// lists for the item's service (presets.ResolveNativeAccount). The stored
+// account can be missing or wrong (#1101: a key held on the speaker came back
+// with the station name as its account), and the speaker refuses an item
+// whose account it does not know. An unreadable source list keeps the item
+// as stored.
+func (s *Server) withSpeakerAccount(ctx context.Context, item presets.NativeItem) presets.NativeItem {
+	if s.boxHost == "" {
+		return item
+	}
+	c, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+s.boxHost+":8090/sources", nil)
+	if err != nil {
+		return item
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return item
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return item
+	}
+	if acct := presets.ResolveNativeAccount(item, presets.NativeSourceAccounts(body)); acct != item.SourceAccount {
+		s.logger.Info("native service item: using the account the speaker lists for this service",
+			"source", item.Source, "storedAccountSet", item.SourceAccount != "")
+		item.SourceAccount = acct
+	}
+	return item
 }
 
 // validNativeItem checks an item a client sent before it is stored: a service

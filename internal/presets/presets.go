@@ -146,13 +146,21 @@ func (p Preset) IsNative() bool {
 // SameNativeItem reports whether two native items name the same station of
 // the same service and account. Names and artwork are deliberately ignored: a
 // key the user renamed must still count as the station the speaker re-states.
+// An item without an account matches on service and station alone: the
+// speaker's own hold-to-store record carries no account (#1101), and it must
+// neither replace a key the app saved with one nor slip past the one-station-
+// one-key rule.
 func SameNativeItem(a, b *NativeItem) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return NormalizeNativeSource(a.Source) == NormalizeNativeSource(b.Source) &&
-		a.Location == b.Location &&
-		strings.EqualFold(a.SourceAccount, b.SourceAccount)
+	if NormalizeNativeSource(a.Source) != NormalizeNativeSource(b.Source) || a.Location != b.Location {
+		return false
+	}
+	if a.SourceAccount == "" || b.SourceAccount == "" {
+		return true
+	}
+	return strings.EqualFold(a.SourceAccount, b.SourceAccount)
 }
 
 // NewNativePreset builds the preset for a native-service item on slot. name

@@ -34,6 +34,8 @@ var (
 	addPresetContentItemFn = boxcli.AddPresetContentItem
 	// boxSourceStatusFn reads the speaker's own source list.
 	boxSourceStatusFn = boxSourceStatus
+	// boxSourceAccountsFn reads the accounts the speaker lists per source.
+	boxSourceAccountsFn = boxSourceAccounts
 )
 
 // nativeSlotSkip is a native key the reconcile left alone, and why.
@@ -127,6 +129,7 @@ func logNativeSkips(skips []nativeSlotSkip, logger *slog.Logger) {
 // that will keep refusing.
 func writeNativeSlots(boxHost string, writes []presets.Preset, logger *slog.Logger) (written []int) {
 	now := time.Now()
+	var accounts map[string][]string
 	for _, p := range writes {
 		key := nativeWriteKey(p)
 		nativeSlotState.Lock()
@@ -135,9 +138,17 @@ func writeNativeSlots(boxHost string, writes []presets.Preset, logger *slog.Logg
 		if refused && now.Sub(at) < nativeWriteBackoff {
 			continue
 		}
+		// The account the speaker itself lists for the service, read once per
+		// pass and only when a write is due. The stored one can be missing or
+		// the station's name (#1101), which the speaker's command line cannot
+		// carry and the speaker would not recognise.
+		if accounts == nil {
+			accounts = boxSourceAccountsFn(boxHost)
+		}
+		account := presets.ResolveNativeAccount(*p.Native, accounts)
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		err := addPresetContentItemFn(ctx, boxHost, p.Slot, p.Native.Source, p.Native.ItemType,
-			p.Native.Location, p.Name, p.Native.SourceAccount)
+			p.Native.Location, p.Name, account)
 		cancel()
 		nativeSlotState.Lock()
 		if err != nil {
@@ -169,28 +180,46 @@ func lazySourceReady(boxHost string) func(string) bool {
 	}
 }
 
-// boxSourceStatus reads :8090/sources into source -> status. A source listed
-// several times (one per account) counts as READY when any entry is. An
-// unreadable answer is an empty map, which reads as "not offered".
-func boxSourceStatus(boxHost string) map[string]string {
-	out := map[string]string{}
+// boxSourceAccounts reads :8090/sources into source -> listed accounts
+// (presets.NativeSourceAccounts). Unreadable is an empty, non-nil map.
+func boxSourceAccounts(boxHost string) map[string][]string {
+	body := readBoxSources(boxHost)
+	if body == nil {
+		return map[string][]string{}
+	}
+	return presets.NativeSourceAccounts(body)
+}
+
+// readBoxSources fetches the speaker's /sources document, nil on any failure.
+func readBoxSources(boxHost string) []byte {
 	if boxHost == "" {
-		return out
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+boxHost+":8090/sources", nil)
 	if err != nil {
-		return out
+		return nil
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return out
+		return nil
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {
-		return out
+		return nil
+	}
+	return body
+}
+
+// boxSourceStatus reads :8090/sources into source -> status. A source listed
+// several times (one per account) counts as READY when any entry is. An
+// unreadable answer is an empty map, which reads as "not offered".
+func boxSourceStatus(boxHost string) map[string]string {
+	body := readBoxSources(boxHost)
+	if body == nil {
+		return map[string]string{}
 	}
 	return parseSourceStatus(body)
 }

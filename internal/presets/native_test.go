@@ -88,3 +88,46 @@ func TestNativeServiceLabelAndSameItem(t *testing.T) {
 		t.Error("an item without a location must be refused")
 	}
 }
+
+// The speaker's own hold-to-store record carries no account (#1101). It is
+// the same station as the key the app saved with the account.
+func TestSameNativeItemWithoutAnAccount(t *testing.T) {
+	saved := &NativeItem{Source: "PANDORA", Location: "1", SourceAccount: "listener@example.com"}
+	held := &NativeItem{Source: "PANDORA", Location: "1"}
+	if !SameNativeItem(saved, held) || !SameNativeItem(held, saved) {
+		t.Fatal("an item without an account must match on service and station")
+	}
+	if SameNativeItem(saved, &NativeItem{Source: "PANDORA", Location: "1", SourceAccount: "other@example.com"}) {
+		t.Fatal("two different accounts must not match")
+	}
+}
+
+func TestResolveNativeAccount(t *testing.T) {
+	listed := NativeSourceAccounts([]byte(`<sources deviceID="device-id-here">` +
+		`<sourceItem source="PANDORA" sourceAccount="old@example.com" status="UNAVAILABLE">x</sourceItem>` +
+		`<sourceItem source="PANDORA" sourceAccount="listener@example.com" status="READY">x</sourceItem>` +
+		`<sourceItem source="IHEARTRADIO" sourceAccount="12345" status="READY">x</sourceItem>` +
+		`<sourceItem source="LOCAL_INTERNET_RADIO" status="READY">x</sourceItem></sources>`))
+	cases := []struct {
+		item NativeItem
+		want string
+	}{
+		// v1.0.5 stored the station name as the account: healed.
+		{NativeItem{Source: "PANDORA", SourceAccount: "Chris Stapleton Radio"}, "listener@example.com"},
+		// No account at all (the speaker's own store record): filled in.
+		{NativeItem{Source: "PANDORA"}, "listener@example.com"},
+		// An account the speaker lists is kept, even a non-READY one.
+		{NativeItem{Source: "PANDORA", SourceAccount: "OLD@example.com"}, "OLD@example.com"},
+		{NativeItem{Source: "IHEART", SourceAccount: "Country 102.5"}, "12345"},
+		// Nothing listed for the service: the stored value stays.
+		{NativeItem{Source: "DEEZER", SourceAccount: "kept"}, "kept"},
+	}
+	for _, c := range cases {
+		if got := ResolveNativeAccount(c.item, listed); got != c.want {
+			t.Errorf("%+v: got %q, want %q", c.item, got, c.want)
+		}
+	}
+	if len(NativeSourceAccounts([]byte("not xml"))) != 0 {
+		t.Fatal("garbage must read as no accounts")
+	}
+}
