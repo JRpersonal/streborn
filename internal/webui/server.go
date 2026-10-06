@@ -596,6 +596,12 @@ type Server struct {
 
 	// playStateFn overrides boxPlayState for tests. nil = the real :8090 probe.
 	playStateFn func() (standby, busy bool)
+	// setVolumeFn overrides the start-volume write for tests. nil = the box.
+	setVolumeFn func(ctx context.Context, vol int) error
+	// startVolumeMu guards startVolumeAt, when the start level was last
+	// scheduled, so one power-on sets it once however many paths notice it.
+	startVolumeMu sync.Mutex
+	startVolumeAt time.Time
 
 	// nowPlayingFn overrides pollNowPlaying for tests. The end detection is a
 	// state machine over what the box reports, so it is only testable if the
