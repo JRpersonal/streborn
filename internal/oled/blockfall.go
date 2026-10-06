@@ -381,7 +381,7 @@ func (g *Blockfall) Frame(buf []byte) {
 			drawWord(buf, "BEST", bfX0+(bfW*bfCell-23)/2, 72, 1, 15)
 		}
 	}
-	if g.best > 0 && !(g.Over && g.Score > g.best) {
+	if g.best > 0 && (!g.Over || g.Score <= g.best) {
 		// the record to beat, in the left column above the score
 		drawSmall(buf, "BEST", bfX0-4-15, 54, 6)
 		n := len(strconv.Itoa(g.best))
