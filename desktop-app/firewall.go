@@ -226,15 +226,20 @@ func firewallPrograms() []string {
 // are turned into strings on purpose: ConvertTo-Json would otherwise write
 // them as numbers, and the enum NAMES are the same on every Windows language,
 // unlike the localised text netsh prints. It reads only, so it needs no
-// elevation. Program filtering happens in Go (evaluateFirewall), so no path
+// elevation. The program of every rule comes from ONE bulk read of the
+// application filters, joined on the rule name (the filter's InstanceID):
+// piping each rule into Get-NetFirewallApplicationFilter costs about 150 ms a
+// rule, so a PC with a few hundred block rules would run past the timeout and
+// never see the banner. Program filtering happens in Go (evaluateFirewall), so no path
 // has to be quoted into the script. Output is forced to UTF-8: Windows
 // PowerShell otherwise writes a redirected stdout in the OEM code page, which
 // would garble a program path under a user folder like C:\Users\Jürgen.
 const firewallQueryScript = `$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$progs = @{}
+Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | ForEach-Object { $progs[[string]$_.InstanceID] = [string]$_.Program }
 $rules = @(Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue | ForEach-Object {
-  $f = $_ | Get-NetFirewallApplicationFilter
   [pscustomobject]@{
     Name = [string]$_.Name
     DisplayName = [string]$_.DisplayName
@@ -242,7 +247,7 @@ $rules = @(Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -E
     Direction = [string]$_.Direction
     Action = [string]$_.Action
     Profile = [string]$_.Profile
-    Program = [string]$f.Program
+    Program = $progs[[string]$_.Name]
   }
 } | Where-Object { $_.Program -and $_.Program -ne 'Any' })
 $profiles = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.NetworkCategory })
@@ -429,11 +434,13 @@ try {
     foreach ($q in $progs) { if ($x -ieq $q) { return $true } }
     return $false
   }
-  Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue | ForEach-Object {
-    if (& $isOurs ($_ | Get-NetFirewallApplicationFilter).Program) { $_ | Remove-NetFirewallRule }
+  $ruleProg = @{}
+  Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | ForEach-Object { $ruleProg[[string]$_.InstanceID] = [string]$_.Program }
+  @(Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue) | ForEach-Object {
+    if (& $isOurs $ruleProg[[string]$_.Name]) { $_ | Remove-NetFirewallRule }
   }
-  Get-NetFirewallRule -Group ` + psQuote(firewallRuleGroup) + ` -ErrorAction SilentlyContinue | ForEach-Object {
-    if (& $isOurs ($_ | Get-NetFirewallApplicationFilter).Program) { $_ | Remove-NetFirewallRule }
+  @(Get-NetFirewallRule -Group ` + psQuote(firewallRuleGroup) + ` -ErrorAction SilentlyContinue) | ForEach-Object {
+    if (& $isOurs $ruleProg[[string]$_.Name]) { $_ | Remove-NetFirewallRule }
   }
   foreach ($p in $progs) {
     foreach ($proto in 'TCP', 'UDP') {
