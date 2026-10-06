@@ -21,7 +21,7 @@ const (
 	flipThread = "DirectFBFlipTas"
 	fbDevice   = "/dev/fb0"
 	fbSysfs    = "/sys/class/graphics/fb0/"
-	frameRate  = 20
+	frameRate  = 30
 )
 
 // panelSupported recognises the Portable's panel by driver and geometry. Every

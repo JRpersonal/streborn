@@ -179,6 +179,10 @@ type BoxInfo struct {
 	// wedged box accepts transport pushes but never plays, and only a
 	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
 	BoxHealth string `json:"boxHealth,omitempty"`
+	// ArcadeAt is when the speaker saved its last round of a display game
+	// (unix seconds as a string, empty when none). The app fetches the
+	// scores only when it changes, to tell the player about a new highscore.
+	ArcadeAt string `json:"arcadeAt,omitempty"`
 	// ConflictingMod names a rival cloud-free SoundTouch tool (e.g. "AfterTouch")
 	// whose leftover files STR found on the box. Two such tools fight over the
 	// cloud redirect, OLED, Wi-Fi and presets; the UI warns the user to remove it
@@ -1271,6 +1275,9 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 	if out.BoxHealth == "" {
 		out.BoxHealth = prev.BoxHealth
 	}
+	if out.ArcadeAt == "" {
+		out.ArcadeAt = prev.ArcadeAt
+	}
 	if prev.PortVerified && !out.PortVerified && prev.Port != 0 {
 		out.Port = prev.Port
 		out.PortVerified = true
@@ -1418,6 +1425,7 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.ForeignCloudURL = b.ForeignCloudURL
 		out.WLANCredsMissing = b.WLANCredsMissing
 		out.BoxHealth = b.BoxHealth
+		out.ArcadeAt = b.ArcadeAt
 		out.Storm1036 = b.Storm1036
 		out.Storm1036SinceSec = b.Storm1036SinceSec
 		out.RecallRefusal = b.RecallRefusal
@@ -1442,6 +1450,9 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		}
 		if out.BoxHealth == "" {
 			out.BoxHealth = b.BoxHealth
+		}
+		if out.ArcadeAt == "" {
+			out.ArcadeAt = b.ArcadeAt
 		}
 	}
 	return out
@@ -1807,6 +1818,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		FriendlyName:      jsonStringField(s, "friendlyName"),
 		Model:             jsonStringField(s, "model"),
 		BoxHealth:         jsonStringField(s, "boxHealth"),
+		ArcadeAt:          jsonStringField(s, "arcadeAt"),
 		ConflictingMod:    jsonStringField(s, "conflictingMod"),
 		ForeignCloudURL:   jsonStringField(s, "foreignCloudURL"),
 		GroupKeyError:     jsonStringField(s, "groupKeyError"),

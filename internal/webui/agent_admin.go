@@ -120,6 +120,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		out["nandTotalBytes"] = strconv.FormatInt(total, 10)
 		out["nandFreeBytes"] = strconv.FormatInt(avail, 10)
 	}
+	// When the last round of a display game was saved, so the app, which
+	// probes this anyway, fetches the scores only after a new round.
+	if at := oled.LastRoundAt(); !at.IsZero() {
+		out["arcadeAt"] = strconv.FormatInt(at.Unix(), 10)
+	}
 	// Wedged-control state (see wedge.go): the desktop app and the phone
 	// remote read this to tell the user a power-cycle is needed.
 	if status, since := s.BoxHealth(); status != "ok" {

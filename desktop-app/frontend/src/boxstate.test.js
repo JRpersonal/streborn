@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, blockfallState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, arcadeState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -79,18 +79,25 @@ describe('displaySplashState', () => {
   });
 });
 
-describe('blockfallState', () => {
-  it('stays hidden until a round was played, so the app does not give the game away', () => {
-    expect(blockfallState(null).show).toBe(false);
-    expect(blockfallState({ rounds: 0, best: 0 }).show).toBe(false);
-    expect(blockfallState({}).show).toBe(false);
+describe('arcadeState', () => {
+  it('stays hidden until a game was played, so the app does not give a game away', () => {
+    expect(arcadeState(null).show).toBe(false);
+    expect(arcadeState([]).show).toBe(false);
+    expect(arcadeState([{ id: 'blockfall', title: 'BLOCKFALL', rounds: 0 }]).show).toBe(false);
   });
-  it('reads the scores once a round exists', () => {
-    const st = blockfallState({ rounds: 2, best: 1200, last: 300, lastRows: 4, screenshot: 'data:image/png;base64,iVBORw0KGgo=' });
-    expect(st).toEqual({ show: true, best: 1200, last: 300, rows: 4, screenshot: 'data:image/png;base64,iVBORw0KGgo=' });
+  it('lists the played games with their scores', () => {
+    const st = arcadeState([
+      { id: 'blockfall', title: 'BLOCKFALL', rounds: 2, best: 1200, last: 300, lastRows: 4, screenshot: 'data:image/png;base64,iVBORw0KGgo=' },
+      { id: 'starguard', title: 'STARGUARD', rounds: 1, best: 80, last: 80, lastRows: 1 },
+    ]);
+    expect(st.show).toBe(true);
+    expect(st.games).toEqual([
+      { id: 'blockfall', title: 'Blockfall', best: 1200, last: 300, rows: 4, screenshot: 'data:image/png;base64,iVBORw0KGgo=' },
+      { id: 'starguard', title: 'Starguard', best: 80, last: 80, rows: 1, screenshot: '' },
+    ]);
   });
-  it('drops a screenshot that is not a PNG data URL', () => {
-    expect(blockfallState({ rounds: 1, screenshot: 'javascript:alert(1)' }).screenshot).toBe('');
-    expect(blockfallState({ rounds: 1, screenshot: 'data:image/png;base64,"onerror="x' }).screenshot).toBe('');
+  it('drops a screenshot that is not a PNG data URL and an id that could break the markup', () => {
+    expect(arcadeState([{ id: 'blockfall', rounds: 1, screenshot: 'javascript:alert(1)' }]).games[0].screenshot).toBe('');
+    expect(arcadeState([{ id: 'x"><img', rounds: 1 }]).show).toBe(false);
   });
 });

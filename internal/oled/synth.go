@@ -46,12 +46,33 @@ var overLead = []int{
 
 var overBass = []int{45, 40}
 
+// sgLead / sgBass: Starguard's intro, a driving E minor loop. sgOverLead /
+// sgOverBass: its game-over jingle, played once.
+var sgLead = []int{
+	64, 0, 67, 64, 71, 0, 69, 67,
+	64, 0, 67, 64, 72, 71, 69, 67,
+	62, 0, 66, 62, 69, 0, 67, 66,
+	64, 67, 71, 76, 74, 71, 67, 0,
+}
+
+var sgBass = []int{40, 40, 38, 43}
+
+var sgOverLead = []int{
+	71, 70, 69, 68, 67, 0, 64, 0,
+	59, 0, 0, 0, 52, 0, 0, 0,
+}
+
+var sgOverBass = []int{40, 40}
+
 // Track is one piece of music: a lead and a bass line in the formats above.
 // A track that does not loop is followed by silence until the stream stops,
 // so the speaker keeps the same stream and shows no state change.
 type Track struct {
 	Lead, Bass []int
 	Loop       bool
+	// Live, when set, makes this the music of one round that follows the
+	// game (liveaudio.go); Lead and Bass are then unused.
+	Live *LiveAudio
 }
 
 var (
@@ -59,6 +80,9 @@ var (
 	IntroTrack = Track{Lead: gameLead, Bass: gameBass, Loop: true}
 	// OverTrack plays under the game-over screen.
 	OverTrack = Track{Lead: overLead, Bass: overBass}
+
+	sgIntroTrack = Track{Lead: sgLead, Bass: sgBass, Loop: true}
+	sgOverTrack  = Track{Lead: sgOverLead, Bass: sgOverBass}
 )
 
 // Length is how long one pass of the track lasts.
@@ -90,6 +114,7 @@ type Synth struct {
 	Track          Track
 	t              int
 	leadPh, bassPh uint32
+	live           *liveSynth
 }
 
 func triangle(ph uint32) int32 {
@@ -102,6 +127,13 @@ func triangle(ph uint32) int32 {
 
 // Render fills buf with the next mono samples.
 func (s *Synth) Render(buf []int16) {
+	if s.Track.Live != nil {
+		if s.live == nil {
+			s.live = &liveSynth{la: s.Track.Live, phase: -1}
+		}
+		s.live.render(buf)
+		return
+	}
 	lead, bass := s.Track.Lead, s.Track.Bass
 	for i := range buf {
 		t := s.t + i

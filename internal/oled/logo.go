@@ -16,7 +16,7 @@ const (
 )
 
 // font is a plain 5x7 dot-matrix alphabet drawn for this project, covering
-// exactly the letters the splash texts and the game use.
+// exactly the letters the splash texts and the games use.
 var font = map[rune][7]string{
 	'S': {"01111", "10000", "10000", "01110", "00001", "00001", "11110"},
 	'T': {"11111", "00100", "00100", "00100", "00100", "00100", "00100"},
@@ -37,6 +37,10 @@ var font = map[rune][7]string{
 	'F': {"11111", "10000", "10000", "11110", "10000", "10000", "10000"},
 	'K': {"10001", "10010", "10100", "11000", "10100", "10010", "10001"},
 	'C': {"01110", "10001", "10000", "10000", "10000", "10001", "01110"},
+	'H': {"10001", "10001", "10001", "11111", "10001", "10001", "10001"},
+	'W': {"10001", "10001", "10001", "10101", "10101", "11011", "10001"},
+	'X': {"10001", "10001", "01010", "00100", "01010", "10001", "10001"},
+	'Y': {"10001", "10001", "01010", "00100", "00100", "00100", "00100"},
 }
 
 // Logo animates the STR mark: the dots of the big letters fly in from outside
@@ -184,6 +188,15 @@ func (l *Logo) Frame(t float64, buf []byte) {
 		ph = ph * ph * (3 - 2*ph) // smoothstep at the ends
 		x := 8 + int(ph*float64(Width-16-bw))
 		fillRect(buf, x, by, bw, 3, 11)
+	}
+}
+
+// clearRect blanks a rectangle (fillRect skips level 0, so it cannot).
+func clearRect(buf []byte, x0, y0, w, h int) {
+	for y := max(y0, 0); y < min(y0+h, Height); y++ {
+		for x := max(x0, 0); x < min(x0+w, Width); x++ {
+			buf[y*Width+x] = 0
+		}
 	}
 }
 

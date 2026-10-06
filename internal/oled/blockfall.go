@@ -28,11 +28,16 @@ const (
 // Key codes in BoseApp's KEY_VAL order, as the speaker's own key trace names
 // them.
 const (
+	KeyPlay       = 0
+	KeyPause      = 1
+	KeyStop       = 2
 	KeyPrev       = 3
 	KeyNext       = 4
 	KeyThumbsUp   = 5
 	KeyThumbsDown = 6
 	KeyPower      = 8
+	KeyPreset1    = 12 // .. KeyPreset1+5 for preset 6
+	KeyAux        = 18
 )
 
 type bfPt struct{ x, y int }
@@ -125,7 +130,10 @@ type Blockfall struct {
 	clearTimer int
 	frame      int
 	lastPress  int
+	best       int // the record before this round
 }
+
+func (g *Blockfall) setBest(n int) { g.best = n }
 
 // NewBlockfall starts a round.
 func NewBlockfall(seed uint64) *Blockfall {
@@ -136,6 +144,12 @@ func NewBlockfall(seed uint64) *Blockfall {
 }
 
 func (g *Blockfall) piece() []bfPt { return bfRotations[g.kind][g.rot] }
+
+// State reports whether the round is over, its score and the cleared rows.
+func (g *Blockfall) State() (bool, int, int) { return g.Over, g.Score, g.Lines }
+
+// End finishes the round from outside.
+func (g *Blockfall) End() { g.Over = true }
 
 func (g *Blockfall) fits(cells []bfPt, x, y int) bool {
 	for _, c := range cells {
@@ -356,12 +370,27 @@ func (g *Blockfall) Frame(buf []byte) {
 	n := len(strconv.Itoa(g.Score))
 	drawDigits(buf, g.Score, bfX0-4-(n*(5*sc+1)-1), Height-1-7*sc, sc, 15)
 	if g.Over {
-		// GAME OVER plate across the board
-		fillRect(buf, bfX0+2, 38, bfW*bfCell-4, 24, 0)
+		// GAME OVER plate across the board, NEW BEST under it on a record
+		record := g.Score > g.best && g.Score > 0
+		h := 24
+		if record {
+			h = 44
+		}
+		clearRect(buf, bfX0+2, 38, bfW*bfCell-4, h)
 		fillRect(buf, bfX0+2, 38, bfW*bfCell-4, 1, 8)
-		fillRect(buf, bfX0+2, 61, bfW*bfCell-4, 1, 8)
+		fillRect(buf, bfX0+2, 37+h, bfW*bfCell-4, 1, 8)
 		drawWord(buf, "GAME", bfX0+(bfW*bfCell-23)/2, 41, 1, 15)
 		drawWord(buf, "OVER", bfX0+(bfW*bfCell-23)/2, 51, 1, 15)
+		if record {
+			drawWord(buf, "NEW", bfX0+(bfW*bfCell-17)/2, 63, 1, 15)
+			drawWord(buf, "BEST", bfX0+(bfW*bfCell-23)/2, 72, 1, 15)
+		}
+	}
+	if g.best > 0 && (!g.Over || g.Score <= g.best) {
+		// the record to beat, in the left column above the score
+		drawSmall(buf, "BEST", bfX0-4-15, 54, 6)
+		n := len(strconv.Itoa(g.best))
+		drawDigits(buf, g.best, bfX0-4-(n*6-1), 61, 1, 9)
 	}
 }
 
@@ -407,6 +436,7 @@ func drawWord(buf []byte, s string, x, y, sc, lvl int) {
 }
 
 var letters3x5 = map[rune][5]string{
+	'B': {"110", "101", "110", "101", "110"},
 	'S': {"111", "100", "111", "001", "111"},
 	'C': {"111", "100", "100", "100", "111"},
 	'O': {"111", "101", "101", "101", "111"},

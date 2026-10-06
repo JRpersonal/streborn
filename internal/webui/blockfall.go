@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,19 +14,20 @@ import (
 	"github.com/JRpersonal/streborn/internal/oled"
 )
 
-// Blockfall, the hidden game on the speaker display (internal/oled). The
-// remote code starts a round; this side owns everything around it: the music
+// The hidden games on the speaker display (internal/oled). A remote code
+// starts a round; this side owns everything around it: the music
 // the speaker plays over UPnP loopback, noticing when the user takes the
 // speaker back, saving the score, and putting the speaker back the way it was
 // (same restore as an announcement: previous stream and volume, or standby).
 
 // The speaker pulls the music from this agent over loopback, like the
-// announcement audio: the intro loop, then the game-over jingle. Two URLs, so
-// a glance at now_playing tells which one the speaker is on.
-const (
-	blockfallIntroURL = "http://127.0.0.1:8888/game/blockfall.wav"
-	blockfallOverURL  = "http://127.0.0.1:8888/game/blockfall-over.wav"
-)
+// announcement audio: the intro loop, then the game-over jingle. One URL each
+// per game, so a glance at now_playing tells which one the speaker is on.
+const gameMusicPrefix = "http://127.0.0.1:8888/game/"
+
+func gameIntroURL(id string) string { return gameMusicPrefix + id + ".wav" }
+
+func gameOverURL(id string) string { return gameMusicPrefix + id + "-over.wav" }
 
 // blockfallMaxVolume caps the volume during a round; the user's own volume is
 // restored afterwards. Waking from standby restores the last volume, which can
@@ -100,7 +102,8 @@ func (s *Server) handleBlockfallMusic(w http.ResponseWriter, r *http.Request) {
 	_ = oled.StreamMusic(w, flush, merged, track)
 }
 
-// handleBlockfallScores answers GET with the stored scores, for the app.
+// handleBlockfallScores answers GET with Blockfall's stored scores. Kept for
+// the v1.0.5 app, which reads only this one.
 func (s *Server) handleBlockfallScores(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "only allowed from LAN", http.StatusForbidden)
@@ -109,10 +112,10 @@ func (s *Server) handleBlockfallScores(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, oled.LoadScores())
+	writeJSON(w, http.StatusOK, oled.LoadScores("blockfall"))
 }
 
-// handleBlockfallScreenshot serves the last round's final screen as PNG.
+// handleBlockfallScreenshot serves Blockfall's last final screen (v1.0.5 app).
 func (s *Server) handleBlockfallScreenshot(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "only allowed from LAN", http.StatusForbidden)
@@ -121,7 +124,49 @@ func (s *Server) handleBlockfallScreenshot(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	http.ServeFile(w, r, oled.ScreenshotPath)
+	http.ServeFile(w, r, oled.ScreenshotPath("blockfall"))
+}
+
+// arcadeEntry is one game in the /api/box/arcade answer.
+type arcadeEntry struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	oled.Scores
+}
+
+// handleArcade answers GET with every game's stored scores, for the app. It
+// lists all games; the app shows only those that were played.
+func (s *Server) handleArcade(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	out := []arcadeEntry{}
+	for _, g := range oled.Games {
+		out = append(out, arcadeEntry{ID: g.ID, Title: g.Title, Scores: oled.LoadScores(g.ID)})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"games": out})
+}
+
+// handleArcadeScreenshot serves one game's last final screen as PNG
+// (?game=<id>).
+func (s *Server) handleArcadeScreenshot(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	g, ok := oled.Game(r.URL.Query().Get("game"))
+	if !ok {
+		http.Error(w, "no such game", http.StatusNotFound)
+		return
+	}
+	http.ServeFile(w, r, oled.ScreenshotPath(g.ID))
 }
 
 // blockfallPlay starts url (serving track) on the speaker and waits until
@@ -137,7 +182,7 @@ func (s *Server) blockfallPlay(ctx context.Context, url string, track oled.Track
 			return false
 		}
 		if err := s.renderer.PlayURLMime(ctx, url, "Blockfall", "", "audio/wav"); err != nil {
-			s.logger.Warn("blockfall: music play command failed", "attempt", attempt, "err", err)
+			s.logger.Warn("game: music play command failed", "attempt", attempt, "err", err)
 		}
 		for i := 0; i < 8; i++ {
 			time.Sleep(time.Second)
@@ -146,7 +191,7 @@ func (s *Server) blockfallPlay(ctx context.Context, url string, track oled.Track
 			}
 			np := fetchNowPlaying(ctx, s.boxHost)
 			if np.Location == url && (np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE") {
-				s.logger.Info("blockfall: music playing", "url", url, "attempt", attempt)
+				s.logger.Info("game: music playing", "url", url, "attempt", attempt)
 				return true
 			}
 		}
@@ -163,7 +208,7 @@ func blockfallTakenOver(np nowPlayingSnapshot, inGame bool) bool {
 	switch {
 	case np.Source == "" || np.Source == "INVALID_SOURCE":
 		return false
-	case np.Location == blockfallIntroURL || np.Location == blockfallOverURL:
+	case strings.HasPrefix(np.Location, gameMusicPrefix):
 		return false
 	case inGame && np.Source == "UPNP":
 		return false
@@ -178,7 +223,7 @@ const (
 	bfOver
 )
 
-// startBlockfall runs one round end to end. Started by the remote code
+// startGame runs one round of game id end to end. Started by a remote code
 // (oled.FeedKey); a second code while a round runs is ignored there.
 //
 // Music plays only under the intro and the game-over screen. The game itself
@@ -186,8 +231,9 @@ const (
 // its own skip on the UPnP source for every press, which tore the music down
 // mid-game. STR cannot keep that key from the firmware, so there is no stream
 // to tear down while the game runs.
-func (s *Server) startBlockfall() {
-	if s.renderer == nil {
+func (s *Server) startGame(id string) {
+	def, ok := oled.Game(id)
+	if s.renderer == nil || !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Minute)
@@ -195,7 +241,15 @@ func (s *Server) startBlockfall() {
 	prev := s.snapshotNowPlaying(ctx)
 	wasStandby := prev.Source == "STANDBY" || prev.Source == ""
 	prevVol := s.readVolume(ctx)
-	s.logger.Info("blockfall: code entered, starting a round", "wasStandby", wasStandby, "source", prev.Source)
+	s.logger.Info("game: code entered, starting a round", "game", id, "wasStandby", wasStandby, "source", prev.Source)
+
+	// A game with live music keeps one stream from the intro to the jingle.
+	var live *oled.LiveAudio
+	introTrack := def.Intro
+	if def.Live {
+		live = oled.NewLiveAudio()
+		introTrack = oled.Track{Live: live}
+	}
 
 	stop := make(chan struct{})
 	var stopOnce sync.Once
@@ -218,11 +272,11 @@ func (s *Server) startBlockfall() {
 	go func() {
 		if wasStandby {
 			if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
-				s.logger.Warn("blockfall: wake failed, playing anyway", "err", err)
+				s.logger.Warn("game: wake failed, playing anyway", "err", err)
 			}
 		}
-		if !s.blockfallPlay(ctx, blockfallIntroURL, oled.IntroTrack, 3, inPhase(bfIntro)) {
-			s.logger.Warn("blockfall: intro music did not start, the round goes on without it")
+		if !s.blockfallPlay(ctx, gameIntroURL(id), introTrack, 3, inPhase(bfIntro)) {
+			s.logger.Warn("game: intro music did not start, the round goes on without it")
 			introGaveUp.Store(true)
 			return
 		}
@@ -253,7 +307,7 @@ func (s *Server) startBlockfall() {
 			}
 			np := fetchNowPlaying(ctx, s.boxHost)
 			if blockfallTakenOver(np, phase.Load() == bfGame) {
-				s.logger.Info("blockfall: speaker taken over, ending the round", "source", np.Source)
+				s.logger.Info("game: speaker taken over, ending the round", "source", np.Source)
 				takenOver.Store(true)
 				stopOnce.Do(func() { close(stop) })
 				return
@@ -266,24 +320,40 @@ func (s *Server) startBlockfall() {
 			at := introAt.Load()
 			return introGaveUp.Load() || (at != 0 && time.Since(time.Unix(0, at)) >= blockfallIntroMusic)
 		},
+		Live: live,
 		GameStart: func() {
 			phase.Store(bfGame)
+			// from here on the round watches for a takeover in every case,
+			// also when the intro music never came up: the speaker's own
+			// buttons are no remote keys and only show in now_playing
+			watching.Store(true)
+			if live != nil {
+				live.StartGame()
+				return
+			}
 			s.blockfall.stop()
 			go func() {
 				if err := s.renderer.Stop(ctx); err != nil {
-					s.logger.Info("blockfall: stopping the intro music", "err", err)
+					s.logger.Info("game: stopping the intro music", "err", err)
 				}
 			}()
 		},
 		GameOver: func() {
 			phase.Store(bfOver)
+			if live != nil {
+				// same stream: the jingle reaches the speaker after what it
+				// has buffered, about two seconds
+				live.GameOver()
+				overUntil.Store(time.Now().Add(def.Over.Length() + 3*time.Second).UnixNano())
+				return
+			}
 			overPending.Store(true)
 			go func() {
 				defer overPending.Store(false)
-				if s.blockfallPlay(ctx, blockfallOverURL, oled.OverTrack, 1, inPhase(bfOver)) {
+				if s.blockfallPlay(ctx, gameOverURL(id), def.Over, 1, inPhase(bfOver)) {
 					// The speaker reports PLAY_STATE about when the sound starts;
 					// keep the screen up through the jingle and its fade.
-					overUntil.Store(time.Now().Add(oled.OverTrack.Length() + time.Second).UnixNano())
+					overUntil.Store(time.Now().Add(def.Over.Length() + time.Second).UnixNano())
 				}
 			}()
 		},
@@ -291,18 +361,18 @@ func (s *Server) startBlockfall() {
 			return overPending.Load() || time.Now().UnixNano() < overUntil.Load()
 		},
 	}
-	res, err := oled.PlayRound(stop, hooks, s.logger.With("comp", "blockfall"))
+	res, err := oled.PlayRound(id, stop, hooks, s.logger.With("comp", "game", "game", id))
 	stopOnce.Do(func() { close(stop) })
 	s.blockfall.stop()
 	if err != nil {
-		s.logger.Info("blockfall: round did not run", "err", err)
+		s.logger.Info("game: round did not run", "err", err)
 	}
-	if scores, serr := oled.SaveRound(res, time.Now()); serr != nil {
-		s.logger.Warn("blockfall: could not save the score", "err", serr)
+	if scores, serr := oled.SaveRound(id, res, time.Now()); serr != nil {
+		s.logger.Warn("game: could not save the score", "err", serr)
 	} else {
-		s.logger.Info("blockfall: round over", "score", res.Score, "rows", res.Lines, "reason", res.Reason, "best", scores.Best)
+		s.logger.Info("game: round over", "score", res.Score, "rows", res.Lines, "reason", res.Reason, "best", scores.Best)
 	}
-	if takenOver.Load() || res.Reason == "power" {
+	if takenOver.Load() || res.Reason == "key" {
 		return
 	}
 	s.boxCmdMu.Lock()

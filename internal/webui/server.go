@@ -1251,7 +1251,7 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	s.consumeOTARebootMarker()
 	// The hidden game's remote code starts a round through this server, which
 	// owns the playback state it has to restore afterwards.
-	oled.SetGameStarter(s.startBlockfall)
+	oled.SetGameStarter(s.startGame)
 	return s
 }
 
@@ -1354,6 +1354,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/display-splash", s.handleDisplaySplash)
 	mux.HandleFunc("/api/box/blockfall", s.handleBlockfallScores)
 	mux.HandleFunc("/api/box/blockfall/screenshot.png", s.handleBlockfallScreenshot)
+	mux.HandleFunc("/api/box/arcade", s.handleArcade)
+	mux.HandleFunc("/api/box/arcade/screenshot.png", s.handleArcadeScreenshot)
 	mux.HandleFunc(displayMsgAudioPath, s.handleDisplayMessageAudio)
 	mux.HandleFunc("/api/box/mediaservers", s.handleMediaServers)
 	mux.HandleFunc("/api/library/search", s.handleLibrarySearch)
@@ -1367,8 +1369,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/snapshot/restore", s.handleBoxSnapshotRestore)
 	mux.HandleFunc("/api/announce", s.handleAnnounce)
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
-	mux.HandleFunc("/game/blockfall.wav", s.handleBlockfallMusic)
-	mux.HandleFunc("/game/blockfall-over.wav", s.handleBlockfallMusic)
+	for _, g := range oled.Games {
+		mux.HandleFunc("/game/"+g.ID+".wav", s.handleBlockfallMusic)
+		mux.HandleFunc("/game/"+g.ID+"-over.wav", s.handleBlockfallMusic)
+	}
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/balance", s.handleBoxBalance)
