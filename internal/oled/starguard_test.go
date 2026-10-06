@@ -58,6 +58,28 @@ func TestStarguardSteering(t *testing.T) {
 		t.Fatalf("after the release and the coast it must stop: %d", d)
 	}
 
+	// the remote's second frame of one tap does not make it a double step
+	tap := func(extraFrame bool) int {
+		g := NewStarguard(2)
+		x0 := g.shipX16
+		g.Key(KeyThumbsDown, KeyPressed)
+		g.Step()
+		g.Key(KeyThumbsDown, KeyReleased)
+		for i := 0; i < 40; i++ {
+			if extraFrame && i == 7 {
+				g.Key(KeyThumbsDown, KeyPressed)
+				g.Step()
+				g.Key(KeyThumbsDown, KeyReleased)
+				continue
+			}
+			g.Step()
+		}
+		return g.shipX16 - x0
+	}
+	if single, double := tap(false), tap(true); double != single {
+		t.Fatalf("a tap's second frame must not add a step: single %d, with the extra frame %d", single, double)
+	}
+
 	// press/release pairs twice a second and repeat events both count as held
 	for _, states := range [][]int{{KeyPressed, KeyReleased}, {KeyRepeat}} {
 		g = NewStarguard(2)

@@ -79,6 +79,7 @@ type Starguard struct {
 	keyAge           int  // steps since the last event of the held key
 	coast            int  // steps the ship keeps gliding after a release
 	heldSteps        int  // steps of continuous movement, for the speed-up
+	sincePress       int  // steps since the last press, for the double-frame filter
 	fireCD           int
 	rapid            int
 	double, spread   bool
@@ -178,8 +179,16 @@ func (g *Starguard) Key(key, state int) {
 	}
 	switch state {
 	case KeyPressed, KeyRepeat:
+		// the remote sends two frames for one tap, a quarter second apart:
+		// a second press the same way that soon is the same tap
+		if state == KeyPressed && d == g.moveDir && !g.keyDown && g.sincePress < sgDoubleFrame {
+			return
+		}
 		if d != g.moveDir {
 			g.heldSteps = 0
+		}
+		if state == KeyPressed {
+			g.sincePress = 0
 		}
 		g.moveDir, g.keyDown, g.keyAge = d, true, 0
 	case KeyReleased:
@@ -191,9 +200,10 @@ func (g *Starguard) Key(key, state int) {
 }
 
 const (
-	sgCoast    = 16  // steps; longer than the gap inside a press/release pair
-	sgKeyStale = 150 // a held key with no event for 5 s counts as released
-	sgFastFrom = 15  // steps of holding before the ship speeds up
+	sgDoubleFrame = 10  // steps (a third of a second)
+	sgCoast       = 16  // steps the ship glides on after a release; bridges a press/release pair
+	sgKeyStale    = 150 // a held key with no event for 5 s counts as released
+	sgFastFrom    = 15  // steps of holding before the ship speeds up
 )
 
 func kindOfRow(row int) int {
@@ -225,6 +235,7 @@ func (g *Starguard) Step() {
 		return
 	}
 	// ship
+	g.sincePress++
 	if g.keyDown {
 		// a lost release must not send the ship into the wall for good
 		if g.keyAge++; g.keyAge > sgKeyStale {
