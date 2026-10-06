@@ -143,3 +143,70 @@ func TestTuneInToken(t *testing.T) {
 		t.Fatalf("token body = %v", m)
 	}
 }
+
+// #500 experiment: the station answer offers a now-playing address, and that
+// address answers with the live title split into artist and song.
+func TestTuneInNowPlaying(t *testing.T) {
+	resetBMXLimiters(t)
+	fakeRadiotime(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/Tune.ashx":
+			_, _ = w.Write([]byte(`{"head":{"status":"200"},"body":[{"element":"audio","url":"https://radio.example/s.mp3","media_type":"mp3"}]}`))
+		case "/Describe.ashx":
+			_, _ = w.Write([]byte(`{"head":{"status":"200"},"body":[{"element":"station","name":"1LIVE","logo":"https://cdn.example/l.jpg"}]}`))
+		}
+	})
+	var logs bytes.Buffer
+	s := bmxTestServer(&logs)
+	// a title left over from whatever played before
+	s.lastICYTitle = "Old Artist - Old Song"
+
+	rr := httptest.NewRecorder()
+	s.handleBMX(rr, httptest.NewRequest(http.MethodGet, "/bmx/tunein/v1/playback/station/s25260", nil))
+	var st tuneInStation
+	if err := json.Unmarshal(rr.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Links["bmx_nowplaying"].Href != "/v1/now-playing/station/s25260" || st.NowPlayingURI == "" || st.Name != "1LIVE" {
+		t.Fatalf("station answer = %s", rr.Body.String())
+	}
+
+	ask := func() tuneInNowPlaying {
+		rr := httptest.NewRecorder()
+		s.handleBMX(rr, httptest.NewRequest(http.MethodGet, "/bmx/tunein"+st.Links["bmx_nowplaying"].Href, nil))
+		assertJSON(t, rr, http.StatusOK)
+		var np tuneInNowPlaying
+		if err := json.Unmarshal(rr.Body.Bytes(), &np); err != nil {
+			t.Fatal(err)
+		}
+		return np
+	}
+	if np := ask(); np.Name != "1LIVE" || np.Artist.Name != "" {
+		t.Fatalf("before a title the station name, never the old song: %+v", np)
+	}
+	s.HandleStreamTitle("Teddy Swims - Mr. Know It All")
+	if np := ask(); np.Name != "Mr. Know It All" || np.Track.Name != "Mr. Know It All" || np.Artist.Name != "Teddy Swims" {
+		t.Fatalf("now playing = %+v", np)
+	}
+	// the firmware's own spelling of the route lands on the same answer
+	rr = httptest.NewRecorder()
+	s.handleBMX(rr, httptest.NewRequest(http.MethodGet, "/bmx/tunein/nowPlaying?partnerId=x", nil))
+	assertJSON(t, rr, http.StatusOK)
+	if !strings.Contains(logs.String(), "bmx tunein: now-playing asked") {
+		t.Fatalf("every now-playing request must be logged: %s", logs.String())
+	}
+}
+
+func TestSplitICYTitle(t *testing.T) {
+	for in, want := range map[string][2]string{
+		"Tyla - CHANEL": {"Tyla", "CHANEL"},
+		"1LIVE":         {"", "1LIVE"},
+		" - ":           {"", "-"},
+		"A - B - C":     {"A", "B - C"},
+	} {
+		if a, s := splitICYTitle(in); a != want[0] || s != want[1] {
+			t.Errorf("splitICYTitle(%q) = %q, %q; want %q, %q", in, a, s, want[0], want[1])
+		}
+	}
+}
