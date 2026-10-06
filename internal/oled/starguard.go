@@ -103,6 +103,16 @@ type Starguard struct {
 	Score int
 	waves int
 	over  bool
+
+	audio *LiveAudio // nil when the round has no live music
+}
+
+func (g *Starguard) setAudio(la *LiveAudio) { g.audio = la }
+
+func (g *Starguard) cue(notes []int) {
+	if g.audio != nil {
+		g.audio.Cue(notes)
+	}
 }
 
 // NewStarguard starts a round.
@@ -223,6 +233,7 @@ func (g *Starguard) Step() {
 	if g.aliveCount() == 0 && !g.over {
 		g.waves++
 		g.Score += 50 * g.wave
+		g.cue(CueWaveClear)
 		up := sgExtraLife
 		if g.waves <= len(sgUpgrades) {
 			up = sgUpgrades[g.waves-1]
@@ -334,8 +345,11 @@ func (g *Starguard) stepAliens() {
 		g.marchCD--
 		return
 	}
-	// fewer aliens and later waves march faster
+	// fewer aliens and later waves march faster, and so does the music
 	g.marchCD = max(0, 1+alive*14/(g.rows*sgCols)-min(g.wave-1, 6)/2)
+	if g.audio != nil {
+		g.audio.SetTempo(100 + 110*(g.rows*sgCols-alive)/(g.rows*sgCols) + 6*min(g.wave-1, 5))
+	}
 	g.anim ^= 1
 	minX, maxX, maxY := Width, 0, 0
 	for row := 0; row < g.rows; row++ {
@@ -402,8 +416,10 @@ func (g *Starguard) shipHit() {
 		g.shield = false
 		g.invuln = 45
 		g.burst(sx, sgShipY-3, 6)
+		g.cue(CueShieldHit)
 		return
 	}
+	g.cue(CueShipLost)
 	g.lives--
 	g.burst(sx, sgShipY+2, 16)
 	g.invuln = 90
@@ -413,6 +429,9 @@ func (g *Starguard) shipHit() {
 }
 
 func (g *Starguard) stepSaucer() {
+	if g.audio != nil {
+		g.audio.SetSaucer(g.saucerD != 0)
+	}
 	if g.saucerD == 0 {
 		if g.saucerCD--; g.saucerCD <= 0 {
 			if g.r.IntN(2) == 0 {

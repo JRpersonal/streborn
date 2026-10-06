@@ -243,6 +243,14 @@ func (s *Server) startGame(id string) {
 	prevVol := s.readVolume(ctx)
 	s.logger.Info("game: code entered, starting a round", "game", id, "wasStandby", wasStandby, "source", prev.Source)
 
+	// A game with live music keeps one stream from the intro to the jingle.
+	var live *oled.LiveAudio
+	introTrack := def.Intro
+	if def.Live {
+		live = oled.NewLiveAudio()
+		introTrack = oled.Track{Live: live}
+	}
+
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	var phase atomic.Int32
@@ -267,7 +275,7 @@ func (s *Server) startGame(id string) {
 				s.logger.Warn("game: wake failed, playing anyway", "err", err)
 			}
 		}
-		if !s.blockfallPlay(ctx, gameIntroURL(id), def.Intro, 3, inPhase(bfIntro)) {
+		if !s.blockfallPlay(ctx, gameIntroURL(id), introTrack, 3, inPhase(bfIntro)) {
 			s.logger.Warn("game: intro music did not start, the round goes on without it")
 			introGaveUp.Store(true)
 			return
@@ -312,8 +320,13 @@ func (s *Server) startGame(id string) {
 			at := introAt.Load()
 			return introGaveUp.Load() || (at != 0 && time.Since(time.Unix(0, at)) >= blockfallIntroMusic)
 		},
+		Live: live,
 		GameStart: func() {
 			phase.Store(bfGame)
+			if live != nil {
+				live.StartGame()
+				return
+			}
 			s.blockfall.stop()
 			go func() {
 				if err := s.renderer.Stop(ctx); err != nil {
@@ -323,6 +336,13 @@ func (s *Server) startGame(id string) {
 		},
 		GameOver: func() {
 			phase.Store(bfOver)
+			if live != nil {
+				// same stream: the jingle reaches the speaker after what it
+				// has buffered, about two seconds
+				live.GameOver()
+				overUntil.Store(time.Now().Add(def.Over.Length() + 3*time.Second).UnixNano())
+				return
+			}
 			overPending.Store(true)
 			go func() {
 				defer overPending.Store(false)

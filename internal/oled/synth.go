@@ -70,6 +70,9 @@ var sgOverBass = []int{40, 40}
 type Track struct {
 	Lead, Bass []int
 	Loop       bool
+	// Live, when set, makes this the music of one round that follows the
+	// game (liveaudio.go); Lead and Bass are then unused.
+	Live *LiveAudio
 }
 
 var (
@@ -111,6 +114,7 @@ type Synth struct {
 	Track          Track
 	t              int
 	leadPh, bassPh uint32
+	live           *liveSynth
 }
 
 func triangle(ph uint32) int32 {
@@ -123,6 +127,13 @@ func triangle(ph uint32) int32 {
 
 // Render fills buf with the next mono samples.
 func (s *Synth) Render(buf []int16) {
+	if s.Track.Live != nil {
+		if s.live == nil {
+			s.live = &liveSynth{la: s.Track.Live, phase: -1}
+		}
+		s.live.render(buf)
+		return
+	}
 	lead, bass := s.Track.Lead, s.Track.Bass
 	for i := range buf {
 		t := s.t + i

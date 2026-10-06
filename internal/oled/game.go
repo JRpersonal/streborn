@@ -38,7 +38,11 @@ type GameDef struct {
 	Code      []string // remote sequence, by the key names of the speaker's own trace
 	Intro     Track
 	Over      Track
-	newGame   func(seed uint64) arcadeGame
+	// Live: the round's music runs through the game too and follows it
+	// (liveaudio.go). Only for games played without Previous/Skip, which are
+	// also the firmware's own skip keys and stop the stream.
+	Live    bool
+	newGame func(seed uint64) arcadeGame
 }
 
 // Games are all games, in the order the app lists them.
@@ -55,6 +59,7 @@ var Games = []GameDef{
 		Code:    []string{"THUMBS_DOWN", "THUMBS_UP", "THUMBS_DOWN", "THUMBS_UP", "NEXT_TRACK", "NEXT_TRACK", "NEXT_TRACK"},
 		Intro:   sgIntroTrack,
 		Over:    sgOverTrack,
+		Live:    true,
 		newGame: func(seed uint64) arcadeGame { return NewStarguard(seed) },
 	},
 }
@@ -176,6 +181,8 @@ type RoundHooks struct {
 	// OverHold keeps the game-over screen up past gameOverShown while it
 	// reports true (the jingle is still playing), capped at gameOverMax.
 	OverHold func() bool
+	// Live is the round's live music, handed to a game that drives it.
+	Live *LiveAudio
 }
 
 const (
@@ -224,6 +231,9 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 	intro := NewLogo(def.Title, introMin, seed)
 	intro.Hold = true
 	g := def.newGame(seed)
+	if ag, ok := g.(interface{ setAudio(*LiveAudio) }); ok && hooks.Live != nil {
+		ag.setAudio(hooks.Live)
+	}
 	var res Result
 	phase := 0 // 0 intro, 1 game, 2 game over
 	frames := 0
