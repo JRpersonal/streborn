@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image/png"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -209,6 +210,49 @@ func TestOverTrackPlaysOnce(t *testing.T) {
 		}
 		if l := tr.Length(); l < 3*time.Second || l > 4*time.Second {
 			t.Fatalf("jingle length %v", l)
+		}
+	}
+}
+
+// Each game keeps exactly two small files on NAND, however many rounds are
+// played, and a failed write leaves nothing behind.
+func TestScoreFilesStayBounded(t *testing.T) {
+	old := ScoreDir
+	ScoreDir = t.TempDir()
+	defer func() { ScoreDir = old }()
+	screen := make([]byte, FrameSize)
+	for i := 1; i <= 50; i++ {
+		for _, g := range Games {
+			if _, err := SaveRound(g.ID, Result{Score: i, Screen: screen}, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	entries, _ := os.ReadDir(ScoreDir)
+	var total int64
+	for _, e := range entries {
+		info, _ := e.Info()
+		total += info.Size()
+	}
+	if len(entries) != 2*len(Games) || total > int64(len(Games))*8<<10 {
+		t.Fatalf("%d files, %d bytes after 50 rounds per game", len(entries), total)
+	}
+	// a write into a directory that is gone fails without leftovers
+	ScoreDir = filepath.Join(ScoreDir, "missing")
+	if _, err := SaveRound("blockfall", Result{Score: 1, Screen: screen}, time.Now()); err == nil {
+		t.Fatal("writing into a missing directory must fail")
+	}
+}
+
+func TestKeysThatEndARound(t *testing.T) {
+	for _, k := range []int{KeyPower, KeyPlay, KeyPause, KeyStop, KeyAux, KeyPreset1, KeyPreset1 + 5} {
+		if !takesSpeakerBack(k) {
+			t.Fatalf("key %d must end the round", k)
+		}
+	}
+	for _, k := range []int{KeyPrev, KeyNext, KeyThumbsUp, KeyThumbsDown, 9, 10, 11} {
+		if takesSpeakerBack(k) {
+			t.Fatalf("key %d (game, volume or mute) must not end the round", k)
 		}
 	}
 }

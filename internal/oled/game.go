@@ -158,10 +158,23 @@ func codeMatches(p []eggPress, code []string, now time.Time) bool {
 	return true
 }
 
+// takesSpeakerBack reports whether a remote key means the user wants the
+// speaker for something else: the round ends at once and nothing is restored
+// over what that key starts. Volume and mute keep working during a round.
+func takesSpeakerBack(key int) bool {
+	switch {
+	case key == KeyPower, key == KeyPlay, key == KeyPause, key == KeyStop, key == KeyAux:
+		return true
+	case key >= KeyPreset1 && key < KeyPreset1+6:
+		return true
+	}
+	return false
+}
+
 // Result is how a round ended.
 type Result struct {
 	Score, Lines int
-	Reason       string // "game over", "idle", "time", "power", "stopped"
+	Reason       string // "game over", "idle", "time", "key", "stopped"
 	Screen       []byte // last frame, grey levels 0..15
 }
 
@@ -262,9 +275,10 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 			for drained := false; !drained; {
 				select {
 				case k := <-keys:
-					if k.Key == KeyPower && k.State == KeyPressed {
-						// the speaker handles power itself; the round just ends
-						res.Reason = "power"
+					if k.State == KeyPressed && takesSpeakerBack(k.Key) {
+						// the speaker handles the key itself (power, a preset,
+						// play, AUX); the round just ends and leaves it to it
+						res.Reason = "key"
 						return false
 					}
 					g.Key(k.Key, k.State)
@@ -404,10 +418,17 @@ func ScreenPNG(frame []byte) []byte {
 	return b.Bytes()
 }
 
+// writeAtomic replaces path in one step; on any failure the temporary file
+// is removed again, so a full or failing NAND never collects leftovers.
 func writeAtomic(path string, b []byte) error {
 	tmp := path + ".str-new"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

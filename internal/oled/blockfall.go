@@ -28,11 +28,16 @@ const (
 // Key codes in BoseApp's KEY_VAL order, as the speaker's own key trace names
 // them.
 const (
+	KeyPlay       = 0
+	KeyPause      = 1
+	KeyStop       = 2
 	KeyPrev       = 3
 	KeyNext       = 4
 	KeyThumbsUp   = 5
 	KeyThumbsDown = 6
 	KeyPower      = 8
+	KeyPreset1    = 12 // .. KeyPreset1+5 for preset 6
+	KeyAux        = 18
 )
 
 type bfPt struct{ x, y int }

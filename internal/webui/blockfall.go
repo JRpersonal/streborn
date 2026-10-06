@@ -323,6 +323,10 @@ func (s *Server) startGame(id string) {
 		Live: live,
 		GameStart: func() {
 			phase.Store(bfGame)
+			// from here on the round watches for a takeover in every case,
+			// also when the intro music never came up: the speaker's own
+			// buttons are no remote keys and only show in now_playing
+			watching.Store(true)
 			if live != nil {
 				live.StartGame()
 				return
@@ -368,7 +372,7 @@ func (s *Server) startGame(id string) {
 	} else {
 		s.logger.Info("game: round over", "score", res.Score, "rows", res.Lines, "reason", res.Reason, "best", scores.Best)
 	}
-	if takenOver.Load() || res.Reason == "power" {
+	if takenOver.Load() || res.Reason == "key" {
 		return
 	}
 	s.boxCmdMu.Lock()
