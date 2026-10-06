@@ -49,33 +49,51 @@ func TestBlockfallRowClearScores(t *testing.T) {
 }
 
 func TestBlockfallTapAndHold(t *testing.T) {
+	run := func(g *Blockfall, steps int) {
+		for range steps {
+			g.Step()
+		}
+	}
+	tap := func(g *Blockfall, key, ms, gapMs int) {
+		g.Key(key, KeyPressed)
+		run(g, ms*30/1000)
+		g.Key(key, KeyReleased)
+		run(g, gapMs*30/1000)
+	}
+	// every tap from the measured log is one column, quick ones too
+	for _, ms := range []int{150, 300, 470} {
+		g := NewBlockfall(3)
+		g.kind, g.rot, g.x = 0, 0, 5
+		g.fast = false
+		x0 := g.x
+		tap(g, KeyPrev, ms, 350)
+		tap(g, KeyPrev, ms, 350)
+		if g.x != x0-2 {
+			t.Fatalf("two %d ms taps moved %d columns, want 2", ms, x0-g.x)
+		}
+	}
+	// a hold slides on, faster over time, and stops at the release
 	g := NewBlockfall(3)
-	x0 := g.x
-	g.Key(KeyPrev, KeyPressed)
-	if g.x != x0-1 {
-		t.Fatalf("a tap moves one column: %d -> %d", x0, g.x)
-	}
-	// an early repeat and a late release (the remote sends both on a short
-	// tap) must not move it again
-	g.Step()
-	g.Key(KeyPrev, KeyRepeat)
-	for i := 0; i < 15; i++ {
-		g.Step()
-	}
-	g.Key(KeyPrev, KeyReleased)
-	if g.x != x0-1 {
-		t.Fatalf("a tap moved %d columns", x0-g.x)
-	}
-	// holding: repeats after the delay slide one column each
+	g.kind, g.rot, g.x = 0, 0, 0
 	g.Key(KeyNext, KeyPressed)
-	x := g.x
-	for i := 0; i < repeatDelay; i++ {
-		g.Step()
+	run(g, bfSlideDelay)
+	stepsFor := func(cols int) int {
+		x0, n := g.x, 0
+		for g.x < x0+cols && n < 200 {
+			g.Step()
+			n++
+		}
+		return n
 	}
-	g.Key(KeyNext, KeyRepeat)
-	g.Key(KeyNext, KeyRepeat)
-	if g.x != x+2 {
-		t.Fatalf("repeats after the delay must slide: %d -> %d", x, g.x)
+	first, next := stepsFor(3), stepsFor(3)
+	if first >= 200 || next >= first {
+		t.Fatalf("a hold must slide and pick up speed: %d steps for the first 3 columns, %d for the next 3", first, next)
+	}
+	g.Key(KeyNext, KeyReleased)
+	x2 := g.x
+	run(g, 20)
+	if g.x != x2 {
+		t.Fatal("the slide must stop at the release")
 	}
 }
 
