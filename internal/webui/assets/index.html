@@ -2578,7 +2578,10 @@ function renderDevMenu() {
   if (!btn) return;
   btn.classList.toggle('haspeers', peersList.length > 0);
   var cnt = document.getElementById('devCnt');
-  if (cnt) cnt.textContent = peersList.length > 0 ? String(peersList.length) : '';
+  // Counts the speakers a tap can switch to right now; offline ones stay in
+  // the list, dimmed, but a number that includes them promises too much.
+  var online = peersList.filter(function(p){ return p.reachable !== false; }).length;
+  if (cnt) cnt.textContent = online > 0 ? String(online) : '';
 }
 
 async function loadPeers() {
