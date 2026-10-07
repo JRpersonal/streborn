@@ -379,6 +379,48 @@ func maskAttrValues(s string, keyRe *regexp.Regexp, mask func(string) string) st
 // bundle on 2026-09-29. pair= carries a speaker name the same way.
 var friendlyNameLogRegex = regexp.MustCompile(`(?im)(\b(?:friendlyName|pair)[:=]"?)([^"\n]*?)("|\s+[A-Za-z][A-Za-z0-9_]*[:=]|$)`)
 
+// friendlyNameChangeLineRegex catches the agent's network-name log lines, where
+// the speaker name rides under a generic key the pattern above cannot key on:
+//
+//	msg="mDNS FriendlyName updated" name=Kitchen
+//	msg="mDNS phase: re-announce trigger" reason="friendlyName change" old=Kitchen new="Living Room"
+//
+// Both shipped room names in clear in an anonymised bundle. Generic name=,
+// old= and new= cannot be hashed everywhere (old=/new= also carry models,
+// states and ids worth reading), so the match is anchored on the
+// friendly-name phrase and covers only the key=value attributes that follow it
+// on the same line; friendlyNameAttrRegex then hashes the name-bearing ones.
+//
+// The value shapes allow the JSON-escaped quote (\") as well as the plain one,
+// and the replacement keeps whatever delimiters were there and adds no quote or
+// backslash, so a log line embedded in a JSON string stays valid JSON.
+var friendlyNameChangeLineRegex = regexp.MustCompile(`(?i)(friendly ?name (?:updated|change)\\?"?)((?:[ \t]+[A-Za-z_][A-Za-z0-9_.]*=(?:\\?"[^"\\\n]*\\?"|[^\s"\\]+))+)`)
+
+// friendlyNameAttrRegex is one name-bearing attribute inside the tail that
+// friendlyNameChangeLineRegex isolated.
+// Quoted (plain or JSON-escaped) or bare value.
+var friendlyNameAttrRegex = regexp.MustCompile(`(?i)(\b(?:name|old|new)=)(?:(\\?")([^"\\\n]*)(\\?")|([^\s"\\]+))`)
+
+// scrubFriendlyNameChanges hashes the speaker names in the agent's
+// network-name log lines (see friendlyNameChangeLineRegex).
+func scrubFriendlyNameChanges(s string) string {
+	return friendlyNameChangeLineRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := friendlyNameChangeLineRegex.FindStringSubmatch(m)
+		tail := friendlyNameAttrRegex.ReplaceAllStringFunc(sub[2], func(a string) string {
+			p := friendlyNameAttrRegex.FindStringSubmatch(a)
+			open, val, closing := p[2], p[3], p[4]
+			if open == "" {
+				val = p[5]
+			}
+			if strings.TrimSpace(val) == "" || strings.HasPrefix(val, "NAME#") || val == ssidRedacted {
+				return a
+			}
+			return p[1] + open + "NAME#" + hashShort(strings.TrimSpace(val)) + closing
+		})
+		return sub[1] + tail
+	})
+}
+
 // boseHostnameRegex catches the speaker name inside the firmware's own
 // hostname. The firmware builds it as SoundTouch-<the name the owner chose>,
 // and it appears in syslog lines no other pattern touches, so a bundle
@@ -604,6 +646,7 @@ func scrubIdentities(s string) string {
 		}
 		return sub[1] + "NAME#" + hashShort(val) + sub[3]
 	})
+	s = scrubFriendlyNameChanges(s)
 	s = scrubAccounts(s)
 	s = scrubURLCredentials(s)
 	s = redactSSIDs(s)
