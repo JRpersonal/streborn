@@ -5,6 +5,7 @@ import { state } from './state.js';
 import {
   zoneBoxes,
   storedPermanentGroupsOf,
+  defaultZoneMasterID,
   groupCount,
   onZoneLive,
   notifyZoneLive,
@@ -641,6 +642,35 @@ describe('storedPermanentGroupsOf', () => {
     const boxes = [{ deviceID: 'AAA', host: '10.0.0.1', kind: 'str' }];
     const zoneLive = { AAA: { master: 'AAA', members: [{ deviceID: 'BBB', ip: '10.0.0.2' }], permanent: true, remembered: [{ ip: '10.0.0.2' }] } };
     expect(storedPermanentGroupsOf(zoneLive, boxes)).toEqual([]);
+  });
+});
+
+// The multiroom MAIN star without a live group: a stored permanent group's main
+// speaker is idle in the normal case, and defaulting to the first card made the
+// view mark another speaker as MAIN, which read as if the group had changed.
+describe('defaultZoneMasterID', () => {
+  const boxes = [
+    { deviceID: 'AAA', host: '192.0.2.1', kind: 'str' },
+    { deviceID: 'BBB', host: '192.0.2.2', kind: 'str' },
+    { deviceID: 'CCC', host: '192.0.2.3', kind: 'str' },
+  ];
+  it('marks the stored permanent group main speaker, not the first card', () => {
+    const zoneLive = {
+      AAA: { master: '', members: [] },
+      CCC: { master: '', members: [], permanent: true, remembered: [{ ip: '192.0.2.1' }] },
+    };
+    expect(defaultZoneMasterID(zoneLive, boxes, boxes)).toBe('CCC');
+  });
+  it('falls back to the first candidate when there is no stored group', () => {
+    expect(defaultZoneMasterID({}, boxes, boxes)).toBe('AAA');
+    expect(defaultZoneMasterID(null, boxes, boxes)).toBe('AAA');
+  });
+  it('ignores a stored main speaker that is not among the candidates', () => {
+    const zoneLive = { CCC: { master: '', members: [], permanent: true, remembered: [{ ip: '192.0.2.1' }] } };
+    expect(defaultZoneMasterID(zoneLive, boxes, boxes.slice(0, 2))).toBe('AAA');
+  });
+  it('returns an empty string without candidates', () => {
+    expect(defaultZoneMasterID({}, boxes, [])).toBe('');
   });
 });
 

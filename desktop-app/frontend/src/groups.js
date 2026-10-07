@@ -640,6 +640,24 @@ export function storedPermanentGroupsOf(zoneLive, boxes) {
   return out;
 }
 
+// defaultZoneMasterID picks the speaker the multiroom view marks as MAIN when
+// no group is live and the user has not hand-picked one. A stored permanent
+// group's main speaker comes first: its master is idle in the normal case, so
+// falling back to the first card in the list put the star on another speaker
+// and read as if the saved group had changed (a user with the Wave as stored
+// main speaker saw a different speaker marked MAIN). Only a main speaker that
+// is among the candidates counts; otherwise the first candidate, as before.
+// candidates are box objects; returns a deviceID string or ''.
+export function defaultZoneMasterID(zoneLive, boxes, candidates) {
+  const cands = candidates || [];
+  const up = (s) => String(s || '').toUpperCase();
+  for (const g of storedPermanentGroupsOf(zoneLive, boxes)) {
+    const hit = cands.find((b) => b && up(b.deviceID) === g.masterKey);
+    if (hit) return hit.deviceID;
+  }
+  return cands.length ? cands[0].deviceID : '';
+}
+
 // storedGroupHostsOf returns the addresses of every speaker that belongs to a
 // permanent group STORED on a main speaker: the main speaker itself and each of
 // its remembered members. Hosts, not deviceIDs, because a remembered member is
