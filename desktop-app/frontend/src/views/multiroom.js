@@ -15,7 +15,7 @@ import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, Dissol
 import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
 // A speaker stuck as half of an old stereo pair (see stalestereo.js).
@@ -235,14 +235,20 @@ export function renderMultiroom(fetchLive) {
   for (const id of Object.keys(state.zoneSlaves)) {
     if (strBoxes.some(b => b.deviceID === id && inPair(b))) delete state.zoneSlaves[id];
   }
-  if (!state.zoneMaster || !zoneBoxes.some(b => b.deviceID === state.zoneMaster)) {
-    // No live group and nothing valid selected: default to the first
-    // groupable speaker. liveZoneMaster returns the box OBJECT; zoneMaster
+  // Without a live group, a star the user did not hand-pick is a default and
+  // is re-derived on every repaint, so it settles on the stored permanent
+  // group's main speaker once the zone answers arrive instead of keeping the
+  // first-card default from the very first paint (or a leader that has since
+  // gone idle). A hand-pick (zoneMasterHandPick) keeps winning.
+  const autoStar = !liveNow && state.zoneMaster !== state.zoneMasterHandPick;
+  if (autoStar || !state.zoneMaster || !zoneBoxes.some(b => b.deviceID === state.zoneMaster)) {
+    // No live group and nothing valid selected: default to the stored
+    // permanent group's main speaker, else the first groupable speaker. liveZoneMaster returns the box OBJECT; zoneMaster
     // holds a deviceID string everywhere else (card badges compare,
     // doFormZone looks it up). Assigning the object (v0.9.48) made every
     // comparison false: no card ever showed MAIN and forming silently
     // no-oped on fleets with a live zone answer.
-    state.zoneMaster = (liveNow && !inPair(liveNow) && liveNow.deviceID) || (zoneBoxes.length ? zoneBoxes[0].deviceID : '');
+    state.zoneMaster = (liveNow && !inPair(liveNow) && liveNow.deviceID) || defaultZoneMasterID(state.zoneLive, strBoxes, zoneBoxes);
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
@@ -748,6 +754,9 @@ export function renderMultiroom(fetchLive) {
         // A hand-pick pins the star against the live-leader tracking above,
         // so preparing the next group is not undone by the running one.
         state.zoneMasterPicked = true;
+        // Remembered beyond the live-leader pin: while nothing is live the
+        // star is otherwise re-derived (stored group's main speaker first).
+        state.zoneMasterHandPick = mk.dataset.id;
         delete state.zoneSlaves[state.zoneMaster];
         renderMultiroom();
         return;

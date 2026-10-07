@@ -64,7 +64,9 @@ describe('group master default', () => {
   it('computes the pair halves before the master default and defaults among the groupable speakers only', () => {
     const fn = multiroomJS.slice(multiroomJS.indexOf('export function renderMultiroom('));
     const pairs = fn.indexOf('const groupablePairIDs');
-    const def = fn.indexOf('zoneBoxes[0].deviceID');
+    // The default (stored group's main speaker, else the first card) is drawn
+    // from zoneBoxes, the pair-free set.
+    const def = fn.indexOf('defaultZoneMasterID(state.zoneLive, strBoxes, zoneBoxes)');
     expect(pairs).toBeGreaterThan(-1);
     expect(def).toBeGreaterThan(pairs);
     expect(fn).not.toContain('strBoxes[0].deviceID');
