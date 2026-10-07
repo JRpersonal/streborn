@@ -652,7 +652,8 @@ type Server struct {
 	// lastICYTitle is the most recent radio StreamTitle seen, kept so enabling the
 	// display push or changing its mode can show the CURRENT track immediately
 	// instead of waiting for the next title change. Guarded by lastPlayMu.
-	lastICYTitle string
+	lastICYTitle  string
+	tuneInStation tuneInNowStation // the TuneIn station last resolved, for the now-playing answer (#500)
 
 	// displayMsg is the bookkeeping for the short messages on the speaker
 	// display when a key cannot play (displaymsg.go).

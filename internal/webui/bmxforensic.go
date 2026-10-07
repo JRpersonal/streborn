@@ -111,6 +111,8 @@ func (s *Server) routeBMX(r *http.Request) (int, []byte) {
 		return s.handleTuneInToken(r)
 	case strings.HasPrefix(p, tuneInStationPrefix):
 		return s.handleTuneInStation(r)
+	case isNowPlayingPath(p):
+		return s.handleTuneInNowPlaying(r)
 	default:
 		return bmxError(http.StatusNotFound, "not implemented")
 	}

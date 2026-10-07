@@ -30,9 +30,46 @@ import (
 )
 
 const (
-	tuneInStationPrefix = "/bmx/tunein/v1/playback/station/"
-	tuneInTokenPath     = "/bmx/tunein/v1/token"
+	tuneInStationPrefix    = "/bmx/tunein/v1/playback/station/"
+	tuneInTokenPath        = "/bmx/tunein/v1/token"
+	tuneInNowPlayingPrefix = "/bmx/tunein/v1/now-playing/station/"
 )
+
+// tuneInStation is the station document plus the now-playing address.
+//
+// Experiment (#500): Bose's BMX answers carried a _links.bmx_nowplaying entry
+// (the field name is in Bose's schema as other cloud replacements recorded
+// it), and the firmware's TuneIn client knows a nowPlayingUri. Offering both
+// shows whether this firmware then asks for the current title, which would
+// put the song on the display without restarting the stream. Unknown fields
+// are ignored by the firmware's parser, so a speaker that does not use them
+// plays exactly as before. Every request lands in the /bmx/ log.
+type tuneInStation struct {
+	lirDescriptor
+	Links         map[string]bmxLink `json:"_links,omitempty"`
+	NowPlayingURI string             `json:"nowPlayingUri,omitempty"`
+}
+
+type bmxLink struct {
+	Href              string `json:"href"`
+	UseInternalClient string `json:"useInternalClient,omitempty"`
+}
+
+// tuneInNowPlaying is the answer at the now-playing address: the shape of a
+// BMX playback answer (name, artist.name, imageUrl), with the song as name
+// and track.name as a second spelling.
+type tuneInNowPlaying struct {
+	Links  map[string]bmxLink `json:"_links,omitempty"`
+	Name   string             `json:"name"`
+	Artist struct {
+		Name string `json:"name"`
+	} `json:"artist"`
+	Track struct {
+		Name string `json:"name"`
+	} `json:"track"`
+	ImageURL   string `json:"imageUrl,omitempty"`
+	StreamType string `json:"streamType"`
+}
 
 var (
 	// radiotimeBase is TuneIn's public OPML API. A var so tests can point it
@@ -148,13 +185,21 @@ func (s *Server) handleTuneInStation(r *http.Request) (int, []byte) {
 	if u, perr := url.Parse(stream); perr == nil {
 		host = u.Host
 	}
-	var d lirDescriptor
+	var d tuneInStation
 	d.Audio.IsRealtime = true
 	d.Audio.StreamURL = boxurl.RawStream(stream)
 	d.ImageURL = stationImageURL(logo)
 	d.Name = name
 	d.StreamType = "liveRadio"
-	s.logger.Info("bmx tunein: station resolved", "path", r.URL.Path, "id", id, "name", name, "streamHost", host)
+	np := "/v1/now-playing/station/" + id
+	d.Links = map[string]bmxLink{"bmx_nowplaying": {Href: np, UseInternalClient: "ALWAYS"}}
+	d.NowPlayingURI = np
+	// a title from the previous station must not reach this one
+	s.lastPlayMu.Lock()
+	s.lastICYTitle = ""
+	s.tuneInStation = tuneInNowStation{id: id, name: name, image: d.ImageURL}
+	s.lastPlayMu.Unlock()
+	s.logger.Info("bmx tunein: station resolved", "path", r.URL.Path, "id", id, "name", name, "streamHost", host, "nowPlaying", np)
 	return bmxJSON(http.StatusOK, d)
 }
 
@@ -164,4 +209,49 @@ func (s *Server) handleTuneInStation(r *http.Request) (int, []byte) {
 func (s *Server) handleTuneInToken(r *http.Request) (int, []byte) {
 	s.logger.Info("bmx tunein: token served", "path", r.URL.Path)
 	return http.StatusOK, []byte(`{"access_token":"","refresh_token":""}`)
+}
+
+// tuneInNowStation is the TuneIn station the speaker was last given.
+type tuneInNowStation struct {
+	id, name, image string
+}
+
+// handleTuneInNowPlaying answers the now-playing address with the live ICY
+// title of the station the speaker plays, split into artist and song where
+// the title reads "Artist - Song". Without a title yet, the station name.
+func (s *Server) handleTuneInNowPlaying(r *http.Request) (int, []byte) {
+	s.lastPlayMu.Lock()
+	title, st := s.lastICYTitle, s.tuneInStation
+	s.lastPlayMu.Unlock()
+	var np tuneInNowPlaying
+	np.Links = map[string]bmxLink{"self": {Href: strings.TrimPrefix(r.URL.Path, "/bmx/tunein")}}
+	np.StreamType = "liveRadio"
+	np.ImageURL = st.image
+	artist, song := splitICYTitle(title)
+	switch {
+	case song != "":
+		np.Name, np.Track.Name, np.Artist.Name = song, song, artist
+	default:
+		np.Name, np.Track.Name = st.name, st.name
+	}
+	s.logger.Info("bmx tunein: now-playing asked", "path", r.URL.Path, "query", r.URL.RawQuery,
+		"station", st.id, "artist", np.Artist.Name, "song", np.Name)
+	return bmxJSON(http.StatusOK, np)
+}
+
+// splitICYTitle reads "Artist - Song" (the common StreamTitle form). A title
+// without the separator is the song alone.
+func splitICYTitle(t string) (artist, song string) {
+	t = strings.TrimSpace(t)
+	if a, b, ok := strings.Cut(t, " - "); ok && strings.TrimSpace(a) != "" && strings.TrimSpace(b) != "" {
+		return strings.TrimSpace(a), strings.TrimSpace(b)
+	}
+	return "", t
+}
+
+// isNowPlayingPath recognises the now-playing address in the spellings the
+// firmware might use (our own, the firmware's nowPlaying route).
+func isNowPlayingPath(p string) bool {
+	l := strings.ToLower(p)
+	return strings.HasPrefix(p, tuneInNowPlayingPrefix) || strings.Contains(l, "/nowplaying") || strings.Contains(l, "/now-playing")
 }
