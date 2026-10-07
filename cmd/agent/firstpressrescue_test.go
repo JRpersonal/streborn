@@ -131,3 +131,87 @@ func TestSecondNativeFailureAsksForTheDisplayMessage(t *testing.T) {
 	h.showDisplayMessage = nil
 	h.displayMessage(webui.DisplayMsgNoInternet)
 }
+
+// A press that left Bluetooth or AUX and whose firmware then gave up without
+// ever asking for the station (#1170, ST10): the box switched to the radio,
+// fetched nothing, fell to INVALID_SOURCE five seconds later and went back
+// to Bluetooth. No PlayFailure exists for that, so the source fall-back is
+// the trigger.
+func TestAPressThatFellBackFromBluetoothIsRescued(t *testing.T) {
+	never := time.Time{}
+	cases := []struct {
+		name string
+		// origin is the source the press left; the box switches 45 ms before
+		// the agent notes the activation, as measured.
+		origin string
+		// seenAfter is when, relative to the press, the station was resolved
+		// or fetched; negative means not since the press.
+		seenAfter time.Duration
+		// fallAfter is when the source fell, and fallTo where to.
+		fallAfter time.Duration
+		fallTo    string
+		want      int
+	}{
+		{"bluetooth falls to INVALID_SOURCE", srcBluetooth, -1, 5140 * time.Millisecond, srcInvalid, 5},
+		{"bluetooth falls straight back to bluetooth", srcBluetooth, -1, 5 * time.Second, srcBluetooth, 5},
+		{"aux falls back to aux", srcAux, -1, 4 * time.Second, srcAux, 5},
+		{"station resolved before the fall-back", srcBluetooth, 200 * time.Millisecond, 5 * time.Second, srcInvalid, 0},
+		{"fall-back after the window", srcBluetooth, -1, firstPressWindow + time.Second, srcInvalid, 0},
+		{"press from standby", "STANDBY", -1, 5 * time.Second, srcInvalid, 0},
+		{"press from another radio source", "UPNP", -1, 5 * time.Second, srcInvalid, 0},
+		{"bluetooth press moves on to a normal source", srcBluetooth, -1, 2 * time.Second, "UPNP", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var f firstPressRescue
+			press := time.Now()
+			f.fallBack(tc.origin, srcRadio, press.Add(-45*time.Millisecond), never)
+			f.noteNativeActivation(5, press)
+			seen := never
+			if tc.seenAfter >= 0 {
+				seen = press.Add(tc.seenAfter)
+			}
+			if got := f.fallBack(srcRadio, tc.fallTo, press.Add(tc.fallAfter), seen); got != tc.want {
+				t.Fatalf("fallBack = %d, want %d", got, tc.want)
+			}
+			if tc.want == 0 {
+				return
+			}
+			if got := f.originOf(5); got != tc.origin {
+				t.Errorf("originOf = %q, want %q", got, tc.origin)
+			}
+			// INVALID_SOURCE -> BLUETOOTH right after is the same failure:
+			// once per press, and a PlayFailure cannot buy a second retry.
+			if got := f.fallBack(srcInvalid, srcBluetooth, press.Add(tc.fallAfter+200*time.Millisecond), never); got != 0 {
+				t.Errorf("the second hop of the same fall-back claimed another rescue (%d)", got)
+			}
+			if got := f.claim(press.Add(tc.fallAfter + time.Second)); got != 0 {
+				t.Errorf("a PlayFailure after the fall-back rescue claimed another (%d)", got)
+			}
+		})
+	}
+}
+
+// The switch to the radio may also arrive just AFTER the activation note; the
+// origin must be picked up either way.
+func TestTheSourceSwitchAfterTheActivationStillCounts(t *testing.T) {
+	var f firstPressRescue
+	press := time.Now()
+	f.noteNativeActivation(2, press)
+	f.fallBack(srcBluetooth, srcRadio, press.Add(100*time.Millisecond), time.Time{})
+	if got := f.fallBack(srcRadio, srcInvalid, press.Add(5*time.Second), time.Time{}); got != 2 {
+		t.Fatalf("fallBack = %d, want 2", got)
+	}
+}
+
+// An old switch into the radio (minutes before) is not this press's origin:
+// a press made while already on the radio has no origin and never triggers.
+func TestAStaleSourceSwitchIsNotThePressOrigin(t *testing.T) {
+	var f firstPressRescue
+	press := time.Now()
+	f.fallBack(srcBluetooth, srcRadio, press.Add(-time.Minute), time.Time{})
+	f.noteNativeActivation(3, press)
+	if got := f.fallBack(srcRadio, srcInvalid, press.Add(5*time.Second), time.Time{}); got != 0 {
+		t.Fatalf("a press made on the radio claimed a rescue (%d)", got)
+	}
+}

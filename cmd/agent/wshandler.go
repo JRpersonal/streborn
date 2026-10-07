@@ -44,7 +44,17 @@ type presetWsHandler struct {
 	// playingNow answers whether the speaker is producing audio right now, so
 	// a rescue press stands down when the box found its feet by itself.
 	playingNow func(context.Context) bool
-	spotify    *spotify.Manager
+	// sourceAndPlaying reads the active source and whether audio flows, for
+	// the rescue of a press that fell back to Bluetooth/AUX: music on that
+	// input is not the speaker having found its feet. nil falls back to
+	// playingNow.
+	sourceAndPlaying func(context.Context) (src string, playing, ok bool)
+	// stationActivity reports the latest moment a native station was resolved
+	// (webui LastStationResolve) or its stream fetched (stream proxy), so the
+	// first-press rescue can tell a press the firmware never acted on. nil
+	// means "never seen".
+	stationActivity func() time.Time
+	spotify         *spotify.Manager
 	// onUserStop is invoked when the box reports a deliberate playback stop
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.

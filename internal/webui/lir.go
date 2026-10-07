@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
 )
@@ -76,6 +77,7 @@ func (s *Server) handleLIRStation(w http.ResponseWriter, r *http.Request) {
 	// it uncached so a re-saved preset is picked up without a box restart.
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	s.lastStationResolve.Store(time.Now().UnixNano())
 	s.logger.Info("lir: station descriptor served", "slot", slot, "name", name)
 	_ = json.NewEncoder(w).Encode(d)
 }
@@ -133,8 +135,21 @@ func (s *Server) handleOrionStation(w http.ResponseWriter, r *http.Request) {
 	d.StreamType = "liveRadio"
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	s.lastStationResolve.Store(time.Now().UnixNano())
 	s.logger.Info("lir: orion station resolved", "name", in.Name, "stream", in.StreamURL)
 	_ = json.NewEncoder(w).Encode(d)
+}
+
+// LastStationResolve reports when the box last resolved a native station
+// descriptor (zero time = never since the agent started). A native preset
+// press the firmware really acts on always passes through here before any
+// audio flows, so its absence after a press is the press going nowhere.
+func (s *Server) LastStationResolve() time.Time {
+	n := s.lastStationResolve.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n)
 }
 
 // OrionStationLocation builds the ContentItem location for a stream URL, the

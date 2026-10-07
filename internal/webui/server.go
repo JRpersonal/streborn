@@ -486,6 +486,13 @@ type Server struct {
 	wedge            wedgeState
 	streamActivityFn func() (lastFetch, lastFailure time.Time)
 
+	// lastStationResolve is when the box last resolved a native station
+	// through the LIR/orion descriptor endpoints (unix nanos, 0 = never). The
+	// agent's first-press rescue reads it to tell a press the firmware never
+	// acted on from one whose station was already on its way. See
+	// LastStationResolve.
+	lastStationResolve atomic.Int64
+
 	// refusal tracks the silent variant of the not-logged-in refusal family:
 	// recalls that exhaust while the box drops its source to STANDBY on its
 	// own, without ever sending a 1036. See wedge.go / RecallRefusal.
