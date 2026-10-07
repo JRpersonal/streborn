@@ -767,6 +767,12 @@ func run() error {
 	webui.RegisterDebugSection("spotify_auth", func() any {
 		return spotifyMgr.CredentialSnapshot()
 	})
+	// Per-playlist resume points and the skip_to_uri the last recall used, so a
+	// report of a preset resuming on another preset's track (discussion #1077)
+	// can be settled from the bundle. URIs and times only.
+	webui.RegisterDebugSection("spotify_resume", func() any {
+		return spotifyMgr.ResumeSnapshot()
+	})
 
 	// Answer for this speaker's own mDNS name BEFORE the engine is told to
 	// advertise it. The order is the safety property, not a detail: the engine
