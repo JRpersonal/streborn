@@ -8621,8 +8621,10 @@ async function refreshStatus() {
       // Keep the live radio track flowing into the now-playing bar for playback
       // STR did not itself start (hardware key, app restart). Self-guarded, so
       // calling it on every poll is safe; it no-ops while already polling.
+      // Any proxied radio stream, not only a preset slot: a station started
+      // from Find stations plays as /stream/raw and has no slot (#1190).
       if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
-          activeSlotFromLocation(newLoc) !== null) {
+          proxiedRadioPlaying(newLoc)) {
         scheduleLiveTitle();
       }
     }
@@ -9384,7 +9386,13 @@ async function playStation(s) {
     state.nowName = s.name; // keep the user's chosen station name across retries
     state.nowIcon = chain;
     state.nowBitrate = cur.bitrate || 0;
+    // Clear the previous station's track and start the title poll here: a Find
+    // stations play has no preset slot, so nothing else started the loop unless
+    // one from an earlier preset play happened to be alive (#1190). The loop is
+    // self-guarded, so the retry passes calling it again are no-ops.
+    state.nowTitle = '';
     scheduleLiveBitrate();
+    scheduleLiveTitle();
     state.nowUUID = cur.stationuuid || '';
     renderPresets();
 
