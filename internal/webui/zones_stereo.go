@@ -661,7 +661,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// actually pairs, but every model lists /addGroup, so we let the firmware
 	// be the authority and surface its real response to the app.
 	if req.Stereo {
-		s.formStereoPair(w, ctx, c, master, slaves, req.Name)
+		s.formStereoPair(w, ctx, c, master, slaves, req.Name, wokenMemberSet(req.WokenFromStandby))
 		return
 	}
 
@@ -836,11 +836,11 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	var resume *lastPlayInfo
 	masterBlocked := false
 	// A master STR woke for this group is playing its own power-on resume, not
-	// the user's music: stop it instead of carrying it into every room.
-	_, busy := s.boxPlayState()
-	if busy && s.stopGroupWakeSelfResume(ctx, "before forming") {
-		busy = false
-	}
+	// the user's music: stop it instead of carrying it into every room. A
+	// master with nothing of the user's to carry also holds the Spotify
+	// auto-attach off for the whole form, or the engine can fill the fresh
+	// group with a track nobody started (#1074).
+	busy := s.masterPlaysUsersMusic(ctx, "before forming", zoneFormBudget(len(slaves))+lateSelfResumeHold)
 	if busy {
 		// WHAT the box is playing, not just that it is: a Spotify session runs
 		// on a URL STR never recorded, and re-pushing the recorded one replaced
@@ -1083,12 +1083,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// A group formed silent out of a group wake gets one more look: the
 		// firmware's resume can start after the zone formed, and the zone then
 		// carries it into every room. One read, no repeating timer.
-		go func() {
-			time.Sleep(lateSelfResumeCheck)
-			lctx, lcancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer lcancel()
-			s.stopGroupWakeSelfResume(lctx, "after forming")
-		}()
+		s.scheduleLateSelfResumeCheck("after forming")
 	}
 	out := map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
@@ -1624,7 +1619,7 @@ func (s *Server) storedGroupBlocksPair() (bool, zones.Zone) {
 	return true, z
 }
 
-func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string) {
+func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string, woken map[string]bool) {
 	if len(slaves) != 1 {
 		http.Error(w, "a stereo pair needs exactly one partner speaker", http.StatusBadRequest)
 		return
@@ -1730,10 +1725,20 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// through the master (LEFT). The partner's stream URL is loopback on the
 	// PARTNER, so it is rewritten to the partner's LAN address the same way the
 	// mirror path already lets one box pull another's stream proxy.
+	//
+	// The busy test is the group path's (masterPlaysUsersMusic), not a bare
+	// boxPlayState: a plain "is it playing" read took a master STR had just
+	// woken, and that was playing its own power-on resume, for the user's
+	// music and restarted it on the pair. The same call holds the Spotify
+	// auto-attach off when there is nothing of the user's to carry (#1074:
+	// the engine pulled the box onto the album the user had played before
+	// standby, 300 ms after the pairing woke it). A master that is genuinely
+	// playing is left alone and its music still moves to the pair.
 	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
 	masterBlocked := false
-	if _, busy := s.boxPlayState(); busy {
+	quietPair := !s.masterPlaysUsersMusic(ctx, "before pairing", stereoPairAutoAttachHold)
+	if !quietPair {
 		np := fetchNowPlaying(ctx, s.boxHost)
 		var why string
 		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
@@ -1741,7 +1746,12 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			"source", np.Source, "location", np.Location, "lastPlayed", lastPlayURL(masterRef),
 			"restart", lastPlayURL(resume), "reason", why)
 	}
-	if resume == nil && !masterBlocked && partner.IP != "" {
+	// A partner the app just woke for this pairing is playing its own power-on
+	// resume, not the user's music, so it is not captured either (the rule
+	// handleZoneForm applies to members through membersNotWokenForGroup).
+	if resume == nil && !masterBlocked && partner.IP != "" && woken[strings.TrimSpace(partner.IP)] {
+		s.logger.Info("stereo: not capturing the partner's stream, the app just woke it for this pairing", "partnerIP", partner.IP)
+	} else if resume == nil && !masterBlocked && partner.IP != "" {
 		if pr := partnerResumeForPair(fetchNowPlaying(ctx, partner.IP), partner.IP); pr != nil {
 			s.logger.Info("stereo: captured the partner's stream to restart on the pair (the master is not playing)",
 				"partnerIP", partner.IP, "url", pr.boxURL, "title", pr.title)
@@ -1781,6 +1791,17 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		}
 		s.logger.Info("stereo: the speaker did not report waking, but it is answering, so the pairing goes ahead",
 			"wakeErr", err, "left", master.DeviceID)
+	}
+	// The wake above may have let the firmware resume the master's last
+	// source after the quiet wake's own STOP check, exactly as on the group
+	// path. With nothing to restart the pair forms silent, so that resume
+	// goes. The auto-attach hold is renewed for the /addGroup round trip,
+	// which alone can take the firmware's full ~20 s.
+	if resume == nil {
+		s.stopGroupWakeSelfResume(ctx, "after the wake")
+	}
+	if quietPair {
+		s.holdSpotifyAutoAttach(stereoPairAutoAttachHold, "before addGroup")
 	}
 
 	// Persist before driving the firmware so the dissolve path knows it is a
@@ -1903,6 +1924,8 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		// still very likely paired (that is why this path answers ok).
 		if resume != nil {
 			go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
+		} else {
+			s.scheduleLateSelfResumeCheck("after pairing")
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "stereo": true,
@@ -1925,6 +1948,11 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		return
 	}
 	s.logger.Info("stereo: paired", "id", g.ID, "members", len(g.Members))
+	// And once more for the two-sided verify below, which can take its own
+	// budget after a slow /addGroup has used up most of the previous hold.
+	if quietPair {
+		s.holdSpotifyAutoAttach(stereoPairAutoAttachHold, "verifying the pair")
+	}
 
 	// Install ONE canonical pair document on both members' marges. Left alone,
 	// each firmware re-creates the record on its own marge from its own point
@@ -1971,6 +1999,10 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// pair sits silent, which is exactly the #705 failure.
 	if resume != nil {
 		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
+	} else {
+		// A pair formed silent gets the same one late look as a silent group:
+		// the firmware's resume can start after the pair formed.
+		s.scheduleLateSelfResumeCheck("after pairing")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "stereo": true, "id": g.ID, "name": g.Name, "members": g.Members,
