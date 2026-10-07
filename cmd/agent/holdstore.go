@@ -27,13 +27,16 @@ import (
 var errNotKeepable = errors.New("not a station STR can keep")
 
 // heldLive is what the keeper reads from the running agent beyond the preset
-// store. The func may be nil (tests, or a hold that lands before the web
+// store. Either func may be nil (tests, or a hold that lands before the web
 // server is up), which means "nothing known".
 type heldLive struct {
 	// queue builds the folder preset for a slot from the media-server folder
 	// the agent plays as a queue right now; ok is false when none plays
 	// (webui.Server.LiveQueuePreset, #1030).
 	queue func(slot int) (presets.Preset, bool)
+	// artChain returns the full logo candidate chain STR knows for a stream
+	// URL, "" when none (webui.Server.StreamArtChain, #968).
+	artChain func(streamURL string) string
 }
 
 // heldWebui is the running web server, stored once main has created it.
@@ -48,6 +51,12 @@ func heldLiveFrom(srv *atomic.Pointer[webui.Server]) heldLive {
 				return s.LiveQueuePreset(slot)
 			}
 			return presets.Preset{}, false
+		},
+		artChain: func(streamURL string) string {
+			if s := srv.Load(); s != nil {
+				return s.StreamArtChain(streamURL)
+			}
+			return ""
 		},
 	}
 }
@@ -157,12 +166,22 @@ func heldPresetCandidate(store *presets.Store, live heldLive, item marge.HeldIte
 		candidate = src
 		candidate.Slot = item.Slot
 	case st.OriginStreamURL != "":
+		// The descriptor carries the ONE picture the display was given; the
+		// app saves the station's whole candidate chain. Use the chain STR
+		// knows for this stream so both gestures give the key the same logo
+		// (#968), and the descriptor's picture only when none is known.
+		art := st.Art
+		if live.artChain != nil {
+			if chain := live.artChain(st.OriginStreamURL); chain != "" {
+				art = chain
+			}
+		}
 		candidate = presets.Preset{
 			Slot:      item.Slot,
 			Name:      name,
 			StreamURL: st.OriginStreamURL,
 			Type:      "radio",
-			Art:       st.Art,
+			Art:       art,
 		}
 	default:
 		return presets.Preset{}, false, fmt.Errorf("%w: the descriptor's stream is not a station origin (%s)",
