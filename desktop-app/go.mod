@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/JRpersonal/streborn v0.0.0
+	github.com/go-ole/go-ole v1.3.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/tc-hib/winres v0.3.1
 	github.com/wailsapp/wails/v2 v2.16.0
@@ -21,7 +22,6 @@ require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
-	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

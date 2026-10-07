@@ -14,10 +14,14 @@ const firewallSupported = false
 
 var errFirewallUnsupported = errors.New("the firewall check exists on Windows only")
 
-func runFirewallQuery(context.Context, string) ([]byte, error) {
-	return nil, errFirewallUnsupported
+func queryFirewall(context.Context) ([]fwRule, []string, error) {
+	return nil, nil, errFirewallUnsupported
 }
 
-func runElevatedPowerShell(context.Context, string) (int, error) {
+func applyFirewallUnblock([]string, bool) error {
+	return errFirewallUnsupported
+}
+
+func runElevatedFirewallHelper(context.Context, []string) (int, error) {
 	return -1, errFirewallUnsupported
 }
