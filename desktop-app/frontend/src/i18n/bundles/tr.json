@@ -327,7 +327,7 @@
   "status.auxInput": "AUX girişi",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
-  "status.ready": "hazır",
+  "status.stopped": "durduruldu",
   "status.unreachable": "erişilemiyor",
   "status.playlistLabel": "Çalma listesi",
   "status.albumLabel": "Albüm",

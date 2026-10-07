@@ -327,7 +327,7 @@
   "status.auxInput": "AUX入力",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
-  "status.ready": "準備完了",
+  "status.stopped": "停止",
   "status.unreachable": "接続できません",
   "status.playlistLabel": "プレイリスト",
   "status.albumLabel": "アルバム",
