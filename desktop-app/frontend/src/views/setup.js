@@ -87,6 +87,7 @@ import {
 } from '../api.js';
 import { takeShareOffer, wireShareOffer } from '../share.js';
 import { stereoInstallChoices, dissolveHosts, restoreMessage } from '../stereoinstall.js';
+import { verifyInstalledLoop, waitForStableAgent } from '../agentsettle.js';
 
 // Official Bose SoundTouch app store listings (verified live 2026-07-09). The
 // app's local Wi-Fi setup still works after the cloud shutdown, so it is the
@@ -2374,68 +2375,18 @@ async function saveFailReportBundle(btn, box, ta) {
 // there. Same contract as the update: the speaker's own report decides, the
 // state is re-checked throughout, and the Spotify engine is delivered inside
 // this flow because nothing is allowed to deliver it afterwards in the
-// background.
-async function verifyInstalledState(box, onState) {
-  // Ten minutes is the budget for a speaker that comes back promptly. It is not
-  // the budget for one that does not: a donor's SoundTouch 20 took just over
-  // twenty minutes to return after its update, the window closed at ten, and
-  // everything the app said after that was about a speaker it had stopped
-  // listening to. So the clock is extended each time the speaker proves it is
-  // still working on it, up to a hard ceiling.
-  const hardStop = Date.now() + 1_800_000;
-  let deadline = Date.now() + 600_000;
-  let attempt = 0;
-  let lastLive = null;
-  while (Date.now() < deadline && Date.now() < hardStop) {
-    attempt++;
-    let live = null;
-    try { live = await BoxAgentVersion(box.host, box.port || 0); } catch {}
-    if (live && live.version) {
-      lastLive = live;
-      // Alive and answering: whatever is left to do (the engine) is worth a
-      // fresh window rather than the remains of the old one.
-      deadline = Math.min(hardStop, Date.now() + 300_000);
-    }
-    if (onState) onState({ attempt, reachable: !!live, remainingMs: deadline - Date.now(),
-      version: (live && live.version) || '', engine: (live && live.goLibrespot) || 'unknown' });
-    // Both halves, never one: a speaker can report the engine present while
-    // its agent is still being written, and stopping there declares success
-    // on software that is not installed yet (fleet run 2026-07-29). A first
-    // install has no previous version to compare against, so any reported
-    // version means the agent is up.
-    if (live && live.goLibrespot === 'present' && live.version) return { ok: true, version: live };
-    if (live && live.goLibrespot === 'missing') {
-      try {
-        const r = await EnsureSpotifyEngine(box.host, box.port || 0);
-        // Nothing to deliver in this build: the speaker is as finished as it
-        // can get, so do not wait out the window for an impossibility.
-        if (r && /no embedded engine/i.test(r)) return { ok: true, version: live };
-      } catch (e) {
-        const m = String((e && e.message) || e || '');
-        // Too full to ever fit: retrying cannot help, only freeing space can.
-        // Still an INSTALLED speaker, so it is reported as one, with the
-        // engine named as the part that is missing.
-        if (/insufficient nand|no space|507/i.test(m)) {
-          return { ok: true, version: live, engineMissing: true, engineReason: m };
-        }
-      }
-    }
-    await new Promise(r => setTimeout(r, Math.min(20_000, 3_000 * attempt)));
-  }
-  // The window closed. Whether that is a failure depends entirely on what the
-  // speaker last said about itself.
-  //
-  // A donor's SoundTouch 20 was reported as a failed installation while STR was
-  // running on it perfectly: the agent had come up on the new version, but it
-  // had dropped the Spotify engine to make room for its own update, so the
-  // "engine present" condition never became true and the whole install timed
-  // out (2026-08-11). He was told to send in logs for a speaker that was
-  // already working. Spotify is one optional component of an install; it
-  // cannot be the thing that decides whether the install happened.
-  if (lastLive && lastLive.version) {
-    return { ok: true, version: lastLive, engineMissing: true, engineReason: 'engine not delivered inside the install window' };
-  }
-  return { ok: false, reason: 'timeout waiting for the speaker to reach the installed state' };
+// background. The engine goes out through the update's own gate (agent on the
+// build this app carries, then settled); the loop lives in agentsettle.js so
+// it can be tested without a speaker.
+function verifyInstalledState(box, onState) {
+  const probe = () => BoxAgentVersion(box.host, box.port || 0);
+  return verifyInstalledLoop({
+    probe,
+    ensureEngine: () => EnsureSpotifyEngine(box.host, box.port || 0),
+    waitStable: (deadlineMs) => waitForStableAgent(probe, deadlineMs),
+    appSha: (state.appInfo && state.appInfo.agentSha256) || '',
+    onState,
+  });
 }
 
   let result;

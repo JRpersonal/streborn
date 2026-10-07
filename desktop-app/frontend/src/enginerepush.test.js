@@ -19,21 +19,10 @@
 // reinstall), so the destructive half is fixed here rather than left to the
 // trigger being gone.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
-
-const at = main.indexOf('function speakerReachedTarget(');
-if (at < 0) throw new Error('speakerReachedTarget moved; fix this test rather than deleting it');
-const src = main.slice(at, main.indexOf('\n}\n', at) + 2);
+import { speakerReachedTarget } from './agentsettle.js';
 
 function reached(appInfo, live, preVersion, wantEngine) {
-  // eslint-disable-next-line no-new-func
-  const fn = new Function('state', `${src}\nreturn speakerReachedTarget;`)({ appInfo });
-  return fn(live, preVersion, wantEngine);
+  return speakerReachedTarget(live, preVersion, wantEngine, appInfo && appInfo.agentSha256);
 }
 
 const SHA = 'a'.repeat(64);

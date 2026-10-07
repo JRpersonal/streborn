@@ -17,6 +17,7 @@ import {
   acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySongText,
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
+import { speakerReachedTarget, waitForStableAgent } from './agentsettle.js';
 import { applyPositionReading, resetProgress, wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
@@ -4293,38 +4294,6 @@ function isEngineStreamDrop(msg) {
   return /broken pipe|connection reset|deadline exceeded|forcibly closed|host is down|unexpected eof|wsarecv/i.test(msg);
 }
 
-// waitForStableAgent waits (bounded by deadlineMs) until the box's agent
-// answers again and KEEPS answering for stableMs, so the next engine attempt
-// streams at a settled box instead of one mid-reboot.
-//
-// Agents that report their box uptime (uptimeSec, v0.9.20+) get two extra
-// gates, learned from the #466 bundles where the FIRST post-confirm 16 MB push
-// reliably died with a connection reset ~107 s in while a retry minutes later
-// sailed through in ~15 s: the box must be past the reboot-prone post-OTA
-// settling window (uptime >= minUptimeSec), and an uptime DROP between two
-// probes is a reboot that plain reachability polling misses entirely (the box
-// can be back up before the next probe) - it resets the stability clock.
-// Older agents without uptimeSec keep the reachability-only behavior.
-async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeSec = 150) {
-  let up = 0;
-  let lastUptime = -1;
-  while (Date.now() < deadlineMs) {
-    await sleep(3_000);
-    try {
-      const v = await BoxAgentVersion(box.host, box.port);
-      const uptime = v && v.uptimeSec ? parseInt(v.uptimeSec, 10) : NaN;
-      if (!Number.isNaN(uptime)) {
-        if (uptime < lastUptime) up = 0; // rebooted between probes
-        lastUptime = uptime;
-        if (uptime < minUptimeSec) continue; // still in the settling window
-      }
-      if (!up) up = Date.now();
-      if (Date.now() - up >= stableMs) return true;
-    } catch { up = 0; lastUptime = -1; }
-  }
-  return false;
-}
-
 // runBoxUpdate runs the per-box OTA sequence. It is the ONE implementation of
 // that sequence: the "update all speakers" batch (updateAllBoxes) and the
 // single-speaker button (doBoxUpdate) both go through here.
@@ -4353,39 +4322,6 @@ async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeS
 //   'engineUploading' -> 'spotify'{attempt, remainingMs, reachable, version,
 //   engine} -> resolve. 'retrying'{attempt} restarts the sequence once.
 // A caller may ignore any phase it has no use for.
-// speakerReachedTarget answers the only question that matters at the end of an
-// install or an update: is this speaker actually where it was meant to be.
-//
-// It exists because judging on one half is how a run lies. A speaker whose
-// Spotify engine survived the reboot reports the engine present within seconds,
-// while its agent is still being replaced, and anything that stops looking at
-// that moment declares success on the old software. The mirror case is just as
-// real: the agent lands and the engine is still missing. Both halves, always,
-// and the caller is told WHICH half is outstanding so it can say so rather than
-// showing a spinner with no explanation.
-//
-// Learned from a fleet run on 2026-07-29 where a Portable passed on the old
-// build and only finished minutes later. Users hit the same on slow speakers.
-function speakerReachedTarget(live, preVersion, wantEngine) {
-  if (!live) return { done: false, missing: 'unreachable' };
-  // The binary the speaker is RUNNING first, then the version string.
-  //
-  // "the version string moved" cannot be satisfied by a push of the SAME
-  // version, and such a push is not harmless: a speaker that has the Spotify
-  // engine is by definition NAND-tight, so the agent drops the engine to make
-  // the update fit. Judging by the string then returns before the engine is
-  // put back, and a working Spotify install is destroyed by a re-push that was
-  // meant to change nothing. Four of six speakers in one household ended up
-  // that way after the v0.9.88 stamp skew invited re-push after re-push.
-  const appSha = state.appInfo && state.appInfo.agentSha256;
-  const agentDone = (!!appSha && live.agentRunningSha256 === appSha) ||
-    (!!live.version && (!preVersion || live.version !== preVersion));
-  const engineDone = !wantEngine || live.goLibrespot === 'present';
-  if (!agentDone) return { done: false, missing: 'agent' };
-  if (!engineDone) return { done: false, missing: 'engine' };
-  return { done: true, missing: '' };
-}
-
 // makeUploadGate serializes the network-heavy part of an update while leaving
 // everything else free to overlap.
 //
@@ -4655,12 +4591,12 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
       });
       // Already in the target state (another pass landed it, or the agent
       // hot-swapped it in): nothing left to do.
-      const verdict = speakerReachedTarget(live, preVersion, true);
+      const verdict = speakerReachedTarget(live, preVersion, true, state.appInfo && state.appInfo.agentSha256);
       if (verdict.done) {
         try { ClearUpdateIntent(box.host, box.port); } catch {}
         return { outcome: 'done', version: live, engineDelivered };
       }
-      await waitForStableAgent(box, engDeadlineMs);
+      await waitForStableAgent(() => BoxAgentVersion(box.host, box.port), engDeadlineMs);
       try {
         // "Spotify engine: missing, waiting for the target state" described the
         // speaker, not what the app was doing, so the ~16 MB delivery that
