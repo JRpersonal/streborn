@@ -1327,6 +1327,16 @@ func run() error {
 	// at the time. See cmd/agent/firstpressrescue.go.
 	host := *boxHost
 	wsHandler.playingNow = func(context.Context) bool { return boxIsPlaying(host) }
+	wsHandler.sourceAndPlaying = func(context.Context) (string, bool, bool) { return boxSourceAndPlaying(host) }
+	// A press that fell back to Bluetooth/AUX counts as failed only when the
+	// station was neither resolved nor fetched after it (#1170).
+	wsHandler.stationActivity = func() time.Time {
+		fetched, _ := streamProxySrv.LastActivity()
+		if resolved := webuiSrv.LastStationResolve(); resolved.After(fetched) {
+			return resolved
+		}
+		return fetched
+	}
 	keyTrace.SetPlayFailureHandler(wsHandler.OnPlayFailure)
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it

@@ -142,6 +142,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// diagnostic bundle pins down what the box actually reports when
 				// the app cannot tell it is playing.
 				c.logger.Info("box ws: source changed", "from", prev, "to", src)
+				// Every transition, for handlers that follow what a press did
+				// to the source (the agent's first-press rescue). Optional, so
+				// handlers that do not need it (tests) are unaffected. Runs on
+				// the read loop: implementations must not block.
+				if h, ok := c.handler.(interface {
+					OnSourceChanged(ctx context.Context, from, to string)
+				}); ok {
+					h.OnSourceChanged(ctx, prev, src)
+				}
 				if src == "AUX" {
 					c.handler.OnSourceAux(ctx)
 				}
