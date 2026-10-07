@@ -262,6 +262,7 @@ import {
   noticeDismissed,
   activeSlotFromLocation,
   proxiedRadioPlaying,
+  isKeyChrome,
   orionStationPayload,
   nativeSlotStale,
   isLostStrKey,
@@ -7268,11 +7269,7 @@ const VISUAL_HOLD_DELAY = 180;
 // key's header (clear, rename) rather than on the key itself. Those icons sit
 // INSIDE the element that carries the play click and the hold-to-save, so
 // without this a tap on the pencil would also start the station, and holding it
-// would save over the key the user only wanted to rename.
-function isKeyChrome(target) {
-  const cl = target && target.classList;
-  return !!cl && (cl.contains('del') || cl.contains('ren'));
-}
+// would save over the key the user only wanted to rename. Lives in utils.js.
 
 function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));

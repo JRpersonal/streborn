@@ -478,6 +478,15 @@ function proxiedRadioURL(u) {
   return /\/stream\/\d+(?:[/?#]|$)/.test(u) || /\/stream\/raw(?:[/?#]|$)/.test(u);
 }
 
+// isKeyChrome reports whether an event landed on one of the small icons in a
+// preset key's header (clear, rename) rather than on the key itself. The icons
+// are inline SVGs, so the event target is usually the <svg> or a <path> inside
+// the button, not the button: ask for the nearest ancestor, or a click on the
+// tag glyph played the key instead of opening rename (#1190).
+export function isKeyChrome(target) {
+  return !!(target && typeof target.closest === 'function' && target.closest('.ren, .del'));
+}
+
 // activeSlotFromLocation extracts the slot number from a stream proxy
 // URL like http://127.0.0.1:8888/stream/3. Since build 2335 the
 // speaker's content items always run through the proxy, so the older
