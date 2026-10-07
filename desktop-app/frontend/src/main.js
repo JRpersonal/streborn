@@ -120,6 +120,7 @@ import {
   SaveSpotifyPreset,
   SaveLibraryPreset,
   SaveNativePreset,
+  SaveQueuePreset,
   RecentPlayed,
   SaveDiagnosticBundle,
   GetLogFilePath,
@@ -258,6 +259,7 @@ import {
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
+  queueSaveFallsThrough,
   dismissNotice,
   noticeDismissed,
   activeSlotFromLocation,
@@ -7436,7 +7438,28 @@ async function saveCurrentToSlot(slot) {
   // A fresh app play is authoritative regardless of what the box reports right
   // now (native-switch lag / wake-resume race, #836). savePresetCase decides;
   // the 'app-play' branch below saves state.lastAppPlay with its real logo chain.
-  const saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS);
+  let saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, state.queue);
+
+  // Case folder: a music-library folder plays as the speaker's queue. The
+  // speaker only reports the current track, so the agent builds the FOLDER
+  // preset from its live queue, the same one the Library star button stores
+  // (#1030). When the agent says no folder plays after all (the queue ended a
+  // moment ago), or it is too old to know the call, the save falls through to
+  // the paths below as if no queue were known.
+  if (saveCase === 'queue') {
+    try {
+      const fname = await SaveQueuePreset(state.currentBox.host, state.currentBox.port, slot);
+      showToast(t('library.folderPresetSaved', { n: slot, name: fname || state.nowName || '' }));
+      await loadPresets();
+      return;
+    } catch (err) {
+      if (!queueSaveFallsThrough(err)) {
+        showPresetSaveError(err, slot);
+        return;
+      }
+      saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null);
+    }
+  }
 
   // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
   // Spotify preset (type=spotify with the playlist URI), not a radio link to

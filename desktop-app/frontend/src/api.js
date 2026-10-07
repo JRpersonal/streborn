@@ -250,6 +250,14 @@ export function SaveNativePreset(host, port, slot, name) {
   return callOptionalBinding('SaveNativePreset', [host, port, slot, name]);
 }
 
+// SaveQueuePreset stores the music-library folder the speaker plays as a queue
+// on a key; the speaker agent builds the folder preset from its live queue and
+// the promise resolves with the folder's name (#1030). Optional binding, per
+// the note above.
+export function SaveQueuePreset(host, port, slot) {
+  return callOptionalBinding('SaveQueuePreset', [host, port, slot]);
+}
+
 // PushFavorites stores the starred stations on one speaker, so the phone page
 // shows the same list. Optional binding, per the note above.
 export function PushFavorites(host, port, favoritesJSON) {

@@ -610,6 +610,9 @@ async function libraryPlayFolder() {
       || (srv && (srv.friendlyName || srv.address))
       || t('controls.playFolder'),
     art: items[0].art || '',
+    // The media server, so holding a key while this folder plays saves it with
+    // the same "from <server>" line the star button gives it (#1030).
+    source: (srv && (srv.friendlyName || srv.address)) || '',
   };
   const payload = {
     items,

@@ -44,7 +44,7 @@ func TestHoldingASpotifyKeyDoesNotTurnItIntoARadioPreset(t *testing.T) {
 		Location: nativeStationLocation(t, want.Name, "http://127.0.0.1:8888/spotify/stream-4.ogg"),
 	}
 
-	got, changed, err := heldPresetCandidate(store, item)
+	got, changed, err := heldPresetCandidate(store, heldLive{}, item)
 	if err != nil {
 		t.Fatalf("holding the key errored: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestHoldingAKeyRefusesAnotherKeysSpotifyPreset(t *testing.T) {
 		Location: nativeStationLocation(t, src.Name, "http://127.0.0.1:8888/spotify/stream-2.ogg"),
 	}
 
-	got, changed, err := heldPresetCandidate(store, item)
+	got, changed, err := heldPresetCandidate(store, heldLive{}, item)
 	if err == nil {
 		t.Fatalf("holding a key over another key's playlist was accepted: %+v changed=%v", got, changed)
 	}

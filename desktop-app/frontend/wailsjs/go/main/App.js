@@ -518,6 +518,10 @@ export function SaveNativePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveNativePreset'](arg1, arg2, arg3, arg4);
 }
 
+export function SaveQueuePreset(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveQueuePreset'](arg1, arg2, arg3);
+}
+
 export function SaveSpotifyPreset(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SaveSpotifyPreset'](arg1, arg2, arg3, arg4, arg5, arg6);
 }

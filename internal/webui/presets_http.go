@@ -318,20 +318,9 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			if n := len(p.Items); n > presets.MaxQueueItems {
 				s.logger.Info("queue preset capped to fit NAND", "slot", slot, "requested", n, "kept", presets.MaxQueueItems)
 			}
-			if err := s.presets.SetSlot(p); err != nil {
+			if err := s.storeQueuePreset(r.Context(), p); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
-			}
-			// Register the slot on the box so the hardware button is mapped. The
-			// physical press is intercepted by RecallSlot (which starts the queue),
-			// but the box still needs an entry for the key to fire at all, so point
-			// it at this slot's stream proxy URL like every other preset.
-			if s.boxHost != "" {
-				boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-				if err := s.writeBoxPreset(boxCtx, slot, p.Name, boxPresetURL(slot, false), p.Art, false); err != nil {
-					s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
-				}
-				cancel()
 			}
 			writeJSON(w, http.StatusOK, p)
 			return

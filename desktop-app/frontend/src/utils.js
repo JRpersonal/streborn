@@ -143,12 +143,15 @@ export function sleep(ms) {
 //   'spotify'   playing via the Spotify engine — save a real Spotify preset.
 //   'app-play'  the app itself started a station within freshMs — trust the
 //               app's own record of WHICH station that was.
+//   'queue'     a music-library folder plays as the speaker's queue — save the
+//               whole folder, the preset the Library star button stores (#1030).
 //   'copy-slot' a proxy slot is playing (hardware key / other soft slot) with
 //               no fresh app record — copy that source preset one to one.
 //   'direct'    a non-proxy stream with no fresh app record — save the
 //               box-reported now-playing.
 // sourceSlot is activeSlotFromLocation(nowLocation), passed in so the caller
-// computes it once; null means "not a proxy location".
+// computes it once; null means "not a proxy location". queue is the agent's
+// GET /api/queue snapshot (state.queue), null when unknown.
 //
 // A fresh app play wins outright, for EVERY location shape. The app knows
 // exactly which station the user just picked, and the box's now-playing cannot
@@ -161,12 +164,29 @@ export function sleep(ms) {
 // after another (#836). The trade-off Jens chose: if you app-play a station and
 // manually switch to a different one within freshMs before hold-saving, the
 // save takes the app's station, not the manual one.
-export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs) {
+//
+// An active queue comes after a fresh app play: a folder play clears the app
+// record, so a fresh one means a station was started after the folder. It comes
+// before 'copy-slot' and 'direct', because while a folder plays the speaker
+// reports only the current TRACK, and saving that lost the folder and its
+// "from <server>" line (#1030).
+export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs, queue) {
   if (/\/spotify\/stream|\/playback\/container/.test(nowLocation || '')) return 'spotify';
   const fresh = !!(lastAppPlay && lastAppPlay.url && nowMs - lastAppPlay.at < freshMs);
   if (fresh) return 'app-play';
+  if (queue && queue.active && Array.isArray(queue.items) && queue.items.length > 0) return 'queue';
   if (sourceSlot !== null && sourceSlot !== undefined) return 'copy-slot';
   return 'direct';
+}
+
+// queueSaveFallsThrough reports whether a failed folder save (SaveQueuePreset)
+// should fall back to the other save paths instead of reporting an error: the
+// agent found no folder playing after all (409 "no-queue", the queue ended a
+// moment ago), the agent is too old to know the call (404), or this app build
+// has no such binding.
+export function queueSaveFallsThrough(err) {
+  if (err && err.code === 'STR_MISSING_BINDING') return true;
+  return /no-queue|status 404|not available in this build/i.test(String(err || ''));
 }
 
 // formatRemaining turns a remaining-ms value into a "m:ss" string for

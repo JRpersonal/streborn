@@ -749,6 +749,10 @@ type Server struct {
 	// Guarded by queueMu.
 	queueRecallSlot int
 	queueRecallAt   time.Time
+	// queueFolder is the folder identity (card key, name, media server) of the
+	// queue started last, so a key saved while it plays stores the same folder
+	// preset the Library star button would (#1030). Guarded by queueMu.
+	queueFolder recentCardCtx
 	// queueEp is the play-queue episode running right now and queueEpPast the
 	// last few that ended, with the reason each one ended (#960). queueLogMu
 	// guards both; it is taken alone, never while boxCmdMu or queueMu is held,
@@ -798,8 +802,10 @@ type BoxPreset struct {
 // recentCardCtx is the current source card for a source, retained so the live
 // track callbacks (radio ICY title, Spotify track change) can hang their tracks
 // under it (#135). homepage is the station website, carried so each ICY-title
-// track entry keeps the "website" link target.
-type recentCardCtx struct{ key, name, art, url, account, homepage, mime string }
+// track entry keeps the "website" link target. source is the media server a
+// library folder came from (its friendly name), carried for a queue so a key
+// saved from the live queue says "from <server>" like a star-button save.
+type recentCardCtx struct{ key, name, art, url, account, homepage, mime, source string }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
@@ -1327,6 +1333,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/queue/shuffle", s.handleQueueShuffle)
 	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
 	mux.HandleFunc("/api/queue/mode", s.handleQueueMode)
+	mux.HandleFunc("/api/queue/save-slot", s.handleQueueSaveSlot)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/recent", s.handleRecent)
