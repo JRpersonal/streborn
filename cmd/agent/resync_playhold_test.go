@@ -90,10 +90,72 @@ func TestForcedWriteHoldCoversAPairingSession(t *testing.T) {
 		t.Errorf("reason = %q, want the source, so a bundle says what was protected", got)
 	}
 
-	// Bounded like every other hold: the keys still have to be registered.
+	// Not bounded since #1035: STR never ends a Bluetooth session, so a
+	// ceiling would only mean interrupting it five minutes later.
 	held := now.Add(-forcedPlayHoldCeiling)
-	if hold, ceiling := forcedWriteHold("BLUETOOTH", false, true, true, held, now); hold || !ceiling {
-		t.Fatalf("the ceiling must release a source hold too: hold=%v ceiling=%v", hold, ceiling)
+	if hold, ceiling := forcedWriteHold("BLUETOOTH", false, true, true, held, now); !hold || ceiling {
+		t.Fatalf("a source the listener chose must stay held past the ceiling: hold=%v ceiling=%v", hold, ceiling)
+	}
+}
+
+// #1035: a bundle's write ledger recorded two complete six-slot sweeps while
+// the speaker played AirPlay. The ceiling released the hold after five minutes,
+// and the first pass after an agent start was never held at all. Each write
+// makes the firmware touch its source and drops the listener out of AirPlay.
+func TestForcedWriteHoldKeepsHoldingOnTheListenersSource(t *testing.T) {
+	now := time.Now()
+	longAgo := now.Add(-10 * forcedPlayHoldCeiling)
+	for _, src := range []string{"AIRPLAY", "BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT", "STORED_MUSIC"} {
+		for _, playing := range []bool{true, false} {
+			if hold, ceiling := forcedWriteHold(src, playing, true, true, longAgo, now); !hold || ceiling {
+				t.Errorf("src=%q playing=%v: the ceiling released the hold and the write would interrupt it: hold=%v ceiling=%v",
+					src, playing, hold, ceiling)
+			}
+			if hold, ceiling := forcedWriteHold(src, playing, true, false, time.Time{}, now); !hold || ceiling {
+				t.Errorf("src=%q playing=%v: the first pass after an agent start wrote into the session: hold=%v ceiling=%v",
+					src, playing, hold, ceiling)
+			}
+		}
+	}
+}
+
+// The moment the speaker leaves the listener's source the held pass must run,
+// first pass included: that is what gets the keys registered in the end.
+func TestTheHeldPassRunsOnceTheListenersSourceEnds(t *testing.T) {
+	now := time.Now()
+	for _, src := range []string{"STANDBY", "UPNP", "INVALID_SOURCE", "LOCAL_INTERNET_RADIO", ""} {
+		for _, first := range []bool{true, false} {
+			if hold, ceiling := forcedWriteHold(src, false, src != "", !first, time.Time{}, now); hold || ceiling {
+				t.Errorf("src=%q firstPass=%v: an idle box must be written: hold=%v ceiling=%v", src, first, hold, ceiling)
+			}
+		}
+	}
+}
+
+// STR's own playback keeps both old rules: the first registration is never
+// held (#4), and a later hold ends at the ceiling.
+func TestSTRsOwnPlaybackKeepsTheCeiling(t *testing.T) {
+	now := time.Now()
+	for _, src := range []string{"UPNP", "LOCAL_INTERNET_RADIO"} {
+		if hold, ceiling := forcedWriteHold(src, true, true, false, time.Time{}, now); hold || ceiling {
+			t.Errorf("src=%q: the first registration must not be held for STR's own stream: hold=%v ceiling=%v", src, hold, ceiling)
+		}
+		if hold, ceiling := forcedWriteHold(src, true, true, true, now.Add(-forcedPlayHoldCeiling), now); hold || !ceiling {
+			t.Errorf("src=%q: STR's own stream must release at the ceiling: hold=%v ceiling=%v", src, hold, ceiling)
+		}
+	}
+}
+
+func TestUserChosenSource(t *testing.T) {
+	for _, src := range []string{"AIRPLAY", "BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT", "STORED_MUSIC", "SOMETHING_NEW"} {
+		if !userChosenSource(src) {
+			t.Errorf("%q must count as the listener's choice (allowlist: unknown names are)", src)
+		}
+	}
+	for _, src := range []string{"", "STANDBY", "SETUP", "UPNP", "INVALID_SOURCE", "LOCAL_INTERNET_RADIO"} {
+		if userChosenSource(src) {
+			t.Errorf("%q is STR's own or no session, it must keep the bounded hold", src)
+		}
 	}
 }
 
