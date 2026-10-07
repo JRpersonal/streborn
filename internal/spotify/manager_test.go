@@ -313,6 +313,10 @@ func TestPlayDefaultResumesWithoutShuffle(t *testing.T) {
 // TestPlayShuffleStartsRandom verifies a shuffle preset still gets the random
 // start: shuffle ON + one /player/next, and it ignores any resume point.
 func TestPlayShuffleStartsRandom(t *testing.T) {
+	// This mock never changes its track, so the wait for the shuffle pick runs
+	// to its cap; keep that short.
+	defer func(d time.Duration) { shuffleSkipSettle = d }(shuffleSkipSettle)
+	shuffleSkipSettle = 200 * time.Millisecond
 	m, calls, cleanup := mockLibrespot(t)
 	defer cleanup()
 	const ctxURI = "spotify:playlist:abc"
@@ -350,6 +354,48 @@ func TestPlayShuffleStartsRandom(t *testing.T) {
 	}
 	if !sawNext {
 		t.Error("shuffle recall must skip once (/player/next) to land on a random track")
+	}
+}
+
+// TestPlayShuffleResumesOnlyAfterThePickLoaded is the 2026-10-07 fix: the engine
+// accepts /player/next at once but loads the pick in the background, and a
+// resume sent in that gap played the playlist's first track for a few seconds
+// before the pick replaced it. Resume must wait until /status shows the pick.
+func TestPlayShuffleResumesOnlyAfterThePickLoaded(t *testing.T) {
+	var mu sync.Mutex
+	var nextAt, resumeAt time.Time
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/status":
+			track := "spotify:track:first"
+			if !nextAt.IsZero() && time.Since(nextAt) >= 300*time.Millisecond {
+				track = "spotify:track:pick"
+			}
+			_, _ = w.Write([]byte(`{"username":"u","track":{"uri":"` + track + `","name":"T"}}`))
+			return
+		case "/player/next":
+			nextAt = time.Now()
+		case "/player/resume":
+			resumeAt = time.Now()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.apiAddr = strings.TrimPrefix(ts.URL, "http://")
+
+	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{Shuffle: true}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if nextAt.IsZero() || resumeAt.IsZero() {
+		t.Fatalf("expected both /player/next and /player/resume, next=%v resume=%v", nextAt, resumeAt)
+	}
+	if gap := resumeAt.Sub(nextAt); gap < 300*time.Millisecond {
+		t.Errorf("resume came %v after next, before the pick was loaded (300ms): the first track would play", gap)
 	}
 }
 
