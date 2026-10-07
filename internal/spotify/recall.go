@@ -213,8 +213,18 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		// shuffle_context only randomises the UPCOMING queue (the current track
 		// stays the context's first), so one skip lands on a random track. Still
 		// paused, so nothing reaches the speaker yet.
+		first := m.currentTrackURI(ctx)
 		if err := m.apiPost(ctx, "/player/next", ""); err != nil {
 			m.logger.Debug("spotify: skip-to-random after shuffle failed", "err", err)
+		} else if first != "" && !m.waitTrackChanged(ctx, first, shuffleSkipSettle) {
+			// /player/next returns as soon as the engine has QUEUED the skip; the
+			// pick itself loads in the background (about 3 s on the Portable). A
+			// resume sent before that started the playlist's first track, and the
+			// pick replaced it seconds later: every shuffle preset opened with the
+			// same few seconds of the same song (live Portable 2026-10-07). Waiting
+			// for the engine to report the pick removes that; past the cap the
+			// recall plays anyway rather than stay silent.
+			m.logger.Warn("spotify: shuffle pick not loaded within the wait, resuming anyway", "uri", uri, "wait", shuffleSkipSettle)
 		}
 	}
 	// Resume: audio now flows, starting on the chosen track from its beginning.
@@ -311,6 +321,45 @@ func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) bool
 		case <-ctx.Done():
 			return false
 		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return false
+}
+
+// shuffleSkipSettle caps how long a shuffle recall waits for the engine to load
+// its random pick before resuming. A var so tests can shorten it.
+var shuffleSkipSettle = 5 * time.Second
+
+// currentTrackURI is the uri of the track go-librespot has loaded, or "" when
+// none is loaded or /status cannot be read.
+func (m *Manager) currentTrackURI(ctx context.Context) string {
+	data, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		Track *struct {
+			URI string `json:"uri"`
+		} `json:"track"`
+	}
+	if json.Unmarshal(data, &st) != nil || st.Track == nil {
+		return ""
+	}
+	return st.Track.URI
+}
+
+// waitTrackChanged polls /status until the loaded track is no longer from (a
+// skip has landed) or max elapses. Reports whether the change was seen.
+func (m *Manager) waitTrackChanged(ctx context.Context, from string, max time.Duration) bool {
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		if cur := m.currentTrackURI(ctx); cur != "" && cur != from {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(150 * time.Millisecond):
 		}
 	}
 	return false
