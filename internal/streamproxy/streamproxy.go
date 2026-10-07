@@ -856,7 +856,37 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	// A forwarded offset Range gets a 206 from any media server that does
+	// ranges, which is the whole point of forwarding it (#844). Rejecting every
+	// non-200 here turned that answer into a 502, so a library track saved on a
+	// preset never played: each retry asked for the same offset, got the same
+	// 206, and the box gave up with AUDIO_ERROR_BAD_URL. A 206 is accepted only
+	// when this fetch actually sent a Range; unasked, it is still a broken
+	// upstream. Its Content-Range, Content-Length and Accept-Ranges travel to the
+	// box with the rest of the headers below, together with the 206 itself.
+	rangeSent := req.Header.Get("Range") != ""
+	partial := rangeSent && resp.StatusCode == http.StatusPartialContent
+	if rangeSent && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		// The offset lies at or past the end of the file: there is nothing left
+		// to send. Not a station failure and nothing a retry can change, so tell
+		// the box exactly that and end the way a finished file ends.
+		s.logger.Info("stream proxy: the requested offset is past the end of the file",
+			"url", url, "range", req.Header.Get("Range"), "contentRange", resp.Header.Get("Content-Range"))
+		if sendHeaders {
+			if cr := resp.Header.Get("Content-Range"); cr != "" {
+				w.Header().Set("Content-Range", cr)
+			}
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		}
+		return false, errUpstreamFileComplete
+	}
+	if partial {
+		s.logger.Info("stream proxy: upstream answered the offset range with partial content",
+			"url", url, "range", req.Header.Get("Range"), "contentRange", resp.Header.Get("Content-Range"),
+			"contentLength", resp.ContentLength)
+	}
+
+	if resp.StatusCode != http.StatusOK && !partial {
 		statusErr := &upstreamStatusError{Code: resp.StatusCode, Status: resp.Status}
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy upstream status", "status", resp.StatusCode, "url", url)
@@ -984,6 +1014,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			for _, v := range vv {
 				w.Header().Add(k, v)
 			}
+		}
+		if partial && w.Header().Get("Accept-Ranges") == "" {
+			w.Header().Set("Accept-Ranges", "bytes")
 		}
 		w.WriteHeader(resp.StatusCode)
 	}
