@@ -262,6 +262,9 @@ import {
   noticeDismissed,
   activeSlotFromLocation,
   proxiedRadioPlaying,
+  queueSlotCard,
+  queueSlotActive,
+  isKeyChrome,
   orionStationPayload,
   nativeSlotStale,
   isLostStrKey,
@@ -6936,7 +6939,11 @@ function renderPresets() {
       (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot) ||
       // Pandora / iHeartRadio: the speaker reports the service's own station
       // reference, which is exactly what the key stores.
-      nativeServiceActive(p, state.nowLocation)
+      nativeServiceActive(p, state.nowLocation) ||
+      // A music-library album or folder: the key stores no stream URL and the
+      // box plays one track URL after another, so only the agent's queue card
+      // names the key (#1190).
+      queueSlotActive(p, state.queue)
     );
     // While a native descriptor is playing, drop a slot whose stored station no
     // longer matches the live audio: a preset list re-synced from the box remote
@@ -7268,11 +7275,7 @@ const VISUAL_HOLD_DELAY = 180;
 // key's header (clear, rename) rather than on the key itself. Those icons sit
 // INSIDE the element that carries the play click and the hold-to-save, so
 // without this a tap on the pencil would also start the station, and holding it
-// would save over the key the user only wanted to rename.
-function isKeyChrome(target) {
-  const cl = target && target.classList;
-  return !!cl && (cl.contains('del') || cl.contains('ren'));
-}
+// would save over the key the user only wanted to rename. Lives in utils.js.
 
 function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));
@@ -7997,7 +8000,12 @@ async function refreshQueue() {
   try {
     const q = await GetQueue(box.host, box.port);
     if (state.currentBox !== box) return; // box switched mid-fetch
+    const before = queueSlotCard(state.queue);
     state.queue = q || null;
+    // A library-album key lights up from the queue card, which arrives here and
+    // not with the status poll: repaint the keys when it changes, or the
+    // highlight waited for an unrelated status change (#1190).
+    if (queueSlotCard(state.queue) !== before && state.presets.length > 0) renderPresets();
   } catch {
     // leave the last known queue state on screen
   }
@@ -8621,8 +8629,10 @@ async function refreshStatus() {
       // Keep the live radio track flowing into the now-playing bar for playback
       // STR did not itself start (hardware key, app restart). Self-guarded, so
       // calling it on every poll is safe; it no-ops while already polling.
+      // Any proxied radio stream, not only a preset slot: a station started
+      // from Find stations plays as /stream/raw and has no slot (#1190).
       if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
-          activeSlotFromLocation(newLoc) !== null) {
+          proxiedRadioPlaying(newLoc)) {
         scheduleLiveTitle();
       }
     }
@@ -9384,7 +9394,13 @@ async function playStation(s) {
     state.nowName = s.name; // keep the user's chosen station name across retries
     state.nowIcon = chain;
     state.nowBitrate = cur.bitrate || 0;
+    // Clear the previous station's track and start the title poll here: a Find
+    // stations play has no preset slot, so nothing else started the loop unless
+    // one from an earlier preset play happened to be alive (#1190). The loop is
+    // self-guarded, so the retry passes calling it again are no-ops.
+    state.nowTitle = '';
     scheduleLiveBitrate();
+    scheduleLiveTitle();
     state.nowUUID = cur.stationuuid || '';
     renderPresets();
 

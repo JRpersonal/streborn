@@ -65,6 +65,21 @@ describe('both places that ask', () => {
     expect(at, 'the status line must use it as well').toBeGreaterThan(-1);
   });
 
+  // #1190: the poll itself asked the right question, but nothing STARTED it for
+  // a Find stations play. playStation never called it, and the status-poll
+  // fallback still gated on a preset slot, so the title only showed when a loop
+  // from an earlier preset play happened to be alive.
+  it('is started by a Find stations play and by the status poll for any proxied stream', () => {
+    const play = main.slice(main.indexOf('async function playStation(s)'), main.indexOf('await PlayURL(box.host'));
+    expect(play).toContain("state.nowTitle = '';");
+    expect(play).toContain('scheduleLiveTitle();');
+
+    const at = main.indexOf('scheduleLiveTitle();', main.indexOf('Keep the live radio track flowing'));
+    const gate = main.slice(at - 200, at);
+    expect(gate).toContain('proxiedRadioPlaying(newLoc)');
+    expect(gate).not.toContain('activeSlotFromLocation');
+  });
+
   // activeSlotFromLocation is still the right tool for lighting up a preset
   // tile; this change was not about deleting it.
   it('leaves the preset highlighting on the slot lookup', () => {

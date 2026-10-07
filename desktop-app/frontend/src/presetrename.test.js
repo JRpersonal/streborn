@@ -48,12 +48,8 @@ describe('a preset key can be renamed', () => {
   it('keeps the icons in the header from pressing the key underneath', () => {
     // The pencil and the X sit INSIDE the element that carries the play click
     // and the hold-to-save, so a tap on either must not reach it.
-    const fn = mainJS.slice(
-      mainJS.indexOf('function isKeyChrome(target)'),
-      mainJS.indexOf('function attachPresetHandlers'),
-    );
-    expect(fn).toContain("cl.contains('del')");
-    expect(fn).toContain("cl.contains('ren')");
+    // isKeyChrome itself lives in utils.js and is covered in keychrome.test.js.
+    expect(mainJS).toMatch(/^\s+isKeyChrome,$/m);
     const handlers = mainJS.slice(
       mainJS.indexOf('function attachPresetHandlers'),
       mainJS.indexOf('const APP_PLAY_FRESH_MS'),
