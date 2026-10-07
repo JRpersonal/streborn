@@ -184,3 +184,22 @@ func TestRepeatAllLeavesALoneTrackAlone(t *testing.T) {
 		t.Fatal("repeat all looped a single click; it is the folder mode and must not")
 	}
 }
+
+// #1031: a single library track recalled from a preset key played to its end
+// and then showed as playing until the auto-off timer. The preset recall path
+// never armed the end watch the plain play has had since #844. A preset stores
+// no length, so the watch has to take the one the speaker reports.
+func TestALibraryTrackFromAPresetKeyIsStoppedAtItsEnd(t *testing.T) {
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	seedLibraryTrackPreset(t, s, 3)
+
+	np.set("PLAY_STATE", 2*time.Second, 5*time.Second)
+	if !s.RecallSlot(context.Background(), 3) {
+		t.Fatal("RecallSlot did not claim the library track key")
+	}
+	time.Sleep(6 * time.Second)
+	np.set("PLAY_STATE", 5*time.Second, 5*time.Second) // frozen at the end
+
+	waitForTrackEnd(t, "the box to be stopped at the end of the preset's track", func() bool { return rec.has("Stop") })
+}

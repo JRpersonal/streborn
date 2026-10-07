@@ -55,6 +55,17 @@ func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Pres
 	go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
 	}, nil)
+	// A finite file has no end event from the firmware: it freezes in
+	// PLAY_STATE at the end (#380), so a track recalled from a key, from the
+	// app or from the speaker's own button, kept showing as playing until the
+	// auto-off timer (#1031). Give it the same end watch the plain play arms
+	// (#844). A preset stores no length, so dur stays 0 and the watch takes
+	// the length the speaker reports, or falls back to the frozen position.
+	// The verify's re-push above does not bump the recall generation, so it
+	// does not call the watch off.
+	s.armSingleTrackEnd(singleTrack{
+		boxURL: directURL, title: name, art: art, mime: mime,
+	}, gen)
 	return nil
 }
 
