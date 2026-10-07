@@ -264,6 +264,7 @@ import {
   proxiedRadioPlaying,
   queueSlotCard,
   queueSlotActive,
+  queueTrackMeta,
   isKeyChrome,
   orionStationPayload,
   nativeSlotStale,
@@ -8035,9 +8036,11 @@ function renderQueueControls() {
   if (pos) {
     const items = q.items || [];
     const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
-    pos.textContent = (n > 0 && items.length > 0)
-      ? t('queue.trackOf', { n, total: items.length })
-      : '';
+    // The running song's artist and album, as its Library row named them
+    // (#1033); the title itself is already on the now-playing line.
+    const meta = queueTrackMeta(q);
+    const of = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
+    pos.textContent = [of, meta].filter(Boolean).join(' · ');
   }
 }
 

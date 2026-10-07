@@ -2211,6 +2211,25 @@ async function currentSong() {
   } catch (e) { return ''; }
 }
 
+// currentQueue returns the agent's play queue while one is running, or null.
+// A folder plays one media-server URL after another, so neither the speaker's
+// answer nor the stream proxy knows the song's artist and album; the queue
+// does (#1033). Best-effort like currentSong, and only asked on the status
+// cadence that already runs.
+async function currentQueue() {
+  var q = await api('/api/queue');
+  return (q && typeof q === 'object' && q.active) ? q : null;
+}
+
+// queueSongMeta is "Artist · Album" of the song the queue is on, the same
+// shape as the folder row it was started from, or ''.
+function queueSongMeta(q) {
+  var items = (q && Array.isArray(q.items)) ? q.items : [];
+  var it = (typeof q.pos === 'number' && q.pos >= 0) ? items[q.pos] : null;
+  if (!it) return '';
+  return [it.artist, it.album].filter(Boolean).join(' · ');
+}
+
 // engineSong returns "Artist · Title" of the song STR's Spotify engine is
 // playing, or ''. Same shape as the line the speaker's own Spotify receiver
 // gets, so the two Spotify paths read alike. Best-effort like currentSong.
@@ -2370,7 +2389,12 @@ async function refreshStatus() {
   // (#1077). The engine knows the song; ask it, and only while it is the one
   // playing, the same way the app does.
   if (!song && playing && /\/spotify\/stream/.test(nowLoc)) song = await engineSong();
-  if (!song) song = (playing && proxySrc) ? await currentSong() : '';
+  // A folder played as a queue: the title is the big line already, the artist
+  // and album go here (#1033). The stream proxy is not asked then, because it
+  // still holds the title of whatever radio stream it carried last (#274).
+  const queue = (upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc)) ? await currentQueue() : null;
+  if (!song && playing && queue) song = queueSongMeta(queue);
+  if (!song && !queue) song = (playing && proxySrc) ? await currentSong() : '';
   // No raw firmware enum on the screen, ever. The old fallback stripped
   // "_STATE" and lower-cased the rest, which turned INVALID_PLAY_STATUS into
   // "invalid_play_status" under the station name (#961). Anything the map does
@@ -4174,7 +4198,9 @@ async function playBrowseFolder(tracks, btn) {
   press(btn);
   var items = (tracks || []).map(function(it){
     return { url: it.url, title: it.title || '', art: it.art || '',
-             mime: it.mime || '', duration_sec: it.durationSec || 0 };
+             mime: it.mime || '', duration_sec: it.durationSec || 0,
+             /* Named next to the running song, as on this row (#1033). */
+             artist: it.artist || '', album: it.album || '' };
   }).filter(function(x){ return x.url; });
   if (!items.length) return;
   /* The card makes the folder show up in Recently played as ONE entry with

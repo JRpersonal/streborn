@@ -487,6 +487,17 @@ export function queueSlotCard(queue) {
   return /^queue:slot:\d+$/.test(queue.card) ? queue.card : '';
 }
 
+// queueTrackMeta returns "artist — album" of the song the agent's queue is on,
+// in the same shape the Library row it came from shows it, or '' when the queue
+// is not running or the media server named neither. A folder played as a queue
+// used to show the bare title only (#1033).
+export function queueTrackMeta(queue) {
+  if (!queue || !queue.active || !Array.isArray(queue.items)) return '';
+  const it = (typeof queue.pos === 'number' && queue.pos >= 0) ? queue.items[queue.pos] : null;
+  if (!it) return '';
+  return [it.artist, it.album].filter(Boolean).join(' — ');
+}
+
 // queueSlotActive reports whether preset p is the library album or folder the
 // box is playing right now. Such a key stores no stream URL (each track is its
 // own URL on the media server), so the location-based matches never fire and

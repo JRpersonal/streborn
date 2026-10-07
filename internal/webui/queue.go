@@ -18,6 +18,7 @@ type queueItem struct {
 	Mime     string
 	Duration time.Duration // 0 when the DLNA server did not report one
 	Artist   string        // "" when the media server named none
+	Album    string        // "" when the media server named none
 }
 
 // repeatMode controls what the queue does at the end of a track / the list.
@@ -270,9 +271,15 @@ type queueSnapshot struct {
 	Card string `json:"card,omitempty"`
 }
 
+// queueSnapItem is one track of the snapshot. Artist and Album are what the
+// media server named for the track, so a client can label the running song the
+// way the Library row it came from was labelled (#1033). Both are omitted when
+// unknown (a queue started by an older app, or a server that names none).
 type queueSnapItem struct {
-	Title string `json:"title"`
-	Art   string `json:"art,omitempty"`
+	Title  string `json:"title"`
+	Art    string `json:"art,omitempty"`
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 }
 
 func (q *playQueue) snapshot() queueSnapshot {
@@ -286,7 +293,7 @@ func (q *playQueue) snapshot() queueSnapshot {
 	}
 	snap.Items = make([]queueSnapItem, len(q.items))
 	for i, it := range q.items {
-		snap.Items[i] = queueSnapItem{Title: it.Title, Art: it.Art}
+		snap.Items[i] = queueSnapItem{Title: it.Title, Art: it.Art, Artist: it.Artist, Album: it.Album}
 	}
 	if q.active && q.pos >= 0 && q.pos < len(q.order) {
 		snap.Pos = q.order[q.pos]

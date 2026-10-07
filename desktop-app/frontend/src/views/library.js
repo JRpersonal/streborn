@@ -591,6 +591,8 @@ async function libraryPlayFolder() {
       duration_sec: it.durationSec || 0,
       // Filed as "Artist - Title" in Recently played, like a Spotify song (#1077).
       artist: it.artist || '',
+      // Shown with the artist next to the running song, as on this row (#1033).
+      album: it.album || '',
     }));
   if (items.length === 0) {
     showError(t('library.errorNoURL'));
@@ -652,6 +654,8 @@ function librarySaveFolderAsPreset() {
       duration_sec: it.durationSec || 0,
       // Filed as "Artist - Title" in Recently played, like a Spotify song (#1077).
       artist: it.artist || '',
+      // Shown with the artist next to the running song, as on this row (#1033).
+      album: it.album || '',
     }));
   if (items.length === 0) {
     showError(t('library.errorNoURL'));
