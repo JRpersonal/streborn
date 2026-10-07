@@ -4080,7 +4080,9 @@ async function playRecent(idx, btn) {
      the indicator amber (#978). This page could never replay a folder at all
      before; now it asks the speaker to do it. */
   var ok;
-  if ((e.cardKey || '').indexOf('queue:') === 0) {
+  /* A folder card this page wrote before it used the app's key scheme,
+     "folder:<server id>/<container>", is a folder too; the agent maps it. */
+  if ((e.cardKey || '').indexOf('queue:') === 0 || /^folder:[^:\/]+\//.test(e.cardKey || '')) {
     var r = await apiDetail('/api/queue/replay-card', 'POST', {
       key: e.cardKey, name: e.cardName || '', art: e.cardArt || ''
     });
@@ -4219,6 +4221,18 @@ async function browseOpen(start) {
     more.onclick = function(){ browseOpen(seen); };
   }
 }
+/* folderCardKey names a folder the way the desktop Library does,
+   "queue:uuid:<guid>:<container>", which is what the agent replays a folder
+   card by and what the app's Recently played marks as playing. This page wrote
+   "folder:<udn>/<id>", so a folder started here could not be replayed as a
+   whole and lost its "playing" mark in the app. The server list names a server
+   by its registry id, the UDN without "uuid:", so that is put back. */
+function folderCardKey(top, firstURL) {
+  /* No server known: not a folder the agent could browse again. */
+  if (!top || !top.udn) return 'folder:' + (firstURL || '');
+  var udn = /^uuid:/i.test(top.udn) ? top.udn : 'uuid:' + top.udn;
+  return 'queue:' + udn + ':' + (top.id || '');
+}
 async function playBrowseFolder(tracks, btn) {
   press(btn);
   var items = (tracks || []).map(function(it){
@@ -4231,7 +4245,7 @@ async function playBrowseFolder(tracks, btn) {
   /* The card makes the folder show up in Recently played as ONE entry with
      its tracks hung underneath, same as the desktop Library sends it. */
   var top = brStack.length ? brStack[brStack.length-1] : null;
-  var card = { key: 'folder:' + (top ? top.udn + '/' + top.id : items[0].url),
+  var card = { key: folderCardKey(top, items[0].url),
                name: (top && top.title) || (items[0].title || ''),
                art: items[0].art || '' };
   var ok = await api('/api/queue', 'POST', { items: items, start: 0, card: card });

@@ -100,6 +100,31 @@ func (s *Server) splitQueueCardKey(key string) (udn, container string, ok bool) 
 	return name, containerOrRoot(cont), true
 }
 
+// legacyFolderCardPrefix is how the phone page keyed a folder card before it
+// used the desktop's scheme: "folder:<registry id>/<container>" (#1204). Such
+// cards stay in the Recently-played ring, so a replay still understands them.
+const legacyFolderCardPrefix = "folder:"
+
+// canonicalFolderCardKey turns a legacy phone folder card key into the
+// "queue:uuid:<guid>:<container>" key the desktop app writes, and returns any
+// other key unchanged. ok is false only for a legacy key that names no server
+// (the phone fell back to "folder:<first track URL>" then): there is no folder
+// to browse again. The registry id is a bare UDN, so it carries no colon and no
+// slash; anything else after the prefix is not a server id.
+func canonicalFolderCardKey(key string) (string, bool) {
+	key = strings.TrimSpace(key)
+	rest, legacy := strings.CutPrefix(key, legacyFolderCardPrefix)
+	if !legacy {
+		return key, true
+	}
+	udn, container, split := strings.Cut(rest, "/")
+	udn = strings.TrimPrefix(udn, "uuid:")
+	if !split || udn == "" || strings.Contains(udn, ":") {
+		return "", false
+	}
+	return queueCardKeyPrefix + "uuid:" + udn + ":" + container, true
+}
+
 // containerOrRoot: an empty container half means the folder played WAS the
 // server root, which is what the desktop app writes for it.
 func containerOrRoot(c string) string {
@@ -130,7 +155,13 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<16, &req) {
 		return
 	}
-	udn, container, ok := s.splitQueueCardKey(req.Key)
+	// An old phone folder card is replayed under the canonical key, so the queue
+	// it starts carries the same card the app marks as playing.
+	key, ok := canonicalFolderCardKey(req.Key)
+	var udn, container string
+	if ok {
+		udn, container, ok = s.splitQueueCardKey(key)
+	}
 	if !ok {
 		http.Error(w, "not a folder card", http.StatusBadRequest)
 		return
@@ -169,7 +200,7 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 	if art == "" {
 		art = items[0].Art
 	}
-	card := recentCardCtx{key: req.Key, name: name, art: art}
+	card := recentCardCtx{key: key, name: name, art: art}
 	// Inherit the sticky shuffle/repeat the user last chose (playmode.go). A
 	// replay is not the place to reset it, and it is not an explicit choice
 	// either, so nothing is saved back.
