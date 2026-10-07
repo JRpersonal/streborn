@@ -2284,11 +2284,28 @@ function playingSlot(loc, list) {
   return 0;
 }
 
-// markPlaying moves the highlight to the key the speaker is on.
-function markPlaying(loc) {
+// queueSlot names the key a running queue was started from, or 0. A key that
+// holds a music-library album or folder stores no stream URL: the speaker plays
+// one media-server track after another, so its location never names the key.
+// The agent's queue does, with the card "queue:slot:<n>"; same rule as the
+// desktop app's queueSlotActive (#1190, #1029).
+function queueSlot(q, list) {
+  if (!q || !q.active || typeof q.card !== 'string') return 0;
+  var m = q.card.match(/^queue:slot:(\d+)$/);
+  if (!m) return 0;
+  var n = parseInt(m[1], 10);
+  for (var i = 0; i < (list || []).length; i++) {
+    if (list[i] && list[i].slot === n && list[i].type === 'queue') return n;
+  }
+  return 0;
+}
+
+// markPlaying moves the highlight to the key the speaker is on. queue is the
+// agent's running play queue (or null), for a key holding a folder.
+function markPlaying(loc, queue) {
   var grid = document.getElementById('presets');
   if (!grid) return;
-  var n = playingSlot(loc, lastPresetList);
+  var n = playingSlot(loc, lastPresetList) || queueSlot(queue, lastPresetList);
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
       clearPendingStart(); // the speaker got there
@@ -2334,7 +2351,6 @@ async function refreshStatus() {
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
   const nowLoc = (t.match(/location="([^"]*)"/) || [])[1] || '';
-  markPlaying(nowLoc);
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
   const name = m ? decodeEntities(m[1]) : '';
   // Track power state for the header toggle: the box is "on" unless it is in
@@ -2393,6 +2409,8 @@ async function refreshStatus() {
   // and album go here (#1033). The stream proxy is not asked then, because it
   // still holds the title of whatever radio stream it carried last (#274).
   const queue = (upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc)) ? await currentQueue() : null;
+  // The same read lights the key a folder was started from (#1029).
+  markPlaying(nowLoc, queue);
   if (!song && playing && queue) song = queueSongMeta(queue);
   if (!song && !queue) song = (playing && proxySrc) ? await currentSong() : '';
   // No raw firmware enum on the screen, ever. The old fallback stripped
