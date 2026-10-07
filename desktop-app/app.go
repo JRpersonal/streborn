@@ -204,7 +204,7 @@ func (a *App) startup(ctx context.Context) {
 	// hidden PowerShell.
 	go a.ensureWingetShortcut()
 	// Whether Windows Firewall blocks this app (firewall.go), once, off the
-	// startup path: it runs a hidden PowerShell. The UI reads the cached result.
+	// startup path: it walks the whole rule list. The UI reads the cached result.
 	go a.CheckFirewall(false)
 	// The salt behind every pseudonym in an exported bundle. Generated once for
 	// this installation and kept beside the app's own state, never inside a

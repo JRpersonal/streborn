@@ -1,11 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf16"
 )
 
 // Windows Firewall block detection and the one-click unblock.
@@ -67,14 +62,14 @@ type FirewallUnblockResult struct {
 	Status FirewallCheck `json:"status"`
 }
 
-// errFirewallDeclined is returned by runElevatedPowerShell when the user
+// errFirewallDeclined is returned by runElevatedFirewallHelper when the user
 // declines the UAC prompt.
 var errFirewallDeclined = errors.New("the administrator prompt was declined")
 
 // firewallRecheckMin is the shortest gap between two forced re-checks. Every
-// check starts a PowerShell, and the frontend asks again when its indirect
+// check walks the whole firewall rule list, and the frontend asks again when its indirect
 // signals fire (an empty speaker list, an install waiting for a callback);
-// this keeps a burst of those from turning into a burst of subprocesses.
+// this keeps a burst of those from turning into a burst of rule walks.
 const firewallRecheckMin = 60 * time.Second
 
 // firewallRuleGroup groups the allow rules the app writes, so a second unblock
@@ -84,7 +79,7 @@ const firewallRuleGroup = "ST Reborn"
 
 // firewallState is the cached result of the last check. mu is held for the
 // whole check, so a caller arriving while one runs waits for that result
-// instead of starting a second PowerShell.
+// instead of starting a second one.
 type firewallState struct {
 	mu   sync.Mutex
 	last *FirewallCheck
@@ -123,16 +118,10 @@ func (a *App) runFirewallCheck() FirewallCheck {
 	ctx, cancel := context.WithTimeout(a.appCtx(), 30*time.Second)
 	defer cancel()
 	started := time.Now()
-	out, err := runFirewallQuery(ctx, firewallQueryScript)
+	rules, profiles, err := queryFirewall(ctx)
 	if err != nil {
 		c.Error = err.Error()
 		a.logger.Info("firewall: could not read the Windows Firewall rules", "err", err, "took", time.Since(started).Round(time.Millisecond))
-		return c
-	}
-	rules, profiles, err := parseFirewallQuery(out)
-	if err != nil {
-		c.Error = err.Error()
-		a.logger.Info("firewall: unreadable rule list", "err", err)
 		return c
 	}
 	c = evaluateFirewall(rules, profiles, firewallPrograms(), os.LookupEnv)
@@ -165,11 +154,10 @@ func (a *App) AllowThroughFirewall(includePublic bool) FirewallUnblockResult {
 	_ = resFile.Close()
 	defer func() { _ = os.Remove(resPath) }()
 
-	script := firewallUnblockScript(programs, includePublic, resPath)
 	ctx, cancel := context.WithTimeout(a.appCtx(), 3*time.Minute)
 	defer cancel()
 	a.logger.Info("firewall: asking for administrator rights to allow ST Reborn through the Windows Firewall", "includePublic", includePublic)
-	exitCode, runErr := runElevatedPowerShell(ctx, script)
+	exitCode, runErr := runElevatedFirewallHelper(ctx, firewallHelperArgs(resPath, includePublic))
 	res := FirewallUnblockResult{}
 	switch {
 	case errors.Is(runErr, errFirewallDeclined):
@@ -221,39 +209,9 @@ func firewallPrograms() []string {
 	return out
 }
 
-// firewallQueryScript lists the enabled inbound block rules with the program
-// each one names, and the categories of the networks the PC is on. Enum values
-// are turned into strings on purpose: ConvertTo-Json would otherwise write
-// them as numbers, and the enum NAMES are the same on every Windows language,
-// unlike the localised text netsh prints. It reads only, so it needs no
-// elevation. The program of every rule comes from ONE bulk read of the
-// application filters, joined on the rule name (the filter's InstanceID):
-// piping each rule into Get-NetFirewallApplicationFilter costs about 150 ms a
-// rule, so a PC with a few hundred block rules would run past the timeout and
-// never see the banner. Program filtering happens in Go (evaluateFirewall), so no path
-// has to be quoted into the script. Output is forced to UTF-8: Windows
-// PowerShell otherwise writes a redirected stdout in the OEM code page, which
-// would garble a program path under a user folder like C:\Users\Jürgen.
-const firewallQueryScript = `$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$progs = @{}
-Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | ForEach-Object { $progs[[string]$_.InstanceID] = [string]$_.Program }
-$rules = @(Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue | ForEach-Object {
-  [pscustomobject]@{
-    Name = [string]$_.Name
-    DisplayName = [string]$_.DisplayName
-    Enabled = [string]$_.Enabled
-    Direction = [string]$_.Direction
-    Action = [string]$_.Action
-    Profile = [string]$_.Profile
-    Program = $progs[[string]$_.Name]
-  }
-} | Where-Object { $_.Program -and $_.Program -ne 'Any' })
-$profiles = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.NetworkCategory })
-ConvertTo-Json -Compress -Depth 3 -InputObject @{ rules = $rules; profiles = $profiles }`
-
-// fwRule is one rule row from firewallQueryScript.
+// fwRule is one firewall rule as queryFirewall reports it. The enum fields
+// carry their names ("Inbound", "Block", "Domain, Private"), which keeps
+// evaluateFirewall readable and testable on every platform.
 type fwRule struct {
 	Name        string `json:"Name"`
 	DisplayName string `json:"DisplayName"`
@@ -262,51 +220,6 @@ type fwRule struct {
 	Action      string `json:"Action"`
 	Profile     string `json:"Profile"`
 	Program     string `json:"Program"`
-}
-
-// parseFirewallQuery reads firewallQueryScript's JSON. It tolerates the shapes
-// Windows PowerShell 5.1 produces: a byte order mark, a lone object where a
-// one-element array was meant, and null for an empty list.
-func parseFirewallQuery(out []byte) ([]fwRule, []string, error) {
-	out = bytes.TrimSpace(bytes.TrimPrefix(out, []byte("\xef\xbb\xbf")))
-	if len(out) == 0 {
-		return nil, nil, errors.New("the firewall query returned nothing")
-	}
-	var top struct {
-		Rules    json.RawMessage `json:"rules"`
-		Profiles json.RawMessage `json:"profiles"`
-	}
-	if err := json.Unmarshal(out, &top); err != nil {
-		return nil, nil, fmt.Errorf("parse firewall query: %w", err)
-	}
-	var rules []fwRule
-	if err := unmarshalOneOrMany(top.Rules, &rules); err != nil {
-		return nil, nil, fmt.Errorf("parse firewall rules: %w", err)
-	}
-	var profiles []string
-	if err := unmarshalOneOrMany(top.Profiles, &profiles); err != nil {
-		return nil, nil, fmt.Errorf("parse network profiles: %w", err)
-	}
-	return rules, profiles, nil
-}
-
-// unmarshalOneOrMany decodes raw into *dst, which must be a slice pointer,
-// accepting a JSON array, a single element, or null/absent.
-func unmarshalOneOrMany[T any](raw json.RawMessage, dst *[]T) error {
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		*dst = nil
-		return nil
-	}
-	if raw[0] == '[' {
-		return json.Unmarshal(raw, dst)
-	}
-	var one T
-	if err := json.Unmarshal(raw, &one); err != nil {
-		return err
-	}
-	*dst = []T{one}
-	return nil
 }
 
 // evaluateFirewall decides whether rules block one of programs on a network
@@ -348,7 +261,7 @@ func evaluateFirewall(rules []fwRule, activeProfiles, programs []string, lookupE
 }
 
 // ruleProfileActive reports whether a rule whose Profile is profile (as
-// PowerShell prints the flags: "Any", "Private", "Domain, Public", ...) applies
+// fwProfileString writes the flags: "Any", "Private", "Domain, Public", ...) applies
 // to one of the active network categories ("Public", "Private",
 // "DomainAuthenticated"). With no known active network the rule is counted, so
 // a failed profile read cannot hide a block.
@@ -409,60 +322,106 @@ func expandWinEnv(s string, lookup func(string) (string, bool)) string {
 	}
 }
 
-// firewallUnblockScript is the PowerShell that runs elevated. It removes every
-// inbound block rule naming one of programs, replaces the app's own earlier
-// allow rules, and adds inbound allow rules for TCP and UDP. The outcome goes
-// to resultPath ("ok" or "error: <message>"), since an elevated process has no
-// output the app could read.
-func firewallUnblockScript(programs []string, includePublic bool, resultPath string) string {
-	quoted := make([]string, 0, len(programs))
-	for _, p := range programs {
-		quoted = append(quoted, psQuote(p))
-	}
-	profiles := "Private,Domain"
+// firewallHelperFlag starts the app in its elevated firewall helper mode
+// instead of the UI. AllowThroughFirewall passes it to a copy of itself
+// started through UAC; firewallHelperMain handles it before anything else in
+// main runs.
+const firewallHelperFlag = "--str-firewall-unblock"
+
+// firewallHelperArgs is the command line of the elevated helper. The outcome
+// goes to resultPath ("ok" or "error: <message>"), since an elevated process
+// has no output the app could read.
+func firewallHelperArgs(resultPath string, includePublic bool) []string {
+	args := []string{firewallHelperFlag, "--result", resultPath}
 	if includePublic {
-		profiles = "Private,Domain,Public"
+		args = append(args, "--public")
 	}
-	return `$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-$out = ` + psQuote(resultPath) + `
-try {
-  $progs = @(` + strings.Join(quoted, ", ") + `)
-  $isOurs = {
-    param($p)
-    $x = [Environment]::ExpandEnvironmentVariables([string]$p)
-    foreach ($q in $progs) { if ($x -ieq $q) { return $true } }
-    return $false
-  }
-  $ruleProg = @{}
-  Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | ForEach-Object { $ruleProg[[string]$_.InstanceID] = [string]$_.Program }
-  @(Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue) | ForEach-Object {
-    if (& $isOurs $ruleProg[[string]$_.Name]) { $_ | Remove-NetFirewallRule }
-  }
-  @(Get-NetFirewallRule -Group ` + psQuote(firewallRuleGroup) + ` -ErrorAction SilentlyContinue) | ForEach-Object {
-    if (& $isOurs $ruleProg[[string]$_.Name]) { $_ | Remove-NetFirewallRule }
-  }
-  foreach ($p in $progs) {
-    foreach ($proto in 'TCP', 'UDP') {
-      New-NetFirewallRule -DisplayName ("ST Reborn (" + $proto + ")") -Group ` + psQuote(firewallRuleGroup) + ` -Description 'Lets ST Reborn find and control SoundTouch speakers on this network.' -Direction Inbound -Action Allow -Program $p -Protocol $proto -Profile ` + profiles + ` | Out-Null
-    }
-  }
-  Set-Content -LiteralPath $out -Value 'ok' -Encoding UTF8
-  exit 0
-} catch {
-  try { Set-Content -LiteralPath $out -Value ('error: ' + $_.Exception.Message) -Encoding UTF8 } catch {}
-  exit 1
-}`
+	return args
 }
 
-// encodePowerShellCommand encodes script for powershell.exe -EncodedCommand:
-// base64 of its UTF-16LE bytes. Encoding sidesteps every quoting rule of the
-// command line the elevated process is started with.
-func encodePowerShellCommand(script string) string {
-	u := utf16.Encode([]rune(script))
-	buf := make([]byte, 2*len(u))
-	for i, c := range u {
-		binary.LittleEndian.PutUint16(buf[2*i:], c)
+// parseFirewallHelperArgs reads firewallHelperArgs back. ok is false when the
+// command line is not a helper invocation at all.
+func parseFirewallHelperArgs(args []string) (resultPath string, includePublic, ok bool) {
+	if len(args) == 0 || args[0] != firewallHelperFlag {
+		return "", false, false
 	}
-	return base64.StdEncoding.EncodeToString(buf)
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--public":
+			includePublic = true
+		case "--result":
+			if i+1 < len(args) {
+				resultPath = args[i+1]
+				i++
+			}
+		}
+	}
+	return resultPath, includePublic, true
+}
+
+// firewallHelperMain runs the elevated step when the process was started as
+// the helper and reports whether it did; main then exits with the returned
+// code instead of opening the UI.
+func firewallHelperMain(args []string) (handled bool, exitCode int) {
+	resultPath, includePublic, ok := parseFirewallHelperArgs(args)
+	if !ok {
+		return false, 0
+	}
+	write := func(msg string) {
+		if resultPath != "" {
+			_ = os.WriteFile(resultPath, []byte(msg), 0o600)
+		}
+	}
+	if !firewallSupported {
+		write("error: " + errFirewallUnsupported.Error())
+		return true, 1
+	}
+	programs := firewallPrograms()
+	if len(programs) == 0 {
+		write("error: could not determine the app's own path")
+		return true, 1
+	}
+	if err := applyFirewallUnblock(programs, includePublic); err != nil {
+		write("error: " + err.Error())
+		return true, 1
+	}
+	write("ok")
+	return true, 0
+}
+
+// fwProfileString names the NET_FW_PROFILE2 bits of a rule the way
+// ruleProfileActive reads them. A mask covering all three profiles, or the
+// NET_FW_PROFILE2_ALL value, is "Any".
+func fwProfileString(mask int64) string {
+	const all = 0x7fffffff
+	if mask == all || mask&0x7 == 0x7 || mask == 0 {
+		return "Any"
+	}
+	var out []string
+	if mask&0x1 != 0 {
+		out = append(out, "Domain")
+	}
+	if mask&0x2 != 0 {
+		out = append(out, "Private")
+	}
+	if mask&0x4 != 0 {
+		out = append(out, "Public")
+	}
+	return strings.Join(out, ", ")
+}
+
+// fwActiveProfiles turns INetFwPolicy2.CurrentProfileTypes into the network
+// category names evaluateFirewall expects.
+func fwActiveProfiles(mask int64) []string {
+	var out []string
+	if mask&0x1 != 0 {
+		out = append(out, "DomainAuthenticated")
+	}
+	if mask&0x2 != 0 {
+		out = append(out, "Private")
+	}
+	if mask&0x4 != 0 {
+		out = append(out, "Public")
+	}
+	return out
 }

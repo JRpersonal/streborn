@@ -57,6 +57,12 @@ func main() {
 		}
 	}()
 
+	// Started through UAC as the elevated firewall step (firewall.go): do that
+	// one job and exit, before any window or single-instance lock exists.
+	if handled, code := firewallHelperMain(os.Args[1:]); handled {
+		os.Exit(code)
+	}
+
 	// Force Go's pure-Go DNS resolver instead of the cgo one. On macOS the
 	// default cgo resolver (getaddrinfo) crashed the app a few seconds after
 	// launch when the startup update check resolved st-reborn.de, the app's
