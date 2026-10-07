@@ -262,6 +262,8 @@ import {
   noticeDismissed,
   activeSlotFromLocation,
   proxiedRadioPlaying,
+  queueSlotCard,
+  queueSlotActive,
   isKeyChrome,
   orionStationPayload,
   nativeSlotStale,
@@ -6937,7 +6939,11 @@ function renderPresets() {
       (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot) ||
       // Pandora / iHeartRadio: the speaker reports the service's own station
       // reference, which is exactly what the key stores.
-      nativeServiceActive(p, state.nowLocation)
+      nativeServiceActive(p, state.nowLocation) ||
+      // A music-library album or folder: the key stores no stream URL and the
+      // box plays one track URL after another, so only the agent's queue card
+      // names the key (#1190).
+      queueSlotActive(p, state.queue)
     );
     // While a native descriptor is playing, drop a slot whose stored station no
     // longer matches the live audio: a preset list re-synced from the box remote
@@ -7994,7 +8000,12 @@ async function refreshQueue() {
   try {
     const q = await GetQueue(box.host, box.port);
     if (state.currentBox !== box) return; // box switched mid-fetch
+    const before = queueSlotCard(state.queue);
     state.queue = q || null;
+    // A library-album key lights up from the queue card, which arrives here and
+    // not with the status poll: repaint the keys when it changes, or the
+    // highlight waited for an unrelated status change (#1190).
+    if (queueSlotCard(state.queue) !== before && state.presets.length > 0) renderPresets();
   } catch {
     // leave the last known queue state on screen
   }

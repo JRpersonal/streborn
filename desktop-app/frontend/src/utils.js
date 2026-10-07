@@ -478,6 +478,25 @@ function proxiedRadioURL(u) {
   return /\/stream\/\d+(?:[/?#]|$)/.test(u) || /\/stream\/raw(?:[/?#]|$)/.test(u);
 }
 
+// queueSlotCard returns the "queue:slot:<n>" card of the agent's queue while it
+// is active, '' otherwise. GET /api/queue names the Recently-played card the
+// queue plays; a preset key holding a music-library album or folder starts it
+// with the card "queue:slot:<n>" (#1190).
+export function queueSlotCard(queue) {
+  if (!queue || !queue.active || typeof queue.card !== 'string') return '';
+  return /^queue:slot:\d+$/.test(queue.card) ? queue.card : '';
+}
+
+// queueSlotActive reports whether preset p is the library album or folder the
+// box is playing right now. Such a key stores no stream URL (each track is its
+// own URL on the media server), so the location-based matches never fire and
+// the key was never shown as selected while it played (#1190).
+export function queueSlotActive(p, queue) {
+  if (!p || p.type !== 'queue') return false;
+  const card = queueSlotCard(queue);
+  return card !== '' && card === 'queue:slot:' + p.slot;
+}
+
 // isKeyChrome reports whether an event landed on one of the small icons in a
 // preset key's header (clear, rename) rather than on the key itself. The icons
 // are inline SVGs, so the event target is usually the <svg> or a <path> inside
