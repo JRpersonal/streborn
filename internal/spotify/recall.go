@@ -132,6 +132,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	if !opts.Shuffle {
 		resumeURI = m.resume.trackFor(uri)
 	}
+	m.resume.noteRecall(uri, resumeURI, opts.Shuffle)
 	// Load the context PAUSED so the speaker never hears the wrong (non-resumed /
 	// non-shuffled) track. skip_to_uri positions the queue on the resume track
 	// before any audio flows; an empty skip_to_uri starts at the context's first
