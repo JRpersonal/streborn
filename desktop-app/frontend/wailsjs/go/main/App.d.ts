@@ -9,6 +9,8 @@ export function AddBoxByIP(arg1:string):Promise<main.BoxInfo>;
 
 export function AddMediaServerByURL(arg1:string):Promise<main.LibraryServer>;
 
+export function AllowThroughFirewall(arg1:boolean):Promise<main.FirewallUnblockResult>;
+
 export function AnnounceExample(arg1:string,arg2:number):Promise<string>;
 
 export function AppInfo():Promise<main.AppInfo>;
@@ -40,6 +42,8 @@ export function BoxWifiScan(arg1:string,arg2:number):Promise<Array<string>>;
 export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
 
 export function CheckAppUpdate():Promise<Record<string, string>>;
+
+export function CheckFirewall(arg1:boolean):Promise<main.FirewallCheck>;
 
 export function CheckStereoBeforeInstall(arg1:string):Promise<main.StereoInstallCheck>;
 

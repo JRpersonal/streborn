@@ -2260,6 +2260,9 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
       if (p.phase === 'access') {
         if (typeof p.margeHits === 'number' && p.margeHits === 0 && (p.elapsedMs || 0) > 60000) {
           accessHint = escapeHtml(t('setup.installFirewallHint'));
+          // Let main.js re-read the Windows Firewall rules once, so a real
+          // block gets its banner with the one-click fix.
+          try { window.dispatchEvent(new CustomEvent('str:firewall-suspect')); } catch { /* no window in tests */ }
         } else if (p.margeHits > 0) {
           accessHint = '';
         }
