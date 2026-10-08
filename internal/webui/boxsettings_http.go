@@ -773,6 +773,10 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 //
 // Returns "" on success, else the message for the handler's 502.
 func (s *Server) boxStandby() string {
+	// Always logged: a standby the app or the phone asked for must be told apart
+	// from one the firmware took on its own (#1190), and nothing else on this
+	// path logs when the Spotify engine is idle.
+	s.logger.Info("standby requested by the app or phone")
 	s.NoteUserStop()
 	s.tellSpotifyUserStopped("standby")
 	client := &http.Client{Timeout: 6 * time.Second}
