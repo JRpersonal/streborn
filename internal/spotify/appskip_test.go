@@ -216,3 +216,63 @@ func TestAPrefetchJustBehindABoundaryStaysWithTheNextTrack(t *testing.T) {
 		t.Fatalf("stream=%d loaded=%d, want 200000 / 150000", m.streamTrackDurMs, m.loadedTrackDurMs)
 	}
 }
+
+// The v1.0.9 regression (#1077): a key press recalls a playlist with a resume
+// track. The engine logs the resume load PAUSED 120 ms behind the preamble's
+// boundary, and the track's real start follows 0.6 s later. That boundary
+// "ended" a 0.5 s stretch, which must never read as an app skip: re-pointing
+// there swaps the key's stream for the generic one and the key goes dark.
+func TestARecallsResumeLoadDoesNotFakeAnAppSkip(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 2)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard
+
+	m.noteTrackBoundaryCut(0, 0) // the preamble's boundary
+	m.noteLibrespotLine(`level=info msg="loaded track \"What I Deserve\" (paused: true, position: 0ms, duration: 266442ms, prefetched: false)"`)
+	m.noteTrackBoundaryCut(24640, 4096) // the real start, 0.5 s later
+	select {
+	case <-fired:
+		t.Fatal("a recall's own track start must not be read as an app skip")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if m.streamTrackDurMs != 266442 {
+		t.Fatalf("the resume track's duration must ride to the boundary that starts it, got %d", m.streamTrackDurMs)
+	}
+}
+
+// Even with a known duration, a stretch under minAppSkipPlayedSec is a seam.
+func TestASubSecondStretchIsNeverAnAppSkip(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 1)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard
+	m.noteLibrespotLine(`level=info msg="loaded track \"a\" (duration: 200000ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(0, 0)
+	m.noteTrackBoundaryCut(2*vorbisRate, 4096)
+	select {
+	case <-fired:
+		t.Fatal("two seconds of play must not count as an app skip")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// While a recall is in flight the detector stands down, even once the skip
+// cut has been consumed.
+func TestTheDetectorStandsDownDuringARecall(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 1)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard
+	m.noteLibrespotLine(`level=info msg="loaded track \"a\" (duration: 200000ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(0, 0)
+	m.mu.Lock()
+	m.recallUntil = time.Now().Add(8 * time.Second)
+	m.mu.Unlock()
+	m.noteTrackBoundaryCut(60*vorbisRate, 4096)
+	select {
+	case <-fired:
+		t.Fatal("a boundary inside a recall window is STR's own")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
