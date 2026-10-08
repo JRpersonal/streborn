@@ -43,6 +43,19 @@ type Server struct {
 	// from somebody whose partner was merely restarting.
 	partnerGoneIP string
 	partnerGoneID string
+	// partnerCheckedAt is when the partner was last probed and
+	// partnerRechecking marks a RecheckPartner probe in flight; together they
+	// rate-limit the on-demand re-probe (see partnerprobe.go).
+	partnerCheckedAt  time.Time
+	partnerRechecking bool
+	// partnerProbe, partnerAttempts, partnerInterval and partnerRecheckEvery
+	// override the probe and its budget in tests. Zero values use the
+	// defaults (HTTP GET /info, partnerProbeAttempts, partnerProbeInterval,
+	// partnerRecheckEvery).
+	partnerProbe        func(ip string, timeout time.Duration) error
+	partnerAttempts     int
+	partnerInterval     time.Duration
+	partnerRecheckEvery time.Duration
 
 	// presetSource, when set, provides the preset list live on every request
 	// (wired to the stick preset store). See WithPresetSource.

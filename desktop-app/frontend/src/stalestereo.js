@@ -37,6 +37,12 @@ export const STALE_GRACE_MS = 10000;
 
 const up = (s) => String(s || '').toUpperCase();
 
+// boxLabel is the same order as utils.getBoxLabel: the speaker's own name
+// first. box.name is only a discovery placeholder ("str-<ip>" from the IP
+// probe, "STR-<MAC tail>" from mDNS) and flips between the two as discovery
+// refreshes the box, so the notice named one speaker two ways (#1208).
+const boxLabel = (b) => (b && (b.friendlyName || b.name || b.host)) || '';
+
 // freshEntry returns the speaker's zone answer from the latest round, or null
 // when it did not answer this round (carried entries have staleSince) or was
 // written by an optimistic edit (null).
@@ -83,7 +89,7 @@ export function findStalePairs(zoneLive, boxes) {
     const partner = partnerMember
       ? boxFor(partnerMember, boxes)
       : boxFor({ deviceID: e.pairPartnerGoneId, ip: goneIP }, boxes);
-    const partnerLabel = partner ? (partner.name || partner.host)
+    const partnerLabel = partner ? boxLabel(partner)
       : ((partnerMember && (partnerMember.ip || partnerMember.deviceID)) || goneIP || '');
     // Without a pair document (partner-gone found at agent start, /getGroup not
     // read this round) the undo still has to reach the holder: a pair of one
@@ -136,7 +142,7 @@ export function staleFindingFor(host, findings) {
 
 // staleNoticeText is the sentence for a finding, through the caller's t().
 export function staleNoticeText(f, t) {
-  const holder = (f.holder && (f.holder.name || f.holder.host)) || '';
+  const holder = boxLabel(f.holder);
   const partner = f.partnerLabel || '?';
   if (f.reason === 'partner-gone') return t('stereoStale.partnerGone', { name: holder, partner });
   return t('stereoStale.partnerDenies', { name: holder, partner });

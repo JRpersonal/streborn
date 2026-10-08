@@ -143,11 +143,11 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// A pair whose other half is gone is the one state that makes a healthy,
-	// reachable speaker refuse to play anything at all.
-	if s.pairPartnerGone != nil {
-		if ip, id := s.pairPartnerGone(); ip != "" {
-			out.PairPartnerGone, out.PairPartnerGoneID = ip, id
-		}
+	// reachable speaker refuse to play anything at all. Re-asked in the
+	// background so the app's warning clears on the next poll once a partner
+	// that was only missed answers; the zone read itself never waits for it.
+	if ip, id := s.zonePartnerGone(); ip != "" {
+		out.PairPartnerGone, out.PairPartnerGoneID = ip, id
 	}
 	writeJSON(w, http.StatusOK, out)
 }

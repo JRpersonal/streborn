@@ -908,6 +908,7 @@ func run() error {
 		}),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithPairPartnerGone(margeSrv.PartnerUnreachable),
+		webui.WithPairPartnerRecheck(margeSrv.RecheckPartner),
 		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
 		webui.WithSpotifyShuffle(spotifyMgr.ShufflingContext),
 		webui.WithSpotifyRepeat(spotifyMgr.RepeatingContext),

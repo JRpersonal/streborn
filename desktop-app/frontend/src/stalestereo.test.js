@@ -67,6 +67,18 @@ describe('findStalePairs', () => {
     expect(f[0].pair.members[0].deviceID).toBe('DEV#TWO');
   });
 
+  it('names the partner by its own name, not by the discovery placeholder that flips (#1208)', () => {
+    const zl = { 'DEV#TWO': { members: [], pairPartnerGone: '192.0.2.25', pairPartnerGoneId: 'DEV#ONE' } };
+    const holder = { ...two, name: 'STR-AA5F4C', friendlyName: 'Office Left' };
+    for (const placeholder of ['str-192.0.2.25', 'STR-BB6E5D']) {
+      const partner = { ...one, name: placeholder, friendlyName: 'Office Right' };
+      const [f] = findStalePairs(zl, [partner, holder]);
+      expect(f.partnerLabel).toBe('Office Right');
+      const text = staleNoticeText(f, (_k, v) => `${v.name}|${v.partner}`);
+      expect(text).toBe('Office Left|Office Right');
+    }
+  });
+
   it('treats a master that is now paired with a THIRD speaker as denying the old pair', () => {
     const three = { host: '192.0.2.27', deviceID: 'DEV#THREE', name: 'Office' };
     const newPair = { id: 'x', masterDeviceID: 'DEV#ONE', members: [{ deviceID: 'DEV#ONE' }, { deviceID: 'DEV#THREE' }] };
