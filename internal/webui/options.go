@@ -328,8 +328,6 @@ func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuf
 	return func(s *Server) { s.spotifyPlay = play }
 }
 
-// WithSpotifyUser registers the resolver for go-librespot's current account,
-// used to stamp the account onto a newly saved Spotify preset.
 // WithPairPartnerGone registers the lookup for the other half of a restored
 // stereo pair that did not answer at agent start. The firmware refuses every
 // source activation while a pair is incomplete, so a speaker in that state
@@ -339,6 +337,18 @@ func WithPairPartnerGone(fn func() (ip, deviceID string)) Option {
 	return func(s *Server) { s.pairPartnerGone = fn }
 }
 
+// WithPairPartnerRecheck registers the re-probe for a partner recorded as
+// gone: it asks the partner again (rate-limited, no network call when nothing
+// is recorded) and returns the verdict afterwards. The play path and the zone
+// endpoint use it before refusing or warning, so a partner that was only
+// missed at agent start (network not up yet after a reboot, #1208) stops
+// blocking the pair the moment it answers.
+func WithPairPartnerRecheck(fn func() (ip, deviceID string)) Option {
+	return func(s *Server) { s.pairPartnerRecheck = fn }
+}
+
+// WithSpotifyUser registers the resolver for go-librespot's current account,
+// used to stamp the account onto a newly saved Spotify preset.
 func WithSpotifyUser(user func(ctx context.Context) string) Option {
 	return func(s *Server) { s.spotifyUser = user }
 }

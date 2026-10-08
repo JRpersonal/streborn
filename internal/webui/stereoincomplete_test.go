@@ -97,6 +97,46 @@ func TestRefuseAnswers409WithTheReason(t *testing.T) {
 	}
 }
 
+// #1208: a partner the agent start missed (network not up yet after a reboot)
+// must stop blocking plays once it answers. The play path re-asks before it
+// refuses.
+func TestPartnerThatAnswersAgainIsNoLongerRefused(t *testing.T) {
+	s := newStereoTestServer()
+	gone := true
+	s.pairPartnerGone = func() (string, string) {
+		if gone {
+			return "192.0.2.25", "DEV#MASTER"
+		}
+		return "", ""
+	}
+	rechecks := 0
+	s.pairPartnerRecheck = func() (string, string) {
+		rechecks++
+		gone = false // the partner answers
+		return s.pairPartnerGone()
+	}
+	rec := httptest.NewRecorder()
+	if s.refuseIfIncompletePair(rec) {
+		t.Fatalf("play refused although the partner answered the recheck: %s", rec.Body.String())
+	}
+	if rechecks != 1 {
+		t.Fatalf("recheck ran %d times, want 1", rechecks)
+	}
+}
+
+func TestPartnerThatStaysDownIsStillRefused(t *testing.T) {
+	s := newStereoTestServer()
+	s.pairPartnerGone = func() (string, string) { return "192.0.2.25", "DEV#MASTER" }
+	s.pairPartnerRecheck = s.pairPartnerGone
+	rec := httptest.NewRecorder()
+	if !s.refuseIfIncompletePair(rec) {
+		t.Fatal("play not refused although the partner is still gone")
+	}
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+}
+
 func TestPlaySlotRefusesBeforeWaking(t *testing.T) {
 	// The whole point: no wake, no lock held for seconds, an immediate answer.
 	s := newStereoTestServer()

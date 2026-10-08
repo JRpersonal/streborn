@@ -47,6 +47,19 @@ func (s *Server) noteStereoSeen(g *boxapi.Group) {
 	s.stereoSeenAt = time.Now()
 }
 
+// recheckPartnerGone re-asks a pair partner recorded as gone and returns the
+// verdict afterwards, empty when no partner is missing. Falls back to the
+// plain lookup when no recheck is wired.
+func (s *Server) recheckPartnerGone() (ip, deviceID string) {
+	if s.pairPartnerRecheck != nil {
+		return s.pairPartnerRecheck()
+	}
+	if s.pairPartnerGone != nil {
+		return s.pairPartnerGone()
+	}
+	return "", ""
+}
+
 // incompletePair describes why this speaker cannot play on its own.
 type incompletePair struct {
 	// Reason is "partner-gone" (the other half did not answer) or
@@ -67,8 +80,8 @@ type incompletePair struct {
 //
 // Deliberately narrow, because refusing a recall on a HEALTHY pair would be far
 // worse than the timeout this replaces: only the firmware's own GROUP_ERROR
-// verdict on a fresh read, or the partner-gone finding the agent makes once at
-// start, count. A pair document alone does not: the half that holds it is
+// verdict on a fresh read, or the partner-gone finding the agent makes at start
+// (and re-checks on demand, see recheckPartnerGone), count. A pair document alone does not: the half that holds it is
 // normal for a healthy pair.
 func (s *Server) incompletePairReason(now time.Time) (incompletePair, bool) {
 	s.stereoSeenMu.Lock()
@@ -100,6 +113,10 @@ func (s *Server) incompletePairReason(now time.Time) (incompletePair, bool) {
 // this speaker is stuck in an incomplete pair, and reports whether it did. Call
 // it BEFORE the wake: waking such a speaker is exactly what cannot succeed.
 func (s *Server) refuseIfIncompletePair(w http.ResponseWriter) bool {
+	// A partner recorded as gone may only have been missed (the agent start
+	// probe ran before the network was up, #1208). Ask it again before
+	// refusing; this costs nothing when no partner is recorded as gone.
+	s.recheckPartnerGone()
 	p, ok := s.incompletePairReason(time.Now())
 	if !ok {
 		return false

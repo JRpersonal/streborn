@@ -209,6 +209,10 @@ type Server struct {
 	// pairPartnerGone names the missing half of a restored stereo pair, so
 	// the zone answer can say why a speaker refuses to play.
 	pairPartnerGone func() (ip, deviceID string)
+	// pairPartnerRecheck re-asks a partner recorded as gone and returns the
+	// verdict afterwards (rate-limited, free when nothing is recorded). nil
+	// falls back to pairPartnerGone.
+	pairPartnerRecheck func() (ip, deviceID string)
 	// stereoSeen is the pair document from the last /getGroup read that got an
 	// answer (nil when the speaker answered with no pair), and when it was read.
 	// The play path checks it instead of asking the firmware again: that read
