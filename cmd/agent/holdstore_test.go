@@ -37,7 +37,7 @@ func heldRadio(slot int, loc, name string) marge.HeldItem {
 // hold gesture on key 3 then lands that station's ORIGIN on key 3.
 func TestHeldPresetFromAdHocPlayStoresTheOrigin(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	loc := webui.OrionStationLocation(boxurl.RawStream("https://stream.sunshine-live.de/90er/mp3-192/"), "Sunshine Live - Die 90er", "https://example.com/sl.png")
 
 	if err := keep(heldRadio(3, loc, "Sunshine Live - Die 90er")); err != nil {
@@ -64,7 +64,7 @@ func TestHeldPresetFromAdHocPlayStoresTheOrigin(t *testing.T) {
 // The boot-time sync PUTs each native slot with its own proxy: a no-op.
 func TestHeldPresetOwnSlotProxyIsANoOp(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	loc := webui.OrionStationLocation(boxurl.StreamSlot(1), "1LIVE", "")
 	if err := keep(heldRadio(1, loc, "1LIVE")); err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestHeldPresetOwnSlotProxyIsANoOp(t *testing.T) {
 // The speaker gets the same refusal, and nothing in the store moves.
 func TestHeldPresetAlreadyOnAnotherKeyIsRefused(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	loc := webui.OrionStationLocation(boxurl.StreamSlot(1), "1LIVE", "")
 	err := keep(heldRadio(3, loc, "1LIVE"))
 	if !errors.Is(err, errNotKeepable) {
@@ -100,7 +100,7 @@ func TestHeldPresetAlreadyOnAnotherKeyIsRefused(t *testing.T) {
 // A proxy slot the store does not back cannot be resolved to a station.
 func TestHeldPresetUnknownProxySlotIsRefused(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	loc := webui.OrionStationLocation(boxurl.StreamSlot(6), "Ghost", "")
 	if err := keep(heldRadio(6, loc, "Ghost")); !errors.Is(err, errNotKeepable) {
 		t.Fatalf("err = %v", err)
@@ -111,7 +111,7 @@ func TestHeldPresetUnknownProxySlotIsRefused(t *testing.T) {
 // (a Deezer playlist, an unreadable descriptor): not keepable, store untouched.
 func TestHeldPresetForeignOrUnreadableIsRefused(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	cases := []marge.HeldItem{
 		{Slot: 2, Source: "UPNP", Type: "audio", Location: boxurl.StreamSlot(4), SourceAccount: "UPnPUserName"},
 		{Slot: 2, Source: "DEEZER", Type: "playlist", Location: "123456789", SourceAccount: "1456373802"},
@@ -132,7 +132,7 @@ func TestHeldPresetForeignOrUnreadableIsRefused(t *testing.T) {
 // the firmware did: DeletePreset, then AddPreset).
 func TestHeldPresetOverwritesTheKeysOldStation(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	loc := webui.OrionStationLocation(boxurl.RawStream("http://stream.example.com/new.mp3"), "New Station", "")
 	if err := keep(heldRadio(1, loc, "New Station")); err != nil {
 		t.Fatal(err)

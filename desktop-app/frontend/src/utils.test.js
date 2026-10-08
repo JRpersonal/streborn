@@ -1,7 +1,7 @@
 // Tests for the pure decision helpers in utils.js.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { savePresetCase, bassControlsDisabled, bassSliderProps } from './utils.js';
+import { savePresetCase, queueSaveFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
 
 const FRESH_MS = 2 * 60 * 1000;
 const NOW = 1_000_000_000;
@@ -37,6 +37,45 @@ describe('savePresetCase', () => {
     expect(savePresetCase('http://radio.example.com/live.mp3', null, stalePlay, NOW, FRESH_MS)).toBe('direct');
     expect(savePresetCase(orionLoc, null, stalePlay, NOW, FRESH_MS)).toBe('direct');
     expect(savePresetCase('', null, null, NOW, FRESH_MS)).toBe('direct');
+  });
+
+  // A music-library folder plays as the speaker's queue, and the speaker only
+  // reports the current track. Holding a key then has to store the FOLDER, the
+  // preset the Library star button stores (#1030), not that one track.
+  const liveQueue = { active: true, items: [{ title: 'Come Together' }, { title: 'Something' }], card: 'queue:uuid:abc:64$1' };
+  const trackLoc = 'http://192.0.2.10:9000/disk/01.mp3';
+  it('saves the folder while a library queue plays', () => {
+    expect(savePresetCase(trackLoc, null, stalePlay, NOW, FRESH_MS, liveQueue)).toBe('queue');
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, liveQueue)).toBe('queue');
+    // A folder recalled from a key reaches the box as that key's proxy: still the folder.
+    expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, null, NOW, FRESH_MS, liveQueue)).toBe('queue');
+  });
+
+  it('keeps Spotify and a fresh app play ahead of the queue', () => {
+    expect(savePresetCase('http://192.0.2.1:8888/spotify/stream-3.ogg', 3, null, NOW, FRESH_MS, liveQueue)).toBe('spotify');
+    expect(savePresetCase('http://radio.example.com/live.mp3', null, freshPlay, NOW, FRESH_MS, liveQueue)).toBe('app-play');
+  });
+
+  it('ignores a queue that is stopped, empty or unknown', () => {
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, { active: false, items: liveQueue.items })).toBe('direct');
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, { active: true, items: [] })).toBe('direct');
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, null)).toBe('direct');
+    expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, null, NOW, FRESH_MS, undefined)).toBe('copy-slot');
+  });
+});
+
+describe('queueSaveFallsThrough', () => {
+  it('falls back when no folder plays, the agent is too old, or the binding is missing', () => {
+    expect(queueSaveFallsThrough('status 409: {"code":"no-queue","error":"No music-library folder is playing right now."}')).toBe(true);
+    expect(queueSaveFallsThrough(new Error('status 404: 404 page not found'))).toBe(true);
+    const missing = new Error('STR_MISSING_BINDING: SaveQueuePreset is not available in this build');
+    missing.code = 'STR_MISSING_BINDING';
+    expect(queueSaveFallsThrough(missing)).toBe(true);
+  });
+
+  it('reports every other failure', () => {
+    expect(queueSaveFallsThrough('status 500: preset store write failed')).toBe(false);
+    expect(queueSaveFallsThrough(new Error('dial tcp 192.0.2.1:8888: connection refused'))).toBe(false);
   });
 });
 

@@ -200,7 +200,7 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 	if art == "" {
 		art = items[0].Art
 	}
-	card := recentCardCtx{key: key, name: name, art: art}
+	card := recentCardCtx{key: key, name: name, art: art, source: srv.FriendlyName}
 	// Inherit the sticky shuffle/repeat the user last chose (playmode.go). A
 	// replay is not the place to reset it, and it is not an explicit choice
 	// either, so nothing is saved back.

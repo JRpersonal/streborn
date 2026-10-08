@@ -168,6 +168,37 @@ func (a *App) SaveFolderPreset(host string, port int, slot int, payloadJSON stri
 	return nil
 }
 
+// SaveQueuePreset stores the music-library folder the speaker plays as a queue
+// right now on a key (#1030). The app sends only the slot: the speaker agent
+// builds the folder preset from its own live queue, the same preset the
+// Library star button stores. Returns the saved folder's name. The agent
+// answers 409 "no-queue" when no folder plays, and an older agent 404s; the
+// caller falls back to its other save paths on either.
+func (a *App) SaveQueuePreset(host string, port int, slot int) (string, error) {
+	body, _ := json.Marshal(map[string]int{"slot": slot})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/queue/save-slot", "application/json", string(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		err := readHTTPError(resp)
+		if a.logger != nil {
+			a.logger.Info("folder preset save from the live queue: refused", "host", host, "slot", slot, "err", err)
+		}
+		return "", err
+	}
+	var p Preset
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&p); err != nil {
+		return "", fmt.Errorf("decode saved preset: %w", err)
+	}
+	if a.logger != nil {
+		a.logger.Info("folder preset save from the live queue: stored", "host", host, "slot", slot,
+			"name", p.Name, "source", p.Source)
+	}
+	return p.Name, nil
+}
+
 // SaveSpotifyPreset stores a real Spotify preset (type=spotify with the
 // playlist/album URI) on a slot. A long-press while a Spotify playlist plays
 // uses this so the saved preset is recallable, shuffled and account-aware,

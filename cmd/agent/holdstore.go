@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -25,6 +26,41 @@ import (
 // station descriptor).
 var errNotKeepable = errors.New("not a station STR can keep")
 
+// heldLive is what the keeper reads from the running agent beyond the preset
+// store. Either func may be nil (tests, or a hold that lands before the web
+// server is up), which means "nothing known".
+type heldLive struct {
+	// queue builds the folder preset for a slot from the media-server folder
+	// the agent plays as a queue right now; ok is false when none plays
+	// (webui.Server.LiveQueuePreset, #1030).
+	queue func(slot int) (presets.Preset, bool)
+	// artChain returns the full logo candidate chain STR knows for a stream
+	// URL, "" when none (webui.Server.StreamArtChain, #968).
+	artChain func(streamURL string) string
+}
+
+// heldWebui is the running web server, stored once main has created it.
+var heldWebui atomic.Pointer[webui.Server]
+
+// heldLiveFrom binds heldLive to a web server that is created after the
+// marge stand-in the keeper is handed to.
+func heldLiveFrom(srv *atomic.Pointer[webui.Server]) heldLive {
+	return heldLive{
+		queue: func(slot int) (presets.Preset, bool) {
+			if s := srv.Load(); s != nil {
+				return s.LiveQueuePreset(slot)
+			}
+			return presets.Preset{}, false
+		},
+		artChain: func(streamURL string) string {
+			if s := srv.Load(); s != nil {
+				return s.StreamArtChain(streamURL)
+			}
+			return ""
+		},
+	}
+}
+
 // newHeldPresetKeeper builds the marge PresetKeeper over the agent's store.
 //
 // It never writes to the box. The firmware is in the middle of its own store
@@ -32,9 +68,9 @@ var errNotKeepable = errors.New("not a station STR can keep")
 // slot), and a TAP AddPreset into that window would start a second gesture.
 // The box slot is the firmware's to write here; the reconcile later rewrites
 // it once onto STR's own form (see reconcileOnce).
-func newHeldPresetKeeper(store *presets.Store, logger *slog.Logger) marge.PresetKeeper {
+func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logger) marge.PresetKeeper {
 	return func(item marge.HeldItem) error {
-		candidate, changed, err := heldPresetCandidate(store, item)
+		candidate, changed, err := heldPresetCandidate(store, live, item)
 		if err != nil {
 			return err
 		}
@@ -61,6 +97,12 @@ func newHeldPresetKeeper(store *presets.Store, logger *slog.Logger) marge.Preset
 				"location", candidate.Native.Location)
 			return nil
 		}
+		if candidate.Type == "queue" {
+			logger.Info("hold-to-store: kept the music-library folder that plays on the key the speaker stored",
+				"slot", item.Slot, "was", was, "now", candidate.Name, "source", candidate.Source,
+				"tracks", len(candidate.Items), "shuffle", candidate.Shuffle)
+			return nil
+		}
 		logger.Info("hold-to-store: kept the station the speaker stored on a key with its own hold gesture",
 			"slot", item.Slot, "was", was, "now", candidate.Name, "stream", candidate.StreamURL)
 		return nil
@@ -81,9 +123,22 @@ func newHeldPresetKeeper(store *presets.Store, logger *slog.Logger) marge.Preset
 // press and answers "already on key N", and the speaker must not quietly do
 // what the app just declined. Refusing is loss-free; the firmware keeps the
 // key as it was.
-func heldPresetCandidate(store *presets.Store, item marge.HeldItem) (candidate presets.Preset, changed bool, err error) {
+//
+// A media-server folder STR plays as a queue is a UPnP push to the speaker,
+// so the item names one track. The folder is what the user hears, so the
+// live queue's folder preset is kept instead (#1030), the same preset the
+// Library star button stores.
+func heldPresetCandidate(store *presets.Store, live heldLive, item marge.HeldItem) (candidate presets.Preset, changed bool, err error) {
 	if _, native := presets.NativeServiceLabel(item.Source); native {
 		return heldNativeCandidate(store, item)
+	}
+	if strings.EqualFold(strings.TrimSpace(item.Source), "UPNP") && live.queue != nil {
+		if q, ok := live.queue(item.Slot); ok {
+			if cur, have := store.Get(item.Slot); have && samePresetContent(cur, q) && cur.Source == q.Source {
+				return cur, false, nil
+			}
+			return q, true, nil
+		}
 	}
 	if !strings.EqualFold(strings.TrimSpace(item.Source), "LOCAL_INTERNET_RADIO") {
 		return presets.Preset{}, false, fmt.Errorf("%w: source %s", errNotKeepable, item.Source)
@@ -111,12 +166,22 @@ func heldPresetCandidate(store *presets.Store, item marge.HeldItem) (candidate p
 		candidate = src
 		candidate.Slot = item.Slot
 	case st.OriginStreamURL != "":
+		// The descriptor carries the ONE picture the display was given; the
+		// app saves the station's whole candidate chain. Use the chain STR
+		// knows for this stream so both gestures give the key the same logo
+		// (#968), and the descriptor's picture only when none is known.
+		art := st.Art
+		if live.artChain != nil {
+			if chain := live.artChain(st.OriginStreamURL); chain != "" {
+				art = chain
+			}
+		}
 		candidate = presets.Preset{
 			Slot:      item.Slot,
 			Name:      name,
 			StreamURL: st.OriginStreamURL,
 			Type:      "radio",
-			Art:       st.Art,
+			Art:       art,
 		}
 	default:
 		return presets.Preset{}, false, fmt.Errorf("%w: the descriptor's stream is not a station origin (%s)",

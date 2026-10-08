@@ -447,7 +447,9 @@ func run() error {
 		// The speaker's own hold-to-store gesture PUTs the playing station to
 		// marge; keep it in the STR store so the app shows the key and the
 		// reconcile keeps it registered (see holdstore.go).
-		marge.WithPresetKeeper(newHeldPresetKeeper(store, logger.With("comp", "holdstore"))),
+		// The live queue and the logo chains come from the web server, which
+		// is created further down; heldWebui is bound to it there.
+		marge.WithPresetKeeper(newHeldPresetKeeper(store, heldLiveFrom(&heldWebui), logger.With("comp", "holdstore"))),
 		// The box re-reads its cloud presets from marge during every
 		// setMargeAccount re-onboarding. Answering with an empty <presets/>
 		// made the firmware WIPE its own hardware-key registrations after
@@ -1011,6 +1013,9 @@ func run() error {
 	// synchronously and early, because the box's account poll comes seconds
 	// after its own boot.
 	webuiSrv.PublishMediaServers()
+	// The speaker's hold-to-store gesture reads the live queue and the logo
+	// chains from here (holdstore.go).
+	heldWebui.Store(webuiSrv)
 
 	// Auto-leave the out-of-box SETUP source. A box that installed STR over the
 	// network but never finished Bose's app-driven onboarding keeps the SETUP

@@ -122,7 +122,7 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", shuffle, "repeat", rep.String())
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot
 	// so repeated recalls of the same preset group together.
-	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
+	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art, source: p.Source}
 	// -1 = the user recalled the whole preset without picking a track, so with
 	// shuffle on the queue may start anywhere (#490).
 	if err := s.startQueue(ctx, items, -1, shuffle, rep, card); err != nil {
@@ -224,6 +224,9 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	}
 	s.ensureBoxReady(ctx)
 	s.queue.load(items, start, shuffle, rep)
+	s.queueMu.Lock()
+	s.queueFolder = card
+	s.queueMu.Unlock()
 	it, ok := s.queue.current()
 	if !ok {
 		return errors.New("empty queue")
@@ -851,6 +854,10 @@ type queueCard struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
 	Art  string `json:"art"`
+	// Source is the media server's name, kept so a key saved while this
+	// queue plays carries "from <server>" (#1030). Older apps send none; the
+	// registered server list fills it in then (see LiveQueuePreset).
+	Source string `json:"source,omitempty"`
 }
 
 type queueStartRequest struct {
@@ -903,7 +910,7 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no playable items", http.StatusBadRequest)
 			return
 		}
-		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art}
+		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art, source: req.Card.Source}
 		// Resolve the play mode: explicit request values win and become the new
 		// sticky mode; absent ones inherit the persisted choice (playmode.go).
 		shuffle, rep, _ := s.loadPlayMode()

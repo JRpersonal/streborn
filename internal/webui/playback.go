@@ -342,7 +342,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		// fetch racing this app-initiated recall can hold for the first track
 		// (mirrors the hardware RecallSlot path).
 		s.armQueueRecall(slot)
-		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
+		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art, source: p.Source}
 		if err := s.startQueueLocked(playCtx, items, 0, p.Shuffle, repeatOff, card); err != nil {
 			if isGroupedRejection(err) {
 				s.writeGroupedPlayError(w, err)

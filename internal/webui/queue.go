@@ -146,6 +146,14 @@ func (q *playQueue) current() (queueItem, bool) {
 	return q.currentLocked()
 }
 
+// contents returns a copy of the queue's tracks in their source order (not
+// the shuffled play order), the shuffle flag, and whether the queue is active.
+func (q *playQueue) contents() (items []queueItem, shuffle, active bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]queueItem(nil), q.items...), q.shuffle, q.active
+}
+
 func (q *playQueue) isActive() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()

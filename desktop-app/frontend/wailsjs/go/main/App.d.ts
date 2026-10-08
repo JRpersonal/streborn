@@ -263,6 +263,8 @@ export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:strin
 
 export function SaveNativePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
 
+export function SaveQueuePreset(arg1:string,arg2:number,arg3:number):Promise<string>;
+
 export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
 
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;

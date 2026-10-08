@@ -20,7 +20,7 @@ func heldPandora(slot int, location, name string) marge.HeldItem {
 
 func TestHeldPandoraStationIsKeptAsANativePreset(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := keep(heldPandora(1, "4071226281950183516", "Little Big Town Radio")); err != nil {
 		t.Fatalf("Pandora item refused: %v", err)
@@ -42,7 +42,7 @@ func TestHeldPandoraStationIsKeptAsANativePreset(t *testing.T) {
 
 func TestHeldIHeartStationIsKeptToo(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	item := marge.HeldItem{Slot: 2, Source: "IHEART", Type: "stationurl", Location: "live:1234", ItemName: "Z100"}
 	if err := keep(item); err != nil {
 		t.Fatalf("iHeart item refused: %v", err)
@@ -56,7 +56,7 @@ func TestHeldIHeartStationIsKeptToo(t *testing.T) {
 // must keep its name, and no write may happen.
 func TestHeldNativeReStateIsNoWriteAndKeepsARename(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := keep(heldPandora(1, "4071226281950183516", "Little Big Town Radio")); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestHeldNativeReStateIsNoWriteAndKeepsARename(t *testing.T) {
 	if err := store.SetSlot(p); err != nil {
 		t.Fatal(err)
 	}
-	_, changed, err := heldPresetCandidate(store, heldPandora(1, "4071226281950183516", "Little Big Town Radio"))
+	_, changed, err := heldPresetCandidate(store, heldLive{}, heldPandora(1, "4071226281950183516", "Little Big Town Radio"))
 	if err != nil || changed {
 		t.Fatalf("re-state: changed=%v err=%v, want no change", changed, err)
 	}
@@ -79,7 +79,7 @@ func TestHeldNativeReStateIsNoWriteAndKeepsARename(t *testing.T) {
 
 func TestHeldNativeAlreadyOnAnotherKeyIsRefused(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := keep(heldPandora(5, "4071226281950183516", "Little Big Town Radio")); err != nil {
 		t.Fatal(err)
 	}
@@ -96,16 +96,16 @@ func TestHeldNativeAlreadyOnAnotherKeyIsRefused(t *testing.T) {
 func TestHeldUnknownSourcesStillRefused(t *testing.T) {
 	store := holdTestStore(t)
 	for _, src := range []string{"UPNP", "DEEZER", "SPOTIFY", "SOURCE#150", ""} {
-		_, _, err := heldPresetCandidate(store, marge.HeldItem{Slot: 2, Source: src, Location: "x", ItemName: "x"})
+		_, _, err := heldPresetCandidate(store, heldLive{}, marge.HeldItem{Slot: 2, Source: src, Location: "x", ItemName: "x"})
 		if !errors.Is(err, errNotKeepable) {
 			t.Fatalf("source %q: err=%v, want errNotKeepable", src, err)
 		}
 	}
-	if _, _, err := heldPresetCandidate(store, marge.HeldItem{Slot: 2, Source: "PANDORA", ItemName: "x"}); !errors.Is(err, errNotKeepable) {
+	if _, _, err := heldPresetCandidate(store, heldLive{}, marge.HeldItem{Slot: 2, Source: "PANDORA", ItemName: "x"}); !errors.Is(err, errNotKeepable) {
 		t.Fatalf("Pandora item without a location: err=%v", err)
 	}
 	// A radio station still goes the radio way, never the native one.
-	_, _, err := heldPresetCandidate(store, heldRadio(2, "/station?data=not-base64", "x"))
+	_, _, err := heldPresetCandidate(store, heldLive{}, heldRadio(2, "/station?data=not-base64", "x"))
 	if !errors.Is(err, errNotKeepable) {
 		t.Fatalf("unreadable radio descriptor: err=%v", err)
 	}
@@ -119,7 +119,7 @@ func TestHeldUnknownSourcesStillRefused(t *testing.T) {
 // names no account) then replaced it. The record re-states the key now.
 func TestHeldNativeRecordWithoutAccountKeepsTheAppsAccount(t *testing.T) {
 	store := holdTestStore(t)
-	keep := newHeldPresetKeeper(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := keep(heldPandora(2, "175477659894029190", "Chris Stapleton Radio")); err != nil {
 		t.Fatalf("app-saved item refused: %v", err)
 	}
