@@ -117,7 +117,7 @@ func TestPairRefusalAnswersTheAppWithTheReason(t *testing.T) {
 
 	s.formStereoPair(rec, context.Background(), boxapi.New(pairSelfHost),
 		boxapi.ZoneMember{DeviceID: "AABBCCDDEEFF", IP: pairSelfHost},
-		[]boxapi.ZoneMember{{DeviceID: "112233445566"}}, "Living room")
+		[]boxapi.ZoneMember{{DeviceID: "112233445566"}}, "Living room", nil)
 
 	if rec.Code != 200 {
 		t.Fatalf("the app must get a 200 it can read, got %d", rec.Code)
@@ -176,7 +176,7 @@ func TestPairRefusedWhenAGroupIsStoredButNotLive(t *testing.T) {
 
 	s.formStereoPair(rec, context.Background(), boxapi.New(pairSelfHost),
 		boxapi.ZoneMember{DeviceID: "AABBCCDDEEFF", IP: pairSelfHost},
-		[]boxapi.ZoneMember{{DeviceID: "999999999999"}}, "Living room")
+		[]boxapi.ZoneMember{{DeviceID: "999999999999"}}, "Living room", nil)
 
 	if rec.Code != 200 {
 		t.Fatalf("the app must get a 200 it can read, got %d", rec.Code)

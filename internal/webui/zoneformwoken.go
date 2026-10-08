@@ -132,3 +132,63 @@ func (s *Server) stopGroupWakeSelfResume(ctx context.Context, when string) bool 
 // once more. The firmware's resume can start after the zone formed; a single
 // read at this point catches it without a timer that keeps polling the box.
 const lateSelfResumeCheck = 4 * time.Second
+
+// masterPlaysUsersMusic is the "is the master playing the user's music" test
+// both form paths run before they capture anything to restart on the fresh
+// group or pair. A master STR woke for this group is playing its own power-on
+// resume, so that is stopped and does not count as busy. When the master is
+// NOT playing the user's music (asleep, idle, or only self-resumed), the
+// Spotify engine's auto-attach is held off for hold: in #1074 the engine,
+// still holding the album the user had played before pressing standby, pulled
+// the box onto STR's Spotify stream 300 ms after the pairing woke it, so the
+// pair formed around music nobody started. A master that IS playing is left
+// alone, auto-attach included, so a pair or group formed mid-song keeps it.
+func (s *Server) masterPlaysUsersMusic(ctx context.Context, when string, hold time.Duration) bool {
+	_, busy := s.boxPlayState()
+	if busy && s.stopGroupWakeSelfResume(ctx, when) {
+		busy = false
+	}
+	if !busy {
+		s.holdSpotifyAutoAttach(hold, when)
+	}
+	return busy
+}
+
+// holdSpotifyAutoAttach keeps the Spotify engine from pointing the box at its
+// stream for d. Only ever extends an existing hold (Manager.SuppressActivate),
+// so the callers can re-arm it at each step of a long form without cutting a
+// longer one short. No-op when Spotify is not configured.
+func (s *Server) holdSpotifyAutoAttach(d time.Duration, when string) {
+	if s.spotifySuppressActivate == nil || d <= 0 {
+		return
+	}
+	s.spotifySuppressActivate(d)
+	s.logger.Info("zone: holding the Spotify auto-attach off while the group forms silent", "when", when, "for", d)
+}
+
+// lateSelfResumeHold is how long the Spotify auto-attach stays held after a
+// silent form: up to and a little past the one late look at the master.
+const lateSelfResumeHold = lateSelfResumeCheck + 2*time.Second
+
+// stereoPairAutoAttachHold is one step of the Spotify auto-attach hold while a
+// pair forms silent. formStereoPair arms it at the start, before /addGroup and
+// before the two-sided verify; each of those steps is bounded by about 30 s
+// (the quiet wake's whole budget, the /addGroup budget, the verify budget plus
+// its slack), and the hold only ever extends, so the chain covers the pairing
+// end to end and hands over to the late check's own hold.
+const stereoPairAutoAttachHold = 30*time.Second + lateSelfResumeHold
+
+// scheduleLateSelfResumeCheck gives a group or pair that formed silent one
+// more look after lateSelfResumeCheck: the firmware's resume can start after
+// the zone formed, and the zone then carries it into every room. One read, at
+// most one STOP, no repeating timer. The Spotify auto-attach is held across
+// the wait so the engine cannot fill the silence in the meantime.
+func (s *Server) scheduleLateSelfResumeCheck(when string) {
+	s.holdSpotifyAutoAttach(lateSelfResumeHold, when)
+	go func() {
+		time.Sleep(lateSelfResumeCheck)
+		lctx, lcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer lcancel()
+		s.stopGroupWakeSelfResume(lctx, when)
+	}()
+}
