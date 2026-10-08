@@ -521,6 +521,11 @@ func parseLoadedTrackDurMs(lc string) int64 {
 	return ms
 }
 
+// lateLoadWindow bounds how long after a boundary a non-prefetched load may
+// still claim it. The field case landed 24 ms behind its BOS; two seconds is
+// far shorter than any real track, so the next track's load cannot fall in.
+const lateLoadWindow = 2 * time.Second
+
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
 	// Spotify refusing the saved login is handled by the supervisor once the
@@ -536,7 +541,16 @@ func (m *Manager) noteLibrespotLine(line string) {
 	if strings.Contains(lc, `msg="loaded track`) {
 		if ms := parseLoadedTrackDurMs(lc); ms > 0 {
 			m.mu.Lock()
-			m.loadedTrackDurMs = ms
+			// A non-prefetched load right behind a boundary, with no other
+			// load in between, is the track that boundary just started (see
+			// boundaryAt in Manager), not the next one.
+			if strings.Contains(lc, "prefetched: false") && !m.loadSinceBoundary &&
+				!m.boundaryAt.IsZero() && time.Since(m.boundaryAt) < lateLoadWindow {
+				m.streamTrackDurMs = ms
+			} else {
+				m.loadedTrackDurMs = ms
+			}
+			m.loadSinceBoundary = true
 			m.mu.Unlock()
 		}
 	}

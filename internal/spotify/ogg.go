@@ -306,6 +306,8 @@ func (m *Manager) noteTrackBoundaryCut(prevGran, prevBody int64) {
 	endedMs := m.streamTrackDurMs
 	m.streamTrackDurMs = m.loadedTrackDurMs
 	m.loadedTrackDurMs = 0
+	m.boundaryAt = time.Now()
+	m.loadSinceBoundary = false
 	armed := time.Now().Before(m.skipCutUntil)
 	m.mu.Unlock()
 	if armed || !cutShortOfDuration(prevGran, prevBody, endedMs) {

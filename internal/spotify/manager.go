@@ -355,8 +355,20 @@ type Manager struct {
 	// in full looked cut short and the box lost the last seconds of every
 	// other song to a needless re-point (living-room ST30, 2026-09-08:
 	// 213 s played against 233 s expected, 198 s against 268 s).
-	loadedTrackDurMs int64
-	streamTrackDurMs int64
+	//
+	// The "always before" above does not hold for a load that is not a
+	// prefetch. When a shuffle recall replaces a track the engine had already
+	// loaded paused, the replacement's "loaded track" line lands a few
+	// milliseconds AFTER its own BOS, so the boundary hands over the stale
+	// paused track's duration and the replacement's arrives one boundary
+	// late. Each song then ended "short" of the wrong length and lost its
+	// buffered tail (living-room ST30, 2026-10-08: 156 s played against 198 s
+	// expected). boundaryAt / loadSinceBoundary let such a late load claim the
+	// boundary it belongs to.
+	loadedTrackDurMs  int64
+	streamTrackDurMs  int64
+	boundaryAt        time.Time
+	loadSinceBoundary bool
 	// pendingRepointFrom/To hold a context change announced by will_play that
 	// has not been acted on yet.
 	//
