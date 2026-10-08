@@ -149,9 +149,14 @@ export function sleep(ms) {
 //               no fresh app record — copy that source preset one to one.
 //   'direct'    a non-proxy stream with no fresh app record — save the
 //               box-reported now-playing.
+//   'library'   a single music-library track the app started from the Library
+//               is still playing — save it with its media server, the preset
+//               the Library star button stores (#1065).
 // sourceSlot is activeSlotFromLocation(nowLocation), passed in so the caller
 // computes it once; null means "not a proxy location". queue is the agent's
-// GET /api/queue snapshot (state.queue), null when unknown.
+// GET /api/queue snapshot (state.queue), null when unknown. libraryMatch is
+// libraryPlayMatches(state.lastLibraryPlay, ...): true when the speaker plays
+// the library track the app last started.
 //
 // A fresh app play wins outright, for EVERY location shape. The app knows
 // exactly which station the user just picked, and the box's now-playing cannot
@@ -170,13 +175,31 @@ export function sleep(ms) {
 // before 'copy-slot' and 'direct', because while a folder plays the speaker
 // reports only the current TRACK, and saving that lost the folder and its
 // "from <server>" line (#1030).
-export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs, queue) {
+//
+// A single library track comes after the queue: a folder play clears the
+// library record, so both can only be set when the queue snapshot is stale, and
+// then the agent answers the folder save with no-queue and the caller asks again
+// with queue null, which lands here. It comes before 'direct', which saved the
+// track as a plain stream without its media server (#1065).
+export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs, queue, libraryMatch) {
   if (/\/spotify\/stream|\/playback\/container/.test(nowLocation || '')) return 'spotify';
   const fresh = !!(lastAppPlay && lastAppPlay.url && nowMs - lastAppPlay.at < freshMs);
   if (fresh) return 'app-play';
   if (queue && queue.active && Array.isArray(queue.items) && queue.items.length > 0) return 'queue';
+  if (libraryMatch) return 'library';
   if (sourceSlot !== null && sourceSlot !== undefined) return 'copy-slot';
   return 'direct';
+}
+
+// libraryPlayMatches reports whether the speaker is playing the single library
+// track the app last started from the Library (state.lastLibraryPlay). The
+// record alone is not enough: the user may have moved on with a hardware key,
+// the phone page or another app since, so the speaker's own location has to
+// name the same URL. decodedLocation is that location with an agent relay
+// wrapper (/stream/raw) taken off, for a speaker that plays it through one.
+export function libraryPlayMatches(rec, nowLocation, decodedLocation) {
+  if (!rec || !rec.url) return false;
+  return rec.url === nowLocation || rec.url === decodedLocation;
 }
 
 // presetBitrateLine is the bitrate line of a preset key: "<n> kbit/s", the

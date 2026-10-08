@@ -43,6 +43,12 @@ export const state = {
   // reporting the PREVIOUS preset (#252). Cleared by preset recalls and by
   // failed plays; null when the app has not started a station itself.
   lastAppPlay: null,
+  // lastLibraryPlay is the single music-library track the app last started from
+  // the Library ({url, name, art, source, at}). A long-press save while the
+  // speaker still plays that URL stores it with its media server, the way the
+  // Library star button does (#1065). Cleared by preset recalls, radio plays and
+  // folder plays.
+  lastLibraryPlay: null,
   queue: null,         // current box play queue: {active, pos, shuffle, repeat, items[]} or null
   optimisticUntil: 0,  // timestamp until which refreshStatus trusts our optimistic state over the box
   presetErrors: {},    // slot → last error message (rendered red)

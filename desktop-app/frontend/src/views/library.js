@@ -488,6 +488,16 @@ async function libraryPlay(item) {
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;
+    // Remembered so holding a key while this track plays saves it with its
+    // media server, like the star button does (#1065). The save only uses it
+    // while the speaker still reports this URL.
+    state.lastLibraryPlay = {
+      url: item.streamURL,
+      name: item.title || '(track)',
+      art: item.albumArtURL || '',
+      source: librarySourceName(),
+      at: Date.now(),
+    };
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
     verifyLibraryPlayback(item, target);
@@ -629,6 +639,7 @@ async function libraryPlayFolder() {
     await StartQueue(target.host, target.port, JSON.stringify(payload));
     // A folder play supersedes any ad-hoc radio station the app started (#252).
     state.lastAppPlay = null;
+    state.lastLibraryPlay = null;
     showToast(t('library.folderQueued', { n: items.length }));
   } catch (e) {
     showError(`StartQueue: ${e}`);
@@ -707,6 +718,14 @@ function librarySaveFolderAsPreset() {
   });
 }
 
+// librarySourceName is the open media server's name as a preset stores it for
+// the "from <server>" line: the star button and the hold-to-save of a track
+// started here must agree on it.
+function librarySourceName() {
+  const srv = libState.servers.find(s => s.udn === libState.currentUDN);
+  return (srv && (srv.friendlyName || srv.address)) || '';
+}
+
 function librarySaveAsPreset(item) {
   if (!state.currentBox) {
     showToast(t('library.toastNoBox') || t('common.pickBox'));
@@ -718,8 +737,7 @@ function librarySaveAsPreset(item) {
   }
   // The media server this track came from, stored on the preset so the tile can
   // show a small "from <server>" badge.
-  const srv = libState.servers.find(s => s.udn === libState.currentUDN);
-  const source = (srv && (srv.friendlyName || srv.address)) || '';
+  const source = librarySourceName();
   deps.showSlotPicker({
     title: t('library.assignTitle', { name: getBoxLabel(state.currentBox) }),
     subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',

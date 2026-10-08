@@ -260,6 +260,7 @@ import {
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
+  libraryPlayMatches,
   presetBitrateLine,
   queueSaveFallsThrough,
   dismissNotice,
@@ -7378,7 +7379,10 @@ async function saveCurrentToSlot(slot) {
   // A fresh app play is authoritative regardless of what the box reports right
   // now (native-switch lag / wake-resume race, #836). savePresetCase decides;
   // the 'app-play' branch below saves state.lastAppPlay with its real logo chain.
-  let saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, state.queue);
+  // A single library track the app started from the Library, still playing:
+  // saved with its media server like the Library star button does (#1065).
+  const libraryMatch = libraryPlayMatches(state.lastLibraryPlay, state.nowLocation, decodeProxyUrl(state.nowLocation));
+  let saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, state.queue, libraryMatch);
 
   // Case folder: a music-library folder plays as the speaker's queue. The
   // speaker only reports the current track, so the agent builds the FOLDER
@@ -7397,7 +7401,7 @@ async function saveCurrentToSlot(slot) {
         showPresetSaveError(err, slot);
         return;
       }
-      saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null);
+      saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null, libraryMatch);
     }
   }
 
@@ -7505,6 +7509,27 @@ async function saveCurrentToSlot(slot) {
       }
       return;
     }
+  }
+
+  // Case library track: the speaker plays the single music-library track the
+  // app started from the Library. Saved through SaveLibraryPreset with the media
+  // server, exactly what the Library star button stores, so the key shows its
+  // "from <server>" line and plays straight from the server. The 'direct' path
+  // below stored it as a plain stream and lost the server (#1065).
+  if (saveCase === 'library') {
+    const lib = state.lastLibraryPlay;
+    const lname = lib.name || state.nowName || '(track)';
+    try {
+      await SaveLibraryPreset(
+        state.currentBox.host, state.currentBox.port,
+        slot, lname, lib.url, lib.art || '', 0, lib.source || ''
+      );
+      showToast(t('preset.savedToKey', { n: slot, name: lname }));
+      await loadPresets();
+    } catch (err) {
+      showPresetSaveError(err, slot);
+    }
+    return;
   }
 
   // Case A: speaker is playing a proxy item
@@ -7673,6 +7698,7 @@ async function play(slot) {
   // A preset recall supersedes any ad-hoc station the app started: drop the
   // record so a later long-press save goes back to trusting the box report.
   state.lastAppPlay = null;
+  state.lastLibraryPlay = null;
   const p = state.presets.find(x => x.slot === slot);
   if (p) {
     // Optimistic UI: set BUFFERING_STATE immediately so the user
@@ -9384,6 +9410,7 @@ async function playStation(s) {
       // copied the OLD station onto the key (#252). Cleared by any other play
       // the app issues (preset recall etc.), so a true hardware-key press
       // still saves via the box report.
+      state.lastLibraryPlay = null;
       state.lastAppPlay = {
         url, name: s.name || '', icon: chain, bitrate: cur.bitrate || 0,
         uuid: cur.stationuuid || '', homepage: s.homepage || '',
