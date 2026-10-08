@@ -1076,6 +1076,9 @@ const standbyStopDebounce = 4 * time.Second
 // (covering a clear that lost the race) without flooding the box with SOAP calls.
 const standbyClearMinGap = 500 * time.Millisecond
 
+// zoneStandbyLogGap bounds the zoned-box power-off line to one per episode.
+const zoneStandbyLogGap = 30 * time.Second
+
 // standbyBounceFixEnabled gates the #197 mitigation. Default on; set
 // STR_STANDBY_STOP=0 on the box to disable it if it ever regresses, without an
 // OTA (run.sh exports the agent's environment).
@@ -1352,6 +1355,24 @@ func (s *Server) HandleEnterStandby() {
 	s.noteStandbyStop()
 
 	if s.boxInZone() {
+		// One line per power-off episode (the flap can re-fire within a second):
+		// on a zone master this is also where a firmware end-of-file standby lands
+		// (#1190), so the log must show the power-off reading was taken.
+		s.standbyStopMu.Lock()
+		logIt := s.lastZoneStandbyLog.IsZero() || now.Sub(s.lastZoneStandbyLog) >= zoneStandbyLogGap
+		if logIt {
+			s.lastZoneStandbyLog = now
+		}
+		s.standbyStopMu.Unlock()
+		if logIt {
+			sinceKey := -1 // no key press seen
+			if !lastKey.IsZero() {
+				sinceKey = int(now.Sub(lastKey).Seconds())
+			}
+			s.logger.Info("standby bounce: speaker in a group or stereo pair went to standby, treated as a power-off; recovery stays off, transport left alone",
+				"sinceLastKeySec", sinceKey, "deliberateStop", deliberateStop,
+				"queueActive", s.queue != nil && s.queue.isActive())
+		}
 		return // a zone slave/master mirror re-selects UPNP on purpose; leave its transport
 	}
 

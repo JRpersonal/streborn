@@ -552,6 +552,10 @@ type Server struct {
 	// the clear re-fires on each flip of the UPNP<->STANDBY oscillation so a clear
 	// that lost the ~170 ms race is retried, bounded by standbyClearMinGap.
 	lastStandbyClear time.Time
+	// lastZoneStandbyLog rate-limits the "zoned box powered off, leaving its
+	// transport alone" line to one per power-off episode (the firmware can flap
+	// UPNP<->STANDBY several times within a second).
+	lastZoneStandbyLog time.Time
 	// lastUserPlayStart is when a user last explicitly asked for playback (a
 	// hardware preset press or an app play). HandleEnterStandby reads it to tell
 	// a UPNP->STANDBY flip that interrupts the user's own fresh recall (firmware
@@ -618,6 +622,10 @@ type Server struct {
 	// state machine over what the box reports, so it is only testable if the
 	// reports can be scripted.
 	nowPlayingFn func() (status string, pos, total time.Duration, standby bool)
+	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
+	// one, boxInZone, reads the persisted zone document and the speaker's
+	// /getZone).
+	queueInZoneFn func() bool
 
 	// nowPlayingBodyFn seams the raw now_playing read behind the foreign-content
 	// guard (resume_foreign.go), so the decision is assertable without a live
