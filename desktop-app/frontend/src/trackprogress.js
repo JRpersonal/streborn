@@ -21,6 +21,12 @@ export const FAST_POLL_WINDOW_MS = 15000;
 //   momentary gap in the speaker's answer (Bose answers NOT_IMPLEMENTED for a
 //   field it has no value for at that instant), not a track turning into radio.
 //   The known length is kept, so the bar does not blink out for a poll.
+// - A zero length right after a "track change" whose position simply continues
+//   the previous track's clock is the same track: the speaker briefly reported
+//   a different name or location for it (a metadata update mid-song) and then
+//   answered without a length for a few seconds. The bar used to vanish for
+//   those seconds while the elapsed clock kept counting (#1190), so the length
+//   remembered by resetProgress is carried over instead.
 // - The bar never runs backwards on its own; only a track change, which the
 //   caller handles by resetting the record, may send it back to zero.
 export function applyPositionReading(tp, reading, keyAtStart, now) {
@@ -29,6 +35,7 @@ export function applyPositionReading(tp, reading, keyAtStart, now) {
   if (pos < 0) return false;
   if (keyAtStart !== undefined && keyAtStart !== tp.key) return false;
   if (dur <= 0 && tp.dur > 0 && pos <= tp.dur + 2) dur = tp.dur;
+  if (dur <= 0 && tp.dur <= 0 && continuesPrevious(tp, pos, now)) dur = tp.prevDur;
   const drifted = tp.sec + (now - tp.at) / 1000;
   if (tp.at !== 0 && pos + 2 < drifted && dur === tp.dur) return false;
   tp.sec = pos;
@@ -37,8 +44,35 @@ export function applyPositionReading(tp, reading, keyAtStart, now) {
   return true;
 }
 
-// resetProgress starts the record over for a new track.
+// CONTINUE_TOLERANCE_SEC is how far a reading may sit from where the previous
+// track's clock would be now and still count as that same track playing on.
+const CONTINUE_TOLERANCE_SEC = 3;
+
+// continuesPrevious reports whether a position reading picks up exactly where
+// the record's previous clock (saved by resetProgress) would be by now.
+function continuesPrevious(tp, pos, now) {
+  if (!(tp.prevDur > 0) || !tp.prevAt) return false;
+  if (pos > tp.prevDur + 2) return false;
+  const expected = tp.prevSec + (now - tp.prevAt) / 1000;
+  return Math.abs(pos - expected) < CONTINUE_TOLERANCE_SEC;
+}
+
+// resetProgress starts the record over for a new track. It keeps the clock it
+// replaces (prevSec / prevDur / prevAt) so applyPositionReading can tell a
+// real new track from the same one under a briefly different name (#1190).
+// A record that took no reading since its own reset holds no clock of its own,
+// so the one before it is kept: the name flipping away and straight back is two
+// resets in a row, and the second must not wipe what the first saved.
 export function resetProgress(tp, key, now) {
+  if (tp.at && tp.at !== tp.resetAt) {
+    tp.prevSec = tp.sec;
+    tp.prevDur = tp.dur;
+    tp.prevAt = tp.at;
+  } else if (!tp.at) {
+    tp.prevSec = 0;
+    tp.prevDur = 0;
+    tp.prevAt = 0;
+  }
   tp.sec = 0;
   tp.dur = 0;
   tp.at = now;

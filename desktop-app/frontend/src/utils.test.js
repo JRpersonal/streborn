@@ -1,7 +1,7 @@
 // Tests for the pure decision helpers in utils.js.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { savePresetCase, queueSaveFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
+import { savePresetCase, libraryPlayMatches, queueSaveFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
 
 const FRESH_MS = 2 * 60 * 1000;
 const NOW = 1_000_000_000;
@@ -61,6 +61,37 @@ describe('savePresetCase', () => {
     expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, { active: true, items: [] })).toBe('direct');
     expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, null)).toBe('direct');
     expect(savePresetCase('http://192.0.2.1:8888/stream/2', 2, null, NOW, FRESH_MS, undefined)).toBe('copy-slot');
+  });
+});
+
+// Holding a key while a single library track plays stored a plain stream
+// without the media server, while the Library star stores the server (#1065).
+describe('savePresetCase for a single library track', () => {
+  const trackLoc = 'http://192.0.2.10:9000/disk/01.mp3';
+  const lib = { url: trackLoc, name: 'Come Together', source: 'Synology', at: NOW - 600_000 };
+  const relayLoc = 'http://192.0.2.1:8888/stream/raw?u=' + btoa(trackLoc).replace(/\+/g, '-').replace(/\//g, '_');
+
+  it('matches only while the speaker plays the remembered URL', () => {
+    expect(libraryPlayMatches(lib, trackLoc, trackLoc)).toBe(true);
+    expect(libraryPlayMatches(lib, relayLoc, trackLoc)).toBe(true); // through the agent relay
+    expect(libraryPlayMatches(lib, 'http://radio.example.com/live.mp3', 'http://radio.example.com/live.mp3')).toBe(false);
+    expect(libraryPlayMatches(null, trackLoc, trackLoc)).toBe(false);
+    expect(libraryPlayMatches({ name: 'x' }, trackLoc, trackLoc)).toBe(false);
+  });
+
+  it('saves the library track instead of the plain stream', () => {
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, null, true)).toBe('library');
+    expect(savePresetCase(trackLoc, null, stalePlay, NOW, FRESH_MS, null, true)).toBe('library');
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, null, false)).toBe('direct');
+  });
+
+  it('leaves Spotify, a fresh app play and a playing folder ahead of it', () => {
+    const liveQueue = { active: true, items: [{ title: 'Come Together' }] };
+    expect(savePresetCase('http://192.0.2.1:8888/spotify/stream-3.ogg', 3, null, NOW, FRESH_MS, null, true)).toBe('spotify');
+    expect(savePresetCase(trackLoc, null, freshPlay, NOW, FRESH_MS, null, true)).toBe('app-play');
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, liveQueue, true)).toBe('queue');
+    // The folder save then reports no-queue and the caller asks again without it.
+    expect(savePresetCase(trackLoc, null, null, NOW, FRESH_MS, null, true)).toBe('library');
   });
 });
 

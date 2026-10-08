@@ -70,7 +70,8 @@ describe('the app wires native keys', () => {
 
   it('shows no bitrate line and runs no directory logo lookup on a native key', () => {
     const tile = main.slice(main.indexOf('function renderPresets()'));
-    expect(tile).toContain("isNativeServicePreset(p) ? '' : `<div class=\"preset-bitrate\">");
+    expect(tile).toContain("isNativeServicePreset(p) ? '' : presetBitrateLine(p, tileBitrate)");
+    expect(tile).toContain('${bitrateLine ? `<div class="preset-bitrate">');
     const heal = main.slice(main.indexOf('async function healPresetLogos()'));
     expect(heal.slice(0, heal.indexOf('RadioSearch('))).toContain('!isNativeServicePreset(p)');
   });

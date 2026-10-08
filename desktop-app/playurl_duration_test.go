@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 // A single library track started from the desktop app drew no progress bar, in
@@ -112,4 +113,27 @@ func TestPlayURLSendsZeroForSomethingWithNoLength(t *testing.T) {
 			t.Errorf("%s = %v, want %q", k, got[k], want)
 		}
 	}
+}
+
+// A play that has to wake the speaker first takes longer than the shared client
+// timeout. The app used to give up a fraction of a second before the music
+// started and report box_not_ready (#1065). The shared timeout is shrunk here so
+// the test stays fast; the play endpoint answers after it has passed.
+func TestPlayOutlastsTheSharedClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/agent/version" {
+			_, _ = w.Write([]byte(`{"version":"v1.0.8"}`))
+			return
+		}
+		time.Sleep(400 * time.Millisecond)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+	a := copyApp(t)
+	a.httpClient.Timeout = 150 * time.Millisecond
+	resp, err := a.playPost("127.0.0.1", listenPort(t, srv), "/api/play", "{}")
+	if err != nil {
+		t.Fatalf("playPost: %v; a play that outlasts the shared timeout must still succeed", err)
+	}
+	resp.Body.Close()
 }

@@ -260,6 +260,8 @@ import {
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
+  libraryPlayMatches,
+  presetBitrateLine,
   queueSaveFallsThrough,
   dismissNotice,
   noticeDismissed,
@@ -6992,6 +6994,9 @@ function renderPresets() {
           setPresetIfUnchanged(state.currentBox, p, { bitrate: state.nowBitrate });
         }
       }
+      // No bitrate line on a native Pandora / iHeartRadio key, nor on a media-server
+      // key that has no rate (presetBitrateLine, #1065).
+      const bitrateLine = isNativeServicePreset(p) ? '' : presetBitrateLine(p, tileBitrate);
       // A key shows what is SAVED on it: a short, static name, plus the markers
       // that say it is the one playing (the green .playing tile and the
       // Playing/Buffering/Paused line from presetStateLabel). It deliberately
@@ -7012,7 +7017,7 @@ function renderPresets() {
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
-            ${isNativeServicePreset(p) ? '' : `<div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>`}
+            ${bitrateLine ? `<div class="preset-bitrate">${bitrateLine}</div>` : ''}
             ${stateLabel}
           </div>
         </div>
@@ -7374,7 +7379,10 @@ async function saveCurrentToSlot(slot) {
   // A fresh app play is authoritative regardless of what the box reports right
   // now (native-switch lag / wake-resume race, #836). savePresetCase decides;
   // the 'app-play' branch below saves state.lastAppPlay with its real logo chain.
-  let saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, state.queue);
+  // A single library track the app started from the Library, still playing:
+  // saved with its media server like the Library star button does (#1065).
+  const libraryMatch = libraryPlayMatches(state.lastLibraryPlay, state.nowLocation, decodeProxyUrl(state.nowLocation));
+  let saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, state.queue, libraryMatch);
 
   // Case folder: a music-library folder plays as the speaker's queue. The
   // speaker only reports the current track, so the agent builds the FOLDER
@@ -7393,7 +7401,7 @@ async function saveCurrentToSlot(slot) {
         showPresetSaveError(err, slot);
         return;
       }
-      saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null);
+      saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null, libraryMatch);
     }
   }
 
@@ -7501,6 +7509,27 @@ async function saveCurrentToSlot(slot) {
       }
       return;
     }
+  }
+
+  // Case library track: the speaker plays the single music-library track the
+  // app started from the Library. Saved through SaveLibraryPreset with the media
+  // server, exactly what the Library star button stores, so the key shows its
+  // "from <server>" line and plays straight from the server. The 'direct' path
+  // below stored it as a plain stream and lost the server (#1065).
+  if (saveCase === 'library') {
+    const lib = state.lastLibraryPlay;
+    const lname = lib.name || state.nowName || '(track)';
+    try {
+      await SaveLibraryPreset(
+        state.currentBox.host, state.currentBox.port,
+        slot, lname, lib.url, lib.art || '', 0, lib.source || ''
+      );
+      showToast(t('preset.savedToKey', { n: slot, name: lname }));
+      await loadPresets();
+    } catch (err) {
+      showPresetSaveError(err, slot);
+    }
+    return;
   }
 
   // Case A: speaker is playing a proxy item
@@ -7669,6 +7698,7 @@ async function play(slot) {
   // A preset recall supersedes any ad-hoc station the app started: drop the
   // record so a later long-press save goes back to trusting the box report.
   state.lastAppPlay = null;
+  state.lastLibraryPlay = null;
   const p = state.presets.find(x => x.slot === slot);
   if (p) {
     // Optimistic UI: set BUFFERING_STATE immediately so the user
@@ -7913,7 +7943,7 @@ function scheduleLiveTitle() {
         // since the keys stopped showing the live title (2026-08-23) a rebuild
         // would re-create six <img class="preset-logo"> every 12 s for a value
         // no tile displays. The tile's own inputs have their own triggers: the
-        // highlight from stateChanged in refreshStatus, the bitrate from
+        // highlight from gridChanged in refreshStatus, the bitrate from
         // scheduleLiveBitrate.
         renderNowPlayingBar();
       }
@@ -8445,7 +8475,11 @@ async function refreshStatus() {
     }
     const newLoc = optimistic ? state.nowLocation : loc;
     const newName = optimistic ? state.nowName : name;
-    const stateChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc || state.nowName !== newName;
+    // The preset grid reads the play state and the location, never the track
+    // name (a key shows what is SAVED on it). Rebuilding all six keys for a name
+    // change re-created their markup mid-song, which made the window jump while
+    // the speaker briefly reported a different name for the same track (#1190).
+    const gridChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc;
     // A different track means the progress must start over; anything else keeps
     // its reading so the bar does not stutter on an unrelated status change.
     const trackKey = newLoc + '|' + newName;
@@ -8630,7 +8664,7 @@ async function refreshStatus() {
       }
     }
 
-    if ((stateChanged || iconAdoptable) && state.presets.length > 0) {
+    if ((gridChanged || iconAdoptable) && state.presets.length > 0) {
       renderPresets();
     }
 
@@ -9380,6 +9414,7 @@ async function playStation(s) {
       // copied the OLD station onto the key (#252). Cleared by any other play
       // the app issues (preset recall etc.), so a true hardware-key press
       // still saves via the box report.
+      state.lastLibraryPlay = null;
       state.lastAppPlay = {
         url, name: s.name || '', icon: chain, bitrate: cur.bitrate || 0,
         uuid: cur.stationuuid || '', homepage: s.homepage || '',
