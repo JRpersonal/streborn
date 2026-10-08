@@ -137,6 +137,47 @@ func TestPartnerThatStaysDownIsStillRefused(t *testing.T) {
 	}
 }
 
+// The zone endpoint is polled every few seconds; a partner that is really gone
+// can take the full recheck timeout to fail. The zone read reports the cached
+// verdict at once and lets the recheck run in the background.
+func TestZoneReadDoesNotWaitForASlowRecheck(t *testing.T) {
+	s := newStereoTestServer()
+	s.pairPartnerGone = func() (string, string) { return "192.0.2.25", "DEV#MASTER" }
+	started := make(chan struct{})
+	release := make(chan struct{})
+	s.pairPartnerRecheck = func() (string, string) {
+		close(started)
+		<-release // a probe that hangs until the test lets it go
+		return "", ""
+	}
+	defer close(release)
+	start := time.Now()
+	ip, id := s.zonePartnerGone()
+	if d := time.Since(start); d > 100*time.Millisecond {
+		t.Fatalf("zone read took %s; it must not wait for the recheck", d)
+	}
+	if ip != "192.0.2.25" || id != "DEV#MASTER" {
+		t.Fatalf("zonePartnerGone = %q, %q; want the cached verdict", ip, id)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the background recheck was never kicked")
+	}
+}
+
+func TestZoneReadKicksNoRecheckWithoutARecord(t *testing.T) {
+	s := newStereoTestServer()
+	s.pairPartnerGone = func() (string, string) { return "", "" }
+	s.pairPartnerRecheck = func() (string, string) {
+		t.Error("recheck kicked although no partner is recorded as gone")
+		return "", ""
+	}
+	if ip, _ := s.zonePartnerGone(); ip != "" {
+		t.Fatalf("zonePartnerGone = %q, want empty", ip)
+	}
+}
+
 func TestPlaySlotRefusesBeforeWaking(t *testing.T) {
 	// The whole point: no wake, no lock held for seconds, an immediate answer.
 	s := newStereoTestServer()

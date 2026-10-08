@@ -60,6 +60,22 @@ func (s *Server) recheckPartnerGone() (ip, deviceID string) {
 	return "", ""
 }
 
+// zonePartnerGone is the non-blocking variant for the zone endpoint, which the
+// app polls every few seconds: it reports the current verdict at once and
+// kicks the recheck in the background. The recheck is rate-limited and
+// single-flight on the marge side, so a kick inside its window returns
+// immediately and polls cannot pile up probes.
+func (s *Server) zonePartnerGone() (ip, deviceID string) {
+	if s.pairPartnerGone == nil {
+		return "", ""
+	}
+	ip, deviceID = s.pairPartnerGone()
+	if ip != "" && s.pairPartnerRecheck != nil {
+		go s.pairPartnerRecheck()
+	}
+	return ip, deviceID
+}
+
 // incompletePair describes why this speaker cannot play on its own.
 type incompletePair struct {
 	// Reason is "partner-gone" (the other half did not answer) or
