@@ -3954,7 +3954,7 @@ function stereoStaleForError(errStr, host) {
     const partner = resolveBoxByRef(ref.partnerIP || ref.partnerID || ref.master, state.boxes);
     return {
       holder: box || { host, name: host }, partner,
-      partnerLabel: partner ? (partner.name || partner.host) : (ref.partnerIP || ''),
+      partnerLabel: partner ? getBoxLabel(partner) : (ref.partnerIP || ''),
       reason: ref.reason === 'partner-gone' ? 'partner-gone' : 'partner-denies', pair: null,
     };
   }
