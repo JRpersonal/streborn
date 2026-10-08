@@ -179,6 +179,19 @@ export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, fres
   return 'direct';
 }
 
+// presetBitrateLine is the bitrate line of a preset key: "<n> kbit/s", the
+// "- kbit/s" placeholder of a radio key with no rate yet, or '' for no line at
+// all. A key that plays from a media server (a single library track, a saved
+// folder, the speaker's queue) carries no measured rate: since v1.0.6 such a
+// track goes straight from the server to the speaker, nothing is measured, and
+// the placeholder read as a broken key (#1065). A rate that IS stored on such a
+// key (saved before that change) is still shown.
+export function presetBitrateLine(p, tileBitrate) {
+  if (tileBitrate > 0) return `${tileBitrate} kbit/s`;
+  if (p && (p.source || p.type === 'queue' || (p.items && p.items.length))) return '';
+  return '- kbit/s';
+}
+
 // queueSaveFallsThrough reports whether a failed folder save (SaveQueuePreset)
 // should fall back to the other save paths instead of reporting an error: the
 // agent found no folder playing after all (409 "no-queue", the queue ended a

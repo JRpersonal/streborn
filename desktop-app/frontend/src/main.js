@@ -260,6 +260,7 @@ import {
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
+  presetBitrateLine,
   queueSaveFallsThrough,
   dismissNotice,
   noticeDismissed,
@@ -6992,6 +6993,9 @@ function renderPresets() {
           setPresetIfUnchanged(state.currentBox, p, { bitrate: state.nowBitrate });
         }
       }
+      // No bitrate line on a native Pandora / iHeartRadio key, nor on a media-server
+      // key that has no rate (presetBitrateLine, #1065).
+      const bitrateLine = isNativeServicePreset(p) ? '' : presetBitrateLine(p, tileBitrate);
       // A key shows what is SAVED on it: a short, static name, plus the markers
       // that say it is the one playing (the green .playing tile and the
       // Playing/Buffering/Paused line from presetStateLabel). It deliberately
@@ -7012,7 +7016,7 @@ function renderPresets() {
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
-            ${isNativeServicePreset(p) ? '' : `<div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>`}
+            ${bitrateLine ? `<div class="preset-bitrate">${bitrateLine}</div>` : ''}
             ${stateLabel}
           </div>
         </div>
