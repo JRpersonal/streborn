@@ -172,3 +172,47 @@ func TestAnExtraLoadWithoutABoundaryDoesNotDesyncTheDetector(t *testing.T) {
 		t.Fatal("a genuine mid-track cut must still re-point the box")
 	}
 }
+
+// The field case (living-room ST30, 2026-10-08): a shuffle recall replaced a
+// track the engine had loaded paused, and the replacement's "loaded track"
+// line arrived 24 ms AFTER its own BOS. The boundary therefore handed over the
+// stale 198 s duration, and when the 156 s song ended naturally it was read as
+// an app skip and lost its buffered tail.
+func TestALoadJustBehindItsBoundaryClaimsThatBoundary(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 2)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard
+
+	m.noteLibrespotLine(`level=info msg="loaded track \"Mr. Know It All\" (paused: true, position: 0ms, duration: 198425ms, prefetched: false)"`)
+	m.noteTrackBoundaryCut(0, 0) // the replacement's BOS
+	m.noteLibrespotLine(`level=info msg="loaded track \"Sorry I'm Here For Someone Else\" (paused: false, position: 5ms, duration: 156582ms, prefetched: false)"`)
+	m.noteLibrespotLine(`level=info msg="loaded track \"Funeral\" (paused: false, position: 0ms, duration: 234090ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(156*vorbisRate, 4096) // natural end at 156 s
+	select {
+	case <-fired:
+		t.Fatal("a song that played to its end must not be read as an app skip")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Funeral is now the forwarded track, and a real app skip still fires.
+	m.noteLibrespotLine(`level=info msg="loaded track \"next\" (paused: false, position: 0ms, duration: 200000ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(100*vorbisRate, 4096)
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a genuine mid-track cut must still re-point the box")
+	}
+}
+
+// A prefetched load right after a boundary names the NEXT track, never the one
+// that just started.
+func TestAPrefetchJustBehindABoundaryStaysWithTheNextTrack(t *testing.T) {
+	m := newAppSkipTestManager()
+	m.noteLibrespotLine(`level=info msg="loaded track \"a\" (duration: 200000ms, prefetched: false)"`)
+	m.noteTrackBoundaryCut(0, 0)
+	m.noteLibrespotLine(`level=info msg="loaded track \"b\" (duration: 150000ms, prefetched: true)"`)
+	if m.streamTrackDurMs != 200000 || m.loadedTrackDurMs != 150000 {
+		t.Fatalf("stream=%d loaded=%d, want 200000 / 150000", m.streamTrackDurMs, m.loadedTrackDurMs)
+	}
+}
