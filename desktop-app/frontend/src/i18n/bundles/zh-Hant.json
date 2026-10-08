@@ -352,7 +352,7 @@
   "status.auxInput": "AUX 輸入",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
-  "status.ready": "就緒",
+  "status.stopped": "已停止",
   "status.unreachable": "無法連線",
   "status.playlistLabel": "播放清單",
   "status.albumLabel": "專輯",

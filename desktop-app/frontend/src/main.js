@@ -265,6 +265,7 @@ import {
   proxiedRadioPlaying,
   queueSlotCard,
   queueSlotActive,
+  queueTrackMeta,
   isKeyChrome,
   orionStationPayload,
   nativeSlotStale,
@@ -7971,9 +7972,11 @@ function renderQueueControls() {
   if (pos) {
     const items = q.items || [];
     const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
-    pos.textContent = (n > 0 && items.length > 0)
-      ? t('queue.trackOf', { n, total: items.length })
-      : '';
+    // The running song's artist and album, as its Library row named them
+    // (#1033); the title itself is already on the now-playing line.
+    const meta = queueTrackMeta(q);
+    const of = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
+    pos.textContent = [of, meta].filter(Boolean).join(' · ');
   }
 }
 
@@ -8114,15 +8117,17 @@ function renderNowPlayingBar() {
   } else if (stateLabel) {
     statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
   } else if (state.currentBox && state.currentBox.offline) {
-    // Not "ready". A failed poll deliberately keeps the last known
+    // Not "stopped". A failed poll deliberately keeps the last known
     // now-playing rather than blanking the bar, and with nothing playing
-    // that fell through to "ready", so a speaker that had gone off the
+    // that fell through to the stopped text (then "ready"), so a speaker that had gone off the
     // network was reported as an idle speaker waiting for input, for as long
     // as the app stayed open. The tile greys out but the status line said the
     // opposite (#165). Discovery already knows; this just stops contradicting it.
     statusHTML = `<span class="muted">${escapeHtml(t('status.unreachable'))}</span>`;
   } else {
-    statusHTML = `<span class="muted">${escapeHtml(t('status.ready'))}</span>`;
+    // Nothing playing is "stopped", the word the phone page uses too. It was
+    // "ready" here and "Idle" there for the same speaker (#1034).
+    statusHTML = `<span class="muted">${escapeHtml(t('status.stopped'))}</span>`;
   }
   // Only rewrite the DOM when the line changes, so the marquee animation is not
   // restarted on every poll (it would never get to scroll).

@@ -32,6 +32,7 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 			Mime:     it.Mime,
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
+			Album:    it.Album,
 		})
 	}
 	return out
@@ -840,6 +841,7 @@ type queueStartItem struct {
 	Mime        string `json:"mime"`
 	DurationSec int    `json:"duration_sec"`
 	Artist      string `json:"artist"`
+	Album       string `json:"album"`
 }
 
 // queueCard is the optional Recently-played folder identity the desktop app
@@ -876,6 +878,7 @@ func toQueueItems(in []queueStartItem) []queueItem {
 			Mime:     it.Mime,
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
+			Album:    it.Album,
 		})
 	}
 	return out

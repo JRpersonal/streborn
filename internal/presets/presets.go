@@ -205,6 +205,9 @@ type PresetItem struct {
 	// the same way Spotify songs are filed (#1077). Optional/additive: presets
 	// saved before this carry no artist and their songs show the title alone.
 	Artist string `json:"artist,omitempty"`
+	// Album is the track's album from the media server, shown with the artist
+	// next to the running song (#1033). Optional/additive like Artist.
+	Album string `json:"album,omitempty"`
 }
 
 // MaxQueueItems bounds how many tracks a queue preset (Type=="queue") stores on

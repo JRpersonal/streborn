@@ -352,7 +352,7 @@
   "status.auxInput": "AUX input",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
-  "status.ready": "ready",
+  "status.stopped": "stopped",
   "status.unreachable": "not reachable",
   "status.playlistLabel": "Playlist",
   "status.albumLabel": "Album",

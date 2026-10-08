@@ -327,7 +327,7 @@
   "status.auxInput": "вхід AUX",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
-  "status.ready": "готово",
+  "status.stopped": "зупинено",
   "status.unreachable": "недоступний",
   "status.playlistLabel": "Плейлист",
   "status.albumLabel": "Альбом",
