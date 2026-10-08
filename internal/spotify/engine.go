@@ -544,7 +544,10 @@ func (m *Manager) noteLibrespotLine(line string) {
 			// A non-prefetched load right behind a boundary, with no other
 			// load in between, is the track that boundary just started (see
 			// boundaryAt in Manager), not the next one.
-			if strings.Contains(lc, "prefetched: false") && !m.loadSinceBoundary &&
+			// Paused loads never claim: a recall's resume load is logged
+			// paused right behind the preamble's boundary, and its duration
+			// belongs to the boundary that actually starts it (#1077, v1.0.9).
+			if strings.Contains(lc, "prefetched: false") && strings.Contains(lc, "paused: false") && !m.loadSinceBoundary &&
 				!m.boundaryAt.IsZero() && time.Since(m.boundaryAt) < lateLoadWindow {
 				m.streamTrackDurMs = ms
 			} else {

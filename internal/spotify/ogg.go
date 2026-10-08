@@ -286,6 +286,12 @@ func (m *Manager) ArmRecallCut() {
 // the fraction-of-a-second disagreement between the final granule and the
 // advertised duration on a natural end, and a skip within the last seconds of
 // a song is heard as the natural transition anyway.
+// minAppSkipPlayedSec is the least a track must have played before its early
+// end can count as an app skip. A sub-second "track" is a recall or attach
+// seam, and a skip in the first seconds leaves too little buffered tail to be
+// worth a re-point that drops the key's own stream.
+const minAppSkipPlayedSec = 5
+
 func cutShortOfDuration(prevGran, prevBody, durMs int64) bool {
 	if prevBody == 0 || prevGran <= 0 || durMs <= 0 {
 		return false
@@ -308,9 +314,13 @@ func (m *Manager) noteTrackBoundaryCut(prevGran, prevBody int64) {
 	m.loadedTrackDurMs = 0
 	m.boundaryAt = time.Now()
 	m.loadSinceBoundary = false
-	armed := time.Now().Before(m.skipCutUntil)
+	now := time.Now()
+	// A recall in flight is STR's own doing, even after its skip cut was
+	// consumed by the preamble's boundary: the real track start follows a
+	// moment later and must not read as an app skip (#1077, v1.0.9).
+	armed := now.Before(m.skipCutUntil) || now.Before(m.recallUntil)
 	m.mu.Unlock()
-	if armed || !cutShortOfDuration(prevGran, prevBody, endedMs) {
+	if armed || prevGran < minAppSkipPlayedSec*vorbisRate || !cutShortOfDuration(prevGran, prevBody, endedMs) {
 		return
 	}
 	m.logger.Info("spotify: mid-track boundary without an STR skip (Spotify-app skip), re-pointing the box to drop its buffered tail",
