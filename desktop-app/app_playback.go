@@ -78,9 +78,9 @@ func isTransportNotReady(err error) bool {
 // reliable than blindly POSTing and waiting out the play timeout:
 //
 //   - When the box is ready (the common case) the probe answers in well
-//     under a second, then the play runs with its full timeout, so a
-//     legitimately slow play (e.g. the agent waking the box from standby)
-//     is never cut short. Stability is unchanged.
+//     under a second, then the play runs with playCallTimeout rather than
+//     the shared 6 s client timeout, so a legitimately slow play (the agent
+//     waking the box from standby first) is not cut short.
 //   - When the box is still coming up after a reboot/OTA, the probe loop
 //     detects "not ready" in a few seconds instead of hanging on the
 //     full play timeout, and returns the sentinel "box_not_ready" for the
@@ -89,7 +89,7 @@ func (a *App) playPost(host string, port int, path, body string) (*http.Response
 	if !a.waitAgentReady(host, port) {
 		return nil, fmt.Errorf("box_not_ready")
 	}
-	resp, err := a.boxDo(host, port, http.MethodPost, path, "application/json", body)
+	resp, err := a.boxDoTimeout(host, port, http.MethodPost, path, "application/json", body, playCallTimeout)
 	if err != nil {
 		if isTransportNotReady(err) {
 			// Say what happened. The readiness probe logs when IT gives up, but
@@ -106,6 +106,17 @@ func (a *App) playPost(host string, port int, path, body string) (*http.Response
 	}
 	return resp, nil
 }
+
+// playCallTimeout bounds one play POST. The agent's play handlers wake a
+// speaker out of standby before they start the stream, and that wake alone may
+// take up to about 8.5 s. With the shared 6 s client timeout the app gave up
+// a fraction of a second before the music started and showed
+// "box_not_ready" for a play that went on to succeed (#1065: click at
+// 09:37:39.5, app timeout at 09:37:45.499, speaker playing at 09:37:45.66).
+// A speaker that is really not there is still caught fast by the readiness
+// probe in front of the POST, so this longer budget only applies to a box
+// that answered and is busy.
+const playCallTimeout = 20 * time.Second
 
 // agentVersionAnswered reports whether a body is the agent's version payload.
 //
