@@ -7943,7 +7943,7 @@ function scheduleLiveTitle() {
         // since the keys stopped showing the live title (2026-08-23) a rebuild
         // would re-create six <img class="preset-logo"> every 12 s for a value
         // no tile displays. The tile's own inputs have their own triggers: the
-        // highlight from stateChanged in refreshStatus, the bitrate from
+        // highlight from gridChanged in refreshStatus, the bitrate from
         // scheduleLiveBitrate.
         renderNowPlayingBar();
       }
@@ -8475,7 +8475,11 @@ async function refreshStatus() {
     }
     const newLoc = optimistic ? state.nowLocation : loc;
     const newName = optimistic ? state.nowName : name;
-    const stateChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc || state.nowName !== newName;
+    // The preset grid reads the play state and the location, never the track
+    // name (a key shows what is SAVED on it). Rebuilding all six keys for a name
+    // change re-created their markup mid-song, which made the window jump while
+    // the speaker briefly reported a different name for the same track (#1190).
+    const gridChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc;
     // A different track means the progress must start over; anything else keeps
     // its reading so the bar does not stutter on an unrelated status change.
     const trackKey = newLoc + '|' + newName;
@@ -8660,7 +8664,7 @@ async function refreshStatus() {
       }
     }
 
-    if ((stateChanged || iconAdoptable) && state.presets.length > 0) {
+    if ((gridChanged || iconAdoptable) && state.presets.length > 0) {
       renderPresets();
     }
 
