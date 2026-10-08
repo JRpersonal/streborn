@@ -269,6 +269,17 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 		if attempt > 0 {
 			time.Sleep(10 * time.Second)
 		}
+		// This sync writes unconditionally, so it would be the back door for
+		// the very interruption the reconcile holds back (#1035): an agent
+		// that starts while the speaker plays AirPlay or Bluetooth held its
+		// first full pass, and this wrote six slots into the session 30 s in.
+		// Stand down instead. The reconcile's held first pass writes every slot
+		// as soon as the box leaves that source, so nothing is lost.
+		if src, _, ok := boxSourceAndPlaying(boxHost); ok && userChosenSource(src) {
+			logger.Info("initial box preset sync: the speaker is on a source the listener chose, leaving the slots to the held reconcile pass",
+				"source", src, "pending", len(pending))
+			return
+		}
 		retrySpecs := make([]boxcli.PresetSpec, 0, len(pending))
 		for _, p := range pending {
 			retrySpecs = append(retrySpecs, p)
@@ -333,6 +344,10 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// ceiling to the first hold, not to the latest retry.
 	forceHeld := false
 	var forceHeldSince time.Time
+	// userHeldSrc is the listener's source the forced pass is currently held
+	// on (#1035), "" when it is not. It keeps the hold line to one per source
+	// and lets the release say what was protected.
+	userHeldSrc := ""
 	// groupWakeHeld keeps the group-wake hold line to one per episode, the
 	// same way retryHoldLogged does for the playback hold.
 	groupWakeHeld := false
@@ -522,9 +537,29 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// station plays for hours and a pairing session is mid-handshake,
 			// and the write ends both.
 			src, playing, playKnown := boxSourceAndPlaying(boxHost)
+			userSrc := userChosenSource(src)
+			if userSrc {
+				// The ceiling bounds a wait on STR's own playback only. Time
+				// spent on the listener's AirPlay or Bluetooth must not count
+				// towards it, or the moment they switch to an STR station the
+				// pass would write straight into it.
+				forceHeldSince = time.Time{}
+			}
 			hold, ceilingHit := forcedWriteHold(src, playing, playKnown, everFullDone, forceHeldSince, time.Now())
 			switch {
+			case hold && userSrc:
+				// One line per source, not per retry: a held pass re-reads the
+				// box every 30 s for as long as the session lasts.
+				if userHeldSrc != src {
+					userHeldSrc = src
+					logger.Info("preset reconcile: forced pass held until the speaker leaves a source the listener chose, writing presets now would interrupt it",
+						"source", src, "playing", playing, "firstPass", !everFullDone)
+				}
+				forceHeld = true
+				time.Sleep(forcedPlayHoldRetry)
+				continue
 			case hold:
+				userHeldSrc = ""
 				if forceHeldSince.IsZero() {
 					forceHeldSince = time.Now()
 					logger.Info("preset reconcile: forced pass held, the write would take the box off what it is doing",
@@ -543,6 +578,11 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 					"reason", forcedHoldReason(src, playing, playKnown),
 					"source", src, "heldFor", time.Since(forceHeldSince).Round(time.Second).String())
 			}
+			if userHeldSrc != "" {
+				logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
+					"heldOn", userHeldSrc, "source", src)
+			}
+			userHeldSrc = ""
 			forceHeld = false
 			forceHeldSince = time.Time{}
 		}
@@ -616,12 +656,26 @@ const forcedPlayHoldRetry = 30 * time.Second
 // "the box changed source across a preset write, before=UPNP after=STANDBY".
 //
 // A hold, never a skip: the keys still have to end up registered, so the wait
-// is bounded and the pass runs anyway once the ceiling passes.
+// on STR's OWN playback is bounded and the pass runs anyway once the ceiling
+// passes.
 //
-// The FIRST full registration after the agent starts is never held. A
-// just-started agent may find the box already playing, and holding there would
-// leave the hardware keys unregistered for the whole session - the regression
-// #4 was about. everFullDone false means that first pass has not happened yet.
+// The FIRST full registration after the agent starts is not held for STR's own
+// playback. A just-started agent may find the box already playing, and holding
+// there would leave the hardware keys unregistered for the whole session - the
+// regression #4 was about. everFullDone false means that first pass has not
+// happened yet.
+//
+// A source the listener chose outside STR (userChosenSource) is the exception
+// to both rules (#1035). A field bundle's write ledger recorded two complete
+// six-slot sweeps while the speaker played AirPlay: the ceiling ran out and
+// wrote anyway, and the first pass after an agent start was never held at all.
+// Each write makes the firmware touch its source, so the listener drops out of
+// AirPlay, Bluetooth or AUX mid-stream. Nothing STR does will ever end that
+// session, so a ceiling there only means "interrupt it in five minutes". The
+// pass is held for as long as the box stays there instead, and runs the moment
+// it leaves: the held pass re-reads the box every forcedPlayHoldRetry, and
+// STANDBY or STR's own idle source release it. A box that never leaves such a
+// source keeps the registrations it already has; the firmware stores them.
 //
 // Audio is not the only thing a write interrupts, which is what #961 cost. A
 // speaker in Bluetooth pairing mode reports playStatus INVALID, so the play
@@ -631,10 +685,14 @@ const forcedPlayHoldRetry = 30 * time.Second
 // while his PC was searching for it. So the source NAME decides too, exactly as
 // it has for the insurance pass since 2026-08-02.
 func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSince, now time.Time) (hold, ceilingHit bool) {
-	if !everFullDone {
+	if !forcedWriteBusy(src, playing, playKnown) {
 		return false, false
 	}
-	if !forcedWriteBusy(src, playing, playKnown) {
+	if userChosenSource(src) {
+		// No ceiling, and the first pass too: see above.
+		return true, false
+	}
+	if !everFullDone {
 		return false, false
 	}
 	if heldSince.IsZero() {
@@ -644,6 +702,22 @@ func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSinc
 		return false, true
 	}
 	return true, false
+}
+
+// userChosenSource reports whether src is a source the listener picked outside
+// STR: AirPlay, Bluetooth, AUX, the speaker's own Spotify Connect, a TV input.
+// It is the same allowlist logic as resyncSafeSource and for the same reason:
+// the input sources are named differently per model, so everything that is not
+// STR's own (UPNP, LOCAL_INTERNET_RADIO, INVALID_SOURCE) or not a session at
+// all (STANDBY, unreadable, and the out-of-box SETUP source a box can be left
+// on after a network install) counts as the listener's choice. A forced write
+// is held on these without a ceiling, because STR's playback never ends them.
+func userChosenSource(src string) bool {
+	switch src {
+	case "", "STANDBY", "SETUP", "LOCAL_INTERNET_RADIO":
+		return false
+	}
+	return !resyncSafeSource(src)
 }
 
 // forcedWriteBusy reports whether the box is doing something the write would
