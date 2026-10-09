@@ -1893,9 +1893,11 @@ function clearPendingStart() { pendingStart = { slot: 0, until: 0 }; }
 // putPresetSlot writes one key and hands back the speaker's answer INCLUDING a
 // refusal body. api() drops the body on any non-2xx, and the 409 is exactly the
 // case whose body is the interesting part.
-async function putPresetSlot(slot, body) {
+// query is '?save=live' for a save of what plays right now, the one write that
+// may move a Spotify key to the account playing it.
+async function putPresetSlot(slot, body, query) {
   try {
-    var r = await fetch('/api/presets/' + slot, {
+    var r = await fetch('/api/presets/' + slot + (query || ''), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
     var j = null;
@@ -2072,7 +2074,7 @@ async function saveSpotifyToSlot(slot) {
     return;
   }
   var body = { slot: slot, name: name || (info && info.track) || 'Spotify', type: 'spotify', uri: ctxUri, account: (info && info.account) || '' };
-  var r = await putPresetSlot(slot, body);
+  var r = await putPresetSlot(slot, body, '?save=live');
   if (r.ok) {
     hideMoveOffer();
     holdNote(fmt(T.saved, { n: slot }));

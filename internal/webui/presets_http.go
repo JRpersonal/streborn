@@ -444,6 +444,15 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// member's account (jensukk) because the old value was never refreshed
 		// (ST30, 2026-07-14). A save for a NON-playing preset keeps its stored
 		// account, so a bulk rename never clobbers another account's preset.
+		// Case (b) only applies to a real save gesture (?save=live, sent by the
+		// app's and the phone remote's "save what plays" paths). Every other
+		// PUT (rename, move, backup restore, copy, stash) re-writes a preset it
+		// read from the store, and while that key plays it plays under whatever
+		// account the speaker fell back to: a recall whose account switch the
+		// other person's still-connected Spotify app overrode plays a public
+		// playlist under the wrong account without a sound of difference. Case
+		// (b) then quietly rewrote the key to that account, so a household with
+		// two accounts ended up with every key on one of them (ST30, 2026-10-09).
 		// Account + cover are best-effort enrichment: use a fresh background
 		// context, not r.Context(), so a client that disconnects right after the
 		// PUT (e.g. a raw one-shot request) does not cancel them mid-fetch.
@@ -453,8 +462,9 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// path already unwrapped above.
 		savingLiveContext := p.Type == "spotify" && p.URI != "" &&
 			s.spotifyContext != nil && normalizeSpotifyURI(s.spotifyContext()) == p.URI
+		liveSave := r.URL.Query().Get("save") == "live"
 		if p.Type == "spotify" && s.spotifyUser != nil {
-			if p.Account == "" || savingLiveContext {
+			if p.Account == "" || (savingLiveContext && liveSave) {
 				uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				if u := s.spotifyUser(uctx); u != "" && u != p.Account {
 					if p.Account != "" {
@@ -464,6 +474,13 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				}
 				cancel()
 			}
+		}
+		if p.Type == "spotify" {
+			// Which account a key ends up on was invisible in a diagnostic, so
+			// "this key was saved from the other account" could not be checked
+			// once the save had left the log window (ST30, 2026-10-09).
+			s.logger.Info("preset save: Spotify key stored", "slot", slot, "account", p.Account,
+				"liveSave", liveSave, "playingNow", savingLiveContext)
 		}
 		// Carry the LIVE shuffle state onto a preset saved from the running
 		// playback, so a playlist the user listens to shuffled recalls
