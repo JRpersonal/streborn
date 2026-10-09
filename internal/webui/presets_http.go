@@ -620,7 +620,9 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePresetMove moves the station on one key over to another key:
-// POST /api/presets/move with {"from":N,"to":M}.
+// POST /api/box/preset-move with {"from":N,"to":M}. Not under /api/presets/:
+// that prefix belongs to the per-key handler, which reads "move" as a key
+// number and answers 400 (the phone remote called it there until 2026-10-09).
 //
 // It is the third answer to the duplicate guard in the per-slot save above,
 // which refuses a save whose station already sits on another key. That refusal

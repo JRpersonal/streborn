@@ -21,7 +21,7 @@ func TestPhoneRemoteOffersToMoveTheStation(t *testing.T) {
 		!strings.Contains(indexHTML, "b.code !== 'already-on-slot'") {
 		t.Fatal("the page must recognise the already-on-another-key refusal")
 	}
-	if !strings.Contains(indexHTML, "'/api/presets/move', 'POST'") {
+	if !strings.Contains(indexHTML, "'/api/box/preset-move', 'POST'") {
 		t.Fatal("the move must go to the agent's move endpoint")
 	}
 	// The hold-to-save and the station picked in the Find tab both offer it.

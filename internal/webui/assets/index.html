@@ -1969,7 +1969,7 @@ function hideMoveOffer() {
 // doPresetMove asks the speaker to move the station. The speaker does both
 // halves in one write, so nothing can end up on neither key.
 async function doPresetMove(fromSlot, toSlot, opts) {
-  var r = await api('/api/presets/move', 'POST', { from: fromSlot, to: toSlot });
+  var r = await api('/api/box/preset-move', 'POST', { from: fromSlot, to: toSlot });
   if (opts.clear) opts.clear();
   if (!r) {
     if (opts.say) opts.say(T.mvFail);
