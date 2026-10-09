@@ -1083,6 +1083,11 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// A group formed silent out of a group wake gets one more look: the
 		// firmware's resume can start after the zone formed, and the zone then
 		// carries it into every room. One read, no repeating timer.
+		//
+		// Unlike a stereo pair (afterSilentPair), a group formed out of
+		// standby is NOT put back to standby: a native zone does not survive
+		// its master dropping to STANDBY (measured 2026-08-18, see boxcli), so
+		// that would dissolve the group the user just created.
 		s.scheduleLateSelfResumeCheck("after forming")
 	}
 	out := map[string]any{
@@ -1734,6 +1739,17 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// the engine pulled the box onto the album the user had played before
 	// standby, 300 ms after the pairing woke it). A master that is genuinely
 	// playing is left alone and its music still moves to the pair.
+	//
+	// Whether STR pulled each half out of standby for this pairing is tracked
+	// alongside: a pair formed out of two sleeping speakers with nothing to
+	// restart goes back to standby afterwards (afterSilentPair), instead of
+	// leaving the master on with no source (#1074, solid amber). The master
+	// counts as asleep when the app's quiet wake brought it up moments ago (the
+	// group-wake episode is stamped only for a speaker that was in standby) or
+	// when it is still in standby at the wake below.
+	pairStart := time.Now()
+	masterWasAsleep := s.QuietWakeEpisodeActive()
+	partnerWasAsleep := partner.IP != "" && woken[strings.TrimSpace(partner.IP)]
 	masterRef := s.captureMasterResume()
 	var resume *lastPlayInfo
 	masterBlocked := false
@@ -1752,7 +1768,11 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	if resume == nil && !masterBlocked && partner.IP != "" && woken[strings.TrimSpace(partner.IP)] {
 		s.logger.Info("stereo: not capturing the partner's stream, the app just woke it for this pairing", "partnerIP", partner.IP)
 	} else if resume == nil && !masterBlocked && partner.IP != "" {
-		if pr := partnerResumeForPair(fetchNowPlaying(ctx, partner.IP), partner.IP); pr != nil {
+		pnp := fetchNowPlaying(ctx, partner.IP)
+		if pnp.Source == "STANDBY" {
+			partnerWasAsleep = true
+		}
+		if pr := partnerResumeForPair(pnp, partner.IP); pr != nil {
 			s.logger.Info("stereo: captured the partner's stream to restart on the pair (the master is not playing)",
 				"partnerIP", partner.IP, "url", pr.boxURL, "title", pr.title)
 			resume = pr
@@ -1775,6 +1795,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// captured above, so muting and stopping the firmware's own resume here
 	// costs nothing: the pair still restarts what the user was listening to.
 	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "STANDBY" {
+		masterWasAsleep = true
 		if err := s.quietWake(ctx); err != nil {
 			s.logger.Warn("stereo: quiet wake of the sleeping master failed, trying the plain wake", "err", err)
 		} else {
@@ -2001,8 +2022,12 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
 	} else {
 		// A pair formed silent gets the same one late look as a silent group:
-		// the firmware's resume can start after the pair formed.
-		s.scheduleLateSelfResumeCheck("after pairing")
+		// the firmware's resume can start after the pair formed. And a pair
+		// STR pulled out of standby on both halves goes back to standby after
+		// that look, or the master stays on with no source (#1074). Only here,
+		// on the verified path: the unread path above cannot tell whether the
+		// pair exists, and standing down a lone master there is a guess.
+		s.afterSilentPair(masterWasAsleep && partnerWasAsleep, pairStart)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "stereo": true, "id": g.ID, "name": g.Name, "members": g.Members,
