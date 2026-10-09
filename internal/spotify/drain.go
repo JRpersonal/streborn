@@ -62,6 +62,9 @@ type oggDrain struct {
 	//   - flushed: delivered at the last write that reached the box, i.e. the
 	//     point a dropped batch is rolled back to.
 	deliveredBase, delivered, flushed int64
+	// staged counts the bytes the recall staging gate dropped since it last
+	// opened (recallstaging.go), for the one line logged when it opens.
+	staged int64
 }
 
 // newOggDrain returns the drain state for one go-librespot run. flushBytes is
@@ -196,10 +199,59 @@ func (d *oggDrain) page(ctx context.Context, page []byte) {
 		m.mu.Unlock()
 	}
 
+	// Recall staging gate (recallstaging.go): a cold recall's paused load
+	// still emits the new track's first pages, and the resume then starts
+	// the track over under a fresh BOS. Those pages are dropped here, BOS
+	// included, and the skip cut stays armed for the resume's BOS, so the box
+	// hears the track start exactly once. Placed after the header and bitrate
+	// bookkeeping above, which must keep following the engine either way.
+	stagingTimedOut := false
+	switch m.stagingVerdictFor(htype&0x02 != 0) {
+	case stagingDrop:
+		d.staged += int64(len(page))
+		return
+	case stagingExpired:
+		m.logger.Warn("spotify: recall staging ended without a fresh track start, re-sending the track headers",
+			"droppedKB", d.staged/1024)
+		d.staged = 0
+		stagingTimedOut = true
+	default:
+		if d.staged > 0 {
+			m.logger.Info("spotify: recall staging ended, dropped the paused load's preamble so the track starts once",
+				"droppedKB", d.staged/1024)
+			d.staged = 0
+		}
+	}
+	if stagingTimedOut {
+		// No BOS is coming to consume the recall's skip cut, and an armed cut
+		// would drop this stream's audio for the rest of its window. Treat
+		// this page as the boundary instead.
+		d.pending = d.pending[:0]
+		d.dropUnsent()
+		m.clearSkipCut()
+		d.leadAnchored = false
+	}
+
 	m.mu.Lock()
 	sink := m.sink
 	haveHdr := len(m.headerPages) > 0
 	m.mu.Unlock()
+
+	if sink != nil && stagingTimedOut && len(d.hdr) > 0 {
+		// The stream's BOS and headers were dropped with the staging pages:
+		// re-send the ones captured so far so the box can decode what follows.
+		// A header page that is still being captured is this page itself, and
+		// goes out below like any other page.
+		hdr := d.hdr
+		if d.capturing && gran <= 0 && len(hdr) >= len(page) {
+			hdr = hdr[:len(hdr)-len(page)]
+		}
+		if len(d.pending) == 0 {
+			d.pendingSince = time.Now()
+		}
+		d.pending = append(d.pending, hdr...)
+		d.forwarded += int64(len(hdr))
+	}
 
 	if sink != nil {
 		d.paused = false

@@ -77,6 +77,10 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
 	// when the box attaches; this path drives the chosen track from its start.
 	m.SetRecalling()
+	// Hold the recall window open until this recall has actually finished: a
+	// slow engine took 10.8 s for the play POST alone, the fixed window ran out
+	// first and the recall's own track start read as a Spotify-app skip (#1077).
+	defer m.endRecallWindow(time.Now(), m.holdRecallWindow())
 	// Warm same-context fast path: the requested context is ALREADY loaded and
 	// audibly streaming to a sink, so the paused-load/pause/wait staging below
 	// buys nothing and costs ~7-9s (the "pressing the playing preset again
@@ -148,7 +152,12 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	}
 	playAt := time.Now()
 	playBody, _ := json.Marshal(playReq)
+	// The paused load still emits the new track's first pages; the staging
+	// gate keeps them off the box until the resume below starts the track for
+	// real (recallstaging.go, #1077).
+	stagingGen := m.beginRecallStaging()
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
+		m.endRecallStaging(stagingGen)
 		// The play never happened, so no track boundary (BOS) is coming: an
 		// armed cut would now drop whatever IS still playing for up to 30s.
 		m.clearSkipCut()
@@ -183,6 +192,10 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// unaffected.
 	if resumeURI != "" && (!loaded || m.seekFailedSince(playAt)) {
 		m.logger.Warn("spotify: resume track not found in context, replaying from the top", "uri", uri, "resumeTrack", resumeURI)
+		// The point is stale for good (the track left the playlist): forget it,
+		// or every later press pays for the failed seek and the second load
+		// again (#1077: about 2 s on every press).
+		m.resume.forget(uri, resumeURI)
 		fromTop, _ := json.Marshal(map[string]any{"uri": uri, "paused": true})
 		if err := m.apiPostC(ctx, m.playClient, "/player/play", string(fromTop)); err != nil {
 			m.logger.Debug("spotify: replay-from-top after seek fail failed", "err", err)
@@ -231,8 +244,12 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		}
 	}
 	// Resume: audio now flows, starting on the chosen track from its beginning.
+	// Marked before the POST: the resume's BOS can beat the HTTP reply.
+	m.markRecallStagingResumed(stagingGen)
 	if err := m.apiPost(ctx, "/player/resume", ""); err != nil {
 		m.logger.Debug("spotify: resume after recall failed", "err", err)
+		// Nothing more of this recall is coming to be gated.
+		m.endRecallStaging(stagingGen)
 	}
 	m.logger.Info("spotify: recall play", "uri", uri, "shuffle", opts.Shuffle, "resumeTrack", resumeURI != "")
 	// Debounce the will_play context change this recall triggers (this path
@@ -649,7 +666,9 @@ func (m *Manager) SetRecalling() {
 	// A recall is a new play intent: an earlier user stop no longer stands.
 	m.clearUserStopLocked()
 	now := time.Now()
-	m.recallUntil = now.Add(8 * time.Second)
+	if t := now.Add(recallWindow); t.After(m.recallUntil) {
+		m.recallUntil = t
+	}
 	// Keep the engine playing across the whole recall + verify window (the
 	// hardware verify re-points up to ~25 s after the press). A shorter window
 	// than recallUntil would let the drain pause the engine mid-flap and strand
@@ -658,6 +677,48 @@ func (m *Manager) SetRecalling() {
 		m.engineHotUntil = t
 	}
 	m.mu.Unlock()
+}
+
+// recallWindow is how long SetRecalling marks a recall as in flight. Play
+// holds the window open past it until the recall has finished (see
+// holdRecallWindow), so this is the floor for a recall that never reaches
+// Play (an entry point that marks the recall and then fails its push).
+const recallWindow = 8 * time.Second
+
+// recallWindowMax caps how long Play may hold the recall window open, and
+// recallWindowTail is how long the window stays open after Play returns: the
+// resume's track start reaches the drain about a second after the POST.
+const (
+	recallWindowMax  = 45 * time.Second
+	recallWindowTail = 5 * time.Second
+)
+
+// holdRecallWindow keeps the recall window open while Play runs, up to
+// recallWindowMax, and returns the deadline it set for endRecallWindow.
+func (m *Manager) holdRecallWindow() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t := time.Now().Add(recallWindowMax)
+	if t.After(m.recallUntil) {
+		m.recallUntil = t
+	}
+	return m.recallUntil
+}
+
+// endRecallWindow shrinks the window held since start back to what it would
+// have been for a fast recall (recallWindow from the press) or recallWindowTail
+// from now, whichever is later. It only touches the window it set itself: a
+// user stop that cleared it, or a newer recall that extended it, stands.
+func (m *Manager) endRecallWindow(start, held time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.recallUntil.Equal(held) {
+		return
+	}
+	m.recallUntil = start.Add(recallWindow)
+	if t := time.Now().Add(recallWindowTail); t.After(m.recallUntil) {
+		m.recallUntil = t
+	}
 }
 
 // engineHot reports whether the drain should keep go-librespot playing even

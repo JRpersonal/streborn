@@ -288,6 +288,30 @@ what the code does:
   timeline that was rebuilt underneath the box. A missing number is worth
   more than a plausible wrong one.
 
+### A cold recall starts the track once: the staging gate
+
+A cold preset recall loads the context with `"paused": true`, sets shuffle
+and repeat, and only then sends `/player/resume`. go-librespot is not silent
+during that paused load: it emits the track's BOS and 13-29 KB of audio, and
+the resume starts a fresh logical stream at granule 0. The recall's skip cut
+used to be consumed by the first of those two boundaries, so the box played
+the first 0.5-1.6 s of the track, then started it again (#1077, ST10: two
+BOS per press, a bad-checksum mid-page handoff between them).
+
+`internal/spotify/recallstaging.go` closes a gate before the paused
+`/player/play`. While it is closed the drain drops every page, BOS included,
+and a dropped BOS does not consume the skip cut. The first BOS after the
+resume opens the gate and takes the normal path. Every exit is bounded: a
+failed play or resume opens it at once, a user stop opens it, a resume whose
+BOS does not come within 4 s opens it and re-sends the track's headers, and
+no recall holds it longer than 45 s. Playback outside a cold recall (the warm
+same-context path, app control, natural track ends) never sees the gate.
+
+Play also holds the recall window (`recallUntil`) open until it has finished,
+capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST
+outlived the fixed window and the recall's own track start read as a
+Spotify-app skip.
+
 ## Why native Spotify works without the Bose cloud
 
 Spotify Connect has two login paths. Bose's app used the **account-linked**
