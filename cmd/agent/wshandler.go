@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/anonymise"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
@@ -1224,7 +1225,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// ST20 #45) shows immediately which precondition failed: no Spotify
 	// manager, no stored account/URI on the preset, or go-librespot not ready.
 	h.logger.Info("spotify preset recall start", "slot", slot,
-		"hasURI", p.URI != "", "account", p.Account, "type", p.Type, "spotifyMgr", h.spotify != nil)
+		"hasURI", p.URI != "", "account", anonymise.MaskAccount(p.Account), "type", p.Type, "spotifyMgr", h.spotify != nil)
 	if h.spotify == nil {
 		h.logger.Warn("spotify preset recall: no Spotify manager on this box", "slot", slot)
 		return
@@ -1345,7 +1346,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// twice. This retries until the box actually plays, with no latency on the
 	// happy path (the initial attempt above already played).
 	go h.verifySpotifyPlaying(seq, gen, pressAt, slot, p)
-	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
+	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", anonymise.MaskAccount(p.Account))
 }
 
 // userAdjustedSince reports whether the box saw a physical key press (any

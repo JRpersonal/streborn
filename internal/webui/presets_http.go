@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/anonymise"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -468,7 +469,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				if u := s.spotifyUser(uctx); u != "" && u != p.Account {
 					if p.Account != "" {
-						s.logger.Info("preset save: refreshed Spotify account to the live playing account", "slot", slot, "from", p.Account, "to", u)
+						s.logger.Info("preset save: refreshed Spotify account to the live playing account", "slot", slot, "from", anonymise.MaskAccount(p.Account), "to", anonymise.MaskAccount(u))
 					}
 					p.Account = u
 				}
@@ -479,7 +480,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			// Which account a key ends up on was invisible in a diagnostic, so
 			// "this key was saved from the other account" could not be checked
 			// once the save had left the log window (ST30, 2026-10-09).
-			s.logger.Info("preset save: Spotify key stored", "slot", slot, "account", p.Account,
+			s.logger.Info("preset save: Spotify key stored", "slot", slot, "account", anonymise.MaskAccount(p.Account),
 				"liveSave", liveSave, "playingNow", savingLiveContext)
 		}
 		// Carry the LIVE shuffle state onto a preset saved from the running

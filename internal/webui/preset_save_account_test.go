@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -69,5 +70,22 @@ func TestPresetWithoutAccountIsFilledFromTheLiveLogin(t *testing.T) {
 	putPresetQuery(t, s, 3, "", `{"name":"Tropical House","type":"spotify","uri":"`+accountTestURI+`"}`)
 	if p, _ := s.presets.Get(3); p.Account != "first-user" {
 		t.Fatalf("account = %q, want an empty account filled with first-user", p.Account)
+	}
+}
+
+// The save log names the key's account only as its ACCT# token, so neither the
+// speaker's log file nor a diagnostic carries the Spotify username in clear.
+func TestPresetSaveLogsTheAccountMasked(t *testing.T) {
+	s := newAccountStampServer(t, accountTestURI, "second-user")
+	var buf bytes.Buffer
+	s.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	putPresetQuery(t, s, 3, "?save=live",
+		`{"name":"Tropical House","type":"spotify","uri":"`+accountTestURI+`","account":"first-user"}`)
+	out := buf.String()
+	if strings.Contains(out, "first-user") || strings.Contains(out, "second-user") {
+		t.Fatalf("log carries a Spotify username in clear:\n%s", out)
+	}
+	if !strings.Contains(out, "account=ACCT#") {
+		t.Fatalf("log lacks the masked account token:\n%s", out)
 	}
 }
