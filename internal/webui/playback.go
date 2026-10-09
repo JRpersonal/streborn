@@ -425,7 +425,13 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 		armedAt := time.Now()
 		slotURL := boxurl.SpotifySlot(slot)
-		if err := s.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
+		// A station the speaker plays natively swallows this push while the
+		// SOAP calls answer success (#1065), so the shared helper stops it
+		// first and checks the speaker really switched over.
+		if err := s.pushOverNativeStation(playCtx, p.Name, func() error {
+			return s.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg")
+		}); err != nil {
+			s.logger.Warn("spotify preset recall (app): the speaker did not take the stream", "slot", slot, "err", err)
 			if isGroupedRejection(err) {
 				s.writeGroupedPlayError(w, err)
 				return
