@@ -885,3 +885,16 @@ export function artCarriesBoxForm(art) {
   }
   return false;
 }
+
+// optimisticSpotifyLocation is the location the app shows right after a click
+// on Spotify preset key `slot`, before the speaker confirms: the per-slot
+// /spotify/stream-<slot>.ogg URL the speaker will report. The generic
+// stream.ogg carried no slot, so the key that played before stayed lit as
+// "stream starting" and the clicked key only lit about six seconds later, when
+// the optimistic window ran out (#1077). A slot that is not a key number keeps
+// the generic URL.
+export function optimisticSpotifyLocation(loopback, slot) {
+  const n = Number(slot);
+  if (Number.isInteger(n) && n >= 1 && n <= 6) return `${loopback}/spotify/stream-${n}.ogg`;
+  return `${loopback}/spotify/stream.ogg`;
+}

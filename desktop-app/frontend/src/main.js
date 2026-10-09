@@ -279,6 +279,7 @@ import {
   shouldAdoptPresetArt,
   appArtFromBoxArt,
   artCarriesBoxForm,
+  optimisticSpotifyLocation,
   STEREO_ICON,
   GROUP_ICON,
 } from './utils.js';
@@ -6076,7 +6077,6 @@ async function healPresetLogos() {
 // to optimistically reflect what the box is about to play; the Go side mirrors
 // these in internal/boxurl. Keep the two in sync.
 const BOX_LOOPBACK = 'http://127.0.0.1:8888';
-const boxSpotifyDefaultUrl = () => `${BOX_LOOPBACK}/spotify/stream.ogg`;
 
 // decodeProxyUrl unwraps a stream-proxy URL
 // (http://<host>:8888/stream/raw?u=<base64url real URL>) back to the real
@@ -7711,11 +7711,15 @@ async function play(slot) {
     // Spotify presets carry no stream_url (they recall by URI), so without
     // this the optimistic location is empty: the tile would not light up and
     // the click feels ignored until the box confirms several seconds later.
-    // Point it at the Spotify stream the box will report, so the highlight and
-    // the "starting" label appear instantly on click.
+    // Point it at the per-slot Spotify stream the box will report, so the
+    // highlight and the "starting" label appear instantly on the CLICKED key.
+    // The generic stream.ogg carried no slot, which kept the previously
+    // playing key lit as "starting" until the optimistic window ran out
+    // (#1077); the slot URL also lets the early release in refreshStatus match.
     state.nowLocation = p.type === 'spotify'
-      ? boxSpotifyDefaultUrl()
+      ? optimisticSpotifyLocation(BOX_LOOPBACK, slot)
       : (isNativeServicePreset(p) && p.native ? (p.native.location || '') : (p.stream_url || ''));
+    if (p.type === 'spotify') state.nowSpotifySlot = slot;
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
     state.nowBitrate = p.bitrate || 0;
