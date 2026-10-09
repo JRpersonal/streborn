@@ -14,7 +14,7 @@ import (
 func TestPhoneRemoteOffersToMoveTheStation(t *testing.T) {
 	// The refusal body is the interesting part of the answer, and api() drops it
 	// on any non-2xx, so both save paths have to read the answer themselves.
-	if !strings.Contains(indexHTML, "async function putPresetSlot(slot, body)") {
+	if !strings.Contains(indexHTML, "async function putPresetSlot(slot, body, query)") {
 		t.Fatal("the page needs a preset write that hands back the refusal body")
 	}
 	if !strings.Contains(indexHTML, "function presetConflict(r)") ||

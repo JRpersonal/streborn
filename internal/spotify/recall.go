@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // normalizeContextURI unwraps an ephemeral autoplay STATION context
@@ -581,7 +583,7 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts Pla
 		"sessionUser", cur, "loggedIn", m.LoggedIn())
 	if account != "" {
 		if _, err := m.switchAccountFrom(ctx, cur, account); err != nil {
-			m.logger.Warn("spotify: account switch failed, playing with current account", "account", account, "err", err)
+			m.logger.Warn("spotify: account switch failed, playing with current account", "account", anonymise.MaskAccount(account), "err", err)
 		}
 	}
 	// Even with no account switch (single-account / already-active case), make sure

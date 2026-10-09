@@ -204,9 +204,11 @@ func (a *App) SaveQueuePreset(host string, port int, slot int) (string, error) {
 // uses this so the saved preset is recallable, shuffled and account-aware,
 // instead of a radio link to the raw stream (which showed the album cover, not
 // the Spotify logo, and did not recall the playlist). The agent fills the
-// account and a stable playlist cover when they are empty.
+// account and a stable playlist cover when they are empty. save=live marks it
+// as a real save gesture, the only kind of write that may move the key to the
+// account playing right now; a rename or move keeps the key's account.
 func (a *App) SaveSpotifyPreset(host string, port int, slot int, name, uri, account string) error {
-	err := a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+	err := a.boxPut(host, port, fmt.Sprintf("%s/%d?save=live", presetAPIPath, slot),
 		Preset{Slot: slot, Name: name, Type: "spotify", URI: uri, Account: account})
 	// A save left no trace at all in str.log, which is why "I saw two different
 	// notices for the same long press" could not be answered from a diagnostic

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/anonymise"
 	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -395,7 +396,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	//     until audio flows.
 	// Log every app-side slot recall so a remote "recall does nothing" report
 	// (ST20 #45) shows the preset shape that was attempted.
-	s.logger.Info("preset slot recall (app)", "slot", slot, "type", p.Type, "hasURI", p.URI != "", "account", p.Account)
+	s.logger.Info("preset slot recall (app)", "slot", slot, "type", p.Type, "hasURI", p.URI != "", "account", anonymise.MaskAccount(p.Account))
 	if p.Type == "spotify" && p.URI == "" {
 		s.logger.Warn("spotify preset recall (app): type=spotify but empty URI, falling through to radio path", "slot", slot, "name", p.Name)
 	}
