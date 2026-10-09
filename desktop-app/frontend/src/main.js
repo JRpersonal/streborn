@@ -282,6 +282,7 @@ import {
   STEREO_ICON,
   GROUP_ICON,
 } from './utils.js';
+import { boxRecordChange } from './boxstate.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
 // in groups.js: ONE implementation for the selector frames, the group chips
@@ -2381,10 +2382,11 @@ function applyBoxList(list) {
     // like a speaker that left the list. Transient stock sightings never reach
     // here as stock (the cache promotes them), so this is a real change.
     if (fresh && fresh.kind !== 'stock') {
-      const changed = fresh.host !== state.currentBox.host
-                   || fresh.port !== state.currentBox.port
-                   || fresh.version !== state.currentBox.version
-                   || fresh.friendlyName !== state.currentBox.friendlyName;
+      // A port-only change (a speaker that answers on both :8888 and :17008)
+      // just re-points the record: what plays did not change, so resetting the
+      // now-playing state here made the view jump and the progress bar vanish
+      // once a minute (#1190).
+      const changed = boxRecordChange(state.currentBox, fresh) === 'changed';
       state.currentBox = fresh;
       if (changed) {
         // Same speaker (matched by deviceID), just a changed field: IP/port after
