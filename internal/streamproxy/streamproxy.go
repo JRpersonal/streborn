@@ -153,8 +153,14 @@ type Server struct {
 	// inside an upstream Read before the stall watchdog closes the
 	// connection to force a reconnect. A field rather than a const so the
 	// backpressure regression test can shrink it; New sets the production
-	// value.
+	// value. upstreamStallMax is how far the watchdog may stretch that when
+	// the box's estimated buffer (boxBuf) allows it; see stall.go.
 	upstreamStallAfter time.Duration
+	upstreamStallMax   time.Duration
+	boxBuf             boxBuffer
+	// tail is the newest audio the box received, so a reconnect can resume
+	// on the exact next byte of the new connection's burst (burst.go).
+	tail spliceTail
 
 	// radio stream health: cross-reconnect counters behind the
 	// radio_stream_health debug section and one consolidated WARN per upstream
@@ -302,8 +308,12 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		// starving box runs dry in the shape this watchdog was written for
 		// (#510: an ST20 sitting byte-less in BUFFERING_STATE for minutes), and
 		// it no longer turns a full box into a reconnect. The write-block grace
-		// in streamOneDepth is the other half of that.
-		upstreamStallAfter: 15 * time.Second,
+		// in streamOneDepth is the other half of that. When the box's buffer
+		// estimate allows, the watchdog now waits up to upstreamStallMax: the
+		// same reporter's edge stalled for up to 15.7 s and then delivered
+		// the whole backlog, which a 15 s kill threw away (stall.go).
+		upstreamStallAfter: upstreamStallBase,
+		upstreamStallMax:   upstreamStallMax,
 	}
 }
 
@@ -1068,17 +1078,39 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// connect: that burst is the box's legitimate prebuffer. Never without a
 	// known bitrate either, because there is then no way to tell a burst from a
 	// healthy stream and the safe answer is exactly today's behaviour.
+	//
+	// cleanAudio says whether the bytes the box gets are plain audio (no ICY
+	// interleave). Only then are they recorded as the splice tail and compared
+	// against a reconnect's burst; with the box de-interleaving itself the
+	// metadata blocks would sit at different offsets on every connection.
+	cleanAudio := metaint == 0 || !boxWantsICY
+	tailStation := station
+	if !cleanAudio {
+		tailStation = ""
+	}
+	if sendHeaders {
+		// A fresh stream: nothing the box held before belongs to it.
+		s.tail.reset(tailStation)
+		s.boxBuf.reset()
+	}
 	if !sendHeaders && knownBitrate {
 		if bps := s.CurrentBitrate() * 1000 / 8; bps > 0 {
 			hole := s.audioGap()
 			keep := int(hole.Seconds() * float64(bps))
-			var dropped int64
-			var drainDur time.Duration
-			src, dropped, drainDur = trimBurst(src, bps, keep)
-			if dropped > 0 {
-				s.logger.Info("stream proxy reconnect: trimmed the upstream's burst to the size of the gap so the box does not replay what it already played",
-					"url", url, "holeMs", hole.Milliseconds(), "bitrateKbps", s.CurrentBitrate(),
-					"keptBytes", keep, "droppedBytes", dropped, "drainMs", drainDur.Milliseconds())
+			var tail []byte
+			if cleanAudio {
+				tail = s.tail.snapshot(station)
+			}
+			var res burstTrim
+			src, res = trimBurst(src, bps, keep, tail, drainBudget(hole))
+			if res.dropped > 0 || res.spliced {
+				resume := "time"
+				if res.spliced {
+					resume = "content"
+				}
+				s.logger.Info("stream proxy reconnect: trimmed the upstream's burst so the box neither replays nor skips audio",
+					"url", url, "resume", resume, "holeMs", hole.Milliseconds(), "bitrateKbps", s.CurrentBitrate(),
+					"keptBytes", res.kept, "droppedBytes", res.dropped, "drainMs", res.drain.Milliseconds())
 			}
 		}
 	}
@@ -1110,8 +1142,6 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// closes the upstream body after upstreamStallAfter without a completed
 	// read; the Read unblocks with an error, the normal reconnect path takes
 	// over, and the box's own connection stays open throughout.
-	lastReadNano := new(int64)
-	*lastReadNano = time.Now().UnixNano()
 	var lastReadMu sync.Mutex
 	// readWaitStart is non-zero only while the copy loop sits inside
 	// src.Read without a productive result. The watchdog counts THIS time,
@@ -1127,7 +1157,6 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	var readWaitStart time.Time
 	touchRead := func() {
 		lastReadMu.Lock()
-		*lastReadNano = time.Now().UnixNano()
 		readWaitStart = time.Time{}
 		lastReadMu.Unlock()
 	}
@@ -1141,18 +1170,15 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		}
 		lastReadMu.Unlock()
 	}
-	sinceRead := func() time.Duration {
-		lastReadMu.Lock()
-		defer lastReadMu.Unlock()
-		return time.Duration(time.Now().UnixNano() - *lastReadNano)
-	}
-	readBlocked := func() time.Duration {
+	// readBlocked reports how long the current read has waited for the
+	// upstream and when that wait began (zero when no read is waiting).
+	readBlocked := func() (time.Duration, time.Time) {
 		lastReadMu.Lock()
 		defer lastReadMu.Unlock()
 		if readWaitStart.IsZero() {
-			return 0
+			return 0, time.Time{}
 		}
-		return time.Since(readWaitStart)
+		return time.Since(readWaitStart), readWaitStart
 	}
 	// lastWriteBlock is how long the previous w.Write spent blocked on the box.
 	// The watchdog adds it to its own threshold, because a Write that blocked
@@ -1195,10 +1221,22 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				// that follows is ours, not the station's. On the #510 shape
 				// (a hungry box on a byte-less upstream) no write ever blocks,
 				// the grace is zero, and this behaves exactly as before.
+				//
+				// The limit itself follows the box's estimated buffer at the
+				// moment the wait began: a full box rides out a stall the edge
+				// would have recovered from, a nearly empty one gets the old
+				// threshold (stall.go).
 				wb := writeBlock()
-				if blocked := readBlocked(); blocked >= s.upstreamStallAfter+wb {
+				blocked, since := readBlocked()
+				if blocked == 0 {
+					continue
+				}
+				buffered := s.boxBuf.levelAt(since)
+				limit := stallLimit(s.upstreamStallAfter, s.upstreamStallMax, buffered)
+				if blocked >= limit+wb {
 					s.logger.Warn("stream proxy upstream stalled (no bytes), closing the upstream connection to force a reconnect",
 						"url", url, "stalledSec", int(blocked.Seconds()),
+						"limitSec", int(limit.Seconds()), "boxBufferSec", int(buffered.Seconds()),
 						"writeBlockGraceSec", int(wb.Seconds()),
 						"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
 					_ = resp.Body.Close()
@@ -1224,16 +1262,25 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		enterRead()
 		n, readErr := src.Read(buf)
 		if n > 0 {
-			if gap := sinceRead(); gap >= audioGapLogAfter && gapLogged < audioGapLogMax {
+			// gapMs is the time this read waited for the upstream, nothing
+			// else. It used to be the time since the previous read returned,
+			// which also counted the previous write blocking on a full box and
+			// overstated upstream stalls; that write time is its own field.
+			if gap, _ := readBlocked(); gap >= audioGapLogAfter && gapLogged < audioGapLogMax {
 				gapLogged++
 				s.logger.Warn("stream proxy audio delivery gap (recovered)", "url", url,
-					"gapMs", gap.Milliseconds(), "connectedSec", int(time.Since(connStart).Seconds()),
+					"gapMs", gap.Milliseconds(), "prevWriteBlockMs", writeBlock().Milliseconds(),
+					"connectedSec", int(time.Since(connStart).Seconds()),
 					"bytes", connBytes, "gapNr", gapLogged)
 			}
 			touchRead()
 			wStart := time.Now()
 			_, writeErr := w.Write(buf[:n])
 			noteWriteBlock(time.Since(wStart))
+			if writeErr == nil {
+				s.tail.record(tailStation, buf[:n])
+				s.boxBuf.add(n, s.CurrentBitrate()*1000/8, time.Now())
+			}
 			if writeErr != nil {
 				// Bose closed the connection
 				connSummary("bose closed")
