@@ -728,18 +728,23 @@ func (m *Manager) playDenialHint() string {
 }
 
 // logWriter forwards go-librespot stderr lines to the agent logger.
+// A track-skip storm is rate-limited in the log (logstorm.go); the per-line
+// hook still sees every line, so the refusal counting is unaffected.
 type logWriter struct {
 	logger *slog.Logger
 	onLine func(string) // optional per-line hook (e.g. free-account detection)
+	storm  *skipStormLimiter
 }
 
 func newLogWriter(l *slog.Logger, onLine func(string)) *logWriter {
-	return &logWriter{logger: l, onLine: onLine}
+	return &logWriter{logger: l, onLine: onLine, storm: newSkipStormLimiter(l)}
 }
 
 func (w *logWriter) Write(p []byte) (int, error) {
 	line := trimEOL(string(p))
-	w.logger.Info("go-librespot", "line", line)
+	if w.storm == nil || w.storm.allow(line) {
+		w.logger.Info("go-librespot", "line", line)
+	}
 	if w.onLine != nil {
 		w.onLine(line)
 	}
