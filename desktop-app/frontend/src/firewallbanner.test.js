@@ -27,6 +27,16 @@ describe('firewallBannerView', () => {
     expect(firewallBannerView({ ...blocked, blocked: false, error: 'x' }, t)).toBeNull();
     expect(firewallBannerView(blocked, t, { dismissed: true })).toBeNull();
   });
+
+  // #1215: block rules on a laptop where speakers are found and updates work
+  // are not a block worth a banner on every start.
+  it('stays down while speakers are found', () => {
+    expect(firewallBannerView(blocked, t, { speakersFound: true })).toBeNull();
+  });
+
+  it('comes back when an install waited in vain, even with speakers found', () => {
+    expect(firewallBannerView(blocked, t, { speakersFound: true, installSuspect: true })).not.toBeNull();
+  });
 });
 
 describe('firewallUnblockToast', () => {
