@@ -51,11 +51,20 @@ func (p *pacedReader) Read(b []byte) (int, error) {
 // which stretch of the stream came out the other end. A hash of the absolute
 // position rather than a short cycle: with a repeating pattern a search for a
 // kept stretch matches near the start of the stream too, and the test would
-// pass or fail on an accident of periodicity.
+// pass or fail on an accident of periodicity. A full integer mix rather than a
+// bare multiplicative hash: the top byte of position*constant is a Weyl
+// sequence, and over megabytes of offsets some shift reproduces a 4 KB stretch
+// almost exactly, which the content splice tests would find.
 func pattern(off, n int) []byte {
 	out := make([]byte, n)
 	for i := range out {
-		out[i] = byte(uint32(off+i) * 2654435761 >> 24)
+		x := uint32(off + i)
+		x ^= x >> 16
+		x *= 0x7feb352d
+		x ^= x >> 15
+		x *= 0x846ca68b
+		x ^= x >> 16
+		out[i] = byte(x)
 	}
 	return out
 }
@@ -70,7 +79,8 @@ func TestTrimBurstKeepsOnlyTheHole(t *testing.T) {
 	src := &pacedReader{burst: burst, rest: rest, bps: bps}
 
 	keep := 5 * bps // a five-second hole
-	out, dropped, _ := trimBurst(src, bps, keep)
+	out, res := trimBurst(src, bps, keep, nil, trimBurstMaxWait)
+	dropped := res.dropped
 
 	if dropped < int64(20*bps) {
 		t.Fatalf("only %d bytes dropped; a 33 s burst against a 5 s hole must discard most of it", dropped)
@@ -99,7 +109,8 @@ func TestTrimBurstLeavesARealTimeStreamAlone(t *testing.T) {
 	const bps = 12000
 	// No burst at all, everything paced at the real rate.
 	src := &pacedReader{burst: nil, rest: pattern(0, 4*bps), bps: bps}
-	out, dropped, _ := trimBurst(src, bps, 5*bps)
+	out, res := trimBurst(src, bps, 5*bps, nil, trimBurstMaxWait)
+	dropped := res.dropped
 	if dropped != 0 {
 		t.Fatalf("dropped %d bytes of a stream that was already at real time", dropped)
 	}
@@ -113,7 +124,8 @@ func TestTrimBurstLeavesARealTimeStreamAlone(t *testing.T) {
 // stream, so the safe answer is today's behaviour: touch nothing.
 func TestTrimBurstWithoutABitrateIsANoOp(t *testing.T) {
 	want := pattern(0, 40000)
-	out, dropped, _ := trimBurst(bytes.NewReader(want), 0, 10000)
+	out, res := trimBurst(bytes.NewReader(want), 0, 10000, nil, trimBurstMaxWait)
+	dropped := res.dropped
 	if dropped != 0 {
 		t.Fatalf("dropped %d bytes with no bitrate to reason from", dropped)
 	}
@@ -128,7 +140,7 @@ func TestTrimBurstWithoutABitrateIsANoOp(t *testing.T) {
 func TestTrimBurstWithNoHoleStillStreams(t *testing.T) {
 	const bps = 12000
 	src := &pacedReader{burst: pattern(0, 10*bps), rest: pattern(10*bps, bps), bps: bps}
-	out, _, _ := trimBurst(src, bps, 0)
+	out, _ := trimBurst(src, bps, 0, nil, trimBurstMaxWait)
 	buf := make([]byte, 1024)
 	if _, err := io.ReadFull(out, buf); err != nil {
 		t.Fatalf("no audio came out of a zero-hole trim: %v", err)
@@ -140,7 +152,7 @@ func TestTrimBurstWithNoHoleStillStreams(t *testing.T) {
 func TestTrimBurstPassesTheUpstreamErrorOn(t *testing.T) {
 	const bps = 12000
 	src := bytes.NewReader(pattern(0, 2000)) // ends in EOF immediately
-	out, _, _ := trimBurst(src, bps, 4000)
+	out, _ := trimBurst(src, bps, 4000, nil, trimBurstMaxWait)
 	all, err := io.ReadAll(out)
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
