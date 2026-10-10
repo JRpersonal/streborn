@@ -43,7 +43,7 @@ func TestTheNoteIsEmptyForACurrentSpeaker(t *testing.T) {
 	if !strings.Contains(src, `fwNote := ""`) {
 		t.Error("the firmware note no longer starts empty; a current speaker would get the outdated warning")
 	}
-	i := strings.Index(src, `fwNote = " The speaker firmware is "`)
+	i := strings.Index(src, `fwNote = firmwareTooOldNote(`)
 	if i < 0 {
 		t.Fatal("the firmware note text is gone; if it moved, move this test with it")
 	}

@@ -68,19 +68,12 @@ export const BOSE_FW_ARTICLES = {
 // to a page showing a small round speaker is the same mistake, one model family
 // further out, that the comment above documents fixing for the ST10.
 //
-// A model with no article is not left with a dead end: the Bose Software Updater
-// page (BOSE_FW_USB_URL) is model-independent and is the route that still works
-// since the cloud shutdown, so it stays on screen either way.
+// A model with no article is not left with a dead end: the firmware update guide
+// (fwguide.js) still shows Bose's download for it when Bose's catalogue lists
+// the model, and Bose's support site otherwise.
 export function boseFwArticles(type) {
   return BOSE_FW_ARTICLES[type] || [];
 }
-
-// Bose's official "Bose Software Updater" download page, referenced in step 4
-// and made clickable so the user does not have to retype it. The old direct
-// USB directory (downloads.bose.com/ced/soundtouch/soundtouch_usb/) went dead:
-// empty listing, index answers 403 even with a browser user agent (checked
-// 2026-07-31). btu.bose.com is the page Bose itself points users to.
-export const BOSE_FW_USB_URL = 'https://btu.bose.com/';
 
 // fwVersionTuple extracts the first 3 numbers from "27.0.6.46330.5043500" for
 // comparison. Returns null on an unknown format.

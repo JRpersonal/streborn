@@ -40,6 +40,7 @@ export {
   RecallBoxPreset,
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
+  GetFirmwareGuide,
   BoxInstallReachable,
   Pause,
   Resume,

@@ -49,7 +49,8 @@ describe('Bose firmware support links', () => {
     const settings = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
     const setup = readFileSync(new URL('./views/setup.js', import.meta.url), 'utf8');
     expect(settings).toContain("from '../firmware.js'");
-    expect(setup).toContain("from '../firmware.js'");
+    // setup.js reaches the firmware facts through the guide, which imports them.
+    expect(setup).toContain("from '../fwguide.js'");
   });
 
   it('has an article for every model that can show the outdated banner', () => {
@@ -87,8 +88,8 @@ describe('Bose firmware support links', () => {
   // Wired by class, because a model with two series renders two links and two
   // elements cannot share an id.
   it('wires the guide links by class rather than by id', () => {
-    const view = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
-    expect(view).toContain('fw-guide-link');
-    expect(view).not.toContain(`$('fwGuideLink')`);
+    const guide = readFileSync(new URL('./fwguide.js', import.meta.url), 'utf8');
+    expect(guide).toContain('fw-guide-link');
+    expect(guide).not.toContain(`$('fwGuideLink')`);
   });
 });

@@ -35,10 +35,9 @@ import { t, tLookup, getLocale } from '../i18n/index.js';
 // cannot be imported outside a browser (see firmware.js).
 import {
   LATEST_FW,
-  BOSE_FW_USB_URL,
-  boseFwArticles,
   isFwOutdated,
 } from '../firmware.js';
+import { firmwareGuideMount, wireFirmwareGuides } from '../fwguide.js';
 import { COUNTRIES, optFlag } from '../localization.js';
 // The box-to-box preset copy continues past rejected slots and reports them
 // as one combined error; reconstructing "how many still copied" from that
@@ -87,6 +86,7 @@ import {
   OpenArcadeThread,
   SaveArcadeScreenshot,
   ClipboardSetText,
+  GetFirmwareGuide,
   AnnounceExample,
   SendAnnounce,
   Translate,
@@ -1765,18 +1765,16 @@ function renderBoxSettings(s, box) {
       revealInSettings($('fwUpdateBanner'));
     };
   }
-  // Outdated-firmware banner links: open the Bose support guide / USB download
-  // directory in the user's browser (Wails BrowserOpenURL) instead of leaving
-  // them as plain text the user has to retype (Jens, 2026-06-27).
-  for (const id of ['fwUsbLink', 'fwFaqLink']) {
-    const el = $(id);
-    if (el) el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
-  }
-  // The guide links are per model, and a model that exists in two series offers
-  // two of them, so they are wired by class rather than by id.
-  document.querySelectorAll('.fw-guide-link').forEach(el => {
-    el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
+  // The firmware update guide in the outdated-firmware banner: the Bose
+  // download, Bose's article, and copy/open of the speaker's update page, all in
+  // the user's browser (Wails BrowserOpenURL). Same guide as the setup screens.
+  wireFirmwareGuides(document, {
+    getGuide: GetFirmwareGuide,
+    openURL: BrowserOpenURL,
+    copy: ClipboardSetText,
   });
+  const faq = $('fwFaqLink');
+  if (faq) faq.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(faq.dataset.url); } catch {} };
   // Voice control: STR itself will never speak to Alexa (the old skill was
   // Bose's cloud talking to Bose's cloud, and a new one would mean an account,
   // a public endpoint and a bill). What does work is a hub the user runs at
@@ -3601,27 +3599,18 @@ function fwUpdateHint(info) {
   if (!isFwOutdated(info)) {
     return `<small class="muted small">${escapeHtml(t('fw.uptodate', { version: want || '27.0.6' }))}</small>`;
   }
+  // The same step-by-step guide the setup screens show (fwguide.js), so a
+  // speaker gets one set of instructions wherever its firmware is flagged.
   return `
     <div class="fw-update-banner" id="fwUpdateBanner">
-      <b>${escapeHtml(t('fw.outdatedTitle'))}</b>
-      <div>${t('fw.outdatedIntro', { version: `<b>${escapeHtml(want || '27.0.6')}</b>` })}</div>
-      <div class="fw-update-howto">
-        <b>${escapeHtml(t('fw.howToHeader'))}</b>
-        <ol>
-          <li>${escapeHtml(t('fw.step1'))}</li>
-          <li>${escapeHtml(t('fw.step2'))}</li>
-          <li>${escapeHtml(t('fw.step3'))}</li>
-          <li>${t('fw.step4')} <a href="#" class="link" id="fwUsbLink" data-url="${escapeHtml(BOSE_FW_USB_URL)}">btu.bose.com</a></li>
-        </ol>
-        ${boseFwArticles(info.type).length
-    ? `<p>${boseFwArticles(info.type).map(([series, url]) =>
-      `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeHtml(url)}">`
-      + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
-      + '</a>').join(' ')}</p>`
-    : ''}
-        <small class="muted small">${escapeHtml(t('fw.hint'))}</small>
-        <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
-      </div>
+      ${firmwareGuideMount({
+    model: info.type || '',
+    moduleType: info.moduleType || '',
+    variant: info.variant || '',
+    current: info.version || '',
+    context: 'settings',
+  })}
+      <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
     </div>`;
 }
 

@@ -38,12 +38,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // language dropdown and the name combobox are shared between Settings and Setup);
 // reuse them rather than duplicating.
 import { langOptionsHtml, wireCombobox } from './settings.js';
-import {
-  boseFwArticles,
-  firmwareOlderThanLatest,
-  BOSE_FW_USB_URL,
-  LATEST_BOSE_FIRMWARE,
-} from '../firmware.js';
+import { firmwareGuideMount, firmwareGuideNeeded, wireFirmwareGuides } from '../fwguide.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
@@ -75,10 +70,12 @@ import {
   ProbeSetupAP,
   PushWLANToBox,
   GetBoxFirmware,
+  GetFirmwareGuide,
   DiscoverBoxes,
   SaveDiagnosticBundle,
   EventsOn,
   BrowserOpenURL,
+  ClipboardSetText,
   PhoneQR,
   boxFetch,
   CheckStereoBeforeInstall,
@@ -1839,9 +1836,21 @@ async function watchForSpeakerReady({ ssid, pass, html, generation }) {
         await sleep(3000); continue;
       }
       if (f && (f.outdated || !f.short)) {
+        // The status is re-set every pass of this loop; the guide is only
+        // rendered when it is not already on screen, so a user halfway through
+        // copying the update page address does not see it redrawn under them.
+        const guideUp = lastSeenState === 'firmware' && statusEl.querySelector('.fw-guide');
         lastSeenState = 'firmware';
-        setStatus('setup-warn', t('setup.awaitFirmwareTooOld', { model, fw: fw || '?' }),
-          `<div><a href="#" id="setupTryAnyway">${escapeHtml(t('setup.awaitFirmwareTryAnyway'))}</a></div>`);
+        if (!guideUp) {
+          const guide = firmwareGuideNeeded(fw)
+            ? `<div class="fw-update-banner">${firmwareGuideMount({
+              model, moduleType: f.moduleType, variant: f.variant, current: f.firmware || fw,
+            })}</div>`
+            : '';
+          setStatus('setup-warn', t('setup.awaitFirmwareTooOld', { model, fw: fw || '?' }),
+            guide + `<div><a href="#" id="setupTryAnyway">${escapeHtml(t('setup.awaitFirmwareTryAnyway'))}</a></div>`);
+          wireOutdatedFirmwareLinks();
+        }
         const ta = $('setupTryAnyway');
         if (ta) ta.onclick = (e) => { e.preventDefault(); handoff(); };
       } else {
@@ -1966,45 +1975,40 @@ const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'ne
 const ST300_STUCK_CODES = ['speaker-not-back', 'agent-not-up', 'install-timeout',
   'not-reachable', 'control-unresponsive'];
 
-// outdatedFirmwareHtml is the firmware route, rendered where the owner of a
-// still-stock speaker can actually reach it.
+// outdatedFirmwareHtml is the firmware update guide, rendered where the owner
+// of a still-stock speaker can actually reach it.
 //
-// The install-failure note has told such an owner since 2026-08-10 that "the
-// Firmware section in the speaker settings has the steps and the link". It does,
-// and a stock speaker can never open it: the settings pane short-circuits a box
-// with kind 'stock' to an empty state with a Setup button and returns before any
-// section is rendered. So the one screen that knows the firmware is too old
-// pointed at a place reachable only by speakers that do not have the problem. A
-// SoundTouch 30 owner on the 2015 firmware spent a week in the SoundTouch app
-// and the community downgrade guide for want of this block.
+// The install-failure note told such an owner from 2026-08-10 that "the Firmware
+// section in the speaker settings has the steps and the link". A stock speaker
+// can never open it: the settings pane short-circuits a box with kind 'stock' to
+// an empty state with a Setup button. So the steps live here, beside the
+// failure, and they are the same steps the settings pane shows (fwguide.js).
 //
-// short comes from InstallResult.Firmware, which install_str.go reads off
-// :8090/info before it touches the speaker, so it is available even when the
-// speaker has since gone quiet.
-function outdatedFirmwareHtml(box, short) {
-  if (!short || !firmwareOlderThanLatest(short)) return '';
-  const type = String((box && (box.model || box.type)) || '');
-  const guides = boseFwArticles(type).map(([series, url]) =>
-    `<a href="#" class="btn btn-mini fw-guide-link" data-url="${escapeAttr(url)}">`
-    + escapeHtml(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'))
-    + '</a>').join(' ');
+// short comes from InstallResult.Firmware, and the model, moduleType and
+// variant from the same InstallResult: install_str.go reads them off
+// :8090/info before it touches the speaker, so they are available even when
+// the speaker has since gone quiet. The box from discovery is the fallback for
+// the model.
+function outdatedFirmwareHtml(box, short, result) {
+  if (!firmwareGuideNeeded(short)) return '';
+  const r = result || {};
   return `<div class="fw-update-banner" id="setupFwBanner">`
-    + `<b>${escapeHtml(t('fw.outdatedTitle'))}</b>`
-    + `<div>${escapeHtml(t('setup.fwTooOldLine', { fw: short, latest: LATEST_BOSE_FIRMWARE }))}</div>`
-    + `<ol><li>${escapeHtml(t('fw.step4'))} `
-    + `<a href="#" class="link" id="setupFwUsbLink" data-url="${escapeAttr(BOSE_FW_USB_URL)}">btu.bose.com</a></li></ol>`
-    + (guides ? `<p>${guides}</p>` : '')
-    + `<small class="muted small">${escapeHtml(t('fw.hint'))}</small></div>`;
+    + firmwareGuideMount({
+      model: r.model || (box && (box.model || box.type)) || '',
+      moduleType: r.moduleType || '',
+      variant: r.variant || '',
+      current: short,
+    })
+    + `</div>`;
 }
 
-// wireOutdatedFirmwareLinks opens the two links in the user's browser. The guide
-// buttons are wired by class, because a model with two series renders two of them
-// and two elements cannot share an id.
+// wireOutdatedFirmwareLinks wires the guide's buttons (Bose download, copy and
+// open the update page) and looks up Bose's file for the speaker.
 function wireOutdatedFirmwareLinks() {
-  const usb = $('setupFwUsbLink');
-  if (usb) usb.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(usb.dataset.url); } catch {} };
-  document.querySelectorAll('#setupFwBanner .fw-guide-link').forEach(el => {
-    el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
+  wireFirmwareGuides(document, {
+    getGuide: GetFirmwareGuide,
+    openURL: BrowserOpenURL,
+    copy: ClipboardSetText,
   });
 }
 
@@ -2474,13 +2478,13 @@ function verifyInstalledState(box, onState) {
     const waiting = inSetup || !!(result && result.code === 'speaker-not-back');
     if (waiting) {
       renderInstallWaiting(inSetup, msg, help, log,
-        outdatedFirmwareHtml(foundBox, result && result.firmware));
+        outdatedFirmwareHtml(foundBox, result && result.firmware, result));
       return;
     }
     const headline = t('setup.installFailed', { msg });
     // The firmware route, right here, because a stock speaker cannot open the
     // settings section the message points at (see outdatedFirmwareHtml).
-    const fwBlock = outdatedFirmwareHtml(foundBox, result && result.firmware);
+    const fwBlock = outdatedFirmwareHtml(foundBox, result && result.firmware, result);
     render(`<div class="setup-err">${escapeHtml(headline)}</div>`
       + fwBlock + help + repairBtn + powerCycleHint + installFailureReportHtml() + log);
     wireOutdatedFirmwareLinks();

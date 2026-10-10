@@ -11,6 +11,10 @@
 // 3. setup.awaitFirmwareTooOld told the user to update in the official Bose
 //    SoundTouch app, which this repo's own code comments call a dead end since
 //    the cloud shutdown.
+// 4. Its replacement then named "Bose's USB update tool" on btu.bose.com and
+//    "write the firmware to another stick", neither of which is Bose's
+//    procedure (field report, ST20 on 5.2.0, 2026-10-10). Every screen now
+//    renders the one firmware update guide (fwguide.js).
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -28,27 +32,30 @@ const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr',
 
 describe('the firmware route is rendered where a stock speaker can reach it', () => {
   it('lives in the setup view, next to the failure', () => {
-    expect(setup).toContain('function outdatedFirmwareHtml(box, short)');
-    expect(setup).toContain('btu.bose.com');
-    expect(setup).toContain("t('fw.boseGuideLink')");
+    expect(setup).toContain('function outdatedFirmwareHtml(box, short, result)');
+    expect(setup).toContain('firmwareGuideMount(');
+    expect(setup).not.toContain('btu.bose.com');
   });
 
   it('is on all three screens an install can end on', () => {
     // the plain failure, the wait, and the give-up after the watcher's ceiling
-    expect(setup).toContain('outdatedFirmwareHtml(foundBox, result && result.firmware)');
+    expect(setup).toContain('outdatedFirmwareHtml(foundBox, result && result.firmware, result)');
     expect(setup.match(/\+ \(fwBlock \|\| ''\)/g) || []).toHaveLength(2);
-    expect(setup.match(/wireOutdatedFirmwareLinks\(\)/g) || []).toHaveLength(4); // 1 definition + 3 calls
+    // 1 definition + 3 install screens + the stick wait
+    expect(setup.match(/wireOutdatedFirmwareLinks\(\)/g) || []).toHaveLength(5);
   });
 
   it('renders nothing for a speaker whose firmware is current', () => {
     const fn = setup.slice(setup.indexOf('function outdatedFirmwareHtml'),
       setup.indexOf('// wireOutdatedFirmwareLinks'));
-    expect(fn).toContain("if (!short || !firmwareOlderThanLatest(short)) return '';");
+    expect(fn).toContain("if (!firmwareGuideNeeded(short)) return '';");
   });
 
   it('no longer sends the owner to a pane that speaker cannot open', () => {
     expect(installGo).not.toContain('the Firmware section in the speaker settings has the steps');
-    expect(installGo).toContain('btu.bose.com');
+    expect(installGo).toContain('fwNote = firmwareTooOldNote(');
+    expect(firmwareGo).not.toContain('btu.bose.com');
+    expect(firmwareGo).not.toContain('USB update tool');
   });
 });
 
@@ -83,10 +90,10 @@ describe('an unknown model gets no article rather than the wrong one', () => {
     }
   });
 
-  it('keeps the model-independent Bose updater page on screen either way', () => {
-    // The guide paragraph is conditional; the btu.bose.com step is not.
-    expect(settings).toContain('BOSE_FW_USB_URL');
-    expect(settings).toContain('boseFwArticles(info.type).length');
+  it('shows the same firmware update guide in the speaker settings', () => {
+    expect(settings).toContain('firmwareGuideMount(');
+    expect(settings).toContain("context: 'settings'");
+    expect(settings).not.toContain('BOSE_FW_USB_URL');
   });
 
   // The helpers live outside the views because a view reads navigator at module
@@ -103,23 +110,29 @@ describe('an unknown model gets no article rather than the wrong one', () => {
   });
 });
 
-describe('no screen tells the user to update in the Bose app any more', () => {
+describe('no screen names a route Bose does not offer', () => {
   for (const lang of langs) {
     it(lang, () => {
       const b = JSON.parse(readFileSync(join(bundleDir, `${lang}.json`), 'utf8'));
       expect(b['setup.awaitFirmwareTooOld']).toBeTruthy();
-      expect(b['setup.awaitFirmwareTooOld']).toContain('btu.bose.com');
-      expect(b['setup.fwTooOldLine']).toBeTruthy();
-      expect(b['setup.fwTooOldLine']).toContain('{{fw}}');
-      expect(b['setup.fwTooOldLine']).toContain('{{latest}}');
       expect(b['setup.awaitFirmwareTooOld']).toContain('{{model}}');
       expect(b['setup.awaitFirmwareTooOld']).toContain('{{fw}}');
+      // The removed strings: the app route, the btu.bose.com "USB tool", and
+      // "write the firmware to another stick".
+      for (const gone of ['setup.fwTooOldLine', 'fw.step1', 'fw.step2', 'fw.step3', 'fw.step4', 'fw.hint']) {
+        expect(b[gone], `${lang} still carries ${gone}`).toBeUndefined();
+      }
+      for (const [k, v] of Object.entries(b)) {
+        if (!k.startsWith('fw') && k !== 'setup.awaitFirmwareTooOld') continue;
+        expect(String(v), `${lang} ${k}`).not.toContain('btu.bose.com');
+        expect(String(v), `${lang} ${k} has an em dash`).not.toMatch(/\u2014/);
+      }
     });
   }
 
   it('the German strings keep their umlauts', () => {
     const de = JSON.parse(readFileSync(join(bundleDir, 'de.json'), 'utf8'));
-    expect(de['setup.fwTooOldLine']).toMatch(/[äöüß]/);
+    expect(de['fwGuide.step1']).toMatch(/[äöüß]/);
     expect(de['setup.awaitFirmwareTooOld']).toMatch(/[äöüß]/);
   });
 });

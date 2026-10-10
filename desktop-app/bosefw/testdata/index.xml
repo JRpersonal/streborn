@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Trimmed copy of Bose's public SoundTouch catalogue
+     (downloads.bose.com/ced/soundtouch/downloads_stockholm/index.xml,
+     2026-10-10). File names only; no firmware image is part of this repo.
+     The last DEVICE is not Bose's: it checks that a foreign host is ignored. -->
+<INDEX REVISION="02.11.00">
+  <DEVICE ID="0x0923" PRODUCTNAME="SoundTouch 20">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm" USBPATH="/ced/soundtouch/downloads_stockholm/stu/s/Update.stu">
+        <IMAGE SUBID="0" LENGTH="105879988" CRC="0x2d5a971e" FILENAME="Update_ti_27.0.6.46330.5043500.scm.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0925" PRODUCTNAME="SoundTouch Portable">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm" USBPATH="/ced/soundtouch/downloads_stockholm/stu/s/Update.stu">
+        <IMAGE SUBID="0" LENGTH="105879988" CRC="0x2d5a971e" FILENAME="Update_ti_27.0.6.46330.5043500.scm.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0931" PRODUCTNAME="SoundTouch App HTML5">
+    <HARDWARE REVISION="00.01.00">
+        <RELEASE REVISION="27.0.24" HTTPHOST="downloads.bose.com" URLPATH="/ced/soundtouch/downloads_stockholm/" DOCVERSION="MjAxOC0wMi0xNQ==">
+        <IMAGE SUBID="0" LENGTH="18377810" CRC="0xaa8209b0" FILENAME="Stockholm_27.0.24-4319-662bda3.zip" />
+      </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0932" PRODUCTNAME="Wave SoundTouch">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="105879988" CRC="0x2d5a971e" FILENAME="Update_ti_27.0.6.46330.5043500.nelson.scm.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0945" PRODUCTNAME="Lifestyle">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="203977300" CRC="0x1858fa51" FILENAME="Update_ti_27.0.6.46330.5043500.marconidev.scm.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0939" PRODUCTNAME="SoundTouch 10">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="105878364" CRC="0xc0b3d401" FILENAME="Update_ti_27.0.6.46330.5043500.rhino.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x093B" PRODUCTNAME="SoundTouch 20">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="105878364" CRC="0xc0b3d401" FILENAME="Update_ti_27.0.6.46330.5043500.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0947" PRODUCTNAME="Lifestyle">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="203977300" CRC="0x1858fa51" FILENAME="Update_ti_27.0.6.46330.5043500.marconidev.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x093F" PRODUCTNAME="Lifestyle">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="203977300" CRC="0x1858fa51" FILENAME="Update_ti_27.0.6.46330.5043500.marconiprod.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x094B" PRODUCTNAME="Lifestyle">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.5043530" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm" USBPATH="/ced/soundtouch/downloads_stockholm/stu/Update.avu">
+        <IMAGE SUBID="0" LENGTH="475186323" CRC="0x523be82b" FILENAME="Update_signed_27.0.6.5043530.avu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0948" PRODUCTNAME="Lifestyle">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="105878364" CRC="0xc0b3d401" FILENAME="Update_ti_27.0.6.46330.5043500.bardeen.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x0949" PRODUCTNAME="SoundTouch 300">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://downloads.bose.com" URLPATH="ced/soundtouch/downloads_stockholm">
+        <IMAGE SUBID="0" LENGTH="105878364" CRC="0xc0b3d401" FILENAME="Update_ti_27.0.6.46330.5043500.ginger.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+  <DEVICE ID="0x9999" PRODUCTNAME="SoundTouch 30">
+    <HARDWARE REVISION="00.01.00">
+      <RELEASE REVISION="27.0.6.46330.5043500" HTTPHOST="https://example.com" URLPATH="firmware">
+        <IMAGE SUBID="0" LENGTH="1" CRC="0x0" FILENAME="Update_ti_27.0.6.46330.5043500.sm2.stu" />
+        </RELEASE>
+    </HARDWARE>
+  </DEVICE>
+</INDEX>

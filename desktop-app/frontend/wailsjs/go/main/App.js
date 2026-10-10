@@ -226,6 +226,10 @@ export function GetDisplayTrack(arg1, arg2) {
   return window['go']['main']['App']['GetDisplayTrack'](arg1, arg2);
 }
 
+export function GetFirmwareGuide(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GetFirmwareGuide'](arg1, arg2, arg3, arg4);
+}
+
 export function GetGroupKeys(arg1, arg2) {
   return window['go']['main']['App']['GetGroupKeys'](arg1, arg2);
 }
