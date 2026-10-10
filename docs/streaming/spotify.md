@@ -298,14 +298,25 @@ used to be consumed by the first of those two boundaries, so the box played
 the first 0.5-1.6 s of the track, then started it again (#1077, ST10: two
 BOS per press, a bad-checksum mid-page handoff between them).
 
-`internal/spotify/recallstaging.go` closes a gate before the paused
-`/player/play`. While it is closed the drain drops every page, BOS included,
-and a dropped BOS does not consume the skip cut. The first BOS after the
-resume opens the gate and takes the normal path. Every exit is bounded: a
-failed play or resume opens it at once, a user stop opens it, a resume whose
-BOS does not come within 4 s opens it and re-sends the track's headers, and
-no recall holds it longer than 45 s. Playback outside a cold recall (the warm
-same-context path, app control, natural track ends) never sees the gate.
+The opposite also happens. On a recall after playback was stopped
+(Portable, v1.0.10 engine) the load is logged `paused: false`, its BOS and
+the track flow before the resume, and the resume brings no fresh BOS. A gate
+that dropped pages until the next BOS lost 1.5-1.8 MB of the track's start
+there.
+
+`internal/spotify/recallstaging.go` therefore closes a gate before the paused
+`/player/play` that HOLDS pages instead of dropping them. From the newest BOS
+on, the drain keeps the pages back (1 MB at most; past that, before the
+resume, it stops reading and the engine stops producing). A BOS after the
+resume means the held pages were a preamble: they are dropped and the fresh
+BOS takes the normal path. No BOS within 1.5 s of the resume, or a full
+buffer after it, means the held pages are the real start: they go out in
+order through the normal path, and their BOS consumes the skip cut like any
+boundary. Pages before any BOS are the old track and meet the skip cut as
+before. A failed play or resume and a user stop open the gate (held pages
+then go out if the stream goes on), and no recall holds it longer than 45 s.
+Playback outside a cold recall (the warm same-context path, app control,
+natural track ends) never sees the gate.
 
 Play also holds the recall window (`recallUntil`) open until it has finished,
 capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST

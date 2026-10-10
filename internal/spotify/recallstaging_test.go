@@ -86,46 +86,130 @@ func TestNoStagingLeavesPlaybackUntouched(t *testing.T) {
 	}
 }
 
-// A resume whose BOS never comes (the engine continued the paused stream
-// instead) must not mute the speaker: after the grace the gate opens, the cut
-// is cleared and the stream goes on behind a fresh copy of its headers.
-func TestStagingExpiresIntoADecodableStream(t *testing.T) {
+// The cold sequence from the Portable live test (v1.0.10 engine, playback
+// stopped before the recall): the load is not paused, its BOS and the track
+// flow BEFORE the resume, and the resume brings no fresh BOS. Not one byte of
+// the track may be lost: the box gets the old track, then the whole new one.
+func TestColdRecallKeepsTheRealStart(t *testing.T) {
 	chain := newTestChain(t, 1<<40, nil)
 	m, d, fs := newDrainHarness(t, chain, 1)
+	old := synthVorbisTrack(0x01, 6, false)
+	feed(d, old)
+
 	m.ArmRecallCut()
 	gen := m.beginRecallStaging()
 	track := synthVorbisTrack(0x30, 60, false)
 	h := headerPageCount(track)
-	feed(d, track[:h+2]) // BOS, headers and two audio pages while paused
+	feed(d, track[:h+10]) // BOS, headers and audio, all before the resume
+	if !bytes.Equal(fs.buf.Bytes(), concatPages(old)) {
+		t.Fatal("pages reached the box before the gate could tell preamble from start")
+	}
 	m.markRecallStagingResumed(gen)
 	m.mu.Lock()
 	m.stagingResumedAt = time.Now().Add(-stagingResumeGrace - time.Second)
 	m.mu.Unlock()
-	feed(d, track[h+2:])
-	if m.recallStaging() || m.skipCutArmed() {
-		t.Fatalf("an expired gate must open and clear the cut (staging %v, cut %v)", m.recallStaging(), m.skipCutArmed())
+	feed(d, track[h+10:]) // the stream just goes on: no fresh BOS
+	if m.recallStaging() {
+		t.Fatal("the gate stayed closed")
 	}
-	want := append(concatPages(track[:h]), concatPages(track[h+2:])...)
+	if m.skipCutArmed() {
+		t.Fatal("the held BOS must consume the recall cut when it goes out")
+	}
+	want := append(concatPages(old), concatPages(track)...)
 	if !bytes.Equal(fs.buf.Bytes(), want) {
-		t.Fatal("after the expiry the box must get the headers, then the live audio")
+		t.Fatalf("wire carries %d bytes, want the old track plus the whole new track (%d)", fs.buf.Len(), len(want))
 	}
-	if s := parseChain(t, fs.buf.Bytes()); len(s) != 1 {
-		t.Fatalf("expired stream parses into %d logical streams, want 1", len(s))
+	if s := parseChain(t, fs.buf.Bytes()); len(s) != 2 {
+		t.Fatalf("wire parses into %d logical streams, want 2", len(s))
 	}
 }
 
-// The hard bound covers a recall that never reaches its resume at all.
-func TestStagingHardBound(t *testing.T) {
+// A gate opened by a failed resume (or a stop) while it holds a track start
+// delivers that start when the stream goes on.
+func TestStagingOpenedEarlyDeliversTheHeldStart(t *testing.T) {
+	chain := newTestChain(t, 1<<40, nil)
+	m, d, fs := newDrainHarness(t, chain, 1)
+	gen := m.beginRecallStaging()
+	track := synthVorbisTrack(0x40, 20, false)
+	h := headerPageCount(track)
+	feed(d, track[:h+3])
+	m.endRecallStaging(gen)
+	feed(d, track[h+3:])
+	if !bytes.Equal(fs.buf.Bytes(), concatPages(track)) {
+		t.Fatal("the held start was lost when the gate opened early")
+	}
+}
+
+// The verdicts at the edges: a full buffer before the resume stops the
+// reading, after the resume it is released at once, and the hard bound opens
+// the gate for a recall that never reaches its resume at all.
+func TestStagingVerdictEdges(t *testing.T) {
 	m := newStallTestManager()
+	gen := m.beginRecallStaging()
+	if v := m.stagingVerdictFor(false, 0); v != stagingNone {
+		t.Fatalf("old-track page before any BOS = %v, want the normal path", v)
+	}
+	if v := m.stagingVerdictFor(true, 0); v != stagingHold {
+		t.Fatalf("BOS before the resume = %v, want hold", v)
+	}
+	if v := m.stagingVerdictFor(false, stagingHoldMax); v != stagingWait {
+		t.Fatalf("full buffer before the resume = %v, want wait", v)
+	}
+	m.markRecallStagingResumed(gen)
+	if v := m.stagingVerdictFor(false, 100); v != stagingHold {
+		t.Fatalf("page inside the resume grace = %v, want hold", v)
+	}
+	if v := m.stagingVerdictFor(false, stagingHoldMax); v != stagingRelease {
+		t.Fatalf("full buffer after the resume = %v, want release", v)
+	}
+	if m.recallStaging() {
+		t.Fatal("a release must open the gate")
+	}
+
 	m.beginRecallStaging()
 	m.mu.Lock()
 	m.stagingUntil = time.Now().Add(-time.Second)
 	m.mu.Unlock()
-	if v := m.stagingVerdictFor(true); v != stagingNone {
-		t.Fatalf("verdict past the hard bound = %v, want the normal path", v)
+	if v := m.stagingVerdictFor(false, 100); v != stagingRelease {
+		t.Fatalf("held pages past the hard bound = %v, want release", v)
 	}
-	if m.recallStaging() {
-		t.Fatal("the gate stayed closed past its hard bound")
+	m.beginRecallStaging()
+	m.mu.Lock()
+	m.stagingUntil = time.Now().Add(-time.Second)
+	m.mu.Unlock()
+	if v := m.stagingVerdictFor(true, 0); v != stagingNone || m.recallStaging() {
+		t.Fatalf("BOS past the hard bound = %v (gate closed %v), want the normal path", v, m.recallStaging())
+	}
+}
+
+// The drain stops reading while a full buffer waits for the resume, and
+// releases it in order once the resume was sent.
+func TestStagingFullBufferWaitsForTheResume(t *testing.T) {
+	chain := newTestChain(t, 1<<40, nil)
+	m, d, fs := newDrainHarness(t, chain, 1)
+	gen := m.beginRecallStaging()
+	track := synthVorbisTrack(0x50, 20, false)
+	h := headerPageCount(track)
+	feed(d, track[:h+2])
+	d.stageBytes = stagingHoldMax // pretend the buffer is full
+	done := make(chan struct{})
+	go func() {
+		feed(d, track[h+2:h+3])
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("the drain kept reading with a full buffer before the resume")
+	case <-time.After(150 * time.Millisecond):
+	}
+	m.markRecallStagingResumed(gen)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the resume did not release the full buffer")
+	}
+	if !bytes.Equal(fs.buf.Bytes(), concatPages(track[:h+3])) {
+		t.Fatal("the released start is not the held pages in order")
 	}
 }
 

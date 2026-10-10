@@ -152,9 +152,9 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	}
 	playAt := time.Now()
 	playBody, _ := json.Marshal(playReq)
-	// The paused load still emits the new track's first pages; the staging
-	// gate keeps them off the box until the resume below starts the track for
-	// real (recallstaging.go, #1077).
+	// The paused load may still emit the new track's first pages; the staging
+	// gate holds them until the resume below shows whether they were a
+	// preamble or the real start (recallstaging.go, #1077).
 	stagingGen := m.beginRecallStaging()
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
 		m.endRecallStaging(stagingGen)
