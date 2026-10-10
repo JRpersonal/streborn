@@ -93,6 +93,10 @@ type Reader struct {
 	// playFailHandler receives each playback failure the firmware logs, so
 	// the agent can act on one instead of only recording it.
 	playFailHandler PlayFailureHandler
+	// gestureHandler receives the firmware's tap/hold verdict on a preset
+	// key, webKeyHandler every key sent over :8090/key (presetgesture.go).
+	gestureHandler PresetGestureHandler
+	webKeyHandler  Handler
 }
 
 // New returns a reader that will call handler for every key event.
@@ -256,6 +260,9 @@ func (r *Reader) handleLine(line string, now time.Time) {
 		}
 		r.firePower(fev)
 		r.firePlayFailure(fev)
+	}
+	if r.handleGestureLines(line, now) {
+		return
 	}
 	ev, ok := ParseKeyLine(line, now)
 	if !ok {

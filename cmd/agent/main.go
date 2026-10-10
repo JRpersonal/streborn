@@ -1338,6 +1338,20 @@ func run() error {
 	// the two origins (cmd/agent/powergate.go); the standby gate is the
 	// dispatcher's own (STR's source was the active one).
 	keyTrace.SetPowerHandler(wsHandler.OnBoxPowerEvent)
+	// A held preset key while STR's own stream plays (#1217): the firmware
+	// refuses to store a UPnP push, so the agent pairs the key line with the
+	// firmware's own hold verdict and saves what plays (holdsave.go).
+	holdSave := newHoldSaver(logger.With("comp", "holdsave"), func(ctx context.Context, slot int) (webui.HoldSaved, error) {
+		srv := heldWebui.Load()
+		if srv == nil {
+			return webui.HoldSaved{}, fmt.Errorf("web server not up yet")
+		}
+		return srv.HoldSaveLive(ctx, slot)
+	})
+	wsHandler.holdSaver = holdSave
+	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
+	keyTrace.SetWebKeyHandler(holdSave.NotePress)
+	webuiSrv.SetHoldSaveTestFn(holdSave.SetAcceptAppKeys)
 	// The same ring carries the firmware saying it got no audio out. Until now
 	// those lines were classified for the bundle and delivered to nobody, so a
 	// first press that produced silence was visible afterwards and unanswerable

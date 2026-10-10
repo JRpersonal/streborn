@@ -71,6 +71,11 @@ const groupKeyToggleBudget = 75 * time.Second
 // same key.
 func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 	h.logKeyEvent(ev)
+	// A preset key may be the start of a hold on STR's own stream; the hold
+	// saver checks the producer itself (holdsave.go).
+	if h.holdSaver != nil {
+		h.holdSaver.NotePress(ev)
+	}
 	if !ev.Pressed() || !ev.Producer.Physical() {
 		return
 	}

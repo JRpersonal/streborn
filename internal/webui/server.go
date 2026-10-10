@@ -416,6 +416,12 @@ type Server struct {
 	// boxSourceFn seams the now_playing source read (boxSourceNow) so the
 	// standby-vs-awake decision is assertable without a live box.
 	boxSourceFn func() string
+	// boxNowFn seams the now_playing source and location read the speaker
+	// key hold-to-save uses (holdsave.go), for the tests.
+	boxNowFn func(ctx context.Context) (source, location string, ok bool)
+	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
+	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
+	holdSaveTestFn func(on bool, d time.Duration) time.Time
 	// nativeStopFn seams the speaker's own STOP key that ends a native
 	// station before a UPnP push (stopNativeStation), for the tests.
 	nativeStopFn func(context.Context) bool
@@ -1439,6 +1445,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/token", s.handleOrionToken)
 	mux.HandleFunc("/api/debug/marge-lab", s.handleMargeLab)
 	mux.HandleFunc("/api/debug/native-preset-probe", s.handleNativeProbe)
+	mux.HandleFunc("/api/debug/hold-save-test", s.handleHoldSaveTest)
 	// Radio service icons the BMX registry points the speaker at. Must be a
 	// real route: without it these fall through to the catchall and the speaker
 	// receives an HTML page where it asked for an image.

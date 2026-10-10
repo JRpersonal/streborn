@@ -648,6 +648,27 @@ Every source change also POSTs a `<recent>` record to `.../device/<id>/recent`
 list: the empty `<recents/>` STR used to answer made it log `AddRecentCB
 Failed with status=N` on every change. The record is echoed with an id.
 
+### Tap or hold: the firmware says which, at INFO
+
+For a UPnP push (everything STR plays itself: Spotify, a library song, a
+library folder) the gesture above never reaches marge, so STR spots the hold
+on its own (#1217, `cmd/agent/holdsave.go`). The key line cannot tell a tap
+from a hold on sm2 (the analytics line is press-only), but the system
+controller logs its verdict at the default level:
+
+- `SysCtlr: HandleMessage(EVT_KEY_PRESET_PRESS)`: a tap, logged at the
+  release; the activation (`nowSelectionUpdated`) follows about 0.13 s after
+  the release.
+- `SysCtlr: HandleMessage(EVT_KEY_PRESET_PRESS_AND_HOLD)`: a hold, logged
+  once the key has been down for between 1.5 s and 1.75 s, whether or not the
+  key holds a preset; nothing follows at the release.
+
+Neither names the key. Keys sent over `:8090/key` log their own line,
+`WebClientTO: ProcessKey: key = N state = S`, which a physical key never
+writes, so STR can tell its own keys from a person's. Measured on an ST10
+(rhino, 27.0.6) on 2026-10-10 with keys sent over `/key`; a key sent that way
+produces no analytics line at all.
+
 ## Per-logical-stream retention in the Ogg/HTTP path
 
 **Symptom.** Spotify through STR (go-librespot raw Ogg Vorbis passthrough,
