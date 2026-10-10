@@ -56,13 +56,19 @@ func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Pres
 	if dur > 0 {
 		meta = upnp.TrackMeta{Duration: dur, Seekable: true}
 	}
-	if err := s.renderer.PlayURLTrack(ctx, directURL, p.Name, p.Art, mime, meta); err != nil {
+	// A native station the speaker plays swallows a bare push (#1065), so the
+	// push, and the verify's re-push below, go through the handover helper.
+	if err := s.pushOverNativeStation(ctx, p.Name, func() error {
+		return s.renderer.PlayURLTrack(ctx, directURL, p.Name, p.Art, mime, meta)
+	}); err != nil {
 		return err
 	}
 	gen := s.setLastPlay(directURL, p.Name, p.Art, mime)
 	name, art := p.Name, p.Art
 	go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
-		_ = s.renderer.PlayURLTrack(ctx, directURL, name, art, mime, meta)
+		_ = s.pushOverNativeStation(ctx, name, func() error {
+			return s.renderer.PlayURLTrack(ctx, directURL, name, art, mime, meta)
+		})
 	}, nil)
 	// A finite file has no end event from the firmware: it freezes in
 	// PLAY_STATE at the end (#380), so a track recalled from a key, from the

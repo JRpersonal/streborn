@@ -184,11 +184,149 @@ const stereoPairAutoAttachHold = 30*time.Second + lateSelfResumeHold
 // most one STOP, no repeating timer. The Spotify auto-attach is held across
 // the wait so the engine cannot fill the silence in the meantime.
 func (s *Server) scheduleLateSelfResumeCheck(when string) {
+	s.scheduleLateSelfResumeCheckThen(when, nil)
+}
+
+// scheduleLateSelfResumeCheckThen is scheduleLateSelfResumeCheck with one
+// follow-up step that runs after the late look, on its own fresh deadline. The
+// stereo path uses it to put a pair formed out of standby back to sleep once
+// the firmware's own resume has been dealt with (afterSilentPair).
+func (s *Server) scheduleLateSelfResumeCheckThen(when string, then func(context.Context)) {
 	s.holdSpotifyAutoAttach(lateSelfResumeHold, when)
 	go func() {
 		time.Sleep(lateSelfResumeCheck)
 		lctx, lcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer lcancel()
 		s.stopGroupWakeSelfResume(lctx, when)
+		lcancel()
+		if then == nil {
+			return
+		}
+		// Give a STOP the late look may just have sent a moment to land, so
+		// the follow-up reads the settled state rather than the old one.
+		time.Sleep(pairStandbySettle)
+		tctx, tcancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer tcancel()
+		then(tctx)
 	}()
+}
+
+// A stereo pair formed out of two sleeping speakers has to go back to sleep.
+//
+// The pairing wakes a standby master on purpose: pairing against a sleeping
+// master let the firmware drag the fresh pair into standby and lose the
+// partner's music (#705). The quiet wake then keeps the firmware's own resume
+// from starting music (#1074), so the pair forms silent, as it should. But
+// nothing put the master back afterwards, and it stayed on with no source,
+// solid amber, until somebody switched it off by hand (#1074, two SoundTouch
+// 10s on v1.0.10: "stereo: paired" and then nothing, the indicator never went
+// out).
+//
+// A pair is one logical device to the firmware and the partner follows its
+// master's power state (that is exactly what #705 measured), so standing the
+// MASTER down is enough. The pair itself is a firmware group that survives
+// standby; a native multiroom ZONE does not (the master dropping to STANDBY
+// dissolves it, measured 2026-08-18), which is why the group form path does
+// not do this: it would undo the group the user just created.
+
+// pairStandbySettle is the pause between the late self-resume look and the
+// standby decision.
+const pairStandbySettle = time.Second
+
+// pairStandbySend is the standby seam, for the same reason as groupWakeStop:
+// the real call reaches :8090 on a fixed port.
+var pairStandbySend = func(ctx context.Context, host string) error {
+	return boxapi.New(host).Standby(ctx)
+}
+
+// pairStandbyIdleSources are the sources a woken master can show while it is
+// merely idle: the station the firmware resumed by itself and STR stopped
+// again. Anything else (AUX, Bluetooth, a soundbar's TV input) is a source
+// somebody picked, and the speaker is left on for it.
+var pairStandbyIdleSources = map[string]bool{
+	"LOCAL_INTERNET_RADIO": true,
+	"UPNP":                 true,
+	"STORED_MUSIC":         true,
+	"SPOTIFY":              true,
+	"TUNEIN":               true,
+	"INTERNET_RADIO":       true,
+}
+
+// pairStandbyDecision decides whether a master STR woke for a pairing may go
+// back to standby now. Only a speaker that is readable, awake and doing nothing
+// the user asked for qualifies: a play pushed through STR since the wake, any
+// playing, buffering or paused transport, and any source the user could have
+// selected on the speaker all keep it on.
+func pairStandbyDecision(np nowPlayingSnapshot, userPlayed bool) (bool, string) {
+	switch {
+	case userPlayed:
+		return false, "the user started something since the wake"
+	case np.Source == "":
+		return false, "the speaker's state could not be read"
+	case np.Source == "STANDBY":
+		return false, "already in standby"
+	}
+	switch np.PlayStatus {
+	case "PLAY_STATE", "BUFFERING_STATE", "PAUSE_STATE":
+		return false, "something is playing on the pair"
+	}
+	if np.Source == "INVALID_SOURCE" {
+		return true, "awake with no source selected"
+	}
+	if pairStandbyIdleSources[np.Source] && np.PlayStatus == "STOP_STATE" {
+		return true, "awake with a stopped source"
+	}
+	return false, "a source the user may have selected is active"
+}
+
+// afterSilentPair is what follows a pair that formed with nothing to restart.
+// Always the late self-resume look; and when STR pulled both halves out of
+// standby for this pairing, the master goes back to standby after it, which
+// takes the partner with it. since is the earliest moment a play by the user
+// counts as "started after the wake".
+func (s *Server) afterSilentPair(bothWereAsleep bool, since time.Time) {
+	if !bothWereAsleep {
+		s.scheduleLateSelfResumeCheck("after pairing")
+		return
+	}
+	s.scheduleLateSelfResumeCheckThen("after pairing", func(ctx context.Context) {
+		s.returnSilentPairToStandby(ctx, since)
+	})
+}
+
+// returnSilentPairToStandby puts a master STR woke for a pairing back to
+// standby, unless the user has started something on it since. One read, at
+// most one standby call. It reports whether the standby was sent.
+//
+// The self-wake guard stays armed on purpose: the group-wake episode is left
+// running and the pair's stored document still marks this speaker as half of
+// a pair, so the next power-on does not auto-resume anything. The standby is
+// noted as a deliberate stop, so the source drop it causes is not taken for a
+// spontaneous firmware drop and recovered (#419).
+func (s *Server) returnSilentPairToStandby(ctx context.Context, since time.Time) bool {
+	if s.boxHost == "" {
+		return false
+	}
+	if active, woke := s.groupWakeEpisode(); active && woke.Before(since) {
+		since = woke
+	}
+	np := groupWakeNowPlaying(ctx, s.boxHost)
+	ok, why := pairStandbyDecision(np, s.userPlayedSince(since))
+	if !ok {
+		s.logger.Info("stereo: leaving the pair on after pairing it out of standby",
+			"reason", why, "source", np.Source, "playStatus", np.PlayStatus)
+		return false
+	}
+	// The level the quiet wake muted from goes back first, while the speaker
+	// is still awake: the restore timer would otherwise write it into a
+	// sleeping speaker, and on some chassis a request into a sleeping box is
+	// what wakes it.
+	s.restoreQuietWakeVolume("pair back to standby")
+	s.NoteUserStop()
+	if err := pairStandbySend(ctx, s.boxHost); err != nil {
+		s.logger.Warn("stereo: could not put the pair back to standby after pairing it out of standby", "err", err)
+		return false
+	}
+	s.logger.Info("stereo: pair formed out of standby, put it back to standby",
+		"reason", why, "source", np.Source, "playStatus", np.PlayStatus)
+	return true
 }

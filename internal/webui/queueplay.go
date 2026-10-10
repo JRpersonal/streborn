@@ -223,19 +223,21 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	if playDirect {
 		playURL = url
 	}
-	var err error
-	if mime != "" {
-		// Tell the speaker what it is being handed. A direct library file has a
-		// length and a server that serves byte ranges, and saying so is what
-		// gives the box a real total time and a position it can return to; a
-		// proxied stream has neither, so it keeps the old stream-shaped metadata.
-		err = s.renderer.PlayURLTrack(ctx, playURL, title, art, mime, upnp.TrackMeta{
-			Duration: dur,
-			Seekable: playDirect,
-		})
-	} else {
-		err = s.renderer.PlayURL(ctx, playURL, title, art)
-	}
+	// A folder started while the speaker plays a native station must stop
+	// that station first, or the firmware swallows the push (#1065).
+	err := s.pushOverNativeStation(ctx, title, func() error {
+		if mime != "" {
+			// Tell the speaker what it is being handed. A direct library file has a
+			// length and a server that serves byte ranges, and saying so is what
+			// gives the box a real total time and a position it can return to; a
+			// proxied stream has neither, so it keeps the old stream-shaped metadata.
+			return s.renderer.PlayURLTrack(ctx, playURL, title, art, mime, upnp.TrackMeta{
+				Duration: dur,
+				Seekable: playDirect,
+			})
+		}
+		return s.renderer.PlayURL(ctx, playURL, title, art)
+	})
 	if err != nil {
 		return err
 	}
