@@ -47,7 +47,9 @@ func libraryFileMime(p presets.Preset) string {
 // The caller holds boxCmdMu.
 func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Preset, mime string, recallStart time.Time) error {
 	directURL := p.StreamURL
-	if err := s.renderer.PlayURLMime(ctx, directURL, p.Name, p.Art, mime); err != nil {
+	if err := s.pushOverNativeStation(ctx, p.Name, func() error {
+		return s.renderer.PlayURLMime(ctx, directURL, p.Name, p.Art, mime)
+	}); err != nil {
 		return err
 	}
 	gen := s.setLastPlay(directURL, p.Name, p.Art, mime)

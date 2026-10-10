@@ -123,7 +123,19 @@ func (s *Server) playWithWrongStateRepair(ctx context.Context, url, title, art, 
 // playTrackWithWrongStateRepair is playWithWrongStateRepair for a file whose
 // length is known. A zero TrackMeta reproduces the old behaviour exactly, which
 // is what every caller that has nothing to say about length passes.
+//
+// Both the app's station play and the radio preset recall come through here,
+// so this is also where a native station the speaker is playing is stopped
+// and the switch over to the stream is checked (pushOverNativeStation, #1065).
 func (s *Server) playTrackWithWrongStateRepair(ctx context.Context, url, title, art, mime string, track upnp.TrackMeta) error {
+	return s.pushOverNativeStation(ctx, title, func() error {
+		return s.pushWithWrongStateRepair(ctx, url, title, art, mime, track)
+	})
+}
+
+// pushWithWrongStateRepair is the push and the one clean-slate retry behind
+// playTrackWithWrongStateRepair.
+func (s *Server) pushWithWrongStateRepair(ctx context.Context, url, title, art, mime string, track upnp.TrackMeta) error {
 	push := func() error {
 		if mime != "" {
 			return s.renderer.PlayURLTrack(ctx, url, title, art, mime, track)
