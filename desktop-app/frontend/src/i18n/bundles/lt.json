@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "Pagrindinis",
   "multiroom.makeMain": "Nustatyti pagrindiniu",
   "multiroom.liveInGroup": "grupėje",
-  "multiroom.liveLeading": "pagrindinis iš {{n}}",
+  "multiroom.liveLeading": "pagrindinis, su: {{names}}",
   "multiroom.liveStandalone": "nesugrupuotas",
   "multiroom.liveNoAnswer": "šiuo metu neatsako",
   "multiroom.updateWarn": "Kai kurie garsiakalbiai veikia su senesniu ST Reborn. Prieš grupuodami atverkite kiekvieną ir per jo atnaujinimo juostą įdiekite naujausią versiją, kitaip grupavimas gali neveikti.",

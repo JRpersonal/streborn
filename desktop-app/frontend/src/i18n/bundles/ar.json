@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "رئيسية",
   "multiroom.makeMain": "تعيين كرئيسية",
   "multiroom.liveInGroup": "ضمن مجموعة",
-  "multiroom.liveLeading": "رئيسية لـ {{n}}",
+  "multiroom.liveLeading": "رئيسية، مع {{names}}",
   "multiroom.liveStandalone": "غير مجمّعة",
   "multiroom.liveNoAnswer": "لا يستجيب حاليًا",
   "multiroom.updateWarn": "بعض السمّاعات تعمل بإصدار أقدم من ST Reborn. افتح كل واحدة واستخدم شريط التحديث الخاص بها للحصول على الأحدث قبل التجميع، وإلا فقد لا يعمل التجميع.",

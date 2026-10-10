@@ -6,8 +6,8 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, STEREO_ICON, GROUP_ICON } from '../utils.js';
-import { t } from '../i18n/index.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, groupFollowerNames, STEREO_ICON, GROUP_ICON } from '../utils.js';
+import { t, getLocale } from '../i18n/index.js';
 import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
@@ -382,7 +382,7 @@ export function renderMultiroom(fetchLive) {
     const m = zoneMasterOf(b.deviceID, state.zoneLive);
     if (m) {
       const isLead = m === (b.deviceID || '').toUpperCase();
-      const txt = isLead ? t('multiroom.liveLeading', { n: (zl.members || []).length }) : t('multiroom.liveInGroup');
+      const txt = isLead ? t('multiroom.liveLeading', { names: groupFollowerNames(zl.members, state.boxes, b.deviceID, getLocale()) }) : t('multiroom.liveInGroup');
       return `<div class="zone-live in">&#9679; ${escapeHtml(txt)}</div>`;
     }
     return `<div class="zone-live">&#9675; ${escapeHtml(t('multiroom.liveStandalone'))}</div>`;

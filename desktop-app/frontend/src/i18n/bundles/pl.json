@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "Główny",
   "multiroom.makeMain": "Ustaw jako główny",
   "multiroom.liveInGroup": "w grupie",
-  "multiroom.liveLeading": "główny z {{n}}",
+  "multiroom.liveLeading": "główny, z: {{names}}",
   "multiroom.liveStandalone": "niezgrupowany",
   "multiroom.liveNoAnswer": "teraz nie odpowiada",
   "multiroom.updateWarn": "Niektóre głośniki mają starszą wersję ST Reborn. Otwórz każdy z osobna i użyj jego banera aktualizacji, aby pobrać najnowszą wersję przed grupowaniem, inaczej grupowanie może nie zadziałać.",

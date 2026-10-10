@@ -159,7 +159,7 @@
   "multiroom.makeMain": "Set as main",
   "multiroom.groupMasterTitle": "Group main (the speaker the group plays from)",
   "multiroom.liveInGroup": "in a group",
-  "multiroom.liveLeading": "main of {{n}}",
+  "multiroom.liveLeading": "main, with {{names}}",
   "multiroom.liveStandalone": "not grouped",
   "multiroom.liveNoAnswer": "not answering right now",
   "multiroom.updateWarn": "Some speakers run an older ST Reborn. Open each one and use its update banner to get the latest before grouping, otherwise grouping may not work.",
