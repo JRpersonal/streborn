@@ -325,13 +325,27 @@ comes from the playing stream) with `buffering` set. The recall used to take
 any track name as "loaded", so on a warm engine it toggled shuffle and sent
 the resume before the load had landed; the toggle was superseded and the late
 load committed `paused: true` after the resume (ST30, 2026-10-10: one silent
-switch in six, `forwardedKB=0`, box `ERROR_NO_DECODED_DATA`). The recall now
-waits until no load is in flight (a second, longer wait for a slow load
-rather than mistaking it for a missing resume track), and after the resume a
-background check reads `/status`: still paused with nothing loading after a
-second means the resume was lost, and it is sent again, at most twice within
-8 s, each retry logged at Warn. The same check re-applies a shuffle setting
-the engine dropped.
+switch in six, `forwardedKB=0`, box `ERROR_NO_DECODED_DATA`). The
+belt-and-braces `/player/pause` made it worse: sent while the load ran, it
+paused the previous stream, whose pause event cleared `buffering`, and that
+stream's position (about 30 s) was carried into the new track's load
+(`passthrough stream cannot seek to 30794ms`); the resume then woke the
+previous stream for the seconds until the load landed paused (four silent
+soft recalls in a row).
+
+So a recall now waits for a committed load: `buffering` off AND go-librespot's
+`loaded track ...` line logged after the recall's `/player/play` (an engine
+that does not report `buffering` behaves as before). A load still running
+after 5 s gets a second, 8 s wait rather than being mistaken for a missing
+resume track. The pause goes out only after the load has landed. Every route
+(the cold reload, the warm same-context fast path, and through `Play` the soft
+and the hardware recall) ends in one `resumeRecall`, which sends the resume
+and starts a 12 s background check on `/status`: "playing" only counts once
+the recalled track's load has committed, and a paused engine is resumed again
+(at most twice, each logged at Warn) when a load committed after the last
+resume or the resume had a second to show. A pause after confirmed playback
+with no new load is the listener's and is left alone. The same check
+re-applies a shuffle setting the engine dropped.
 
 Play also holds the recall window (`recallUntil`) open until it has finished,
 capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST

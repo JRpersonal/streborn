@@ -281,6 +281,16 @@ type Manager struct {
 	stagingGen       uint64
 	stagingUntil     time.Time
 	stagingResumedAt time.Time
+	// recallSeq counts Play calls, so a recall's background resume check
+	// (confirmRecallPlaying) can tell that a newer recall took over.
+	// lastLoadCommitAt is when go-librespot last logged a committed track load
+	// ("loaded track ..."), lastLoadCommitPaused whether it landed paused: the
+	// engine loads off its player loop, and this line is the one reliable sign
+	// that the recalled track, not the previous one, is in the player. Guarded
+	// by mu.
+	recallSeq            uint64
+	lastLoadCommitAt     time.Time
+	lastLoadCommitPaused bool
 	// recallRestartAt is when a cross-account SwitchAccount last restarted
 	// go-librespot. ServeOgg uses it to tell a cross-account recall (which leaves
 	// the engine paused in the restart gap and must be resumed on re-attach) apart

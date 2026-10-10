@@ -18,7 +18,10 @@ import (
 // asyncEngine is a fake go-librespot with an asynchronous track load. While a
 // load runs, /status reports buffering and still names the previous track.
 type asyncEngine struct {
-	mu        sync.Mutex
+	mu sync.Mutex
+	// m receives the engine's "loaded track" log line when a load commits,
+	// the way the agent reads go-librespot's stderr.
+	m         *Manager
 	loadDelay time.Duration
 	landsAt   time.Time
 	loading   bool
@@ -37,6 +40,11 @@ type asyncEngine struct {
 	// superseded by a newer load is.
 	dropShuffleToggle bool
 	shuffleDropped    bool
+	// pauseClearsBuffering: a pause while a load runs acts on the PREVIOUS
+	// stream, whose pause event clears the buffering flag (the ST30 soft
+	// recall sequence).
+	pauseClearsBuffering bool
+	bufferingCleared     bool
 
 	resumes   []time.Time
 	landedAt  time.Time
@@ -49,6 +57,10 @@ func (e *asyncEngine) settleLocked() {
 		e.track = "New"
 		e.paused = true // the load was asked for paused
 		e.landedAt = time.Now()
+		e.bufferingCleared = false
+		if e.m != nil {
+			e.m.noteLibrespotLine(`level=info msg="loaded track \"New\" (paused: true, position: 0ms, duration: 200000ms, prefetched: false)"`)
+		}
 	}
 }
 
@@ -61,7 +73,7 @@ func (e *asyncEngine) handler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"username":        "u",
 			"paused":          e.paused,
-			"buffering":       e.loading,
+			"buffering":       e.loading && !e.bufferingCleared,
 			"shuffle_context": e.shuffle,
 			"track":           map[string]string{"uri": "spotify:track:" + e.track, "name": e.track},
 		})
@@ -71,9 +83,19 @@ func (e *asyncEngine) handler(w http.ResponseWriter, r *http.Request) {
 		e.landsAt = time.Now().Add(e.loadDelay)
 	case "/player/pause":
 		e.paused = true
+		if e.loading && e.pauseClearsBuffering {
+			e.bufferingCleared = true
+		}
 	case "/player/resume":
 		e.resumes = append(e.resumes, time.Now())
 		if e.loading && e.resumeLostWhileLoading {
+			break
+		}
+		if e.loading && e.bufferingCleared {
+			// The resume woke the previous stream, which plays until the load
+			// lands paused.
+			e.bufferingCleared = false
+			e.paused = false
 			break
 		}
 		e.paused = false
@@ -131,6 +153,7 @@ func TestRecallWaitsForTheAsyncLoad(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(e.handler))
 	defer ts.Close()
 	m := newTestManagerAt(t, ts.URL)
+	e.m = m
 
 	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{}); err != nil {
 		t.Fatalf("Play: %v", err)
@@ -159,6 +182,7 @@ func TestRecallResumesAgainAfterALatePausedLoad(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(e.handler))
 	defer ts.Close()
 	m := newTestManagerAt(t, ts.URL)
+	e.m = m
 
 	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{}); err != nil {
 		t.Fatalf("Play: %v", err)
@@ -181,6 +205,7 @@ func TestRecallResumeRetriesAreBounded(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(stuck.handler))
 	defer ts.Close()
 	m := newTestManagerAt(t, ts.URL)
+	stuck.m = m
 	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{}); err != nil {
 		t.Fatalf("Play: %v", err)
 	}
@@ -195,6 +220,7 @@ func TestRecallResumeRetriesAreBounded(t *testing.T) {
 
 type stuckEngine struct {
 	mu      sync.Mutex
+	m       *Manager
 	resumes int
 }
 
@@ -208,6 +234,9 @@ func (s *stuckEngine) handler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/player/resume" {
 		s.resumes++
 	}
+	if r.URL.Path == "/player/play" && s.m != nil {
+		s.m.noteLibrespotLine(`level=info msg="loaded track \"X\" (paused: true, position: 0ms, duration: 200000ms, prefetched: false)"`)
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -219,6 +248,7 @@ func TestRecallReappliesADroppedShuffle(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(e.handler))
 	defer ts.Close()
 	m := newTestManagerAt(t, ts.URL)
+	e.m = m
 	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{}); err != nil {
 		t.Fatalf("Play: %v", err)
 	}
@@ -244,6 +274,7 @@ func TestSlowLoadIsNotASeekFailure(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(e.handler))
 	defer ts.Close()
 	m := newTestManagerAt(t, ts.URL)
+	e.m = m
 	const ctxURI = "spotify:playlist:slow"
 	m.resume.note(ctxURI, "spotify:track:here")
 	if err := m.Play(context.Background(), ctxURI, PlayOptions{}); err != nil {
@@ -253,4 +284,62 @@ func TestSlowLoadIsNotASeekFailure(t *testing.T) {
 		t.Fatalf("a slow load cost the resume point (now %q)", got)
 	}
 	waitPlaying(t, e, 2*time.Second)
+}
+
+// The soft recall route (webui -> PlayAccount -> Play) on the ST30, four
+// switches in a row: the recall's pause hit the PREVIOUS stream while the
+// load ran, which cleared the buffering flag, so the load looked finished;
+// the resume woke the previous stream, and the load then landed paused. The
+// recall must wait for the load to commit and leave the engine playing.
+func TestSoftRecallSurvivesALatePausedLoad(t *testing.T) {
+	fastConfirm(t)
+	e := &asyncEngine{loadDelay: 500 * time.Millisecond, track: "Old", pauseClearsBuffering: true}
+	ts := httptest.NewServer(http.HandlerFunc(e.handler))
+	defer ts.Close()
+	m := newTestManagerAt(t, ts.URL)
+	e.m = m
+	if err := m.PlayAccount(context.Background(), "spotify:playlist:slot3", "", PlayOptions{}); err != nil {
+		t.Fatalf("PlayAccount: %v", err)
+	}
+	waitPlaying(t, e, 3*time.Second)
+	_, _, resumes, landedAt, _ := e.state()
+	if landedAt.IsZero() || len(resumes) == 0 || resumes[len(resumes)-1].Before(landedAt) {
+		t.Fatal("no resume reached the engine after the recalled track landed")
+	}
+	// Stays playing: nothing pauses it again inside the check's window.
+	time.Sleep(500 * time.Millisecond)
+	if paused, _, _, _, _ := e.state(); paused {
+		t.Fatal("the engine ended paused")
+	}
+}
+
+// The same late paused load on the warm same-context fast path (a shuffle
+// press loads the pick): the shared resume check covers it too.
+func TestWarmRecallResumesALatePausedLoad(t *testing.T) {
+	fastConfirm(t)
+	e := &asyncEngine{track: "Old", paused: false}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/player/next" {
+			// The pick loads in the background and commits paused, after the
+			// fast path's resume.
+			e.mu.Lock()
+			e.loading = true
+			e.landsAt = time.Now().Add(300 * time.Millisecond)
+			e.resumeLostWhileLoading = true
+			e.mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		e.handler(w, r)
+	}))
+	defer ts.Close()
+	m := newTestManagerAt(t, ts.URL)
+	e.m = m
+	const ctxURI = "spotify:playlist:warm"
+	makeWarm(m, ctxURI)
+	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: true}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+	time.Sleep(400 * time.Millisecond)
+	waitPlaying(t, e, 3*time.Second)
 }

@@ -538,6 +538,14 @@ func (m *Manager) noteLibrespotLine(line string) {
 	// The newest load simply overwrites the slot. A load that never reaches a
 	// boundary is then forgotten at the next one instead of shifting every
 	// later pairing by one.
+	// A committed load (track or episode). The recall waits for one before it
+	// resumes, and resumes again when one lands paused afterwards.
+	if strings.Contains(lc, `msg="loaded track`) || strings.Contains(lc, `msg="loaded episode`) {
+		m.mu.Lock()
+		m.lastLoadCommitAt = time.Now()
+		m.lastLoadCommitPaused = strings.Contains(lc, "paused: true")
+		m.mu.Unlock()
+	}
 	if strings.Contains(lc, `msg="loaded track`) {
 		if ms := parseLoadedTrackDurMs(lc); ms > 0 {
 			m.mu.Lock()
