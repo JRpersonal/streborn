@@ -255,6 +255,23 @@ export function splitUpdateTargets(rows) {
   return { updateTargets, engineTargets, targets: updateTargets.concat(engineTargets) };
 }
 
+// agentCurrentEngineMissing reports whether a speaker already runs exactly the
+// agent this app would push and only lacks the Spotify engine. Such a speaker
+// needs the engine, not another agent upload and the reboot that comes with it.
+//
+// The running agent's checksum decides when both sides know it. It is the
+// running one on purpose: the one on disk differs exactly when a push landed
+// and did not boot, and that speaker does need the agent again. Without a
+// checksum, version and build must both match.
+export function agentCurrentEngineMissing(v, appInfo) {
+  if (!v || v.goLibrespot !== 'missing') return false;
+  const sha = appInfo && appInfo.agentSha256;
+  if (sha && v.agentRunningSha256) return v.agentRunningSha256 === sha;
+  const build = appInfo && appInfo.build;
+  const version = appInfo && appInfo.version;
+  return !!(build && version && v.build === build && v.version === version);
+}
+
 // encodeURIStrict is encodeURIComponent plus the six characters JS deliberately
 // leaves alone: ! ' ( ) * ~
 //

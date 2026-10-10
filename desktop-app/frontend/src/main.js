@@ -283,6 +283,7 @@ import {
   optimisticQueue,
   queueRecallConfirmed,
   queueReplyMerge,
+  agentCurrentEngineMissing,
   STEREO_ICON,
   GROUP_ICON,
 } from './utils.js';
@@ -4404,11 +4405,21 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   const appBuild = state.appInfo && state.appInfo.build;
   // Record what the box runs RIGHT NOW; the post-OTA success signal is "reachable
   // AND no longer this pre-OTA build", which survives app/agent build-stamp drift.
-  let preBuild = '', preVersion = '';
+  let preBuild = '', preVersion = '', pv = null;
   try {
-    const pv = await BoxAgentVersion(box.host, box.port);
+    pv = await BoxAgentVersion(box.host, box.port);
     if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
   } catch { /* pre-OTA version unknown: fall back to the appBuild match */ }
+  // A speaker that already runs exactly this agent and only lacks the Spotify
+  // engine gets the engine and nothing else. Pushing the agent again bought
+  // nothing and cost a reboot: on a slow chassis that reboot outlasts the verify
+  // window, the engine step after it never ran, and the speaker came back still
+  // without an engine, so every click on "Update" started the same round again
+  // (a CineMate, three rounds of about eight minutes each, 2026-10-10).
+  if (agentCurrentEngineMissing(pv, state.appInfo)) {
+    try { RecordOTAOutcome(box.host, `agent upload skipped: the speaker already runs build ${pv.build || '?'}, only the Spotify engine is missing`); } catch {}
+    return deliverEngineAfterAgent(box, pv, preVersion, phase, gated);
+  }
   phase('uploading');
   // Serialize only the BYTE push, not the box's whole reboot. UpdateBoxAgent
   // does not return when the bytes land: the box replies, then reboots ~1.5 s
@@ -4576,6 +4587,13 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   // Fire and forget: a speaker whose group cannot be rebuilt must not hold up
   // the rest of the update.
   try { RestoreGroupAfterUpdate(box.host, box.port); } catch {}
+  return deliverEngineAfterAgent(box, confirmedVer, preVersion, phase, gated);
+}
+
+// deliverEngineAfterAgent is the second half of an update: the agent is on the
+// target build (just confirmed, or already there) and the Spotify engine is
+// put back if it is missing or outdated.
+async function deliverEngineAfterAgent(box, confirmedVer, preVersion, phase, gated) {
   // The agent half is done and proven. Say so now rather than at the very end:
   // the engine step below can run for another ten minutes, and a user watching a
   // single speaker has earned the news that the update itself landed.
