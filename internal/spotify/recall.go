@@ -178,7 +178,19 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	_ = m.apiPost(ctx, "/player/pause", "")
 	// shuffle_context is a no-op against an unloaded context (live: cold preset 6
 	// then skipped to the deterministic 2nd track), so wait for the track to load.
-	loaded := m.waitContextLoaded(ctx, 5*time.Second)
+	//
+	// The engine loads off its player loop since the 2026-09 upstream merge:
+	// /player/play answers once the context is resolved, and the track itself
+	// lands seconds later. A load still running past the first wait gets a
+	// second one; resuming or toggling shuffle before it lands is exactly the
+	// race that left a recall silent (ST30 2026-10-10: the late load committed
+	// "paused: true" 3.7 s after the resume, and the shuffle toggle was
+	// superseded).
+	loaded, busy := m.waitContextLoaded(ctx, 5*time.Second)
+	if !loaded && busy && !m.seekFailedSince(playAt) {
+		m.logger.Info("spotify: the engine is still loading the recalled track, waiting for it", "uri", uri)
+		loaded, _ = m.waitContextLoaded(ctx, recallSlowLoadWait)
+	}
 	// A resume-point recall passes skip_to_uri to seek to the track the user last
 	// heard from this context. On a volatile context (a Spotify auto-generated
 	// Radio / Daily Mix playlist whose track set drifts between sessions) that track
@@ -201,7 +213,9 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 			m.logger.Debug("spotify: replay-from-top after seek fail failed", "err", err)
 		} else {
 			_ = m.apiPost(ctx, "/player/pause", "")
-			m.waitContextLoaded(ctx, 5*time.Second)
+			if ok, busy := m.waitContextLoaded(ctx, 5*time.Second); !ok && busy {
+				m.waitContextLoaded(ctx, recallSlowLoadWait)
+			}
 		}
 	}
 	// A shuffle recall first turns shuffle OFF explicitly: go-librespot's
@@ -257,7 +271,111 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	m.mu.Lock()
 	m.lastActivate = time.Now()
 	m.mu.Unlock()
+	// Make sure the resume actually took. In the background: the hardware
+	// path points the box at the stream once Play returns and must not wait.
+	go m.confirmRecallPlaying(uri, opts, stagingGen, time.Now())
 	return nil
+}
+
+// recallSlowLoadWait is the second wait for a track load that is still running
+// after the first five seconds (10.8 s seen on a slow ST10).
+var recallSlowLoadWait = 8 * time.Second
+
+// Resume confirmation after a cold recall. Vars so tests can shorten them.
+var (
+	// recallConfirmWindow bounds the whole confirmation.
+	recallConfirmWindow = 8 * time.Second
+	// recallConfirmPoll is the /status poll step.
+	recallConfirmPoll = 250 * time.Millisecond
+	// recallResumeSettle is how long a resume gets to show before the engine
+	// reporting "paused" counts as a lost resume.
+	recallResumeSettle = time.Second
+)
+
+// recallResumeRetries caps the extra resumes one recall may send.
+const recallResumeRetries = 2
+
+// engineStatus is the part of go-librespot's /status a recall checks. The
+// pointer fields stay nil on an engine build that does not report them, and
+// a missing field never triggers a retry.
+type engineStatus struct {
+	Paused         *bool `json:"paused"`
+	Buffering      bool  `json:"buffering"`
+	ShuffleContext *bool `json:"shuffle_context"`
+	Track          *struct {
+		URI  string `json:"uri"`
+		Name string `json:"name"`
+	} `json:"track"`
+}
+
+func (m *Manager) readEngineStatus(ctx context.Context) (engineStatus, bool) {
+	var st engineStatus
+	data, err := m.apiGet(ctx, "/status")
+	if err != nil || json.Unmarshal(data, &st) != nil {
+		return st, false
+	}
+	return st, true
+}
+
+// confirmRecallPlaying checks that the engine really plays after the recall's
+// resume, and sends the resume again (at most recallResumeRetries times) when
+// it reports paused with nothing loading. The engine loads tracks off its
+// player loop, so a resume can land while a late load is still running and
+// that load then commits paused: the box attaches to a stream that never
+// carries audio and gives up with ERROR_NO_DECODED_DATA (ST30, 2026-10-10).
+// It also re-applies the preset's shuffle state if the engine dropped the
+// toggle. It stands down when a newer recall starts or the user stops.
+func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, gen uint64, resumedAt time.Time) {
+	ctx, cancel := context.WithTimeout(context.Background(), recallConfirmWindow+5*time.Second)
+	defer cancel()
+	deadline := time.Now().Add(recallConfirmWindow)
+	retries := 0
+	lastResume := resumedAt
+	shuffleFixed := false
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(recallConfirmPoll):
+		}
+		m.mu.Lock()
+		superseded := m.stagingGen != gen || m.userStopAt.After(resumedAt)
+		m.mu.Unlock()
+		if superseded {
+			return
+		}
+		st, ok := m.readEngineStatus(ctx)
+		if !ok || st.Buffering || st.Track == nil || st.Track.Name == "" {
+			continue // unreadable, or a load still running: its commit applies the resume
+		}
+		if !shuffleFixed && st.ShuffleContext != nil && *st.ShuffleContext != opts.Shuffle {
+			shuffleFixed = true
+			m.logger.Warn("spotify: the engine dropped the recall's shuffle setting, setting it again",
+				"uri", uri, "want", opts.Shuffle)
+			_ = m.apiPost(ctx, "/player/shuffle_context", fmt.Sprintf(`{"shuffle_context":%t}`, opts.Shuffle))
+		}
+		if st.Paused == nil || !*st.Paused {
+			if retries > 0 {
+				m.logger.Info("spotify: the engine plays after the extra resume", "uri", uri, "retries", retries)
+			}
+			return
+		}
+		if time.Since(lastResume) < recallResumeSettle {
+			continue
+		}
+		if retries >= recallResumeRetries {
+			break
+		}
+		retries++
+		m.logger.Warn("spotify: the engine is still paused after the recall's resume, resuming again",
+			"uri", uri, "attempt", retries, "track", st.Track.URI)
+		m.markRecallStagingResumed(gen)
+		if err := m.apiPost(ctx, "/player/resume", ""); err != nil {
+			m.logger.Debug("spotify: extra resume failed", "err", err)
+		}
+		lastResume = time.Now()
+	}
+	m.logger.Warn("spotify: could not confirm that the recall plays", "uri", uri, "resumeRetries", retries)
 }
 
 // replayWarm handles a recall of the context that is already loaded and
@@ -321,29 +439,32 @@ func (m *Manager) setRepeat(ctx context.Context, on bool) {
 
 // waitContextLoaded polls go-librespot's /status until a track is loaded (the
 // context is ready) or max elapses. Used by Play before shuffle_context, which
-// is a no-op against an unloaded context. Returns true once a track is loaded,
-// false if max/ctx elapsed with none (a stalled context, e.g. a resume seek that
-// found no track), so the caller can recover.
-func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) bool {
+// is a no-op against an unloaded context. loaded is true once a track is
+// loaded and no load is in flight; false if max/ctx elapsed without that (a
+// stalled context, e.g. a resume seek that found no track), so the caller can
+// recover. busy reports whether the engine was still loading at the end.
+//
+// "No load in flight" matters since the engine loads off its player loop:
+// /status names the PREVIOUS track until the new one lands (its track comes
+// from the playing stream), with buffering set meanwhile. Reading a track
+// name alone returned at once on a warm engine and let the resume race the
+// load. An engine build that does not report buffering behaves as before.
+func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) (loaded, busy bool) {
 	deadline := time.Now().Add(max)
 	for time.Now().Before(deadline) {
-		if data, err := m.apiGet(ctx, "/status"); err == nil {
-			var st struct {
-				Track *struct {
-					Name string `json:"name"`
-				} `json:"track"`
-			}
-			if json.Unmarshal(data, &st) == nil && st.Track != nil && st.Track.Name != "" {
-				return true
+		if st, ok := m.readEngineStatus(ctx); ok {
+			busy = st.Buffering
+			if !st.Buffering && st.Track != nil && st.Track.Name != "" {
+				return true, false
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return false
+			return false, busy
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	return false
+	return false, busy
 }
 
 // shuffleSkipSettle caps how long a shuffle recall waits for the engine to load

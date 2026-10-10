@@ -318,6 +318,21 @@ then go out if the stream goes on), and no recall holds it longer than 45 s.
 Playback outside a cold recall (the warm same-context path, app control,
 natural track ends) never sees the gate.
 
+Since the 2026-09 upstream merge the engine loads tracks off its player loop:
+`/player/play` answers once the context is resolved, the track lands seconds
+later, and until then `/status` still names the PREVIOUS track (its `track`
+comes from the playing stream) with `buffering` set. The recall used to take
+any track name as "loaded", so on a warm engine it toggled shuffle and sent
+the resume before the load had landed; the toggle was superseded and the late
+load committed `paused: true` after the resume (ST30, 2026-10-10: one silent
+switch in six, `forwardedKB=0`, box `ERROR_NO_DECODED_DATA`). The recall now
+waits until no load is in flight (a second, longer wait for a slow load
+rather than mistaking it for a missing resume track), and after the resume a
+background check reads `/status`: still paused with nothing loading after a
+second means the resume was lost, and it is sent again, at most twice within
+8 s, each retry logged at Warn. The same check re-applies a shuffle setting
+the engine dropped.
+
 Play also holds the recall window (`recallUntil`) open until it has finished,
 capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST
 outlived the fixed window and the recall's own track start read as a
