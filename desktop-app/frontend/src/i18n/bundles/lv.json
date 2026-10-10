@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "Galvenais",
   "multiroom.makeMain": "Iestatīt kā galveno",
   "multiroom.liveInGroup": "grupā",
-  "multiroom.liveLeading": "galvenais grupā ({{n}})",
+  "multiroom.liveLeading": "galvenais, ar: {{names}}",
   "multiroom.liveStandalone": "nav sagrupēts",
   "multiroom.liveNoAnswer": "pašlaik neatbild",
   "multiroom.updateWarn": "Daži skaļruņi darbojas ar vecāku ST Reborn. Pirms grupēšanas atveriet katru no tiem un izmantojiet tā atjaunināšanas joslu, lai iegūtu jaunāko versiju, citādi grupēšana var nedarboties.",

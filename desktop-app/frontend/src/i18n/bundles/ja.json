@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "メイン",
   "multiroom.makeMain": "メインに設定",
   "multiroom.liveInGroup": "グループ内",
-  "multiroom.liveLeading": "{{n}} 台のメイン",
+  "multiroom.liveLeading": "メイン({{names}} と)",
   "multiroom.liveStandalone": "グループ化されていません",
   "multiroom.liveNoAnswer": "現在応答なし",
   "multiroom.updateWarn": "一部のスピーカーは古いST Rebornで動作しています。グループ化する前に、それぞれを開いて更新バナーから最新版にしてください。そうしないとグループ化がうまくいかないことがあります。",

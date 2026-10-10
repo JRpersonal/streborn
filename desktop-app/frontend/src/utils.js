@@ -272,6 +272,31 @@ export function agentCurrentEngineMissing(v, appInfo) {
   return !!(build && version && v.build === build && v.version === version);
 }
 
+// groupFollowerNames names the speakers that follow a group's main speaker,
+// for the main speaker's card ("Haupt, mit Küche und Bad"). It used to say
+// "Haupt von 1", which counted the followers but read like a group number.
+// members: the main speaker's zone members [{deviceID, ip}]; the main speaker
+// itself is skipped in case the speaker lists it. A follower STR has not
+// discovered is shown by its address. More than three are cut to two names
+// and a count, so the card line stays short.
+export function groupFollowerNames(members, boxes, masterID, locale) {
+  const master = String(masterID || '').toUpperCase();
+  const names = [];
+  for (const m of members || []) {
+    const id = String((m && m.deviceID) || '').toUpperCase();
+    if (id && id === master) continue;
+    const box = (boxes || []).find(b => b && id && String(b.deviceID || '').toUpperCase() === id);
+    const name = box ? getBoxLabel(box) : ((m && m.ip) || id);
+    if (name) names.push(name);
+  }
+  if (names.length > 3) return `${names[0]}, ${names[1]} +${names.length - 2}`;
+  try {
+    return new Intl.ListFormat(locale || undefined, { style: 'long', type: 'conjunction' }).format(names);
+  } catch {
+    return names.join(', ');
+  }
+}
+
 // encodeURIStrict is encodeURIComponent plus the six characters JS deliberately
 // leaves alone: ! ' ( ) * ~
 //

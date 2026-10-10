@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "Hoofd",
   "multiroom.makeMain": "Als hoofd instellen",
   "multiroom.liveInGroup": "in een groep",
-  "multiroom.liveLeading": "hoofd van {{n}}",
+  "multiroom.liveLeading": "hoofd, met {{names}}",
   "multiroom.liveStandalone": "niet gegroepeerd",
   "multiroom.liveNoAnswer": "reageert nu niet",
   "multiroom.updateWarn": "Sommige speakers draaien een oudere ST Reborn. Open elke speaker en gebruik de updatebanner om de nieuwste versie te halen voordat je groepeert, anders werkt het groeperen mogelijk niet.",

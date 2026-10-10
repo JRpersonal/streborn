@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "Ana",
   "multiroom.makeMain": "Ana yap",
   "multiroom.liveInGroup": "bir grupta",
-  "multiroom.liveLeading": "{{n}} hoparlörün anası",
+  "multiroom.liveLeading": "ana hoparlör, {{names}} ile",
   "multiroom.liveStandalone": "gruplanmadı",
   "multiroom.liveNoAnswer": "şu anda yanıt vermiyor",
   "multiroom.updateWarn": "Bazı hoparlörler daha eski bir ST Reborn çalıştırıyor. Gruplamadan önce her birini açın ve en yeni sürümü almak için güncelleme afişini kullanın, aksi halde gruplama çalışmayabilir.",

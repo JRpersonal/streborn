@@ -159,7 +159,7 @@
   "multiroom.makeMain": "設為主喇叭",
   "multiroom.groupMasterTitle": "群組主機（群組從這台播放）",
   "multiroom.liveInGroup": "在群組裡",
-  "multiroom.liveLeading": "{{n}} 台的主喇叭",
+  "multiroom.liveLeading": "主喇叭,搭配 {{names}}",
   "multiroom.liveStandalone": "未加入群組",
   "multiroom.liveNoAnswer": "目前沒有回應",
   "multiroom.updateWarn": "有些喇叭跑的是舊版 ST Reborn。建群組前先一台一台打開，用它的更新橫幅裝上最新版，不然群組可能不會動。",

@@ -159,7 +159,7 @@
   "multiroom.makeMain": "Als Haupt",
   "multiroom.groupMasterTitle": "Gruppen-Haupt (der Lautsprecher, von dem die Gruppe spielt)",
   "multiroom.liveInGroup": "in einer Gruppe",
-  "multiroom.liveLeading": "Haupt von {{n}}",
+  "multiroom.liveLeading": "Haupt, mit {{names}}",
   "multiroom.liveStandalone": "nicht gruppiert",
   "multiroom.liveNoAnswer": "antwortet gerade nicht",
   "multiroom.updateWarn": "Einige Lautsprecher laufen mit einem älteren ST Reborn. Öffne jeden einzeln und nutze sein Update-Banner für die neueste Version, bevor du gruppierst, sonst klappt das Gruppieren eventuell nicht.",

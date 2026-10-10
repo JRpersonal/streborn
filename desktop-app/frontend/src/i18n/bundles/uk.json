@@ -154,7 +154,7 @@
   "multiroom.mainBadge": "Головна",
   "multiroom.makeMain": "Зробити головною",
   "multiroom.liveInGroup": "у групі",
-  "multiroom.liveLeading": "головна з {{n}}",
+  "multiroom.liveLeading": "головна, разом із: {{names}}",
   "multiroom.liveStandalone": "не в групі",
   "multiroom.liveNoAnswer": "зараз не відповідає",
   "multiroom.updateWarn": "Деякі колонки працюють на старішій версії ST Reborn. Відкрийте кожну й скористайтеся її банером оновлення, щоб отримати найновішу версію перед об'єднанням, інакше об'єднання може не спрацювати.",
