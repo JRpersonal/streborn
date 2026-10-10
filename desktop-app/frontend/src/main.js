@@ -280,6 +280,9 @@ import {
   appArtFromBoxArt,
   artCarriesBoxForm,
   optimisticSpotifyLocation,
+  optimisticQueue,
+  queueRecallConfirmed,
+  queueReplyMerge,
   STEREO_ICON,
   GROUP_ICON,
 } from './utils.js';
@@ -6872,7 +6875,14 @@ function renderPresets() {
     // (e.g. a Deezer playlist set on the speaker). Show it so the user sees and
     // can recall it, instead of a misleading "empty" tile.
     const bp = !p ? (state.boxPresets || []).find(x => x.slot === i) : null;
-    const baseActive = p && state.nowLocation && (
+    // The queue match is checked outside the location gate below: right after
+    // a click on a library album or folder key the optimistic location is
+    // empty (the key stores no stream URL) and only the optimistic queue card
+    // names the key (#978). Outside that window it still needs a location, so
+    // a queue left active on a speaker that went quiet lights nothing.
+    const queueLit = (!!state.nowLocation || Date.now() < (state.optimisticUntil || 0))
+      && queueSlotActive(p, state.queue);
+    const baseActive = p && (queueLit || (state.nowLocation && (
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
       (activeStreamURL && p.stream_url === activeStreamURL) ||
@@ -6882,12 +6892,11 @@ function renderPresets() {
       (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot) ||
       // Pandora / iHeartRadio: the speaker reports the service's own station
       // reference, which is exactly what the key stores.
-      nativeServiceActive(p, state.nowLocation) ||
+      nativeServiceActive(p, state.nowLocation)
       // A music-library album or folder: the key stores no stream URL and the
       // box plays one track URL after another, so only the agent's queue card
-      // names the key (#1190).
-      queueSlotActive(p, state.queue)
-    );
+      // names the key (#1190). Matched by queueLit above.
+    )));
     // While a native descriptor is playing, drop a slot whose stored station no
     // longer matches the live audio: a preset list re-synced from the box remote
     // must not leave the freshly-changed tile lit as "playing" (#758). Only bites
@@ -7708,6 +7717,20 @@ async function play(slot) {
     // must not flip the preset back to grey when the speaker still
     // reports the old stream or an empty one.
     state.nowPlayState = 'BUFFERING_STATE';
+    // A music-library album or folder key stores no stream URL, so the
+    // optimistic location below is empty and nothing would name the key until
+    // the agent's queue card arrived and the 6 s window ran out (#978): the key
+    // lit about ten seconds after the click although the queue started within
+    // a second. Name it through an optimistic queue card instead, and remember
+    // what the speaker reported before the click so refreshStatus can end the
+    // window as soon as the speaker reports something new.
+    if (p.type === 'queue') {
+      state.queue = optimisticQueue(state.queue, slot);
+      state.optimisticQueueSlot = slot;
+      state.optimisticQueuePrevLoc = state.nowLocation || '';
+    } else {
+      state.optimisticQueueSlot = null;
+    }
     // Spotify presets carry no stream_url (they recall by URI), so without
     // this the optimistic location is empty: the tile would not light up and
     // the click feels ignored until the box confirms several seconds later.
@@ -7997,7 +8020,10 @@ async function refreshQueue() {
     const q = await GetQueue(box.host, box.port);
     if (state.currentBox !== box) return; // box switched mid-fetch
     const before = queueSlotCard(state.queue);
-    state.queue = q || null;
+    // A reply that does not name the key just clicked yet (sent before the
+    // agent started the queue) must not wipe the optimistic card (#978).
+    const pending = Date.now() < (state.optimisticUntil || 0) ? state.optimisticQueueSlot : null;
+    state.queue = queueReplyMerge(state.queue, q, pending);
     // A library-album key lights up from the queue card, which arrives here and
     // not with the status poll: repaint the keys when it changes, or the
     // highlight waited for an unrelated status change (#1190).
@@ -8478,6 +8504,13 @@ async function refreshStatus() {
     const optimistic = Date.now() < (state.optimisticUntil || 0);
     if (optimistic && loc && loc === state.nowLocation) {
       state.optimisticUntil = 0;
+    }
+    // A library album or folder key has no location to compare: the recall is
+    // confirmed once the queue names the clicked key and the speaker reports a
+    // location other than the one it had before the click (#978).
+    if (optimistic && queueRecallConfirmed(state.optimisticQueueSlot, state.queue, loc, state.optimisticQueuePrevLoc)) {
+      state.optimisticUntil = 0;
+      state.optimisticQueueSlot = null;
     }
     const newLoc = optimistic ? state.nowLocation : loc;
     const newName = optimistic ? state.nowName : name;

@@ -53,9 +53,12 @@ describe('queueSlotCard', () => {
 
 describe('the preset grid uses it', () => {
   it('as one of the ways a key counts as playing', () => {
-    const at = main.indexOf('const baseActive = p && state.nowLocation && (');
+    // Outside the location gate, so the optimistic card of a just-clicked
+    // folder key (empty location) lights it at once (#978).
+    const at = main.indexOf('const queueLit = ');
     expect(at).toBeGreaterThan(-1);
-    expect(main.slice(at, at + 1600)).toContain('queueSlotActive(p, state.queue)');
+    expect(main.slice(at, at + 200)).toContain('queueSlotActive(p, state.queue)');
+    expect(main.slice(at, at + 400)).toContain('const baseActive = p && (queueLit ||');
   });
 
   it('and repaints the keys when the queue card changes', () => {
