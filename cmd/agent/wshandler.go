@@ -98,6 +98,10 @@ type presetWsHandler struct {
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.
 	keyTrace *boxlog.Reader
+	// holdSaver turns a held preset key into a save of what STR plays, for
+	// the UPnP pushes the firmware refuses to store itself (holdsave.go).
+	// nil-safe.
+	holdSaver *holdSaver
 	// powerGate dedupes the standby/wake transitions between the gabbo bus
 	// and the syslog ring (powergate.go). Zero value ready.
 	powerGate powerGate
@@ -500,6 +504,9 @@ func recallActiveWithin(d time.Duration) bool {
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
 	noteRecallActivity()
+	if h.holdSaver != nil {
+		h.holdSaver.NoteSelection()
+	}
 	// Press time is taken while still on the gabbo read loop, so every
 	// stand-down check anchors to when the user actually pressed, not to when
 	// STR got around to the recall.
