@@ -105,6 +105,19 @@ curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
 
 See [AUTOMATION.md](AUTOMATION.md) for what a fire actually does and how the
 clock is handled.
+## Sleep timer
+
+| Method   | Path | Body | Notes |
+| -------- | ---- | ---- | ----- |
+| `GET`    | `/api/box/sleep` | - | `{"active":false}`, or `{"active":true,"remainingSec":N,"group":bool}` while armed. |
+| `POST`   | `/api/box/sleep` | `{"minutes":N,"group":bool}` | Arms the timer, replacing one that is already running. `minutes` is 1-720; `0` or less cancels. `group: true` switches off the whole group, not only this speaker. |
+| `DELETE` | `/api/box/sleep` | - | Cancels. |
+
+The timer lives in the agent's memory only, so a reboot or an agent update
+cancels it. When it fires the speaker goes to standby, and with `group: true` every
+other member of its group too. A speaker that is already in standby is left
+alone.
+
 ## Groups
 
 | Method | Path | Body | Notes |
