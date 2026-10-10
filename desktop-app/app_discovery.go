@@ -1105,10 +1105,10 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	}
 	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
 	defer cancel()
+	// The live probe prefers the port each box was last verified on, so a
+	// speaker that answers on both :8888 and :17008 keeps its port from one
+	// refresh to the next instead of flipping (#1190).
 	probe := a.probeSTRFn
-	if probe == nil {
-		probe = probeSTR
-	}
 	open := a.portOpenFn
 	if open == nil {
 		open = portOpen
@@ -1126,7 +1126,13 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			probed, probeOK := probe(ctx, kb.Host)
+			var probed BoxInfo
+			var probeOK bool
+			if probe != nil {
+				probed, probeOK = probe(ctx, kb.Host)
+			} else {
+				probed, probeOK = probeSTRPreferring(ctx, kb.Host, knownAgentPort(kb))
+			}
 			bosePortOpen := false
 			if !probeOK {
 				bosePortOpen = open(kb.Host, 8090, 1200)
@@ -1175,6 +1181,15 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 		"count", len(out), "reached", reached, "fromCache", len(seen)-reached,
 		"unreachable", len(offline))
 	return out, nil
+}
+
+// knownAgentPort is the agent port a cached record was verified on, or 0
+// (no preference) when the record carries none.
+func knownAgentPort(kb BoxInfo) int {
+	if kb.Kind == "str" && kb.PortVerified {
+		return kb.Port
+	}
+	return 0
 }
 
 // classifyKnownBox is the pure per-box decision behind RefreshKnownBoxes,
@@ -1750,9 +1765,13 @@ func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
 //     forward to localhost:8888. On these boxes :17008 is the only
 //     externally-reachable port.
 //
-// Both ports are probed in parallel; whichever responds with the
-// STR JSON wins. The BoxInfo.Port records the actual reachable port
-// so subsequent API calls hit the right entry point.
+// Both ports are probed in parallel. An ST10 answers on BOTH, and taking
+// whichever answered first made the reported port flip between 8888 and
+// 17008 from one refresh to the next, which the app read as a changed
+// speaker and reset the now-playing view once a minute (#1190). The pick
+// is therefore deterministic: see pickAgentPort. The BoxInfo.Port records
+// the chosen reachable port so subsequent API calls hit the right entry
+// point.
 //
 // On hit we also pull /info from :8090 on the same box — the Bose
 // firmware keeps answering that endpoint even after STR is installed,
@@ -1760,56 +1779,118 @@ func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
 // FriendlyName/DeviceID/Model, which the frontend renders as if the
 // box were unprovisioned.
 func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
+	return probeSTRPreferring(ctx, ip, 0)
+}
+
+// agentPorts are the two entry points the STR agent can be reached on, in
+// the default order of preference: :8888 directly, :17008 via the redirect.
+var agentPorts = [2]int{8888, 17008}
+
+// portPreferGrace is how long pickAgentPort waits for the preferred port
+// once the other one has already answered. Both probes run in parallel, so
+// on a box that answers on both this is normally a few milliseconds; the
+// cap only bounds the wait on a box whose preferred port is dropped (a
+// Portable with no known port yet, where :8888 SYNs go nowhere).
+const portPreferGrace = 400 * time.Millisecond
+
+// probeSTRPreferring is probeSTR with a preferred port: the port the box was
+// last verified on (prefer), so a box that answers on both keeps the port it
+// already has. prefer 0, or a port that is not an agent port, means :8888.
+func probeSTRPreferring(ctx context.Context, ip string, prefer int) (BoxInfo, bool) {
+	port, body := pickAgentPort(ctx, prefer, func(ctx context.Context, p int) ([]byte, bool) {
+		url := fmt.Sprintf("http://%s:%d/api/agent/version", ip, p)
+		// The budget below covers the ANSWER; connecting has its own,
+		// much shorter one (probeDialTimeout). A speaker that accepts
+		// the connection is there, and under sustained box load
+		// (BoseApp churning CPU, loadavg 3-4) it can take seconds to
+		// reply. A missed probe relabels a flashed speaker as "needs
+		// install", so the answer is worth waiting for; a host that is
+		// not there still fails in about a second, at the dial.
+		// 8 KB and a real decode, for the reason in agentVersionAnswered:
+		// the agent's optional flags used to push "version" past a small
+		// cap, and here that would relabel a flashed speaker as "needs
+		// install", which is worse than the play refusal it also caused.
+		body, err := httpGetSmall(ctx, url, probeAnswerBudget, 8192)
+		if err != nil || !agentVersionAnswered(body) {
+			return nil, false
+		}
+		return body, true
+	})
+	if port == 0 {
+		return BoxInfo{}, false
+	}
+	return strBoxFromVersion(ctx, ip, port, body), true
+}
+
+// pickAgentPort runs fetch on both agent ports in parallel and returns the
+// port to use plus its answer, or 0 when neither answered. The preferred
+// port (prefer, else :8888) wins whenever it answers: returned at once when
+// it answers first, and waited for up to portPreferGrace when the other port
+// was faster. The other port is used only when the preferred one fails or
+// stays silent past the grace, so the result no longer depends on which of
+// two healthy ports happened to reply first.
+func pickAgentPort(ctx context.Context, prefer int, fetch func(context.Context, int) ([]byte, bool)) (int, []byte) {
+	if prefer != agentPorts[0] && prefer != agentPorts[1] {
+		prefer = agentPorts[0]
+	}
 	type result struct {
 		port int
 		body []byte
+		ok   bool
 	}
-	hits := make(chan result, 2)
-	for _, port := range []int{8888, 17008} {
+	// Buffered for both, so a probe still running when we return early does
+	// not block forever on its send.
+	hits := make(chan result, len(agentPorts))
+	for _, port := range agentPorts {
 		p := port
 		go func() {
-			url := fmt.Sprintf("http://%s:%d/api/agent/version", ip, p)
-			// The budget below covers the ANSWER; connecting has its own,
-			// much shorter one (probeDialTimeout). A speaker that accepts
-			// the connection is there, and under sustained box load
-			// (BoseApp churning CPU, loadavg 3-4) it can take seconds to
-			// reply. A missed probe relabels a flashed speaker as "needs
-			// install", so the answer is worth waiting for; a host that is
-			// not there still fails in about a second, at the dial.
-			// 8 KB and a real decode, for the reason in agentVersionAnswered:
-			// the agent's optional flags used to push "version" past a small
-			// cap, and here that would relabel a flashed speaker as "needs
-			// install", which is worse than the play refusal it also caused.
-			body, err := httpGetSmall(ctx, url, probeAnswerBudget, 8192)
-			if err != nil || !agentVersionAnswered(body) {
-				hits <- result{}
-				return
-			}
-			hits <- result{port: p, body: body}
+			body, ok := fetch(ctx, p)
+			hits <- result{port: p, body: body, ok: ok}
 		}()
 	}
-	var winner result
-	for i := 0; i < 2; i++ {
-		r := <-hits
-		if r.port != 0 && winner.port == 0 {
-			winner = r
+	var fallback result
+	var grace <-chan time.Time
+	for pending := len(agentPorts); pending > 0; {
+		select {
+		case r := <-hits:
+			pending--
+			if !r.ok {
+				continue
+			}
+			if r.port == prefer {
+				return r.port, r.body
+			}
+			fallback = r
+			if pending > 0 {
+				t := time.NewTimer(portPreferGrace)
+				defer t.Stop()
+				grace = t.C
+			}
+		case <-grace:
+			return fallback.port, fallback.body
 		}
 	}
-	if winner.port == 0 {
-		return BoxInfo{}, false
+	if fallback.ok {
+		return fallback.port, fallback.body
 	}
-	s := string(winner.body)
+	return 0, nil
+}
+
+// strBoxFromVersion builds the BoxInfo for an agent that answered its
+// /api/agent/version on port with body, enriched from the stock :8090 /info.
+func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) BoxInfo {
+	s := string(body)
 	version := jsonStringField(s, "version")
 	build := jsonStringField(s, "build")
 
 	box := BoxInfo{
 		Name:         "str-" + ip,
 		Host:         ip,
-		Port:         winner.port,
+		Port:         port,
 		Version:      version,
 		Build:        build,
 		Kind:         "str",
-		PortVerified: true, // winner.port answered an actual HTTP probe
+		PortVerified: true, // port answered an actual HTTP probe
 		// The agent now carries the box display name/model in its version
 		// envelope (#108). Seeding them here means a flashed speaker is
 		// labelled straight from this one verified probe, even when the
@@ -1874,7 +1955,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 			box.SerialNumber = info.SerialNumber
 		}
 	}
-	return box, true
+	return box
 }
 
 // probeSTRWithRetry probes a single host for the STR agent up to attempts

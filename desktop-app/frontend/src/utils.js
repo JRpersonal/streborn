@@ -564,6 +564,35 @@ export function queueSlotActive(p, queue) {
   return card !== '' && card === 'queue:slot:' + p.slot;
 }
 
+// optimisticQueue is the queue state the app assumes right after a click on
+// library album or folder key `slot`, before the agent reports it: active, with
+// that key's card, and no track yet (so no old song's artist/album shows). The
+// key stores no stream URL, so without it nothing named the key and it lit
+// about ten seconds after the click (#978).
+export function optimisticQueue(queue, slot) {
+  return { ...(queue || {}), active: true, card: 'queue:slot:' + slot, items: [], pos: -1 };
+}
+
+// queueRecallConfirmed reports whether the speaker confirmed a click on library
+// key pendingSlot: the queue names that key and the speaker reports a location
+// other than the one it had before the click (prevLoc). The new location alone
+// is not enough, nor is the card alone (it is the app's own optimistic one).
+export function queueRecallConfirmed(pendingSlot, queue, loc, prevLoc) {
+  if (pendingSlot == null || !loc || loc === (prevLoc || '')) return false;
+  return queueSlotCard(queue) === 'queue:slot:' + pendingSlot;
+}
+
+// queueReplyMerge folds an agent queue reply into the current queue state.
+// While a click on library key pendingSlot is still unconfirmed, a reply that
+// does not name that key yet (it left before the agent started the queue)
+// keeps the current, optimistic state instead of wiping its card (#978).
+export function queueReplyMerge(cur, reply, pendingSlot) {
+  if (pendingSlot != null && queueSlotCard(reply) !== 'queue:slot:' + pendingSlot) {
+    return cur || null;
+  }
+  return reply || null;
+}
+
 // isKeyChrome reports whether an event landed on one of the small icons in a
 // preset key's header (clear, rename) rather than on the key itself. The icons
 // are inline SVGs, so the event target is usually the <svg> or a <path> inside
@@ -884,4 +913,17 @@ export function artCarriesBoxForm(art) {
     if (boxArtKind(u) !== null) return true;
   }
   return false;
+}
+
+// optimisticSpotifyLocation is the location the app shows right after a click
+// on Spotify preset key `slot`, before the speaker confirms: the per-slot
+// /spotify/stream-<slot>.ogg URL the speaker will report. The generic
+// stream.ogg carried no slot, so the key that played before stayed lit as
+// "stream starting" and the clicked key only lit about six seconds later, when
+// the optimistic window ran out (#1077). A slot that is not a key number keeps
+// the generic URL.
+export function optimisticSpotifyLocation(loopback, slot) {
+  const n = Number(slot);
+  if (Number.isInteger(n) && n >= 1 && n <= 6) return `${loopback}/spotify/stream-${n}.ogg`;
+  return `${loopback}/spotify/stream.ogg`;
 }

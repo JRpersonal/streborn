@@ -72,6 +72,22 @@ export function arcadeState(list) {
   return { show: games.length > 0, games };
 }
 
+// boxRecordChange compares the selected speaker's record with this refresh's
+// record for the same speaker (matched by deviceID) and says what changed:
+// 'none', 'port' when only the agent port moved (same host, version and name),
+// or 'changed' for anything else that matters (IP, version after an OTA,
+// rename). A speaker that answers on both :8888 and :17008 could come back on
+// the other port every minute; treating that as a changed speaker reset the
+// now-playing state, cleared the search results and hid the track progress
+// bar once a minute (#1190). A port-only change just re-points the record.
+export function boxRecordChange(prev, fresh) {
+  if (!prev || !fresh) return 'changed';
+  if (fresh.host !== prev.host
+      || fresh.version !== prev.version
+      || fresh.friendlyName !== prev.friendlyName) return 'changed';
+  return fresh.port !== prev.port ? 'port' : 'none';
+}
+
 function titleCase(s) {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
