@@ -148,7 +148,11 @@ func TestStereoPairNeverCarriesAGroupWakeResume(t *testing.T) {
 	case hold < 0 || hold > addGroup:
 		t.Error("the auto-attach hold must be renewed before /addGroup")
 	}
-	if n := strings.Count(body, `s.scheduleLateSelfResumeCheck("after pairing")`); n != 2 {
+	// The unread pair schedules the look directly; the confirmed pair goes
+	// through afterSilentPair, which always schedules it and may then put a
+	// pair formed out of standby back to sleep.
+	if n := strings.Count(body, `s.scheduleLateSelfResumeCheck("after pairing")`) +
+		strings.Count(body, "s.afterSilentPair("); n != 2 {
 		t.Errorf("both success paths (confirmed and unread pair) need the late self-resume look, found %d", n)
 	}
 	if strings.Contains(body, "if _, busy := s.boxPlayState(); busy") {

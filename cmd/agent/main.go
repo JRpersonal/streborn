@@ -1286,7 +1286,12 @@ func run() error {
 			cancel()
 		}
 		pctx, cancel := context.WithTimeout(cbCtx, 15*time.Second)
-		if err := renderer.PlayURLMime(pctx, spotifyStreamURL, "Spotify", "", "audio/ogg"); err != nil {
+		// A native station the speaker is playing swallows the push while the
+		// SOAP calls answer success (#1065); the shared helper stops it first
+		// and checks the speaker really switched over.
+		if err := webuiSrv.PushOverNativeStation(pctx, "Spotify", func() error {
+			return renderer.PlayURLMime(pctx, spotifyStreamURL, "Spotify", "", "audio/ogg")
+		}); err != nil {
 			// A speaker that is a MEMBER of a group refuses transport control
 			// outright, so this can never succeed while the group stands, and
 			// the listener just sees Spotify move to another speaker. Record it
