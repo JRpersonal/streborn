@@ -230,6 +230,8 @@
   "library.addServerError": "Nie znaleziono serwera multimediów pod tym adresem",
   "library.serverNotAnswering": "nie odpowiada",
   "library.serverNotAnsweringNote": "Ten serwer nie odpowiedział podczas ostatniego skanowania. Jest na liście na podstawie wcześniejszego skanowania. Przeglądanie zadziała ponownie, gdy serwer będzie włączony i wróci do sieci.",
+  "library.umsSummary": "Utwory z Universal Media Server nie grają?",
+  "library.umsBody": "Universal Media Server konwertuje utwory dla głośników, których nie zna, a głośnik nie potrafi odtworzyć wyniku. W interfejsie webowym UMS otwórz ustawienia transkodowania i wpisz mp3,flac (bez spacji) w polu \"Skip transcoding for the following extensions\". Albo zatrzymaj UMS, dodaj wiersz disable_transcode_for_extensions = mp3,flac do pliku UMS.conf i uruchom go ponownie.",
   "library.notAnsweringWarnTitle": "Ten serwer muzyczny nie odpowiada",
   "library.notAnsweringWarnBody": "{{name}} nie odpowiedział podczas ostatniego skanowania, więc aplikacja zna go tylko z pamięci. Możesz go i tak dodać do swoich głośników. Przeglądanie nie będzie się udawać na żadnym głośniku, dopóki serwer nie będzie włączony i nie wróci do sieci.",
   "library.serverRefusesPC": "Serwer multimediów pod adresem {{address}} odrzuca ten komputer, więc nie można go tu pokazać. Zezwól na ten komputer w ustawieniach serwera multimediów (na NAS zwykle jest to lista dozwolonych urządzeń lub odbiorników multimediów), a potem odśwież.",

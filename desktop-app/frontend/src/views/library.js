@@ -240,6 +240,23 @@ export function serverNotAnswering(srv) {
   return !!(srv && srv.notAnswering);
 }
 
+// isUniversalMediaServer spots Universal Media Server. Out of the box it
+// converts songs for any receiver it has no profile for, and a SoundTouch
+// speaker then gets a stream it cannot decode: the song loads and stays silent
+// with a decoder error. An owner found the setting that stops it (2026-10-10),
+// so the open server gets that recipe as a folded note.
+export function isUniversalMediaServer(srv) {
+  if (!srv) return false;
+  const s = `${srv.manufacturer || ''} ${srv.modelName || ''} ${srv.friendlyName || ''}`;
+  return /universal media server/i.test(s) || /^ums$/i.test(String(srv.modelName || '').trim());
+}
+
+// libraryUMSNote is that folded note, or nothing for any other server.
+export function libraryUMSNote(srv) {
+  if (!isUniversalMediaServer(srv)) return '';
+  return `<details class="library-ums-note"><summary>${escapeHtml(t('library.umsSummary'))}</summary><p>${escapeHtml(t('library.umsBody'))}</p></details>`;
+}
+
 // libraryRefusedNote names the media servers that refused to describe
 // themselves to this PC. They cannot be listed, and the fix is on the server:
 // a QNAP NAS that served the speaker fine answered the PC with a SOAP fault, most
@@ -953,6 +970,7 @@ function renderLibrary() {
         ${removeBtn}
       </div>
       ${notAnsweringNote}
+      ${libraryUMSNote(cur)}
       <div class="library-onspeakers-msg" id="libOnSpeakersMsg"></div>`;
   }
 

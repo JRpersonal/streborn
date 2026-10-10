@@ -230,6 +230,8 @@
   "library.addServerError": "Bu adreste medya sunucusu bulunamadı",
   "library.serverNotAnswering": "yanıt vermiyor",
   "library.serverNotAnsweringNote": "Bu sunucu son taramada yanıt vermedi. Daha önceki bir taramadan hatırlandığı için listede görünüyor. Sunucu açılıp ağa geri döndüğünde göz atma yeniden çalışır.",
+  "library.umsSummary": "Universal Media Server'daki şarkılar ses vermiyor mu?",
+  "library.umsBody": "Universal Media Server, tanımadığı hoparlörler için şarkıları dönüştürür ve hoparlör sonucu çalamaz. UMS web arayüzünde kod dönüştürme ayarlarını aç ve \"Skip transcoding for the following extensions\" alanına mp3,flac yaz (boşluksuz). Ya da UMS'yi durdur, UMS.conf dosyasına disable_transcode_for_extensions = mp3,flac satırını ekle ve yeniden başlat.",
   "library.notAnsweringWarnTitle": "Bu müzik sunucusu yanıt vermiyor",
   "library.notAnsweringWarnBody": "{{name}} son taramada yanıt vermedi, bu yüzden uygulama onu yalnızca hafızasından biliyor. Yine de hoparlörlerine ekleyebilirsin. Sunucu açılıp ağa geri dönene kadar göz atma her hoparlörde başarısız olur.",
   "library.serverRefusesPC": "{{address}} adresindeki medya sunucusu bu bilgisayarı reddediyor, bu yüzden burada listelenemiyor. Bu bilgisayara medya sunucusunun ayarlarında izin ver (NAS'ta genellikle izin verilen cihazlar veya medya alıcıları listesi), ardından yenile.",

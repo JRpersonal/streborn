@@ -243,6 +243,8 @@
   "library.addServerError": "這個位址上找不到媒體伺服器",
   "library.serverNotAnswering": "沒有回應",
   "library.serverNotAnsweringNote": "這個伺服器在上次掃描時沒有回應。它是依照先前掃描記住的資料列在清單中。等伺服器開機並回到網路上，瀏覽就會再次正常。",
+  "library.umsSummary": "Universal Media Server 的歌曲沒有聲音?",
+  "library.umsBody": "Universal Media Server 會為它不認識的喇叭轉換歌曲格式,而喇叭無法播放轉換後的結果。在 UMS 的網頁介面開啟轉碼設定,在「Skip transcoding for the following extensions」欄位輸入 mp3,flac(不要空格)。或者停止 UMS,在 UMS.conf 加入 disable_transcode_for_extensions = mp3,flac 這一行,再重新啟動。",
   "library.notAnsweringWarnTitle": "這個音樂伺服器沒有回應",
   "library.notAnsweringWarnBody": "{{name}} 在上次掃描時沒有回應，所以應用程式只是從記憶中知道它。你仍然可以把它加到喇叭上。在伺服器開機並回到網路之前，每一部喇叭的瀏覽都會失敗。",
   "library.serverRefusesPC": "位於 {{address}} 的媒體伺服器拒絕這台電腦，所以無法在這裡列出。請在媒體伺服器的設定中允許這台電腦（在 NAS 上通常是允許的裝置或媒體接收器清單），然後重新整理。",

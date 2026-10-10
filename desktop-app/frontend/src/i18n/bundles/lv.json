@@ -230,6 +230,8 @@
   "library.addServerError": "Šajā adresē multivides serveris netika atrasts",
   "library.serverNotAnswering": "neatbild",
   "library.serverNotAnsweringNote": "Šis serveris pēdējā meklēšanā neatbildēja. Sarakstā tas ir no iepriekšējās meklēšanas atmiņas. Kad serveris būs ieslēgts un atkal tīklā, pārlūkošana atkal darbosies.",
+  "library.umsSummary": "Universal Media Server dziesmas neskan?",
+  "library.umsBody": "Universal Media Server pārveido dziesmas skaļruņiem, kurus tas nepazīst, un skaļrunis nevar atskaņot rezultātu. UMS tīmekļa saskarnē atveriet pārkodēšanas iestatījumus un laukā “Skip transcoding for the following extensions” ierakstiet mp3,flac (bez atstarpes). Vai arī apturiet UMS, pievienojiet failam UMS.conf rindu disable_transcode_for_extensions = mp3,flac un palaidiet to vēlreiz.",
   "library.notAnsweringWarnTitle": "Šis mūzikas serveris neatbild",
   "library.notAnsweringWarnBody": "{{name}} pēdējā meklēšanā neatbildēja, tāpēc lietotne to zina tikai no atmiņas. Tu tomēr vari to pievienot saviem skaļruņiem. Pārlūkošana neizdosies nevienā skaļrunī, kamēr serveris nebūs ieslēgts un atkal tīklā.",
   "library.serverRefusesPC": "Multivides serveris adresē {{address}} noraida šo datoru, tāpēc to nevar parādīt šeit. Atļauj šo datoru multivides servera iestatījumos (NAS ierīcē parasti tas ir atļauto ierīču vai multivides uztvērēju saraksts), pēc tam atsvaidzini.",

@@ -230,6 +230,8 @@
   "library.addServerError": "No se encontró ningún servidor multimedia en esta dirección",
   "library.serverNotAnswering": "no responde",
   "library.serverNotAnsweringNote": "Este servidor no respondió en el último análisis. Aparece en la lista por lo que se recordó de un análisis anterior. La exploración volverá a funcionar cuando el servidor esté encendido y de nuevo en la red.",
+  "library.umsSummary": "¿Las canciones de Universal Media Server no suenan?",
+  "library.umsBody": "Universal Media Server convierte las canciones para los altavoces que no conoce, y el altavoz no puede reproducir el resultado. En la interfaz web de UMS, abre los ajustes de transcodificación y escribe mp3,flac (sin espacio) en \"Skip transcoding for the following extensions\". O detén UMS, añade la línea disable_transcode_for_extensions = mp3,flac a UMS.conf y vuelve a iniciarlo.",
   "library.notAnsweringWarnTitle": "Este servidor de música no responde",
   "library.notAnsweringWarnBody": "{{name}} no respondió en el último análisis, así que la aplicación solo lo conoce por lo que recuerda. Puedes añadirlo a tus altavoces igualmente. La exploración fallará en todos los altavoces hasta que el servidor esté encendido y de nuevo en la red.",
   "library.serverRefusesPC": "El servidor multimedia en {{address}} rechaza este ordenador, por lo que no puede mostrarse aquí. Permite este PC en los ajustes del servidor multimedia (en un NAS suele ser una lista de dispositivos o receptores multimedia permitidos) y luego actualiza.",
