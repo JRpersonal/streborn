@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "невідомо",
   "settingsView.airplayOptHeading": "Оптимізація AirPlay",
   "settingsView.airplayOptCurrent": "Зараз",
-  "settingsView.airplayOptHelp": "Тримає співпроцесор AirPlay активним, щоб AirPlay запускався швидше й працював надійніше. Лише на колонках з обладнанням AirPlay (Portable, ST20). Зміна перезапускає колонку.",
+  "settingsView.airplayOptHelp": "Тримає співпроцесор AirPlay активним, щоб AirPlay запускався швидше й працював надійніше. Лише на колонках з обладнанням AirPlay (Portable). Зміна перезапускає колонку.",
   "settingsView.airplayOptRecommend": "Увімк.: швидший і надійніший AirPlay, трохи більше енергоспоживання. Вимк.: глибший режим очікування й довша робота від батареї, AirPlay реагує трохи повільніше. Порада: лишіть увімкненим, якщо користуєтеся AirPlay; вимкніть на Portable з живленням від батареї, на який рідко передаєте потік.",
   "settingsView.airplayOptConfirmTitle": "Перезапустити колонку, щоб застосувати?",
   "settingsView.airplayOptConfirmBody": "Зміна оптимізації AirPlay перезапускає колонку, щоб застосувати налаштування (так само, як застосунок Bose). Вона ненадовго стане недоступною. Продовжити?",

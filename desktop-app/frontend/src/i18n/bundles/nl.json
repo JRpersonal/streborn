@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "onbekend",
   "settingsView.airplayOptHeading": "AirPlay-optimalisatie",
   "settingsView.airplayOptCurrent": "Nu",
-  "settingsView.airplayOptHelp": "De geavanceerde \"AirPlay-optimalisatie\" van de Bose-app, een coprocessor-keepalive die de AirPlay-betrouwbaarheid verbetert. Alleen aanwezig op speakers met AirPlay-hardware (Portable, ST20). Een wijziging herstart de speaker om die toe te passen, net als de Bose-app doet.",
+  "settingsView.airplayOptHelp": "De geavanceerde \"AirPlay-optimalisatie\" van de Bose-app, een coprocessor-keepalive die de AirPlay-betrouwbaarheid verbetert. Alleen aanwezig op speakers met AirPlay-hardware (Portable). Een wijziging herstart de speaker om die toe te passen, net als de Bose-app doet.",
   "settingsView.airplayOptRecommend": "Aan: snellere, betrouwbaardere AirPlay, iets meer stroomverbruik. Uit: diepere stand-by en langere batterijduur, AirPlay reageert wat trager. Tip: laat het aan staan als je AirPlay gebruikt; zet het uit op een Portable op batterij waar je zelden naartoe streamt.",
   "settingsView.airplayOptConfirmTitle": "Speaker herstarten om toe te passen?",
   "settingsView.airplayOptConfirmBody": "Het wijzigen van de AirPlay-optimalisatie herstart de speaker zodat de instelling kan worden toegepast (net als de Bose-app). Hij is kort niet beschikbaar. Doorgaan?",

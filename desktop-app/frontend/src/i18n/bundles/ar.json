@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "غير معروف",
   "settingsView.airplayOptHeading": "تحسين AirPlay",
   "settingsView.airplayOptCurrent": "حاليًا",
-  "settingsView.airplayOptHelp": "يبقي معالج AirPlay المساعد مستيقظًا حتى يبدأ AirPlay أسرع ويظلّ موثوقًا. فقط على السمّاعات المزوّدة بعتاد AirPlay (Portable وST20). تغييره يعيد تشغيل السمّاعة.",
+  "settingsView.airplayOptHelp": "يبقي معالج AirPlay المساعد مستيقظًا حتى يبدأ AirPlay أسرع ويظلّ موثوقًا. فقط على السمّاعات المزوّدة بعتاد AirPlay (Portable). تغييره يعيد تشغيل السمّاعة.",
   "settingsView.airplayOptRecommend": "مفعّل: AirPlay أسرع وأكثر موثوقية، واستهلاك طاقة أعلى قليلًا. معطّل: استعداد أعمق وعمر بطارية أطول، ويستجيب AirPlay أبطأ قليلًا. نصيحة: اتركه مفعّلًا إن كنت تستخدم AirPlay؛ وعطّله على Portable تعمل بالبطارية ونادرًا ما تبثّ إليها.",
   "settingsView.airplayOptConfirmTitle": "هل تعيد تشغيل السمّاعة للتطبيق؟",
   "settingsView.airplayOptConfirmBody": "تغيير تحسين AirPlay يعيد تشغيل السمّاعة لتطبيق الإعداد (تمامًا كتطبيق Bose). ستكون غير متاحة لوهلة. هل تتابع؟",

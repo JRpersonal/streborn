@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "desconocido",
   "settingsView.airplayOptHeading": "Optimización de AirPlay",
   "settingsView.airplayOptCurrent": "Actualmente",
-  "settingsView.airplayOptHelp": "Mantiene despierto el coprocesador de AirPlay para que AirPlay se inicie más rápido y siga siendo fiable. Solo en altavoces con hardware AirPlay (Portable, ST20). Cambiarlo reinicia el altavoz.",
+  "settingsView.airplayOptHelp": "Mantiene despierto el coprocesador de AirPlay para que AirPlay se inicie más rápido y siga siendo fiable. Solo en altavoces con hardware AirPlay (Portable). Cambiarlo reinicia el altavoz.",
   "settingsView.airplayOptRecommend": "Activado: AirPlay más rápido y fiable, algo más de consumo. Desactivado: reposo más profundo y más batería, AirPlay reacciona un poco más lento. Consejo: déjalo activado si usas AirPlay; desactívalo en un Portable a batería al que rara vez transmites.",
   "settingsView.airplayOptConfirmTitle": "¿Reiniciar el altavoz para aplicarlo?",
   "settingsView.airplayOptConfirmBody": "Cambiar la optimización de AirPlay reinicia el altavoz para que pueda aplicar el ajuste (igual que la app Bose). Estará brevemente no disponible. ¿Continuar?",

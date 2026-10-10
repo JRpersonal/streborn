@@ -891,7 +891,7 @@
   "settingsView.clockUnknown": "unbekannt",
   "settingsView.airplayOptHeading": "AirPlay-Optimierung",
   "settingsView.airplayOptCurrent": "Aktuell",
-  "settingsView.airplayOptHelp": "Hält den AirPlay-Koprozessor wach, damit AirPlay schneller startet und zuverlässig bleibt. Nur auf Lautsprechern mit AirPlay-Hardware (Portable, ST20). Eine Änderung startet den Lautsprecher neu.",
+  "settingsView.airplayOptHelp": "Hält den AirPlay-Koprozessor wach, damit AirPlay schneller startet und zuverlässig bleibt. Nur auf Lautsprechern mit AirPlay-Hardware (Portable). Eine Änderung startet den Lautsprecher neu.",
   "settingsView.airplayOptRecommend": "An: schneller, zuverlässiger, etwas mehr Strom. Aus: tieferer Standby, längere Akkulaufzeit, AirPlay reagiert etwas langsamer. Tipp: An lassen, wenn du AirPlay nutzt; bei einem Akku-Portable, auf den du selten streamst, Aus.",
   "settingsView.airplayOptConfirmTitle": "Zum Übernehmen neu starten?",
   "settingsView.airplayOptConfirmBody": "Das Ändern der AirPlay-Optimierung startet den Lautsprecher neu, damit er die Einstellung übernimmt (genau wie die Bose-App). Er ist kurz nicht erreichbar. Fortfahren?",
