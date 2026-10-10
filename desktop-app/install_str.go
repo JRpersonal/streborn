@@ -40,6 +40,12 @@ type InstallResult struct {
 	Message  string `json:"message"`
 	Log      string `json:"log"`
 	Firmware string `json:"firmware"` // Bose firmware read from :8090/info, for diagnostics
+	// The speaker identity read with Firmware. The firmware update guide on the
+	// failure screen needs it to pick Bose's file, and by then the speaker may
+	// be rebooting and not answer.
+	Model      string `json:"model"`
+	ModuleType string `json:"moduleType"`
+	Variant    string `json:"variant"`
 }
 
 // stickProbePaths are the candidate mount paths checked for the STR
@@ -173,6 +179,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	fwNote := ""
 	if fw, ferr := a.GetBoxFirmware(host); ferr == nil && fw.Reachable {
 		res.Firmware = fw.Short
+		res.Model, res.ModuleType, res.Variant = fw.Model, fw.ModuleType, fw.Variant
 		a.logger.Info("install_str: box firmware", "host", host, "model", fw.Model,
 			"firmware", fw.Firmware, "moduleType", fw.ModuleType, "variant", fw.Variant, "outdated", fw.Outdated)
 		if fw.Outdated && fw.Short != "" {
@@ -188,12 +195,15 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			// and a speaker without STR on it can never open it: the settings
 			// pane short-circuits a stock box to an empty state with a Setup
 			// button. Every owner who gets this note has exactly such a box, so
-			// the signpost pointed at a room only the unaffected can enter. The
-			// route is named here instead, and the setup screen renders the
-			// steps and the model's guide beside this message
-			// (outdatedFirmwareHtml in views/setup.js).
-			fwNote = " The speaker firmware is " + fw.Short + ", older than Bose's last firmware " + latestBoseFirmware +
-				", and STR needs it updated first. Since the Bose cloud shut down the SoundTouch app usually cannot deliver a firmware update any more, so use Bose's own USB update tool from btu.bose.com: the steps and your model's guide are linked below."
+			// the signpost pointed at a room only the unaffected can enter.
+			// Until 2026-10-10 it named "Bose's USB update tool" on
+			// btu.bose.com, which is not Bose's procedure either: Bose's
+			// support articles upload the update file to the speaker's own
+			// :17008/update.html page. The note now carries Bose's direct
+			// download for this speaker, and the setup screen renders the
+			// step-by-step firmware update guide beside it (fwguide.js).
+			guide := firmwareGuideFor(a.appCtx(), fw.Model, fw.ModuleType, fw.Variant, fw.Firmware)
+			fwNote = firmwareTooOldNote(fw.Short, guide.Files)
 		}
 	}
 	// Every message this function can end on gets the firmware note, and that

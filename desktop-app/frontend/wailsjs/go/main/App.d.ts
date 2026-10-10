@@ -117,6 +117,8 @@ export function GetDisplaySplash(arg1:string,arg2:number):Promise<Record<string,
 
 export function GetDisplayTrack(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function GetFirmwareGuide(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.FirmwareGuide>;
+
 export function GetGroupKeys(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function GetLogFilePath():Promise<string>;

@@ -1,3 +1,26 @@
+export namespace bosefw {
+	
+	export class File {
+	    name: string;
+	    url: string;
+	    generation: string;
+	    deviceId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new File(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.url = source["url"];
+	        this.generation = source["generation"];
+	        this.deviceId = source["deviceId"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AppInfo {
@@ -268,6 +291,44 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class FirmwareGuide {
+	    model: string;
+	    current: string;
+	    required: string;
+	    files: bosefw.File[];
+	    live: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FirmwareGuide(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.model = source["model"];
+	        this.current = source["current"];
+	        this.required = source["required"];
+	        this.files = this.convertValues(source["files"], bosefw.File);
+	        this.live = source["live"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class FirmwareInfo {
 	    reachable: boolean;
 	    model: string;
@@ -301,6 +362,9 @@ export namespace main {
 	    message: string;
 	    log: string;
 	    firmware: string;
+	    model: string;
+	    moduleType: string;
+	    variant: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new InstallResult(source);
@@ -314,6 +378,9 @@ export namespace main {
 	        this.message = source["message"];
 	        this.log = source["log"];
 	        this.firmware = source["firmware"];
+	        this.model = source["model"];
+	        this.moduleType = source["moduleType"];
+	        this.variant = source["variant"];
 	    }
 	}
 	export class LibraryContainer {

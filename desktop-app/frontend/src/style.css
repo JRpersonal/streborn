@@ -2428,6 +2428,13 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 }
 .fw-update-banner li { margin-bottom: 3px; }
 .fw-update-howto { margin-top: 6px; }
+/* Firmware update guide (fwguide.js): the download buttons and the update page
+   address sit on their own line under their step, and wrap on a narrow window. */
+.fw-guide > div { margin-top: 4px; }
+.fw-guide .fw-guide-dl,
+.fw-guide .fw-guide-addr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.fw-guide .fw-guide-addr code { user-select: all; word-break: break-all; background: rgba(0,0,0,0.25); padding: 1px 5px; border-radius: 3px; }
+.fw-guide .fw-guide-usb { margin-top: 6px; }
 .update-info { background: var(--brand-bg); border: 1px solid var(--brand-border); color: var(--brand-text); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; }
 .update-info small { color: var(--brand-text-mid); }
 /* The row holds a message, one or two buttons and a progress line. Without
