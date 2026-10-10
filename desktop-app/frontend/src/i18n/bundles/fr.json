@@ -230,6 +230,8 @@
   "library.addServerError": "Aucun serveur multimédia trouvé à cette adresse",
   "library.serverNotAnswering": "ne répond pas",
   "library.serverNotAnsweringNote": "Ce serveur n'a pas répondu lors de la dernière recherche. Il figure dans la liste grâce à une recherche précédente. La navigation fonctionnera à nouveau dès que le serveur sera allumé et de retour sur le réseau.",
+  "library.umsSummary": "Les morceaux de Universal Media Server restent muets ?",
+  "library.umsBody": "Universal Media Server convertit les morceaux pour les enceintes qu'il ne connaît pas, et l'enceinte ne peut pas lire le résultat. Dans l'interface web de UMS, ouvrez les réglages de transcodage et saisissez mp3,flac (sans espace) dans « Skip transcoding for the following extensions ». Ou arrêtez UMS, ajoutez la ligne disable_transcode_for_extensions = mp3,flac dans UMS.conf et relancez-le.",
   "library.notAnsweringWarnTitle": "Ce serveur de musique ne répond pas",
   "library.notAnsweringWarnBody": "{{name}} n'a pas répondu lors de la dernière recherche, l'application le connaît donc seulement de mémoire. Vous pouvez quand même l'ajouter à vos enceintes. La navigation échouera sur chaque enceinte jusqu'à ce que le serveur soit allumé et de retour sur le réseau.",
   "library.serverRefusesPC": "Le serveur multimédia à l'adresse {{address}} refuse cet ordinateur, il ne peut donc pas être affiché ici. Autorisez ce PC dans les réglages du serveur multimédia (sur un NAS, généralement une liste d'appareils ou de récepteurs multimédias autorisés), puis actualisez.",

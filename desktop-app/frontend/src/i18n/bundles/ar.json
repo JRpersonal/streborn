@@ -230,6 +230,8 @@
   "library.addServerError": "لم يتم العثور على خادم وسائط على هذا العنوان",
   "library.serverNotAnswering": "لا يستجيب",
   "library.serverNotAnsweringNote": "لم يستجب هذا الخادم في آخر عملية بحث. يظهر في القائمة من ذاكرة بحث سابق. سيعمل التصفح مرة أخرى بعد تشغيل الخادم وعودته إلى الشبكة.",
+  "library.umsSummary": "أغاني Universal Media Server بلا صوت؟",
+  "library.umsBody": "يحوّل Universal Media Server الأغاني لمكبرات الصوت التي لا يعرفها، ولا يستطيع مكبر الصوت تشغيل النتيجة. في واجهة الويب الخاصة بـ UMS افتح إعدادات تحويل الترميز واكتب mp3,flac (بدون مسافة) في الحقل \"Skip transcoding for the following extensions\". أو أوقف UMS وأضف السطر disable_transcode_for_extensions = mp3,flac إلى الملف UMS.conf ثم شغّله من جديد.",
   "library.notAnsweringWarnTitle": "خادم الموسيقى هذا لا يستجيب",
   "library.notAnsweringWarnBody": "لم يستجب {{name}} في آخر عملية بحث، لذلك لا يعرفه التطبيق إلا من الذاكرة. يمكنك إضافته إلى مكبرات الصوت على أي حال. سيفشل التصفح على كل مكبر صوت حتى يتم تشغيل الخادم وعودته إلى الشبكة.",
   "library.serverRefusesPC": "خادم الوسائط على {{address}} يرفض هذا الكمبيوتر، لذلك لا يمكن عرضه هنا. اسمح لهذا الكمبيوتر في إعدادات خادم الوسائط (على جهاز NAS عادةً قائمة بالأجهزة أو مستقبلات الوسائط المسموح بها)، ثم حدّث.",

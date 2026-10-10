@@ -230,6 +230,8 @@
   "library.addServerError": "このアドレスにメディアサーバーが見つかりませんでした",
   "library.serverNotAnswering": "応答なし",
   "library.serverNotAnsweringNote": "このサーバーは前回の検索で応答しませんでした。以前の検索で覚えていた情報からリストに表示されています。サーバーの電源が入り、ネットワークに戻れば再び閲覧できます。",
+  "library.umsSummary": "Universal Media Server の曲が鳴らない?",
+  "library.umsBody": "Universal Media Server は知らないスピーカー向けに曲を変換し、スピーカーはその結果を再生できません。UMS のウェブ画面でトランスコード設定を開き、「Skip transcoding for the following extensions」に mp3,flac (スペースなし) と入力してください。または UMS を停止し、UMS.conf に disable_transcode_for_extensions = mp3,flac の行を追加してから再起動してください。",
   "library.notAnsweringWarnTitle": "この音楽サーバーは応答していません",
   "library.notAnsweringWarnBody": "{{name}} は前回の検索で応答しなかったため、アプリは記憶からしか知りません。それでもスピーカーに追加できます。サーバーの電源が入ってネットワークに戻るまで、どのスピーカーでも閲覧は失敗します。",
   "library.serverRefusesPC": "{{address}} のメディアサーバーがこのコンピューターを拒否しているため、ここに表示できません。メディアサーバーの設定でこの PC を許可してから（NAS では通常、許可するデバイスやメディアレシーバーの一覧）、更新してください。",

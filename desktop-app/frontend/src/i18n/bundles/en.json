@@ -243,6 +243,8 @@
   "library.addServerError": "No media server found at this address",
   "library.serverNotAnswering": "not answering",
   "library.serverNotAnsweringNote": "This server did not answer the last scan. It is on the list from memory of an earlier one, and browsing works again once the server is switched on and back on the network.",
+  "library.umsSummary": "Songs from Universal Media Server stay silent?",
+  "library.umsBody": "Universal Media Server converts songs for speakers it does not know, and the speaker cannot play the result. In the UMS web interface, open Transcoding Settings and enter mp3,flac (no space) under \"Skip transcoding for the following extensions\". Or stop UMS, add the line disable_transcode_for_extensions = mp3,flac to UMS.conf and start it again.",
   "library.notAnsweringWarnTitle": "This music server is not answering",
   "library.notAnsweringWarnBody": "{{name}} did not answer the last scan, so the app only knows it from memory. You can still add it to your speakers. Browsing it will fail on every speaker until the server is switched on and back on the network.",
   "library.serverRefusesPC": "The media server at {{address}} refuses this computer, so it cannot be listed here. Allow this PC in the media server's settings (on a NAS usually a list of allowed devices or media receivers), then refresh.",

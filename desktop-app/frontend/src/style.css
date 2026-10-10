@@ -1139,6 +1139,9 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   white-space: nowrap;
 }
 .library-server-dark-note { color: var(--c-muted); font-size: 12px; margin: 0 0 12px; }
+.library-ums-note { color: var(--c-muted); font-size: 12px; margin: 0 0 12px; }
+.library-ums-note summary { cursor: pointer; }
+.library-ums-note p { margin: 6px 0 0; }
 .library-empty {
   background: var(--c-surface);
   border: 1px dashed var(--c-surface-3);
