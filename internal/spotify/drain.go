@@ -62,6 +62,12 @@ type oggDrain struct {
 	//   - flushed: delivered at the last write that reached the box, i.e. the
 	//     point a dropped batch is rolled back to.
 	deliveredBase, delivered, flushed int64
+	// The recall staging gate (recallstaging.go) holds the pages from the
+	// newest BOS it saw in stageBuf (stageBytes long) until it can tell a
+	// paused load's preamble, which a fresh BOS after the resume replaces,
+	// from the real start of the track, which it must deliver in full.
+	stageBuf   [][]byte
+	stageBytes int
 }
 
 // newOggDrain returns the drain state for one go-librespot run. flushBytes is
@@ -111,8 +117,79 @@ func (d *oggDrain) dropUnsent() {
 	m.mu.Unlock()
 }
 
-// page processes one checksum-valid Ogg page from the engine.
+// page processes one checksum-valid Ogg page from the engine. The recall
+// staging gate gets it first (recallstaging.go): while a cold recall loads
+// its context paused, the pages from the newest BOS are held back until it is
+// clear whether they are a preamble the resume replaces (dropped) or the real
+// start of the track (delivered in full, in order, through pageNow).
 func (d *oggDrain) page(ctx context.Context, page []byte) {
+	m := d.m
+	bos := page[5]&0x02 != 0
+	for {
+		switch m.stagingVerdictFor(bos, d.stageBytes) {
+		case stagingHold:
+			if bos {
+				d.dropStaged("a newer track start replaced it")
+			}
+			d.stageBuf = append(d.stageBuf, page)
+			d.stageBytes += len(page)
+			return
+		case stagingWait:
+			// The held stream reached its cap before the resume: this is the
+			// track playing for real, not a preamble. Stop reading so the
+			// engine stops producing, and decide once the resume was sent.
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(stagingWaitStep):
+			}
+			continue
+		case stagingRelease:
+			d.releaseStaged(ctx, "no fresh track start after the resume")
+		default: // stagingNone: no gate, or a fresh BOS just opened it
+			// Pages held when the gate opened: a BOS means the resume started
+			// the track afresh and they were a preamble; any other page means
+			// the stream simply goes on (the gate was opened by a failed
+			// resume or a stop), so they are its start and go out first.
+			if d.stageBytes > 0 {
+				if bos {
+					d.dropStaged("the resume started the track afresh")
+				} else {
+					d.releaseStaged(ctx, "the recall gate opened without a fresh track start")
+				}
+			}
+		}
+		break
+	}
+	d.pageNow(ctx, page)
+}
+
+// releaseStaged delivers the held pages in order through the normal path:
+// they are the real start of the track. Their BOS meets the recall's armed
+// skip cut there exactly like a fresh one would (old tail dropped, pacing
+// re-anchored), and the pacing spreads them out like live pages.
+func (d *oggDrain) releaseStaged(ctx context.Context, why string) {
+	buf := d.stageBuf
+	d.m.logger.Info("spotify: recall staging delivers the held track start",
+		"heldKB", d.stageBytes/1024, "pages", len(buf), "why", why)
+	d.stageBuf, d.stageBytes = nil, 0
+	for _, p := range buf {
+		d.pageNow(ctx, p)
+	}
+}
+
+// dropStaged throws the held pages away: they were a paused load's preamble.
+func (d *oggDrain) dropStaged(why string) {
+	if d.stageBytes > 0 {
+		d.m.logger.Info("spotify: recall staging dropped the paused load's preamble so the track starts once",
+			"droppedKB", d.stageBytes/1024, "why", why)
+	}
+	d.stageBuf, d.stageBytes = nil, 0
+}
+
+// pageNow is the normal path of one page: header capture, bitrate, skip cut,
+// pacing, batching and the write to the box.
+func (d *oggDrain) pageNow(ctx context.Context, page []byte) {
 	m := d.m
 	// Maintain the current track's header pages: a BOS page starts a
 	// track (Vorbis identification header), the following granule<=0

@@ -131,6 +131,29 @@ func (s *resumeStore) trackFor(contextURI string) string {
 	return s.track[contextURI]
 }
 
+// forget drops the resume point of contextURI, but only while it still names
+// trackURI: a recall found that track gone from the context, and a newer
+// point noted in the meantime is not stale. No-op on a nil store.
+func (s *resumeStore) forget(contextURI, trackURI string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if tr, ok := s.track[contextURI]; !ok || tr != trackURI {
+		return
+	}
+	delete(s.track, contextURI)
+	delete(s.notedAt, contextURI)
+	for i, c := range s.order {
+		if c == contextURI {
+			s.order = append(s.order[:i], s.order[i+1:]...)
+			break
+		}
+	}
+	s.dirty = true
+}
+
 // noteRecall records what a preset recall asked the engine for: the context it
 // loaded and the resume track it passed as skip_to_uri ("" when it started the
 // context from the top or shuffled). Diagnostics only.

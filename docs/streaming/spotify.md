@@ -288,6 +288,70 @@ what the code does:
   timeline that was rebuilt underneath the box. A missing number is worth
   more than a plausible wrong one.
 
+### A cold recall starts the track once: the staging gate
+
+A cold preset recall loads the context with `"paused": true`, sets shuffle
+and repeat, and only then sends `/player/resume`. go-librespot is not silent
+during that paused load: it emits the track's BOS and 13-29 KB of audio, and
+the resume starts a fresh logical stream at granule 0. The recall's skip cut
+used to be consumed by the first of those two boundaries, so the box played
+the first 0.5-1.6 s of the track, then started it again (#1077, ST10: two
+BOS per press, a bad-checksum mid-page handoff between them).
+
+The opposite also happens. On a recall after playback was stopped
+(Portable, v1.0.10 engine) the load is logged `paused: false`, its BOS and
+the track flow before the resume, and the resume brings no fresh BOS. A gate
+that dropped pages until the next BOS lost 1.5-1.8 MB of the track's start
+there.
+
+`internal/spotify/recallstaging.go` therefore closes a gate before the paused
+`/player/play` that HOLDS pages instead of dropping them. From the newest BOS
+on, the drain keeps the pages back (1 MB at most; past that, before the
+resume, it stops reading and the engine stops producing). A BOS after the
+resume means the held pages were a preamble: they are dropped and the fresh
+BOS takes the normal path. No BOS within 1.5 s of the resume, or a full
+buffer after it, means the held pages are the real start: they go out in
+order through the normal path, and their BOS consumes the skip cut like any
+boundary. Pages before any BOS are the old track and meet the skip cut as
+before. A failed play or resume and a user stop open the gate (held pages
+then go out if the stream goes on), and no recall holds it longer than 45 s.
+Playback outside a cold recall (the warm same-context path, app control,
+natural track ends) never sees the gate.
+
+Since the 2026-09 upstream merge the engine loads tracks off its player loop:
+`/player/play` answers once the context is resolved, the track lands seconds
+later, and until then `/status` still names the PREVIOUS track (its `track`
+comes from the playing stream) with `buffering` set. The recall used to take
+any track name as "loaded", so on a warm engine it toggled shuffle and sent
+the resume before the load had landed; the toggle was superseded and the late
+load committed `paused: true` after the resume (ST30, 2026-10-10: one silent
+switch in six, `forwardedKB=0`, box `ERROR_NO_DECODED_DATA`). The
+belt-and-braces `/player/pause` made it worse: sent while the load ran, it
+paused the previous stream, whose pause event cleared `buffering`, and that
+stream's position (about 30 s) was carried into the new track's load
+(`passthrough stream cannot seek to 30794ms`); the resume then woke the
+previous stream for the seconds until the load landed paused (four silent
+soft recalls in a row).
+
+So a recall now waits for a committed load: `buffering` off AND go-librespot's
+`loaded track ...` line logged after the recall's `/player/play` (an engine
+that does not report `buffering` behaves as before). A load still running
+after 5 s gets a second, 8 s wait rather than being mistaken for a missing
+resume track. The pause goes out only after the load has landed. Every route
+(the cold reload, the warm same-context fast path, and through `Play` the soft
+and the hardware recall) ends in one `resumeRecall`, which sends the resume
+and starts a 12 s background check on `/status`: "playing" only counts once
+the recalled track's load has committed, and a paused engine is resumed again
+(at most twice, each logged at Warn) when a load committed after the last
+resume or the resume had a second to show. A pause after confirmed playback
+with no new load is the listener's and is left alone. The same check
+re-applies a shuffle setting the engine dropped.
+
+Play also holds the recall window (`recallUntil`) open until it has finished,
+capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST
+outlived the fixed window and the recall's own track start read as a
+Spotify-app skip.
+
 ## Why native Spotify works without the Bose cloud
 
 Spotify Connect has two login paths. Bose's app used the **account-linked**

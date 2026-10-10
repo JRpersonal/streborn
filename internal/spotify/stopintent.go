@@ -50,6 +50,9 @@ func (m *Manager) UserStopped(ctx context.Context, reason string) {
 	m.stopHoldLogged = false
 	m.engineHotUntil = time.Time{}
 	m.recallUntil = time.Time{}
+	// A recall cut short by the stop never sends its resume: open its staging
+	// gate now rather than at the gate's own time bound (recallstaging.go).
+	m.staging = false
 	hasEngine := m.client != nil
 	m.mu.Unlock()
 	if !running || !hasEngine {
