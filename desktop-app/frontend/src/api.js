@@ -121,6 +121,7 @@ export {
   GetStereoPairName,
   SetStereoPairName,
   RescuedSpeakerCount,
+  FeatureWishes,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,

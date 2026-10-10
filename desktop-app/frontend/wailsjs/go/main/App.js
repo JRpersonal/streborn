@@ -174,6 +174,10 @@ export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
 }
 
+export function FeatureWishes() {
+  return window['go']['main']['App']['FeatureWishes']();
+}
+
 export function ForgetPermanentGroup(arg1, arg2) {
   return window['go']['main']['App']['ForgetPermanentGroup'](arg1, arg2);
 }
