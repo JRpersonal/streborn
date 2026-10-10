@@ -424,6 +424,11 @@ type Server struct {
 	deferredMu sync.Mutex
 	deferred   *deferredResume
 
+	// trackLens remembers the lengths of the library files played directly, so
+	// a key saved or recalled without a stored length can still end on time
+	// (#978). See librarykey.go.
+	trackLens trackLengths
+
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
 	// rePushInFlight coalesces stream-drop resumes (see HandleStreamDisconnect).

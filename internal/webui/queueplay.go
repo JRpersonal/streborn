@@ -241,6 +241,9 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	if err != nil {
 		return err
 	}
+	if playDirect {
+		s.trackLens.put(url, dur) // #978: a single-track key of this file can use it
+	}
 	s.setLastPlay(playURL, title, art, mime)
 	// Recently-played (#220): hang this queue track under the active folder card.
 	// No-op outside a queue (pushStream is queue-only) or before a card is set.

@@ -7547,7 +7547,7 @@ async function saveCurrentToSlot(slot) {
     try {
       await SaveLibraryPreset(
         state.currentBox.host, state.currentBox.port,
-        slot, lname, lib.url, lib.art || '', 0, lib.source || ''
+        slot, lname, lib.url, lib.art || '', 0, lib.source || '', lib.durationSec || 0
       );
       showToast(t('preset.savedToKey', { n: slot, name: lname }));
       await loadPresets();

@@ -21,11 +21,14 @@ type Preset struct {
 	Type      string `json:"type"`
 	Art       string `json:"art,omitempty"`
 	Bitrate   int    `json:"bitrate,omitempty"`
-	Codec     string `json:"codec,omitempty"`    // radio presets: station codec ("MP3", "AAC+"); recalls label AAC streams audio/aac (#252)
-	URI       string `json:"uri,omitempty"`      // Spotify presets: playlist/album URI
-	Account   string `json:"account,omitempty"`  // Spotify presets: owning account
-	Source    string `json:"source,omitempty"`   // DLNA presets: media server name (cosmetic badge)
-	Homepage  string `json:"homepage,omitempty"` // radio presets: station website (recent "website" link)
+	Codec     string `json:"codec,omitempty"`   // radio presets: station codec ("MP3", "AAC+"); recalls label AAC streams audio/aac (#252)
+	URI       string `json:"uri,omitempty"`     // Spotify presets: playlist/album URI
+	Account   string `json:"account,omitempty"` // Spotify presets: owning account
+	Source    string `json:"source,omitempty"`  // DLNA presets: media server name (cosmetic badge)
+	// DurationSec: a single library song's length, so a press ends it on time
+	// (#978). Mirrored so a rename or a box-to-box copy keeps it.
+	DurationSec int    `json:"duration_sec,omitempty"`
+	Homepage    string `json:"homepage,omitempty"` // radio presets: station website (recent "website" link)
 	// Queue presets (Type=="queue", a saved DLNA folder) carry the shuffle
 	// flag and the ordered track list. Items stays raw JSON on purpose: the
 	// agent owns that schema (internal/presets PresetItem), and the copy-
@@ -144,9 +147,15 @@ func (a *App) renamePresetByResave(host string, port int, slot int, name string)
 // tab). It plays like a radio preset (a stream URL the box pulls) but carries
 // the media server name as Source, so the desktop app can show a small "from"
 // badge on the preset. Source is cosmetic and round-trips through the agent.
-func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, source string) error {
+// durationSec is the track length the media server reported (0 = unknown); the
+// agent hands it to the speaker on every press so the key stops showing
+// "playing" when the song ends (#978).
+func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, source string, durationSec int) error {
+	if durationSec < 0 {
+		durationSec = 0
+	}
 	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
-		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source})
+		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source, DurationSec: durationSec})
 }
 
 // SaveFolderPreset stores a queue preset (a whole DLNA folder, type=queue) on a
