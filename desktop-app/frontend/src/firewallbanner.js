@@ -11,8 +11,16 @@
 // unreadable rule list, macOS/Linux (supported false) or a session dismissal
 // keep it down, because sending somebody to change a firewall that is not the
 // problem costs them more than a missing hint.
-export function firewallBannerView(status, t, { dismissed = false } = {}) {
+//
+// Found speakers keep it down too. Block rules alone do not prove a block: a
+// managed laptop can carry them for a profile it is not on, discovery and
+// updates work, and the banner then came back on every start of the app on a
+// machine where the user may not change the firewall at all (#1215). It stays
+// up when an install waited in vain for the speaker's callback (installSuspect),
+// because inbound connections are exactly what such a rule stops.
+export function firewallBannerView(status, t, { dismissed = false, speakersFound = false, installSuspect = false } = {}) {
   if (dismissed || !status || !status.supported || !status.checked || !status.blocked) return null;
+  if (speakersFound && !installSuspect) return null;
   const view = {
     title: t('firewall.bannerTitle'),
     text: t('firewall.bannerText'),

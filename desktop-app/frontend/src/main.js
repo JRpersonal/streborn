@@ -1204,6 +1204,7 @@ async function renderFooter() {
   // An install that waits for the speaker's callback and gets none (setup.js)
   // is the firewall's other footprint: look again once.
   window.addEventListener('str:firewall-suspect', () => {
+    firewallInstallSuspect = true;
     if (firewallSuspect('install')) checkFirewallBanner(true);
   });
   // A winget upgrade started by the previous run that failed: remembered before
@@ -2260,6 +2261,10 @@ async function discoverBoxes() {
     }
     const list = await DiscoverBoxes(4);
     applyBoxList(list || []);
+    if (firewallSpeakersFound !== (list || []).length > 0) {
+      firewallSpeakersFound = (list || []).length > 0;
+      renderFirewallBanner();
+    }
     // An empty speaker list is what a firewall block looks like from in here.
     // Look at the firewall rules again, once per session, not on every sweep.
     if (!(list || []).length && firewallSuspect('empty')) checkFirewallBanner(true);
@@ -2730,6 +2735,11 @@ function checkWedgeBanner() {
 // block is still there and the app should say so again on the next start.
 let firewallState = null;
 let firewallDismissed = false;
+// Speakers found in the last discovery sweep, and an install that waited in
+// vain for the speaker's callback: the banner only matters when the block
+// shows (firewallbanner.js, #1215).
+let firewallSpeakersFound = false;
+let firewallInstallSuspect = false;
 let firewallBusy = false;
 const firewallSuspect = firewallSuspectGate();
 
@@ -2743,7 +2753,11 @@ async function checkFirewallBanner(force) {
 function renderFirewallBanner() {
   const el = $('firewallBanner');
   if (!el) return;
-  const v = firewallBannerView(firewallState, t, { dismissed: firewallDismissed });
+  const v = firewallBannerView(firewallState, t, {
+    dismissed: firewallDismissed,
+    speakersFound: firewallSpeakersFound,
+    installSuspect: firewallInstallSuspect,
+  });
   if (!v) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   const btn = (b, id, cls) => `<button class="btn ${cls} app-update-btn" id="${id}"${firewallBusy ? ' disabled' : ''}>${escapeHtml(firewallBusy && cls === 'btn-primary' ? t('firewall.working') : b.label)}</button>`;
   el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(v.title)}</b> ${escapeHtml(v.text)}${v.note ? ' ' + escapeHtml(v.note) : ''}</span></div>`
