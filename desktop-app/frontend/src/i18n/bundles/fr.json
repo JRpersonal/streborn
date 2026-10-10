@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "inconnu",
   "settingsView.airplayOptHeading": "Optimisation AirPlay",
   "settingsView.airplayOptCurrent": "Actuellement",
-  "settingsView.airplayOptHelp": "Garde le coprocesseur AirPlay éveillé pour qu'AirPlay démarre plus vite et reste fiable. Uniquement sur les enceintes dotées du matériel AirPlay (Portable, ST20). Sa modification redémarre l'enceinte.",
+  "settingsView.airplayOptHelp": "Garde le coprocesseur AirPlay éveillé pour qu'AirPlay démarre plus vite et reste fiable. Uniquement sur les enceintes dotées du matériel AirPlay (Portable). Sa modification redémarre l'enceinte.",
   "settingsView.airplayOptRecommend": "Activé : AirPlay plus rapide et plus fiable, un peu plus de consommation. Désactivé : veille plus profonde et meilleure autonomie, AirPlay réagit un peu plus lentement. Astuce : laissez-le activé si vous utilisez AirPlay ; désactivez-le sur une Portable sur batterie vers laquelle vous diffusez rarement.",
   "settingsView.airplayOptConfirmTitle": "Redémarrer l'enceinte pour appliquer ?",
   "settingsView.airplayOptConfirmBody": "Modifier l'optimisation AirPlay redémarre l'enceinte pour appliquer le réglage (comme l'application Bose). Elle sera brièvement indisponible. Continuer ?",

@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "nezināms",
   "settingsView.airplayOptHeading": "AirPlay optimizācija",
   "settingsView.airplayOptCurrent": "Pašlaik",
-  "settingsView.airplayOptHelp": "Papildu Bose lietotnes \"AirPlay optimizācijas\" iestatījums, koprocesora atbalsts, kas uzlabo AirPlay uzticamību. Pieejams tikai skaļruņos ar AirPlay aparatūru (Portable, ST20). Maiņa restartē skaļruni, lai to pielietotu, tāpat kā Bose lietotne.",
+  "settingsView.airplayOptHelp": "Papildu Bose lietotnes \"AirPlay optimizācijas\" iestatījums, koprocesora atbalsts, kas uzlabo AirPlay uzticamību. Pieejams tikai skaļruņos ar AirPlay aparatūru (Portable). Maiņa restartē skaļruni, lai to pielietotu, tāpat kā Bose lietotne.",
   "settingsView.airplayOptRecommend": "Ieslēgts: ātrāks, uzticamāks AirPlay, mazliet vairāk enerģijas. Izslēgts: dziļāka gaidstāve un ilgāks akumulators, AirPlay reaģē mazliet lēnāk. Padoms: atstājiet ieslēgtu, ja izmantojat AirPlay; izslēdziet to Portable, kas darbojas no akumulatora un uz ko reti straumējat.",
   "settingsView.airplayOptConfirmTitle": "Restartēt skaļruni, lai pielietotu?",
   "settingsView.airplayOptConfirmBody": "AirPlay optimizācijas maiņa restartē skaļruni, lai pielietotu iestatījumu (tāpat kā Bose lietotne). Tas uz brīdi nebūs pieejams. Turpināt?",

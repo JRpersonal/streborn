@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "不明",
   "settingsView.airplayOptHeading": "AirPlay最適化",
   "settingsView.airplayOptCurrent": "現在",
-  "settingsView.airplayOptHelp": "AirPlayのコプロセッサーを起動状態に保ち、AirPlayの開始を速く、安定させます。AirPlayハードウェアを搭載したスピーカー (Portable、ST20) のみ。変更するとスピーカーが再起動します。",
+  "settingsView.airplayOptHelp": "AirPlayのコプロセッサーを起動状態に保ち、AirPlayの開始を速く、安定させます。AirPlayハードウェアを搭載したスピーカー (Portable) のみ。変更するとスピーカーが再起動します。",
   "settingsView.airplayOptRecommend": "オン: AirPlayが速く、より安定しますが、消費電力がわずかに増えます。オフ: スタンバイがより深くなりバッテリーが長持ちしますが、AirPlayの反応が少し遅くなります。ヒント: AirPlayを使うならオンのまま、めったにストリーミングしないバッテリー駆動のPortableではオフにしてください。",
   "settingsView.airplayOptConfirmTitle": "適用のためスピーカーを再起動しますか?",
   "settingsView.airplayOptConfirmBody": "AirPlay最適化を変更すると、設定を適用するためスピーカーが再起動します (Boseアプリと同じです)。短時間利用できなくなります。続行しますか?",

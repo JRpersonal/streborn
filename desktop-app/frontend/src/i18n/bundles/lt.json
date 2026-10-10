@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "nežinoma",
   "settingsView.airplayOptHeading": "AirPlay optimizavimas",
   "settingsView.airplayOptCurrent": "Dabar",
-  "settingsView.airplayOptHelp": "Išplėstinis Bose programos \"AirPlay optimizavimo\" nustatymas, koprocesoriaus palaikymas, gerinantis AirPlay patikimumą. Yra tik garsiakalbiuose su AirPlay aparatine įranga (Portable, ST20). Pakeitimas paleidžia garsiakalbį iš naujo, kad būtų pritaikytas, kaip ir Bose programa.",
+  "settingsView.airplayOptHelp": "Išplėstinis Bose programos \"AirPlay optimizavimo\" nustatymas, koprocesoriaus palaikymas, gerinantis AirPlay patikimumą. Yra tik garsiakalbiuose su AirPlay aparatine įranga (Portable). Pakeitimas paleidžia garsiakalbį iš naujo, kad būtų pritaikytas, kaip ir Bose programa.",
   "settingsView.airplayOptRecommend": "Įjungta: greitesnis, patikimesnis AirPlay, šiek tiek daugiau energijos. Išjungta: gilesnis budėjimas ir ilgesnė baterija, AirPlay reaguoja kiek lėčiau. Patarimas: palikite įjungtą, jei naudojate AirPlay; išjunkite Portable modelyje, veikiančiame iš baterijos, į kurį retai transliuojate.",
   "settingsView.airplayOptConfirmTitle": "Paleisti garsiakalbį iš naujo, kad būtų pritaikyta?",
   "settingsView.airplayOptConfirmBody": "AirPlay optimizavimo keitimas paleidžia garsiakalbį iš naujo, kad pritaikytų nustatymą (kaip ir Bose programa). Jis trumpam bus nepasiekiamas. Tęsti?",

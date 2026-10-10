@@ -891,7 +891,7 @@
   "settingsView.clockUnknown": "未知",
   "settingsView.airplayOptHeading": "AirPlay 最佳化",
   "settingsView.airplayOptCurrent": "目前",
-  "settingsView.airplayOptHelp": "讓 AirPlay 的協同處理器保持喚醒，AirPlay 就能更快啟動、也更穩定。只有具備 AirPlay 硬體的喇叭才有（Portable、ST20）。變更後喇叭會重新啟動。",
+  "settingsView.airplayOptHelp": "讓 AirPlay 的協同處理器保持喚醒，AirPlay 就能更快啟動、也更穩定。只有具備 AirPlay 硬體的喇叭才有（Portable）。變更後喇叭會重新啟動。",
   "settingsView.airplayOptRecommend": "開：AirPlay 更快更穩，耗電稍微多一點。關：待機更省電、電池更耐用，AirPlay 反應會慢一點。小提示：會用 AirPlay 就開著；很少串流的電池式 Portable 就關掉。",
   "settingsView.airplayOptConfirmTitle": "要重新啟動喇叭來套用嗎？",
   "settingsView.airplayOptConfirmBody": "變更 AirPlay 最佳化後，喇叭要重新啟動才能套用這個設定（和 Bose 應用程式一樣），期間會短暫無法使用。要繼續嗎？",

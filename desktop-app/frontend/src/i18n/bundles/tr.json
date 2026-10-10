@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "bilinmiyor",
   "settingsView.airplayOptHeading": "AirPlay optimizasyonu",
   "settingsView.airplayOptCurrent": "Şu anda",
-  "settingsView.airplayOptHelp": "Gelişmiş Bose uygulaması \"AirPlay optimizasyonu\" ayarı, AirPlay güvenilirliğini artıran bir yardımcı işlemci desteği. Yalnızca AirPlay donanımı olan hoparlörlerde (Portable, ST20) bulunur. Değişiklik, Bose uygulaması gibi, uygulamak için hoparlörü yeniden başlatır.",
+  "settingsView.airplayOptHelp": "Gelişmiş Bose uygulaması \"AirPlay optimizasyonu\" ayarı, AirPlay güvenilirliğini artıran bir yardımcı işlemci desteği. Yalnızca AirPlay donanımı olan hoparlörlerde (Portable) bulunur. Değişiklik, Bose uygulaması gibi, uygulamak için hoparlörü yeniden başlatır.",
   "settingsView.airplayOptRecommend": "Açık: daha hızlı, daha güvenilir AirPlay, biraz daha fazla güç. Kapalı: daha derin bekleme ve daha uzun pil, AirPlay biraz daha yavaş tepki verir. İpucu: AirPlay kullanıyorsanız Açık bırakın; nadiren akış gönderdiğiniz pille çalışan bir Portable'da Kapalı yapın.",
   "settingsView.airplayOptConfirmTitle": "Uygulamak için hoparlör yeniden başlatılsın mı?",
   "settingsView.airplayOptConfirmBody": "AirPlay optimizasyonunu değiştirmek ayarı uygulamak için hoparlörü yeniden başlatır (Bose uygulaması gibi). Kısa süre erişilemez olur. Devam edilsin mi?",

@@ -801,7 +801,7 @@
   "settingsView.clockUnknown": "nieznane",
   "settingsView.airplayOptHeading": "Optymalizacja AirPlay",
   "settingsView.airplayOptCurrent": "Teraz",
-  "settingsView.airplayOptHelp": "Zaawansowane ustawienie \"optymalizacja AirPlay\" aplikacji Bose, podtrzymanie koprocesora, które poprawia niezawodność AirPlay. Obecne tylko na głośnikach ze sprzętem AirPlay (Portable, ST20). Zmiana uruchamia głośnik ponownie, aby ją zastosować, tak jak robi to aplikacja Bose.",
+  "settingsView.airplayOptHelp": "Zaawansowane ustawienie \"optymalizacja AirPlay\" aplikacji Bose, podtrzymanie koprocesora, które poprawia niezawodność AirPlay. Obecne tylko na głośnikach ze sprzętem AirPlay (Portable). Zmiana uruchamia głośnik ponownie, aby ją zastosować, tak jak robi to aplikacja Bose.",
   "settingsView.airplayOptRecommend": "Wł.: szybsze, bardziej niezawodne AirPlay, nieco więcej energii. Wył.: głębsze czuwanie i dłuższa praca na baterii, AirPlay reaguje trochę wolniej. Wskazówka: zostaw Wł., jeśli używasz AirPlay; wyłącz na zasilanym z baterii Portable, do którego rzadko strumieniujesz.",
   "settingsView.airplayOptConfirmTitle": "Uruchomić głośnik ponownie, aby zastosować?",
   "settingsView.airplayOptConfirmBody": "Zmiana optymalizacji AirPlay uruchamia głośnik ponownie, aby zastosować ustawienie (tak jak aplikacja Bose). Będzie chwilowo niedostępny. Kontynuować?",
