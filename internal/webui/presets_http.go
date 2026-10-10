@@ -512,6 +512,13 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			}
 			cancel()
 		}
+		// A single library song saved without its length (an app that does not
+		// send it) gets the one learned when the file played here, so the key
+		// ends on time when it is pressed (#978).
+		if s.fillLibraryPresetLength(&p) {
+			s.logger.Info("preset save: library track stored with the length learned from its play",
+				"slot", slot, "trackSec", p.DurationSec)
+		}
 		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
 		// real name (the playlist title), so the box display and the tile show
 		// e.g. "Jens Chill" instead of a bare "Spotify". Only fills empties / a

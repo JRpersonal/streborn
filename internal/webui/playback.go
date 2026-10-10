@@ -239,6 +239,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			boxURL: playURL, title: req.Title, art: req.Icon, mime: mime, meta: meta,
 			dur: time.Duration(req.DurationSec) * time.Second,
 		}, playGen)
+		// Remembered so a key saved from this play keeps the length even
+		// when the saving app does not send it (#978).
+		s.trackLens.put(req.URL, time.Duration(req.DurationSec)*time.Second)
 	}
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.

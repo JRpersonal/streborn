@@ -58,6 +58,13 @@ type Preset struct {
 	// badge on the preset. Optional/additive: radio and Spotify presets leave it
 	// empty.
 	Source string `json:"source,omitempty"`
+	// DurationSec is the length of a single music-library track saved on a key
+	// (a radio-shaped preset with Source set), as the media server reported it
+	// at save time. A recall hands it to the speaker and to the end watch, so
+	// the key stops showing "playing" when the song ends instead of ~20 s later
+	// (#978). Optional/additive: 0 means unknown, which is what every preset
+	// saved before this, and every station, carries.
+	DurationSec int `json:"duration_sec,omitempty"`
 	// Homepage is the radio station website, kept so a preset recall can offer
 	// the same "website" link as the radio search rows in Recently-played (#135).
 	// Optional/additive: presets saved before this, or non-radio, leave it empty.
@@ -243,6 +250,7 @@ type rawPreset struct {
 	URI       string       `json:"uri"`
 	Account   string       `json:"account"`
 	Source    string       `json:"source"`
+	Duration  int          `json:"duration_sec"`
 	Homepage  string       `json:"homepage"`
 	Shuffle   bool         `json:"shuffle"`
 	Repeat    bool         `json:"repeat"`
@@ -351,21 +359,22 @@ func normalize(in []rawPreset) []Preset {
 			typ = "radio"
 		}
 		out = append(out, Preset{
-			Slot:      slot,
-			Name:      p.Name,
-			StreamURL: stream,
-			Type:      typ,
-			Art:       p.Art,
-			Bitrate:   p.Bitrate,
-			Codec:     p.Codec,
-			URI:       p.URI,
-			Account:   p.Account,
-			Source:    p.Source,
-			Homepage:  p.Homepage,
-			Shuffle:   p.Shuffle,
-			Repeat:    p.Repeat,
-			Items:     p.Items,
-			Native:    p.Native,
+			Slot:        slot,
+			Name:        p.Name,
+			StreamURL:   stream,
+			Type:        typ,
+			Art:         p.Art,
+			Bitrate:     p.Bitrate,
+			Codec:       p.Codec,
+			URI:         p.URI,
+			Account:     p.Account,
+			Source:      p.Source,
+			DurationSec: p.Duration,
+			Homepage:    p.Homepage,
+			Shuffle:     p.Shuffle,
+			Repeat:      p.Repeat,
+			Items:       p.Items,
+			Native:      p.Native,
 		})
 	}
 	return out

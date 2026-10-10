@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -162,6 +163,46 @@ func TestLoadPresetWithoutRepeatKeyIsNotLooping(t *testing.T) {
 	}
 	if !got.Shuffle {
 		t.Errorf("the old shuffle flag must still load: %+v", got)
+	}
+}
+
+// A single library song keeps its length across a reload, so a recall can end
+// it on time (#978). A key saved before the field existed loads with 0.
+func TestSaveLoadKeepsLibraryTrackLength(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(new): %v", err)
+	}
+	want := Preset{Slot: 6, Name: "Song", Type: "radio", StreamURL: "http://192.0.2.32:9790/a.m4a", Source: "MinimServer", DurationSec: 175}
+	if err := s.SetSlot(want); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(reload): %v", err)
+	}
+	got, ok := reloaded.Get(6)
+	if !ok || got.DurationSec != 175 {
+		t.Fatalf("DurationSec lost across the reload: %+v", got)
+	}
+
+	oldPath := filepath.Join(t.TempDir(), "presets.json")
+	old := `[{"slot":6,"name":"Song","type":"radio","stream_url":"http://192.0.2.32:9790/a.m4a","source":"MinimServer"}]`
+	if err := os.WriteFile(oldPath, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	olds, err := Load(oldPath)
+	if err != nil {
+		t.Fatalf("Load(old): %v", err)
+	}
+	if got, _ := olds.Get(6); got.DurationSec != 0 {
+		t.Errorf("a key saved before the length existed must load with 0: %+v", got)
+	}
+	// A preset without a length writes no key, so the stored file stays as it was.
+	b, _ := json.Marshal(Preset{Slot: 1, Name: "Radio", Type: "radio", StreamURL: "http://stream.example/a.mp3"})
+	if strings.Contains(string(b), "duration_sec") {
+		t.Errorf("a preset without a length must not write duration_sec: %s", b)
 	}
 }
 

@@ -515,6 +515,7 @@ export namespace main {
 	    uri?: string;
 	    account?: string;
 	    source?: string;
+	    duration_sec?: number;
 	    homepage?: string;
 	    shuffle?: boolean;
 	    items?: number[];
@@ -537,6 +538,7 @@ export namespace main {
 	        this.uri = source["uri"];
 	        this.account = source["account"];
 	        this.source = source["source"];
+	        this.duration_sec = source["duration_sec"];
 	        this.homepage = source["homepage"];
 	        this.shuffle = source["shuffle"];
 	        this.items = source["items"];

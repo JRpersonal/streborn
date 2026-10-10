@@ -496,6 +496,7 @@ async function libraryPlay(item) {
       name: item.title || '(track)',
       art: item.albumArtURL || '',
       source: librarySourceName(),
+      durationSec: item.durationSec || 0,
       at: Date.now(),
     };
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
@@ -743,7 +744,8 @@ function librarySaveAsPreset(item) {
     subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',
     onPick: async (i) => {
       await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
-        item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source);
+        item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source,
+        item.durationSec || 0);
       showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
     },
   });
