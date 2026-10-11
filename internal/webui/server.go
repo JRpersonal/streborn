@@ -40,6 +40,10 @@ type Server struct {
 	// (usservices.go). nativeBoxOverride is a test seam.
 	native            NativeServicesBackend
 	nativeBoxOverride nativeBoxAPI
+	// pandoraStations is the last station list read from the speaker, so a
+	// play can hand back the exact item it listed (pandorastations.go).
+	pandoraMu       sync.Mutex
+	pandoraStations []boxapi.ServiceStation
 	// regionRes combines the wizard region with the firmware's countryCode
 	// (internal/region); nil on builds that do not wire it.
 	regionRes *region.Resolver
@@ -1388,6 +1392,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/pandora", s.handleUSServices)
 	mux.HandleFunc("/api/pandora/account", s.handleNativeAccount("PANDORA"))
 	mux.HandleFunc("/api/iheart/account", s.handleNativeAccount("IHEART"))
+	mux.HandleFunc("/api/pandora/stations", s.handlePandoraStations)
+	mux.HandleFunc("/api/pandora/play", s.handlePandoraPlay)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
