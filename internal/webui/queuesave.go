@@ -169,10 +169,12 @@ func (s *Server) handleQueueSaveSlot(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	prev, had := s.presets.Get(req.Slot)
 	if err := s.storeQueuePreset(r.Context(), p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.noticeAppSave(r, prev, had, p)
 	s.logger.Info("queue preset save: stored the playing folder on a key",
 		"slot", p.Slot, "name", p.Name, "source", p.Source, "tracks", len(p.Items), "shuffle", p.Shuffle)
 	writeJSON(w, http.StatusOK, p)

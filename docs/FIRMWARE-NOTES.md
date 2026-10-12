@@ -541,11 +541,40 @@ it never touches the volume.
 
 There is no display command, but on the Portable the panel itself is
 reachable (spike 2026-10-06, taigan, FW 27.0.6, public write-up in
-discussion #1168). STR uses this for one thing only: its own logo animation
-after an install, after an update, on a box boot, and while an agent update
-is received (`internal/oled`). It can be switched off per speaker
+discussion #1168). STR uses this for its own logo animation after an
+install, after an update, on a box boot, and while an agent update is
+received (`internal/oled`). It can be switched off per speaker
 (`POST /api/box/display-splash {"enabled":false}`, flag file
 `/mnt/nv/streborn/display-splash`).
+
+**Display notices.** The same panel carries STR's short notices for things the
+firmware never shows because STR does them behind its back
+(`internal/oled/notice.go`): a 32x32 symbol and up to three lines in the 5x7
+font, 150 ms fade-in, then the panel goes back to BoseApp.
+
+| Notice | When | Text | Shown for |
+| ------ | ---- | ---- | --------- |
+| Key + check | a held key stored what plays (`cmd/agent/holdsave.go` for STR's own stream, `holdstore.go` for the speaker's own store gesture) | `SAVED N`, the item's name | 2.5 s |
+| Key + check | the app or the phone page put something new on a key (per-slot PUT, queue save, native save, preset move) | `SAVED N`, `FROM STR APP` | 2 s |
+| Key + equals | a save was refused because the item is on another key (#836) | `ON KEY M`, `ALREADY SAVED` | 3 s |
+| Key + X | a held key could not be saved (STR has no preset form for what plays) | `NOT SAVED`, `SOURCE NOT SUPPORTED` | 3 s |
+| Dotted key | a physical press on a key with nothing in STR's store or the box's own list, and no activation after it | `KEY N`, `EMPTY. SET IN STR APP` | 2.5 s |
+| Key grid + arrow | the first reconcile pass after a box boot wrote keys back the box had lost | `N KEYS`, `RESTORED AFTER REBOOT` | 2 s, once per boot |
+| Rings + border | `POST /api/box/identify` ("find this speaker" in the app and on the phone page) | `HELLO`, the speaker's name | 5 s |
+
+One notice at a time, at most one every 3 s; while one shows only the newest
+waiting one is kept (a less important one never replaces a more important
+one) and an identical request is dropped. The splash, the update screen and
+the games always win the panel: a game or an update ends a notice at once, the
+splash at start-up interrupts one and lets it show again afterwards, and no
+notice starts during a game round. The marge keeper only notices a store when
+a person pressed that key in the 15 s before it, so the boot-time preset sync
+the firmware runs through the same door stays silent. Switch: `POST
+/api/box/display-notices {"enabled":false}`, flag file
+`/mnt/nv/streborn/display-notices`, absent = on; the identify notice ignores
+it because it answers a button just pressed. Every shown notice is logged at
+INFO as `display notice shown` (kind, key, durationMs), every dropped one at
+DEBUG as `display notice skipped` with the reason.
 
 **The panel.** `/dev/fb0`, kernel driver `ssdspi`, 128 x 100 pixels, 8 bits
 per pixel, 16 grey levels (0x00 to 0xFF in steps of 0x11), 12,800 bytes per

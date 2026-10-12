@@ -571,6 +571,13 @@ func run() error {
 	// display thread is up.
 	splashKind := oled.DecideKind(agentStamp(), webui.OTARebootPending(), strings.HasPrefix(bootReason, "box-boot"))
 	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"))
+	// The short display notices (saved keys, empty keys, find this speaker)
+	// log under the same component; a box boot arms the one "keys restored
+	// after reboot" notice of this start (displaynotices.go).
+	oled.SetNoticeLogger(logger.With("comp", "oled"))
+	if strings.HasPrefix(bootReason, "box-boot") {
+		armRestoreNotice(time.Now())
+	}
 	go func() {
 		for {
 			time.Sleep(time.Hour)
@@ -1361,6 +1368,16 @@ func run() error {
 		return srv.HoldSaveLive(ctx, slot)
 	})
 	wsHandler.holdSaver = holdSave
+	// The same press tells the display notices that a key is empty, and lets
+	// the marge keeper tell the user's store gesture from the boot-time sync
+	// (displaynotices.go).
+	holdSave.emptyKey = func(slot int) (bool, bool) {
+		if srv := heldWebui.Load(); srv != nil {
+			return srv.KeyEmpty(slot)
+		}
+		return false, false
+	}
+	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
 	keyTrace.SetWebKeyHandler(holdSave.NotePress)
 	webuiSrv.SetHoldSaveTestFn(holdSave.SetAcceptAppKeys)

@@ -102,6 +102,7 @@ func (s *Server) NoteBoxPresets(ps []BoxPreset) {
 		s.logger.Info("box preset list went to empty while the STR store is empty (the firmware dropped its own list, presumably after re-reading its presets from marge)",
 			"was", len(s.boxPresets))
 	}
+	s.boxPresetsSeen = true
 	now := time.Now()
 	for slot, when := range s.deletedBoxSlots {
 		if now.Sub(when) > boxPresetTombstoneTTL {
@@ -120,6 +121,30 @@ func (s *Server) NoteBoxPresets(ps []BoxPreset) {
 		filtered = append(filtered, p)
 	}
 	s.boxPresets = filtered
+}
+
+// KeyEmpty reports whether preset key slot holds nothing at all: no STR
+// preset in the store and no entry in the box's own preset list (a foreign
+// Deezer or TuneIn key counts as set). known is false while the box's list
+// has not been reported yet, so the caller cannot tell.
+func (s *Server) KeyEmpty(slot int) (empty, known bool) {
+	if s.presets == nil {
+		return false, false
+	}
+	if _, ok := s.presets.Get(slot); ok {
+		return false, true
+	}
+	s.boxPresetsMu.Lock()
+	defer s.boxPresetsMu.Unlock()
+	if !s.boxPresetsSeen {
+		return false, false
+	}
+	for _, p := range s.boxPresets {
+		if p.Slot == slot {
+			return false, true
+		}
+	}
+	return true, true
 }
 
 // forgetBoxPreset removes a slot from the box-preset snapshot immediately and

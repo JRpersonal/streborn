@@ -69,10 +69,10 @@ func heldLiveFrom(srv *atomic.Pointer[webui.Server]) heldLive {
 // The box slot is the firmware's to write here; the reconcile later rewrites
 // it once onto STR's own form (see reconcileOnce).
 func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logger) marge.PresetKeeper {
-	return func(item marge.HeldItem) error {
+	keep := func(item marge.HeldItem) (string, error) {
 		candidate, changed, err := heldPresetCandidate(store, live, item)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if !changed {
 			// The boot-time sync PUTs every native slot the box holds, and a
@@ -80,11 +80,11 @@ func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logge
 			// store already says exactly this, so no NAND write and no noise.
 			logger.Debug("hold-to-store: the box re-stated a slot the store already holds",
 				"slot", item.Slot, "name", candidate.Name)
-			return nil
+			return candidate.Name, nil
 		}
 		prev, had := store.Get(item.Slot)
 		if err := store.SetSlot(candidate); err != nil {
-			return fmt.Errorf("preset store write: %w", err)
+			return "", fmt.Errorf("preset store write: %w", err)
 		}
 		was := ""
 		if had {
@@ -95,17 +95,23 @@ func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logge
 				"slot", item.Slot, "was", was, "now", candidate.Name,
 				"source", candidate.Native.Source, "type", candidate.Native.ItemType,
 				"location", candidate.Native.Location)
-			return nil
+			return candidate.Name, nil
 		}
 		if candidate.Type == "queue" {
 			logger.Info("hold-to-store: kept the music-library folder that plays on the key the speaker stored",
 				"slot", item.Slot, "was", was, "now", candidate.Name, "source", candidate.Source,
 				"tracks", len(candidate.Items), "shuffle", candidate.Shuffle)
-			return nil
+			return candidate.Name, nil
 		}
 		logger.Info("hold-to-store: kept the station the speaker stored on a key with its own hold gesture",
 			"slot", item.Slot, "was", was, "now", candidate.Name, "stream", candidate.StreamURL)
-		return nil
+		return candidate.Name, nil
+	}
+	// The display tells the user how the hold went (displaynotices.go).
+	return func(item marge.HeldItem) error {
+		name, err := keep(item)
+		noticeHeldStore(item, name, err)
+		return err
 	}
 }
 
@@ -197,8 +203,7 @@ func heldPresetCandidate(store *presets.Store, live heldLive, item marge.HeldIte
 		dup := (candidate.URI != "" && other.URI == candidate.URI) ||
 			(candidate.StreamURL != "" && other.StreamURL == candidate.StreamURL)
 		if dup {
-			return presets.Preset{}, false, fmt.Errorf("%w: %q is already on key %d",
-				errNotKeepable, other.Name, other.Slot)
+			return presets.Preset{}, false, &alreadyOnKeyError{slot: other.Slot, name: other.Name}
 		}
 	}
 	if cur, have := store.Get(item.Slot); have && samePresetContent(cur, candidate) {
@@ -231,8 +236,7 @@ func heldNativeCandidate(store *presets.Store, item marge.HeldItem) (presets.Pre
 	}
 	for _, other := range store.All() {
 		if other.Slot != item.Slot && other.IsNative() && presets.SameNativeItem(other.Native, candidate.Native) {
-			return presets.Preset{}, false, fmt.Errorf("%w: %q is already on key %d",
-				errNotKeepable, other.Name, other.Slot)
+			return presets.Preset{}, false, &alreadyOnKeyError{slot: other.Slot, name: other.Name}
 		}
 	}
 	if cur, have := store.Get(item.Slot); have && cur.IsNative() && presets.SameNativeItem(cur.Native, candidate.Native) {

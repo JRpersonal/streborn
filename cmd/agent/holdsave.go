@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
 
@@ -58,6 +59,11 @@ const (
 	// it (#1217: a reporter's held key left no hold-to-save line at all).
 	// The pair window plus a margin for a verdict read late.
 	holdUnpairedCheckAfter = holdPairWindow + 500*time.Millisecond
+	// emptyKeyCheckAfter is when, after a physical preset press, the saver
+	// looks whether the key held anything at all (display notice "KEY N
+	// EMPTY"). A tap is released and its activation announced well within it
+	// (holdConfirmAfter), and a hold has its verdict by about 1.6 s.
+	emptyKeyCheckAfter = 2 * time.Second
 )
 
 // holdSaveFunc stores what STR plays on a slot (webui.Server.HoldSaveLive).
@@ -91,11 +97,18 @@ type holdSaver struct {
 	// acceptAppUntil (unix nanos) is the test-only switch that lets a key
 	// sent over :8090/key count like a physical one; 0 = off.
 	acceptAppUntil atomic.Int64
+	// notify puts a notice on the speaker display (oled.Show; tests record).
+	notify func(oled.Notice)
+	// emptyKey reports whether a key holds nothing at all, and whether that
+	// is known (webui.Server.KeyEmpty). nil: the empty-key notice is off.
+	emptyKey func(slot int) (empty, known bool)
 
 	mu     sync.Mutex
 	press  holdPress
 	hold   time.Time // a hold verdict no press has been paired with yet
 	vetoAt time.Time // newest tap verdict or preset activation
+	// selectAt is the newest preset activation the speaker announced.
+	selectAt time.Time
 	// pressSeq counts preset presses (holdPress.seq).
 	pressSeq uint64
 	// verdictAt / verdictHold describe the newest tap/hold verdict, whatever
@@ -115,6 +128,7 @@ func newHoldSaver(logger *slog.Logger, save holdSaveFunc) *holdSaver {
 		sleep:  time.Sleep,
 		spawn:  func(f func()) { go f() },
 		after:  func(d time.Duration, f func()) { time.AfterFunc(d, f) },
+		notify: func(n oled.Notice) { showNotice(n) },
 	}
 }
 
@@ -154,6 +168,42 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 		// presses; it only reads state and logs.
 		h.after(holdUnpairedCheckAfter, func() { h.checkUnpaired(p) })
 	}
+	if h.emptyKey != nil && h.after != nil &&
+		(p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())) {
+		h.after(emptyKeyCheckAfter, func() { h.checkEmpty(p) })
+	}
+}
+
+// checkEmpty is the one-shot look after a physical preset press: when the
+// press is still the newest, no hold was paired with it, the speaker
+// activated nothing since, and the key holds nothing in STR's store or the
+// box's own list, the display says the key is empty and where to set it.
+// The firmware itself shows nothing for an empty key.
+func (h *holdSaver) checkEmpty(p holdPress) {
+	h.mu.Lock()
+	cur, sel := h.press, h.selectAt
+	h.mu.Unlock()
+	if cur.seq != p.seq || cur.used || (!sel.IsZero() && !sel.Before(p.at)) {
+		return
+	}
+	empty, known := h.emptyKey(p.slot)
+	if !known || !empty {
+		return
+	}
+	h.logger.Info("preset key pressed while it holds nothing", "slot", p.slot, "producer", p.producer.String())
+	h.notify(oled.EmptyKey(p.slot))
+}
+
+// recentPhysicalPress reports whether the newest preset press was a physical
+// press of slot within d (the marge keeper's "was this a person's hold").
+func (h *holdSaver) recentPhysicalPress(slot int, d time.Duration) bool {
+	h.mu.Lock()
+	p := h.press
+	h.mu.Unlock()
+	if p.slot != slot || p.at.IsZero() || h.now().Sub(p.at) > d {
+		return false
+	}
+	return p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())
 }
 
 // checkUnpaired is the one-shot look back after a physical preset press: if
@@ -225,6 +275,7 @@ func (h *holdSaver) NoteGesture(g boxlog.PresetGesture) {
 func (h *holdSaver) NoteSelection() {
 	h.mu.Lock()
 	h.vetoAt = h.now()
+	h.selectAt = h.vetoAt
 	h.mu.Unlock()
 }
 
@@ -295,17 +346,25 @@ func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 	case errors.Is(err, webui.ErrHoldUnknownStream):
 		h.logger.Info("hold-to-save: not saved, the speaker plays a stream STR did not start or no longer knows",
 			"slot", p.slot)
+		h.notify(oled.NotSaved(p.slot))
 	case errors.As(err, &refusal):
 		h.logger.Info("hold-to-save: not saved, the preset rules refused it",
 			"slot", p.slot, "code", refusal.Code, "reason", refusal.Error())
+		if refusal.Code == "already-on-slot" && refusal.OtherSlot >= 1 {
+			h.notify(oled.AlreadyOnKey(refusal.OtherSlot))
+		} else {
+			h.notify(oled.NotSaved(p.slot))
+		}
 	case err != nil:
 		h.logger.Warn("hold-to-save: the save failed", "slot", p.slot, "err", err)
 	case saved.Unchanged:
 		h.logger.Info("hold-to-save: the key already holds what plays, nothing written",
 			"slot", p.slot, "kind", saved.Kind, "name", saved.Name)
+		h.notify(oled.SavedByKey(p.slot, saved.Name))
 	default:
 		h.logger.Info("hold-to-save: stored what STR plays on the held key",
 			"slot", p.slot, "kind", saved.Kind, "name", saved.Name,
 			"producer", p.producer.String(), "holdAfterPressMs", holdAt.Sub(p.at).Milliseconds())
+		h.notify(oled.SavedByKey(p.slot, saved.Name))
 	}
 }
