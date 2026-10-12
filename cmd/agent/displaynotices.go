@@ -8,7 +8,9 @@
 //   - a physical press on a key that holds nothing at all (holdsave.go,
 //     checkEmpty): KEY N, EMPTY.
 //   - the reconcile wrote keys back that the box lost over a reboot: N KEYS
-//     RESTORED, once per box boot.
+//     RESTORED, once in the life of the speaker. Some speakers (the Portable)
+//     drop every key registration on every boot, so a notice per boot would
+//     be routine noise; once is enough to show STR does this.
 //
 // The saves from the app and the phone page are noticed in internal/webui,
 // where those requests land.
@@ -18,6 +20,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -37,12 +40,22 @@ const restoreNoticeWindow = 15 * time.Minute
 // of this agent start (unix nanos, 0 = not armed or already used).
 var restoreNoticeArmedAt atomic.Int64
 
+// restoreNoticeShownPath marks that this speaker has shown the restored-keys
+// notice once. Written a single time, never again, so it costs no NAND wear.
+var restoreNoticeShownPath = "/mnt/nv/streborn/display-notice-restored-shown"
+
 // armRestoreNotice is called once at start-up when the box itself just booted.
-func armRestoreNotice(now time.Time) { restoreNoticeArmedAt.Store(now.UnixNano()) }
+// It arms nothing once the speaker has shown the notice before.
+func armRestoreNotice(now time.Time) {
+	if _, err := os.Stat(restoreNoticeShownPath); err == nil {
+		return
+	}
+	restoreNoticeArmedAt.Store(now.UnixNano())
+}
 
 // noteKeysRestored shows "N KEYS RESTORED AFTER REBOOT" the first time a
-// reconcile pass after a box boot put keys back, and never again until the
-// next agent start.
+// reconcile pass after a box boot put keys back, and never again on this
+// speaker.
 func noteKeysRestored(n int) {
 	if n <= 0 {
 		return
@@ -53,6 +66,7 @@ func noteKeysRestored(n int) {
 	}
 	if restoreNoticeArmedAt.CompareAndSwap(at, 0) {
 		showNotice(oled.KeysRestored(n))
+		_ = os.WriteFile(restoreNoticeShownPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
 	}
 }
 

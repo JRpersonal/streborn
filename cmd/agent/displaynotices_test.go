@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -182,6 +184,9 @@ func TestHeldStoreNotices(t *testing.T) {
 func TestKeysRestoredNotice(t *testing.T) {
 	l := swapShowNotice(t)
 	t.Cleanup(func() { restoreNoticeArmedAt.Store(0) })
+	oldPath := restoreNoticeShownPath
+	restoreNoticeShownPath = filepath.Join(t.TempDir(), "shown")
+	t.Cleanup(func() { restoreNoticeShownPath = oldPath })
 
 	noteKeysRestored(3) // not armed: the agent restarted on a running box
 	l.none(t)
@@ -191,12 +196,19 @@ func TestKeysRestoredNotice(t *testing.T) {
 	l.none(t)
 	noteKeysRestored(2)
 	l.only(t, oled.NoticeRestored, 2)
-	noteKeysRestored(4) // once per agent start
+	noteKeysRestored(4)
 	if len(l.get()) != 1 {
 		t.Fatal("restored notice shown twice")
 	}
 
+	// the next box boot: the speaker has shown it once, never again
 	l.ns = nil
+	armRestoreNotice(time.Now())
+	noteKeysRestored(5)
+	l.none(t)
+
+	// a boot long ago does not count as "after a reboot"
+	_ = os.Remove(restoreNoticeShownPath)
 	armRestoreNotice(time.Now().Add(-restoreNoticeWindow - time.Minute))
 	noteKeysRestored(2)
 	l.none(t)

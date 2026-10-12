@@ -572,8 +572,8 @@ func run() error {
 	splashKind := oled.DecideKind(agentStamp(), webui.OTARebootPending(), strings.HasPrefix(bootReason, "box-boot"))
 	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"))
 	// The short display notices (saved keys, empty keys, find this speaker)
-	// log under the same component; a box boot arms the one "keys restored
-	// after reboot" notice of this start (displaynotices.go).
+	// log under the same component; a box boot arms the "keys restored
+	// after reboot" notice, shown once per speaker (displaynotices.go).
 	oled.SetNoticeLogger(logger.With("comp", "oled"))
 	if strings.HasPrefix(bootReason, "box-boot") {
 		armRestoreNotice(time.Now())
