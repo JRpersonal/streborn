@@ -229,6 +229,19 @@ export function AllowThroughFirewall(includePublic) {
   return callOptionalBinding('AllowThroughFirewall', [!!includePublic]);
 }
 
+// GetDisplayNotices / SetDisplayNotices read and switch STR's short notices on
+// the speaker display (a saved key, an empty key, ...); IdentifyBox shows
+// HELLO and the speaker's name there. Optional bindings, per the note above.
+export function GetDisplayNotices(host, port) {
+  return callOptionalBinding('GetDisplayNotices', [host, port]);
+}
+export function SetDisplayNotices(host, port, enabled) {
+  return callOptionalBinding('SetDisplayNotices', [host, port, !!enabled]);
+}
+export function IdentifyBox(host, port) {
+  return callOptionalBinding('IdentifyBox', [host, port]);
+}
+
 // ReplayFolderCard replays a Recently-played FOLDER card as the whole folder
 // again instead of as its first track. Optional binding, per the note above; a
 // speaker whose agent predates the endpoint rejects it with
