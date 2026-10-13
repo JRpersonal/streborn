@@ -319,6 +319,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// thumb heuristic will not treat that ping as a thumb press.
 		known = true
 		c.noteExplainedActivity()
+		// Optional: a handler that draws on the speaker's panel steps aside
+		// so the firmware's own volume bar shows. Must not block.
+		if h, ok := c.handler.(interface{ OnVolumeChanged(context.Context) }); ok {
+			h.OnVolumeChanged(ctx)
+		}
 	case f.UserActivity != nil:
 		// The remote thumbs keys surface ONLY as this generic ping (no up/down
 		// identity). Treat a lone one as a thumb press; noteUserActivity

@@ -251,8 +251,9 @@ func (a *App) SetResumeOnPowerOn(host string, port int, enabled bool) error {
 }
 
 // GetDisplayTrack reads the per-box "show the live radio track on the speaker
-// display" opt-in (default off). Returns {supported, enabled, mode} where mode is
-// "both" | "title" | "artist".
+// display" opt-in (default off). Returns {supported, enabled, mode, onPanel}
+// where mode is "both" | "title" | "artist" and onPanel says the agent draws the
+// track on the speaker's panel itself (no re-buffering; absent on older agents).
 func (a *App) GetDisplayTrack(host string, port int) (map[string]any, error) {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/display-track", "", "")
 	if err != nil {
@@ -271,7 +272,8 @@ func (a *App) GetDisplayTrack(host string, port int) (map[string]any, error) {
 
 // SetDisplayTrack toggles the per-box "show the live radio track on the speaker
 // display" opt-in and sets what it shows (mode: "both" | "title" | "artist").
-// Enabling it makes the box re-buffer (a brief audio dropout) on each text change.
+// Without a panel the agent draws on, enabling it makes the box re-buffer (a
+// brief audio dropout) on each text change.
 func (a *App) SetDisplayTrack(host string, port int, enabled bool, mode string) error {
 	body, _ := json.Marshal(map[string]any{"enabled": enabled, "mode": mode})
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/display-track", "application/json", string(body))

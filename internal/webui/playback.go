@@ -606,6 +606,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	now := time.Now()
 	s.lastPlayMu.Lock()
+	newStream := s.lastPlay == nil || s.lastPlay.boxURL != boxURL
 	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
 	s.recallGen++
 	gen := s.recallGen
@@ -614,6 +615,13 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	s.resumeAttempts = 0
 	s.lastResumeAt = time.Time{}
 	s.lastPlayMu.Unlock()
+	// The track on the panel belonged to the previous stream; the new one's
+	// first title brings it back. The same stream pushed again keeps it (its
+	// title is not reported again). Synchronous, so it cannot land after the
+	// new stream's first title; letting go of the panel takes milliseconds.
+	if newStream {
+		s.clearTrackPanel("new stream")
+	}
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
 	s.persistLastPlay(boxURL, title, art, mime, now, 0, time.Time{})

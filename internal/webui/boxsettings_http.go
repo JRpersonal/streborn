@@ -710,9 +710,11 @@ func (s *Server) displayTrackActiveNow(ctx context.Context) (active bool, why st
 
 // handleDisplayTrack reads or sets the per-box "show the live radio track on the
 // speaker's display" opt-in (default OFF). Stored as a plain NAND flag file
-// ("1"/"0"). GET returns {supported, enabled}; POST {enabled} persists it.
-// Enabling it makes STR re-push the now-playing metadata on each ICY title
-// change, which briefly re-buffers the box, so it is the user's explicit choice.
+// ("1"/"0"). GET returns {supported, enabled, mode, activeNow, onPanel}; POST
+// {enabled, mode} persists it. On a speaker whose panel STR draws on (onPanel)
+// the track is drawn there without touching the stream; elsewhere STR re-pushes
+// the now-playing metadata on each ICY title change, which briefly re-buffers
+// the box, so it is the user's explicit choice.
 func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "only allowed from LAN", http.StatusForbidden)
@@ -731,6 +733,11 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 			// setting drives the group.
 			"activeNow":   active,
 			"inactiveWhy": why,
+			// onPanel: STR draws the track on the speaker's panel itself, so
+			// the music never re-buffers and the app needs no warning about
+			// audio gaps. False (or absent, older agents) means the re-send
+			// path with its one-second gap at each change.
+			"onPanel": s.trackOnPanel(),
 		})
 	case http.MethodPost:
 		var body struct {
@@ -761,11 +768,18 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 		_ = exec.Command("sync").Run()
 		s.logger.Info("display-track set", "enabled", body.Enabled, "mode", s.displayTrackMode())
 		// Update the speaker display right away instead of waiting for the next
-		// song: enable / mode change pushes the current title; disable reverts to
-		// the box's default text. Async so the POST returns before the box I/O.
-		if body.Enabled {
+		// song: enable / mode change shows the current title; disable reverts to
+		// the box's default screen. Async so the POST returns before the box I/O.
+		// On a panel STR draws on itself that is the panel and nothing else;
+		// elsewhere the stream is re-sent with the new text.
+		switch onPanel := s.trackOnPanel(); {
+		case onPanel && body.Enabled:
+			go s.showTrackOnPanelNow()
+		case onPanel:
+			go s.clearTrackPanel("setting off")
+		case body.Enabled:
 			go s.pushDisplayNow()
-		} else {
+		default:
 			go s.pushDisplayDefault()
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled, "mode": s.displayTrackMode()})

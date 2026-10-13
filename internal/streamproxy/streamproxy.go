@@ -141,6 +141,10 @@ type Server struct {
 	// onTitle, if set, is called whenever the live StreamTitle changes to a
 	// non-empty value. Used to push the radio track text to the box display.
 	onTitle func(title string)
+	// onTitleEnd, if set, is called when the proxy stopped carrying the
+	// stream whose title it had (no successor within titleEndGrace). Used to
+	// take the track off the speaker's panel.
+	onTitleEnd func()
 
 	// gapMu guards lastByteToBox, the wall-clock time the proxy last handed
 	// audio bytes to the box on the current stream. The reconnect loops read it

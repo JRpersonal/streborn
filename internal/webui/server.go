@@ -670,6 +670,10 @@ type Server struct {
 	// (a brief audio gap on each track change, verified on a Portable), so it is
 	// off unless the user turns it on. Empty falls back to defaultDisplayTrackPath.
 	displayTrackPath string
+	// trackPanel draws the track on the speaker's own panel where STR can
+	// (displaytrack_panel.go); nil means the real one (internal/oled). Tests
+	// swap it.
+	trackPanel trackPanelSink
 
 	// lastDisplayPush debounces the ICY display push so a station that flips its
 	// StreamTitle between the song and promo/talk lines does not cause a re-buffer

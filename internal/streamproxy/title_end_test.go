@@ -58,6 +58,29 @@ func TestClearTitleOnEndLeavesASuccessorAlone(t *testing.T) {
 	}
 }
 
+// The end of the stream is also what takes the track off the speaker's
+// panel (internal/oled track screen): the callback fires when the title's own
+// stream ended, and never for an old handler a successor already replaced.
+func TestTitleEndCallbackFiresOnlyForTheTitlesStream(t *testing.T) {
+	s := newTitleServer()
+	ends := 0
+	s.SetOnTitleEnd(func() { ends++ })
+	s.noteStreamStart("http://radio/a")
+	s.setTitle("http://radio/a", "Old Song")
+	gen := genOf(s, "http://radio/a")
+	s.noteStreamStart("http://radio/b")
+	s.clearTitleForNewURL("http://radio/b")
+	s.setTitle("http://radio/b", "New Song")
+	s.wipeTitleIfUnclaimed("http://radio/a", gen)
+	if ends != 0 {
+		t.Fatalf("a replaced stream's end fired the callback %d times", ends)
+	}
+	s.wipeTitleIfUnclaimed("http://radio/b", genOf(s, "http://radio/b"))
+	if ends != 1 {
+		t.Fatalf("the title's own stream ended: callback fired %d times, want 1", ends)
+	}
+}
+
 // The v0.9.53 stutter loop (#119): with the on-display track push enabled the
 // box re-fetches the SAME stream after every push. The old handler's wipe must
 // be cancelled by the successor's takeover, so the unchanged title does NOT

@@ -601,6 +601,30 @@ INFO as `display notice shown` (kind, key, durationMs), every dropped one at
 DEBUG as `display notice skipped` with the reason, and a notice the panel
 path gave up on at WARN as `display notice ended early` with the error.
 
+**The live radio track.** "Show the current track on the speaker display"
+used to re-send the stream with the new title as metadata, which makes the
+speaker re-buffer (about a second of silence at every song change). On a
+panel STR draws on, the setting takes a different path
+(`internal/oled/track.go`, `internal/webui/displaytrack_panel.go`): every ICY
+title change is drawn by STR itself and the stream is never touched. It is a
+full screen of STR's own (station on top, artist, title below, title at
+double size when it fits on two lines of ten), not a band over BoseApp's
+picture, because what BoseApp shows there is the stale title from the start
+of the stream. It is drawn once per change and stands still in between (no
+scrolling: long text is wrapped and cut with `...`), so the held panel costs
+no CPU; every three minutes the layout moves by one pixel against wear. The
+flip thread is held for as long as the track shows, which is longer than
+anything else holds it (unverified beyond several minutes on hardware).
+Notices, the splash, the update screen and the games always win the panel
+and the track screen returns by itself afterwards; a volume change hands the
+panel back to BoseApp for 4 s so its volume bar shows. It leaves the panel
+for good on a new stream, when the proxy stops carrying the stream for 5 s,
+on a source change to anything but `UPNP` or `LOCAL_INTERNET_RADIO`, when the
+setting is switched off and at agent exit. Logged at INFO as `display track
+overlay on` / `off` (with the reason), every text change at DEBUG. The app
+learns which path a speaker takes from `onPanel` in `GET
+/api/box/display-track`, and only warns about audio gaps where it is false.
+
 **The panel.** `/dev/fb0`, kernel driver `ssdspi`, 128 x 100 pixels, 8 bits
 per pixel, 16 grey levels (0x00 to 0xFF in steps of 0x11), 12,800 bytes per
 frame. The driver refreshes the panel from framebuffer memory on its own

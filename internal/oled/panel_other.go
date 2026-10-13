@@ -16,3 +16,7 @@ func boseAppDisplayReady() bool { return false }
 func play(func(float64, []byte) bool, func(float64), time.Duration, <-chan struct{}) error {
 	return errors.New("no panel on this platform")
 }
+
+func hold(func([]byte), <-chan struct{}, <-chan struct{}, time.Duration) error {
+	return errors.New("no panel on this platform")
+}

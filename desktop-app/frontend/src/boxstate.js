@@ -24,6 +24,14 @@ export function displayTrackState(r) {
   return r.enabled;
 }
 
+// displayTrackOnPanel says whether the speaker draws the track on its panel
+// itself (no re-buffering, so no warning about audio gaps). Only an explicit
+// true counts: an older agent or a failed read keeps the warning, which is the
+// safe side.
+export function displayTrackOnPanel(r) {
+  return !!r && r.onPanel === true;
+}
+
 // displayMessagesState reads the agent's /api/box/display-messages answer for
 // the "short message on the speaker display" setting. show is true only when
 // the speaker said it has a display (the setting does nothing elsewhere);

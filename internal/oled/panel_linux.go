@@ -75,54 +75,94 @@ func ptrace(req, tid int) error {
 	return nil
 }
 
-// play holds BoseApp's flip thread, renders frames until frame returns false,
-// and always releases the thread again. quit (may be nil) asks for the exit:
-// onQuit (may be nil) is told the time so the animation can wind down,
-// otherwise the loop stops at once. After maxDur the same exit is forced, and
-// a few seconds later the loop ends regardless.
-func play(frame func(t float64, buf []byte) bool, onQuit func(t float64), maxDur time.Duration, quit <-chan struct{}) error {
+// panelHold is the panel taken from BoseApp: its flip thread held and
+// /dev/fb0 mapped. Every ptrace request must come from the thread that
+// attached, so takePanel and release run on a goroutine locked to its OS
+// thread.
+type panelHold struct {
+	mem []byte
+	out []byte
+	tid int
+}
+
+// takePanel holds BoseApp's flip thread (PTRACE_SEIZE + PTRACE_INTERRUPT, no
+// signal, every other BoseApp thread keeps running) and maps the
+// framebuffer. The caller must have called runtime.LockOSThread and must call
+// release on success.
+func takePanel() (*panelHold, error) {
 	pid := findProcess("BoseApp")
 	if pid == 0 {
-		return errors.New("BoseApp not running")
+		return nil, errors.New("BoseApp not running")
 	}
 	tid := findThread(pid, flipThread)
 	if tid == 0 {
-		return errors.New("flip thread not found")
+		return nil, errors.New("flip thread not found")
 	}
 	f, err := os.OpenFile(fbDevice, os.O_RDWR, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mem, err := syscall.Mmap(int(f.Fd()), 0, FrameSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	// The mapping stays valid without the descriptor, so close it right away
 	// and with its error checked: nothing is written through the file itself.
 	if cerr := f.Close(); err == nil && cerr != nil {
 		_ = syscall.Munmap(mem)
-		return fmt.Errorf("close %s: %w", fbDevice, cerr)
+		return nil, fmt.Errorf("close %s: %w", fbDevice, cerr)
 	}
 	if err != nil {
-		return fmt.Errorf("mmap: %w", err)
+		return nil, fmt.Errorf("mmap: %w", err)
 	}
-	defer syscall.Munmap(mem)
-
-	// Every ptrace request must come from the thread that attached. The OS
-	// thread stays locked to this goroutine until after the detach.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	if err := ptrace(ptraceSeize, tid); err != nil {
-		return fmt.Errorf("seize: %w", err)
+		_ = syscall.Munmap(mem)
+		return nil, fmt.Errorf("seize: %w", err)
 	}
-	defer ptrace(ptraceDetach, tid)
+	fail := func(err error) (*panelHold, error) {
+		_ = ptrace(ptraceDetach, tid)
+		_ = syscall.Munmap(mem)
+		return nil, err
+	}
 	if err := ptrace(ptraceInterrupt, tid); err != nil {
-		return fmt.Errorf("interrupt: %w", err)
+		return fail(fmt.Errorf("interrupt: %w", err))
 	}
 	var ws syscall.WaitStatus
 	if _, err := syscall.Wait4(tid, &ws, waitAll, nil); err != nil {
-		return fmt.Errorf("wait: %w", err)
+		return fail(fmt.Errorf("wait: %w", err))
 	}
+	return &panelHold{mem: mem, out: make([]byte, FrameSize), tid: tid}, nil
+}
+
+// show puts a frame of grey levels 0..15 on the panel.
+func (p *panelHold) show(buf []byte) {
+	for i, v := range buf {
+		p.out[i] = v * 0x11
+	}
+	copy(p.mem, p.out)
+}
+
+// release leaves a black frame (BoseApp repaints its own screen right after
+// the detach), lets the flip thread go and unmaps the framebuffer.
+func (p *panelHold) release() {
+	clear(p.mem)
+	_ = ptrace(ptraceDetach, p.tid)
+	_ = syscall.Munmap(p.mem)
+}
+
+// play holds BoseApp's flip thread, renders frames until frame returns false,
+// and always releases the thread again. quit (may be nil) asks for the exit:
+// onQuit (may be nil) is told the time so the animation can wind down,
+// otherwise the loop stops at once. After maxDur the same exit is forced, and
+// a few seconds later the loop ends regardless.
+func play(frame func(t float64, buf []byte) bool, onQuit func(t float64), maxDur time.Duration, quit <-chan struct{}) error {
+	// The OS thread stays locked to this goroutine until after the detach.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	p, err := takePanel()
+	if err != nil {
+		return err
+	}
+	defer p.release()
 
 	buf := make([]byte, FrameSize)
-	out := make([]byte, FrameSize)
 	start := time.Now()
 	every := time.Second / frameRate
 	quitting := false
@@ -147,17 +187,41 @@ func play(frame func(t float64, buf []byte) bool, onQuit func(t float64), maxDur
 			break
 		}
 		more := frame(t.Seconds(), buf)
-		for i, v := range buf {
-			out[i] = v * 0x11
-		}
-		copy(mem, out)
+		p.show(buf)
 		if !more {
 			break
 		}
 		time.Sleep(every - time.Since(start)%every)
 	}
-	// Leave a black frame; BoseApp repaints its own screen right after the
-	// detach.
-	clear(mem)
 	return nil
+}
+
+// hold takes the panel for as long as quit stays open and draws only when
+// asked: draw runs once at the start, again on every redraw signal, and after
+// every tick (0 = no tick). Nothing is drawn or copied in between, so a held
+// panel whose content stands costs no CPU. The flip thread is always released
+// on return, and the kernel releases it on its own if the agent dies.
+func hold(draw func(buf []byte), redraw, quit <-chan struct{}, tick time.Duration) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	p, err := takePanel()
+	if err != nil {
+		return err
+	}
+	defer p.release()
+	buf := make([]byte, FrameSize)
+	for {
+		draw(buf)
+		p.show(buf)
+		var tc <-chan time.Time
+		if tick > 0 {
+			tc = time.After(tick)
+		}
+		select {
+		case <-quit:
+			return nil
+		case <-redraw:
+		case <-tc:
+		}
+	}
 }

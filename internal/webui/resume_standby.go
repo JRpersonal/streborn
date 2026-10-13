@@ -2094,6 +2094,13 @@ func (s *Server) HandleStreamTitle(title string) {
 		s.lastPlayMu.Unlock()
 	}
 	enabled := s.displayTrackEnabled()
+	// Where STR can draw on the panel itself, the track goes there and the
+	// stream is never re-sent: no re-buffering, no audio gap
+	// (displaytrack_panel.go).
+	if enabled && title != "" && s.trackOnPanel() {
+		s.showTrackOnPanel(title)
+		return
+	}
 	if !enabled || s.renderer == nil || title == "" {
 		// Log the silent skip so a "title missing on model X" report shows which
 		// leg was taken (feature off vs no renderer vs empty title) instead of

@@ -1082,6 +1082,9 @@ func run() error {
 	// with the new title. Gated behind STR_ICY_DISPLAY inside the handler until
 	// the mid-stream re-set is verified not to glitch audio on real hardware.
 	streamProxySrv.SetOnTitle(webuiSrv.HandleStreamTitle)
+	// On a speaker whose panel STR draws the track on (internal/oled), the
+	// end of the stream takes it off again.
+	streamProxySrv.SetOnTitleEnd(webuiSrv.HandleStreamEnded)
 
 	// Hardware preset buttons: the box sends a presetSelectionUpdated event via
 	// WebSocket on 8080 (gabbo protocol) when the user physically presses a
@@ -1966,6 +1969,9 @@ func run() error {
 		logger.Error("subsystem error, shutting down", "err", err)
 		cancel()
 	}
+	// Hand the panel back before anything else winds down. The kernel would
+	// release BoseApp's flip thread at exit anyway; this leaves it cleanly.
+	oled.ClearTrack("agent exit")
 
 	wg.Wait()
 

@@ -49,7 +49,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
@@ -1309,11 +1309,12 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="displayTrackModeTitle">${escapeHtml(t('settingsView.displayTrackModeTitle'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayTrackModeBoth">${escapeHtml(t('settingsView.displayTrackModeBoth'))}</button>
       </div>
-      <div class="format-warn">
+      <div class="format-warn" id="displayTrackWarn">
         <div class="warn-icon-inline">&#9888;</div>
         <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
       </div>
-      <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <small class="muted small" id="displayTrackHelp">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <small class="muted small hidden" id="displayTrackHelpPanel">${escapeHtml(t('settingsView.displayTrackHelpPanel'))}</small>
       <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
     </div>
 
@@ -2569,15 +2570,28 @@ function renderBoxSettings(s, box) {
   }
 
   // Show the live radio track on the speaker display (opt-in, default off).
-  // Enabling it makes the box re-buffer (a brief audio dropout) on each text
-  // change, so turning it ON asks for confirmation first, and a sub-row lets the
-  // user pick what to show: artist, title, or both.
+  // Where the speaker's panel is STR's to draw on (onPanel), STR draws the
+  // track itself and the music never stops, so there is no warning. Elsewhere
+  // enabling it makes the box re-buffer (a brief audio dropout) on each text
+  // change, so there turning it ON asks for confirmation first. A sub-row lets
+  // the user pick what to show: artist, title, or both.
   const dtOn = $('displayTrackOn');
   const dtOff = $('displayTrackOff');
   const dtModeRow = $('displayTrackModeRow');
   const dtModeBtns = { artist: $('displayTrackModeArtist'), title: $('displayTrackModeTitle'), both: $('displayTrackModeBoth') };
   let dtMode = 'both';
   const dtUnknown = $('displayTrackUnknown');
+  const dtWarn = $('displayTrackWarn');
+  const dtHelp = $('displayTrackHelp');
+  const dtHelpPanel = $('displayTrackHelpPanel');
+  // Until the speaker says otherwise, assume the re-buffer path: the warning
+  // stays and the confirm runs (the safe side for older agents).
+  let dtOnPanel = false;
+  const paintDtPath = () => {
+    if (dtWarn) dtWarn.classList.toggle('hidden', dtOnPanel);
+    if (dtHelp) dtHelp.classList.toggle('hidden', dtOnPanel);
+    if (dtHelpPanel) dtHelpPanel.classList.toggle('hidden', !dtOnPanel);
+  };
   // enabled is true, false, or null for "could not be read". A failed read used
   // to paint Off, so a speaker that was restarting showed the setting off while
   // it was on and pushing titles (#1083). Unknown lights neither button.
@@ -2595,6 +2609,8 @@ function renderBoxSettings(s, box) {
       try {
         const r = await GetDisplayTrack(box.host, box.port);
         if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
+        dtOnPanel = displayTrackOnPanel(r);
+        paintDtPath();
         paintDisplayTrack(displayTrackState(r));
         paintDtMode();
       } catch { paintDisplayTrack(null); }
@@ -2606,9 +2622,12 @@ function renderBoxSettings(s, box) {
       } catch (e) { showError(e); }
     };
     dtOn.onclick = async () => {
-      // Confirm before enabling: it interrupts the audio on every text change.
-      const ok = await confirmWarn(t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
-      if (!ok) return;
+      // Confirm before enabling where it interrupts the audio on every text
+      // change; on a panel STR draws on there is nothing to warn about.
+      if (!dtOnPanel) {
+        const ok = await confirmWarn(t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
+        if (!ok) return;
+      }
       paintDisplayTrack(true);
       paintDtMode();
       save(true);

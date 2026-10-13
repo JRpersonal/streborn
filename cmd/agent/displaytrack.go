@@ -1,0 +1,39 @@
+package main
+
+// The gabbo side of the track screen (internal/oled/track.go): the speaker
+// tells STR when the track has to leave the panel or step aside for a moment.
+
+import (
+	"context"
+
+	"github.com/JRpersonal/streborn/internal/oled"
+)
+
+// Seams for the tests.
+var (
+	setTrackSource = oled.SetTrackSource
+	pauseTrack     = oled.PauseTrack
+)
+
+// trackSourceKeeps reports whether a source switch to to can still be STR's
+// radio: its own UPnP push, or a native radio preset streamed through STR.
+// Anything else (standby, AUX, Bluetooth, a firmware service such as TuneIn
+// that shows its own titles) ends the track.
+func trackSourceKeeps(to string) bool {
+	return to == "UPNP" || to == "LOCAL_INTERNET_RADIO"
+}
+
+// trackOnSourceChanged tells the track screen about every source switch:
+// leaving STR's sources takes the track off the panel and keeps titles off
+// it until STR's source is back. Runs on the gabbo read loop; the call does
+// not block and keeps the order of the switches.
+func trackOnSourceChanged(to string) {
+	setTrackSource(to, trackSourceKeeps(to))
+}
+
+// OnVolumeChanged is the boxws hook for a volumeUpdated frame: the track
+// screen hands the panel back for a few seconds so BoseApp's own volume bar
+// shows, then returns by itself.
+func (h *presetWsHandler) OnVolumeChanged(context.Context) {
+	go pauseTrack(oled.TrackVolumePause, "volume")
+}
