@@ -100,6 +100,8 @@ export {
   SetResumeOnPowerOn,
   GetDisplayTrack,
   SetDisplayTrack,
+  GetDisplayClock,
+  SetDisplayClock,
   GetDisplayMessages,
   SetDisplayMessages,
   GetDisplaySplash,

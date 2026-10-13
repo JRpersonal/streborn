@@ -283,7 +283,8 @@ func TestSpeakerHour12ReadsOnce(t *testing.T) {
 	}
 	s.hour12Read = func() (bool, bool) { reads++; return true, true }
 	s.forgetSpeakerHour12()
-	if !s.speakerHour12() || !s.speakerHour12() || reads != 2 {
+	first, second := s.speakerHour12(), s.speakerHour12()
+	if !first || !second || reads != 2 {
 		t.Fatalf("reads %d", reads)
 	}
 }
