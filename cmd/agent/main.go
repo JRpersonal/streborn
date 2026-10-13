@@ -1377,6 +1377,9 @@ func run() error {
 		}
 		return false, false
 	}
+	// A physical preset key still down after heldScreenAfter takes the panel
+	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
+	holdSave.screen = oledHeldScreen{}
 	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
 	keyTrace.SetWebKeyHandler(holdSave.NotePress)

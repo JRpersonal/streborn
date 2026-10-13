@@ -279,6 +279,7 @@ func TestNoticesRender(t *testing.T) {
 		EmptyKey(1),
 		KeysRestored(4),
 		Identify("Küche"),
+		KeyHeld(6),
 	}
 	buf := make([]byte, FrameSize)
 	for _, n := range all {

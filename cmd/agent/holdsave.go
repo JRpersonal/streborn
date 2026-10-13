@@ -64,7 +64,32 @@ const (
 	// EMPTY"). A tap is released and its activation announced well within it
 	// (holdConfirmAfter), and a hold has its verdict by about 1.6 s.
 	emptyKeyCheckAfter = 2 * time.Second
+	// heldScreenAfter is when, with a physical preset key still down, the
+	// display shows the held-key screen (oled.KeyHeld). It must be on the
+	// panel before the firmware's own reaction to the hold: on the Portable
+	// the hold verdict, and with it the firmware's "action not available"
+	// message for a UPnP push, comes 2.0 s after the press (field log
+	// 2026-10-13: pressAgeMs=2003). A press released before this is a tap
+	// on every chassis (the ST10's tap limit is under 1.75 s), and a tap
+	// never touches the panel.
+	heldScreenAfter = 1800 * time.Millisecond
 )
+
+// heldKeyScreen is the display's held-key session (oled.KeyHoldStart and
+// friends). The outcome itself goes through notify like every notice; the
+// display routes it into the running session.
+type heldKeyScreen interface {
+	Start(slot int, pressAt time.Time)
+	Released(slot int, at time.Time)
+	Cancel(slot int, reason string)
+}
+
+// oledHeldScreen is heldKeyScreen on the speaker's panel.
+type oledHeldScreen struct{}
+
+func (oledHeldScreen) Start(slot int, pressAt time.Time) { oled.KeyHoldStart(slot, pressAt) }
+func (oledHeldScreen) Released(slot int, at time.Time)   { oled.KeyHoldReleased(slot, at) }
+func (oledHeldScreen) Cancel(slot int, reason string)    { oled.KeyHoldCancel(slot, reason) }
 
 // holdSaveFunc stores what STR plays on a slot (webui.Server.HoldSaveLive).
 type holdSaveFunc func(ctx context.Context, slot int) (webui.HoldSaved, error)
@@ -79,6 +104,11 @@ type holdPress struct {
 	// seq numbers the presses so the unpaired check can tell whether the
 	// press it was armed for is still the newest one.
 	seq uint64
+	// released is when the key went up again (key trace only); zero while
+	// it is down or when the chassis reports no release.
+	released time.Time
+	// screen is set once the held-key screen started for this press.
+	screen bool
 }
 
 // holdSaver pairs preset presses with the firmware's hold verdict and saves
@@ -102,6 +132,9 @@ type holdSaver struct {
 	// emptyKey reports whether a key holds nothing at all, and whether that
 	// is known (webui.Server.KeyEmpty). nil: the empty-key notice is off.
 	emptyKey func(slot int) (empty, known bool)
+	// screen shows the held-key screen while a physical preset key is held
+	// (oledHeldScreen). nil: off.
+	screen heldKeyScreen
 
 	mu     sync.Mutex
 	press  holdPress
@@ -144,6 +177,10 @@ func presetKeySlot(name string) int {
 // keys) or the firmware's line for keys sent over its API.
 func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 	slot := presetKeySlot(ev.Name)
+	if slot != 0 && ev.State == boxlog.StateReleased {
+		h.noteRelease(slot, ev.At)
+		return
+	}
 	if slot == 0 || ev.State != boxlog.StatePressed {
 		return
 	}
@@ -170,7 +207,60 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 	}
 	if h.emptyKey != nil && h.after != nil &&
 		(p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())) {
-		h.after(emptyKeyCheckAfter, func() { h.checkEmpty(p) })
+		h.after(emptyKeyCheckAfter, func() { h.checkEmpty(p, false) })
+	}
+	if h.screen != nil && h.after != nil && p.producer.Physical() {
+		// Counted from the press itself, not from when its line was read.
+		h.after(max(p.at.Add(heldScreenAfter).Sub(h.now()), 0), func() { h.startHeldScreen(p) })
+	}
+}
+
+// noteRelease records a preset key going up (key trace) and tells the
+// held-key screen, which then stays until a firmware message drawn at the
+// release is gone.
+func (h *holdSaver) noteRelease(slot int, at time.Time) {
+	h.mu.Lock()
+	p := &h.press
+	if p.slot != slot || !p.released.IsZero() || at.Before(p.at) {
+		h.mu.Unlock()
+		return
+	}
+	p.released = at
+	screen := p.screen
+	h.mu.Unlock()
+	if screen {
+		h.screen.Released(slot, at)
+	}
+}
+
+// startHeldScreen is the one-shot look heldScreenAfter after a physical
+// preset press: is the key still down? Then the held-key screen takes the
+// panel before the firmware reacts to the hold. A tap (released, or a tap
+// verdict or another press since) leaves the panel alone.
+func (h *holdSaver) startHeldScreen(p holdPress) {
+	h.mu.Lock()
+	cur, sel := h.press, h.selectAt
+	ok := cur.seq == p.seq && cur.released.IsZero() &&
+		(sel.IsZero() || sel.Before(p.at)) &&
+		(h.verdictAt.Before(p.at) || h.verdictHold)
+	if ok {
+		h.press.screen = true
+	}
+	h.mu.Unlock()
+	if !ok {
+		return
+	}
+	h.screen.Start(p.slot, p.at)
+}
+
+// endHeldScreen ends the held-key screen of the newest press, if it runs and
+// no outcome reached it yet.
+func (h *holdSaver) endHeldScreen(slot int, reason string) {
+	h.mu.Lock()
+	on := h.press.screen && h.press.slot == slot
+	h.mu.Unlock()
+	if on {
+		h.screen.Cancel(slot, reason)
 	}
 }
 
@@ -179,11 +269,19 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 // activated nothing since, and the key holds nothing in STR's store or the
 // box's own list, the display says the key is empty and where to set it.
 // The firmware itself shows nothing for an empty key.
-func (h *holdSaver) checkEmpty(p holdPress) {
+func (h *holdSaver) checkEmpty(p holdPress, again bool) {
 	h.mu.Lock()
 	cur, sel := h.press, h.selectAt
 	h.mu.Unlock()
 	if cur.seq != p.seq || cur.used || (!sel.IsZero() && !sel.Before(p.at)) {
+		return
+	}
+	if cur.screen && !again && h.after != nil {
+		// The key is held and the held-key screen shows: the hold verdict
+		// may land just after this check (2.0 s on the Portable), and then
+		// the save's outcome is the answer, not EMPTY. Look once more when
+		// any hold has shown itself.
+		h.after(holdConfirmAfter-emptyKeyCheckAfter, func() { h.checkEmpty(p, true) })
 		return
 	}
 	empty, known := h.emptyKey(p.slot)
@@ -220,6 +318,9 @@ func (h *holdSaver) checkUnpaired(p holdPress) {
 	if cur.seq == p.seq && cur.used {
 		return
 	}
+	if cur.seq == p.seq && cur.screen {
+		h.screen.Cancel(p.slot, "no hold verdict")
+	}
 	verdict, afterPressMs, ageMs := "none", int64(0), int64(-1)
 	if !verdictAt.IsZero() {
 		verdict = "tap"
@@ -251,7 +352,11 @@ func (h *holdSaver) NoteGesture(g boxlog.PresetGesture) {
 	if !g.Hold {
 		h.vetoAt = g.At
 		h.hold = time.Time{}
+		screen := p.screen
 		h.mu.Unlock()
+		if screen {
+			h.screen.Cancel(p.slot, "a tap after all")
+		}
 		h.logger.Info("hold-to-save: the speaker read a preset key as a tap",
 			"hold", false, "pressSlot", slot, "pressAgeMs", ageMs, "pressUsed", p.used)
 		return
@@ -329,9 +434,11 @@ func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 	if !veto.IsZero() && !veto.Before(from) {
 		h.logger.Info("hold-to-save: not saving, the speaker activated a key or read the press as a tap",
 			"slot", p.slot, "vetoAfterPressMs", veto.Sub(p.at).Milliseconds())
+		h.endHeldScreen(p.slot, "not saving")
 		return
 	}
 	if h.save == nil {
+		h.endHeldScreen(p.slot, "no saver")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), holdSaveBudget)
@@ -357,6 +464,7 @@ func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 		}
 	case err != nil:
 		h.logger.Warn("hold-to-save: the save failed", "slot", p.slot, "err", err)
+		h.endHeldScreen(p.slot, "save failed")
 	case saved.Unchanged:
 		h.logger.Info("hold-to-save: the key already holds what plays, nothing written",
 			"slot", p.slot, "kind", saved.Kind, "name", saved.Name)

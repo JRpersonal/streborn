@@ -554,6 +554,7 @@ font, 150 ms fade-in, then the panel goes back to BoseApp.
 
 | Notice | When | Text | Shown for |
 | ------ | ---- | ---- | --------- |
+| Key + busy dots | a physical preset key is still down 1.8 s after the press (before the firmware's own hold reaction at 2.0 s on the Portable); replaced in place by the outcome below | `KEY N`, `SAVING...` | until the outcome, at most 6 s |
 | Key + check | a held key stored what plays (`cmd/agent/holdsave.go` for STR's own stream, `holdstore.go` for the speaker's own store gesture) | `SAVED N`, the item's name | 2.5 s |
 | Key + check | the app or the phone page put something new on a key (per-slot PUT, queue save, native save, preset move) | `SAVED N`, `FROM STR APP` | 2 s |
 | Key + equals | a save was refused because the item is on another key (#836) | `ON KEY M`, `ALREADY SAVED` | 3 s |
@@ -561,6 +562,29 @@ font, 150 ms fade-in, then the panel goes back to BoseApp.
 | Dotted key | a physical press on a key with nothing in STR's store or the box's own list, and no activation after it | `KEY N`, `EMPTY. SET IN STR APP` | 2.5 s |
 | Key grid + arrow | the first reconcile pass after a box boot wrote keys back the box had lost | `N KEYS`, `RESTORED AFTER REBOOT` | 2 s, once per boot |
 | Rings + border | `POST /api/box/identify` ("find this speaker" in the app and on the phone page) | `HELLO`, the speaker's name | 5 s |
+
+**Held key.** Holding a preset key while STR plays a UPnP push (Spotify, a
+library file or folder) makes the firmware draw its own "action not
+available" message 2.0 s after the press (and log `MargeClient: AddPreset -
+failed due to invalid SourceID`); STR's save answers 0.5 to 3 s later. So
+the agent (`cmd/agent/holdsave.go`, `heldScreenAfter`) starts the held-key
+screen 1.8 s after a physical press whose key is still down, and the panel
+is already held when the firmware draws. The outcome notice (saved, on
+another key, not saved, empty) replaces that screen in the same panel hold
+(`internal/oled/keyhold.go`): no release in between and no 3 s start gap. A
+release before 1.8 s is a tap and never touches the panel; a tap verdict, a
+save that fails or is vetoed, or no hold verdict at all ends the screen, and
+without an outcome it ends after 6 s. BoseApp keeps running while its flip
+thread is held, so the firmware's message is still drawn into BoseApp's own
+frame and would be flipped back at the release while its timer runs. The
+session therefore keeps the panel at least 4 s from its start (the message
+lasts 2 to 3 s from 2.0 s after the press) and 3 s past the key's release
+(the firmware also reacts at the release), capped at 12 s. Residual risk: a
+firmware message that outlasts these margins, or a key held so long that the
+release comes after the session ended, can still flash after the release.
+Logged at INFO: `display held-key screen started` (sincePressMs), `display
+held-key screen handed over` (heldMs, sincePressMs), `display held-key
+screen ended` (reason, durationMs).
 
 One notice at a time, at most one every 3 s; while one shows only the newest
 waiting one is kept (a less important one never replaces a more important
@@ -574,7 +598,8 @@ the firmware runs through the same door stays silent. Switch: `POST
 `/mnt/nv/streborn/display-notices`, absent = on; the identify notice ignores
 it because it answers a button just pressed. Every shown notice is logged at
 INFO as `display notice shown` (kind, key, durationMs), every dropped one at
-DEBUG as `display notice skipped` with the reason.
+DEBUG as `display notice skipped` with the reason, and a notice the panel
+path gave up on at WARN as `display notice ended early` with the error.
 
 **The panel.** `/dev/fb0`, kernel driver `ssdspi`, 128 x 100 pixels, 8 bits
 per pixel, 16 grey levels (0x00 to 0xFF in steps of 0x11), 12,800 bytes per

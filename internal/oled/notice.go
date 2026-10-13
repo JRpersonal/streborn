@@ -19,6 +19,10 @@ package oled
 // running notice, the splash at start-up interrupts one and lets it show
 // again afterwards, and a notice never starts while a game round runs.
 //
+// The held-key screen (keyhold.go) is the one exception to the gap: it starts
+// at once, ends a running notice (identify excepted), and the outcome of that
+// held key replaces it within the same panel hold.
+//
 // The per-speaker switch is NoticesFlagPath, absent = on. Only the identify
 // notice ignores it: it is the answer to a button the user just pressed.
 
@@ -63,6 +67,7 @@ const (
 	iconKeyEmpty
 	iconRestored
 	iconIdentify
+	iconKeyHold
 )
 
 // Notice is one message for the panel. Build it with the constructors below.
@@ -246,6 +251,12 @@ type noticeQueue struct {
 	requeue   bool
 	wake      chan struct{}
 	startOnce sync.Once
+	// held is the newest held-key session (keyhold.go) until it is over,
+	// heldReq the one the worker has still to start, curSession the one on
+	// the panel.
+	held       *heldSession
+	heldReq    *heldSession
+	curSession *heldSession
 
 	now        func() time.Time
 	sleep      func(time.Duration)
@@ -256,7 +267,9 @@ type noticeQueue struct {
 	acquire    func() bool
 	release    func()
 	show       func(n Notice, quit <-chan struct{}) error
-	busyWait   time.Duration
+	// showSession keeps a held-key session on the panel until it is over.
+	showSession func(s *heldSession, quit <-chan struct{}) error
+	busyWait    time.Duration
 }
 
 var noticeLog atomic.Pointer[slog.Logger]
@@ -272,7 +285,7 @@ func noticeLogger() *slog.Logger {
 }
 
 func newNoticeQueue() *noticeQueue {
-	return &noticeQueue{
+	q := &noticeQueue{
 		wake:       make(chan struct{}, 1),
 		now:        time.Now,
 		sleep:      time.Sleep,
@@ -285,6 +298,8 @@ func newNoticeQueue() *noticeQueue {
 		show:       playNotice,
 		busyWait:   noticeBusyWait,
 	}
+	q.showSession = func(s *heldSession, quit <-chan struct{}) error { return playSession(q, s, quit) }
+	return q
 }
 
 var notices = newNoticeQueue()
@@ -295,6 +310,11 @@ func Show(n Notice) { notices.post(n) }
 func (q *noticeQueue) post(n Notice) {
 	q.startOnce.Do(func() { go q.loop() })
 	q.mu.Lock()
+	if q.attach(n) {
+		// the outcome of a held key replaces its held-key screen in place
+		q.mu.Unlock()
+		return
+	}
 	switch {
 	case q.pending != nil && q.pending.same(n), q.showing && q.cur.same(n):
 		q.mu.Unlock()
@@ -326,19 +346,43 @@ func (q *noticeQueue) loop() {
 func (q *noticeQueue) drain() {
 	for {
 		q.mu.Lock()
+		if s := q.heldReq; s != nil {
+			// A held key goes first and never waits for the start gap: it
+			// must be on the panel before the firmware draws its message.
+			q.heldReq = nil
+			q.mu.Unlock()
+			q.runSession(s)
+			continue
+		}
 		if q.pending == nil {
 			q.mu.Unlock()
 			return
 		}
 		if wait := q.lastStart.Add(noticeGap).Sub(q.now()); !q.lastStart.IsZero() && wait > 0 {
 			q.mu.Unlock()
-			q.sleep(wait)
+			q.sleepGap(wait)
 			continue // the newest pending notice wins after the gap
 		}
 		n := *q.pending
 		q.pending = nil
 		q.mu.Unlock()
 		q.run(n)
+	}
+}
+
+// sleepGap waits out the start gap, but wakes early for a held key, which
+// does not wait for the gap.
+func (q *noticeQueue) sleepGap(d time.Duration) {
+	for d > 0 {
+		q.mu.Lock()
+		held := q.heldReq != nil
+		q.mu.Unlock()
+		if held {
+			return
+		}
+		step := min(d, heldPanelPoll)
+		q.sleep(step)
+		d -= step
 	}
 }
 
@@ -372,6 +416,12 @@ func (q *noticeQueue) run(n Notice) {
 		}
 		q.mu.Lock()
 		newer := q.pending != nil
+		if !newer && q.heldReq != nil {
+			// A held key goes first; this notice waits behind it.
+			q.pending = &n
+			q.mu.Unlock()
+			return
+		}
 		q.mu.Unlock()
 		if newer {
 			q.skip(n, "replaced by a newer notice")
@@ -404,7 +454,7 @@ func (q *noticeQueue) run(n Notice) {
 	q.mu.Unlock()
 	close(done)
 	if err != nil {
-		noticeLogger().Debug("display notice ended early", "kind", string(n.Kind), "err", err)
+		noticeLogger().Warn("display notice ended early", "kind", string(n.Kind), "key", n.Key, "err", err)
 	}
 }
 
@@ -487,7 +537,7 @@ func newNoticeRenderer(n Notice) *noticeRenderer {
 	return r
 }
 
-func (r *noticeRenderer) animated() bool { return r.n.icon == iconIdentify }
+func (r *noticeRenderer) animated() bool { return r.n.icon == iconIdentify || r.n.icon == iconKeyHold }
 
 // frame renders time t (seconds since the notice started) into buf.
 func (r *noticeRenderer) frame(t float64, buf []byte) {
@@ -520,6 +570,10 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 	case iconKeyCheck, iconKeyEqual, iconKeyX:
 		c.presetKey(n.Key, false)
 		c.badge(n.icon)
+	case iconKeyHold:
+		c.presetKey(n.Key, false)
+		c.badge(n.icon)
+		c.busyDots(int(t * 3))
 	case iconKeyEmpty:
 		c.presetKey(n.Key, true)
 	case iconRestored:
@@ -729,5 +783,19 @@ func (c canvas) badge(icon noticeIcon) {
 		c.arc(bx, by, 3, 60, 360, 0)
 		c.fill(bx+1, by-5, 4, 1, 0)
 		c.fill(bx+3, by-5, 1, 4, 0)
+	case iconKeyHold:
+		// three dots, drawn by busyDots
+	}
+}
+
+// busyDots are the held-key badge's three dots in a row, cut dark out of the
+// disc; the one at step%3 is cut deepest, so the dots run left to right.
+func (c canvas) busyDots(step int) {
+	for i := 0; i < 3; i++ {
+		lvl := 6
+		if i == step%3 {
+			lvl = 0
+		}
+		c.fill(badgeCX-5+i*4, badgeCY-1, 3, 3, lvl)
 	}
 }
