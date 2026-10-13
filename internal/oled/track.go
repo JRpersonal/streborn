@@ -504,20 +504,21 @@ func trackShift(n int) (dx, dy int) {
 
 // Track screen layout: grey levels and character widths per font scale.
 const (
-	lvlTrackStation = 6
-	lvlTrackRule    = 3
-	lvlTrackArtist  = 9
-	lvlTrackTitle   = 15
-	lvlTrackClock   = 9
-	bigClockScale   = 4  // "15:42" is 116 px wide at 24 px a character
-	smallCols       = 21 // 6 px a character at scale 1
-	bigCols         = 10 // 12 px a character at scale 2
-	smallLineH      = 10
-	bigLineH        = 18
-	trackTopY       = 5
-	trackRuleY      = 16
-	trackAreaY      = 20 // the text block is centred between here and the bottom
-	trackGap        = 6  // between the artist and the title block
+	lvlTrackStation  = 6
+	lvlTrackRule     = 3
+	lvlTrackArtist   = 9
+	lvlTrackTitle    = 15
+	lvlTrackClock    = 12
+	headerClockScale = 2  // the time in the top line: 12 px a character
+	bigClockScale    = 4  // "15:42" is 116 px wide at 24 px a character
+	smallCols        = 21 // 6 px a character at scale 1
+	bigCols          = 10 // 12 px a character at scale 2
+	smallLineH       = 10
+	bigLineH         = 18
+	trackTopY        = 5
+	trackRuleY       = 16
+	trackAreaY       = 20 // the text block is centred between here and the bottom
+	trackGap         = 6  // between the artist and the title block
 )
 
 // trackLines is the text of the track screen broken into panel lines.
@@ -633,20 +634,13 @@ func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
 		return
 	}
 	l := layoutTrack(t)
+	areaY := trackAreaY
 	switch {
 	case t.Clock:
-		// the station on the left, the time on the right of the top line
-		hm, ampm := clockText(now, t.Hour12)
-		if ampm != "" {
-			hm += " " + ampm
-		}
-		if st := cutLine(t.Station, smallCols-len(hm)-1); st != "" {
-			c.textLeft(st, 1+dx, trackTopY+dy, 1, lvlTrackStation)
-			c.textLeft(hm, Width-(len(hm)*6-1)-1+dx, trackTopY+dy, 1, lvlTrackClock)
-		} else {
-			c.textAt(hm, trackTopY+dy, 1, lvlTrackClock, dx)
-		}
-		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
+		// The time at double size on the right of the top line, the station
+		// small on its left. At the normal size the time was too small to
+		// read from across a room (Jens, 2026-10-13).
+		areaY = renderClockHeader(c, t, now, dx, dy)
 	case l.station != "":
 		c.textAt(l.station, trackTopY+dy, 1, lvlTrackStation, dx)
 		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
@@ -659,7 +653,7 @@ func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
 	if len(l.artist) > 0 && len(l.title) > 0 {
 		h += trackGap
 	}
-	y := trackAreaY + (Height-trackAreaY-h)/2 + dy
+	y := areaY + (Height-areaY-h)/2 + dy
 	for _, s := range l.artist {
 		c.textAt(s, y, 1, lvlTrackArtist, dx)
 		y += smallLineH
@@ -676,6 +670,32 @@ func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
 			y += smallLineH
 		}
 	}
+}
+
+// renderClockHeader draws the top line with the time: the time at double
+// size flush right ("PM" small after it on a 12-hour clock), the station
+// small on the left, cut to the room left, and the rule under both. Returns
+// where the text block below may start.
+func renderClockHeader(c canvas, t TrackText, now time.Time, dx, dy int) int {
+	hm, ampm := clockText(now, t.Hour12)
+	const sc = headerClockScale
+	w := len(hm)*6*sc - sc
+	if ampm != "" {
+		w += 2 + len(ampm)*6 - 1
+	}
+	x := Width - w - 1 + dx
+	top := trackTopY + dy
+	c.textLeft(hm, x, top, sc, lvlTrackClock)
+	if ampm != "" {
+		c.textLeft(ampm, x+len(hm)*6*sc-sc+2, top+7*sc-7, 1, lvlTrackStation)
+	}
+	cols := (Width - w - 1 - 4) / 6
+	if st := cutLine(t.Station, cols); st != "" {
+		c.textLeft(st, 1+dx, top+(7*sc-7)/2, 1, lvlTrackStation)
+	}
+	ruleY := top + 7*sc + 3
+	c.fill(24+dx, ruleY, Width-48, 1, lvlTrackRule)
+	return trackTopY + 7*sc + 6
 }
 
 // renderBigClock is the screen without a track: the station on top as
