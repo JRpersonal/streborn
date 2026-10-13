@@ -21,7 +21,7 @@ func TestTrackSourceFollowsSTRsSources(t *testing.T) {
 		"STANDBY": false, "AUX": false, "BLUETOOTH": false, "TUNEIN": false,
 	}
 	for name := range want {
-		trackOnSourceChanged(name)
+		trackOnSourceChanged("UPNP", name)
 	}
 	for range want {
 		select {
@@ -32,6 +32,29 @@ func TestTrackSourceFollowsSTRsSources(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("source never reported")
 		}
+	}
+}
+
+// Coming back to STR's source redraws the screen at once; staying on it or
+// moving between STR's own sources does not.
+func TestTrackReturnsWithSTRsSource(t *testing.T) {
+	oldSet, oldRefresh := setTrackSource, refreshTrackPanel
+	t.Cleanup(func() { setTrackSource, refreshTrackPanel = oldSet, oldRefresh })
+	setTrackSource = func(string, bool) {}
+	refreshed := make(chan struct{}, 4)
+	refreshTrackPanel = func() { refreshed <- struct{}{} }
+	trackOnSourceChanged("STANDBY", "UPNP")
+	select {
+	case <-refreshed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("return from standby did not redraw")
+	}
+	trackOnSourceChanged("UPNP", "LOCAL_INTERNET_RADIO")
+	trackOnSourceChanged("UPNP", "AUX")
+	select {
+	case <-refreshed:
+		t.Fatal("redraw without a return to STR's source")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 

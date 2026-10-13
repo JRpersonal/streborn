@@ -288,6 +288,41 @@ func (a *App) SetDisplayTrack(host string, port int, enabled bool, mode string) 
 	return nil
 }
 
+// GetDisplayClock reads the per-box "show the time on the speaker display
+// during playback" setting (default off). Returns {supported, enabled}, where
+// supported says the agent draws on this speaker's panel; absent (an error)
+// on agents older than the setting.
+func (a *App) GetDisplayClock(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/display-clock", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetDisplayClock switches the time on the speaker display during playback.
+func (a *App) SetDisplayClock(host string, port int, enabled bool) error {
+	body, _ := json.Marshal(map[string]any{"enabled": enabled})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/display-clock", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // GetDisplayMessages reads the per-box "short message on the speaker display
 // when a key cannot play" switch (default on). Returns {enabled, hasDisplay,
 // lastShown?}; hasDisplay is false on a speaker without a screen, where the

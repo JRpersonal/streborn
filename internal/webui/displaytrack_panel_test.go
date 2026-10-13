@@ -137,27 +137,191 @@ func TestPanelTrackTextModes(t *testing.T) {
 		if err := writeFlagFile(modePathFor(s.displayTrackPath), c.mode); err != nil {
 			t.Fatal(err)
 		}
-		if got := s.panelTrackText(c.in); got != c.want {
+		s.panelRadioTitle(c.in)
+		if got, _ := s.panelText(); got != c.want {
 			t.Errorf("mode %s, %q: got %+v, want %+v", c.mode, c.in, got, c.want)
 		}
 	}
 }
 
-// A new stream takes the old track off the panel; the same stream pushed
-// again (a recovery) keeps it, because its title is not reported again.
-func TestNewStreamClearsThePanel(t *testing.T) {
+// A new stream replaces the old track with its own name until its first
+// song; the same stream pushed again (a recovery) keeps the track, because
+// its title is not reported again.
+func TestNewStreamShowsItsNameUntilTheFirstSong(t *testing.T) {
 	s, fp, _ := newTrackServer(t, true)
+	s.HandleStreamTitle("Queen - Under Pressure")
 	s.setLastPlay("http://192.0.2.1:8888/stream/1", "Radio Bob", "", "audio/mpeg")
-	if _, cleared := fp.snapshot(); len(cleared) != 0 {
-		t.Fatalf("same stream cleared the panel: %v", cleared)
+	if shown, _ := fp.snapshot(); len(shown) != 1 {
+		t.Fatalf("same stream redrew the panel: %+v", shown)
 	}
 	s.setLastPlay("http://192.0.2.1:8888/stream/2", "Other", "", "audio/mpeg")
-	if _, cleared := fp.snapshot(); len(cleared) != 1 || cleared[0] != "new stream" {
-		t.Fatalf("cleared %v, want one new-stream clear", cleared)
+	shown, cleared := fp.snapshot()
+	if len(cleared) != 0 || len(shown) != 2 || shown[1] != (oled.TrackText{Title: "Other"}) {
+		t.Fatalf("new stream: shown %+v cleared %v, want the station name alone", shown, cleared)
 	}
 	s.HandleStreamEnded()
-	if _, cleared := fp.snapshot(); len(cleared) != 2 || cleared[1] != "stream ended" {
+	if _, cleared := fp.snapshot(); len(cleared) != 1 || cleared[0] != "stream ended" {
 		t.Fatalf("cleared %v, want the stream-ended clear", cleared)
+	}
+	// ended stays off, even when a setting redraws
+	s.refreshTrackPanel()
+	if shown, _ := fp.snapshot(); len(shown) != 2 {
+		t.Fatalf("an ended stream came back: %+v", shown)
+	}
+	// until its title arrives again (the speaker reconnected)
+	s.HandleStreamTitle("Queen - Under Pressure")
+	if shown, _ := fp.snapshot(); len(shown) != 3 || shown[2].Title != "Under Pressure" {
+		t.Fatalf("reconnect: %+v", shown)
+	}
+}
+
+// The four combinations of the two settings.
+func TestPanelTrackAndClockCombinations(t *testing.T) {
+	cases := []struct {
+		track, clock bool
+		want         oled.TrackText
+		show         bool
+	}{
+		{true, false, oled.TrackText{Station: "Radio Bob", Artist: "Queen", Title: "Under Pressure"}, true},
+		{true, true, oled.TrackText{Station: "Radio Bob", Artist: "Queen", Title: "Under Pressure", Clock: true, Hour12: true}, true},
+		{false, true, oled.TrackText{Station: "Radio Bob", Clock: true, Hour12: true}, true},
+		{false, false, oled.TrackText{}, false},
+	}
+	for _, c := range cases {
+		s, _, _ := newTrackServer(t, true)
+		s.hour12Read = func() (bool, bool) { return true, true }
+		setFlag(t, s.displayTrackPath, c.track)
+		setFlag(t, clockPathFor(s.displayTrackPath), c.clock)
+		s.panelRadioTitle("Queen - Under Pressure")
+		got, ok := s.panelText()
+		if ok != c.show || got != c.want {
+			t.Errorf("track=%v clock=%v: got %+v %v, want %+v %v", c.track, c.clock, got, ok, c.want, c.show)
+		}
+	}
+}
+
+func setFlag(t *testing.T, path string, on bool) {
+	t.Helper()
+	v := "0"
+	if on {
+		v = "1"
+	}
+	if err := writeFlagFile(path, v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Spotify: its songs come from the engine, a radio title arriving late from
+// the stream before is dropped, and the radio proxy ending behind it does not
+// take Spotify's screen away.
+func TestPanelSpotify(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	s.HandleStreamTitle("Queen - Under Pressure")
+	s.PanelSpotifyTrack("Flowers", "Miley Cyrus") // engine song while radio plays: kept, not shown
+	if shown, _ := fp.snapshot(); len(shown) != 1 {
+		t.Fatalf("Spotify song shown over the radio: %+v", shown)
+	}
+	s.PanelSpotifyActive()
+	want := oled.TrackText{Station: "Spotify", Artist: "Miley Cyrus", Title: "Flowers"}
+	if shown, _ := fp.snapshot(); len(shown) != 2 || shown[1] != want {
+		t.Fatalf("Spotify activation: %+v", shown)
+	}
+	s.HandleStreamTitle("Queen - Bohemian Rhapsody")
+	s.HandleStreamEnded()
+	if shown, cleared := fp.snapshot(); len(shown) != 2 || len(cleared) != 0 {
+		t.Fatalf("radio leftovers reached Spotify's screen: shown %+v cleared %v", shown, cleared)
+	}
+	s.PanelSpotifyTrack("Espresso", "Sabrina Carpenter")
+	if shown, _ := fp.snapshot(); len(shown) != 3 || shown[2].Title != "Espresso" {
+		t.Fatalf("next Spotify song: %+v", shown)
+	}
+	// a Spotify preset from STR names the preset until the first song
+	s.setLastPlay("http://192.0.2.1:8888/spotify/slot/5.ogg", "Test Playlist", "", "audio/ogg")
+	if shown, _ := fp.snapshot(); shown[len(shown)-1] != (oled.TrackText{Title: "Test Playlist"}) {
+		t.Fatalf("Spotify preset: %+v", shown[len(shown)-1])
+	}
+}
+
+func TestPanelLibrary(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	s.panelLibraryTrack("Best of 80s", "a-ha", "Take On Me")
+	want := oled.TrackText{Station: "Best of 80s", Artist: "a-ha", Title: "Take On Me"}
+	if shown, _ := fp.snapshot(); len(shown) != 1 || shown[0] != want {
+		t.Fatalf("library: %+v", shown)
+	}
+	s.HandleStreamEnded()
+	if _, cleared := fp.snapshot(); len(cleared) != 0 {
+		t.Fatalf("radio end cleared the library screen: %v", cleared)
+	}
+}
+
+func TestParseClockHour12(t *testing.T) {
+	for _, c := range []struct {
+		body    string
+		h12, ok bool
+	}{
+		{`<?xml version="1.0" encoding="UTF-8" ?><clockDisplay><clockConfig timezoneInfo="Europe/Berlin" userEnable="true" timeFormat="TIME_FORMAT_24HOUR_ID" /></clockDisplay>`, false, true},
+		{`<clockDisplay><clockConfig timeFormat="TIME_FORMAT_12HOUR_ID" /></clockDisplay>`, true, true},
+		{`<clockDisplay/>`, false, false},
+		{`garbage`, false, false},
+	} {
+		if h12, ok := parseClockHour12([]byte(c.body)); h12 != c.h12 || ok != c.ok {
+			t.Errorf("%s: %v %v", c.body, h12, ok)
+		}
+	}
+}
+
+// A failed format read is retried after a pause, not on every draw.
+func TestSpeakerHour12ReadsOnce(t *testing.T) {
+	s, _, _ := newTrackServer(t, true)
+	reads := 0
+	s.hour12Read = func() (bool, bool) { reads++; return false, false }
+	s.speakerHour12()
+	s.speakerHour12()
+	if reads != 1 {
+		t.Fatalf("failed read retried at once: %d reads", reads)
+	}
+	s.hour12Read = func() (bool, bool) { reads++; return true, true }
+	s.forgetSpeakerHour12()
+	if !s.speakerHour12() || !s.speakerHour12() || reads != 2 {
+		t.Fatalf("reads %d", reads)
+	}
+}
+
+func TestDisplayClockEndpoint(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	s.hour12Read = func() (bool, bool) { return false, true }
+	s.playStateDetailFn = func() (bool, bool, bool) { return false, true, false }
+	s.HandleStreamTitle("Queen - Under Pressure")
+	call := func(method, body string) map[string]any {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "/api/box/display-clock", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:1234"
+		s.handleDisplayClock(rr, req)
+		var got map[string]any
+		_ = json.Unmarshal(rr.Body.Bytes(), &got)
+		return got
+	}
+	if got := call(http.MethodGet, ""); got["supported"] != true || got["enabled"] != false {
+		t.Fatalf("GET %v", got)
+	}
+	call(http.MethodPost, `{"enabled":true}`)
+	waitUntil(t, func() bool { shown, _ := fp.snapshot(); return len(shown) == 2 })
+	if shown, _ := fp.snapshot(); !shown[1].Clock || shown[1].Title != "Under Pressure" {
+		t.Fatalf("clock on: %+v", shown[1])
+	}
+	// the track off with the clock on keeps the panel, now with the clock alone
+	setFlag(t, s.displayTrackPath, false)
+	s.applyPanelSetting()
+	waitUntil(t, func() bool { shown, _ := fp.snapshot(); return len(shown) == 3 })
+	if shown, _ := fp.snapshot(); shown[2] != (oled.TrackText{Station: "Radio Bob", Clock: true}) {
+		t.Fatalf("clock alone: %+v", shown[2])
+	}
+	// both off hands the panel back
+	call(http.MethodPost, `{"enabled":false}`)
+	waitUntil(t, func() bool { _, cleared := fp.snapshot(); return len(cleared) == 1 })
+	if got := call(http.MethodGet, ""); got["enabled"] != false {
+		t.Fatalf("GET after off %v", got)
 	}
 }
 
@@ -173,7 +337,9 @@ func TestClearIsANoOpWithoutPanel(t *testing.T) {
 func TestDisplayTrackEndpointOnPanel(t *testing.T) {
 	s, fp, actions := newTrackServer(t, true)
 	s.playStateDetailFn = func() (bool, bool, bool) { return false, true, false }
-	s.lastICYTitle = "Queen - Under Pressure"
+	// the song is known while the setting is off
+	setFlag(t, s.displayTrackPath, false)
+	s.HandleStreamTitle("Queen - Under Pressure")
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/box/display-track", nil)
@@ -204,8 +370,9 @@ func TestDisplayTrackEndpointOnPanel(t *testing.T) {
 	}
 	// switching it off clears the panel, and neither touched the stream
 	post(`{"enabled":false}`)
-	waitUntil(t, func() bool { _, cleared := fp.snapshot(); return len(cleared) == 1 })
-	if _, cleared := fp.snapshot(); cleared[0] != "setting off" {
+	// (the title that arrived with the setting off already let it go once)
+	waitUntil(t, func() bool { _, cleared := fp.snapshot(); return len(cleared) == 2 })
+	if _, cleared := fp.snapshot(); cleared[1] != "setting off" {
 		t.Fatalf("cleared %v", cleared)
 	}
 	if a := actions(); len(a) != 0 {

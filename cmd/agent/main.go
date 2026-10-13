@@ -1292,6 +1292,19 @@ func run() error {
 	// provable by hand-counting stale-status WARNs) and the box-owned preset
 	// slots STR preserves in the marge answer (the Deezer slot-3 loss class).
 	webui.RegisterDebugSection("boseapp_health", func() any { return webuiSrv.BoseAppHealth() })
+	// What drawing the playback screen costs: how long STR held the panel,
+	// how often it drew, and the CPU time of BoseApp and the agent, so two
+	// readings a few minutes apart (screen on, screen off) give the
+	// difference. Read only when a diagnostic is taken.
+	webui.RegisterDebugSection("display_cost", func() any {
+		return map[string]any{
+			"track":        oled.TrackStats(),
+			"boseAppCPUms": oled.ProcessCPUms("BoseApp"),
+			"agentCPUms":   oled.SelfCPUms(),
+			"loadavg":      readLoadAvg(),
+			"at":           time.Now().Format(time.RFC3339),
+		}
+	})
 	webui.RegisterDebugSection("foreign_presets", foreignPresets.DebugState)
 	// What the library play queue did: how many tracks it was given, how many it
 	// advanced through, and the reason it ended. Before #960 a folder that
@@ -1326,13 +1339,19 @@ func run() error {
 			}
 		} else {
 			spotifyMgr.ClearGroupedRefusal()
+			webuiSrv.PanelSpotifyActive()
 		}
 		cancel()
 	})
 	// Record each Spotify song into the recently-played ring under the active
 	// Spotify card (#135), so its card shows the songs that played, not just the
 	// playlist frame. No-op until a Spotify card has been recorded via a recall.
-	spotifyMgr.SetOnTrack(webuiSrv.NoteRecentSpotifyTrack)
+	// ...and to the speaker display, where STR draws the playback screen.
+	spotifyMgr.SetOnTrack(func(track, artist string) {
+		webuiSrv.NoteRecentSpotifyTrack(track, artist)
+		webuiSrv.PanelSpotifyTrack(track, artist)
+	})
+	refreshTrackPanel = webuiSrv.RefreshTrackPanel
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", *boxHost),

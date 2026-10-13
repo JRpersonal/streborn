@@ -41,6 +41,48 @@ func boseAppDisplayReady() bool {
 	return pid != 0 && findThread(pid, flipThread) != 0
 }
 
+// ProcessCPUms is the CPU time (user plus system) the named process has used
+// since it started, in milliseconds; -1 when it is not running. For the
+// display_cost debug section: the panel hold stops BoseApp's flip thread, and
+// whether BoseApp spends more or less while it is held is the question.
+func ProcessCPUms(name string) int64 {
+	pid := findProcess(name)
+	if pid == 0 {
+		return -1
+	}
+	return statCPUms(fmt.Sprintf("/proc/%d/stat", pid))
+}
+
+// SelfCPUms is the agent's own CPU time in milliseconds.
+func SelfCPUms() int64 { return statCPUms("/proc/self/stat") }
+
+// statCPUms reads utime + stime from a /proc stat file (USER_HZ 100).
+func statCPUms(path string) int64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return -1
+	}
+	// the command name is in parentheses and may hold spaces
+	s := string(b)
+	i := strings.LastIndexByte(s, ')')
+	if i < 0 {
+		return -1
+	}
+	f := strings.Fields(s[i+1:])
+	// after the name: state is field 3, utime 14, stime 15 (1-based)
+	if len(f) < 13 {
+		return -1
+	}
+	var ut, st int64
+	if _, err := fmt.Sscan(f[11], &ut); err != nil {
+		return -1
+	}
+	if _, err := fmt.Sscan(f[12], &st); err != nil {
+		return -1
+	}
+	return (ut + st) * 10
+}
+
 func findProcess(name string) int {
 	ents, _ := os.ReadDir("/proc")
 	for _, e := range ents {
@@ -197,11 +239,12 @@ func play(frame func(t float64, buf []byte) bool, onQuit func(t float64), maxDur
 }
 
 // hold takes the panel for as long as quit stays open and draws only when
-// asked: draw runs once at the start, again on every redraw signal, and after
-// every tick (0 = no tick). Nothing is drawn or copied in between, so a held
-// panel whose content stands costs no CPU. The flip thread is always released
-// on return, and the kernel releases it on its own if the agent dies.
-func hold(draw func(buf []byte), redraw, quit <-chan struct{}, tick time.Duration) error {
+// asked: draw runs once at the start, again on every redraw signal, and when
+// the wait next returns after a draw runs out (next nil or <= 0: no timed
+// redraw). Nothing is drawn or copied in between, so a held panel whose
+// content stands costs no CPU. The flip thread is always released on return,
+// and the kernel releases it on its own if the agent dies.
+func hold(draw func(buf []byte), redraw, quit <-chan struct{}, next func() time.Duration) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	p, err := takePanel()
@@ -214,8 +257,10 @@ func hold(draw func(buf []byte), redraw, quit <-chan struct{}, tick time.Duratio
 		draw(buf)
 		p.show(buf)
 		var tc <-chan time.Time
-		if tick > 0 {
-			tc = time.After(tick)
+		if next != nil {
+			if d := next(); d > 0 {
+				tc = time.After(d)
+			}
 		}
 		select {
 		case <-quit:

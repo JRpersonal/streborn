@@ -773,10 +773,8 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 		// On a panel STR draws on itself that is the panel and nothing else;
 		// elsewhere the stream is re-sent with the new text.
 		switch onPanel := s.trackOnPanel(); {
-		case onPanel && body.Enabled:
-			go s.showTrackOnPanelNow()
 		case onPanel:
-			go s.clearTrackPanel("setting off")
+			s.applyPanelSetting()
 		case body.Enabled:
 			go s.pushDisplayNow()
 		default:

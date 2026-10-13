@@ -13,6 +13,9 @@ import (
 var (
 	setTrackSource = oled.SetTrackSource
 	pauseTrack     = oled.PauseTrack
+	// refreshTrackPanel redraws the playback screen from what STR knows plays
+	// (webui.RefreshTrackPanel); wired in main, nil until then.
+	refreshTrackPanel func()
 )
 
 // trackSourceKeeps reports whether a source switch to to can still be STR's
@@ -25,10 +28,17 @@ func trackSourceKeeps(to string) bool {
 
 // trackOnSourceChanged tells the track screen about every source switch:
 // leaving STR's sources takes the track off the panel and keeps titles off
-// it until STR's source is back. Runs on the gabbo read loop; the call does
-// not block and keeps the order of the switches.
-func trackOnSourceChanged(to string) {
-	setTrackSource(to, trackSourceKeeps(to))
+// it until STR's source is back. Coming back (out of standby, from AUX or
+// Bluetooth) brings the screen back at once rather than at the next song,
+// which for a long Spotify track or a station without titles would never
+// come. Runs on the gabbo read loop; the call does not block and keeps the
+// order of the switches.
+func trackOnSourceChanged(from, to string) {
+	ours := trackSourceKeeps(to)
+	setTrackSource(to, ours)
+	if ours && !trackSourceKeeps(from) && refreshTrackPanel != nil {
+		go refreshTrackPanel()
+	}
 }
 
 // OnVolumeChanged is the boxws hook for a volumeUpdated frame: the track

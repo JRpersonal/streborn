@@ -78,6 +78,8 @@ import {
   SetResumeOnPowerOn,
   GetDisplayTrack,
   SetDisplayTrack,
+  GetDisplayClock,
+  SetDisplayClock,
   GetDisplayMessages,
   SetDisplayMessages,
   GetDisplaySplash,
@@ -1309,12 +1311,18 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="displayTrackModeTitle">${escapeHtml(t('settingsView.displayTrackModeTitle'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayTrackModeBoth">${escapeHtml(t('settingsView.displayTrackModeBoth'))}</button>
       </div>
+      <div class="setting-row hidden" id="displayClockRow">
+        <span class="muted small" style="margin-right:6px">${escapeHtml(t('settingsView.displayClockLabel'))}</span>
+        <button class="btn btn-mini toggle-btn" id="displayClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displayClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
       <div class="format-warn" id="displayTrackWarn">
         <div class="warn-icon-inline">&#9888;</div>
         <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
       </div>
       <small class="muted small" id="displayTrackHelp">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
       <small class="muted small hidden" id="displayTrackHelpPanel">${escapeHtml(t('settingsView.displayTrackHelpPanel'))}</small>
+      <small class="muted small hidden" id="displayClockHelp">${escapeHtml(t('settingsView.displayClockHelp'))}</small>
       <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
     </div>
 
@@ -2636,6 +2644,40 @@ function renderBoxSettings(s, box) {
     for (const [m, b] of Object.entries(dtModeBtns)) {
       if (b) b.onclick = () => { dtMode = m; paintDtMode(); save(true); };
     }
+  }
+
+  // The time on the speaker display during playback. Independent of the track
+  // setting (with the track it sits in the top line, without it the time is
+  // large), and only offered where STR draws on the speaker's panel itself:
+  // an older agent or a speaker without one answers no or nothing, and the
+  // row stays hidden.
+  const dcRow = $('displayClockRow');
+  const dcOn = $('displayClockOn');
+  const dcOff = $('displayClockOff');
+  const dcHelp = $('displayClockHelp');
+  const paintDisplayClock = (enabled) => {
+    if (dcOn) dcOn.classList.toggle('active', enabled === true);
+    if (dcOff) dcOff.classList.toggle('active', enabled === false);
+  };
+  if (dcRow && dcOn && dcOff) {
+    (async () => {
+      try {
+        const r = await GetDisplayClock(box.host, box.port);
+        if (!r || r.supported !== true) return;
+        dcRow.classList.remove('hidden');
+        if (dcHelp) dcHelp.classList.remove('hidden');
+        paintDisplayClock(typeof r.enabled === 'boolean' ? r.enabled : null);
+      } catch { /* older agent: no clock setting */ }
+    })();
+    const saveClock = async (enabled) => {
+      paintDisplayClock(enabled);
+      try {
+        await SetDisplayClock(box.host, box.port, enabled);
+        showToast(t('settingsView.displayTrackSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    dcOn.onclick = () => saveClock(true);
+    dcOff.onclick = () => saveClock(false);
   }
 
   // Short message on the speaker display when a key cannot play (default on).

@@ -16,6 +16,10 @@ package oled
 // held panel costs no CPU. Every few minutes the whole layout moves by a
 // pixel so no pixel sits under the same text all evening.
 //
+// The screen can carry the time as well: with a track, in the top line next
+// to the station; without one (the user chose the clock alone), large in the
+// middle. Then it is redrawn at every full minute and stands still between.
+//
 // The panel is shared. The splash, the update screen, the games and the
 // notices all win it: acquirePanel and the notice queue call yieldTrack,
 // which ends the hold at once, and the track screen comes back by itself once
@@ -36,12 +40,16 @@ import (
 
 // TrackText is what the track screen shows. Station is the small top line;
 // Title is the main text, Artist the line above it. Either of Artist and
-// Title may be empty (the per-speaker mode shows only one of them).
+// Title may be empty (the per-speaker mode shows only one of them). Clock
+// adds the time: in the top line when there is a track, large on its own when
+// Artist and Title are both empty. Hour12 draws it as "3:42 PM", as the
+// speaker's own clock setting says.
 type TrackText struct {
 	Station, Artist, Title string
+	Clock, Hour12          bool
 }
 
-func (t TrackText) empty() bool { return t.Artist == "" && t.Title == "" }
+func (t TrackText) empty() bool { return !t.Clock && t.Artist == "" && t.Title == "" }
 
 // sanitized returns t made drawable (SanitizeText rules, no cut yet: the
 // layout wraps and cuts).
@@ -50,6 +58,8 @@ func (t TrackText) sanitized() TrackText {
 		Station: SanitizeText(t.Station, trackTextMax),
 		Artist:  SanitizeText(t.Artist, trackTextMax),
 		Title:   SanitizeText(t.Title, trackTextMax),
+		Clock:   t.Clock,
+		Hour12:  t.Hour12,
 	}
 }
 
@@ -70,6 +80,8 @@ const (
 	TrackVolumePause = 4 * time.Second
 	// trackStopWait bounds how long a stop waits for the panel to be let go.
 	trackStopWait = 2 * time.Second
+	// trackClockLate is how far past the full minute the clock is redrawn.
+	trackClockLate = 50 * time.Millisecond
 )
 
 // trackScreen owns the track display: what it should show and whether it
@@ -82,13 +94,23 @@ type trackScreen struct {
 	holding    bool
 	drawn      bool // the current hold has put a frame on the panel
 	failures   int  // holds in a row that never got the panel
-	foreign    bool // the speaker is on a source that is not STR's
-	quit       chan struct{}
-	done       chan struct{}
-	stopWhy    string
-	redraw     chan struct{}
-	wake       chan struct{}
-	startOnce  sync.Once
+	// stepAside: the running hold ends only to give way for a moment (a
+	// volume bar, a notice); returning: the next hold is the comeback. Both
+	// log at DEBUG, so a listener working the volume does not write two
+	// lines per change into the NAND log.
+	stepAside, returning bool
+	// cost counters for the display_cost debug section
+	draws     int64
+	drawNanos int64
+	heldNanos int64 // finished holds
+	holdStart time.Time
+	foreign   bool // the speaker is on a source that is not STR's
+	quit      chan struct{}
+	done      chan struct{}
+	stopWhy   string
+	redraw    chan struct{}
+	wake      chan struct{}
+	startOnce sync.Once
 
 	// seams; newTrackScreen wires the real ones
 	now        func() time.Time
@@ -98,7 +120,7 @@ type trackScreen struct {
 	noticeBusy func() bool
 	tryLock    func() bool
 	unlock     func()
-	hold       func(draw func([]byte), redraw, quit <-chan struct{}, tick time.Duration) error
+	hold       func(draw func([]byte), redraw, quit <-chan struct{}, next func() time.Duration) error
 	retry      time.Duration
 	shiftEvery time.Duration
 	log        func() *slog.Logger
@@ -206,7 +228,7 @@ func (s *trackScreen) show(t TrackText) {
 	s.want = &t
 	holding := s.holding
 	s.mu.Unlock()
-	s.log().Debug("display track text", "station", t.Station, "artist", t.Artist, "title", t.Title)
+	s.log().Debug("display track text", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock)
 	if holding {
 		select {
 		case s.redraw <- struct{}{}:
@@ -222,6 +244,7 @@ func (s *trackScreen) clear(reason string) {
 	s.mu.Lock()
 	had := s.want != nil
 	s.want = nil
+	s.returning = false
 	s.mu.Unlock()
 	if !s.stop(reason) && had {
 		s.log().Info("display track overlay off", "reason", reason, "held", false)
@@ -230,6 +253,9 @@ func (s *trackScreen) clear(reason string) {
 
 func (s *trackScreen) pause(d time.Duration, reason string) {
 	s.mu.Lock()
+	if s.holding {
+		s.stepAside = true
+	}
 	if until := s.now().Add(d); until.After(s.pauseUntil) {
 		s.pauseUntil = until
 	}
@@ -328,11 +354,16 @@ func (s *trackScreen) tryHold() {
 	s.mu.Unlock()
 
 	start := s.now()
-	err := s.hold(s.draw, s.redraw, quit, s.shiftEvery)
+	s.mu.Lock()
+	s.holdStart = start
+	s.mu.Unlock()
+	err := s.hold(s.draw, s.redraw, quit, s.nextDraw)
 
 	s.unlock()
 	s.mu.Lock()
 	s.holding = false
+	s.heldNanos += int64(s.now().Sub(start))
+	s.holdStart = time.Time{}
 	why, drawn := s.stopWhy, s.drawn
 	failures := 0
 	if drawn {
@@ -354,9 +385,16 @@ func (s *trackScreen) tryHold() {
 	if why == "" {
 		why = "panel lost"
 	}
+	aside := s.stepAside && drawn && err == nil
+	s.stepAside = false
+	if aside {
+		s.returning = true
+	}
 	s.mu.Unlock()
 	close(done)
 	switch {
+	case aside:
+		s.log().Debug("display track overlay stepped aside", "reason", why, "heldSec", int(s.now().Sub(start).Seconds()))
 	case drawn:
 		args := []any{"reason", why, "heldSec", int(s.now().Sub(start).Seconds())}
 		if err != nil {
@@ -380,16 +418,72 @@ func (s *trackScreen) draw(buf []byte) {
 	}
 	first := !s.drawn
 	s.drawn = true
+	back := first && s.returning
+	if first {
+		s.returning = false
+	}
+	now := s.now()
 	step := 0
 	if s.shiftEvery > 0 {
-		step = int(s.now().UnixNano() / int64(s.shiftEvery))
+		step = int(now.UnixNano() / int64(s.shiftEvery))
 	}
 	s.mu.Unlock()
-	if first {
-		s.log().Info("display track overlay on", "station", t.Station, "artist", t.Artist, "title", t.Title)
+	switch {
+	case back:
+		s.log().Debug("display track overlay back", "station", t.Station, "title", t.Title)
+	case first:
+		s.log().Info("display track overlay on", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock)
 	}
 	dx, dy := trackShift(step)
-	renderTrack(t, dx, dy, buf)
+	t0 := time.Now()
+	renderTrack(t, now, dx, dy, buf)
+	el := time.Since(t0)
+	s.mu.Lock()
+	s.draws++
+	s.drawNanos += int64(el)
+	s.mu.Unlock()
+}
+
+// TrackStats is what the track screen has cost since the agent started: how
+// long it held the panel, how often it drew and how long the drawing took
+// (the copy to the panel not included). For the display_cost debug section.
+func TrackStats() map[string]any { return tracks.stats() }
+
+func (s *trackScreen) stats() map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	held := s.heldNanos
+	if !s.holdStart.IsZero() {
+		held += int64(s.now().Sub(s.holdStart))
+	}
+	return map[string]any{
+		"holding":   s.holding,
+		"heldSec":   held / int64(time.Second),
+		"draws":     s.draws,
+		"drawMsSum": float64(s.drawNanos) / 1e6,
+	}
+}
+
+// nextDraw is how long the held screen may stand before it is drawn again:
+// until the next layout shift, or the next full minute while it shows the
+// time. Called by hold after every draw.
+func (s *trackScreen) nextDraw() time.Duration {
+	s.mu.Lock()
+	clock := s.want != nil && s.want.Clock
+	now := s.now()
+	s.mu.Unlock()
+	var d time.Duration
+	if s.shiftEvery > 0 {
+		d = s.shiftEvery - time.Duration(now.UnixNano()%int64(s.shiftEvery))
+	}
+	if clock {
+		// a hair past the minute, so the draw reads the new one
+		toMinute := time.Minute - time.Duration(now.UnixNano()%int64(time.Minute)) + trackClockLate
+		if d <= 0 || toMinute < d {
+			d = toMinute
+		}
+	}
+	return d
 }
 
 // trackShift is the layout offset for shift step n: a slow walk around a 2x2
@@ -414,6 +508,8 @@ const (
 	lvlTrackRule    = 3
 	lvlTrackArtist  = 9
 	lvlTrackTitle   = 15
+	lvlTrackClock   = 9
+	bigClockScale   = 4  // "15:42" is 116 px wide at 24 px a character
 	smallCols       = 21 // 6 px a character at scale 1
 	bigCols         = 10 // 12 px a character at scale 2
 	smallLineH      = 10
@@ -516,13 +612,42 @@ func wrapText(s string, cols, maxLines int) (lines []string, cut bool) {
 	return lines, cut
 }
 
-// renderTrack draws the track screen for t (already sanitised) into buf,
-// offset by dx, dy pixels.
-func renderTrack(t TrackText, dx, dy int, buf []byte) {
+// clockText is the time as the track screen draws it: "15:42", or "3:42"
+// with "PM" apart when the speaker's clock is set to 12 hours.
+func clockText(now time.Time, hour12 bool) (hm, ampm string) {
+	if hour12 {
+		return now.Format("3:04"), now.Format("PM")
+	}
+	return now.Format("15:04"), ""
+}
+
+// renderTrack draws the track screen for t (already sanitised) at the time
+// now into buf, offset by dx, dy pixels.
+func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
 	clear(buf)
 	c := canvas(buf)
+	if t.Artist == "" && t.Title == "" {
+		if t.Clock {
+			renderBigClock(c, t, now, dx, dy)
+		}
+		return
+	}
 	l := layoutTrack(t)
-	if l.station != "" {
+	switch {
+	case t.Clock:
+		// the station on the left, the time on the right of the top line
+		hm, ampm := clockText(now, t.Hour12)
+		if ampm != "" {
+			hm += " " + ampm
+		}
+		if st := cutLine(t.Station, smallCols-len(hm)-1); st != "" {
+			c.textLeft(st, 1+dx, trackTopY+dy, 1, lvlTrackStation)
+			c.textLeft(hm, Width-(len(hm)*6-1)-1+dx, trackTopY+dy, 1, lvlTrackClock)
+		} else {
+			c.textAt(hm, trackTopY+dy, 1, lvlTrackClock, dx)
+		}
+		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
+	case l.station != "":
 		c.textAt(l.station, trackTopY+dy, 1, lvlTrackStation, dx)
 		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
 	}
@@ -550,6 +675,33 @@ func renderTrack(t TrackText, dx, dy int, buf []byte) {
 			c.textAt(s, y, 1, lvlTrackTitle, dx)
 			y += smallLineH
 		}
+	}
+}
+
+// renderBigClock is the screen without a track: the station on top as
+// usual, the time large in the space below, "AM"/"PM" small under it.
+func renderBigClock(c canvas, t TrackText, now time.Time, dx, dy int) {
+	if st := cutLine(t.Station, smallCols); st != "" {
+		c.textAt(st, trackTopY+dy, 1, lvlTrackStation, dx)
+		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
+	}
+	hm, ampm := clockText(now, t.Hour12)
+	h := 7 * bigClockScale
+	if ampm != "" {
+		h += trackGap + 7
+	}
+	y := trackAreaY + (Height-trackAreaY-h)/2 + dy
+	c.textAt(hm, y, bigClockScale, lvlTrackTitle, dx)
+	if ampm != "" {
+		c.textAt(ampm, y+7*bigClockScale+trackGap, 1, lvlTrackArtist, dx)
+	}
+}
+
+// textLeft paints s with its left edge at x and its top at y.
+func (c canvas) textLeft(s string, x, y, sc, lvl int) {
+	for _, ch := range s {
+		c.glyph(ch, x, y, sc, lvl)
+		x += 6 * sc
 	}
 }
 

@@ -100,7 +100,7 @@ func litRows(buf []byte) (first, last int, bad bool) {
 func TestRenderTrack(t *testing.T) {
 	buf := make([]byte, FrameSize)
 	tt := TrackText{Station: "Radio", Artist: "Queen", Title: "Under Pressure"}.sanitized()
-	renderTrack(tt, 0, 0, buf)
+	renderTrack(tt, time.Time{}, 0, 0, buf)
 	first, last, bad := litRows(buf)
 	if bad || first != trackTopY || last >= Height {
 		t.Fatalf("rows %d..%d bad=%v", first, last, bad)
@@ -114,7 +114,7 @@ func TestRenderTrack(t *testing.T) {
 	}
 	// the shifted layout is the same picture one pixel to the right and down
 	moved := make([]byte, FrameSize)
-	renderTrack(tt, 1, 1, moved)
+	renderTrack(tt, time.Time{}, 1, 1, moved)
 	for y := 0; y < Height-1; y++ {
 		for x := 0; x < Width-1; x++ {
 			if buf[y*Width+x] != moved[(y+1)*Width+x+1] {
@@ -123,12 +123,12 @@ func TestRenderTrack(t *testing.T) {
 		}
 	}
 	// nothing to show draws nothing
-	renderTrack(TrackText{}, 0, 0, buf)
+	renderTrack(TrackText{}, time.Time{}, 0, 0, buf)
 	if f, _, _ := litRows(buf); f != -1 {
 		t.Errorf("empty text lit row %d", f)
 	}
 	// the longest layout stays on the panel
-	renderTrack(TrackText{Station: strings.Repeat("S", 40), Artist: strings.Repeat("A ", 40), Title: strings.Repeat("T ", 80)}, 1, 1, buf)
+	renderTrack(TrackText{Station: strings.Repeat("S", 40), Artist: strings.Repeat("A ", 40), Title: strings.Repeat("T ", 80)}, time.Time{}, 1, 1, buf)
 	if _, l, _ := litRows(buf); l >= Height-1 {
 		t.Errorf("longest layout reaches row %d", l)
 	}
@@ -188,7 +188,7 @@ func newFakeTrack() (*trackScreen, *fakePanel) {
 	s.unlock = func() { p.mu.Lock(); p.locked = false; p.mu.Unlock() }
 	s.retry = 5 * time.Millisecond
 	s.log = func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
-	s.hold = func(draw func([]byte), redraw, quit <-chan struct{}, _ time.Duration) error {
+	s.hold = func(draw func([]byte), redraw, quit <-chan struct{}, _ func() time.Duration) error {
 		p.holds.Add(1)
 		if p.fail.Load() {
 			return errors.New("seize: operation not permitted")
@@ -393,3 +393,110 @@ func TestTrackClearWithoutHoldIsQuiet(t *testing.T) {
 	s.pause(time.Second, "volume")
 	s.yield("notice")
 }
+
+func TestRenderTrackClock(t *testing.T) {
+	at := time.Date(2026, 10, 13, 15, 42, 0, 0, time.Local)
+	buf := make([]byte, FrameSize)
+	// with a track: the station starts at the left edge, the time ends at the
+	// right edge of the top line, both inside the panel
+	renderTrack(TrackText{Station: "1LIVE", Artist: "ADELA", Title: "AIN'T IN LA", Clock: true}, at, 0, 0, buf)
+	top := buf[trackTopY*Width : (trackTopY+7)*Width]
+	left, right := Width, -1
+	for i, v := range top {
+		if v != 0 {
+			left, right = min(left, i%Width), max(right, i%Width)
+		}
+	}
+	if left > 2 || right < Width-3 || right >= Width {
+		t.Errorf("top line spans %d..%d", left, right)
+	}
+	if maxByte(top) != lvlTrackClock {
+		t.Errorf("time level %d", maxByte(top))
+	}
+	// a long station name is cut so the time still fits
+	renderTrack(TrackText{Station: strings.Repeat("S", 40), Title: "X", Clock: true, Hour12: true}, at, 1, 1, buf)
+	if _, l, bad := litRows(buf); bad || l >= Height-1 {
+		t.Errorf("long station with clock: last row %d bad=%v", l, bad)
+	}
+	// without a track: the time is large in the middle
+	renderTrack(TrackText{Station: "1LIVE", Clock: true}, at, 0, 0, buf)
+	first, last, bad := litRows(buf)
+	if bad || first != trackTopY || last-trackAreaY < 7*bigClockScale || last >= Height {
+		t.Errorf("big clock rows %d..%d bad=%v", first, last, bad)
+	}
+	if maxByte(buf) != lvlTrackTitle {
+		t.Errorf("big clock level %d", maxByte(buf))
+	}
+	// 12 hours: "3:42" large and "PM" under it, still on the panel
+	renderTrack(TrackText{Clock: true, Hour12: true}, at, 1, 1, buf)
+	if _, l, bad := litRows(buf); bad || l >= Height-1 {
+		t.Errorf("12h big clock: last row %d bad=%v", l, bad)
+	}
+}
+
+func TestClockText(t *testing.T) {
+	at := time.Date(2026, 10, 13, 15, 4, 0, 0, time.Local)
+	if hm, ap := clockText(at, false); hm != "15:04" || ap != "" {
+		t.Errorf("24h %q %q", hm, ap)
+	}
+	if hm, ap := clockText(at, true); hm != "3:04" || ap != "PM" {
+		t.Errorf("12h %q %q", hm, ap)
+	}
+}
+
+func TestTrackNextDraw(t *testing.T) {
+	now := time.Date(2026, 10, 13, 15, 42, 20, 0, time.UTC)
+	s := newTrackScreen()
+	s.now = func() time.Time { return now }
+	s.shiftEvery = 3 * time.Minute
+	s.want = &TrackText{Title: "X"}
+	// no clock: the next layout shift (15:45:00)
+	if d := s.nextDraw(); d != 2*time.Minute+40*time.Second {
+		t.Errorf("no clock: %v", d)
+	}
+	// with the clock: just past the next full minute
+	s.want = &TrackText{Title: "X", Clock: true}
+	if d := s.nextDraw(); d != 40*time.Second+trackClockLate {
+		t.Errorf("clock: %v", d)
+	}
+	// clock only counts while there is something to show
+	s.want = nil
+	if d := s.nextDraw(); d != 2*time.Minute+40*time.Second {
+		t.Errorf("nothing wanted: %v", d)
+	}
+	// a clock-only screen is not empty
+	if (TrackText{Clock: true}).empty() {
+		t.Error("clock-only text counts as empty")
+	}
+}
+
+// Stepping aside for the volume bar and coming back stays out of the INFO
+// log (the NAND log on the speaker); the real on and off are in it.
+func TestTrackScreenVolumePauseLogsQuietly(t *testing.T) {
+	s, p := newFakeTrack()
+	var mu sync.Mutex
+	var out strings.Builder
+	s.log = func() *slog.Logger {
+		return slog.New(slog.NewTextHandler(writerFunc(func(b []byte) (int, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return out.Write(b)
+		}), &slog.HandlerOptions{Level: slog.LevelInfo}))
+	}
+	lines := func() string { mu.Lock(); defer mu.Unlock(); return out.String() }
+	s.show(TrackText{Title: "Song"})
+	waitFor(t, "the panel to be held", p.held.Load)
+	waitFor(t, "the on line", func() bool { return strings.Count(lines(), "overlay on") == 1 })
+	for range 3 {
+		s.pause(20*time.Millisecond, "volume")
+		waitFor(t, "the return after the pause", p.held.Load)
+	}
+	s.clear("test")
+	if l := lines(); strings.Count(l, "overlay on") != 1 || strings.Count(l, "overlay off") != 1 {
+		t.Fatalf("INFO log:\n%s", l)
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(b []byte) (int, error) { return f(b) }

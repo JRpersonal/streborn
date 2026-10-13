@@ -228,6 +228,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	playGen := s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	if playDirect {
+		// a single library file: its name is the song
+		s.panelLibraryTrack("", "", req.Title)
+	}
 	// A finite file played on its own has nothing watching it end. The box
 	// finishes the bytes and freezes in PLAY_STATE (#380), so the app, the
 	// remote and the speaker's display kept showing a 2:07 track playing six
@@ -615,12 +619,12 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	s.resumeAttempts = 0
 	s.lastResumeAt = time.Time{}
 	s.lastPlayMu.Unlock()
-	// The track on the panel belonged to the previous stream; the new one's
-	// first title brings it back. The same stream pushed again keeps it (its
-	// title is not reported again). Synchronous, so it cannot land after the
-	// new stream's first title; letting go of the panel takes milliseconds.
+	// The track on the panel belonged to the previous stream: the new one's
+	// name replaces it until its first song is known. The same stream pushed
+	// again keeps it (its title is not reported again). Synchronous, so it
+	// cannot land after the new stream's first title.
 	if newStream {
-		s.clearTrackPanel("new stream")
+		s.panelNewStream(boxURL, title)
 	}
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
