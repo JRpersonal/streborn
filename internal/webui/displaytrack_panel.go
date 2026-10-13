@@ -251,12 +251,14 @@ func (s *Server) refreshTrackPanel() {
 // for the next song.
 func (s *Server) RefreshTrackPanel() { s.refreshTrackPanel() }
 
-// showTrackOnPanelNow redraws right after a display setting changed, when the
-// speaker is playing.
+// showTrackOnPanelNow redraws right after a display setting changed. It does
+// not ask the speaker whether it plays: BoseApp is the part that stops
+// answering for minutes at a time (measured on a Portable, 2026-10-13
+// 18:26, 160 s), and a setting switched on in such a window then stayed
+// invisible until the next song. The panel side already keeps off a speaker
+// in standby or on another source (oled.SetTrackSource), and the model is
+// empty until something of STR's played.
 func (s *Server) showTrackOnPanelNow() {
-	if standby, busy := s.boxPlayState(); standby || !busy {
-		return
-	}
 	s.refreshTrackPanel()
 }
 
