@@ -223,6 +223,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// "outdated=true" from the speaker seconds earlier and kept it to itself
 	// (field report 2026-08-04).
 	withFW := func(msg string) string { return msg + fwNote }
+	a.ensureSpeakerLanguage(host)
 
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
@@ -1605,3 +1606,30 @@ func (a *App) agentRunningViaSSH(host string) bool {
 	n := strings.TrimSpace(out)
 	return n != "" && n != "0"
 }
+
+// ensureSpeakerLanguage sets the speaker's language when it was never set
+// (sysLanguage 0). That is the last step of Bose's own out-of-box setup, and
+// until it is done the speaker keeps showing its setup screen ("start the
+// SoundTouch app") with STR installed and working. Two ways of joining the
+// Wi-Fi skip it: Bose's own setup page on 192.168.1.1, which sets only the
+// name and the network, and the app's chipset (goform) provisioning, which
+// returns before its language step. Found on a second-hand Portable,
+// 2026-10-13. Same value the app's own provisioning uses: the app's language,
+// English when unknown. Best-effort: a read or write that fails is logged
+// and the install goes on.
+func (a *App) ensureSpeakerLanguage(host string) {
+	cur, err := a.GetBoxLanguage(host)
+	if err != nil || !languageUnset(cur) {
+		return
+	}
+	lang := sticksetup.SysLanguageForLocale(a.appLocale())
+	if err := a.SetBoxLanguage(host, lang); err != nil {
+		a.logger.Warn("install_str: the speaker's language was never set and setting it failed", "host", host, "sysLanguage", lang, "err", err)
+		return
+	}
+	a.logger.Info("install_str: set the speaker's language, its out-of-box setup had left it unset", "host", host, "sysLanguage", lang, "locale", a.appLocale())
+}
+
+// languageUnset reports whether a /language value is the firmware's "never
+// set" 0. An empty or unreadable value is not evidence and is left alone.
+func languageUnset(v string) bool { return strings.TrimSpace(v) == "0" }
