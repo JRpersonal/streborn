@@ -49,7 +49,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, arcadeState } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
@@ -82,6 +82,9 @@ import {
   SetDisplayMessages,
   GetDisplaySplash,
   SetDisplaySplash,
+  GetDisplayNotices,
+  SetDisplayNotices,
+  IdentifyBox,
   GetArcade,
   OpenArcadeThread,
   SaveArcadeScreenshot,
@@ -719,6 +722,7 @@ function groupSettingsSections() {
     displayTrackSection: 'sound',
     displayMsgSection: 'sound',
     displaySplashSection: 'sound',
+    displayNoticesSection: 'sound',
     arcadeSection: 'sound',
     airplayOptSection: 'sound',
   };
@@ -1332,6 +1336,15 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.displaySplashHelp'))}</small>
     </div>
 
+    <div class="settings-section hidden" id="displayNoticesSection">
+      <h3>${escapeHtml(t('settingsView.displayNoticesHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="displayNoticesOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displayNoticesOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.displayNoticesHelp'))}</small>
+    </div>
+
     <div class="settings-section hidden" id="arcadeSection">
       <h3>${escapeHtml(t('settingsView.blockfallHeading'))}</h3>
       <div id="arcadeGames"></div>
@@ -1585,6 +1598,8 @@ function renderBoxSettings(s, box) {
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.actionsHeading'))}</h3>
       <div class="actions-grid">
+        <button class="btn btn-mini" id="boxIdentifyBtn">${escapeHtml(t('settingsView.identifyBtn'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.identifyHelp'))}</p>
         <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
         <button class="btn btn-mini" id="boxSaveLogsBtn">${escapeHtml(t('footer.saveLogs'))}</button>
@@ -2201,6 +2216,27 @@ function renderBoxSettings(s, box) {
     };
   }
 
+  // Find this speaker: HELLO and its name on its display for a few seconds.
+  const identifyBtn = $('boxIdentifyBtn');
+  if (identifyBtn) {
+    identifyBtn.onclick = async () => {
+      identifyBtn.disabled = true;
+      try {
+        const outcome = identifyOutcome(await IdentifyBox(box.host, box.port));
+        const msg = {
+          'shown': 'settingsView.identifyShownToast',
+          'no-display': 'settingsView.identifyNoDisplayToast',
+          'old-agent': 'settingsView.identifyOldAgentToast',
+          'busy': 'settingsView.identifyBusyToast',
+        }[outcome];
+        if (msg) showToast(t(msg));
+        else showError(t('settingsView.identifyFailed'));
+      } catch (e) { showError(e); }
+      // The notice holds for 5 s; a second press meanwhile would only queue.
+      setTimeout(() => { identifyBtn.disabled = false; }, 3000);
+    };
+  }
+
   // Speaker reboot button.
   const rebootBtn = $('boxRebootBtn');
   if (rebootBtn) {
@@ -2644,6 +2680,36 @@ function renderBoxSettings(s, box) {
     };
     dsOn.onclick = () => saveDS(true);
     dsOff.onclick = () => saveDS(false);
+  }
+
+  // STR's short notices on the speaker display (a saved key, an empty key,
+  // keys restored after a reboot; default on). Same rule as the splash: only
+  // where the agent can draw on the panel, hidden elsewhere and on an agent
+  // or app build that does not know the setting yet.
+  const dnSection = $('displayNoticesSection');
+  const dnOn = $('displayNoticesOn');
+  const dnOff = $('displayNoticesOff');
+  const paintDisplayNotices = (enabled) => {
+    if (dnOn) dnOn.classList.toggle('active', enabled === true);
+    if (dnOff) dnOff.classList.toggle('active', enabled === false);
+  };
+  if (dnSection && dnOn && dnOff) {
+    (async () => {
+      try {
+        const st = displayNoticesState(await GetDisplayNotices(box.host, box.port));
+        dnSection.classList.toggle('hidden', !st.show);
+        paintDisplayNotices(st.enabled);
+      } catch { dnSection.classList.add('hidden'); }
+    })();
+    const saveDN = async (enabled) => {
+      paintDisplayNotices(enabled);
+      try {
+        await SetDisplayNotices(box.host, box.port, enabled);
+        showToast(t('settingsView.displayNoticesSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    dnOn.onclick = () => saveDN(true);
+    dnOff.onclick = () => saveDN(false);
   }
 
   // The hidden games on the speaker display: per game the score, the last

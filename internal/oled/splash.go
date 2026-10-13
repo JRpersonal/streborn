@@ -1,6 +1,7 @@
 // Package oled draws STR's own splash animation on the SoundTouch Portable's
 // OLED panel: after a fresh install, after an update, on a box boot, and while
-// an agent update is being received.
+// an agent update is being received. The same panel carries STR's short
+// display notices (notice.go) and the hidden games (game.go).
 //
 // The panel is a plain Linux framebuffer (/dev/fb0, ssdspi, 128x100, 8 bpp)
 // that BoseApp fills about six times a second from one thread named
@@ -63,8 +64,12 @@ var (
 )
 
 // Enabled reads the per-speaker switch. On unless the flag file says otherwise.
-func Enabled() bool {
-	b, err := os.ReadFile(FlagPath)
+func Enabled() bool { return flagOn(FlagPath) }
+
+// flagOn reads a per-speaker switch file: absent or anything but 0, false,
+// off, no means on.
+func flagOn(path string) bool {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return true
 	}
@@ -104,7 +109,9 @@ func DecideKind(stamp string, otaMarker, boxBoot bool) Kind {
 	return kind
 }
 
-// busy keeps two animations from fighting over the panel.
+// busy keeps two animations from fighting over the panel. The splash, the
+// update screen and the games take it through acquirePanel (notice.go), which
+// first ends a display notice that holds it.
 var busy sync.Mutex
 
 // ShowAtStart waits for BoseApp to be up and plays the splash for kind once.
@@ -124,7 +131,8 @@ func ShowAtStart(kind Kind, logger *slog.Logger) {
 		time.Sleep(2 * time.Second)
 	}
 	time.Sleep(3 * time.Second)
-	if !busy.TryLock() {
+	// A notice that is up gives way and shows again after the splash.
+	if !acquirePanel(true) {
 		return
 	}
 	defer busy.Unlock()
@@ -143,7 +151,7 @@ func ShowAtStart(kind Kind, logger *slog.Logger) {
 // reboot takes the animation down with the process). Safe to call stop more
 // than once. A hard cap releases the panel even if stop is never called.
 func StartUpdating(logger *slog.Logger) (stop func()) {
-	if !Enabled() || !panelSupported() || !boseAppDisplayReady() || !busy.TryLock() {
+	if !Enabled() || !panelSupported() || !boseAppDisplayReady() || !acquirePanel(false) {
 		return func() {}
 	}
 	quit := make(chan struct{})

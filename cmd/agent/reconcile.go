@@ -973,8 +973,11 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			nativeWrites = nil
 		}
 	}
+	// restored counts the store's keys this pass put back on a box that had
+	// lost them, for the display notice after a reboot (displaynotices.go).
+	restored := 0
 	if len(nativeWrites) > 0 {
-		writeNativeSlots(boxHost, nativeWrites, logger)
+		restored += len(writeNativeSlots(boxHost, nativeWrites, logger))
 	}
 	if len(missing) > 0 {
 		if forceFull {
@@ -1029,6 +1032,9 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			healed, kept := splitHealedFromRewritten(landed, boxLocs)
 			for _, slot := range healed {
 				logger.Info("preset reconcile healed", "slot", slot)
+				if _, inStore := store.Get(slot); inStore {
+					restored++ // not a webhook-only placeholder
+				}
 			}
 			if len(kept) > 0 {
 				// These were on the box before the write, so finding them after
@@ -1064,6 +1070,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			}
 		}
 	}
+	noteKeysRestored(restored)
 	// Prune STR-owned box presets the store no longer backs, so a stale preset
 	// from an earlier install does not linger as a dead button. The box's Bose
 	// firmware keeps its preset list across an STR reinstall, but STR's store is

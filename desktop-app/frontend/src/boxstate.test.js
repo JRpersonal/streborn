@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, arcadeState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -99,5 +99,24 @@ describe('arcadeState', () => {
   it('drops a screenshot that is not a PNG data URL and an id that could break the markup', () => {
     expect(arcadeState([{ id: 'blockfall', rounds: 1, screenshot: 'javascript:alert(1)' }]).games[0].screenshot).toBe('');
     expect(arcadeState([{ id: 'x"><img', rounds: 1 }]).show).toBe(false);
+  });
+});
+
+describe('displayNoticesState', () => {
+  it('shows the setting only where the agent can draw on the panel', () => {
+    expect(displayNoticesState({ enabled: true, supported: true })).toEqual({ show: true, enabled: true });
+    expect(displayNoticesState({ enabled: false, supported: false }).show).toBe(false);
+    expect(displayNoticesState(undefined)).toEqual({ show: false, enabled: null });
+  });
+});
+
+describe('identifyOutcome', () => {
+  it('maps the agent answer to what the app says', () => {
+    expect(identifyOutcome({ shown: true })).toBe('shown');
+    expect(identifyOutcome({ shown: false, reason: 'no display' })).toBe('no-display');
+    expect(identifyOutcome({ shown: false, reason: 'old agent' })).toBe('old-agent');
+    expect(identifyOutcome({ shown: false, reason: 'busy' })).toBe('busy');
+    expect(identifyOutcome({ shown: false })).toBe('failed');
+    expect(identifyOutcome(null)).toBe('failed');
   });
 });
