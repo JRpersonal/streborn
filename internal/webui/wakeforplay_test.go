@@ -42,3 +42,25 @@ func TestWakeSilentlyForPlayWithoutABox(t *testing.T) {
 		t.Fatal("stamped the settling window without a speaker")
 	}
 }
+
+// A speaker whose state cannot be read is not known to be asleep. Muting it
+// silenced a playing speaker for a second on a skip in the Spotify app, so an
+// unreadable state is retried once and then left alone.
+func TestWakeSilentlyForPlayLeavesAnUnreadableSpeakerAlone(t *testing.T) {
+	prev, prevRetry := quietWakeNowPlaying, wakeForPlayReadRetry
+	t.Cleanup(func() { quietWakeNowPlaying, wakeForPlayReadRetry = prev, prevRetry })
+	wakeForPlayReadRetry = time.Millisecond
+	reads := 0
+	quietWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+		reads++
+		return nowPlayingSnapshot{}
+	}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	s.WakeSilentlyForPlay(context.Background())()
+	if reads != 2 {
+		t.Fatalf("read the state %d times, want one retry", reads)
+	}
+	if s.QuietWakeEpisodeActive() {
+		t.Fatal("treated an unreadable speaker as asleep")
+	}
+}

@@ -34,10 +34,22 @@ func (s *Server) WakeSilentlyForPlay(ctx context.Context) (restore func()) {
 		return noop
 	}
 	ctx = context.WithoutCancel(ctx)
-	readCtx, readCancel := context.WithTimeout(ctx, quietWakeStepBudget)
-	np := quietWakeNowPlaying(readCtx, s.boxHost)
-	readCancel()
-	if !quietWakeNeeded(np) {
+	// Only a speaker that SAYS it is in standby is muted. The group wake's gate
+	// (quietWakeNeeded) also takes a failed read as standby, which is right
+	// for a group but wrong here: this runs on every Spotify activation,
+	// including a skip in the Spotify app, and a speaker busy re-pointing its
+	// stream can miss the read. That muted a playing speaker for a second on
+	// a skip (Portable, 2026-10-13 14:30:03). A failed read is retried once;
+	// still unknown, the speaker is left alone.
+	np := s.wakeForPlayRead(ctx)
+	if np.Source == "" {
+		time.Sleep(wakeForPlayReadRetry)
+		np = s.wakeForPlayRead(ctx)
+	}
+	if np.Source != "STANDBY" {
+		if np.Source == "" {
+			s.logger.Info("wake: state unreadable before a play, not muting", "host", s.boxHost)
+		}
 		return noop
 	}
 	s.noteQuietWakeEpisode()
@@ -73,4 +85,13 @@ func (s *Server) WakeSilentlyForPlay(ctx context.Context) (restore func()) {
 		}
 		s.logger.Info("wake: level restored after a silent wake", "vol", prevVol)
 	}
+}
+
+// wakeForPlayReadRetry is the pause before the second state read.
+var wakeForPlayReadRetry = 300 * time.Millisecond
+
+func (s *Server) wakeForPlayRead(ctx context.Context) nowPlayingSnapshot {
+	readCtx, readCancel := context.WithTimeout(ctx, quietWakeStepBudget)
+	defer readCancel()
+	return quietWakeNowPlaying(readCtx, s.boxHost)
 }
