@@ -11,8 +11,9 @@ import (
 
 // Seams for the tests.
 var (
-	setTrackSource = oled.SetTrackSource
-	pauseTrack     = oled.PauseTrack
+	setTrackSource  = oled.SetTrackSource
+	setTrackPlaying = oled.SetTrackPlaying
+	pauseTrack      = oled.PauseTrack
 	// refreshTrackPanel redraws the playback screen from what STR knows plays
 	// (webui.RefreshTrackPanel); wired in main, nil until then.
 	refreshTrackPanel func()
@@ -46,4 +47,10 @@ func trackOnSourceChanged(from, to string) {
 // shows, then returns by itself.
 func (h *presetWsHandler) OnVolumeChanged(context.Context) {
 	go pauseTrack(oled.TrackVolumePause, "volume")
+}
+
+// OnPlayingChanged is the boxws hook for the speaker's play status: the
+// playing symbol on the track screen moves only while music runs.
+func (h *presetWsHandler) OnPlayingChanged(_ context.Context, playing bool) {
+	setTrackPlaying(playing)
 }

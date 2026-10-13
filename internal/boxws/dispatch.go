@@ -104,10 +104,12 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// the same frame. A frame without a play status says nothing about
 			// it and leaves the edge tracker alone.
 			fireSourcePlaying := false
+			firePlayingEdge, playingEdge := false, false
 			if f.NowPlaying != nil {
 				if ps := f.NowPlaying.playStatus(); ps != "" {
 					playingNow := isStreamingSource(src) && (ps == "PLAY_STATE" || ps == "BUFFERING_STATE")
 					fireSourcePlaying = playingNow && !c.sourcePlaying
+					firePlayingEdge, playingEdge = playingNow != c.sourcePlaying, playingNow
 					c.sourcePlaying = playingNow
 					// A speaker that plays is not refusing every station. The
 					// 1036 rejections on the way there (a Spotify key racing
@@ -133,6 +135,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if fireSourcePlaying {
 				if h, ok := c.handler.(interface{ OnSourcePlaying(context.Context, string) }); ok {
 					h.OnSourcePlaying(ctx, src)
+				}
+			}
+			// Both edges, for handlers that show whether music runs (the
+			// playing symbol on the speaker display). Runs on the read loop:
+			// implementations must not block.
+			if firePlayingEdge {
+				if h, ok := c.handler.(interface{ OnPlayingChanged(context.Context, bool) }); ok {
+					h.OnPlayingChanged(ctx, playingEdge)
 				}
 			}
 			if changed {

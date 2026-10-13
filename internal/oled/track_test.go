@@ -100,7 +100,7 @@ func litRows(buf []byte) (first, last int, bad bool) {
 func TestRenderTrack(t *testing.T) {
 	buf := make([]byte, FrameSize)
 	tt := TrackText{Station: "Radio", Artist: "Queen", Title: "Under Pressure"}.sanitized()
-	renderTrack(tt, time.Time{}, 0, 0, buf)
+	renderTrack(tt, time.Time{}, trackAnim{}, 0, 0, buf)
 	first, last, bad := litRows(buf)
 	if bad || first != trackTopY || last >= Height {
 		t.Fatalf("rows %d..%d bad=%v", first, last, bad)
@@ -114,7 +114,7 @@ func TestRenderTrack(t *testing.T) {
 	}
 	// the shifted layout is the same picture one pixel to the right and down
 	moved := make([]byte, FrameSize)
-	renderTrack(tt, time.Time{}, 1, 1, moved)
+	renderTrack(tt, time.Time{}, trackAnim{}, 1, 1, moved)
 	for y := 0; y < Height-1; y++ {
 		for x := 0; x < Width-1; x++ {
 			if buf[y*Width+x] != moved[(y+1)*Width+x+1] {
@@ -123,12 +123,12 @@ func TestRenderTrack(t *testing.T) {
 		}
 	}
 	// nothing to show draws nothing
-	renderTrack(TrackText{}, time.Time{}, 0, 0, buf)
+	renderTrack(TrackText{}, time.Time{}, trackAnim{}, 0, 0, buf)
 	if f, _, _ := litRows(buf); f != -1 {
 		t.Errorf("empty text lit row %d", f)
 	}
 	// the longest layout stays on the panel
-	renderTrack(TrackText{Station: strings.Repeat("S", 40), Artist: strings.Repeat("A ", 40), Title: strings.Repeat("T ", 80)}, time.Time{}, 1, 1, buf)
+	renderTrack(TrackText{Station: strings.Repeat("S", 40), Artist: strings.Repeat("A ", 40), Title: strings.Repeat("T ", 80)}, time.Time{}, trackAnim{}, 1, 1, buf)
 	if _, l, _ := litRows(buf); l >= Height-1 {
 		t.Errorf("longest layout reaches row %d", l)
 	}
@@ -399,7 +399,7 @@ func TestRenderTrackClock(t *testing.T) {
 	buf := make([]byte, FrameSize)
 	// with a track: the station starts at the left edge, the time ends at the
 	// right edge of the top line, both inside the panel
-	renderTrack(TrackText{Station: "1LIVE", Artist: "ADELA", Title: "AIN'T IN LA", Clock: true}, at, 0, 0, buf)
+	renderTrack(TrackText{Station: "1LIVE", Artist: "ADELA", Title: "AIN'T IN LA", Clock: true}, at, trackAnim{}, 0, 0, buf)
 	top := buf[trackTopY*Width : (trackTopY+7)*Width]
 	left, right := Width, -1
 	for i, v := range top {
@@ -407,19 +407,19 @@ func TestRenderTrackClock(t *testing.T) {
 			left, right = min(left, i%Width), max(right, i%Width)
 		}
 	}
-	if left > 2 || right < Width-3 || right >= Width {
+	if left > 1+barsW+barsGap+1 || right < Width-3 || right >= Width {
 		t.Errorf("top line spans %d..%d", left, right)
 	}
 	if maxByte(top) != lvlTrackClock {
 		t.Errorf("time level %d", maxByte(top))
 	}
 	// a long station name is cut so the time still fits
-	renderTrack(TrackText{Station: strings.Repeat("S", 40), Title: "X", Clock: true, Hour12: true}, at, 1, 1, buf)
+	renderTrack(TrackText{Station: strings.Repeat("S", 40), Title: "X", Clock: true, Hour12: true}, at, trackAnim{}, 1, 1, buf)
 	if _, l, bad := litRows(buf); bad || l >= Height-1 {
 		t.Errorf("long station with clock: last row %d bad=%v", l, bad)
 	}
 	// without a track: the time is large in the middle
-	renderTrack(TrackText{Station: "1LIVE", Clock: true}, at, 0, 0, buf)
+	renderTrack(TrackText{Station: "1LIVE", Clock: true}, at, trackAnim{}, 0, 0, buf)
 	first, last, bad := litRows(buf)
 	if bad || first != trackTopY || last-trackAreaY < 7*bigClockScale || last >= Height {
 		t.Errorf("big clock rows %d..%d bad=%v", first, last, bad)
@@ -428,7 +428,7 @@ func TestRenderTrackClock(t *testing.T) {
 		t.Errorf("big clock level %d", maxByte(buf))
 	}
 	// 12 hours: "3:42" large and "PM" under it, still on the panel
-	renderTrack(TrackText{Clock: true, Hour12: true}, at, 1, 1, buf)
+	renderTrack(TrackText{Clock: true, Hour12: true}, at, trackAnim{}, 1, 1, buf)
 	if _, l, bad := litRows(buf); bad || l >= Height-1 {
 		t.Errorf("12h big clock: last row %d bad=%v", l, bad)
 	}
@@ -449,6 +449,7 @@ func TestTrackNextDraw(t *testing.T) {
 	s := newTrackScreen()
 	s.now = func() time.Time { return now }
 	s.shiftEvery = 3 * time.Minute
+	s.paused = true // the playing symbol stands still
 	s.want = &TrackText{Title: "X"}
 	// no clock: the next layout shift (15:45:00)
 	if d := s.nextDraw(); d != 2*time.Minute+40*time.Second {
@@ -463,6 +464,12 @@ func TestTrackNextDraw(t *testing.T) {
 	s.want = nil
 	if d := s.nextDraw(); d != 2*time.Minute+40*time.Second {
 		t.Errorf("nothing wanted: %v", d)
+	}
+	// while playing, the symbol moves every frame
+	s.paused = false
+	s.want = &TrackText{Title: "X", Clock: true}
+	if d := s.nextDraw(); d != barsFrame {
+		t.Errorf("playing: %v", d)
 	}
 	// a clock-only screen is not empty
 	if (TrackText{Clock: true}).empty() {
@@ -500,3 +507,49 @@ func TestTrackScreenVolumePauseLogsQuietly(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
+
+func TestPlayingBars(t *testing.T) {
+	flat := barHeights(trackAnim{})
+	for _, h := range flat {
+		if h != 2 {
+			t.Fatalf("paused bars %v", flat)
+		}
+	}
+	moved := false
+	prev := barHeights(trackAnim{playing: true, frame: 0})
+	for f := 1; f < 20; f++ {
+		h := barHeights(trackAnim{playing: true, frame: f})
+		for _, v := range h {
+			if v < 2 || v > barsMaxH {
+				t.Fatalf("frame %d heights %v", f, h)
+			}
+		}
+		if h != prev {
+			moved = true
+		}
+		prev = h
+	}
+	if !moved {
+		t.Error("the bars never move")
+	}
+	// the symbol sits left of the station and inside the panel, on every
+	// layout
+	buf := make([]byte, FrameSize)
+	at := time.Date(2026, 10, 13, 15, 42, 0, 0, time.Local)
+	for _, tt := range []TrackText{
+		{Station: strings.Repeat("S", 40), Title: "X"},
+		{Station: strings.Repeat("S", 40), Title: "X", Clock: true},
+		{Station: strings.Repeat("S", 40), Clock: true},
+	} {
+		renderTrack(tt, at, trackAnim{playing: true, frame: 3}, 1, 1, buf)
+		if _, l, bad := litRows(buf); bad || l >= Height-1 {
+			t.Errorf("%+v: last row %d bad=%v", tt, l, bad)
+		}
+		for y := 0; y < 20; y++ {
+			if buf[y*Width+1+barsW+1] != 0 {
+				t.Errorf("%+v: the station touches the bars at row %d", tt, y)
+				break
+			}
+		}
+	}
+}

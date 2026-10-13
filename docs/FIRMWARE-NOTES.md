@@ -624,10 +624,15 @@ panel to BoseApp. 12 or 24 hours follow the speaker's own clock setting
 (`timeFormat` in `:8090/clockDisplay`, read once and kept). Only offered where
 STR draws on the panel.
 
-The screen is drawn once per change and stands still in between (no
-scrolling: long text is wrapped and cut with `...`), so the held panel costs
-no CPU; with the time on it is redrawn just past every full minute, and every
-three minutes the layout moves by one pixel against wear. The flip thread is
+A playing symbol, three small bars at the left of the top line, moves while
+the speaker plays and lies flat when it does not (the gabbo play status,
+`OnPlayingChanged`; unknown counts as playing). It shows that music runs, not
+its level: STR never sees the audio the speaker decodes. Long text is wrapped
+and cut with `...`, never scrolled. While the bars move the screen is redrawn
+every 400 ms; one draw takes about 0.7 ms on a Portable, so that is roughly
+0.2 % of one CPU. Paused, it stands still and is redrawn only just past every
+full minute when it shows the time. Every three minutes the layout moves by
+one pixel against wear. The flip thread is
 held for as long as the screen shows, which is longer than anything else holds
 it (two hours of radio on 2026-10-13 without a reboot). Notices, the splash,
 the update screen and the games always win the panel and the screen returns by

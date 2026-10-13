@@ -99,6 +99,10 @@ type trackScreen struct {
 	// log at DEBUG, so a listener working the volume does not write two
 	// lines per change into the NAND log.
 	stepAside, returning bool
+	// paused: the speaker said it stopped playing; the playing symbol lies
+	// flat and the screen stands still. Unknown counts as playing, because
+	// the screen only shows while one of STR's streams is on.
+	paused bool
 	// cost counters for the display_cost debug section
 	draws     int64
 	drawNanos int64
@@ -178,6 +182,24 @@ func (s *trackScreen) poke() {
 	select {
 	case s.wake <- struct{}{}:
 	default:
+	}
+}
+
+// SetTrackPlaying tells the track screen whether the speaker plays, from its
+// own play status: the playing symbol moves only while it does.
+func SetTrackPlaying(playing bool) { tracks.setPlaying(playing) }
+
+func (s *trackScreen) setPlaying(playing bool) {
+	s.mu.Lock()
+	changed := s.paused == playing
+	s.paused = !playing
+	holding := s.holding
+	s.mu.Unlock()
+	if changed && holding {
+		select {
+		case s.redraw <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -427,6 +449,7 @@ func (s *trackScreen) draw(buf []byte) {
 	if s.shiftEvery > 0 {
 		step = int(now.UnixNano() / int64(s.shiftEvery))
 	}
+	anim := trackAnim{playing: !s.paused, frame: int(now.UnixNano() / int64(barsFrame))}
 	s.mu.Unlock()
 	switch {
 	case back:
@@ -436,7 +459,7 @@ func (s *trackScreen) draw(buf []byte) {
 	}
 	dx, dy := trackShift(step)
 	t0 := time.Now()
-	renderTrack(t, now, dx, dy, buf)
+	renderTrack(t, now, anim, dx, dy, buf)
 	el := time.Since(t0)
 	s.mu.Lock()
 	s.draws++
@@ -470,11 +493,19 @@ func (s *trackScreen) stats() map[string]any {
 func (s *trackScreen) nextDraw() time.Duration {
 	s.mu.Lock()
 	clock := s.want != nil && s.want.Clock
+	moving := s.want != nil && !s.paused
 	now := s.now()
 	s.mu.Unlock()
 	var d time.Duration
 	if s.shiftEvery > 0 {
 		d = s.shiftEvery - time.Duration(now.UnixNano()%int64(s.shiftEvery))
+	}
+	if moving {
+		// the next frame of the playing symbol
+		toFrame := barsFrame - time.Duration(now.UnixNano()%int64(barsFrame))
+		if d <= 0 || toFrame < d {
+			d = toFrame
+		}
 	}
 	if clock {
 		// a hair past the minute, so the draw reads the new one
@@ -624,12 +655,12 @@ func clockText(now time.Time, hour12 bool) (hm, ampm string) {
 
 // renderTrack draws the track screen for t (already sanitised) at the time
 // now into buf, offset by dx, dy pixels.
-func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
+func renderTrack(t TrackText, now time.Time, a trackAnim, dx, dy int, buf []byte) {
 	clear(buf)
 	c := canvas(buf)
 	if t.Artist == "" && t.Title == "" {
 		if t.Clock {
-			renderBigClock(c, t, now, dx, dy)
+			renderBigClock(c, t, now, a, dx, dy)
 		}
 		return
 	}
@@ -640,10 +671,9 @@ func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
 		// The time at double size on the right of the top line, the station
 		// small on its left. At the normal size the time was too small to
 		// read from across a room (Jens, 2026-10-13).
-		areaY = renderClockHeader(c, t, now, dx, dy)
-	case l.station != "":
-		c.textAt(l.station, trackTopY+dy, 1, lvlTrackStation, dx)
-		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
+		areaY = renderClockHeader(c, t, now, a, dx, dy)
+	default:
+		renderPlainHeader(c, t, a, dx, dy)
 	}
 	titleH := len(l.title) * smallLineH
 	if l.big {
@@ -676,7 +706,7 @@ func renderTrack(t TrackText, now time.Time, dx, dy int, buf []byte) {
 // size flush right ("PM" small after it on a 12-hour clock), the station
 // small on the left, cut to the room left, and the rule under both. Returns
 // where the text block below may start.
-func renderClockHeader(c canvas, t TrackText, now time.Time, dx, dy int) int {
+func renderClockHeader(c canvas, t TrackText, now time.Time, a trackAnim, dx, dy int) int {
 	hm, ampm := clockText(now, t.Hour12)
 	const sc = headerClockScale
 	w := len(hm)*6*sc - sc
@@ -689,22 +719,76 @@ func renderClockHeader(c canvas, t TrackText, now time.Time, dx, dy int) int {
 	if ampm != "" {
 		c.textLeft(ampm, x+len(hm)*6*sc-sc+2, top+7*sc-7, 1, lvlTrackStation)
 	}
-	cols := (Width - w - 1 - 4) / 6
+	textY := top + (7*sc-7)/2
+	c.bars(1+dx, textY+7, a)
+	cols := (Width - w - 1 - 4 - barsW - barsGap) / 6
 	if st := cutLine(t.Station, cols); st != "" {
-		c.textLeft(st, 1+dx, top+(7*sc-7)/2, 1, lvlTrackStation)
+		c.textLeft(st, 1+barsW+barsGap+dx, textY, 1, lvlTrackStation)
 	}
 	ruleY := top + 7*sc + 3
 	c.fill(24+dx, ruleY, Width-48, 1, lvlTrackRule)
 	return trackTopY + 7*sc + 6
 }
 
-// renderBigClock is the screen without a track: the station on top as
-// usual, the time large in the space below, "AM"/"PM" small under it.
-func renderBigClock(c canvas, t TrackText, now time.Time, dx, dy int) {
-	if st := cutLine(t.Station, smallCols); st != "" {
+// renderPlainHeader is the top line without the time: the playing symbol on
+// the left, the station centred (cut so the two never touch), the rule under
+// the station.
+func renderPlainHeader(c canvas, t TrackText, a trackAnim, dx, dy int) {
+	c.bars(1+dx, trackTopY+7+dy, a)
+	if st := cutLine(t.Station, smallCols-4); st != "" {
 		c.textAt(st, trackTopY+dy, 1, lvlTrackStation, dx)
 		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
 	}
+}
+
+// trackAnim is the moving part of the playback screen: the playing symbol.
+type trackAnim struct {
+	playing bool
+	frame   int // advances every barsFrame while playing
+}
+
+// The playing symbol: three bars at the left of the top line that move
+// while the speaker plays and lie flat when it does not. They show that
+// music runs, not its level: STR does not see the audio the speaker plays.
+const (
+	barsN     = 3
+	barsBarW  = 2
+	barsW     = barsN*barsBarW + barsN - 1 // 8 px
+	barsGap   = 3
+	barsMaxH  = 7
+	barsFrame = 400 * time.Millisecond
+)
+
+// barHeights is the height of each bar for frame: a fixed pseudo-random walk
+// between 2 and barsMaxH pixels, flat at 2 when not playing.
+func barHeights(a trackAnim) [barsN]int {
+	var h [barsN]int
+	for i := range h {
+		h[i] = 2
+		if a.playing {
+			x := uint32(a.frame*barsN+i) * 2654435761
+			h[i] = 2 + int(x>>27)%(barsMaxH-1)
+		}
+	}
+	return h
+}
+
+// bars paints the playing symbol with its left edge at x and its bottom
+// row just above bottom.
+func (c canvas) bars(x, bottom int, a trackAnim) {
+	lvl := lvlTrackClock
+	if !a.playing {
+		lvl = lvlTrackRule
+	}
+	for i, h := range barHeights(a) {
+		c.fill(x+i*(barsBarW+1), bottom-h, barsBarW, h, lvl)
+	}
+}
+
+// renderBigClock is the screen without a track: the station on top as
+// usual, the time large in the space below, "AM"/"PM" small under it.
+func renderBigClock(c canvas, t TrackText, now time.Time, a trackAnim, dx, dy int) {
+	renderPlainHeader(c, t, a, dx, dy)
 	hm, ampm := clockText(now, t.Hour12)
 	h := 7 * bigClockScale
 	if ampm != "" {
