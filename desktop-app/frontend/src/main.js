@@ -415,6 +415,7 @@ import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
+import { renderStreamSource, initStreamSourceView } from './views/streamsource.js';
 import { renderWishes, initWishesView } from './views/wishes.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
@@ -487,6 +488,13 @@ initSpotifyView({
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
+initStreamSourceView({
+  effectivePlayTarget,
+  playbackChanged: () => {
+    renderNowPlayingBar();
+    setTimeout(refreshStatus, 1200);
+  },
+});
 initWishesView();
 // Session maps this file keeps per speaker, cleared when STR is removed from
 // that speaker (Settings > Remove STR calls purgeSpeakerLocalState; see
@@ -644,6 +652,7 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="tab-badge" id="multiroomTabBadge" hidden></span></button>
     <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}</button>
+    <button class="tab-btn" data-view="stream-source">${escapeHtml(t('nav.streamSource'))}</button>
     <button class="tab-btn" data-view="wishes">${escapeHtml(t('nav.wishes'))}</button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
@@ -660,6 +669,7 @@ document.querySelector('#app').innerHTML = `
   <div id="view-setup" class="view hidden"></div>
   <div id="view-multiroom" class="view hidden"></div>
   <div id="view-spotify" class="view hidden"></div>
+  <div id="view-stream-source" class="view hidden"></div>
   <div id="view-wishes" class="view hidden"></div>
 
   <div class="modal hidden" id="pickModal">
@@ -920,6 +930,7 @@ function switchView(view) {
   // "stereo pair cannot be grouped" note that survived every screen change).
   if (view !== 'multiroom') { stopMultiroomLive(); resetMultiroomNotes(); }
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
+  $('view-stream-source').classList.toggle('hidden', view !== 'stream-source');
   $('view-wishes').classList.toggle('hidden', view !== 'wishes');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
@@ -970,6 +981,7 @@ function switchView(view) {
   if (view === 'recent') renderRecent();
   if (view === 'multiroom') renderMultiroom(true);
   if (view === 'spotify') renderSpotifyAlpha();
+  if (view === 'stream-source') renderStreamSource();
   if (view === 'wishes') renderWishes();
 }
 

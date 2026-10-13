@@ -335,6 +335,10 @@ export function Stop(arg1:string,arg2:number):Promise<void>;
 
 export function StreamBitrate(arg1:string,arg2:number):Promise<number>;
 
+export function StreamSourcePlayback(arg1:string,arg2:string):Promise<main.StreamSourcePlayback>;
+
+export function StreamSourceStations(arg1:string):Promise<Array<main.StreamSourceStation>>;
+
 export function StreamTitle(arg1:string,arg2:number):Promise<string>;
 
 export function SuggestBoxLanguage(arg1:string,arg2:string):Promise<number>;

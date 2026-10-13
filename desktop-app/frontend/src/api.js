@@ -332,6 +332,16 @@ export function ClassifyStreamURL(streamURL) {
   return callOptionalBinding('ClassifyStreamURL', [streamURL]);
 }
 
+// Stream-source methods are optional so the current frontend remains usable
+// with an older backend build that has not regenerated its Wails bindings.
+export function StreamSourceStations(baseURL) {
+  return callOptionalBinding('StreamSourceStations', [baseURL]);
+}
+
+export function GetStreamSourcePlayback(baseURL, stationID) {
+  return callOptionalBinding('StreamSourcePlayback', [baseURL, stationID]);
+}
+
 // MovePreset takes the station on key `from` over to key `to`. Offered when a
 // save is refused because the station already sits on another key, so the user
 // can say "then move it" (discussions #709 and #925). Optional binding: an app
