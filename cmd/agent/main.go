@@ -1292,11 +1292,11 @@ func run() error {
 	// while the box is on another source, point the box at the Spotify stream so
 	// it actually plays instead of staying on the current source (#14).
 	spotifyMgr.SetOnActivate(func(cbCtx context.Context) {
-		if *boxHost != "" {
-			wctx, cancel := context.WithTimeout(cbCtx, 8*time.Second)
-			_ = boxcli.WakeAndWait(wctx, *boxHost, 6*time.Second, logger)
-			cancel()
-		}
+		// A sleeping speaker resumes its own last station on power-on, which
+		// played for seconds before the push took over: muted through the
+		// wake, its level comes back once the push is done.
+		restoreLevel := webuiSrv.WakeSilentlyForPlay(cbCtx)
+		defer restoreLevel()
 		pctx, cancel := context.WithTimeout(cbCtx, 15*time.Second)
 		// A native station the speaker is playing swallows the push while the
 		// SOAP calls answer success (#1065); the shared helper stops it first
