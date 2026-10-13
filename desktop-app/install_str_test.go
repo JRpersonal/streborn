@@ -441,3 +441,11 @@ func TestLanguageUnset(t *testing.T) {
 		}
 	}
 }
+
+func TestClockDisplayOff(t *testing.T) {
+	for v, want := range map[string]bool{"false": true, "true": false, "": false, "x": false} {
+		if got := clockDisplayOff(v); got != want {
+			t.Errorf("clockDisplayOff(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
