@@ -43,38 +43,31 @@ func TestWrapText(t *testing.T) {
 }
 
 func TestLayoutTrack(t *testing.T) {
-	// a short title is drawn big
+	// a single word longer than a big line is not split and not shrunk: one
+	// big line that scrolls
 	l := layoutTrack(TrackText{Station: "RADIO BOB", Artist: "AC/DC", Title: "THUNDERSTRUCK"}.sanitized())
-	if l.big {
-		t.Errorf("a 13-letter word must not be split across big lines: %+v", l)
+	if !reflect.DeepEqual(l.title, []string{"THUNDERSTRUCK"}) {
+		t.Errorf("a 13-letter word must stay whole on one line: %+v", l)
 	}
+	// a title that fits on two big lines is wrapped and stands
 	l = layoutTrack(TrackText{Artist: "QUEEN", Title: "Under Pressure"}.sanitized())
-	if !l.big || !reflect.DeepEqual(l.title, []string{"UNDER", "PRESSURE"}) {
+	if !reflect.DeepEqual(l.title, []string{"UNDER", "PRESSURE"}) {
 		t.Errorf("short title: %+v", l)
 	}
-	// a long one is small, wrapped and cut, with the artist above it
+	// long fields are kept whole for the marquee, nothing is cut
 	long := TrackText{
 		Station: "A station name that is far too long for one line",
-		Artist:  "Nick Cave & The Bad Seeds",
+		Artist:  "Nick Cave & The Bad Seeds and Friends of the Band",
 		Title:   "Into My Arms (Live at the Royal Albert Hall, remastered edition 2024)",
 	}.sanitized()
 	l = layoutTrack(long)
-	if l.big || len(l.title) != 3 || len(l.artist) != 2 {
+	if !reflect.DeepEqual(l.title, []string{long.Title}) || !reflect.DeepEqual(l.artist, []string{long.Artist}) || l.station != long.Station {
 		t.Fatalf("long text: %+v", l)
 	}
-	if !strings.HasSuffix(l.title[2], "...") || !strings.HasSuffix(l.station, "...") {
-		t.Errorf("cut text must end in ...: %+v", l)
-	}
-	if len(l.station) > smallCols {
-		t.Errorf("station %q wider than a line", l.station)
-	}
-	if l.artist[0] != "NICK CAVE + THE BAD" || l.artist[1] != "SEEDS" {
+	// an artist that fits on two small lines is wrapped there
+	l = layoutTrack(TrackText{Artist: "Nick Cave & The Bad Seeds", Title: "X"}.sanitized())
+	if !reflect.DeepEqual(l.artist, []string{"NICK CAVE + THE BAD", "SEEDS"}) {
 		t.Errorf("artist %q", l.artist)
-	}
-	// title only (the "artist" and "title" modes): up to four small lines
-	l = layoutTrack(TrackText{Title: strings.Repeat("WORD ", 30)})
-	if len(l.title) != 4 || len(l.artist) != 0 {
-		t.Errorf("title only: %+v", l)
 	}
 }
 
@@ -100,7 +93,7 @@ func litRows(buf []byte) (first, last int, bad bool) {
 func TestRenderTrack(t *testing.T) {
 	buf := make([]byte, FrameSize)
 	tt := TrackText{Station: "Radio", Artist: "Queen", Title: "Under Pressure"}.sanitized()
-	renderTrack(tt, time.Time{}, trackAnim{}, 0, 0, buf)
+	renderTrack(tt, time.Time{}, trackAnim{}, 0, 0, 0, buf)
 	first, last, bad := litRows(buf)
 	if bad || first != trackTopY || last >= Height {
 		t.Fatalf("rows %d..%d bad=%v", first, last, bad)
@@ -114,7 +107,7 @@ func TestRenderTrack(t *testing.T) {
 	}
 	// the shifted layout is the same picture one pixel to the right and down
 	moved := make([]byte, FrameSize)
-	renderTrack(tt, time.Time{}, trackAnim{}, 1, 1, moved)
+	renderTrack(tt, time.Time{}, trackAnim{}, 0, 1, 1, moved)
 	for y := 0; y < Height-1; y++ {
 		for x := 0; x < Width-1; x++ {
 			if buf[y*Width+x] != moved[(y+1)*Width+x+1] {
@@ -123,12 +116,12 @@ func TestRenderTrack(t *testing.T) {
 		}
 	}
 	// nothing to show draws nothing
-	renderTrack(TrackText{}, time.Time{}, trackAnim{}, 0, 0, buf)
+	renderTrack(TrackText{}, time.Time{}, trackAnim{}, 0, 0, 0, buf)
 	if f, _, _ := litRows(buf); f != -1 {
 		t.Errorf("empty text lit row %d", f)
 	}
 	// the longest layout stays on the panel
-	renderTrack(TrackText{Station: strings.Repeat("S", 40), Artist: strings.Repeat("A ", 40), Title: strings.Repeat("T ", 80)}, time.Time{}, trackAnim{}, 1, 1, buf)
+	renderTrack(TrackText{Station: strings.Repeat("S", 40), Artist: strings.Repeat("A ", 40), Title: strings.Repeat("T ", 80)}, time.Time{}, trackAnim{}, 0, 1, 1, buf)
 	if _, l, _ := litRows(buf); l >= Height-1 {
 		t.Errorf("longest layout reaches row %d", l)
 	}
@@ -399,7 +392,7 @@ func TestRenderTrackClock(t *testing.T) {
 	buf := make([]byte, FrameSize)
 	// with a track: the station starts at the left edge, the time ends at the
 	// right edge of the top line, both inside the panel
-	renderTrack(TrackText{Station: "1LIVE", Artist: "ADELA", Title: "AIN'T IN LA", Clock: true}, at, trackAnim{}, 0, 0, buf)
+	renderTrack(TrackText{Station: "1LIVE", Artist: "ADELA", Title: "AIN'T IN LA", Clock: true}, at, trackAnim{}, 0, 0, 0, buf)
 	top := buf[trackTopY*Width : (trackTopY+7)*Width]
 	left, right := Width, -1
 	for i, v := range top {
@@ -414,12 +407,12 @@ func TestRenderTrackClock(t *testing.T) {
 		t.Errorf("time level %d", maxByte(top))
 	}
 	// a long station name is cut so the time still fits
-	renderTrack(TrackText{Station: strings.Repeat("S", 40), Title: "X", Clock: true, Hour12: true}, at, trackAnim{}, 1, 1, buf)
+	renderTrack(TrackText{Station: strings.Repeat("S", 40), Title: "X", Clock: true, Hour12: true}, at, trackAnim{}, 0, 1, 1, buf)
 	if _, l, bad := litRows(buf); bad || l >= Height-1 {
 		t.Errorf("long station with clock: last row %d bad=%v", l, bad)
 	}
 	// without a track: the time is large in the middle
-	renderTrack(TrackText{Station: "1LIVE", Clock: true}, at, trackAnim{}, 0, 0, buf)
+	renderTrack(TrackText{Station: "1LIVE", Clock: true}, at, trackAnim{}, 0, 0, 0, buf)
 	first, last, bad := litRows(buf)
 	if bad || first != trackTopY || last-trackAreaY < 7*bigClockScale || last >= Height {
 		t.Errorf("big clock rows %d..%d bad=%v", first, last, bad)
@@ -428,7 +421,7 @@ func TestRenderTrackClock(t *testing.T) {
 		t.Errorf("big clock level %d", maxByte(buf))
 	}
 	// 12 hours: "3:42" large and "PM" under it, still on the panel
-	renderTrack(TrackText{Clock: true, Hour12: true}, at, trackAnim{}, 1, 1, buf)
+	renderTrack(TrackText{Clock: true, Hour12: true}, at, trackAnim{}, 0, 1, 1, buf)
 	if _, l, bad := litRows(buf); bad || l >= Height-1 {
 		t.Errorf("12h big clock: last row %d bad=%v", l, bad)
 	}
@@ -541,7 +534,7 @@ func TestPlayingBars(t *testing.T) {
 		{Station: strings.Repeat("S", 40), Title: "X", Clock: true},
 		{Station: strings.Repeat("S", 40), Clock: true},
 	} {
-		renderTrack(tt, at, trackAnim{playing: true, frame: 3}, 1, 1, buf)
+		renderTrack(tt, at, trackAnim{playing: true, frame: 3}, 0, 1, 1, buf)
 		if _, l, bad := litRows(buf); bad || l >= Height-1 {
 			t.Errorf("%+v: last row %d bad=%v", tt, l, bad)
 		}

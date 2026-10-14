@@ -12,9 +12,11 @@ package oled
 // below), not a band over BoseApp's picture: what BoseApp would show there is
 // the stale title from the start of the stream, and mixing the two is exactly
 // what the notices avoid too. It is drawn once per change and stands still in
-// between (no animation, no scrolling: long text is wrapped and cut), so a
-// held panel costs no CPU. Every few minutes the whole layout moves by a
-// pixel so no pixel sits under the same text all evening.
+// between, so a held panel costs no CPU, except while something moves: the
+// playing symbol, and a line too long for the panel at its normal size,
+// which scrolls instead of shrinking (marquee.go). Every few minutes the
+// whole layout moves by a pixel so no pixel sits under the same text all
+// evening.
 //
 // The screen can carry the time as well: with a track, in the top line next
 // to the station; without one (the user chose the clock alone), large in the
@@ -108,13 +110,18 @@ type trackScreen struct {
 	drawNanos int64
 	heldNanos int64 // finished holds
 	holdStart time.Time
-	foreign   bool // the speaker is on a source that is not STR's
-	quit      chan struct{}
-	done      chan struct{}
-	stopWhy   string
-	redraw    chan struct{}
-	wake      chan struct{}
-	startOnce sync.Once
+	// scrollDraws counts the draws of a moving marquee frame
+	scrollDraws int64
+	// marqueeFrom is when the marquee cycle started (zero: at the next
+	// draw); marqueeNext when its next step is due (zero: nothing scrolls).
+	marqueeFrom, marqueeNext time.Time
+	foreign                  bool // the speaker is on a source that is not STR's
+	quit                     chan struct{}
+	done                     chan struct{}
+	stopWhy                  string
+	redraw                   chan struct{}
+	wake                     chan struct{}
+	startOnce                sync.Once
 
 	// seams; newTrackScreen wires the real ones
 	now        func() time.Time
@@ -193,6 +200,10 @@ func (s *trackScreen) setPlaying(playing bool) {
 	s.mu.Lock()
 	changed := s.paused == playing
 	s.paused = !playing
+	if changed && playing {
+		// play again: the marquee starts over with the start of each line
+		s.marqueeFrom = time.Time{}
+	}
 	holding := s.holding
 	s.mu.Unlock()
 	if changed && holding {
@@ -248,6 +259,8 @@ func (s *trackScreen) show(t TrackText) {
 		return
 	}
 	s.want = &t
+	// new text: a scrolling line starts at its beginning again
+	s.marqueeFrom = time.Time{}
 	holding := s.holding
 	s.mu.Unlock()
 	s.log().Debug("display track text", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock)
@@ -366,6 +379,7 @@ func (s *trackScreen) tryHold() {
 		return
 	}
 	s.holding, s.drawn = true, false
+	s.marqueeFrom, s.marqueeNext = time.Time{}, time.Time{}
 	s.quit, s.done, s.stopWhy = make(chan struct{}), make(chan struct{}), ""
 	quit, done := s.quit, s.done
 	// a redraw left from before the hold would only draw the same text twice
@@ -450,6 +464,10 @@ func (s *trackScreen) draw(buf []byte) {
 		step = int(now.UnixNano() / int64(s.shiftEvery))
 	}
 	anim := trackAnim{playing: !s.paused, frame: int(now.UnixNano() / int64(barsFrame))}
+	if s.marqueeFrom.IsZero() {
+		s.marqueeFrom = now
+	}
+	since := now.Sub(s.marqueeFrom)
 	s.mu.Unlock()
 	switch {
 	case back:
@@ -459,11 +477,25 @@ func (s *trackScreen) draw(buf []byte) {
 	}
 	dx, dy := trackShift(step)
 	t0 := time.Now()
-	renderTrack(t, now, anim, dx, dy, buf)
+	f := trackLayout(t, now)
+	// The marquee moves only while the speaker plays: paused, every line
+	// shows its start and no scroll frame is asked for.
+	mStep, mNext := 0, time.Duration(0)
+	if anim.playing {
+		mStep, mNext = marqueeAt(since, f.steps())
+	}
+	f.render(anim, mStep, dx, dy, buf)
 	el := time.Since(t0)
 	s.mu.Lock()
 	s.draws++
 	s.drawNanos += int64(el)
+	if mStep > 0 {
+		s.scrollDraws++
+	}
+	s.marqueeNext = time.Time{}
+	if mNext > 0 {
+		s.marqueeNext = now.Add(mNext)
+	}
 	s.mu.Unlock()
 }
 
@@ -484,6 +516,8 @@ func (s *trackScreen) stats() map[string]any {
 		"heldSec":   held / int64(time.Second),
 		"draws":     s.draws,
 		"drawMsSum": float64(s.drawNanos) / 1e6,
+		// draws of a moving marquee frame, a part of draws
+		"scrollDraws": s.scrollDraws,
 	}
 }
 
@@ -494,6 +528,7 @@ func (s *trackScreen) nextDraw() time.Duration {
 	s.mu.Lock()
 	clock := s.want != nil && s.want.Clock
 	moving := s.want != nil && !s.paused
+	marquee := s.marqueeNext
 	now := s.now()
 	s.mu.Unlock()
 	var d time.Duration
@@ -505,6 +540,13 @@ func (s *trackScreen) nextDraw() time.Duration {
 		toFrame := barsFrame - time.Duration(now.UnixNano()%int64(barsFrame))
 		if d <= 0 || toFrame < d {
 			d = toFrame
+		}
+	}
+	if moving && !marquee.IsZero() {
+		// the next marquee step, or the end of its pause
+		toStep := max(marquee.Sub(now), time.Millisecond)
+		if d <= 0 || toStep < d {
+			d = toStep
 		}
 	}
 	if clock {
@@ -555,32 +597,35 @@ const (
 // trackLines is the text of the track screen broken into panel lines.
 type trackLines struct {
 	station string
-	artist  []string // scale 1
-	title   []string
-	big     bool // title at scale 2
+	artist  []string // scale 1: up to two lines, or one that scrolls
+	title   []string // scale 2: up to two lines, or one that scrolls
 }
 
-// layoutTrack breaks t (already sanitised) into lines: the station cut to one
-// line, the artist wrapped onto at most two, the title at double size when it
-// fits on two lines of ten, otherwise small on up to three lines (two when an
-// artist is shown). Text that does not fit ends in "...".
+// layoutTrack breaks t (already sanitised) into lines. Nothing is drawn
+// smaller than its normal size and nothing is cut: the station is one line,
+// the artist is wrapped onto two lines at scale 1 when it fits there, the
+// title onto two lines at scale 2 when it fits there without splitting a
+// word; otherwise the field is one line that scrolls (marquee.go). Two
+// standing lines read at a glance and cost nothing, so wrapping wins where
+// it works; a third line would crowd the panel and a split word reads worse
+// than a moving one.
 func layoutTrack(t TrackText) trackLines {
-	l := trackLines{station: cutLine(t.Station, smallCols)}
-	l.artist, _ = wrapText(t.Artist, smallCols, 2)
-	if w, cut := wrapText(t.Title, bigCols, 2); len(w) > 0 && !cut && !hasLongWord(t.Title, bigCols) {
-		l.title, l.big = w, true
-		return l
+	l := trackLines{station: t.Station}
+	if w, cut := wrapText(t.Artist, smallCols, 2); !cut {
+		l.artist = w
+	} else {
+		l.artist = []string{t.Artist}
 	}
-	maxTitle := 4
-	if len(l.artist) > 0 {
-		maxTitle = 3
+	if w, cut := wrapText(t.Title, bigCols, 2); !cut && !hasLongWord(t.Title, bigCols) {
+		l.title = w
+	} else if t.Title != "" {
+		l.title = []string{t.Title}
 	}
-	l.title, _ = wrapText(t.Title, smallCols, maxTitle)
 	return l
 }
 
 // hasLongWord reports whether a word of s is longer than cols: split across
-// two big lines it reads worse than small on one.
+// two big lines it reads worse than scrolling on one.
 func hasLongWord(s string, cols int) bool {
 	for _, w := range strings.Fields(s) {
 		if len(w) > cols {
@@ -588,14 +633,6 @@ func hasLongWord(s string, cols int) bool {
 		}
 	}
 	return false
-}
-
-// cutLine returns s cut to cols characters, ending in "..." when it was longer.
-func cutLine(s string, cols int) string {
-	if len(s) <= cols {
-		return s
-	}
-	return strings.TrimRight(s[:cols-3], " ") + "..."
 }
 
 // wrapText breaks s into at most maxLines lines of cols characters at spaces,
@@ -653,92 +690,147 @@ func clockText(now time.Time, hour12 bool) (hm, ampm string) {
 	return now.Format("15:04"), ""
 }
 
-// renderTrack draws the track screen for t (already sanitised) at the time
-// now into buf, offset by dx, dy pixels.
-func renderTrack(t TrackText, now time.Time, a trackAnim, dx, dy int, buf []byte) {
-	clear(buf)
-	c := canvas(buf)
+// trackFrame is the whole track screen laid out, unshifted: every text line
+// in its box, where the playing symbol sits and where the rule runs.
+type trackFrame struct {
+	lines      []marqueeLine
+	barsBottom int
+	ruleY      int // -1: no rule
+}
+
+// steps is how many marquee steps the longest scrolling line needs; 0 when
+// everything fits and the screen can stand still.
+func (f trackFrame) steps() int {
+	n := 0
+	for _, l := range f.lines {
+		n = max(n, l.steps())
+	}
+	return n
+}
+
+// Text boxes. The station box keeps clear of the playing symbol on the left
+// and, mirrored, on the right, so a centred station stays centred on the
+// panel; the text block below uses the whole width less a pixel each side.
+const (
+	stationBoxX = 1 + barsW + barsGap // 12
+	blockBoxX   = 1
+	blockBoxW   = Width - 2
+)
+
+// trackLayout lays out the track screen for t (already sanitised) at the time
+// now.
+func trackLayout(t TrackText, now time.Time) trackFrame {
+	f := trackFrame{ruleY: -1}
 	if t.Artist == "" && t.Title == "" {
 		if t.Clock {
-			renderBigClock(c, t, now, a, dx, dy)
+			f.plainHeader(t)
+			f.bigClock(t, now)
 		}
-		return
+		return f
 	}
-	l := layoutTrack(t)
 	areaY := trackAreaY
-	switch {
-	case t.Clock:
+	if t.Clock {
 		// The time at double size on the right of the top line, the station
 		// small on its left. At the normal size the time was too small to
 		// read from across a room (Jens, 2026-10-13).
-		areaY = renderClockHeader(c, t, now, a, dx, dy)
-	default:
-		renderPlainHeader(c, t, a, dx, dy)
+		areaY = f.clockHeader(t, now)
+	} else {
+		f.plainHeader(t)
 	}
-	titleH := len(l.title) * smallLineH
-	if l.big {
-		titleH = len(l.title) * bigLineH
-	}
-	h := len(l.artist)*smallLineH + titleH
+	l := layoutTrack(t)
+	h := len(l.artist)*smallLineH + len(l.title)*bigLineH
 	if len(l.artist) > 0 && len(l.title) > 0 {
 		h += trackGap
 	}
-	y := areaY + (Height-areaY-h)/2 + dy
+	y := areaY + (Height-areaY-h)/2
 	for _, s := range l.artist {
-		c.textAt(s, y, 1, lvlTrackArtist, dx)
+		f.lines = append(f.lines, marqueeLine{s: s, sc: 1, lvl: lvlTrackArtist, x0: blockBoxX, w: blockBoxW, y: y})
 		y += smallLineH
 	}
 	if len(l.artist) > 0 && len(l.title) > 0 {
 		y += trackGap
 	}
 	for _, s := range l.title {
-		if l.big {
-			c.textAt(s, y, 2, lvlTrackTitle, dx)
-			y += bigLineH
-		} else {
-			c.textAt(s, y, 1, lvlTrackTitle, dx)
-			y += smallLineH
-		}
+		f.lines = append(f.lines, marqueeLine{s: s, sc: 2, lvl: lvlTrackTitle, x0: blockBoxX, w: blockBoxW, y: y})
+		y += bigLineH
 	}
+	return f
 }
 
-// renderClockHeader draws the top line with the time: the time at double
-// size flush right ("PM" small after it on a 12-hour clock), the station
-// small on the left, cut to the room left, and the rule under both. Returns
-// where the text block below may start.
-func renderClockHeader(c canvas, t TrackText, now time.Time, a trackAnim, dx, dy int) int {
+// clockHeader lays out the top line with the time: the time at double size
+// flush right ("PM" small after it on a 12-hour clock), the station small on
+// the left in the room left, and the rule under both. Returns where the text
+// block below may start.
+func (f *trackFrame) clockHeader(t TrackText, now time.Time) int {
 	hm, ampm := clockText(now, t.Hour12)
 	const sc = headerClockScale
-	w := len(hm)*6*sc - sc
+	w := textWidth(hm, sc)
 	if ampm != "" {
-		w += 2 + len(ampm)*6 - 1
+		w += 2 + textWidth(ampm, 1)
 	}
-	x := Width - w - 1 + dx
-	top := trackTopY + dy
-	c.textLeft(hm, x, top, sc, lvlTrackClock)
+	x := Width - w - 1
+	top := trackTopY
+	f.lines = append(f.lines, marqueeLine{s: hm, sc: sc, lvl: lvlTrackClock, x0: x, w: textWidth(hm, sc), y: top, left: true})
 	if ampm != "" {
-		c.textLeft(ampm, x+len(hm)*6*sc-sc+2, top+7*sc-7, 1, lvlTrackStation)
+		ax := x + textWidth(hm, sc) + 2
+		f.lines = append(f.lines, marqueeLine{s: ampm, sc: 1, lvl: lvlTrackStation, x0: ax, w: textWidth(ampm, 1), y: top + 7*sc - 7, left: true})
 	}
 	textY := top + (7*sc-7)/2
-	c.bars(1+dx, textY+7, a)
-	cols := (Width - w - 1 - 4 - barsW - barsGap) / 6
-	if st := cutLine(t.Station, cols); st != "" {
-		c.textLeft(st, 1+barsW+barsGap+dx, textY, 1, lvlTrackStation)
+	f.barsBottom = textY + 7
+	if t.Station != "" {
+		f.lines = append(f.lines, marqueeLine{s: t.Station, sc: 1, lvl: lvlTrackStation, x0: stationBoxX, w: x - 4 - stationBoxX, y: textY, left: true})
 	}
-	ruleY := top + 7*sc + 3
-	c.fill(24+dx, ruleY, Width-48, 1, lvlTrackRule)
+	f.ruleY = top + 7*sc + 3
 	return trackTopY + 7*sc + 6
 }
 
-// renderPlainHeader is the top line without the time: the playing symbol on
-// the left, the station centred (cut so the two never touch), the rule under
-// the station.
-func renderPlainHeader(c canvas, t TrackText, a trackAnim, dx, dy int) {
-	c.bars(1+dx, trackTopY+7+dy, a)
-	if st := cutLine(t.Station, smallCols-4); st != "" {
-		c.textAt(st, trackTopY+dy, 1, lvlTrackStation, dx)
-		c.fill(24+dx, trackRuleY+dy, Width-48, 1, lvlTrackRule)
+// plainHeader lays out the top line without the time: the playing symbol on
+// the left, the station centred between it and its mirror on the right, the
+// rule under the station.
+func (f *trackFrame) plainHeader(t TrackText) {
+	f.barsBottom = trackTopY + 7
+	if t.Station != "" {
+		f.lines = append(f.lines, marqueeLine{s: t.Station, sc: 1, lvl: lvlTrackStation, x0: stationBoxX, w: Width - 2*stationBoxX, y: trackTopY})
+		f.ruleY = trackRuleY
 	}
+}
+
+// bigClock lays out the time large below the header, "AM"/"PM" small under
+// it: the screen without a track.
+func (f *trackFrame) bigClock(t TrackText, now time.Time) {
+	hm, ampm := clockText(now, t.Hour12)
+	h := 7 * bigClockScale
+	if ampm != "" {
+		h += trackGap + 7
+	}
+	y := trackAreaY + (Height-trackAreaY-h)/2
+	f.lines = append(f.lines, marqueeLine{s: hm, sc: bigClockScale, lvl: lvlTrackTitle, x0: 0, w: Width, y: y})
+	if ampm != "" {
+		f.lines = append(f.lines, marqueeLine{s: ampm, sc: 1, lvl: lvlTrackArtist, x0: 0, w: Width, y: y + 7*bigClockScale + trackGap})
+	}
+}
+
+// render draws the laid-out screen into buf at marquee step, with the
+// playing symbol in state a, offset by dx, dy pixels.
+func (f trackFrame) render(a trackAnim, step, dx, dy int, buf []byte) {
+	clear(buf)
+	c := canvas(buf)
+	if len(f.lines) == 0 {
+		return
+	}
+	c.bars(1+dx, f.barsBottom+dy, a)
+	if f.ruleY >= 0 {
+		c.fill(24+dx, f.ruleY+dy, Width-48, 1, lvlTrackRule)
+	}
+	for _, l := range f.lines {
+		l.draw(c, step, dx, dy)
+	}
+}
+
+// renderTrack draws the track screen for t (already sanitised) at the time
+// now and marquee step into buf, offset by dx, dy pixels.
+func renderTrack(t TrackText, now time.Time, a trackAnim, step, dx, dy int, buf []byte) {
+	trackLayout(t, now).render(a, step, dx, dy, buf)
 }
 
 // trackAnim is the moving part of the playback screen: the playing symbol.
@@ -782,42 +874,5 @@ func (c canvas) bars(x, bottom int, a trackAnim) {
 	}
 	for i, h := range barHeights(a) {
 		c.fill(x+i*(barsBarW+1), bottom-h, barsBarW, h, lvl)
-	}
-}
-
-// renderBigClock is the screen without a track: the station on top as
-// usual, the time large in the space below, "AM"/"PM" small under it.
-func renderBigClock(c canvas, t TrackText, now time.Time, a trackAnim, dx, dy int) {
-	renderPlainHeader(c, t, a, dx, dy)
-	hm, ampm := clockText(now, t.Hour12)
-	h := 7 * bigClockScale
-	if ampm != "" {
-		h += trackGap + 7
-	}
-	y := trackAreaY + (Height-trackAreaY-h)/2 + dy
-	c.textAt(hm, y, bigClockScale, lvlTrackTitle, dx)
-	if ampm != "" {
-		c.textAt(ampm, y+7*bigClockScale+trackGap, 1, lvlTrackArtist, dx)
-	}
-}
-
-// textLeft paints s with its left edge at x and its top at y.
-func (c canvas) textLeft(s string, x, y, sc, lvl int) {
-	for _, ch := range s {
-		c.glyph(ch, x, y, sc, lvl)
-		x += 6 * sc
-	}
-}
-
-// textAt paints s centred horizontally, moved dx pixels, with its top at y.
-func (c canvas) textAt(s string, y, sc, lvl, dx int) {
-	if s == "" {
-		return
-	}
-	w := len(s)*6*sc - sc
-	x := (Width-w)/2 + dx
-	for _, ch := range s {
-		c.glyph(ch, x, y, sc, lvl)
-		x += 6 * sc
 	}
 }
