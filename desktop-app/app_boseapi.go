@@ -356,6 +356,66 @@ func (a *App) SetDisplaySplash(host string, port int, enabled bool) error {
 	return nil
 }
 
+// GetDisplayNotices reads the per-box switch for STR's short notices on the
+// speaker display (a saved key, an empty key, keys restored after a reboot;
+// default on). Returns {enabled, supported}, the same shape as
+// GetDisplaySplash; supported is false where the agent cannot draw on the
+// panel, and the app hides the setting there.
+func (a *App) GetDisplayNotices(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/display-notices", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetDisplayNotices switches the display notices on or off for one box.
+func (a *App) SetDisplayNotices(host string, port int, enabled bool) error {
+	body, _ := json.Marshal(map[string]any{"enabled": enabled})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/display-notices", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+// IdentifyBox asks a speaker to show HELLO and its name on its display, so the
+// user can tell which box is which. Returns the agent's {shown, reason}; an
+// agent from before the endpoint (404) answers {shown:false, reason:"old
+// agent"}, a speaker without a display {shown:false, reason:"no display"}.
+func (a *App) IdentifyBox(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/identify", "application/json", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return map[string]any{"shown": false, "reason": "old agent"}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BoxPresetInfo is one of the box's OWN presets (incl. foreign sources like
 // Deezer that STR did not set), from GET /api/box/presets.
 type BoxPresetInfo struct {

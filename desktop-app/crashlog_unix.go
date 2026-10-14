@@ -4,7 +4,8 @@ package main
 
 import (
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // redirectStderrTo points the process's stderr (fd 2) at f so the Go
@@ -15,7 +16,7 @@ func redirectStderrTo(f *os.File) {
 	if f == nil {
 		return
 	}
-	if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err == nil {
+	if err := unix.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err == nil {
 		os.Stderr = f
 	}
 }

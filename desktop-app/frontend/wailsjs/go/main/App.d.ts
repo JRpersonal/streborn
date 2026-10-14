@@ -115,6 +115,8 @@ export function GetClockFormat24(arg1:string):Promise<boolean>;
 
 export function GetDisplayMessages(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function GetDisplayNotices(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function GetDisplaySplash(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function GetDisplayTrack(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -138,6 +140,8 @@ export function GetStereoPairName(arg1:string):Promise<string>;
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function GetZoneState(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function IdentifyBox(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function ImportBackup():Promise<Record<string, any>>;
 
@@ -304,6 +308,8 @@ export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number,arg5:boolean):Promise<void>;
 
 export function SetDisplayMessages(arg1:string,arg2:number,arg3:boolean):Promise<void>;
+
+export function SetDisplayNotices(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetDisplaySplash(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 

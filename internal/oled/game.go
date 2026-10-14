@@ -220,7 +220,8 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 		return Result{}, ErrBusy
 	}
 	defer gameActive.Store(false)
-	if !busy.TryLock() {
+	// A display notice that is up ends at once; the game wins the panel.
+	if !acquirePanel(false) {
 		return Result{}, ErrBusy
 	}
 	defer busy.Unlock()

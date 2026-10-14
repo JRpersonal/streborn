@@ -228,19 +228,22 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 		s.logger.Info("preset save refused: this station is already on another slot",
 			"slot", slot, "existingSlot", other.Slot, "name", other.Name,
 			"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+		s.noticeAppRefused(r, other.Slot)
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"code": "already-on-slot", "slot": other.Slot, "name": other.Name,
 		})
 		return
 	}
 	prevName := ""
-	if old, had := s.presets.Get(slot); had {
-		prevName = old.Name
+	prev, had := s.presets.Get(slot)
+	if had {
+		prevName = prev.Name
 	}
 	if err := s.presets.SetSlot(p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.noticeAppSave(r, prev, had, p)
 	s.logger.Info("preset write accepted",
 		"slot", slot, "was", prevName, "now", p.Name, "type", p.Type,
 		"source", p.Native.Source, "location", p.Native.Location,

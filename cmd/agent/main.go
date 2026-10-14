@@ -571,6 +571,13 @@ func run() error {
 	// display thread is up.
 	splashKind := oled.DecideKind(agentStamp(), webui.OTARebootPending(), strings.HasPrefix(bootReason, "box-boot"))
 	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"))
+	// The short display notices (saved keys, empty keys, find this speaker)
+	// log under the same component; a box boot arms the "keys restored
+	// after reboot" notice, shown once per speaker (displaynotices.go).
+	oled.SetNoticeLogger(logger.With("comp", "oled"))
+	if strings.HasPrefix(bootReason, "box-boot") {
+		armRestoreNotice(time.Now())
+	}
 	go func() {
 		for {
 			time.Sleep(time.Hour)
@@ -1292,11 +1299,11 @@ func run() error {
 	// while the box is on another source, point the box at the Spotify stream so
 	// it actually plays instead of staying on the current source (#14).
 	spotifyMgr.SetOnActivate(func(cbCtx context.Context) {
-		if *boxHost != "" {
-			wctx, cancel := context.WithTimeout(cbCtx, 8*time.Second)
-			_ = boxcli.WakeAndWait(wctx, *boxHost, 6*time.Second, logger)
-			cancel()
-		}
+		// A sleeping speaker resumes its own last station on power-on, which
+		// played for seconds before the push took over: muted through the
+		// wake, its level comes back once the push is done.
+		restoreLevel := webuiSrv.WakeSilentlyForPlay(cbCtx)
+		defer restoreLevel()
 		pctx, cancel := context.WithTimeout(cbCtx, 15*time.Second)
 		// A native station the speaker is playing swallows the push while the
 		// SOAP calls answer success (#1065); the shared helper stops it first
@@ -1361,6 +1368,19 @@ func run() error {
 		return srv.HoldSaveLive(ctx, slot)
 	})
 	wsHandler.holdSaver = holdSave
+	// The same press tells the display notices that a key is empty, and lets
+	// the marge keeper tell the user's store gesture from the boot-time sync
+	// (displaynotices.go).
+	holdSave.emptyKey = func(slot int) (bool, bool) {
+		if srv := heldWebui.Load(); srv != nil {
+			return srv.KeyEmpty(slot)
+		}
+		return false, false
+	}
+	// A physical preset key still down after heldScreenAfter takes the panel
+	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
+	holdSave.screen = oledHeldScreen{}
+	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
 	keyTrace.SetWebKeyHandler(holdSave.NotePress)
 	webuiSrv.SetHoldSaveTestFn(holdSave.SetAcceptAppKeys)

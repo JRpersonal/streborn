@@ -1,12 +1,13 @@
-# Package managers: winget and Homebrew
+# Package managers: winget, Homebrew and .deb
 
-The desktop app is published to two package managers on top of the GitHub
+The desktop app is published to these package managers on top of the GitHub
 release and st-reborn.de:
 
 | Platform | Package manager | What users type |
 |---|---|---|
 | Windows | winget (the Windows Package Manager) | `winget install JRpersonal.STReborn` |
 | macOS | Homebrew, own tap | `brew install --cask jrpersonal/tap/st-reborn` |
+| Debian, Ubuntu, Mint, Raspberry Pi OS | `.deb` on the release | double click, or `sudo apt install ./STR-Linux-x64.deb` |
 
 After the one-time setup below, every real release updates both by itself
 (job `package-managers` in `.github/workflows/release.yml`). A preview release
@@ -106,3 +107,27 @@ with the new version; the winget maintainers merge it.
   true`, so `brew upgrade` leaves an app alone that already updated itself.
 - The tokens expire after a year. GitHub mails a reminder; renew them and
   replace the two secrets.
+
+## Linux .deb
+
+Every release carries `STR-Linux-x64.deb` and `STR-Linux-arm64.deb`, built by
+`.github/scripts/build-deb.sh` from the same binary as the tar.gz, installed
+once on the build runner and checked for missing libraries before it is
+published. apt pulls in GTK, WebKitGTK 4.1 and libsoup 3. Nothing needs
+setting up.
+
+A copy the .deb installed updates through the next .deb: the app recognises
+`/usr/bin/st-reborn` in dpkg's file list (`desktop-app/linuxpkg.go`),
+downloads the new .deb from the release manifest (`desktop_linux_deb`,
+`desktop_linux_arm64_deb`) and opens it in the system's package installer,
+which asks for the password and upgrades the package. It never swaps the
+binary behind dpkg's back. There is no apt repository, so `apt upgrade` does
+not see new versions; the in-app banner is the update path.
+
+## Flathub, ruled out
+
+Flathub was looked at on 2026-10-13 and dropped: its requirements forbid
+AI-generated or AI-assisted content in manifests and AI tools opening or
+writing submission pull requests, and require disclosing AI-generated code in
+the application itself. Do not resubmit the idea without revisiting that
+policy.

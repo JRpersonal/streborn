@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ST Reborn
+GenericName=SoundTouch controller
+Comment=Revive Bose SoundTouch speakers without the Bose cloud
+Exec=st-reborn
+Icon=st-reborn
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=SoundTouch;Bose;speaker;radio;
+StartupWMClass=ST Reborn

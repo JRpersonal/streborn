@@ -13,6 +13,7 @@ import (
 
 	"github.com/JRpersonal/streborn/anonymise"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
 
@@ -319,10 +320,12 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			if n := len(p.Items); n > presets.MaxQueueItems {
 				s.logger.Info("queue preset capped to fit NAND", "slot", slot, "requested", n, "kept", presets.MaxQueueItems)
 			}
+			prevQ, hadQ := s.presets.Get(slot)
 			if err := s.storeQueuePreset(r.Context(), p); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			s.noticeAppSave(r, prevQ, hadQ, p)
 			writeJSON(w, http.StatusOK, p)
 			return
 		}
@@ -557,6 +560,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("preset save refused: this station is already on another slot",
 				"slot", slot, "existingSlot", other.Slot, "name", other.Name,
 				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+			s.noticeAppRefused(r, other.Slot)
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"code": "already-on-slot",
 				"slot": other.Slot,
@@ -570,16 +574,15 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// because a successful PUT left no trace; silent success paths are
 		// forensic holes.
 		prevName := ""
-		for _, old := range s.presets.All() {
-			if old.Slot == slot {
-				prevName = old.Name
-				break
-			}
+		prev, had := s.presets.Get(slot)
+		if had {
+			prevName = prev.Name
 		}
 		if err := s.presets.SetSlot(p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.noticeAppSave(r, prev, had, p)
 		s.logger.Info("preset write accepted",
 			"slot", slot, "was", prevName, "now", p.Name, "type", p.Type,
 			"stream", p.StreamURL, "from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
@@ -687,6 +690,9 @@ func (s *Server) handlePresetMove(w http.ResponseWriter, r *http.Request) {
 		"fromSlot", req.From, "toSlot", req.To, "name", moved.Name,
 		"replaced", replacedName, "type", moved.Type,
 		"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+	// The move is the answer to the "already on key N" offer: the station
+	// now sits on the key the user wanted, so say so on the display.
+	oled.Show(oled.SavedFromApp(req.To))
 	// The hardware keys follow: write the new key first, then drop the old one,
 	// so the station is never absent from the box's own preset list. The
 	// tombstone stops a trailing gabbo presetsUpdated from resurfacing the old

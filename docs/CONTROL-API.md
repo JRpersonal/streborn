@@ -174,6 +174,18 @@ shows a green tick over a group that is still playing.
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
 
+## Display
+
+These only do something on a speaker whose display STR can draw on (the
+Portable's panel, see `docs/FIRMWARE-NOTES.md`); elsewhere they answer
+without touching anything.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `POST` | `/api/box/identify` | - | "Find this speaker": the display shows `HELLO` and the speaker's name with pulsing rings for 5 s. Always 200: `{"shown":true}`, or `{"shown":false,"reason":"no display"}` on a speaker without a supported display (`"busy"` while a game holds it). Shown even when the notices below are switched off. |
+| `GET`  | `/api/box/display-notices` | - | `{"enabled":bool,"supported":bool}`: STR's short notices on the display (a saved key, an empty key, keys restored after a reboot). On by default; `supported` says whether this speaker's display can show them. |
+| `POST` / `PUT` | `/api/box/display-notices` | `{"enabled":false}` | Switch the notices off (or on) for this speaker. Persisted in `/mnt/nv/streborn/display-notices`. |
+
 ## Examples
 
 ```bash

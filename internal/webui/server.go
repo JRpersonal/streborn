@@ -742,6 +742,9 @@ type Server struct {
 	// set. Lets the app show/preserve/recall them (Option C). Guarded by boxPresetsMu.
 	boxPresetsMu sync.Mutex
 	boxPresets   []BoxPreset
+	// boxPresetsSeen is true once the box's own list has been reported at
+	// least once, so "not in the list" can be told from "list not known".
+	boxPresetsSeen bool
 	// deletedBoxSlots tombstones slots the user just deleted, so a presetsUpdated
 	// burst the box emits right after the removal does not resurrect the slot in
 	// the app's merged view before the box-side RemovePreset has settled (a user
@@ -1418,6 +1421,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/display-messages", s.handleDisplayMessages)
 	mux.HandleFunc("/api/box/display-splash", s.handleDisplaySplash)
+	mux.HandleFunc("/api/box/display-notices", s.handleDisplayNotices)
+	mux.HandleFunc("/api/box/identify", s.handleIdentify)
 	mux.HandleFunc("/api/box/blockfall", s.handleBlockfallScores)
 	mux.HandleFunc("/api/box/blockfall/screenshot.png", s.handleBlockfallScreenshot)
 	mux.HandleFunc("/api/box/arcade", s.handleArcade)

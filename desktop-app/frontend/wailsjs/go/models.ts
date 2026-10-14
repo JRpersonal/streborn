@@ -33,6 +33,7 @@ export namespace main {
 	    updateManifestUrl: string;
 	    agentSha256: string;
 	    installedViaWinget: boolean;
+	    linuxPackage: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -49,6 +50,7 @@ export namespace main {
 	        this.updateManifestUrl = source["updateManifestUrl"];
 	        this.agentSha256 = source["agentSha256"];
 	        this.installedViaWinget = source["installedViaWinget"];
+	        this.linuxPackage = source["linuxPackage"];
 	    }
 	}
 	export class BoxInfo {

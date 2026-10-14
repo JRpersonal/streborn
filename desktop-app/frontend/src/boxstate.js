@@ -51,6 +51,29 @@ export function displaySplashState(r) {
   };
 }
 
+// displayNoticesState reads the agent's /api/box/display-notices answer for
+// STR's short notices on the speaker display (a saved key, an empty key, ...).
+// Same rule as the splash: show only where the agent can draw on the panel,
+// enabled true/false or null when unreadable.
+export function displayNoticesState(r) {
+  return displaySplashState(r);
+}
+
+// identifyOutcome turns the IdentifyBox answer into what the app says:
+// 'shown' (look at the speaker), 'no-display' (this model has no display STR
+// can draw on), 'old-agent' (update STR on the speaker first), 'busy' (a game
+// holds the display), or 'failed' for anything unreadable.
+export function identifyOutcome(r) {
+  if (!r || typeof r !== 'object') return 'failed';
+  if (r.shown === true) return 'shown';
+  switch (r.reason) {
+    case 'no display': return 'no-display';
+    case 'old agent': return 'old-agent';
+    case 'busy': return 'busy';
+    default: return 'failed';
+  }
+}
+
 // arcadeState reads the app's GetArcade answer for the hidden games on the
 // speaker display. The Go side already lists only games that were played, so
 // the app never names a game before somebody found it; this checks that again

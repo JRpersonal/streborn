@@ -222,6 +222,10 @@ export function GetDisplayMessages(arg1, arg2) {
   return window['go']['main']['App']['GetDisplayMessages'](arg1, arg2);
 }
 
+export function GetDisplayNotices(arg1, arg2) {
+  return window['go']['main']['App']['GetDisplayNotices'](arg1, arg2);
+}
+
 export function GetDisplaySplash(arg1, arg2) {
   return window['go']['main']['App']['GetDisplaySplash'](arg1, arg2);
 }
@@ -268,6 +272,10 @@ export function GetWebhooks(arg1, arg2) {
 
 export function GetZoneState(arg1, arg2) {
   return window['go']['main']['App']['GetZoneState'](arg1, arg2);
+}
+
+export function IdentifyBox(arg1, arg2) {
+  return window['go']['main']['App']['IdentifyBox'](arg1, arg2);
 }
 
 export function ImportBackup() {
@@ -600,6 +608,10 @@ export function SetClockDisplay(arg1, arg2, arg3, arg4, arg5) {
 
 export function SetDisplayMessages(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetDisplayMessages'](arg1, arg2, arg3);
+}
+
+export function SetDisplayNotices(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetDisplayNotices'](arg1, arg2, arg3);
 }
 
 export function SetDisplaySplash(arg1, arg2, arg3) {
