@@ -5,6 +5,8 @@ export namespace bosefw {
 	    url: string;
 	    generation: string;
 	    deviceId: string;
+	    length: number;
+	    crc: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new File(source);
@@ -16,6 +18,8 @@ export namespace bosefw {
 	        this.url = source["url"];
 	        this.generation = source["generation"];
 	        this.deviceId = source["deviceId"];
+	        this.length = source["length"];
+	        this.crc = source["crc"];
 	    }
 	}
 
@@ -292,6 +296,22 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class FirmwareFlashResult {
+	    before: string;
+	    after: string;
+	    via: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FirmwareFlashResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.before = source["before"];
+	        this.after = source["after"];
+	        this.via = source["via"];
+	    }
 	}
 	export class FirmwareGuide {
 	    model: string;

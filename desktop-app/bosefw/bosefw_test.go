@@ -195,3 +195,37 @@ func TestLiveBoseIndex(t *testing.T) {
 		}
 	}
 }
+
+// The catalogue's LENGTH and CRC travel with each image, and the built-in
+// table carries the same values, so a download can be checked whether Bose's
+// index was reachable or not.
+func TestLengthAndCRC(t *testing.T) {
+	data, err := os.ReadFile("testdata/index.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := ParseIndex(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]Entry{}
+	for _, e := range live {
+		byName[e.FileName] = e
+	}
+	p := byName["Update_ti_27.0.6.46330.5043500.scm.stu"]
+	if p.Length != 105879988 || p.CRC != 0x2d5a971e {
+		t.Fatalf("scm image: length %d crc %#x", p.Length, p.CRC)
+	}
+	for _, b := range Builtin {
+		if b.Length == 0 || b.CRC == 0 {
+			t.Errorf("builtin %s has no length or CRC", b.FileName)
+		}
+		if l, ok := byName[b.FileName]; ok && (l.Length != b.Length || l.CRC != b.CRC) {
+			t.Errorf("builtin %s: %d %#x, catalogue %d %#x", b.FileName, b.Length, b.CRC, l.Length, l.CRC)
+		}
+	}
+	files := Match(live, "SoundTouch Portable", "scm", "taigan")
+	if len(files) != 1 || files[0].Length != 105879988 || files[0].CRC != 0x2d5a971e {
+		t.Fatalf("Portable match %+v", files)
+	}
+}

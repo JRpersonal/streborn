@@ -178,6 +178,10 @@ export function FeatureWishes() {
   return window['go']['main']['App']['FeatureWishes']();
 }
 
+export function FlashBoseFirmware(arg1, arg2) {
+  return window['go']['main']['App']['FlashBoseFirmware'](arg1, arg2);
+}
+
 export function ForgetPermanentGroup(arg1, arg2) {
   return window['go']['main']['App']['ForgetPermanentGroup'](arg1, arg2);
 }

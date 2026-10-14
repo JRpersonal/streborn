@@ -28,8 +28,9 @@ import (
 const latestBoseFirmware = "27.0.6"
 
 // boseCatalogue is Bose's model index, fetched once per session on first use
-// and held in memory only. STR links files on Bose's host and never downloads
-// or redistributes a firmware image itself.
+// and held in memory only. STR links files on Bose's host and never mirrors or
+// redistributes a firmware image; the one-click update (app_fwflash.go) fetches
+// the file from Bose into the user's own cache folder.
 var boseCatalogue = &bosefw.Catalogue{
 	Client:  &http.Client{Timeout: 6 * time.Second},
 	Timeout: 5 * time.Second,

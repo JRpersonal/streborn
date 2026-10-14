@@ -5,10 +5,12 @@
 // Bose still publishes its model catalogue (index.xml) and the update images
 // beside it on downloads.bose.com, long after the cloud shutdown. STR reads
 // that catalogue at runtime and links the matching file on Bose's host. STR
-// never downloads, stores, mirrors or redistributes a firmware image: the user's
-// browser fetches it from Bose. When Bose cannot be reached, a small built-in
-// table of the final (27.0.6) file names stands in, so the link still works on
-// a flaky connection.
+// never mirrors or redistributes a firmware image: the file always comes from
+// Bose's host, either in the user's browser or, for the app's one-click update
+// (app_fwflash.go), downloaded by the app into the user's own cache folder and
+// checked against the catalogue's size and CRC. When Bose cannot be reached, a
+// small built-in table of the final (27.0.6) file names stands in, so the link
+// still works on a flaky connection.
 package bosefw
 
 import (
@@ -17,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +42,11 @@ type Entry struct {
 	Release     string // e.g. "27.0.6.46330.5043500"
 	FileName    string // e.g. "Update_ti_27.0.6.46330.5043500.sm2.stu"
 	URL         string // full download URL on Bose's host
+	// Length and CRC are the catalogue's LENGTH and CRC for the image: its
+	// exact byte count and its CRC-32 (IEEE, the zlib one). A download is
+	// only used when both match; 0 means the catalogue did not say.
+	Length int64
+	CRC    uint32
 }
 
 // File is a download offered to the user.
@@ -47,32 +55,35 @@ type File struct {
 	URL        string `json:"url"`
 	Generation string `json:"generation"` // "scm" (older hardware), "sm2" (newer), or ""
 	DeviceID   string `json:"deviceId"`
+	Length     int64  `json:"length"`
+	CRC        uint32 `json:"crc"`
 }
 
 // Builtin is the fallback when Bose's catalogue cannot be fetched. It is the
-// speaker part of the catalogue as Bose published it (checked 2026-10-10), file
-// NAMES only. The files themselves stay on Bose's host.
+// speaker part of the catalogue as Bose published it (checked 2026-10-10, sizes
+// and CRCs 2026-10-13), file NAMES only. The files themselves stay on Bose's
+// host.
 var Builtin = []Entry{
-	builtin("0x0923", "SoundTouch 20", "Update_ti_27.0.6.46330.5043500.scm.stu"),
-	builtin("0x0924", "SoundTouch 30", "Update_ti_27.0.6.46330.5043500.scm.stu"),
-	builtin("0x0925", "SoundTouch Portable", "Update_ti_27.0.6.46330.5043500.scm.stu"),
-	builtin("0x0932", "Wave SoundTouch", "Update_ti_27.0.6.46330.5043500.nelson.scm.stu"),
-	builtin("0x0936", "SoundTouch SA-4", "Update_ti_27.0.6.46330.5043500.lisa.scm.stu"),
-	builtin("0x0938", "Cinemate", "Update_ti_27.0.6.46330.5043500.triode.scm.stu"),
-	builtin("0x0939", "SoundTouch 10", "Update_ti_27.0.6.46330.5043500.rhino.sm2.stu"),
-	builtin("0x093A", "SoundTouch SA-5", "Update_ti_27.0.6.46330.5043500.burns.sm2.stu"),
-	builtin("0x093B", "SoundTouch 20", "Update_ti_27.0.6.46330.5043500.sm2.stu"),
-	builtin("0x093C", "SoundTouch 30", "Update_ti_27.0.6.46330.5043500.sm2.stu"),
-	builtin("0x093D", "Wave SoundTouch", "Update_ti_27.0.6.46330.5043500.nelson.sm2.stu"),
-	builtin("0x0941", "SoundTouch SA-4", "Update_ti_27.0.6.46330.5043500.lisa.sm2.stu"),
-	builtin("0x0942", "Cinemate", "Update_ti_27.0.6.46330.5043500.triode.sm2.stu"),
-	builtin("0x0948", "Lifestyle", "Update_ti_27.0.6.46330.5043500.bardeen.sm2.stu"),
-	builtin("0x0949", "SoundTouch 300", "Update_ti_27.0.6.46330.5043500.ginger.sm2.stu"),
-	builtin("0x094A", "SoundTouch Wireless Link adapter", "Update_ti_27.0.6.46330.5043500.sm2.stu"),
+	builtin("0x0923", "SoundTouch 20", "Update_ti_27.0.6.46330.5043500.scm.stu", 105879988, 0x2d5a971e),
+	builtin("0x0924", "SoundTouch 30", "Update_ti_27.0.6.46330.5043500.scm.stu", 105879988, 0x2d5a971e),
+	builtin("0x0925", "SoundTouch Portable", "Update_ti_27.0.6.46330.5043500.scm.stu", 105879988, 0x2d5a971e),
+	builtin("0x0932", "Wave SoundTouch", "Update_ti_27.0.6.46330.5043500.nelson.scm.stu", 112367416, 0x49d88de4),
+	builtin("0x0936", "SoundTouch SA-4", "Update_ti_27.0.6.46330.5043500.lisa.scm.stu", 110991796, 0x01e35713),
+	builtin("0x0938", "Cinemate", "Update_ti_27.0.6.46330.5043500.triode.scm.stu", 114125624, 0x562de6f1),
+	builtin("0x0939", "SoundTouch 10", "Update_ti_27.0.6.46330.5043500.rhino.sm2.stu", 95906856, 0xf18fe026),
+	builtin("0x093A", "SoundTouch SA-5", "Update_ti_27.0.6.46330.5043500.burns.sm2.stu", 100957944, 0x0b99190b),
+	builtin("0x093B", "SoundTouch 20", "Update_ti_27.0.6.46330.5043500.sm2.stu", 99445800, 0x536e6d6f),
+	builtin("0x093C", "SoundTouch 30", "Update_ti_27.0.6.46330.5043500.sm2.stu", 99445800, 0x536e6d6f),
+	builtin("0x093D", "Wave SoundTouch", "Update_ti_27.0.6.46330.5043500.nelson.sm2.stu", 100297132, 0x2e2fd417),
+	builtin("0x0941", "SoundTouch SA-4", "Update_ti_27.0.6.46330.5043500.lisa.sm2.stu", 98921512, 0x07521bda),
+	builtin("0x0942", "Cinemate", "Update_ti_27.0.6.46330.5043500.triode.sm2.stu", 102700460, 0xfbcab635),
+	builtin("0x0948", "Lifestyle", "Update_ti_27.0.6.46330.5043500.bardeen.sm2.stu", 105878364, 0xc0b3d401),
+	builtin("0x0949", "SoundTouch 300", "Update_ti_27.0.6.46330.5043500.ginger.sm2.stu", 102384736, 0xed21efd3),
+	builtin("0x094A", "SoundTouch Wireless Link adapter", "Update_ti_27.0.6.46330.5043500.sm2.stu", 99445800, 0x536e6d6f),
 }
 
-func builtin(id, name, file string) Entry {
-	return Entry{DeviceID: id, ProductName: name, Release: LatestRelease, FileName: file, URL: DownloadBase + file}
+func builtin(id, name, file string, length int64, crc uint32) Entry {
+	return Entry{DeviceID: id, ProductName: name, Release: LatestRelease, FileName: file, URL: DownloadBase + file, Length: length, CRC: crc}
 }
 
 type xmlIndex struct {
@@ -86,6 +97,8 @@ type xmlIndex struct {
 				URLPath  string `xml:"URLPATH,attr"`
 				Images   []struct {
 					FileName string `xml:"FILENAME,attr"`
+					Length   string `xml:"LENGTH,attr"`
+					CRC      string `xml:"CRC,attr"`
 				} `xml:"IMAGE"`
 			} `xml:"RELEASE"`
 		} `xml:"HARDWARE"`
@@ -113,12 +126,16 @@ func ParseIndex(data []byte) ([]Entry, error) {
 					if !strings.HasSuffix(strings.ToLower(name), ".stu") || strings.ContainsAny(name, "/\\?#") {
 						continue
 					}
+					length, _ := strconv.ParseInt(strings.TrimSpace(img.Length), 10, 64)
+					crc, _ := strconv.ParseUint(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(img.CRC)), "0x"), 16, 32)
 					out = append(out, Entry{
 						DeviceID:    strings.TrimSpace(d.ID),
 						ProductName: strings.TrimSpace(d.ProductName),
 						Release:     strings.TrimSpace(r.Revision),
 						FileName:    name,
 						URL:         base + name,
+						Length:      length,
+						CRC:         uint32(crc),
 					})
 				}
 			}
@@ -233,7 +250,7 @@ func Match(entries []Entry, model, moduleType, variant string) []File {
 	}
 	out := make([]File, 0, len(cands))
 	for _, e := range cands {
-		out = append(out, File{Name: e.FileName, URL: e.URL, Generation: generation(e.FileName), DeviceID: e.DeviceID})
+		out = append(out, File{Name: e.FileName, URL: e.URL, Generation: generation(e.FileName), DeviceID: e.DeviceID, Length: e.Length, CRC: e.CRC})
 	}
 	return out
 }
