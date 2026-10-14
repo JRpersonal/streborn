@@ -30,13 +30,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -341,31 +341,38 @@ func lastPathPart(u string) string {
 	return u
 }
 
-// selfUpdateClient talks to GitHub. The certificate chain is checked against
-// the speaker's trust store with the clock tolerance the radio relay uses (a
-// speaker has no RTC and boots into 2015). When the store does not know the
-// issuer at all, which happens on chassis with a thin CA bundle, the download
-// goes ahead anyway: what is installed is decided by the signed index, not by
-// TLS, and the files are public, so TLS adds no secrecy to protect.
+// selfUpdateClient talks to GitHub. Each connection is verified with the
+// clock-tolerant check the radio relay uses (a speaker has no RTC and boots
+// into 2015), built per host so the redirect to GitHub's asset host is checked
+// against that host. A speaker whose trust store does not know the issuer
+// still downloads: what is installed is decided by the signed index, not by
+// TLS, and the files are public.
 func (s *Server) selfUpdateClient(base string) *http.Client {
 	logger := s.logger
+	dialer := &net.Dialer{Timeout: 20 * time.Second}
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // VerifyConnection checks the chain; integrity comes from the signed index.
-			VerifyConnection: func(cs tls.ConnectionState) error {
-				roots, _ := x509.SystemCertPool()
-				err := streamproxy.VerifyChainClockTolerant(cs.PeerCertificates, cs.ServerName, roots)
-				var ua x509.UnknownAuthorityError
-				if err != nil && errors.As(err, &ua) {
-					logger.Warn("self-update: this speaker's trust store does not know the issuer, relying on the signed release index",
-						"host", cs.ServerName, "err", err)
-					return nil
-				}
-				return err
-			},
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			raw, err := dialer.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			cfg := streamproxy.ClockTolerantTLSConfigSigned(host, logger)
+			// HTTP/1.1 only: a Transport with its own TLS dialer does not speak
+			// h2, and offering it made GitHub pick h2 and the request end in a
+			// bare EOF (live, ST10, 2026-10-14).
+			cfg.NextProtos = []string{"http/1.1"}
+			conn := tls.Client(raw, cfg)
+			if err := conn.HandshakeContext(ctx); err != nil {
+				_ = raw.Close()
+				return nil, err
+			}
+			return conn, nil
 		},
 		ResponseHeaderTimeout: 30 * time.Second,
-		TLSHandshakeTimeout:   20 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}
 	plainOK := strings.HasPrefix(base, "http://")

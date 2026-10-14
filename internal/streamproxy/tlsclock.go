@@ -40,6 +40,20 @@ func clockUntrustworthy() bool { return time.Now().Before(minPlausibleClock) }
 // ConnectionState.ServerName) so a bare-IP upstream, which sends no SNI, is
 // still verified against the certificate's IP SANs.
 func clockTolerantTLSConfig(host string, logger *slog.Logger) *tls.Config {
+	return clockTolerantTLSConfigOpt(host, logger, false)
+}
+
+// ClockTolerantTLSConfigSigned is the same verification for a download whose
+// content is authenticated by a signature of its own (the speaker's
+// self-update, internal/updatesig). It additionally accepts a chain the
+// speaker's trust store cannot place, because some chassis ship a thin CA
+// bundle and the signature, not TLS, decides what gets installed. Every other
+// failure (wrong host, broken chain, expired outside a bad clock) still fails.
+func ClockTolerantTLSConfigSigned(host string, logger *slog.Logger) *tls.Config {
+	return clockTolerantTLSConfigOpt(host, logger, true)
+}
+
+func clockTolerantTLSConfigOpt(host string, logger *slog.Logger, acceptUnknownIssuer bool) *tls.Config {
 	return &tls.Config{
 		ServerName: host, // SNI for a hostname; ignored on the wire for an IP literal
 		// h2 stays available (DialTLSContext otherwise defaults to HTTP/1.1 only).
@@ -50,6 +64,14 @@ func clockTolerantTLSConfig(host string, logger *slog.Logger) *tls.Config {
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			roots, _ := x509.SystemCertPool()
 			err := verifyChainClockTolerant(cs.PeerCertificates, host, roots, time.Now(), clockUntrustworthy())
+			var ua x509.UnknownAuthorityError
+			if err != nil && acceptUnknownIssuer && errors.As(err, &ua) {
+				if logger != nil {
+					logger.Warn("this speaker's trust store does not know the issuer; accepted for a signed download",
+						"host", host, "err", err)
+				}
+				return nil
+			}
 			if err != nil {
 				logRejectedChain(logger, host, cs.PeerCertificates, roots, err)
 			}
@@ -134,12 +156,4 @@ func verifyChainClockTolerant(certs []*x509.Certificate, host string, roots *x50
 		}
 		return err
 	}
-}
-
-// VerifyChainClockTolerant is verifyChainClockTolerant for other packages that
-// fetch over HTTPS from the speaker (the self-update reads GitHub with it). It
-// reads the live clock, so the time window is only relaxed while the speaker's
-// clock is implausibly old.
-func VerifyChainClockTolerant(certs []*x509.Certificate, host string, roots *x509.CertPool) error {
-	return verifyChainClockTolerant(certs, host, roots, time.Now(), clockUntrustworthy())
 }
