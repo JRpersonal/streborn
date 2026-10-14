@@ -937,6 +937,7 @@ export namespace main {
 	export class StreamSourceStation {
 	    id: string;
 	    name: string;
+	    stream_type: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StreamSourceStation(source);
@@ -946,6 +947,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.stream_type = source["stream_type"];
 	    }
 	}
 	export class StreamURLKind {

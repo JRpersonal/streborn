@@ -14,8 +14,9 @@ import (
 // StreamSourceStation is the public, provider-neutral station-list item.
 // ID is opaque and is only sent back to the stream source.
 type StreamSourceStation struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	StreamType string `json:"stream_type,omitempty"`
 }
 
 // StreamSourcePlayback is what STR needs to start playback: a LAN-reachable
@@ -75,7 +76,7 @@ func (a *App) streamSourceGet(ctx context.Context, requestURL string) ([]byte, e
 	return body, nil
 }
 
-// StreamSourceStations implements the neutral sidecar contract for listing stations.
+// StreamSourceStations implements the provider-neutral stream-server contract.
 func (a *App) StreamSourceStations(baseURL string) ([]StreamSourceStation, error) {
 	endpoint, err := streamSourceURL(baseURL, "/api/stations")
 	if err != nil {
@@ -103,6 +104,10 @@ func (a *App) StreamSourceStations(baseURL string) ([]StreamSourceStation, error
 		if s.ID == "" || s.Name == "" {
 			continue
 		}
+		s.StreamType = strings.ToLower(strings.TrimSpace(s.StreamType))
+		if s.StreamType == "" {
+			s.StreamType = "audio"
+		}
 		clean = append(clean, s)
 		if len(clean) == 1000 {
 			break
@@ -111,9 +116,10 @@ func (a *App) StreamSourceStations(baseURL string) ([]StreamSourceStation, error
 	return clean, nil
 }
 
-// StreamSourcePlayback handles the request to start a stream.
-// It is now updated to handle both JSON metadata responses AND direct audio streams.
-func (a *App) StreamSourcePlayback(baseURL, stationID string) (StreamSourcePlayback, error) {
+// StreamSourcePlayback returns playback data without opening a live audio
+// session. Direct-audio servers are identified by stream_type in the station
+// list; only metadata endpoints are requested here.
+func (a *App) StreamSourcePlayback(baseURL, stationID, streamType string) (StreamSourcePlayback, error) {
 	stationID = strings.TrimSpace(stationID)
 	if stationID == "" {
 		return StreamSourcePlayback{}, fmt.Errorf("a station id is required")
@@ -123,48 +129,20 @@ func (a *App) StreamSourcePlayback(baseURL, stationID string) (StreamSourcePlayb
 		return StreamSourcePlayback{}, err
 	}
 
+	switch strings.ToLower(strings.TrimSpace(streamType)) {
+	case "", "audio":
+		return StreamSourcePlayback{StreamURL: endpoint}, nil
+	case "json":
+		// Continue below to retrieve the small metadata response.
+	default:
+		return StreamSourcePlayback{}, fmt.Errorf("stream server declared unsupported stream_type %q", streamType)
+	}
+
 	ctx, cancel := context.WithTimeout(a.appCtx(), 7*time.Second)
 	defer cancel()
-
-	// We manually create the request here instead of using streamSourceGet
-	// because we need to check the Headers before we try to read the Body.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	body, err := a.streamSourceGet(ctx, endpoint)
 	if err != nil {
-		return StreamSourcePlayback{}, err
-	}
-
-	client := *a.httpClient
-	client.Timeout = 7 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return StreamSourcePlayback{}, fmt.Errorf("start stream: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return StreamSourcePlayback{}, fmt.Errorf("stream server answered HTTP %d", resp.StatusCode)
-	}
-
-	// --- KEY FIX START ---
-	// Check if the server is sending a raw audio stream (like audio/mpeg)
-	// If it is, we don't read the body; we just tell the app to play this URL.
-	contentType := resp.Header.Get("Content-Type")
-	if strings.Contains(contentType, "audio/") {
-		return StreamSourcePlayback{
-			StreamURL: endpoint, 
-			Title:     stationID, 
-		}, nil
-	}
-	// --- KEY FIX END ---
-
-	// Otherwise, assume it's JSON metadata (the original logic)
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return StreamSourcePlayback{}, fmt.Errorf("failed to read playback metadata: %w", err)
+		return StreamSourcePlayback{}, fmt.Errorf("read playback metadata: %w", err)
 	}
 
 	var wire struct {

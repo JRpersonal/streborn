@@ -3,7 +3,7 @@
 
 import { $, escapeHtml, escapeAttr, getBoxLabel, showError, showToast } from '../utils.js';
 import { state } from '../state.js';
-import { GetStreamSourcePlayback, StreamSourceStations, PlayURL } from '../api.js';
+import { GetStreamSourcePlayback, StreamSourceStations } from '../api.js';
 import { t } from '../i18n/index.js';
 
 const BASE_URL_KEY = 'str.streamSourceBaseURL';
@@ -45,30 +45,19 @@ async function playStation(station) {
     showToast(t('common.pickBox'));
     return;
   }
-  const box = (deps.effectivePlayTarget && deps.effectivePlayTarget()) || selected;
   try {
-    const playback = await GetStreamSourcePlayback(sourceState.baseURL, station.id);
+    const playback = await GetStreamSourcePlayback(sourceState.baseURL, station.id, station.stream_type || 'audio');
     const title = playback.title || station.name;
-    await PlayURL(box.host, box.port, playback.streamURL, title, '', '', '', '', '', 0);
-    state.nowPlayState = 'BUFFERING_STATE';
-    state.nowLocation = playback.streamURL;
-    state.nowName = title;
-    state.nowIcon = '';
-    state.nowBitrate = 0;
-    state.nowUUID = '';
-    state.lastAppPlay = {
-      url: playback.streamURL, name: title, icon: '', bitrate: 0,
-      uuid: '', homepage: '', codec: '', at: Date.now(),
-    };
-    if (deps.playbackChanged) deps.playbackChanged();
-    showToast(t('streamSource.playing', { name: title, speaker: getBoxLabel(selected) }));
+    if (typeof deps.playStation !== 'function') throw new Error('Stream playback is unavailable');
+    const started = await deps.playStation(station, { ...playback, title });
+    if (started) showToast(t('streamSource.playing', { name: title, speaker: getBoxLabel(selected) }));
   } catch (e) {
     showError(String(e));
   }
 }
 
 export function renderStreamSource() {
-  const root = $('view-stream-source');
+  const root = $('streamSourceInline');
   if (!root) return;
   const baseURL = sourceState.baseURL || savedBaseURL();
   const selected = state.currentBox && state.currentBox.kind !== 'stock' ? getBoxLabel(state.currentBox) : t('common.pickBox');
@@ -86,14 +75,11 @@ export function renderStreamSource() {
         : `<p class="muted">${escapeHtml(t('streamSource.empty'))}</p>`;
   root.innerHTML = `
     <div class="stream-source-page">
-      <header class="stream-source-hero">
-        <h2>${escapeHtml(t('streamSource.title'))}</h2>
-        <p>${escapeHtml(t('streamSource.lead'))}</p>
-      </header>
+      <p class="stream-source-lead">${escapeHtml(t('streamSource.lead'))}</p>
       <section class="stream-source-card">
         <label for="streamSourceURL">${escapeHtml(t('streamSource.serverLabel'))}</label>
         <div class="stream-source-connect">
-          <input id="streamSourceURL" type="url" inputmode="url" spellcheck="false" placeholder="http://192.0.2.10:8091" value="${escapeAttr(baseURL)}">
+          <input id="streamSourceURL" type="url" inputmode="url" spellcheck="false" placeholder="http://192.0.2.10:8765" value="${escapeAttr(baseURL)}">
           <button class="btn btn-primary" id="streamSourceConnect">${escapeHtml(t('streamSource.connect'))}</button>
         </div>
         <p class="muted small">${escapeHtml(t('streamSource.serverHelp'))}</p>
@@ -102,7 +88,6 @@ export function renderStreamSource() {
         <div class="stream-source-target"><span>${escapeHtml(t('streamSource.forSpeaker'))}</span><b>${escapeHtml(selected)}</b></div>
         ${body}
       </section>
-      <p class="muted small">${escapeHtml(t('streamSource.presetHint'))}</p>
     </div>`;
   const input = $('streamSourceURL');
   const connect = $('streamSourceConnect');

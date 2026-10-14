@@ -993,9 +993,12 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 }
 
 /* ---------- LAN stream-source tab ---------- */
-.stream-source-page { max-width: 720px; margin: 24px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 16px; }
-.stream-source-hero h2 { margin: 0 0 6px; }
-.stream-source-hero p { margin: 0; color: var(--c-text-2); line-height: 1.5; }
+.stream-source-embed { margin: 12px 0; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); }
+.stream-source-embed > summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
+.stream-source-embed[open] > summary { border-bottom: 1px solid var(--c-border); }
+.stream-source-embed > div { padding: 0 12px 12px; }
+.stream-source-page { max-width: none; margin: 0; padding: 12px 0 0; display: flex; flex-direction: column; gap: 12px; }
+.stream-source-lead { margin: 0; color: var(--c-text-2); line-height: 1.5; }
 .stream-source-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 16px 18px; }
 .stream-source-card > label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
 .stream-source-connect { display: flex; gap: 8px; }

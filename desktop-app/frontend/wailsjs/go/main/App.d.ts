@@ -335,7 +335,7 @@ export function Stop(arg1:string,arg2:number):Promise<void>;
 
 export function StreamBitrate(arg1:string,arg2:number):Promise<number>;
 
-export function StreamSourcePlayback(arg1:string,arg2:string):Promise<main.StreamSourcePlayback>;
+export function StreamSourcePlayback(arg1:string,arg2:string,arg3:string):Promise<main.StreamSourcePlayback>;
 
 export function StreamSourceStations(arg1:string):Promise<Array<main.StreamSourceStation>>;
 

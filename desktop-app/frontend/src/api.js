@@ -338,8 +338,8 @@ export function StreamSourceStations(baseURL) {
   return callOptionalBinding('StreamSourceStations', [baseURL]);
 }
 
-export function GetStreamSourcePlayback(baseURL, stationID) {
-  return callOptionalBinding('StreamSourcePlayback', [baseURL, stationID]);
+export function GetStreamSourcePlayback(baseURL, stationID, streamType) {
+  return callOptionalBinding('StreamSourcePlayback', [baseURL, stationID, streamType]);
 }
 
 // MovePreset takes the station on key `from` over to key `to`. Offered when a

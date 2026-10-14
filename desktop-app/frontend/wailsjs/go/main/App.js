@@ -662,8 +662,8 @@ export function StreamBitrate(arg1, arg2) {
   return window['go']['main']['App']['StreamBitrate'](arg1, arg2);
 }
 
-export function StreamSourcePlayback(arg1, arg2) {
-  return window['go']['main']['App']['StreamSourcePlayback'](arg1, arg2);
+export function StreamSourcePlayback(arg1, arg2, arg3) {
+  return window['go']['main']['App']['StreamSourcePlayback'](arg1, arg2, arg3);
 }
 
 export function StreamSourceStations(arg1) {

@@ -489,11 +489,15 @@ initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxS
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initStreamSourceView({
-  effectivePlayTarget,
-  playbackChanged: () => {
-    renderNowPlayingBar();
-    setTimeout(refreshStatus, 1200);
-  },
+  playStation: (station, playback) => playStation({
+    url: playback.streamURL,
+    url_resolved: playback.streamURL,
+    name: playback.title || station.name,
+    stationuuid: '',
+    homepage: '',
+    codec: '',
+    bitrate: 0,
+  }, { streamSource: true }),
 });
 initWishesView();
 // Session maps this file keeps per speaker, cleared when STR is removed from
@@ -652,7 +656,6 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="tab-badge" id="multiroomTabBadge" hidden></span></button>
     <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}</button>
-    <button class="tab-btn" data-view="stream-source">${escapeHtml(t('nav.streamSource'))}</button>
     <button class="tab-btn" data-view="wishes">${escapeHtml(t('nav.wishes'))}</button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
@@ -669,7 +672,6 @@ document.querySelector('#app').innerHTML = `
   <div id="view-setup" class="view hidden"></div>
   <div id="view-multiroom" class="view hidden"></div>
   <div id="view-spotify" class="view hidden"></div>
-  <div id="view-stream-source" class="view hidden"></div>
   <div id="view-wishes" class="view hidden"></div>
 
   <div class="modal hidden" id="pickModal">
@@ -930,7 +932,6 @@ function switchView(view) {
   // "stereo pair cannot be grouped" note that survived every screen change).
   if (view !== 'multiroom') { stopMultiroomLive(); resetMultiroomNotes(); }
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
-  $('view-stream-source').classList.toggle('hidden', view !== 'stream-source');
   $('view-wishes').classList.toggle('hidden', view !== 'wishes');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
@@ -981,7 +982,6 @@ function switchView(view) {
   if (view === 'recent') renderRecent();
   if (view === 'multiroom') renderMultiroom(true);
   if (view === 'spotify') renderSpotifyAlpha();
-  if (view === 'stream-source') renderStreamSource();
   if (view === 'wishes') renderWishes();
 }
 
@@ -1717,6 +1717,10 @@ $('view-box').innerHTML = `
     </div>
     <div class="search">
       <h3>${escapeHtml(t('search.heading'))} <small>(${escapeHtml(t('search.headingSub'))})</small></h3>
+      <details class="stream-source-embed" id="streamSourceDetails">
+        <summary>${escapeHtml(t('streamSource.title'))}</summary>
+        <div id="streamSourceInline"></div>
+      </details>
       <div class="search-input-row">
         <input type="text" id="searchQ" placeholder="${escapeAttr(t('search.placeholder'))}" />
         <button class="btn" id="searchBtn">${escapeHtml(t('search.btn'))}</button>
@@ -1765,6 +1769,10 @@ $('view-box').innerHTML = `
     </div>
   </div>
 `;
+
+$('streamSourceDetails').addEventListener('toggle', () => {
+  if ($('streamSourceDetails').open) renderStreamSource();
+});
 
 // Filter Dropdowns befuellen
 $('searchCountry').innerHTML = COUNTRIES.map(c =>
@@ -9237,10 +9245,11 @@ function preferMp3SiblingForBox(s, list) {
 // retries with another radio-browser entry of the SAME station before giving
 // up. This turns the most common "every station errors" frustration into a
 // usually-silent recovery. Used by every radio play-now button.
-async function playStation(s) {
+async function playStation(s, options = {}) {
+  const isStreamSource = options.streamSource === true;
   // A play aimed at a zone follower must go to its master instead (#70).
   let box = effectivePlayTarget();
-  if (!box) return;
+  if (!box) return false;
   // The user-facing selection when this play started. Every await below
   // re-checks it: without the guard, a speaker switch during the retry loop
   // kept starting playback on the PREVIOUS speaker and painted its buffering
@@ -9253,12 +9262,12 @@ async function playStation(s) {
   // path is the fragile one, the MP3 mirror of the same station is rock solid.
   // No sibling (or no list) plays the chosen entry unchanged; its AAC codec is
   // now labelled correctly, so it works too.
-  s = preferMp3SiblingForBox(s, state.searchResults);
+  if (!isStreamSource) s = preferMp3SiblingForBox(s, state.searchResults);
   const tried = new Set();
   let cur = s;
   let retargeted = false;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (switched()) return;
+  for (let attempt = 0; attempt < (isStreamSource ? 1 : 4); attempt++) {
+    if (switched()) return false;
     const url = cur.url_resolved || cur.url;
     const host = extractHost(url);
     if (host) tried.add(host);
@@ -9305,10 +9314,11 @@ async function playStation(s) {
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cur.stationuuid || '')) {
         RadioClick(cur.stationuuid).catch(() => {});
       }
+      if (isStreamSource) renderNowPlayingBar();
       // Refresh the now-playing bar promptly on the happy path; the upstream
       // verdict (success vs 403/503) arrives asynchronously, so poll for it.
       setTimeout(refreshStatus, 1200);
-      fail = await pollStreamFailure(box, url);
+      fail = isStreamSource ? null : await pollStreamFailure(box, url);
     } catch (err) {
       // Newer agents reject a play sent to a grouped follower with a
       // structured 409 ({"error":"box-grouped","master":...}): retarget the
@@ -9332,8 +9342,17 @@ async function playStation(s) {
     // The user may have switched speakers during the play/verdict round trip:
     // stop here so the failure handling below cannot repaint the new
     // speaker's UI or start an alternative stream on the old one.
-    if (switched()) return;
-    if (!fail) return; // playing fine
+    if (switched()) return false;
+    if (!fail) return true; // playing fine
+
+    if (isStreamSource) {
+      state.nowPlayState = '';
+      state.nowLocation = '';
+      state.lastAppPlay = null;
+      renderPresets();
+      showToast(streamErrorMessage(fail.reason));
+      return false;
+    }
 
     if (fail.reason === 'offline') {
       // The speaker itself has no internet: every station will fail the same
@@ -9349,18 +9368,18 @@ async function playStation(s) {
         { icon: null, confirmLabel: t('search.streamOfflineFix'), confirmClass: 'btn btn-primary' }
       );
       if (fix) openBoxWifiSetup(box);
-      return;
+      return false;
     }
 
     const alt = await findAlternativeStation(s, tried);
-    if (switched()) return; // speaker switched during the search: stop quietly
+    if (switched()) return false; // speaker switched during the search: stop quietly
     if (!alt) {
       state.nowPlayState = '';
       state.nowLocation = '';
       state.lastAppPlay = null; // never long-press-save a station that failed to play
       renderPresets();
       showToast(streamErrorMessage(fail.reason) + ' ' + t('search.allSourcesFailed'));
-      return;
+      return false;
     }
     showToast(t('search.tryingAlternative', { name: s.name || '' }));
     cur = alt;
@@ -9371,6 +9390,7 @@ async function playStation(s) {
   state.lastAppPlay = null; // never long-press-save a station that failed to play
   renderPresets();
   showToast(t('search.allSourcesFailed'));
+  return false;
 }
 
 function renderSearchResults() {

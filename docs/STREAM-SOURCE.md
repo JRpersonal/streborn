@@ -1,29 +1,31 @@
-# LAN stream-source tab
+# LAN Stream Source
 
-STR can browse a separately run stream source without embedding or naming the
-service behind it. The service runs on a computer, NAS, or other host on the
-LAN. It keeps its own login and provider-specific code; STR only receives
-station names and a URL the selected speaker can fetch.
+STR can browse stations from a stream server running on the local network. The
+server owns its authentication and provider-specific setup. STR reads the
+station list and sends the selected station's playable URL to the speaker.
 
-Enter the server's LAN address in the desktop app's **Stream source** tab. For
-the SiriusXM sidecar in this workspace, that is usually
-`http://<computer-LAN-IP>:8091`. Use the computer's LAN IP rather than
-`localhost` or `127.0.0.1`: the speaker fetches the stream URL directly and
-those loopback addresses would refer to the speaker itself.
+Open **Listen to music** and expand **Stream source**. Enter the server's LAN
+address, for example `http://192.0.2.10:8765`. Use the server computer's LAN
+address rather than `localhost` or `127.0.0.1`: the speaker fetches the audio
+directly, so loopback addresses would refer to the speaker itself.
 
-## Endpoints
+## API contract
 
-`GET {base}/api/stations` returns either a JSON array or an object containing
-the array:
+`GET {base}/api/stations` returns a JSON array or an object with a `stations`
+array. Each station has an opaque `id`, a display `name`, and an optional
+`stream_type`:
 
 ```json
-[{"id":"octane","name":"Octane"}]
+[{"id":"station-1","name":"Example Station","stream_type":"audio"}]
 ```
 
-STR requests `GET {base}/api/stations/{id}/stream`. A server may return audio
-directly, or JSON containing `url` or `stream_url` and an optional `title` or
-`now_playing`. The final stream URL must use HTTP or HTTPS and be reachable
-from the speaker.
+When `stream_type` is `audio` or omitted, `GET {base}/api/stations/{id}/stream`
+is the speaker-playable audio endpoint. STR returns that URL without requesting
+it, so selecting a station does not open and discard a live stream session.
 
-STR stores no account credentials and does not forward credentials to the
-service or the speaker.
+When `stream_type` is `json`, the same endpoint returns JSON containing `url`
+or `stream_url`, and optionally `title` or `now_playing`. The returned URL must
+use HTTP or HTTPS and be reachable by the speaker.
+
+The stream server must make its audio endpoint reachable from the speaker and
+keep any credentials or provider-specific logic on the server.
