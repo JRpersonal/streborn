@@ -293,10 +293,15 @@ func newNoticeQueue() *noticeQueue {
 		supported:  panelSupported,
 		gameActive: GameActive,
 		ready:      boseAppDisplayReady,
-		acquire:    busy.TryLock,
-		release:    busy.Unlock,
-		show:       playNotice,
-		busyWait:   noticeBusyWait,
+		// The track screen holds the panel for long stretches; a notice
+		// ends it first and it comes back afterwards (track.go).
+		acquire: func() bool {
+			yieldTrack("notice")
+			return busy.TryLock()
+		},
+		release:  busy.Unlock,
+		show:     playNotice,
+		busyWait: noticeBusyWait,
 	}
 	q.showSession = func(s *heldSession, quit <-chan struct{}) error { return playSession(q, s, quit) }
 	return q
@@ -458,6 +463,14 @@ func (q *noticeQueue) run(n Notice) {
 	}
 }
 
+// active reports whether a notice is showing or waiting; the track screen
+// stays off the panel meanwhile.
+func (q *noticeQueue) active() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.showing || q.pending != nil
+}
+
 // stop takes the panel back from a running notice and waits (bounded) until
 // it is released. With requeue the notice shows again afterwards, unless a
 // newer one is waiting by then.
@@ -487,6 +500,7 @@ func (q *noticeQueue) stop(requeue bool) {
 // panel: a running notice is ended first (requeue: shown again afterwards),
 // then the panel lock is taken, retried briefly while the notice lets go.
 func acquirePanel(requeue bool) bool {
+	yieldTrack("splash or game")
 	notices.stop(requeue)
 	for i := 0; i < 20; i++ {
 		if busy.TryLock() {

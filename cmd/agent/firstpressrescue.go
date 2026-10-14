@@ -241,6 +241,8 @@ func (h *presetWsHandler) OnPlayFailure(ev boxlog.PlayFailure) {
 // OnSourceChanged is the boxws hook for every source transition. It runs on
 // the gabbo read loop, so the press happens in its own goroutine.
 func (h *presetWsHandler) OnSourceChanged(_ context.Context, from, to string) {
+	// leaving STR's sources takes the track off the panel (displaytrack.go)
+	trackOnSourceChanged(from, to)
 	var seen time.Time
 	if h.stationActivity != nil {
 		seen = h.stationActivity()

@@ -248,6 +248,10 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	// Recently-played (#220): hang this queue track under the active folder card.
 	// No-op outside a queue (pushStream is queue-only) or before a card is set.
 	s.recentNoteQueueTrack(title, artist)
+	s.recentMu.Lock()
+	folder := s.recentQueueCard.name
+	s.recentMu.Unlock()
+	s.panelLibraryTrack(folder, artist, title)
 	return nil
 }
 

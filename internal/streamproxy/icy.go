@@ -21,6 +21,11 @@ import (
 // the proxied stream changes to a non-empty value. Set once at wiring time.
 func (s *Server) SetOnTitle(fn func(title string)) { s.onTitle = fn }
 
+// SetOnTitleEnd registers a callback invoked when the stream the current
+// title belongs to has ended for good (no successor handler for the same
+// stream within titleEndGrace). Set once at wiring time.
+func (s *Server) SetOnTitleEnd(fn func()) { s.onTitleEnd = fn }
+
 // CurrentTitle returns the live ICY StreamTitle of the stream being proxied
 // right now, or "" if the station sends no metadata or none has arrived yet.
 func (s *Server) CurrentTitle() string {
@@ -142,13 +147,19 @@ func (s *Server) clearTitleOnEnd(url string, gen uint64) {
 // no successor handler for url has started since the snapshot was taken.
 func (s *Server) wipeTitleIfUnclaimed(url string, gen uint64) {
 	s.titleMu.Lock()
-	defer s.titleMu.Unlock()
 	if s.titleGens[url] != gen {
+		s.titleMu.Unlock()
 		return
 	}
 	delete(s.titleGens, url)
-	if url == s.curTitleURL {
+	ended := url == s.curTitleURL
+	if ended {
 		s.curTitle = ""
+	}
+	cb := s.onTitleEnd
+	s.titleMu.Unlock()
+	if ended && cb != nil {
+		cb()
 	}
 }
 

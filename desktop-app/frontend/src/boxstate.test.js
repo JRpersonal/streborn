@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -45,6 +45,26 @@ describe('displayTrackState', () => {
     expect(settings).toContain('catch { paintDisplayTrack(null); }');
     expect(settings).not.toContain('catch { paintDisplayTrack(false); }');
     expect(settings).toContain("t('settingsView.displayTrackUnknown')");
+  });
+});
+
+describe('displayTrackOnPanel', () => {
+  it('is true only when the speaker says it draws on its panel', () => {
+    expect(displayTrackOnPanel({ enabled: true, onPanel: true })).toBe(true);
+    expect(displayTrackOnPanel({ enabled: true, onPanel: false })).toBe(false);
+  });
+
+  it('keeps the dropout warning for older agents and failed reads', () => {
+    expect(displayTrackOnPanel({ enabled: true })).toBe(false);
+    expect(displayTrackOnPanel(null)).toBe(false);
+    expect(displayTrackOnPanel({ onPanel: 'yes' })).toBe(false);
+  });
+
+  it('the settings view confirms only on the re-buffer path', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8');
+    expect(settings).toContain('if (!dtOnPanel) {');
+    expect(settings).toContain("t('settingsView.displayTrackHelpPanel')");
   });
 });
 

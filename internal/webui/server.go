@@ -676,6 +676,13 @@ type Server struct {
 	// (a brief audio gap on each track change, verified on a Portable), so it is
 	// off unless the user turns it on. Empty falls back to defaultDisplayTrackPath.
 	displayTrackPath string
+	// trackPanel draws the track on the speaker's own panel where STR can
+	// (displaytrack_panel.go); nil means the real one (internal/oled). Tests
+	// swap it.
+	trackPanel trackPanelSink
+	// panelState is what the panel shows during playback and the speaker's
+	// clock format (displaytrack_panel.go).
+	panelState
 
 	// lastDisplayPush debounces the ICY display push so a station that flips its
 	// StreamTitle between the song and promo/talk lines does not cause a re-buffer
@@ -1425,6 +1432,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
+	mux.HandleFunc("/api/box/display-clock", s.handleDisplayClock)
 	mux.HandleFunc("/api/box/display-messages", s.handleDisplayMessages)
 	mux.HandleFunc("/api/box/display-splash", s.handleDisplaySplash)
 	mux.HandleFunc("/api/box/display-notices", s.handleDisplayNotices)

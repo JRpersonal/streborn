@@ -228,6 +228,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	playGen := s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	if playDirect {
+		// a single library file: its name is the song
+		s.panelLibraryTrack("", "", req.Title)
+	}
 	// A finite file played on its own has nothing watching it end. The box
 	// finishes the bytes and freezes in PLAY_STATE (#380), so the app, the
 	// remote and the speaker's display kept showing a 2:07 track playing six
@@ -606,6 +610,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	now := time.Now()
 	s.lastPlayMu.Lock()
+	newStream := s.lastPlay == nil || s.lastPlay.boxURL != boxURL
 	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
 	s.recallGen++
 	gen := s.recallGen
@@ -614,6 +619,13 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	s.resumeAttempts = 0
 	s.lastResumeAt = time.Time{}
 	s.lastPlayMu.Unlock()
+	// The track on the panel belonged to the previous stream: the new one's
+	// name replaces it until its first song is known. The same stream pushed
+	// again keeps it (its title is not reported again). Synchronous, so it
+	// cannot land after the new stream's first title.
+	if newStream {
+		s.panelNewStream(boxURL, title)
+	}
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
 	s.persistLastPlay(boxURL, title, art, mime, now, 0, time.Time{})

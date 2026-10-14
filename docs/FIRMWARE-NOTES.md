@@ -601,6 +601,56 @@ INFO as `display notice shown` (kind, key, durationMs), every dropped one at
 DEBUG as `display notice skipped` with the reason, and a notice the panel
 path gave up on at WARN as `display notice ended early` with the error.
 
+**The playback screen.** "Show the current track on the speaker display"
+used to re-send the stream with the new title as metadata, which makes the
+speaker re-buffer (about a second of silence at every song change). On a
+panel STR draws on, the setting takes a different path
+(`internal/oled/track.go`, `internal/webui/displaytrack_panel.go`): STR draws
+what plays itself and the stream is never touched. What plays is one model
+fed by every source that knows the song: ICY titles for radio, the Spotify
+engine's track changes (and its current song when the Spotify app points the
+speaker at STR), the library queue's tracks. A new stream shows its name until
+its first song is known; a radio title arriving while Spotify or the library
+plays is a late one from the stream before and is dropped. It is a full screen
+of STR's own (station on top, artist, title below, title at double size when
+it fits on two lines of ten), not a band over BoseApp's picture, because what
+BoseApp shows there is the stale title from the start of the stream.
+
+A second setting, "time during playback" (`/api/box/display-clock`, flag file
+`display-clock-on-playback`, default off), adds the time: with the track it
+sits at the right of the top line next to the station, without the track
+(track setting off) it is drawn large under the station. Both off leaves the
+panel to BoseApp. 12 or 24 hours follow the speaker's own clock setting
+(`timeFormat` in `:8090/clockDisplay`, read once and kept). Only offered where
+STR draws on the panel.
+
+A playing symbol, three small bars at the left of the top line, moves while
+the speaker plays and lies flat when it does not (the gabbo play status,
+`OnPlayingChanged`; unknown counts as playing). It shows that music runs, not
+its level: STR never sees the audio the speaker decodes. Long text is wrapped
+and cut with `...`, never scrolled. While the bars move the screen is redrawn
+every 400 ms; one draw takes about 0.7 ms on a Portable, so that is roughly
+0.2 % of one CPU. Paused, it stands still and is redrawn only just past every
+full minute when it shows the time. Every three minutes the layout moves by
+one pixel against wear. The flip thread is
+held for as long as the screen shows, which is longer than anything else holds
+it (two hours of radio on 2026-10-13 without a reboot). Notices, the splash,
+the update screen and the games always win the panel and the screen returns by
+itself afterwards; a volume change hands the panel back to BoseApp for 4 s so
+its volume bar shows. It leaves the panel when the proxy stops carrying a
+radio stream for 5 s, on a source change to anything but `UPNP` or
+`LOCAL_INTERNET_RADIO` (and comes back at once when the speaker returns to
+one), when both settings are off and at agent exit. Logged at INFO as
+`display track overlay on` / `off` (with the reason), every text change at
+DEBUG. The app learns which path a speaker takes from `onPanel` in `GET
+/api/box/display-track`, and only warns about audio gaps where it is false.
+
+Station metadata sets the pace: 1LIVE, for one, updates its ICY title only
+once a minute (every change in a two-hour log landed at second 02 to 03 of a
+minute), so a new song can run up to a minute under the old name. STR draws
+within milliseconds of the title arriving and cannot do better than the
+station.
+
 **The panel.** `/dev/fb0`, kernel driver `ssdspi`, 128 x 100 pixels, 8 bits
 per pixel, 16 grey levels (0x00 to 0xFF in steps of 0x11), 12,800 bytes per
 frame. The driver refreshes the panel from framebuffer memory on its own
