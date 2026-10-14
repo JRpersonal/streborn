@@ -130,3 +130,116 @@ func (c canvas) textClip(s string, x, y, sc, lvl, clipX0, clipX1 int) {
 		x += adv
 	}
 }
+
+// trackCache keeps what does not move between two marquee frames: the
+// layout, the frame with every standing line and the rule drawn, and each
+// scrolling line drawn once into a strip of its own. A scroll frame is then
+// a copy of the standing frame, the playing symbol and a window of each
+// strip, instead of every glyph drawn again 15 times a second.
+type trackCache struct {
+	valid  bool
+	t      TrackText
+	hm     string
+	dx, dy int
+	f      trackFrame
+	base   []byte
+	strips map[int][]byte // line index -> strip, for the lines that scroll
+}
+
+// prepare makes the cache hold the track screen for t at now, shifted by
+// dx, dy, rebuilding it only when the text, the time shown or the shift
+// changed. Returns the layout.
+func (tc *trackCache) prepare(t TrackText, now time.Time, dx, dy int) trackFrame {
+	hm := ""
+	if t.Clock {
+		h, ap := clockText(now, t.Hour12)
+		hm = h + ap
+	}
+	if !tc.valid || tc.t != t || tc.hm != hm || tc.dx != dx || tc.dy != dy {
+		tc.build(t, now, dx, dy)
+		tc.hm = hm
+	}
+	return tc.f
+}
+
+// render draws the prepared screen at marquee step with the playing symbol
+// in state a into buf: exactly what trackFrame.render draws.
+func (tc *trackCache) render(a trackAnim, step int, buf []byte) {
+	copy(buf, tc.base)
+	if len(tc.f.lines) == 0 {
+		return
+	}
+	canvas(buf).bars(1+tc.dx, tc.f.barsBottom+tc.dy, a)
+	for i, strip := range tc.strips {
+		tc.f.lines[i].blit(buf, strip, step, tc.dx, tc.dy)
+	}
+}
+
+func (tc *trackCache) build(t TrackText, now time.Time, dx, dy int) {
+	tc.valid, tc.t, tc.dx, tc.dy = true, t, dx, dy
+	tc.f = trackLayout(t, now)
+	if tc.base == nil {
+		tc.base = make([]byte, FrameSize)
+	}
+	clear(tc.base)
+	tc.strips = map[int][]byte{}
+	if len(tc.f.lines) == 0 {
+		return
+	}
+	c := canvas(tc.base)
+	if tc.f.ruleY >= 0 {
+		c.fill(24+dx, tc.f.ruleY+dy, Width-48, 1, lvlTrackRule)
+	}
+	for i, l := range tc.f.lines {
+		if l.overflow() > 0 {
+			tc.strips[i] = l.strip()
+			continue
+		}
+		l.draw(c, 0, dx, dy)
+	}
+}
+
+// strip draws the whole line once into a buffer of its own, textWidth wide
+// and 7*sc high.
+func (m marqueeLine) strip() []byte {
+	w, h := textWidth(m.s, m.sc), 7*m.sc
+	s := make([]byte, w*h)
+	x := 0
+	for _, ch := range m.s {
+		for gy, row := range font[ch] {
+			for gx, b := range row {
+				if b != '1' {
+					continue
+				}
+				for yy := gy * m.sc; yy < (gy+1)*m.sc; yy++ {
+					for xx := x + gx*m.sc; xx < x+(gx+1)*m.sc && xx < w; xx++ {
+						s[yy*w+xx] = byte(m.lvl)
+					}
+				}
+			}
+		}
+		x += 6 * m.sc
+	}
+	return s
+}
+
+// blit copies the window of the line's strip that shows at marquee step
+// into buf, clipped to the line's box and the panel.
+func (m marqueeLine) blit(buf, strip []byte, step, dx, dy int) {
+	w, h := textWidth(m.s, m.sc), 7*m.sc
+	off := min(step*m.sc, m.overflow())
+	x0 := m.x0 + dx
+	// panel columns lo..hi show strip columns lo-x0+off.., all in range
+	lo, hi := max(x0, 0, x0-off), min(x0+m.w, Width, x0-off+w)
+	if lo >= hi {
+		return
+	}
+	s0 := lo - x0 + off
+	for r := 0; r < h; r++ {
+		y := m.y + dy + r
+		if y < 0 || y >= Height {
+			continue
+		}
+		copy(buf[y*Width+lo:y*Width+hi], strip[r*w+s0:])
+	}
+}

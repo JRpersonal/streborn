@@ -115,13 +115,16 @@ type trackScreen struct {
 	// marqueeFrom is when the marquee cycle started (zero: at the next
 	// draw); marqueeNext when its next step is due (zero: nothing scrolls).
 	marqueeFrom, marqueeNext time.Time
-	foreign                  bool // the speaker is on a source that is not STR's
-	quit                     chan struct{}
-	done                     chan struct{}
-	stopWhy                  string
-	redraw                   chan struct{}
-	wake                     chan struct{}
-	startOnce                sync.Once
+	// cache keeps the standing parts of the screen between marquee frames;
+	// used on the holding thread only (draw)
+	cache     trackCache
+	foreign   bool // the speaker is on a source that is not STR's
+	quit      chan struct{}
+	done      chan struct{}
+	stopWhy   string
+	redraw    chan struct{}
+	wake      chan struct{}
+	startOnce sync.Once
 
 	// seams; newTrackScreen wires the real ones
 	now        func() time.Time
@@ -477,14 +480,14 @@ func (s *trackScreen) draw(buf []byte) {
 	}
 	dx, dy := trackShift(step)
 	t0 := time.Now()
-	f := trackLayout(t, now)
+	f := s.cache.prepare(t, now, dx, dy)
 	// The marquee moves only while the speaker plays: paused, every line
 	// shows its start and no scroll frame is asked for.
 	mStep, mNext := 0, time.Duration(0)
 	if anim.playing {
 		mStep, mNext = marqueeAt(since, f.steps())
 	}
-	f.render(anim, mStep, dx, dy, buf)
+	s.cache.render(anim, mStep, buf)
 	el := time.Since(t0)
 	s.mu.Lock()
 	s.draws++

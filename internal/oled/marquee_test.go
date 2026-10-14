@@ -185,6 +185,62 @@ func TestTrackScreenMarqueeTicker(t *testing.T) {
 	}
 }
 
+// The cached marquee frame is pixel for pixel the frame drawn from scratch,
+// at every step, with and without the shift, and follows a text change.
+func TestTrackCacheMatchesFullRender(t *testing.T) {
+	at := time.Date(2026, 10, 14, 21, 5, 0, 0, time.Local)
+	var tc trackCache
+	want, got := make([]byte, FrameSize), make([]byte, FrameSize)
+	for _, tt := range []TrackText{
+		{Station: "TROPICAL HOUSE", Artist: "NICK CAVE + THE BAD SEEDS AND FRIENDS", Title: "INTO MY ARMS (LIVE AT THE ROYAL ALBERT HALL)", Clock: true},
+		{Station: "BEST OF ROCK.FM ALTERNATIVE ROCK", Artist: "AC/DC", Title: "THUNDERSTRUCK"},
+		{Station: "1LIVE", Artist: "QUEEN", Title: "UNDER PRESSURE", Clock: true, Hour12: true},
+		{Station: strings.Repeat("S", 30), Clock: true},
+		{},
+	} {
+		for _, sh := range [][2]int{{0, 0}, {1, 1}} {
+			f := trackLayout(tt, at)
+			for step := 0; step <= f.steps()+2; step++ {
+				a := trackAnim{playing: step%2 == 0, frame: step}
+				f.render(a, step, sh[0], sh[1], want)
+				tc.prepare(tt, at, sh[0], sh[1])
+				tc.render(a, step, got)
+				if string(want) != string(got) {
+					t.Fatalf("%+v shift %v step %d: cached frame differs", tt, sh, step)
+				}
+			}
+		}
+	}
+}
+
+// One marquee frame against one standing frame: the scroll adds a full
+// redraw per step, so the difference is its cost per frame.
+func BenchmarkTrackFrame(b *testing.B) {
+	at := time.Date(2026, 10, 14, 21, 5, 0, 0, time.Local)
+	buf := make([]byte, FrameSize)
+	for _, c := range []struct {
+		name string
+		t    TrackText
+	}{
+		{"fits", TrackText{Station: "1LIVE", Artist: "QUEEN", Title: "UNDER PRESSURE"}},
+		{"scrolls", TrackText{Station: "BEST OF ROCK.FM ALTERNATIVE ROCK", Artist: "NICK CAVE + THE BAD SEEDS AND FRIENDS", Title: "INTO MY ARMS (LIVE AT THE ROYAL ALBERT HALL)", Clock: true}},
+	} {
+		b.Run(c.name+"/full", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				f := trackLayout(c.t, at)
+				f.render(trackAnim{playing: true, frame: i}, i%40, 0, 0, buf)
+			}
+		})
+		b.Run(c.name+"/cached", func(b *testing.B) {
+			var tc trackCache
+			for i := 0; i < b.N; i++ {
+				tc.prepare(c.t, at, 0, 0)
+				tc.render(trackAnim{playing: true, frame: i}, i%40, buf)
+			}
+		})
+	}
+}
+
 // Renders the start, a middle and the end of a scrolling title to PNG so the
 // result can be looked at: in a temp dir, or in $STR_TRACK_PNG_DIR when set.
 func TestRenderMarqueeFramesPNG(t *testing.T) {
