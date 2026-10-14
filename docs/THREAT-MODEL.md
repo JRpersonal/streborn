@@ -101,6 +101,12 @@ Each boundary is covered in detail in
   discarded without being renamed into place. The endpoint is LAN-gated
   like the OTA upload; what a LAN client gains is the ability to start
   an update to the official latest release, not to choose its content.
+  "Update all speakers" adds no new trust: the driving speaker only asks
+  each peer to run that same self-update, one at a time, and every peer
+  verifies the release itself and applies its own LAN gate. Peers come
+  from the speaker's peer list only, must be bare private LAN addresses,
+  are reached on the two agent ports through the dial-time SSRF guard, and
+  no redirect is followed.
   See [`SELF-UPDATE.md`](SELF-UPDATE.md).
 
 ## Inherited speaker firmware caveats

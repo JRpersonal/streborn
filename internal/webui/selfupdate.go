@@ -78,6 +78,9 @@ const selfUpdateCheckTTL = 15 * time.Minute
 type selfUpdateSource struct {
 	Base string   `json:"base"`
 	Keys []string `json:"keys"`
+	// Peers narrows "update all speakers" to these addresses, so a developer
+	// can run the whole flow against test speakers on a LAN that has others.
+	Peers []string `json:"peers,omitempty"`
 }
 
 // selfUpdatePending is the marker the update leaves for the agent it installs.
@@ -87,6 +90,9 @@ type selfUpdatePending struct {
 	Engine  *updatesig.File `json:"engine,omitempty"`
 	Base    string          `json:"base"`
 	At      time.Time       `json:"at"`
+	// Fleet is the "update all speakers" run this update was the last step
+	// of, carried across the reboot so the phone gets its summary.
+	Fleet *fleetRun `json:"fleet,omitempty"`
 }
 
 // selfUpdateResult is what the last update ended with.
@@ -111,6 +117,8 @@ type selfUpdateStatus struct {
 	Error     string            `json:"error,omitempty"`
 	Engine    string            `json:"engine"` // present, missing
 	Last      *selfUpdateResult `json:"last,omitempty"`
+	// Fleet is the "update all speakers" plan or run (selfupdate_fleet.go).
+	Fleet *fleetRun `json:"fleet,omitempty"`
 }
 
 type selfUpdater struct {
@@ -158,6 +166,13 @@ func (u *selfUpdater) claim() bool {
 	return true
 }
 
+// isBusy reports whether a check or install holds the updater.
+func (u *selfUpdater) isBusy() bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.busy
+}
+
 func (u *selfUpdater) release() {
 	u.mu.Lock()
 	u.busy = false
@@ -195,6 +210,7 @@ func (s *Server) selfUpdateStatus() selfUpdateStatus {
 			st.Last = &r
 		}
 	}
+	st.Fleet = s.fleet.snapshot()
 	return st
 }
 
@@ -204,6 +220,8 @@ func (s *Server) selfUpdateStatus() selfUpdateStatus {
 //	POST {"action":"check"}   ask GitHub for the latest release (waits for it)
 //	POST {"action":"install"} install it; returns at once, poll GET for progress
 //	POST {"action":"engine"}  fetch the Spotify engine of the running version
+//	POST {"action":"plan"}    list the other STR speakers and what they run
+//	POST {"action":"install-all"} update every speaker, this one last
 func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet, http.MethodPost) {
 		return
@@ -237,7 +255,31 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("self-update: check failed", "err", err)
 		}
 		writeJSON(w, http.StatusOK, s.selfUpdateStatus())
+	case "plan":
+		ctx, cancel := context.WithTimeout(r.Context(), 75*time.Second)
+		err := s.fleetPlan(ctx)
+		cancel()
+		if err != nil {
+			s.logger.Warn("self-update fleet: plan failed", "err", err)
+		}
+		writeJSON(w, http.StatusOK, s.selfUpdateStatus())
+	case "install-all":
+		if updateInFlight.Load() || s.selfUpd.isBusy() {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "an update is already installing on this speaker"})
+			return
+		}
+		if !s.startFleet() {
+			writeJSON(w, http.StatusConflict, s.selfUpdateStatus())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, s.selfUpdateStatus())
 	case "install", "engine":
+		if s.fleet.running() {
+			// This speaker is updating the others and goes last itself; a
+			// second driver asking it to update now would cut that run off.
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "this speaker is updating all speakers right now"})
+			return
+		}
 		if updateInFlight.Load() {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "an update is already installing on this speaker"})
 			return
@@ -259,15 +301,21 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// readSelfUpdateSource reads the developer override, if there is one.
+func readSelfUpdateSource() (selfUpdateSource, bool) {
+	var src selfUpdateSource
+	b, err := os.ReadFile(selfUpdateSourcePath)
+	if err != nil || json.Unmarshal(b, &src) != nil {
+		return selfUpdateSource{}, false
+	}
+	return src, true
+}
+
 // selfUpdateSourceNow returns the release base and the trusted keys.
 func selfUpdateSourceNow() (base string, keys []string) {
 	base, keys = selfUpdateDefaultBase, updatesig.PublicKeys
-	b, err := os.ReadFile(selfUpdateSourcePath)
-	if err != nil {
-		return base, keys
-	}
-	var src selfUpdateSource
-	if json.Unmarshal(b, &src) != nil {
+	src, ok := readSelfUpdateSource()
+	if !ok {
 		return base, keys
 	}
 	if src.Base != "" {
@@ -420,6 +468,9 @@ func (s *Server) runSelfUpdate() {
 	if e, ok := ix.Files[updatesig.EngineFile]; ok {
 		p.Engine = &e
 	}
+	if s.fleet.running() {
+		p.Fleet = s.fleet.snapshot()
+	}
 	if err := writeJSONFile(selfUpdatePendingPath, p); err != nil {
 		s.selfUpd.fail(fmt.Errorf("could not prepare the update: %w", err))
 		return
@@ -477,9 +528,11 @@ func (s *Server) resumeSelfUpdate() {
 		msg := fmt.Sprintf("the speaker restarted on %s instead of %s", now, p.Version)
 		s.logger.Warn("self-update: " + msg)
 		s.selfUpd.fail(errors.New(msg))
+		s.fleetFromPending(p, msg)
 		writeSelfUpdateResult(selfUpdateResult{Version: p.Version, From: p.From, Error: msg, At: time.Now().UTC()})
 		return
 	}
+	s.fleetFromPending(p, "")
 	if !s.selfUpd.claim() {
 		return
 	}

@@ -38,6 +38,8 @@ type Server struct {
 	boxHost string
 	// selfUpd runs the speaker's own update from GitHub (selfupdate.go).
 	selfUpd selfUpdater
+	// fleet is the phone's "update all speakers" plan or run (selfupdate_fleet.go).
+	fleet fleetState
 	// The firmware's own US services, Pandora and iHeartRadio
 	// (usservices.go). nativeBoxOverride is a test seam.
 	native            NativeServicesBackend
