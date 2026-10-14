@@ -122,9 +122,10 @@ func ptrace(req, tid int) error {
 // attached, so takePanel and release run on a goroutine locked to its OS
 // thread.
 type panelHold struct {
-	mem []byte
-	out []byte
-	tid int
+	mem   []byte
+	out   []byte // the frame last written, as panel bytes
+	tid   int
+	shown bool // a first frame was written whole
 }
 
 // takePanel holds BoseApp's flip thread (PTRACE_SEIZE + PTRACE_INTERRUPT, no
@@ -173,12 +174,26 @@ func takePanel() (*panelHold, error) {
 	return &panelHold{mem: mem, out: make([]byte, FrameSize), tid: tid}, nil
 }
 
-// show puts a frame of grey levels 0..15 on the panel.
+// show puts a frame of grey levels 0..15 on the panel. Only the rows that
+// changed since the last frame are written to the framebuffer (the first
+// frame is written whole, over BoseApp's picture): a scrolling line or the
+// playing symbol touches a strip of the panel, not all of it. The flip
+// thread is held, so nothing else writes there in between.
 func (p *panelHold) show(buf []byte) {
-	for i, v := range buf {
-		p.out[i] = v * 0x11
+	for y := 0; y < Height; y++ {
+		row, out := buf[y*Width:(y+1)*Width], p.out[y*Width:(y+1)*Width]
+		dirty := !p.shown
+		for i, v := range row {
+			if b := v * 0x11; out[i] != b {
+				out[i] = b
+				dirty = true
+			}
+		}
+		if dirty {
+			copy(p.mem[y*Width:(y+1)*Width], out)
+		}
 	}
-	copy(p.mem, p.out)
+	p.shown = true
 }
 
 // release leaves a black frame (BoseApp repaints its own screen right after
