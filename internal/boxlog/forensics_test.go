@@ -313,3 +313,24 @@ func TestReaderLinePath(t *testing.T) {
 		t.Fatalf("events %v", snap)
 	}
 }
+
+func TestRedactDropsWiFiSecrets(t *testing.T) {
+	cases := []string{
+		"BCOWifiSetup VerifyProfileData Passphrase: hunter2 with space",
+		"network psk=\"hunter2\"",
+		"WPAPSK/Passphrase = hunter2",
+		"set password:hunter2",
+	}
+	for _, in := range cases {
+		out := Redact(in)
+		if strings.Contains(out, "hunter2") {
+			t.Errorf("Redact(%q) = %q, secret survived", in, out)
+		}
+		if !strings.Contains(out, "<secret-redacted>") {
+			t.Errorf("Redact(%q) = %q, no redaction marker", in, out)
+		}
+	}
+	if got := Redact("passphrase check skipped"); got != "passphrase check skipped" {
+		t.Errorf("a line without a secret changed: %q", got)
+	}
+}
