@@ -373,7 +373,7 @@ func wpaConfDropNetworks(conf string, drop func(ssid string) bool) (out string, 
 	var b strings.Builder
 	for i := 0; i < len(lines); i++ {
 		t := strings.TrimSpace(lines[i])
-		if !(strings.HasPrefix(t, "network=") && strings.Contains(t, "{")) {
+		if !strings.HasPrefix(t, "network=") || !strings.Contains(t, "{") {
 			b.WriteString(lines[i])
 			continue
 		}
