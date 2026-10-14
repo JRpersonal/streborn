@@ -37,6 +37,20 @@ type fakeNativeBox struct {
 	setSource, setDisplay, setUser, setPass string
 	removedSource, removedUser              string
 	sources                                 []boxapi.Source
+	stations                                []boxapi.ServiceStation
+	stationsErr, selectErr                  error
+	listedSource, listedAccount             string
+	selected                                []string
+}
+
+func (b *fakeNativeBox) ListServiceStations(_ context.Context, source, account string) ([]boxapi.ServiceStation, error) {
+	b.listedSource, b.listedAccount = source, account
+	return b.stations, b.stationsErr
+}
+
+func (b *fakeNativeBox) SelectContentItem(_ context.Context, item string) error {
+	b.selected = append(b.selected, item)
+	return b.selectErr
 }
 
 func (b *fakeNativeBox) SetMusicServiceAccount(_ context.Context, source, display, user, pass string) error {

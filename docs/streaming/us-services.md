@@ -187,6 +187,26 @@ Every store request for a source other than STR's own radio is logged at
 INFO as `marge preset store: the box asked to keep a non-radio item` with
 all fields (account masked).
 
+## In the STR app
+
+- **Speaker settings, "Pandora & iHeartRadio"**: per service where it stands
+  on this speaker (not connected, connected as the masked account, ready),
+  e-mail and password with Connect, and Disconnect once an account is on the
+  speaker. Outside the US the card says that both services only play from a
+  US connection and offers the opt-in switch. iHeartRadio is marked
+  experimental. The password goes from the form to the agent and on to the
+  speaker; neither the app nor the agent keeps it.
+- **Find stations, "Pandora"**: appears next to Top and Favorites while the
+  speaker lists `PANDORA` as `READY`. It lists the account's stations with
+  their art; each one can be played, or put on a key (the app starts the
+  station, waits until the speaker plays it, and then saves the key from
+  now-playing, see Presets above). New stations are created in the Pandora
+  app.
+- **Phone remote, Find tab**: the same list with Play, shown only when the
+  agent can list the stations.
+
+There is no station search or station creation in STR.
+
 ## Agent endpoints (LAN only)
 
 All on the agent's web port (`:8888`, or `:17008` on speakers that use
@@ -198,6 +218,8 @@ the redirect, see `docs/MODEL-VARIANTS.md`). POST bodies must be JSON.
 | `POST /api/us-services` `{"enabled":true}` | create the opt-in marker (`false` removes it); only needed outside the US |
 | `POST /api/pandora/account`, `POST /api/iheart/account` `{"user":"...","password":"..."}` | call `setMusicServiceAccount` on the speaker (needs a US speaker or the opt-in) |
 | `DELETE /api/pandora/account`, `DELETE /api/iheart/account` | call `removeMusicServiceAccount` and delete the stored source |
+| `GET /api/pandora/stations` | the linked account's stations from the speaker's own `/navigate` (`menu="radioStations"`, paged, up to 500): name, art, location, type. The account is read from `:8090/sources` and never returned. `409` `service-off` / `not-linked`, `502` with the firmware's message |
+| `POST /api/pandora/play` `{"location":"...","name":"..."}` | hand the station to the speaker's `/select`: the exact `<ContentItem>` the last list carried, or, for a location not in it, the same item rebuilt with the account from `:8090/sources` |
 
 `/api/pandora` is the older name of `/api/us-services` and still works.
 

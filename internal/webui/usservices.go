@@ -15,6 +15,9 @@ package webui
 // DELETE /api/{pandora,iheart}/account removes it from the firmware and the
 //                              stand-in
 //
+// GET  /api/pandora/stations, POST /api/pandora/play: the linked account's
+//                              stations and starting one (pandorastations.go)
+//
 // /api/pandora is the older name of /api/us-services and stays an alias.
 //
 // The account calls need the service enabled (a US speaker, or the opt-in),
@@ -57,6 +60,8 @@ type nativeBoxAPI interface {
 	SetMusicServiceAccount(ctx context.Context, source, displayName, user, pass string) error
 	RemoveMusicServiceAccount(ctx context.Context, source, displayName, user string) error
 	GetSources(ctx context.Context) ([]boxapi.Source, error)
+	ListServiceStations(ctx context.Context, source, account string) ([]boxapi.ServiceStation, error)
+	SelectContentItem(ctx context.Context, item string) error
 }
 
 func (s *Server) nativeBox() nativeBoxAPI {
