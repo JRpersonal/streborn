@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { setLocale } from './i18n/index.js';
 import {
   fwGuidePlan,
+  fwFlashStatus,
   firmwareGuideHtml,
   firmwareGuideMount,
   firmwareGuideNeeded,
@@ -156,5 +157,37 @@ describe('the strings', () => {
       expect(Object.keys(b).filter(k => k.startsWith('fwGuide.')).length, lang)
         .toBe(Object.keys(en).filter(k => k.startsWith('fwGuide.')).length);
     }
+  });
+});
+
+describe('one-click firmware update', () => {
+  beforeAll(() => setLocale('en'));
+  const one = { required: '27.0.6', files: [{ name: 'Update_x.scm.stu', url: 'https://downloads.bose.com/x' }] };
+  const two = { required: '27.0.6', files: [{ url: 'https://downloads.bose.com/a' }, { url: 'https://downloads.bose.com/b' }] };
+
+  it('is offered only with a host and exactly one known file', () => {
+    expect(fwGuidePlan({ host: '192.0.2.10', current: '27.0.3' }, one).auto).toBe(true);
+    expect(fwGuidePlan({ current: '27.0.3' }, one).auto).toBe(false);
+    expect(fwGuidePlan({ host: '192.0.2.10', current: '27.0.3' }, two).auto).toBe(false);
+    expect(fwGuidePlan({ host: '192.0.2.10', current: '27.0.3' }, null).auto).toBe(false);
+  });
+
+  it('renders the button above the manual steps', () => {
+    const html = firmwareGuideHtml({ host: '192.0.2.10', current: '27.0.3', model: 'SoundTouch Portable' }, one);
+    expect(html).toContain('data-fwflash');
+    expect(html.indexOf('data-fwflash')).toBeLessThan(html.indexOf('fw-guide-steps'));
+    expect(firmwareGuideHtml({ current: '27.0.3' }, one)).not.toContain('data-fwflash');
+  });
+
+  it('keeps the host in the mount so the click knows the speaker', () => {
+    expect(firmwareGuideMount({ host: '192.0.2.10', current: '27.0.3' })).toContain('192.0.2.10');
+  });
+
+  it('describes every phase', () => {
+    expect(fwFlashStatus({ phase: 'download', pct: 42 })).toBe('Downloading from Bose: 42 %');
+    expect(fwFlashStatus({ phase: 'upload', pct: -1 })).toBe('Sending the update to the speaker:');
+    expect(fwFlashStatus({ phase: 'done', version: '27.0.6' })).toContain('27.0.6');
+    expect(fwFlashStatus({ phase: 'error', error: 'boom' })).toContain('boom');
+    for (const ph of ['start', 'verify', 'install']) expect(fwFlashStatus({ phase: ph })).not.toMatch(/fwGuide\./);
   });
 });

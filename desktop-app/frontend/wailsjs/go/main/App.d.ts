@@ -93,6 +93,8 @@ export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.Lo
 
 export function FeatureWishes():Promise<main.WishList>;
 
+export function FlashBoseFirmware(arg1:string,arg2:boolean):Promise<main.FirmwareFlashResult>;
+
 export function ForgetPermanentGroup(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;

@@ -1390,6 +1390,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
+	mux.HandleFunc("/api/agent/bose-firmware", s.handleBoseFirmware)
 	mux.HandleFunc("/api/agent/ssh", s.handleAgentSSH)
 	mux.HandleFunc("/api/us-services", s.handleUSServices)
 	mux.HandleFunc("/api/pandora", s.handleUSServices)

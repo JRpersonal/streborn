@@ -41,6 +41,7 @@ export {
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
   GetFirmwareGuide,
+  FlashBoseFirmware,
   BoxInstallReachable,
   Pause,
   Resume,

@@ -94,6 +94,8 @@ import {
   SaveArcadeScreenshot,
   ClipboardSetText,
   GetFirmwareGuide,
+  FlashBoseFirmware,
+  EventsOn,
   AnnounceExample,
   SendAnnounce,
   Translate,
@@ -1794,7 +1796,7 @@ function renderBoxSettings(s, box) {
         <span class="kv-val">${fwStatusInline(info)}</span>
       </div>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.deviceIdLabel'))}</span><span class="kv-val small muted">${escapeHtml(info.deviceID || '-')}</span></div>
-      ${fwUpdateHint(info)}
+      ${fwUpdateHint(info, box)}
     </div>
     <div class="settings-section phone-feature" id="phoneCardSection">
       <h3><span class="phone-feature-icon">&#128241;</span> ${escapeHtml(t('settingsView.phoneHeading'))}</h3>
@@ -1931,6 +1933,9 @@ function renderBoxSettings(s, box) {
     getGuide: GetFirmwareGuide,
     openURL: BrowserOpenURL,
     copy: ClipboardSetText,
+    flash: FlashBoseFirmware,
+    onProgress: (cb) => EventsOn('firmware:progress', cb),
+    confirm: confirmWarn,
   });
   const faq = $('fwFaqLink');
   if (faq) faq.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(faq.dataset.url); } catch {} };
@@ -3804,7 +3809,7 @@ function fwStatusInline(info) {
   return `<span class="fw-ok">&#10003; ${v}</span>`;
 }
 
-function fwUpdateHint(info) {
+function fwUpdateHint(info, box) {
   const want = LATEST_FW[info.type || ''];
   if (!isFwOutdated(info)) {
     return `<small class="muted small">${escapeHtml(t('fw.uptodate', { version: want || '27.0.6' }))}</small>`;
@@ -3819,6 +3824,7 @@ function fwUpdateHint(info) {
     variant: info.variant || '',
     current: info.version || '',
     context: 'settings',
+    host: (box && box.host) || '',
   })}
       <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
     </div>`;
