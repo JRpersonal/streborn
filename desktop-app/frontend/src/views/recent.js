@@ -467,7 +467,8 @@ async function syncCurrentNowPlaying() {
     const xml = await Status(box.host, box.port);
     if (state.view !== 'recent') return;
     if (Date.now() < (state.optimisticUntil || 0)) return; // let a fresh local click settle first
-    state.nowName = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
+    state.nowName = decodeXmlEntities((xml.match(/<stationName>([^<]+)<\/stationName>/) || [])[1]
+      || (xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
     state.nowLocation = decodeXmlEntities((xml.match(/location="([^"]+)"/) || [])[1] || '');
     state.nowSource = (xml.match(/source="([^"]+)"/) || [])[1] || '';
   } catch { /* box busy or rebooting: keep the last known mark */ }

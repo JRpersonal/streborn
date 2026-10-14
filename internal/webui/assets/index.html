@@ -2374,7 +2374,10 @@ async function refreshStatus() {
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
   const nowLoc = (t.match(/location="([^"]*)"/) || [])[1] || '';
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
-  const name = m ? decodeEntities(m[1]) : '';
+  // The station name wins when the speaker (or the agent, #1170) reports one:
+  // with the track shown on the speaker display, itemName carries the song.
+  const sn = (t.match(/<stationName>([^<]+)<\/stationName>/) || [])[1] || '';
+  const name = sn ? decodeEntities(sn) : (m ? decodeEntities(m[1]) : '');
   // Track power state for the header toggle: the box is "on" unless it is in
   // standby (a stopped-but-awake box still counts as on, so the button can switch
   // it off, which was the whole point of the request).

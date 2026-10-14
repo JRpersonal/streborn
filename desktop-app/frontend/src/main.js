@@ -8283,7 +8283,10 @@ async function refreshStatus() {
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     _statusFailCount = 0; // the box answered: it is reachable at its current IP
-    const name = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
+    // The station name wins when the speaker (or the agent, #1170) reports one:
+    // with the track shown on the speaker display, itemName carries the song.
+    const name = decodeXmlEntities((xml.match(/<stationName>([^<]+)<\/stationName>/) || [])[1]
+      || (xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
     state.nowSource = src;
     // A speaker with more than one socket of the same kind (an SA-5 reports
