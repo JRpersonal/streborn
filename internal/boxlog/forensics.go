@@ -81,6 +81,13 @@ const (
 	ClassWake       Class = "wake"        // HSM: ChangeState(Standby >> ...)
 	ClassPowerEvent Class = "power_event" // scmmond: low power notification
 	ClassPowerSleep Class = "power_sleep" // scmmond: sleep stage / processor clock
+	// ClassDisplayClock is the display controller switching between its
+	// standby states with and without the clock (StandbyClock, StandbyNoClock).
+	// Both start with "Standby", so the standby/wake rule below drops them,
+	// and #841 (the clock vanishing from an ST20 display after hours in
+	// standby, firmware clock correct and enabled) had no evidence of which
+	// state the panel was in or when it changed.
+	ClassDisplayClock Class = "display_clock" // HSM: ChangeState(StandbyClock >> StandbyNoClock) and back
 	// ClassGroupError is the firmware refusing to activate a source because
 	// its group is not whole: EVT_SYSTEM_GROUP_STATE_IN_ERROR, which lands it
 	// straight back in standby. Measured on a speaker that is the RIGHT half
@@ -339,6 +346,9 @@ func classifyStateChange(m string) (Class, bool) {
 		return ClassStandby, true
 	case strings.HasPrefix(from, "Standby") && !strings.HasPrefix(to, "Standby"):
 		return ClassWake, true
+	case strings.HasPrefix(from, "Standby") && strings.HasPrefix(to, "Standby") &&
+		(strings.Contains(from, "Clock") || strings.Contains(to, "Clock")):
+		return ClassDisplayClock, true
 	}
 	return "", false
 }
@@ -359,7 +369,7 @@ func (c Class) logGap() time.Duration {
 	switch {
 	case c.Playback():
 		return playbackLogGap
-	case c == ClassStandby, c == ClassWake, c == ClassPowerEvent:
+	case c == ClassStandby, c == ClassWake, c == ClassPowerEvent, c == ClassDisplayClock:
 		return powerLogGap
 	case c == ClassSwamped, c == ClassMargeError:
 		return rareLogGap
