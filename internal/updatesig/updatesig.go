@@ -52,7 +52,7 @@ var PublicKeys = []string{
 
 // releaseKey1 is the first release signing key (2026-10-14). Its private half
 // is the STR_UPDATE_SIGNING_KEY Actions secret.
-const releaseKey1 = "REPLACE_WITH_PUBLIC_KEY"
+const releaseKey1 = "xGh/Jl/719PSDFwu8gpBmvfsfxkbn8DPPqFeTK8VDWU="
 
 // File is one installable release file.
 type File struct {
