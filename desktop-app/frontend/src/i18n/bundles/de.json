@@ -1001,7 +1001,7 @@
   "settingsView.wlanForgetRefused.ethernet": "Der Lautsprecher hängt am Netzwerkkabel. WLAN-Netzwerke vergessen geht nur, solange er im WLAN ist.",
   "settingsView.wlanForgetRefused.mismatch": "Der Lautsprecher ist in einem anderen Netzwerk als dem, das STR für ihn eingerichtet hat. Wechsle zuerst oben das WLAN und versuch es dann noch mal.",
   "settingsView.wlanForgetRefused.keepNotStored": "Die eigene Netzwerkliste des Lautsprechers enthält das aktuelle Netzwerk nicht, deshalb lässt STR die Liste in Ruhe.",
-  "settingsView.wlanForgetRefused.chassis": "Der WLAN-Chip dieses Lautsprechers führt seine eigene Netzwerkliste und bietet keinen Weg, ein einzelnes Netzwerk zu entfernen.",
+  "settingsView.wlanForgetRefused.chassis": "Bei diesem Lautsprechermodell kann STR einzelne gespeicherte Netzwerke noch nicht entfernen. Der Lautsprecher wechselt nur dann in ein anderes gespeichertes Netzwerk, wenn sein aktuelles nicht erreichbar ist. Solange dein Netzwerk verfügbar ist, bleibt er also dort.",
   "settingsView.wlanForgetFailed": "STR konnte die Netzwerke nicht vergessen: {{reason}}",
   "settingsView.wlanForgetOthersToggle": "Alle anderen Netzwerke auf diesem Lautsprecher vergessen",
   "settingsView.wlanForgetOthersToggleHint": "Empfohlen. Der Lautsprecher kennt dann nur noch das neue Netzwerk und kann nicht auf ein altes oder öffentliches ausweichen. Zum Abschluss startet er einmal neu.",

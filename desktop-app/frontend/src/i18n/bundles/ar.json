@@ -892,7 +892,7 @@
   "settingsView.wlanForgetRefused.ethernet": "السمّاعة متصلة بكابل شبكة. لا يمكن نسيان شبكات Wi-Fi إلا أثناء اتصالها عبر Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "السمّاعة على شبكة مختلفة عن التي أعدّها STR لها. غيّر Wi-Fi في الأعلى أولًا ثم حاول مرة أخرى.",
   "settingsView.wlanForgetRefused.keepNotStored": "قائمة الشبكات الخاصة بالسمّاعة لا تحتوي على الشبكة الحالية، لذلك يترك STR القائمة كما هي.",
-  "settingsView.wlanForgetRefused.chassis": "شريحة Wi-Fi في هذه السمّاعة تحتفظ بقائمة شبكاتها الخاصة ولا تتيح إزالة شبكة واحدة.",
+  "settingsView.wlanForgetRefused.chassis": "لا يستطيع STR بعد إزالة شبكة محفوظة واحدة على طراز هذه السمّاعة. لا تنتقل السمّاعة إلى شبكة محفوظة أخرى إلا إذا تعذّر الوصول إلى شبكتها الحالية، لذا تبقى على شبكتك ما دامت متاحة.",
   "settingsView.wlanForgetFailed": "تعذّر على STR نسيان الشبكات: {{reason}}",
   "settingsView.wlanForgetOthersToggle": "نسيان جميع الشبكات الأخرى على هذه السمّاعة",
   "settingsView.wlanForgetOthersToggleHint": "مستحسن. ستعرف السمّاعة الشبكة الجديدة فقط ولن تتمكن من الرجوع إلى شبكة قديمة أو عامة. تعيد التشغيل مرة واحدة للإنهاء.",

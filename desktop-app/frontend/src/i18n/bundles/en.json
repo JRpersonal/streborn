@@ -1001,7 +1001,7 @@
   "settingsView.wlanForgetRefused.ethernet": "The speaker is on a network cable. Forgetting Wi-Fi networks only works while it is on Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "The speaker is on a different network than the one STR set up for it. Change the Wi-Fi above first, then try again.",
   "settingsView.wlanForgetRefused.keepNotStored": "The speaker's own network list does not contain the current network, so STR leaves the list alone.",
-  "settingsView.wlanForgetRefused.chassis": "This speaker's Wi-Fi chip keeps its own network list and offers no way to remove a single network.",
+  "settingsView.wlanForgetRefused.chassis": "STR cannot remove single stored networks on this speaker model yet. The speaker only switches to another stored network when its current one cannot be reached, so it stays on your network as long as that one is available.",
   "settingsView.wlanForgetFailed": "STR could not forget the networks: {{reason}}",
   "settingsView.wlanForgetOthersToggle": "Forget all other networks on this speaker",
   "settingsView.wlanForgetOthersToggleHint": "Recommended. The speaker then only knows the new network and cannot fall back to an old or public one. It restarts once to finish.",

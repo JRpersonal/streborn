@@ -32,11 +32,20 @@ package webui
 //	  ST10 2026-10-14.
 //
 //	bco chassis (scm: Portable taigan, ST30 scm, ST20 spotty)
-//	  The radio is a separate chip with its own profile store, mirrored into
-//	  AirplayConfiguration.xml. There is no runtime channel that removes ONE
-//	  profile from the chip (BoseApp only knows "clear all on BCO"), so a
-//	  speaker with more than one profile there gets an honest refusal instead
-//	  of a half-done job: a profile left in the chip comes straight back.
+//	  Measured on a Portable 2026-10-14: the radio chip holds ONE profile
+//	  (its config entry Networking/DrvCfg/WlanCfg/Profile1), and BoseApp
+//	  programs it at every boot from its own list, the up to four
+//	  PersistentWifiProfile slots of AirplayConfiguration.xml in the order of
+//	  WifiProfileArray. BoseApp's profile manager moves on to the next slot
+//	  only when the current network cannot be reached. So the list that
+//	  matters is the XML, not the chip. Removing a slot from it (and leaving
+//	  the kept slot's ciphertext untouched) is the likely way to forget a
+//	  network here, but it has not been tried on hardware yet, and a wrong
+//	  guess reboots a speaker whose Wi-Fi is its only uplink into nothing. The
+//	  firmware's own add path (:8090/addWirelessProfile) is no help either: on
+//	  this chassis it REPLACES the chip's one profile instead of adding one.
+//	  Until a slot removal is verified, a speaker with more than one network
+//	  gets an honest refusal instead of a half-done job.
 //
 // The rules that keep a speaker reachable, all enforced in planWLANForget:
 // the network the speaker is associated with right now is never touched; the
@@ -120,7 +129,7 @@ type storedWiFi struct {
 	STRTarget bool `json:"strTarget,omitempty"`
 	// Sources names every store that holds it: "firmware" (NetManager's
 	// NetworkProfiles), "running" (wpa_supplicant), "conf"
-	// (wpa_supplicant.conf), "chip" (the BCO radio's mirror).
+	// (wpa_supplicant.conf), "chip" (BoseApp's AirplayConfiguration list on the BCO chassis).
 	Sources []string `json:"sources"`
 }
 
@@ -191,7 +200,7 @@ func planWLANForget(in wlanForgetInputs, only string) wlanForgetPlan {
 		if len(distinct) <= 1 {
 			return wlanForgetPlan{Keep: in.LiveSSID}
 		}
-		return refuse(forgetChassis, "this speaker's Wi-Fi chip keeps its own networks and offers no way to remove a single one")
+		return refuse(forgetChassis, "STR cannot remove single stored networks on this speaker model yet; the speaker only switches to another stored network when its current one cannot be reached")
 	}
 	if in.LiveSSID == "" {
 		if in.Wired {

@@ -1398,8 +1398,10 @@ function renderBoxSettings(s, box) {
           <input type="password" id="boxWlanPass" placeholder="${escapeAttr(t('settingsView.wlanPassPlaceholder'))}" />
           <button class="btn btn-icon-sm" id="boxWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>
         </div>
-        <label style="display:block;margin:4px 0 0"><input type="checkbox" id="boxWlanForgetOthers" checked /> ${escapeHtml(t('settingsView.wlanForgetOthersToggle'))}</label>
-        <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(t('settingsView.wlanForgetOthersToggleHint'))}</small>
+        <div id="boxWlanForgetOthersRow">
+          <label style="display:block;margin:4px 0 0"><input type="checkbox" id="boxWlanForgetOthers" checked /> ${escapeHtml(t('settingsView.wlanForgetOthersToggle'))}</label>
+          <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(t('settingsView.wlanForgetOthersToggleHint'))}</small>
+        </div>
         <button class="btn btn-danger btn-mini" id="boxWlanSave">${escapeHtml(t('settingsView.wlanSaveBtn'))}</button>
         <small class="muted small">${escapeHtml(t('settingsView.wlanWarn'))}</small>
       </div>
@@ -3742,6 +3744,12 @@ function wireWlanStored(box) {
     }
     list.innerHTML = storedNetworksHtml(view, t, escapeHtml);
     btn.hidden = !view.canForget;
+    // The change form's "forget the others" option does nothing on a
+    // chassis that cannot forget, so it is not offered there.
+    const forgetRow = $('boxWlanForgetOthersRow');
+    const forgetBox = $('boxWlanForgetOthers');
+    if (forgetRow) forgetRow.hidden = !view.forgetSupported;
+    if (forgetBox && !view.forgetSupported) forgetBox.checked = false;
     note.textContent = view.refusalKey && view.networks.length > 1
       ? t(view.refusalKey)
       : '';

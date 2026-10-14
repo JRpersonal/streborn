@@ -41,6 +41,13 @@ describe('storedNetworksView', () => {
     expect(storedNetworksView({ ...field, networks: nets }).canForget).toBe(false);
   });
 
+  it('offers the change form option only where a forget can run', () => {
+    expect(storedNetworksView(field).forgetSupported).toBe(true);
+    expect(storedNetworksView({ ...field, mechanism: 'bco' }).forgetSupported).toBe(false);
+    // An agent that does not say keeps the option: the agent ignores it on BCO.
+    expect(storedNetworksView({ ...field, mechanism: undefined }).forgetSupported).toBe(true);
+  });
+
   it('survives an old agent answer', () => {
     const v = storedNetworksView(null);
     expect(v.networks).toEqual([]);

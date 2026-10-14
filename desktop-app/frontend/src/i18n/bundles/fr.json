@@ -892,7 +892,7 @@
   "settingsView.wlanForgetRefused.ethernet": "L'enceinte est branchée par câble réseau. Oublier des réseaux Wi-Fi ne fonctionne que lorsqu'elle est en Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "L'enceinte est sur un autre réseau que celui que STR lui a configuré. Change d'abord le Wi-Fi ci-dessus, puis réessaie.",
   "settingsView.wlanForgetRefused.keepNotStored": "La liste de réseaux de l'enceinte ne contient pas le réseau actuel, STR n'y touche donc pas.",
-  "settingsView.wlanForgetRefused.chassis": "La puce Wi-Fi de cette enceinte gère sa propre liste de réseaux et ne permet pas d'en supprimer un seul.",
+  "settingsView.wlanForgetRefused.chassis": "STR ne peut pas encore supprimer un seul réseau enregistré sur ce modèle d'enceinte. L'enceinte ne passe à un autre réseau enregistré que si son réseau actuel est injoignable, elle reste donc sur votre réseau tant qu'il est disponible.",
   "settingsView.wlanForgetFailed": "STR n'a pas pu oublier les réseaux : {{reason}}",
   "settingsView.wlanForgetOthersToggle": "Oublier tous les autres réseaux sur cette enceinte",
   "settingsView.wlanForgetOthersToggleHint": "Recommandé. L'enceinte ne connaît alors que le nouveau réseau et ne peut plus se rabattre sur un ancien ou un réseau public. Elle redémarre une fois pour terminer.",

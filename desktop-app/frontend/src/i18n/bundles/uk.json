@@ -892,7 +892,7 @@
   "settingsView.wlanForgetRefused.ethernet": "Колонка підключена мережевим кабелем. Забути мережі Wi-Fi можна лише тоді, коли вона в Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "Колонка в іншій мережі, ніж та, яку для неї налаштував STR. Спершу зміни Wi-Fi вище, потім спробуй ще раз.",
   "settingsView.wlanForgetRefused.keepNotStored": "Власний список мереж колонки не містить поточної мережі, тож STR його не чіпає.",
-  "settingsView.wlanForgetRefused.chassis": "Wi-Fi-чип цієї колонки веде власний список мереж і не дозволяє видалити одну мережу.",
+  "settingsView.wlanForgetRefused.chassis": "На цій моделі колонки STR поки не може видаляти окремі збережені мережі. Колонка переходить до іншої збереженої мережі лише тоді, коли поточна недоступна, тож вона залишається у вашій мережі, доки та доступна.",
   "settingsView.wlanForgetFailed": "STR не вдалося забути мережі: {{reason}}",
   "settingsView.wlanForgetOthersToggle": "Забути всі інші мережі на цій колонці",
   "settingsView.wlanForgetOthersToggleHint": "Рекомендовано. Колонка знатиме лише нову мережу і не зможе перейти на стару чи публічну. Наприкінці вона один раз перезапуститься.",

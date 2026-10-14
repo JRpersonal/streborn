@@ -1001,7 +1001,7 @@
   "settingsView.wlanForgetRefused.ethernet": "喇叭正使用網路線連線。只有在連上 Wi-Fi 時才能忘記 Wi-Fi 網路。",
   "settingsView.wlanForgetRefused.mismatch": "喇叭所在的網路和 STR 為它設定的不同。請先在上方切換 Wi-Fi，再試一次。",
   "settingsView.wlanForgetRefused.keepNotStored": "喇叭自己的網路清單裡沒有目前的網路，所以 STR 不會動這份清單。",
-  "settingsView.wlanForgetRefused.chassis": "這台喇叭的 Wi-Fi 晶片有自己的網路清單，無法只移除單一網路。",
+  "settingsView.wlanForgetRefused.chassis": "STR 目前還無法在這個喇叭型號上移除單一已儲存的網路。喇叭只會在目前的網路無法連線時才切換到另一個已儲存的網路，所以只要你的網路可用，它就會留在上面。",
   "settingsView.wlanForgetFailed": "STR 無法忘記這些網路：{{reason}}",
   "settingsView.wlanForgetOthersToggle": "忘記這台喇叭上的所有其他網路",
   "settingsView.wlanForgetOthersToggleHint": "建議勾選。喇叭之後只認得新網路，不會退回舊的或公共網路。最後會重新開機一次。",

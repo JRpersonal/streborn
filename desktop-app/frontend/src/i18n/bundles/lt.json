@@ -892,7 +892,7 @@
   "settingsView.wlanForgetRefused.ethernet": "Garsiakalbis prijungtas tinklo kabeliu. Pamiršti Wi-Fi tinklus galima tik kai jis Wi-Fi tinkle.",
   "settingsView.wlanForgetRefused.mismatch": "Garsiakalbis yra kitame tinkle nei tas, kurį jam nustatė STR. Pirmiausia pakeisk Wi-Fi aukščiau ir bandyk dar kartą.",
   "settingsView.wlanForgetRefused.keepNotStored": "Garsiakalbio tinklų sąraše nėra dabartinio tinklo, todėl STR sąrašo neliečia.",
-  "settingsView.wlanForgetRefused.chassis": "Šio garsiakalbio Wi-Fi lustas tvarko savo tinklų sąrašą ir neleidžia pašalinti vieno tinklo.",
+  "settingsView.wlanForgetRefused.chassis": "Šiame garsiakalbio modelyje STR kol kas negali pašalinti atskirų išsaugotų tinklų. Garsiakalbis pereina į kitą išsaugotą tinklą tik tada, kai dabartinis nepasiekiamas, todėl lieka jūsų tinkle, kol jis veikia.",
   "settingsView.wlanForgetFailed": "STR nepavyko pamiršti tinklų: {{reason}}",
   "settingsView.wlanForgetOthersToggle": "Pamiršti visus kitus šio garsiakalbio tinklus",
   "settingsView.wlanForgetOthersToggleHint": "Rekomenduojama. Garsiakalbis žinos tik naują tinklą ir negalės persijungti į seną ar viešą. Pabaigai jis vieną kartą persikraus.",

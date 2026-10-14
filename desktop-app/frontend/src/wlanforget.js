@@ -34,6 +34,11 @@ export function storedNetworksView(resp) {
   const code = fo.code || '';
   return {
     networks: sorted,
+    // Only the wpa chassis can forget a network today. The BCO chassis
+    // (Portable, scm ST30, spotty ST20) keeps its list in BoseApp's own
+    // settings, where STR cannot remove a single entry yet, so the "forget
+    // the others" option of the Wi-Fi change form would do nothing there.
+    forgetSupported: !resp || !resp.mechanism || resp.mechanism === 'wpa',
     keep: current ? current.ssid : (resp && resp.current) || '',
     removable,
     canForget: !code && removable > 0 && !!current,

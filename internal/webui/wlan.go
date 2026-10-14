@@ -373,7 +373,7 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 		}
 	default:
 		if forgetOthers {
-			s.logger.Info("WLAN: forgetting the other networks is not possible on this chassis, its Wi-Fi chip keeps its own list", "wantTag", ssidTag(ssid))
+			s.logger.Info("WLAN: forgetting the other networks is not supported on this chassis yet (BoseApp keeps its own list in AirplayConfiguration.xml)", "wantTag", ssidTag(ssid))
 		}
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid, "wantTag", ssidTag(ssid))
 		// Same store, one last chance to record the new network before the
