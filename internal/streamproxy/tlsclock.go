@@ -135,3 +135,11 @@ func verifyChainClockTolerant(certs []*x509.Certificate, host string, roots *x50
 		return err
 	}
 }
+
+// VerifyChainClockTolerant is verifyChainClockTolerant for other packages that
+// fetch over HTTPS from the speaker (the self-update reads GitHub with it). It
+// reads the live clock, so the time window is only relaxed while the speaker's
+// clock is implausibly old.
+func VerifyChainClockTolerant(certs []*x509.Certificate, host string, roots *x509.CertPool) error {
+	return verifyChainClockTolerant(certs, host, roots, time.Now(), clockUntrustworthy())
+}
