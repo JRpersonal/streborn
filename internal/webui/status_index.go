@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -175,7 +177,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		s.statusMu.Unlock()
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.WriteHeader(code)
-		_, _ = w.Write(body)
+		_, _ = w.Write(s.withStationName(body))
 		return
 	}
 	s.statusMu.Unlock()
@@ -214,7 +216,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 			w.WriteHeader(code)
-			_, _ = w.Write(body)
+			_, _ = w.Write(s.withStationName(body))
 			return
 		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -236,7 +238,51 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(body)
+	_, _ = w.Write(s.withStationName(body))
+}
+
+// withStationName puts the station STR started back into a now_playing body
+// whose station name the speaker no longer reports (#1170).
+//
+// "Show the current track on the display" works by re-sending the stream with
+// the song as its title (setDisplayText), and from then on the speaker reports
+// that song as itemName and leaves stationName empty. Both apps took itemName
+// as the station, so the phone showed the song as the big title and hid the
+// song line as a duplicate. The agent still knows what it started, in
+// lastPlay, so when the speaker is playing exactly that stream and has no
+// station name of its own, the empty <stationName> gets lastPlay's title. The
+// body stays the speaker's own XML otherwise: clients regex-parse it.
+func (s *Server) withStationName(body []byte) []byte {
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	var url, title string
+	if lp != nil {
+		url, title = lp.boxURL, lp.title
+	}
+	s.lastPlayMu.Unlock()
+	return annotateStationName(body, url, title)
+}
+
+var emptyStationNameRe = regexp.MustCompile(`<stationName\s*/>|<stationName>\s*</stationName>`)
+
+func annotateStationName(body []byte, boxURL, title string) []byte {
+	if boxURL == "" || strings.TrimSpace(title) == "" {
+		return body
+	}
+	m := nowPlayingLocationRe.FindSubmatch(body)
+	if m == nil || html.UnescapeString(string(m[1])) != boxURL {
+		return body
+	}
+	loc := emptyStationNameRe.FindIndex(body)
+	if loc == nil {
+		return body
+	}
+	var esc strings.Builder
+	_ = xml.EscapeText(&esc, []byte(title))
+	out := make([]byte, 0, len(body)+len(title)+32)
+	out = append(out, body[:loc[0]]...)
+	out = append(out, "<stationName>"+esc.String()+"</stationName>"...)
+	return append(out, body[loc[1]:]...)
 }
 
 // boseappOutage is one closed episode of the firmware webserver (:8090) not
