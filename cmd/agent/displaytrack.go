@@ -49,6 +49,16 @@ func (h *presetWsHandler) OnVolumeChanged(context.Context) {
 	go pauseTrack(oled.TrackVolumePause, "volume")
 }
 
+// OnVolumeLevel is the boxws hook carrying the speaker's new volume (-1 when
+// the frame had none): it is passed to the Spotify engine so the Spotify
+// app's volume slider follows hardware keys, the remote and every other
+// volume source. Non-blocking (NoteBoxVolume hands it to a worker).
+func (h *presetWsHandler) OnVolumeLevel(_ context.Context, level int) {
+	if h.spotify != nil {
+		h.spotify.NoteBoxVolume(level)
+	}
+}
+
 // OnPlayingChanged is the boxws hook for the speaker's play status: the
 // playing symbol on the track screen moves only while music runs.
 func (h *presetWsHandler) OnPlayingChanged(_ context.Context, playing bool) {

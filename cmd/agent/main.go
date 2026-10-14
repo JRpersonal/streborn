@@ -782,6 +782,12 @@ func run() error {
 	webui.RegisterDebugSection("spotify_resume", func() any {
 		return spotifyMgr.ResumeSnapshot()
 	})
+	// The box <-> Spotify volume bridge: the speaker level and the Connect
+	// volume the Spotify app is shown, so "the slider shows the wrong volume"
+	// can be settled from a bundle.
+	webui.RegisterDebugSection("spotify_volume", func() any {
+		return spotifyMgr.VolumeSnapshot()
+	})
 
 	// Answer for this speaker's own mDNS name BEFORE the engine is told to
 	// advertise it. The order is the safety property, not a detail: the engine

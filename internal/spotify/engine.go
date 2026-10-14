@@ -233,7 +233,8 @@ func (m *Manager) Run(ctx context.Context) {
 	// watchVolume is re-enabled now that its goroutine leak is fixed (per-call
 	// ctx in volumeStream): it mirrors Spotify-app volume changes onto the box
 	// so the Connect remote controls the speaker volume. The box -> Spotify
-	// feedback direction is added separately with echo dedup to avoid a loop.
+	// direction is NoteBoxVolume, fed by the gabbo volumeUpdated frame; both
+	// directions share the echo marks in volumesync.go.
 	go m.watchVolume(ctx)
 	// captureLoop snapshots each account's credential as it taps the device,
 	// building the per-account library that SwitchAccount swaps between for
@@ -242,8 +243,8 @@ func (m *Manager) Run(ctx context.Context) {
 	// Debounced writer for the per-context resume memory.
 	go m.resume.run(ctx)
 	// One-shot: rewrite config with the box's real name + volume once the box
-	// REST API answers (it is usually not up when config is first written), then
-	// restart go-librespot so the Spotify app sees the right volume, not 100%.
+	// REST API answers (it is usually not up when config is first written), and
+	// restart go-librespot if the name it advertises was wrong.
 	go m.refreshVolumeConfigOnce(ctx)
 	// A stereo pair has to appear in the Spotify app as ONE device, the way the
 	// Bose firmware shows it. This notices a pair forming or dissolving and

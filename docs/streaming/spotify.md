@@ -352,6 +352,33 @@ capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST
 outlived the fixed window and the recall's own track start read as a
 Spotify-app skip.
 
+### Volume: the speaker owns it, the app's slider follows (`volumesync.go`)
+
+The engine runs with `external_volume`, so a Connect volume command only
+arrives as a `volume` event that STR writes to the speaker. The other
+direction (speaker keys, IR remote, the STR app, the Bose API) is the box's
+gabbo `volumeUpdated` frame, which carries the new level; STR passes it to
+the engine with `/player/volume`, waiting out a key burst first. Every value
+STR sends either way is remembered for 3 s and its echo is dropped by value,
+so nothing bounces.
+
+go-librespot announces a new device at volume 100 % whatever
+`initial_volume` says: under `external_volume` `daemon/player.go` skips its
+`initialVolumeOnce` block and `initState` (`daemon/player_state.go`) hard-codes
+`player.MaxStateVolume`. That is why the app's slider sat at max and the first
+touch sent max to the speaker. STR therefore seeds the speaker's level at the
+engine's `playback_ready` event (the session has just registered the device),
+again when its events socket connects, and on `active` only if the engine
+does not hold the level yet. The fork fix that removes the window entirely:
+let `initState` start `device.Volume` at
+`InitialVolume * MaxStateVolume / VolumeSteps` (or the last volume unless
+`ignore_last_volume`) for every volume mode, so the very first `NEW_DEVICE`
+PutState carries it. Until that ships, a narrow guard holds a Spotify volume
+of 100 that would raise the speaker by 25 points or more for 1.2 s and drops
+it if another level follows (logged `ignored a jump to full volume`). The
+`spotify_volume` debug section shows both sides and the engine's live Connect
+volume.
+
 ## Why native Spotify works without the Bose cloud
 
 Spotify Connect has two login paths. Bose's app used the **account-linked**

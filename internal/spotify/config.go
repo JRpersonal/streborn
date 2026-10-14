@@ -51,9 +51,14 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	// Volume bridge: the box owns the actual volume (passthrough Ogg can't be
 	// scaled by go-librespot), so external_volume makes go-librespot forward
 	// Connect volume changes as /events instead of applying them; the manager
-	// mirrors those onto the box and back (with echo dedup, see watchVolume /
-	// SetVolume). volume_steps 100 makes the value a percent; initial_volume
-	// seeds it with the box's real level so the Spotify app shows it correctly.
+	// mirrors those onto the box and back (with echo dedup, see volumesync.go).
+	// volume_steps 100 makes the value a percent. initial_volume is written
+	// with the box's real level, but go-librespot IGNORES it under
+	// external_volume (daemon/player.go skips its initialVolumeOnce block and
+	// initState announces the device at 100 %). The real level therefore
+	// reaches the Connect state through /player/volume at the engine's
+	// playback_ready event (seedEngineVolume); the key stays for an engine that
+	// honours it.
 	b.WriteString("external_volume: true\n")
 	b.WriteString("volume_steps: 100\n")
 	fmt.Fprintf(&b, "initial_volume: %d\n", initialVol)
@@ -206,14 +211,14 @@ func (m *Manager) ensureConfig(ctx context.Context) error {
 }
 
 // refreshVolumeConfigOnce rewrites config.yml with the box's real name and
-// volume once the box REST API first answers, then restarts go-librespot a
-// single time. config.yml is first written at agent start, usually before the
-// box is up, so device_name and initial_volume fall back (volume 100), which
-// made the Spotify app slider start at 100% and jump on first touch. With
-// ignore_last_volume true and a correct initial_volume, go-librespot then
-// reports the box's real level. One shot only (no polling), so it cannot flap
-// like the old name watcher; skips the rewrite when already correct and the
-// restart when a box is streaming.
+// volume once the box REST API first answers, and restarts go-librespot a
+// single time when the NAME changed. config.yml is first written at agent
+// start, usually before the box is up, so device_name and initial_volume fall
+// back. A volume-only difference does not restart the engine: go-librespot
+// ignores initial_volume under external_volume, and the speaker's level
+// reaches the Spotify app through seedEngineVolume (volumesync.go). One shot
+// only (no polling), so it cannot flap like the old name watcher; skips the
+// rewrite when already correct and the restart when a box is streaming.
 func (m *Manager) refreshVolumeConfigOnce(ctx context.Context) {
 	if m.box == nil {
 		return
@@ -243,12 +248,21 @@ func (m *Manager) refreshVolumeConfigOnce(ctx context.Context) {
 			vol = 100
 		}
 		m.mu.Lock()
-		unchanged := name == m.name && vol == m.configVol
+		nameChanged := name != m.name
+		unchanged := !nameChanged && vol == m.configVol
 		streaming := m.sink != nil
 		restart := m.runCancel
 		m.mu.Unlock()
 		if unchanged {
 			return // initial config was already correct
+		}
+		// Only a NAME change is worth an engine restart. initial_volume is
+		// ignored by go-librespot under external_volume, so restarting for it
+		// cost a re-login and changed nothing the app shows; the volume reaches
+		// the Connect state through seedEngineVolume instead. The file is
+		// still rewritten so an engine that honours the key starts right.
+		if !nameChanged {
+			restart = nil
 		}
 		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
 			[]byte(m.configYAML(name, vol)), 0o644); err != nil {
@@ -259,7 +273,7 @@ func (m *Manager) refreshVolumeConfigOnce(ctx context.Context) {
 		m.name = name
 		m.configVol = vol
 		m.mu.Unlock()
-		m.logger.Info("spotify: refreshed config from box", "name", name, "vol", vol, "restart", !streaming)
+		m.logger.Info("spotify: refreshed config from box", "name", name, "vol", vol, "restart", !streaming && restart != nil)
 		if !streaming && restart != nil {
 			restart()
 		}

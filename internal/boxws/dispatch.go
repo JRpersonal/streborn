@@ -334,6 +334,12 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if h, ok := c.handler.(interface{ OnVolumeChanged(context.Context) }); ok {
 			h.OnVolumeChanged(ctx)
 		}
+		// Optional: the new level itself (-1 when the frame carried none), for
+		// the Spotify engine so the Spotify app's slider follows the speaker.
+		// Must not block either.
+		if h, ok := c.handler.(interface{ OnVolumeLevel(context.Context, int) }); ok {
+			h.OnVolumeLevel(ctx, f.VolumeUpdated.level())
+		}
 	case f.UserActivity != nil:
 		// The remote thumbs keys surface ONLY as this generic ping (no up/down
 		// identity). Treat a lone one as a thumb press; noteUserActivity
