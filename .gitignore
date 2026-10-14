@@ -87,3 +87,6 @@ testbuilds/
 # Generated Windows resource (icon, manifest and version block), written by
 # `make winres` and by CI. Never committed, like the other embed artefacts.
 desktop-app/rsrc_windows_amd64.syso
+
+# Stray local agent build output (a bare `go build ./cmd/agent` at the repo root)
+/agent

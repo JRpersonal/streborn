@@ -5,7 +5,7 @@
 // user's home Wi-Fi without ever touching the iOS app. Live-verified
 // 2026-05-30 on a taigan SoundTouch Portable in factory reset: the
 // four-call sequence (language gate, marge gate, site survey,
-// addWirelessProfile) lands a JJ3 join with the box reachable at its
+// addWirelessProfile) lands a <home Wi-Fi> join with the box reachable at its
 // new DHCP-assigned IP on the home LAN within 1 to 5 minutes.
 //
 // The HTTP shapes are the originals the Bose iOS app and the Bose

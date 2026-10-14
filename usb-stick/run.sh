@@ -2655,7 +2655,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # /language + /name gates run, and the post-reboot boot wins via
         # M0a-prelease which skips M1. So fire those same two gates here,
         # once BoseApp is up. Self-gated on systemstate -> no-op once set.
-        # Live finding 2026-06-01: a taigan joined JJ3 via M_air but the
+        # Live finding 2026-06-01: a taigan joined <home Wi-Fi> via M_air but the
         # display kept prompting the iOS app because language stayed unset.
         _fo_api="http://127.0.0.1:8090"
         _fo=0
@@ -2693,7 +2693,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # M5/M6 would tear down the very network we already have. All of
     # those are destructive when the user-visible network already
     # works — observed live on taigan/Portable 2026-05-28 where
-    # STR's profiles clear wiped JJ3 right after Bose iOS app
+    # STR's profiles clear wiped <home Wi-Fi> right after Bose iOS app
     # provisioned it, and live again on Series-I scm-variant ST20
     # 2026-05-29 (#60) where pre-stick the box was on Wi-Fi,
     # M0a logged "skipping" but the pipeline kept running because

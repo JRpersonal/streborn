@@ -35,7 +35,7 @@ func TestClassify(t *testing.T) {
 			in: Facts{
 				Reachable: true, IP: "192.168.178.79",
 				SetupState: "SETUP_AP_OOB", SystemState: "SETUP_LANG_NOT_SET",
-				SSID: "JJ3", WifiProfileCount: 1,
+				SSID: "ExampleWiFi", WifiProfileCount: 1,
 			},
 			want: StateOnlineNotConfigured,
 		},
@@ -44,7 +44,7 @@ func TestClassify(t *testing.T) {
 			in: Facts{
 				Reachable: true, IP: "192.168.178.79",
 				SetupState: "SETUP_INACTIVE", SystemState: "SETUP_LANG_SET",
-				MargeAccountUUID: "stick-bootstrap", SSID: "JJ3",
+				MargeAccountUUID: "stick-bootstrap", SSID: "ExampleWiFi",
 			},
 			want: StateOnlineConfigured,
 		},

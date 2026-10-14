@@ -2468,7 +2468,7 @@ function renderBoxSettings(s, box) {
           showToast(t('settingsView.trueFactoryResetDoneToast', { n: (r.wipedFiles || []).length }));
           // Speaker reboots into OOB, will not be on the LAN for a
           // while. Trigger discovery in 60 s so the UI catches it
-          // when the iOS app brings it back onto JJ3.
+          // when the iOS app brings it back onto <home Wi-Fi>.
           setTimeout(deps.discoverBoxes, 60000);
         } else {
           showError(t('settingsView.trueFactoryResetFailed', { msg: (r && r.message) || '?' }));
