@@ -937,7 +937,7 @@ export namespace main {
 	export class StreamSourceStation {
 	    id: string;
 	    name: string;
-	    stream_type: string;
+	    stream_type?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StreamSourceStation(source);
