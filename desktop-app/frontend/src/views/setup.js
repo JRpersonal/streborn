@@ -71,6 +71,7 @@ import {
   PushWLANToBox,
   GetBoxFirmware,
   GetFirmwareGuide,
+  FlashBoseFirmware,
   DiscoverBoxes,
   SaveDiagnosticBundle,
   EventsOn,
@@ -1844,7 +1845,7 @@ async function watchForSpeakerReady({ ssid, pass, html, generation }) {
         if (!guideUp) {
           const guide = firmwareGuideNeeded(fw)
             ? `<div class="fw-update-banner">${firmwareGuideMount({
-              model, moduleType: f.moduleType, variant: f.variant, current: f.firmware || fw,
+              model, moduleType: f.moduleType, variant: f.variant, current: f.firmware || fw, host: cand.host,
             })}</div>`
             : '';
           setStatus('setup-warn', t('setup.awaitFirmwareTooOld', { model, fw: fw || '?' }),
@@ -1998,6 +1999,7 @@ function outdatedFirmwareHtml(box, short, result) {
       moduleType: r.moduleType || '',
       variant: r.variant || '',
       current: short,
+      host: (box && box.host) || '',
     })
     + `</div>`;
 }
@@ -2009,6 +2011,9 @@ function wireOutdatedFirmwareLinks() {
     getGuide: GetFirmwareGuide,
     openURL: BrowserOpenURL,
     copy: ClipboardSetText,
+    flash: FlashBoseFirmware,
+    onProgress: (cb) => EventsOn('firmware:progress', cb),
+    confirm: confirmWarn,
   });
 }
 

@@ -84,6 +84,9 @@ export function fwGuidePlan(ident, guide) {
     setupKey: setupModeKey(id.model),
     articles: boseFwArticles(String(id.model || '').trim()),
     afterKey: id.context === 'settings' ? 'fwGuide.afterInstalled' : 'fwGuide.after',
+    // The app can do the update itself for a speaker it reaches on the home
+    // network and whose file is known for certain (FlashBoseFirmware).
+    auto: !!String(id.host || '').trim() && download === 'one',
   };
 }
 
@@ -122,6 +125,33 @@ function downloadHtml(plan) {
   }
 }
 
+// fwFlashStatus turns one "firmware:progress" event (or the final result or
+// error, as { phase: 'done', version } / { phase: 'error', error }) into the
+// line shown under the update button.
+export function fwFlashStatus(p) {
+  const e = p || {};
+  const pct = typeof e.pct === 'number' && e.pct >= 0 ? e.pct : null;
+  switch (e.phase) {
+    case 'verify': return t('fwGuide.autoVerify');
+    case 'download': return pct === null ? t('fwGuide.autoDownload', { pct: '' }).trim() : t('fwGuide.autoDownload', { pct: `${pct} %` });
+    case 'upload': return pct === null ? t('fwGuide.autoUpload', { pct: '' }).trim() : t('fwGuide.autoUpload', { pct: `${pct} %` });
+    case 'install': return t('fwGuide.autoInstall');
+    case 'done': return t('fwGuide.autoDone', { version: e.version || '?' });
+    case 'error': return t('fwGuide.autoFailed', { error: e.error || '?' });
+    default: return t('fwGuide.autoStarting');
+  }
+}
+
+function autoHtml(plan) {
+  if (!plan.auto) return '';
+  return '<div class="fw-guide-auto">'
+    + `<div>${escapeHtml(t('fwGuide.autoIntro'))}</div>`
+    + `<div class="fw-guide-dl"><button type="button" class="btn btn-mini btn-primary" data-fwflash="1">${escapeHtml(t('fwGuide.autoBtn'))}</button></div>`
+    + '<div class="fw-guide-autostatus small" aria-live="polite"></div>'
+    + `<div class="muted small">${escapeHtml(t('fwGuide.manualIntro'))}</div>`
+    + '</div>';
+}
+
 // firmwareGuideHtml renders the guide body for a plan.
 export function firmwareGuideHtml(ident, guide) {
   const plan = fwGuidePlan(ident, guide);
@@ -130,6 +160,7 @@ export function firmwareGuideHtml(ident, guide) {
   return `<b>${escapeHtml(t('fwGuide.title'))}</b>`
     + `<div>${escapeHtml(t('fwGuide.versions', { current: plan.current, required: plan.required }))}</div>`
     + `<div class="muted small">${escapeHtml(t('fwGuide.why'))}</div>`
+    + autoHtml(plan)
     + '<ol class="fw-guide-steps">'
     + `<li>${escapeHtml(t('fwGuide.step1'))}${downloadHtml(plan)}</li>`
     + `<li>${escapeHtml(t(plan.setupKey))}</li>`
@@ -152,6 +183,11 @@ function identKey(id) {
   return [id.model, id.moduleType, id.variant, id.current].map(v => String(v || '')).join('|');
 }
 
+// A running update per speaker, so a guide that is redrawn mid-update (the
+// stick wait re-renders every few seconds) picks the progress up again
+// instead of offering the button a second time.
+const flashes = new Map();
+
 // firmwareGuideMount is the placeholder a view puts into its HTML. It renders
 // the guide at once (download step "looking up") and wireFirmwareGuides fills in
 // Bose's link.
@@ -162,6 +198,7 @@ export function firmwareGuideMount(ident) {
     variant: (ident && ident.variant) || '',
     current: (ident && ident.current) || '',
     context: (ident && ident.context) || '',
+    host: (ident && ident.host) || '',
   };
   const cached = guideCache.get(identKey(id)) || null;
   return `<div class="fw-guide" data-fwguide="${escapeHtml(JSON.stringify(id))}">${firmwareGuideHtml(id, cached)}</div>`;
@@ -170,6 +207,9 @@ export function firmwareGuideMount(ident) {
 // wireFirmwareGuides wires every guide under root.
 //   deps.getGuide(model, moduleType, variant, current) -> Promise<FirmwareGuide>
 //   deps.openURL(url), deps.copy(text) -> Promise
+//   deps.flash(host, force) -> Promise<FirmwareFlashResult>   (optional)
+//   deps.onProgress(cb) -> off()                               (optional)
+//   deps.confirm(title, html, opts) -> Promise<boolean>        (optional)
 export function wireFirmwareGuides(root, deps) {
   if (!root || !root.querySelectorAll) return;
   root.querySelectorAll('.fw-guide[data-fwguide]').forEach((el) => {
@@ -180,6 +220,14 @@ export function wireFirmwareGuides(root, deps) {
       if (open) {
         e.preventDefault();
         try { deps.openURL(open.dataset.fwopen); } catch {}
+        return;
+      }
+      const flashBtn = e.target.closest('[data-fwflash]');
+      if (flashBtn) {
+        e.preventDefault();
+        let fid;
+        try { fid = JSON.parse(el.dataset.fwguide); } catch { return; }
+        startFlash(el, fid, deps);
         return;
       }
       const copy = e.target.closest('[data-fwcopy]');
@@ -193,13 +241,17 @@ export function wireFirmwareGuides(root, deps) {
     });
     let id;
     try { id = JSON.parse(el.dataset.fwguide); } catch { return; }
+    showFlashState(el, id.host);
     const key = identKey(id);
     if (guideCache.has(key)) return;
     Promise.resolve()
       .then(() => deps.getGuide(id.model, id.moduleType, id.variant, id.current))
       .then((g) => {
         guideCache.set(key, g || { files: [] });
-        if (el.isConnected !== false) el.innerHTML = firmwareGuideHtml(id, guideCache.get(key));
+        if (el.isConnected !== false) {
+          el.innerHTML = firmwareGuideHtml(id, guideCache.get(key));
+          showFlashState(el, id.host);
+        }
       })
       .catch(() => {
         // Backend unreachable: no download link can be named, so the guide
@@ -207,4 +259,58 @@ export function wireFirmwareGuides(root, deps) {
         el.innerHTML = firmwareGuideHtml(id, { files: [] });
       });
   });
+}
+
+function showFlashState(el, host) {
+  const st = host && flashes.get(host);
+  if (!st || !el.querySelector) return;
+  const line = el.querySelector('.fw-guide-autostatus');
+  const b = el.querySelector('[data-fwflash]');
+  if (line) {
+    line.textContent = st.text;
+    line.classList.toggle('setup-err', st.phase === 'error');
+  }
+  if (b) b.disabled = st.phase !== 'error' && st.phase !== 'done';
+}
+
+function isBatteryModel(model) {
+  return String(model || '').trim().toLowerCase() === 'soundtouch portable';
+}
+
+async function startFlash(el, id, deps) {
+  if (!deps.flash || !id.host) return;
+  const running = flashes.get(id.host);
+  if (running && running.phase !== 'error' && running.phase !== 'done') return;
+  if (deps.confirm) {
+    const body = `<p>${escapeHtml(t('fwGuide.autoConfirmBody'))}</p>`
+      + (isBatteryModel(id.model) ? `<p><b>${escapeHtml(t('fwGuide.autoConfirmBattery'))}</b></p>` : '');
+    const ok = await deps.confirm(t('fwGuide.autoConfirmTitle'), body,
+      { calm: true, confirmLabel: t('fwGuide.autoBtn'), confirmClass: 'btn btn-primary' });
+    if (!ok) return;
+  }
+  const set = (p) => {
+    const st = { phase: p.phase || 'start', text: fwFlashStatus(p) };
+    flashes.set(id.host, st);
+    if (typeof document === 'undefined' || !document.querySelectorAll) {
+      showFlashState(el, id.host);
+      return;
+    }
+    document.querySelectorAll('.fw-guide[data-fwguide]').forEach((g) => {
+      let gid;
+      try { gid = JSON.parse(g.dataset.fwguide); } catch { return; }
+      if (gid.host === id.host) showFlashState(g, id.host);
+    });
+  };
+  set({ phase: 'start' });
+  const off = deps.onProgress ? deps.onProgress((p) => {
+    if (p && p.host === id.host && p.phase && p.phase !== 'done') set(p);
+  }) : null;
+  try {
+    const res = await deps.flash(id.host, false);
+    set({ phase: 'done', version: res && res.after });
+  } catch (err) {
+    set({ phase: 'error', error: String((err && err.message) || err || '') });
+  } finally {
+    if (typeof off === 'function') off();
+  }
 }

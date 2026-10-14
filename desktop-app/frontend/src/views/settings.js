@@ -53,6 +53,10 @@ import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessa
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import {
+  US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
+  usServiceCanDisconnect, agentErrorText,
+} from '../usservices.js';
+import {
   BoxSettings,
   BoxAgentVersion,
   PhoneQR,
@@ -92,6 +96,8 @@ import {
   SaveArcadeScreenshot,
   ClipboardSetText,
   GetFirmwareGuide,
+  FlashBoseFirmware,
+  EventsOn,
   AnnounceExample,
   SendAnnounce,
   Translate,
@@ -121,6 +127,10 @@ import {
   ListBoxMediaServers,
   EnableBoxMediaServer,
   DisableBoxMediaServer,
+  USServicesStatus,
+  SetUSServicesOptIn,
+  LinkMusicService,
+  UnlinkMusicService,
   boxFetch,
   readBoxBalanceInfo,
   writeBoxBalance,
@@ -727,6 +737,7 @@ function groupSettingsSections() {
     displayNoticesSection: 'sound',
     arcadeSection: 'sound',
     airplayOptSection: 'sound',
+    usServicesSection: 'info',
   };
   const byHeading = {
     [t('settingsView.nameHeading')]: 'basics',
@@ -896,6 +907,133 @@ async function fillMusicLib(box) {
       }
       btn.disabled = false;
       fillMusicLib(box).catch(() => {});
+    };
+  });
+}
+
+// fillUSServices draws the Pandora & iHeartRadio card: per service where it
+// stands on this speaker, a login form or Disconnect, and outside the US the
+// note that both only play from a US connection plus the opt-in switch.
+//
+// The speaker's own clients log in and play; the password goes from the form
+// to the agent and on to the speaker, and nothing here keeps it. An agent too
+// old for /api/us-services, or a build without it, leaves the card out.
+async function fillUSServices(box) {
+  const section = $('usServicesSection');
+  const body = $('usServicesBody');
+  if (!section || !body) return;
+  if (!box || !box.host || box.kind === 'stock') {
+    section.style.display = 'none';
+    return;
+  }
+  let status;
+  try {
+    status = await USServicesStatus(box.host, box.port);
+  } catch {
+    section.style.display = 'none';
+    return;
+  }
+  if (!$('usServicesBody')) return;
+  section.style.display = '';
+  const isUS = usServicesRegionIsUS(status);
+  const optIn = usServicesOptIn(status);
+  const enabled = isUS || optIn;
+  const parts = [];
+  if (!isUS) {
+    parts.push(`<div class="setup-warn small">${escapeHtml(t('usServices.notUSNote'))}</div>
+      <label style="display:block;margin:6px 0"><input type="checkbox" id="usServicesOptIn"${optIn ? ' checked' : ''} /> ${escapeHtml(t('usServices.optInLabel'))}</label>`);
+  }
+  if (enabled) {
+    US_SERVICES.forEach(svc => {
+      const st = usServiceState(status, svc.type);
+      const line = t(usServiceStatusKey(st), { account: st.account });
+      const badge = svc.experimental ? ` <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span>` : '';
+      const action = usServiceCanDisconnect(st)
+        ? `<button class="btn btn-mini" data-usdisconnect="${escapeAttr(svc.key)}">${escapeHtml(t('usServices.disconnect'))}</button>`
+        : `<div class="wlan-row">
+            <input type="email" autocomplete="off" id="usUser-${escapeAttr(svc.key)}" placeholder="${escapeAttr(t('usServices.emailPlaceholder'))}" />
+          </div>
+          <div class="wlan-row">
+            <input type="password" autocomplete="off" id="usPass-${escapeAttr(svc.key)}" placeholder="${escapeAttr(t('usServices.passwordPlaceholder'))}" />
+            <button class="btn btn-mini btn-primary" data-usconnect="${escapeAttr(svc.key)}">${escapeHtml(t('usServices.connect'))}</button>
+          </div>`;
+      parts.push(`<div class="setting-row" style="display:block;margin-top:8px">
+        <div><b>${escapeHtml(svc.label)}</b>${badge}</div>
+        <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(line)}</small>
+        ${action}
+      </div>`);
+    });
+  }
+  body.className = '';
+  body.innerHTML = parts.join('');
+
+  const msg = $('usServicesMsg');
+  const say = (cls, text) => { if (msg) msg.innerHTML = text ? `<div class="${cls}">${escapeHtml(text)}</div>` : ''; };
+  const changed = () => {
+    try { document.dispatchEvent(new CustomEvent('str:usservices-changed', { detail: { host: box.host } })); } catch {}
+  };
+  // The speaker logs in with the service after the account call returns and
+  // registers the source with STR a little later, so the card is read again
+  // twice instead of claiming "ready" straight away.
+  const refreshSoon = () => {
+    setTimeout(() => { fillUSServices(box).catch(() => {}); changed(); }, 6000);
+    setTimeout(() => { fillUSServices(box).catch(() => {}); changed(); }, 30000);
+  };
+
+  const opt = $('usServicesOptIn');
+  if (opt) {
+    opt.onchange = async () => {
+      opt.disabled = true;
+      try {
+        await SetUSServicesOptIn(box.host, box.port, opt.checked);
+        say('', '');
+        changed();
+      } catch (e) {
+        say('setup-err', agentErrorText(e));
+      }
+      fillUSServices(box).catch(() => {});
+    };
+  }
+  body.querySelectorAll('[data-usconnect]').forEach(btn => {
+    btn.onclick = async () => {
+      const key = btn.getAttribute('data-usconnect');
+      const userEl = $('usUser-' + key);
+      const passEl = $('usPass-' + key);
+      const user = userEl ? userEl.value.trim() : '';
+      const pass = passEl ? passEl.value : '';
+      if (!user || !pass) {
+        say('setup-warn', t('usServices.needBoth'));
+        return;
+      }
+      btn.disabled = true;
+      say('muted small', t('usServices.connecting'));
+      try {
+        await LinkMusicService(box.host, box.port, key, user, pass);
+        if (passEl) passEl.value = '';
+        say('setup-ok', t('usServices.connectSent'));
+        refreshSoon();
+      } catch (e) {
+        say('setup-err', t('usServices.connectFailed', { err: agentErrorText(e) }));
+      }
+      btn.disabled = false;
+    };
+  });
+  body.querySelectorAll('[data-usdisconnect]').forEach(btn => {
+    btn.onclick = async () => {
+      const key = btn.getAttribute('data-usdisconnect');
+      const svc = US_SERVICES.find(s => s.key === key);
+      const ok = await confirmWarn(t('usServices.disconnectTitle', { service: svc ? svc.label : key }),
+        escapeHtml(t('usServices.disconnectBody')));
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await UnlinkMusicService(box.host, box.port, key);
+        say('setup-ok', t('usServices.disconnected'));
+        changed();
+      } catch (e) {
+        say('setup-err', agentErrorText(e));
+      }
+      fillUSServices(box).catch(() => {});
     };
   });
 }
@@ -1595,6 +1733,13 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.musicLibHelp'))}</small>
     </div>
 
+    <div class="settings-section" id="usServicesSection" style="display:none">
+      <h3>Pandora &amp; iHeartRadio</h3>
+      <div id="usServicesBody" class="muted small">${escapeHtml(t('common.loading'))}</div>
+      <div id="usServicesMsg"></div>
+      <small class="muted small">${escapeHtml(t('usServices.passwordNote'))}</small>
+    </div>
+
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.regionHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.regionCurrent'))}</span><span class="kv-val" id="currentAppRegion">${escapeHtml(t('common.loading'))}</span></div>
@@ -1660,7 +1805,7 @@ function renderBoxSettings(s, box) {
         <span class="kv-val">${fwStatusInline(info)}</span>
       </div>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.deviceIdLabel'))}</span><span class="kv-val small muted">${escapeHtml(info.deviceID || '-')}</span></div>
-      ${fwUpdateHint(info)}
+      ${fwUpdateHint(info, box)}
     </div>
     <div class="settings-section phone-feature" id="phoneCardSection">
       <h3><span class="phone-feature-icon">&#128241;</span> ${escapeHtml(t('settingsView.phoneHeading'))}</h3>
@@ -1683,6 +1828,7 @@ function renderBoxSettings(s, box) {
   // template literal: a call placed in there renders as literal text on the
   // page instead of running.
   fillMusicLib(box).catch(() => {});
+  fillUSServices(box).catch(() => {});
 
   // Phone control: build this speaker's web-remote URL from its reachable
   // host:port (probeSTR records the right port: 8888 direct or 17008 redirect)
@@ -1796,6 +1942,9 @@ function renderBoxSettings(s, box) {
     getGuide: GetFirmwareGuide,
     openURL: BrowserOpenURL,
     copy: ClipboardSetText,
+    flash: FlashBoseFirmware,
+    onProgress: (cb) => EventsOn('firmware:progress', cb),
+    confirm: confirmWarn,
   });
   const faq = $('fwFaqLink');
   if (faq) faq.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(faq.dataset.url); } catch {} };
@@ -3721,7 +3870,7 @@ function fwStatusInline(info) {
   return `<span class="fw-ok">&#10003; ${v}</span>`;
 }
 
-function fwUpdateHint(info) {
+function fwUpdateHint(info, box) {
   const want = LATEST_FW[info.type || ''];
   if (!isFwOutdated(info)) {
     return `<small class="muted small">${escapeHtml(t('fw.uptodate', { version: want || '27.0.6' }))}</small>`;
@@ -3736,6 +3885,7 @@ function fwUpdateHint(info) {
     variant: info.variant || '',
     current: info.version || '',
     context: 'settings',
+    host: (box && box.host) || '',
   })}
       <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
     </div>`;

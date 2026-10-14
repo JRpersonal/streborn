@@ -178,6 +178,10 @@ export function FeatureWishes() {
   return window['go']['main']['App']['FeatureWishes']();
 }
 
+export function FlashBoseFirmware(arg1, arg2) {
+  return window['go']['main']['App']['FlashBoseFirmware'](arg1, arg2);
+}
+
 export function ForgetPermanentGroup(arg1, arg2) {
   return window['go']['main']['App']['ForgetPermanentGroup'](arg1, arg2);
 }
@@ -298,6 +302,10 @@ export function LibraryRefusedServers() {
   return window['go']['main']['App']['LibraryRefusedServers']();
 }
 
+export function LinkMusicService(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['LinkMusicService'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function ListBoxMediaServers(arg1, arg2) {
   return window['go']['main']['App']['ListBoxMediaServers'](arg1, arg2);
 }
@@ -338,6 +346,10 @@ export function OpenArcadeThread() {
   return window['go']['main']['App']['OpenArcadeThread']();
 }
 
+export function PandoraStations(arg1, arg2) {
+  return window['go']['main']['App']['PandoraStations'](arg1, arg2);
+}
+
 export function Pause(arg1, arg2) {
   return window['go']['main']['App']['Pause'](arg1, arg2);
 }
@@ -352,6 +364,10 @@ export function PhoneAddressFor(arg1, arg2) {
 
 export function PhoneQR(arg1) {
   return window['go']['main']['App']['PhoneQR'](arg1);
+}
+
+export function PlayPandoraStation(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['PlayPandoraStation'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function PlaySlot(arg1, arg2, arg3) {
@@ -642,6 +658,10 @@ export function SetStereoPairName(arg1, arg2) {
   return window['go']['main']['App']['SetStereoPairName'](arg1, arg2);
 }
 
+export function SetUSServicesOptIn(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetUSServicesOptIn'](arg1, arg2, arg3);
+}
+
 export function SetWebhooks(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SetWebhooks'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
@@ -722,12 +742,20 @@ export function TryWiFiPassword(arg1) {
   return window['go']['main']['App']['TryWiFiPassword'](arg1);
 }
 
+export function USServicesStatus(arg1, arg2) {
+  return window['go']['main']['App']['USServicesStatus'](arg1, arg2);
+}
+
 export function UndoForeignFinding(arg1, arg2, arg3) {
   return window['go']['main']['App']['UndoForeignFinding'](arg1, arg2, arg3);
 }
 
 export function UninstallSTR(arg1) {
   return window['go']['main']['App']['UninstallSTR'](arg1);
+}
+
+export function UnlinkMusicService(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UnlinkMusicService'](arg1, arg2, arg3);
 }
 
 export function UpdateBoxAgent(arg1, arg2) {

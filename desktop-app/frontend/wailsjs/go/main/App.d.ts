@@ -93,6 +93,8 @@ export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.Lo
 
 export function FeatureWishes():Promise<main.WishList>;
 
+export function FlashBoseFirmware(arg1:string,arg2:boolean):Promise<main.FirmwareFlashResult>;
+
 export function ForgetPermanentGroup(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;
@@ -153,6 +155,8 @@ export function IsBoseStick(arg1:string):Promise<boolean>;
 
 export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
 
+export function LinkMusicService(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
+
 export function ListBoxMediaServers(arg1:string,arg2:number):Promise<Array<main.BoxMediaServer>>;
 
 export function ListDrives():Promise<Array<sticksetup.Drive>>;
@@ -173,6 +177,8 @@ export function Next(arg1:string,arg2:number):Promise<void>;
 
 export function OpenArcadeThread():Promise<void>;
 
+export function PandoraStations(arg1:string,arg2:number):Promise<main.PandoraStationList>;
+
 export function Pause(arg1:string,arg2:number):Promise<void>;
 
 export function PendingUpdateIntent(arg1:string,arg2:number):Promise<Record<string, string>>;
@@ -180,6 +186,8 @@ export function PendingUpdateIntent(arg1:string,arg2:number):Promise<Record<stri
 export function PhoneAddressFor(arg1:string,arg2:number):Promise<main.PhoneAddress>;
 
 export function PhoneQR(arg1:string):Promise<string>;
+
+export function PlayPandoraStation(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 
@@ -325,6 +333,8 @@ export function SetStartVolume(arg1:string,arg2:number,arg3:number):Promise<void
 
 export function SetStereoPairName(arg1:string,arg2:string):Promise<void>;
 
+export function SetUSServicesOptIn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
+
 export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
 
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
@@ -365,9 +375,13 @@ export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResul
 
 export function TryWiFiPassword(arg1:string):Promise<string>;
 
+export function USServicesStatus(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function UndoForeignFinding(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
 export function UninstallSTR(arg1:string):Promise<main.UninstallSTRResult>;
+
+export function UnlinkMusicService(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;
 

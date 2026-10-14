@@ -70,6 +70,25 @@ because clearing that other key without being asked is how presets got lost.
 `POST /api/box/preset-move` is the explicit way to do it: it writes the new key
 and frees the old one in a single store write.
 
+## Pandora stations
+
+Only on a speaker where Pandora is enabled (a US speaker, or the opt-in) and
+an account is linked; see
+[`streaming/us-services.md`](streaming/us-services.md). The speaker's own
+Pandora client plays the station, STR only hands it the item.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`  | `/api/pandora/stations` | - | The linked account's stations, read from the speaker: `{"status":"READY","stations":[{"name","source","location","type","itemName","art","presetable"}]}`. The account itself is never part of the answer. |
+| `POST` | `/api/pandora/play` | `{"location":"...","name":"...","type":"stationurl"}` | Start one. `location` comes from the list; `name` and `type` are optional. |
+
+Both answer `409` with `{"code":"service-off"}` when Pandora is not enabled on
+the speaker and `{"code":"not-linked"}` when it lists no Pandora account, and
+`502` with the firmware's message when the speaker refuses (`navigate-failed`,
+`select-failed`). To keep a station on a key, start it and then save the key
+with `PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`: the agent
+takes the item from what the speaker plays.
+
 ## Alarm clock
 
 | Method | Path | Body | Notes |

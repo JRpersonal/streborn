@@ -41,6 +41,7 @@ export {
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
   GetFirmwareGuide,
+  FlashBoseFirmware,
   BoxInstallReachable,
   Pause,
   Resume,
@@ -265,6 +266,29 @@ export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notic
 // Optional binding, per the note above.
 export function SaveNativePreset(host, port, slot, name) {
   return callOptionalBinding('SaveNativePreset', [host, port, slot, name]);
+}
+
+// Pandora and iHeartRadio, the services the speaker plays by itself
+// (usservices.js). Optional bindings, per the note above: all brand new.
+// service is 'pandora' or 'iheart'. The password goes to the speaker and is
+// never kept by the app.
+export function USServicesStatus(host, port) {
+  return callOptionalBinding('USServicesStatus', [host, port]);
+}
+export function SetUSServicesOptIn(host, port, enabled) {
+  return callOptionalBinding('SetUSServicesOptIn', [host, port, !!enabled]);
+}
+export function LinkMusicService(host, port, service, user, password) {
+  return callOptionalBinding('LinkMusicService', [host, port, service, user, password]);
+}
+export function UnlinkMusicService(host, port, service) {
+  return callOptionalBinding('UnlinkMusicService', [host, port, service]);
+}
+export function PandoraStations(host, port) {
+  return callOptionalBinding('PandoraStations', [host, port]);
+}
+export function PlayPandoraStation(host, port, location, name, type) {
+  return callOptionalBinding('PlayPandoraStation', [host, port, location, name, type]);
 }
 
 // SaveQueuePreset stores the music-library folder the speaker plays as a queue

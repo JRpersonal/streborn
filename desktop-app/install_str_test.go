@@ -431,3 +431,21 @@ func TestPreflightFailuresCarryTheFirmwareNote(t *testing.T) {
 		t.Errorf("preflight message does not go through withFW(), so an outdated firmware stays hidden: %s", b)
 	}
 }
+
+// Only the firmware's explicit "never set" 0 makes the install set the
+// language; a set language, an empty body or garbage is left alone.
+func TestLanguageUnset(t *testing.T) {
+	for v, want := range map[string]bool{"0": true, " 0 ": true, "2": false, "3": false, "": false, "x": false} {
+		if got := languageUnset(v); got != want {
+			t.Errorf("languageUnset(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
+
+func TestClockDisplayOff(t *testing.T) {
+	for v, want := range map[string]bool{"false": true, "true": false, "": false, "x": false} {
+		if got := clockDisplayOff(v); got != want {
+			t.Errorf("clockDisplayOff(%q) = %v, want %v", v, got, want)
+		}
+	}
+}

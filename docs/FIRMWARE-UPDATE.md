@@ -16,6 +16,40 @@ points at Bose's own server, and the checksums below are Bose's own.
 
 ---
 
+## The easy way: let the app do it
+
+When the STR app sees a speaker on your home network whose firmware is
+older than 27.0.6, the firmware notice (in the speaker's settings, and on
+the setup screen while it waits for a stock speaker) has an **Update now**
+button. The app then:
+
+1. downloads Bose's file for exactly this model from Bose's own host into
+   the app's cache folder on your computer, and checks it against the
+   size and CRC in Bose's catalogue (a file that does not match is thrown
+   away, never sent);
+2. uploads it to the speaker's own update page
+   (`http://<speaker>:17008/update.html`, the page Bose's support
+   articles use), over your home network, with no setup mode, no USB
+   stick and no change of Wi-Fi;
+3. waits for the speaker to restart and reports the version it comes
+   back with.
+
+It takes about ten minutes: roughly five for the upload over Wi-Fi, then
+the speaker installs and restarts. Leave it powered the whole time; a
+Portable belongs on its power supply, not on battery.
+
+This works on a speaker that already runs STR too. STR occupies the
+update page's port on several models, so the app hands the file to STR
+on the speaker, which passes it on to Bose's page locally. A firmware
+update rewrites Bose's firmware only: STR, its settings, the speaker's
+name, Wi-Fi and presets stay as they were (verified on a Portable on
+2026-10-13, 27.0.3 to 27.0.6 on a stock speaker, and 27.0.6 over 27.0.6
+with STR installed).
+
+The button only appears when the app can name one file for the speaker
+for certain. Otherwise, or if the update page does not answer (very old
+firmware may not have it), use the manual routes below.
+
 ## 1. Which firmware is on the speaker now
 
 In the STR app, open the speaker's settings; the firmware version is
@@ -119,9 +153,9 @@ server and no app.
 
 Afterwards, check the version again as in step 1. Then install STR.
 
-**Install STR only after the firmware is right.** STR's agent occupies
-the port the speaker's own setup and update pages live on, so updating
-afterwards is harder than updating first.
+**Bring the firmware to 27.0.6 before installing STR if you can.** The
+app's **Update now** button also works on a speaker with STR, but STR is
+tested on 27.0.6 only, so updating first saves an install that fails.
 
 ## 4. When 27.0.6 will not take
 
@@ -146,6 +180,11 @@ Two things reported alongside it, worth knowing before you start:
 Verified by this project, on 2026-09-08: the catalogue and the images
 are still served by Bose (`Update.stu` answers with the full payload),
 and the table above is taken directly from that catalogue.
+
+Verified on 2026-10-13: the network upload to `:17008/update.html` on a
+Portable, from 27.0.3 and again over 27.0.6 with STR installed. Other
+models use the same page; the app's own upload is being tested across the
+maintainer's speakers (SoundTouch 10, 30 and Portable).
 
 Reported by users and not reproduced by this project: the button
 combinations, the downgrade route, and the behaviour of the speaker's

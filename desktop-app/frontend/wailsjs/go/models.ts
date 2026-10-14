@@ -5,6 +5,8 @@ export namespace bosefw {
 	    url: string;
 	    generation: string;
 	    deviceId: string;
+	    length: number;
+	    crc: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new File(source);
@@ -16,6 +18,8 @@ export namespace bosefw {
 	        this.url = source["url"];
 	        this.generation = source["generation"];
 	        this.deviceId = source["deviceId"];
+	        this.length = source["length"];
+	        this.crc = source["crc"];
 	    }
 	}
 
@@ -293,6 +297,22 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class FirmwareFlashResult {
+	    before: string;
+	    after: string;
+	    via: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FirmwareFlashResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.before = source["before"];
+	        this.after = source["after"];
+	        this.via = source["via"];
+	    }
+	}
 	export class FirmwareGuide {
 	    model: string;
 	    current: string;
@@ -552,6 +572,60 @@ export namespace main {
 	        this.role = source["role"];
 	        this.ip = source["ip"];
 	    }
+	}
+	export class PandoraStation {
+	    name: string;
+	    location: string;
+	    type: string;
+	    itemName?: string;
+	    art?: string;
+	    presetable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PandoraStation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.location = source["location"];
+	        this.type = source["type"];
+	        this.itemName = source["itemName"];
+	        this.art = source["art"];
+	        this.presetable = source["presetable"];
+	    }
+	}
+	export class PandoraStationList {
+	    status: string;
+	    stations: PandoraStation[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PandoraStationList(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.stations = this.convertValues(source["stations"], PandoraStation);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class PhoneAddress {
 	    url: string;
