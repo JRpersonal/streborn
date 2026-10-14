@@ -223,6 +223,8 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// "outdated=true" from the speaker seconds earlier and kept it to itself
 	// (field report 2026-08-04).
 	withFW := func(msg string) string { return msg + fwNote }
+	a.ensureSpeakerLanguage(host)
+	a.ensureSpeakerClock(host)
 
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
@@ -1605,3 +1607,63 @@ func (a *App) agentRunningViaSSH(host string) bool {
 	n := strings.TrimSpace(out)
 	return n != "" && n != "0"
 }
+
+// ensureSpeakerLanguage sets the speaker's language when it was never set
+// (sysLanguage 0). That is the last step of Bose's own out-of-box setup, and
+// until it is done the speaker keeps showing its setup screen ("start the
+// SoundTouch app") with STR installed and working. Two ways of joining the
+// Wi-Fi skip it: Bose's own setup page on 192.168.1.1, which sets only the
+// name and the network, and the app's chipset (goform) provisioning, which
+// returns before its language step. Found on a second-hand Portable,
+// 2026-10-13. Same value the app's own provisioning uses: the app's language,
+// English when unknown. Best-effort: a read or write that fails is logged
+// and the install goes on.
+func (a *App) ensureSpeakerLanguage(host string) {
+	cur, err := a.GetBoxLanguage(host)
+	if err != nil || !languageUnset(cur) {
+		return
+	}
+	lang := sticksetup.SysLanguageForLocale(a.appLocale())
+	if err := a.SetBoxLanguage(host, lang); err != nil {
+		a.logger.Warn("install_str: the speaker's language was never set and setting it failed", "host", host, "sysLanguage", lang, "err", err)
+		return
+	}
+	a.logger.Info("install_str: set the speaker's language, its out-of-box setup had left it unset", "host", host, "sysLanguage", lang, "locale", a.appLocale())
+}
+
+// languageUnset reports whether a /language value is the firmware's "never
+// set" 0. An empty or unreadable value is not evidence and is left alone.
+func languageUnset(v string) bool { return strings.TrimSpace(v) == "0" }
+
+// ensureSpeakerClock switches the speaker's clock display on when it is off,
+// so a speaker shows the time in standby from the moment STR is on it (Jens,
+// 2026-10-13: "should be on by default as soon as STR is installed"). The
+// firmware ships it off and only the Bose app used to offer the switch. It
+// keeps the speaker's own time zone and 12/24-hour format; a speaker with no
+// zone set gets the desktop's current offset, as the settings page does. A
+// speaker without a clock (no clockConfig to read) and a read that fails are
+// left alone. Runs once, at install; switching it off again in the settings
+// stays off.
+func (a *App) ensureSpeakerClock(host string) {
+	body, err := a.boseGet(host, "/clockDisplay")
+	if err != nil || !clockDisplayOff(xmlTagOrAttr(body, "clockConfig", "userEnable")) {
+		return
+	}
+	tz := xmlTagOrAttr(body, "clockConfig", "timezoneInfo")
+	format24 := !strings.Contains(xmlTagOrAttr(body, "clockConfig", "timeFormat"), "12HOUR")
+	offMin := 0
+	if tz == "" || tz == "NOT_SET" {
+		tz = ""
+		_, off := time.Now().Zone()
+		offMin = off / 60
+	}
+	if err := a.SetClockDisplay(host, true, tz, offMin, format24); err != nil {
+		a.logger.Warn("install_str: could not switch the speaker's clock display on", "host", host, "err", err)
+		return
+	}
+	a.logger.Info("install_str: switched the speaker's clock display on", "host", host, "timezone", tz, "offsetMin", offMin, "format24", format24)
+}
+
+// clockDisplayOff reports whether a clockConfig userEnable value says the
+// clock is off. Only an explicit "false" counts.
+func clockDisplayOff(v string) bool { return strings.TrimSpace(v) == "false" }
