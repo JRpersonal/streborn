@@ -633,6 +633,12 @@ func (m *Manager) SwitchedAway(ctx context.Context) {
 	if !running {
 		return
 	}
+	// Logged so a bundle shows the hand-off: without it, "Spotify came back
+	// after I pressed another key" could not tell a missing switch-away from
+	// one the engine ignored (#1065).
+	if m.logger != nil {
+		m.logger.Info("spotify: speaker switched to another source, pausing the engine and holding off auto-attach")
+	}
 	if err := m.Pause(ctx); err != nil {
 		m.logger.Debug("spotify: pause on source-switch failed", "err", err)
 	}

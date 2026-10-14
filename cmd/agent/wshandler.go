@@ -566,6 +566,17 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 // the background verify. Runs OFF the gabbo read loop; seq/pressAt come from
 // the press event and drive supersession and the stand-down anchors.
 func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt time.Time, slot int, location, title string) {
+	// Any key that is not a Spotify key takes the speaker away from Spotify,
+	// so tell the Spotify manager first, whatever the key's type. This used to
+	// happen only on the radio path further down, so a library song, a saved
+	// folder, a native station or a Pandora key left go-librespot playing to
+	// nobody, and at its next track boundary the auto-attach took that for the
+	// app starting Spotify and pulled the speaker back to the album (#1065,
+	// ST10 bundle 2026-10-14: a song key 6 s after a Spotify key, cut 13 s in).
+	// Skipped when a newer press exists, which may itself be a Spotify key.
+	if p, ok := h.store.Get(slot); ok && p.Type != "spotify" && h.spotify != nil && h.pressSeq.Load() == seq {
+		h.spotify.SwitchedAway(ctx)
+	}
 	// A queue preset (a saved DLNA folder) is recalled by the webui's play-queue,
 	// not the single-track UPnP play below. Let it claim the press; it returns
 	// true (and starts the queue) only for a queue preset, so every other preset
@@ -695,11 +706,11 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 		return
 	}
 
-	// This is a radio (non-Spotify) recall. Tell the Spotify manager the user
-	// switched away so its #14 auto-attach does not yank the box back to a
-	// still-advancing go-librespot a second later (reported: Spotify->radio
-	// played radio ~1s then jumped back to the Spotify preset).
-	if h.spotify != nil {
+	// A radio recall that came from the box's location without a stored slot
+	// still switches away from Spotify; a stored slot already did at the top
+	// (reported: Spotify->radio played radio ~1s then jumped back to the
+	// Spotify preset).
+	if _, stored := h.store.Get(slot); !stored && h.spotify != nil {
 		h.spotify.SwitchedAway(ctx)
 	}
 
