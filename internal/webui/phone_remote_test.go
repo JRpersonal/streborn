@@ -20,7 +20,8 @@ func TestPhoneRemoteDecodesNowPlayingEntities(t *testing.T) {
 		t.Fatal("indexHTML is missing the decodeEntities helper (#295)")
 	}
 	// The captured now-playing name must be decoded, not used raw.
-	if !strings.Contains(indexHTML, "const name = m ? decodeEntities(m[1]) : '';") {
+	// #1170 lets a reported stationName win over itemName; both must be decoded.
+	if !strings.Contains(indexHTML, "const name = sn ? decodeEntities(sn) : (m ? decodeEntities(m[1]) : '');") {
 		t.Fatal("indexHTML must decode entities on the now_playing name before display (#295)")
 	}
 	if strings.Contains(indexHTML, "const name = m ? m[1] : '';") {
