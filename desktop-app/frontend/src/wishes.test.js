@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('./api.js', () => ({ BrowserOpenURL: () => {}, FeatureWishes: async () => null }));
 
-const { wishesHTML, wishTitle, wishMatches } = await import('./views/wishes.js');
+const { wishesHTML, wishTitle, wishMatches, doneMonth } = await import('./views/wishes.js');
 
 const tr = (k, p) => (p ? `${k}:${JSON.stringify(p)}` : k);
 const LIST = {
@@ -104,5 +104,62 @@ describe('wishes search', () => {
     expect(html).not.toMatch(/data-wish-num="1098" hidden/);
     expect(html).toMatch(/id="wishesNoMatch" hidden/);
     expect(wishesHTML({ ok: true, wishes: [clock, usb] }, tr, 'de', 'zzz')).not.toMatch(/id="wishesNoMatch" hidden/);
+  });
+});
+
+// Built wishes stay listed as "Recently done" for three months, so voters see
+// their votes lead somewhere (Jens, 2026-10-14).
+describe('recently done', () => {
+  const ios = {
+    number: 1182,
+    title: 'iOS app for the phone <remote>',
+    titles: { de: 'iOS App für die Handy Fernbedienung' },
+    url: 'https://github.com/JRpersonal/streborn/discussions/1182',
+    votes: 5,
+    doneAt: '2026-10-10T21:37:53Z',
+  };
+  const WITH_DONE = { ...LIST, done: [ios] };
+
+  it('renders a done section below the open wishes with badge, date and link', () => {
+    const html = wishesHTML(WITH_DONE, tr, 'en');
+    expect(html).toContain('wishes.doneTitle');
+    expect(html).toContain('wishes.doneBadge');
+    expect(html).toContain('data-wish-open="https://github.com/JRpersonal/streborn/discussions/1182"');
+    expect(html).toContain('datetime="2026-10-10T21:37:53Z"');
+    expect(html).toContain('October 2026');
+    expect(html).toContain('iOS app for the phone &lt;remote&gt;');
+    expect(html.indexOf('Update speakers')).toBeLessThan(html.indexOf('wishes.doneTitle'));
+  });
+
+  it('uses the translated title and the app language for the month', () => {
+    const html = wishesHTML(WITH_DONE, tr, 'de');
+    expect(html).toContain('iOS App für die Handy Fernbedienung');
+    expect(html).toContain('Oktober 2026');
+  });
+
+  it('renders nothing extra without done wishes or with an older list', () => {
+    expect(wishesHTML(LIST, tr, 'en')).not.toContain('wishes.doneTitle');
+    expect(wishesHTML({ ...LIST, done: [] }, tr, 'en')).not.toContain('wishes.doneTitle');
+  });
+
+  it('still shows done wishes when no wish is open', () => {
+    const html = wishesHTML({ ...WITH_DONE, wishes: [] }, tr, 'en');
+    expect(html).toContain('wishes.empty');
+    expect(html).toContain('wishes.doneTitle');
+  });
+
+  it('obeys the search like the open rows', () => {
+    const html = wishesHTML(WITH_DONE, tr, 'en', 'ios');
+    expect(html).toMatch(/data-wish-num="1182"\s*>/);
+    expect(html).toMatch(/data-wish-num="1091" hidden/);
+    expect(html).toMatch(/id="wishesNoMatch" hidden/);
+    expect(wishesHTML(WITH_DONE, tr, 'en', 'zzz')).toMatch(/data-wish-num="1182" hidden/);
+  });
+
+  it('formats the month in UTC and skips an unreadable date', () => {
+    expect(doneMonth('2026-10-31T23:30:00Z', 'en')).toBe('October 2026');
+    expect(doneMonth('nope', 'en')).toBe('');
+    expect(doneMonth('', 'en')).toBe('');
+    expect(wishesHTML({ ...LIST, done: [{ ...ios, doneAt: 'nope' }] }, tr, 'en')).not.toContain('<time');
   });
 });

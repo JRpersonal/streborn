@@ -1148,6 +1148,7 @@ export namespace main {
 	    url: string;
 	    votes: number;
 	    titles?: Record<string, string>;
+	    doneAt?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Wish(source);
@@ -1160,6 +1161,7 @@ export namespace main {
 	        this.url = source["url"];
 	        this.votes = source["votes"];
 	        this.titles = source["titles"];
+	        this.doneAt = source["doneAt"];
 	    }
 	}
 	export class WishList {
@@ -1168,6 +1170,7 @@ export namespace main {
 	    voteUrl: string;
 	    suggestUrl: string;
 	    wishes: Wish[];
+	    done: Wish[];
 	
 	    static createFrom(source: any = {}) {
 	        return new WishList(source);
@@ -1180,6 +1183,7 @@ export namespace main {
 	        this.voteUrl = source["voteUrl"];
 	        this.suggestUrl = source["suggestUrl"];
 	        this.wishes = this.convertValues(source["wishes"], Wish);
+	        this.done = this.convertValues(source["done"], Wish);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

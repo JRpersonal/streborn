@@ -1062,6 +1062,30 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .wishes-asof {
   margin-top: 12px;
 }
+/* "Recently done": the badge carries a check mark and the word, so the state
+   never rests on the green alone. --signal-green is retuned per theme. */
+.wishes-done {
+  margin-top: 28px;
+}
+.wishes-done-title {
+  margin: 0 0 4px;
+}
+.wish-done-badge {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: center;
+  padding: 2px 8px;
+  border: 1px solid var(--signal-green);
+  border-radius: 999px;
+  color: var(--signal-green);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wish-done-date {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 
 /* ---------- Alpha-stage placeholder pages (Spotify, Multi-room) ---------- */
 .alpha-stage {
