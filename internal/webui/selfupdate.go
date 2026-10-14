@@ -119,6 +119,9 @@ type selfUpdateStatus struct {
 	Last      *selfUpdateResult `json:"last,omitempty"`
 	// Fleet is the "update all speakers" plan or run (selfupdate_fleet.go).
 	Fleet *fleetRun `json:"fleet,omitempty"`
+	// PhoneRun is set while a phone walks such a run itself
+	// (selfupdate_phone.go). It never carries the token.
+	PhoneRun *phoneRunView `json:"phoneRun,omitempty"`
 }
 
 type selfUpdater struct {
@@ -211,6 +214,7 @@ func (s *Server) selfUpdateStatus() selfUpdateStatus {
 		}
 	}
 	st.Fleet = s.fleet.snapshot()
+	st.PhoneRun = s.phoneRun.view(time.Now())
 	return st
 }
 
@@ -221,7 +225,13 @@ func (s *Server) selfUpdateStatus() selfUpdateStatus {
 //	POST {"action":"install"} install it; returns at once, poll GET for progress
 //	POST {"action":"engine"}  fetch the Spotify engine of the running version
 //	POST {"action":"plan"}    list the other STR speakers and what they run
-//	POST {"action":"install-all"} update every speaker, this one last
+//	POST {"action":"install-all"} update every speaker, this one last; with
+//	                          "peers":[...] only those peers, this one not
+//	POST {"action":"run-claim","token":"..."} a phone starts or renews its run
+//	POST {"action":"run-end","token":"..."}   and ends it
+//
+// "token" on install, engine and install-all is the claiming phone's; while
+// a phone run is claimed, those actions without it answer 409.
 func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet, http.MethodPost) {
 		return
@@ -234,11 +244,50 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.selfUpdateStatus())
 		return
 	}
-	var req struct {
-		Action string `json:"action"`
+	if selfUpdateForeignOrigin(r) {
+		s.logger.Warn("self-update: refused a request from a foreign page", "origin", r.Header.Get("Origin"), "remote", r.RemoteAddr)
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req); err != nil {
+	var req struct {
+		Action string   `json:"action"`
+		Token  string   `json:"token,omitempty"`
+		Peers  []string `json:"peers,omitempty"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.Token != "" && !phoneRunTokenRE.MatchString(req.Token) {
+		http.Error(w, "bad token", http.StatusBadRequest)
+		return
+	}
+	now := time.Now()
+	switch req.Action {
+	case "run-claim":
+		if req.Token == "" {
+			http.Error(w, "token required", http.StatusBadRequest)
+			return
+		}
+		if s.fleet.runningFor() != "" && s.fleet.runningFor() != req.Token {
+			writeJSON(w, http.StatusConflict, s.selfUpdateStatus())
+			return
+		}
+		if !s.phoneRun.claim(req.Token, now) {
+			writeJSON(w, http.StatusConflict, s.selfUpdateStatus())
+			return
+		}
+		writeJSON(w, http.StatusOK, s.selfUpdateStatus())
+		return
+	case "run-end":
+		s.phoneRun.release(req.Token)
+		writeJSON(w, http.StatusOK, s.selfUpdateStatus())
+		return
+	}
+	if (req.Action == "install" || req.Action == "engine" || req.Action == "install-all") && s.phoneRun.heldByOther(req.Token, now) {
+		// A phone is walking the speakers one after the other; it updates
+		// this one last itself. Anybody else asking now would cut that off.
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a phone is updating all speakers right now"})
 		return
 	}
 	switch req.Action {
@@ -268,7 +317,17 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "an update is already installing on this speaker"})
 			return
 		}
-		if !s.startFleet() {
+		var only []string
+		if len(req.Peers) > 0 {
+			// The phone could not reach these peers itself and hands them
+			// over. Only speakers of this speaker's own list are accepted.
+			only = s.fleetKnownPeers(r.Context(), req.Peers)
+			if len(only) == 0 {
+				http.Error(w, "none of these speakers is on this speaker's list", http.StatusBadRequest)
+				return
+			}
+		}
+		if !s.startFleet(only, req.Token) {
 			writeJSON(w, http.StatusConflict, s.selfUpdateStatus())
 			return
 		}

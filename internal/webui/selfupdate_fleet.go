@@ -37,6 +37,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,8 +78,10 @@ type fleetSpeaker struct {
 	Pct   int    `json:"pct,omitempty"`
 	// Reason is a skip code (fleetSkip*) or, for a failed speaker, the error.
 	Reason string `json:"reason,omitempty"`
-	// Port is the agent port this speaker answered on; not shown, not kept.
-	Port int `json:"-"`
+	// Port is the agent port this speaker answered on, or the one the peer
+	// list knows it by. The phone tries it first when it reaches the peer
+	// itself (selfupdate_phone.go).
+	Port int `json:"port,omitempty"`
 }
 
 // fleetRun is the plan the card shows, or the run that executes it.
@@ -87,11 +90,30 @@ type fleetRun struct {
 	Target   string         `json:"target,omitempty"`
 	Speakers []fleetSpeaker `json:"speakers"`
 	At       time.Time      `json:"at"`
+	// Only is set when a phone handed this speaker some peers it could not
+	// reach itself: the run updates just those, and not this speaker.
+	Only []string `json:"only,omitempty"`
+	// token is the phone run this run belongs to, "" for one started here.
+	token string
 }
 
 type fleetState struct {
 	mu  sync.Mutex
 	run *fleetRun
+}
+
+// runningFor reports who a running run belongs to: "" when none runs, the
+// phone's token for a hand-over, "speaker" for a run started on its own.
+func (f *fleetState) runningFor() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.run == nil || f.run.Mode != "running" {
+		return ""
+	}
+	if f.run.token != "" {
+		return f.run.token
+	}
+	return "speaker"
 }
 
 var (
@@ -337,8 +359,15 @@ func planFleetPeer(ctx context.Context, sp fleetSpeaker, target string) fleetSpe
 
 // planFleet builds the card's list: every peer, then this speaker, last.
 // The probes only read, so they run a few at a time; the updates never do.
-func (s *Server) planFleet(ctx context.Context, target string) []fleetSpeaker {
-	peers := s.fleetPeerAddrs(ctx)
+// With only set (a phone's hand-over) the list is just those peers, and this
+// speaker is not part of it: the phone updates it itself, last.
+func (s *Server) planFleet(ctx context.Context, target string, only map[string]bool) []fleetSpeaker {
+	var peers []fleetSpeaker
+	for _, p := range s.fleetPeerAddrs(ctx) {
+		if only == nil || only[p.IP] {
+			peers = append(peers, p)
+		}
+	}
 	out := make([]fleetSpeaker, len(peers))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 6)
@@ -352,7 +381,27 @@ func (s *Server) planFleet(ctx context.Context, target string) []fleetSpeaker {
 		}(i, p)
 	}
 	wg.Wait()
+	if only != nil {
+		return out
+	}
 	return append(out, s.fleetSelfRow(target))
+}
+
+// fleetKnownPeers keeps the addresses of ips that are on this speaker's own
+// peer list (and its test allowlist), in list order. A hand-over can never
+// aim this speaker at an address it would not have walked itself.
+func (s *Server) fleetKnownPeers(ctx context.Context, ips []string) []string {
+	want := map[string]bool{}
+	for _, ip := range ips {
+		want[strings.TrimSpace(ip)] = true
+	}
+	var out []string
+	for _, p := range s.fleetPeerAddrs(ctx) {
+		if want[p.IP] {
+			out = append(out, p.IP)
+		}
+	}
+	return out
 }
 
 // fleetSelfRow is this speaker's own row.
@@ -395,7 +444,7 @@ func (s *Server) fleetPlan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	speakers := s.planFleet(ctx, target)
+	speakers := s.planFleet(ctx, target, nil)
 	s.fleet.mu.Lock()
 	defer s.fleet.mu.Unlock()
 	if s.fleet.run != nil && s.fleet.run.Mode == "running" {
@@ -406,18 +455,23 @@ func (s *Server) fleetPlan(ctx context.Context) error {
 }
 
 // startFleet claims the run and starts it in the background. False when a
-// run is already going.
-func (s *Server) startFleet() bool {
+// run is already going. only narrows it to those peers (a phone's hand-over,
+// this speaker not included); token ties it to that phone's run.
+func (s *Server) startFleet(only []string, token string) bool {
 	s.fleet.mu.Lock()
 	if s.fleet.run != nil && s.fleet.run.Mode == "running" {
 		s.fleet.mu.Unlock()
 		return false
 	}
 	prev := s.fleet.run
-	run := &fleetRun{Mode: "running", At: time.Now().UTC()}
+	run := &fleetRun{Mode: "running", At: time.Now().UTC(), Only: only, token: token}
 	if prev != nil {
 		run.Target = prev.Target
-		run.Speakers = append([]fleetSpeaker(nil), prev.Speakers...)
+		for _, sp := range prev.Speakers {
+			if only == nil || (!sp.Self && slices.Contains(only, sp.IP)) {
+				run.Speakers = append(run.Speakers, sp)
+			}
+		}
 	}
 	s.fleet.run = run
 	s.fleet.mu.Unlock()
@@ -429,11 +483,20 @@ func (s *Server) startFleet() bool {
 func (s *Server) runFleet() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	target, err := s.fleetLatest(ctx)
+	var only map[string]bool
+	s.fleet.mu.Lock()
+	if s.fleet.run != nil && s.fleet.run.Only != nil {
+		only = map[string]bool{}
+		for _, ip := range s.fleet.run.Only {
+			only[ip] = true
+		}
+	}
+	s.fleet.mu.Unlock()
 	var speakers []fleetSpeaker
 	if err == nil {
 		// Planned again: the card's list may be minutes old, and a speaker
 		// somebody updated from the desktop meanwhile is simply skipped.
-		speakers = s.planFleet(ctx, target)
+		speakers = s.planFleet(ctx, target, only)
 	}
 	cancel()
 	s.fleet.mu.Lock()

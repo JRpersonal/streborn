@@ -40,6 +40,9 @@ type Server struct {
 	selfUpd selfUpdater
 	// fleet is the phone's "update all speakers" plan or run (selfupdate_fleet.go).
 	fleet fleetState
+	// phoneRun is the claim of the phone that walks such a run itself
+	// (selfupdate_phone.go).
+	phoneRun phoneRun
 	// The firmware's own US services, Pandora and iHeartRadio
 	// (usservices.go). nativeBoxOverride is a test seam.
 	native            NativeServicesBackend
@@ -1631,6 +1634,12 @@ var allowedCORSOrigins = map[string]bool{
 // the page. Nothing that worked stops working; only the reading stops.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The self-update endpoint alone also answers another speaker's page,
+		// so the phone can update every speaker from one page
+		// (selfupdate_phone.go). Every other path keeps the rule below.
+		if r.URL.Path == selfUpdateAPIPath && selfUpdateCORS(w, r) {
+			return
+		}
 		origin := r.Header.Get("Origin")
 		if origin != "" && allowedCORSOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)

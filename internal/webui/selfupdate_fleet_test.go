@@ -61,14 +61,14 @@ func (p *fakePeer) handler() http.Handler {
 			if p.installed {
 				switch p.behaviour {
 				case "success":
-					switch {
-					case p.polls == 1:
+					switch p.polls {
+					case 1:
 						st.State, st.Done, st.Total = "downloading", 50, 100
-					case p.polls == 2:
+					case 2:
 						// Rebooting: the speaker is not there.
 						http.Error(w, "gone", http.StatusServiceUnavailable)
 						return
-					case p.polls == 3:
+					case 3:
 						p.version = p.target
 						st.Current, st.State = p.target, "engine"
 					default:
@@ -209,7 +209,7 @@ func TestFleetPlanOrdersThisSpeakerLastAndAppliesSkipRules(t *testing.T) {
 		"10.0.0.3": {name: "Bath", version: "v1.0.13", behaviour: "success"},
 		"10.0.0.4": {name: "Attic", version: "v1.0.5", behaviour: "old"},
 	})
-	rows := h.s.planFleet(context.Background(), "v1.0.13")
+	rows := h.s.planFleet(context.Background(), "v1.0.13", nil)
 	var names []string
 	for _, r := range rows {
 		names = append(names, r.Name)
@@ -246,7 +246,7 @@ func TestFleetPlanSelfCurrentIsSkipped(t *testing.T) {
 	h := newFleetHarness(t, "v1.0.13", map[string]*fakePeer{
 		"10.0.0.2": {name: "Kitchen", version: "v1.0.12", behaviour: "success"},
 	})
-	rows := h.s.planFleet(context.Background(), "v1.0.13")
+	rows := h.s.planFleet(context.Background(), "v1.0.13", nil)
 	last := rows[len(rows)-1]
 	if !last.Self || last.State != fleetSkipped || last.Reason != fleetSkipCurrent {
 		t.Fatalf("self row %+v", last)
@@ -347,10 +347,10 @@ func TestFleetRunUpdatesPeersOneAtATime(t *testing.T) {
 		"10.0.0.5": {name: "Hall", version: "v1.0.13", behaviour: "success"},
 		"10.0.0.6": {name: "Garage", version: "v1.0.2", behaviour: "old"},
 	})
-	if !h.s.startFleet() {
+	if !h.s.startFleet(nil, "") {
 		t.Fatal("run did not start")
 	}
-	if h.s.startFleet() {
+	if h.s.startFleet(nil, "") {
 		t.Fatal("a second run started while the first one runs")
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -433,6 +433,11 @@ func TestFleetRunSurvivesThisSpeakersReboot(t *testing.T) {
 	if r := rowByName(t, got.Speakers, "Kitchen"); r.State != fleetDone {
 		t.Errorf("peer row lost: %+v", r)
 	}
+	// The resume finishes in the background and removes the marker; let it,
+	// or the next write races that removal (Windows refuses the open).
+	for deadline := time.Now().Add(5 * time.Second); s.selfUpd.isBusy() && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// Came back on the old version: the row says so.
 	if err := writeJSONFile(selfUpdatePendingPath, selfUpdatePending{Version: "v1.0.13", From: "v1.0.12", Fleet: run}); err != nil {
@@ -486,15 +491,46 @@ func TestPhoneCardOffersUpdateAllByDefault(t *testing.T) {
 		}
 	}
 	js := page[strings.Index(page, "(function wireSelfUpdate(){"):strings.Index(page, "(function wireDiag(){")]
-	if !strings.Contains(js, "action: 'install-all'") || !strings.Contains(js, "action: 'plan'") {
+	if !strings.Contains(js, "action: 'install-all', peers: [row.ip]") || !strings.Contains(js, "action: 'plan'") {
 		t.Error("the card does not drive the fleet actions")
+	}
+	// The phone drives: it claims the run, talks to each peer directly, hands
+	// a peer it cannot reach to this speaker, and updates this speaker last.
+	for _, want := range []string{
+		"action: 'run-claim', token: run.token",
+		"action: 'run-end', token: run.token",
+		"peerCall(base, 'POST', { action: 'check' }",
+		"peerCall(base, 'POST', { action: 'install' }",
+		"=== 'unreachable') setRow(row, { via: 'speaker'",
+		"action: 'install', token: run.token",
+		"mode: 'cors'",
+		"credentials: 'omit'",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("the phone run lost %q", want)
+		}
+	}
+	if strings.Index(js, "await updateSelf(self)") < strings.Index(js, "await updateViaSpeaker(row)") {
+		t.Error("this speaker must be updated after every peer")
+	}
+	// Backgrounded: the run waits between steps; a reload resumes it.
+	for _, want := range []string{"visibilitychange", "function gate()", "localStorage.setItem(RUN_KEY", "run = loadRun();"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("pause/resume lost %q", want)
+		}
+	}
+	// Storage may throw (private mode): every access sits inside a try.
+	for _, loc := range regexp.MustCompile(`localStorage\.`).FindAllStringIndex(js, -1) {
+		if !strings.Contains(js[max(0, loc[0]-120):loc[0]], "try {") {
+			t.Errorf("unguarded storage access at %q", js[loc[0]:min(len(js), loc[0]+40)])
+		}
 	}
 	// Default all: the single-speaker choice starts off.
 	if !regexp.MustCompile(`var onlyThis = false`).MatchString(js) {
 		t.Error("the default must be all speakers")
 	}
 	// A reload during a run follows the run instead of starting a check.
-	if !strings.Contains(js, "if (fleetRunning()) { pollFleet(); return; }") {
+	if !strings.Contains(js, "if (runActive()) { drive(); return; }") || !strings.Contains(js, "if (fleetRunning()) { pollFleet(); return; }") {
 		t.Error("opening the tab during a run must pick the run up")
 	}
 	// Names come from the network: text only, never markup.
@@ -509,7 +545,8 @@ func TestPhoneCardFleetStringsInEveryLocale(t *testing.T) {
 		t.Fatalf("%d locale bundles carry the update card, want 12", bundles)
 	}
 	for _, key := range []string{"sfAll", "sfOnly", "sfAllLink", "sfThis", "sfNeeds", "sfWaiting", "sfCurrent",
-		"sfOld", "sfUnreach", "sfChecking", "sfReboot", "sfConfirm", "sfRunning", "sfSummary", "sfLoading"} {
+		"sfOld", "sfUnreach", "sfChecking", "sfReboot", "sfConfirm", "sfRunning", "sfSummary", "sfLoading",
+		"sfVia", "sfOther"} {
 		if got := len(regexp.MustCompile(`[{,]`+key+`:"`).FindAllString(indexHTML, -1)); got != bundles {
 			t.Errorf("%s: in %d of %d locales", key, got, bundles)
 		}
@@ -526,8 +563,20 @@ func TestPhoneCardFleetStringsInEveryLocale(t *testing.T) {
 			}
 		}
 	}
-	// German: du-form and real umlauts.
-	if !strings.Contains(indexHTML, `sfRunning:"Die Lautsprecher werden nacheinander aktualisiert. Du kannst diese Seite schließen."`) {
+	// German: du-form and real umlauts; the phone must stay open now.
+	if !strings.Contains(indexHTML, `sfRunning:"Die Lautsprecher werden nacheinander aktualisiert. Lass diese Seite offen, bis alles fertig ist."`) {
 		t.Error("German running line changed or lost its du-form")
+	}
+	if !strings.Contains(indexHTML, `sfUnreach:"Nicht erreichbar. Aktualisiere ihn mit der Desktop-App oder öffne seine eigene Seite."`) {
+		t.Error("German unreachable line changed")
+	}
+	// Every locale tells the owner to keep the page open, and none of the
+	// new lines uses a dash as punctuation.
+	for _, key := range []string{"sfRunning", "sfConfirm", "sfUnreach", "sfVia", "sfOther"} {
+		for _, m := range regexp.MustCompile(key+`:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1) {
+			if strings.ContainsAny(m[1], "–—") || strings.Contains(m[1], " - ") {
+				t.Errorf("%s uses a dash: %q", key, m[1])
+			}
+		}
 	}
 }

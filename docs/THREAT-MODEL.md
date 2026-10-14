@@ -101,12 +101,42 @@ Each boundary is covered in detail in
   discarded without being renamed into place. The endpoint is LAN-gated
   like the OTA upload; what a LAN client gains is the ability to start
   an update to the official latest release, not to choose its content.
-  "Update all speakers" adds no new trust: the driving speaker only asks
-  each peer to run that same self-update, one at a time, and every peer
-  verifies the release itself and applies its own LAN gate. Peers come
-  from the speaker's peer list only, must be bare private LAN addresses,
-  are reached on the two agent ports through the dial-time SSRF guard, and
-  no redirect is followed.
+  "Update all speakers" adds no new trust: the phone page (or, as a
+  fallback, the speaker serving it) only asks each peer to run that same
+  self-update, one at a time, and every peer verifies the release itself
+  and applies its own LAN gate. When the serving speaker does it, peers
+  come from its peer list only, must be bare private LAN addresses, are
+  reached on the two agent ports through the dial-time SSRF guard, and no
+  redirect is followed.
+- **The one cross-origin opening.** So that the phone page served by one
+  speaker can drive the others, `/api/agent/self-update` (and no other
+  path) answers CORS for an `Origin` that is `http://` plus a LAN host:
+  a private or link-local IP literal, an address on one of the speaker's
+  own subnets (the rule `isLocalLAN` applies to callers), or a bare local
+  name (single label or `.local`). The origin is echoed exactly with
+  `Vary: Origin`, only `GET, POST, OPTIONS` and `Content-Type` are
+  allowed, and a preflight that asks for Private Network Access gets
+  `Access-Control-Allow-Private-Network: true`. Never `*`, never `null`,
+  never loopback, never a public or dotted name. The caller's own
+  address still has to pass the LAN gate, and a POST from any other
+  browser origin is refused with 403 before it acts (a missing CORS
+  header would only stop the page from reading the answer, not the
+  speaker from acting on a simple POST). Limits: any page that really is
+  served from a LAN address (another device's web interface, a router
+  page with a script injection) can start an update to the official,
+  signed latest release on the speakers it can reach, which is exactly
+  what any LAN client could already do with curl; it cannot choose what
+  is installed. A DNS-rebinding page arrives with its own (public) origin
+  and is refused; one that rebinds onto the speaker's own address is
+  same-origin by definition and was never stopped by CORS.
+- **Two drivers.** A phone run claims a random token on the serving
+  speaker (`run-claim`, renewed while it walks, expiring after 20
+  minutes without renewal). While it is held, a second phone cannot
+  claim a run, and `install`, `engine` and `install-all` on that speaker
+  without the token answer 409, so nobody reboots the serving speaker in
+  the middle of the run. Every peer refuses a second install while its
+  own one runs. The token is not a credential: the status shows that a
+  run is going, never the token.
   See [`SELF-UPDATE.md`](SELF-UPDATE.md).
 
 ## Inherited speaker firmware caveats
