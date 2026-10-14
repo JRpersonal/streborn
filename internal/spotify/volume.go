@@ -18,72 +18,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// SetVolume tells go-librespot the current volume as a percent (0..100) so the
-// Spotify app's slider reflects the speaker's real level. With volume_steps
-// 100 the API value is the percent directly. This is the box -> Spotify
-// direction; the box -> go-librespot caller is the gabbo volumeUpdated hook.
-func (m *Manager) SetVolume(ctx context.Context, pct int) error {
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 100 {
-		pct = 100
-	}
-	// Mark the change self-caused for the event loop: go-librespot echoes API
-	// volume changes as "volume" events, and only genuine Spotify-Connect
-	// changes may fan out to the multiroom group (see selfVolActive).
-	m.mu.Lock()
-	m.selfVolUntil = time.Now().Add(3 * time.Second)
-	m.mu.Unlock()
-	return m.apiPost(ctx, "/player/volume", fmt.Sprintf(`{"volume":%d}`, pct))
-}
-
-// selfVolActive reports whether a recent volume change originated from the
-// manager itself (slider seed/nudge) rather than from a Spotify Connect
-// client.
-func (m *Manager) selfVolActive() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return time.Now().Before(m.selfVolUntil)
-}
-
-// syncVolumeFromBox seeds go-librespot's volume with the box's real level so the
-// Spotify app slider starts at the correct value. Without it go-librespot
-// defaults to 100% (external_volume ignores initial_volume), so the first slider
-// touch jumped the speaker to 100 and then back down to the chosen value.
-func (m *Manager) syncVolumeFromBox(ctx context.Context) {
-	if m.box == nil {
-		return
-	}
-	st, err := m.box.LoadSettings(ctx)
-	if err != nil {
-		return
-	}
-	vol := st.Volume.Actual
-	if vol < 0 || vol > 100 {
-		return
-	}
-	set := func(v int) {
-		vctx, c := context.WithTimeout(ctx, 4*time.Second)
-		_ = m.SetVolume(vctx, v)
-		c()
-	}
-	set(vol)
-	// The Spotify app caches go-librespot's default (100) and only updates the
-	// slider when it sees a volume CHANGE. Nudge to an adjacent value and back
-	// so the app picks up the real level instead of showing 100 until the user
-	// first touches the slider (Jens' idea).
-	time.Sleep(1500 * time.Millisecond)
-	nudge := vol - 1
-	if nudge < 0 {
-		nudge = vol + 1
-	}
-	set(nudge)
-	time.Sleep(250 * time.Millisecond)
-	set(vol)
-	m.logger.Info("spotify: seeded + nudged app volume slider from box", "vol", vol)
-}
-
 // Connect-intent plumbing: a pause/stop/transfer pressed in the Spotify app
 // reaches STR only as a go-librespot event - no gabbo key frame, no STR
 // endpoint. These hooks feed it into the box-side stop/play latches so the
@@ -299,6 +233,12 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() { <-sctx.Done(); conn.Close() }()
+	// The engine is up: from now on speaker volume changes are passed to it.
+	// A session that registered before this socket connected missed its
+	// playback_ready seed, so seed once here (silent when there is no session).
+	m.setEventsLive(true)
+	defer m.setEventsLive(false)
+	go m.seedEngineVolume(sctx, "engine-connected")
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -314,18 +254,26 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 		switch ev.Type {
 		case "active":
 			// The Spotify app selected this device. Switch the box to the Spotify
-			// stream if it is on another source (#14), and seed the app's volume
-			// slider with the box's real level so the first slider touch does not
-			// jump the speaker to 100% first.
+			// stream if it is on another source (#14), and make sure the app's
+			// volume slider shows the box's real level (normally done already
+			// at playback_ready; see seedEngineVolume).
 			// The volume seed is harmless either way; everything that can
 			// point the speaker back at the stream or lift STR's stop latches
 			// waits for engineStartAllowed (stopintent.go).
-			go m.syncVolumeFromBox(context.Background())
+			go m.seedEngineVolume(context.Background(), "active")
 			if !m.engineStartAllowed(ev.Type) {
 				continue
 			}
 			m.maybeActivate()
 			m.handleEnginePlaybackStart()
+		case "playback_ready":
+			// A Spotify session has just registered this device with Spotify,
+			// and go-librespot announces every new device at volume 100 %
+			// whatever initial_volume says (external_volume skips it). Put the
+			// speaker's real level into the Connect state now, before anybody
+			// opens the device picker, so the slider never starts at max.
+			m.noteEngineSessionReset()
+			go m.seedEngineVolume(sctx, "session-ready")
 		case "playing":
 			// After the user stopped the speaker, an engine that merely kept
 			// playing must not bring it back at the next track boundary.
@@ -416,9 +364,6 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			// playlist (the events stream covers the no-desktop-app case).
 			m.noteResume()
 		case "volume":
-			if m.box == nil {
-				continue // no box client: metadata only, no volume mirror
-			}
 			var vd struct {
 				Value int `json:"value"`
 				Max   int `json:"max"`
@@ -426,38 +371,9 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			if err := json.Unmarshal(ev.Data, &vd); err != nil {
 				continue
 			}
-			pct := 100
-			if vd.Max > 0 {
-				pct = vd.Value * 100 / vd.Max
-			}
-			// Our OWN seed/nudge echoes back as an ordinary volume event, and
-			// it must not be written anywhere.
-			//
-			// syncVolumeFromBox deliberately sends vol, then vol-1, then vol,
-			// because the Spotify app only refreshes its slider on a CHANGE.
-			// That middle value was being mirrored straight onto the speaker,
-			// so every Spotify activation audibly dropped the volume by one
-			// step and put it back. Reported as "lauter/leiser springt
-			// hoch-runter", with the three writes visible in his own log
-			// (2026-09-25).
-			//
-			// The guard already existed one block down, protecting the group
-			// fan-out for exactly this reason. It simply never covered the
-			// speaker itself, which is the one that makes a sound.
-			if m.selfVolActive() {
-				m.logger.Debug("spotify: volume event is our own seed/nudge, not writing it back", "pct", pct)
-				continue
-			}
-			sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-			if err := m.box.SetVolume(sctx, pct); err != nil {
-				m.logger.Debug("spotify: box SetVolume from Spotify event failed", "err", err, "pct", pct)
-			}
-			cancel()
-			m.logger.Info("spotify: volume mirrored to box", "pct", pct)
-			// A group's volume must reach every follower, not just the master
-			// this go-librespot runs on. Handed to a worker so a slow/offline
-			// follower can never stall this event loop.
-			m.requestGroupVolume(pct)
+			// Echo filter, box write, max-jump guard and group fan-out live in
+			// volumesync.go.
+			m.handleEngineVolumeEvent(vd.Value, vd.Max)
 		}
 	}
 }

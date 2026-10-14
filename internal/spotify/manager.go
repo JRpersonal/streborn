@@ -106,12 +106,9 @@ type Manager struct {
 	EngineRSSKB func(pid int) int64
 
 	mu sync.Mutex
-	// selfVolUntil marks a volume change as caused by the manager itself (the
-	// slider seed + nudge in syncVolumeFromBox): go-librespot echoes API
-	// volume changes as "volume" events, and the group fan-out must ignore
-	// those or every device activation rewrites the followers' individually
-	// set levels.
-	selfVolUntil time.Time
+	// vs is the box <-> Spotify volume bridge (volumesync.go): echo marks for
+	// both directions, the last level known on each side, the push worker.
+	vs volSync
 	// Connect intent (see SetConnectIntentHooks): hooks into the box-side
 	// stop/play latches, plus the stamp that filters the engine's echoes of
 	// STR's OWN /player commands out of the intent signal.

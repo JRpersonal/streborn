@@ -56,6 +56,24 @@ type wsNowPlaying struct {
 	ContentItem    wsContentItem `xml:"ContentItem"`
 }
 
+// wsVolume is the <volumeUpdated> body.
+type wsVolume struct {
+	Target *int `xml:"volume>targetvolume"`
+	Actual *int `xml:"volume>actualvolume"`
+}
+
+// level returns the level the box is heading to (target, else actual), or -1
+// when the frame carried none.
+func (v wsVolume) level() int {
+	if v.Target != nil {
+		return *v.Target
+	}
+	if v.Actual != nil {
+		return *v.Actual
+	}
+	return -1
+}
+
 func (n wsNowPlaying) playStatus() string {
 	if n.PlayStatusEl != "" {
 		return n.PlayStatusEl
@@ -84,7 +102,11 @@ type gabboFrame struct {
 	PowerState *struct {
 		Inner string `xml:",innerxml"`
 	} `xml:"powerStateUpdated"`
-	VolumeUpdated *struct{} `xml:"volumeUpdated"`
+	// VolumeUpdated carries the new level (measured on a Portable and an ST10,
+	// FW 27.0.x: <volumeUpdated><volume><targetvolume>4</targetvolume>
+	// <actualvolume>4</actualvolume>...). Pointers, because older captures show
+	// a bare <volumeUpdated/> and a missing level must not read as 0.
+	VolumeUpdated *wsVolume `xml:"volumeUpdated"`
 	// BassUpdated is the same shape for the bass control. Turning the bass knob
 	// on the speaker or its remote emits a burst of these, and until now every
 	// one was logged as an unrecognized frame: seven in 400 ms filled a field
