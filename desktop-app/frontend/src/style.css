@@ -869,6 +869,23 @@ body {
 .box-update-chip:hover { background: #1c62c4; }
 .box-update-chip:focus-visible { outline: 2px solid var(--c-text); outline-offset: 2px; }
 
+/* "No internet" on a speaker tile (nointernet.js). Amber, not red: the
+   speaker itself is fine and reachable, the router is what needs a look. */
+.box-nointernet-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #b45309;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* The once-per-start speaker-update card. Deliberately calm: it sits above the
    content like the other banners, is never modal, and disappears for good once
    the speakers are current. */

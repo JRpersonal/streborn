@@ -31,6 +31,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/dnsboot"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/hosts"
+	"github.com/JRpersonal/streborn/internal/internet"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/mdnshost"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
@@ -199,6 +200,9 @@ func run() error {
 	}
 
 	logger := newLogger(*logLevel)
+	// The internet verdict logs its transitions from the very first clock
+	// sync attempt on, which runs before the debug sections are registered.
+	internet.SetLogger(logger.With("comp", "internet"))
 	// The process default routes into the same destination as the named logger.
 	// Library code falls back to slog.Default() when no logger was handed to it
 	// (the boxapi client's 2xx error-envelope survey is the case that exposed
@@ -634,6 +638,11 @@ func run() error {
 	// cheap carrier/IP/gateway-ARP snapshot the health tick watches, plus the
 	// on-demand INPUT chain, routes, ARP table and listeners for a bundle.
 	webui.RegisterDebugSection("net_reachability", netReachabilityDebugSection)
+	// internet: the passive "can this speaker reach the internet" verdict
+	// (internal/internet) behind /api/agent/version's internet field, with
+	// the evidence: last success, last failure, its reason and source. Fed by
+	// the clock sync and the stream proxy; no probe or timer of its own.
+	webui.RegisterDebugSection("internet", internet.Snapshot)
 	// dns_status makes the #487 fault class visible in one glance: a bundle
 	// with an empty nameserver list explains dead radio, a stuck clock, an
 	// unpaired box and a crash-looping Spotify engine all at once.

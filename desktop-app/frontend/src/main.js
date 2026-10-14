@@ -19,6 +19,7 @@ import {
   acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
+import { boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText } from './nointernet.js';
 import { speakerReachedTarget, waitForStableAgent } from './agentsettle.js';
 import { applyPositionReading, resetProgress, wantsFastPoll } from './trackprogress.js';
 import {
@@ -2890,7 +2891,15 @@ function checkBoxIssueBanner() {
   // key error: it happened, it was refused, and nothing visible said so, so
   // the key appeared to snap back to the old station on its own.
   const holdErr = boxes.filter(b => b && b.holdRefusedSource);
+  // A speaker that cannot reach the internet while the LAN works (the agent's
+  // passive verdict, nointernet.js). Not dismissible: every station fails on
+  // it, and the fix is on the router, which only a sentence can point at.
+  const noNet = noInternetBoxes(boxes);
   const msgs = [];
+  if (noNet.length) {
+    const names = noNet.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(`<b>${escapeHtml(t('speaker.noInternetBanner', { name: names }))}</b> ${escapeHtml(t('speaker.noInternetHint'))}`);
+  }
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.conflictModBanner', { name: names, mod: conflict[0].conflictingMod })));
@@ -3337,7 +3346,12 @@ function renderBoxSelect() {
     const playMark = playingNow
       ? `<span class="box-playing" title="${escapeAttr(t('speaker.playingNow'))}" aria-label="${escapeAttr(t('speaker.playingNow'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a7 7 0 0 1 0 14.14"></path></svg></span>`
       : '';
-    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    // "No internet" right on the speaker's own tile, the router hint in its
+    // tooltip: the tile is where an owner looks when a station will not play.
+    const noNetChip = boxCannotReachInternet(b)
+      ? `<span class="box-nointernet-chip" title="${escapeAttr(noInternetText(t))}">${escapeHtml(t('speaker.noInternetChip'))}</span>`
+      : '';
+    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   };
   // "Add by IP" tile, always available once at least one speaker is listed.
   // On a routed network mDNS and the local /24 scan find only the speakers on
@@ -9539,17 +9553,20 @@ async function playStation(s) {
     if (switched()) return;
     if (!fail) return; // playing fine
 
-    if (fail.reason === 'offline') {
+    if (playFailedForNoInternet(fail, box)) {
       // The speaker itself has no internet: every station will fail the same
-      // way, so do not cycle through alternatives. Say so plainly and offer to
-      // re-run its Wi-Fi setup (#375).
+      // way, so do not cycle through alternatives. Say so plainly. The app has
+      // just reached the speaker over the LAN, so its Wi-Fi works and the
+      // place to look is the router (2026-10-14: two hours of rebooting five
+      // speakers a router had cut off the internet). The Wi-Fi setup stays
+      // offered for a speaker that joined a network with no internet (#375).
       state.nowPlayState = '';
       state.nowLocation = '';
       state.lastAppPlay = null;
       renderPresets();
       const fix = await confirmWarn(
-        t('search.streamOfflineTitle'),
-        t('search.streamOfflineBody', { name: getBoxLabel(box) }),
+        t('speaker.noInternetTitle'),
+        `<b>${escapeHtml(getBoxLabel(box))}</b>: ${escapeHtml(t('speaker.noInternetHint'))}`,
         { icon: null, confirmLabel: t('search.streamOfflineFix'), confirmClass: 'btn btn-primary' }
       );
       if (fix) openBoxWifiSetup(box);

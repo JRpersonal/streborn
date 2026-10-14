@@ -75,6 +75,8 @@ export namespace main {
 	    strSilent?: boolean;
 	    otaPending?: boolean;
 	    boxHealth?: string;
+	    internet?: string;
+	    internetReason?: string;
 	    arcadeAt?: string;
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
@@ -113,6 +115,8 @@ export namespace main {
 	        this.strSilent = source["strSilent"];
 	        this.otaPending = source["otaPending"];
 	        this.boxHealth = source["boxHealth"];
+	        this.internet = source["internet"];
+	        this.internetReason = source["internetReason"];
 	        this.arcadeAt = source["arcadeAt"];
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
