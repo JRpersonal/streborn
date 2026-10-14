@@ -6,6 +6,8 @@
 // website (st-reborn.de/ideas.json, rebuilt daily) via the Go side, so the app
 // never talks to GitHub itself. When it cannot be fetched, the tab still offers
 // the two buttons that matter: vote on GitHub and suggest a new wish.
+// Below the open wishes, a "Recently done" block lists the wishes built in the
+// last three months, so voting visibly pays off.
 
 import { $, escapeHtml, escapeAttr, showError } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
@@ -52,7 +54,8 @@ export function wishTitle(w, lang) {
 export function initWishesView() {}
 
 // wishesHTML builds the tab body. Pure, so it is testable without a DOM.
-// list: { ok, updatedAt, voteUrl, suggestUrl, wishes: [{ number, title, titles, url, votes }] }
+// list: { ok, updatedAt, voteUrl, suggestUrl, wishes: [{ number, title, titles, url, votes }],
+//         done: [{ number, title, titles, url, votes, doneAt }] }
 // or null while loading.
 export function wishesHTML(list, tr, lang, query = '') {
   const head = `
@@ -66,7 +69,8 @@ export function wishesHTML(list, tr, lang, query = '') {
   if (!list) return `<div class="wishes">${head}<p class="muted">${escapeHtml(tr('wishes.loading'))}</p></div>`;
   if (!list.ok) return `<div class="wishes">${head}<p class="muted">${escapeHtml(tr('wishes.unavailable'))}</p></div>`;
   const wishes = list.wishes || [];
-  if (wishes.length === 0) return `<div class="wishes">${head}<p class="muted">${escapeHtml(tr('wishes.empty'))}</p></div>`;
+  const done = list.done || [];
+  if (wishes.length === 0) return `<div class="wishes">${head}<p class="muted">${escapeHtml(tr('wishes.empty'))}</p>${doneHTML(done, tr, lang, '')}</div>`;
   const rows = wishes.map((w) => `
       <li class="wish-row" data-wish-num="${escapeAttr(String(w.number))}"${wishMatches(w, lang, query) ? '' : ' hidden'}>
         <span class="wish-votes" title="${escapeAttr(tr('wishes.votesTitle', { count: w.votes }))}"><span class="wish-arrow" aria-hidden="true">&#9650;</span>${escapeHtml(String(w.votes))}</span>
@@ -80,13 +84,47 @@ export function wishesHTML(list, tr, lang, query = '') {
     try { when = d.toLocaleDateString(lang || undefined, { day: 'numeric', month: 'long', year: 'numeric' }); } catch {}
     asOf = `<p class="muted small wishes-asof">${escapeHtml(tr('wishes.asOf', { date: when }))}</p>`;
   }
-  const anyMatch = wishes.some((w) => wishMatches(w, lang, query));
+  const anyMatch = [...wishes, ...done].some((w) => wishMatches(w, lang, query));
   const search = `
     <div class="wishes-search-row">
       <input type="search" class="wishes-search" id="wishesSearch" placeholder="${escapeAttr(tr('wishes.searchPlaceholder'))}" aria-label="${escapeAttr(tr('wishes.searchPlaceholder'))}" value="${escapeAttr(query)}">
     </div>
     <p class="muted wishes-nomatch" id="wishesNoMatch"${anyMatch ? ' hidden' : ''}>${escapeHtml(tr('wishes.noMatch'))}</p>`;
-  return `<div class="wishes">${head}${search}<ol class="wish-list">${rows}</ol>${asOf}</div>`;
+  return `<div class="wishes">${head}${search}<ol class="wish-list">${rows}</ol>${doneHTML(done, tr, lang, query)}${asOf}</div>`;
+}
+
+// doneMonth renders a done date as month and year in the app language
+// ("October 2026", "Oktober 2026"), in UTC so a wish closed late on the last
+// day of a month does not jump. Empty for an unreadable date.
+export function doneMonth(iso, lang) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) return '';
+  try { return d.toLocaleDateString(lang || undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }); } catch {}
+  return String(iso).slice(0, 7);
+}
+
+// doneHTML is the "Recently done" block under the open wishes: wishes built in
+// the last three months, newest first, so voters see that their votes lead
+// somewhere. The website picks them (see app_wishes.go); nothing renders when
+// there are none. The rows obey the same search as the open ones.
+export function doneHTML(done, tr, lang, query = '') {
+  if (!done || done.length === 0) return '';
+  const rows = done.map((w) => {
+    const when = doneMonth(w.doneAt, lang);
+    return `
+      <li class="wish-row wish-row-done" data-wish-num="${escapeAttr(String(w.number))}"${wishMatches(w, lang, query) ? '' : ' hidden'}>
+        <span class="wish-done-badge"><span aria-hidden="true">&#10003;</span> ${escapeHtml(tr('wishes.doneBadge'))}</span>
+        <span class="wish-title">${escapeHtml(wishTitle(w, lang))}</span>
+        ${when ? `<time class="wish-done-date muted small" datetime="${escapeAttr(w.doneAt)}">${escapeHtml(when)}</time>` : ''}
+        <button class="btn btn-mini btn-secondary" data-wish-open="${escapeAttr(w.url)}">${escapeHtml(tr('wishes.doneOpenBtn'))}</button>
+      </li>`;
+  }).join('');
+  return `
+    <section class="wishes-done" aria-labelledby="wishesDoneTitle">
+      <h3 class="wishes-done-title" id="wishesDoneTitle">${escapeHtml(tr('wishes.doneTitle'))}</h3>
+      <p class="muted small">${escapeHtml(tr('wishes.doneLead'))}</p>
+      <ul class="wish-list">${rows}</ul>
+    </section>`;
 }
 
 function paint(list) {
@@ -108,7 +146,7 @@ function paint(list) {
 function wireSearch(root, list, lang) {
   const box = root.querySelector('#wishesSearch');
   if (!box) return;
-  const byNum = new Map(((list && list.wishes) || []).map((w) => [String(w.number), w]));
+  const byNum = new Map([...((list && list.wishes) || []), ...((list && list.done) || [])].map((w) => [String(w.number), w]));
   box.oninput = () => {
     filterText = box.value;
     let any = false;

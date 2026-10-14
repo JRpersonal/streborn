@@ -36,16 +36,23 @@ type Wish struct {
 	// title (see the website's lib/translate.ts). The app never contacts a
 	// translation service itself; a missing language shows Title.
 	Titles map[string]string `json:"titles,omitempty"`
+	// DoneAt is set only on wishes in WishList.Done: when the wish was
+	// marked as built (the discussion's close time, RFC 3339 UTC).
+	DoneAt string `json:"doneAt,omitempty"`
 }
 
 // WishList is what the Wishes tab renders. OK is false when the list could not
-// be fetched; VoteURL and SuggestURL are always set.
+// be fetched; VoteURL and SuggestURL are always set. Done lists the wishes
+// built in the last three months, newest first. The website decides which
+// (closed as resolved with the "shipped" label); Done is empty with an older
+// ideas.json that has no "done" array.
 type WishList struct {
 	OK         bool   `json:"ok"`
 	UpdatedAt  string `json:"updatedAt"`
 	VoteURL    string `json:"voteUrl"`
 	SuggestURL string `json:"suggestUrl"`
 	Wishes     []Wish `json:"wishes"`
+	Done       []Wish `json:"done"`
 }
 
 // FeatureWishes returns the open feature wishes, most votes first, for the
@@ -54,7 +61,7 @@ type WishList struct {
 func (a *App) FeatureWishes() WishList {
 	ctx, cancel := context.WithTimeout(a.appCtx(), 8*time.Second)
 	defer cancel()
-	out := WishList{VoteURL: wishesVoteURL, SuggestURL: wishesSuggestURL, Wishes: []Wish{}}
+	out := WishList{VoteURL: wishesVoteURL, SuggestURL: wishesSuggestURL, Wishes: []Wish{}, Done: []Wish{}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wishesURL, nil)
 	if err != nil {
 		return out
@@ -78,15 +85,17 @@ func (a *App) FeatureWishes() WishList {
 }
 
 // parseWishes reads the website's ideas.json and keeps only entries that link
-// into the project's own discussions.
+// into the project's own discussions, both the open wishes ("ideas") and the
+// recently built ones ("done").
 func parseWishes(r io.Reader) (WishList, error) {
 	var in struct {
 		UpdatedAt  string `json:"updatedAt"`
 		VoteURL    string `json:"voteUrl"`
 		SuggestURL string `json:"suggestUrl"`
 		Ideas      []Wish `json:"ideas"`
+		Done       []Wish `json:"done"`
 	}
-	out := WishList{VoteURL: wishesVoteURL, SuggestURL: wishesSuggestURL, Wishes: []Wish{}}
+	out := WishList{VoteURL: wishesVoteURL, SuggestURL: wishesSuggestURL, Wishes: []Wish{}, Done: []Wish{}}
 	if err := json.NewDecoder(r).Decode(&in); err != nil {
 		return out, err
 	}
@@ -97,16 +106,39 @@ func parseWishes(r io.Reader) (WishList, error) {
 		out.SuggestURL = in.SuggestURL
 	}
 	for _, w := range in.Ideas {
-		w.Title = strings.TrimSpace(w.Title)
-		if w.Title == "" || !strings.HasPrefix(w.URL, wishesLinkPrefix) {
+		if w, ok := cleanWish(w); ok {
+			w.DoneAt = ""
+			out.Wishes = append(out.Wishes, w)
+		}
+	}
+	// A done wish without a readable date is dropped: the tab shows the
+	// month it was built, and a guess would be wrong.
+	for _, w := range in.Done {
+		w, ok := cleanWish(w)
+		if !ok {
 			continue
 		}
-		if w.Votes < 0 {
-			w.Votes = 0
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(w.DoneAt))
+		if err != nil {
+			continue
 		}
-		out.Wishes = append(out.Wishes, w)
+		w.DoneAt = at.UTC().Format(time.RFC3339)
+		out.Done = append(out.Done, w)
 	}
 	out.UpdatedAt = in.UpdatedAt
 	out.OK = true
 	return out, nil
+}
+
+// cleanWish trims the title and clamps the votes. It rejects an entry without
+// a title or with a link outside the project's own discussions.
+func cleanWish(w Wish) (Wish, bool) {
+	w.Title = strings.TrimSpace(w.Title)
+	if w.Title == "" || !strings.HasPrefix(w.URL, wishesLinkPrefix) {
+		return w, false
+	}
+	if w.Votes < 0 {
+		w.Votes = 0
+	}
+	return w, true
 }
