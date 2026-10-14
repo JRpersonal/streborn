@@ -1481,6 +1481,15 @@ func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Reque
 // profiles) or that run on ethernet — boxes with months of clean cold boots
 // suddenly told the user they would strand (#381 cgb280, #119). An unknown or
 // absent wlan-mode stays quiet for the same reason.
+//
+// The Portable (taigan-bco) keeps its own profile: the BCO coprocessor's NVRAM
+// (it survived even a full `sys factorydefault`, 2026-05-24) and the slot-0
+// PersistentWifiProfile in AirplayConfiguration.xml. With such a profile there
+// the warning was a false alarm: a second-hand Portable joined to the home
+// network through Bose's own setup page (2026-10-13) showed it, and so did the
+// test Portable for months, while both reconnected after every restart and
+// two firmware flashes. The scm bridge boxes keep it: their cold-boot
+// association failures are what the offline rescue re-pushes STR's copy for.
 func wlanCredsWarningWarranted() bool {
 	if hasSavedWLANCreds() {
 		return false
@@ -1489,11 +1498,38 @@ func wlanCredsWarningWarranted() bool {
 	if err != nil {
 		return false
 	}
-	switch strings.TrimSpace(string(mode)) {
-	case "bco", "taigan-bco":
+	return wlanCredsWarningFor(strings.TrimSpace(string(mode)), firmwareWifiProfileSSID)
+}
+
+// wlanCredsWarningFor is the decision for a speaker without STR's own copy,
+// by its wlan-mode. firmwareSSID is only asked on a Portable.
+func wlanCredsWarningFor(mode string, firmwareSSID func() string) bool {
+	switch mode {
+	case "bco":
 		return true
+	case "taigan-bco":
+		return firmwareSSID() == ""
 	}
 	return false
+}
+
+// firmwareWifiProfileSSID is the SSID of the Wi-Fi profile the firmware keeps
+// itself (NetworkProfiles.xml, else AirplayConfiguration.xml), "" when it
+// keeps none.
+func firmwareWifiProfileSSID() string {
+	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/NetworkProfiles.xml"); len(m) > 0 {
+		if b, err := os.ReadFile(m[0]); err == nil {
+			if v := ssidAfter(string(b), "<profile"); v != "" {
+				return v
+			}
+		}
+	}
+	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml"); len(m) > 0 {
+		if b, err := os.ReadFile(m[0]); err == nil {
+			return ssidAfter(string(b), "PersistentWifiProfile")
+		}
+	}
+	return ""
 }
 
 // nandEntry is one top-level /mnt/nv entry with its recursive size.
