@@ -36,6 +36,8 @@ import (
 type Server struct {
 	addr    string
 	boxHost string
+	// selfUpd runs the speaker's own update from GitHub (selfupdate.go).
+	selfUpd selfUpdater
 	// The firmware's own US services, Pandora and iHeartRadio
 	// (usservices.go). nativeBoxOverride is a test seam.
 	native            NativeServicesBackend
@@ -1315,6 +1317,8 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	// resume down briefly so it does not blast the room right after the update
 	// (a genuine power outage leaves no marker and resumes as before).
 	s.consumeOTARebootMarker()
+	// Finish a self-update that rebooted into this agent (selfupdate.go).
+	s.resumeSelfUpdate()
 	// The hidden game's remote code starts a round through this server, which
 	// owns the playback state it has to restore afterwards.
 	oled.SetGameStarter(s.startGame)
@@ -1391,6 +1395,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
 	mux.HandleFunc("/api/agent/bose-firmware", s.handleBoseFirmware)
+	mux.HandleFunc("/api/agent/self-update", s.handleSelfUpdate)
 	mux.HandleFunc("/api/agent/ssh", s.handleAgentSSH)
 	mux.HandleFunc("/api/us-services", s.handleUSServices)
 	mux.HandleFunc("/api/pandora", s.handleUSServices)

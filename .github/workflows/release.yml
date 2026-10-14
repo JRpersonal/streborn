@@ -1719,6 +1719,36 @@ jobs:
           sha256sum streborn-* STR-* str-shim.so go-librespot-armv7l > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Signed update index (speakers updating themselves)
+        # update.json lists the version and the hash and size of the agent and
+        # the Spotify engine; update.json.sig is its Ed25519 signature. A
+        # speaker updating itself from the phone (no desktop app) installs only
+        # what this signature covers (internal/updatesig). updatesign refuses
+        # to sign with a key the agent does not trust, so a key mix-up fails
+        # here instead of on every speaker. Dry-runs without the secret skip
+        # it; a real release without it fails, because its speakers could not
+        # update themselves.
+        working-directory: dist
+        env:
+          STR_UPDATE_SIGNING_KEY: ${{ secrets.STR_UPDATE_SIGNING_KEY }}
+          VERSION: ${{ needs.build-agent.outputs.version }}
+          BUILD: ${{ needs.build-agent.outputs.build_stamp }}
+          REAL_RELEASE: ${{ github.event.inputs.version != '' }}
+        run: |
+          set -eu
+          if [ -z "$STR_UPDATE_SIGNING_KEY" ]; then
+            if [ "$REAL_RELEASE" = "true" ]; then
+              echo "::error::STR_UPDATE_SIGNING_KEY is not set; speakers could not update themselves to this release"
+              exit 1
+            fi
+            echo "No signing key on this dry-run; skipping update.json"
+            exit 0
+          fi
+          # A dry-run's version is dev-<hash>, which is no release tag; sign
+          # under a placeholder so the key check still runs.
+          if [ "$REAL_RELEASE" != "true" ]; then VERSION="v0.0.0-dryrun"; fi
+          go run ../cmd/updatesign sign -dir . -version "$VERSION" -build "$BUILD" -commit "$GITHUB_SHA"
+
       - name: Release provenance (one attestation over every published file)
         # The build jobs already attest each artifact, but those attestations
         # live only in GitHub's attestation store, and the Windows download is
@@ -2190,6 +2220,8 @@ jobs:
             dist/go-librespot-armv7l
             dist/str-shim.so
             dist/SHA256SUMS
+            dist/update.json
+            dist/update.json.sig
             dist/manifest.json
             dist/STR-*.sigstore.json
             dist/STR-*.intoto.jsonl

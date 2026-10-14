@@ -90,6 +90,18 @@ Each boundary is covered in detail in
   accept requests from private LAN source addresses (`isLocalLAN`);
   there is still no client authentication (see below), but these
   endpoints are at least source-gated.
+- A speaker that updates itself (the phone remote's "Software update",
+  `/api/agent/self-update`) installs only what the release's
+  `update.json` lists, and only when its Ed25519 signature verifies
+  against a key compiled into the agent. The signature covers the
+  version, so an older signed release cannot be passed off as newer, and
+  the agent refuses anything not newer than what it runs. Each download
+  is checked against the signed SHA-256 and size before the final byte
+  reaches the install handler, so a tampered or truncated file is
+  discarded without being renamed into place. The endpoint is LAN-gated
+  like the OTA upload; what a LAN client gains is the ability to start
+  an update to the official latest release, not to choose its content.
+  See [`SELF-UPDATE.md`](SELF-UPDATE.md).
 
 ## Inherited speaker firmware caveats
 
