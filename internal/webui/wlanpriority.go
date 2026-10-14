@@ -188,6 +188,9 @@ type profileTag struct {
 	// attribute the tag lacks.
 	nameEnd int
 	attrs   []profileAttr
+	// start is the offset of the tag's '<' and end the offset just past its
+	// closing '>', so a caller can cut the whole element out (wlanforget.go).
+	start, end int
 }
 
 // scanProfileTags finds every <profile ...> start tag. A hand-rolled scanner
@@ -197,7 +200,14 @@ type profileTag struct {
 // would re-serialize the ciphertext-carrying attributes this file must never
 // touch. Byte offsets into the ORIGINAL document are the whole point.
 func scanProfileTags(doc string) []profileTag {
-	const open = "<profile"
+	return scanElementTags(doc, "profile")
+}
+
+// scanElementTags is scanProfileTags for any element name, with the same
+// guarantees: byte offsets into the original document, quote-aware, and a
+// longer name that merely starts with this one is not a match.
+func scanElementTags(doc, element string) []profileTag {
+	open := "<" + element
 	var tags []profileTag
 	i := 0
 	for i+len(open) <= len(doc) {
@@ -218,6 +228,7 @@ func scanProfileTags(doc string) []profileTag {
 		}
 		tag, next := parseProfileAttrs(doc, nameEnd)
 		tag.nameEnd = nameEnd
+		tag.start, tag.end = i, next
 		tags = append(tags, tag)
 		i = next
 	}

@@ -1422,6 +1422,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/wlan/scan", s.handleBoxWLANScan)
+	mux.HandleFunc("/api/box/wlan/networks", s.handleBoxWLANNetworks)
+	mux.HandleFunc("/api/box/wlan/forget-others", s.handleBoxWLANForgetOthers)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
 	mux.HandleFunc("/api/box/restore-cloud-url", s.handleRestoreCloudURL)

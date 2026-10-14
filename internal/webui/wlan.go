@@ -115,6 +115,10 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		// dropped off the protected home Wi-Fi right after a successful OTA
 		// install (field report 2026-08-29).
 		Open bool `json:"open"`
+		// ForgetOthers removes every other stored network once the speaker is
+		// confirmed on the new one (wlanforget.go), so it cannot fall back to
+		// an old or public network later. wpa chassis only.
+		ForgetOthers bool `json:"forgetOthers"`
 	}
 	if !decodeJSONRequest(w, r, 2048, &req) {
 		return
@@ -201,13 +205,17 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	if mech == "bco" {
 		status = "rebooting"
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    status,
 		"ssid":      req.SSID,
 		"mechanism": mech,
+		// Whether the forget option will run: only the wpa chassis can remove
+		// a single stored network (see wlanforget.go). A forget that removes
+		// something restarts the speaker once, so the app waits longer.
+		"forgetOthers": req.ForgetOthers && mech == "wpa",
 	})
-	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface, "hidden", req.Hidden)
-	go s.applyWLANChange(iface, mech, req.SSID, req.Password, req.Hidden)
+	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface, "hidden", req.Hidden, "forgetOthers", req.ForgetOthers)
+	go s.applyWLANChange(iface, mech, req.SSID, req.Password, req.Hidden, req.ForgetOthers)
 }
 
 // wlanPreflightApplies reports whether the site-survey visibility pre-flight
@@ -263,7 +271,7 @@ func detectWlanMechanism() (iface, mech string) {
 // to wlan-creds / wpa_supplicant.conf and leave the box on an unpredictable
 // network. The creds were committed synchronously by the handler before this
 // runs, so this only drives the live switch / reboot.
-func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool) {
+func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, forgetOthers bool) {
 	s.wlanMu.Lock()
 	defer s.wlanMu.Unlock()
 	switch mech {
@@ -305,6 +313,17 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// password must leave the old ranking intact as the fallback, which
 			// is why the wpaCannotApply and rollback arms never touch it.
 			s.raiseFirmwareProfilePriority(ssid)
+			// The owner asked to forget every other network. Runs last, after
+			// commitFirmwareProfile put the new network into the firmware's
+			// store, because the plan refuses to touch a store that does not
+			// hold the network being kept. A changed store is only re-read by
+			// NetManager at start, so the speaker restarts once to finish; the
+			// apply marker above makes that boot program the new network.
+			if forgetOthers && s.forgetOthersAfterSwitch(context.Background(), ssid) {
+				s.logger.Info("WLAN: restarting once so the speaker's network manager drops the forgotten networks", "wantTag", ssidTag(ssid))
+				rebootBox()
+				return
+			}
 			renewDHCPLease()
 			// The switch can land the box on a NEW address (another subnet's
 			// DHCP), and everything derived from the old one goes stale: the
@@ -353,6 +372,9 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			}
 		}
 	default:
+		if forgetOthers {
+			s.logger.Info("WLAN: forgetting the other networks is not possible on this chassis, its Wi-Fi chip keeps its own list", "wantTag", ssidTag(ssid))
+		}
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid, "wantTag", ssidTag(ssid))
 		// Same store, one last chance to record the new network before the
 		// reboot. Known to fail on taigan; logged either way and never

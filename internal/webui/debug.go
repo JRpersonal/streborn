@@ -269,7 +269,10 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// the passphrase, and this endpoint answers an unauthenticated LAN GET.
 		// The tag is enough to tell it apart from the networks in
 		// wlan_configured, which is the only question a bundle has to answer.
-		"wlan_target":   wlanTargetDebug(),
+		"wlan_target": wlanTargetDebug(),
+		// The last "forget the other networks" run, by tag, and whether the
+		// forgotten networks stayed gone after the restart (wlanforget.go).
+		"wlan_forget":   wlanForgetDebug(),
 		"region_txt":    readTail("/mnt/nv/streborn/region.txt"),
 		"name_txt":      readTail("/mnt/nv/streborn/name.txt"),
 		"stick_listing": listDir("/media/sda1"),

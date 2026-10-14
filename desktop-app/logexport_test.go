@@ -352,8 +352,10 @@ func TestScrubPII_SSIDWithoutAKeyBesideIt(t *testing.T) {
 	if strings.Contains(got, "Livebox-D7WD0_5GHz") {
 		t.Fatalf("the network name survived the scrub:\n%s", got)
 	}
-	if !strings.Contains(got, "<SSID-REDACTED>") {
-		t.Fatalf("expected a redaction marker:\n%s", got)
+	// The name is replaced by its stable tag (SSID#<hash>), so a bundle can
+	// still tell this network apart from the others without naming it.
+	if !strings.Contains(got, "seeding 'SSID#") {
+		t.Fatalf("expected an SSID# tag in place of the name:\n%s", got)
 	}
 }
 
