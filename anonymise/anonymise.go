@@ -360,7 +360,14 @@ var spotifyUserRegex = regexp.MustCompile(`(?i)(spotify:user:)([A-Z0-9._%+#-]+)`
 // labels a socket, so it is masked whatever it holds.
 // The KEY only: the value is read by maskAttrValues, which stops at the next
 // attribute without swallowing it.
-var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"?\s*[:=]\s*"?`)
+//
+// The opening quote after the separator may be escaped (\" or \\\"): a
+// forwarded engine line is a quoted slog value, so its own attributes arrive
+// as username=\"...\". The key used to stop before the backslash, the value
+// was then read as that lone backslash, and the account id went out with only
+// the backslash masked and its escape broken (#1314). The escape now belongs
+// to the key, and maskAttrValues leaves the closing one in place.
+var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"?\s*[:=]\s*(?:\\*")?`)
 
 // The second family. Every name here is one the code actually emits, and the
 // list is the whole protection: a key that is not in it is not masked, however
@@ -380,7 +387,7 @@ var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"
 // whole tree returns three lines, all three of them a Spotify identity, so
 // masking unconditionally costs no debug value. Keep this list and the
 // emitters in step; anonymise_spotify_test.go pins each name.
-var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|sessionUser|wantAccount|login|user)"?\s*[:=]\s*"?`)
+var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|sessionUser|wantAccount|login|user)"?\s*[:=]\s*(?:\\*")?`)
 
 // attrBoundary is where a log attribute's value ends because the NEXT attribute
 // begins. Values may contain spaces, so whitespace alone cannot end one.
@@ -426,7 +433,14 @@ func maskAttrValues(s string, keyRe *regexp.Regexp, mask func(string) string) st
 		if m := attrBoundary.FindStringIndex(rest); m != nil && m[0] < end {
 			end = m[0]
 		}
-		b.WriteString(mask(rest[:end]))
+		// Backslashes right before the closing quote escape that quote; they
+		// are not part of the value, and masking them would break the escape.
+		val := rest[:end]
+		if end < len(rest) && rest[end] == '"' {
+			val = strings.TrimRight(val, `\`)
+		}
+		b.WriteString(mask(val))
+		b.WriteString(rest[len(val):end])
 		prev = loc[1] + end
 	}
 	b.WriteString(s[prev:])
@@ -493,6 +507,38 @@ func scrubFriendlyNameChanges(s string) string {
 			return p[1] + open + "NAME#" + hashShort(strings.TrimSpace(val)) + closing
 		})
 		return sub[1] + tail
+	})
+}
+
+// spotifyPeerDeviceRegex catches the name of the OTHER Spotify device in the
+// Spotify engine's own log lines, which the agent forwards verbatim:
+//
+//	msg="playback was transferred to Kim's MacBook Pro"
+//	msg="accepted zeroconf from Kim's iPhone" username=...
+//
+// That name is whatever the owner called their phone or laptop, often with
+// their first name in it, and an anonymised bundle on a public issue shipped
+// it in clear (#1314). The engine writes it into the message text, not under
+// a key, so none of the attribute passes see it.
+//
+// The name ends at the closing quote (plain or JSON-escaped) or the line end.
+// A JSON unicode escape (\u0026 for an ampersand) is part of the name, so a
+// line still inside encoded JSON text is masked whole. The replacement adds no
+// quote or backslash, so a log line embedded in a JSON string stays valid.
+var spotifyPeerDeviceRegex = regexp.MustCompile(`(?i)(\b(?:playback was transferred to|accepted zeroconf from|refused zeroconf from|failed creating new session from) )((?:[^"\\\n]|\\u[0-9a-f]{4})+)`)
+
+// scrubSpotifyPeerDevices hashes the device names spotifyPeerDeviceRegex
+// isolates. The engine's own placeholder for a nameless device stays readable.
+func scrubSpotifyPeerDevices(s string) string {
+	return spotifyPeerDeviceRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := spotifyPeerDeviceRegex.FindStringSubmatch(m)
+		val := strings.TrimSpace(sub[2])
+		switch {
+		case val == "", strings.HasPrefix(val, "DEVICE#"),
+			strings.EqualFold(val, "<unknown>"), strings.EqualFold(val, `\u003cunknown\u003e`):
+			return m
+		}
+		return sub[1] + "DEVICE#" + hashShort(val)
 	})
 }
 
@@ -722,6 +768,7 @@ func scrubIdentities(s string) string {
 		return sub[1] + "NAME#" + hashShort(val) + sub[3]
 	})
 	s = scrubFriendlyNameChanges(s)
+	s = scrubSpotifyPeerDevices(s)
 	s = scrubAccounts(s)
 	s = scrubURLCredentials(s)
 	s = redactSSIDs(s)

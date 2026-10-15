@@ -29,8 +29,15 @@ import (
 const nativeRadioSource = "LOCAL_INTERNET_RADIO"
 
 // errNativeStationKept is returned when the speaker ignored the UPnP push twice
-// and kept playing its own station. The text is what the app shows.
-var errNativeStationKept = errors.New("the speaker kept playing its own radio station and did not switch over. Press Stop on the speaker or in the app, then try again")
+// and kept its own station. The text is what the app shows.
+//
+// It used to tell the user to press Stop and try again. By then STR had
+// already pressed Stop twice, so the advice repeated the thing that had just
+// failed and left the room silent (#1314: an ST10 stereo master that refused
+// every UPnP push while its native radio played fine). This is the refusal the
+// app's speaker banner describes, so it says the same: what fails, what still
+// works, and the one thing that usually helps.
+var errNativeStationKept = errors.New("the speaker is refusing what STR sends it right now, so its radio station was put back on. Presets with Spotify, the music library or the queue fail while radio stations still play. A restart of the speaker usually fixes it")
 
 // Handover timing. Variables so the tests do not wait for real seconds.
 var (
@@ -53,6 +60,19 @@ func (s *Server) stopNativeStation(ctx context.Context) bool {
 		s.renderer.OnTransportCommand()
 	}
 	return s.transportKeyFallback(ctx, "STOP")
+}
+
+// resumeNativeStation sends the speaker's own PLAY key to bring back the
+// station stopNativeStation ended, when the UPnP push it was stopped for never
+// took. Returns whether the key was delivered.
+func (s *Server) resumeNativeStation(ctx context.Context) bool {
+	if s.nativeResumeFn != nil {
+		return s.nativeResumeFn(ctx)
+	}
+	if s.renderer != nil && s.renderer.OnTransportCommand != nil {
+		s.renderer.OnTransportCommand()
+	}
+	return s.transportKeyFallback(ctx, "PLAY")
 }
 
 // awaitUPnPSource polls the speaker's source after a push until it reads UPNP
@@ -97,6 +117,7 @@ func (s *Server) pushOverNativeStation(ctx context.Context, title string, push f
 	s.logger.Info("play: the speaker is playing a native station, stopping it before the UPnP push",
 		"title", title, "source", before)
 	stopped := s.stopNativeStation(ctx)
+	everStopped := stopped
 	if err := push(); err != nil {
 		return err
 	}
@@ -109,6 +130,7 @@ func (s *Server) pushOverNativeStation(ctx context.Context, title string, push f
 	s.logger.Warn("play: the speaker kept its native station after the UPnP push, stopping it and pushing once more",
 		"title", title, "source", src, "stopKeySent", stopped)
 	stopped = s.stopNativeStation(ctx)
+	everStopped = everStopped || stopped
 	if err := push(); err != nil {
 		return err
 	}
@@ -118,8 +140,17 @@ func (s *Server) pushOverNativeStation(ctx context.Context, title string, push f
 			"title", title, "source", src, "stopKeySent", stopped)
 		return nil
 	}
-	s.logger.Warn("play: the speaker ignored the UPnP push twice and kept playing its native station, reporting the play as failed",
-		"title", title, "source", src, "stopKeySent", stopped)
+	// Both pushes answered success and the speaker still holds its own source:
+	// it is refusing UPnP pushes, the same refusal the recall verify counts, so
+	// count it toward the same restart hint. Then undo the stops, so the user is
+	// back to the station they were listening to instead of a silent room.
+	s.noteRefusalStrike("handover")
+	resumed := false
+	if everStopped {
+		resumed = s.resumeNativeStation(ctx)
+	}
+	s.logger.Warn("play: the speaker ignored the UPnP push twice and kept its native station, reporting the play as failed",
+		"title", title, "source", src, "stopKeySent", stopped, "stationResumed", resumed)
 	return errNativeStationKept
 }
 

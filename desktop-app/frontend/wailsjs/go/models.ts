@@ -886,6 +886,7 @@ export namespace main {
 	    premiumRequired: boolean;
 	    audioKeyRefused: boolean;
 	    canRecall?: boolean;
+	    product: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyNow(source);
@@ -902,6 +903,7 @@ export namespace main {
 	        this.premiumRequired = source["premiumRequired"];
 	        this.audioKeyRefused = source["audioKeyRefused"];
 	        this.canRecall = source["canRecall"];
+	        this.product = source["product"];
 	    }
 	}
 	export class SpotifyQualityState {

@@ -23,9 +23,10 @@ const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const KEY = 'preset.spotifyKeyNeedsLogin';
 const PREMIUM = 'preset.spotifyKeyNeedsPremium';
+const PLAN = 'preset.spotifyKeyPlanUnknown';
 
 const save = src.slice(src.indexOf('async function saveCurrentToSlot'),
-  src.indexOf('async function saveCurrentToSlot') + 8000);
+  src.indexOf('async function saveCurrentToSlot') + 10000);
 const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`), 'utf8'));
 
 // The gate as the save path applies it, lifted out of main.js so the order of the
@@ -33,13 +34,25 @@ const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`)
 const at = main.indexOf('      // Same order the speaker applies when the key is pressed');
 const gate = main.slice(at, main.indexOf('      // Which notice was shown', at));
 
-function decide(canRecall, premiumRequired) {
+// One app run: the once-per-run flag lives as long as the returned function,
+// the way the module-level flag in main.js lives as long as the app.
+function appRun() {
   let shown = null;
   // eslint-disable-next-line no-new-func
-  new Function('canRecall', 'premiumRequired', 'showToast', 't', `${gate}\nreturn notice;`)(
-    canRecall, premiumRequired, (msg) => { shown = msg; }, (k) => k,
-  );
-  return shown;
+  const run = new Function('showToast', 't', `let spotifyPlanHintShown = false;
+return (canRecall, premiumRequired, planKnown) => {
+${gate}
+return notice;
+};`)((msg) => { shown = msg; }, (k) => k);
+  return (canRecall, premiumRequired, planKnown) => {
+    shown = null;
+    run(canRecall, premiumRequired, planKnown);
+    return shown;
+  };
+}
+
+function decide(canRecall, premiumRequired, planKnown) {
+  return appRun()(canRecall, premiumRequired, planKnown);
 }
 
 describe('saving a Spotify key that cannot play', () => {
@@ -54,6 +67,43 @@ describe('saving a Spotify key that cannot play', () => {
 
   it('stays quiet when the speaker can recall', () => {
     expect(decide(true, false)).toBeNull();
+  });
+
+  it('hints softly when the speaker could not read the plan (#1314)', () => {
+    // premiumRequired false with no plan is Premium OR an unanswered question
+    // (Spotify answering 429). A free account would make the key silent, so
+    // the save says the plan went unchecked and what the key needs.
+    expect(decide(true, false, false)).toBe(PLAN);
+    expect(decide(true, false, true)).toBeNull();
+    // The login notice and the free-account notice still win.
+    expect(decide(false, false, false)).toBe(KEY);
+    expect(decide(true, true, false)).toBe(PREMIUM);
+    // An unreadable speaker stays silent, as every other gate does.
+    expect(decide(true, false, undefined)).toBeNull();
+    expect(decide(undefined, undefined, undefined)).toBeNull();
+  });
+
+  it('gives the plan hint once per app run, not on every save', () => {
+    // A Premium account whose token cannot read the plan stays "unknown" for
+    // good; repeating the hint on every save would nag exactly those users.
+    const run = appRun();
+    expect(run(true, false, false)).toBe(PLAN);
+    expect(run(true, false, false)).toBeNull();
+    expect(run(true, false, false)).toBeNull();
+    // The real warnings are not rationed.
+    expect(run(false, false, false)).toBe(KEY);
+    expect(run(true, true, false)).toBe(PREMIUM);
+    expect(run(true, true, false)).toBe(PREMIUM);
+    // A new run shows it again.
+    expect(appRun()(true, false, false)).toBe(PLAN);
+  });
+
+  it('keeps the once-per-run flag outside the save function', () => {
+    // Declared inside saveCurrentToSlot it would reset on every save.
+    const fnAt = main.indexOf('async function saveCurrentToSlot');
+    const flagAt = main.indexOf('let spotifyPlanHintShown = false;');
+    expect(flagAt).toBeGreaterThan(-1);
+    expect(flagAt).toBeLessThan(fnAt);
   });
 
   it('stays quiet when the speaker is too old to say', () => {
@@ -98,6 +148,8 @@ describe('the wording claims only what STR can see', () => {
       expect(b[PREMIUM], `${lang} is missing ${PREMIUM}`).toBeTruthy();
       expect(b[KEY], `${lang} does not name the (STR) entry`).toContain('(STR)');
       expect(b[PREMIUM], `${lang} does not name Premium`).toMatch(/Premium/);
+      expect(b[PLAN], `${lang} is missing ${PLAN}`).toBeTruthy();
+      expect(b[PLAN], `${lang} does not name Premium`).toMatch(/Premium/);
     }
   });
 

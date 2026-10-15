@@ -220,6 +220,11 @@ func (s *Server) noteRecallExhaustedWithSource(source string) {
 
 // NoteBoxHealthy clears the wedge state; called whenever playback is actually
 // observed (a verify succeeding, the box attaching to a stream).
+//
+// Every caller is a UPnP push that was seen to play. Keep it that way: a
+// station the speaker starts natively bypasses the UPnP login the refusal
+// latch is about, so calling this from a native start would clear the hint on
+// a box that still refuses every Spotify or library preset.
 func (s *Server) NoteBoxHealthy() {
 	s.wedge.mu.Lock()
 	wasWedged := s.wedge.wedged
@@ -236,6 +241,7 @@ func (s *Server) NoteBoxHealthy() {
 	s.refusal.strikes = 0
 	s.refusal.latched = false
 	s.refusal.since = time.Time{}
+	s.refusal.lastStrike = time.Time{}
 	s.refusal.lastNonUserDrop = time.Time{}
 	s.refusal.mu.Unlock()
 	if wasRefusing {
@@ -257,12 +263,28 @@ type refusalState struct {
 	strikes         int
 	latched         bool
 	since           time.Time
+	lastStrike      time.Time // the most recent strike, for refusalDecay
 	lastNonUserDrop time.Time
 }
 
 // refusalStrikesToLatch mirrors wedgeStrikesToLatch: two consecutive silent
 // failures latch, a single odd failure stays quiet.
 const refusalStrikesToLatch = 2
+
+// refusalDecay is how long the refusal hint outlives its most recent strike.
+//
+// The latch is about one thing: the speaker refusing what STR pushes over UPnP
+// (Spotify, the music library, the queue). A station the speaker starts itself
+// (LOCAL_INTERNET_RADIO) goes past that login entirely and plays on a refusing
+// box, so a native play is NOT evidence the UPnP side recovered and must not
+// clear the latch. Before this, though, only an observed UPnP success cleared
+// it, and a household that switched to radio after the failures kept a
+// "restart the speaker" banner for good (#1314: an ST10 stereo pair that
+// played radio all day under the banner). A refusal is only news while the
+// user is still running into it: if nothing STR pushed was refused for this
+// long, the hint goes away on its own, and the next refused push brings it
+// back with fresh strikes. A variable so the tests do not wait ten minutes.
+var refusalDecay = 10 * time.Minute
 
 // NoteNonUserStandbyDrop records that HandleEnterStandby classified a
 // UPNP->STANDBY drop as NOT a user power-off (#419 mid-recall branch), so an
@@ -308,6 +330,15 @@ func (s *Server) noteSilentRefusalCandidate() {
 // answered 1036). Both end in the same advice, so they share one latch.
 func (s *Server) noteRefusalStrike(kind string) {
 	s.refusal.mu.Lock()
+	now := time.Now()
+	// Strikes far apart are not a pattern: a refusal this morning and one
+	// tonight start counting afresh, same as an expired latch.
+	if !s.refusal.lastStrike.IsZero() && now.Sub(s.refusal.lastStrike) >= refusalDecay {
+		s.refusal.strikes = 0
+		s.refusal.latched = false
+		s.refusal.since = time.Time{}
+	}
+	s.refusal.lastStrike = now
 	s.refusal.strikes++
 	latch := s.refusal.strikes >= refusalStrikesToLatch && !s.refusal.latched
 	if latch {
@@ -328,10 +359,26 @@ func (s *Server) noteRefusalStrike(kind string) {
 // RecallRefusal reports whether the silent-refusal state is latched, and since
 // when. Surfaced on the version envelope so the desktop app can join it into
 // the storm banner (same remedy: a soft restart).
+//
+// The latch decays: refusalDecay after the most recent strike it reads as
+// inactive and is reset, so the banner goes away once the user stops running
+// into refusals (a native radio station playing meanwhile does not count either
+// way, see refusalDecay).
 func (s *Server) RecallRefusal() (active bool, since time.Time) {
 	s.refusal.mu.Lock()
-	defer s.refusal.mu.Unlock()
-	return s.refusal.latched, s.refusal.since
+	expired := s.refusal.latched && !s.refusal.lastStrike.IsZero() &&
+		time.Since(s.refusal.lastStrike) >= refusalDecay
+	if expired {
+		s.refusal.strikes = 0
+		s.refusal.latched = false
+		s.refusal.since = time.Time{}
+	}
+	active, since = s.refusal.latched, s.refusal.since
+	s.refusal.mu.Unlock()
+	if expired {
+		s.logger.Info("recall refusal hint cleared: no refused push for a while", "after", refusalDecay)
+	}
+	return active, since
 }
 
 // BoxStateHint reports the speaker-side condition that would make streams fail
