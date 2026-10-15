@@ -496,6 +496,38 @@ func scrubFriendlyNameChanges(s string) string {
 	})
 }
 
+// spotifyPeerDeviceRegex catches the name of the OTHER Spotify device in the
+// Spotify engine's own log lines, which the agent forwards verbatim:
+//
+//	msg="playback was transferred to Kim's MacBook Pro"
+//	msg="accepted zeroconf from Kim's iPhone" username=...
+//
+// That name is whatever the owner called their phone or laptop, often with
+// their first name in it, and an anonymised bundle on a public issue shipped
+// it in clear (#1314). The engine writes it into the message text, not under
+// a key, so none of the attribute passes see it.
+//
+// The name ends at the closing quote (plain or JSON-escaped) or the line end.
+// A JSON unicode escape (\u0026 for an ampersand) is part of the name, so a
+// line still inside encoded JSON text is masked whole. The replacement adds no
+// quote or backslash, so a log line embedded in a JSON string stays valid.
+var spotifyPeerDeviceRegex = regexp.MustCompile(`(?i)(\b(?:playback was transferred to|accepted zeroconf from|refused zeroconf from|failed creating new session from) )((?:[^"\\\n]|\\u[0-9a-f]{4})+)`)
+
+// scrubSpotifyPeerDevices hashes the device names spotifyPeerDeviceRegex
+// isolates. The engine's own placeholder for a nameless device stays readable.
+func scrubSpotifyPeerDevices(s string) string {
+	return spotifyPeerDeviceRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := spotifyPeerDeviceRegex.FindStringSubmatch(m)
+		val := strings.TrimSpace(sub[2])
+		switch {
+		case val == "", strings.HasPrefix(val, "DEVICE#"),
+			strings.EqualFold(val, "<unknown>"), strings.EqualFold(val, `\u003cunknown\u003e`):
+			return m
+		}
+		return sub[1] + "DEVICE#" + hashShort(val)
+	})
+}
+
 // boseHostnameRegex catches the speaker name inside the firmware's own
 // hostname. The firmware builds it as SoundTouch-<the name the owner chose>,
 // and it appears in syslog lines no other pattern touches, so a bundle
@@ -722,6 +754,7 @@ func scrubIdentities(s string) string {
 		return sub[1] + "NAME#" + hashShort(val) + sub[3]
 	})
 	s = scrubFriendlyNameChanges(s)
+	s = scrubSpotifyPeerDevices(s)
 	s = scrubAccounts(s)
 	s = scrubURLCredentials(s)
 	s = redactSSIDs(s)
