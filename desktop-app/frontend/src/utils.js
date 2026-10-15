@@ -699,6 +699,19 @@ export function presetOwnArt(p) {
   return '';
 }
 
+// folderFallbackArt is the preset-level art a music-library album or folder
+// key is saved with: the folder's own cover (the container's upnp:albumArtURI),
+// but only when none of its tracks carries a cover. When a track has one the
+// key stores no preset-level art, so presetOwnArt keeps taking the first
+// track's cover exactly as before (#1301).
+export function folderFallbackArt(items, folderArt) {
+  const own = typeof folderArt === 'string' ? folderArt.trim() : '';
+  if (!own) return '';
+  const trackArt = Array.isArray(items)
+    && items.some((x) => x && typeof x.art === 'string' && x.art.trim());
+  return trackArt ? '' : own;
+}
+
 // optimisticQueue is the queue state the app assumes right after a click on
 // library album or folder key `slot`, before the agent reports it: active, with
 // that key's card, and no track yet (so no old song's artist/album shows). The

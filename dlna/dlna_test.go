@@ -73,6 +73,38 @@ func TestParseBrowseResponse_StripsIllegalXMLChars(t *testing.T) {
 	}
 }
 
+// #1301: an album folder carries its own cover (upnp:albumArtURI on the
+// container). It is parsed so a folder key whose tracks carry no cover can
+// fall back to it.
+func TestParseBrowseResponse_ContainerAlbumArt(t *testing.T) {
+	didl := `&lt;DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" ` +
+		`xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"&gt;` +
+		`&lt;container id="10" parentID="1" childCount="12"&gt;&lt;dc:title&gt;Album&lt;/dc:title&gt;` +
+		`&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;` +
+		`&lt;upnp:albumArtURI&gt; http://192.0.2.1:9790/minimserver/*/Music/Album/folder.jpg &lt;/upnp:albumArtURI&gt;` +
+		`&lt;/container&gt;` +
+		`&lt;container id="11" parentID="1" childCount="3"&gt;&lt;dc:title&gt;No cover&lt;/dc:title&gt;&lt;/container&gt;` +
+		`&lt;/DIDL-Lite&gt;`
+	soap := "<?xml version=\"1.0\"?>\n<Envelope><Body><BrowseResponse><Result>" + didl +
+		"</Result><NumberReturned>2</NumberReturned><TotalMatches>2</TotalMatches></BrowseResponse></Body></Envelope>"
+	res, err := parseBrowseResponse([]byte(soap))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Containers) != 2 {
+		t.Fatalf("want 2 containers, got %d", len(res.Containers))
+	}
+	if got, want := res.Containers[0].AlbumArtURL, "http://192.0.2.1:9790/minimserver/*/Music/Album/folder.jpg"; got != want {
+		t.Errorf("container art = %q, want %q", got, want)
+	}
+	if got := res.Containers[1].AlbumArtURL; got != "" {
+		t.Errorf("container without art: got %q", got)
+	}
+	if res.Containers[0].Title != "Album" || res.Containers[0].ChildCount != 12 {
+		t.Errorf("container fields lost: %+v", res.Containers[0])
+	}
+}
+
 // TestDescribeServer covers the manual add-server fallback (#341): a
 // valid MediaServer description must resolve to a populated Server
 // with an absolute ContentDirectory control URL, and a device without

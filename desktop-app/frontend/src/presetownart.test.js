@@ -9,7 +9,7 @@
 //    server's albumArtURI, and that was never used for the tile.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { presetOwnArt, queueSlotActive, shouldAdoptPresetArt } from './utils.js';
+import { folderFallbackArt, presetOwnArt, queueSlotActive, shouldAdoptPresetArt } from './utils.js';
 
 const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 
@@ -56,5 +56,34 @@ describe('presetOwnArt', () => {
   });
   it('is what the preset grid draws from', () => {
     expect(main).toContain('addCands(appArtFromBoxArt(presetOwnArt(p)))');
+  });
+});
+
+describe('folderFallbackArt', () => {
+  const FOLDER = 'http://192.0.2.32:9790/minimserver/*/Music/Boston/Third*20Stage/folder.jpg';
+  it('gives the folder cover when no track carries one', () => {
+    expect(folderFallbackArt([{ url: 'u1', art: '' }, { url: 'u2' }], FOLDER)).toBe(FOLDER);
+    expect(folderFallbackArt([], ' ' + FOLDER + ' ')).toBe(FOLDER);
+  });
+  it('gives nothing when a track has a cover, so the first track still wins', () => {
+    expect(folderFallbackArt([{ url: 'u1' }, { url: 'u2', art: COVER }], FOLDER)).toBe('');
+    expect(presetOwnArt(folderKey(2, [{ url: 'u1' }, { url: 'u2', art: COVER }]))).toBe(COVER);
+  });
+  it('gives nothing without a folder cover', () => {
+    expect(folderFallbackArt([{ url: 'u1' }], '')).toBe('');
+    expect(folderFallbackArt([{ url: 'u1' }], undefined)).toBe('');
+  });
+  it('a folder key saved with the fallback shows it', () => {
+    const items = [{ url: 'u1' }];
+    expect(presetOwnArt({ ...folderKey(2, items), art: folderFallbackArt(items, FOLDER) })).toBe(FOLDER);
+  });
+});
+
+describe('library folder save and play use the folder cover fallback', () => {
+  const lib = readFileSync(new URL('./views/library.js', import.meta.url), 'utf8');
+  it('carries the container cover into the breadcrumb and both save paths', () => {
+    expect(lib).toContain("art: container.albumArtURL || ''");
+    expect(lib).toContain('const art = folderFallbackArt(queueItems, last && last.art);');
+    expect(lib).toContain('art: items[0].art || folderFallbackArt(items, last && last.art),');
   });
 });

@@ -19,6 +19,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"image"
 	_ "image/gif" // decoders for image.Decode
 	"image/jpeg"
@@ -28,6 +30,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/image/draw"
@@ -60,50 +63,146 @@ func isLANArtURL(raw string) bool {
 	return strings.HasSuffix(strings.ToLower(host), ".local")
 }
 
+// lanArtTimeout bounds one cover fetch, the whole request including the body.
+// It has its own client (lanArtClient) because a.httpClient carries a shorter
+// overall timeout that silently cut this one short before it could apply.
+const lanArtTimeout = 8 * time.Second
+
+// lanArtMissTTL is how long ResolveStationLogo answers "" for a cover that
+// failed before it asks the media server again.
+const lanArtMissTTL = 60 * time.Second
+
+// lanArtClient fetches media-server covers. No client-level timeout: the
+// per-request context (lanArtTimeout) is the one that applies.
+var lanArtClient = &http.Client{}
+
+// lanArtLogMax bounds how many distinct failing cover URLs are remembered for
+// log de-duplication, so a library with thousands of broken covers cannot grow
+// the set (or the log) without limit.
+const lanArtLogMax = 256
+
+// lanArtLogged remembers which failing cover URLs were already logged.
+type lanArtLogged struct {
+	mu   sync.Mutex
+	seen map[string]struct{}
+}
+
+// first reports whether url was not logged before, and records it. Once the
+// set is full nothing new is recorded and nothing more is logged.
+func (l *lanArtLogged) first(url string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.seen == nil {
+		l.seen = map[string]struct{}{}
+	}
+	if _, ok := l.seen[url]; ok || len(l.seen) >= lanArtLogMax {
+		return false
+	}
+	l.seen[url] = struct{}{}
+	return true
+}
+
 // lanArtDataURI fetches a media server's album art and returns it as a small
 // JPEG data: URI, or "" when the URL is not a LAN http URL, does not answer
-// 200 with an image, or cannot be read.
+// 200 with an image, or cannot be read. Every failure is logged once per URL
+// with its reason: a key that showed its letter tile instead of the cover could
+// not be explained from a diagnostic bundle before (#1301).
 func (a *App) lanArtDataURI(raw string) string {
 	if !isLANArtURL(raw) {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(a.appCtx(), 8*time.Second)
+	raw = strings.TrimSpace(raw)
+	ctx, cancel := context.WithTimeout(a.appCtx(), lanArtTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(raw), nil)
+	uri, info, err := fetchLANArt(ctx, lanArtClient, raw)
+	if a.logger == nil {
+		return uri
+	}
 	if err != nil {
+		if a.lanArtLog.first(raw) {
+			a.logger.Info("library cover: not shown", "url", raw, "reason", err.Error(),
+				"status", info.status, "contentType", info.ctype, "bytes", info.size)
+		}
 		return ""
+	}
+	a.logger.Debug("library cover: fetched", "url", raw, "contentType", info.ctype, "bytes", info.size)
+	return uri
+}
+
+// lanArtInfo is what a cover fetch learned about the response, for the log.
+type lanArtInfo struct {
+	status int
+	ctype  string
+	size   int
+}
+
+// fetchLANArt GETs url with client and turns the answer into a tile-sized data:
+// URI. The error names why no cover came out of it. It does no LAN check of its
+// own (lanArtDataURI does), so tests can point it at a loopback server.
+func fetchLANArt(ctx context.Context, client *http.Client, url string) (string, lanArtInfo, error) {
+	var info lanArtInfo
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", info, fmt.Errorf("bad url: %w", err)
 	}
 	req.Header.Set("User-Agent", "STReborn-Desktop")
-	resp, err := a.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		if ctx.Err() != nil {
+			return "", info, fmt.Errorf("no answer in time: %w", err)
+		}
+		return "", info, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	ctype := strings.ToLower(strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0]))
-	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(ctype, "image/") {
-		return ""
+	info.status = resp.StatusCode
+	info.ctype = strings.ToLower(strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0]))
+	if resp.StatusCode != http.StatusOK {
+		return "", info, fmt.Errorf("server answered HTTP %d", resp.StatusCode)
+	}
+	if !strings.HasPrefix(info.ctype, "image/") {
+		return "", info, fmt.Errorf("not an image (content type %q)", info.ctype)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, lanArtMaxBytes+1))
-	if err != nil || len(body) == 0 || len(body) > lanArtMaxBytes {
-		return ""
+	info.size = len(body)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", info, fmt.Errorf("no complete image in time: %w", err)
+		}
+		return "", info, fmt.Errorf("read failed: %w", err)
 	}
-	return artDataURI(body, ctype)
+	if len(body) == 0 {
+		return "", info, errors.New("empty body")
+	}
+	if len(body) > lanArtMaxBytes {
+		return "", info, fmt.Errorf("image larger than %d bytes", lanArtMaxBytes)
+	}
+	uri, err := artDataURIErr(body, info.ctype)
+	if err != nil {
+		return "", info, err
+	}
+	return uri, info, nil
 }
 
 // artDataURI turns image bytes into a tile-sized JPEG data: URI. An image Go
 // cannot decode is passed through as it came when it is small enough.
 func artDataURI(body []byte, ctype string) string {
+	uri, _ := artDataURIErr(body, ctype)
+	return uri
+}
+
+// artDataURIErr is artDataURI with the reason when no URI comes out.
+func artDataURIErr(body []byte, ctype string) (string, error) {
 	src, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
 		if len(body) > lanArtRawMax {
-			return ""
+			return "", fmt.Errorf("cannot decode %s image of %d bytes, too big to pass through: %w", ctype, len(body), err)
 		}
-		return "data:" + ctype + ";base64," + base64.StdEncoding.EncodeToString(body)
+		return "data:" + ctype + ";base64," + base64.StdEncoding.EncodeToString(body), nil
 	}
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
 	if w <= 0 || h <= 0 {
-		return ""
+		return "", errors.New("image has no pixels")
 	}
 	if w > lanArtEdge || h > lanArtEdge {
 		if w >= h {
@@ -120,7 +219,7 @@ func artDataURI(body []byte, ctype string) string {
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Over, nil)
 	var out bytes.Buffer
 	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 85}); err != nil {
-		return ""
+		return "", fmt.Errorf("jpeg encode: %w", err)
 	}
-	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(out.Bytes())
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(out.Bytes()), nil
 }
