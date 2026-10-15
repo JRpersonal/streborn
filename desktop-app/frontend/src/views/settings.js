@@ -52,6 +52,7 @@ import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
+import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../wlanforget.js';
 import {
   US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
   usServiceCanDisconnect, agentErrorText,
@@ -1397,8 +1398,18 @@ function renderBoxSettings(s, box) {
           <input type="password" id="boxWlanPass" placeholder="${escapeAttr(t('settingsView.wlanPassPlaceholder'))}" />
           <button class="btn btn-icon-sm" id="boxWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>
         </div>
+        <div id="boxWlanForgetOthersRow">
+          <label style="display:block;margin:4px 0 0"><input type="checkbox" id="boxWlanForgetOthers" checked /> ${escapeHtml(t('settingsView.wlanForgetOthersToggle'))}</label>
+          <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(t('settingsView.wlanForgetOthersToggleHint'))}</small>
+        </div>
         <button class="btn btn-danger btn-mini" id="boxWlanSave">${escapeHtml(t('settingsView.wlanSaveBtn'))}</button>
         <small class="muted small">${escapeHtml(t('settingsView.wlanWarn'))}</small>
+      </div>
+      <div id="wlanStoredBlock" class="wlan-stored" style="margin-top:12px">
+        <div class="kv-key">${escapeHtml(t('settingsView.wlanStoredHeading'))}</div>
+        <ul id="wlanStoredList" class="wlan-stored-list"><li class="muted small">${escapeHtml(t('settingsView.wlanStoredLoading'))}</li></ul>
+        <button class="btn btn-mini" id="wlanForgetOthersBtn" hidden>${escapeHtml(t('settingsView.wlanForgetOthersBtn'))}</button>
+        <small class="muted small" id="wlanForgetNote" style="display:block"></small>
       </div>
     </div>
 
@@ -1926,6 +1937,8 @@ function renderBoxSettings(s, box) {
   // a dropdown with auto-password prefill, Save sends
   // PUT /api/box/wlan.
   wireWlanSwitch(box);
+  // The stored networks and "Forget the other networks" (wlanforget.js).
+  wireWlanStored(box);
 
   // The "Update" button next to the firmware version scrolls down
   // to the update banner.
@@ -3645,6 +3658,9 @@ function wireWlanSwitch(box) {
     // Hidden networks never appear in the speaker's site survey, so the flag
     // also implies force: the agent skips the visibility preflight for them.
     const hidden = !!($('boxWlanHidden') && $('boxWlanHidden').checked);
+    // Default ON: a speaker that keeps its old networks falls back to them,
+    // public hotspots included (field case 2026-10-14).
+    const forgetOthers = !$('boxWlanForgetOthers') || $('boxWlanForgetOthers').checked;
     if (!ssid) { showError(t('settingsView.wlanSsidEmpty')); return; }
     const ok = await confirmWarn(
       t('settingsView.wlanSwitchConfirmTitle'),
@@ -3654,7 +3670,7 @@ function wireWlanSwitch(box) {
     const putWlan = (force) => boxFetch(box, '/api/box/wlan', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ssid, password: pass, hidden, force: hidden || force }),
+      body: JSON.stringify({ ssid, password: pass, hidden, force: hidden || force, forgetOthers }),
     });
     try {
       let r = await putWlan(false);
@@ -3699,9 +3715,83 @@ function wireWlanSwitch(box) {
       );
       // The speaker gets a new IP (or reboots). Retrigger discovery; a longer
       // delay for the BCO reboot so the rediscover lands after it is back up.
-      setTimeout(deps.discoverBoxes, info.mechanism === 'bco' ? 90000 : 12000);
+      // A forget that removed something restarts the speaker once, so it
+      // needs the same long wait as the BCO reboot.
+      setTimeout(deps.discoverBoxes, (info.mechanism === 'bco' || info.forgetOthers) ? 90000 : 12000);
     } catch (e) { showError(e); }
   });
+}
+
+// wireWlanStored lists the speaker's stored networks with the current one
+// marked, and offers "Forget the other networks" when the agent says it can.
+// An agent without the endpoint answers 404 and the block says so.
+function wireWlanStored(box) {
+  const list = $('wlanStoredList');
+  const btn = $('wlanForgetOthersBtn');
+  const note = $('wlanForgetNote');
+  if (!list || !btn || !note || !box || !box.host) return;
+  let view = null;
+  const load = async () => {
+    try {
+      const r = await boxFetch(box, '/api/box/wlan/networks', {}, 15000);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      view = storedNetworksView(await r.json());
+    } catch {
+      list.innerHTML = `<li class="muted small">${escapeHtml(t('settingsView.wlanStoredUnavailable'))}</li>`;
+      btn.hidden = true;
+      note.textContent = '';
+      return;
+    }
+    list.innerHTML = storedNetworksHtml(view, t, escapeHtml);
+    btn.hidden = !view.canForget;
+    // The change form's "forget the others" option does nothing on a
+    // chassis that cannot forget, so it is not offered there.
+    const forgetRow = $('boxWlanForgetOthersRow');
+    const forgetBox = $('boxWlanForgetOthers');
+    if (forgetRow) forgetRow.hidden = !view.forgetSupported;
+    if (forgetBox && !view.forgetSupported) forgetBox.checked = false;
+    note.textContent = view.refusalKey && view.networks.length > 1
+      ? t(view.refusalKey)
+      : '';
+  };
+  btn.onclick = () => withButtonPending(btn, async () => {
+    if (!view || !view.canForget) return;
+    const speaker = box.friendlyName || box.name || box.host;
+    const ok = await confirmWarn(
+      t('settingsView.wlanForgetConfirmTitle'),
+      t('settingsView.wlanForgetConfirmBody', {
+        speaker: '<b>' + escapeHtml(speaker) + '</b>',
+        network: '<b>' + escapeHtml(view.keep) + '</b>',
+        count: view.removable,
+      }),
+    );
+    if (!ok) return;
+    try {
+      const r = await boxFetch(box, '/api/box/wlan/forget-others', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reboot: true }),
+      }, 30000);
+      let res = {};
+      try { res = await r.json(); } catch {}
+      if (!r.ok || res.status !== 'ok') {
+        const key = forgetRefusalKey(res.code);
+        showError(key ? t(key) : t('settingsView.wlanForgetFailed', { reason: res.reason || res.error || ('HTTP ' + r.status) }));
+        await load();
+        return;
+      }
+      if (!res.removed) {
+        showToast(t('settingsView.wlanForgetNothing', { network: view.keep }), 7000);
+        await load();
+        return;
+      }
+      showToast(t('settingsView.wlanForgetDone', { count: res.removed, network: view.keep }), 9000);
+      btn.hidden = true;
+      if (res.rebooting) setTimeout(deps.discoverBoxes, 90000);
+      else await load();
+    } catch (e) { showError(e); }
+  });
+  load();
 }
 
 // wireCombobox binds to an <input> + <button toggle> + <ul list>

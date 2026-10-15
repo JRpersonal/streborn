@@ -207,10 +207,10 @@ func TestSSIDTag(t *testing.T) {
 	if tag != ssidTag(ssid) {
 		t.Error("ssidTag is not stable across calls")
 	}
-	if !strings.HasPrefix(tag, "ssid:") {
-		t.Fatalf("ssidTag(%q) = %q, want an ssid: prefix", ssid, tag)
+	if !strings.HasPrefix(tag, "SSID#") {
+		t.Fatalf("ssidTag(%q) = %q, want an SSID# prefix", ssid, tag)
 	}
-	hash := strings.TrimPrefix(tag, "ssid:")
+	hash := strings.TrimPrefix(tag, "SSID#")
 	for _, r := range hash {
 		if !strings.ContainsRune("0123456789abcdef", r) {
 			t.Fatalf("hash part of %q is not lowercase hex", tag)
@@ -249,7 +249,7 @@ func TestSSIDTag(t *testing.T) {
 	// A multi-byte network name is handled like any other and says nothing about
 	// its own size. The byte length used to be part of the tag, which is one of
 	// the things that made it guessable.
-	if got := ssidTag("Küche"); !strings.HasPrefix(got, "ssid:") || strings.Contains(got, "6") && len(got) < 10 {
+	if got := ssidTag("Küche"); !strings.HasPrefix(got, "SSID#") || strings.Contains(got, "6") && len(got) < 10 {
 		t.Errorf("ssidTag(%q) = %q, want a plain salted tag", "Küche", got)
 	}
 }

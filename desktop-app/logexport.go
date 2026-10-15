@@ -421,10 +421,16 @@ type boxSnapshot struct {
 	// agent), best-effort and empty when the agent is down or predates the
 	// zone API. Group bugs (#70) were previously undiagnosable from a bundle
 	// because nothing recorded who was master/member at export time.
-	STRZone       string `json:"strZoneJson,omitempty"`
-	ReachableSSH  bool   `json:"reachableSSH"`
-	Reachable8090 bool   `json:"reachable8090"`
-	Reachable8888 bool   `json:"reachable8888"`
+	STRZone string `json:"strZoneJson,omitempty"`
+	// WifiNetworks is every Wi-Fi network the speaker has stored, as tags
+	// hashed with THIS machine's salt. The agent's own wlan_configured tags
+	// use each speaker's salt, so they tell one speaker's networks apart but
+	// cannot say whether two speakers share a network; these can. Never a
+	// name, whether or not the bundle is anonymised.
+	WifiNetworks  []bundleWiFi `json:"wifiNetworks,omitempty"`
+	ReachableSSH  bool         `json:"reachableSSH"`
+	Reachable8090 bool         `json:"reachable8090"`
+	Reachable8888 bool         `json:"reachable8888"`
 	// Reachable8091 is the box's UPnP/DLNA media-renderer port, served by a
 	// separate firmware process from the Bose REST API (:8090) and the STR
 	// agent. A box that answers here but nowhere else is ON the network with a
@@ -573,6 +579,9 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// ~6 s on scm/BCO chassis (the firmware /getGroup hang), which is why
 		// no group bundle from those fleets ever carried strZoneJson.
 		s.STRZone = httpGetTextTimeout(base+"/api/box/zone", 4096, 10*time.Second)
+		// Stored Wi-Fi networks, tagged here (agents without the endpoint
+		// answer 404 and leave this empty).
+		s.WifiNetworks = bundleWiFiFrom(httpGetTextTimeout(base+"/api/box/wlan/networks", 16*1024, 15*time.Second))
 		// 8 KB: this one Unmarshals the body, so a cap that truncates it makes
 		// the parse fail and STRDetected go false, i.e. the bundle of a box
 		// carrying several agent flags would claim STR is not installed on it.
@@ -1203,4 +1212,44 @@ func (a *App) SaveDiagnosticBundle(boxHosts []string, anonymize bool) (LogExport
 // frontend can show it in an "open log folder" link.
 func (a *App) GetLogFilePath() string {
 	return LogFilePath()
+}
+
+// bundleWiFi is one stored network in a bundle: its tag and the flags a
+// diagnosis reads, never its name.
+type bundleWiFi struct {
+	Tag           string   `json:"tag"`
+	Current       bool     `json:"current"`
+	Open          bool     `json:"open"`
+	PublicHotspot bool     `json:"publicHotspot"`
+	STRTarget     bool     `json:"strTarget,omitempty"`
+	Sources       []string `json:"sources,omitempty"`
+}
+
+// bundleWiFiFrom turns the agent's GET /api/box/wlan/networks answer (names
+// in clear, for the owner's app) into tags. Anything unparsable yields nil.
+func bundleWiFiFrom(body string) []bundleWiFi {
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	var resp struct {
+		Networks []struct {
+			SSID          string   `json:"ssid"`
+			Current       bool     `json:"current"`
+			Open          bool     `json:"open"`
+			PublicHotspot bool     `json:"publicHotspot"`
+			STRTarget     bool     `json:"strTarget"`
+			Sources       []string `json:"sources"`
+		} `json:"networks"`
+	}
+	if json.Unmarshal([]byte(body), &resp) != nil {
+		return nil
+	}
+	out := make([]bundleWiFi, 0, len(resp.Networks))
+	for _, n := range resp.Networks {
+		out = append(out, bundleWiFi{
+			Tag: anonymise.SSIDTag(n.SSID), Current: n.Current, Open: n.Open,
+			PublicHotspot: n.PublicHotspot, STRTarget: n.STRTarget, Sources: n.Sources,
+		})
+	}
+	return out
 }

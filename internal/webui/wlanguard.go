@@ -165,6 +165,10 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	if !claimWlanGuardBootRun() {
 		return
 	}
+	// Settle a "forget the other networks" that restarted the speaker: did
+	// the forgotten networks stay out of the firmware's store? A file read,
+	// once per boot, before anything below can touch the store.
+	s.checkWLANForgetAfterBoot()
 	iface, mech := detectWlanMechanism()
 	tgt, hasTarget := readWlanTarget()
 

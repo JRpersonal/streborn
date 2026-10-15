@@ -263,5 +263,15 @@ func ssidTag(s string) string {
 	//
 	// The salt belongs to this speaker and never leaves it, so the tag still
 	// distinguishes networks inside one log and says nothing to a stranger.
-	return "ssid:" + anonymise.HashShort(s)
+	//
+	// Spelled SSID#<hash> (anonymise.SSIDTag), the same shape as the NAME# and
+	// DEV# tags. The older "ssid:<hash>" spelling began with the word the
+	// desktop bundle's text scrub keys on, so every tag in a bundle came out as
+	// the same <SSID-REDACTED> marker and a bundle could not tell which stored
+	// network was the live one (support case 2026-10-14). The scrub now hands
+	// SSID# tags back untouched.
+	// Hashed unconditionally (not via anonymise.SSIDTag, which passes a value
+	// that already looks like a tag through): here the input is always a real
+	// network name, whatever it happens to look like.
+	return "SSID#" + anonymise.HashShort(s)
 }

@@ -30,10 +30,10 @@ package webui
 // today no rhino/sm2 bundle had ever carried the one list that decides which
 // network a speaker wakes up on.
 //
-// Still read-only. Removing a network from the firmware's store is a way to
-// lock a speaker out of the only network it can reach, so the correction runs
-// through the live supplicant instead (wlanguard.go), where a failure is
-// recoverable and a reboot undoes it.
+// This file stays read-only. Removing networks from the firmware's store is a
+// way to lock a speaker out of the only network it can reach, so it lives in
+// wlanforget.go behind its own rules (never the current network, never an
+// empty store) and only on the owner's request.
 
 import (
 	"context"
@@ -58,6 +58,13 @@ type wlanNetwork struct {
 	BSSID   string `json:"bssid,omitempty"`
 	Flags   string `json:"flags,omitempty"`
 	Current bool   `json:"current"`
+	// Open marks a stored network without a key (security "none" in the
+	// firmware's store, key_mgmt=NONE in the running supplicant): the shape of
+	// a public hotspot, and a network nobody can be sure the owner chose.
+	Open bool `json:"open"`
+	// PublicHotspot marks a name from publicHotspotNames (wlanforget.go). Set
+	// before redaction, so a bundle shows it without showing the name.
+	PublicHotspot bool `json:"publicHotspot"`
 }
 
 // wlanConfigured is the whole picture for one speaker.
@@ -170,6 +177,16 @@ func listConfiguredWLANs(ctx context.Context, confPath string) wlanConfigured {
 	}
 	tagNetworks(out.Networks)
 	tagNetworks(out.Stored)
+	open := openStoredNetworks(confPath)
+	if out.Interface != "" {
+		for _, n := range out.Networks {
+			if wpaNetworkIsOpen(out.Interface, n.ID) {
+				open[n.SSID] = true
+			}
+		}
+	}
+	markOpenNetworks(out.Networks, open)
+	markOpenNetworks(out.Stored, open)
 	return out
 }
 
@@ -241,11 +258,50 @@ func parseWPANetworkList(raw string) []wlanNetwork {
 	return out
 }
 
-// tagNetworks stamps each network with its scrub-proof identity, in place.
+// tagNetworks stamps each network with its scrub-proof identity and the
+// public-hotspot flag, in place.
 func tagNetworks(nets []wlanNetwork) {
 	for i := range nets {
 		nets[i].SSIDTag = ssidTag(nets[i].SSID)
+		nets[i].PublicHotspot = isPublicHotspot(nets[i].SSID)
 	}
+}
+
+// markOpenNetworks sets Open on every network the stores record without a
+// key. Names are matched exactly; open is a property of the stored profile,
+// so one store saying so is enough.
+func markOpenNetworks(nets []wlanNetwork, open map[string]bool) {
+	for i := range nets {
+		if open[nets[i].SSID] {
+			nets[i].Open = true
+		}
+	}
+}
+
+// openStoredNetworks reads which stored networks have no key, from the
+// firmware store, the chip mirror and the wpa conf.
+func openStoredNetworks(confPath string) map[string]bool {
+	open := map[string]bool{}
+	for _, spec := range []struct{ glob, element string }{
+		{networkProfilesGlob, "profile"},
+		{airplayConfigGlob, "PersistentWifiProfile"},
+	} {
+		files, _ := filepath.Glob(spec.glob)
+		for _, f := range files {
+			for _, e := range parseStoredProfiles(readFileString(f), spec.element) {
+				if e.Open {
+					open[e.SSID] = true
+				}
+			}
+		}
+	}
+	_, blocks, _ := wpaConfDropNetworks(readFileString(confPath), func(string) bool { return false })
+	for _, b := range blocks {
+		if b.Open {
+			open[b.SSID] = true
+		}
+	}
+	return open
 }
 
 // ssidTagsOf is the same for a log field: a list of tags, no network names.

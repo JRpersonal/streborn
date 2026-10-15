@@ -2286,6 +2286,13 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .wlan-row { display: flex; gap: 6px; align-items: stretch; margin-bottom: 6px; }
 .wlan-row select, .wlan-row input { flex: 1; margin-bottom: 0 !important; }
 .wlan-row .btn-mini, .wlan-row .btn-icon-sm { flex-shrink: 0; }
+/* Stored networks of a speaker (wlanforget.js). */
+.wlan-stored-list { list-style: none; margin: 4px 0 8px; padding: 0; }
+.wlan-stored-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 3px 0; overflow-wrap: anywhere; }
+.wlan-stored-item.is-current .wlan-stored-name { font-weight: 600; }
+.wlan-badge { font-size: 11px; line-height: 1.4; padding: 0 6px; border-radius: 8px; border: 1px solid var(--brand-border); color: var(--c-muted); }
+.wlan-badge-current { border-color: var(--brand); color: var(--brand-text); }
+.wlan-badge-warn { border-color: var(--accent, #8a2318); color: var(--accent, #8a2318); }
 .btn-icon-sm { background: var(--brand-bg-soft); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 4px; width: 36px; padding: 0; cursor: pointer; font-size: 14px; }
 #wlanSection input:focus, #wlanSection select:focus { outline: none; border-color: var(--brand); }
 #wlanSection h3 small { color: var(--c-muted); font-weight: normal; font-size: 11px; }

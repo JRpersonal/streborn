@@ -142,19 +142,94 @@ func scrubHexRuns(s string) string {
 // WiFi" does not ship its tail; the unterminated case is a separate
 // alternative so a terminated value does not greedily eat the rest of the
 // line with it.
-var ssidRedactRegex = regexp.MustCompile(`(?im)<SSID-REDACTED>|\b(?:ssid|password|passphrase|psk)\s*=\s*"[^"\n]*(?:"|$)|\bseeding\s+'[^\n]*'|\bseeding\s+'[^\n]*$|\b(?:ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
+//
+// The alternatives after the marker are things this pass WROTE (or an agent
+// wrote) and must hand back untouched for the same reason: an SSID# tag, the
+// older agent tag "ssid:<hex>", and the bare field name ssidTag, which the
+// bare-key alternative would otherwise read as "ssid" followed by a value.
+var ssidRedactRegex = regexp.MustCompile(`(?im)<SSID-REDACTED>|SSID#[0-9a-f]{8}\b|\bssid:[0-9a-f]{8}\b|\bssidTag\b|\b(?:ssid|password|passphrase|psk)\s*=\s*"[^"\n]*(?:"|$)|\bseeding\s+'[^\n]*'|\bseeding\s+'[^\n]*$|\b(?:ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
 
 const ssidRedacted = "<SSID-REDACTED>"
 
-// redactSSIDs applies ssidRedactRegex, keeping the "seeding" verb so the line
-// still reads as an event rather than turning into a bare marker.
+// ssidTagRegex is the exact shape of a tag SSIDTag writes.
+var ssidTagRegex = regexp.MustCompile(`^SSID#[0-9a-f]{8}$`)
+
+// SSIDTag is the stable pseudonym for a network NAME: "SSID#" and the salted
+// hash, the same scheme as the NAME# and DEV# tags.
+//
+// Network names used to be replaced by one literal marker, every one of them,
+// so a bundle could not say which of a speaker's four stored networks was the
+// live one, or whether two speakers shared a network: the field case of
+// 2026-10-14 (five speakers falling back to a public hotspot) needed exactly
+// that and could not get it. A tag keeps networks apart without naming any of
+// them, and stays meaningless to anybody without this machine's salt.
+//
+// Passwords are NOT tagged: a stable token for a secret says whether two
+// speakers share a key, which is nobody's business.
+func SSIDTag(name string) string {
+	if name == "" {
+		return ""
+	}
+	if isSSIDMarker(name) {
+		return name
+	}
+	return "SSID#" + hashShort(name)
+}
+
+// isSSIDMarker reports whether v is already the output of a redaction (or an
+// agent tag), so a second pass never hashes a tag into a new tag.
+func isSSIDMarker(v string) bool {
+	v = strings.TrimSpace(v)
+	switch {
+	case v == "", v == ssidRedacted, v == "<REDACTED>":
+		return true
+	case ssidTagRegex.MatchString(v):
+		return true
+	case len(v) == 13 && strings.HasPrefix(v, "ssid:"):
+		return true
+	}
+	return false
+}
+
+// ssidKeyFold reports whether key names a network (not a secret).
+func ssidKeyFold(key string) bool {
+	key = strings.TrimSpace(key)
+	return strings.EqualFold(key, "ssid") || strings.EqualFold(key, "ssid_name")
+}
+
+// redactSSIDs applies ssidRedactRegex: network names become SSID# tags,
+// secrets become the redaction marker, and the "seeding" verb is kept so the
+// line still reads as an event.
 func redactSSIDs(s string) string {
 	return ssidRedactRegex.ReplaceAllStringFunc(s, func(m string) string {
-		if strings.EqualFold(m, ssidRedacted) {
-			return m // already redacted, leave it exactly as it is
+		if strings.EqualFold(m, ssidRedacted) || isSSIDMarker(m) || strings.EqualFold(m, "ssidTag") {
+			return m // already redacted, or a tag: leave it exactly as it is
 		}
 		if len(m) >= 8 && strings.EqualFold(m[:8], "seeding ") {
-			return "seeding '" + ssidRedacted + "'"
+			val := strings.TrimSpace(m[8:])
+			val = strings.TrimPrefix(val, "'")
+			val = strings.TrimSuffix(val, "'")
+			if isSSIDMarker(val) {
+				return "seeding '" + val + "'"
+			}
+			return "seeding '" + SSIDTag(val) + "'"
+		}
+		// key="value" or key=value / key:value. Only a NETWORK key keeps its
+		// value as a tag; every secret goes to the marker as before.
+		sep := strings.IndexAny(m, "=:")
+		if sep > 0 && ssidKeyFold(m[:sep]) {
+			key := strings.TrimSpace(m[:sep])
+			val := strings.TrimSpace(m[sep+1:])
+			quoted := strings.HasPrefix(val, `"`)
+			val = strings.Trim(val, `"`)
+			if val == "" {
+				return m
+			}
+			tag := SSIDTag(val)
+			if quoted {
+				return key + m[sep:sep+1] + `"` + tag + `"`
+			}
+			return key + m[sep:sep+1] + tag
 		}
 		return ssidRedacted
 	})
@@ -740,12 +815,25 @@ func anonymizeDebugState(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		if s, ok := v.(string); ok && s != "" && sensitiveValueKeyRegex.MatchString(k) {
-			out[k] = "<REDACTED>"
+			out[k] = redactKeyedValue(k, s)
 			continue
 		}
 		out[k] = anonymizeAny(v)
 	}
 	return out
+}
+
+// redactKeyedValue is what a value under a sensitive key becomes: a network
+// name turns into its SSID# tag (so two networks stay apart), a secret into
+// the plain marker. A value that is already a marker stays as it is.
+func redactKeyedValue(key, val string) string {
+	if ssidKeyFold(key) {
+		if isSSIDMarker(val) {
+			return val
+		}
+		return SSIDTag(val)
+	}
+	return "<REDACTED>"
 }
 
 func anonymizeAny(v any) any {
@@ -801,7 +889,7 @@ func DebugState(in map[string]any) map[string]any {
 		if str, ok := v.(string); ok && str != "" {
 			switch {
 			case sensitiveValueKeyRegex.MatchString(k):
-				out[k] = "<REDACTED>"
+				out[k] = redactKeyedValue(k, str)
 				continue
 			case speaker && speakerNameKeys[k]:
 				out[k] = "NAME#" + hashShort(str)
