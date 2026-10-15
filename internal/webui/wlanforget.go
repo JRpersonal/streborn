@@ -149,6 +149,8 @@ type wlanForgetInputs struct {
 	Running  []string
 	Conf     []string
 	Chip     []string
+	// Open marks the networks stored without a key, in any store.
+	Open map[string]bool
 }
 
 // wlanForgetPlan is the decision.
@@ -172,7 +174,24 @@ const (
 	forgetIsTarget      = "is-target"
 	forgetNotFound      = "not-found"
 	forgetWouldEmpty    = "would-empty"
+	forgetOnHotspot     = "on-hotspot"
 )
+
+// liveIsHotspot reports whether the network the speaker is on right now is
+// one a forget must never keep as its only network: a public community
+// hotspot, or an open network (no key) that STR did not give the speaker
+// itself. An open network STR set up on purpose is the owner's own choice.
+func liveIsHotspot(in wlanForgetInputs) bool {
+	if isPublicHotspot(in.LiveSSID) {
+		return true
+	}
+	return in.Open[in.LiveSSID] && in.LiveSSID != in.Target
+}
+
+// isHotspotName reports whether a stored network is a public hotspot or open.
+func isHotspotName(in wlanForgetInputs, name string) bool {
+	return isPublicHotspot(name) || in.Open[name]
+}
 
 // planWLANForget decides what to remove. only=="" forgets every network but
 // the current one; a name forgets that one network alone (#969). Pure, so the
@@ -209,6 +228,16 @@ func planWLANForget(in wlanForgetInputs, only string) wlanForgetPlan {
 		return refuse(forgetNotAssociated, "the speaker is not connected to a Wi-Fi network right now, so there is no current network to keep")
 	}
 	keep := in.LiveSSID
+	// Support case 2026-10-15: speakers that kept landing on a Vodafone
+	// Homespot. "Keep the current network" would then keep the hotspot and
+	// delete the home network, the exact opposite of what the owner wants.
+	// While the speaker sits on a hotspot, forgetting all others is refused
+	// outright, and forgetting one network only runs when that one is itself
+	// a hotspot or open (never a network with a key, which may be the home
+	// network the speaker should go back to).
+	if liveIsHotspot(in) && (only == "" || !isHotspotName(in, only)) {
+		return refuse(forgetOnHotspot, "the speaker is on a public hotspot or an open network right now; move it back to your own network first, then try again")
+	}
 	if only == "" && in.Target != "" && in.Target != keep {
 		return refuse(forgetMismatch, "the speaker is on a different network than the one STR gave it; change the Wi-Fi first or move the speaker back, then try again")
 	}
@@ -478,6 +507,7 @@ type wlanForgetState struct {
 func (s *Server) readWLANForgetState(ctx context.Context) wlanForgetState {
 	iface, mech := detectWlanMechanism()
 	st := wlanForgetState{iface: iface, open: map[string]bool{}, firmCount: -1}
+	st.in.Open = st.open // same map: filled below as the stores are read
 	st.in.Mechanism = mech
 	st.in.Target = strWlanTarget()
 

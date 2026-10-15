@@ -15,6 +15,7 @@ export function forgetRefusalKey(code) {
     case 'not-associated': return 'settingsView.wlanForgetRefused.notAssociated';
     case 'ethernet': return 'settingsView.wlanForgetRefused.ethernet';
     case 'target-mismatch': return 'settingsView.wlanForgetRefused.mismatch';
+    case 'on-hotspot': return 'settingsView.wlanForgetRefused.onHotspot';
     case 'keep-not-stored':
     case 'would-empty': return 'settingsView.wlanForgetRefused.keepNotStored';
     case 'chassis-unsupported': return 'settingsView.wlanForgetRefused.chassis';

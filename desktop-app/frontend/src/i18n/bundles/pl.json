@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "Głośnik nie jest teraz połączony z żadną siecią Wi-Fi, więc STR nie wie, którą sieć zachować.",
   "settingsView.wlanForgetRefused.ethernet": "Głośnik jest podłączony kablem sieciowym. Zapominanie sieci Wi-Fi działa tylko wtedy, gdy jest w Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "Głośnik jest w innej sieci niż ta, którą skonfigurował mu STR. Najpierw zmień Wi-Fi powyżej, a potem spróbuj ponownie.",
+  "settingsView.wlanForgetRefused.onHotspot": "Głośnik jest teraz połączony z publicznym hotspotem lub otwartą siecią. Zachowanie jej usunęłoby Twoją własną sieć, więc STR zostawia listę bez zmian. Przełącz głośnik z powrotem na swoją sieć za pomocą zmiany Wi-Fi powyżej, a potem spróbuj ponownie.",
   "settingsView.wlanForgetRefused.keepNotStored": "Własna lista sieci głośnika nie zawiera bieżącej sieci, więc STR jej nie zmienia.",
   "settingsView.wlanForgetRefused.chassis": "Na tym modelu głośnika STR nie potrafi jeszcze usuwać pojedynczych zapisanych sieci. Głośnik przełącza się na inną zapisaną sieć tylko wtedy, gdy obecna jest nieosiągalna, więc pozostaje w Twojej sieci, dopóki jest dostępna.",
   "settingsView.wlanForgetFailed": "STR nie mógł zapomnieć sieci: {{reason}}",

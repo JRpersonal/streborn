@@ -1012,6 +1012,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "喇叭目前沒有連上任何 Wi-Fi，所以 STR 無法判斷要保留哪個網路。",
   "settingsView.wlanForgetRefused.ethernet": "喇叭正使用網路線連線。只有在連上 Wi-Fi 時才能忘記 Wi-Fi 網路。",
   "settingsView.wlanForgetRefused.mismatch": "喇叭所在的網路和 STR 為它設定的不同。請先在上方切換 Wi-Fi，再試一次。",
+  "settingsView.wlanForgetRefused.onHotspot": "喇叭目前連在公共熱點或沒有密碼的開放網路上。保留它會刪掉你自己的網路，所以 STR 不會變動清單。請先用上方的 Wi-Fi 切換把喇叭移回你的網路，再試一次。",
   "settingsView.wlanForgetRefused.keepNotStored": "喇叭自己的網路清單裡沒有目前的網路，所以 STR 不會動這份清單。",
   "settingsView.wlanForgetRefused.chassis": "STR 目前還無法在這個喇叭型號上移除單一已儲存的網路。喇叭只會在目前的網路無法連線時才切換到另一個已儲存的網路，所以只要你的網路可用，它就會留在上面。",
   "settingsView.wlanForgetFailed": "STR 無法忘記這些網路：{{reason}}",

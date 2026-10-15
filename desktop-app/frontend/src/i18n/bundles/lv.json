@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "Skaļrunis pašlaik nav savienots ne ar vienu Wi-Fi tīklu, tāpēc STR nezina, kuru tīklu paturēt.",
   "settingsView.wlanForgetRefused.ethernet": "Skaļrunis ir pievienots ar tīkla kabeli. Wi-Fi tīklus var aizmirst tikai tad, kad tas ir Wi-Fi tīklā.",
   "settingsView.wlanForgetRefused.mismatch": "Skaļrunis ir citā tīklā nekā tas, ko tam iestatīja STR. Vispirms nomaini Wi-Fi augstāk un mēģini vēlreiz.",
+  "settingsView.wlanForgetRefused.onHotspot": "Skaļrunis šobrīd ir publiskā tīklājā vai atvērtā tīklā. Ja to paturētu, tiktu dzēsts tavs paša tīkls, tāpēc STR sarakstu neaiztiek. Atgriez skaļruni savā tīklā ar Wi-Fi maiņu augstāk un mēģini vēlreiz.",
   "settingsView.wlanForgetRefused.keepNotStored": "Skaļruņa tīklu sarakstā nav pašreizējā tīkla, tāpēc STR sarakstu neaiztiek.",
   "settingsView.wlanForgetRefused.chassis": "Šim skaļruņa modelim STR pagaidām nevar noņemt atsevišķus saglabātos tīklus. Skaļrunis pāriet uz citu saglabāto tīklu tikai tad, ja pašreizējais nav sasniedzams, tāpēc tas paliek jūsu tīklā, kamēr tas ir pieejams.",
   "settingsView.wlanForgetFailed": "STR neizdevās aizmirst tīklus: {{reason}}",

@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "Hoparlör şu anda hiçbir Wi-Fi ağına bağlı değil, bu yüzden STR hangi ağın kalacağını bilemiyor.",
   "settingsView.wlanForgetRefused.ethernet": "Hoparlör ağ kablosuyla bağlı. Wi-Fi ağlarını unutmak yalnızca Wi-Fi'deyken çalışır.",
   "settingsView.wlanForgetRefused.mismatch": "Hoparlör, STR'nin onun için kurduğu ağdan farklı bir ağda. Önce yukarıdan Wi-Fi'yi değiştir, sonra tekrar dene.",
+  "settingsView.wlanForgetRefused.onHotspot": "Hoparlör şu anda herkese açık bir hotspot'a veya şifresiz bir ağa bağlı. Onu tutmak kendi ağını silerdi, bu yüzden STR listeye dokunmuyor. Yukarıdaki Wi-Fi değişikliğiyle hoparlörü kendi ağına geri al, sonra tekrar dene.",
   "settingsView.wlanForgetRefused.keepNotStored": "Hoparlörün kendi ağ listesinde geçerli ağ yok, bu yüzden STR listeye dokunmuyor.",
   "settingsView.wlanForgetRefused.chassis": "STR bu hoparlör modelinde kayıtlı ağları tek tek henüz silemiyor. Hoparlör yalnızca mevcut ağına ulaşamadığında başka bir kayıtlı ağa geçer, yani ağınız kullanılabildiği sürece orada kalır.",
   "settingsView.wlanForgetFailed": "STR ağları unutamadı: {{reason}}",
