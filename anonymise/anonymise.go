@@ -360,7 +360,14 @@ var spotifyUserRegex = regexp.MustCompile(`(?i)(spotify:user:)([A-Z0-9._%+#-]+)`
 // labels a socket, so it is masked whatever it holds.
 // The KEY only: the value is read by maskAttrValues, which stops at the next
 // attribute without swallowing it.
-var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"?\s*[:=]\s*"?`)
+//
+// The opening quote after the separator may be escaped (\" or \\\"): a
+// forwarded engine line is a quoted slog value, so its own attributes arrive
+// as username=\"...\". The key used to stop before the backslash, the value
+// was then read as that lone backslash, and the account id went out with only
+// the backslash masked and its escape broken (#1314). The escape now belongs
+// to the key, and maskAttrValues leaves the closing one in place.
+var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"?\s*[:=]\s*(?:\\*")?`)
 
 // The second family. Every name here is one the code actually emits, and the
 // list is the whole protection: a key that is not in it is not masked, however
@@ -380,7 +387,7 @@ var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"
 // whole tree returns three lines, all three of them a Spotify identity, so
 // masking unconditionally costs no debug value. Keep this list and the
 // emitters in step; anonymise_spotify_test.go pins each name.
-var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|sessionUser|wantAccount|login|user)"?\s*[:=]\s*"?`)
+var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|sessionUser|wantAccount|login|user)"?\s*[:=]\s*(?:\\*")?`)
 
 // attrBoundary is where a log attribute's value ends because the NEXT attribute
 // begins. Values may contain spaces, so whitespace alone cannot end one.
@@ -426,7 +433,14 @@ func maskAttrValues(s string, keyRe *regexp.Regexp, mask func(string) string) st
 		if m := attrBoundary.FindStringIndex(rest); m != nil && m[0] < end {
 			end = m[0]
 		}
-		b.WriteString(mask(rest[:end]))
+		// Backslashes right before the closing quote escape that quote; they
+		// are not part of the value, and masking them would break the escape.
+		val := rest[:end]
+		if end < len(rest) && rest[end] == '"' {
+			val = strings.TrimRight(val, `\`)
+		}
+		b.WriteString(mask(val))
+		b.WriteString(rest[len(val):end])
 		prev = loc[1] + end
 	}
 	b.WriteString(s[prev:])
