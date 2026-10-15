@@ -398,11 +398,22 @@ var ssidRe = regexp.MustCompile(`(?i)(ssid=)(?:(\\?")([^"\\]*)(\\?")|'([^']*)')`
 // it.
 var bssidRe = regexp.MustCompile(`\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b`)
 
-// Redact replaces every SSID value and every MAC address with a hash tag. The
+// secretRe matches a Wi-Fi secret wherever the firmware logs one. BoseApp
+// prints the passphrase in clear while it verifies a new profile
+// ("VerifyProfileData Passphrase: <secret>"), and wpa_supplicant-style lines
+// carry psk=. Everything after the separator is dropped, quoted or not: a
+// passphrase may contain spaces, so there is no safe place to stop early.
+var secretRe = regexp.MustCompile(`(?i)\b(passphrase|password|passwd|wpapsk|psk)(\s*[:=]\s*)\S.*$`)
+
+// Redact replaces every SSID value and every MAC address with a hash tag, and
+// drops every Wi-Fi secret the line carries. The
 // app's bundle anonymizer masks IPs and device ids on its own, but it cannot
 // recognise a bare network name in free text, so that happens here, on the
 // speaker.
 func Redact(s string) string {
+	if containsFoldASCII(s, "pass") || containsFoldASCII(s, "psk") {
+		s = secretRe.ReplaceAllString(s, "${1}${2}<secret-redacted>")
+	}
 	if containsFoldASCII(s, "ssid=") {
 		s = ssidRe.ReplaceAllStringFunc(s, func(m string) string {
 			sub := ssidRe.FindStringSubmatch(m)

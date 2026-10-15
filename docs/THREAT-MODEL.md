@@ -148,6 +148,18 @@ STR:
   segment, not a guest network, since guest networks usually isolate
   clients from one another and that breaks discovery and multiroom.
 
+- **The Wi-Fi passphrase can be read back from the speaker.** On the
+  older chassis (Portable, the older SoundTouch 20 and 30) the stock
+  setup service on `:17000` answers a configuration read of the radio
+  chip's stored profile with the passphrase in clear, again without
+  authentication. The firmware also writes the passphrase into its own
+  system log while it verifies a newly added network. STR cannot close
+  the first: the service belongs to the firmware. It does keep the
+  second out of everything it publishes: the agent drops every
+  passphrase, password and PSK value from the firmware log lines it keeps
+  for `/api/debug/state` and the diagnostic bundle, on the speaker,
+  before anything leaves it (measured on a Portable, 2026-10-14).
+
 If your speaker is on a network with untrusted devices (guest Wi-Fi,
 shared student housing, public-facing IoT segment), put it on a
 dedicated VLAN or trusted SSID before installing STR. The same
