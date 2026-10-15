@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
@@ -621,6 +622,45 @@ func splitStreamTitle(s string) (artist, title string) {
 		}
 	}
 	return "", s
+}
+
+// placeholderStreamTitles are ICY StreamTitles that say nothing about the
+// song: defaults that stream broadcast software sends until a station fills in
+// real metadata (#1305). Compared lower-case after trimming.
+var placeholderStreamTitles = map[string]bool{
+	"now playing info goes here":     true,
+	"unknown":                        true,
+	"unknown - unknown":              true,
+	"unknown artist":                 true,
+	"unknown title":                  true,
+	"unknown artist - unknown title": true,
+	"n/a":                            true,
+	"none":                           true,
+	"null":                           true,
+	"undefined":                      true,
+	"no title":                       true,
+	"no name":                        true,
+	"untitled":                       true,
+	"artist - title":                 true,
+}
+
+// isPlaceholderStreamTitle reports whether an ICY StreamTitle carries no song
+// and must not be shown as one: empty after trimming, nothing but punctuation
+// (a lone "-"), a known broadcast-software placeholder, or just the station's
+// own name. Callers treat it as "no title", so the station name shows instead.
+func isPlaceholderStreamTitle(title, station string) bool {
+	t := strings.TrimSpace(title)
+	if t == "" {
+		return true
+	}
+	if strings.IndexFunc(t, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) < 0 {
+		return true
+	}
+	if placeholderStreamTitles[strings.ToLower(t)] {
+		return true
+	}
+	st := strings.TrimSpace(station)
+	return st != "" && strings.EqualFold(t, st)
 }
 
 // displayTrackText applies the configured display mode to a raw ICY StreamTitle,
@@ -2082,13 +2122,30 @@ func icyDisplayPushEnabled() bool {
 // surfacing the title only in the app (via /api/stream/title) until the
 // mid-stream re-set is verified on real hardware. Wired from the stream proxy.
 func (s *Server) HandleStreamTitle(title string) {
+	// A placeholder ("Now playing info goes here", "Unknown", the station's
+	// own name) is no song: it must not reach the display, Recently played or
+	// the remembered live title (#1305). It counts as "no title".
+	placeholder := false
+	if title != "" {
+		s.lastPlayMu.Lock()
+		station := ""
+		if s.lastPlay != nil {
+			station = s.lastPlay.title
+		}
+		s.lastPlayMu.Unlock()
+		if isPlaceholderStreamTitle(title, station) {
+			s.logger.Debug("stream title dropped as placeholder", "title", title, "station", station)
+			title, placeholder = "", true
+		}
+	}
 	// Recently-played (#135): record the live radio track under the current
 	// source card, regardless of whether the on-box ICY display push is enabled
 	// (this callback fires on every ICY title change either way).
 	s.recentNoteRadioTrack(title)
 	// Remember the live title so enabling the push / changing its mode can show
 	// the CURRENT track immediately (see pushDisplayNow), not only the next one.
-	if title != "" {
+	// A placeholder forgets the song before it: that one is no longer playing.
+	if title != "" || placeholder {
 		s.lastPlayMu.Lock()
 		s.lastICYTitle = title
 		s.lastPlayMu.Unlock()
@@ -2099,7 +2156,9 @@ func (s *Server) HandleStreamTitle(title string) {
 	// (displaytrack_panel.go). The panel model takes every title, setting on
 	// or off: the clock screen and a later switch-on need to know what plays.
 	if s.trackOnPanel() {
-		if title != "" {
+		// A dropped placeholder clears the song before it, so the station
+		// name takes the big title area again.
+		if title != "" || placeholder {
 			s.panelRadioTitle(title)
 		}
 		return

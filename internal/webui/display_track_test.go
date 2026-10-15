@@ -23,6 +23,46 @@ func TestSplitStreamTitle(t *testing.T) {
 	}
 }
 
+// isPlaceholderStreamTitle drops StreamTitles that carry no song (#1305) and
+// keeps every real one, including short and odd-looking songs.
+func TestIsPlaceholderStreamTitle(t *testing.T) {
+	cases := []struct {
+		in, station string
+		want        bool
+	}{
+		{"Now playing info goes here", "Radio Bob", true},
+		{"  now PLAYING info goes here  ", "", true},
+		{"Unknown", "", true},
+		{"Unknown - Unknown", "", true},
+		{"unknown artist - unknown title", "", true},
+		{"N/A", "", true},
+		{"No title", "", true},
+		{"Untitled", "", true},
+		{"", "", true},
+		{"   ", "", true},
+		{"-", "", true},
+		{" - ", "", true},
+		{"--- ...", "", true},
+		{"Radio Bob", "Radio Bob", true},
+		{" RADIO BOB ", "Radio Bob", true},
+		// real titles stay
+		{"Queen - Under Pressure", "Radio Bob", false},
+		{"Morning Show", "Radio Bob", false},
+		{"Radio Bob", "", false},
+		{"Radio Bob - Rock Hits", "Radio Bob", false},
+		{"U2 - One", "", false},
+		{"Unknown Pleasures", "", false},
+		{"Untitled #1 - Sigur Ros", "", false},
+		{"!!!", "", true},
+		{"!!! - Heart of Hearts", "", false},
+	}
+	for _, c := range cases {
+		if got := isPlaceholderStreamTitle(c.in, c.station); got != c.want {
+			t.Errorf("isPlaceholderStreamTitle(%q, %q) = %v, want %v", c.in, c.station, got, c.want)
+		}
+	}
+}
+
 // displayTrackText applies the per-box mode; "title"/"artist" fall back to the
 // full string when there is no separator, so the display is never blank.
 func TestDisplayTrackText(t *testing.T) {
