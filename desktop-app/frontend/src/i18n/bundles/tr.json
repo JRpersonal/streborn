@@ -1448,7 +1448,7 @@
   "settingsView.displayTrackHeading": "Çalan parçayı hoparlör ekranında göster",
   "settingsView.displayTrackHelp": "Varsayılan olarak kapalı. Açıkken, bir radyo istasyonunun anlık şarkısı, eskiden internet radyosunda olduğu gibi hoparlörün kendi ekranında gösterilir. Metni güncellemek için hoparlörün yeniden ara belleğe alması gerekir, bu yüzden her değişiklikte ses kısa süre kesilir. Parça bu uygulamada her zaman kesintisiz gösterilir, bu yüzden kesintisiz ses istiyorsan bunu kapalı bırak. Ekranı olan bir hoparlörde, normalde gösterdiği şeyin yerini de alır: ön ayar numarası ve istasyon.",
   "settingsView.displayTrackHelpPanel": "Varsayılan olarak kapalı. Açıkken STR, çalan şeyi (bir radyo istasyonunun şarkısı, STR üzerinden Spotify, müzik kitaplığından bir dosya) hoparlörün ekranına kendisi çizer, böylece müzik hiç kesilmeden çalmaya devam eder. Gösterildiği sürece hoparlörün kendi ekranının yerini alır; sesi değiştirdiğinde hoparlörün ses çubuğu birkaç saniye görünür.",
-  "settingsView.displayClockLabel": "Çalarken saat:",
+  "settingsView.displayClockLabel": "Çalarken saati göster:",
   "settingsView.displayClockHelp": "STR çalarken saati hoparlörün ekranında gösterir: şarkı gösteriliyorsa istasyonun yanında, gösterilmiyorsa büyük ve tek başına.",
   "settingsView.displayTrackUnknown": "Hoparlör az önce yanıt vermedi, bu yüzden bu ayar bilinmiyor (yeniden başlıyor olabilir). Ayarları bir dakika sonra tekrar açın.",
   "settingsView.displayTrackModeArtist": "Sanatçı",

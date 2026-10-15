@@ -1448,7 +1448,7 @@
   "settingsView.displayTrackHeading": "Het huidige nummer op het luidsprekerdisplay tonen",
   "settingsView.displayTrackHelp": "Standaard uit. Als dit aan staat, wordt het actuele nummer van een radiozender op het eigen display van de luidspreker getoond, zoals vroeger bij internetradio. De luidspreker moet opnieuw bufferen om de tekst bij te werken, dus de audio valt bij elke wijziging even weg. Het nummer wordt in deze app altijd zonder onderbreking getoond, dus laat dit uit als je liever ononderbroken geluid hebt. Op een speaker met display vervangt dit ook wat er normaal staat, het presetnummer en de zender.",
   "settingsView.displayTrackHelpPanel": "Standaard uit. Als dit aan staat, tekent STR zelf op het display van de luidspreker wat er speelt (het nummer van een radiozender, Spotify via STR, een bestand uit je muziekbibliotheek), zodat de muziek zonder enige onderbreking doorspeelt. Zolang dat wordt getoond, vervangt het het eigen scherm van de luidspreker; als je het volume verandert, verschijnt een paar seconden de volumebalk van de luidspreker.",
-  "settingsView.displayClockLabel": "Tijd tijdens het afspelen:",
+  "settingsView.displayClockLabel": "Klok tonen tijdens het afspelen:",
   "settingsView.displayClockHelp": "Toont de tijd op het display van de luidspreker terwijl STR speelt: naast de zender als het nummer wordt getoond, anders groot en alleen.",
   "settingsView.displayTrackUnknown": "De luidspreker antwoordde net niet, dus deze instelling is onbekend (hij start misschien opnieuw op). Open de instellingen over een minuut opnieuw.",
   "settingsView.displayTrackModeArtist": "Artiest",

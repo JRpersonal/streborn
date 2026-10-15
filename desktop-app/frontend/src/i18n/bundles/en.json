@@ -868,7 +868,7 @@
   "settingsView.displayTrackWarn": "When on, the music is interrupted for about a second each time the shown text changes (e.g. a new track).",
   "settingsView.displayTrackHelp": "Off by default. When on, the live song of a radio station is shown on the speaker's own display, like internet radio used to. The speaker has to re-buffer to update the text, so the audio drops out briefly on each change. The track is always shown in this app without any interruption, so leave this off if you prefer gap-free audio. On a speaker with a display it also replaces what it normally shows, the preset number and the station.",
   "settingsView.displayTrackHelpPanel": "Off by default. When on, STR draws what is playing (a radio station's song, Spotify through STR, a file from your music library) on the speaker's display itself, so the music keeps playing without any interruption. While it is shown it replaces the speaker's own screen; when you change the volume, the speaker's volume bar appears for a few seconds.",
-  "settingsView.displayClockLabel": "Time during playback:",
+  "settingsView.displayClockLabel": "Show clock during playback:",
   "settingsView.displayClockHelp": "Shows the time on the speaker display while STR plays: next to the station when the track is shown, large on its own when it is not.",
   "settingsView.displayTrackUnknown": "The speaker did not answer just now, so this setting is unknown (it may be restarting). Open the settings again in a minute.",
   "settingsView.displayTrackConfirmTitle": "Show the track on the speaker display?",
