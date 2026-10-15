@@ -39,6 +39,12 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 	a.logoMu.Unlock()
 
 	best := ""
+	// 0. A media server's album art on the LAN (upnp:albumArtURI). Always
+	//    plain http, so the webview would not draw it: fetched here and
+	//    handed back as a small data: URI (lanart.go, #1301).
+	if isLANArtURL(faviconURL) {
+		best = a.lanArtDataURI(faviconURL)
+	}
 	// 1. The station's own HTTPS favicon, if it really serves an image.
 	//    HTTP favicons are skipped: the secure webview blocks them as
 	//    mixed content anyway.

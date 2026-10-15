@@ -1345,6 +1345,9 @@ func run() error {
 			}
 		} else {
 			spotifyMgr.ClearGroupedRefusal()
+			// The speaker now plays Spotify: a library queue it was on is
+			// over, or its watcher pushes the next track over Spotify (#1301).
+			webuiSrv.StopQueueForSpotify()
 			webuiSrv.PanelSpotifyActive()
 		}
 		cancel()

@@ -88,6 +88,31 @@ func TestQueueEndWithoutAnEpisodeIsHarmless(t *testing.T) {
 	}
 }
 
+// #1301: the Spotify app taking the speaker over ends a running library queue,
+// so its watcher cannot push the next track over Spotify later, and the app
+// stops showing the folder key as playing.
+func TestStopQueueForSpotify(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	s.StopQueueForSpotify() // no queue: nothing recorded
+	if past := recentEpisodes(t, s); len(past) != 0 {
+		t.Fatalf("an idle stop recorded an episode: %+v", past)
+	}
+	s.queue.load([]queueItem{
+		{URL: "http://192.0.2.10:50002/a.mp3", Title: "A", Mime: "audio/mpeg"},
+	}, 0, false, repeatOff)
+	s.noteQueueStart(1, 0, false, repeatOff, "", 0)
+
+	s.StopQueueForSpotify()
+
+	if s.queue.isActive() {
+		t.Error("the queue is still active after the Spotify takeover")
+	}
+	past := recentEpisodes(t, s)
+	if len(past) != 1 || past[0].EndReason != "the Spotify app took over the speaker" {
+		t.Fatalf("episode = %+v", past)
+	}
+}
+
 func currentEpisode(t *testing.T, s *Server) queueEpisode {
 	t.Helper()
 	cur, ok := s.QueueForensics().(map[string]any)["current"].(queueEpisode)

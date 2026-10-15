@@ -673,10 +673,30 @@ export function queueTrackMeta(queue) {
 // box is playing right now. Such a key stores no stream URL (each track is its
 // own URL on the media server), so the location-based matches never fire and
 // the key was never shown as selected while it played (#1190).
-export function queueSlotActive(p, queue) {
+//
+// nowLocation is what the speaker reports it plays. While that is STR's Spotify
+// stream the queue card is stale by definition: an agent up to v1.0.12 kept the
+// queue running when the Spotify app took the speaker over, so the folder key
+// lit up next to the Spotify track and adopted its cover as its own (#1301).
+export function queueSlotActive(p, queue, nowLocation) {
   if (!p || p.type !== 'queue') return false;
+  if (nowLocation && /\/spotify\/stream/.test(nowLocation)) return false;
   const card = queueSlotCard(queue);
   return card !== '' && card === 'queue:slot:' + p.slot;
+}
+
+// presetOwnArt is the artwork a key carries itself: its stored art, or for a
+// music-library album or folder key, which stores none at preset level, the
+// cover of the first track that has one (the media server's upnp:albumArtURI,
+// saved with every track). Empty when the key has none (#1301).
+export function presetOwnArt(p) {
+  if (!p) return '';
+  if (p.art) return p.art;
+  if (p.type === 'queue' && Array.isArray(p.items)) {
+    const it = p.items.find((x) => x && typeof x.art === 'string' && x.art.trim());
+    if (it) return it.art.trim();
+  }
+  return '';
 }
 
 // optimisticQueue is the queue state the app assumes right after a click on
@@ -927,6 +947,10 @@ export function bassSliderProps(bass) {
 // own, so the tile takes the speaker's <art> once and then keeps the value it
 // saved, and never for a Spotify key (those draw the Spotify logo on purpose,
 // and SetPreset is radio-only, so writing art there would clobber the URI).
+// Never for a music-library album or folder key either: it is lit from the
+// agent's queue card, which can lag behind what really plays, and the one time
+// it did the key took the Spotify cover of another key as its own (#1301). Its
+// own art comes from its tracks (presetOwnArt).
 //
 // It matters that this is a shared gate: the grid uses it to decide what to
 // draw, and refreshStatus uses it to decide whether a redraw is worth it at
@@ -941,7 +965,8 @@ export function bassSliderProps(bass) {
 // the vitest environment is deliberately DOM-free, so a helper is the only
 // place this rule can be pinned down by a test.
 export function shouldAdoptPresetArt(icon, preset) {
-  return !!icon && !!preset && !preset.art && preset.type !== 'spotify';
+  return !!icon && !!preset && !preset.art && preset.type !== 'spotify'
+    && preset.type !== 'queue';
 }
 
 // appArtFromBoxArt turns art the way the BOX carries it into art the app may

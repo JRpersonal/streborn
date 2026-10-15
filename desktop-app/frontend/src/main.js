@@ -276,6 +276,7 @@ import {
   proxiedRadioPlaying,
   queueSlotCard,
   queueSlotActive,
+  presetOwnArt,
   queueTrackMeta,
   isKeyChrome,
   orionStationPayload,
@@ -6742,7 +6743,7 @@ function renderPresets() {
     // names the key (#978). Outside that window it still needs a location, so
     // a queue left active on a speaker that went quiet lights nothing.
     const queueLit = (!!state.nowLocation || Date.now() < (state.optimisticUntil || 0))
-      && queueSlotActive(p, state.queue);
+      && queueSlotActive(p, state.queue, state.nowLocation);
     const baseActive = p && (queueLit || (state.nowLocation && (
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
@@ -6806,12 +6807,14 @@ function renderPresets() {
         // Spotify playlist; the account name is shown small under the title.
         // (Chosen over the album/playlist cover, which changes or lags.)
         addCands(SPOTIFY_LOGO);
-      } else if (p.art) {
+      } else if (presetOwnArt(p)) {
         // Same unwrap on the STORED art: keys hold-saved by v0.9.56 and older
         // already carry the box-loopback wrapper (the reporter's six keys in
         // the #696 bundle do), so unwrapping at render gives them back their
-        // real image URL without rewriting the store.
-        addCands(appArtFromBoxArt(p.art));
+        // real image URL without rewriting the store. A library album or
+        // folder key has no art of its own and shows its first track's cover,
+        // the media server's albumArtURI (#1301).
+        addCands(appArtFromBoxArt(presetOwnArt(p)));
       } else if (isActive && shouldAdoptPresetArt(adoptIcon, p)) {
         // Same gate refreshStatus uses to decide whether a late-arriving logo
         // is worth a redraw, so the two cannot drift apart.

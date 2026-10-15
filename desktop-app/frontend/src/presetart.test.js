@@ -119,7 +119,7 @@ describe('main.js persists no box-form art (#696)', () => {
   it('stored art from older saves is unwrapped at render time', () => {
     // Keys hold-saved by v0.9.56 and older still carry the wrapper in the
     // store; the tile must not feed it to the <img> cascade as-is.
-    expect(src).toContain('addCands(appArtFromBoxArt(p.art));');
+    expect(src).toContain('addCands(appArtFromBoxArt(presetOwnArt(p)));');
   });
   it('the tile renders through the validated hydration, not the raw cascade', () => {
     // The raw data-fallbacks cascade cannot reject DuckDuckGo's grey "no

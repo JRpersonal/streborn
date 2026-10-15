@@ -57,7 +57,7 @@ describe('the preset grid uses it', () => {
     // folder key (empty location) lights it at once (#978).
     const at = main.indexOf('const queueLit = ');
     expect(at).toBeGreaterThan(-1);
-    expect(main.slice(at, at + 200)).toContain('queueSlotActive(p, state.queue)');
+    expect(main.slice(at, at + 200)).toContain('queueSlotActive(p, state.queue, state.nowLocation)');
     expect(main.slice(at, at + 400)).toContain('const baseActive = p && (queueLit ||');
   });
 
