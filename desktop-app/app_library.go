@@ -228,6 +228,9 @@ type LibraryContainer struct {
 	ParentID   string `json:"parentID"`
 	Title      string `json:"title"`
 	ChildCount int    `json:"childCount"`
+	// AlbumArtURL is the folder's own cover (upnp:albumArtURI). A folder key
+	// falls back to it when none of its tracks carries a cover (#1301).
+	AlbumArtURL string `json:"albumArtURL"`
 }
 
 // LibraryItem is a single playable track.
@@ -406,7 +409,7 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	for _, c := range res.Containers {
 		page.Containers = append(page.Containers, LibraryContainer{
 			ID: c.ID, ParentID: c.ParentID, Title: c.Title,
-			ChildCount: c.ChildCount,
+			ChildCount: c.ChildCount, AlbumArtURL: c.AlbumArtURL,
 		})
 	}
 	for _, it := range res.Items {

@@ -27,13 +27,19 @@ const queueFolderFallbackName = "Music folder"
 // tracks, shuffle flag and folder identity. It mirrors the desktop app's
 // librarySaveFolderAsPreset field for field: name, type queue, shuffle,
 // source, and the tracks in folder order with url/title/art/mime/duration/
-// artist. No preset-level art, exactly like the star button. The track list
-// is capped at presets.MaxQueueItems, the cap the store applies anyway.
+// artist. Preset-level art only when no track carries a cover: then the
+// folder's own cover from the queue card, exactly like the star button
+// (#1301). The track list is capped at presets.MaxQueueItems, the cap the
+// store applies anyway.
 func queuePresetFromLive(slot int, items []queueItem, shuffle bool, folder recentCardCtx) (presets.Preset, bool) {
 	out := make([]presets.PresetItem, 0, len(items))
+	trackArt := false
 	for _, it := range items {
 		if it.URL == "" {
 			continue
+		}
+		if strings.TrimSpace(it.Art) != "" {
+			trackArt = true
 		}
 		out = append(out, presets.PresetItem{
 			URL:         it.URL,
@@ -58,12 +64,17 @@ func queuePresetFromLive(slot int, items []queueItem, shuffle bool, folder recen
 	if name == "" {
 		name = queueFolderFallbackName
 	}
+	art := ""
+	if !trackArt {
+		art = strings.TrimSpace(folder.art)
+	}
 	return presets.Preset{
 		Slot:    slot,
 		Name:    name,
 		Type:    "queue",
 		Shuffle: shuffle,
 		Source:  source,
+		Art:     art,
 		Items:   out,
 	}, true
 }

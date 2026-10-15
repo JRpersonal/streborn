@@ -64,6 +64,25 @@ func TestQueuePresetFromLiveMatchesTheStarButton(t *testing.T) {
 	}
 }
 
+// #1301: a folder whose tracks carry no cover is saved with the folder's own
+// cover from the queue card; a folder whose tracks do carry one keeps no
+// preset-level art, so the key still shows the first track's cover.
+func TestQueuePresetFromLiveFolderArtFallback(t *testing.T) {
+	const folderArt = "http://192.0.2.10:9000/art/folder.jpg"
+	bare := []queueItem{
+		{URL: "http://192.0.2.10:9000/disk/01.mp3", Title: "One"},
+		{URL: "http://192.0.2.10:9000/disk/02.mp3", Title: "Two"},
+	}
+	p, ok := queuePresetFromLive(1, bare, false, recentCardCtx{name: "Album", art: folderArt})
+	if !ok || p.Art != folderArt {
+		t.Fatalf("no track art: preset art = %q, want the folder cover", p.Art)
+	}
+	p, _ = queuePresetFromLive(1, queueSaveTracks, false, recentCardCtx{name: "Album", art: folderArt})
+	if p.Art != "" {
+		t.Fatalf("tracks carry a cover: preset art = %q, want none", p.Art)
+	}
+}
+
 func TestLiveQueuePreset(t *testing.T) {
 	s := queueSaveTestServer(t)
 	if _, ok := s.LiveQueuePreset(1); ok {

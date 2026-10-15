@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt } from '../utils.js';
 import { t } from '../i18n/index.js';
 import {
   ProbeTrackDelivery,
@@ -118,7 +118,7 @@ function rememberPath() {
   try {
     localStorage.setItem(LIB_PATH_KEY, JSON.stringify({
       udn: libState.currentUDN,
-      stack: (libState.stack || []).map(s => ({ id: s.id, title: s.title })),
+      stack: (libState.stack || []).map(s => ({ id: s.id, title: s.title, art: s.art || '' })),
     }));
   } catch { /* same trade-off as rememberServerUDN */ }
 }
@@ -449,7 +449,9 @@ async function libraryBrowseCurrent() {
 }
 
 async function libraryEnter(container) {
-  libState.stack.push({ id: container.id, title: container.title });
+  // The folder's own cover rides along: a folder key saved from here falls
+  // back to it when none of the tracks carries one (#1301).
+  libState.stack.push({ id: container.id, title: container.title, art: container.albumArtURL || '' });
   await libraryBrowseCurrent();
 }
 
@@ -637,7 +639,9 @@ async function libraryPlayFolder() {
     name: (last && last.title)
       || (srv && (srv.friendlyName || srv.address))
       || t('controls.playFolder'),
-    art: items[0].art || '',
+    // The folder's own cover when no track has one (#1301): holding a key while
+    // this folder plays saves it with that cover.
+    art: items[0].art || folderFallbackArt(items, last && last.art),
     // The media server, so holding a key while this folder plays saves it with
     // the same "from <server>" line the star button gives it (#1030).
     source: (srv && (srv.friendlyName || srv.address)) || '',
@@ -722,6 +726,9 @@ function librarySaveFolderAsPreset() {
         source,
         items: queueItems,
       };
+      // No track carries a cover: the key shows the folder's own (#1301).
+      const art = folderFallbackArt(queueItems, last && last.art);
+      if (art) payload.art = art;
       try {
         await SaveFolderPreset(state.currentBox.host, state.currentBox.port, i, JSON.stringify(payload));
         if (queueItems.length < totalItems) {

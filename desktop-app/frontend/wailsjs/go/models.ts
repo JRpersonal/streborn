@@ -414,6 +414,7 @@ export namespace main {
 	    parentID: string;
 	    title: string;
 	    childCount: number;
+	    albumArtURL: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryContainer(source);
@@ -425,6 +426,7 @@ export namespace main {
 	        this.parentID = source["parentID"];
 	        this.title = source["title"];
 	        this.childCount = source["childCount"];
+	        this.albumArtURL = source["albumArtURL"];
 	    }
 	}
 	export class LibraryItem {

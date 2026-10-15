@@ -870,6 +870,9 @@ type Container struct {
 	ParentID   string
 	Title      string
 	ChildCount int
+	// AlbumArtURL is the container's own cover (upnp:albumArtURI), which
+	// servers set on album folders. Empty when the server sends none.
+	AlbumArtURL string
 }
 
 // Item is a single playable object (track, photo, video). For the
@@ -1067,6 +1070,7 @@ type didlContainer struct {
 	ChildCount int    `xml:"childCount,attr"`
 	Title      string `xml:"title"`
 	Class      string `xml:"class"`
+	AlbumArt   string `xml:"albumArtURI"`
 }
 
 type didlItem struct {
@@ -1150,7 +1154,7 @@ func didlToResult(res string, total, returned int) (BrowseResult, error) {
 	for _, c := range didl.Containers {
 		out.Containers = append(out.Containers, Container{
 			ID: c.ID, ParentID: c.ParentID, Title: c.Title,
-			ChildCount: c.ChildCount,
+			ChildCount: c.ChildCount, AlbumArtURL: strings.TrimSpace(c.AlbumArt),
 		})
 	}
 	for _, it := range didl.Items {
