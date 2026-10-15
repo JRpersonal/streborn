@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/internet"
 )
 
 // failLogSuppressWindow is the minimum spacing between identical
@@ -129,6 +131,8 @@ func (s *Server) boxHasOutbound() bool {
 	}
 	s.netMu.Unlock()
 	online := false
+	failReason := ""
+	var failErr error
 	for _, h := range []string{"www.google.com:443", "www.cloudflare.com:443", "1.1.1.1:53"} {
 		c, err := net.DialTimeout("tcp", h, 2*time.Second)
 		if err == nil {
@@ -136,6 +140,18 @@ func (s *Server) boxHasOutbound() bool {
 			online = true
 			break
 		}
+		if r := internet.Classify(err, false); r != "" {
+			failReason, failErr = r, err
+		}
+	}
+	// This probe already runs on demand (a station failed and the app asked
+	// why), so its verdict feeds the internet state for free. All three
+	// failing, the bare IP included, is evidence of no internet; the reason
+	// of the last one wins, as in clocksync.
+	if online {
+		internet.ReportSuccess("outbound-probe")
+	} else {
+		internet.Default.Failure("outbound-probe", failReason, failErr)
 	}
 	s.netMu.Lock()
 	s.netOnline = online
@@ -192,7 +208,9 @@ func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 	// connection" and offer to re-run Wi-Fi setup, instead of blaming every
 	// station in turn (#375). Only checked on the "unreachable" catch-all, so a
 	// clear 403/blocked/gone is never masked and the probe stays off the hot path.
-	if f.reason == "unreachable" && !s.boxHasOutbound() {
+	// The passive internet verdict answers first: when the agent already has
+	// fresh evidence the internet is gone, no probe is needed.
+	if f.reason == "unreachable" && (internetDown() || !s.boxHasOutbound()) {
 		f.reason = "offline"
 	}
 	body, err := json.Marshal(struct {
@@ -235,3 +253,10 @@ func errStr(err error) string {
 // messages ask it once when a key failed, to tell a dead station from a dead
 // connection. Cached for a few seconds like the original.
 func (s *Server) BoxHasOutbound() bool { return s.boxHasOutbound() }
+
+// internetDown reports whether the passive internet verdict currently says the
+// speaker cannot reach the internet (internal/internet).
+func internetDown() bool {
+	s, _ := internet.Status()
+	return s == internet.StatusUnreachable
+}

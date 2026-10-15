@@ -2,11 +2,53 @@ package clocksync
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/internet"
 )
+
+type dialTimeout struct{}
+
+func (dialTimeout) Error() string   { return "i/o timeout" }
+func (dialTimeout) Timeout() bool   { return true }
+func (dialTimeout) Temporary() bool { return true }
+
+// TestFetchFeedsInternetVerdict replays the 2026-10-14 field case: the named
+// hosts fail with a DNS SERVFAIL, the IP literals time out. That marks the
+// internet unreachable with the reason of the last host (timeout). One HTTP
+// answer, even without a Date header, marks it ok again.
+func TestFetchFeedsInternetVerdict(t *testing.T) {
+	broken := &http.Client{Transport: &http.Transport{
+		DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
+			host, _, _ := net.SplitHostPort(addr)
+			if net.ParseIP(host) == nil {
+				return nil, &net.DNSError{Err: "server misbehaving", Name: host, IsTemporary: true}
+			}
+			return nil, &net.OpError{Op: "dial", Net: network, Err: dialTimeout{}}
+		},
+	}}
+	_, err := fetchNetworkTime(context.Background(), broken,
+		[]string{"http://time.example.org/", "http://192.0.2.1/"})
+	if err == nil {
+		t.Fatal("expected an error with every host failing")
+	}
+	if s, r := internet.Status(); s != internet.StatusUnreachable || r != internet.ReasonTimeout {
+		t.Fatalf("after all hosts failed: %q/%q, want unreachable/timeout", s, r)
+	}
+
+	noDate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header()["Date"] = nil // suppress the automatic header
+	}))
+	defer noDate.Close()
+	_, _ = fetchNetworkTime(context.Background(), &http.Client{Timeout: 2 * time.Second}, []string{noDate.URL})
+	if s, _ := internet.Status(); s != internet.StatusOK {
+		t.Fatalf("after an HTTP answer: %q, want ok", s)
+	}
+}
 
 func TestImplausible(t *testing.T) {
 	cases := []struct {

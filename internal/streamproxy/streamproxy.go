@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/internet"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -244,7 +245,28 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 	// resolution) is applied to every dial, plain or TLS, so a malicious
 	// radio-browser URL cannot point the box at its own loopback services or
 	// cloud metadata.
-	baseDialer := &net.Dialer{Control: netutil.DialGuardSSRF}
+	guardedDialer := &net.Dialer{Control: netutil.DialGuardSSRF}
+	// Every upstream dial also feeds the internet reachability verdict
+	// (internal/internet), which costs one mutex per connection and no
+	// request of its own: a connection to a public address proves the box
+	// reaches the internet, and a DNS server failure or a missing route is
+	// evidence it does not. Strict classification: one station's server
+	// timing out or refusing is not counted (2026-10-14 field case: the
+	// router answered every station lookup with SERVFAIL, and nothing told
+	// the owner the speakers had no internet).
+	baseDialer := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := guardedDialer.DialContext(ctx, network, addr)
+		if err != nil {
+			if ctx.Err() == nil {
+				internet.ReportError("streamproxy", err, true)
+			}
+			return nil, err
+		}
+		if internet.IsPublicAddr(c.RemoteAddr()) {
+			internet.ReportSuccess("streamproxy")
+		}
+		return c, nil
+	}
 	// Legacy SHOUTcast v1 servers answer the stream request with an "ICY 200 OK"
 	// status line instead of "HTTP/1.0 200 OK". Go's net/http rejects that as a
 	// malformed response ("Received HTTP/0.9 when not allowed"), so those stations
@@ -255,7 +277,7 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 	// to "HTTP/1.0" before Go parses it; everything else (headers, ICY metadata,
 	// audio) is untouched. HTTPS is left to dialTLS (SHOUTcast-over-TLS is rare).
 	icyDial := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		raw, err := baseDialer.DialContext(ctx, network, addr)
+		raw, err := baseDialer(ctx, network, addr)
 		if err != nil {
 			return nil, err
 		}
@@ -272,7 +294,7 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		if err != nil {
 			return nil, err
 		}
-		raw, err := baseDialer.DialContext(ctx, network, addr)
+		raw, err := baseDialer(ctx, network, addr)
 		if err != nil {
 			return nil, err
 		}

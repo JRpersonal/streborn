@@ -179,6 +179,15 @@ type BoxInfo struct {
 	// wedged box accepts transport pushes but never plays, and only a
 	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
 	BoxHealth string `json:"boxHealth,omitempty"`
+	// Internet is the agent's passive verdict on whether the speaker reaches
+	// the internet: "ok", "unreachable" or "unknown" (empty from agents that
+	// predate it). InternetReason is the short cause behind "unreachable"
+	// (dns, timeout, route, connect). The UI turns "unreachable" into "this
+	// speaker cannot reach the internet, check the router": the app reaching
+	// the speaker over the LAN proves the Wi-Fi works, so rebooting it, which
+	// is what an owner did for two hours on 2026-10-14, cannot help.
+	Internet       string `json:"internet,omitempty"`
+	InternetReason string `json:"internetReason,omitempty"`
 	// ArcadeAt is when the speaker saved its last round of a display game
 	// (unix seconds as a string, empty when none). The app fetches the
 	// scores only when it changes, to tell the player about a new highscore.
@@ -1216,6 +1225,8 @@ func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (recor
 	// whatever is really true.
 	cached.ConflictingMod = ""
 	cached.ForeignCloudURL = ""
+	cached.Internet = ""
+	cached.InternetReason = ""
 	cached.WLANCredsMissing = false
 	cached.Storm1036 = false
 	cached.Storm1036SinceSec = 0
@@ -1290,6 +1301,12 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 	if out.BoxHealth == "" {
 		out.BoxHealth = prev.BoxHealth
 	}
+	// Same for the internet verdict: an mDNS-only sighting carries none, and
+	// the "check the router" hint must not flicker between cycles.
+	if out.Internet == "" {
+		out.Internet = prev.Internet
+		out.InternetReason = prev.InternetReason
+	}
 	if out.ArcadeAt == "" {
 		out.ArcadeAt = prev.ArcadeAt
 	}
@@ -1330,6 +1347,8 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.BoxHealth = ""
 	b.ConflictingMod = ""
 	b.ForeignCloudURL = ""
+	b.Internet = ""
+	b.InternetReason = ""
 	b.WLANCredsMissing = false
 	b.Storm1036 = false
 	b.Storm1036SinceSec = 0
@@ -1440,6 +1459,8 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.ForeignCloudURL = b.ForeignCloudURL
 		out.WLANCredsMissing = b.WLANCredsMissing
 		out.BoxHealth = b.BoxHealth
+		out.Internet = b.Internet
+		out.InternetReason = b.InternetReason
 		out.ArcadeAt = b.ArcadeAt
 		out.Storm1036 = b.Storm1036
 		out.Storm1036SinceSec = b.Storm1036SinceSec
@@ -1465,6 +1486,10 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		}
 		if out.BoxHealth == "" {
 			out.BoxHealth = b.BoxHealth
+		}
+		if out.Internet == "" {
+			out.Internet = b.Internet
+			out.InternetReason = b.InternetReason
 		}
 		if out.ArcadeAt == "" {
 			out.ArcadeAt = b.ArcadeAt
@@ -1899,6 +1924,8 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 		FriendlyName:      jsonStringField(s, "friendlyName"),
 		Model:             jsonStringField(s, "model"),
 		BoxHealth:         jsonStringField(s, "boxHealth"),
+		Internet:          jsonStringField(s, "internet"),
+		InternetReason:    jsonStringField(s, "internetReason"),
 		ArcadeAt:          jsonStringField(s, "arcadeAt"),
 		ConflictingMod:    jsonStringField(s, "conflictingMod"),
 		ForeignCloudURL:   jsonStringField(s, "foreignCloudURL"),

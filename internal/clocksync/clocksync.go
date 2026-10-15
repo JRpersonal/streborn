@@ -21,6 +21,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/internet"
 )
 
 // minPlausible is the lower bound on a trustworthy wall clock. STR shipped in
@@ -57,8 +59,27 @@ func plausible(t time.Time) bool { return t.After(minPlausible) && t.Before(maxP
 
 // fetchNetworkTime returns the current time from the first reachable host's HTTP
 // Date header. It only accepts a plausible value.
+//
+// Every attempt also feeds the internet reachability verdict (internal/internet)
+// at no extra cost: any HTTP answer proves the box reaches the internet, and
+// every host failing, the IP literals included, is the strongest evidence the
+// agent ever gets that it does not (2026-10-14 field case: DNS SERVFAIL for the
+// names, timeouts for the IP literals, clock stuck in 2015 for an hour, and
+// nothing on screen saying why).
 func fetchNetworkTime(ctx context.Context, client *http.Client, hosts []string) (time.Time, error) {
 	lastErr := errors.New("clocksync: no hosts to query")
+	failReason, answered := "", false
+	var failErr error
+	defer func() {
+		// Reported once per attempt, after all hosts, and only when none of
+		// them answered at all, so one dead host in the list never reads as
+		// "no internet". The reason is that of the LAST host that failed for a
+		// network reason: the list ends with IP literals, so a timeout there
+		// (the internet is gone) wins over the DNS failure of the named hosts.
+		if !answered && failReason != "" {
+			internet.Default.Failure("clocksync", failReason, failErr)
+		}
+	}()
 	for _, h := range hosts {
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, h, nil)
 		if err != nil {
@@ -68,8 +89,16 @@ func fetchNetworkTime(ctx context.Context, client *http.Client, hosts []string) 
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
+			if ctx.Err() == nil {
+				if r := internet.Classify(err, false); r != "" {
+					failReason, failErr = r, err
+				}
+			}
 			continue
 		}
+		// Any HTTP answer from the internet counts, usable Date header or not.
+		answered = true
+		internet.ReportSuccess("clocksync")
 		dateHdr := resp.Header.Get("Date")
 		_ = resp.Body.Close()
 		if dateHdr == "" {

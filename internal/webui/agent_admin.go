@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/hosts"
+	"github.com/JRpersonal/streborn/internal/internet"
 	"github.com/JRpersonal/streborn/internal/oled"
 )
 
@@ -132,6 +133,18 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		out["boxHealthSinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
 	} else {
 		out["boxHealth"] = "ok"
+	}
+	// Whether the speaker reaches the internet (internal/internet): a passive
+	// verdict fed by the clock sync and the stream proxy, no probe of its own.
+	// "unreachable" only on positive evidence. The desktop app turns it into
+	// "this speaker cannot reach the internet, check the router" where the
+	// owner looks, instead of a station that "stops after a few seconds"
+	// (2026-10-14: two hours of rebooting five speakers whose router had cut
+	// them off the internet while the LAN kept working).
+	inetStatus, inetReason := internet.Status()
+	out["internet"] = inetStatus
+	if inetReason != "" {
+		out["internetReason"] = inetReason
 	}
 	// Pre-latch wedge evidence (#402): the strike count and the age of the most
 	// recent strike, so a diagnostic taken mid-wedge is distinguishable from a
