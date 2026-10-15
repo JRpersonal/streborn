@@ -498,7 +498,8 @@ func TestPhoneCardOffersUpdateAllByDefault(t *testing.T) {
 	// a peer it cannot reach to this speaker, and updates this speaker last.
 	for _, want := range []string{
 		"action: 'run-claim', token: run.token",
-		"action: 'run-end', token: run.token",
+		// Awaited, or the reload sees this phone's own claim as another phone's.
+		"await apiDetail(SU, 'POST', { action: 'run-end', token: run.token });",
 		"peerCall(base, 'POST', { action: 'check' }",
 		"peerCall(base, 'POST', { action: 'install' }",
 		"=== 'unreachable') setRow(row, { via: 'speaker'",

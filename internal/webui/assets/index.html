@@ -4502,7 +4502,9 @@ async function saveAlarms() {
       if (!runActive()) return;
       run.mode = 'finished'; run.finishedAt = Date.now(); saveRun();
       checked = false; probes = {};
-      apiDetail(SU, 'POST', { action: 'run-end', token: run.token });
+      // Release the claim before reloading: a load that still sees it would
+      // tell this very phone that another phone is updating.
+      await apiDetail(SU, 'POST', { action: 'run-end', token: run.token });
       await load();
     } finally {
       driving = false;
