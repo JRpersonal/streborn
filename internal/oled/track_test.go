@@ -98,7 +98,7 @@ func TestRenderTrack(t *testing.T) {
 	if bad || first != trackTopY || last >= Height {
 		t.Fatalf("rows %d..%d bad=%v", first, last, bad)
 	}
-	// the title is the brightest text, the station the dimmest
+	// the title is the brightest text, the station a step above the artist
 	if v := buf[trackTopY*Width+Width/2-20 : (trackTopY+7)*Width]; maxByte(v) != lvlTrackStation {
 		t.Errorf("station level %d", maxByte(v))
 	}

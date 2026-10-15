@@ -580,7 +580,7 @@ func trackShift(n int) (dx, dy int) {
 
 // Track screen layout: grey levels and character widths per font scale.
 const (
-	lvlTrackStation  = 6
+	lvlTrackStation  = 10
 	lvlTrackRule     = 3
 	lvlTrackArtist   = 9
 	lvlTrackTitle    = 15

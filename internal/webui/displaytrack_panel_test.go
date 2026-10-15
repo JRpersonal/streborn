@@ -144,6 +144,30 @@ func TestPanelTrackTextModes(t *testing.T) {
 	}
 }
 
+// A placeholder StreamTitle is no song (#1305): the station name fills the big
+// title area instead, a song before it is cleared, and neither Recently played
+// nor the remembered live title keep it.
+func TestPlaceholderStreamTitleShowsTheStationName(t *testing.T) {
+	for _, in := range []string{"Now playing info goes here", "Unknown - Unknown", " - ", "radio bob"} {
+		s, fp, actions := newTrackServer(t, true)
+		s.HandleStreamTitle("Queen - Under Pressure")
+		s.HandleStreamTitle(in)
+		shown, _ := fp.snapshot()
+		if want := (oled.TrackText{Title: "Radio Bob"}); len(shown) != 2 || shown[1] != want {
+			t.Errorf("%q: panel got %+v, want the station name alone last", in, shown)
+		}
+		s.lastPlayMu.Lock()
+		last := s.lastICYTitle
+		s.lastPlayMu.Unlock()
+		if last != "" {
+			t.Errorf("%q: lastICYTitle = %q, want it forgotten", in, last)
+		}
+		if a := actions(); len(a) != 0 {
+			t.Errorf("%q: the speaker was sent %v", in, a)
+		}
+	}
+}
+
 // A new stream replaces the old track with its own name until its first
 // song; the same stream pushed again (a recovery) keeps the track, because
 // its title is not reported again.

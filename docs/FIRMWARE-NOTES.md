@@ -616,7 +616,7 @@ of STR's own (station on top, artist, title below, title at double size when
 it fits on two lines of ten), not a band over BoseApp's picture, because what
 BoseApp shows there is the stale title from the start of the stream.
 
-A second setting, "time during playback" (`/api/box/display-clock`, flag file
+A second setting, "Show clock during playback" (`/api/box/display-clock`, flag file
 `display-clock-on-playback`, default off), adds the time: with the track it
 sits at the right of the top line next to the station, without the track
 (track setting off) it is drawn large under the station. Both off leaves the
