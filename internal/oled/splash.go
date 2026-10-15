@@ -12,7 +12,8 @@
 // the kernel releases the thread on its own. Nothing is written to NAND
 // except the small splash-seen marker.
 //
-// Only the Portable's panel geometry is recognised; on every other model, and
+// Only the SoundTouch panel geometry (ST20, ST30, Portable, Wave) is
+// recognised; on every other model, and
 // when the user switched it off, all entry points return without touching
 // anything.
 package oled
