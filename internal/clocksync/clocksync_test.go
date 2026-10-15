@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,14 +41,114 @@ func TestFetchFeedsInternetVerdict(t *testing.T) {
 		t.Fatalf("after all hosts failed: %q/%q, want unreachable/timeout", s, r)
 	}
 
-	noDate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header()["Date"] = nil // suppress the automatic header
-	}))
-	defer noDate.Close()
-	_, _ = fetchNetworkTime(context.Background(), &http.Client{Timeout: 2 * time.Second}, []string{noDate.URL})
+	ok := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer ok.Close()
+	_, _ = fetchNetworkTime(context.Background(), &http.Client{Timeout: 2 * time.Second}, []string{ok.URL})
 	if s, _ := internet.Status(); s != internet.StatusOK {
 		t.Fatalf("after an HTTP answer: %q, want ok", s)
 	}
+}
+
+// freshVerdict gives the test its own internet tracker.
+func freshVerdict(t *testing.T) {
+	t.Helper()
+	prev := internet.Default
+	internet.Default = internet.New(nil)
+	t.Cleanup(func() { internet.Default = prev })
+}
+
+// Support case 2026-10-15: on an open hotspot every plain HTTP request lands
+// on the login page. That answer must not read as "internet ok", while the
+// clock may still take its Date as before.
+func TestCaptivePortalIsNotInternet(t *testing.T) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	portal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK) // the login page, with a valid Date
+	}))
+	defer portal.Close()
+
+	t.Run("redirect to the login host", func(t *testing.T) {
+		freshVerdict(t)
+		// Same address, other host name: the redirect leaves the host asked.
+		target := strings.Replace(portal.URL, "127.0.0.1", "localhost", 1)
+		hijack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, target+"/login", http.StatusFound)
+		}))
+		defer hijack.Close()
+		tm, err := fetchNetworkTime(context.Background(), client, []string{hijack.URL})
+		if err != nil || tm.IsZero() {
+			t.Fatalf("clock sync must still take the Date: %v", err)
+		}
+		if s, _ := internet.Status(); s != internet.StatusUnknown {
+			t.Fatalf("after a portal redirect: %q, want unknown", s)
+		}
+	})
+
+	t.Run("unfollowed redirect elsewhere", func(t *testing.T) {
+		freshVerdict(t)
+		hijack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "http://portal.example.net/login", http.StatusFound)
+		}))
+		defer hijack.Close()
+		noFollow := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}}
+		_, _ = fetchNetworkTime(context.Background(), noFollow, []string{hijack.URL})
+		if s, _ := internet.Status(); s != internet.StatusUnknown {
+			t.Fatalf("after a redirect to another host: %q, want unknown", s)
+		}
+	})
+
+	t.Run("511 network authentication required", func(t *testing.T) {
+		freshVerdict(t)
+		auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNetworkAuthenticationRequired)
+		}))
+		defer auth.Close()
+		_, _ = fetchNetworkTime(context.Background(), client, []string{auth.URL})
+		if s, _ := internet.Status(); s != internet.StatusUnknown {
+			t.Fatalf("after a 511: %q, want unknown", s)
+		}
+	})
+
+	t.Run("no Date header", func(t *testing.T) {
+		freshVerdict(t)
+		noDate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header()["Date"] = nil // suppress the automatic header
+		}))
+		defer noDate.Close()
+		_, _ = fetchNetworkTime(context.Background(), client, []string{noDate.URL})
+		if s, _ := internet.Status(); s != internet.StatusUnknown {
+			t.Fatalf("after an answer without Date: %q, want unknown", s)
+		}
+	})
+
+	t.Run("same-host redirect and 204 still count", func(t *testing.T) {
+		freshVerdict(t)
+		var self string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/" {
+				http.Redirect(w, r, self+"/home", http.StatusMovedPermanently)
+			}
+		}))
+		defer srv.Close()
+		self = srv.URL
+		_, _ = fetchNetworkTime(context.Background(), client, []string{srv.URL})
+		if s, _ := internet.Status(); s != internet.StatusOK {
+			t.Fatalf("after a same-host redirect: %q, want ok", s)
+		}
+
+		freshVerdict(t)
+		nc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header()["Date"] = nil
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer nc.Close()
+		_, _ = fetchNetworkTime(context.Background(), client, []string{nc.URL + "/generate_204"})
+		if s, _ := internet.Status(); s != internet.StatusOK {
+			t.Fatalf("after a 204: %q, want ok", s)
+		}
+	})
 }
 
 func TestImplausible(t *testing.T) {
