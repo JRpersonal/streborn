@@ -887,11 +887,11 @@ export namespace main {
 	    audioKeyRefused: boolean;
 	    canRecall?: boolean;
 	    product: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyNow(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bitrate = source["bitrate"];
