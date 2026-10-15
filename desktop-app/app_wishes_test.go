@@ -60,11 +60,11 @@ func TestParseWishesKeepsTranslatedTitles(t *testing.T) {
 func TestParseWishesReadsRecentlyDone(t *testing.T) {
 	in := `{"ideas":[{"number":1091,"title":"Open wish","url":"https://github.com/JRpersonal/streborn/discussions/1091","votes":10,"doneAt":"2026-10-01T00:00:00Z"}],
 	"done":[
-	 {"number":1182,"title":" iOS app for the phone remote ","url":"https://github.com/JRpersonal/streborn/discussions/1182","votes":5,"doneAt":"2026-10-10T21:37:53.000Z","titles":{"de":"iOS App"}},
+	 {"number":1182,"title":" iOS app for the phone remote ","url":"https://github.com/JRpersonal/streborn/discussions/1182","votes":5,"doneAt":"2026-10-10T21:37:53.000Z","titles":{"de":"iOS App"},"version":" v1.0.13 "},
 	 {"number":1,"title":"Elsewhere","url":"https://evil.example/1","votes":9,"doneAt":"2026-10-09T00:00:00Z"},
 	 {"number":2,"title":"No date","url":"https://github.com/JRpersonal/streborn/discussions/2","votes":1},
 	 {"number":3,"title":"Bad date","url":"https://github.com/JRpersonal/streborn/discussions/3","votes":1,"doneAt":"last week"},
-	 {"number":1107,"title":"Move a station to another key","url":"https://github.com/JRpersonal/streborn/discussions/1107","votes":-2,"doneAt":"2026-10-03T23:13:05Z"}
+	 {"number":1107,"title":"Move a station to another key","url":"https://github.com/JRpersonal/streborn/discussions/1107","votes":-2,"doneAt":"2026-10-03T23:13:05Z","version":"<b>soon</b>"}
 	]}`
 	got, err := parseWishes(strings.NewReader(in))
 	if err != nil {
@@ -79,6 +79,9 @@ func TestParseWishesReadsRecentlyDone(t *testing.T) {
 	d := got.Done[0]
 	if d.Title != "iOS app for the phone remote" || d.DoneAt != "2026-10-10T21:37:53Z" || d.Titles["de"] != "iOS App" {
 		t.Fatalf("want a trimmed title, a normalized date and the translations, got %+v", d)
+	}
+	if d.Version != "v1.0.13" || got.Done[1].Version != "" {
+		t.Fatalf("want the trimmed release version and nothing for a malformed one, got %q and %q", d.Version, got.Done[1].Version)
 	}
 	if got.Done[1].Votes != 0 {
 		t.Fatalf("negative votes must read as 0, got %d", got.Done[1].Votes)

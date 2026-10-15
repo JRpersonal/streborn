@@ -131,6 +131,12 @@ describe('recently done', () => {
     expect(html.indexOf('Update speakers')).toBeLessThan(html.indexOf('wishes.doneTitle'));
   });
 
+  it('shows the release a wish shipped in, and only a real version', () => {
+    expect(wishesHTML({ ...LIST, done: [{ ...ios, version: 'v1.0.13' }] }, tr, 'en')).toContain('<span class="wish-done-version small">v1.0.13</span>');
+    expect(wishesHTML(WITH_DONE, tr, 'en')).not.toContain('wish-done-version');
+    expect(wishesHTML({ ...LIST, done: [{ ...ios, version: '<b>x</b>' }] }, tr, 'en')).not.toContain('wish-done-version');
+  });
+
   it('uses the translated title and the app language for the month', () => {
     const html = wishesHTML(WITH_DONE, tr, 'de');
     expect(html).toContain('iOS App für die Handy Fernbedienung');

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -39,6 +40,9 @@ type Wish struct {
 	// DoneAt is set only on wishes in WishList.Done: when the wish was
 	// marked as built (the discussion's close time, RFC 3339 UTC).
 	DoneAt string `json:"doneAt,omitempty"`
+	// Version is the release a done wish shipped in ("v1.0.13"), taken by the
+	// website from the maintainer's closing comment. Empty when unknown.
+	Version string `json:"version,omitempty"`
 }
 
 // WishList is what the Wishes tab renders. OK is false when the list could not
@@ -107,7 +111,7 @@ func parseWishes(r io.Reader) (WishList, error) {
 	}
 	for _, w := range in.Ideas {
 		if w, ok := cleanWish(w); ok {
-			w.DoneAt = ""
+			w.DoneAt, w.Version = "", ""
 			out.Wishes = append(out.Wishes, w)
 		}
 	}
@@ -123,12 +127,19 @@ func parseWishes(r io.Reader) (WishList, error) {
 			continue
 		}
 		w.DoneAt = at.UTC().Format(time.RFC3339)
+		if w.Version = strings.TrimSpace(w.Version); !wishVersionRe.MatchString(w.Version) {
+			w.Version = ""
+		}
 		out.Done = append(out.Done, w)
 	}
 	out.UpdatedAt = in.UpdatedAt
 	out.OK = true
 	return out, nil
 }
+
+// wishVersionRe is the only shape a done wish's version may have; anything else
+// is dropped rather than shown.
+var wishVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 
 // cleanWish trims the title and clamps the votes. It rejects an entry without
 // a title or with a link outside the project's own discussions.

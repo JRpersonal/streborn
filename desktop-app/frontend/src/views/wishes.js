@@ -115,6 +115,7 @@ export function doneHTML(done, tr, lang, query = '') {
       <li class="wish-row wish-row-done" data-wish-num="${escapeAttr(String(w.number))}"${wishMatches(w, lang, query) ? '' : ' hidden'}>
         <span class="wish-done-badge"><span aria-hidden="true">&#10003;</span> ${escapeHtml(tr('wishes.doneBadge'))}</span>
         <span class="wish-title">${escapeHtml(wishTitle(w, lang))}</span>
+        ${/^v\d+\.\d+\.\d+$/.test(w.version || '') ? `<span class="wish-done-version small">${escapeHtml(w.version)}</span>` : ''}
         ${when ? `<time class="wish-done-date muted small" datetime="${escapeAttr(w.doneAt)}">${escapeHtml(when)}</time>` : ''}
         <button class="btn btn-mini btn-secondary" data-wish-open="${escapeAttr(w.url)}">${escapeHtml(tr('wishes.doneOpenBtn'))}</button>
       </li>`;

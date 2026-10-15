@@ -1103,6 +1103,12 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   flex: 0 0 auto;
   white-space: nowrap;
 }
+.wish-done-version {
+  flex: 0 0 auto;
+  color: var(--signal-green);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 /* ---------- Alpha-stage placeholder pages (Spotify, Multi-room) ---------- */
 .alpha-stage {
