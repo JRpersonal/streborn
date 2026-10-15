@@ -7368,6 +7368,11 @@ async function saveCurrentToSlot(slot) {
     // Spotify account cannot, so the key stores fine and then never plays: that is
     // the entitlement half of #976, which the login check alone never covered.
     let premiumRequired;
+    // Whether the speaker could find out the plan at all. premiumRequired false
+    // means EITHER Premium OR an unanswered question (Spotify answering 429 is
+    // the common one, #1314), and only np.product tells them apart. undefined =
+    // the speaker was not readable, which stays silent like every other gate.
+    let planKnown;
     let gateRead = 'unknown';
     try {
       const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
@@ -7377,6 +7382,7 @@ async function saveCurrentToSlot(slot) {
         if (np.account) acct = np.account;
         if (np.canRecall !== null && np.canRecall !== undefined) canRecall = !!np.canRecall;
         if (np.premiumRequired !== null && np.premiumRequired !== undefined) premiumRequired = !!np.premiumRequired;
+        planKnown = !!np.product;
       }
     } catch { gateRead = 'no'; }
     // Fallback: go-librespot's /spotify/info can report an empty context even
@@ -7430,6 +7436,12 @@ async function saveCurrentToSlot(slot) {
       } else if (premiumRequired === true) {
         notice = 'needs-premium';
         showToast(t('preset.spotifyKeyNeedsPremium'), 12000);
+      } else if (canRecall === true && premiumRequired === false && planKnown === false) {
+        // The speaker answered but could not read the plan. Not a warning, a
+        // hint: the key may well be fine, but a free account would make it
+        // silent and nothing else would say so.
+        notice = 'plan-unknown';
+        showToast(t('preset.spotifyKeyPlanUnknown'), 10000);
       }
       // Which notice was shown, and what it was decided from. Without this a
       // report of "two different notices for one long press" cannot be read out

@@ -420,6 +420,7 @@
   "preset.savedToKey": "Saved to key {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Saved. The key will not play yet: this speaker has not been picked once in Spotify. Open Spotify, choose the entry for this speaker ending in (STR), and play any track. A free Spotify account cannot pick that entry.",
   "preset.spotifyKeyNeedsPremium": "Saved. The key will not play: the Spotify account on this speaker is free, and playing a Spotify key needs Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Saved. STR could not check the Spotify plan on this speaker just now. Spotify keys need Spotify Premium; with Premium the key will play.",
   "preset.alreadyOnKey": "This station is already on key {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" is already on key {{n}}. Start the one you want on the speaker first, then save it.",
   "preset.moveTitle": "This station is already on another key",

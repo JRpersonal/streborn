@@ -391,6 +391,7 @@
   "preset.savedToKey": "Opgeslagen op toets {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Opgeslagen. De toets speelt nog niet: deze speaker is nog niet één keer in Spotify gekozen. Open Spotify, kies het item voor deze speaker dat eindigt op (STR) en speel een nummer. Met een gratis Spotify-account is dat item niet te kiezen.",
   "preset.spotifyKeyNeedsPremium": "Opgeslagen. De toets speelt niet: het Spotify-account op deze speaker is gratis, en een Spotify-toets vereist Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Opgeslagen. STR kon het Spotify-abonnement op deze speaker op dit moment niet controleren. Spotify-toetsen hebben Spotify Premium nodig; met Premium speelt de toets.",
   "preset.alreadyOnKey": "Deze zender staat al op toets {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" staat al op toets {{n}}. Start eerst op de luidspreker wat je wilt opslaan, en sla het dan op.",
   "preset.moveTitle": "Deze zender staat al op een andere toets",

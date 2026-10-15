@@ -203,6 +203,11 @@ type SpotifyNow struct {
 	// distinguishable from a real false, or every speaker on an older agent
 	// would silently be treated as unable to recall.
 	CanRecall *bool `json:"canRecall"`
+	// Product is the account plan the speaker read from Spotify ("premium",
+	// "free", "open"), or "" when it could not find out (Spotify answering 429,
+	// a token without the scope, no engine). The save gate shows a soft hint
+	// on "" because premiumRequired false cannot tell Premium from "unknown".
+	Product string `json:"product"`
 }
 
 func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {

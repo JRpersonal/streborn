@@ -391,6 +391,7 @@
   "preset.savedToKey": "キー {{n}} に保存しました: {{name}}",
   "preset.spotifyKeyNeedsLogin": "保存しました。このキーはまだ再生できません。このスピーカーが Spotify で一度も選ばれていません。Spotify を開き、末尾が (STR) のこのスピーカーの項目を選んで曲を再生してください。無料の Spotify アカウントではその項目を選べません。",
   "preset.spotifyKeyNeedsPremium": "保存しました。このキーは再生できません。このスピーカーの Spotify アカウントは無料版で、Spotify のキーには Spotify Premium が必要です。",
+  "preset.spotifyKeyPlanUnknown": "保存しました。このスピーカーの Spotify プランを STR は今確認できませんでした。Spotify のキーには Spotify Premium が必要です。Premium であればキーは再生されます。",
   "preset.alreadyOnKey": "この局はすでにキー {{n}} に登録されています。",
   "preset.alreadyOnKeyNamed": "「{{name}}」はすでにキー {{n}} にあります。保存したいものを先にスピーカーで再生してから保存してください。",
   "preset.moveTitle": "この局はすでに別のキーに登録されています",

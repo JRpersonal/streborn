@@ -391,6 +391,7 @@
   "preset.savedToKey": "{{n}} tuşuna kaydedildi: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Kaydedildi. Tuş henüz çalmaz: bu hoparlör Spotify'da bir kez bile seçilmemiş. Spotify'ı aç, sonu (STR) ile biten bu hoparlörün kaydını seç ve bir parça çal. Ücretsiz bir Spotify hesabıyla bu kayıt seçilemez.",
   "preset.spotifyKeyNeedsPremium": "Kaydedildi. Tuş çalmaz: bu hoparlördeki Spotify hesabı ücretsiz, Spotify tuşu için Spotify Premium gerekir.",
+  "preset.spotifyKeyPlanUnknown": "Kaydedildi. STR bu hoparlördeki Spotify planını şu anda kontrol edemedi. Spotify tuşları Spotify Premium gerektirir; Premium ile tuş çalar.",
   "preset.alreadyOnKey": "Bu istasyon zaten {{n}} tuşunda kayıtlı.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" zaten {{n}} numaralı tuşta. Önce kaydetmek istediğini hoparlörde başlat, sonra kaydet.",
   "preset.moveTitle": "Bu istasyon zaten başka bir tuşta",

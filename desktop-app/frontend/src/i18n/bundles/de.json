@@ -420,6 +420,7 @@
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Gespeichert. Die Taste spielt noch nicht: dieser Lautsprecher wurde in Spotify noch nicht einmal ausgewählt. Öffne Spotify, wähl den Eintrag für diesen Lautsprecher mit (STR) am Ende und spiel einen Titel. Mit einem kostenlosen Spotify-Konto lässt sich dieser Eintrag nicht auswählen.",
   "preset.spotifyKeyNeedsPremium": "Gespeichert. Die Taste spielt nicht: das Spotify-Konto auf diesem Lautsprecher ist kostenlos, und für eine Spotify-Taste braucht es Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Gespeichert. STR konnte das Spotify-Abo auf diesem Lautsprecher gerade nicht prüfen. Spotify-Tasten brauchen Spotify Premium; mit Premium spielt die Taste.",
   "preset.alreadyOnKey": "Dieser Sender liegt schon auf Taste {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" liegt schon auf Taste {{n}}. Starte erst das, was du speichern willst, auf dem Lautsprecher, dann sichere es.",
   "preset.moveTitle": "Dieser Sender liegt schon auf einer anderen Taste",

@@ -23,9 +23,10 @@ const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const KEY = 'preset.spotifyKeyNeedsLogin';
 const PREMIUM = 'preset.spotifyKeyNeedsPremium';
+const PLAN = 'preset.spotifyKeyPlanUnknown';
 
 const save = src.slice(src.indexOf('async function saveCurrentToSlot'),
-  src.indexOf('async function saveCurrentToSlot') + 8000);
+  src.indexOf('async function saveCurrentToSlot') + 10000);
 const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`), 'utf8'));
 
 // The gate as the save path applies it, lifted out of main.js so the order of the
@@ -33,11 +34,11 @@ const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`)
 const at = main.indexOf('      // Same order the speaker applies when the key is pressed');
 const gate = main.slice(at, main.indexOf('      // Which notice was shown', at));
 
-function decide(canRecall, premiumRequired) {
+function decide(canRecall, premiumRequired, planKnown) {
   let shown = null;
   // eslint-disable-next-line no-new-func
-  new Function('canRecall', 'premiumRequired', 'showToast', 't', `${gate}\nreturn notice;`)(
-    canRecall, premiumRequired, (msg) => { shown = msg; }, (k) => k,
+  new Function('canRecall', 'premiumRequired', 'planKnown', 'showToast', 't', `${gate}\nreturn notice;`)(
+    canRecall, premiumRequired, planKnown, (msg) => { shown = msg; }, (k) => k,
   );
   return shown;
 }
@@ -54,6 +55,20 @@ describe('saving a Spotify key that cannot play', () => {
 
   it('stays quiet when the speaker can recall', () => {
     expect(decide(true, false)).toBeNull();
+  });
+
+  it('hints softly when the speaker could not read the plan (#1314)', () => {
+    // premiumRequired false with no plan is Premium OR an unanswered question
+    // (Spotify answering 429). A free account would make the key silent, so
+    // the save says the plan went unchecked and what the key needs.
+    expect(decide(true, false, false)).toBe(PLAN);
+    expect(decide(true, false, true)).toBeNull();
+    // The login notice and the free-account notice still win.
+    expect(decide(false, false, false)).toBe(KEY);
+    expect(decide(true, true, false)).toBe(PREMIUM);
+    // An unreadable speaker stays silent, as every other gate does.
+    expect(decide(true, false, undefined)).toBeNull();
+    expect(decide(undefined, undefined, undefined)).toBeNull();
   });
 
   it('stays quiet when the speaker is too old to say', () => {
@@ -98,6 +113,8 @@ describe('the wording claims only what STR can see', () => {
       expect(b[PREMIUM], `${lang} is missing ${PREMIUM}`).toBeTruthy();
       expect(b[KEY], `${lang} does not name the (STR) entry`).toContain('(STR)');
       expect(b[PREMIUM], `${lang} does not name Premium`).toMatch(/Premium/);
+      expect(b[PLAN], `${lang} is missing ${PLAN}`).toBeTruthy();
+      expect(b[PLAN], `${lang} does not name Premium`).toMatch(/Premium/);
     }
   });
 

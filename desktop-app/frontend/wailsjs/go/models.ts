@@ -886,11 +886,12 @@ export namespace main {
 	    premiumRequired: boolean;
 	    audioKeyRefused: boolean;
 	    canRecall?: boolean;
-	
+	    product: string;
+
 	    static createFrom(source: any = {}) {
 	        return new SpotifyNow(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bitrate = source["bitrate"];
@@ -902,6 +903,7 @@ export namespace main {
 	        this.premiumRequired = source["premiumRequired"];
 	        this.audioKeyRefused = source["audioKeyRefused"];
 	        this.canRecall = source["canRecall"];
+	        this.product = source["product"];
 	    }
 	}
 	export class SpotifyQualityState {

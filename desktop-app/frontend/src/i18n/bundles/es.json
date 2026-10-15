@@ -391,6 +391,7 @@
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Guardado. La tecla aún no suena: este altavoz no se ha elegido ni una vez en Spotify. Abre Spotify, elige la entrada de este altavoz que termina en (STR) y reproduce una canción. Una cuenta de Spotify gratuita no puede elegir esa entrada.",
   "preset.spotifyKeyNeedsPremium": "Guardado. La tecla no sonará: la cuenta de Spotify en este altavoz es gratuita, y una tecla de Spotify necesita Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Guardado. STR no ha podido comprobar ahora mismo el plan de Spotify de este altavoz. Las teclas de Spotify necesitan Spotify Premium; con Premium la tecla funcionará.",
   "preset.alreadyOnKey": "Esta emisora ya está en la tecla {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" ya está en la tecla {{n}}. Pon primero en el altavoz lo que quieras guardar y guárdalo entonces.",
   "preset.moveTitle": "Esta emisora ya está en otra tecla",

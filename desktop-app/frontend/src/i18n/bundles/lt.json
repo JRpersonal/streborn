@@ -391,6 +391,7 @@
   "preset.savedToKey": "Išsaugota mygtuke {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Išsaugota. Klavišas dar negros: ši kolonėlė nė karto nebuvo pasirinkta Spotify. Atidaryk Spotify, pasirink šios kolonėlės įrašą, kuris baigiasi (STR), ir paleisk kokį nors kūrinį. Su nemokama Spotify paskyra to įrašo pasirinkti negalima.",
   "preset.spotifyKeyNeedsPremium": "Išsaugota. Klavišas negros: Spotify paskyra šioje kolonėlėje yra nemokama, o Spotify klavišui reikia Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Išsaugota. STR šiuo metu nepavyko patikrinti šios kolonėlės Spotify plano. Spotify mygtukams reikia Spotify Premium; su Premium mygtukas gros.",
   "preset.alreadyOnKey": "Ši stotis jau priskirta klavišui {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" jau yra ties mygtuku {{n}}. Pirma paleisk kolonėlėje tai, ką nori išsaugoti, tada saugok.",
   "preset.moveTitle": "Ši stotis jau priskirta kitam klavišui",

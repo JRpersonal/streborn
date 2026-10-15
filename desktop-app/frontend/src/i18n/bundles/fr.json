@@ -391,6 +391,7 @@
   "preset.savedToKey": "Enregistré sur la touche {{n}} : {{name}}",
   "preset.spotifyKeyNeedsLogin": "Enregistré. La touche ne joue pas encore : cette enceinte n'a pas encore été choisie une fois dans Spotify. Ouvre Spotify, choisis l'entrée de cette enceinte qui se termine par (STR) et lis un titre. Un compte Spotify gratuit ne peut pas choisir cette entrée.",
   "preset.spotifyKeyNeedsPremium": "Enregistré. La touche ne jouera pas : le compte Spotify de cette enceinte est gratuit, et une touche Spotify demande Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Enregistré. STR n'a pas pu vérifier pour l'instant l'abonnement Spotify de cette enceinte. Les touches Spotify nécessitent Spotify Premium ; avec Premium, la touche fonctionnera.",
   "preset.alreadyOnKey": "Cette station est déjà sur la touche {{n}}.",
   "preset.alreadyOnKeyNamed": "« {{name}} » est déjà sur la touche {{n}}. Lancez d’abord sur l’enceinte ce que vous voulez enregistrer, puis enregistrez-le.",
   "preset.moveTitle": "Cette station est déjà sur une autre touche",

@@ -391,6 +391,7 @@
   "preset.savedToKey": "حُفظ في الزر {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "تم الحفظ. المفتاح لن يعمل بعد: لم يتم اختيار هذا السماعة في Spotify ولا مرة. افتح Spotify، اختر مدخل هذه السماعة المنتهي بـ (STR) وشغّل أي أغنية. حساب Spotify المجاني لا يمكنه اختيار هذا المدخل.",
   "preset.spotifyKeyNeedsPremium": "تم الحفظ. المفتاح لن يعمل: حساب Spotify على هذه السماعة مجاني، ومفتاح Spotify يحتاج إلى Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "تم الحفظ. لم يتمكن STR الآن من التحقق من خطة Spotify على مكبر الصوت هذا. تحتاج أزرار Spotify إلى Spotify Premium؛ مع Premium سيعمل الزر.",
   "preset.alreadyOnKey": "هذه المحطة موجودة بالفعل على الزر {{n}}.",
   "preset.alreadyOnKeyNamed": "«{{name}}» موجود بالفعل على الزر {{n}}. شغّل أولًا ما تريد حفظه على السماعة، ثم احفظه.",
   "preset.moveTitle": "هذه المحطة موجودة بالفعل على زر آخر",

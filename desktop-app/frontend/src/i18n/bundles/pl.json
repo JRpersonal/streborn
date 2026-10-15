@@ -391,6 +391,7 @@
   "preset.savedToKey": "Zapisano na przycisku {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Zapisano. Przycisk jeszcze nie zagra: tego głośnika nie wybrano ani raz w Spotify. Otwórz Spotify, wybierz pozycję tego głośnika zakończoną (STR) i odtwórz utwór. Na darmowym koncie Spotify tej pozycji nie da się wybrać.",
   "preset.spotifyKeyNeedsPremium": "Zapisano. Przycisk nie zagra: konto Spotify na tym głośniku jest darmowe, a przycisk Spotify wymaga Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Zapisano. STR nie mógł teraz sprawdzić planu Spotify na tym głośniku. Przyciski Spotify wymagają Spotify Premium; z Premium przycisk zagra.",
   "preset.alreadyOnKey": "Ta stacja jest już przypisana do przycisku {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" jest już na przycisku {{n}}. Najpierw włącz na głośniku to, co chcesz zapisać, a potem zapisz.",
   "preset.moveTitle": "Ta stacja jest już na innym przycisku",

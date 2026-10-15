@@ -391,6 +391,7 @@
   "preset.savedToKey": "Збережено на кнопку {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Збережено. Кнопка ще не грає: цю колонку ні разу не вибрали в Spotify. Відкрий Spotify, вибери запис цієї колонки, що закінчується на (STR), і запусти будь-який трек. З безкоштовним акаунтом Spotify цей запис вибрати не можна.",
   "preset.spotifyKeyNeedsPremium": "Збережено. Кнопка не грає: акаунт Spotify на цій колонці безкоштовний, а кнопка Spotify потребує Spotify Premium.",
+  "preset.spotifyKeyPlanUnknown": "Збережено. STR зараз не зміг перевірити тариф Spotify на цій колонці. Кнопкам Spotify потрібен Spotify Premium; з Premium кнопка гратиме.",
   "preset.alreadyOnKey": "Ця станція вже призначена на клавішу {{n}}.",
   "preset.alreadyOnKeyNamed": "\"{{name}}\" вже на кнопці {{n}}. Спершу увімкніть на колонці те, що хочете зберегти, а тоді збережіть.",
   "preset.moveTitle": "Ця станція вже на іншій кнопці",
