@@ -366,6 +366,23 @@ func (s *Server) stopQueue(why string) {
 	s.recentClearQueueCard()
 }
 
+// StopQueueForSpotify ends a running library queue because the Spotify app
+// just pointed the speaker at the Spotify stream. A no-op without a queue.
+//
+// Every other way off a queue (another preset, a single track, stop, standby)
+// already ended it; the Spotify app takeover did not, so the queue watcher kept
+// timing the library track underneath Spotify and, once that track's length
+// had passed, its wall-clock net pushed the next library track over the
+// Spotify music. Meanwhile the app kept showing the folder key as playing
+// (#1301: "queue advance ... net=wall-clock" right after the Spotify stream
+// dropped, with the queue's card still active).
+func (s *Server) StopQueueForSpotify() {
+	if s.queue == nil || !s.queue.isActive() {
+		return
+	}
+	s.stopQueue("the Spotify app took over the speaker")
+}
+
 // advanceAndPlay moves to the next track (natural end vs manual skip differ on
 // repeatOne) and plays it, or stops the queue at the end. The caller must NOT
 // hold boxCmdMu. gen is the queue generation the advance decision was based
