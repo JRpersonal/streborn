@@ -57,7 +57,7 @@ describe('storedNetworksView', () => {
 
 describe('forgetRefusalKey', () => {
   it('knows every agent code', () => {
-    for (const c of ['not-associated', 'ethernet', 'target-mismatch', 'keep-not-stored', 'would-empty', 'chassis-unsupported']) {
+    for (const c of ['not-associated', 'ethernet', 'target-mismatch', 'on-hotspot', 'keep-not-stored', 'would-empty', 'chassis-unsupported']) {
       expect(forgetRefusalKey(c)).not.toBe('');
     }
     expect(forgetRefusalKey('something-new')).toBe('');

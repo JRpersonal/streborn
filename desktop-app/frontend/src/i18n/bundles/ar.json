@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "السمّاعة غير متصلة بأي شبكة Wi-Fi الآن، لذلك لا يعرف STR أي شبكة يجب الاحتفاظ بها.",
   "settingsView.wlanForgetRefused.ethernet": "السمّاعة متصلة بكابل شبكة. لا يمكن نسيان شبكات Wi-Fi إلا أثناء اتصالها عبر Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "السمّاعة على شبكة مختلفة عن التي أعدّها STR لها. غيّر Wi-Fi في الأعلى أولًا ثم حاول مرة أخرى.",
+  "settingsView.wlanForgetRefused.onHotspot": "السمّاعة متصلة الآن بنقطة اتصال عامة أو بشبكة مفتوحة. الإبقاء عليها سيحذف شبكتك الخاصة، لذلك لا يغيّر STR القائمة. أعِد السمّاعة إلى شبكتك عبر تغيير Wi-Fi في الأعلى ثم حاول مرة أخرى.",
   "settingsView.wlanForgetRefused.keepNotStored": "قائمة الشبكات الخاصة بالسمّاعة لا تحتوي على الشبكة الحالية، لذلك يترك STR القائمة كما هي.",
   "settingsView.wlanForgetRefused.chassis": "لا يستطيع STR بعد إزالة شبكة محفوظة واحدة على طراز هذه السمّاعة. لا تنتقل السمّاعة إلى شبكة محفوظة أخرى إلا إذا تعذّر الوصول إلى شبكتها الحالية، لذا تبقى على شبكتك ما دامت متاحة.",
   "settingsView.wlanForgetFailed": "تعذّر على STR نسيان الشبكات: {{reason}}",

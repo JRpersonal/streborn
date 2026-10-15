@@ -45,11 +45,57 @@ func TestPlanWLANForget_RefusesWhenTargetAndLiveDisagree(t *testing.T) {
 	in.LiveSSID = "Vodafone Homespot" // the speaker fell back to the hotspot
 	in.Target = "HomeNet"
 	p := planWLANForget(in, "")
-	if p.Code != forgetMismatch {
-		t.Fatalf("code = %q, want %q (keeping the hotspot would forget the home network)", p.Code, forgetMismatch)
+	if p.Code != forgetOnHotspot {
+		t.Fatalf("code = %q, want %q (keeping the hotspot would forget the home network)", p.Code, forgetOnHotspot)
 	}
 	if len(p.Remove) != 0 {
 		t.Fatalf("a refusal must not carry anything to remove: %v", p.Remove)
+	}
+	// A plain mismatch between two private networks keeps its own refusal.
+	in.LiveSSID = "OldNet"
+	if p := planWLANForget(in, ""); p.Code != forgetMismatch {
+		t.Fatalf("code = %q, want %q", p.Code, forgetMismatch)
+	}
+}
+
+// Support case 2026-10-15: a speaker on a public hotspot, with no STR target
+// to compare against. Keeping "the current network" would keep the hotspot and
+// delete the home network, so nothing may be removed but other hotspots.
+func TestPlanWLANForget_NeverKeepsAHotspotOverTheHomeNetwork(t *testing.T) {
+	in := fieldInputs()
+	in.LiveSSID = "Vodafone Homespot"
+	if p := planWLANForget(in, ""); p.Code != forgetOnHotspot || len(p.Remove) != 0 {
+		t.Fatalf("plan = %+v, want %q", p, forgetOnHotspot)
+	}
+	// Deleting the home network by name while on the hotspot: refused too.
+	if p := planWLANForget(in, "HomeNet"); p.Code != forgetOnHotspot {
+		t.Fatalf("delete-one of a keyed network on a hotspot: code = %q, want %q", p.Code, forgetOnHotspot)
+	}
+
+	// An open network the speaker happens to be on counts as a hotspot.
+	in = fieldInputs()
+	in.Firmware = append(in.Firmware, "CafeFree")
+	in.LiveSSID = "CafeFree"
+	in.Open = map[string]bool{"CafeFree": true}
+	if p := planWLANForget(in, ""); p.Code != forgetOnHotspot {
+		t.Fatalf("open live network: code = %q, want %q", p.Code, forgetOnHotspot)
+	}
+	// Removing another hotspot while on an open network is fine.
+	if p := planWLANForget(in, "Vodafone Homespot"); p.Code != "" || !reflect.DeepEqual(p.Remove, []string{"Vodafone Homespot"}) {
+		t.Fatalf("plan = %+v, want the other hotspot removed", p)
+	}
+
+	// An open network STR itself gave the speaker is the owner's choice.
+	in.Target = "CafeFree"
+	if p := planWLANForget(in, ""); p.Code != "" || p.Keep != "CafeFree" {
+		t.Fatalf("plan = %+v, want the STR-set open network kept", p)
+	}
+	// A public hotspot is refused even when STR set it.
+	in = fieldInputs()
+	in.LiveSSID = "Vodafone Homespot"
+	in.Target = "Vodafone Homespot"
+	if p := planWLANForget(in, ""); p.Code != forgetOnHotspot {
+		t.Fatalf("STR-set public hotspot: code = %q, want %q", p.Code, forgetOnHotspot)
 	}
 }
 

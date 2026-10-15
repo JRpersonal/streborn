@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "Garsiakalbis šiuo metu neprisijungęs prie jokio Wi-Fi tinklo, todėl STR nežino, kurį tinklą palikti.",
   "settingsView.wlanForgetRefused.ethernet": "Garsiakalbis prijungtas tinklo kabeliu. Pamiršti Wi-Fi tinklus galima tik kai jis Wi-Fi tinkle.",
   "settingsView.wlanForgetRefused.mismatch": "Garsiakalbis yra kitame tinkle nei tas, kurį jam nustatė STR. Pirmiausia pakeisk Wi-Fi aukščiau ir bandyk dar kartą.",
+  "settingsView.wlanForgetRefused.onHotspot": "Garsiakalbis šiuo metu prijungtas prie viešo prieigos taško arba atviro tinklo. Jį palikus būtų ištrintas tavo paties tinklas, todėl STR sąrašo neliečia. Grąžink garsiakalbį į savo tinklą per Wi-Fi keitimą aukščiau ir bandyk dar kartą.",
   "settingsView.wlanForgetRefused.keepNotStored": "Garsiakalbio tinklų sąraše nėra dabartinio tinklo, todėl STR sąrašo neliečia.",
   "settingsView.wlanForgetRefused.chassis": "Šiame garsiakalbio modelyje STR kol kas negali pašalinti atskirų išsaugotų tinklų. Garsiakalbis pereina į kitą išsaugotą tinklą tik tada, kai dabartinis nepasiekiamas, todėl lieka jūsų tinkle, kol jis veikia.",
   "settingsView.wlanForgetFailed": "STR nepavyko pamiršti tinklų: {{reason}}",

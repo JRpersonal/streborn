@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "El altavoz no está conectado a ninguna red Wi-Fi ahora mismo, así que STR no sabe qué red conservar.",
   "settingsView.wlanForgetRefused.ethernet": "El altavoz está conectado por cable. Olvidar redes Wi-Fi solo funciona mientras está en Wi-Fi.",
   "settingsView.wlanForgetRefused.mismatch": "El altavoz está en otra red distinta de la que STR le configuró. Cambia primero la Wi-Fi arriba y vuelve a intentarlo.",
+  "settingsView.wlanForgetRefused.onHotspot": "El altavoz está ahora en un punto de acceso público o en una red abierta. Conservar esa red borraría la tuya, así que STR no toca la lista. Vuelve a poner el altavoz en tu red con el cambio de Wi-Fi de arriba y vuelve a intentarlo.",
   "settingsView.wlanForgetRefused.keepNotStored": "La lista de redes propia del altavoz no contiene la red actual, así que STR no la toca.",
   "settingsView.wlanForgetRefused.chassis": "STR aún no puede eliminar redes guardadas individuales en este modelo de altavoz. El altavoz solo cambia a otra red guardada cuando no puede alcanzar la actual, así que se queda en tu red mientras esté disponible.",
   "settingsView.wlanForgetFailed": "STR no pudo olvidar las redes: {{reason}}",

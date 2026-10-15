@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/internet"
@@ -61,7 +62,8 @@ func plausible(t time.Time) bool { return t.After(minPlausible) && t.Before(maxP
 // Date header. It only accepts a plausible value.
 //
 // Every attempt also feeds the internet reachability verdict (internal/internet)
-// at no extra cost: any HTTP answer proves the box reaches the internet, and
+// at no extra cost: an HTTP answer that looks genuine (genuineAnswer, so not a
+// captive portal) proves the box reaches the internet, and
 // every host failing, the IP literals included, is the strongest evidence the
 // agent ever gets that it does not (2026-10-14 field case: DNS SERVFAIL for the
 // names, timeouts for the IP literals, clock stuck in 2015 for an hour, and
@@ -96,9 +98,14 @@ func fetchNetworkTime(ctx context.Context, client *http.Client, hosts []string) 
 			}
 			continue
 		}
-		// Any HTTP answer from the internet counts, usable Date header or not.
+		// Any HTTP answer at all means this attempt is no evidence of a dead
+		// internet. Only an answer that looks like it came from the host asked
+		// is evidence of a working one: a captive portal (an open hotspot's
+		// login page) answers too, so it must not read as "internet ok".
 		answered = true
-		internet.ReportSuccess("clocksync")
+		if genuineAnswer(req, resp) {
+			internet.ReportSuccess("clocksync")
+		}
 		dateHdr := resp.Header.Get("Date")
 		_ = resp.Body.Close()
 		if dateHdr == "" {
@@ -117,6 +124,40 @@ func fetchNetworkTime(ctx context.Context, client *http.Client, hosts []string) 
 		return t, nil
 	}
 	return time.Time{}, lastErr
+}
+
+// genuineAnswer reports whether resp looks like the real answer of the host
+// req asked, and so proves the speaker reaches the internet. Support case
+// 2026-10-15: speakers on a Vodafone Homespot get an HTTP answer from the
+// hotspot's login page for every plain HTTP request, which used to read as
+// "internet ok" while radio was dead.
+//
+// Rejected: 511 Network Authentication Required (RFC 6585, the captive portal
+// status), an answer that ended on (or points to) a different host than the
+// one asked, and an answer without a Date header (every real web server sends
+// one). A 204 No Content is the generate_204 style connectivity check answer a
+// portal never gives, so it always counts. A portal that intercepts the
+// request in place, same host and no redirect, cannot be told apart from a
+// HEAD answer; that remains a known blind spot.
+func genuineAnswer(req *http.Request, resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return true
+	case http.StatusNetworkAuthenticationRequired:
+		return false
+	}
+	asked := strings.ToLower(req.URL.Host)
+	// resp.Request is the last request of a followed redirect chain.
+	if resp.Request != nil && resp.Request.URL != nil && strings.ToLower(resp.Request.URL.Host) != asked {
+		return false
+	}
+	// A redirect the client did not follow: judge where it points.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		if loc, err := resp.Location(); err == nil && strings.ToLower(loc.Host) != asked {
+			return false
+		}
+	}
+	return resp.Header.Get("Date") != ""
 }
 
 // RunUntilSynced keeps correcting an implausibly old system clock from a network

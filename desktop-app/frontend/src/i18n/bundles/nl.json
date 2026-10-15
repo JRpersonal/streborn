@@ -903,6 +903,7 @@
   "settingsView.wlanForgetRefused.notAssociated": "De speaker is nu met geen enkel wifi-netwerk verbonden, dus STR weet niet welk netwerk moet blijven.",
   "settingsView.wlanForgetRefused.ethernet": "De speaker hangt aan een netwerkkabel. Wifi-netwerken vergeten werkt alleen zolang hij op wifi zit.",
   "settingsView.wlanForgetRefused.mismatch": "De speaker zit op een ander netwerk dan het netwerk dat STR voor hem heeft ingesteld. Wissel eerst hierboven van wifi en probeer het dan opnieuw.",
+  "settingsView.wlanForgetRefused.onHotspot": "De speaker zit nu op een openbare hotspot of een open netwerk. Als STR dat zou bewaren, verdwijnt je eigen netwerk, dus STR laat de lijst met rust. Zet de speaker hierboven via de wifi-wissel terug op je eigen netwerk en probeer het dan opnieuw.",
   "settingsView.wlanForgetRefused.keepNotStored": "De eigen netwerklijst van de speaker bevat het huidige netwerk niet, dus STR laat de lijst met rust.",
   "settingsView.wlanForgetRefused.chassis": "STR kan op dit speakermodel nog geen losse opgeslagen netwerken verwijderen. De speaker stapt alleen over op een ander opgeslagen netwerk als het huidige onbereikbaar is, dus hij blijft op je netwerk zolang dat beschikbaar is.",
   "settingsView.wlanForgetFailed": "STR kon de netwerken niet vergeten: {{reason}}",
