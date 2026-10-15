@@ -163,6 +163,14 @@ type App struct {
 	// app run. Value "" means "no real logo, draw a monogram".
 	logoMu    sync.Mutex
 	logoCache map[string]string
+	// lanArtMiss holds, per ResolveStationLogo key, until when a media-server
+	// cover that failed to load is answered "" without asking the server
+	// again (lanArtMissTTL). Guarded by logoMu.
+	lanArtMiss map[string]time.Time
+
+	// lanArtLog remembers which media-server covers already logged their
+	// failure, so a broken cover is explained once, not on every redraw.
+	lanArtLog lanArtLogged
 }
 
 // NewApp creates a new App instance.

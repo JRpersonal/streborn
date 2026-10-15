@@ -25,7 +25,8 @@ import (
 // <img> error handler, so a pure-frontend cascade cannot tell a real
 // icon from the placeholder and the grey chevron wins. Here, in Go, we
 // can read the HTTP status: 200 means a real icon, 404 means placeholder
-// (skip it). Results are cached per (favicon, hosts) for the app run.
+// (skip it). Results are cached per (favicon, hosts) for the app run, except a
+// media-server cover that failed: that miss is kept only for lanArtMissTTL.
 func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []string) string {
 	key := faviconURL + "\x1f" + brandHost + "\x1f" + strings.Join(hosts, ",")
 	a.logoMu.Lock()
@@ -35,6 +36,13 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 	if v, ok := a.logoCache[key]; ok {
 		a.logoMu.Unlock()
 		return v
+	}
+	if until, ok := a.lanArtMiss[key]; ok {
+		if time.Now().Before(until) {
+			a.logoMu.Unlock()
+			return ""
+		}
+		delete(a.lanArtMiss, key)
 	}
 	a.logoMu.Unlock()
 
@@ -81,6 +89,20 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 		}
 	}
 
+	// A media server's cover that did not come back is remembered only
+	// briefly: one timeout or a server still waking up otherwise left the key
+	// on its letter tile until the app restarted (#1301). The short miss keeps
+	// tile redraws from refetching a cover that is really broken; the reason
+	// is logged once per URL by lanArtDataURI.
+	if best == "" && isLANArtURL(faviconURL) {
+		a.logoMu.Lock()
+		if a.lanArtMiss == nil {
+			a.lanArtMiss = map[string]time.Time{}
+		}
+		a.lanArtMiss[key] = time.Now().Add(lanArtMissTTL)
+		a.logoMu.Unlock()
+		return best
+	}
 	a.logoMu.Lock()
 	a.logoCache[key] = best
 	a.logoMu.Unlock()
