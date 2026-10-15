@@ -1034,6 +1034,20 @@ export namespace main {
 	        this.stream_type = source["stream_type"];
 	    }
 	}
+	export class StreamTitleState {
+	    title: string;
+	    swapped: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamTitleState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.swapped = source["swapped"];
+	    }
+	}
 	export class StreamURLKind {
 	    kind: string;
 	    contentType: string;

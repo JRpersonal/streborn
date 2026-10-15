@@ -658,6 +658,10 @@ export function SetStereoPairName(arg1, arg2) {
   return window['go']['main']['App']['SetStereoPairName'](arg1, arg2);
 }
 
+export function SetStreamTitleSwap(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetStreamTitleSwap'](arg1, arg2, arg3);
+}
+
 export function SetUSServicesOptIn(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetUSServicesOptIn'](arg1, arg2, arg3);
 }
@@ -712,6 +716,10 @@ export function StreamSourceStations(arg1) {
 
 export function StreamTitle(arg1, arg2) {
   return window['go']['main']['App']['StreamTitle'](arg1, arg2);
+}
+
+export function StreamTitleInfo(arg1, arg2) {
+  return window['go']['main']['App']['StreamTitleInfo'](arg1, arg2);
 }
 
 export function SuggestBoxLanguage(arg1, arg2) {

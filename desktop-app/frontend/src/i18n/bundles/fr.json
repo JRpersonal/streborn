@@ -360,6 +360,7 @@
   "status.artistLabel": "Artiste",
   "status.podcastLabel": "Podcast",
   "status.stationLabel": "Station",
+  "status.titleSwap": "Sur cette station, l'artiste et le titre sont inversés",
   "queue.trackOf": "Piste {{n}} sur {{total}}",
   "battery.label": "Batterie",
   "battery.onPower": "branchée",

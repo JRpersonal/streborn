@@ -135,6 +135,13 @@ type Server struct {
 	titleMu     sync.Mutex
 	curTitle    string
 	curTitleURL string
+	// curRawTitle is curTitle as the station sent it, before a per-station
+	// artist/title swap (titleswap.go), so flipping the flag can re-derive
+	// the live title at once.
+	curRawTitle string
+	// swap is the per-station "artist and title are the wrong way round"
+	// flag store (titleswap.go).
+	swap titleSwapStore
 	// titleGens counts handler starts per stream URL so a handler that ends
 	// can tell whether a successor already took the same stream over (see
 	// clearTitleOnEnd; the wipe is delayed and cancelled by a takeover).

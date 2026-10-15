@@ -360,6 +360,7 @@
   "status.artistLabel": "Виконавець",
   "status.podcastLabel": "Подкаст",
   "status.stationLabel": "Станція",
+  "status.titleSwap": "На цій станції виконавця й назву переплутано місцями",
   "queue.trackOf": "Трек {{n}} з {{total}}",
   "battery.label": "Батарея",
   "battery.onPower": "підключено до мережі",

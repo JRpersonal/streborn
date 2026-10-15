@@ -386,6 +386,7 @@
   "status.artistLabel": "演出者",
   "status.podcastLabel": "Podcast",
   "status.stationLabel": "電台",
+  "status.titleSwap": "此電台的歌手與歌名顛倒了",
   "queue.trackOf": "第 {{n}} 首，共 {{total}} 首",
   "battery.label": "電池",
   "battery.onPower": "接著電源",

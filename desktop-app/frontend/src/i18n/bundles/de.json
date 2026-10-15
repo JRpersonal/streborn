@@ -386,6 +386,7 @@
   "status.artistLabel": "Künstler",
   "status.podcastLabel": "Podcast",
   "status.stationLabel": "Radiosender",
+  "status.titleSwap": "Interpret und Titel sind bei diesem Sender vertauscht",
   "queue.trackOf": "Titel {{n}} von {{total}}",
   "battery.label": "Akku",
   "battery.onPower": "am Netz",

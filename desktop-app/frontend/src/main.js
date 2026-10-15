@@ -22,6 +22,7 @@ import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText } from './nointernet.js';
 import { speakerReachedTarget, waitForStableAgent } from './agentsettle.js';
 import { applyPositionReading, resetProgress, wantsFastPoll } from './trackprogress.js';
+import { titleSwapOffered } from './titleswap.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -117,7 +118,8 @@ import {
   SaveWebhookConfig,
   TestWebhook,
   StreamBitrate,
-  StreamTitle,
+  StreamTitleInfo,
+  SetStreamTitleSwap,
   SpotifyBitrate,
   SpotifyNowPlaying,
   LogSpotifySaveGate,
@@ -1720,6 +1722,7 @@ $('view-box').innerHTML = `
         <span class="track-time" id="trackTotal"></span>
       </div>
     </div>
+    <label class="title-swap-row hidden" id="titleSwapRow"><input type="checkbox" id="titleSwapToggle"> <span>${escapeHtml(t('status.titleSwap'))}</span></label>
     <div class="group-control" id="groupControl"></div>
     <div class="controls">
       <button class="btn btn-mini hidden" id="trackPrevBtn" title="${escapeAttr(t('controls.prev'))}" aria-label="${escapeAttr(t('controls.prev'))}">&#9198;</button>
@@ -1865,6 +1868,24 @@ if (gsd) gsd.onclick = () => {
 // stopped: nothing happened and there was no way back to the music. Same fault,
 // same fix as the phone remote.
 $('pauseBtn').onclick = () => action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
+// "Artist and title are the wrong way round for this station": the agent keeps
+// the flag per station and answers with the corrected live title, so the line
+// above flips at once instead of with the next song.
+$('titleSwapToggle').onchange = async (e) => {
+  const box = state.currentBox;
+  if (!box) return;
+  const want = !!e.target.checked;
+  try {
+    const title = await SetStreamTitleSwap(box.host, box.port, want);
+    if (state.currentBox !== box) return;
+    state.nowTitleSwapped = want;
+    if (title) state.nowTitle = title;
+  } catch (err) {
+    e.target.checked = !want;
+    showError(err);
+  }
+  renderNowPlayingBar();
+};
 
 // stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
 // is deliberately excluded: nothing is loaded there, so Play would promise
@@ -7881,10 +7902,16 @@ function scheduleLiveTitle() {
     const isRadio = proxiedRadioPlaying(loc);
     if (isRadio) {
       let title = '';
-      try { title = (await StreamTitle(box.host, box.port)) || ''; } catch {}
+      let swapped = false;
+      try {
+        const info = await StreamTitleInfo(box.host, box.port);
+        title = (info && info.title) || '';
+        swapped = !!(info && info.swapped);
+      } catch {}
       if (state.currentBox !== box) { liveTitleActive = false; return; }
-      if (title !== state.nowTitle) {
+      if (title !== state.nowTitle || swapped !== !!state.nowTitleSwapped) {
         state.nowTitle = title;
+        state.nowTitleSwapped = swapped;
         // Only the status line. The preset grid is NOT rebuilt here any more:
         // since the keys stopped showing the live title (2026-08-23) a rebuild
         // would re-create six <img class="preset-logo"> every 12 s for a value
@@ -8064,6 +8091,15 @@ function renderNowPlayingBar() {
     // one: fixing only the poll would fetch a title that this line then refused
     // to print (#922).
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
+  }
+  // The per-station "artist and title are the wrong way round" switch, only
+  // while a proxied station plays a two-part title (titleswap.js).
+  const swapRow = $('titleSwapRow');
+  if (swapRow) {
+    const offered = !song && titleSwapOffered(proxiedRadioPlaying(loc), state.nowTitle);
+    swapRow.classList.toggle('hidden', !offered);
+    const box = $('titleSwapToggle');
+    if (box && offered) box.checked = !!state.nowTitleSwapped;
   }
   // Match the source case-insensitively: the firmware is not consistent about
   // casing across models, and AirPlay in particular can read as AIRPLAY,
