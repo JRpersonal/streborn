@@ -414,7 +414,7 @@ import {
   bestLogoForStation,
   stationLogoChain,
   monogramDataUri,
-  SPOTIFY_LOGO,
+  spotifyCoverImgTag,
 } from './logos.js';
 
 // First view extracted out of this monolith into its own module (#135). The view
@@ -6008,7 +6008,8 @@ function decodeProxyUrl(loc) {
 // spotifyURIFromContainer lives in utils.js (shared with the preset-save
 // URI decision, spotifySaveContextURI).
 
-// SPOTIFY_LOGO moved to logos.js (shared with the Recently-played view).
+// SPOTIFY_LOGO lives in logos.js (shared with the Recently-played view); the
+// preset grid draws Spotify keys through spotifyCoverImgTag from there.
 
 // presetStateLabel returns the small state line shown on a preset tile: an
 // error, or the now-playing state when this preset is the active one. Keeps the
@@ -6837,10 +6838,14 @@ function renderPresets() {
       // (#696). Unwrap first, and gate + persist on the unwrapped value.
       const adoptIcon = appArtFromBoxArt(state.nowIcon);
       if (p.type === 'spotify') {
-        // Show the Spotify logo so the tile is instantly recognisable as a
-        // Spotify playlist; the account name is shown small under the title.
-        // (Chosen over the album/playlist cover, which changes or lags.)
-        addCands(SPOTIFY_LOGO);
+        // Show the playlist or album cover STORED on the key (the agent fills
+        // p.art from Spotify's oEmbed thumbnail when the key is saved, #1312).
+        // That image is fixed at save time, so it neither changes nor lags
+        // with the track playing, which is why the live now-playing art is
+        // still never adopted here. Unwrapped like any stored art; with no
+        // cover (a key saved before the fill, or oEmbed failed) or one that
+        // does not load, spotifyCoverImgTag keeps the Spotify glyph.
+        addCands(appArtFromBoxArt(p.art));
       } else if (presetOwnArt(p)) {
         // Same unwrap on the STORED art: keys hold-saved by v0.9.56 and older
         // already carry the box-loopback wrapper (the reporter's six keys in
@@ -6865,14 +6870,15 @@ function renderPresets() {
       // chevron, which the icon service serves as a real image on its 404, so
       // a station with no logo anywhere wore the chevron on its key while the
       // search row for the same station correctly fell back to the letter
-      // tile (#696, EPIC CLASSICAL). Spotify keeps its self-contained glyph, a
-      // data URI that needs no resolution. The first DIRECT art candidate is
+      // tile (#696, EPIC CLASSICAL). A Spotify key validates its stored cover
+      // the same way, with the Spotify glyph instead of the monogram as the
+      // immediate src and fallback (spotifyCoverImgTag). The first DIRECT art candidate is
       // handed over as the favicon to validate; icon-service entries stored in
       // older chains are dropped here because the resolver rederives them from
       // the hosts, status-checked.
       let logo;
       if (p.type === 'spotify') {
-        logo = `<img class="preset-logo" alt="" src="${escapeAttr(presetCandidates[0] || SPOTIFY_LOGO)}"/>`;
+        logo = spotifyCoverImgTag(presetCandidates[0], 'preset-logo');
       } else {
         const directArt = presetCandidates.find(
           (c) => /^https?:\/\//i.test(c) && !c.startsWith('https://icons.duckduckgo.com/')

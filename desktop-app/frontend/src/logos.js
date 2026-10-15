@@ -191,6 +191,32 @@ export function stationLogoChain(s) {
 }
 
 // SPOTIFY_LOGO is a self-contained green Spotify glyph (SVG data URI), shown on
-// Spotify presets and Recently-played cards so a Spotify item is instantly
-// recognisable regardless of (and steadier than) the playlist cover.
+// Recently-played cards, and on a Spotify preset key until (or instead of,
+// when it has none or it fails) the cover stored on the key loads.
 export const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
+
+// spotifyCoverImgTag renders a Spotify key's tile image: the playlist or album
+// cover the agent stored on the preset at save time (Spotify's oEmbed
+// thumbnail, filled once and never rewritten, so unlike the live now-playing
+// art it neither changes nor lags), with the Spotify glyph as the immediate
+// src and as the fallback. It rides the same Go-validated hydration as
+// logoImgTag (data-logo-mono is the glyph, data-logo-fav the cover; no hosts
+// and no brand, so the DuckDuckGo and brand-favicon lookups never run for it):
+// the cover replaces the glyph only once ResolveStationLogo has seen it answer
+// with an image, and a cover that still fails to draw drops back to the glyph.
+// Only an http(s) cover is handed over; anything else (empty, a data: URI, a
+// box-local path) keeps the plain glyph, which is what a key saved before the
+// cover was filled shows.
+export function spotifyCoverImgTag(art, cssClass) {
+  const first = String(art || '').split('|').map((c) => c.trim()).find(Boolean) || '';
+  const cover = /^https?:\/\//i.test(first) ? first : '';
+  if (!cover) {
+    return `<img class="${cssClass}" alt="" src="${escapeAttr(SPOTIFY_LOGO)}"/>`;
+  }
+  return `<img class="${cssClass}" alt=""
+            src="${escapeAttr(SPOTIFY_LOGO)}"
+            data-logo-mono="${escapeAttr(SPOTIFY_LOGO)}"
+            data-logo-fav="${escapeAttr(cover)}"
+            data-logo-brand=""
+            data-logo-hosts=""/>`;
+}
