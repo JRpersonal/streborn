@@ -1002,6 +1002,36 @@ export namespace main {
 	        this.foreignDirs = source["foreignDirs"];
 	    }
 	}
+	export class StreamSourcePlayback {
+	    streamURL: string;
+	    title: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamSourcePlayback(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.streamURL = source["streamURL"];
+	        this.title = source["title"];
+	    }
+	}
+	export class StreamSourceStation {
+	    id: string;
+	    name: string;
+	    stream_type?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamSourceStation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.stream_type = source["stream_type"];
+	    }
+	}
 	export class StreamURLKind {
 	    kind: string;
 	    contentType: string;

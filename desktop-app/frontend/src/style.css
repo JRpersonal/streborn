@@ -1009,6 +1009,26 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   color: var(--c-pill-planned);
 }
 
+/* ---------- LAN stream-source tab ---------- */
+.stream-source-embed { margin: 12px 0; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); }
+.stream-source-embed > summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
+.stream-source-embed[open] > summary { border-bottom: 1px solid var(--c-border); }
+.stream-source-embed > div { padding: 0 12px 12px; }
+.stream-source-page { max-width: none; margin: 0; padding: 12px 0 0; display: flex; flex-direction: column; gap: 12px; }
+.stream-source-lead { margin: 0; color: var(--c-text-2); line-height: 1.5; }
+.stream-source-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 16px 18px; }
+.stream-source-card > label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+.stream-source-connect { display: flex; gap: 8px; }
+.stream-source-connect input { flex: 1; min-width: 0; background: var(--c-bg); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 6px; padding: 7px 9px; }
+.stream-source-card > .muted { margin: 9px 0 0; line-height: 1.45; }
+.stream-source-target { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--c-text-2); font-size: 13px; }
+.stream-source-target b { color: var(--c-text); text-align: end; }
+.stream-source-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--c-border); }
+.stream-source-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--c-border); }
+.stream-source-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stream-source-error { margin: 0; color: var(--c-pill-alpha); font-size: 13px; }
+@media (max-width: 520px) { .stream-source-connect { flex-direction: column; } .stream-source-connect .btn { width: 100%; } }
+
 /* ---------- Wishes tab (votable feature wishes) ---------- */
 .wishes {
   max-width: 720px;

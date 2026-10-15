@@ -70,7 +70,7 @@ describe('both places that ask', () => {
   // fallback still gated on a preset slot, so the title only showed when a loop
   // from an earlier preset play happened to be alive.
   it('is started by a Find stations play and by the status poll for any proxied stream', () => {
-    const play = main.slice(main.indexOf('async function playStation(s)'), main.indexOf('await PlayURL(box.host'));
+    const play = main.slice(main.indexOf('async function playStation(s'), main.indexOf('await PlayURL(box.host'));
     expect(play).toContain("state.nowTitle = '';");
     expect(play).toContain('scheduleLiveTitle();');
 
