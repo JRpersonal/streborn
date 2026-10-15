@@ -360,6 +360,7 @@
   "status.artistLabel": "Artiest",
   "status.podcastLabel": "Podcast",
   "status.stationLabel": "Zender",
+  "status.titleSwap": "Artiest en titel staan bij deze zender verkeerd om",
   "queue.trackOf": "Nummer {{n}} van {{total}}",
   "battery.label": "Batterij",
   "battery.onPower": "op netstroom",

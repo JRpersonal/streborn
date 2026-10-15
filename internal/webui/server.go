@@ -1434,6 +1434,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/restore-cloud-url", s.handleRestoreCloudURL)
 	mux.HandleFunc("/api/box/start-volume", s.handleStartVolume)
 	mux.HandleFunc("/api/favorites", s.handleFavorites)
+	mux.HandleFunc("/api/stream/title-swap", s.handleTitleSwap)
 	mux.HandleFunc("/api/box/foreign-influence", s.handleForeignInfluence)
 	mux.HandleFunc("/api/box/wake", s.handleBoxWake)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)

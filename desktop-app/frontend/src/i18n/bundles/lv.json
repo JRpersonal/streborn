@@ -360,6 +360,7 @@
   "status.artistLabel": "Izpildītājs",
   "status.podcastLabel": "Podkāsts",
   "status.stationLabel": "Stacija",
+  "status.titleSwap": "Šajā stacijā izpildītājs un nosaukums ir samainīti vietām",
   "queue.trackOf": "{{n}}. ieraksts no {{total}}",
   "battery.label": "Akumulators",
   "battery.onPower": "barojas no tīkla",

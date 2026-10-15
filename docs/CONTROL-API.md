@@ -38,6 +38,9 @@ All request and response bodies are JSON.
 | `POST` | `/api/stop` | - | Stop. |
 | `POST` | `/api/next` | - | Next track (within a folder / playlist). |
 | `POST` | `/api/prev` | - | Previous track. |
+| `GET`  | `/api/stream/title` | - | Live radio title of the stream STR is proxying: `{"title":"Artist - Title","swapped":bool}`. `title` is `""` when the station sends none. `swapped` says the station below is flagged and its title was already turned round. |
+| `GET`  | `/api/stream/title-swap` | - | `{"stations":[...],"swapped":bool}`: the stream URLs flagged as sending their title "Title - Artist", and whether the station playing now is one of them. |
+| `POST` | `/api/stream/title-swap` | `{"swap":true}` | Flag (or with `false` unflag) a station whose live title arrives as "Title - Artist" instead of "Artist - Title". Without `"station":"<stream url>"` it acts on the station playing now (`409` when nothing is). The flag is kept per station in `/mnt/nv/streborn/title-swap.json` and applies to everything that shows the title: the speaker display, the app, Recently played and the phone remote. Answers `{"ok":true,"station":"...","swapped":bool,"title":"<live title now>"}`. |
 
 ## Volume, power and source
 

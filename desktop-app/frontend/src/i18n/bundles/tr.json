@@ -360,6 +360,7 @@
   "status.artistLabel": "Sanatçı",
   "status.podcastLabel": "Podcast",
   "status.stationLabel": "İstasyon",
+  "status.titleSwap": "Bu istasyonda sanatçı ve şarkı adı yer değiştirmiş",
   "queue.trackOf": "{{total}} parçadan {{n}}. parça",
   "battery.label": "Pil",
   "battery.onPower": "şebekeden besleniyor",

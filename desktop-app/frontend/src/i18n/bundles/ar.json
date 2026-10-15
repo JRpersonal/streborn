@@ -360,6 +360,7 @@
   "status.artistLabel": "الفنان",
   "status.podcastLabel": "بودكاست",
   "status.stationLabel": "المحطة",
+  "status.titleSwap": "الفنان والعنوان معكوسان في هذه المحطة",
   "queue.trackOf": "المقطع {{n}} من {{total}}",
   "battery.label": "البطارية",
   "battery.onPower": "موصّلة بالطاقة",

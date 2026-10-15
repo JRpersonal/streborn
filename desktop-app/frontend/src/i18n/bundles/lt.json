@@ -360,6 +360,7 @@
   "status.artistLabel": "Atlikėjas",
   "status.podcastLabel": "Tinklalaidė",
   "status.stationLabel": "Stotis",
+  "status.titleSwap": "Šioje stotyje atlikėjas ir pavadinimas sukeisti vietomis",
   "queue.trackOf": "{{n}} kūrinys iš {{total}}",
   "battery.label": "Baterija",
   "battery.onPower": "maitinama iš tinklo",

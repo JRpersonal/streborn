@@ -360,6 +360,7 @@
   "status.artistLabel": "アーティスト",
   "status.podcastLabel": "ポッドキャスト",
   "status.stationLabel": "放送局",
+  "status.titleSwap": "この放送局ではアーティスト名と曲名が逆になっています",
   "queue.trackOf": "{{total}} 曲中 {{n}} 曲目",
   "battery.label": "バッテリー",
   "battery.onPower": "電源接続中",

@@ -6,7 +6,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
 // StreamBitrate returns the agent's currently-detected stream bitrate in
@@ -126,6 +128,53 @@ func (a *App) StreamTitle(host string, port int) string {
 		return ""
 	}
 	return out.Title
+}
+
+// StreamTitleState is the live radio title plus whether the station playing
+// is flagged as sending "Title - Artist" (the agent then already turned the
+// title round). Swapped is false on an agent that predates the flag.
+type StreamTitleState struct {
+	Title   string `json:"title"`
+	Swapped bool   `json:"swapped"`
+}
+
+// StreamTitleInfo is StreamTitle with the station's swap flag, for the
+// now-playing line and its "artist and title are the wrong way round" toggle.
+func (a *App) StreamTitleInfo(host string, port int) StreamTitleState {
+	var out StreamTitleState
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/stream/title", "", "")
+	if err != nil {
+		return out
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return out
+}
+
+// SetStreamTitleSwap flags (or unflags) the station playing now as sending its
+// ICY title "Title - Artist". The agent keeps the flag per station on the
+// speaker and returns the corrected live title, so the app can show it at once.
+func (a *App) SetStreamTitleSwap(host string, port int, swap bool) (string, error) {
+	body, _ := json.Marshal(map[string]bool{"swap": swap})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/stream/title-swap", "application/json", string(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return "", fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var out struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.Title, nil
 }
 
 // SpotifyNowPlaying returns the live Spotify state for the UI: measured

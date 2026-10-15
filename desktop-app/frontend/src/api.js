@@ -134,6 +134,8 @@ export {
   TestWebhookAction,
   StreamBitrate,
   StreamTitle,
+  StreamTitleInfo,
+  SetStreamTitleSwap,
   SpotifyBitrate,
   SpotifyQuality,
   SetSpotifyQuality,

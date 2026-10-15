@@ -42,15 +42,24 @@ func (s *Server) setTitle(url, title string) {
 	title = strings.TrimRight(title, "\x00")
 	title = strings.TrimSpace(title)
 	title = titleToUTF8(title)
+	// A station the listener flagged as sending "Title - Artist" is turned
+	// round here, before anything reads it (titleswap.go).
+	raw := title
+	title = s.shownTitle(url, raw)
 	s.titleMu.Lock()
 	changed := title != s.curTitle || url != s.curTitleURL
 	s.curTitle = title
+	s.curRawTitle = raw
 	s.curTitleURL = url
 	fire := changed && title != "" && s.onTitle != nil
 	cb := s.onTitle
 	s.titleMu.Unlock()
 	if changed {
-		s.logger.Info("stream proxy ICY title", "title", title)
+		if raw != title {
+			s.logger.Info("stream proxy ICY title", "title", title, "raw", raw)
+		} else {
+			s.logger.Info("stream proxy ICY title", "title", title)
+		}
 	}
 	if fire {
 		cb(title)
@@ -85,6 +94,7 @@ func (s *Server) clearTitleForNewURL(url string) {
 	s.titleMu.Lock()
 	if url != s.curTitleURL {
 		s.curTitle = ""
+		s.curRawTitle = ""
 		s.curTitleURL = url
 	}
 	s.titleMu.Unlock()
@@ -155,6 +165,7 @@ func (s *Server) wipeTitleIfUnclaimed(url string, gen uint64) {
 	ended := url == s.curTitleURL
 	if ended {
 		s.curTitle = ""
+		s.curRawTitle = ""
 	}
 	cb := s.onTitleEnd
 	s.titleMu.Unlock()
@@ -285,7 +296,18 @@ func (r *icyReader) Read(p []byte) (int, error) {
 // radio track next to the station name, the same way it shows the bitrate.
 func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	writeJSONString(w, "title", s.CurrentTitle())
+	s.titleMu.Lock()
+	title, station := s.curTitle, s.curTitleURL
+	s.titleMu.Unlock()
+	// swapped tells the app which way its "artist and title are the wrong way
+	// round" toggle stands for this station (titleswap.go). json.Marshal
+	// escapes every control character, so a hostile StreamTitle cannot break
+	// the reply.
+	b, _ := json.Marshal(struct {
+		Title   string `json:"title"`
+		Swapped bool   `json:"swapped"`
+	}{title, s.swap.has(station)})
+	_, _ = w.Write(b)
 }
 
 // writeJSONString emits {"<key>":"<value>"} with value JSON-escaped via

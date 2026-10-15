@@ -386,6 +386,7 @@
   "status.artistLabel": "Artist",
   "status.podcastLabel": "Podcast",
   "status.stationLabel": "Station",
+  "status.titleSwap": "Artist and title are the wrong way round for this station",
   "queue.trackOf": "Track {{n}} of {{total}}",
   "battery.label": "Battery",
   "battery.onPower": "plugged in",

@@ -333,6 +333,8 @@ export function SetStartVolume(arg1:string,arg2:number,arg3:number):Promise<void
 
 export function SetStereoPairName(arg1:string,arg2:string):Promise<void>;
 
+export function SetStreamTitleSwap(arg1:string,arg2:number,arg3:boolean):Promise<string>;
+
 export function SetUSServicesOptIn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
@@ -360,6 +362,8 @@ export function StreamSourcePlayback(arg1:string,arg2:string,arg3:string):Promis
 export function StreamSourceStations(arg1:string):Promise<Array<main.StreamSourceStation>>;
 
 export function StreamTitle(arg1:string,arg2:number):Promise<string>;
+
+export function StreamTitleInfo(arg1:string,arg2:number):Promise<main.StreamTitleState>;
 
 export function SuggestBoxLanguage(arg1:string,arg2:string):Promise<number>;
 
