@@ -1055,6 +1055,8 @@
   "usServices.disconnectTitle": "Disconnect {{service}}?",
   "usServices.disconnectBody": "The speaker forgets the account. Keys that hold its stations stop playing until you connect it again.",
   "usServices.disconnected": "Disconnected.",
+  "usServices.disconnectFailed": "The speaker did not remove the account: {{err}}",
+  "usServices.disconnectStillLinked": "The speaker still lists the account, so it is still connected.",
   "pandora.btnTitle": "Your Pandora stations",
   "pandora.loading": "Loading your Pandora stations…",
   "pandora.notLinked": "No Pandora account is connected to this speaker. Connect it in Speaker settings.",

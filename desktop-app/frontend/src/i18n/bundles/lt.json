@@ -946,6 +946,8 @@
   "usServices.disconnectTitle": "Atjungti {{service}}?",
   "usServices.disconnectBody": "Garsiakalbis pamirš paskyrą. Mygtukai su jos stotimis negros, kol vėl ją prijungsite.",
   "usServices.disconnected": "Atjungta.",
+  "usServices.disconnectFailed": "Garsiakalbis nepašalino paskyros: {{err}}",
+  "usServices.disconnectStillLinked": "Garsiakalbis vis dar rodo paskyrą, todėl ji tebėra prijungta.",
   "pandora.btnTitle": "Jūsų Pandora stotys",
   "pandora.loading": "Įkeliamos Pandora stotys…",
   "pandora.notLinked": "Prie šio garsiakalbio neprijungta jokia Pandora paskyra. Prijunkite ją garsiakalbio nustatymuose.",

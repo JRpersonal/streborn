@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
   usServiceCanDisconnect, pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText,
+  usDisconnectError,
 } from './usservices.js';
 
 // A GET /api/us-services answer in the agent's shape.
@@ -120,5 +121,15 @@ describe('agent errors', () => {
     expect(agentErrorText(err)).toBe('No Pandora account is linked to this speaker.');
     expect(agentErrorCode('timeout')).toBe('');
     expect(agentErrorText('timeout')).toBe('timeout');
+  });
+});
+
+describe('usDisconnectError', () => {
+  it('names a speaker that kept the account, and passes other reasons on (#1101)', () => {
+    const still = new Error('status 502: {"code":"still-linked","error":"the speaker still lists the account after the removal"}');
+    expect(usDisconnectError(still)).toEqual(['usServices.disconnectStillLinked', {}]);
+    const refused = new Error('status 502: {"code":"remove-refused","error":"the speaker refused to remove the account: status 500"}');
+    expect(usDisconnectError(refused)).toEqual(['usServices.disconnectFailed', { err: 'the speaker refused to remove the account: status 500' }]);
+    expect(usDisconnectError('timeout')).toEqual(['usServices.disconnectFailed', { err: 'timeout' }]);
   });
 });

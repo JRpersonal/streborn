@@ -44,6 +44,7 @@ type NativeServicesBackend interface {
 	NativeServiceEnabled(typ string) bool
 	NativeStatusSnapshot() marge.NativeServicesStatus
 	NativeUsername(typ string) string
+	CarriedOverAccount(typ string) string
 	ClearNative(typ string) error
 }
 
@@ -189,22 +190,107 @@ func (s *Server) handleNativeAccount(typ string) http.HandlerFunc {
 			s.logger.Info("us-services: account handed to the speaker's own client", "service", typ, "user", maskForLog(req.User))
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "note": "the speaker registers the source with STR next; check GET /api/us-services in a minute"})
 		case http.MethodDelete:
-			if user := s.native.NativeUsername(typ); user != "" {
-				if err := s.nativeBox().RemoveMusicServiceAccount(ctx, typ, display, user); err != nil {
-					s.logger.Warn("us-services: the speaker did not confirm the removal", "service", typ, "err", err)
-				}
-			}
-			if err := s.native.ClearNative(typ); err != nil {
-				http.Error(w, "could not clear the stored source", http.StatusInternalServerError)
-				return
-			}
-			s.logger.Info("us-services: account removed", "service", typ)
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+			s.removeNativeAccount(ctx, w, typ, display)
 		default:
 			w.Header().Set("Allow", "POST, DELETE")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// nativeRemoveSettle is the pause between the re-reads of /sources that
+// confirm a removal, in case the firmware updates the list a moment late.
+var nativeRemoveSettle = time.Second
+
+// nativeRemoveRereads is how many times /sources is read to confirm a removal.
+const nativeRemoveRereads = 3
+
+// listedNativeAccount returns the account the firmware lists for typ in
+// /sources (unmasked, agent side only), "" when it lists none.
+func listedNativeAccount(srcs []boxapi.Source, typ string) string {
+	for _, it := range srcs {
+		if strings.EqualFold(it.Source, typ) && strings.TrimSpace(it.SourceAccount) != "" {
+			return strings.TrimSpace(it.SourceAccount)
+		}
+	}
+	return ""
+}
+
+// stillLinked reports whether /sources lists typ READY with an account.
+func stillLinked(srcs []boxapi.Source, typ string) bool {
+	for _, it := range srcs {
+		if strings.EqualFold(it.Source, typ) && strings.EqualFold(it.Status, "READY") && strings.TrimSpace(it.SourceAccount) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// removeNativeAccount is DELETE /api/{pandora,iheart}/account.
+//
+// The account to remove is the one STR registered, else the one the firmware
+// lists, else the one carried over in the reflect file. A carried-over account
+// (linked with the Bose app before STR) has no STR registration, and an
+// earlier version sent no removal at all for it while still answering ok
+// (#1101). Success is only reported once /sources no longer lists the service
+// READY with an account.
+func (s *Server) removeNativeAccount(ctx context.Context, w http.ResponseWriter, typ, display string) {
+	box := s.nativeBox()
+	user := s.native.NativeUsername(typ)
+	origin := "registration"
+	if user == "" {
+		if srcs, err := box.GetSources(ctx); err == nil {
+			user, origin = listedNativeAccount(srcs, typ), "sources"
+		} else {
+			s.logger.Warn("us-services: could not read the speaker's sources before the removal", "service", typ, "err", err)
+		}
+	}
+	if user == "" {
+		user, origin = s.native.CarriedOverAccount(typ), "carried-over"
+	}
+	if user != "" {
+		if err := box.RemoveMusicServiceAccount(ctx, typ, display, user); err != nil {
+			s.logger.Warn("us-services: the speaker refused the removal", "service", typ, "account", origin, "err", err)
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "the speaker refused to remove the account: " + err.Error(),
+				"code":  "remove-refused",
+			})
+			return
+		}
+	}
+	if err := s.native.ClearNative(typ); err != nil {
+		http.Error(w, "could not clear the stored source", http.StatusInternalServerError)
+		return
+	}
+	if user != "" {
+		for i := 0; i < nativeRemoveRereads; i++ {
+			if i > 0 {
+				select {
+				case <-ctx.Done():
+				case <-time.After(nativeRemoveSettle):
+				}
+			}
+			srcs, err := box.GetSources(ctx)
+			if err != nil {
+				// Unconfirmed, not refused: the removal call itself succeeded.
+				s.logger.Warn("us-services: could not re-read the speaker's sources after the removal", "service", typ, "err", err)
+				break
+			}
+			if !stillLinked(srcs, typ) {
+				break
+			}
+			if i == nativeRemoveRereads-1 {
+				s.logger.Warn("us-services: the speaker still lists the account after the removal", "service", typ, "account", origin)
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": "the speaker still lists the account after the removal",
+					"code":  "still-linked",
+				})
+				return
+			}
+		}
+	}
+	s.logger.Info("us-services: account removed", "service", typ, "account", origin, "sent", user != "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // decodeNativeJSON enforces a JSON content type and decodes a small body.

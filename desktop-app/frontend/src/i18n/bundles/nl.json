@@ -946,6 +946,8 @@
   "usServices.disconnectTitle": "{{service}} loskoppelen?",
   "usServices.disconnectBody": "De speaker vergeet het account. Toetsen met zenders daarvan spelen pas weer als je het opnieuw verbindt.",
   "usServices.disconnected": "Losgekoppeld.",
+  "usServices.disconnectFailed": "De speaker heeft het account niet verwijderd: {{err}}",
+  "usServices.disconnectStillLinked": "De speaker toont het account nog, het is dus nog verbonden.",
   "pandora.btnTitle": "Je Pandora-zenders",
   "pandora.loading": "Je Pandora-zenders worden geladen…",
   "pandora.notLinked": "Er is geen Pandora-account met deze speaker verbonden. Verbind het in de speakerinstellingen.",

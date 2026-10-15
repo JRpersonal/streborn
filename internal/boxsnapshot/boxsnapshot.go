@@ -169,6 +169,43 @@ func MergeReflect(path string, add []ReflectSource) error {
 	return os.Rename(tmp, path)
 }
 
+// RemoveReflect drops every entry for source (matched case-insensitively) from
+// the reflect file at path, the counterpart of MergeReflect. It reports whether
+// an entry was removed; the file is rewritten once, and only then, so a no-op
+// costs no NAND write.
+func RemoveReflect(path, source string) (bool, error) {
+	if path == "" {
+		path = reflectPath
+	}
+	want := strings.ToUpper(strings.TrimSpace(source))
+	if want == "" {
+		return false, nil
+	}
+	cur := LoadReflect(path)
+	kept := make([]ReflectSource, 0, len(cur))
+	for _, r := range cur {
+		if strings.ToUpper(strings.TrimSpace(r.Source)) == want {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	if len(kept) == len(cur) {
+		return false, nil
+	}
+	data, err := json.MarshalIndent(kept, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // reflectFromSources derives reflect entries from a captured /sources list: the
 // account-linked cloud sources (Deezer, ...) that STR cannot serve itself.
 func reflectFromSources(sources []Source) []ReflectSource {

@@ -217,7 +217,7 @@ the redirect, see `docs/MODEL-VARIANTS.md`). POST bodies must be JSON.
 | `GET /api/us-services` | region, the availability list as served, the stored sources (masked), the recent registrations, and the firmware's own `PANDORA` and `IHEART` lines from `:8090/sources` |
 | `POST /api/us-services` `{"enabled":true}` | create the opt-in marker (`false` removes it); only needed outside the US |
 | `POST /api/pandora/account`, `POST /api/iheart/account` `{"user":"...","password":"..."}` | call `setMusicServiceAccount` on the speaker (needs a US speaker or the opt-in) |
-| `DELETE /api/pandora/account`, `DELETE /api/iheart/account` | call `removeMusicServiceAccount` and delete the stored source |
+| `DELETE /api/pandora/account`, `DELETE /api/iheart/account` | call `removeMusicServiceAccount` with the STR registration's account, else the one `/sources` lists, else the carried-over one; delete the stored source and the reflect-file entry; answer 502 (`remove-refused`, `still-linked`) when the speaker refuses or still lists the account READY afterwards |
 | `GET /api/pandora/stations` | the linked account's stations from the speaker's own `/navigate` (`menu="radioStations"`, paged, up to 500): name, art, location, type. The account is read from `:8090/sources` and never returned. `409` `service-off` / `not-linked`, `502` with the firmware's message |
 | `POST /api/pandora/play` `{"location":"...","name":"..."}` | hand the station to the speaker's `/select`: the exact `<ContentItem>` the last list carried, or, for a location not in it, the same item rebuilt with the account from `:8090/sources` |
 

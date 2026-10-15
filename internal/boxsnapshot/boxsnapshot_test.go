@@ -1,6 +1,33 @@
 package boxsnapshot
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
+
+func TestRemoveReflect(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reflect-sources.json")
+	if err := MergeReflect(path, []ReflectSource{
+		{Source: "PANDORA", Account: "old@example.com", Name: "Pandora"},
+		{Source: "DEEZER", Account: "123", Name: "Deezer"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := RemoveReflect(path, "pandora")
+	if err != nil || !removed {
+		t.Fatalf("RemoveReflect = %v, %v", removed, err)
+	}
+	got := LoadReflect(path)
+	if len(got) != 1 || got[0].Source != "DEEZER" {
+		t.Fatalf("left %+v, want only DEEZER", got)
+	}
+	if removed, err := RemoveReflect(path, "PANDORA"); err != nil || removed {
+		t.Fatalf("second RemoveReflect = %v, %v", removed, err)
+	}
+	if removed, err := RemoveReflect(filepath.Join(t.TempDir(), "missing.json"), "PANDORA"); err != nil || removed {
+		t.Fatalf("missing file: %v, %v", removed, err)
+	}
+}
 
 func TestParseSources(t *testing.T) {
 	// Sanitised from a live ST10 /sources dump (placeholder device ID).

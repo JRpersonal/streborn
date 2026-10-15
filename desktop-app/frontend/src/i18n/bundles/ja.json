@@ -946,6 +946,8 @@
   "usServices.disconnectTitle": "{{service}} の接続を解除しますか?",
   "usServices.disconnectBody": "スピーカーはアカウントを忘れます。そのステーションを登録したキーは、再接続するまで再生されません。",
   "usServices.disconnected": "接続を解除しました。",
+  "usServices.disconnectFailed": "スピーカーがアカウントを削除しませんでした: {{err}}",
+  "usServices.disconnectStillLinked": "スピーカーにアカウントがまだ残っているため、接続されたままです。",
   "pandora.btnTitle": "あなたの Pandora ステーション",
   "pandora.loading": "Pandora ステーションを読み込み中…",
   "pandora.notLinked": "このスピーカーには Pandora アカウントが接続されていません。スピーカー設定で接続してください。",

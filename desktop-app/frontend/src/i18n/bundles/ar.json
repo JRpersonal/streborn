@@ -946,6 +946,8 @@
   "usServices.disconnectTitle": "قطع الاتصال بـ {{service}}؟",
   "usServices.disconnectBody": "ستنسى السمّاعة الحساب. الأزرار التي تحمل محطاته تتوقف عن التشغيل حتى تعيد ربطه.",
   "usServices.disconnected": "تم قطع الاتصال.",
+  "usServices.disconnectFailed": "لم تحذف السمّاعة الحساب: {{err}}",
+  "usServices.disconnectStillLinked": "ما زالت السمّاعة تعرض الحساب، لذا فهو ما زال متصلاً.",
   "pandora.btnTitle": "محطات Pandora الخاصة بك",
   "pandora.loading": "جارٍ تحميل محطات Pandora…",
   "pandora.notLinked": "لا يوجد حساب Pandora متصل بهذه السمّاعة. اربطه من إعدادات السمّاعة.",

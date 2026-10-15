@@ -355,6 +355,44 @@ func TestCarriedOverAccountYieldsToRegistration(t *testing.T) {
 	}
 }
 
+// #1101: disconnecting a carried-over account must drop it from the reflect
+// file, so /full stops naming it, and leave every other entry alone.
+func TestClearNativeDropsCarriedOverAccount(t *testing.T) {
+	dir := t.TempDir()
+	reflect := filepath.Join(dir, "reflect-sources.json")
+	if err := os.WriteFile(reflect, []byte(`[{"source":"PANDORA","account":"olduser@example.com","name":"Pandora"},{"source":"DEEZER","account":"123","name":"Deezer"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newNativeServer(t, false, "US", []Option{WithReflectSourcesPath(reflect)})
+	if got := s.NativeUsername("PANDORA"); got != "" {
+		t.Fatalf("no registration expected, got %q", got)
+	}
+	if got := s.CarriedOverAccount("pandora"); got != "olduser@example.com" {
+		t.Fatalf("CarriedOverAccount = %q", got)
+	}
+	if err := s.ClearNative("PANDORA"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.CarriedOverAccount("PANDORA"); got != "" {
+		t.Fatalf("carried-over account survived: %q", got)
+	}
+	full := serve(s, http.MethodGet, "/streaming/account/stick@local/full", "", "127.0.0.1:4000").Body.String()
+	if strings.Contains(full, "olduser@example.com") || !strings.Contains(full, `<sourcename>DEEZER</sourcename>`) {
+		t.Fatalf("/full after clear:\n%s", full)
+	}
+	st, err := os.Stat(reflect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second clear has nothing to drop and must not rewrite the file.
+	if err := s.ClearNative("PANDORA"); err != nil {
+		t.Fatal(err)
+	}
+	if st2, _ := os.Stat(reflect); !st2.ModTime().Equal(st.ModTime()) || st2.Size() != st.Size() {
+		t.Fatal("no-op clear rewrote the reflect file")
+	}
+}
+
 func TestPostHistoryIsBounded(t *testing.T) {
 	s := newNativeServer(t, false, "US", nil)
 	for i := 0; i < nativePostCap+5; i++ {

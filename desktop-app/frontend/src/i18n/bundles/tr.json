@@ -946,6 +946,8 @@
   "usServices.disconnectTitle": "{{service}} bağlantısı kesilsin mi?",
   "usServices.disconnectBody": "Hoparlör hesabı unutur. Bu hesabın istasyonlarını tutan tuşlar, hesabı yeniden bağlayana kadar çalmaz.",
   "usServices.disconnected": "Bağlantı kesildi.",
+  "usServices.disconnectFailed": "Hoparlör hesabı kaldırmadı: {{err}}",
+  "usServices.disconnectStillLinked": "Hoparlör hesabı hâlâ listeliyor, yani hesap hâlâ bağlı.",
   "pandora.btnTitle": "Pandora istasyonların",
   "pandora.loading": "Pandora istasyonların yükleniyor…",
   "pandora.notLinked": "Bu hoparlöre bağlı bir Pandora hesabı yok. Hoparlör ayarlarından bağla.",
