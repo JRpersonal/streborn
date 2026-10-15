@@ -436,6 +436,9 @@ type Server struct {
 	// nativeStopFn seams the speaker's own STOP key that ends a native
 	// station before a UPnP push (stopNativeStation), for the tests.
 	nativeStopFn func(context.Context) bool
+	// nativeResumeFn seams the speaker's own PLAY key that brings the native
+	// station back after a handover the speaker refused, for the tests.
+	nativeResumeFn func(context.Context) bool
 	// deferred holds a resume waiting for the user to switch the box on; STR
 	// never powers a speaker on by itself (#487). Guarded by deferredMu.
 	deferredMu sync.Mutex

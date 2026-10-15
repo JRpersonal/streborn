@@ -57,6 +57,13 @@ func (b *handoverBox) stopKey(context.Context) bool {
 	return true
 }
 
+func (b *handoverBox) playKey(context.Context) bool {
+	b.mu.Lock()
+	b.events = append(b.events, "play")
+	b.mu.Unlock()
+	return true
+}
+
 func (b *handoverBox) seen() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -77,11 +84,12 @@ func newHandoverServer(t *testing.T, b *handoverBox) *Server {
 	srv := httptest.NewServer(b.handler())
 	t.Cleanup(srv.Close)
 	return &Server{
-		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		queue:        newPlayQueue(),
-		renderer:     &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
-		boxSourceFn:  b.currentSource,
-		nativeStopFn: b.stopKey,
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		queue:          newPlayQueue(),
+		renderer:       &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
+		boxSourceFn:    b.currentSource,
+		nativeStopFn:   b.stopKey,
+		nativeResumeFn: b.playKey,
 	}
 }
 
@@ -152,11 +160,57 @@ func TestHandoverReportsAPlayTheSpeakerIgnored(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("response is not JSON: %v", err)
 	}
-	if !strings.Contains(resp["detail"], "own radio station") {
-		t.Errorf("detail = %q, want the native-station explanation", resp["detail"])
+	// #1314: the message used to say "press Stop and try again" after STR had
+	// pressed Stop twice itself. It now names the refusal and the remedy.
+	for _, want := range []string{"refusing", "radio station was put back on", "restart"} {
+		if !strings.Contains(resp["detail"], want) {
+			t.Errorf("detail = %q, want it to mention %q", resp["detail"], want)
+		}
 	}
-	if got := joined(b.seen()); got != "stop,push,stop,push" {
-		t.Errorf("speaker saw %q, want exactly one retry (stop,push,stop,push)", got)
+	if strings.Contains(resp["detail"], "Press Stop") {
+		t.Errorf("detail = %q still tells the user to press Stop", resp["detail"])
+	}
+	// Exactly one retry, then the station the user was listening to comes back.
+	if got := joined(b.seen()); got != "stop,push,stop,push,play" {
+		t.Errorf("speaker saw %q, want stop,push,stop,push,play", got)
+	}
+}
+
+// A refused handover is the same refusal the recall verify counts, so two of
+// them latch the speaker banner, and one alone stays quiet.
+func TestRefusedHandoverCountsTowardTheRefusalHint(t *testing.T) {
+	b := &handoverBox{source: nativeRadioSource}
+	s := newHandoverServer(t, b)
+	push := func() error { return s.renderer.PlayURL(t.Context(), "http://stream.example/a", "Station", "") }
+	if err := s.pushOverNativeStation(t.Context(), "Station", push); !errors.Is(err, errNativeStationKept) {
+		t.Fatalf("err = %v, want errNativeStationKept", err)
+	}
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("one refused handover must stay quiet")
+	}
+	if err := s.pushOverNativeStation(t.Context(), "Station", push); !errors.Is(err, errNativeStationKept) {
+		t.Fatalf("err = %v, want errNativeStationKept", err)
+	}
+	if active, _ := s.RecallRefusal(); !active {
+		t.Fatal("two refused handovers must latch the refusal hint")
+	}
+}
+
+// When no stop key reached the speaker, nothing was interrupted, so there is
+// nothing to resume: a PLAY key then could start a station the user had
+// stopped themselves.
+func TestRefusedHandoverResumesOnlyWhatItStopped(t *testing.T) {
+	b := &handoverBox{source: nativeRadioSource}
+	s := newHandoverServer(t, b)
+	s.nativeStopFn = func(context.Context) bool { return false }
+	err := s.pushOverNativeStation(t.Context(), "Station", func() error {
+		return s.renderer.PlayURL(t.Context(), "http://stream.example/a", "Station", "")
+	})
+	if !errors.Is(err, errNativeStationKept) {
+		t.Fatalf("err = %v, want errNativeStationKept", err)
+	}
+	if got := joined(b.seen()); got != "push,push" {
+		t.Errorf("speaker saw %q, want push,push and no play key", got)
 	}
 }
 
