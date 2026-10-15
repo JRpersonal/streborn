@@ -177,8 +177,8 @@ shows a green tick over a group that is still playing.
 ## Display
 
 These only do something on a speaker whose display STR can draw on (the
-Portable's panel, see `docs/FIRMWARE-NOTES.md`); elsewhere they answer
-without touching anything.
+SoundTouch 20, 30, Portable and Wave, see `docs/FIRMWARE-NOTES.md`);
+elsewhere they answer without touching anything.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |

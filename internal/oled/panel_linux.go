@@ -24,8 +24,8 @@ const (
 	frameRate  = 30
 )
 
-// panelSupported recognises the Portable's panel by driver and geometry. Every
-// other display is left alone.
+// panelSupported recognises the SoundTouch panel (ST20, ST30, Portable, Wave)
+// by driver and geometry. Every other display is left alone.
 func panelSupported() bool {
 	read := func(name string) string {
 		b, _ := os.ReadFile(fbSysfs + name)

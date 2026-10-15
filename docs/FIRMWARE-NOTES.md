@@ -671,9 +671,11 @@ freezer, and holding the wrong thread is not harmless either: holding
 `DevHelperThread` (key handling, it also serves internal eventfds and a
 timer) rebooted the speaker after about 25 seconds.
 
-**Only the Portable is recognised.** `internal/oled` checks the driver name and
-geometry in `/sys/class/graphics/fb0/` and does nothing on any other panel.
-The other display models (ST20, ST30, ST300, Wave) are untested.
+**Every SoundTouch display is recognised.** `internal/oled` checks the driver
+name and geometry in `/sys/class/graphics/fb0/` and does nothing on any other
+panel. The SoundTouch 20, 30 and Wave carry the same panel as the Portable and
+pass the check (a live SoundTouch 30 reports the track screen as supported);
+the SoundTouch 10 and 300 have no such display.
 
 **Cost.** Measured on the Portable in standby (AM335x single core, no
 temperature sensor exposed): the stock standby screen keeps the system about
