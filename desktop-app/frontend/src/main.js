@@ -7291,6 +7291,11 @@ async function saveNativeToSlot(slot) {
 // given slot (overwrites whatever was there before). Uses the
 // now_playing data state.nowLocation + state.nowName plus the last
 // known logo.
+// The Spotify "plan could not be checked" hint is shown once per app run. A
+// Premium account whose token cannot read the plan stays unknown for good, and
+// repeating the hint on every save would nag exactly those users.
+let spotifyPlanHintShown = false;
+
 async function saveCurrentToSlot(slot) {
   // Refresh from the speaker first. On a hardware key press,
   // state.nowLocation / nowName often lag behind (the boxws event
@@ -7436,7 +7441,8 @@ async function saveCurrentToSlot(slot) {
       } else if (premiumRequired === true) {
         notice = 'needs-premium';
         showToast(t('preset.spotifyKeyNeedsPremium'), 12000);
-      } else if (canRecall === true && premiumRequired === false && planKnown === false) {
+      } else if (canRecall === true && premiumRequired === false && planKnown === false && !spotifyPlanHintShown) {
+        spotifyPlanHintShown = true;
         // The speaker answered but could not read the plan. Not a warning, a
         // hint: the key may well be fine, but a free account would make it
         // silent and nothing else would say so.

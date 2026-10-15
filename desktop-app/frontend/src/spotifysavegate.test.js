@@ -34,13 +34,25 @@ const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`)
 const at = main.indexOf('      // Same order the speaker applies when the key is pressed');
 const gate = main.slice(at, main.indexOf('      // Which notice was shown', at));
 
-function decide(canRecall, premiumRequired, planKnown) {
+// One app run: the once-per-run flag lives as long as the returned function,
+// the way the module-level flag in main.js lives as long as the app.
+function appRun() {
   let shown = null;
   // eslint-disable-next-line no-new-func
-  new Function('canRecall', 'premiumRequired', 'planKnown', 'showToast', 't', `${gate}\nreturn notice;`)(
-    canRecall, premiumRequired, planKnown, (msg) => { shown = msg; }, (k) => k,
-  );
-  return shown;
+  const run = new Function('showToast', 't', `let spotifyPlanHintShown = false;
+return (canRecall, premiumRequired, planKnown) => {
+${gate}
+return notice;
+};`)((msg) => { shown = msg; }, (k) => k);
+  return (canRecall, premiumRequired, planKnown) => {
+    shown = null;
+    run(canRecall, premiumRequired, planKnown);
+    return shown;
+  };
+}
+
+function decide(canRecall, premiumRequired, planKnown) {
+  return appRun()(canRecall, premiumRequired, planKnown);
 }
 
 describe('saving a Spotify key that cannot play', () => {
@@ -69,6 +81,29 @@ describe('saving a Spotify key that cannot play', () => {
     // An unreadable speaker stays silent, as every other gate does.
     expect(decide(true, false, undefined)).toBeNull();
     expect(decide(undefined, undefined, undefined)).toBeNull();
+  });
+
+  it('gives the plan hint once per app run, not on every save', () => {
+    // A Premium account whose token cannot read the plan stays "unknown" for
+    // good; repeating the hint on every save would nag exactly those users.
+    const run = appRun();
+    expect(run(true, false, false)).toBe(PLAN);
+    expect(run(true, false, false)).toBeNull();
+    expect(run(true, false, false)).toBeNull();
+    // The real warnings are not rationed.
+    expect(run(false, false, false)).toBe(KEY);
+    expect(run(true, true, false)).toBe(PREMIUM);
+    expect(run(true, true, false)).toBe(PREMIUM);
+    // A new run shows it again.
+    expect(appRun()(true, false, false)).toBe(PLAN);
+  });
+
+  it('keeps the once-per-run flag outside the save function', () => {
+    // Declared inside saveCurrentToSlot it would reset on every save.
+    const fnAt = main.indexOf('async function saveCurrentToSlot');
+    const flagAt = main.indexOf('let spotifyPlanHintShown = false;');
+    expect(flagAt).toBeGreaterThan(-1);
+    expect(flagAt).toBeLessThan(fnAt);
   });
 
   it('stays quiet when the speaker is too old to say', () => {
