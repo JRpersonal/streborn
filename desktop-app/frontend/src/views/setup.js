@@ -2820,7 +2820,10 @@ function verifyInstalledState(box, onState) {
         if (s.id === 'wifi') {
           if (res.ok) {
             const info = res.value || {};
-            unplugLine = (info.mechanism === 'bco') ? t('setup.unplugSafeBco') : t('setup.unplugSafeWpa');
+            // A cabled wpa speaker only stored the network (#1307): its radio
+            // stays off until the cable is out and the speaker restarts.
+            unplugLine = info.wiredUplink ? t('setup.unplugWiredWpa')
+              : (info.mechanism === 'bco') ? t('setup.unplugSafeBco') : t('setup.unplugSafeWpa');
           } else {
             unplugLine = t('setup.wifiWriteFailed');
           }

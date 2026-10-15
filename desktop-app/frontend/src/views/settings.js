@@ -3707,6 +3707,14 @@ function wireWlanSwitch(box) {
       try { info = await r.json(); } catch {}
       $('boxWlanPass').value = '';
       form.classList.add('hidden');
+      // A speaker on a network cable keeps its Wi-Fi radio off while the
+      // cable is in, so the agent stored the network instead of switching
+      // (#1307). Nothing moves until the owner unplugs the cable and restarts
+      // the speaker; the speaker stays reachable over the cable meanwhile.
+      if (info.wiredUplink) {
+        showToast(t('settingsView.wlanWiredStoredToast', { ssid }), 20000);
+        return;
+      }
       showToast(
         info.mechanism === 'bco'
           ? t('settingsView.wlanRebootingToast')

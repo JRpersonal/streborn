@@ -151,7 +151,18 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	// and `hidden` implies the same skip: a hidden SSID is invisible to the
 	// survey BY DESIGN, so refusing on invisibility would refuse every hidden
 	// network forever.
-	if wlanPreflightApplies(req.Force, req.Hidden) {
+	//
+	// The mechanism and the uplink are read first because a cabled speaker
+	// skips the survey altogether: its radio is down, so the survey can only
+	// time out or come back empty (#1307), and either way it burns twelve
+	// seconds to learn nothing.
+	iface, mech := detectWlanMechanism()
+	wired := ""
+	if mech == "wpa" {
+		wired = wiredUplinkIface(iface)
+	}
+	mode := wlanSwitchModeFor(mech, wired)
+	if mode != wlanSwitchStoreWired && wlanPreflightApplies(req.Force, req.Hidden) {
 		sctx, scancel := context.WithTimeout(r.Context(), 12*time.Second)
 		ssids, serr := boxapi.New(s.boxHost).SiteSurvey(sctx)
 		scancel()
@@ -189,7 +200,6 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	iface, mech := detectWlanMechanism()
 	// Persist to NAND (with .bak backup) BEFORE responding: the response triggers
 	// the client to rediscover the box on its new network, and the actual switch
 	// runs in a background goroutine, so committing the canonical creds first
@@ -201,21 +211,108 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	}
 	// Respond before switching: the box drops off the current network mid-switch,
 	// so the client rediscovers it on its new IP instead of waiting on this socket.
-	status := "switching"
-	if mech == "bco" {
-		status = "rebooting"
+	writeJSON(w, http.StatusOK, wlanSwitchResponse(mode, mech, req.SSID, req.ForgetOthers))
+	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface,
+		"mode", mode, "wiredUplink", wired, "hidden", req.Hidden, "forgetOthers", req.ForgetOthers)
+	if mode == wlanSwitchStoreWired {
+		go s.storeWLANForWiredUplink(wired, req.SSID, req.Password, req.Hidden)
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    status,
-		"ssid":      req.SSID,
-		"mechanism": mech,
-		// Whether the forget option will run: only the wpa chassis can remove
-		// a single stored network (see wlanforget.go). A forget that removes
-		// something restarts the speaker once, so the app waits longer.
-		"forgetOthers": req.ForgetOthers && mech == "wpa",
-	})
-	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface, "hidden", req.Hidden, "forgetOthers", req.ForgetOthers)
 	go s.applyWLANChange(iface, mech, req.SSID, req.Password, req.Hidden, req.ForgetOthers)
+}
+
+// The three ways a Wi-Fi change request is carried out.
+const (
+	wlanSwitchLive       = "live"        // wpa chassis: switch live, verify, roll back on failure
+	wlanSwitchReboot     = "reboot"      // BCO chassis: persist and reboot into the boot path
+	wlanSwitchStoreWired = "store-wired" // wpa chassis on a cable: persist only, no live test
+)
+
+// wlanSwitchModeFor picks how a Wi-Fi change is carried out.
+//
+// A wpa speaker whose default route leaves through a live cable gets the
+// store-only mode (#1307). On such a box the firmware keeps the radio DOWN
+// for as long as the cable carries it: a used ST20 (sm2, SMSC bridge) logged
+// "wlcore: down" right before "net eth0: initializing cpsw", and its own
+// networkInfo listed both wlan interfaces as disconnected. The live switch
+// therefore cannot associate whatever the password, so it walked every stage
+// to the rollback and reported a failure. Worse, the M3 stage killed and
+// relaunched wpa_supplicant under NetManager, which afterwards logged
+// "wpa_ctrl_request failed: ADD_NETWORK (Connection refused)": the switch
+// broke the control socket of the very component that has to bring the Wi-Fi
+// up once the cable is gone.
+//
+// Refusing outright was the other option, and the wrong one. A used box
+// often carries no Wi-Fi profile of its own owner at all, so "unplug the
+// cable first" would take it off the LAN with nothing to join and leave the
+// app no way to reach it. Storing is what leaves the speaker reachable: it
+// stays on the cable now, and the network is where every boot path looks
+// for it. wlan-creds plus the one-shot apply marker make run.sh actively
+// provision the network on the next boot without a cable (#184), the
+// firmware's own store gets the profile through the stock addWirelessProfile
+// call, and the weak target lets the boot guard check and correct the result
+// once the cable is out (on a cabled boot it stands down, wlanguard.go).
+//
+// BCO chassis never land here: their Wi-Fi chip IS eth0, which
+// wiredUplinkFrom excludes as the Wi-Fi interface itself, and they apply by
+// reboot anyway.
+func wlanSwitchModeFor(mech, wiredIface string) string {
+	switch {
+	case mech != "wpa":
+		return wlanSwitchReboot
+	case wiredIface != "":
+		return wlanSwitchStoreWired
+	default:
+		return wlanSwitchLive
+	}
+}
+
+// wlanSwitchResponse is the handler's answer for an accepted change.
+// "status" tells the app what happens next: "switching" (live), "rebooting"
+// (BCO), or "stored" (cabled, nothing happens until the cable is out).
+// wiredUplink is what the app keys its "unplug the cable" message on.
+func wlanSwitchResponse(mode, mech, ssid string, forgetOthers bool) map[string]any {
+	status := "switching"
+	switch mode {
+	case wlanSwitchReboot:
+		status = "rebooting"
+	case wlanSwitchStoreWired:
+		status = "stored"
+	}
+	return map[string]any{
+		"status":      status,
+		"ssid":        ssid,
+		"mechanism":   mech,
+		"wiredUplink": mode == wlanSwitchStoreWired,
+		// Whether the forget option will run: only the wpa chassis can remove
+		// a single stored network (see wlanforget.go), and only after a
+		// CONFIRMED live switch, which a cabled speaker cannot make. A forget
+		// that removes something restarts the speaker once, so the app waits
+		// longer.
+		"forgetOthers": forgetOthers && mode == wlanSwitchLive,
+	}
+}
+
+// storeWLANForWiredUplink is the store-only arm of a Wi-Fi change on a cabled
+// wpa speaker (see wlanSwitchModeFor for why). The creds are already on NAND.
+// Nothing here touches wpa_supplicant: no conf write, no reload, no restart,
+// so NetManager's control socket stays intact for the moment the cable goes.
+//
+// Deliberately NOT done, because the network was never verified: raising the
+// new profile's priority and forgetting the others. A mistyped password must
+// leave the firmware's existing ranking as the fallback, exactly as the live
+// path's rollback does.
+func (s *Server) storeWLANForWiredUplink(wired, ssid, password string, hidden bool) {
+	s.wlanMu.Lock()
+	defer s.wlanMu.Unlock()
+	s.logger.Info("WLAN: this speaker is on a network cable and its Wi-Fi radio is off while it is; storing the new network for when the cable is out, no live switch",
+		"uplink", wired, "wantTag", ssidTag(ssid))
+	// No rollback can follow, so a stale backup must not survive to roll a
+	// later switch back to this superseded set.
+	_ = os.Remove(wlanCredsPath + ".bak")
+	s.commitFirmwareProfile(context.Background(), ssid, password)
+	s.armWlanTarget(ssid, password, hidden, "weak")
+	touchWLANApplyMarker()
 }
 
 // wlanPreflightApplies reports whether the site-survey visibility pre-flight
