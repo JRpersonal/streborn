@@ -10,7 +10,8 @@
 // DDG icon, which is exactly the discriminator he suspected.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { appArtFromBoxArt, artCarriesBoxForm } from './utils.js';
+import { appArtFromBoxArt, artCarriesBoxForm, escapeAttr } from './utils.js';
+import { spotifyCoverImgTag, SPOTIFY_LOGO } from './logos.js';
 
 // The wrapper exactly as the #696 bundle carries it (box-2.json, the playing
 // slot's <art> tag): the loopback art proxy around the DDG icon URL the agent
@@ -139,5 +140,42 @@ describe('main.js persists no box-form art (#696)', () => {
     // does, probed 2026-08-24); truthy p.art used to keep healPresetLogos
     // away from both.
     expect(src).toContain('p.name && (!appArtFromBoxArt(p.art) || artCarriesBoxForm(p.art))');
+  });
+});
+
+// #1312: a Spotify key showed the Spotify glyph even though the agent stores
+// the playlist or album cover (Spotify's oEmbed thumbnail) on the key at save
+// time. The key now shows that stored cover, validated by the same Go
+// hydration as station logos, with the glyph as the immediate src and the
+// fallback.
+describe('spotifyCoverImgTag (#1312)', () => {
+  const COVER = 'https://image-cdn.example/cover/ab67616d0000b273.jpg';
+  it('hands the stored cover to the logo hydration with the glyph as fallback', () => {
+    const tag = spotifyCoverImgTag(COVER, 'preset-logo');
+    expect(tag).toContain('class="preset-logo"');
+    expect(tag).toContain(`src="${escapeAttr(SPOTIFY_LOGO)}"`);
+    expect(tag).toContain(`data-logo-mono="${escapeAttr(SPOTIFY_LOGO)}"`);
+    expect(tag).toContain(`data-logo-fav="${COVER}"`);
+    // Present but empty: the hydration observer selects on the attribute, and
+    // no DuckDuckGo or brand lookup may run for a cover.
+    expect(tag).toContain('data-logo-hosts=""');
+    expect(tag).toContain('data-logo-brand=""');
+  });
+  it('uses the first candidate of a chain', () => {
+    expect(spotifyCoverImgTag(COVER + '|https://other.example/x.png', 'preset-logo'))
+      .toContain(`data-logo-fav="${COVER}"`);
+  });
+  it('keeps the plain glyph for a key without a cover', () => {
+    for (const art of ['', null, undefined, 'data:image/png;base64,AAAA', '/icon.png']) {
+      const tag = spotifyCoverImgTag(art, 'preset-logo');
+      expect(tag).toContain(`src="${escapeAttr(SPOTIFY_LOGO)}"`);
+      expect(tag).not.toContain('data-logo-fav');
+    }
+  });
+  it('the preset grid draws Spotify keys from the stored, unwrapped art', () => {
+    const src = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+    expect(src).toContain('addCands(appArtFromBoxArt(p.art));');
+    expect(src).toContain("logo = spotifyCoverImgTag(presetCandidates[0], 'preset-logo');");
+    expect(src, 'the Spotify branch went back to the bare glyph').not.toContain('addCands(SPOTIFY_LOGO)');
   });
 });

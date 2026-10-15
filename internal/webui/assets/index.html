@@ -205,6 +205,12 @@ button.btn:active { background:var(--press); }
 .preset:focus-visible { outline-offset:-2px; }
 .preset .num { font-size:11px; color:var(--muted); }
 .preset .name { font-size:15px; font-weight:600; margin-top:4px; }
+/* A key with a cover (#1312): the image sits left of the number and name, so
+   both stay readable on a two-column phone grid; the name wraps rather than
+   being cut. Without a cover (or when it fails) the tile is unchanged. */
+.preset.has-art { flex-direction:row; align-items:center; justify-content:flex-start; gap:10px; }
+.preset .art { width:40px; height:40px; flex:none; border-radius:6px; object-fit:cover; background:var(--card); }
+.preset .txt { min-width:0; overflow-wrap:anywhere; }
 .preset.empty { color:var(--muted); border-style:dashed; cursor:default; }
 .preset.active { border-color:transparent; box-shadow:0 0 0 2px var(--accent) inset; }
 .preset.active .num { color:var(--accent); }
@@ -1745,10 +1751,77 @@ async function refreshWedge() {
   } catch (e) {}
 }
 
+/* Cover art on a key (#1312). /api/presets already carries each key's art: a
+   station logo chain (pipe-separated, https favicons first), a Spotify key's
+   playlist or album cover (oEmbed thumbnail, filled in at save time), a media
+   server's http album art on the LAN, and on library album or folder keys the
+   first track's cover. The phone fetches these itself, never through the
+   speaker. Box-form candidates are healed the way the desktop app's
+   appArtFromBoxArt does it: the agent's /art?u= wrapper is unwrapped to the
+   image it carries, and anything else pointing at the speaker's loopback or
+   STR's /icon.png stand-in is dropped (not the key's art). DuckDuckGo icon
+   entries are dropped too: that service answers a miss with a grey chevron
+   IMAGE, which never fires onerror, so a key with no real logo would wear the
+   chevron instead of its plain text tile. */
+function presetArtCands(p) {
+  var art = (p && p.art) || '';
+  if (!art && p && p.type === 'queue' && Array.isArray(p.items)) {
+    for (var k = 0; k < p.items.length; k++) {
+      var it = p.items[k];
+      if (it && typeof it.art === 'string' && it.art.trim()) { art = it.art.trim(); break; }
+    }
+  }
+  var out = [];
+  String(art).split('|').forEach(function (c) {
+    c = c.trim();
+    if (!c) return;
+    var u;
+    try { u = new URL(c); } catch (e) { return; }
+    if (u.pathname === '/art' && u.searchParams.get('u')) {
+      try {
+        var b = u.searchParams.get('u').replace(/-/g, '+').replace(/_/g, '/');
+        while (b.length % 4) b += '=';
+        c = atob(b);
+        u = new URL(c);
+      } catch (e) { return; }
+    } else if (u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.pathname === '/icon.png') {
+      return;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+    if (u.hostname === 'icons.duckduckgo.com') return;
+    if (out.indexOf(c) < 0) out.push(c);
+  });
+  return out;
+}
+// presetArtImg builds the lazy cover image for a key, or null when it has none.
+// A candidate that fails moves on to the next; when none loads, the image is
+// removed and the key is the plain number-and-name tile it always was.
+function presetArtImg(cands) {
+  if (!cands.length) return null;
+  var img = document.createElement('img');
+  img.className = 'art';
+  img.alt = '';
+  img.width = 40; img.height = 40;
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.referrerPolicy = 'no-referrer';
+  var k = 0;
+  img.onerror = function () {
+    k++;
+    if (k < cands.length) { img.src = cands[k]; return; }
+    img.onerror = null;
+    var tile = img.parentNode;
+    if (tile) { tile.classList.remove('has-art'); tile.removeChild(img); }
+  };
+  img.src = cands[0];
+  return img;
+}
+
 // presetSig reduces the list to what a tile shows, so a re-read that returns
-// the same thing does not rebuild the grid underneath the user's finger.
+// the same thing does not rebuild the grid underneath the user's finger. The
+// art is part of it: a Spotify key's cover is filled in by the agent at save.
 function presetSig(list) {
-  return (list || []).map(function (p) { return p.slot + ' ' + (p.name || ''); }).join('');
+  return (list || []).map(function (p) { return p.slot + ' ' + (p.name || '') + ' ' + (p.art || ''); }).join('');
 }
 var lastPresetSig = null;
 var lastPresetList = [];
@@ -1804,10 +1877,12 @@ async function loadPresets() {
       div.setAttribute('role','button'); div.tabIndex = 0;
       div.onclick = () => { if (consumeHold(div)) return; playSlot(i, div, nm); };
       div.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playSlot(i, div, nm); } };
-      div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>' +
+      div.innerHTML = '<div class="txt"><div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>' +
         // A Pandora or iHeartRadio key names its service (a brand name, the
         // same in every language): the speaker's own client plays it.
-        (p.type === 'native' && p.source ? '<div class="num">' + escapeHtml(p.source) + '</div>' : '');
+        (p.type === 'native' && p.source ? '<div class="num">' + escapeHtml(p.source) + '</div>' : '') + '</div>';
+      var art = presetArtImg(presetArtCands(p));
+      if (art) { div.classList.add('has-art'); div.insertBefore(art, div.firstChild); }
       div.appendChild(renameButton(div, i, nm));
     }
     else {

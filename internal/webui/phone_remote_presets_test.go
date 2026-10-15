@@ -35,3 +35,37 @@ func TestPhoneRemoteLocalesCarryNoPresets(t *testing.T) {
 		t.Errorf("noPresets: %d locale bundles but %d keys", bundles, got)
 	}
 }
+
+// The phone remote's keys show their cover (#1312): lazily loaded, healed of
+// box-form art the phone cannot reach, never DuckDuckGo's grey "no icon"
+// chevron, and a key whose image fails is the plain text tile again.
+func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
+	for _, want := range []string{
+		// The tile builds the image from the key's art and marks itself.
+		"var art = presetArtImg(presetArtCands(p));",
+		"div.classList.add('has-art');",
+		// Library album or folder keys fall back to the first track's cover.
+		"p.type === 'queue' && Array.isArray(p.items)",
+		// The agent's /art?u= wrapper is unwrapped; loopback and the
+		// /icon.png stand-in are dropped; DuckDuckGo entries are dropped.
+		"u.pathname === '/art' && u.searchParams.get('u')",
+		"u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.pathname === '/icon.png'",
+		"u.hostname === 'icons.duckduckgo.com'",
+		// Lazy, and the failure path restores the text-only tile.
+		"img.loading = 'lazy';",
+		"tile.classList.remove('has-art'); tile.removeChild(img);",
+		// The number and name stay visible beside the image.
+		".preset.has-art {",
+		".preset .art {",
+		// A cover filled in after the save repaints the grid.
+		"(p.art || '')",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("phone remote cover art: index.html lacks %q", want)
+		}
+	}
+	// No inline onerror attribute: the handler is assigned in script.
+	if strings.Contains(indexHTML, `onerror="`) {
+		t.Error("phone remote uses an inline onerror attribute")
+	}
+}
