@@ -140,10 +140,10 @@ func fetchNetworkTime(ctx context.Context, client *http.Client, hosts []string) 
 // request in place, same host and no redirect, cannot be told apart from a
 // HEAD answer; that remains a known blind spot.
 func genuineAnswer(req *http.Request, resp *http.Response) bool {
-	switch {
-	case resp.StatusCode == http.StatusNoContent:
+	switch resp.StatusCode {
+	case http.StatusNoContent:
 		return true
-	case resp.StatusCode == http.StatusNetworkAuthenticationRequired:
+	case http.StatusNetworkAuthenticationRequired:
 		return false
 	}
 	asked := strings.ToLower(req.URL.Host)
