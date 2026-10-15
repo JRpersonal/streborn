@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,16 +18,19 @@ type fakeNative struct {
 	on      bool
 	us      bool
 	users   map[string]string
+	carried map[string]string
 	cleared []string
 }
 
-func (f *fakeNative) PandoraEnabled() bool               { return f.on }
-func (f *fakeNative) SetPandoraEnabled(on bool) error    { f.on = on; return nil }
-func (f *fakeNative) NativeServiceEnabled(_ string) bool { return f.on || f.us }
-func (f *fakeNative) NativeUsername(typ string) string   { return f.users[typ] }
+func (f *fakeNative) PandoraEnabled() bool                 { return f.on }
+func (f *fakeNative) SetPandoraEnabled(on bool) error      { f.on = on; return nil }
+func (f *fakeNative) NativeServiceEnabled(_ string) bool   { return f.on || f.us }
+func (f *fakeNative) NativeUsername(typ string) string     { return f.users[typ] }
+func (f *fakeNative) CarriedOverAccount(typ string) string { return f.carried[typ] }
 func (f *fakeNative) ClearNative(typ string) error {
 	f.cleared = append(f.cleared, typ)
 	delete(f.users, typ)
+	delete(f.carried, typ)
 	return nil
 }
 func (f *fakeNative) NativeStatusSnapshot() marge.NativeServicesStatus {
@@ -36,11 +40,17 @@ func (f *fakeNative) NativeStatusSnapshot() marge.NativeServicesStatus {
 type fakeNativeBox struct {
 	setSource, setDisplay, setUser, setPass string
 	removedSource, removedUser              string
-	sources                                 []boxapi.Source
-	stations                                []boxapi.ServiceStation
-	stationsErr, selectErr                  error
-	listedSource, listedAccount             string
-	selected                                []string
+	removeErr                               error
+	removeCalls                             int
+	// sourcesAfterRemove, when set, is what /sources lists once the
+	// removal call was made (nil: the removal empties the service).
+	sourcesAfterRemove          []boxapi.Source
+	keepAfterRemove             bool
+	sources                     []boxapi.Source
+	stations                    []boxapi.ServiceStation
+	stationsErr, selectErr      error
+	listedSource, listedAccount string
+	selected                    []string
 }
 
 func (b *fakeNativeBox) ListServiceStations(_ context.Context, source, account string) ([]boxapi.ServiceStation, error) {
@@ -60,6 +70,13 @@ func (b *fakeNativeBox) SetMusicServiceAccount(_ context.Context, source, displa
 
 func (b *fakeNativeBox) RemoveMusicServiceAccount(_ context.Context, source, _, user string) error {
 	b.removedSource, b.removedUser = source, user
+	b.removeCalls++
+	if b.removeErr != nil {
+		return b.removeErr
+	}
+	if !b.keepAfterRemove {
+		b.sources = b.sourcesAfterRemove
+	}
 	return nil
 }
 
@@ -145,6 +162,78 @@ func TestPandoraAccountAddAndRemove(t *testing.T) {
 	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
 	if w.Code != http.StatusOK || box.removedUser != "u@example.com" || box.removedSource != "PANDORA" || len(p.cleared) != 1 {
 		t.Fatalf("remove: status %d, removed %q, cleared %v", w.Code, box.removedUser, p.cleared)
+	}
+}
+
+// #1101: an account linked with the Bose app has no STR registration. The
+// removal must still reach the speaker with the account it lists, and the
+// carried-over entry must be dropped.
+func TestCarriedOverAccountIsRemovedFromSpeaker(t *testing.T) {
+	nativeRemoveSettle = 0
+	for _, typ := range []string{"PANDORA", "IHEART"} {
+		s, p, box := nativeTestServer(true)
+		p.carried = map[string]string{typ: "old@example.com"}
+		box.sources = []boxapi.Source{{Source: "TUNEIN", Status: "READY"}, {Source: typ, Status: "READY", SourceAccount: "listed@example.com"}}
+		box.sourcesAfterRemove = []boxapi.Source{{Source: "TUNEIN", Status: "READY"}, {Source: typ, Status: "UNAVAILABLE"}}
+		w := httptest.NewRecorder()
+		s.handleNativeAccount(typ)(w, nativeReq(http.MethodDelete, "/api/x/account", "", "192.168.1.5:5000", ""))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status %d %s", typ, w.Code, w.Body.String())
+		}
+		if box.removedSource != typ || box.removedUser != "listed@example.com" {
+			t.Fatalf("%s: removal sent for %q/%q, want the listed account", typ, box.removedSource, box.removedUser)
+		}
+		if len(p.cleared) != 1 || p.carried[typ] != "" {
+			t.Fatalf("%s: carried-over entry not cleared: %v %v", typ, p.cleared, p.carried)
+		}
+	}
+}
+
+func TestCarriedOverAccountFallsBackToReflectEntry(t *testing.T) {
+	nativeRemoveSettle = 0
+	s, p, box := nativeTestServer(true)
+	p.carried = map[string]string{"PANDORA": "old@example.com"}
+	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "UNAVAILABLE"}}
+	box.sourcesAfterRemove = box.sources
+	w := httptest.NewRecorder()
+	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusOK || box.removedUser != "old@example.com" || len(p.cleared) != 1 {
+		t.Fatalf("status %d, removed %q, cleared %v", w.Code, box.removedUser, p.cleared)
+	}
+}
+
+func TestRemovalStillListedIsAnError(t *testing.T) {
+	nativeRemoveSettle = 0
+	s, _, box := nativeTestServer(true)
+	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "READY", SourceAccount: "listed@example.com"}}
+	box.keepAfterRemove = true
+	w := httptest.NewRecorder()
+	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"still-linked"`) {
+		t.Fatalf("still listed: status %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "listed@example.com") {
+		t.Fatal("error answer leaks the account name")
+	}
+}
+
+func TestRemovalRefusedIsAnError(t *testing.T) {
+	s, p, box := nativeTestServer(true)
+	p.users["IHEART"] = "u@example.com"
+	box.removeErr = errors.New("status 500")
+	w := httptest.NewRecorder()
+	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodDelete, "/api/iheart/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"remove-refused"`) || len(p.cleared) != 0 {
+		t.Fatalf("refused: status %d %s, cleared %v", w.Code, w.Body.String(), p.cleared)
+	}
+}
+
+func TestRemovalWithNothingLinkedStaysOK(t *testing.T) {
+	s, p, box := nativeTestServer(true)
+	w := httptest.NewRecorder()
+	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusOK || box.removeCalls != 0 || len(p.cleared) != 1 {
+		t.Fatalf("nothing linked: status %d, calls %d, cleared %v", w.Code, box.removeCalls, p.cleared)
 	}
 }
 

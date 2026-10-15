@@ -947,6 +947,8 @@
   "usServices.disconnectTitle": "¿Desconectar {{service}}?",
   "usServices.disconnectBody": "El altavoz olvida la cuenta. Las teclas con sus emisoras dejan de sonar hasta que la vuelvas a conectar.",
   "usServices.disconnected": "Desconectado.",
+  "usServices.disconnectFailed": "El altavoz no eliminó la cuenta: {{err}}",
+  "usServices.disconnectStillLinked": "El altavoz sigue mostrando la cuenta, así que sigue conectada.",
   "pandora.btnTitle": "Tus emisoras de Pandora",
   "pandora.loading": "Cargando tus emisoras de Pandora…",
   "pandora.notLinked": "No hay ninguna cuenta de Pandora conectada a este altavoz. Conéctala en los ajustes del altavoz.",

@@ -50,6 +50,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 )
 
 // nativeService describes one of the firmware's own US services.
@@ -257,20 +259,46 @@ func (s *Server) saveNative(typ string, rec nativeRecord) error {
 	return os.Rename(tmp, path)
 }
 
-// ClearNative forgets the registered source of one service.
+// ClearNative forgets one service: the source the firmware registered with
+// the stand-in, and the account carried over from before STR in the reflect
+// file. Without the second, /full would keep naming a Bose-app account and the
+// firmware would pick it up again at the next account sync (#1101).
 func (s *Server) ClearNative(typ string) error {
 	n, ok := nativeByType(typ)
 	if !ok {
 		return os.ErrInvalid
 	}
-	path := s.nativeStores[n.Type]
-	if path == "" {
-		return nil
+	if path := s.nativeStores[n.Type]; path != "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
+	if s.reflectPath != "" {
+		removed, err := boxsnapshot.RemoveReflect(s.reflectPath, n.Type)
+		if err != nil {
+			return err
+		}
+		if removed {
+			s.logger.Info("us-services: carried-over account dropped from the reflect file", "service", n.Type)
+		}
 	}
 	return nil
+}
+
+// CarriedOverAccount returns the account the speaker held before STR, as the
+// reflect file carries it over, unmasked, for the agent's own removal call to
+// the firmware. Never for display. "" when there is none.
+func (s *Server) CarriedOverAccount(typ string) string {
+	n, ok := nativeByType(typ)
+	if !ok {
+		return ""
+	}
+	for _, r := range s.reflected() {
+		if m, ok := nativeByType(r.Source); ok && m.Type == n.Type && strings.TrimSpace(r.Account) != "" {
+			return strings.TrimSpace(r.Account)
+		}
+	}
+	return ""
 }
 
 // NativeUsername returns the registered account name unmasked, for the

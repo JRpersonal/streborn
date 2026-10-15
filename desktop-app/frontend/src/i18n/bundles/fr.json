@@ -947,6 +947,8 @@
   "usServices.disconnectTitle": "Déconnecter {{service}} ?",
   "usServices.disconnectBody": "L'enceinte oublie le compte. Les touches avec ses stations ne jouent plus tant que tu ne le reconnectes pas.",
   "usServices.disconnected": "Déconnecté.",
+  "usServices.disconnectFailed": "L'enceinte n'a pas supprimé le compte : {{err}}",
+  "usServices.disconnectStillLinked": "L'enceinte affiche toujours le compte, il est donc encore connecté.",
   "pandora.btnTitle": "Tes stations Pandora",
   "pandora.loading": "Chargement de tes stations Pandora…",
   "pandora.notLinked": "Aucun compte Pandora n'est connecté à cette enceinte. Connecte-le dans les réglages de l'enceinte.",

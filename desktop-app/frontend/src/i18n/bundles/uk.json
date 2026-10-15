@@ -947,6 +947,8 @@
   "usServices.disconnectTitle": "Відключити {{service}}?",
   "usServices.disconnectBody": "Динамік забуде обліковий запис. Кнопки з його станціями не гратимуть, доки ви не підключите його знову.",
   "usServices.disconnected": "Відключено.",
+  "usServices.disconnectFailed": "Динамік не видалив обліковий запис: {{err}}",
+  "usServices.disconnectStillLinked": "Динамік досі показує обліковий запис, тож він і далі підключений.",
   "pandora.btnTitle": "Ваші станції Pandora",
   "pandora.loading": "Завантаження станцій Pandora…",
   "pandora.notLinked": "До цього динаміка не підключено обліковий запис Pandora. Підключіть його в налаштуваннях динаміка.",

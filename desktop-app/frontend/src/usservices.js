@@ -101,6 +101,14 @@ export function agentErrorCode(err) {
   return m ? m[1] : '';
 }
 
+// usDisconnectError picks the message for a failed Disconnect: the speaker
+// still listing the account gets its own translated line, anything else the
+// generic one with the agent's reason. Returns [i18n key, params].
+export function usDisconnectError(err) {
+  if (agentErrorCode(err) === 'still-linked') return ['usServices.disconnectStillLinked', {}];
+  return ['usServices.disconnectFailed', { err: agentErrorText(err) }];
+}
+
 // agentErrorText pulls the agent's JSON "error" out of a binding error, or
 // returns the error as it is.
 export function agentErrorText(err) {

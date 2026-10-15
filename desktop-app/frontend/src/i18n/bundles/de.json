@@ -1056,6 +1056,8 @@
   "usServices.disconnectTitle": "{{service}} trennen?",
   "usServices.disconnectBody": "Der Lautsprecher vergisst das Konto. Tasten mit Sendern davon spielen erst wieder, wenn du es neu verbindest.",
   "usServices.disconnected": "Getrennt.",
+  "usServices.disconnectFailed": "Der Lautsprecher hat das Konto nicht entfernt: {{err}}",
+  "usServices.disconnectStillLinked": "Der Lautsprecher führt das Konto noch, es ist also weiter verbunden.",
   "pandora.btnTitle": "Deine Pandora-Sender",
   "pandora.loading": "Deine Pandora-Sender werden geladen…",
   "pandora.notLinked": "Mit diesem Lautsprecher ist kein Pandora-Konto verbunden. Verbinde es in den Lautsprecher-Einstellungen.",

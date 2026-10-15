@@ -1056,6 +1056,8 @@
   "usServices.disconnectTitle": "要中斷 {{service}} 的連線嗎？",
   "usServices.disconnectBody": "喇叭會忘記這個帳號。存有其電台的按鍵在重新連線前都無法播放。",
   "usServices.disconnected": "已中斷連線。",
+  "usServices.disconnectFailed": "喇叭沒有移除這個帳號：{{err}}",
+  "usServices.disconnectStillLinked": "喇叭仍列出這個帳號，所以仍保持連線。",
   "pandora.btnTitle": "你的 Pandora 電台",
   "pandora.loading": "正在載入 Pandora 電台…",
   "pandora.notLinked": "這個喇叭沒有連線任何 Pandora 帳號。請在喇叭設定中連線。",

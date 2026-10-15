@@ -947,6 +947,8 @@
   "usServices.disconnectTitle": "Rozłączyć {{service}}?",
   "usServices.disconnectBody": "Głośnik zapomni konto. Przyciski z jego stacjami przestaną grać, dopóki nie połączysz go ponownie.",
   "usServices.disconnected": "Rozłączono.",
+  "usServices.disconnectFailed": "Głośnik nie usunął konta: {{err}}",
+  "usServices.disconnectStillLinked": "Głośnik nadal pokazuje konto, więc jest ono wciąż połączone.",
   "pandora.btnTitle": "Twoje stacje Pandora",
   "pandora.loading": "Wczytywanie stacji Pandora…",
   "pandora.notLinked": "Z tym głośnikiem nie jest połączone żadne konto Pandora. Połącz je w ustawieniach głośnika.",

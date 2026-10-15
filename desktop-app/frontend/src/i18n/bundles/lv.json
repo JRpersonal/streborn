@@ -947,6 +947,8 @@
   "usServices.disconnectTitle": "Atvienot {{service}}?",
   "usServices.disconnectBody": "Skaļrunis aizmirsīs kontu. Taustiņi ar tā stacijām neskanēs, līdz to atkal savienosi.",
   "usServices.disconnected": "Atvienots.",
+  "usServices.disconnectFailed": "Skaļrunis nenoņēma kontu: {{err}}",
+  "usServices.disconnectStillLinked": "Skaļrunis joprojām rāda kontu, tāpēc tas joprojām ir savienots.",
   "pandora.btnTitle": "Tavas Pandora stacijas",
   "pandora.loading": "Ielādē Pandora stacijas…",
   "pandora.notLinked": "Šim skaļrunim nav savienots neviens Pandora konts. Savieno to skaļruņa iestatījumos.",
