@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // verifyRecall confirms the box reached a playing state ON THE EXPECTED STREAM
@@ -115,10 +117,104 @@ func (s *Server) verifyRecall(gen uint64, started time.Time, expectedLocation st
 		cancel()
 		s.boxCmdMu.Unlock()
 	}
+	// The final re-push was never looked at: the loop ends right after it. Give
+	// it one settle beat before declaring the recall dead, so a last attempt
+	// that did take is not followed by a clean-up that stops it.
+	time.Sleep(exhaustedRecallSettle)
+	if reason := s.recallStandDownReason(gen, started); reason != "" {
+		s.logger.Info("recall verify: standing down", "reason", reason, "attempt", "final")
+		return
+	}
+	if working != nil && working() {
+		s.NoteBoxHealthy()
+		return
+	}
+	if location, busy := s.boxPlayLocation(); busy && recallLocationMatches(expectedLocation, location) {
+		s.NoteBoxHealthy()
+		return
+	}
 	s.logger.Warn("recall still not playing after retries")
 	// Wedge detection (#power-cycle hint): decide whether this exhaustion
-	// looks like the box rather than the station, and count it.
+	// looks like the box rather than the station, and count it. Before the
+	// clean-up below, which changes the source this reads.
 	s.NoteRecallExhausted()
+	s.settleExhaustedRecall(gen, started)
+}
+
+// exhaustedRecallSettle is the beat between the final re-push and the last look
+// at it. A variable so the tests do not wait for real seconds.
+var exhaustedRecallSettle = 5 * time.Second
+
+// exhaustedStandbySend is the standby seam for settleExhaustedRecall, for the
+// same reason as pairStandbySend: the real call reaches :8090 on a fixed port.
+var exhaustedStandbySend = func(ctx context.Context, host string) error {
+	return boxapi.New(host).Standby(ctx)
+}
+
+// settleExhaustedRecall leaves the speaker in a clean state after a recall that
+// ran out of retries, and reports what it did ("standby", "stop" or "" for
+// nothing).
+//
+// Until now an exhausted recall simply ended, and the speaker stayed where the
+// failed pushes had left it: in INVALID_SOURCE, which an ST10 shows as a solid
+// amber light, with the last-resort power nudge having woken it on the way
+// (#1314, an ST10 stereo master that refused every UPnP push). Nothing plays
+// in that state and nothing the user sees explains it. So:
+//
+//   - INVALID_SOURCE (no source selected, nothing to interrupt): back to
+//     standby, the state an idle speaker is normally in.
+//   - UPNP (still on STR's transport, buffering a stream that never came):
+//     stopped, as abandonSessionlessRecall does for a Spotify recall without a
+//     login, so it does not sit buffering.
+//   - STANDBY, an unreadable source, or anything else: left alone. A sleeping
+//     speaker is never woken, and any other source is one the user picked.
+//
+// A newer play or a user stop/power-off since the press owns the speaker, and
+// is never undone. The clean-up is recorded as a deliberate stop so the drop it
+// causes is not read as a spontaneous firmware drop and re-pushed (#419).
+func (s *Server) settleExhaustedRecall(gen uint64, started time.Time) string {
+	if reason := s.recallStandDownReason(gen, started); reason != "" {
+		return ""
+	}
+	src := strings.TrimSpace(s.boxSourceNow())
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	switch src {
+	case "INVALID_SOURCE":
+		if s.boxHost == "" {
+			return ""
+		}
+		s.boxCmdMu.Lock()
+		defer s.boxCmdMu.Unlock()
+		if reason := s.recallStandDownReason(gen, started); reason != "" {
+			return ""
+		}
+		s.NoteUserStop()
+		if err := exhaustedStandbySend(ctx, s.boxHost); err != nil {
+			s.logger.Warn("recall verify: could not put the speaker back to standby after the failed recall", "err", err)
+			return ""
+		}
+		s.logger.Info("recall verify: the failed recall left the speaker with no source, put it back to standby instead of leaving it there")
+		return "standby"
+	case "UPNP":
+		if s.renderer == nil {
+			return ""
+		}
+		s.boxCmdMu.Lock()
+		defer s.boxCmdMu.Unlock()
+		if reason := s.recallStandDownReason(gen, started); reason != "" {
+			return ""
+		}
+		s.NoteUserStop()
+		if err := s.renderer.Stop(ctx); err != nil {
+			s.logger.Warn("recall verify: stopping the speaker after the failed recall did not work", "err", err)
+			return ""
+		}
+		s.logger.Info("recall verify: the failed recall left the speaker buffering, stopped it")
+		return "stop"
+	default:
+		return ""
+	}
 }
 
 // recallStandDownReason gathers the live inputs for verifyStandDownReason: the
