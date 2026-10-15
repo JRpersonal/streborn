@@ -67,6 +67,12 @@ func TestClassify(t *testing.T) {
 		{lineUnderrun, ClassPlayUnderrun, true},
 		{lineSelect, ClassPlaySelect, true},
 		{lineStandby, ClassStandby, true},
+		// #841: the display controller moving between its standby states
+		// with and without the clock; a boot into StandbyNoClock stays standby.
+		{`Oct 14 18:51:00 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_CLOCK_INVALID) >> Standby > Main > Top [ChangeState(StandbyClock >> StandbyNoClock), StandbyClock(EXIT)]`, ClassDisplayClock, true},
+		{`Oct 14 18:51:00 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(PDO_CLOCK_TIME_UPDATE) >> Standby > Main > Top [ChangeState(StandbyNoClock >> StandbyClock), StandbyNoClock(EXIT)]`, ClassDisplayClock, true},
+		{`Oct  9 21:05:10 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_STATUS_STANDBY) >> Bootup > Main > Top [ChangeState(Bootup >> StandbyNoClock), Bootup(EXIT)]`, ClassStandby, true},
+		{`Oct 13 19:48:46 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_STATUS_ON) >> Standby [ChangeState(StandbyNoClock >> Idle), Standby(EXIT)]`, ClassWake, true},
 		{lineWake, ClassWake, true},
 		{lineSrcChange, "", false},
 		{lineLowPower, ClassPowerEvent, true},
