@@ -3,8 +3,8 @@ package spotify
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
