@@ -1201,6 +1201,7 @@ export namespace main {
 	    votes: number;
 	    titles?: Record<string, string>;
 	    doneAt?: string;
+	    version?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Wish(source);
@@ -1214,6 +1215,7 @@ export namespace main {
 	        this.votes = source["votes"];
 	        this.titles = source["titles"];
 	        this.doneAt = source["doneAt"];
+	        this.version = source["version"];
 	    }
 	}
 	export class WishList {
