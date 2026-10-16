@@ -451,6 +451,36 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 	s.setQueueTiming(it.Duration)
 }
 
+// retryQueueTrackStart wakes the speaker and hands it the current track once
+// more, for a track it never started. Same checks as an advance: it stands
+// down when a newer queue or track took over, and when the user stopped the
+// box. It reports whether the track was handed over again.
+func (s *Server) retryQueueTrackStart(gen int, trackStart time.Time) bool {
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	s.queueMu.Lock()
+	superseded := s.queueGen != gen
+	s.queueMu.Unlock()
+	if superseded || !s.queue.isActive() || s.userStoppedRecently() {
+		return false
+	}
+	it, ok := s.queue.current()
+	if !ok {
+		return false
+	}
+	s.logger.Info("queue watcher: the speaker never started the track, waking it and handing it over once more",
+		"title", it.Title, "waitedSec", int(time.Since(trackStart).Seconds()))
+	ctx := s.queueCtx()
+	s.ensureBoxReady(ctx)
+	s.ClearUserStop()
+	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
+		s.logger.Warn("queue watcher: the second start failed too", "title", it.Title, "err", err)
+		return false
+	}
+	s.setQueueTiming(it.Duration)
+	return true
+}
+
 // queueDeadTrackStops counts one more track the speaker did not play, either
 // dropped (a torn-down source) or never started, and reports whether the run
 // has reached queueDeadTrackLimit and the queue should stop.
@@ -519,6 +549,9 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// file, several in a row is a server that has gone away, and only the
 		// second reading is worth stopping for.
 		deadInARow int
+		// startRetried: the one start retry of the current run of silent
+		// tracks has been used. Audible progress gives the next run its own.
+		startRetried bool
 		// interval is the ticker's current period. zoneChecked / inZone cache the
 		// zone check once per track: boxInZone may read /getZone over HTTP, so it
 		// runs only when a track first enters its last stretch, never per poll.
@@ -623,6 +656,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			// run of dead tracks is over.
 			if pos > 0 {
 				deadInARow = 0
+				startRetried = false
 			}
 			// Track the MAX position and when it last advanced: the box's position
 			// climbs each second while playing and then freezes at EOF, so a
@@ -661,6 +695,13 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		default:
 			// No usable status this tick (poll error or an idle box).
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
+				// The first silence of a run gets one more wake and the same
+				// track again before anything is skipped (#1322): the Wave
+				// that never took the first push started fine on the second.
+				if !startRetried && s.retryQueueTrackStart(curGen, start) {
+					startRetried = true
+					continue
+				}
 				// A track that never started counts as a dead one too. A speaker
 				// that never takes the stream (a Wave left on its own source,
 				// #1322) otherwise walked the whole folder in silence and filled

@@ -102,3 +102,19 @@ func TestNeverStartedTracksStopTheQueueAfterTheLimit(t *testing.T) {
 		t.Error("a never-started track no longer counts towards the dead-track limit")
 	}
 }
+
+// #1322: before a never-started track is skipped, the first silence of a run
+// gets one more wake and the same track again, and audible progress gives the
+// next run its own retry.
+func TestANeverStartedQueueTrackIsRetriedOnceBeforeItIsSkipped(t *testing.T) {
+	src := readRepoFile(t, "queueplay.go")
+	r := strings.Index(src, "!startRetried && s.retryQueueTrackStart(curGen, start)")
+	d := strings.Index(src, `"the track never started playing"`)
+	if r < 0 || d < 0 || r > d {
+		t.Fatal("the never-started branch no longer retries the track before skipping it")
+	}
+	p := strings.Index(src, "deadInARow = 0\n\t\t\t\tstartRetried = false")
+	if p < 0 {
+		t.Error("audible progress no longer re-arms the start retry")
+	}
+}
