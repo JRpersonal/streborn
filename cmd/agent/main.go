@@ -1261,8 +1261,6 @@ func run() error {
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
 		recallSlot: webuiSrv.RecallSlot,
-		// A key with its own volume gets it once it plays (#1323).
-		presetVolume: webuiSrv.ApplyPresetVolume,
 	}
 	// A pause, stop or transfer-away pressed in the SPOTIFY app arrives only as
 	// a go-librespot event: no gabbo key frame, no STR endpoint. Without this

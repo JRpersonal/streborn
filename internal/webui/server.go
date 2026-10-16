@@ -654,12 +654,6 @@ type Server struct {
 	// scheduled, so one power-on sets it once however many paths notice it.
 	startVolumeMu sync.Mutex
 	startVolumeAt time.Time
-	// getVolumeFn overrides the speaker volume read of the per-key volume
-	// (presetvolume.go) for tests. nil = the box.
-	getVolumeFn func(ctx context.Context) (int, error)
-	// presetVolumeSeq numbers the per-key volume watches, so a newer key
-	// press retires the watch of the one before it.
-	presetVolumeSeq atomic.Uint64
 
 	// nowPlayingFn overrides pollNowPlaying for tests. The end detection is a
 	// state machine over what the box reports, so it is only testable if the

@@ -229,10 +229,6 @@ type presetWsHandler struct {
 	// still runs. The queue lives in webui, so the queue start happens there.
 	// Wired to webui.Server.RecallSlot. nil-safe.
 	recallSlot func(ctx context.Context, slot int) bool
-	// presetVolume sets the key's own volume once the pressed key plays
-	// (#1323); a no-op for a key without one. Wired to
-	// webui.Server.ApplyPresetVolume. nil-safe.
-	presetVolume func(slot int, why string)
 	// noteUserPlay records a hardware preset press as an explicit user play in
 	// the webui: it clears the deliberate-stop latches (a press outranks any
 	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
@@ -580,12 +576,6 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	// Skipped when a newer press exists, which may itself be a Spotify key.
 	if p, ok := h.store.Get(slot); ok && p.Type != "spotify" && h.spotify != nil && h.pressSeq.Load() == seq {
 		h.spotify.SwitchedAway(ctx)
-	}
-	// The key's own volume (#1323), whatever plays it: STR's push, the queue,
-	// Spotify, or the speaker itself for a native station or a Pandora key.
-	// The watch waits until the key plays, and a newer press retires it.
-	if h.presetVolume != nil && h.pressSeq.Load() == seq {
-		h.presetVolume(slot, "hardware key")
 	}
 	// A queue preset (a saved DLNA folder) is recalled by the webui's play-queue,
 	// not the single-track UPnP play below. Let it claim the press; it returns
