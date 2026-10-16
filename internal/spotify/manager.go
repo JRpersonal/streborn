@@ -237,6 +237,11 @@ type Manager struct {
 	// Play uses it to replay the context from the top instead of leaving the box on
 	// a stalled, never-loading stream (ST30 intermittent-silence recall, #recall).
 	lastSeekFailAt time.Time
+	// lastTransferAwayAt is when go-librespot last reported "playback was
+	// transferred to ...": Spotify moved this account's playback to another
+	// device. A recall that loses its session that way while it is still
+	// starting plays nothing (recallReclaim).
+	lastTransferAwayAt time.Time
 	// desyncAt collects recent Connect-desync markers from the engine's
 	// stderr (put-state failures, dealer receive failures); lastDesyncHeal
 	// rate-limits the self-heal restart. See noteDesyncSignature.
