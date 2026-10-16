@@ -482,8 +482,9 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "spotify" {
 			// Which account a key ends up on was invisible in a diagnostic, so
 			// "this key was saved from the other account" could not be checked
-			// once the save had left the log window (ST30, 2026-10-09).
-			s.logger.Info("preset save: Spotify key stored", "slot", slot, "account", anonymise.MaskAccount(p.Account),
+			// once the save had left the log window (ST30, 2026-10-09). Logged before
+			// the preset rules run, so a refusal line can still follow it.
+			s.logger.Info("preset save: Spotify key about to be stored (the preset rules may still refuse it)", "slot", slot, "account", anonymise.MaskAccount(p.Account),
 				"liveSave", liveSave, "playingNow", savingLiveContext)
 		}
 		// Carry the LIVE shuffle state onto a preset saved from the running

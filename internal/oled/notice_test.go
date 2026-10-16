@@ -275,6 +275,8 @@ func TestNoticesRender(t *testing.T) {
 		SavedByKey(3, "Deutschlandfunk Kultur und mehr"),
 		SavedFromApp(6),
 		AlreadyOnKey(2),
+		Swapped(5, 6, "Best Of Rock.FM"),
+		Swapped(2, 3, ""),
 		NotSaved(5),
 		EmptyKey(1),
 		KeysRestored(4),

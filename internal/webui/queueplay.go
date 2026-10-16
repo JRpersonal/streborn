@@ -97,6 +97,20 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	// that server a different lease, every folder key pointing at it goes dead at
 	// once, which is what a static-lease workaround is really for (#977). Correct
 	// the key from the media-server store before the queue is built.
+	// Pressing the key of the folder that plays right now skips to its next
+	// track, the way a listener expects a playlist key to behave (Jens,
+	// 2026-10-16). Restarting the folder instead cut the song off and began it
+	// again. Past the last track (no repeat) the folder starts over below.
+	if s.queuePlaysSlot(slot) {
+		if it, ok, err := s.queueSkip(true); err == nil && ok {
+			s.logger.Info("preset slot recall (hardware): the key's folder already plays, next track",
+				"slot", slot, "title", it.Title)
+			return true
+		} else if err != nil {
+			s.logger.Warn("preset slot recall (hardware): next track failed, starting the folder again",
+				"slot", slot, "err", err)
+		}
+	}
 	s.healQueuePresetIfMoved(ctx, slot, &p)
 	items := presetItemsToQueue(p.Items)
 	if len(items) == 0 {
@@ -129,6 +143,16 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
 	}
 	return true
+}
+
+// queuePlaysSlot reports whether the active queue is the folder saved on slot.
+func (s *Server) queuePlaysSlot(slot int) bool {
+	if !s.queue.isActive() {
+		return false
+	}
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	return s.queueFolder.key == fmt.Sprintf("queue:slot:%d", slot)
 }
 
 // Auto-advance tuning. The Bose box emits no native "track finished" event: a

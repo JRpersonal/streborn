@@ -590,6 +590,11 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.lastSeekFailAt = time.Now()
 		m.mu.Unlock()
 	}
+	if strings.Contains(lc, "playback was transferred to") {
+		m.mu.Lock()
+		m.lastTransferAwayAt = time.Now()
+		m.mu.Unlock()
+	}
 	// The engine could not work out what to play after the current context ran
 	// out. It stops afterwards, and that stop must not be read as the listener
 	// having stopped it.

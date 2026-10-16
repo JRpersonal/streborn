@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
 
@@ -41,6 +42,11 @@ type HoldSaved struct {
 	// Unchanged is true when the key already held exactly this, so nothing
 	// was written.
 	Unchanged bool
+	// SwappedWith is the key the item already sat on when the hold swapped
+	// the two keys instead of refusing; 0 for a plain save. SwappedName is
+	// what that key holds now, "" when it became empty.
+	SwappedWith int
+	SwappedName string
 }
 
 // HoldSaveError is a save the preset rules refused, with the code the app's
@@ -112,7 +118,7 @@ func (s *Server) HoldSaveLive(ctx context.Context, slot int) (HoldSaved, error) 
 		// "Spotify" is the placeholder the per-slot save replaces with the
 		// playlist's own title, exactly as for the app's save.
 		p := presets.Preset{Slot: slot, Name: "Spotify", Type: "spotify", URI: uri}
-		return s.holdSaveThroughPut(ctx, p, "spotify", true)
+		return s.holdSaveOrSwap(ctx, p, "spotify", true)
 	}
 	if q, ok := s.LiveQueuePreset(slot); ok {
 		if cur, have := s.presets.Get(slot); have && cur.Type == "queue" &&
@@ -128,9 +134,71 @@ func (s *Server) HoldSaveLive(ctx context.Context, slot int) (HoldSaved, error) 
 		return HoldSaved{Slot: slot, Kind: "queue", Name: q.Name}, nil
 	}
 	if p, ok := s.liveLibraryFilePreset(slot, loc); ok {
-		return s.holdSaveThroughPut(ctx, p, "library", false)
+		return s.holdSaveOrSwap(ctx, p, "library", false)
 	}
 	return HoldSaved{}, ErrHoldUnknownStream
+}
+
+// holdSaveOrSwap saves p through the per-slot PUT, and when the preset rules
+// refuse it because the item already sits on another key, swaps the two keys
+// instead: the held key gets the item, the other key gets what the held key
+// had (or ends up empty). A held key is an explicit "put it HERE", and users
+// expect the item to come over rather than a refusal. The app keeps its
+// refusal, which offers the move itself. Nothing is ever deleted, so the
+// loss-free promise of #836 holds.
+func (s *Server) holdSaveOrSwap(ctx context.Context, p presets.Preset, kind string, live bool) (HoldSaved, error) {
+	saved, err := s.holdSaveThroughPut(ctx, p, kind, live)
+	var refusal *HoldSaveError
+	if !errors.As(err, &refusal) || refusal.Code != "already-on-slot" ||
+		refusal.OtherSlot < 1 || refusal.OtherSlot > 6 || refusal.OtherSlot == p.Slot {
+		return saved, err
+	}
+	return s.holdSwapKeys(ctx, p.Slot, refusal.OtherSlot, kind)
+}
+
+// holdSwapKeys exchanges the presets on keys slot and other in one store
+// write and brings the speaker's own keys along.
+func (s *Server) holdSwapKeys(ctx context.Context, slot, other int, kind string) (HoldSaved, error) {
+	item, ok := s.presets.Get(other)
+	if !ok {
+		return HoldSaved{}, fmt.Errorf("key %d no longer holds the item", other)
+	}
+	old, hadOld := s.presets.Get(slot)
+	if err := s.presets.SwapSlots(slot, other); err != nil {
+		return HoldSaved{}, err
+	}
+	item.Slot = slot
+	old.Slot = other
+	oldName := ""
+	if hadOld {
+		oldName = old.Name
+	}
+	// Same forensic rule as every other accepted write (#758).
+	s.logger.Info("preset swap accepted",
+		"slot", slot, "now", item.Name, "otherSlot", other, "otherNow", oldName,
+		"type", item.Type, "from", "speaker-key", "ua", holdSaveUA)
+	if !hadOld {
+		// Same as the move: the tombstone keeps a trailing presetsUpdated
+		// from resurfacing the emptied key as a foreign entry.
+		s.forgetBoxPreset(other)
+	}
+	if s.boxHost != "" {
+		boxCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		// The item goes onto its new key first, so it is never absent from
+		// the speaker's own list.
+		if err := s.writeStorePresetToBox(boxCtx, item); err != nil {
+			s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
+		}
+		if hadOld {
+			if err := s.writeStorePresetToBox(boxCtx, old); err != nil {
+				s.logger.Warn("box preset sync failed", "slot", other, "err", err)
+			}
+		} else if err := boxcli.RemovePreset(boxCtx, s.boxHost, other); err != nil {
+			s.logger.Warn("preset swap: box-side RemovePreset failed", "slot", other, "err", err)
+		}
+		cancel()
+	}
+	return HoldSaved{Slot: slot, Kind: kind, Name: item.Name, SwappedWith: other, SwappedName: oldName}, nil
 }
 
 // liveLibraryFilePreset is the single library song STR handed the speaker

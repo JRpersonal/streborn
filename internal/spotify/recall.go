@@ -44,6 +44,9 @@ type PlayOptions struct {
 	// recall that stays silent inherits whatever the previous one left, and a
 	// preset saved without repeat would keep looping because an earlier one did.
 	Repeat bool
+	// reclaimed marks the one repeat of a recall whose session Spotify moved
+	// to another device while it was starting (recallReclaim).
+	reclaimed bool
 }
 
 // Play asks go-librespot to start playing a Spotify context (playlist/album/
@@ -381,6 +384,10 @@ func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64,
 		if superseded {
 			return
 		}
+		if !confirmed && m.transferredAwaySince(since) {
+			m.recallReclaim(uri, opts, seq, since)
+			return
+		}
 		st, ok := m.readEngineStatus(ctx)
 		if !ok {
 			continue
@@ -455,13 +462,26 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions, 
 	m.lastContext = uri
 	m.curTrackURI = ""
 	m.mu.Unlock()
+	// Pressing the key of the playlist that plays right now moves on to the
+	// next track (Jens, 2026-10-16): resuming the same song only cut it off
+	// for a moment. A paused engine is resumed where it stood instead, since
+	// that press asks for the music back, not for another song.
+	skipped := false
 	if opts.Shuffle {
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`)
 		_ = m.apiPost(ctx, "/player/next", "")
+		skipped = true
 	} else {
-		m.clearSkipCut()
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
+		if st, ok := m.readEngineStatus(ctx); ok && st.Paused != nil && *st.Paused {
+			m.clearSkipCut()
+		} else if err := m.apiPost(ctx, "/player/next", ""); err != nil {
+			m.logger.Debug("spotify: next on a re-pressed key failed", "err", err)
+			m.clearSkipCut()
+		} else {
+			skipped = true
+		}
 	}
 	// The fast path exists to skip the cold staging, and it skipped this with
 	// it: pressing the key while the same playlist already plays is exactly
@@ -470,8 +490,8 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions, 
 	// No-op while playing; recovers an engine another controller paused. The
 	// shared resume confirms it took; a shuffle press loads the pick, so the
 	// check also waits for that load to commit.
-	m.resumeRecall(ctx, uri, opts, seq, since, opts.Shuffle, 0)
-	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle, "repeat", opts.Repeat)
+	m.resumeRecall(ctx, uri, opts, seq, since, skipped, 0)
+	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle, "repeat", opts.Repeat, "nextTrack", skipped)
 	// Debounce the will_play repoint exactly like the cold path does.
 	m.mu.Lock()
 	m.lastActivate = time.Now()
@@ -579,6 +599,50 @@ func (m *Manager) waitTrackChanged(ctx context.Context, from string, max time.Du
 		}
 	}
 	return false
+}
+
+// transferredAwaySince reports whether Spotify moved this account's playback
+// to another device after t.
+func (m *Manager) transferredAwaySince(t time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastTransferAwayAt.After(t)
+}
+
+// recallReclaimSettle gives the engine time to sign back in after Spotify
+// took its session away (about 2 s on a Portable) before the repeat. A var
+// so tests can shorten it.
+var recallReclaimSettle = 3 * time.Second
+
+// recallReclaim repeats a recall once when Spotify moved the account's
+// playback to another device while the recall was still starting. The press
+// on this speaker is the newest wish, so it wins: live 2026-10-16 a Portable's
+// preset 6 lost its session two seconds into the recall when another speaker
+// on the same account let go of it, resumed a session that was no longer
+// there, and the speaker gave up after 30 silent seconds (3101). A transfer
+// after the recall played is someone else's choice and is left alone; that
+// case never reaches here, because the check runs only until it is confirmed.
+func (m *Manager) recallReclaim(uri string, opts PlayOptions, seq uint64, since time.Time) {
+	if opts.reclaimed {
+		m.logger.Warn("spotify: the recall lost its session to another device again, giving up",
+			"uri", uri)
+		return
+	}
+	m.logger.Info("spotify: Spotify moved playback to another device while this recall started, taking it back",
+		"uri", uri, "sinceRecallMs", time.Since(since).Milliseconds())
+	time.Sleep(recallReclaimSettle)
+	m.mu.Lock()
+	stale := m.recallSeq != seq || m.userStopAt.After(since)
+	m.mu.Unlock()
+	if stale {
+		return
+	}
+	opts.reclaimed = true
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := m.Play(ctx, uri, opts); err != nil {
+		m.logger.Warn("spotify: taking the recall back failed", "uri", uri, "err", err)
+	}
 }
 
 // seekFailedSince reports whether go-librespot logged a resume-seek failure
