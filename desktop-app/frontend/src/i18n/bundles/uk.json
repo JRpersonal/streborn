@@ -351,6 +351,7 @@
   "status.standby": "Очікування",
   "status.active": "активно",
   "status.auxInput": "вхід AUX",
+  "status.ownSource": "власне джерело колонки",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "зупинено",

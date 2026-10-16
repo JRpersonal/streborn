@@ -351,6 +351,7 @@
   "status.standby": "スタンバイ",
   "status.active": "動作中",
   "status.auxInput": "AUX入力",
+  "status.ownSource": "スピーカー本体のソース",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "停止",

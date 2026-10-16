@@ -34,7 +34,9 @@ describe('the AUX line names the socket', () => {
 
   it('is wired that way in the source, for AUX and for LOCAL', () => {
     expect(auxLine).toContain("srcU === 'LOCAL'");
-    expect(auxLine).toContain("name || t('status.auxInput')");
+    expect(auxLine).toContain('name || auxGeneric');
+    // The generic is AUX input, except where LOCAL is not a socket (#1322).
+    expect(src).toMatch(/const auxGeneric = [^;]*t\('status\.ownSource'\) : t\('status\.auxInput'\)/);
     // The bug in one expression: the generic label assigned unconditionally.
     expect(auxLine).not.toMatch(/displayName = t\('status\.auxInput'\)/);
   });

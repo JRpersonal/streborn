@@ -433,7 +433,7 @@ import { renderWishes, initWishesView } from './views/wishes.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
 // each button is called (sourceinputs.js, vitest-covered).
-import { inputButtons, isActiveInput, sourceRowKey } from './sourceinputs.js';
+import { inputButtons, isActiveInput, localIsAuxSocket, sourceRowKey } from './sourceinputs.js';
 // Turning a refused preset transfer into a readable sentence is a pure
 // decision (copyreport.js, vitest-covered).
 import { presetCopyConflict } from './copyreport.js';
@@ -8141,7 +8141,12 @@ function renderNowPlayingBar() {
   // name (#274). The generic label stays as the FALLBACK: a CineMate reported
   // no name at all and fell through to "some source is active", which was
   // worse than a generic one (#491).
-  if (srcU === 'AUX' || srcU === 'LOCAL') { displayName = name || t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  // On a Wave, LOCAL is the console's own CD, radio or Aux, not a socket STR
+  // can name, so it gets a neutral label instead of "AUX input" (#1322).
+  const npBox = state.currentBox;
+  const auxGeneric = (srcU === 'LOCAL' && !localIsAuxSocket(npBox ? sourceListCache.get(npBox.host) : null, npBox ? npBox.model : ''))
+    ? t('status.ownSource') : t('status.auxInput');
+  if (srcU === 'AUX' || srcU === 'LOCAL') { displayName = name || auxGeneric; if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (srcU === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (isAirplay) { displayName = t('status.airplay'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && ps !== 'STOP_STATE' && !stateLabel && !displayName) {

@@ -351,6 +351,7 @@
   "status.standby": "Bekleme",
   "status.active": "etkin",
   "status.auxInput": "AUX girişi",
+  "status.ownSource": "hoparlörün kendi kaynağı",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "durduruldu",

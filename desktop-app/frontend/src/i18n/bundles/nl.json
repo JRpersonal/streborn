@@ -351,6 +351,7 @@
   "status.standby": "Stand-by",
   "status.active": "actief",
   "status.auxInput": "AUX-ingang",
+  "status.ownSource": "eigen bron van de speaker",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "gestopt",

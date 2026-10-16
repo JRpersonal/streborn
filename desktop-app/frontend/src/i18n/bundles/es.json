@@ -351,6 +351,7 @@
   "status.standby": "Reposo",
   "status.active": "activo",
   "status.auxInput": "entrada AUX",
+  "status.ownSource": "fuente propia del altavoz",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "detenido",

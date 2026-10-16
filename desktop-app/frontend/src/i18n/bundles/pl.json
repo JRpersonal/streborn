@@ -351,6 +351,7 @@
   "status.standby": "Czuwanie",
   "status.active": "aktywne",
   "status.auxInput": "Wejście AUX",
+  "status.ownSource": "własne źródło głośnika",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "zatrzymano",

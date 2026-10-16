@@ -9,7 +9,7 @@
 // remote to get his television sound back.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { inputButtons, isActiveInput, physicalInputs, sourceRowKey } from './sourceinputs.js';
+import { inputButtons, isActiveInput, localIsAuxSocket, physicalInputs, sourceRowKey } from './sourceinputs.js';
 import { setLocale } from './i18n/index.js';
 import en from './i18n/bundles/en.json';
 
@@ -183,5 +183,28 @@ describe('the music tab wiring', () => {
 
   it('sends the account with the source, so a socket can be identified', () => {
     expect(mainJS).toContain('SelectBoxSource(box.host, box.port, src, account)');
+  });
+});
+
+// #1322: a Wave on its console's own source read as "AUX input", on a system
+// whose pedestal has no Aux at all.
+describe('LOCAL is an AUX socket only where the speaker has one', () => {
+  it('is never one on a Wave', () => {
+    expect(localIsAuxSocket([{ source: 'LOCAL' }], 'Wave SoundTouch')).toBe(false);
+    expect(localIsAuxSocket([], 'Wave SoundTouch')).toBe(false);
+  });
+
+  it('is one when the source list names an AUX or LOCAL input (the CineMate of #491)', () => {
+    expect(localIsAuxSocket([{ source: 'TV' }, { source: 'LOCAL' }], 'CineMate 130')).toBe(true);
+    expect(localIsAuxSocket([{ source: 'AUX', sourceAccount: 'AUX' }], 'SoundTouch 20')).toBe(true);
+  });
+
+  it('is not one when the list names no such input', () => {
+    expect(localIsAuxSocket([{ source: 'BLUETOOTH' }, { source: 'UPNP' }], 'SoundTouch 20')).toBe(false);
+  });
+
+  it('keeps the old label on a speaker that never answered its list', () => {
+    expect(localIsAuxSocket(null, 'SoundTouch 20')).toBe(true);
+    expect(localIsAuxSocket([], '')).toBe(true);
   });
 });

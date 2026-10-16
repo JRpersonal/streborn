@@ -351,6 +351,7 @@
   "status.standby": "Gaidstāve",
   "status.active": "aktīvs",
   "status.auxInput": "AUX ieeja",
+  "status.ownSource": "skaļruņa paša avots",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "apturēts",
