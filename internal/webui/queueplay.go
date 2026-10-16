@@ -97,6 +97,20 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	// that server a different lease, every folder key pointing at it goes dead at
 	// once, which is what a static-lease workaround is really for (#977). Correct
 	// the key from the media-server store before the queue is built.
+	// Pressing the key of the folder that plays right now skips to its next
+	// track, the way a listener expects a playlist key to behave (Jens,
+	// 2026-10-16). Restarting the folder instead cut the song off and began it
+	// again. Past the last track (no repeat) the folder starts over below.
+	if s.queuePlaysSlot(slot) {
+		if it, ok, err := s.queueSkip(true); err == nil && ok {
+			s.logger.Info("preset slot recall (hardware): the key's folder already plays, next track",
+				"slot", slot, "title", it.Title)
+			return true
+		} else if err != nil {
+			s.logger.Warn("preset slot recall (hardware): next track failed, starting the folder again",
+				"slot", slot, "err", err)
+		}
+	}
 	s.healQueuePresetIfMoved(ctx, slot, &p)
 	items := presetItemsToQueue(p.Items)
 	if len(items) == 0 {
@@ -129,6 +143,16 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
 	}
 	return true
+}
+
+// queuePlaysSlot reports whether the active queue is the folder saved on slot.
+func (s *Server) queuePlaysSlot(slot int) bool {
+	if !s.queue.isActive() {
+		return false
+	}
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	return s.queueFolder.key == fmt.Sprintf("queue:slot:%d", slot)
 }
 
 // Auto-advance tuning. The Bose box emits no native "track finished" event: a
@@ -451,6 +475,44 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 	s.setQueueTiming(it.Duration)
 }
 
+// retryQueueTrackStart wakes the speaker and hands it the current track once
+// more, for a track it never started. Same checks as an advance: it stands
+// down when a newer queue or track took over, and when the user stopped the
+// box. It reports whether the track was handed over again.
+func (s *Server) retryQueueTrackStart(gen int, trackStart time.Time) bool {
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	s.queueMu.Lock()
+	superseded := s.queueGen != gen
+	s.queueMu.Unlock()
+	if superseded || !s.queue.isActive() || s.userStoppedRecently() {
+		return false
+	}
+	it, ok := s.queue.current()
+	if !ok {
+		return false
+	}
+	s.logger.Info("queue watcher: the speaker never started the track, waking it and handing it over once more",
+		"title", it.Title, "waitedSec", int(time.Since(trackStart).Seconds()))
+	ctx := s.queueCtx()
+	s.ensureBoxReady(ctx)
+	s.ClearUserStop()
+	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
+		s.logger.Warn("queue watcher: the second start failed too", "title", it.Title, "err", err)
+		return false
+	}
+	s.setQueueTiming(it.Duration)
+	return true
+}
+
+// queueDeadTrackStops counts one more track the speaker did not play, either
+// dropped (a torn-down source) or never started, and reports whether the run
+// has reached queueDeadTrackLimit and the queue should stop.
+func queueDeadTrackStops(deadInARow *int) bool {
+	*deadInARow++
+	return *deadInARow >= queueDeadTrackLimit
+}
+
 // queueCurrentTitle is the title of the track the queue is on, empty when none.
 func (s *Server) queueCurrentTitle() string {
 	if it, ok := s.queue.current(); ok {
@@ -511,6 +573,9 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// file, several in a row is a server that has gone away, and only the
 		// second reading is worth stopping for.
 		deadInARow int
+		// startRetried: the one start retry of the current run of silent
+		// tracks has been used. Audible progress gives the next run its own.
+		startRetried bool
 		// interval is the ticker's current period. zoneChecked / inZone cache the
 		// zone check once per track: boxInZone may read /getZone over HTTP, so it
 		// runs only when a track first enters its last stretch, never per poll.
@@ -565,8 +630,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// then logs the dead track as a natural end (11 m 43 s of silence inside one
 		// 33-minute queue, 2026-09-28), and with repeat=all that never stops.
 		if tornDown && sawPlay {
-			deadInARow++
-			if deadInARow >= queueDeadTrackLimit {
+			if queueDeadTrackStops(&deadInARow) {
 				s.logger.Info("queue watcher: the speaker dropped several tracks in a row without playing them, stopping the queue",
 					"deadInARow", deadInARow)
 				s.stopQueue("the music server stopped delivering; several tracks in a row did not play")
@@ -616,6 +680,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			// run of dead tracks is over.
 			if pos > 0 {
 				deadInARow = 0
+				startRetried = false
 			}
 			// Track the MAX position and when it last advanced: the box's position
 			// climbs each second while playing and then freezes at EOF, so a
@@ -654,8 +719,27 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		default:
 			// No usable status this tick (poll error or an idle box).
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
-				// A track that never started: skip it.
-				s.advanceAndPlay(true, curGen, "the track never started playing")
+				// The first silence of a run gets one more wake and the same
+				// track again before anything is skipped (#1322): the Wave
+				// that never took the first push started fine on the second.
+				if !startRetried && s.retryQueueTrackStart(curGen, start) {
+					startRetried = true
+					continue
+				}
+				// A track that never started counts as a dead one too. A speaker
+				// that never takes the stream (a Wave left on its own source,
+				// #1322) otherwise walked the whole folder in silence and filled
+				// Recently played with tracks nobody heard.
+				if queueDeadTrackStops(&deadInARow) {
+					s.logger.Info("queue watcher: several tracks in a row never started playing, stopping the queue",
+						"deadInARow", deadInARow)
+					s.stopQueue("the speaker did not start several tracks in a row")
+					return
+				}
+				s.logger.Info("queue watcher: the track never started playing, skipping to the next",
+					"deadInARow", deadInARow, "waitedSec", int(time.Since(start).Seconds()))
+				s.advanceAndPlayEnded(true, curGen, "the track never started playing",
+					trackEndReport{net: "never-started", length: dur, elapsed: time.Since(start)})
 				continue
 			}
 		}

@@ -1015,6 +1015,9 @@ func run() error {
 	// reconcile loop sleeps before its first pass, so wiring it here is early
 	// enough.
 	quietWakeEpisodeActive = webuiSrv.QuietWakeEpisodeActive
+	// ... and when the user last asked for playback, so a forced pass does not
+	// write into a play that is still starting (#1322).
+	lastUserPlayStartFn = webuiSrv.LastUserPlayStart
 	// ... and whether this speaker follows a group or stereo pair: its
 	// firmware refuses every preset write while it does (#1077).
 	groupFollowerFn = func() (bool, string) {
@@ -1258,6 +1261,8 @@ func run() error {
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
 		recallSlot: webuiSrv.RecallSlot,
+		// A key with its own volume gets it once it plays (#1323).
+		presetVolume: webuiSrv.ApplyPresetVolume,
 	}
 	// A pause, stop or transfer-away pressed in the SPOTIFY app arrives only as
 	// a go-librespot event: no gabbo key frame, no STR endpoint. Without this

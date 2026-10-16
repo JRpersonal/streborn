@@ -62,6 +62,7 @@ func TestHoldSaveNotices(t *testing.T) {
 	}{
 		{"saved", webui.HoldSaved{Kind: "spotify", Name: "Jens Chill"}, nil, oled.NoticeSavedByKey, 1},
 		{"unchanged", webui.HoldSaved{Kind: "queue", Name: "Album", Unchanged: true}, nil, oled.NoticeSavedByKey, 1},
+		{"swapped", webui.HoldSaved{Kind: "spotify", Name: "Jens Chill", SwappedWith: 4, SwappedName: "Rock"}, nil, oled.NoticeSwapped, 1},
 		{"on another key", webui.HoldSaved{}, &webui.HoldSaveError{Code: "already-on-slot", OtherSlot: 4, OtherName: "X"}, oled.NoticeAlreadyOnKey, 4},
 		{"refused", webui.HoldSaved{}, &webui.HoldSaveError{Code: "spotify-context-unknown"}, oled.NoticeNotSaved, 1},
 		{"unknown stream", webui.HoldSaved{}, webui.ErrHoldUnknownStream, oled.NoticeNotSaved, 1},
@@ -113,15 +114,19 @@ func TestEmptyKeyNotice(t *testing.T) {
 	r.fireChecks()
 	l.none(t)
 
-	// The box's own list was never reported: unknown, so silent.
+	// The box's own list was never reported: unknown, so silent. Every tap
+	// brings its tap verdict (live ST10, 2026-10-16); without one a stats
+	// press would read as a hold (holdSaver.statsHold).
 	r, l = setup(true, false)
 	r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.gesture(false, 150)
 	r.fireChecks()
 	l.none(t)
 
 	// A key that holds something.
 	r, l = setup(false, true)
 	r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.gesture(false, 150)
 	r.fireChecks()
 	l.none(t)
 

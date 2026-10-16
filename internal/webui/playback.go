@@ -210,6 +210,16 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// itself: through the proxy the byte count is the proxy's, not the track's,
 	// and a seekable claim over it would be a lie. So the meta follows
 	// playDirect rather than the MIME.
+	// A client that sends no length still gets the one this agent learned for
+	// the same file, from an earlier play or a key: the phone page's history
+	// replay left it out, and its replays drew no bar (#845).
+	if playDirect && req.DurationSec <= 0 {
+		if d := s.trackLens.get(req.URL); d > 0 {
+			req.DurationSec = int(d / time.Second)
+			s.logger.Info("play request: no length sent, using the one learned for this file",
+				"title", req.Title, "durationSec", req.DurationSec)
+		}
+	}
 	var meta upnp.TrackMeta
 	if playDirect && req.DurationSec > 0 {
 		meta = upnp.TrackMeta{Duration: time.Duration(req.DurationSec) * time.Second, Seekable: true}
@@ -304,6 +314,12 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// standby-flip discriminator (#419). Before the wake: the wake itself can
 	// flip the source states around.
 	s.NoteUserPlay()
+	// The key's own volume (#1323), set once the key plays. Only for a recall
+	// the app or the phone asked for: an in-process recall (the alarm, which
+	// sets the level you want to wake up to, or a recovery) has no RemoteAddr.
+	if r.RemoteAddr != "" {
+		s.ApplyPresetVolume(slot, "app recall")
+	}
 	// Was the speaker asleep? Read it BEFORE the wake, because the wake is what
 	// changes the answer.
 	//

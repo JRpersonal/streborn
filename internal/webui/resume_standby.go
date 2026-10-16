@@ -1273,6 +1273,15 @@ func (s *Server) NoteUserPlay() {
 	s.ClearUserStop()
 }
 
+// LastUserPlayStart is when a user last explicitly asked for playback, zero
+// when never. The agent's preset reconcile reads it so a forced key write does
+// not land on a play that is still starting (#1322).
+func (s *Server) LastUserPlayStart() time.Time {
+	s.standbyStopMu.Lock()
+	defer s.standbyStopMu.Unlock()
+	return s.lastUserPlayStart
+}
+
 // HandleEnterStandby reacts to the box's own UPnP source dropping to STANDBY
 // (a power-off), seen over gabbo. On some ST20 (scm) firmware the box then
 // oscillates STANDBY->UPNP and switches itself back on because STR's UPnP

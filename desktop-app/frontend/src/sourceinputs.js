@@ -122,6 +122,25 @@ export function inputButtons(sources, model) {
   return out;
 }
 
+// localIsAuxSocket reports whether the source LOCAL on this speaker is an
+// analogue socket, so the now-playing line may call it the AUX input.
+//
+// On a CineMate LOCAL is the analogue socket (#491). On a Wave it is the
+// console's own source, its CD, radio or Aux, which the SoundTouch pedestal
+// cannot reach, and a reporter whose Wave sat on it read "AUX input" as STR
+// claiming an input the system does not have (#1322). So LOCAL is a socket only
+// where the speaker offers one: never on a Wave, and on any other speaker only
+// when its source list names an AUX or LOCAL input. A speaker that never
+// answered its list keeps the old label.
+export function localIsAuxSocket(sources, model) {
+  if (/wave/i.test(String(model || ''))) return false;
+  if (!Array.isArray(sources) || sources.length === 0) return true;
+  return sources.some((x) => {
+    const src = up(x && x.source);
+    return src === 'AUX' || src === 'LOCAL';
+  });
+}
+
 // sourceRowKey identifies the row as drawn, so a refresh that changes nothing
 // leaves the buttons alone: redrawing them every minute takes a pressed state
 // and the mouse focus with it.

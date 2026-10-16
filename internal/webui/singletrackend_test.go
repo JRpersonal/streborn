@@ -203,3 +203,38 @@ func TestALibraryTrackFromAPresetKeyIsStoppedAtItsEnd(t *testing.T) {
 
 	waitForTrackEnd(t, "the box to be stopped at the end of the preset's track", func() bool { return rec.has("Stop") })
 }
+
+// #1322: a Wave that took STR's wake and push but never started the stream,
+// then dropped back to standby. The track is handed over once more, and only
+// once: a speaker that refuses twice is left alone.
+func TestATrackTheSpeakerNeverStartedIsHandedOverOnceMore(t *testing.T) {
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	gen := s.setLastPlay("http://192.0.2.9/27025.flac", "Layla", "", "audio/x-flac")
+	np.set("", 0, 0) // no usable status: the speaker never took the stream
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/27025.flac", title: "Layla", mime: "audio/x-flac", dur: 4 * time.Minute}, gen)
+
+	waitForTrackEnd(t, "the second start", func() bool { return rec.countOf("SetAVTransportURI") >= 1 })
+	// Still silent after the retry: no third push.
+	time.Sleep(queueStallTimeout + 2*queuePollInterval)
+	if n := rec.countOf("SetAVTransportURI"); n != 1 {
+		t.Fatalf("the track was handed over %d more times, want exactly one retry", n)
+	}
+}
+
+// A key pressed on the speaker after the play began is the listener choosing
+// something else, and the retry must not overrule it.
+func TestNoStartRetryAfterAKeyPress(t *testing.T) {
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	pressed := time.Now().Add(time.Second)
+	s.userActivityFn = func() time.Time { return pressed }
+	gen := s.setLastPlay("http://192.0.2.9/27025.flac", "Layla", "", "audio/x-flac")
+	np.set("", 0, 0)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/27025.flac", title: "Layla", mime: "audio/x-flac", dur: 4 * time.Minute}, gen)
+
+	time.Sleep(queueStallTimeout + 2*queuePollInterval)
+	if n := rec.countOf("SetAVTransportURI"); n != 0 {
+		t.Fatalf("the track was pushed again %d times after a key press", n)
+	}
+}

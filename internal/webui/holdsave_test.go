@@ -147,24 +147,55 @@ func TestHoldSaveLiveNativeSourceNoAction(t *testing.T) {
 	}
 }
 
-// The one-station-one-key rule (#836) holds for a held key as for the app:
-// the playlist already on key 3 is not copied onto key 2, and key 3 stays.
-func TestHoldSaveLiveDuplicateRefused(t *testing.T) {
+// The one-station-one-key rule (#836) holds for a held key too, but a hold is
+// an explicit "put it here": the playlist on key 3 comes over to the held key
+// 2, and key 3 gets what key 2 had. Nothing is copied, nothing is lost.
+func TestHoldSaveLiveDuplicateSwapsKeys(t *testing.T) {
+	s := newHoldTestServer(t, "UPNP", holdTestSpotifyLoc)
+	s.spotifyContext = func() string { return holdTestSpotifyURI }
+	if err := s.presets.SetSlot(presets.Preset{Slot: 3, Name: "Jens Chill", Type: "spotify", URI: holdTestSpotifyURI, Shuffle: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.presets.SetSlot(presets.Preset{Slot: 2, Name: "Rock FM", Type: "radio", StreamURL: "http://example.com/rock"}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.HoldSaveLive(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("err = %v, want a swap", err)
+	}
+	if saved.Slot != 2 || saved.Name != "Jens Chill" || saved.SwappedWith != 3 || saved.SwappedName != "Rock FM" {
+		t.Fatalf("saved = %+v, want Jens Chill on 2 swapped with Rock FM on 3", saved)
+	}
+	if p, ok := s.presets.Get(2); !ok || p.URI != holdTestSpotifyURI || !p.Shuffle {
+		t.Fatalf("key 2 = %+v, want the playlist with its shuffle", p)
+	}
+	if p, ok := s.presets.Get(3); !ok || p.StreamURL != "http://example.com/rock" {
+		t.Fatalf("key 3 = %+v, want the station key 2 had", p)
+	}
+	if n := len(s.presets.All()); n != 2 {
+		t.Fatalf("store holds %d presets, want 2", n)
+	}
+}
+
+// A held empty key takes the item over and the key it sat on ends up empty.
+func TestHoldSaveLiveDuplicateOnEmptyKeyMoves(t *testing.T) {
 	s := newHoldTestServer(t, "UPNP", holdTestSpotifyLoc)
 	s.spotifyContext = func() string { return holdTestSpotifyURI }
 	if err := s.presets.SetSlot(presets.Preset{Slot: 3, Name: "Jens Chill", Type: "spotify", URI: holdTestSpotifyURI}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.HoldSaveLive(context.Background(), 2)
-	var refusal *HoldSaveError
-	if !errors.As(err, &refusal) || refusal.Code != "already-on-slot" || refusal.OtherSlot != 3 {
-		t.Fatalf("err = %v, want already-on-slot on key 3", err)
+	saved, err := s.HoldSaveLive(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("err = %v, want a move", err)
 	}
-	if _, ok := s.presets.Get(2); ok {
-		t.Fatal("key 2 must stay empty")
+	if saved.SwappedWith != 3 || saved.SwappedName != "" {
+		t.Fatalf("saved = %+v, want a move from key 3", saved)
 	}
-	if p, ok := s.presets.Get(3); !ok || p.URI != holdTestSpotifyURI {
-		t.Fatal("key 3 must keep its playlist")
+	if p, ok := s.presets.Get(2); !ok || p.URI != holdTestSpotifyURI {
+		t.Fatal("key 2 must hold the playlist")
+	}
+	if _, ok := s.presets.Get(3); ok {
+		t.Fatal("key 3 must be empty")
 	}
 }
 

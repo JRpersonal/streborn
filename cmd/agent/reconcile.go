@@ -351,6 +351,8 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// groupWakeHeld keeps the group-wake hold line to one per episode, the
 	// same way retryHoldLogged does for the playback hold.
 	groupWakeHeld := false
+	// startHoldLogged does the same for the hold on a play that is starting.
+	startHoldLogged := false
 	// retryHoldLogged keeps the "retry pass held" line to ONE per hold
 	// episode: the hold is re-evaluated every maintenance tick for as long as
 	// the box sleeps, and a line per tick is noise in the NAND log.
@@ -486,6 +488,11 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			if presetResyncAsk.CompareAndSwap(true, false) {
 				deferPresetResyncForStandby(logger, retryHeldSrc)
 			}
+			// The ceiling bounds a wait on STR's own playback. A night in
+			// standby is not that: counted, it fired the pass three seconds
+			// into the morning's wake resume ("heldFor=9h51m36s", #1322) and
+			// pulled the box off the song. The wait starts over after a wake.
+			forceHeldSince = time.Time{}
 			time.Sleep(10 * time.Second)
 			// Maintenance cadence, but wake early on a fresh ask (= the box
 			// woke up).
@@ -537,6 +544,20 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// station plays for hours and a pairing session is mid-handshake,
 			// and the write ends both.
 			src, playing, playKnown := boxSourceAndPlaying(boxHost)
+			// ... and not into a play the user just asked for that is still
+			// on its way (#1322). Bounded by the start window, so the pass
+			// runs at the latest once the play has had its chance.
+			if since := sinceLastUserPlay(); userPlayStartingHold(src, playing, playKnown, since) {
+				if !startHoldLogged {
+					startHoldLogged = true
+					logger.Info("preset reconcile: forced pass held, a play the user asked for is still starting",
+						"source", src, "sinceUserPlaySec", int(since.Seconds()))
+				}
+				forceHeld = true
+				time.Sleep(userPlayStartHoldRetry)
+				continue
+			}
+			startHoldLogged = false
 			userSrc := userChosenSource(src)
 			if userSrc {
 				// The ceiling bounds a wait on STR's own playback only. Time
@@ -628,6 +649,52 @@ func resyncSafeSource(src string) bool {
 	}
 }
 
+// lastUserPlayStartFn is wired to the webui's LastUserPlayStart in main.go.
+// Left nil in tests and in builds without a webui, where it reads as "no play
+// is starting".
+var lastUserPlayStartFn func() time.Time
+
+// userPlayStartWindow is how long after an app or phone play the speaker may
+// still be on its way to the stream: woken from standby, switching off its
+// own source, buffering. A wake that the firmware takes its time over plus a
+// push, measured on a Wave (#1322), fits inside it.
+const userPlayStartWindow = 45 * time.Second
+
+// userPlayStartingHold reports whether a forced key write must wait because a
+// play the user asked for is still starting. The box then reads a transitional
+// source that looks free (INVALID_SOURCE, UPNP not yet playing, STANDBY while
+// it wakes), and writing the native presets there switches it to
+// LOCAL_INTERNET_RADIO and kills the start. A #1322 bundle shows exactly that:
+// a Wave woken for a folder, the held pass released the moment the source
+// went INVALID_SOURCE, two full re-syncs, and the first track never played.
+// Audio that already flows is forcedWriteHold's business, not this one's.
+func userPlayStartingHold(src string, playing, playKnown bool, sinceUserPlay time.Duration) bool {
+	if sinceUserPlay < 0 || sinceUserPlay >= userPlayStartWindow {
+		return false
+	}
+	if playKnown && playing {
+		return false
+	}
+	switch src {
+	case "INVALID_SOURCE", "UPNP", "STANDBY", "":
+		return true
+	}
+	return false
+}
+
+// sinceLastUserPlay is how long ago a user last asked for playback, -1 when
+// unknown or never.
+func sinceLastUserPlay() time.Duration {
+	if lastUserPlayStartFn == nil {
+		return -1
+	}
+	at := lastUserPlayStartFn()
+	if at.IsZero() {
+		return -1
+	}
+	return time.Since(at)
+}
+
 // forcedPlayHoldCeiling bounds how long a forced re-sync may wait for playback
 // to stop. Hardware keys that are not registered are silent damage nobody sees
 // until they press one, so the wait must end. Five minutes is long enough to
@@ -638,6 +705,10 @@ const forcedPlayHoldCeiling = 5 * time.Minute
 // now_playing read per interval, and only while a forced pass is actually
 // waiting, so a speaker that is not being written to is never polled for this.
 const forcedPlayHoldRetry = 30 * time.Second
+
+// userPlayStartHoldRetry is the re-check while a play is starting: short,
+// because the window itself is short and the keys should register right after.
+const userPlayStartHoldRetry = 5 * time.Second
 
 // forcedWriteHold decides whether a forced full re-sync must wait because audio
 // is flowing right now.
