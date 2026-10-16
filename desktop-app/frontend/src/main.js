@@ -30,6 +30,7 @@ import {
   GetPresets,
   SetPreset,
   RenamePreset,
+  SetPresetVolume,
   DeletePreset,
   MovePreset,
   PlaySlot,
@@ -7063,20 +7064,30 @@ function renderPresets() {
 // back shortened.
 const PRESET_NAME_MAX = 64;
 
+// PRESET_VOLUME_DEFAULT is where the per-key volume slider starts when a key
+// has none yet: quiet, because a level is only ever a surprise when it is loud.
+const PRESET_VOLUME_DEFAULT = 20;
+
 // renamePresetKey lets the user call a key whatever they want (#812). Station
 // names arrive from the radio directory shouted in capitals, misspelled, or long
 // enough to fill the whole tile, and the key is the user's own. Only the name is
 // written: the station, its logo, a Spotify preset's playlist and account all
 // stay exactly as they are.
+//
+// The same dialog sets the key's own volume (#1323): off by default, which
+// leaves the volume as it is; on, the speaker is set to the level whenever the
+// key plays.
 async function renamePresetKey(slot) {
   if (!state.currentBox) return;
   const p = state.presets.find(x => x.slot === slot);
   if (!p) return;
   const current = p.name || '';
+  const currentVol = p.volume > 0 ? p.volume : 0;
   const answer = confirmWarn(
     t('preset.renameHeading'),
     `<p>${escapeHtml(t('preset.renameBody', { n: slot }))}</p>`
-    + `<input id="presetRenameInput" class="rename-input" type="text" maxlength="${PRESET_NAME_MAX}" />`,
+    + `<input id="presetRenameInput" class="rename-input" type="text" maxlength="${PRESET_NAME_MAX}" />`
+    + presetVolumeControlHTML(),
     {
       icon: null,
       calm: true,
@@ -7089,6 +7100,7 @@ async function renamePresetKey(slot) {
   // from JS so an apostrophe or a quote in a station name cannot break out of
   // the markup.
   const input = $('presetRenameInput');
+  wirePresetVolumeControl(currentVol);
   if (input) {
     input.value = current;
     input.focus();
@@ -7102,17 +7114,74 @@ async function renamePresetKey(slot) {
       if (confirmBtn) confirmBtn.click();
     };
   }
+  // The elements are held before the modal closes; like the name field, they
+  // keep their values once it is gone.
+  const volOn = $('presetVolumeOn');
+  const volRange = $('presetVolumeInput');
   if (!await answer) return;
+  const vol = readPresetVolumeControl(volOn, volRange);
   const name = (input ? input.value : '').trim();
-  if (!name || name === current) return;
-  try {
-    await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
-  } catch (err) {
-    showError(err);
-    return;
+  const renamed = !!name && name !== current;
+  const volChanged = vol !== currentVol;
+  if (!renamed && !volChanged) return;
+  if (renamed) {
+    try {
+      await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
+    } catch (err) {
+      showError(err);
+      return;
+    }
+    showToast(t('preset.renamedKey', { n: slot, name }));
   }
-  showToast(t('preset.renamedKey', { n: slot, name }));
+  if (volChanged) {
+    try {
+      await SetPresetVolume(state.currentBox.host, state.currentBox.port, slot, vol);
+      showToast(vol > 0
+        ? t('preset.volumeSetToast', { n: slot, v: vol })
+        : t('preset.volumeOffToast', { n: slot }));
+    } catch (err) {
+      if (String(err && err.message || err).includes('preset-volume-unsupported')) {
+        showToast(t('preset.volumeUnsupported'));
+      } else {
+        showError(err);
+      }
+    }
+  }
   loadPresets();
+}
+
+// presetVolumeControlHTML is the per-key volume part of the edit dialog: a
+// switch and a slider that only counts while the switch is on.
+function presetVolumeControlHTML() {
+  return `<label class="preset-volume-toggle"><input id="presetVolumeOn" type="checkbox" /> `
+    + `${escapeHtml(t('preset.volumeToggle'))}</label>`
+    + `<div class="preset-volume-row"><input id="presetVolumeInput" type="range" min="1" max="100" step="1" />`
+    + `<span id="presetVolumeValue" class="preset-volume-value"></span></div>`
+    + `<p class="preset-volume-hint">${escapeHtml(t('preset.volumeHint'))}</p>`;
+}
+
+// wirePresetVolumeControl fills the control from the key's stored level (0 =
+// off) and keeps the number and the enabled state in step with it.
+function wirePresetVolumeControl(currentVol) {
+  const on = $('presetVolumeOn');
+  const range = $('presetVolumeInput');
+  const label = $('presetVolumeValue');
+  if (!on || !range) return;
+  on.checked = currentVol > 0;
+  range.value = String(currentVol > 0 ? currentVol : PRESET_VOLUME_DEFAULT);
+  const sync = () => {
+    range.disabled = !on.checked;
+    if (label) label.textContent = on.checked ? range.value : '';
+  };
+  on.onchange = sync;
+  range.oninput = sync;
+  sync();
+}
+
+// readPresetVolumeControl answers the level the dialog asks for, 0 for off.
+function readPresetVolumeControl(on, range) {
+  if (!on || !range || !on.checked) return 0;
+  return Math.max(1, Math.min(100, parseInt(range.value, 10) || 0));
 }
 
 // applyTrackScroll turns an overflowing line into a gentle marquee: it pauses

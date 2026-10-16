@@ -44,15 +44,30 @@ const maxPresetNameRunes = 64
 // replaces the stored name of an existing preset and leaves every other field
 // untouched. Answers the renamed preset, so a client can render the result
 // without re-reading the whole store.
+//
+// The same verb also stores the key's own volume, {"volume":N} (#1323), for
+// the reason a rename has it: the level is about the key, not the station, so
+// none of the station gates of the PUT apply.
 func (s *Server) handlePresetRename(w http.ResponseWriter, r *http.Request, slot int) {
-	var in struct {
-		Name string `json:"name"`
-	}
+	var in presetPatch
 	// A name is a few dozen characters; there is no reason to read more.
 	if !decodeJSONRequest(w, r, 4<<10, &in) {
 		return
 	}
-	name := strings.TrimSpace(in.Name)
+	if in.Volume != nil && in.Name == nil {
+		s.handlePresetVolume(w, r, slot, *in.Volume)
+		return
+	}
+	if in.Volume != nil {
+		if _, ok, err := s.presets.SetVolume(slot, *in.Volume); err == nil && ok {
+			s.logger.Info("preset volume set", "slot", slot, "vol", *in.Volume,
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+		}
+	}
+	name := ""
+	if in.Name != nil {
+		name = strings.TrimSpace(*in.Name)
+	}
 	if name == "" {
 		// An empty name leaves the key showing "Key 3" with no way to tell what
 		// is on it, which is the opposite of what renaming is for. Refused in
