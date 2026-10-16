@@ -462,13 +462,26 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions, 
 	m.lastContext = uri
 	m.curTrackURI = ""
 	m.mu.Unlock()
+	// Pressing the key of the playlist that plays right now moves on to the
+	// next track (Jens, 2026-10-16): resuming the same song only cut it off
+	// for a moment. A paused engine is resumed where it stood instead, since
+	// that press asks for the music back, not for another song.
+	skipped := false
 	if opts.Shuffle {
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`)
 		_ = m.apiPost(ctx, "/player/next", "")
+		skipped = true
 	} else {
-		m.clearSkipCut()
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
+		if st, ok := m.readEngineStatus(ctx); ok && st.Paused != nil && *st.Paused {
+			m.clearSkipCut()
+		} else if err := m.apiPost(ctx, "/player/next", ""); err != nil {
+			m.logger.Debug("spotify: next on a re-pressed key failed", "err", err)
+			m.clearSkipCut()
+		} else {
+			skipped = true
+		}
 	}
 	// The fast path exists to skip the cold staging, and it skipped this with
 	// it: pressing the key while the same playlist already plays is exactly
@@ -477,8 +490,8 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions, 
 	// No-op while playing; recovers an engine another controller paused. The
 	// shared resume confirms it took; a shuffle press loads the pick, so the
 	// check also waits for that load to commit.
-	m.resumeRecall(ctx, uri, opts, seq, since, opts.Shuffle, 0)
-	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle, "repeat", opts.Repeat)
+	m.resumeRecall(ctx, uri, opts, seq, since, skipped, 0)
+	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle, "repeat", opts.Repeat, "nextTrack", skipped)
 	// Debounce the will_play repoint exactly like the cold path does.
 	m.mu.Lock()
 	m.lastActivate = time.Now()

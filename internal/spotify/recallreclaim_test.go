@@ -1,7 +1,9 @@
 package spotify
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,11 +24,15 @@ type transferEngine struct {
 	paused    bool
 	track     string
 	lostAgain bool // every load loses the session
+	paths     []string
 }
 
 func (e *transferEngine) handler(w http.ResponseWriter, r *http.Request) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if r.URL.Path != "/status" {
+		e.paths = append(e.paths, time.Now().Format("05.000")+" "+r.URL.Path)
+	}
 	switch r.URL.Path {
 	case "/status":
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -37,6 +43,9 @@ func (e *transferEngine) handler(w http.ResponseWriter, r *http.Request) {
 	case "/player/play":
 		e.plays++
 		e.track, e.paused = "New", true
+		// A real load takes seconds; without a gap the commit can share the
+		// play request's clock tick on Windows and never count as after it.
+		time.Sleep(20 * time.Millisecond)
 		e.m.noteLibrespotLine(`level=info msg="loaded track \"New\" (paused: true, position: 0ms, duration: 200000ms, prefetched: false)"`)
 		if e.plays == 1 || e.lostAgain {
 			e.lost = true
@@ -76,10 +85,17 @@ func TestRecallTakesBackATransferredSession(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(e.handler))
 	defer ts.Close()
 	m := newTestManagerAt(t, ts.URL)
+	var logBuf syncBuf
+	m.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e.m = m
 	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{}); err != nil {
 		t.Fatalf("Play: %v", err)
 	}
+	defer func() {
+		if t.Failed() {
+			t.Log(logBuf.String())
+		}
+	}()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if plays, paused := e.snapshot(); plays == 2 && !paused {
@@ -88,6 +104,9 @@ func TestRecallTakesBackATransferredSession(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	plays, paused := e.snapshot()
+	e.mu.Lock()
+	t.Log(e.paths)
+	e.mu.Unlock()
 	t.Fatalf("plays=%d paused=%v, want the recall repeated once and playing", plays, paused)
 }
 
@@ -107,4 +126,22 @@ func TestRecallReclaimIsBounded(t *testing.T) {
 	if plays, _ := e.snapshot(); plays != 2 {
 		t.Fatalf("plays=%d, want the original and exactly one repeat", plays)
 	}
+}
+
+// syncBuf is a goroutine-safe log sink for the reclaim tests.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

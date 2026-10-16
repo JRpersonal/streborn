@@ -69,11 +69,10 @@ func TestPlayWarmShuffleFastPath(t *testing.T) {
 	}
 }
 
-// TestPlayWarmResumeClearsCut: re-pressing the playing resume preset only
-// ensures shuffle-off playback (no reload, no skip). No BOS will arrive, so
-// the cut the entry point armed MUST be disarmed, or it would drop the live
-// audio for the whole 30s window.
-func TestPlayWarmResumeClearsCut(t *testing.T) {
+// TestPlayWarmRepressSkipsToNextTrack: re-pressing the key of the playlist
+// that plays right now moves on to its next track (Jens, 2026-10-16), without
+// a reload. The cut stays armed so the /player/next BOS drops the old tail.
+func TestPlayWarmRepressSkipsToNextTrack(t *testing.T) {
 	m, calls, cleanup := mockLibrespot(t)
 	defer cleanup()
 	const ctxURI = "spotify:playlist:abc"
@@ -84,17 +83,60 @@ func TestPlayWarmResumeClearsCut(t *testing.T) {
 		t.Fatalf("Play: %v", err)
 	}
 
+	sawNext := false
 	for _, p := range pathsOf(calls()) {
-		if p == "/player/play" || p == "/player/next" {
-			t.Errorf("warm resume re-press must not reload or skip, saw %s", p)
+		if p == "/player/play" {
+			t.Errorf("a re-press must not reload the playlist, saw %s", p)
 		}
+		if p == "/player/next" {
+			sawNext = true
+		}
+	}
+	if !sawNext {
+		t.Errorf("a re-press of the playing key must skip to the next track, calls %v", pathsOf(calls()))
 	}
 	shufBody, ok := bodyForPath(calls(), "/player/shuffle_context")
 	if !ok || !strings.Contains(shufBody, `"shuffle_context":false`) {
-		t.Errorf("warm resume must ensure shuffle OFF, got %q ok=%v", shufBody, ok)
+		t.Errorf("a re-press must keep shuffle OFF, got %q ok=%v", shufBody, ok)
+	}
+	if !m.skipCutArmed() {
+		t.Error("the recall cut must stay armed so the /player/next BOS drops the old tail")
+	}
+}
+
+// TestPlayWarmPausedRepressResumes: on a paused engine the press asks for the
+// music back, so it resumes where it stood instead of skipping. No BOS is
+// coming, so the cut must be disarmed or it would drop the live audio.
+func TestPlayWarmPausedRepressResumes(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			_, _ = w.Write([]byte(`{"username":"u","paused":true,"track":{"uri":"spotify:track:cur","name":"Cur"}}`))
+			return
+		}
+		mu.Lock()
+		got = append(got, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	m := newTestManagerAt(t, ts.URL)
+	const ctxURI = "spotify:playlist:abc"
+	makeWarm(m, ctxURI)
+	m.ArmRecallCut()
+	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: false}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, p := range got {
+		if p == "/player/next" || p == "/player/play" {
+			t.Errorf("a press on a paused playlist must resume, not skip or reload, saw %s", p)
+		}
 	}
 	if m.skipCutArmed() {
-		t.Error("warm resume must clear the recall cut (no BOS is coming)")
+		t.Error("a resume must clear the recall cut (no BOS is coming)")
 	}
 }
 
