@@ -223,6 +223,13 @@ export function LibraryRefusedServers() {
   return callOptionalBinding('LibraryRefusedServers', []);
 }
 
+// SearchLibrary searches the whole library of every media server the app
+// knows, narrowed to any, album, artist or title (#1325). Optional binding,
+// per the note above.
+export function SearchLibrary(query, field) {
+  return callOptionalBinding('SearchLibrary', [query, field]);
+}
+
 // CheckFirewall reports whether Windows Firewall blocks this app (cached on the
 // backend; force asks for a fresh read), AllowThroughFirewall replaces the
 // block with allow rules in one administrator step. Optional bindings, per the

@@ -439,6 +439,7 @@ export namespace main {
 	    streamURL: string;
 	    albumArtURL: string;
 	    durationSec: number;
+	    server?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryItem(source);
@@ -455,6 +456,7 @@ export namespace main {
 	        this.streamURL = source["streamURL"];
 	        this.albumArtURL = source["albumArtURL"];
 	        this.durationSec = source["durationSec"];
+	        this.server = source["server"];
 	    }
 	}
 	export class LibraryPage {
@@ -506,6 +508,42 @@ export namespace main {
 	        this.address = source["address"];
 	        this.detail = source["detail"];
 	    }
+	}
+	export class LibrarySearchResult {
+	    items: LibraryItem[];
+	    searched: number;
+	    unanswered?: string[];
+	    partial: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new LibrarySearchResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], LibraryItem);
+	        this.searched = source["searched"];
+	        this.unanswered = source["unanswered"];
+	        this.partial = source["partial"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class LibraryServer {
 	    udn: string;

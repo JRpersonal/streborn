@@ -566,6 +566,10 @@ export function SaveWebhookConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveWebhookConfig'](arg1, arg2, arg3);
 }
 
+export function SearchLibrary(arg1, arg2) {
+  return window['go']['main']['App']['SearchLibrary'](arg1, arg2);
+}
+
 export function SelectBoxSource(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3, arg4);
 }

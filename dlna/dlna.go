@@ -955,10 +955,39 @@ func browseRaw(ctx context.Context, srv Server, objectID string, start, count in
 // hits with the title-only criteria and one hit with this one, although the
 // track's upnp:artist is "AVM GmbH".
 func Search(ctx context.Context, srv Server, query string, count int) (BrowseResult, error) {
+	return searchWithCriteria(ctx, srv, SearchCriteria(query, SearchAny), count)
+}
+
+// The fields a library search can be narrowed to (#1325). SearchAny matches
+// the title, the artist or the album, as Search always has.
+const (
+	SearchAny    = "any"
+	SearchTitle  = "title"
+	SearchArtist = "artist"
+	SearchAlbum  = "album"
+)
+
+// SearchCriteria builds the ContentDirectory criteria for audio items whose
+// field contains query. An unknown or empty field means SearchAny.
+func SearchCriteria(query, field string) string {
 	q := escapeCriteriaValue(query)
-	return searchWithCriteria(ctx, srv,
-		`upnp:class derivedfrom "object.item.audioItem" and (dc:title contains "`+q+
-			`" or upnp:artist contains "`+q+`" or upnp:album contains "`+q+`")`, count)
+	const audio = `upnp:class derivedfrom "object.item.audioItem" and `
+	switch field {
+	case SearchTitle:
+		return audio + `dc:title contains "` + q + `"`
+	case SearchArtist:
+		return audio + `upnp:artist contains "` + q + `"`
+	case SearchAlbum:
+		return audio + `upnp:album contains "` + q + `"`
+	}
+	return audio + `(dc:title contains "` + q +
+		`" or upnp:artist contains "` + q + `" or upnp:album contains "` + q + `")`
+}
+
+// SearchBy is Search narrowed to one field: the whole library, from container
+// "0", for the tracks whose title, artist or album contains query.
+func SearchBy(ctx context.Context, srv Server, query, field string, count int) (BrowseResult, error) {
+	return searchWithCriteria(ctx, srv, SearchCriteria(query, field), count)
 }
 
 // SearchTitleOnly is the narrow form of Search, for servers that index titles
@@ -967,9 +996,7 @@ func Search(ctx context.Context, srv Server, query string, count int) (BrowseRes
 // caller whose widened Search failed asks again this way before falling back to
 // the far more expensive browse walk.
 func SearchTitleOnly(ctx context.Context, srv Server, query string, count int) (BrowseResult, error) {
-	return searchWithCriteria(ctx, srv,
-		`upnp:class derivedfrom "object.item.audioItem" and dc:title contains "`+
-			escapeCriteriaValue(query)+`"`, count)
+	return searchWithCriteria(ctx, srv, SearchCriteria(query, SearchTitle), count)
 }
 
 // escapeCriteriaValue guards the criteria string itself: the value is quoted

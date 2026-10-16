@@ -91,6 +91,9 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "q must not be empty", http.StatusBadRequest)
 		return
 	}
+	// field narrows the search to album, artist or title; absent is all three,
+	// as before (#1325).
+	field := librarySearchField(r.URL.Query().Get("field"))
 	if s.mediaServers == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"results": []librarySearchResult{}, "registered": 0})
 		return
@@ -141,7 +144,7 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		sctx, scancel := context.WithTimeout(ctx, librarySearchPerServer)
-		items, serverPartial := s.searchOneServer(sctx, srv, q)
+		items, serverPartial := s.searchOneServerBy(sctx, srv, q, field)
 		scancel()
 		partial = partial || serverPartial
 		name := srv.FriendlyName
@@ -361,8 +364,29 @@ func (s *Server) recallMediaServer(ctx context.Context, key string) (dlna.Server
 // typed character decided whether the phone found the song, which is exactly
 // the "sometimes it finds it" of #666.
 func (s *Server) searchOneServer(ctx context.Context, srv dlna.Server, q string) ([]dlna.Item, bool) {
-	res, err := dlna.Search(ctx, srv, q, librarySearchMax)
-	if err != nil {
+	return s.searchOneServerBy(ctx, srv, q, dlna.SearchAny)
+}
+
+// librarySearchField reads the field a search is narrowed to (#1325): album,
+// artist or title, anything else is "any", today's title-artist-album match.
+func librarySearchField(raw string) string {
+	switch f := strings.ToLower(strings.TrimSpace(raw)); f {
+	case dlna.SearchAlbum, dlna.SearchArtist, dlna.SearchTitle:
+		return f
+	}
+	return dlna.SearchAny
+}
+
+// searchOneServerBy is searchOneServer narrowed to one field. The title-only
+// retry only makes sense where the title is part of what was asked: an artist
+// search answered with title hits would list the wrong songs.
+func (s *Server) searchOneServerBy(ctx context.Context, srv dlna.Server, q, field string) ([]dlna.Item, bool) {
+	titleRetry := field == dlna.SearchAny || field == dlna.SearchTitle
+	res, err := dlna.SearchBy(ctx, srv, q, field, librarySearchMax)
+	if err != nil && !titleRetry {
+		s.logger.Info("library search: Search action refused the field, walking the tree (bounded)",
+			"server", srv.FriendlyName, "q", q, "field", field, "err", err)
+	} else if err != nil {
 		// A server that indexes titles only faults on the widened criteria
 		// (UPnPError 708) instead of answering it. Ask the narrow way before
 		// paying for the walk.
@@ -372,7 +396,7 @@ func (s *Server) searchOneServer(ctx context.Context, srv dlna.Server, q string)
 			s.logger.Info("library search: Search action unavailable, walking the tree (bounded)",
 				"server", srv.FriendlyName, "q", q, "err", err, "titleOnlyErr", nerr)
 		}
-	} else if len(res.Items) == 0 {
+	} else if len(res.Items) == 0 && titleRetry {
 		// A 200 with zero hits is not proof of absence either: the FRITZ!Box
 		// index answers "Fly FRITZ!" with zero and "Fly FRITZ" with one for
 		// the same track, and the widened boolean criteria has its own quirks
@@ -394,9 +418,9 @@ func (s *Server) searchOneServer(ctx context.Context, srv dlna.Server, q string)
 		// search matches TAGS, while the folder view the user compares against
 		// shows file names).
 		s.logger.Info("library search: Search answered nothing, walking the tree (bounded)",
-			"server", srv.FriendlyName, "q", q)
+			"server", srv.FriendlyName, "q", q, "field", field)
 	}
-	return s.walkOneServer(ctx, srv, q)
+	return s.walkOneServerBy(ctx, srv, q, field)
 }
 
 // walkOneServer is the fallback: a breadth-first browse of the server's tree,
@@ -404,11 +428,24 @@ func (s *Server) searchOneServer(ctx context.Context, srv dlna.Server, q string)
 // folder. Bounded in calls, depth and per-container paging so a huge NAS cannot
 // pin the speaker's CPU.
 func (s *Server) walkOneServer(ctx context.Context, srv dlna.Server, q string) ([]dlna.Item, bool) {
+	return s.walkOneServerBy(ctx, srv, q, dlna.SearchAny)
+}
+
+// walkOneServerBy is the walk, matching only the field a search was narrowed
+// to (#1325).
+func (s *Server) walkOneServerBy(ctx context.Context, srv dlna.Server, q, field string) ([]dlna.Item, bool) {
 	qLower := strings.ToLower(q)
+	has := func(v string) bool { return strings.Contains(strings.ToLower(v), qLower) }
 	matches := func(it dlna.Item) bool {
-		return strings.Contains(strings.ToLower(it.Title), qLower) ||
-			strings.Contains(strings.ToLower(it.Artist), qLower) ||
-			strings.Contains(strings.ToLower(it.Album), qLower)
+		switch field {
+		case dlna.SearchTitle:
+			return has(it.Title)
+		case dlna.SearchArtist:
+			return has(it.Artist)
+		case dlna.SearchAlbum:
+			return has(it.Album)
+		}
+		return has(it.Title) || has(it.Artist) || has(it.Album)
 	}
 	type node struct {
 		id    string

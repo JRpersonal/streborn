@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -244,6 +245,9 @@ type LibraryItem struct {
 	StreamURL   string `json:"streamURL"`
 	AlbumArtURL string `json:"albumArtURL"`
 	DurationSec int    `json:"durationSec"`
+	// Server names the media server a whole-library search hit came from;
+	// empty for a browse, where the open server is plain to see.
+	Server string `json:"server,omitempty"`
 }
 
 // LibraryPage is one page of a browse call.
@@ -402,6 +406,126 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	if err != nil {
 		return LibraryPage{}, err
 	}
+	return libraryPageFrom(res), nil
+}
+
+// LibrarySearchResult is one whole-library search across every media server
+// the app knows: the merged tracks, plus the servers that could not answer.
+type LibrarySearchResult struct {
+	Items []LibraryItem `json:"items"`
+	// Searched is how many servers were asked.
+	Searched int `json:"searched"`
+	// Unanswered names the servers that have no working search or did not
+	// answer in time, so the list can say its result is not complete.
+	Unanswered []string `json:"unanswered,omitempty"`
+	// Partial is true when a server had more hits than it handed over, so
+	// the list is not the whole answer. Same three notes as the phone page:
+	// a server that did not answer, a partial list, nothing found.
+	Partial bool `json:"partial"`
+}
+
+const (
+	// librarySearchPerServer caps one server's search. A NAS that is asleep
+	// or switched off must not hold the other servers' hits back.
+	librarySearchPerServer = 12 * time.Second
+	// librarySearchMaxPerServer caps the hits asked from one server; a longer
+	// list is a query to narrow, not a page to scroll.
+	librarySearchMaxPerServer = 200
+)
+
+// librarySearchFn is the per-server search, swapped out in tests.
+var librarySearchFn = librarySearchOne
+
+// librarySearchOne asks one server. A server that indexes titles only
+// rejects the widened "any" criteria, so that one is asked again title-only,
+// as the phone page's search does.
+func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string) (dlna.BrowseResult, error) {
+	res, err := dlna.SearchBy(ctx, srv, query, field, librarySearchMaxPerServer)
+	if err != nil && (field == "" || field == dlna.SearchAny) {
+		res, err = dlna.SearchTitleOnly(ctx, srv, query, librarySearchMaxPerServer)
+	}
+	return res, err
+}
+
+// SearchLibrary searches the WHOLE library of EVERY media server the app
+// knows, not only the folder that is open (#1325), for tracks whose field
+// contains query. field is any, title, artist or album (dlna.SearchAny and
+// friends). The servers are asked in parallel, each with its own timeout, and
+// the hits come back merged, each naming its server.
+func (a *App) SearchLibrary(query, field string) (LibrarySearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return LibrarySearchResult{}, nil
+	}
+	a.libraryMu.Lock()
+	servers := make([]dlna.Server, 0, len(a.libraryServers))
+	for _, s := range a.libraryServers {
+		servers = append(servers, s)
+	}
+	a.libraryMu.Unlock()
+	if len(servers) == 0 {
+		return LibrarySearchResult{}, fmt.Errorf("no media server known, call ListMediaServers first")
+	}
+	out := searchServers(a.appCtx(), servers, query, field)
+	if a.logger != nil {
+		a.logger.Info("library search", "field", field, "servers", out.Searched,
+			"hits", len(out.Items), "unanswered", out.Unanswered)
+	}
+	return out, nil
+}
+
+// searchServers runs the per-server searches in parallel and merges them in a
+// stable order: by server name, then in the order each server answered.
+func searchServers(parent context.Context, servers []dlna.Server, query, field string) LibrarySearchResult {
+	type answer struct {
+		name    string
+		items   []LibraryItem
+		partial bool
+		err     error
+	}
+	answers := make([]answer, len(servers))
+	var wg sync.WaitGroup
+	for i, srv := range servers {
+		wg.Add(1)
+		go func(i int, srv dlna.Server) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(parent, librarySearchPerServer)
+			defer cancel()
+			name := srv.FriendlyName
+			if name == "" {
+				name = srv.UDN
+			}
+			res, err := librarySearchFn(ctx, srv, query, field)
+			answers[i] = answer{name: name, err: err}
+			if err != nil {
+				return
+			}
+			answers[i].partial = res.TotalMatches > len(res.Items)
+			for _, it := range libraryPageFrom(res).Items {
+				it.Server = name
+				answers[i].items = append(answers[i].items, it)
+			}
+		}(i, srv)
+	}
+	wg.Wait()
+	sort.SliceStable(answers, func(i, j int) bool {
+		return strings.ToLower(answers[i].name) < strings.ToLower(answers[j].name)
+	})
+	out := LibrarySearchResult{Searched: len(servers), Items: []LibraryItem{}}
+	for _, a := range answers {
+		if a.err != nil {
+			out.Unanswered = append(out.Unanswered, a.name)
+			continue
+		}
+		out.Partial = out.Partial || a.partial
+		out.Items = append(out.Items, a.items...)
+	}
+	return out
+}
+
+// libraryPageFrom turns a browse or search answer into the page the Library
+// shows, without the items the SoundTouch cannot play.
+func libraryPageFrom(res dlna.BrowseResult) LibraryPage {
 	page := LibraryPage{
 		TotalMatches: res.TotalMatches,
 		Returned:     res.Returned,
@@ -423,7 +547,7 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 			DurationSec: it.DurationSec,
 		})
 	}
-	return page, nil
+	return page
 }
 
 // TrackDelivery is the answer to "did the media server hand over the file".

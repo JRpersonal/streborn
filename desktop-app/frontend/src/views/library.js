@@ -21,6 +21,7 @@ import {
   ProbeTrackDelivery,
   ListMediaServers,
   LibraryRefusedServers,
+  SearchLibrary,
   BrowseLibrary,
   AddMediaServerByURL,
   RemoveManualMediaServer,
@@ -68,7 +69,19 @@ const libState = {
   browseToken: 0,     // bumped on each browse so a stale background page-loop abandons
   shuffle: false,     // "Play folder" shuffle toggle (UI state, default off)
   repeat: 'off',      // "Play folder" repeat mode: "off" | "all" | "one" (default off)
+  // The whole-library search across every media server (#1325). active means
+  // its results stand in for the folder list until the user goes back.
+  search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], partial: false, token: 0 },
 };
+
+// The whole-library search categories: the same four, in the same order, as
+// the phone page's Find tab offers.
+const LIB_SEARCH_FIELDS = [
+  ['any', 'library.fieldAll'],
+  ['album', 'library.fieldAlbum'],
+  ['artist', 'library.fieldArtist'],
+  ['title', 'library.fieldTrack'],
+];
 
 // Media-library paging (#119). DLNA servers (and the Bose box's own UPnP) cap
 // NumberReturned per Browse, so a 1500-track folder only returned its first
@@ -514,7 +527,8 @@ async function libraryPlay(item) {
       url: item.streamURL,
       name: item.title || '(track)',
       art: item.albumArtURL || '',
-      source: librarySourceName(),
+      // A whole-library search hit names its own server (#1325).
+      source: item.server || librarySourceName(),
       durationSec: item.durationSec || 0,
       at: Date.now(),
     };
@@ -762,7 +776,7 @@ function librarySaveAsPreset(item) {
   }
   // The media server this track came from, stored on the preset so the tile can
   // show a small "from <server>" badge.
-  const source = librarySourceName();
+  const source = item.server || librarySourceName();
   deps.showSlotPicker({
     title: t('library.assignTitle', { name: getBoxLabel(state.currentBox) }),
     subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',
@@ -883,6 +897,122 @@ function libRefilter() {
   if (list) { list.innerHTML = libraryListInnerHTML(); wireLibraryRows(list); }
   const cnt = $('libCount');
   if (cnt) cnt.textContent = libraryCountText();
+}
+
+// libraryWholeSearch runs the whole-library search (#1325). Every media server
+// the app knows is asked at once by the backend, each with its own timeout, and
+// the token drops an answer the user has already moved past, the same guard the
+// phone page's libToken is.
+export async function libraryWholeSearch(query, field) {
+  const s = libState.search;
+  const q = (query || '').trim();
+  s.query = query || '';
+  s.field = field || 'any';
+  if (!q) return;
+  const token = ++s.token;
+  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false });
+  renderLibrary();
+  let res = null;
+  let failed = false;
+  try {
+    res = await SearchLibrary(q, s.field);
+  } catch (e) {
+    failed = true;
+  }
+  if (token !== s.token) return;
+  s.loading = false;
+  if (failed || !res) {
+    // No answer at all reads like "every server was silent", which is the
+    // offline note naming all of them.
+    s.unanswered = libState.servers.map(libraryServerLabel);
+  } else {
+    s.items = res.items || [];
+    s.unanswered = (res.unanswered || []).filter(Boolean);
+    s.partial = !!res.partial;
+  }
+  renderLibrary();
+}
+
+// libraryWholeSearchNote picks the one note under the results, in the phone
+// page's order: a server that did not answer, then a partial list, then no hits.
+function libraryWholeSearchNote(s) {
+  if (s.unanswered.length) return t('library.wholeSearchOffline', { name: s.unanswered.join(', ') });
+  if (s.partial) return t('library.wholeSearchPartial');
+  if (!s.items.length) return t('library.wholeSearchNone');
+  return '';
+}
+
+// libraryWholeSearchBox is the search row above the folder: the query, the
+// category and the button.
+function libraryWholeSearchBox() {
+  const s = libState.search;
+  const opts = LIB_SEARCH_FIELDS.map(([v, k]) =>
+    `<option value="${v}"${s.field === v ? ' selected' : ''}>${escapeHtml(t(k))}</option>`).join('');
+  return `
+      <div class="library-search-row library-whole-search">
+        <input type="search" class="library-search" id="libWholeQ" placeholder="${escapeAttr(t('library.wholeSearchPlaceholder'))}" value="${escapeAttr(s.query)}">
+        <label class="muted small" for="libWholeField">${escapeHtml(t('library.searchIn'))}</label>
+        <select id="libWholeField">${opts}</select>
+        <button class="btn btn-mini" id="libWholeBtn">${escapeHtml(t('library.wholeSearchBtn'))}</button>
+      </div>`;
+}
+
+// libraryWholeSearchBody lists the hits the way the phone page does: the title,
+// then artist, album and server on one line.
+function libraryWholeSearchBody() {
+  const s = libState.search;
+  const head = `
+      <div class="library-crumbs">
+        <a href="#" class="library-ws-back" id="libWholeClose">&lsaquo; ${escapeHtml(t('library.wholeSearchClose'))}</a>
+        <span class="library-crumb-sep">&rsaquo;</span>
+        <span class="library-crumb-active">${escapeHtml(t('library.wholeSearchSec'))}</span>
+      </div>`;
+  if (s.loading) return head + `<p class="library-loading">${escapeHtml(t('library.wholeSearching'))}</p>`;
+  const rows = s.items.map((it, idx) => {
+    const meta = [it.artist, it.album, it.server].filter(Boolean).join(' · ');
+    const dur = it.durationSec > 0 ? ` <span class="library-duration">${deps.formatDuration(it.durationSec)}</span>` : '';
+    return `
+        <li class="library-row library-row-track">
+          <span class="library-icon">&#9835;</span>
+          <span class="library-title">
+            <span class="library-track-title">${escapeHtml(it.title || it.streamURL || '')}</span>
+            ${meta ? `<span class="library-track-meta">${escapeHtml(meta)}</span>` : ''}
+          </span>
+          ${dur}
+          <span class="library-actions">
+            <button class="btn btn-mini lib-ws-play" data-idx="${idx}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
+            <button class="btn btn-mini btn-secondary lib-ws-preset" data-idx="${idx}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
+          </span>
+        </li>`;
+  }).join('');
+  const note = libraryWholeSearchNote(s);
+  return head
+    + (rows ? `<ul class="library-list">${rows}</ul>` : '')
+    + (note ? `<p class="library-empty-folder">${escapeHtml(note)}</p>` : '');
+}
+
+function wireWholeSearch(el) {
+  const q = $('libWholeQ');
+  const f = $('libWholeField');
+  const go = () => libraryWholeSearch(q ? q.value : '', f ? f.value : 'any');
+  const btn = $('libWholeBtn');
+  if (btn) btn.onclick = go;
+  if (q) q.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  // Picking a category narrows the search already typed, as on the phone.
+  if (f) f.onchange = () => { libState.search.field = f.value; if (q && q.value.trim()) go(); };
+  const close = $('libWholeClose');
+  if (close) close.onclick = (e) => {
+    e.preventDefault();
+    libState.search.token++;
+    Object.assign(libState.search, { active: false, loading: false, items: [] });
+    renderLibrary();
+  };
+  el.querySelectorAll('.lib-ws-play').forEach((b) => {
+    b.onclick = () => { const it = libState.search.items[+b.dataset.idx]; if (it) libraryPlay(it); };
+  });
+  el.querySelectorAll('.lib-ws-preset').forEach((b) => {
+    b.onclick = () => { const it = libState.search.items[+b.dataset.idx]; if (it) librarySaveAsPreset(it); };
+  });
 }
 
 function renderLibrary() {
@@ -1042,7 +1172,13 @@ function renderLibrary() {
     body = `<p class="library-pick-server">${escapeHtml(t('library.pickServer'))}</p>`;
   }
 
-  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + manualAdd + body;
+  // The whole-library search sits above the folder whenever there is a server
+  // to search, and its results stand in for the folder until "back" (#1325).
+  const wholeSearch = libState.servers.length > 0 ? libraryWholeSearchBox() : '';
+  if (libState.search.active) body = libraryWholeSearchBody();
+
+  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + manualAdd + wholeSearch + body;
+  wireWholeSearch(el);
 
   // Wire interactions.
   const boxSel = $('libraryBoxSelect');
