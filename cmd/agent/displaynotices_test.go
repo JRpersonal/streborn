@@ -62,6 +62,7 @@ func TestHoldSaveNotices(t *testing.T) {
 	}{
 		{"saved", webui.HoldSaved{Kind: "spotify", Name: "Jens Chill"}, nil, oled.NoticeSavedByKey, 1},
 		{"unchanged", webui.HoldSaved{Kind: "queue", Name: "Album", Unchanged: true}, nil, oled.NoticeSavedByKey, 1},
+		{"swapped", webui.HoldSaved{Kind: "spotify", Name: "Jens Chill", SwappedWith: 4, SwappedName: "Rock"}, nil, oled.NoticeSwapped, 1},
 		{"on another key", webui.HoldSaved{}, &webui.HoldSaveError{Code: "already-on-slot", OtherSlot: 4, OtherName: "X"}, oled.NoticeAlreadyOnKey, 4},
 		{"refused", webui.HoldSaved{}, &webui.HoldSaveError{Code: "spotify-context-unknown"}, oled.NoticeNotSaved, 1},
 		{"unknown stream", webui.HoldSaved{}, webui.ErrHoldUnknownStream, oled.NoticeNotSaved, 1},

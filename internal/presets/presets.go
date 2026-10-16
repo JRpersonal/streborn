@@ -504,6 +504,31 @@ func (s *Store) MoveSlot(from int, p Preset) error {
 	return s.Save()
 }
 
+// SwapSlots exchanges the presets on keys a and b in a SINGLE persisted write.
+// When a key is empty the other one's preset moves over and leaves it empty.
+// Used by a held hardware key whose item already sits on another key: the two
+// halves must be one write for the same reason as MoveSlot, so an interrupted
+// swap never leaves either preset on no key at all (#836).
+func (s *Store) SwapSlots(a, b int) error {
+	if a == b {
+		return nil
+	}
+	s.mu.Lock()
+	out := make([]Preset, 0, len(s.data))
+	for _, existing := range s.data {
+		switch existing.Slot {
+		case a:
+			existing.Slot = b
+		case b:
+			existing.Slot = a
+		}
+		out = append(out, existing)
+	}
+	s.data = out
+	s.mu.Unlock()
+	return s.Save()
+}
+
 // RemoveSlot removes the preset for the given slot.
 func (s *Store) RemoveSlot(slot int) error {
 	s.mu.Lock()

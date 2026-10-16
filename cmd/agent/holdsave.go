@@ -498,6 +498,12 @@ func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 	case err != nil:
 		h.logger.Warn("hold-to-save: the save failed", "slot", p.slot, "err", err)
 		h.endHeldScreen(p.slot, "save failed")
+	case saved.SwappedWith > 0:
+		h.logger.Info("hold-to-save: swapped the keys, the held key took over what plays",
+			"slot", p.slot, "kind", saved.Kind, "name", saved.Name,
+			"otherSlot", saved.SwappedWith, "otherNow", saved.SwappedName,
+			"producer", p.producer.String(), "holdAfterPressMs", holdAt.Sub(p.at).Milliseconds())
+		h.notify(oled.Swapped(p.slot, saved.SwappedWith, saved.SwappedName))
 	case saved.Unchanged:
 		h.logger.Info("hold-to-save: the key already holds what plays, nothing written",
 			"slot", p.slot, "kind", saved.Kind, "name", saved.Name)

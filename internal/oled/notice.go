@@ -52,6 +52,7 @@ const (
 	NoticeSavedByKey   NoticeKind = "saved-key"
 	NoticeSavedFromApp NoticeKind = "saved-app"
 	NoticeAlreadyOnKey NoticeKind = "already-on-key"
+	NoticeSwapped      NoticeKind = "swapped"
 	NoticeNotSaved     NoticeKind = "not-saved"
 	NoticeEmptyKey     NoticeKind = "empty-key"
 	NoticeRestored     NoticeKind = "keys-restored"
@@ -115,6 +116,16 @@ func SavedFromApp(key int) Notice {
 // AlreadyOnKey: a save was refused because the item already sits on other.
 func AlreadyOnKey(other int) Notice {
 	return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other, "ON KEY "+strconv.Itoa(other), "ALREADY SAVED", 3*time.Second, 2)
+}
+
+// Swapped: a held key took over the item that sat on other, and other got
+// what the held key had (otherName), or became empty.
+func Swapped(key, other int, otherName string) Notice {
+	l2 := "OLD ONE NOW ON " + strconv.Itoa(other)
+	if otherName == "" {
+		l2 = "KEY " + strconv.Itoa(other) + " NOW EMPTY"
+	}
+	return keyNotice(NoticeSwapped, iconKeyCheck, key, "SAVED "+strconv.Itoa(key), l2, 3*time.Second, 2)
 }
 
 // NotSaved: what plays cannot be kept on key.
