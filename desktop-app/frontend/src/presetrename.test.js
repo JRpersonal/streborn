@@ -42,8 +42,7 @@ describe('a preset key can be renamed', () => {
     // Nothing is sent when the user cancels, clears the field, or retypes the
     // same name: each of those would cost the speaker a flash write for nothing.
     expect(fn).toContain('if (!await answer) return;');
-    expect(fn).toContain('const renamed = !!name && name !== current;');
-    expect(fn).toContain('if (!renamed && !volChanged) return;');
+    expect(fn).toContain('if (!name || name === current) return;');
   });
 
   it('keeps the icons in the header from pressing the key underneath', () => {

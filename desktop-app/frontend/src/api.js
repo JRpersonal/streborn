@@ -12,7 +12,6 @@ export {
   GetPresets,
   SetPreset,
   RenamePreset,
-  SetPresetVolume,
   DeletePreset,
   PlaySlot,
   PlayURL,
