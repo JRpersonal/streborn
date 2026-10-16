@@ -304,6 +304,12 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// standby-flip discriminator (#419). Before the wake: the wake itself can
 	// flip the source states around.
 	s.NoteUserPlay()
+	// The key's own volume (#1323), set once the key plays. Only for a recall
+	// the app or the phone asked for: an in-process recall (the alarm, which
+	// sets the level you want to wake up to, or a recovery) has no RemoteAddr.
+	if r.RemoteAddr != "" {
+		s.ApplyPresetVolume(slot, "app recall")
+	}
 	// Was the speaker asleep? Read it BEFORE the wake, because the wake is what
 	// changes the answer.
 	//

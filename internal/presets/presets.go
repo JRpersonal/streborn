@@ -93,7 +93,16 @@ type Preset struct {
 	// is. Optional/additive: nil on every other type, and a store written
 	// before it simply has none.
 	Native *NativeItem `json:"native,omitempty"`
+	// Volume is the level the speaker is set to whenever this key is played,
+	// 1-100; 0 leaves the volume as it is, which is what every preset saved
+	// before this carries (#1323). It belongs to the key: a new station saved
+	// onto the key keeps it (SetSlot), and a moved or swapped preset takes it
+	// along, because it travels with the struct.
+	Volume int `json:"volume,omitempty"`
 }
+
+// MaxPresetVolume is the highest level a key can store.
+const MaxPresetVolume = 100
 
 // TypeNative is the preset type for a music-service station the speaker plays
 // natively (see Preset.Native).
@@ -256,6 +265,7 @@ type rawPreset struct {
 	Repeat    bool         `json:"repeat"`
 	Items     []PresetItem `json:"items"`
 	Native    *NativeItem  `json:"native"`
+	Volume    int          `json:"volume"`
 }
 
 // rawWrapper supports the object format {"presets": [...]}.
@@ -375,6 +385,7 @@ func normalize(in []rawPreset) []Preset {
 			Repeat:      p.Repeat,
 			Items:       p.Items,
 			Native:      p.Native,
+			Volume:      clampVolume(p.Volume),
 		})
 	}
 	return out
@@ -431,6 +442,7 @@ func (s *Store) SetSlot(p Preset) error {
 	replaced := false
 	for i, existing := range s.data {
 		if existing.Slot == p.Slot {
+			keepKeyVolume(&p, existing)
 			s.data[i] = p
 			replaced = true
 			break
@@ -461,6 +473,7 @@ func (s *Store) SetSlots(ps []Preset) error {
 		replaced := false
 		for i, existing := range s.data {
 			if existing.Slot == p.Slot {
+				keepKeyVolume(&p, existing)
 				s.data[i] = p
 				replaced = true
 				break
@@ -472,6 +485,51 @@ func (s *Store) SetSlots(ps []Preset) error {
 	}
 	s.mu.Unlock()
 	return s.Save()
+}
+
+// keepKeyVolume carries the key's own volume over to a preset written onto it
+// without one. Every save path writes the whole preset (the app's save, a
+// hold, a re-save that heals the metadata, a rename on an older agent), and
+// none of them knows about the volume, so without this each of them would
+// quietly switch it off again (#1323). Turning it off is SetVolume's job.
+func keepKeyVolume(p *Preset, existing Preset) {
+	if p.Volume <= 0 && existing.Volume > 0 {
+		p.Volume = existing.Volume
+	}
+}
+
+// clampVolume keeps a stored level inside 0..MaxPresetVolume, so a damaged or
+// hand-edited store can never hand the speaker an out-of-range level.
+func clampVolume(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > MaxPresetVolume {
+		return MaxPresetVolume
+	}
+	return v
+}
+
+// SetVolume stores the level slot is set to when it is played, 0 for none.
+// ok is false when the key is empty.
+func (s *Store) SetVolume(slot, vol int) (Preset, bool, error) {
+	vol = clampVolume(vol)
+	s.mu.Lock()
+	idx := -1
+	for i, existing := range s.data {
+		if existing.Slot == slot {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		return Preset{}, false, nil
+	}
+	s.data[idx].Volume = vol
+	p := s.data[idx]
+	s.mu.Unlock()
+	return p, true, s.Save()
 }
 
 // MoveSlot puts p on p.Slot and clears the key it came from, in a SINGLE

@@ -46,6 +46,10 @@ type Preset struct {
 	// (Type=="native"). Raw JSON for the reason Items is: the agent owns the
 	// schema and a box-to-box copy must carry it verbatim.
 	Native json.RawMessage `json:"native,omitempty"`
+	// Volume is the level the speaker is set to when this key plays, 1-100;
+	// 0 leaves the volume alone (#1323). Mirrored so the edit dialog can show
+	// it and a box-to-box copy carries it.
+	Volume int `json:"volume,omitempty"`
 }
 
 // presetAPIPath is the agent's preset REST route; the slot is appended for
@@ -141,6 +145,49 @@ func (a *App) renamePresetByResave(host string, port int, slot int, name string)
 		return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot), p)
 	}
 	return fmt.Errorf("key %d holds nothing to rename", slot)
+}
+
+// errPresetVolumeUnsupported is what SetPresetVolume answers when the
+// speaker's agent predates the per-key volume; the frontend names it.
+const errPresetVolumeUnsupported = "preset-volume-unsupported"
+
+// SetPresetVolume stores the level a key plays at (#1323), 1-100, or 0 to
+// leave the volume alone. It goes out on the same PATCH verb as a rename and
+// changes nothing else on the key. An agent from before the per-key volume
+// ignores the field and answers the unchanged preset, which is how an old
+// speaker is told apart: the level it answers is not the level asked for.
+func (a *App) SetPresetVolume(host string, port int, slot int, volume int) error {
+	if volume < 0 {
+		volume = 0
+	}
+	if volume > 100 {
+		volume = 100
+	}
+	b, err := json.Marshal(map[string]int{"volume": volume})
+	if err != nil {
+		return err
+	}
+	resp, err := a.boxDo(host, port, http.MethodPatch,
+		fmt.Sprintf("%s/%d", presetAPIPath, slot), "application/json", string(b))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusUnprocessableEntity {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			return errors.New(errPresetVolumeUnsupported)
+		}
+		return readHTTPError(resp)
+	}
+	var got Preset
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&got); err != nil || got.Volume != volume {
+		a.logger.Info("preset volume: this speaker's agent does not keep a volume per key",
+			"host", host, "slot", slot)
+		return errors.New(errPresetVolumeUnsupported)
+	}
+	a.logger.Info("preset volume set", "host", host, "slot", slot, "volume", volume)
+	return nil
 }
 
 // SaveLibraryPreset stores a preset saved from a DLNA media server (the Library

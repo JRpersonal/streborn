@@ -670,6 +670,7 @@ export namespace main {
 	    items?: number[];
 	    repeat?: boolean;
 	    native?: number[];
+	    volume?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -693,6 +694,7 @@ export namespace main {
 	        this.items = source["items"];
 	        this.repeat = source["repeat"];
 	        this.native = source["native"];
+	        this.volume = source["volume"];
 	    }
 	}
 	export class RadioSearchOpts {
