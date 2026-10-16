@@ -90,6 +90,26 @@ func TestThePhonePageSendsTheLengthItAlreadyHas(t *testing.T) {
 	if n := strings.Count(page, "duration_sec: it.durationSec || 0"); n != 3 {
 		t.Errorf("%d of the 3 play calls send the length, want 3", n)
 	}
+	// The Recently played replay, both the single-track card and the folder
+	// card's fallback to its first track. The desktop replay sent the length
+	// and drew a bar; this one did not (#845).
+	if n := strings.Count(page, "duration_sec: e.durationSec || 0"); n != 2 {
+		t.Errorf("%d of the 2 history replay calls send the length, want 2", n)
+	}
+}
+
+// A client that sends no length still gets the one the agent learned for the
+// same file, so an older page or another remote draws the bar too (#845).
+func TestAPlayWithoutALengthUsesTheLearnedOne(t *testing.T) {
+	src := readRepoFile(t, "playback.go")
+	i := strings.Index(src, "playDirect && req.DurationSec <= 0")
+	j := strings.Index(src, "var meta upnp.TrackMeta")
+	if i < 0 || j < 0 || i > j {
+		t.Fatal("the learned-length fallback must run before the track meta is built")
+	}
+	if !strings.Contains(src[i:j], "s.trackLens.get(req.URL)") {
+		t.Error("the fallback no longer reads the learned length of this file")
+	}
 }
 
 // readRepoFile reads a source file of this package, so a test can pin the

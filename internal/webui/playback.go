@@ -210,6 +210,16 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// itself: through the proxy the byte count is the proxy's, not the track's,
 	// and a seekable claim over it would be a lie. So the meta follows
 	// playDirect rather than the MIME.
+	// A client that sends no length still gets the one this agent learned for
+	// the same file, from an earlier play or a key: the phone page's history
+	// replay left it out, and its replays drew no bar (#845).
+	if playDirect && req.DurationSec <= 0 {
+		if d := s.trackLens.get(req.URL); d > 0 {
+			req.DurationSec = int(d / time.Second)
+			s.logger.Info("play request: no length sent, using the one learned for this file",
+				"title", req.Title, "durationSec", req.DurationSec)
+		}
+	}
 	var meta upnp.TrackMeta
 	if playDirect && req.DurationSec > 0 {
 		meta = upnp.TrackMeta{Duration: time.Duration(req.DurationSec) * time.Second, Seekable: true}

@@ -4828,7 +4828,9 @@ async function playRecent(idx, btn) {
      with the desktop app, which turns out to have been dropping it too, so
      "parity" meant both paths were wrong (#817): the Wave labelled the track as
      internet radio, the bitrate read as a dash, the track never ended and the
-     card was re-filed under Radio. The card carries it; send it. */
+     card was re-filed under Radio. The card carries it; send it. The same goes
+     for durationSec: without it the speaker reports no length, so a replayed
+     track drew no progress bar here while the desktop replay drew one (#845). */
   /* A FOLDER card is not a track: its key names the media server and the
      container it was played from, so the speaker can browse that folder again and
      start the whole queue. The stored URL is only the first track, and playing it
@@ -4853,13 +4855,15 @@ async function playRecent(idx, btn) {
     if (!ok && r && r.status === 404) {
       ok = await api('/api/play', 'POST', {
         url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
-        mime: e.mime || '', homepage: e.homepage || ''
+        mime: e.mime || '', homepage: e.homepage || '',
+        duration_sec: e.durationSec || 0
       });
     }
   } else {
     ok = await api('/api/play', 'POST', {
       url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
-      mime: e.mime || '', homepage: e.homepage || ''
+      mime: e.mime || '', homepage: e.homepage || '',
+      duration_sec: e.durationSec || 0
     });
   }
   if (ok) { setNow(T.starting + ' ' + (e.cardName || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(loadRecent, 4000); }
