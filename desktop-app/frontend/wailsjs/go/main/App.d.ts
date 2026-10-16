@@ -287,6 +287,8 @@ export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:strin
 
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
+export function SearchLibrary(arg1:string,arg2:string):Promise<main.LibrarySearchResult>;
+
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 
 export function SendAnnounce(arg1:string,arg2:number,arg3:string,arg4:string,arg5:number):Promise<void>;

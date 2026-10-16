@@ -421,3 +421,50 @@ func TestLibrarySearchSkipsNonAudio(t *testing.T) {
 		t.Fatalf("a video item was offered as a song: %+v", items)
 	}
 }
+
+// #1325: a search narrowed to the artist sends the artist criteria, never
+// retries title-only (that would list songs whose TITLE matches), and the walk
+// fallback matches the artist alone. The phone page and the desktop Library
+// offer the same four choices.
+func TestLibrarySearchNarrowedToAField(t *testing.T) {
+	f := &fakeCDS{
+		searchFaults: true,
+		children: map[string]fakeContainer{
+			"0": {tracks: []fakeTrack{
+				{id: "t1", title: "Rush Hour", artist: "Jane Wiedlin", album: "Fur", url: "http://192.0.2.9/1.mp3"},
+				{id: "t2", title: "Limelight", artist: "Rush", album: "Moving Pictures", url: "http://192.0.2.9/2.mp3"},
+			}},
+		},
+	}
+	s, srv := testSearchServer(t, f)
+	items, _ := s.searchOneServerBy(context.Background(), srv, "rush", dlna.SearchArtist)
+	if len(items) != 1 || items[0].Title != "Limelight" {
+		t.Fatalf("artist search got %+v, want only Limelight", items)
+	}
+	if searches, _ := f.counts(); searches != 1 {
+		t.Errorf("want one Search call and no title-only retry, got %d", searches)
+	}
+	items, _ = s.searchOneServerBy(context.Background(), srv, "rush", dlna.SearchTitle)
+	if len(items) != 1 || items[0].Title != "Rush Hour" {
+		t.Fatalf("title search got %+v, want only Rush Hour", items)
+	}
+	page := readIndexHTML(t)
+	if !strings.Contains(page, "'&field=' + encodeURIComponent(field)") {
+		t.Error("the phone page does not send the chosen category to the search")
+	}
+	opts := []string{`<option value="any">`, `<option value="album">`, `<option value="artist">`, `<option value="title">`}
+	at := 0
+	for _, o := range opts {
+		i := strings.Index(page[at:], o)
+		if i < 0 {
+			t.Fatalf("category %s missing or out of order (All, Album, Artist, Track, as on the desktop)", o)
+		}
+		at += i
+	}
+	for raw, want := range map[string]string{"": dlna.SearchAny, "ALBUM": dlna.SearchAlbum,
+		"artist": dlna.SearchArtist, "title": dlna.SearchTitle, "genre": dlna.SearchAny} {
+		if got := librarySearchField(raw); got != want {
+			t.Errorf("field %q = %q, want %q", raw, got, want)
+		}
+	}
+}

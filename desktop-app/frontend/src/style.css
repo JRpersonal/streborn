@@ -1261,8 +1261,11 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   color: var(--c-muted);
   overflow-wrap: anywhere;
 }
-.library-crumb { color: var(--brand); text-decoration: none; }
-.library-crumb:hover { text-decoration: underline; }
+.library-crumb, .library-ws-back { color: var(--brand); text-decoration: none; }
+.library-crumb:hover, .library-ws-back:hover { text-decoration: underline; }
+/* The whole-library search row (#1325): query, category, button on one line. */
+.library-whole-search { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.library-whole-search .library-search { flex: 1 1 220px; }
 .library-crumb-active { color: var(--c-text); font-weight: 600; }
 .library-crumb-sep { color: var(--c-border-2); padding: 0 4px; }
 .library-folder-actions { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
