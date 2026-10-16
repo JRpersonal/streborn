@@ -377,6 +377,7 @@
   "status.standby": "Standby",
   "status.active": "active",
   "status.auxInput": "AUX input",
+  "status.ownSource": "Speaker's own source",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "stopped",

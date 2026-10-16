@@ -377,6 +377,7 @@
   "status.standby": "待機",
   "status.active": "使用中",
   "status.auxInput": "AUX 輸入",
+  "status.ownSource": "喇叭本身的音源",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "已停止",

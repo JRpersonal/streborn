@@ -95,11 +95,47 @@ func (s *Server) replaySingleTrack(tr singleTrack, gen uint64) (uint64, bool) {
 	return newGen, true
 }
 
+// retrySingleTrackStart wakes the speaker and hands it the file once more,
+// for a play the speaker never started (#1322). A Wave left on its own source
+// before it went to standby took STR's wake and push, never activated the
+// stream, and dropped back to standby 30 s later: the app said "playing", the
+// room stayed silent. The second wake reached the speaker every time in that
+// bundle, so one more try is what the user would have done by hand.
+//
+// It re-checks, under boxCmdMu, that nothing newer took the box, that nobody
+// stopped it, and that no key was pressed on the speaker since the play began
+// (a key press is the listener choosing something else). It returns the new
+// play's generation.
+func (s *Server) retrySingleTrackStart(tr singleTrack, gen uint64, playStart time.Time, why string) (uint64, bool) {
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	if s.RecallGeneration() != gen || s.queue.isActive() || s.userStoppedRecently() {
+		return 0, false
+	}
+	if s.userActivityFn != nil && s.userActivityFn().After(playStart) {
+		s.logger.Info("single track: not retrying the start, a key was pressed on the speaker meanwhile",
+			"title", tr.title)
+		return 0, false
+	}
+	s.logger.Info("single track: waking the speaker and handing the track over once more",
+		"title", tr.title, "why", why, "waitedSec", int(time.Since(playStart).Seconds()))
+	ctx := s.queueCtx()
+	s.ensureBoxReady(ctx)
+	s.ClearUserStop()
+	if err := s.playTrackWithWrongStateRepair(ctx, tr.boxURL, tr.title, tr.art, tr.mime, tr.meta); err != nil {
+		s.logger.Warn("single track: the second start failed too", "title", tr.title, "err", err)
+		return 0, false
+	}
+	return s.setLastPlay(tr.boxURL, tr.title, tr.art, tr.mime), true
+}
+
 func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
 	for {
-		if !s.watchOneSingleTrackPlay(tr, gen) {
+		ended, cur := s.watchOneSingleTrackPlay(tr, gen)
+		if !ended {
 			return
 		}
+		gen = cur
 		if !s.singleTrackRepeatOne() {
 			return
 		}
@@ -113,8 +149,9 @@ func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
 
 // watchOneSingleTrackPlay watches one play of the file to its end. It returns
 // true when the track ended naturally and repeat-one may play it again, false
-// when the watch ended for any other reason or the box was stopped for good.
-func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
+// when the watch ended for any other reason or the box was stopped for good,
+// plus the generation the play ended under (a start retry makes a new one).
+func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint64) {
 	ctx, cancel := context.WithTimeout(s.queueCtx(), singleTrackMaxWatch)
 	defer cancel()
 	ticker := time.NewTicker(queuePollInterval)
@@ -127,11 +164,13 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 		lastPosAt time.Time
 		obsTotal  time.Duration
 		sawPlay   bool
+		// retried: the one start retry this play gets has been used.
+		retried bool
 	)
 	for {
 		select {
 		case <-ctx.Done():
-			return false
+			return false, gen
 		case <-ticker.C:
 		}
 		// Anything newer wins: another track, a preset key, a station, a
@@ -139,22 +178,35 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 		// the box now would stop THEIR audio.
 		if s.RecallGeneration() != gen {
 			s.logger.Debug("single track: a newer play superseded the end watch", "title", title)
-			return false
+			return false, gen
 		}
 		if s.queue.isActive() {
 			// A folder started meanwhile owns the box; its watcher is the one
 			// that should call the end.
-			return false
+			return false, gen
 		}
 		if s.userStoppedRecently() {
-			return false
+			return false, gen
 		}
 
 		ps, pos, total, standby, tornDown := s.pollNowPlaying()
 		if standby {
 			// Powered off mid-track. Never a track end, and STR must not send
 			// anything to a sleeping box (#219).
-			return false
+			return false, gen
+		}
+		if tornDown && !sawPlay && !retried && time.Since(start) < queueStallTimeout {
+			// Not started yet, and the source reads torn down: on a speaker
+			// that is still switching away from its own source on the way to
+			// the stream that is a transition, not a refusal (#1322). The
+			// stall branch below decides once the start has had its time.
+			continue
+		}
+		if tornDown && !sawPlay && !retried {
+			if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker dropped the track before it started"); ok {
+				gen, start, retried = next, time.Now(), true
+				continue
+			}
 		}
 		if tornDown {
 			// The box dropped the source instead of playing. Same shape as the
@@ -162,7 +214,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 			// track's nominal length would just be silence with a ticking
 			// progress bar. There is no next track here, so end the watch.
 			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
-			return false
+			return false, gen
 		}
 		if total > obsTotal {
 			obsTotal = total
@@ -194,14 +246,20 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 			s.logger.Info("single track: the box reported the track stopped", "title", title,
 				"posSec", int(lastPos.Seconds()), "trackSec", int(end.Seconds()))
 			if s.singleTrackRepeatOne() {
-				return true
+				return true, gen
 			}
 			s.NoteUserStop()
-			return false
+			return false, gen
 		default:
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
+				if !retried {
+					if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker never started the track"); ok {
+						gen, start, retried = next, time.Now(), true
+						continue
+					}
+				}
 				s.logger.Info("single track: it never started, dropping the end watch", "title", title)
-				return false
+				return false, gen
 			}
 			continue
 		}
@@ -212,7 +270,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) bool {
 		in := s.trackEndSnapshot(sawPlay, ps, start, tr.dur, obsTotal, lastPos, lastPosAt)
 		if net := trackEndNet(in); net != endNetNone {
 			s.learnSingleTrackLength(tr, net, lastPos)
-			return s.finishSingleTrack(title, net.why(), lastPos, end)
+			return s.finishSingleTrack(title, net.why(), lastPos, end), gen
 		}
 	}
 }

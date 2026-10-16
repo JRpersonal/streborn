@@ -351,6 +351,7 @@
   "status.standby": "وضع الاستعداد",
   "status.active": "نشط",
   "status.auxInput": "مدخل AUX",
+  "status.ownSource": "مصدر السماعة الخاص",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "متوقف",

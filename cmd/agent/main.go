@@ -1015,6 +1015,9 @@ func run() error {
 	// reconcile loop sleeps before its first pass, so wiring it here is early
 	// enough.
 	quietWakeEpisodeActive = webuiSrv.QuietWakeEpisodeActive
+	// ... and when the user last asked for playback, so a forced pass does not
+	// write into a play that is still starting (#1322).
+	lastUserPlayStartFn = webuiSrv.LastUserPlayStart
 	// ... and whether this speaker follows a group or stereo pair: its
 	// firmware refuses every preset write while it does (#1077).
 	groupFollowerFn = func() (bool, string) {

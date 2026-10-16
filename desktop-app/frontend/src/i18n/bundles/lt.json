@@ -351,6 +351,7 @@
   "status.standby": "Budėjimas",
   "status.active": "aktyvus",
   "status.auxInput": "AUX įvestis",
+  "status.ownSource": "garsiakalbio šaltinis",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "sustabdyta",

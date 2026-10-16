@@ -351,6 +351,7 @@
   "status.standby": "Veille",
   "status.active": "actif",
   "status.auxInput": "entrée AUX",
+  "status.ownSource": "source propre de l'enceinte",
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "arrêté",
