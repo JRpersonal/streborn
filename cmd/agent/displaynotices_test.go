@@ -113,15 +113,19 @@ func TestEmptyKeyNotice(t *testing.T) {
 	r.fireChecks()
 	l.none(t)
 
-	// The box's own list was never reported: unknown, so silent.
+	// The box's own list was never reported: unknown, so silent. Every tap
+	// brings its tap verdict (live ST10, 2026-10-16); without one a stats
+	// press would read as a hold (holdSaver.statsHold).
 	r, l = setup(true, false)
 	r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.gesture(false, 150)
 	r.fireChecks()
 	l.none(t)
 
 	// A key that holds something.
 	r, l = setup(false, true)
 	r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.gesture(false, 150)
 	r.fireChecks()
 	l.none(t)
 

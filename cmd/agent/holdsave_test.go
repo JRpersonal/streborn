@@ -282,10 +282,11 @@ func TestOnKeyEventFeedsHoldSaver(t *testing.T) {
 
 // TestHoldSaveUnpairedPressLeavesTrace: the #1217 field case. A physical
 // press of key 3 for which no hold verdict ever arrives must leave one INFO
-// line naming the slot once the pair window has passed.
+// line naming the slot once the pair window has passed. A trace press: a
+// stats-only press takes the fallback (TestHoldSaveStatsHoldWithoutVerdict).
 func TestHoldSaveUnpairedPressLeavesTrace(t *testing.T) {
 	r := newHoldRig(t)
-	r.press("PRESET_3", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.press("PRESET_3", boxlog.ProducerConsole, boxlog.OriginTrace, 0)
 	if len(r.checks) != 1 || r.checkDelays[0] != holdUnpairedCheckAfter {
 		t.Fatalf("armed checks = %d (%v), want one at %v", len(r.checks), r.checkDelays, holdUnpairedCheckAfter)
 	}
@@ -359,7 +360,74 @@ func TestHoldSaveNoCheckForNetworkKeys(t *testing.T) {
 	r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 0)
 	r.hs.NotePress(boxlog.KeyEvent{Name: "PRESET_2", Producer: boxlog.ProducerConsole,
 		State: boxlog.StateReleased, Origin: boxlog.OriginStats, At: r.now})
-	if len(r.checks) != 1 {
-		t.Fatalf("armed checks = %d, want 1 (the physical press only)", len(r.checks))
+	// The physical stats press arms the unpaired check and the stats-hold
+	// look; the network key and the release arm nothing.
+	if len(r.checks) != 2 {
+		t.Fatalf("armed checks = %d, want 2 (the physical press only)", len(r.checks))
+	}
+}
+
+// fireAfter advances the clock by d and runs every armed one-shot.
+func (r *holdRig) fireAfter(d time.Duration) {
+	r.mu.Lock()
+	fs := r.checks
+	r.checks = nil
+	r.mu.Unlock()
+	r.now = r.now.Add(d)
+	for _, f := range fs {
+		f()
+	}
+}
+
+// TestHoldSaveStatsHoldWithoutVerdict replays the live ST10 run of
+// 2026-10-16: a held key 6 left one stats press line and no verdict at all.
+// Read as a hold once the tap window has passed quietly, and saved.
+func TestHoldSaveStatsHoldWithoutVerdict(t *testing.T) {
+	r := newHoldRig(t)
+	r.result = webui.HoldSaved{Kind: "spotify", Name: "Gute-Laune-Mix"}
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 1 || got[0] != 6 {
+		t.Fatalf("saves = %v, want [6]\n%s", got, r.log.String())
+	}
+	if !strings.Contains(r.log.String(), "reading it as a hold") {
+		t.Fatalf("missing the fallback line:\n%s", r.log.String())
+	}
+}
+
+// TestHoldSaveStatsTapNeverSaves replays the taps of the same run: the
+// activation came about 0.4 s before the stats line, the tap verdict 3 ms
+// after it. Neither may be read as a hold.
+func TestHoldSaveStatsTapNeverSaves(t *testing.T) {
+	r := newHoldRig(t)
+	r.hs.NoteSelection()
+	r.now = r.now.Add(400 * time.Millisecond)
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.gesture(false, 3)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("a tap saved %v\n%s", got, r.log.String())
+	}
+
+	// A tap verdict alone (an empty key activates nothing) vetoes too.
+	r = newHoldRig(t)
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.gesture(false, 3)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("a tap on an empty key saved %v", got)
+	}
+}
+
+// TestHoldSaveStatsFallbackNotForNetworkOrTrace: the fallback is for the
+// stats-only physical press; a key sent over the network or one the key
+// trace reports (with its release) never takes it.
+func TestHoldSaveStatsFallbackNotForNetworkOrTrace(t *testing.T) {
+	r := newHoldRig(t)
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginTrace, 0)
+	r.press("PRESET_5", boxlog.ProducerGabbo, boxlog.OriginStats, 100)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("saved %v without a stats press", got)
 	}
 }

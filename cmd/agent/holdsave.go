@@ -19,6 +19,14 @@
 // activation that follows a tap lands about 0.25 s after the release, so
 // nothing is saved before holdConfirmAfter has passed since the press, and a
 // tap verdict or a preset activation anywhere in that window cancels it.
+//
+// A physical press on the sm2 ST10 that only the analytics line reports
+// (origin stats) never gets a hold verdict at all: two holds on a live ST10
+// (2026-10-16) left one stats press line each and nothing else, while each
+// tap in the same run brought its activation and a tap verdict within half a
+// second. So a stats press that holdConfirmAfter later still has neither is
+// read as the hold itself (statsHold), and goes through the same
+// confirmation and save as a paired one.
 
 package main
 
@@ -205,6 +213,9 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 		// presses; it only reads state and logs.
 		h.after(holdUnpairedCheckAfter, func() { h.checkUnpaired(p) })
 	}
+	if p.producer.Physical() && p.origin == boxlog.OriginStats && h.after != nil {
+		h.after(max(p.at.Add(holdConfirmAfter).Sub(h.now()), 0), func() { h.statsHold(p) })
+	}
 	if h.emptyKey != nil && h.after != nil &&
 		(p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())) {
 		h.after(emptyKeyCheckAfter, func() { h.checkEmpty(p, false) })
@@ -335,6 +346,28 @@ func (h *holdSaver) checkUnpaired(p holdPress) {
 		"superseded", cur.seq != p.seq,
 		"lastVerdict", verdict, "lastVerdictAgeMs", ageMs,
 		"lastVerdictAfterPressMs", afterPressMs, "unclaimedHold", unclaimed)
+}
+
+// statsHold is the one-shot look holdConfirmAfter after a physical press
+// reported only by the analytics line: when it is still the newest press, no
+// verdict paired with it, and neither a tap verdict nor a preset activation
+// came since shortly before it, the press was a hold the firmware gave no
+// verdict for (#1217), and it is saved like a paired one.
+func (h *holdSaver) statsHold(p holdPress) {
+	from := p.at.Add(-holdVetoLookback)
+	h.mu.Lock()
+	cur, veto, verdictAt := h.press, h.vetoAt, h.verdictAt
+	if cur.seq != p.seq || cur.used ||
+		(!veto.IsZero() && !veto.Before(from)) ||
+		(!verdictAt.IsZero() && !verdictAt.Before(from)) {
+		h.mu.Unlock()
+		return
+	}
+	h.press.used = true
+	h.mu.Unlock()
+	h.logger.Info("hold-to-save: no verdict and no activation after the press, reading it as a hold",
+		"slot", p.slot, "producer", p.producer.String(), "origin", string(p.origin))
+	h.paired(p, p.at)
 }
 
 // NoteGesture receives the firmware's tap/hold verdict on a preset key. Each
