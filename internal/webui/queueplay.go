@@ -451,6 +451,14 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 	s.setQueueTiming(it.Duration)
 }
 
+// queueDeadTrackStops counts one more track the speaker did not play, either
+// dropped (a torn-down source) or never started, and reports whether the run
+// has reached queueDeadTrackLimit and the queue should stop.
+func queueDeadTrackStops(deadInARow *int) bool {
+	*deadInARow++
+	return *deadInARow >= queueDeadTrackLimit
+}
+
 // queueCurrentTitle is the title of the track the queue is on, empty when none.
 func (s *Server) queueCurrentTitle() string {
 	if it, ok := s.queue.current(); ok {
@@ -565,8 +573,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// then logs the dead track as a natural end (11 m 43 s of silence inside one
 		// 33-minute queue, 2026-09-28), and with repeat=all that never stops.
 		if tornDown && sawPlay {
-			deadInARow++
-			if deadInARow >= queueDeadTrackLimit {
+			if queueDeadTrackStops(&deadInARow) {
 				s.logger.Info("queue watcher: the speaker dropped several tracks in a row without playing them, stopping the queue",
 					"deadInARow", deadInARow)
 				s.stopQueue("the music server stopped delivering; several tracks in a row did not play")
@@ -654,8 +661,20 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		default:
 			// No usable status this tick (poll error or an idle box).
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
-				// A track that never started: skip it.
-				s.advanceAndPlay(true, curGen, "the track never started playing")
+				// A track that never started counts as a dead one too. A speaker
+				// that never takes the stream (a Wave left on its own source,
+				// #1322) otherwise walked the whole folder in silence and filled
+				// Recently played with tracks nobody heard.
+				if queueDeadTrackStops(&deadInARow) {
+					s.logger.Info("queue watcher: several tracks in a row never started playing, stopping the queue",
+						"deadInARow", deadInARow)
+					s.stopQueue("the speaker did not start several tracks in a row")
+					return
+				}
+				s.logger.Info("queue watcher: the track never started playing, skipping to the next",
+					"deadInARow", deadInARow, "waitedSec", int(time.Since(start).Seconds()))
+				s.advanceAndPlayEnded(true, curGen, "the track never started playing",
+					trackEndReport{net: "never-started", length: dur, elapsed: time.Since(start)})
 				continue
 			}
 		}

@@ -79,3 +79,26 @@ func TestTheStopReasonNamesTheServerNotTheState(t *testing.T) {
 		t.Error("the stop reason does not name the server, which is the thing the owner can check")
 	}
 }
+
+// A track that never starts counts towards the same limit as a dropped one.
+// The #1322 Wave never took the stream at all, and the queue walked the whole
+// folder in silence, one never-started track after the other.
+func TestNeverStartedTracksStopTheQueueAfterTheLimit(t *testing.T) {
+	dead := 0
+	for i := 1; i < queueDeadTrackLimit; i++ {
+		if queueDeadTrackStops(&dead) {
+			t.Fatalf("the queue stopped after %d dead tracks, the limit is %d", i, queueDeadTrackLimit)
+		}
+	}
+	if !queueDeadTrackStops(&dead) {
+		t.Fatalf("the queue kept going after %d dead tracks in a row", queueDeadTrackLimit)
+	}
+	src := readRepoFile(t, "queueplay.go")
+	i := strings.Index(src, `"the track never started playing"`)
+	if i < 0 {
+		t.Fatal("the never-started advance is gone; if it moved, move this test with it")
+	}
+	if !strings.Contains(src[max(0, i-1200):i], "queueDeadTrackStops(&deadInARow)") {
+		t.Error("a never-started track no longer counts towards the dead-track limit")
+	}
+}
