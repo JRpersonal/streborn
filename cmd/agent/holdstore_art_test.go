@@ -38,3 +38,34 @@ func TestHeldStationTakesTheKnownArtChain(t *testing.T) {
 		t.Fatalf("fallback Art = %q, want the descriptor picture", got.Art)
 	}
 }
+
+// A station saved with the speaker's own hold also carries the homepage STR
+// knows for the stream: the tile derives its logo from it, and without it the
+// key showed the stream host's icon instead of the station's own (#1217).
+func TestHeldStationTakesTheKnownHomepage(t *testing.T) {
+	const origin = "https://stream.example.com/jazz/mp3-128/"
+	loc := webui.OrionStationLocation(boxurl.RawStream(origin), "Jazz FM", "https://example.com/jazz-logo.png")
+
+	store := holdTestStore(t)
+	live := heldLive{homepage: func(u string) string {
+		if u == origin {
+			return "https://jazz.example.org/"
+		}
+		return ""
+	}}
+	got, changed, err := heldPresetCandidate(store, live, heldRadio(3, loc, "Jazz FM"))
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	if got.Homepage != "https://jazz.example.org/" {
+		t.Fatalf("Homepage = %q, want the known station website", got.Homepage)
+	}
+
+	got, _, err = heldPresetCandidate(store, heldLive{}, heldRadio(3, loc, "Jazz FM"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Homepage != "" {
+		t.Fatalf("nothing known: Homepage = %q", got.Homepage)
+	}
+}

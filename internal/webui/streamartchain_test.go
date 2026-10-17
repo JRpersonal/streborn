@@ -41,3 +41,40 @@ func TestStreamArtChain(t *testing.T) {
 		t.Fatalf("preset: %q", got)
 	}
 }
+
+// The station website is looked up from the same three places as the logo
+// chain, so a key saved by the speaker's hold draws the logo the app's save
+// would (#1217).
+func TestStreamHomepage(t *testing.T) {
+	const u = "https://stream.example.com/jazz/"
+	s := queueSaveTestServer(t)
+	if got := s.StreamHomepage(u); got != "" {
+		t.Fatalf("nothing known: %q", got)
+	}
+
+	s.recent = recent.New()
+	s.recent.Add(recent.Entry{Source: "radio", CardKey: u, CardURL: u, Homepage: "https://ring.example.org/"})
+	s.recent.Add(recent.Entry{Source: "radio", CardKey: "other", CardURL: "https://other.example.com/", Homepage: "x"})
+	if got := s.StreamHomepage(u); got != "https://ring.example.org/" {
+		t.Fatalf("ring: %q", got)
+	}
+
+	s.recentRadioCard = recentCardCtx{key: u, url: u, homepage: "https://now.example.org/"}
+	if got := s.StreamHomepage(u); got != "https://now.example.org/" {
+		t.Fatalf("current card: %q", got)
+	}
+
+	// A preset without a homepage does not hide the card's.
+	if err := s.presets.SetSlot(presets.Preset{Slot: 2, Name: "Jazz", Type: "radio", StreamURL: u}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.StreamHomepage(u); got != "https://now.example.org/" {
+		t.Fatalf("preset without homepage: %q", got)
+	}
+	if err := s.presets.SetSlot(presets.Preset{Slot: 2, Name: "Jazz", Type: "radio", StreamURL: u, Homepage: "https://preset.example.org/"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.StreamHomepage(u); got != "https://preset.example.org/" {
+		t.Fatalf("preset: %q", got)
+	}
+}

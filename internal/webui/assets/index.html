@@ -2457,12 +2457,14 @@ function playingSlot(loc, list) {
 // holds a music-library album or folder stores no stream URL: the speaker plays
 // one media-server track after another, so its location never names the key.
 // The agent's queue does, with the card "queue:slot:<n>"; same rule as the
-// desktop app's queueSlotActive (#1190, #1029).
+// desktop app's queueSlotActive (#1190, #1029). A folder started from the
+// Library and then saved on a key keeps its folder card; the agent names that
+// key as q.slot instead (#1217).
 function queueSlot(q, list) {
-  if (!q || !q.active || typeof q.card !== 'string') return 0;
-  var m = q.card.match(/^queue:slot:(\d+)$/);
-  if (!m) return 0;
-  var n = parseInt(m[1], 10);
+  if (!q || !q.active) return 0;
+  var m = typeof q.card === 'string' ? q.card.match(/^queue:slot:(\d+)$/) : null;
+  var n = m ? parseInt(m[1], 10) : (typeof q.slot === 'number' ? q.slot : 0);
+  if (!n) return 0;
   for (var i = 0; i < (list || []).length; i++) {
     if (list[i] && list[i].slot === n && list[i].type === 'queue') return n;
   }

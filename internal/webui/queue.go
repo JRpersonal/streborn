@@ -277,6 +277,16 @@ type queueSnapshot struct {
 	// carries the folder's first track, so a name or URL match lost the "now
 	// playing" mark from the second track on (#1065).
 	Card string `json:"card,omitempty"`
+	// Slot is the key the playing folder was saved on while it played (a hold
+	// on a key, or the app's hold-to-save), 0 when none. The card keeps naming
+	// the folder the queue was started from, because Library and
+	// Recently-played match on it, so a folder started with "Play folder" and
+	// then saved never lit its new key (#1217).
+	Slot int `json:"slot,omitempty"`
+	// PresetRev is the preset store's write counter (presets.Store.Revision).
+	// The app reads this every status tick anyway, so a change makes it
+	// re-read the presets at once instead of on its slow timer (#1217).
+	PresetRev uint64 `json:"preset_rev"`
 }
 
 // queueSnapItem is one track of the snapshot. Artist and Album are what the

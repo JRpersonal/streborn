@@ -17,6 +17,7 @@ import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativ
 import { pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText } from './usservices.js';
 import {
   acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
+  spotifySlotForContext,
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText } from './nointernet.js';
@@ -279,6 +280,7 @@ import {
   proxiedRadioPlaying,
   queueSlotCard,
   queueSlotActive,
+  presetRevChanged,
   presetOwnArt,
   queueTrackMeta,
   isKeyChrome,
@@ -6760,6 +6762,13 @@ function renderPresets() {
       state.nowSpotifySlot = null;
     }
   }
+  // Playback no key started (the Spotify app, then a hold that saved it on a
+  // key) never gets a per-slot URL: light the key that holds the playing
+  // context, by URI only (#1217). The stale check above drops it again once
+  // the engine moves to something else.
+  if (spotifyPlaying && state.nowSpotifySlot == null) {
+    state.nowSpotifySlot = spotifySlotForContext(state.presets, state.spotifyNow);
+  }
   // If the speaker is playing through the stream proxy, resolve the
   // real stream URL of the source slot. That lets us mark sibling
   // slots with the same station as active too. Otherwise only the
@@ -7982,14 +7991,27 @@ async function refreshQueue() {
     const q = await GetQueue(box.host, box.port);
     if (state.currentBox !== box) return; // box switched mid-fetch
     const before = queueSlotCard(state.queue);
+    const beforeSlot = state.queue ? state.queue.slot : undefined;
     // A reply that does not name the key just clicked yet (sent before the
     // agent started the queue) must not wipe the optimistic card (#978).
     const pending = Date.now() < (state.optimisticUntil || 0) ? state.optimisticQueueSlot : null;
     state.queue = queueReplyMerge(state.queue, q, pending);
     // A library-album key lights up from the queue card, which arrives here and
     // not with the status poll: repaint the keys when it changes, or the
-    // highlight waited for an unrelated status change (#1190).
-    if (queueSlotCard(state.queue) !== before && state.presets.length > 0) renderPresets();
+    // highlight waited for an unrelated status change (#1190). Same for the
+    // key a playing folder was just saved on (#1217).
+    const slotNow = state.queue ? state.queue.slot : undefined;
+    if ((queueSlotCard(state.queue) !== before || slotNow !== beforeSlot) && state.presets.length > 0) renderPresets();
+    // The agent's preset store was written (a save on this app, the phone, or
+    // a hold on the speaker's own key): re-read the presets now instead of on
+    // the slow recheck timer, which kept a held key unshown for up to 15 s
+    // (#1217). The revision rides this reply, so it costs no request of its own.
+    const rev = q ? q.preset_rev : undefined;
+    if (presetRevChanged(state.presetRev, rev)) {
+      _lastPresetCheck = 0;
+      refreshPresetsIfChanged();
+    }
+    if (typeof rev === 'number') state.presetRev = rev;
   } catch {
     // leave the last known queue state on screen
   }
@@ -8535,11 +8557,15 @@ async function refreshStatus() {
           // and entitlement fields below are not about the song and are read
           // either way.
           let coverChanged = false;
+          let contextChanged = false;
           if (acceptSpotifyReply(np, {
             sentGen, currentGen: state.spotifyNowGen || 0, recall: state.spotifyRecall, now: Date.now(),
           })) {
             const snap = snapshotFromReply(np);
             coverChanged = (state.spotifyNow ? state.spotifyNow.cover : '') !== snap.cover;
+            // The context names the key to light when no key started the
+            // playback (#1217): repaint the keys when it changes too.
+            contextChanged = (state.spotifyNow ? state.spotifyNow.context : '') !== snap.context;
             state.spotifyNow = snap;
             if (recallSettled(snap)) state.spotifyRecall = null;
             renderNowPlayingBar();
@@ -8576,7 +8602,7 @@ async function refreshStatus() {
           // only redraws on renderPresets. Re-render when the cover changes so
           // the preset logo tracks the song in step with the title instead of
           // lagging a track behind.
-          if (coverChanged) renderPresets();
+          if (coverChanged || contextChanged) renderPresets();
         }).catch(() => {});
       }
     } else {
