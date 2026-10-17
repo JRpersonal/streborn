@@ -139,6 +139,19 @@ func (s *Server) listedPandoraItem(location string) (string, bool) {
 	return "", false
 }
 
+// listedPandoraArt returns the artwork the speaker listed for location, from
+// the last station list, or "" when it listed none.
+func (s *Server) listedPandoraArt(location string) string {
+	s.pandoraMu.Lock()
+	defer s.pandoraMu.Unlock()
+	for _, st := range s.pandoraStations {
+		if st.Location == location {
+			return st.ContainerArt
+		}
+	}
+	return ""
+}
+
 func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 	if !s.pandoraGate(w, r, http.MethodPost) {
 		return
@@ -166,13 +179,13 @@ func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, listed := s.listedPandoraItem(req.Location)
+	typ := strings.TrimSpace(req.Type)
+	if typ == "" {
+		typ = "stationurl"
+	}
 	if !listed {
 		// Not in the last list (the agent restarted, or the list was never
 		// read): rebuild the item in the form the speaker lists it.
-		typ := strings.TrimSpace(req.Type)
-		if typ == "" {
-			typ = "stationurl"
-		}
 		item = nativeContentItemXML(presets.NativeItem{
 			Source: pandoraSource, SourceAccount: account, Location: req.Location, ItemType: typ,
 		}, strings.TrimSpace(req.Name))
@@ -188,5 +201,6 @@ func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("pandora: station handed to the speaker", "location", req.Location, "name", req.Name, "listed", listed,
 		"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+	s.recentNotePandora(req.Location, strings.TrimSpace(req.Name), typ, s.listedPandoraArt(req.Location))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

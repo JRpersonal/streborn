@@ -16,7 +16,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, isMissingBinding } from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
@@ -25,12 +25,14 @@ import { spotifyAccountName } from '../spotifyaccountlabel.js';
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
 // actions, reused so the radio cards are pixel- and behaviour-identical.
+// openPandoraPick is the Pandora station row's save-to-key action (#1101).
 let deps = {
   showSlotPicker: null,
   playStation: null,
   openPick: null,
   toggleFav: null,
   isFav: null,
+  openPandoraPick: null,
 };
 export function initRecentView(d) {
   deps = { ...deps, ...d };
@@ -136,6 +138,7 @@ function groupRecentCards(entries) {
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
       source: e.source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, mime: e.mime, durationSec: e.durationSec || 0, account: e.account, ts: e.ts,
+      itemType: e.itemType || '',
       homepage: e.homepage || '', playSlot,
       tracks: e.track ? [{ track: e.track, ts: e.ts }] : [],
       _seen: seen,
@@ -177,6 +180,7 @@ async function loadRecentCards() {
 function recentSourceLabel(src) {
   if (src === 'spotify') return t('recent.srcSpotify');
   if (src === 'upnp') return t('recent.srcLibrary');
+  if (src === 'pandora') return 'Pandora';
   return t('recent.srcRadio');
 }
 
@@ -268,7 +272,9 @@ export function cardIsPlaying(c) {
 }
 
 function recentCardHTML(c, i, nowPlaying) {
-  const isRadio = c.source !== 'spotify';
+  // Pandora is played by the speaker's own client, so its card has play and
+  // save-to-key like the Find tab's Pandora rows, but no radio favourite.
+  const isRadio = c.source !== 'spotify' && c.source !== 'pandora';
   const webUrl = cardWebURL(c);
   // Always show which box played it (Jens) plus the source, Spotify account and,
   // like the radio search rows, a "website" link.
@@ -299,7 +305,7 @@ function recentCardHTML(c, i, nowPlaying) {
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`
       + `<button class="btn btn-mini rc-fav${fav ? ' is-fav' : ''}" id="recFav${i}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>`;
   } else {
-    const canPlay = c.playSlot != null;
+    const canPlay = c.source === 'pandora' ? !!c.url : c.playSlot != null;
     actions = (canPlay
       ? `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>`
       : '')
@@ -351,6 +357,13 @@ async function replayLibraryTrack(c, box, art) {
   await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', dur);
 }
 
+// replayPandoraCard starts a Pandora card on the speaker's own Pandora client,
+// exactly like the Find tab's Pandora row. The stored item type lets the agent
+// rebuild the item when it no longer holds the station list (#1101).
+async function replayPandoraCard(c, box) {
+  await PlayPandoraStation(box.host, box.port, c.url, c.name || '', c.itemType || '');
+}
+
 function wireCard(c, i) {
   const playBtn = document.getElementById('recPlay' + i);
   const pickBtn = document.getElementById('recPick' + i);
@@ -369,6 +382,9 @@ function wireCard(c, i) {
         if (c.source === 'spotify') {
           // Token present (matched a preset slot): recall it, same as a preset.
           await PlaySlot(c.box.host, c.box.port, c.playSlot);
+          showToast(t('recent.playing', { name: c.name || '' }));
+        } else if (c.source === 'pandora') {
+          await replayPandoraCard(c, c.box || state.currentBox);
           showToast(t('recent.playing', { name: c.name || '' }));
         } else if (c.source === 'upnp') {
           // A network-library (NAS) track must replay the DIRECT library way, not
@@ -395,6 +411,10 @@ function wireCard(c, i) {
   if (pickBtn) {
     pickBtn.onclick = () => {
       if (c.source === 'spotify') return saveSpotifyCard(c);
+      if (c.source === 'pandora') {
+        if (deps.openPandoraPick) deps.openPandoraPick({ location: c.url, name: c.name || '', type: c.itemType || '' });
+        return;
+      }
       deps.openPick(cardStation(c)); // radio: identical to the search "+" action
     };
   }

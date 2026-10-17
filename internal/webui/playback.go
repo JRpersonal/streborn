@@ -811,6 +811,17 @@ func (s *Server) recentNoteLibraryCard(key, name, art, url, mime string, duratio
 	s.recentNoteEntry(recent.Entry{Source: "upnp", CardKey: key, CardName: name, CardArt: art, CardURL: url, Mime: mime, DurationSec: durationSec})
 }
 
+// recentNotePandora records a Pandora station as a Recently-played card. The
+// key is prefixed so a station reference can never merge with a radio card,
+// and CardURL holds the station reference the replay hands back to
+// /api/pandora/play together with itemType (#1101).
+func (s *Server) recentNotePandora(location, name, itemType, art string) {
+	if location == "" {
+		return
+	}
+	s.recentNoteEntry(recent.Entry{Source: "pandora", CardKey: "pandora:" + location, CardName: name, CardArt: art, CardURL: location, ItemType: itemType})
+}
+
 // recentPresetLengthSec is the length to record for a library key's recall:
 // the stored one, else the one learned from an earlier direct play. Quiet twin
 // of libraryPresetLength, which already logged the fallback for this recall.
@@ -947,8 +958,16 @@ func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
 // the renderer, bypassing the webui play handlers.
 func (s *Server) NoteRecentPreset(p presets.Preset) {
 	if p.IsNative() {
-		// Pandora / iHeartRadio: a card could not replay it, STR does not
-		// play these services itself.
+		// Pandora replays through the speaker's own client (/api/pandora/play),
+		// so its key gets a card (#1101). iHeartRadio has no such path yet, so
+		// a card could not replay it.
+		if p.Native.Source == pandoraSource {
+			name := p.Name
+			if name == "" {
+				name = p.Native.ItemName
+			}
+			s.recentNotePandora(p.Native.Location, name, p.Native.ItemType, p.Native.ContainerArt)
+		}
 		return
 	}
 	if p.Type == "spotify" {

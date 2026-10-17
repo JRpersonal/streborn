@@ -61,6 +61,11 @@ type Entry struct {
 	// without it the speaker reports no total and the app draws no progress bar
 	// (#845).
 	DurationSec int `json:"durationSec,omitempty"`
+	// ItemType is the ContentItem type of a Pandora station ("stationurl",
+	// ...), so a replay from history can rebuild the item when the agent no
+	// longer holds the speaker's station list (#1101). Empty for every other
+	// source.
+	ItemType string `json:"itemType,omitempty"`
 }
 
 // Store is the in-RAM ring plus its debounced NAND backing file.
@@ -175,6 +180,9 @@ func (s *Store) Add(e Entry) {
 				}
 				if last.DurationSec == 0 && e.DurationSec > 0 {
 					last.DurationSec = e.DurationSec
+				}
+				if last.ItemType == "" && e.ItemType != "" {
+					last.ItemType = e.ItemType
 				}
 				s.markDirtyLocked()
 				return
