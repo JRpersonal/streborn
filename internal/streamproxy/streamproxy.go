@@ -99,6 +99,10 @@ type Server struct {
 	// natively activated as /stream/<slot>, plus whether a queue (re)call for
 	// that slot is still landing. Wired to webui.QueueLiveURL. nil-safe.
 	queueLiveURLFn func(slot int) (url string, recalling bool)
+	// holdMissingSlotFn reports that STR is waking this speaker for a group
+	// right now. A fetch for a slot with nothing playable is then fed silence
+	// instead of a 404 (see silence.go). Nil: always 404.
+	holdMissingSlotFn func() bool
 
 	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
 	// reach the public internet. It lets /api/stream-status tell "this one
@@ -578,6 +582,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		// the only branch in the recall chain with no trace at all (#252).
 		s.logger.Warn("stream proxy: box fetched a slot with no playable preset",
 			"slot", slot, "found", ok, "queue", ok && p.Type == "queue")
+		if s.holdMissingSlotFn != nil && s.holdMissingSlotFn() {
+			// Woken for a group: a 404 here would surface as a firmware error
+			// after the zone join and take the group down (silence.go). The
+			// station is not dropped, so no slot miss is recorded.
+			s.logger.Info("stream proxy: speaker is being woken for a group, serving silence instead of refusing", "slot", slot)
+			serveSilence(r.Context(), w)
+			return
+		}
 		// The box will now leave the station it was just handed. Record the
 		// refusal so the native-preset watchdog does not read that as the
 		// speaker being unable to hold one. See slotmiss.go.

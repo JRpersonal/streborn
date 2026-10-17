@@ -71,7 +71,12 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 		mu.Unlock()
 	}
 	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
-		return boxapi.Zone{}, nil // no live zone yet
+		mu.Lock()
+		defer mu.Unlock()
+		if setCalls == 0 {
+			return boxapi.Zone{}, nil // no live zone yet
+		}
+		return boxapi.Zone{Master: setMaster.DeviceID, Members: setSlaves}, nil // the zone held
 	}
 	rejoinSetZone = func(_ context.Context, _ string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
 		mu.Lock()
