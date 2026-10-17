@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "السمّاعة غير متّصلة بـ Wi-Fi.",
   "settingsView.wlanSwitchToggle": "تغيير شبكة Wi-Fi للسمّاعة",
   "settingsView.wlanSwitchHint": "هل تنقل السمّاعة إلى شبكة Wi-Fi أخرى؟ يمكنك ذلك هنا، دون الحاجة إلى تطبيق Bose.",
+  "settingsView.wlanStoreHint": "يحتاج STR فقط إلى كلمة مرور شبكة Wi-Fi التي تتصل بها السمّاعة الآن. أدخلها واحفظ. ستُعاد تشغيل السمّاعة مرة واحدة ويختفي التنبيه.",
   "settingsView.wlanPickPlaceholder": "- اختر Wi-Fi أو اكتب واحدًا أدناه -",
   "settingsView.wlanRefreshTitle": "إعادة تحميل قائمة Wi-Fi من هذا الحاسوب",
   "settingsView.wlanListRefreshed": "حُمّلت {{n}} شبكة Wi-Fi",

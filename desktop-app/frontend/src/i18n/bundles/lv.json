@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "Skaļrunis nav pievienots Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Iestatīt citu Wi-Fi tīklu",
   "settingsView.wlanSwitchHint": "Pārceļat skaļruni uz citu Wi-Fi tīklu? To varat izdarīt šeit, Bose lietotne nav vajadzīga.",
+  "settingsView.wlanStoreHint": "STR vajag tikai tā Wi-Fi tīkla paroli, kurā skaļrunis ir tagad. Ievadi to un saglabā. Skaļrunis vienreiz restartēsies, un paziņojums pazudīs.",
   "settingsView.wlanPickPlaceholder": "- atlasiet Wi-Fi vai ievadiet zemāk -",
   "settingsView.wlanRefreshTitle": "Pārlādēt šī datora Wi-Fi sarakstu",
   "settingsView.wlanListRefreshed": "Ielādēti {{n}} Wi-Fi tīkli",

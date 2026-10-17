@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "Głośnik nie jest połączony z Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Ustaw inną sieć Wi-Fi",
   "settingsView.wlanSwitchHint": "Przenosisz głośnik do innej sieci Wi-Fi? Możesz to zrobić tutaj, bez aplikacji Bose.",
+  "settingsView.wlanStoreHint": "STR potrzebuje tylko hasła sieci Wi-Fi, w której głośnik jest teraz. Wpisz je i zapisz. Głośnik uruchomi się raz ponownie, a komunikat zniknie.",
   "settingsView.wlanPickPlaceholder": "- wybierz Wi-Fi lub wpisz poniżej -",
   "settingsView.wlanRefreshTitle": "Załaduj ponownie listę Wi-Fi tego komputera",
   "settingsView.wlanListRefreshed": "Załadowano {{n}} sieci Wi-Fi",

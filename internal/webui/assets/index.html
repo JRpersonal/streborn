@@ -116,7 +116,23 @@ header .brand span { color:var(--accent); }
    reads as a headline: bright, semi-bold, and it WRAPS instead of getting cut
    off - multi-word room names were ellipsized before. */
 header .devwrap { margin-left:auto; position:relative; min-width:0; }
-header .dev { min-width:0; min-height:44px; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:anywhere; line-height:1.25; background:none; border:0; padding:4px 2px; font-family:inherit; cursor:default; display:flex; align-items:center; gap:5px; }
+header .dev { min-width:0; min-height:44px; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:break-word; line-height:1.25; background:none; border:0; padding:4px 2px; font-family:inherit; cursor:default; display:flex; align-items:center; gap:5px; }
+/* break-word, not anywhere: "anywhere" lets the name shrink to one letter per
+   line once the header runs out of room, and on an iPhone at a larger text size
+   "Wohnzimmer - ST10 - Stereo" stood as a column of single letters (#1336). The
+   name now breaks between words and splits a word, hyphenated, only when it
+   cannot fit at all. On a narrow phone the "ST Reborn" wordmark gives way to the pill; the icon stays. */
+@media (max-width:440px) { header .brand { display:none; } }
+header .dev { max-width:100%; }
+header #devName { min-width:0; hyphens:auto; -webkit-hyphens:auto; }
+/* At the larger text sizes a narrow phone has no room for the name beside the
+   buttons at all, so the pill gets the header's second row to itself. */
+@media (max-width:440px) {
+  html.a11y-scale-l header, html.a11y-scale-xl header { flex-wrap:wrap; row-gap:4px; }
+  html.a11y-scale-l header .brand, html.a11y-scale-xl header .brand { display:block; }
+  html.a11y-scale-l header .pwr, html.a11y-scale-xl header .pwr { margin-left:auto; }
+  html.a11y-scale-l header .devwrap, html.a11y-scale-xl header .devwrap { order:9; flex:1 0 100%; margin-left:0; display:flex; justify-content:center; }
+}
 header .dev .chev, header .dev .spk, header .dev .cnt { flex:none; display:none; }
 header .dev .chev { font-size:10px; color:var(--muted); }
 /* With other speakers around the name is a visible switch, not bare text: users

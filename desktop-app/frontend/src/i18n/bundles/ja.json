@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "スピーカーはWi-Fiに接続されていません。",
   "settingsView.wlanSwitchToggle": "別のWi-Fiを設定",
   "settingsView.wlanSwitchHint": "スピーカーを別のWi-Fiネットワークに移しますか? Boseアプリなしでここで行えます。",
+  "settingsView.wlanStoreHint": "STRに必要なのは、スピーカーが今つながっているWi-Fiのパスワードだけです。入力して保存すると、スピーカーが一度再起動し、この案内は消えます。",
   "settingsView.wlanPickPlaceholder": "- Wi-Fiを選ぶか、下に入力してください -",
   "settingsView.wlanRefreshTitle": "このPCからWi-Fi一覧を再読み込み",
   "settingsView.wlanListRefreshed": "{{n}} 件のWi-Fiネットワークを読み込みました",

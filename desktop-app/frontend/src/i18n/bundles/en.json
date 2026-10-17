@@ -1004,6 +1004,7 @@
   "settingsView.wlanNotConnected": "Speaker is not connected to Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Change the speaker's Wi-Fi network",
   "settingsView.wlanSwitchHint": "Moving the speaker to a different Wi-Fi network? You can do it here, no Bose app needed.",
+  "settingsView.wlanStoreHint": "STR only needs the password of the network the speaker is on now. Enter it and save. The speaker restarts once and the notice goes away.",
   "settingsView.wlanPickPlaceholder": "- pick a Wi-Fi or type one below -",
   "settingsView.wlanRefreshTitle": "Reload Wi-Fi list from this PC",
   "settingsView.wlanListRefreshed": "{{n}} Wi-Fi networks loaded",

@@ -1004,6 +1004,7 @@
   "settingsView.wlanNotConnected": "喇叭沒有連上 Wi-Fi。",
   "settingsView.wlanSwitchToggle": "更換喇叭的 Wi-Fi 網路",
   "settingsView.wlanSwitchHint": "想把喇叭換到另一個 Wi-Fi？在這裡就能改，不需要 Bose 應用程式。",
+  "settingsView.wlanStoreHint": "STR 只需要喇叭目前所連 Wi-Fi 的密碼。輸入後儲存，喇叭會重新啟動一次，提示就會消失。",
   "settingsView.wlanPickPlaceholder": "- 選一個 Wi-Fi，或在下面輸入 -",
   "settingsView.wlanRefreshTitle": "從這台電腦重新載入 Wi-Fi 清單",
   "settingsView.wlanListRefreshed": "已載入 {{n}} 個 Wi-Fi 網路",

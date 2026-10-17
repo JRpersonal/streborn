@@ -125,6 +125,7 @@ import {
   ListWiFiProfiles,
   BoxWifiScan,
   TryWiFiPassword,
+  CurrentWiFi,
   ListBoxMediaServers,
   EnableBoxMediaServer,
   DisableBoxMediaServer,
@@ -1388,6 +1389,7 @@ function renderBoxSettings(s, box) {
       <small class="muted small" style="display:block;margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchHint'))}</small>
       <button class="btn" id="wlanSwitchToggle" style="margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchToggle'))}</button>
       <div id="wlanSwitchForm" class="hidden" style="margin-top:8px">
+        <div id="wlanStoreHint" class="muted small" style="margin-bottom:6px" hidden>${escapeHtml(t('settingsView.wlanStoreHint'))}</div>
         <div class="wlan-row">
           <select id="boxWlanSelect"><option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option></select>
           <button class="btn btn-icon-sm" id="boxWlanRefresh" title="${escapeAttr(t('settingsView.wlanRefreshTitle'))}">&#x21bb;</button>
@@ -1937,7 +1939,7 @@ function renderBoxSettings(s, box) {
   // Wire the WLAN switch UI: collapsible form, PC-known SSIDs in
   // a dropdown with auto-password prefill, Save sends
   // PUT /api/box/wlan.
-  wireWlanSwitch(box);
+  wireWlanSwitch(box, wifi && !isWired ? wifi.ssid : '');
   // The stored networks and "Forget the other networks" (wlanforget.js).
   wireWlanStored(box);
 
@@ -3586,10 +3588,38 @@ function renderBoxSettings(s, box) {
 // wireWlanSwitch wires the WLAN switch UI in the Settings tab.
 // Lists PC-known WLANs in a dropdown (no manual typing), prefills
 // the password, and on Save sends PUT /api/box/wlan.
-function wireWlanSwitch(box) {
+function wireWlanSwitch(box, currentSsid) {
   const toggle = $('wlanSwitchToggle');
   const form = $('wlanSwitchForm');
   if (!toggle || !form) return;
+  // Arriving from the "Save Wi-Fi" banner. The form is the switch form and its
+  // labels talk about MOVING the speaker, so a user who only meant to let STR
+  // keep the current network saved name, language and everything else on the
+  // page, and the banner never went away (mail 2026-10-18). Open the form on the
+  // network the speaker is on now and say that only the password is missing.
+  if (state.wlanStoreFor && box && state.wlanStoreFor === box.host) {
+    state.wlanStoreFor = null;
+    openForStore();
+  }
+  async function openForStore() {
+    form.classList.remove('hidden');
+    const hint = $('wlanStoreHint');
+    if (hint) hint.hidden = false;
+    // BCO chassis do not report the SSID, so the computer's own network is the
+    // best guess there: the speaker was set up from it in nearly every case.
+    let ssid = currentSsid || '';
+    if (!ssid) { try { ssid = await CurrentWiFi() || ''; } catch {} }
+    if (ssid && $('boxWlanSSID')) $('boxWlanSSID').value = ssid;
+    if (ssid && !isMacOS) {
+      try {
+        const pw = await TryWiFiPassword(ssid);
+        if (pw && $('boxWlanPass')) $('boxWlanPass').value = pw;
+      } catch {}
+    }
+    form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const pass = $('boxWlanPass');
+    if (pass && !pass.value) pass.focus();
+  }
   toggle.onclick = () => {
     form.classList.toggle('hidden');
     if (!form.classList.contains('hidden')) {
