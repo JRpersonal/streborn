@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "Колонка не підключена до Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Налаштувати інший Wi-Fi",
   "settingsView.wlanSwitchHint": "Переносите колонку в іншу мережу Wi-Fi? Це можна зробити тут, без застосунку Bose.",
+  "settingsView.wlanStoreHint": "STR потрібен лише пароль мережі Wi-Fi, до якої зараз підключена колонка. Введи його та збережи. Колонка один раз перезапуститься, і повідомлення зникне.",
   "settingsView.wlanPickPlaceholder": "- виберіть Wi-Fi або введіть нижче -",
   "settingsView.wlanRefreshTitle": "Перезавантажити список Wi-Fi з цього ПК",
   "settingsView.wlanListRefreshed": "Завантажено мереж Wi-Fi: {{n}}",

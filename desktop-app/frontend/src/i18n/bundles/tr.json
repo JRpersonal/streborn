@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "Hoparlör Wi-Fi'ye bağlı değil.",
   "settingsView.wlanSwitchToggle": "Başka bir Wi-Fi ağı ayarla",
   "settingsView.wlanSwitchHint": "Hoparlörü farklı bir Wi-Fi ağına mı taşıyorsunuz? Bunu burada yapabilirsiniz, Bose uygulaması gerekmez.",
+  "settingsView.wlanStoreHint": "STR'nin yalnızca hoparlörün şu an bağlı olduğu Wi-Fi ağının şifresine ihtiyacı var. Şifreyi gir ve kaydet. Hoparlör bir kez yeniden başlar ve uyarı kaybolur.",
   "settingsView.wlanPickPlaceholder": "- bir Wi-Fi seçin veya aşağıya girin -",
   "settingsView.wlanRefreshTitle": "Bu bilgisayarın Wi-Fi listesini yeniden yükle",
   "settingsView.wlanListRefreshed": "{{n}} Wi-Fi ağı yüklendi",

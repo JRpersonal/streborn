@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "Speaker is niet verbonden met wifi.",
   "settingsView.wlanSwitchToggle": "Een ander wifi-netwerk instellen",
   "settingsView.wlanSwitchHint": "Verplaats je de speaker naar een ander wifi-netwerk? Dat kan hier, geen Bose-app nodig.",
+  "settingsView.wlanStoreHint": "STR heeft alleen het wachtwoord nodig van het wifi-netwerk waarop de speaker nu zit. Vul het in en sla op. De speaker start één keer opnieuw en de melding verdwijnt.",
   "settingsView.wlanPickPlaceholder": "- kies een wifi of typ er hieronder een -",
   "settingsView.wlanRefreshTitle": "Wifi-lijst van deze pc opnieuw laden",
   "settingsView.wlanListRefreshed": "{{n}} wifi-netwerken geladen",

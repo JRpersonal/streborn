@@ -3025,7 +3025,8 @@ function checkBoxIssueBanner() {
   const cloudB = $('boxIssueCloudBtn');
   if (cloudB) cloudB.onclick = () => runCloudRestore(foreignCloud, cloudB);
   const wb = $('boxIssueWifiBtn');
-  if (wb) wb.onclick = () => { selectBox(noWifi[0]); switchView('settings'); };
+  // Settings opens straight on the Wi-Fi form for this speaker (wireWlanSwitch).
+  if (wb) wb.onclick = () => { state.wlanStoreFor = noWifi[0].host; selectBox(noWifi[0]); switchView('settings'); };
   const cb = $('boxIssueConflictBtn');
   if (cb) cb.onclick = async () => {
     const label = cb.textContent;
@@ -8162,9 +8163,11 @@ function renderNowPlayingBar() {
   // The bitrate readout only means something for a measured live stream: radio
   // through the proxy (/stream/...) or Spotify. A direct library file is played
   // straight to the box and STR never measures its rate, so it must not show a
-  // number (a leftover radio value) or a misleading "- kbit/s" (#310).
+  // number (a leftover radio value) or a misleading "- kbit/s" (#310). Until
+  // the rate is measured the bar shows nothing rather than a unit with no
+  // number in front of it (#1077, Issue 17).
   const measuredStream = /\/stream\//.test(state.nowLocation || '') || /\/spotify\/stream/.test(state.nowLocation || '');
-  const brLabel = (isStreamSrc && measuredStream) ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
+  const brLabel = (isStreamSrc && measuredStream && state.nowBitrate > 0) ? ` <small class="now-bitrate">${state.nowBitrate} kbit/s</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
   // by colour alone (accessibility): play arrow normally, pause bars when paused.
@@ -8492,6 +8495,7 @@ async function refreshStatus() {
       state.optimisticQueueSlot = null;
     }
     const newLoc = optimistic ? state.nowLocation : loc;
+    const prevLoc = state.nowLocation;
     const newName = optimistic ? state.nowName : name;
     // The preset grid reads the play state and the location, never the track
     // name (a key shows what is SAVED on it). Rebuilding all six keys for a name
@@ -8620,8 +8624,13 @@ async function refreshStatus() {
         // Spotify stream: never inherit the previous radio station's bitrate.
         // Use the matching Spotify preset's stored (measured) rate, or 0 so the
         // live fetch below recomputes it from the actual stream.
+        // A rate the live fetch already measured for this same stream stays:
+        // resetting it on every poll left "- kbit/s" in the bar most of the
+        // time (#1077, Issue 17).
         const sp = state.presets.find(p => p.type === 'spotify' && p.name === newName);
-        state.nowBitrate = (sp && sp.bitrate) ? sp.bitrate : 0;
+        if (!(prevLoc === newLoc && state.nowBitrate > 0)) {
+          state.nowBitrate = (sp && sp.bitrate) ? sp.bitrate : 0;
+        }
       } else if (ap && ap.bitrate) {
         state.nowBitrate = ap.bitrate;
       } else if (!newLoc ||

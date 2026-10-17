@@ -18,6 +18,7 @@ export const state = {
   recentAllBoxes: false,
   recentBoxKey: null,
   settingsBox: null,   // The box whose settings are currently being edited
+  wlanStoreFor: null,  // host whose Settings should open on the Wi-Fi form ("Save Wi-Fi" banner)
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
   boxSnapshot: null,   // agent's pre-takeover snapshot (warns about lost cloud sources like Deezer)
