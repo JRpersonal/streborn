@@ -479,7 +479,7 @@ import { onSpeakerPurge } from './speakerPurge.js';
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
-initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
+initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav, openPandoraPick });
 // openSpeakerSettings selects a speaker and shows its settings, which is where
 // its update lives. The Multi-Room tab needs it: a card that says a speaker
 // must be updated first has to be able to take the owner there.

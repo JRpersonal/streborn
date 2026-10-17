@@ -3590,6 +3590,10 @@ async function loadPandora() {
 async function playPandora(idx, btn) {
   var st = pandoraStations[idx];
   if (!st) return;
+  startPandora(st, btn);
+}
+/* Shared by the Pandora list and a Pandora row in Recently played (#1101). */
+async function startPandora(st, btn) {
   press(btn);
   var ok = await api('/api/pandora/play', 'POST', { location: st.location, name: st.name || '', type: st.type || '' });
   if (ok) {
@@ -4927,6 +4931,18 @@ async function loadRecent() {
         setTimeout(loadRecent, 4000);
       });
       row.appendChild(sb);
+    } else if (e.source === 'pandora' && e.cardURL) {
+      /* The speaker's own Pandora client plays it, the same call the
+         Pandora list makes (#1101). */
+      var pb = document.createElement('button');
+      pb.className = 'btn'; pb.type = 'button';
+      pb.setAttribute('aria-label', T.play + ': ' + (e.cardName || ''));
+      pb.textContent = T.play;
+      pb.addEventListener('click', function(){
+        startPandora({ location: e.cardURL, name: e.cardName || '', type: e.itemType || '' }, pb);
+        setTimeout(loadRecent, 4000);
+      });
+      row.appendChild(pb);
     } else if ((e.source === 'radio' || e.source === 'upnp') && e.cardURL && e.cardURL.indexOf('http') === 0) {
       var b = document.createElement('button');
       b.className = 'btn'; b.type = 'button';
