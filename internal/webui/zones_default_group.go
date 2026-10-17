@@ -226,21 +226,8 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 		return
 	}
 	// Already complete? Then the firmware is left alone.
-	if live, err := rejoinLiveZone(ctx, s.boxHost); err == nil && live.Master == z.Master {
-		have := make(map[string]bool, len(live.Members))
-		for _, m := range live.Members {
-			have[m.DeviceID] = true
-		}
-		complete := true
-		for _, j := range joiners {
-			if !have[j.DeviceID] {
-				complete = false
-				break
-			}
-		}
-		if complete {
-			return
-		}
+	if live, err := rejoinLiveZone(ctx, s.boxHost); err == nil && zoneCarries(live, z.Master, joiners) {
+		return
 	}
 	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
 	if err := rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
@@ -248,6 +235,63 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 		return
 	}
 	s.logger.Info("default group: re-formed on play", "members", len(joiners))
+	s.holdDefaultGroupOnce(master, joiners)
+}
+
+// defaultGroupHoldCheckAfter is how long after a re-form the master looks
+// whether the zone is still standing. A member that was just woken can fall out
+// a second or two after joining: its own power-on resume fails late, the
+// firmware raises the error after the join and the member drops to
+// INVALID_SOURCE, which takes the zone down with it (Küche, 2026-10-17 09:51).
+// A variable so the tests do not wait for it.
+var defaultGroupHoldCheckAfter = 8 * time.Second
+
+// holdDefaultGroupOnce checks once, shortly after a re-form, that the zone still
+// carries the members it was formed with, and forms it one more time when it
+// does not. Only once: a member that keeps falling out has a reason of its own,
+// and driving the firmware in a loop would only hide it. The master must still
+// be playing, or the user has moved on and the group is left as it is.
+func (s *Server) holdDefaultGroupOnce(master boxapi.ZoneMember, joiners []boxapi.ZoneMember) {
+	time.Sleep(defaultGroupHoldCheckAfter)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	live, err := rejoinLiveZone(ctx, s.boxHost)
+	if err != nil {
+		// Unreadable is not evidence the group fell apart.
+		return
+	}
+	if zoneCarries(live, master.DeviceID, joiners) {
+		return
+	}
+	if np := rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+		s.logger.Info("default group: the zone fell apart after forming, but the master stopped playing, leaving it",
+			"source", np.Source, "playStatus", np.PlayStatus)
+		return
+	}
+	s.logger.Warn("default group: the zone fell apart right after forming, forming it once more",
+		"liveMaster", live.Master, "liveMembers", len(live.Members), "members", len(joiners))
+	if err := rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
+		s.logger.Warn("default group: forming it once more failed", "err", err, "members", len(joiners))
+		return
+	}
+	s.logger.Info("default group: formed once more after it fell apart", "members", len(joiners))
+}
+
+// zoneCarries reports whether live is led by master and holds every joiner.
+func zoneCarries(live boxapi.Zone, master string, joiners []boxapi.ZoneMember) bool {
+	if live.Master != master {
+		return false
+	}
+	have := make(map[string]bool, len(live.Members))
+	for _, m := range live.Members {
+		have[m.DeviceID] = true
+	}
+	for _, j := range joiners {
+		if !have[j.DeviceID] {
+			return false
+		}
+	}
+	return true
 }
 
 // wakeStoredMembersForPlay wakes every stored member that reports STANDBY, in
