@@ -1094,6 +1094,10 @@ func run() error {
 	// current track and briefly hold for it, instead of 404-ing into the old
 	// station (the ST20 folder-preset race).
 	streamProxySrv.SetQueueLiveURLFn(webuiSrv.QueueLiveURL)
+	// A speaker woken for a group resumes its own last station; when that key
+	// is gone, a 404 would surface as a firmware error after the zone join and
+	// take the group down. During the wake the proxy serves silence instead.
+	streamProxySrv.SetHoldMissingSlotFn(webuiSrv.QuietWakeEpisodeActive)
 
 	// ICY radio text: the proxy parses the live StreamTitle out of the
 	// stream; push it to the box display by re-issuing the current stream URI

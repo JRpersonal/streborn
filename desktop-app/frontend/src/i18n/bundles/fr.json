@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "L'enceinte n'est pas connectée au Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Configurer un autre Wi-Fi",
   "settingsView.wlanSwitchHint": "Vous déplacez l'enceinte vers un autre réseau Wi-Fi ? Vous pouvez le faire ici, sans application Bose.",
+  "settingsView.wlanStoreHint": "STR a seulement besoin du mot de passe du Wi-Fi sur lequel l'enceinte se trouve. Saisis-le et enregistre. L'enceinte redémarre une fois et l'avis disparaît.",
   "settingsView.wlanPickPlaceholder": "- choisissez un Wi-Fi ou saisissez-en un ci-dessous -",
   "settingsView.wlanRefreshTitle": "Recharger la liste Wi-Fi depuis ce PC",
   "settingsView.wlanListRefreshed": "{{n}} réseaux Wi-Fi chargés",

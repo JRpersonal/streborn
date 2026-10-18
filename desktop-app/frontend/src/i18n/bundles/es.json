@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "El altavoz no está conectado al Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Configurar otro Wi-Fi",
   "settingsView.wlanSwitchHint": "¿Vas a mover el altavoz a otra red Wi-Fi? Puedes hacerlo aquí, sin necesidad de la app Bose.",
+  "settingsView.wlanStoreHint": "STR solo necesita la contraseña de la red Wi-Fi en la que está el altavoz. Escríbela y guarda. El altavoz se reinicia una vez y el aviso desaparece.",
   "settingsView.wlanPickPlaceholder": "- elige un Wi-Fi o escribe uno abajo -",
   "settingsView.wlanRefreshTitle": "Recargar la lista de Wi-Fi desde este PC",
   "settingsView.wlanListRefreshed": "{{n}} redes Wi-Fi cargadas",

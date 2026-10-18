@@ -895,6 +895,7 @@
   "settingsView.wlanNotConnected": "Garsiakalbis neprijungtas prie Wi-Fi.",
   "settingsView.wlanSwitchToggle": "Nustatyti kitą Wi-Fi tinklą",
   "settingsView.wlanSwitchHint": "Perkeliate garsiakalbį į kitą Wi-Fi tinklą? Galite tai padaryti čia, Bose programos nereikia.",
+  "settingsView.wlanStoreHint": "STR reikia tik to Wi-Fi tinklo, prie kurio dabar prijungtas garsiakalbis, slaptažodžio. Įvesk jį ir išsaugok. Garsiakalbis vieną kartą persikraus ir pranešimas dings.",
   "settingsView.wlanPickPlaceholder": "- pasirinkite Wi-Fi arba įveskite žemiau -",
   "settingsView.wlanRefreshTitle": "Iš naujo įkelti šio kompiuterio Wi-Fi sąrašą",
   "settingsView.wlanListRefreshed": "Įkelta {{n}} Wi-Fi tinklų",
