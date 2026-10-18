@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -240,6 +241,33 @@ func nudgeLeaveSetupWatcher() {
 	}
 }
 
+// leaveSetupAskedWindow is how far back a key combination on the speaker counts
+// as the reason for the setup that follows. The firmware's countdown runs about
+// five seconds before the access point comes up.
+const leaveSetupAskedWindow = time.Minute
+
+// setupAskedAt is when the speaker last showed a key combination (its countdown
+// or its manual access point mode), in Unix nanoseconds; zero for never.
+var setupAskedAt atomic.Int64
+
+// noteSetupAsked records a key combination on the speaker. The boxlog reader
+// calls it from its syslog goroutine.
+func noteSetupAsked(at time.Time) { setupAskedAt.Store(at.UnixNano()) }
+
+// setupWasAsked reports whether a SETUP seen at now follows a key combination
+// on the speaker, which makes it a setup somebody asked for and not a stuck one.
+//
+// A person holding 2 and volume down on a Portable wants the setup network to
+// open. Before this the watcher cleared it 0.3 s after it came up, the speaker
+// went straight back to its old Wi-Fi and the combination looked broken (#1340).
+func setupWasAsked(now time.Time, askedAt int64) bool {
+	if askedAt == 0 {
+		return false
+	}
+	d := now.Sub(time.Unix(0, askedAt))
+	return d >= -time.Second && d <= leaveSetupAskedWindow
+}
+
 // leaveSetupSourceWatcher clears a stuck out-of-box SETUP source so the box can
 // play. A POST /setup SETUP_LEAVE is harmless when the box is not in setup, so
 // a stray check costs nothing. See boxapi.LeaveSetup.
@@ -266,6 +294,9 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 		// lastSetupSeen is when SETUP was last observed, which is what tells a
 		// NEW episode from the same one flapping. See leaveSetupNewEpisode.
 		lastSetupSeen time.Time
+		// asked marks an episode a person started with a key combination,
+		// which STR leaves alone until it ends. See setupWasAsked.
+		asked bool
 		// warnedFailure keeps a box whose POST /setup always fails from
 		// writing the same Warn line into the NAND-mirrored agent log on every
 		// pass. Edge-triggered, like run.sh's fw_sig line: said on the first
@@ -319,10 +350,20 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 		if leaveSetupNewEpisode(now, lastSetupSeen, inSetup) {
 			episodes++
 			attempts = 0
+			asked = false
 			warnedFailure = false
 			fastUntil = now.Add(leaveSetupFastWindow)
 		}
 		lastSetupSeen = now
+		if !asked && setupWasAsked(now, setupAskedAt.Load()) {
+			asked = true
+			logger.Info("leave-setup: the setup was asked for with a key combination on the speaker, leaving it open",
+				"episode", episodes)
+		}
+		if asked {
+			inSetup = true
+			continue
+		}
 		// Said on every re-entry, but only while a clear is still on the table:
 		// past the cap the watcher is silent by design, and a flapping source
 		// would otherwise write this line into the NAND-mirrored log for the

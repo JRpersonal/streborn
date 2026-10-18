@@ -94,13 +94,16 @@ func (r *Reader) SetPresetGestureHandler(h PresetGestureHandler) {
 //
 //	[(tid):HSM:INFO]DisplayController: HandleMessage(EVT_DISPLAY_COUNTDOWN_ACTIVATE) >> StandbyNoClock > ...
 //	[(tid):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_COMBINATION_KEYPRESS_CANCEL) >> Countdown ...
+//	[(tid):HSM:INFO]SysCtlr: HandleMessage(EVT_SYSTEM_ENTERED_MANUAL_AP_MODE) >> Standby > StdOp ...
 //
+// The last one is the setup combination's result: the access point it opens.
 // Seen on a Portable for 2 and volume down (#1340). It matters most where the
 // key trace is blind: the sm2 SoundTouch 10 reports the preset key of a
 // combination but never the volume key.
 func ParseComboLine(line string) bool {
 	return strings.Contains(line, "HandleMessage(EVT_DISPLAY_COUNTDOWN_ACTIVATE)") ||
-		strings.Contains(line, "HandleMessage(EVT_SYSTEM_COMBINATION_KEYPRESS")
+		strings.Contains(line, "HandleMessage(EVT_SYSTEM_COMBINATION_KEYPRESS") ||
+		strings.Contains(line, "HandleMessage(EVT_SYSTEM_ENTERED_MANUAL_AP_MODE)")
 }
 
 // SetComboHandler installs the hook for ParseComboLine. Set before Run; nil

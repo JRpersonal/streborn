@@ -98,3 +98,26 @@ func TestLeaveSetupFlappingSourceIsOneEpisode(t *testing.T) {
 		}
 	}
 }
+
+// A setup somebody opened with 2 and volume down is not a stuck one. The
+// #1340 Portable: countdown at 15:42:43, access point at 15:42:48, and the
+// watcher cleared it at 15:42:48.465 before this check existed.
+func TestLeaveSetupLeavesAnAskedSetupAlone(t *testing.T) {
+	combo := time.Date(2026, 10, 18, 15, 42, 43, 0, time.UTC)
+	cases := []struct {
+		name    string
+		now     time.Time
+		askedAt int64
+		want    bool
+	}{
+		{"no combination ever", combo, 0, false},
+		{"access point five seconds after the countdown", combo.Add(5 * time.Second), combo.UnixNano(), true},
+		{"syslog line and poll in the same second", combo.Add(-500 * time.Millisecond), combo.UnixNano(), true},
+		{"a combination long before a stuck setup", combo.Add(leaveSetupAskedWindow + time.Second), combo.UnixNano(), false},
+	}
+	for _, c := range cases {
+		if got := setupWasAsked(c.now, c.askedAt); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
