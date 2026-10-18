@@ -27,6 +27,14 @@
 // second. So a stats press that holdConfirmAfter later still has neither is
 // read as the hold itself (statsHold), and goes through the same
 // confirmation and save as a paired one.
+//
+// A preset key held together with another key is never a hold of that key.
+// The firmware's own combinations (1 and volume down for the factory reset,
+// 2 or 5 and volume down for the setup network) start with a preset key, and
+// the firmware still reads the preset as held on the way. Saving, swapping or
+// drawing on the display at that moment got in the way of the combination
+// (#1340), so a press with another physical key down around it is left to the
+// firmware entirely (comboKey).
 
 package main
 
@@ -81,6 +89,14 @@ const (
 	// on every chassis (the ST10's tap limit is under 1.75 s), and a tap
 	// never touches the panel.
 	heldScreenAfter = 1800 * time.Millisecond
+	// comboLookback is how long before a preset press another key's press
+	// still makes it a combination: people rarely hit both keys in the same
+	// instant, and either may go first.
+	comboLookback = 2 * time.Second
+	// comboHeldFor bounds how long a key whose release the trace never
+	// reported still counts as down. The longest firmware combination (the
+	// factory reset) takes ten seconds.
+	comboHeldFor = 15 * time.Second
 )
 
 // heldKeyScreen is the display's held-key session (oled.KeyHoldStart and
@@ -117,6 +133,9 @@ type holdPress struct {
 	released time.Time
 	// screen is set once the held-key screen started for this press.
 	screen bool
+	// combo is set once another physical key was seen down around this
+	// press: a firmware key combination, which STR stays out of.
+	combo bool
 }
 
 // holdSaver pairs preset presses with the firmware's hold verdict and saves
@@ -156,6 +175,13 @@ type holdSaver struct {
 	// became of it, for the forensic lines.
 	verdictAt   time.Time
 	verdictHold bool
+	// otherAt is the newest physical press (or repeat) of a key that is not
+	// a preset key, otherName its key, otherUp its newest release (key trace
+	// only; the analytics line reports no release).
+	otherAt    time.Time
+	otherName  string
+	otherUp    time.Time
+	otherTrace bool
 }
 
 func newHoldSaver(logger *slog.Logger, save holdSaveFunc) *holdSaver {
@@ -185,17 +211,31 @@ func presetKeySlot(name string) int {
 // keys) or the firmware's line for keys sent over its API.
 func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 	slot := presetKeySlot(ev.Name)
-	if slot != 0 && ev.State == boxlog.StateReleased {
+	if slot == 0 {
+		h.noteOtherKey(ev)
+		return
+	}
+	if ev.State == boxlog.StateReleased {
 		h.noteRelease(slot, ev.At)
 		return
 	}
-	if slot == 0 || ev.State != boxlog.StatePressed {
+	if ev.State != boxlog.StatePressed {
 		return
 	}
 	p := holdPress{slot: slot, producer: ev.Producer, origin: ev.Origin, at: ev.At}
 	h.mu.Lock()
 	h.pressSeq++
 	p.seq = h.pressSeq
+	if p.producer.Physical() && h.otherDownLocked(p.at) {
+		p.combo = true
+		h.press = p
+		h.hold = time.Time{}
+		other := h.otherName
+		h.mu.Unlock()
+		h.logger.Info("hold-to-save: a key combination, left to the speaker",
+			"slot", p.slot, "otherKey", other, "producer", p.producer.String())
+		return
+	}
 	hold := h.hold
 	if !hold.IsZero() && ev.At.Sub(hold) < holdPairWindow {
 		// The verdict was read first; this press line trails it.
@@ -244,6 +284,62 @@ func (h *holdSaver) noteRelease(slot int, at time.Time) {
 	}
 }
 
+// noteOtherKey records a physical key that is not a preset key. Pressed
+// while a preset key is down (or shortly before), it turns that press into a
+// firmware key combination: nothing is saved, and a held-key screen that
+// already shows is taken down so the firmware has the panel.
+func (h *holdSaver) noteOtherKey(ev boxlog.KeyEvent) {
+	if !ev.Producer.Physical() {
+		return
+	}
+	h.mu.Lock()
+	if ev.State == boxlog.StateReleased {
+		if ev.At.After(h.otherUp) {
+			h.otherUp = ev.At
+		}
+		h.mu.Unlock()
+		return
+	}
+	if ev.At.After(h.otherAt) || h.otherAt.IsZero() {
+		h.otherAt, h.otherName, h.otherTrace = ev.At, ev.Name, ev.Origin == boxlog.OriginTrace
+	}
+	p := h.press
+	hit := p.slot != 0 && !p.combo && p.producer.Physical() &&
+		!ev.At.Before(p.at.Add(-comboLookback)) && ev.At.Sub(p.at) < comboHeldFor &&
+		(p.released.IsZero() || ev.At.Before(p.released))
+	if hit {
+		h.press.combo = true
+		h.hold = time.Time{}
+	}
+	h.mu.Unlock()
+	if !hit {
+		return
+	}
+	h.logger.Info("hold-to-save: a key combination, left to the speaker",
+		"slot", p.slot, "otherKey", ev.Name, "producer", p.producer.String(),
+		"otherAfterPressMs", ev.At.Sub(p.at).Milliseconds(), "saveUnderWay", p.used)
+	if p.screen {
+		h.screen.Cancel(p.slot, "key combination")
+	}
+}
+
+// otherDownLocked reports whether another physical key counts as down at t:
+// pressed within comboLookback of it, or pressed earlier and not released
+// yet. Callers hold h.mu.
+func (h *holdSaver) otherDownLocked(t time.Time) bool {
+	if h.otherAt.IsZero() {
+		return false
+	}
+	d := t.Sub(h.otherAt)
+	if d < 0 {
+		d = -d
+	}
+	if d <= comboLookback {
+		return true
+	}
+	return h.otherTrace && h.otherAt.Before(t) && t.Sub(h.otherAt) < comboHeldFor && h.otherUp.Before(h.otherAt)
+}
+
 // startHeldScreen is the one-shot look heldScreenAfter after a physical
 // preset press: is the key still down? Then the held-key screen takes the
 // panel before the firmware reacts to the hold. A tap (released, or a tap
@@ -251,7 +347,7 @@ func (h *holdSaver) noteRelease(slot int, at time.Time) {
 func (h *holdSaver) startHeldScreen(p holdPress) {
 	h.mu.Lock()
 	cur, sel := h.press, h.selectAt
-	ok := cur.seq == p.seq && cur.released.IsZero() &&
+	ok := cur.seq == p.seq && cur.released.IsZero() && !cur.combo &&
 		(sel.IsZero() || sel.Before(p.at)) &&
 		(h.verdictAt.Before(p.at) || h.verdictHold)
 	if ok {
@@ -284,7 +380,7 @@ func (h *holdSaver) checkEmpty(p holdPress, again bool) {
 	h.mu.Lock()
 	cur, sel := h.press, h.selectAt
 	h.mu.Unlock()
-	if cur.seq != p.seq || cur.used || (!sel.IsZero() && !sel.Before(p.at)) {
+	if cur.seq != p.seq || cur.used || cur.combo || (!sel.IsZero() && !sel.Before(p.at)) {
 		return
 	}
 	if cur.screen && !again && h.after != nil {
@@ -309,7 +405,7 @@ func (h *holdSaver) recentPhysicalPress(slot int, d time.Duration) bool {
 	h.mu.Lock()
 	p := h.press
 	h.mu.Unlock()
-	if p.slot != slot || p.at.IsZero() || h.now().Sub(p.at) > d {
+	if p.slot != slot || p.at.IsZero() || p.combo || h.now().Sub(p.at) > d {
 		return false
 	}
 	return p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())
@@ -326,7 +422,7 @@ func (h *holdSaver) checkUnpaired(p holdPress) {
 	verdictAt, verdictHold := h.verdictAt, h.verdictHold
 	unclaimed := !h.hold.IsZero()
 	h.mu.Unlock()
-	if cur.seq == p.seq && cur.used {
+	if cur.seq == p.seq && (cur.used || cur.combo) {
 		return
 	}
 	if cur.seq == p.seq && cur.screen {
@@ -357,7 +453,7 @@ func (h *holdSaver) statsHold(p holdPress) {
 	from := p.at.Add(-holdVetoLookback)
 	h.mu.Lock()
 	cur, veto, verdictAt := h.press, h.vetoAt, h.verdictAt
-	if cur.seq != p.seq || cur.used ||
+	if cur.seq != p.seq || cur.used || cur.combo ||
 		(!veto.IsZero() && !veto.Before(from)) ||
 		(!verdictAt.IsZero() && !verdictAt.Before(from)) {
 		h.mu.Unlock()
@@ -392,6 +488,12 @@ func (h *holdSaver) NoteGesture(g boxlog.PresetGesture) {
 		}
 		h.logger.Info("hold-to-save: the speaker read a preset key as a tap",
 			"hold", false, "pressSlot", slot, "pressAgeMs", ageMs, "pressUsed", p.used)
+		return
+	}
+	if p.combo && !g.At.Before(p.at) && g.At.Sub(p.at) < comboHeldFor {
+		h.mu.Unlock()
+		h.logger.Info("hold-to-save: the speaker read a preset key as a hold inside a key combination, not saving",
+			"pressSlot", slot, "pressAgeMs", ageMs)
 		return
 	}
 	if p.slot != 0 && !p.used && !g.At.Before(p.at) && g.At.Sub(p.at) < holdPairWindow {
@@ -463,7 +565,12 @@ func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 	from = from.Add(-holdVetoLookback)
 	h.mu.Lock()
 	veto := h.vetoAt
+	combo := h.press.seq == p.seq && h.press.combo
 	h.mu.Unlock()
+	if combo {
+		// noteOtherKey logged it and took the held-key screen down.
+		return
+	}
 	if !veto.IsZero() && !veto.Before(from) {
 		h.logger.Info("hold-to-save: not saving, the speaker activated a key or read the press as a tap",
 			"slot", p.slot, "vetoAfterPressMs", veto.Sub(p.at).Milliseconds())

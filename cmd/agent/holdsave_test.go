@@ -431,3 +431,95 @@ func TestHoldSaveStatsFallbackNotForNetworkOrTrace(t *testing.T) {
 		t.Fatalf("saved %v without a stats press", got)
 	}
 }
+
+// key sends one state of a key at ms on the trace (press and release).
+func (r *holdRig) key(name string, state boxlog.State, ms int) {
+	r.hs.NotePress(boxlog.KeyEvent{Key: boxlog.KeyNumber(name), Name: name, Producer: boxlog.ProducerConsole,
+		State: state, Origin: boxlog.OriginTrace, At: r.at(ms)})
+}
+
+// TestHoldSaveLeavesKeyCombinationsAlone: #1340. Holding 2 and volume down
+// opens the speaker's setup network; the firmware still reads 2 as held on
+// the way, and STR swapped the keys and broke the combination. Whichever key
+// goes first, nothing is saved.
+func TestHoldSaveLeavesKeyCombinationsAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		presetMs, vMs int
+	}{
+		{"volume first", 400, 0},
+		{"preset first", 0, 700},
+		{"same instant", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newHoldRig(t)
+			r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix", SwappedWith: 5}
+			if tc.vMs <= tc.presetMs {
+				r.key("VOLUME_DOWN", boxlog.StatePressed, tc.vMs)
+				r.key("PRESET_2", boxlog.StatePressed, tc.presetMs)
+			} else {
+				r.key("PRESET_2", boxlog.StatePressed, tc.presetMs)
+				r.key("VOLUME_DOWN", boxlog.StatePressed, tc.vMs)
+			}
+			r.gesture(true, tc.presetMs+2000)
+			r.fireAfter(holdConfirmAfter)
+			if got := r.savedSlots(); len(got) != 0 {
+				t.Fatalf("saves = %v, want none\n%s", got, r.log.String())
+			}
+			if !strings.Contains(r.log.String(), "a key combination, left to the speaker") {
+				t.Fatalf("missing the combination line:\n%s", r.log.String())
+			}
+		})
+	}
+}
+
+// TestHoldSaveComboVolumeHeldLong: volume down pressed well before the preset
+// and still held (no release) is a combination too; once released, a later
+// hold saves again.
+func TestHoldSaveComboVolumeHeldLong(t *testing.T) {
+	r := newHoldRig(t)
+	r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix"}
+	r.key("VOLUME_DOWN", boxlog.StatePressed, 0)
+	r.key("PRESET_1", boxlog.StatePressed, 5000)
+	r.gesture(true, 6600)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("saves = %v during a held volume key, want none", got)
+	}
+	r.key("PRESET_1", boxlog.StateReleased, 0)
+	r.key("VOLUME_DOWN", boxlog.StateReleased, 0)
+	r.now = r.now.Add(5 * time.Second)
+	r.key("PRESET_1", boxlog.StatePressed, 0)
+	r.gesture(true, 1600)
+	if got := r.savedSlots(); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("saves = %v after the combination ended, want [1]\n%s", got, r.log.String())
+	}
+}
+
+// TestHoldSaveComboFromStatsLine: on sm2 the analytics line is all there is;
+// a volume press there marks the combination the same way.
+func TestHoldSaveComboFromStatsLine(t *testing.T) {
+	r := newHoldRig(t)
+	r.press("PRESET_1", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.press("VOLUME_DOWN", boxlog.ProducerConsole, boxlog.OriginStats, 300)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("saves = %v, want none\n%s", got, r.log.String())
+	}
+	if r.hs.recentPhysicalPress(1, heldNoticeWindow) {
+		t.Fatal("a combination must not count as the user's hold for the keeper's notice")
+	}
+}
+
+// TestHoldSaveVolumeFromAppIsNoCombo: a volume key a network client sent is
+// not a finger on the speaker.
+func TestHoldSaveVolumeFromAppIsNoCombo(t *testing.T) {
+	r := newHoldRig(t)
+	r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix"}
+	r.press("VOLUME_DOWN", boxlog.ProducerGabbo, boxlog.OriginWeb, 0)
+	r.press("PRESET_3", boxlog.ProducerConsole, boxlog.OriginStats, 100)
+	r.gesture(true, 1700)
+	if got := r.savedSlots(); len(got) != 1 || got[0] != 3 {
+		t.Fatalf("saves = %v, want [3]\n%s", got, r.log.String())
+	}
+}
