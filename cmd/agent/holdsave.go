@@ -35,6 +35,12 @@
 // drawing on the display at that moment got in the way of the combination
 // (#1340), so a press with another physical key down around it is left to the
 // firmware entirely (comboKey).
+//
+// That needs the other key to be visible, and on the sm2 ST10 it is not: its
+// analytics line reports the preset key and nothing else (6 + volume up on a
+// live ST10, 2026-10-18, left one PRESET_6 line). There a combination still
+// reads as a hold. It only matters while STR's own stream plays (Spotify, the
+// library); the firmware stores its own sources itself and STR does nothing.
 
 package main
 
