@@ -1429,6 +1429,7 @@ func run() error {
 	holdSave.screen = oledHeldScreen{}
 	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
+	keyTrace.SetComboHandler(holdSave.NoteCombination)
 	keyTrace.SetWebKeyHandler(holdSave.NotePress)
 	webuiSrv.SetHoldSaveTestFn(holdSave.SetAcceptAppKeys)
 	// The same ring carries the firmware saying it got no audio out. Until now

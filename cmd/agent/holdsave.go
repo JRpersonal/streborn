@@ -36,11 +36,12 @@
 // (#1340), so a press with another physical key down around it is left to the
 // firmware entirely (comboKey).
 //
-// That needs the other key to be visible, and on the sm2 ST10 it is not: its
-// analytics line reports the preset key and nothing else (6 + volume up on a
-// live ST10, 2026-10-18, left one PRESET_6 line). There a combination still
-// reads as a hold. It only matters while STR's own stream plays (Spotify, the
-// library); the firmware stores its own sources itself and STR does nothing.
+// The other key is not always visible: the sm2 ST10's analytics line reports
+// the preset key and nothing else (6 + volume up on a live ST10, 2026-10-18,
+// left one PRESET_6 line). So the firmware's own countdown for a real
+// combination counts as the other key too (NoteCombination). A pair the
+// firmware does not count down for still reads as a hold there; that is no
+// firmware combination, and it only matters while STR's own stream plays.
 
 package main
 
@@ -327,6 +328,14 @@ func (h *holdSaver) noteOtherKey(ev boxlog.KeyEvent) {
 	if p.screen {
 		h.screen.Cancel(p.slot, "key combination")
 	}
+}
+
+// NoteCombination hears the firmware counting a key combination down. It is
+// handled like a second key going down, so it also covers a chassis whose
+// key trace never reports the volume key (the sm2 SoundTouch 10).
+func (h *holdSaver) NoteCombination(at time.Time) {
+	h.noteOtherKey(boxlog.KeyEvent{Name: "COMBINATION", Producer: boxlog.ProducerConsole,
+		State: boxlog.StatePressed, Origin: boxlog.OriginStats, At: at})
 }
 
 // otherDownLocked reports whether another physical key counts as down at t:

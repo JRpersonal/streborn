@@ -88,6 +88,29 @@ func (r *Reader) SetPresetGestureHandler(h PresetGestureHandler) {
 	r.gestureHandler = h
 }
 
+// ParseComboLine reports a firmware key combination in progress: the display
+// controller's countdown (the factory reset and setup combinations count down
+// on the panel or the lights), or the combination being let go early.
+//
+//	[(tid):HSM:INFO]DisplayController: HandleMessage(EVT_DISPLAY_COUNTDOWN_ACTIVATE) >> StandbyNoClock > ...
+//	[(tid):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_COMBINATION_KEYPRESS_CANCEL) >> Countdown ...
+//
+// Seen on a Portable for 2 and volume down (#1340). It matters most where the
+// key trace is blind: the sm2 SoundTouch 10 reports the preset key of a
+// combination but never the volume key.
+func ParseComboLine(line string) bool {
+	return strings.Contains(line, "HandleMessage(EVT_DISPLAY_COUNTDOWN_ACTIVATE)") ||
+		strings.Contains(line, "HandleMessage(EVT_SYSTEM_COMBINATION_KEYPRESS")
+}
+
+// SetComboHandler installs the hook for ParseComboLine. Set before Run; nil
+// disables it.
+func (r *Reader) SetComboHandler(h func(at time.Time)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.comboHandler = h
+}
+
 // SetWebKeyHandler installs the hook for keys sent over the speaker's HTTP
 // API. They are kept out of the key handler and the key history on purpose:
 // those answer "what did a person press", and a key STR sends itself must
@@ -107,6 +130,15 @@ func (r *Reader) handleGestureLines(line string, now time.Time) bool {
 		r.mu.Unlock()
 		if h != nil {
 			h(g)
+		}
+		return true
+	}
+	if ParseComboLine(line) {
+		r.mu.Lock()
+		h := r.comboHandler
+		r.mu.Unlock()
+		if h != nil {
+			h(now)
 		}
 		return true
 	}

@@ -523,3 +523,24 @@ func TestHoldSaveVolumeFromAppIsNoCombo(t *testing.T) {
 		t.Fatalf("saves = %v, want [3]\n%s", got, r.log.String())
 	}
 }
+
+// On the sm2 ST10 the key trace sees only the preset key of a combination; the
+// firmware's countdown line marks it instead, before or after the lagging
+// analytics line.
+func TestHoldSaveComboFromFirmwareCountdown(t *testing.T) {
+	for _, countdownFirst := range []bool{false, true} {
+		r := newHoldRig(t)
+		r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix"}
+		if countdownFirst {
+			r.hs.NoteCombination(r.at(0))
+			r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 1400)
+		} else {
+			r.press("PRESET_2", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+			r.hs.NoteCombination(r.at(600))
+		}
+		r.fireAfter(holdConfirmAfter)
+		if got := r.savedSlots(); len(got) != 0 {
+			t.Fatalf("countdownFirst=%v: saves = %v, want none\n%s", countdownFirst, got, r.log.String())
+		}
+	}
+}
