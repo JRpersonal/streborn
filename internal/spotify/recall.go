@@ -86,6 +86,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	m.recallSeq++
 	seq := m.recallSeq
 	m.mu.Unlock()
+	started := time.Now()
 	// Hold the recall window open until this recall has actually finished: a
 	// slow engine took 10.8 s for the play POST alone, the fixed window ran out
 	// first and the recall's own track start read as a Spotify-app skip (#1077).
@@ -270,6 +271,16 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 			// recall plays anyway rather than stay silent.
 			m.logger.Warn("spotify: shuffle pick not loaded within the wait, resuming anyway", "uri", uri, "wait", shuffleSkipSettle)
 		}
+	}
+	// A Stop (or a newer recall) that came while this one was loading has the
+	// last word. The load can take 15 s and more when Spotify throttles, and
+	// resuming after the user's Stop left the engine playing to nobody, its
+	// next track then counted as a new play and could pull the speaker back
+	// (fleet roll 2026-10-18, ST30: Stop at 22:21:55, resume at 22:22:00).
+	if m.recallStoppedSince(seq, started) {
+		m.endRecallStaging(stagingGen)
+		m.logger.Info("spotify: the recall was stopped or replaced while it loaded, not starting it", "uri", uri)
+		return nil
 	}
 	// Resume: audio now flows, starting on the chosen track from its beginning.
 	m.resumeRecall(ctx, uri, opts, seq, playAt, true, stagingGen)
@@ -622,6 +633,14 @@ var recallReclaimSettle = 3 * time.Second
 // there, and the speaker gave up after 30 silent seconds (3101). A transfer
 // after the recall played is someone else's choice and is left alone; that
 // case never reaches here, because the check runs only until it is confirmed.
+// recallStoppedSince reports whether the recall with seq was replaced by a
+// newer one, or the user stopped the speaker after it started at since.
+func (m *Manager) recallStoppedSince(seq uint64, since time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.recallSeq != seq || m.userStopAt.After(since)
+}
+
 func (m *Manager) recallReclaim(uri string, opts PlayOptions, seq uint64, since time.Time) {
 	if opts.reclaimed {
 		m.logger.Warn("spotify: the recall lost its session to another device again, giving up",
