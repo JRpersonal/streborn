@@ -492,6 +492,9 @@ func TestTrackScreenVolumePauseLogsQuietly(t *testing.T) {
 		waitFor(t, "the return after the pause", p.held.Load)
 	}
 	s.clear("test")
+	// The off line is written by the holding goroutine as it lets go, which
+	// can land just after clear returns.
+	waitFor(t, "the off line", func() bool { return strings.Count(lines(), "overlay off") >= 1 })
 	if l := lines(); strings.Count(l, "overlay on") != 1 || strings.Count(l, "overlay off") != 1 {
 		t.Fatalf("INFO log:\n%s", l)
 	}

@@ -452,7 +452,10 @@ func (s *trackScreen) tryHold() {
 func (s *trackScreen) draw(buf []byte) {
 	s.mu.Lock()
 	var t TrackText
-	if s.want != nil {
+	// wanted is false when a clear landed between the start of this hold and
+	// its first frame; the hold is about to end, so it announces nothing.
+	wanted := s.want != nil
+	if wanted {
 		t = *s.want
 	}
 	first := !s.drawn
@@ -475,7 +478,7 @@ func (s *trackScreen) draw(buf []byte) {
 	switch {
 	case back:
 		s.log().Debug("display track overlay back", "station", t.Station, "title", t.Title)
-	case first:
+	case first && wanted:
 		s.log().Info("display track overlay on", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock)
 	}
 	dx, dy := trackShift(step)
