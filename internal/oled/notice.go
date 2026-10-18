@@ -57,6 +57,8 @@ const (
 	NoticeEmptyKey     NoticeKind = "empty-key"
 	NoticeRestored     NoticeKind = "keys-restored"
 	NoticeIdentify     NoticeKind = "identify"
+	NoticePreset       NoticeKind = "preset"
+	NoticePresetFailed NoticeKind = "preset-failed"
 )
 
 type noticeIcon int
@@ -69,6 +71,7 @@ const (
 	iconRestored
 	iconIdentify
 	iconKeyHold
+	iconKey
 )
 
 // Notice is one message for the panel. Build it with the constructors below.
@@ -145,6 +148,36 @@ func KeysRestored(n int) Notice {
 		l1 = "1 KEY"
 	}
 	return keyNotice(NoticeRestored, iconRestored, n, l1, "RESTORED AFTER REBOOT", 2*time.Second, 0)
+}
+
+// PresetPlaying: a preset key switched the station while STR's track or clock
+// screen holds the panel. BoseApp shows the key and the station on its own
+// screen, but under the track screen nobody saw it: the station just changed.
+// The key carries the number; the station name is the text, large, on up to
+// three lines (drawn by presetLines).
+func PresetPlaying(key int, name string) Notice {
+	n := Notice{Kind: NoticePreset, Key: key, icon: iconKey, prio: 1, Hold: 2500 * time.Millisecond}
+	lines, _ := wrapText(SanitizeText(name, trackTextMax), line1Max, 3)
+	if len(lines) == 0 {
+		lines = []string{"PRESET"}
+	}
+	n.Line1 = lines[0]
+	if len(lines) > 1 {
+		n.Line2 = lines[1]
+	}
+	if len(lines) > 2 {
+		n.Line3 = lines[2]
+	}
+	return n
+}
+
+// PresetFailed: the station a preset key switched to did not start playing,
+// whatever the reason. Without it the track screen just came back with the new
+// name over silence, which read as playing.
+func PresetFailed(key int, name string) Notice {
+	n := keyNotice(NoticePresetFailed, iconKeyX, key, "FAILED", name, 4*time.Second, 2)
+	n.Line3 = "DID NOT START PLAYING"
+	return n
 }
 
 // Identify: "find this speaker", HELLO and its name with pulsing rings.
@@ -541,11 +574,15 @@ const (
 	line2Y       = 66
 	line3Y       = 76
 	barY         = 89
-	lvlLine1     = 15
-	lvlLine2     = 9
-	lvlLine3     = 6
-	badgeCX      = 78
-	badgeCY      = 34
+	// presetLineY and presetLineStep place the station name of a preset
+	// notice: three lines at font scale 2 under the key.
+	presetLineY    = 40
+	presetLineStep = 19
+	lvlLine1       = 15
+	lvlLine2       = 9
+	lvlLine3       = 6
+	badgeCX        = 78
+	badgeCY        = 34
 )
 
 // noticeRenderer draws one notice. Static notices are drawn once at full
@@ -601,6 +638,12 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 		c.busyDots(int(t * 3))
 	case iconKeyEmpty:
 		c.presetKey(n.Key, true)
+	case iconKey:
+		c.presetKey(n.Key, false)
+		for i, l := range []string{n.Line1, n.Line2, n.Line3} {
+			c.text(l, presetLineY+i*presetLineStep, 2, lvlLine1)
+		}
+		return
 	case iconRestored:
 		for row := 0; row < 2; row++ {
 			for col := 0; col < 3; col++ {

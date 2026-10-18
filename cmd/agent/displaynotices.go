@@ -7,6 +7,9 @@
 //     form for it: NOT SAVED.
 //   - a physical press on a key that holds nothing at all (holdsave.go,
 //     checkEmpty): KEY N, EMPTY.
+//   - a preset key switched the station while STR's track or clock screen
+//     held the panel (wshandler.go, OnPresetSelected): PRESET N and the
+//     station, where the firmware's own preset screen would have been hidden.
 //   - the reconcile wrote keys back that the box lost over a reboot: N KEYS
 //     RESTORED, once in the life of the speaker. Some speakers (the Portable)
 //     drop every key registration on every boot, so a notice per boot would
