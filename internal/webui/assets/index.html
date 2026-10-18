@@ -140,7 +140,9 @@ header .dev .chev { font-size:10px; color:var(--muted); }
 header .dev.haspeers { cursor:pointer; border:1px solid var(--accent); border-radius:999px; padding:4px 10px; background:var(--card2); }
 header .dev.haspeers .chev, header .dev.haspeers .spk { display:inline; }
 header .dev.haspeers .spk { color:var(--accent); }
-header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; padding:0 5px; border-radius:9px; background:var(--accent); color:var(--bg); font-size:11px; line-height:18px; text-align:center; }
+/* Neutral, not the accent: in red next to the name it read as a group or an
+   alert (#1339), and it only counts the speakers a tap can switch to. */
+header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; padding:0 5px; border-radius:9px; border:1px solid var(--line); background:var(--card2); color:var(--muted); font-size:11px; line-height:16px; text-align:center; }
 #peersCard.flash { animation:peersFlash 1.2s ease-out 1; }
 @keyframes peersFlash { 0% { box-shadow:0 0 0 3px var(--accent); } 100% { box-shadow:0 0 0 0 transparent; } }
 @media (prefers-reduced-motion: reduce) { #peersCard.flash { animation:none; } }
