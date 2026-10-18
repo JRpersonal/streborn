@@ -47,6 +47,33 @@ func TestHeldKeyDuringFolderQueueKeepsTheFolder(t *testing.T) {
 	}
 }
 
+// A folder kept on a held key is reported to the server, which lights that key
+// as playing (#1217); a refused hold reports nothing.
+func TestHeldFolderReportsItsKey(t *testing.T) {
+	store := holdTestStore(t)
+	var noted []int
+	live := heldLive{queue: liveFolder, queueSaved: func(slot int) { noted = append(noted, slot) }}
+	keep := newHeldPresetKeeper(store, live, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := keep(heldUPnP(4)); err != nil {
+		t.Fatalf("folder hold refused: %v", err)
+	}
+	// The same folder held again is no write, and still the key's folder.
+	if err := keep(heldUPnP(4)); err != nil {
+		t.Fatalf("re-hold: %v", err)
+	}
+	if len(noted) != 2 || noted[0] != 4 || noted[1] != 4 {
+		t.Fatalf("noted %v, want [4 4]", noted)
+	}
+	noted = nil
+	refused := heldLive{queueSaved: live.queueSaved}
+	if err := newHeldPresetKeeper(store, refused, slog.New(slog.NewTextHandler(io.Discard, nil)))(heldUPnP(5)); err == nil {
+		t.Fatal("want a refusal without a playing folder")
+	}
+	if len(noted) != 0 {
+		t.Fatalf("refused hold noted %v", noted)
+	}
+}
+
 // With no queue playing, a UPnP item stays not keepable, as before.
 func TestHeldUPnPWithoutQueueIsRefused(t *testing.T) {
 	store := holdTestStore(t)

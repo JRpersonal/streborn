@@ -27,7 +27,7 @@ import (
 var errNotKeepable = errors.New("not a station STR can keep")
 
 // heldLive is what the keeper reads from the running agent beyond the preset
-// store. Either func may be nil (tests, or a hold that lands before the web
+// store. Any func may be nil (tests, or a hold that lands before the web
 // server is up), which means "nothing known".
 type heldLive struct {
 	// queue builds the folder preset for a slot from the media-server folder
@@ -37,6 +37,12 @@ type heldLive struct {
 	// artChain returns the full logo candidate chain STR knows for a stream
 	// URL, "" when none (webui.Server.StreamArtChain, #968).
 	artChain func(streamURL string) string
+	// homepage returns the station website STR knows for a stream URL, ""
+	// when none (webui.Server.StreamHomepage, #1217).
+	homepage func(streamURL string) string
+	// queueSaved tells the server a playing folder was kept on slot, so the
+	// key lights up as playing (webui.Server.NoteQueueSavedSlot, #1217).
+	queueSaved func(slot int)
 }
 
 // heldWebui is the running web server, stored once main has created it.
@@ -58,6 +64,17 @@ func heldLiveFrom(srv *atomic.Pointer[webui.Server]) heldLive {
 			}
 			return ""
 		},
+		homepage: func(streamURL string) string {
+			if s := srv.Load(); s != nil {
+				return s.StreamHomepage(streamURL)
+			}
+			return ""
+		},
+		queueSaved: func(slot int) {
+			if s := srv.Load(); s != nil {
+				s.NoteQueueSavedSlot(slot)
+			}
+		},
 	}
 }
 
@@ -69,11 +86,18 @@ func heldLiveFrom(srv *atomic.Pointer[webui.Server]) heldLive {
 // The box slot is the firmware's to write here; the reconcile later rewrites
 // it once onto STR's own form (see reconcileOnce).
 func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logger) marge.PresetKeeper {
-	keep := func(item marge.HeldItem) (string, error) {
+	keep := func(item marge.HeldItem) (_ string, err error) {
 		candidate, changed, err := heldPresetCandidate(store, live, item)
 		if err != nil {
 			return "", err
 		}
+		// A folder kept on the key lights that key as playing; the server
+		// only counts it while the key holds the tracks that play (#1217).
+		defer func() {
+			if err == nil && candidate.Type == "queue" && live.queueSaved != nil {
+				live.queueSaved(item.Slot)
+			}
+		}()
 		if !changed {
 			// The boot-time sync PUTs every native slot the box holds, and a
 			// re-hold of a key while its own station plays lands here too: the
@@ -182,12 +206,21 @@ func heldPresetCandidate(store *presets.Store, live heldLive, item marge.HeldIte
 				art = chain
 			}
 		}
+		// The tile draws its logo from the homepage once the chain holds only
+		// icon-service entries, so a key saved without it fell back to the
+		// stream host's icon and looked unlike the same station saved from
+		// Find stations (#1217).
+		homepage := ""
+		if live.homepage != nil {
+			homepage = live.homepage(st.OriginStreamURL)
+		}
 		candidate = presets.Preset{
 			Slot:      item.Slot,
 			Name:      name,
 			StreamURL: st.OriginStreamURL,
 			Type:      "radio",
 			Art:       art,
+			Homepage:  homepage,
 		}
 	default:
 		return presets.Preset{}, false, fmt.Errorf("%w: the descriptor's stream is not a station origin (%s)",

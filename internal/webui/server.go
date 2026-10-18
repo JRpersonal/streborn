@@ -812,6 +812,11 @@ type Server struct {
 	// queue started last, so a key saved while it plays stores the same folder
 	// preset the Library star button would (#1030). Guarded by queueMu.
 	queueFolder recentCardCtx
+	// queueSavedSlot is the key the running queue was saved on while it
+	// played, 0 when none; a new queue start clears it. Kept apart from
+	// queueFolder.key, which Library and Recently-played match on (#1217).
+	// Guarded by queueMu.
+	queueSavedSlot int
 	// queueEp is the play-queue episode running right now and queueEpPast the
 	// last few that ended, with the reason each one ended (#960). queueLogMu
 	// guards both; it is taken alone, never while boxCmdMu or queueMu is held,

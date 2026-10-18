@@ -678,11 +678,28 @@ export function queueTrackMeta(queue) {
 // stream the queue card is stale by definition: an agent up to v1.0.12 kept the
 // queue running when the Spotify app took the speaker over, so the folder key
 // lit up next to the Spotify track and adopted its cover as its own (#1301).
+//
+// A folder started with "Play folder" carries its folder card, not a key's, and
+// keeps it when it is then saved on a key, because Library and Recently-played
+// match on that card. The agent names the key it was saved on as queue.slot,
+// and only while the key still holds the tracks that play (#1217).
 export function queueSlotActive(p, queue, nowLocation) {
   if (!p || p.type !== 'queue') return false;
   if (nowLocation && /\/spotify\/stream/.test(nowLocation)) return false;
+  if (queue && queue.active && typeof queue.slot === 'number' && queue.slot === p.slot) return true;
   const card = queueSlotCard(queue);
   return card !== '' && card === 'queue:slot:' + p.slot;
+}
+
+// presetRevChanged reports whether the agent's preset store was written since
+// the last GET /api/queue reply, so the app re-reads the presets at once
+// instead of waiting out its slow recheck timer (#1217). prev is the revision
+// seen last (undefined before the first reply); an agent that reports none
+// (older than this) never triggers a re-read.
+export function presetRevChanged(prev, next) {
+  if (typeof next !== 'number') return false;
+  if (typeof prev !== 'number') return false; // the first reading only sets the baseline
+  return next !== prev;
 }
 
 // presetOwnArt is the artwork a key carries itself: its stored art, or for a

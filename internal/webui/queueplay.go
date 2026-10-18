@@ -145,14 +145,62 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	return true
 }
 
-// queuePlaysSlot reports whether the active queue is the folder saved on slot.
+// queuePlaysSlot reports whether the active queue is the folder saved on slot:
+// the queue was started from that key, or saved onto it while it played.
 func (s *Server) queuePlaysSlot(slot int) bool {
 	if !s.queue.isActive() {
 		return false
 	}
 	s.queueMu.Lock()
-	defer s.queueMu.Unlock()
-	return s.queueFolder.key == fmt.Sprintf("queue:slot:%d", slot)
+	fromKey := s.queueFolder.key == fmt.Sprintf("queue:slot:%d", slot)
+	s.queueMu.Unlock()
+	return fromKey || (slot > 0 && s.queueSavedSlotHolds() == slot)
+}
+
+// NoteQueueSavedSlot records that the running queue was just saved on slot
+// (#1217). The queue keeps its folder card; the saved slot is extra.
+func (s *Server) NoteQueueSavedSlot(slot int) {
+	s.queueMu.Lock()
+	s.queueSavedSlot = slot
+	s.queueMu.Unlock()
+}
+
+// queueSavedSlotHolds returns the key the running queue was saved on, or 0
+// when none, or when that key has since been given something else: it counts
+// only while the key still holds a folder with exactly the tracks that play.
+// Shuffle is not compared, so toggling it during play keeps the key lit.
+func (s *Server) queueSavedSlotHolds() int {
+	s.queueMu.Lock()
+	slot := s.queueSavedSlot
+	s.queueMu.Unlock()
+	if slot == 0 || s.presets == nil || s.queue == nil {
+		return 0
+	}
+	cur, ok := s.presets.Get(slot)
+	if !ok || cur.Type != "queue" {
+		return 0
+	}
+	items, _, active := s.queue.contents()
+	if !active {
+		return 0
+	}
+	n := 0
+	for _, it := range items {
+		if it.URL == "" {
+			continue
+		}
+		if n >= len(cur.Items) || cur.Items[n].URL != it.URL {
+			return 0
+		}
+		n++
+		if n == presets.MaxQueueItems {
+			break
+		}
+	}
+	if n != len(cur.Items) {
+		return 0
+	}
+	return slot
 }
 
 // Auto-advance tuning. The Bose box emits no native "track finished" event: a
@@ -307,6 +355,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	s.queue.load(items, start, shuffle, rep)
 	s.queueMu.Lock()
 	s.queueFolder = card
+	s.queueSavedSlot = 0 // a new folder is on no key until it is saved on one
 	s.queueMu.Unlock()
 	it, ok := s.queue.current()
 	if !ok {
@@ -1788,13 +1837,18 @@ func (s *Server) handleQueueRepeat(w http.ResponseWriter, r *http.Request) {
 }
 
 // queueSnapshotWithCard is the GET /api/queue answer: the queue snapshot plus the
-// Recently-played card key of the folder it plays, while it is active.
+// Recently-played card key of the folder it plays, while it is active, the key
+// it was saved on while it played, and the preset store's revision.
 func (s *Server) queueSnapshotWithCard() queueSnapshot {
 	snap := s.queue.snapshot()
 	if snap.Active {
 		s.recentMu.Lock()
 		snap.Card = s.recentQueueCard.key
 		s.recentMu.Unlock()
+		snap.Slot = s.queueSavedSlotHolds()
+	}
+	if s.presets != nil {
+		snap.PresetRev = s.presets.Revision()
 	}
 	return snap
 }

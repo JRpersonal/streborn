@@ -123,11 +123,16 @@ func (s *Server) HoldSaveLive(ctx context.Context, slot int) (HoldSaved, error) 
 	if q, ok := s.LiveQueuePreset(slot); ok {
 		if cur, have := s.presets.Get(slot); have && cur.Type == "queue" &&
 			samePresetItems(cur, q) && cur.Name == q.Name && cur.Source == q.Source {
+			s.NoteQueueSavedSlot(slot)
 			return HoldSaved{Slot: slot, Kind: "queue", Name: cur.Name, Unchanged: true}, nil
 		}
 		if err := s.storeQueuePreset(ctx, q); err != nil {
 			return HoldSaved{}, err
 		}
+		// The folder keeps its own card (Library and Recently-played match on
+		// it); the key it now sits on is recorded beside it, so the key lights
+		// up as playing (#1217).
+		s.NoteQueueSavedSlot(slot)
 		s.logger.Info("queue preset save: stored the playing folder on a key",
 			"slot", q.Slot, "name", q.Name, "source", q.Source, "tracks", len(q.Items),
 			"shuffle", q.Shuffle, "from", "speaker key hold")

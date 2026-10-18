@@ -100,6 +100,28 @@ export function spotifySlotStillHolds(presetUri, snapshot) {
   return ctx === normalizeSpotifyContext(presetUri);
 }
 
+// spotifySlotForContext names the Spotify key that holds what the engine plays,
+// for playback no key started: a playlist started from the Spotify app plays on
+// the generic /spotify/stream.ogg, so the per-slot URL that lights a recalled
+// key never comes, and a key just saved from it by a hold stayed dark (#1217).
+//
+// Matched on the context URI only, never on the name: a preset literally named
+// "Spotify" must not light up for whatever plays (#1077). The store refuses the
+// same playlist on two keys (#836), so more than one match is an older store;
+// the lowest key wins then, so the highlight does not hop between renders. An
+// empty context proves nothing and names no key.
+export function spotifySlotForContext(presets, snapshot) {
+  const ctx = normalizeSpotifyContext(snapshot && snapshot.context);
+  if (!ctx) return null;
+  let best = null;
+  for (const p of presets || []) {
+    if (!p || p.type !== 'spotify' || !p.uri) continue;
+    if (normalizeSpotifyContext(p.uri) !== ctx) continue;
+    if (best === null || p.slot < best) best = p.slot;
+  }
+  return best;
+}
+
 // spotifySongText is the "Artist - Track" part of the line, or '' when the
 // snapshot has no song yet (the line then shows the heading alone).
 export function spotifySongText(snapshot) {

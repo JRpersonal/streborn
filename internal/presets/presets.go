@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
@@ -268,7 +269,15 @@ type Store struct {
 	path string
 	mu   sync.RWMutex
 	data []Preset
+	// rev counts the writes since the store was loaded. Clients poll it to
+	// re-read the presets as soon as one changed, instead of on a slow timer
+	// (#1217). Not persisted: a restart starts over at 0, which a client
+	// takes as one more change.
+	rev atomic.Uint64
 }
+
+// Revision returns the store's write counter, bumped by every Save.
+func (s *Store) Revision() uint64 { return s.rev.Load() }
 
 // New creates an empty Store without a persistence path.
 func New() *Store { return &Store{} }
@@ -546,6 +555,10 @@ func (s *Store) RemoveSlot(slot int) error {
 // Save writes the presets back in the object format ({"presets":[...]}).
 // That is also the format the wizard writes, so both are compatible.
 func (s *Store) Save() error {
+	// Every caller changed the in-memory set before it got here, so the
+	// revision moves even when the write below fails: what clients read is
+	// the memory, not the file.
+	s.rev.Add(1)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.path == "" {
