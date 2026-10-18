@@ -542,6 +542,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// before the screen comes back with the new station.
 	if oled.TrackShowing() {
 		showNotice(oled.PresetPlaying(slot, title))
+		go h.notePresetOutcome(ctx, seq, slot, title)
 	}
 	// The press is the user explicitly asking for playback: clear any stale
 	// deliberate-stop latch BEFORE the recall so a preceding (or spontaneous,
@@ -565,6 +566,34 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// and the ST30 whose remote presses never play (#252). The read loop must
 	// keep draining; the recall runs beside it.
 	go h.recallPreset(ctx, seq, pressAt, slot, location, title)
+}
+
+// presetOutcomeAfter is how long a preset press gets to bring sound before the
+// panel says it failed: past the recall's own verify and a slow station's
+// first buffer.
+const presetOutcomeAfter = 15 * time.Second
+
+// notePresetOutcome looks once, presetOutcomeAfter after a press that showed
+// its preset notice, whether the speaker plays. If a newer press came since,
+// that one answers for itself. If it does not play, the panel says so, so a
+// station that never started is not shown as if it had.
+func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slot int, title string) {
+	if h.playingNow == nil {
+		return
+	}
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(presetOutcomeAfter):
+	}
+	if h.pressSeq.Load() != seq || h.playingNow(ctx) {
+		return
+	}
+	if p, ok := h.store.Get(slot); ok && p.Name != "" {
+		title = p.Name
+	}
+	h.logger.Info("preset press did not start playing, saying so on the display", "slot", slot, "name", title)
+	showNotice(oled.PresetFailed(slot, title))
 }
 
 // recallPreset is the slow half of a hardware preset press: the queue-preset

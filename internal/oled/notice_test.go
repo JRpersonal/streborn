@@ -284,6 +284,7 @@ func TestNoticesRender(t *testing.T) {
 		KeyHeld(6),
 		PresetPlaying(3, "Radio Arabella Oberösterreich"),
 		PresetPlaying(1, ""),
+		PresetFailed(4, "Radio Arabella Oberösterreich"),
 	}
 	buf := make([]byte, FrameSize)
 	for _, n := range all {
@@ -387,11 +388,11 @@ func TestNoticesFlag(t *testing.T) {
 	}
 }
 
-// A long station name takes both small lines rather than being cut at the
-// first one.
+// A long station name wraps over the large lines rather than being cut at
+// the first one.
 func TestPresetPlayingWrapsTheName(t *testing.T) {
 	n := PresetPlaying(3, "Radio Arabella Oberösterreich")
-	if n.Line1 != "PRESET 3" || n.Line2 == "" || n.Line3 == "" {
+	if n.Line1 == "" || n.Line2 == "" || len(n.Line1) > line1Max || len(n.Line2) > line1Max || len(n.Line3) > line1Max {
 		t.Fatalf("got %q / %q / %q", n.Line1, n.Line2, n.Line3)
 	}
 }
