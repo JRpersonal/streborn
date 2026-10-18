@@ -1983,6 +1983,7 @@ func run() error {
 			} else {
 				logger.Info("hosts redirect applied after marge endpoint ready", "endpoint", waitAddr)
 			}
+			keepNTPPinned(ctx, hostsMgr, logger.With("comp", "ntphosts"))
 		}()
 	}
 
