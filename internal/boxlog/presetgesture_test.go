@@ -105,3 +105,18 @@ func TestPresetVerdictFromStandbyStaysAWake(t *testing.T) {
 		t.Fatalf("classified as %q (ok=%v), want %q", got, ok, ClassWake)
 	}
 }
+
+func TestParseComboLine(t *testing.T) {
+	for _, l := range []string{
+		"Oct 18 11:10:09 taigan local0.info BoseApp[1965]: [(001234):HSM:INFO]DisplayController: HandleMessage(EVT_DISPLAY_COUNTDOWN_ACTIVATE) >> StandbyNoClock > Standby > Main > Top",
+		"Oct 18 11:10:11 taigan local0.info BoseApp[1965]: [(001234):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_COMBINATION_KEYPRESS_CANCEL) >> Countdown",
+		"Oct 18 15:42:48 taigan local0.info BoseApp[1965]: [(001234):HSM:INFO]SysCtlr: HandleMessage(EVT_SYSTEM_ENTERED_MANUAL_AP_MODE) >> Standby > StdOp [ChangeState(Standby >> Setup), Standby(EXIT)]",
+	} {
+		if !ParseComboLine(l) {
+			t.Errorf("not read as a combination: %s", l)
+		}
+	}
+	if ParseComboLine("[(001234):HSM:INFO]DisplayController: HandleMessage(EVT_DISPLAY_VOLUME_TIMEOUT) >> Volume") {
+		t.Error("a volume display line read as a combination")
+	}
+}

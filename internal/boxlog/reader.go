@@ -97,6 +97,8 @@ type Reader struct {
 	// key, webKeyHandler every key sent over :8090/key (presetgesture.go).
 	gestureHandler PresetGestureHandler
 	webKeyHandler  Handler
+	// comboHandler hears the firmware's key combination countdown.
+	comboHandler func(at time.Time)
 }
 
 // New returns a reader that will call handler for every key event.
