@@ -57,6 +57,7 @@ const (
 	NoticeEmptyKey     NoticeKind = "empty-key"
 	NoticeRestored     NoticeKind = "keys-restored"
 	NoticeIdentify     NoticeKind = "identify"
+	NoticePreset       NoticeKind = "preset"
 )
 
 type noticeIcon int
@@ -69,6 +70,7 @@ const (
 	iconRestored
 	iconIdentify
 	iconKeyHold
+	iconKey
 )
 
 // Notice is one message for the panel. Build it with the constructors below.
@@ -145,6 +147,22 @@ func KeysRestored(n int) Notice {
 		l1 = "1 KEY"
 	}
 	return keyNotice(NoticeRestored, iconRestored, n, l1, "RESTORED AFTER REBOOT", 2*time.Second, 0)
+}
+
+// PresetPlaying: a preset key switched the station while STR's track or clock
+// screen holds the panel. BoseApp shows the key and the station on its own
+// screen, but under the track screen nobody saw it: the station just changed.
+// The name gets the two small lines.
+func PresetPlaying(key int, name string) Notice {
+	n := keyNotice(NoticePreset, iconKey, key, "PRESET "+strconv.Itoa(key), "", 2500*time.Millisecond, 1)
+	lines, _ := wrapText(SanitizeText(name, trackTextMax), line2Max, 2)
+	if len(lines) > 0 {
+		n.Line2 = lines[0]
+	}
+	if len(lines) > 1 {
+		n.Line3 = lines[1]
+	}
+	return n
 }
 
 // Identify: "find this speaker", HELLO and its name with pulsing rings.
@@ -601,6 +619,8 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 		c.busyDots(int(t * 3))
 	case iconKeyEmpty:
 		c.presetKey(n.Key, true)
+	case iconKey:
+		c.presetKey(n.Key, false)
 	case iconRestored:
 		for row := 0; row < 2; row++ {
 			for col := 0; col < 3; col++ {

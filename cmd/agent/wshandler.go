@@ -537,6 +537,12 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// return above): a webhook-only press starts no recall of its own, so it
 	// must not read as "a newer press" to an unrelated in-flight verify.
 	seq := h.pressSeq.Add(1)
+	// Under STR's track or clock screen the firmware's own preset screen is
+	// hidden, so the key and the station show on the panel for a moment
+	// before the screen comes back with the new station.
+	if oled.TrackShowing() {
+		showNotice(oled.PresetPlaying(slot, title))
+	}
 	// The press is the user explicitly asking for playback: clear any stale
 	// deliberate-stop latch BEFORE the recall so a preceding (or spontaneous,
 	// #419) power-off cannot suppress it, and anchor the webui's standby-flip

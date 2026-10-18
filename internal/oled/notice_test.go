@@ -282,6 +282,8 @@ func TestNoticesRender(t *testing.T) {
 		KeysRestored(4),
 		Identify("Küche"),
 		KeyHeld(6),
+		PresetPlaying(3, "Radio Arabella Oberösterreich"),
+		PresetPlaying(1, ""),
 	}
 	buf := make([]byte, FrameSize)
 	for _, n := range all {
@@ -382,5 +384,14 @@ func TestNoticesFlag(t *testing.T) {
 	_ = os.WriteFile(NoticesFlagPath, []byte("1"), 0o644)
 	if !NoticesEnabled() {
 		t.Fatal("1 must mean on")
+	}
+}
+
+// A long station name takes both small lines rather than being cut at the
+// first one.
+func TestPresetPlayingWrapsTheName(t *testing.T) {
+	n := PresetPlaying(3, "Radio Arabella Oberösterreich")
+	if n.Line1 != "PRESET 3" || n.Line2 == "" || n.Line3 == "" {
+		t.Fatalf("got %q / %q / %q", n.Line1, n.Line2, n.Line3)
 	}
 }
