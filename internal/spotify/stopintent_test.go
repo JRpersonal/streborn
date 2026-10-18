@@ -167,3 +167,37 @@ func TestAFetchAlreadyUnderWayAtTheStopDoesNotLiftTheLatch(t *testing.T) {
 		t.Error("an attach right at the stop lifted the latch")
 	}
 }
+
+// A Stop that lands while a recall is still loading is the last word: the
+// recall must not resume the engine afterwards. The fleet roll on 2026-10-18
+// saw an ST30 resume five seconds after the Stop, with Spotify throttling the
+// load, and the engine then played to nobody.
+func TestRecallDoesNotResumeAfterAStopDuringTheLoad(t *testing.T) {
+	var m *Manager
+	resumed := make(chan struct{}, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/player/play":
+			// The user presses Stop while the engine loads.
+			m.mu.Lock()
+			m.userStopAt = time.Now().Add(time.Millisecond)
+			m.mu.Unlock()
+		case "/player/resume":
+			resumed <- struct{}{}
+		case "/status":
+			_, _ = w.Write([]byte(`{"track":{"uri":"spotify:track:1","name":"Song"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	m = newTestManagerAt(t, srv.URL)
+	if err := m.Play(context.Background(), "spotify:playlist:X", PlayOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-resumed:
+		t.Fatal("the recall resumed the engine after the user's Stop")
+	default:
+	}
+}
