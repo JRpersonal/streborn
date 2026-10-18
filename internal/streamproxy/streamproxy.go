@@ -18,6 +18,7 @@ package streamproxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -30,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/internet"
@@ -177,6 +179,13 @@ type Server struct {
 	// tail is the newest audio the box received, so a reconnect can resume
 	// on the exact next byte of the new connection's burst (burst.go).
 	tail spliceTail
+
+	// held is the station connection kept open after the box let go of it,
+	// so a fetch of the same station moments later needs no dial (held.go).
+	// heldFor is how long it is kept; 0 turns holding off.
+	heldMu  sync.Mutex
+	held    *heldConn
+	heldFor time.Duration
 
 	// radio stream health: cross-reconnect counters behind the
 	// radio_stream_health debug section and one consolidated WARN per upstream
@@ -351,6 +360,7 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		// the whole backlog, which a 15 s kill threw away (stall.go).
 		upstreamStallAfter: upstreamStallBase,
 		upstreamStallMax:   upstreamStallMax,
+		heldFor:            heldFor,
 	}
 }
 
@@ -841,7 +851,19 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		}
 		return false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// The station request runs on its own context. It follows the box's
+	// until the answer is in; from then on a live stream may outlive the box's
+	// connection for a moment and be held (held.go), so the copy loop decides.
+	upCtx, upCancel := context.WithCancel(context.WithoutCancel(ctx))
+	stopFollow := context.AfterFunc(ctx, upCancel)
+	var handedOver atomic.Bool
+	defer func() {
+		stopFollow()
+		if !handedOver.Load() {
+			upCancel()
+		}
+	}()
+	req, err := http.NewRequestWithContext(upCtx, http.MethodGet, url, nil)
 	if err != nil {
 		s.logger.Warn("stream proxy NewRequest fail", "err", err)
 		return false, err
@@ -870,7 +892,20 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	}
 
 	started := time.Now()
-	resp, err := s.client.Do(req)
+	var resp *http.Response
+	var heldAge time.Duration
+	var heldBytes int
+	if sendHeaders && depth == 0 && req.Header.Get("Range") == "" {
+		resp, heldAge, heldBytes = s.claimHeld(station)
+	} else {
+		s.dropHeldUnless(station)
+	}
+	if resp != nil {
+		s.logger.Info("stream proxy: the box came back to the station it dropped, continuing on the held connection",
+			"url", station, "heldMs", heldAge.Milliseconds(), "keptBytes", heldBytes)
+	} else {
+		resp, err = s.client.Do(req)
+	}
 	if err != nil {
 		// If Bose has closed the connection, a retry makes no sense.
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
@@ -909,7 +944,11 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		// Headers already sent — try a reconnect
 		return true, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if !handedOver.Load() {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	// A forwarded offset Range gets a 206 from any media server that does
 	// ranges, which is the whole point of forwarding it (#844). Rejecting every
@@ -1159,6 +1198,23 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			}
 		}
 	}
+	// A live stream of clean audio may outlive the box's connection by a
+	// moment and be held for its return (held.go). The station request then
+	// stops following the box's context; instead, once the box is gone, the
+	// loop has heldGrab to hand the connection over before it is closed.
+	holdable := s.heldFor > 0 && cleanAudio && !partial && !rangeSent && resp.ContentLength <= 0
+	closeUpstream := heldCloser(resp, upCancel)
+	if holdable && stopFollow() {
+		defer context.AfterFunc(ctx, func() {
+			time.AfterFunc(heldGrab, func() {
+				if !handedOver.Load() {
+					closeUpstream()
+				}
+			})
+		})()
+	} else {
+		holdable = false
+	}
 	buf := make([]byte, 16*1024)
 	// Connection-scoped telemetry so a diagnostic bundle can explain a dropout
 	// without a live capture: how long this upstream connection lasted and how
@@ -1284,7 +1340,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 						"limitSec", int(limit.Seconds()), "boxBufferSec", int(buffered.Seconds()),
 						"writeBlockGraceSec", int(wb.Seconds()),
 						"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
-					_ = resp.Body.Close()
+					if !handedOver.Load() {
+						_ = resp.Body.Close()
+					}
 					return
 				}
 			}
@@ -1306,6 +1364,17 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	for {
 		enterRead()
 		n, readErr := src.Read(buf)
+		// handOver keeps the station connection for the box's return; the
+		// bytes just read never reached the box and lead what is kept.
+		handOver := func(why string) (bool, error) {
+			handedOver.Store(true)
+			s.park(station, resp, src, closeUpstream, s.tail.snapshot(tailStation), bytes.Clone(buf[:n]))
+			connSummary(why)
+			return false, nil
+		}
+		if holdable && n > 0 && readErr == nil && ctx.Err() != nil {
+			return handOver("box gone, station held")
+		}
 		if n > 0 {
 			// gapMs is the time this read waited for the upstream, nothing
 			// else. It used to be the time since the previous read returned,
@@ -1328,6 +1397,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			}
 			if writeErr != nil {
 				// Bose closed the connection
+				if holdable {
+					return handOver("bose closed, station held")
+				}
 				connSummary("bose closed")
 				return false, nil
 			}
