@@ -672,6 +672,10 @@ type Server struct {
 	// state machine over what the box reports, so it is only testable if the
 	// reports can be scripted.
 	nowPlayingFn func() (status string, pos, total time.Duration, standby bool)
+	// nowPlayingSourceFn scripts the now_playing source attribute next to
+	// nowPlayingFn. nil means "", which the queue watcher reads as unknown,
+	// never as another source.
+	nowPlayingSourceFn func() string
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).

@@ -189,7 +189,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			return false, gen
 		}
 
-		ps, pos, total, standby, tornDown := s.pollNowPlaying()
+		ps, pos, total, standby, tornDown, _ := s.pollNowPlaying()
 		if standby {
 			// Powered off mid-track. Never a track end, and STR must not send
 			// anything to a sleeping box (#219).

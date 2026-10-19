@@ -199,6 +199,9 @@ func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// The station replaces a running library queue, like every other play.
+	// After the speaker took it, so a refused station leaves the queue playing.
+	s.stopQueueIfActive("a Pandora station was started instead")
 	s.logger.Info("pandora: station handed to the speaker", "location", req.Location, "name", req.Name, "listed", listed,
 		"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
 	s.recentNotePandora(req.Location, strings.TrimSpace(req.Name), typ, s.listedPandoraArt(req.Location))

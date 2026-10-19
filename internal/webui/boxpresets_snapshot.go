@@ -390,6 +390,11 @@ func (s *Server) handleBoxPresetRecall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "slot must be 1..6", http.StatusBadRequest)
 		return
 	}
+	// The box plays the slot through its own source, which replaces a running
+	// library queue (#1366). Before the key, not after: the key press reaches
+	// STR's own hardware-key hook too, and a queue that hook starts for a
+	// library slot must not be ended by this call afterwards.
+	s.stopQueueIfActive("a box preset was recalled")
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	if err := boxcli.PresetKey(ctx, s.boxHost, body.Slot, "p"); err != nil {

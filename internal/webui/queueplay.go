@@ -232,6 +232,11 @@ const (
 	// the end is noise; more than that is a box still playing audio the length
 	// says does not exist (#1065).
 	queueOverrunSlack = 2 * time.Second
+	// queueTakeoverPolls is how many polls in a row the box must report
+	// another source playing before the watcher ends the queue (#1366). One
+	// poll could catch a source change in flight; two, eight seconds apart,
+	// are the user having moved on.
+	queueTakeoverPolls = 2
 	// queueOwnEndSlack is how close a still-climbing position must be to the
 	// box's OWN reported total to count as "the box says this is the end".
 	queueOwnEndSlack = 1 * time.Second
@@ -456,6 +461,22 @@ func (s *Server) StopQueueForSpotify() {
 	s.stopQueue("the Spotify app took over the speaker")
 }
 
+// stopQueueIfActive ends a running library queue because the user started
+// something on the speaker that is not a queue: a Pandora station, the AUX or
+// Bluetooth input, a box-native preset key. A no-op without a queue.
+//
+// The plain play paths (a station, a track, a non-queue preset) always called
+// stopQueue. These go straight to the speaker's own /select or key, so the
+// queue stayed active underneath the new source: its watcher pushed the next
+// library track over it once the old track's length had passed, and the
+// queue's folder key stayed highlighted (#1366).
+func (s *Server) stopQueueIfActive(why string) {
+	if s.queue == nil || !s.queue.isActive() {
+		return
+	}
+	s.stopQueue(why)
+}
+
 // advanceAndPlay moves to the next track (natural end vs manual skip differ on
 // repeatOne) and plays it, or stops the queue at the end. The caller must NOT
 // hold boxCmdMu. gen is the queue generation the advance decision was based
@@ -554,6 +575,23 @@ func (s *Server) retryQueueTrackStart(gen int, trackStart time.Time) bool {
 	return true
 }
 
+// queueSourceTakenOver reports whether one now_playing poll shows the speaker
+// playing a source other than the queue's own (#1366). Deliberately narrow,
+// because a false positive ends a queue the user is listening to:
+//   - only after the box was seen on the queue's UPNP source, so a speaker that
+//     has not switched to the queue yet is left to the start retry;
+//   - only a named source that is not one of STR's own states between tracks
+//     ("", UPNP, STANDBY, INVALID_SOURCE: boxOwnedSource), so a poll error or
+//     a torn-down source never counts;
+//   - only while that source plays or buffers, so a source the box merely
+//     shows while idle never counts.
+func queueSourceTakenOver(sawQueueSource bool, src, state string) bool {
+	if !sawQueueSource || !boxOwnedSource(strings.ToUpper(strings.TrimSpace(src))) {
+		return false
+	}
+	return state == "PLAY_STATE" || state == "BUFFERING_STATE"
+}
+
 // queueDeadTrackStops counts one more track the speaker did not play, either
 // dropped (a torn-down source) or never started, and reports whether the run
 // has reached queueDeadTrackLimit and the queue should stop.
@@ -631,6 +669,13 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		interval    = queuePollInterval
 		zoneChecked bool
 		inZone      bool
+		// sawQueueSource: the box has reported the queue's UPNP source at
+		// least once. Only after that can a different source be a takeover;
+		// before it, the box simply has not switched to the queue yet (a Wave
+		// still on its own source, #1322), which the start retry handles.
+		sawQueueSource bool
+		// takeoverPolls counts polls in a row with another source playing.
+		takeoverPolls int
 	)
 	for {
 		select {
@@ -653,7 +698,28 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			zoneChecked, inZone = false, false
 		}
 
-		ps, pos, total, standby, tornDown := s.pollNowPlaying()
+		ps, pos, total, standby, tornDown, src := s.pollNowPlaying()
+		if strings.EqualFold(src, "UPNP") {
+			sawQueueSource = true
+		}
+		// Another source is playing (#1366): a Pandora station, AUX, Bluetooth
+		// or a native preset started on the speaker itself or from another app.
+		// That is the user moving on, not a track ending. Advancing here pushed
+		// the next library track over the new source once the old track's
+		// length had passed (the wall-clock net below), and the queue's key
+		// stayed lit the whole time.
+		if queueSourceTakenOver(sawQueueSource, src, ps) {
+			takeoverPolls++
+			if takeoverPolls >= queueTakeoverPolls {
+				s.logger.Info("queue watcher: another source is playing on the speaker, ending the queue (not advancing)",
+					"source", src, "state", ps, "polls", takeoverPolls,
+					"elapsedSec", int(time.Since(start).Seconds()))
+				s.stopQueue("another source took over the speaker (" + src + ")")
+				return
+			}
+			continue // never time or advance a track while another source plays
+		}
+		takeoverPolls = 0
 		if standby {
 			// The box was powered off mid-queue (top switch, remote, or the app's
 			// Standby button -> now_playing source=STANDBY). A standby is never a
@@ -1065,26 +1131,30 @@ func nowPlayingStatus(body string) string {
 }
 
 // pollNowPlaying reads the box's now_playing once and returns the play status,
-// the current/total position, and whether the box is in standby. Zero values on
-// any error.
-func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby, tornDown bool) {
+// the current/total position, whether the box is in standby or dropped its
+// source, and the source attribute ("" when unknown). Zero values on any error.
+func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby, tornDown bool, source string) {
 	// Test seam, the same one boxPlayStateDetail has: the end detection is a
 	// state machine over what the box reports, and it is only testable if the
 	// reports can be scripted.
 	if s.nowPlayingFn != nil {
 		// The test seam predates the torn-down flag and scripts four values; a
 		// scripted box is never reported as torn down, which keeps every existing
-		// end-detection test meaning exactly what it did before.
+		// end-detection test meaning exactly what it did before. The source is
+		// scripted separately and stays "" (unknown) unless a test sets it.
 		st, p, t, sb := s.nowPlayingFn()
-		return st, p, t, sb, false
+		if s.nowPlayingSourceFn != nil {
+			source = s.nowPlayingSourceFn()
+		}
+		return st, p, t, sb, false, source
 	}
 	if s.boxHost == "" {
-		return "", 0, 0, false, false
+		return "", 0, 0, false, false, ""
 	}
 	cl := &http.Client{Timeout: 3 * time.Second}
 	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
 	if err != nil {
-		return "", 0, 0, false, false
+		return "", 0, 0, false, false, ""
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	resp.Body.Close()
@@ -1092,6 +1162,9 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 	standby = nowPlayingStandby(body)
 	tornDown = nowPlayingSourceTornDown(body)
 	status = nowPlayingStatus(body)
+	if m := reNowPlaySource.FindStringSubmatch(body); m != nil {
+		source = m[1]
+	}
 	if m := reNowPlayTime.FindStringSubmatch(body); m != nil {
 		if t, err := strconv.Atoi(m[1]); err == nil {
 			total = time.Duration(t) * time.Second
@@ -1100,7 +1173,7 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 			pos = time.Duration(c) * time.Second
 		}
 	}
-	return status, pos, total, standby, tornDown
+	return status, pos, total, standby, tornDown, source
 }
 
 // --- HTTP handlers -------------------------------------------------------
