@@ -13,9 +13,32 @@ home automation.
 desktop app / curl ──POST /api/announce {text, lang, volume}──▶ stick agent
    (via boxDo: self-heals :8888 <-> :17008, BCO boxes only answer :17008)
         agent: fetch TTS audio ──▶ snapshot now-playing + volume
-                                ──▶ UPnP play the announcement
+                                ──▶ stop the current source
+                                ──▶ load the clip, set the volume, play
                                 ──▶ wait for it to finish, then resume
 ```
+
+Order and resume rules (`runAnnouncement`, #1359):
+
+- **Stop first, then volume, then play.** The running source is silenced
+  before the announcement volume is set, so it never plays at that volume: a
+  UPnP stream gets a transport Stop, a native radio station
+  (`LOCAL_INTERNET_RADIO`) goes through the same native-station handover every
+  other play uses (the speaker's own STOP key, then a check that it let go),
+  Bluetooth/AUX get the STOP key. A clip push refused in the wrong transport
+  state is cleared and retried once. If the clip does not start, the volume and
+  the previous source are restored.
+- **Resume only what was playing.** After the clip the transport is stopped and
+  the volume restored, then the previous source comes back only if it was in
+  `PLAY_STATE` or `BUFFERING_STATE`:
+  - native radio station: the speaker's own `/select` with the
+    `/station?data=...` item it reported (the same call the app's preset recall
+    uses); if the speaker refuses, the stream that descriptor names is pushed
+    over UPnP;
+  - UPnP stream: pushed again with the wrong-state repair, using the art and
+    mime of the last play when it is the same stream;
+  - anything else (Bluetooth, AUX, other speaker-owned sources): left alone.
+- A speaker that was in standby is woken for the clip and put back to standby.
 
 - Endpoint: `internal/webui/announce.go` (`handleAnnounce`, `handleAnnounceAudio`).
 - Desktop call: `desktop-app/announce.go` (`SendAnnounce`), routed through `boxDo`
