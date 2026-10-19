@@ -209,6 +209,66 @@ func TestFormDefaultGroupOnPlayLeavesMembersAloneWhenMasterIsNotPlaying(t *testi
 	}
 }
 
+// A start that first fails (the master briefly INVALID_SOURCE) and then plays a
+// few seconds later must still form the group: the failed kick may not burn the
+// cooldown the real kick needs (#1353). A third kick right after the formed one
+// stays inside the cooldown.
+func TestFormDefaultGroupOnPlayAfterFailedStart(t *testing.T) {
+	oldNP, oldZM, oldWake, oldLive, oldSet, oldHold := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, defaultGroupHoldCheckAfter
+	defer func() {
+		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, defaultGroupHoldCheckAfter = oldNP, oldZM, oldWake, oldLive, oldSet, oldHold
+	}()
+	defaultGroupHoldCheckAfter = 0
+
+	var mu sync.Mutex
+	masterReads := 0
+	setCalls := 0
+	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+		if ip != "10.0.0.1" {
+			return nowPlayingSnapshot{Source: "INVALID_SOURCE"}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		masterReads++
+		if masterReads == 1 {
+			return nowPlayingSnapshot{Source: "INVALID_SOURCE"} // the failed first start
+		}
+		return nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE"}
+	}
+	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
+	rejoinWakeMember = func(context.Context, string, *slog.Logger) {}
+	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if setCalls == 0 {
+			return boxapi.Zone{}, nil
+		}
+		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "IDLE"}}}, nil
+	}
+	rejoinSetZone = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+		mu.Lock()
+		setCalls++
+		mu.Unlock()
+		return nil
+	}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true,
+		Slaves: []zones.Member{{DeviceID: "IDLE", IP: "10.0.0.4"}}}
+
+	s.formDefaultGroupOnPlay(z) // master not playing yet: nothing happens
+	if setCalls != 0 {
+		t.Fatalf("setZone driven while the master was not playing: %d", setCalls)
+	}
+	s.formDefaultGroupOnPlay(z) // the retry plays: the group must form now
+	if setCalls != 1 {
+		t.Fatalf("setZone calls after the successful retry = %d, want 1", setCalls)
+	}
+	s.formDefaultGroupOnPlay(z) // inside the cooldown of the real form
+	if setCalls != 1 {
+		t.Errorf("cooldown ignored after a real form: setZone calls = %d", setCalls)
+	}
+}
+
 // The periodic rejoin: a permanent group whose master plays takes a member
 // back that rebooted (fresh agent uptime, standby) or sits idle, leaves a
 // member alone that somebody switched off (standby, long uptime), and does
