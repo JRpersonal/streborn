@@ -25,8 +25,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/grandcat/zeroconf"
@@ -82,7 +84,28 @@ type Announcer struct {
 	server       *zeroconf.Server // current ServiceType
 	legacyServer *zeroconf.Server // LegacyServiceType
 	cfg          Config
+	// addrs are the LAN addresses the current registration was made with,
+	// nil while none is registered. WatchAddresses compares against them.
+	addrs []string
 }
+
+// The announcer's view of the machine, as variables so a test can stand in for
+// the real interfaces and for zeroconf without touching the network.
+var (
+	registerIfaces  = pickRegisterIfaces
+	currentLANAddrs = lanAddrStrings
+	registerService = func(a *Announcer, service string, txt []string, ifaces []net.Interface) (*zeroconf.Server, error) {
+		// Register the service under a name that resolves. See
+		// Config.HostName: with an empty HostName this is the plain Register
+		// the library has always done, so a speaker that cannot answer for a
+		// name of its own keeps exactly today's behaviour.
+		if a.cfg.HostName != "" {
+			return zeroconf.RegisterProxy(a.cfg.InstanceName, service, Domain, a.cfg.Port,
+				a.cfg.HostName, nil, txt, ifaces)
+		}
+		return zeroconf.Register(a.cfg.InstanceName, service, Domain, a.cfg.Port, txt, ifaces)
+	}
+)
 
 // Config describes what goes into the mDNS record.
 type Config struct {
@@ -170,18 +193,24 @@ func (a *Announcer) txtRecord() []string {
 // the first call.
 func (a *Announcer) register() error {
 	txt := a.txtRecord()
-	ifaces := pickAnnounceIfaces(a.logger)
-
-	// register the service under a name that resolves. See Config.HostName:
-	// with an empty HostName this is the plain Register the library has always
-	// done, so a speaker that cannot answer for a name of its own keeps exactly
-	// today's behaviour.
+	ifaces := registerIfaces(a.logger)
+	a.addrs = nil
+	if len(ifaces) == 0 {
+		// Nothing to announce on yet, typically a boot where the agent is up
+		// before the Wi-Fi lease, or a speaker sitting in its setup network.
+		// Registering anyway used to fall back to every interface, and the
+		// library freezes the address records at register time, so the only
+		// address published was the USB gadget's (192.0.2.1 on a SoundTouch
+		// 30). The desktop app showed that as a third speaker nobody owned,
+		// for the whole runtime. WatchAddresses registers once a LAN address
+		// appears.
+		a.logger.Warn("mDNS phase: announce postponed, no LAN address yet",
+			slog.String("instance", a.cfg.InstanceName))
+		return nil
+	}
+	addrs := currentLANAddrs()
 	reg := func(service string) (*zeroconf.Server, error) {
-		if a.cfg.HostName != "" {
-			return zeroconf.RegisterProxy(a.cfg.InstanceName, service, Domain, a.cfg.Port,
-				a.cfg.HostName, nil, txt, ifaces)
-		}
-		return zeroconf.Register(a.cfg.InstanceName, service, Domain, a.cfg.Port, txt, ifaces)
+		return registerService(a, service, txt, ifaces)
 	}
 
 	server, err := reg(ServiceType)
@@ -214,8 +243,59 @@ func (a *Announcer) register() error {
 		slog.Bool("legacyAnnounced", legacy != nil),
 		slog.Int("port", a.cfg.Port),
 		slog.Int("ifaces", len(ifaces)),
+		slog.Int("addrs", len(addrs)),
 	)
+	a.addrs = addrs
 	return nil
+}
+
+// WatchAddresses registers again whenever the speaker's LAN addresses differ
+// from the ones the current registration was made with: the first lease after
+// a boot, leaving the setup network, a DHCP renumbering. Before this only a
+// rename or a confirmed Wi-Fi switch in STR re-announced, so a speaker that
+// came up without an address kept announcing none (or the wrong one) until it
+// rebooted. onChange, when set, runs after each such re-announce with the new
+// addresses. Blocks until ctx is done.
+//
+// A tick that finds no address at all changes nothing: tearing the
+// registration down then would leave the speaker announcing nothing, which is
+// worse than a stale record.
+func (a *Announcer) WatchAddresses(ctx context.Context, every time.Duration, onChange func(addrs []string)) {
+	if a == nil {
+		return
+	}
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		if cur, changed := a.checkAddresses(); changed && onChange != nil {
+			onChange(cur)
+		}
+	}
+}
+
+// checkAddresses is one WatchAddresses tick: re-announce when the LAN
+// addresses moved. Reports the addresses and whether it re-announced.
+func (a *Announcer) checkAddresses() ([]string, bool) {
+	cur := currentLANAddrs()
+	if len(cur) == 0 {
+		return nil, false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if slices.Equal(cur, a.addrs) {
+		return cur, false
+	}
+	old := strings.Join(a.addrs, ",")
+	if err := a.reannounceLocked("lan address changed", old, strings.Join(cur, ",")); err != nil {
+		a.logger.Warn("mDNS re-announce after an address change failed, retrying on the next check", slog.Any("err", err))
+		return cur, false
+	}
+	return cur, true
 }
 
 // shutdownServersLocked stops both mDNS servers and reports whether any was
@@ -739,6 +819,46 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 		// Fallback: zeroconf default with all interfaces
 		return nil
 	}
+	return out
+}
+
+// pickRegisterIfaces is pickAnnounceIfaces for the speaker's own registration,
+// without the "every interface" fallback: an empty answer means there is no
+// address worth announcing yet. A link-local address still counts, so two
+// devices on a network without DHCP keep finding each other, but the USB
+// gadget never does.
+func pickRegisterIfaces(logger *slog.Logger) []net.Interface {
+	if ifaces := pickAnnounceIfaces(logger); len(ifaces) > 0 {
+		return ifaces
+	}
+	all, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []net.Interface
+	for _, iface := range all {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 || netutil.IsGadgetIface(iface.Name) {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, a := range addrs {
+			if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.To4() != nil && ipnet.IP.IsLinkLocalUnicast() {
+				out = append(out, iface)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// lanAddrStrings lists the speaker's usable LAN addresses, sorted, for
+// comparing one moment with the next.
+func lanAddrStrings() []string {
+	var out []string
+	for _, c := range netutil.LANIfaceAddrs(false) {
+		out = append(out, c.IP.String())
+	}
+	slices.Sort(out)
 	return out
 }
 

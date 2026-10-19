@@ -1862,6 +1862,15 @@ func run() error {
 		// soon as /info on :8090 responds, then continue watching
 		// for renames the user might do via the BoseApp HTTP API.
 		go pollBoxInfo(ctx, *boxHost, region, regionRes, ann, logger)
+
+		// Register again whenever the LAN address moves, the first lease after
+		// a boot above all: the agent is often up before it, and until then
+		// there is nothing to announce on. Repoint the name responder with it.
+		go ann.WatchAddresses(ctx, 15*time.Second, func([]string) {
+			if ip := routableIPv4(); ip != nil && mdnsHostResp != nil {
+				mdnsHostResp.SetAddress(ip)
+			}
+		})
 	}()
 
 	if *pendingNameFile != "" {
