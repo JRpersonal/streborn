@@ -1133,7 +1133,9 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		// though it already advertises the radio source as READY. A short
 		// backoff turns that into a non-event.
 		if wroteNative(missing) {
-			if lost := verifyNativeWrites(boxHost, missing, logger); len(lost) > 0 {
+			if lost := verifyNativeWrites(boxHost, missing, func(_ int, spec boxcli.PresetSpec) bool {
+				return specStillWanted(store, spec)
+			}, logger); len(lost) > 0 {
 				disableNativePresets(fmt.Sprintf("slots %v stayed empty after a native write", lost))
 				syncFailed = true // keep the fast cadence so UPnP is restored now
 			} else {

@@ -326,6 +326,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.noticeAppSave(r, prevQ, hadQ, p)
+			s.clearHeldRefusal(slot)
 			writeJSON(w, http.StatusOK, p)
 			return
 		}
@@ -584,6 +585,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.noticeAppSave(r, prev, had, p)
+		s.clearHeldRefusal(slot)
 		s.logger.Info("preset write accepted",
 			"slot", slot, "was", prevName, "now", p.Name, "type", p.Type,
 			"stream", p.StreamURL, "from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
@@ -611,6 +613,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// Same forensic line as the PUT: a vanished preset must name its deleter.
 		s.logger.Info("preset delete accepted",
 			"slot", slot, "from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+		s.clearHeldRefusal(slot)
 		// Drop it from the box-preset snapshot right away and tombstone the slot so
 		// a trailing gabbo presetsUpdated does not resurface it as a foreign (UPNP)
 		// entry the user then "cannot delete" (reported after an app restart).
@@ -694,6 +697,8 @@ func (s *Server) handlePresetMove(w http.ResponseWriter, r *http.Request) {
 	// The move is the answer to the "already on key N" offer: the station
 	// now sits on the key the user wanted, so say so on the display.
 	oled.Show(oled.SavedFromApp(req.To))
+	s.clearHeldRefusal(req.From)
+	s.clearHeldRefusal(req.To)
 	// The hardware keys follow: write the new key first, then drop the old one,
 	// so the station is never absent from the box's own preset list. The
 	// tombstone stops a trailing gabbo presetsUpdated from resurfacing the old

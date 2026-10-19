@@ -1548,6 +1548,8 @@ func run() error {
 		}
 		return r.At, r.Slot, r.Source, r.Name, true
 	})
+	// A save or delete on that slot through the app settles it (#1217).
+	webuiSrv.SetHeldRefusalClearFn(margeSrv.ClearHeldRefusal)
 	// ...and keep the rejections STR PROVOKES out of that count, or the banner
 	// fires on a healthy speaker. Two paths provoke them: the firmware answers
 	// its own power-on self-resume with 1036 (it restarts a source it does not

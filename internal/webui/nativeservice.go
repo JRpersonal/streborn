@@ -244,6 +244,7 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	s.noticeAppSave(r, prev, had, p)
+	s.clearHeldRefusal(slot)
 	s.logger.Info("preset write accepted",
 		"slot", slot, "was", prevName, "now", p.Name, "type", p.Type,
 		"source", p.Native.Source, "location", p.Native.Location,

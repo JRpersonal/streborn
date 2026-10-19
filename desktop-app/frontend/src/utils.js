@@ -505,6 +505,16 @@ export function stormBannerBoxes(boxes) {
   return (boxes || []).filter(b => b && (b.storm1036 || b.recallRefusal) && b.boxHealth !== 'wedged');
 }
 
+// holdRefusedBannerKey picks the text for a long press STR could not keep.
+// The advice to save a Spotify playlist from the app only fits when the
+// speaker was playing Spotify; for any other source it read as a wrong
+// diagnosis (#1217), so those get the plain statement.
+export function holdRefusedBannerKey(source) {
+  return String(source || '').toUpperCase() === 'SPOTIFY'
+    ? 'speaker.holdRefusedBanner'
+    : 'speaker.holdRefusedBannerGeneric';
+}
+
 export function showError(msg) {
   wireError();
   const m = $('errorModal');

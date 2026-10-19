@@ -1585,6 +1585,7 @@
   "speaker.stormBanner": "{{name}} está rechazando lo que STR le envía: los presets con Spotify, la biblioteca o la cola no arrancan, aunque las emisoras de radio pueden seguir sonando. El altavoz ha perdido el inicio de sesión que hace con el sustituto local de STR para la nube de Bose. Es algo interno: no interviene ninguna cuenta tuya y no tienes que introducir nada. Un reinicio suele solucionarlo. No desenchufes el altavoz, eso reinicia su reloj y lo empeora.",
   "speaker.groupKeyErrorBanner": "{{name}}: el altavoz rechazó la última pulsación de una tecla de grupo del mando. Motivo: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: una pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes. Por esta vía STR solo puede guardar una emisora de radio. Para poner una lista de Spotify en una tecla, mantén pulsada la tecla en la aplicación mientras suena la lista.",
+  "speaker.holdRefusedBannerGeneric": "{{name}}: una pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes.",
   "speaker.stormRestartBtn": "Reiniciar altavoz",
   "speaker.stormRestarting": "Reiniciando {{name}}, tarda alrededor de un minuto.",
   "speaker.wifiSaveBtn": "Guardar Wi-Fi",

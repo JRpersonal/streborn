@@ -1585,6 +1585,7 @@
   "speaker.stormBanner": "{{name}} odrzuca teraz to, co wysyła mu STR: presety ze Spotify, biblioteki lub kolejki nie startują, choć stacje radiowe mogą nadal grać. Głośnik utracił logowanie, które wykonuje do lokalnego zamiennika chmury Bose w STR. To sprawa wewnętrzna: nie dotyczy żadnego twojego konta i nie musisz nic wpisywać. Ponowne uruchomienie zwykle to naprawia. Nie wyciągaj wtyczki, to cofa zegar głośnika i pogarsza sprawę.",
   "speaker.groupKeyErrorBanner": "{{name}}: głośnik odrzucił ostatnie naciśnięcie przycisku grupy na pilocie. Powód: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: długiego naciśnięcia przycisku {{slot}} nie udało się zapisać, więc przycisk nadal trzyma to, co wcześniej. W ten sposób STR może zapisać tylko stację radiową. Aby umieścić playlistę Spotify na przycisku, przytrzymaj przycisk w aplikacji, gdy playlista gra.",
+  "speaker.holdRefusedBannerGeneric": "{{name}}: długiego naciśnięcia przycisku {{slot}} nie udało się zapisać, więc przycisk nadal trzyma to, co wcześniej.",
   "speaker.stormRestartBtn": "Uruchom głośnik ponownie",
   "speaker.stormRestarting": "Ponowne uruchamianie {{name}}, to potrwa około minuty.",
   "speaker.wifiSaveBtn": "Zapisz Wi-Fi",

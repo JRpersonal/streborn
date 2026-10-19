@@ -1227,6 +1227,20 @@ func (s *Server) SetHeldRefusalFn(fn func() (time.Time, int, string, string, boo
 	s.heldRefusalFn = fn
 }
 
+// SetHeldRefusalClearFn wires the marge stub's ClearHeldRefusal, called when
+// the agent stores or deletes a slot, so a refusal reported for that slot
+// ends with the save that settled it.
+func (s *Server) SetHeldRefusalClearFn(fn func(slot int)) {
+	s.heldRefusalClearFn = fn
+}
+
+// clearHeldRefusal drops a reported hold refusal for this slot, if any.
+func (s *Server) clearHeldRefusal(slot int) {
+	if s.heldRefusalClearFn != nil {
+		s.heldRefusalClearFn(slot)
+	}
+}
+
 // SetSuppress1036Fn wires boxws.Suppress1036Until so the paths that PROVOKE a
 // 1036 can say so, instead of the storm detector reading STR's own footprints
 // as a box that refuses everything (see suppress1036For).

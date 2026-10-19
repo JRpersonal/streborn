@@ -33,7 +33,17 @@ var (
 	// native path off for a user whose speaker was never at fault. Knowing WHEN
 	// we last wrote is what lets a watchdog tell its own footprint apart.
 	lastAt = map[string]time.Time{}
+	// slotAt is when STR last wrote a preset slot on the box, per kind and
+	// slot. The firmware echoes every AddPreset as a marge preset PUT, which
+	// looks exactly like a long press on that key; the marge stub uses this to
+	// tell its own echo apart from an owner's hold (#1217).
+	slotAt = map[slotKey]time.Time{}
 )
+
+type slotKey struct {
+	kind string
+	slot int
+}
 
 // Note records one write of the given kind (e.g. "addpreset", "setmarge",
 // "upnp-resume") with the box's playback source at write time. Pass source ""
@@ -69,6 +79,24 @@ func WroteWithin(kind string, d time.Duration) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	t, ok := lastAt[kind]
+	return ok && time.Since(t) < d
+}
+
+// NoteSlot records that STR wrote the given preset slot just now (kind e.g.
+// "addpreset"). It does not count towards the ledger totals: the caller's own
+// Note/NoteN does that, this only remembers the moment per slot.
+func NoteSlot(kind string, slot int) {
+	mu.Lock()
+	slotAt[slotKey{kind, slot}] = time.Now()
+	mu.Unlock()
+}
+
+// SlotWrittenWithin reports whether STR wrote this slot (kind "addpreset")
+// in the last d.
+func SlotWrittenWithin(slot int, d time.Duration) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	t, ok := slotAt[slotKey{"addpreset", slot}]
 	return ok && time.Since(t) < d
 }
 
