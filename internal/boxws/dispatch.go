@@ -102,11 +102,18 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// "This speaker started music" is the edge from not-playing to
 			// playing on a streaming source, read from the typed play status of
 			// the same frame. A frame without a play status says nothing about
-			// it and leaves the edge tracker alone.
+			// it and leaves the edge tracker alone, except on INVALID_SOURCE
+			// and STANDBY: those frames often carry no play status, yet nothing
+			// plays there. Without resetting on them, a start that first failed
+			// (UPNP PLAY, INVALID_SOURCE, UPNP PLAY on the retry) never counted
+			// the retry as a new start (#1353).
 			fireSourcePlaying := false
 			firePlayingEdge, playingEdge := false, false
 			if f.NowPlaying != nil {
-				if ps := f.NowPlaying.playStatus(); ps != "" {
+				if ps := f.NowPlaying.playStatus(); ps == "" && (src == "INVALID_SOURCE" || src == "STANDBY") {
+					firePlayingEdge, playingEdge = c.sourcePlaying, false
+					c.sourcePlaying = false
+				} else if ps != "" {
 					playingNow := isStreamingSource(src) && (ps == "PLAY_STATE" || ps == "BUFFERING_STATE")
 					fireSourcePlaying = playingNow && !c.sourcePlaying
 					firePlayingEdge, playingEdge = playingNow != c.sourcePlaying, playingNow

@@ -47,3 +47,31 @@ func TestHandleMessage_SourcePlayingFiresOnPlayEdgeNotOnSourceFlip(t *testing.T)
 		t.Fatalf("a non-streaming source must not fire, got %d", h.starts.Load())
 	}
 }
+
+// A failed start drops the box to INVALID_SOURCE (or STANDBY) with a frame that
+// carries no playStatus. That frame must still end the "playing" state, so the
+// retry that does play a few seconds later counts as a new start (#1353).
+func TestHandleMessage_SourcePlayingResetsOnInvalidSourceWithoutPlayStatus(t *testing.T) {
+	h := &sourcePlayingHandler{}
+	c := newTestClient(h)
+	playing := func(src string) []byte {
+		return []byte(`<updates deviceID="x"><nowPlayingUpdated><nowPlaying source="` + src + `">` +
+			`<ContentItem source="` + src + `"/><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`)
+	}
+	bare := func(src string) []byte {
+		return []byte(`<updates deviceID="x"><nowPlayingUpdated><nowPlaying source="` + src + `">` +
+			`<ContentItem source="` + src + `"/></nowPlaying></nowPlayingUpdated></updates>`)
+	}
+	ctx := context.Background()
+	c.handleMessage(ctx, playing("UPNP"))
+	c.handleMessage(ctx, bare("INVALID_SOURCE"))
+	c.handleMessage(ctx, playing("UPNP"))
+	if got := h.starts.Load(); got != 2 {
+		t.Fatalf("UPNP play, INVALID_SOURCE, UPNP play must count 2 starts, got %d", got)
+	}
+	c.handleMessage(ctx, bare("STANDBY"))
+	c.handleMessage(ctx, playing("UPNP"))
+	if got := h.starts.Load(); got != 3 {
+		t.Fatalf("a start after a bare STANDBY frame must count again, got %d", got)
+	}
+}

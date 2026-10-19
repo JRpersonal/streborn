@@ -166,13 +166,17 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 		// choice keeps the old behaviour, nothing re-forms or wakes on play.
 		return
 	}
+	// The cooldown is only looked at here, not stamped: a kick whose master
+	// turns out not to be playing (a Spotify start that first failed with
+	// INVALID_SOURCE and plays on the retry seconds later) must not burn the
+	// window the real start's kick needs. Before this, that retry's kick
+	// landed inside the cooldown and the group never formed (#1353).
 	s.defaultFormMu.Lock()
-	if time.Since(s.lastDefaultFormAt) < defaultGroupFormCooldown {
-		s.defaultFormMu.Unlock()
+	cooling := time.Since(s.lastDefaultFormAt) < defaultGroupFormCooldown
+	s.defaultFormMu.Unlock()
+	if cooling {
 		return
 	}
-	s.lastDefaultFormAt = time.Now()
-	s.defaultFormMu.Unlock()
 
 	// Own context: member wakes legitimately take ~10 s each (in parallel),
 	// and the kick that got us here has long returned.
@@ -191,6 +195,15 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 			"source", np.Source, "playStatus", np.PlayStatus)
 		return
 	}
+	// The master plays: claim the cooldown now, re-checked under the lock so
+	// two kicks that passed the gate together still drive one round only.
+	s.defaultFormMu.Lock()
+	if time.Since(s.lastDefaultFormAt) < defaultGroupFormCooldown {
+		s.defaultFormMu.Unlock()
+		return
+	}
+	s.lastDefaultFormAt = time.Now()
+	s.defaultFormMu.Unlock()
 
 	type verdict struct {
 		m   zones.Member
@@ -302,6 +315,10 @@ func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
 	if !z.Permanent {
 		return // opt-in, see formDefaultGroupOnPlay
 	}
+	// Stamping up front is fine here, unlike formDefaultGroupOnPlay: there is
+	// no master-playing gate after it that could bail, and a kick skipped by
+	// the cooldown loses nothing because the mirror pass that follows runs
+	// regardless and the members woken by the earlier kick are awake already.
 	s.defaultFormMu.Lock()
 	if time.Since(s.lastDefaultFormAt) < defaultGroupFormCooldown {
 		s.defaultFormMu.Unlock()
