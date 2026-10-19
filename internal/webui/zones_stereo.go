@@ -127,7 +127,7 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	// 28 ms). Chained on the zone ctx it ate the whole 6 s budget, the desktop
 	// app's 6 s client always gave up first, and so no non-ST10 speaker EVER
 	// delivered a live zone to the app: both group screens then ran on
-	// optimistic data alone (Bernard's two-screens-disagree family). After a
+	// optimistic data alone (the two-screens-disagree family). After a
 	// few consecutive hangs the read is paused for a while — the answer cannot
 	// change while the firmware refuses to give one.
 	if s.groupReadAllowed() {

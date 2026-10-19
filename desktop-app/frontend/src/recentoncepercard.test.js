@@ -1,4 +1,4 @@
-// Recently played lists each station once, at its newest listening (Bernard's
+// Recently played lists each station once, at its newest listening (a user's
 // wish, 2026-10-19). The agent keeps one session per station per speaker; the
 // app does the same across speakers and for a speaker whose agent still sends
 // the older history, and a delete removes the station from every speaker the

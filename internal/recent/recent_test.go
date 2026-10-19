@@ -123,7 +123,7 @@ func TestDeleteCardAtClearsALegacyDuplicate(t *testing.T) {
 	eq(t, rows(s), []string{"1live/Other"})
 }
 
-// TestAddListsAStationOnce is Bernard's wish (2026-10-19): a station listened
+// TestAddListsAStationOnce is a user wish (2026-10-19): a station listened
 // to at two different times is ONE card, at the newer time, carrying the tracks
 // of the newer session only.
 func TestAddListsAStationOnce(t *testing.T) {

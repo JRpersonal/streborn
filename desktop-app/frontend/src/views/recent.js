@@ -110,7 +110,7 @@ function cardStation(c) {
 
 // groupRecentCards turns a newest-first, box-tagged entry list into source
 // cards, ONE card per station (cardKey), placed at its newest listening
-// (Bernard's wish, 2026-10-19). The agent already keeps a station once per
+// (a user wish, 2026-10-19). The agent already keeps a station once per
 // speaker; this does the same across speakers for the "All speakers" view, and
 // for a speaker whose agent still keeps the older history.
 //
@@ -352,7 +352,7 @@ function recentCardHTML(c, i, nowPlaying) {
       : '')
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
-  // Remove-this-card button (Brice): drops the card from the box's history.
+  // Remove-this-card button: drops the card from the box's history.
   actions += `<button class="btn btn-mini rc-del" id="recDel${i}" title="${escapeAttr(t('recent.removeCard'))}">&times;</button>`;
   // nowPlaying is decided by the caller (the newest matching card only, #761),
   // not per-card, so a station in history several times lights up once.
@@ -595,7 +595,7 @@ export async function renderRecent() {
     html += `<div class="recent-scope"><select class="recent-box-select" id="recentBoxSelect" `
       + `title="${escapeAttr(t('recent.thisBox'))}">${opts}</select></div>`;
   }
-  // Clear the whole list (Brice). Clears every box in the current scope.
+  // Clear the whole list. Clears every box in the current scope.
   html += `<button class="btn btn-mini recent-clear" id="recentClear" title="${escapeAttr(t('recent.clearAll'))}">${escapeHtml(t('recent.clearAll'))}</button>`;
   html += `</div><div class="recent-sub muted">${escapeHtml(t('recent.subtitle'))}</div>`
     + `<div class="recent-list" id="recentList"><div class="muted recent-loading">${escapeHtml(t('recent.loading'))}</div></div>`;

@@ -46,7 +46,7 @@ func recentKeys(t *testing.T, s *Server) []string {
 }
 
 // GET /api/recent lists a station once, at its newest listening, which is what
-// both the desktop app and the phone page render (Bernard, 2026-10-19).
+// both the desktop app and the phone page render (2026-10-19).
 func TestRecentEndpointListsAStationOnce(t *testing.T) {
 	s := newRecentServer(t)
 	s.recent.Add(recent.Entry{Source: "radio", CardKey: "swr3", Track: "Epic", TS: "t1"})
