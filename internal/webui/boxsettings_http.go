@@ -456,6 +456,9 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "box error: "+string(respBody), http.StatusBadGateway)
 		return
 	}
+	// The input replaces a running library queue (#1366): left active, its
+	// watcher pushed the next track over AUX or Bluetooth.
+	s.stopQueueIfActive("the speaker was switched to " + src)
 	writeJSON(w, http.StatusOK, map[string]string{"source": src})
 }
 
