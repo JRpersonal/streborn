@@ -262,8 +262,20 @@ func (a *App) doAction(host string, port int, action string) error {
 // desktop app is a separate module and cannot import it, so the two are kept
 // in step by hand: change one, change the other.
 //
-// Skip: 203.0.113/24 (Documentation TEST-NET-3, box USB gadget),
+// Skip: 203.0.113/24, 192.0.2/24, 198.51.100/24 (documentation ranges, box USB gadget),
 // 127/8 loopback.
+// isDocumentationIPv4 reports whether ip lies in one of the three ranges
+// reserved for examples, which is where the speakers' USB gadget lives. Same
+// list as internal/netutil/lanaddr.go gadgetPrefixes.
+func isDocumentationIPv4(ip string) bool {
+	for _, p := range []string{"203.0.113.", "192.0.2.", "198.51.100."} {
+		if strings.HasPrefix(ip, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func pickReachableIP(ips []string) string {
 	if len(ips) == 0 {
 		return ""
@@ -274,8 +286,12 @@ func pickReachableIP(ips []string) string {
 		if ip == nil || ip.IsLoopback() {
 			continue
 		}
-		// USB gadget TEST-NET-3 is not routable
-		if strings.HasPrefix(ipStr, "203.0.113.") {
+		// The speakers' USB gadget sits in documentation space (TEST-NET-3
+		// today, TEST-NET-1 on a SoundTouch 30), never reachable from the LAN.
+		// All three ranges, as in netutil: missing 192.0.2. here turned an
+		// agent's gadget-only announcement into a third speaker card at
+		// 192.0.2.1 (2026-10-19).
+		if isDocumentationIPv4(ipStr) {
 			continue
 		}
 		if ip.IsPrivate() {
