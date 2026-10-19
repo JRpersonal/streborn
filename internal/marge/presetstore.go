@@ -35,6 +35,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
 
 // HeldItem is the ContentItem the firmware asks marge to keep in a preset
@@ -374,15 +376,28 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 		// keeps the old station and the owner sees the key snap back with no
 		// explanation anywhere. It was in the log all along and nowhere a user
 		// would look (reported 2026-09-25 as "presets barely savable").
-		s.noteHeldRefusal(slot, item.Source, item.ItemName)
+		//
+		// Except when the PUT is only the firmware echoing STR's own AddPreset
+		// on this slot: every write STR makes comes back here, and a stale
+		// re-write the keeper rightly refuses is not a long press of the
+		// owner's. Recording it raised a "could not be kept" banner for an
+		// hour on a speaker whose every user save had succeeded (#1217).
+		ownEcho := ownSlotWriteFn(slot)
+		if !ownEcho {
+			s.noteHeldRefusal(slot, item.Source, item.ItemName)
+		}
 		if s.presetRefusalLogAllowed(slot) {
 			s.logger.Warn("marge preset store: the box asked to keep an item STR cannot map onto a preset, keeping the old answer",
 				slog.String("comp", "marge"), slog.Int("slot", slot),
 				slog.String("source", item.Source), slog.String("name", item.ItemName),
+				slog.Bool("ownWriteEcho", ownEcho),
 				slog.String("reason", err.Error()))
 		}
 		return false
 	}
+	// The slot holds what the box asked for now, so an earlier refusal on it
+	// is no longer the key's state.
+	s.ClearHeldRefusal(slot)
 	s.logger.Info("marge preset store: answered the box's own preset store with the slot's preset element",
 		slog.String("comp", "marge"), slog.Int("slot", slot), slog.String("name", item.ItemName))
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -403,6 +418,32 @@ type HeldRefusal struct {
 func (s *Server) noteHeldRefusal(slot int, source, name string) {
 	s.mu.Lock()
 	s.lastHeldRefusal = HeldRefusal{At: time.Now(), Slot: slot, Source: source, Name: name}
+	s.mu.Unlock()
+}
+
+// ownWriteEchoWindow is how long after STR's own AddPreset on a slot a
+// refused preset PUT for that slot is taken as the firmware's echo of it
+// rather than an owner's long press. The echo follows the write within a
+// second or two; ten seconds leaves room for a slow chassis.
+const ownWriteEchoWindow = 10 * time.Second
+
+// ownSlotWriteFn reports whether STR itself wrote the slot within
+// ownWriteEchoWindow. A variable so a test can stand in for the ledger.
+var ownSlotWriteFn = func(slot int) bool {
+	return boxwrites.SlotWrittenWithin(slot, ownWriteEchoWindow)
+}
+
+// ClearHeldRefusal forgets the recorded refusal when it was for this slot:
+// the key has since been stored or deleted, so the refusal no longer
+// describes it. A refusal on another slot is kept.
+func (s *Server) ClearHeldRefusal(slot int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.lastHeldRefusal.Slot == slot {
+		s.lastHeldRefusal = HeldRefusal{}
+	}
 	s.mu.Unlock()
 }
 

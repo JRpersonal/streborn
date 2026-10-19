@@ -299,6 +299,7 @@ import {
   agentCurrentEngineMissing,
   searchErrorText,
   stormBannerBoxes,
+  holdRefusedBannerKey,
   STEREO_ICON,
   GROUP_ICON,
 } from './utils.js';
@@ -2970,7 +2971,7 @@ function checkBoxIssueBanner() {
   }
   if (holdErr.length) {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.holdRefusedBanner', {
+    msgs.push(escapeHtml(t(holdRefusedBannerKey(holdErr[0].holdRefusedSource), {
       name: names, slot: holdErr[0].holdRefusedSlot || '?',
     })));
   }

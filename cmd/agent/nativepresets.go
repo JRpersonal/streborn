@@ -435,7 +435,13 @@ var nativeRetryWait = 1 * time.Second
 // HTTP call; only a sweep that actually lost something pays for retries. That
 // matters because the Bose firmware app cannot sustain a high request rate on
 // some chassis, which is why this does not verify slot by slot.
-func verifyNativeWrites(boxHost string, specs []boxcli.PresetSpec, logger *slog.Logger) []int {
+//
+// stillWanted is asked before every re-write (nil = always). The specs are a
+// snapshot from the start of the sweep, and the owner can delete or replace a
+// key in the app while it runs: re-writing the snapshot then brought a deleted
+// key back on the box, and the firmware's echo of that stale write was
+// refused by the preset keeper and reported as a failed long press (#1217).
+func verifyNativeWrites(boxHost string, specs []boxcli.PresetSpec, stillWanted func(slot int, spec boxcli.PresetSpec) bool, logger *slog.Logger) []int {
 	pending := map[int]boxcli.PresetSpec{}
 	for _, s := range specs {
 		if s.NativeLocation != "" {
@@ -474,6 +480,7 @@ func verifyNativeWrites(boxHost string, specs []boxcli.PresetSpec, logger *slog.
 	logger.Info("preset write: some slots did not keep the native form, re-writing them once",
 		"slots", lost)
 	time.Sleep(nativeRetryWait)
+	lost = keepStillWanted(lost, pending, stillWanted, logger)
 	for _, slot := range lost {
 		spec := pending[slot]
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -495,6 +502,9 @@ func verifyNativeWrites(boxHost string, specs []boxcli.PresetSpec, logger *slog.
 	// better than one that does nothing. The next sweep sees a UPnP slot on a
 	// box that can take native and tries the upgrade again, and the
 	// consecutive-failure latch stops that repeating forever.
+	if lost = keepStillWanted(lost, pending, stillWanted, logger); len(lost) == 0 {
+		return nil
+	}
 	logger.Warn("preset write: slots still not stored, restoring the UPnP form so the keys are not dead",
 		"slots", lost)
 	for _, slot := range lost {
@@ -507,6 +517,49 @@ func verifyNativeWrites(boxHost string, specs []boxcli.PresetSpec, logger *slog.
 		time.Sleep(boxcli.WriteGap)
 	}
 	return lost
+}
+
+// keepStillWanted drops the slots whose sweep snapshot no longer matches what
+// the owner wants on that key, and forgets them from pending so a later
+// readback does not count them as lost.
+func keepStillWanted(slots []int, pending map[int]boxcli.PresetSpec, stillWanted func(int, boxcli.PresetSpec) bool, logger *slog.Logger) []int {
+	if stillWanted == nil {
+		return slots
+	}
+	out := slots[:0:0]
+	for _, slot := range slots {
+		if stillWanted(slot, pending[slot]) {
+			out = append(out, slot)
+			continue
+		}
+		logger.Info("preset write: slot changed in the store during the sweep, not re-writing the old snapshot",
+			"slot", slot)
+		delete(pending, slot)
+	}
+	return out
+}
+
+// specStillWanted reports whether the store still holds, on spec.Slot, the
+// preset the spec was built from: same name, same box-side stream and the
+// same native station location. A deleted or replaced key returns false.
+func specStillWanted(store *presets.Store, spec boxcli.PresetSpec) bool {
+	if store == nil {
+		return true
+	}
+	p, ok := store.Get(spec.Slot)
+	if !ok {
+		return false
+	}
+	if p.Name != spec.Name || boxPresetURL(p) != spec.StreamURL {
+		return false
+	}
+	if spec.NativeLocation != "" {
+		if !nativeStorable(p) ||
+			webui.OrionStationLocation(boxPresetURL(p), p.Name, p.Art) != spec.NativeLocation {
+			return false
+		}
+	}
+	return true
 }
 
 // wroteNative reports whether a sync batch contained at least one native

@@ -1,11 +1,13 @@
 package marge
 
 import (
+	"bytes"
 	"encoding/base64"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -289,5 +291,91 @@ func TestRecentAnswerUsesTheContentItemDialect(t *testing.T) {
 	}
 	if sourceNameForAccountID("12") != "STORED_MUSIC" || sourceNameForAccountID("x") != "SOURCE#x" {
 		t.Fatal("source id mapping")
+	}
+}
+
+// putHeld sends one hold-to-store PUT for the given slot.
+func putHeld(t *testing.T, s *Server, slot int) {
+	t.Helper()
+	path := strings.TrimSuffix(heldDevicePath, "3") + strconv.Itoa(slot)
+	loc := heldStationLocation(t, "http://127.0.0.1:8888/stream/1", "1LIVE")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPut, path,
+		strings.NewReader(heldPresetBody(loc, "1LIVE"))))
+}
+
+// noOwnWrites makes the own-write ledger report nothing for the test.
+func noOwnWrites(t *testing.T) {
+	t.Helper()
+	prev := ownSlotWriteFn
+	ownSlotWriteFn = func(int) bool { return false }
+	t.Cleanup(func() { ownSlotWriteFn = prev })
+}
+
+// A refusal followed by a kept store on the same slot must not leave the
+// refusal standing: the key holds the new item, and the app showed an
+// undismissable "could not be kept" banner for an hour (#1217).
+func TestHeldRefusalClearedBySuccessOnSameSlot(t *testing.T) {
+	noOwnWrites(t)
+	refuse := true
+	s := newKeeperServer(t, func(HeldItem) error {
+		if refuse {
+			return io.ErrUnexpectedEOF
+		}
+		return nil
+	})
+	putHeld(t, s, 6)
+	if r, ok := s.LastHeldRefusal(); !ok || r.Slot != 6 {
+		t.Fatalf("refusal on slot 6 not recorded: %+v ok=%v", r, ok)
+	}
+	refuse = false
+	putHeld(t, s, 6)
+	if r, ok := s.LastHeldRefusal(); ok {
+		t.Fatalf("refusal survived a kept store on the same slot: %+v", r)
+	}
+}
+
+// A kept store on ANOTHER slot says nothing about the refused one.
+func TestHeldRefusalKeptBySuccessOnOtherSlot(t *testing.T) {
+	noOwnWrites(t)
+	s := newKeeperServer(t, func(item HeldItem) error {
+		if item.Slot == 4 {
+			return io.ErrUnexpectedEOF
+		}
+		return nil
+	})
+	putHeld(t, s, 4)
+	putHeld(t, s, 2)
+	if r, ok := s.LastHeldRefusal(); !ok || r.Slot != 4 {
+		t.Fatalf("refusal on slot 4 lost after a store on slot 2: %+v ok=%v", r, ok)
+	}
+	s.ClearHeldRefusal(2)
+	if _, ok := s.LastHeldRefusal(); !ok {
+		t.Fatal("ClearHeldRefusal(2) cleared the refusal for slot 4")
+	}
+	s.ClearHeldRefusal(4)
+	if r, ok := s.LastHeldRefusal(); ok {
+		t.Fatalf("ClearHeldRefusal(4) left %+v", r)
+	}
+}
+
+// The firmware echoes STR's own AddPreset as a preset PUT. Refusing that echo
+// is right, but it is not an owner's long press and must not be reported;
+// the WARN still goes to the log, marked as the echo.
+func TestHeldRefusalOfOwnWriteEchoIsLoggedNotRecorded(t *testing.T) {
+	prev := ownSlotWriteFn
+	ownSlotWriteFn = func(slot int) bool { return slot == 6 }
+	t.Cleanup(func() { ownSlotWriteFn = prev })
+
+	var logBuf bytes.Buffer
+	s := New(slog.New(slog.NewTextHandler(&logBuf, nil)),
+		WithDeviceID("AABBCCDDEEFF"), WithPresetKeeper(func(HeldItem) error { return io.ErrUnexpectedEOF }))
+	s.SetAccount(&AccountInfo{AccountEmail: "stick@local"})
+	putHeld(t, s, 6)
+	if r, ok := s.LastHeldRefusal(); ok {
+		t.Fatalf("own-write echo recorded as a refused long press: %+v", r)
+	}
+	if out := logBuf.String(); !strings.Contains(out, "cannot map onto a preset") || !strings.Contains(out, "ownWriteEcho=true") {
+		t.Fatalf("refusal WARN missing or not marked as own-write echo:\n%s", out)
 	}
 }

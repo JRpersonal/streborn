@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
 
 // Send sends a single command to port 17000 and collects up to 200 ms
@@ -337,6 +339,7 @@ func AddPreset(ctx context.Context, host string, slot int, name, streamURL strin
 	// LOCATION should have no quotes.
 	cmd := fmt.Sprintf(`ws AddPreset UPNP audio %s "%s" UPnPUserName %d`,
 		streamURL, tapLabel(name, fmt.Sprintf("Preset %d", slot)), slot)
+	noteOwnSlotWrite(slot)
 	out, err := Send(ctx, host, cmd)
 	if err != nil {
 		return err
@@ -383,6 +386,7 @@ func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, locat
 		account = source + "UserName"
 	}
 	cmd := fmt.Sprintf(`ws AddPreset %s %s %s "%s" %s %d`, source, typ, location, name, account, slot)
+	noteOwnSlotWrite(slot)
 	_, err := Send(ctx, host, cmd)
 	return err
 }
@@ -419,6 +423,7 @@ func AddPresetContentItem(ctx context.Context, host string, slot int, source, ty
 	}
 	cmd := fmt.Sprintf(`ws AddPreset %s %s %s "%s" %s %d`,
 		source, typ, location, tapLabel(name, fmt.Sprintf("Preset %d", slot)), account, slot)
+	noteOwnSlotWrite(slot)
 	out, err := Send(ctx, host, cmd)
 	if err != nil {
 		return err
@@ -427,6 +432,14 @@ func AddPresetContentItem(ctx context.Context, host string, slot int, source, ty
 		return fmt.Errorf("box refused the %s preset for slot %d: %s", source, slot, firstLine(reply))
 	}
 	return nil
+}
+
+// noteOwnSlotWrite marks the slot as written by STR just before the command
+// goes out. The firmware answers an AddPreset with a marge preset PUT for the
+// same slot, which the marge stub must not mistake for an owner's long press
+// it then has to refuse (#1217).
+func noteOwnSlotWrite(slot int) {
+	boxwrites.NoteSlot("addpreset", slot)
 }
 
 // tapToken reports whether v survives the TAP CLI's argument splitting as one
@@ -483,6 +496,7 @@ func AddPresetNative(ctx context.Context, host string, slot int, name, location 
 	// sourceAccount="" from it, which is exactly the shape that plays.
 	cmd := fmt.Sprintf(`ws AddPreset LOCAL_INTERNET_RADIO stationurl %s "%s" none %d`,
 		location, tapLabel(name, fmt.Sprintf("Preset %d", slot)), slot)
+	noteOwnSlotWrite(slot)
 	out, err := Send(ctx, host, cmd)
 	if err != nil {
 		return err

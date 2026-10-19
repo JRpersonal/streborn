@@ -1585,6 +1585,7 @@
   "speaker.stormBanner": "{{name}} は現在、STR から送られるものを拒否しています。Spotify、ライブラリ、キューを使うプリセットは再生できませんが、ラジオ局は引き続き再生できる場合があります。スピーカーが、STR が Bose クラウドの代わりに動かしているローカルの仕組みへのサインインを失いました。これは内部的なもので、お客様のアカウントは関係なく、入力していただくものもありません。たいていは再起動で直ります。電源プラグは抜かないでください。スピーカーの時計が戻り、状況が悪化します。",
   "speaker.groupKeyErrorBanner": "{{name}}: リモコンのグループキーの最後の操作がスピーカーに拒否されました。理由: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: キー {{slot}} の長押しを保存できなかったため、キーには以前の内容が残っています。この方法で STR が保存できるのはラジオ局だけです。Spotify のプレイリストをキーに入れるには、再生中にアプリ側でそのキーを長押ししてください。",
+  "speaker.holdRefusedBannerGeneric": "{{name}}: キー {{slot}} の長押しを保存できなかったため、キーには以前の内容が残っています。",
   "speaker.stormRestartBtn": "スピーカーを再起動",
   "speaker.stormRestarting": "{{name}} を再起動しています。約1分かかります。",
   "speaker.wifiSaveBtn": "Wi-Fi を保存",

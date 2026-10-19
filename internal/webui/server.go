@@ -624,6 +624,10 @@ type Server struct {
 	// while Spotify runs is the common one, and until now it left no trace the
 	// owner could see, so the key simply snapped back.
 	heldRefusalFn func() (time.Time, int, string, string, bool)
+	// heldRefusalClearFn forgets that refusal once the slot it names has been
+	// stored or deleted through the app, so the banner does not outlive the
+	// save that fixed it (#1217). nil = not wired.
+	heldRefusalClearFn func(slot int)
 	// startVolumePath overrides the NAND file holding the per-box start
 	// level, so a test can point it at a temp tree.
 	startVolumePath string

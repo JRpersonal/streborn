@@ -13,6 +13,7 @@ func resetLedger() {
 	hour = map[string]int{}
 	totals = map[string]int{}
 	lastAt = map[string]time.Time{}
+	slotAt = map[slotKey]time.Time{}
 	mu.Unlock()
 }
 
@@ -232,5 +233,27 @@ func TestFormat(t *testing.T) {
 				t.Errorf("Format(%v) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// SlotWrittenWithin is per slot: a write on one key must not mask another,
+// and an old write must have expired.
+func TestSlotWrittenWithin(t *testing.T) {
+	resetLedger()
+	if SlotWrittenWithin(6, time.Minute) {
+		t.Fatal("never-written slot reported as written")
+	}
+	NoteSlot("addpreset", 6)
+	if !SlotWrittenWithin(6, time.Minute) {
+		t.Fatal("fresh write on slot 6 not seen")
+	}
+	if SlotWrittenWithin(5, time.Minute) {
+		t.Fatal("write on slot 6 leaked onto slot 5")
+	}
+	mu.Lock()
+	slotAt[slotKey{"addpreset", 6}] = time.Now().Add(-time.Hour)
+	mu.Unlock()
+	if SlotWrittenWithin(6, time.Minute) {
+		t.Fatal("hour-old write still reported inside a one-minute window")
 	}
 }
