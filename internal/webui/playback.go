@@ -994,7 +994,7 @@ func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.recent.All())
 	case http.MethodDelete:
 		// DELETE /api/recent?all=1            -> clear the whole ring (explicit)
-		// DELETE /api/recent?cardKey=X&ts=Y   -> remove the ONE card at that ts
+		// DELETE /api/recent?cardKey=X&ts=Y   -> remove that station's card (ts names one of its rows)
 		// "all=1" is REQUIRED to clear: a delete-card request with a missing/stale
 		// cardKey must never fall through to wiping everything (that was the bug
 		// where deleting one entry removed all older ones). Flush() now so the

@@ -9,9 +9,10 @@
 // stops growing.
 //
 // Cross-source listening history: read each box's /api/recent ring, merge by
-// time, group consecutive same-card rows into source cards (newest card on top,
-// tracks newest-first). The box only appends in-RAM; ALL the merge, grouping and
-// rendering happen here in the app (App-First, keep the box light).
+// time, and show each station once, at its newest listening (newest card on
+// top, tracks of that newest session newest-first). The box keeps one session
+// per station itself; the cross-speaker merge and rendering happen here in the
+// app (App-First, keep the box light).
 
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities } from '../utils.js';
@@ -107,24 +108,54 @@ function cardStation(c) {
   };
 }
 
-// groupRecentCards turns a newest-first, box-tagged entry list into source cards:
-// a card is a contiguous run of the same (box, cardKey). Tracks within stay
-// newest-first; an empty-track placeholder row just yields a card with no tracks.
-function groupRecentCards(entries) {
+// groupRecentCards turns a newest-first, box-tagged entry list into source
+// cards, ONE card per station (cardKey), placed at its newest listening
+// (Bernard's wish, 2026-10-19). The agent already keeps a station once per
+// speaker; this does the same across speakers for the "All speakers" view, and
+// for a speaker whose agent still keeps the older history.
+//
+// The card belongs to the speaker that played the station last: play, the
+// speaker label and the tracks come from that speaker's newest session. Every
+// other speaker that has the station is listed in members, so a delete removes
+// it from all of them and the card does not reappear from another speaker.
+// A session is a run of the same cardKey in ONE speaker's own sequence;
+// another speaker's rows interleaved by time do not split it. Tracks stay
+// newest-first; an empty-track placeholder row yields a card with no tracks.
+// Self-contained (no imports): the tests evaluate it on its own.
+export function groupRecentCards(entries) {
   const cards = [];
+  const byKey = new Map();
+  const boxCur = new Map(); // boxKey -> cardKey of that box's previous (newer) row
+  const left = new Set();   // "boxKey\n cardKey" whose newest session is over
   for (const e of entries) {
-    const last = cards[cards.length - 1];
-    if (last && last.boxKey === e._boxKey && last.cardKey === e.cardKey) {
-      if (!last.homepage && e.homepage) last.homepage = e.homepage;
-      if (!last.durationSec && e.durationSec > 0) last.durationSec = e.durationSec;
+    if (!e || !e.cardKey) continue;
+    const prev = boxCur.get(e._boxKey);
+    if (prev !== undefined && prev !== e.cardKey) left.add(e._boxKey + '\n' + prev);
+    boxCur.set(e._boxKey, e.cardKey);
+    // An older session of a station this speaker played again later: the
+    // newer session already stands for it.
+    if (left.has(e._boxKey + '\n' + e.cardKey)) continue;
+
+    const card = byKey.get(e.cardKey);
+    if (card && card.boxKey === e._boxKey) {
+      if (!card.homepage && e.homepage) card.homepage = e.homepage;
+      if (!card.durationSec && e.durationSec > 0) card.durationSec = e.durationSec;
       // Dedup repeated titles within a session. Many stations flip the ICY title
       // between the song and talk/promo/contact lines (SWR3: "TALK mit ...",
       // "Kontakt zu SWR3: ..."), which otherwise fills the card with the same few
       // strings. Keep the newest occurrence of each distinct title only (entries
       // arrive newest-first), so each line shows once.
-      if (e.track && !last._seen.has(e.track)) {
-        last._seen.add(e.track);
-        last.tracks.push({ track: e.track, ts: e.ts });
+      if (e.track && !card._seen.has(e.track)) {
+        card._seen.add(e.track);
+        card.tracks.push({ track: e.track, ts: e.ts });
+      }
+      continue;
+    }
+    if (card) {
+      // Same station on another speaker, heard earlier: remember the speaker
+      // (its newest row identifies the card there for a delete), no tracks.
+      if (!card.members.some((m) => m.boxKey === e._boxKey)) {
+        card.members.push({ box: e._box, boxKey: e._boxKey, boxName: e._boxName, ts: e.ts });
       }
       continue;
     }
@@ -134,15 +165,18 @@ function groupRecentCards(entries) {
     const playSlot = e.source === 'spotify' && e._spotifySlots
       ? e._spotifySlots[e.cardKey]
       : undefined;
-    cards.push({
+    const c = {
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
       source: e.source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, mime: e.mime, durationSec: e.durationSec || 0, account: e.account, ts: e.ts,
       itemType: e.itemType || '',
       homepage: e.homepage || '', playSlot,
       tracks: e.track ? [{ track: e.track, ts: e.ts }] : [],
+      members: [{ box: e._box, boxKey: e._boxKey, boxName: e._boxName, ts: e.ts }],
       _seen: seen,
-    });
+    };
+    byKey.set(e.cardKey, c);
+    cards.push(c);
   }
   return cards;
 }
@@ -251,7 +285,12 @@ function cardWebURL(c) {
 // no badge; polling every box's now-playing just for it is not worth the box
 // traffic.
 export function cardIsPlaying(c) {
-  if (!state.currentBox || c.boxKey !== recentBoxKey(state.currentBox)) return false;
+  if (!state.currentBox) return false;
+  // A card that stands for several speakers (one card per station) counts for
+  // each of them.
+  const curKey = recentBoxKey(state.currentBox);
+  const keys = (c.members && c.members.length) ? c.members.map((m) => m.boxKey) : [c.boxKey];
+  if (!keys.includes(curKey)) return false;
   const loc = state.nowLocation || '';
   if (c.source === 'spotify') {
     if (!/\/spotify\/stream/.test(loc)) return false;
@@ -285,9 +324,11 @@ function recentCardHTML(c, i, nowPlaying) {
   // then appeared in a public screenshot anyway, on 2026-10-02. One identifier,
   // two places, and only one of them was looked at.
   const accountLabel = c.account ? spotifyAccountName(c.account, state.spotifyAccountNames) : '';
+  // Every speaker that played this station, the most recent one first.
+  const boxNames = [...new Set((c.members && c.members.length ? c.members.map((m) => m.boxName) : [c.boxName]).filter(Boolean))];
   const sub = `<span class="rc-src">${escapeHtml(recentSourceLabel(c.source))}</span>`
     + (accountLabel ? ` &middot; ${escapeHtml(accountLabel)}` : '')
-    + (c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '')
+    + (boxNames.length ? ` &middot; <span class="rc-box">${escapeHtml(boxNames.join(', '))}</span>` : '')
     + (webUrl ? ` &middot; <a href="#" class="rc-site" id="recSite${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : '');
   const tracks = c.tracks.length
     ? `<div class="rc-tracks">` + c.tracks.map((tr) =>
@@ -429,15 +470,30 @@ function wireCard(c, i) {
   const delBtn = document.getElementById('recDel' + i);
   if (delBtn) {
     delBtn.onclick = async () => {
-      const box = c.box || state.currentBox;
-      if (!box) return;
       delBtn.disabled = true;
       try {
-        await DeleteRecentCard(box.host, box.port, c.cardKey, c.ts);
+        await deleteRecentStation(c, DeleteRecentCard, state.currentBox);
         await refreshRecentList();
       } catch (err) { showError(err); delBtn.disabled = false; }
     };
   }
+}
+
+// deleteRecentStation removes a card's station from every speaker it stands
+// for, each identified by its own newest row, so the station does not come
+// back from another speaker on the next refresh. A speaker that is unreachable
+// does not stop the others; the first error is reported once all were tried.
+export async function deleteRecentStation(c, del, fallbackBox) {
+  const members = (c.members && c.members.length)
+    ? c.members
+    : [{ box: c.box || fallbackBox, ts: c.ts }];
+  let firstErr = null;
+  for (const m of members) {
+    const box = m.box || fallbackBox;
+    if (!box) continue;
+    try { await del(box.host, box.port, c.cardKey, m.ts); } catch (err) { if (!firstErr) firstErr = err; }
+  }
+  if (firstErr) throw firstErr;
 }
 
 function saveSpotifyCard(c) {
@@ -505,11 +561,10 @@ export async function refreshRecentList() {
     return;
   }
   // Only ONE card wears the now-playing badge: the NEWEST card of the current
-  // source. A station played several times sits in history as several cards
-  // with the same name, and cardIsPlaying (name-matched for radio) is true for
-  // every one of them, so all three lit up green (#761). Cards are newest-first,
-  // so the first match is the running session, the one that holds the current
-  // song.
+  // source. Each station is one card now, but two stations can share a name
+  // (cardIsPlaying is name-matched for radio), and before that a station played
+  // several times lit up every one of its cards (#761). Cards are newest-first,
+  // so the first match is the running session.
   const playingIdx = cards.findIndex(cardIsPlaying);
   listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
   cards.forEach((c, i) => wireCard(c, i));

@@ -14,12 +14,18 @@
 //     flushDelay, coalescing a burst of track changes into one write. Flush()
 //     is also called on graceful shutdown so the tail survives a clean reboot.
 //   - The agent only appends in-RAM and serves the list verbatim on
-//     GET /api/recent. All merging across boxes, dedup and the source-card
-//     grouping happen in the desktop app, not here.
+//     GET /api/recent. Merging across boxes and the source-card grouping
+//     happen in the desktop app and the phone page, not here.
 //
 // Entries are stored oldest-first. Consecutive entries that share a CardKey are
 // one "source card" (a listening session); a different CardKey starts a new
-// card. The app groups them; the box just records the sequence.
+// card. Each CardKey appears in at most ONE such run: when a station comes back,
+// its older session is dropped and the new one is appended at the end, so the
+// list shows every station once, at the time it was last heard. Doing it here
+// keeps the ring from filling up with the same few stations, and every consumer
+// (desktop app, phone page, older desktop builds) gets the one-card-per-station
+// view without its own dedup. Load applies the same rule, so a ring written by
+// an older agent loses its duplicates on the next boot.
 package recent
 
 import (
@@ -102,12 +108,12 @@ func Load(path string) (*Store, error) {
 		Recent []Entry `json:"recent"`
 	}
 	if err := json.Unmarshal(b, &wrap); err == nil && wrap.Recent != nil {
-		s.data = capTail(wrap.Recent)
+		s.data = capTail(collapse(wrap.Recent))
 		return s, nil
 	}
 	var arr []Entry
 	if err := json.Unmarshal(b, &arr); err == nil {
-		s.data = capTail(arr)
+		s.data = capTail(collapse(arr))
 		return s, nil
 	}
 	return s, fmt.Errorf("recent parse: unknown format in %s", path)
@@ -121,13 +127,46 @@ func capTail(in []Entry) []Entry {
 	return append([]Entry(nil), in[len(in)-maxEntries:]...)
 }
 
+// collapse keeps, for every CardKey, only its NEWEST run of consecutive entries
+// (the last listening session), preserving the order of what is kept. A ring
+// that already satisfies the one-run-per-key rule comes back unchanged. Used on
+// Load, so a recent.json written before the rule existed loses its duplicates.
+func collapse(in []Entry) []Entry {
+	// Walk newest-first: the first run seen for a key is its newest session.
+	done := map[string]bool{}
+	keep := make([]bool, len(in))
+	for i := len(in) - 1; i >= 0; {
+		key := in[i].CardKey
+		j := i
+		for j >= 0 && in[j].CardKey == key {
+			j--
+		}
+		if !done[key] {
+			done[key] = true
+			for k := j + 1; k <= i; k++ {
+				keep[k] = true
+			}
+		}
+		i = j
+	}
+	out := make([]Entry, 0, len(in))
+	for i, e := range in {
+		if keep[i] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // Add records a play/track. It coalesces against the newest entry so STR's own
 // re-points and repeated ICY titles do not create duplicate rows:
 //
 //   - same card + same (or empty) track: refresh the timestamp and fill in any
 //     newly-known metadata in place; no new row.
 //   - same card + a genuinely new track: append a track row.
-//   - a different card: append (starts a new card).
+//   - a different card: append (starts a new card). An older session of that
+//     same card is removed first, so a station is listed once, at its newest
+//     play, with the tracks of that newest session only.
 //
 // It never writes to NAND synchronously; it only marks dirty and arms the
 // debounce timer (see flushDelay). Safe to call from the WebSocket reader / the
@@ -188,6 +227,10 @@ func (s *Store) Add(e Entry) {
 				return
 			}
 			// Same session, a new distinct track within it: fall through, append.
+		} else {
+			// A new session starts. Drop the station's older session so it is
+			// listed once; those track rows belonged to the older listening.
+			s.dropKeyLocked(e.CardKey)
 		}
 	}
 
@@ -196,6 +239,22 @@ func (s *Store) Add(e Entry) {
 		s.data = s.data[len(s.data)-maxEntries:]
 	}
 	s.markDirtyLocked()
+}
+
+// dropKeyLocked removes every entry with CardKey == key and reports how many
+// went. Caller must hold s.mu; it does not mark dirty, the caller does.
+func (s *Store) dropKeyLocked(key string) int {
+	kept := make([]Entry, 0, len(s.data))
+	for _, e := range s.data {
+		if e.CardKey != key {
+			kept = append(kept, e)
+		}
+	}
+	removed := len(s.data) - len(kept)
+	if removed > 0 {
+		s.data = kept
+	}
+	return removed
 }
 
 // markDirtyLocked flags the ring as needing a write and arms a single debounce
@@ -226,66 +285,48 @@ func (s *Store) Clear() {
 	s.mu.Unlock()
 }
 
-// DeleteCard removes every entry whose CardKey matches key, i.e. one card /
-// listening session in the app's grouped view, and returns how many rows were
-// removed. Marks dirty when something changed (caller Flush()es). No-op for an
-// empty key or no match.
+// DeleteCard removes every entry whose CardKey matches key, i.e. one station's
+// card in the app's view, and returns how many rows were removed. Marks dirty
+// when something changed (caller Flush()es). No-op for an empty key or no match.
 func (s *Store) DeleteCard(key string) int {
 	if key == "" {
 		return 0
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	kept := make([]Entry, 0, len(s.data))
-	removed := 0
-	for _, e := range s.data {
-		if e.CardKey == key {
-			removed++
-			continue
-		}
-		kept = append(kept, e)
-	}
+	removed := s.dropKeyLocked(key)
 	if removed > 0 {
-		s.data = kept
 		s.markDirtyLocked()
 	}
 	return removed
 }
 
-// DeleteCardAt removes the ONE card the user clicked: the maximal run of
-// consecutive entries with CardKey == key that contains the entry timestamped ts
-// (cards in the app's view are exactly such consecutive runs). It deletes only
-// that single listening session, NOT every other session of the same station
-// elsewhere in the ring, which is what DeleteCard(key) did and why deleting one
-// entry wiped older same-station entries too. A non-matching (key, ts) is a no-op,
-// so a stale/empty id can never fall through to clearing the whole ring. Returns
-// the number of rows removed.
+// DeleteCardAt removes the card the user clicked: the station whose CardKey is
+// key, identified by the timestamp ts of one of its rows. A station is stored as
+// a single run (see collapse and Add), so that run is the whole station and the
+// station leaves the list. The (key, ts) pair must still match a stored row: a
+// stale or empty id is a no-op and never falls through to clearing the ring or
+// touching another station (the bug where deleting one entry wiped others).
+// Returns the number of rows removed.
 func (s *Store) DeleteCardAt(key, ts string) int {
 	if key == "" || ts == "" {
 		return 0
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	idx := -1
-	for i, e := range s.data {
+	found := false
+	for _, e := range s.data {
 		if e.CardKey == key && e.TS == ts {
-			idx = i
+			found = true
 			break
 		}
 	}
-	if idx < 0 {
+	if !found {
 		return 0
 	}
-	lo, hi := idx, idx
-	for lo > 0 && s.data[lo-1].CardKey == key {
-		lo--
-	}
-	for hi < len(s.data)-1 && s.data[hi+1].CardKey == key {
-		hi++
-	}
-	s.data = append(s.data[:lo:lo], s.data[hi+1:]...)
+	removed := s.dropKeyLocked(key)
 	s.markDirtyLocked()
-	return hi - lo + 1
+	return removed
 }
 
 // All returns a copy of the ring, oldest-first. The /api/recent handler serves
