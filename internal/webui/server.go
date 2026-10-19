@@ -439,6 +439,15 @@ type Server struct {
 	// nativeResumeFn seams the speaker's own PLAY key that brings the native
 	// station back after a handover the speaker refused, for the tests.
 	nativeResumeFn func(context.Context) bool
+	// selectFn seams the speaker's own /select (postSelect), for the tests.
+	// It gets the ContentItem body. nil = the real :8090 call.
+	selectFn func(ctx context.Context, body string) error
+	// announceNowFn, announceVolumeFn and announceSetVolumeFn seam the
+	// now_playing read, the volume read and the volume write of an
+	// announcement (announce.go), for the tests. nil = the real box.
+	announceNowFn       func(ctx context.Context) nowPlayingSnapshot
+	announceVolumeFn    func(ctx context.Context) int
+	announceSetVolumeFn func(ctx context.Context, vol int) error
 	// deferred holds a resume waiting for the user to switch the box on; STR
 	// never powers a speaker on by itself (#487). Guarded by deferredMu.
 	deferredMu sync.Mutex

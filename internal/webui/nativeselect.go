@@ -34,8 +34,8 @@ import (
 // Returns an error when the speaker refuses, so the caller can fall back to the
 // UPnP push rather than leaving the user with silence.
 func (s *Server) selectNativeStation(ctx context.Context, location, name string) error {
-	if s.boxHost == "" || location == "" {
-		return fmt.Errorf("selectNativeStation: box host and location required")
+	if location == "" {
+		return fmt.Errorf("selectNativeStation: location required")
 	}
 	body := `<ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="` +
 		escapeXMLAttr(location) + `" sourceAccount="" isPresetable="true"><itemName>` +
@@ -46,6 +46,9 @@ func (s *Server) selectNativeStation(ctx context.Context, location, name string)
 // postSelect hands a ContentItem to the speaker's own /select and turns a
 // refusal into an error.
 func (s *Server) postSelect(ctx context.Context, body string) error {
+	if s.selectFn != nil {
+		return s.selectFn(ctx, body)
+	}
 	if s.boxHost == "" {
 		return fmt.Errorf("select: box host not configured")
 	}
