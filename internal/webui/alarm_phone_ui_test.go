@@ -1,9 +1,12 @@
 package webui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/JRpersonal/streborn/internal/alarm"
 )
 
 // The alarm card is markup plus vanilla JS inside one embedded file, so the
@@ -85,6 +88,7 @@ func TestPhoneRemoteLocalesCarryTheAlarm(t *testing.T) {
 		"alarm", "alarmNone", "alarmAdd", "alarmSave", "alarmDelete", "alarmCancel",
 		"alarmPreset", "alarmVol", "alarmVolKeep", "alarmZone", "alarmClockBad",
 		"alarmFail", "alarmNext", "alarmDow", "alarmOff", "alarmOffNever",
+		"alarmOffMin", "alarmOffHours",
 	} {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
@@ -160,6 +164,26 @@ func TestPhoneRemoteAlarmHasASwitchOff(t *testing.T) {
 	// zero still means never, so an alarm saved without the field is unchanged.
 	if !strings.Contains(indexHTML, "volume: 0, autoOff: 60 }") {
 		t.Error("a new alarm has to default to switching off after an hour")
+	}
+}
+
+// The switch-off list reaches the backend's 12-hour bound (discussion #1364),
+// a saved value outside the list keeps its own entry, and every unit label
+// carries the {n} placeholder the editor substitutes.
+func TestPhoneRemoteAlarmAutoOffReachesTwelveHours(t *testing.T) {
+	steps := fmt.Sprintf("[15, 30, 60, 120, 240, 480, %d]", alarm.MaxAutoOffMinutes)
+	if !strings.Contains(indexHTML, steps) {
+		t.Errorf("the alarm editor has to offer %s, ending at alarm.MaxAutoOffMinutes", steps)
+	}
+	if !strings.Contains(indexHTML, "if (savedOff > 0 && offSteps.indexOf(savedOff) < 0) {") {
+		t.Error("a saved switch-off outside the list must not fall back to Never")
+	}
+	for _, key := range []string{"alarmOffMin", "alarmOffHours"} {
+		for _, m := range regexp.MustCompile(key+`:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1) {
+			if !strings.Contains(m[1], "{n}") {
+				t.Errorf("%s %q lacks the {n} placeholder", key, m[1])
+			}
+		}
 	}
 }
 
