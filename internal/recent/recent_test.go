@@ -72,32 +72,22 @@ func TestDeleteCardRemovesOnlyThatCard(t *testing.T) {
 	}
 }
 
-// TestDeleteCardAtRemovesOnlyThatSession is the regression for the data-loss bug:
-// the same station listened to twice (with another station in between) is two
-// separate cards/sessions. Deleting one must remove ONLY that session's
-// consecutive run, not every row sharing the CardKey (which DeleteCard did, so
-// deleting the newer SWR3 card also wiped the older one).
-func TestDeleteCardAtRemovesOnlyThatSession(t *testing.T) {
+// TestDeleteCardAtRemovesOnlyThatStation is the regression for the data-loss
+// bug: deleting one card must remove that card and nothing else. With one card
+// per station, the card is the station, so its rows go and every other station
+// stays.
+func TestDeleteCardAtRemovesOnlyThatStation(t *testing.T) {
 	s := New()
-	// Session A of swr3 (two tracks, one consecutive run), then 1live, then a
-	// second swr3 session B. Explicit TS so the runs are unambiguous.
 	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Epic", TS: "t1"})
 	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Yellow", TS: "t2"})
 	s.Add(Entry{Source: "radio", CardKey: "1live", Track: "Other", TS: "t3"})
-	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Reborn", TS: "t4"})
+	s.Add(Entry{Source: "radio", CardKey: "dlf", Track: "News", TS: "t4"})
 
-	// Delete session B by any of its timestamps: only the t4 run goes.
-	if n := s.DeleteCardAt("swr3", "t4"); n != 1 {
-		t.Fatalf("DeleteCardAt(swr3,t4) removed %d, want 1", n)
+	// Delete swr3 by any of its timestamps: both of its rows go.
+	if n := s.DeleteCardAt("swr3", "t2"); n != 2 {
+		t.Fatalf("DeleteCardAt(swr3,t2) removed %d, want 2", n)
 	}
-	eq(t, rows(s), []string{"swr3/Epic", "swr3/Yellow", "1live/Other"})
-
-	// Delete session A by its head ts: the whole consecutive run (both tracks)
-	// goes, leaving 1live untouched.
-	if n := s.DeleteCardAt("swr3", "t1"); n != 2 {
-		t.Fatalf("DeleteCardAt(swr3,t1) removed %d, want 2", n)
-	}
-	eq(t, rows(s), []string{"1live/Other"})
+	eq(t, rows(s), []string{"1live/Other", "dlf/News"})
 
 	// A non-matching (key, ts) and any empty id are no-ops; they must never fall
 	// through to clearing the ring.
@@ -110,7 +100,101 @@ func TestDeleteCardAtRemovesOnlyThatSession(t *testing.T) {
 	if n := s.DeleteCardAt("", ""); n != 0 {
 		t.Fatalf("DeleteCardAt empty removed %d, want 0", n)
 	}
+	if n := s.DeleteCardAt("1live", ""); n != 0 {
+		t.Fatalf("DeleteCardAt without ts removed %d, want 0", n)
+	}
+	eq(t, rows(s), []string{"1live/Other", "dlf/News"})
+}
+
+// TestDeleteCardAtClearsALegacyDuplicate: a ring that still holds two sessions
+// of one station (only possible in memory if collapse were bypassed, e.g. a
+// future code path) loses the station entirely, so it never "comes back" as an
+// older card after the user deleted it.
+func TestDeleteCardAtClearsALegacyDuplicate(t *testing.T) {
+	s := New()
+	s.data = []Entry{
+		{Source: "radio", CardKey: "swr3", Track: "Old", TS: "t1"},
+		{Source: "radio", CardKey: "1live", Track: "Other", TS: "t2"},
+		{Source: "radio", CardKey: "swr3", Track: "New", TS: "t3"},
+	}
+	if n := s.DeleteCardAt("swr3", "t3"); n != 2 {
+		t.Fatalf("removed %d, want 2", n)
+	}
 	eq(t, rows(s), []string{"1live/Other"})
+}
+
+// TestAddListsAStationOnce is a user wish (2026-10-19): a station listened
+// to at two different times is ONE card, at the newer time, carrying the tracks
+// of the newer session only.
+func TestAddListsAStationOnce(t *testing.T) {
+	s := New()
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Epic", TS: "t1"})
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Yellow", TS: "t2"})
+	s.Add(Entry{Source: "radio", CardKey: "1live", Track: "Other", TS: "t3"})
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Reborn", TS: "t4"})
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Again", TS: "t5"})
+	eq(t, rows(s), []string{"1live/Other", "swr3/Reborn", "swr3/Again"})
+}
+
+// TestAddReturningStationDoesNotEvictOthers: a station coming back takes its
+// old rows with it instead of growing the ring, so stations that are only in
+// the list once are not pushed out by repeats of a favourite.
+func TestAddReturningStationDoesNotEvictOthers(t *testing.T) {
+	s := New()
+	for i := 0; i < maxEntries-2; i++ {
+		s.Add(Entry{Source: "radio", CardKey: "k" + itoa(i)})
+	}
+	for i := 0; i < 50; i++ {
+		s.Add(Entry{Source: "radio", CardKey: "fav"})
+		s.Add(Entry{Source: "radio", CardKey: "other"})
+	}
+	all := s.All()
+	if len(all) != maxEntries {
+		t.Fatalf("len=%d want %d: %v", len(all), maxEntries, rows(s))
+	}
+	if all[0].CardKey != "k0" {
+		t.Fatalf("a once-played station was evicted by repeats: front=%q", all[0].CardKey)
+	}
+}
+
+// TestLoadCollapsesAnOldHistory: a recent.json written by an older agent, with
+// the same station in several sessions, comes back one card per station.
+func TestLoadCollapsesAnOldHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "recent.json")
+	old := `{"recent":[
+	 {"ts":"t1","source":"radio","cardKey":"swr3","cardName":"SWR3","track":"Epic"},
+	 {"ts":"t2","source":"radio","cardKey":"swr3","cardName":"SWR3","track":"Yellow"},
+	 {"ts":"t3","source":"radio","cardKey":"1live","cardName":"1LIVE","track":"Other"},
+	 {"ts":"t4","source":"radio","cardKey":"swr3","cardName":"SWR3","track":"Reborn"},
+	 {"ts":"t5","source":"radio","cardKey":"dlf","cardName":"DLF"},
+	 {"ts":"t6","source":"radio","cardKey":"1live","cardName":"1LIVE","track":"Late"}
+	]}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	eq(t, rows(s), []string{"swr3/Reborn", "dlf/", "1live/Late"})
+}
+
+// TestCollapseKeepsAnAlreadyCleanRing: collapse is a no-op on a ring that
+// already lists every station once.
+func TestCollapseKeepsAnAlreadyCleanRing(t *testing.T) {
+	in := []Entry{
+		{CardKey: "a", Track: "1"}, {CardKey: "a", Track: "2"},
+		{CardKey: "b"}, {CardKey: "c", Track: "x"},
+	}
+	out := collapse(in)
+	if len(out) != len(in) {
+		t.Fatalf("collapse changed a clean ring: %v", out)
+	}
+	for i := range in {
+		if out[i] != in[i] {
+			t.Fatalf("row %d changed: %+v", i, out[i])
+		}
+	}
 }
 
 // TestAddAppendsNewTrackSameCard: a genuinely new song under the same station
@@ -123,13 +207,15 @@ func TestAddAppendsNewTrackSameCard(t *testing.T) {
 }
 
 // TestAddNewCardOnSourceSwitch: switching source starts a new card, and
-// switching back is a third card (cards group CONSECUTIVE runs, per #135).
+// switching back moves the first station to the newest end as one card again
+// (one card per station, newest listening wins).
 func TestAddNewCardOnSourceSwitch(t *testing.T) {
 	s := New()
 	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Epic"})
 	s.Add(Entry{Source: "spotify", CardKey: "spotify:playlist:chill", Track: "Orange Blossoms"})
+	eq(t, rows(s), []string{"swr3/Epic", "spotify:playlist:chill/Orange Blossoms"})
 	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Yellow"})
-	eq(t, rows(s), []string{"swr3/Epic", "spotify:playlist:chill/Orange Blossoms", "swr3/Yellow"})
+	eq(t, rows(s), []string{"spotify:playlist:chill/Orange Blossoms", "swr3/Yellow"})
 }
 
 // TestAddFillsMetadataInPlace: a card started with sparse metadata gets enriched

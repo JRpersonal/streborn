@@ -71,8 +71,8 @@ func (a *App) ClearRecent(host string, port int) error {
 
 // DeleteRecentCard removes the ONE card the user clicked from a box's
 // recently-played ring (DELETE /api/recent?cardKey=...&ts=...). Both cardKey and
-// ts identify the exact card so only that one listening session is removed, not
-// every other session of the same station.
+// ts identify the exact card; the agent lists each station once, so the card is
+// the station and nothing else is touched.
 func (a *App) DeleteRecentCard(host string, port int, cardKey, ts string) error {
 	if cardKey == "" || ts == "" {
 		return fmt.Errorf("cardKey and ts required")
