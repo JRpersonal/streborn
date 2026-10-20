@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Installiere STR als Nächstes auch auf dem anderen Lautsprecher von „{{name}}“ ({{partner}}). Das Paar bleibt erhalten, sobald beide STR haben.",
   "setup.pairKept": "Das Stereopaar „{{name}}“ ist auf beiden Lautsprechern erhalten.",
   "setup.pairRestored": "Das Stereopaar „{{name}}“ wurde auf beiden Lautsprechern wieder eingerichtet.",
-  "setup.pairRestoreFailed": "Das Stereopaar „{{name}}“ ließ sich nicht wieder einrichten. Du kannst die beiden Lautsprecher im Multi-Room-Tab selbst koppeln."
+  "setup.pairRestoreFailed": "Das Stereopaar „{{name}}“ ließ sich nicht wieder einrichten. Du kannst die beiden Lautsprecher im Multi-Room-Tab selbst koppeln.",
+  "settingsView.sleepKeyLabel": "Sleep-Timer auf dieser Taste (je Druck: 15, 30, 60 Min., aus)",
+  "settingsView.sleepKeyHelp": "Jeder Druck schaltet den Sleep-Timer des Lautsprechers weiter: 15, 30 oder 60 Minuten, dann aus. Lautsprecher mit Display zeigen jeden Schritt und, solange er läuft, einen Mond mit den restlichen Minuten. In einer Gruppe schaltet der Timer die ganze Gruppe aus.",
+  "settingsView.sleepKeyGroupConflict": "Diese Taste bildet die Gruppe \"{{name}}\". Eine Taste trägt entweder eine Gruppe oder den Sleep-Timer: Nimm die Gruppe zuerst im Reiter Multi-Room von dieser Taste.",
+  "settingsView.sleepKeyOnToast": "Der Sleep-Timer liegt jetzt auf dieser Taste.",
+  "settingsView.sleepKeyOffToast": "Der Sleep-Timer ist von dieser Taste entfernt.",
+  "settingsView.webhookSleepKeyNote": "Auf dieser Taste liegt der Sleep-Timer. Der Sleep-Timer gewinnt: Ein Druck schaltet ihn weiter, der Webhook feuert nicht.",
+  "settingsView.webhookRemoteLegendSleep": "Sleep-Timer",
+  "settingsView.sleepKeyNeedsUpdate": "Aktualisiere diesen Lautsprecher, um den Sleep-Timer auf eine Taste zu legen.",
+  "multiroom.groupKeysKeySleep": "(Sleep-Timer)",
+  "multiroom.groupKeysSleepHint": "Eine Daumen-Taste mit dem Sleep-Timer kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung."
 }

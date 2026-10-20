@@ -8,11 +8,12 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, groupFollowerNames, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
-import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks } from '../api.js';
+import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks, GetKeyActions } from '../api.js';
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
 import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
+import { normalizeKeyActions, sleepOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID } from '../groups.js';
@@ -881,6 +882,7 @@ const gk = {
   host: '',       // host the cached document/webhooks belong to
   doc: null,      // normalized document, null until fetched
   webhooks: null, // that speaker's webhook config, for the conflict warning
+  sleep: null,    // that speaker's key actions: a thumbs key with the sleep timer cannot carry a group
   loading: false,
   error: '',
   unsupported: false, // the speaker's agent predates /api/groupkeys
@@ -937,8 +939,17 @@ function renderGroupKeysSection(strBoxes) {
   const remoteName = remote ? zoneLabel(remote) : '';
   const opts = strBoxes.map(b =>
     `<option value="${escapeAttr(b.deviceID)}"${remote && b.deviceID === remote.deviceID ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`).join('');
+  // A thumbs key that carries the sleep timer cannot carry a group as well:
+  // it is offered disabled, marked, and a hint below says where to change it.
+  const sleepKey = (v) => !!v && sleepOn(gk.sleep, v);
   const keyOpts = (sel) => [['', t('multiroom.groupKeysKeyNone')], ['thumbsUp', t('multiroom.groupKeysKeyUp')], ['thumbsDown', t('multiroom.groupKeysKeyDown')]]
-    .map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('');
+    .map(([v, l]) => {
+      const blocked = sleepKey(v) && v !== sel;
+      const label = blocked ? `${l} ${t('multiroom.groupKeysKeySleep')}` : l;
+      return `<option value="${v}"${v === sel ? ' selected' : ''}${blocked ? ' disabled' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
+  const sleepHint = (doc && (sleepKey('thumbsUp') || sleepKey('thumbsDown')))
+    ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysSleepHint'))}</div>` : '';
   let list = '';
   if (!remote) {
     list = `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
@@ -974,6 +985,7 @@ function renderGroupKeysSection(strBoxes) {
          <select id="gkRemote"${remote ? '' : ' disabled'}>${opts || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`}</select></label>
        <div class="muted small">${escapeHtml(t('multiroom.groupKeysRemoteHelp'))}</div>
        ${list}
+       ${sleepHint}
        <div class="zone-actions" style="align-items:center">
          <input id="gkName" type="text" maxlength="60" placeholder="${escapeAttr(t('multiroom.groupKeysNamePlaceholder'))}" value="${escapeAttr(gk.name)}"${canSave ? '' : ' disabled'} style="flex:1 1 180px">
          <button id="gkSave" class="btn btn-mini"${canSave ? '' : ' disabled'}>${escapeHtml(t('multiroom.groupKeysSaveCurrent'))}</button>
@@ -1037,7 +1049,8 @@ async function loadGroupKeys(box) {
   gk.error = '';
   gk.unsupported = false;
   gk.webhooks = null;
-  const [d, w] = await Promise.allSettled([GetGroupKeys(box.host, box.port), GetWebhooks(box.host, box.port)]);
+  gk.sleep = null;
+  const [d, w, ka] = await Promise.allSettled([GetGroupKeys(box.host, box.port), GetWebhooks(box.host, box.port), GetKeyActions(box.host, box.port)]);
   gk.loading = false;
   if (gk.host !== box.host) return; // the user picked another speaker meanwhile
   if (d.status === 'fulfilled') {
@@ -1050,6 +1063,7 @@ async function loadGroupKeys(box) {
     gk.error = err;
   }
   gk.webhooks = w.status === 'fulfilled' ? w.value : null;
+  gk.sleep = normalizeKeyActions(ka.status === 'fulfilled' ? ka.value : null);
   if (state.view === 'multiroom') renderMultiroom(false);
 }
 

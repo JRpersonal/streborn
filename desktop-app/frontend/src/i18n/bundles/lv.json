@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Pēc tam instalē STR arī otrā “{{name}}” skaļrunī ({{partner}}). Pāris saglabāsies, tiklīdz abos skaļruņos būs STR.",
   "setup.pairKept": "Stereo pāris “{{name}}” ir saglabāts abos skaļruņos.",
   "setup.pairRestored": "Stereo pāris “{{name}}” atkal iestatīts abos skaļruņos.",
-  "setup.pairRestoreFailed": "Stereo pāri “{{name}}” neizdevās atkal iestatīt. Abus skaļruņus vari savienot pats cilnē Multi-Room."
+  "setup.pairRestoreFailed": "Stereo pāri “{{name}}” neizdevās atkal iestatīt. Abus skaļruņus vari savienot pats cilnē Multi-Room.",
+  "settingsView.sleepKeyLabel": "Miega taimeris uz šī taustiņa (katrs nospiediens: 15, 30, 60 min, izslēgts)",
+  "settingsView.sleepKeyHelp": "Katrs nospiediens pārslēdz skaļruņa miega taimeri: 15, 30 vai 60 minūtes, tad izslēgts. Skaļruņi ar displeju rāda katru soli un, kamēr taimeris darbojas, mēnesi ar atlikušajām minūtēm. Grupā taimeris izslēdz visu grupu.",
+  "settingsView.sleepKeyGroupConflict": "Šis taustiņš veido grupu \"{{name}}\". Taustiņam ir vai nu grupa, vai miega taimeris: vispirms noņemiet grupu no šī taustiņa cilnē Multiroom.",
+  "settingsView.sleepKeyOnToast": "Miega taimeris tagad ir uz šī taustiņa.",
+  "settingsView.sleepKeyOffToast": "Miega taimeris noņemts no šī taustiņa.",
+  "settingsView.webhookSleepKeyNote": "Uz šī taustiņa ir miega taimeris. Taimeris uzvar: nospiediens to pārslēdz, un tīmekļa āķis neizpildās.",
+  "settingsView.webhookRemoteLegendSleep": "miega taimeris",
+  "settingsView.sleepKeyNeedsUpdate": "Atjauniniet šo skaļruni, lai piešķirtu miega taimeri taustiņam.",
+  "multiroom.groupKeysKeySleep": "(miega taimeris)",
+  "multiroom.groupKeysSleepHint": "Īkšķa taustiņš ar miega taimeri nevar arī veidot grupu. Mainiet to pults taustiņu kartē iestatījumos."
 }

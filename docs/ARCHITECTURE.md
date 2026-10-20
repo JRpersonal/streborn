@@ -333,7 +333,7 @@ flowchart TB
     AUDIO["internal/spotify and internal/streamproxy<br/>the two audio planes"]
     CLOUD["internal/marge, tlsgen, hosts,<br/>mdnshost, bmx<br/>the local cloud stand-in"]
     WIRE["internal/boxapi, boxws, upnp, boxcli, boxlog<br/>the only code that touches firmware ports"]
-    STORES["internal/presets, zones, groupkeys, recent,<br/>webhooks, mediaservers, boxsnapshot"]
+    STORES["internal/presets, zones, groupkeys, keyactions,<br/>recent, webhooks, mediaservers, boxsnapshot"]
     ATOMIC["internal/atomicfile<br/>every NAND write goes through here"]
   end
 

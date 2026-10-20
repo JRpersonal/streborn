@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Następnie zainstaluj STR także na drugim głośniku pary „{{name}}” ({{partner}}). Para zostanie zachowana, gdy oba głośniki będą miały STR.",
   "setup.pairKept": "Para stereo „{{name}}” jest zachowana na obu głośnikach.",
   "setup.pairRestored": "Para stereo „{{name}}” została ponownie skonfigurowana na obu głośnikach.",
-  "setup.pairRestoreFailed": "Nie udało się ponownie skonfigurować pary stereo „{{name}}”. Możesz sam sparować oba głośniki w karcie Multi-Room."
+  "setup.pairRestoreFailed": "Nie udało się ponownie skonfigurować pary stereo „{{name}}”. Możesz sam sparować oba głośniki w karcie Multi-Room.",
+  "settingsView.sleepKeyLabel": "Wyłącznik czasowy na tym klawiszu (każde naciśnięcie: 15, 30, 60 min, wył.)",
+  "settingsView.sleepKeyHelp": "Każde naciśnięcie przełącza wyłącznik czasowy głośnika: 15, 30 lub 60 minut, potem wyłączony. Głośniki z wyświetlaczem pokazują każdy krok, a gdy działa, księżyc z pozostałymi minutami. W grupie wyłącznik wyłącza całą grupę.",
+  "settingsView.sleepKeyGroupConflict": "Ten klawisz tworzy grupę \"{{name}}\". Klawisz ma albo grupę, albo wyłącznik czasowy: najpierw usuń grupę z tego klawisza na karcie Multiroom.",
+  "settingsView.sleepKeyOnToast": "Wyłącznik czasowy jest teraz na tym klawiszu.",
+  "settingsView.sleepKeyOffToast": "Wyłącznik czasowy usunięto z tego klawisza.",
+  "settingsView.webhookSleepKeyNote": "Ten klawisz ma wyłącznik czasowy. Wyłącznik wygrywa: naciśnięcie go przełącza, a webhook nie jest wywoływany.",
+  "settingsView.webhookRemoteLegendSleep": "wyłącznik czasowy",
+  "settingsView.sleepKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać wyłącznik czasowy do klawisza.",
+  "multiroom.groupKeysKeySleep": "(wyłącznik czasowy)",
+  "multiroom.groupKeysSleepHint": "Klawisz kciuka z wyłącznikiem czasowym nie może też tworzyć grupy. Zmień to na mapie klawiszy pilota w Ustawieniach."
 }

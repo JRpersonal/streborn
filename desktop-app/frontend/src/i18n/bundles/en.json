@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Next, install STR on the other speaker of \"{{name}}\" ({{partner}}) too. The pair is kept once both speakers run STR.",
   "setup.pairKept": "The stereo pair \"{{name}}\" is intact on both speakers.",
   "setup.pairRestored": "The stereo pair \"{{name}}\" was set up again on both speakers.",
-  "setup.pairRestoreFailed": "The stereo pair \"{{name}}\" could not be set up again. You can pair the two speakers yourself in the Multi-Room tab."
+  "setup.pairRestoreFailed": "The stereo pair \"{{name}}\" could not be set up again. You can pair the two speakers yourself in the Multi-Room tab.",
+  "settingsView.sleepKeyLabel": "Sleep timer on this key (each press: 15, 30, 60 min, off)",
+  "settingsView.sleepKeyHelp": "Every press steps the speaker's sleep timer: 15, 30 or 60 minutes, then off. Speakers with a display show each step, and a moon with the minutes left while it runs. In a group the timer switches the whole group off.",
+  "settingsView.sleepKeyGroupConflict": "This key forms the group \"{{name}}\". A key carries either a group or the sleep timer: take the group off this key on the Multi-room tab first.",
+  "settingsView.sleepKeyOnToast": "The sleep timer is now on this key.",
+  "settingsView.sleepKeyOffToast": "The sleep timer is off this key.",
+  "settingsView.webhookSleepKeyNote": "This key carries the sleep timer. The sleep timer wins: a press steps it, and the webhook does not fire.",
+  "settingsView.webhookRemoteLegendSleep": "sleep timer",
+  "settingsView.sleepKeyNeedsUpdate": "Update this speaker to put the sleep timer on a key.",
+  "multiroom.groupKeysKeySleep": "(sleep timer)",
+  "multiroom.groupKeysSleepHint": "A thumbs key that carries the sleep timer cannot form a group as well. Change it on the remote key map in Settings."
 }

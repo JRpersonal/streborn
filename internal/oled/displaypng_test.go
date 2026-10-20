@@ -68,3 +68,47 @@ func writePNG(t *testing.T, path string, frame []byte, k int) {
 		t.Fatal(err)
 	}
 }
+
+// Renders the sleep timer's states: the notices a key press shows and the
+// track screen's top line with the countdown, with and without the time, a
+// long station and a 12-hour clock. Same switch as above:
+//
+//	STR_DISPLAY_PNG_DIR=$PWD/docs/images/display/sleep go test ./internal/oled -run SleepDisplayPNG
+func TestRenderSleepDisplayPNG(t *testing.T) {
+	dir := os.Getenv("STR_DISPLAY_PNG_DIR")
+	if dir == "" {
+		t.Skip("STR_DISPLAY_PNG_DIR not set")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 20, 15, 42, 0, 0, time.Local)
+	short := TrackText{Station: "WDR 2", Artist: "Herbert Grönemeyer", Title: "Männer"}
+	long := TrackText{Station: "Deutschlandfunk Kultur", Artist: "Ibrahim Maalouf", Title: "Beirut (Live à l'Olympia)"}
+	withClock := func(t TrackText, h12 bool) TrackText { t.Clock, t.Hour12 = true, h12; return t }
+	playing := trackAnim{playing: true, frame: 3}
+	for _, c := range []struct {
+		name string
+		t    TrackText
+		min  int
+	}{
+		{"track-clock-23", withClock(short, false), 23},
+		{"track-clock12-60", withClock(short, true), 60},
+		{"track-only-7", short, 7},
+		{"long-station-clock12-15", withClock(long, true), 15},
+		{"long-station-only-30", long, 30},
+		{"clock-only-45", TrackText{Station: "WDR 2", Clock: true}, 45},
+	} {
+		tt := c.t.sanitized()
+		tt.sleepMin = c.min
+		buf := make([]byte, FrameSize)
+		renderTrack(tt, at, playing, 0, 0, 0, buf)
+		writePNG(t, filepath.Join(dir, "sleep-"+c.name+".png"), buf, 1)
+		writePNG(t, filepath.Join(dir, "sleep-"+c.name+"@3x.png"), buf, 3)
+	}
+	for name, n := range map[string]Notice{"notice-30": SleepSet(30), "notice-off": SleepOff()} {
+		r := newNoticeRenderer(n)
+		writePNG(t, filepath.Join(dir, "sleep-"+name+".png"), r.full, 1)
+		writePNG(t, filepath.Join(dir, "sleep-"+name+"@3x.png"), r.full, 3)
+	}
+}

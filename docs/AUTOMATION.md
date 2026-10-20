@@ -188,7 +188,7 @@ the main speaker's stored permanent group; the template itself stays on the
 remote's speaker, and the next press forms it again with its permanent flag.
 
 **Rules.** A key carries one action: a thumbs key bound to a group does not
-fire its webhook. Presses that land while a form or dissolve for that key is
+fire its webhook, and cannot carry the sleep timer (next section). Presses that land while a form or dissolve for that key is
 still running are ignored, and so is a second press within 3 s. The 2 s
 webhook rule for the other keys stays as it is.
 
@@ -201,6 +201,48 @@ main speaker cannot be reached, the press is logged (`group key: press
 failed`, at most one WARN per minute per key) and nothing changes. The
 diagnostic bundle's `group_keys` section shows the templates, the bindings,
 the last action and the last error.
+
+## Sleep timer key (a thumbs key steps the sleep timer)
+
+Instead of a group, a thumbs key can carry the sleep timer. Set it in the
+Settings tab's remote key map ("Sleep timer on this key"); the key is then
+drawn with a small moon. Each press steps the timer:
+
+    not running -> 15 min -> 30 min -> 60 min -> off -> 15 min ...
+
+The next step comes from what the running timer was ARMED with, not from the
+time left: the smallest of 15, 30 and 60 that is longer, and past 60, off. A
+timer the phone set to 45 minutes goes to 60, one set to 90 (or an alarm's
+auto-off) goes off, and tapping through never repeats a step because a minute
+passed.
+
+**What is stored, and where.** `/mnt/nv/streborn/key-actions.json` on the
+speaker whose remote is pressed, `{"keys":{"thumbsUp":"sleep"}}`, written only
+when the app saves it (`PUT /api/keyactions`, LAN only; `GET` reads it back).
+The timer itself stays RAM-only, as before. A press writes nothing.
+
+**Rules.** A thumbs key carries ONE of: a group, the sleep timer, a webhook.
+Group and sleep timer exclude each other: `PUT /api/keyactions` refuses a key
+that carries a group, and `PUT /api/groupkeys` refuses a key that carries the
+sleep timer (both with 409 and the reason). Either wins over a webhook on the
+same key. Only the thumbs keys can carry it: back, forward and play/pause
+always run the firmware's own reaction too.
+
+**What the speaker shows.** On a speaker with a panel STR draws on (ST20, ST30,
+Portable, Wave), a press shows SLEEP 15 / 30 / 60 MINUTES or SLEEP OFF; a newer
+step replaces the one on screen at once. While a timer runs (set from the key,
+the phone or an alarm), STR's own playback screen shows a moon and the minutes
+left in its top line. That countdown costs no timer: the deadline is handed to
+the display once and it redraws at each minute boundary. On other models the
+key still steps the timer, without the picture.
+
+**Groups.** The key always arms a group timer: in a group, the whole group goes
+off. The speaker that armed it hands the countdown (and the notice of a press)
+to every live member's agent (`POST /api/display/sleep
+{"remainingSec":N,"notice":bool}`, LAN only, `0` clears it), so every member
+with a display shows it too. That call only draws; the arming speaker still
+switches the members off at the end. A member without STR, without a panel or
+that missed the call still goes off with the group.
 
 ## Alarm clock (a preset, but timed)
 

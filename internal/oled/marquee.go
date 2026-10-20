@@ -157,9 +157,7 @@ func (tc *trackCache) build(t TrackText, now time.Time, dx, dy int) {
 		return
 	}
 	c := canvas(tc.base)
-	if tc.f.ruleY >= 0 {
-		c.fill(24+dx, tc.f.ruleY+dy, Width-48, 1, lvlTrackRule)
-	}
+	tc.f.drawStanding(c, dx, dy)
 	for i, l := range tc.f.lines {
 		if l.overflow() > 0 {
 			tc.strips[i] = l.strip()
