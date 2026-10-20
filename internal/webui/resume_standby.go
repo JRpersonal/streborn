@@ -605,23 +605,41 @@ func modePathFor(enabledPath string) string {
 
 // splitStreamTitle splits an ICY StreamTitle into (artist, title). The separator
 // is the de-facto tell across stations, matching the app's Recently-played view:
-// " - " is "Artist - Title", " / " is "Title / Artist" (flipped). No separator:
-// the whole string is the title, artist empty.
+// " - " is "Artist - Title", " / " is "Title / Artist" (flipped, SWR3). A dash
+// wins over a slash: a slash is also part of artist names ("AC/DC", "Axwell /
+// Ingrosso", stylised "Axwell /\ Ingrosso"), and cutting there turned "Axwell
+// / Ingrosso - More Than You Know" into artist "Ingrosso - More Than You Know",
+// title "Axwell". So " / " only splits a title that has no dash at all. The
+// earliest dash splits, so "Artist - Title - Remix" keeps the remix in the
+// title. No separator: the whole string is the title, artist empty.
 func splitStreamTitle(s string) (artist, title string) {
 	s = strings.TrimSpace(s)
-	for _, sep := range []string{" / ", " - ", " – ", " — "} {
-		if i := strings.Index(s, sep); i > 0 && i+len(sep) < len(s) {
-			left, right := strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+len(sep):])
-			if left == "" || right == "" {
-				continue
-			}
-			if sep == " / " {
-				return right, left // "Title / Artist"
-			}
-			return left, right // "Artist - Title"
-		}
+	if left, right, ok := cutFirstSep(s, " - ", " – ", " — "); ok {
+		return left, right // "Artist - Title"
+	}
+	if left, right, ok := cutFirstSep(s, " / "); ok {
+		return right, left // "Title / Artist"
 	}
 	return "", s
+}
+
+// cutFirstSep cuts s at the earliest occurrence of any of seps. ok is false
+// when no separator is found or one side of the cut is empty.
+func cutFirstSep(s string, seps ...string) (left, right string, ok bool) {
+	best, bestLen := -1, 0
+	for _, sep := range seps {
+		if i := strings.Index(s, sep); i > 0 && (best < 0 || i < best) {
+			best, bestLen = i, len(sep)
+		}
+	}
+	if best < 0 {
+		return "", "", false
+	}
+	left, right = strings.TrimSpace(s[:best]), strings.TrimSpace(s[best+bestLen:])
+	if left == "" || right == "" {
+		return "", "", false
+	}
+	return left, right, true
 }
 
 // placeholderStreamTitles are ICY StreamTitles that say nothing about the

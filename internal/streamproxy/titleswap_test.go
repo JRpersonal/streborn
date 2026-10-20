@@ -25,6 +25,11 @@ func TestSwapStreamTitle(t *testing.T) {
 		"Just a title":                        "Just a title",
 		"  Sultans of swing - Dire Straits  ": "Dire Straits - Sultans of swing",
 		"- Dire Straits":                      "- Dire Straits",
+		// a slash in the artist name does not beat the dash
+		"More Than You Know - Axwell / Ingrosso":  "Axwell / Ingrosso - More Than You Know",
+		`More Than You Know - Axwell /\ Ingrosso`: `Axwell /\ Ingrosso - More Than You Know`,
+		"Highway to Hell - AC/DC":                 "AC/DC - Highway to Hell",
+		"AC/DC / Highway to Hell":                 "AC/DC - Highway to Hell",
 	}
 	for in, want := range cases {
 		if got := swapStreamTitle(in); got != want {

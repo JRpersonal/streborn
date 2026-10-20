@@ -3,17 +3,30 @@ package webui
 import "testing"
 
 // splitStreamTitle mirrors the app's Recently-played heuristic: " - " is
-// "Artist - Title", " / " is "Title / Artist" (flipped), no separator = title only.
+// "Artist - Title", " / " is "Title / Artist" (flipped) when the title has no
+// dash, no separator = title only. A dash wins over a slash, because a slash is
+// also part of artist names (1LIVE, 2026-10-20: "Axwell /\ Ingrosso").
 func TestSplitStreamTitle(t *testing.T) {
 	cases := []struct {
 		in, artist, title string
 	}{
 		{"Nacho Sotomayor - I wonder", "Nacho Sotomayor", "I wonder"},
-		{"Don't let me go / Kelvin Jones", "Kelvin Jones", "Don't let me go"}, // slash flips
+		{"Don't let me go / Kelvin Jones", "Kelvin Jones", "Don't let me go"}, // slash flips (SWR3)
 		{"Just A Station Name", "", "Just A Station Name"},                    // no separator
 		{"A - B - C", "A", "B - C"},                                           // first dash splits
 		{"- leading dash", "", "- leading dash"},                              // empty side -> not split
 		{"", "", ""},
+		// a slash inside the artist name never beats the dash
+		{`Axwell /\ Ingrosso - More Than You Know`, `Axwell /\ Ingrosso`, "More Than You Know"},
+		{"Axwell / Ingrosso - More Than You Know", "Axwell / Ingrosso", "More Than You Know"},
+		{"Axwell \u039b Ingrosso - More Than You Know", "Axwell \u039b Ingrosso", "More Than You Know"},
+		{"AC/DC - Highway to Hell", "AC/DC", "Highway to Hell"},
+		{"Simon & Garfunkel - The Boxer", "Simon & Garfunkel", "The Boxer"},
+		{"Avicii - Levels - Skrillex Remix", "Avicii", "Levels - Skrillex Remix"},
+		{"Queen \u2013 Under Pressure", "Queen", "Under Pressure"},
+		{"Kelvin Jones /", "", "Kelvin Jones /"},         // nothing after the slash
+		{`Axwell /\ Ingrosso`, "", `Axwell /\ Ingrosso`}, // "/\" is no separator
+		{"   ", "", ""},
 	}
 	for _, c := range cases {
 		a, ti := splitStreamTitle(c.in)

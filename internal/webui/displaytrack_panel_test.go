@@ -131,6 +131,9 @@ func TestPanelTrackTextModes(t *testing.T) {
 		{"both", "Morning Show", oled.TrackText{Station: "Radio Bob", Title: "Morning Show"}},
 		{"artist", "Morning Show", oled.TrackText{Station: "Radio Bob", Title: "Morning Show"}},
 		{"title", "Morning Show", oled.TrackText{Station: "Radio Bob", Title: "Morning Show"}},
+		// 1LIVE, 2026-10-20: the slash in the artist name is not the separator
+		{"both", "Axwell / Ingrosso - More Than You Know", oled.TrackText{Station: "Radio Bob", Artist: "Axwell / Ingrosso", Title: "More Than You Know"}},
+		{"both", `Axwell /\ Ingrosso - More Than You Know`, oled.TrackText{Station: "Radio Bob", Artist: `Axwell /\ Ingrosso`, Title: "More Than You Know"}},
 	}
 	for _, c := range cases {
 		s, _, _ := newTrackServer(t, true)
