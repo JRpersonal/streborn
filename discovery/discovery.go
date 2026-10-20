@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/grandcat/zeroconf"
@@ -666,7 +667,12 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 			}
 			seen[key] = kind
 			inst := Instance{
-				Name: e.Instance,
+				// The instance name comes out of the same wire-decoder as the
+				// TXT values, in DNS presentation form, so "Küche" arrives as
+				// "K\195\188che". Left raw it reached the speaker list as
+				// escapes and, being the longer string, beat the correct name
+				// from /info in pickBoxName (field report 2026-10-20).
+				Name: decodeMDNSText(e.Instance),
 				Host: e.HostName,
 				Port: e.Port,
 				Kind: kind,
@@ -688,7 +694,7 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 				// "K\195\188che" and, being longer, even wins pickBoxName over the
 				// correct name from the live /info probe. Decode it back to bytes
 				// here, the single boundary where every TXT value enters STR.
-				v = unescapeTXT(v)
+				v = decodeMDNSText(v)
 				switch strings.ToLower(k) {
 				case "deviceid", "mac":
 					if inst.DeviceID == "" {
@@ -874,6 +880,39 @@ func nz(s, dflt string) string {
 		return dflt
 	}
 	return s
+}
+
+// decodeMDNSText turns an mDNS name or TXT value as the wire-decoder hands it
+// over back into the text the speaker meant: the presentation escapes are
+// undone, and a name that was UTF-8 encoded twice somewhere on its way (the
+// bytes of "ü" read as Latin-1 and encoded again, "Ã¼") is folded back once.
+func decodeMDNSText(s string) string {
+	return undoDoubleUTF8(unescapeTXT(s))
+}
+
+// undoDoubleUTF8 reverses one round of UTF-8 encoding applied to text that was
+// already UTF-8. It only acts when every rune fits in a byte, at least one is
+// outside ASCII, and the bytes those runes make are valid UTF-8 themselves, so
+// a plain "Café" (é alone is not a valid UTF-8 sequence) is left as it is.
+func undoDoubleUTF8(s string) string {
+	if !utf8.ValidString(s) {
+		return s
+	}
+	b := make([]byte, 0, len(s))
+	high := false
+	for _, r := range s {
+		if r > 0xFF {
+			return s
+		}
+		if r >= 0x80 {
+			high = true
+		}
+		b = append(b, byte(r))
+	}
+	if !high || !utf8.Valid(b) {
+		return s
+	}
+	return string(b)
 }
 
 // unescapeTXT reverses the DNS presentation escaping the mDNS wire-decoder
