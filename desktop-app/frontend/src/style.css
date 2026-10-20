@@ -23,7 +23,10 @@
   --brand-text-mid: #9cd;
   --signal-green: #6c6;
   --signal-yellow: #cc6;
-  --signal-red: #c66;
+  /* #e87a7a, not #c66: the red is mostly used as TEXT (error lines, the
+     "error" state on a preset tile), and #c66 measured 3.87:1 on a tile and
+     3.89:1 on the error tile. Now 5.12:1 and 4.85:1. */
+  --signal-red: #e87a7a;
 
   /* Semantic greyscale tokens. The whole UI's backgrounds, borders and
      text route through these so the Light and High-contrast themes below
@@ -39,12 +42,16 @@
   --c-border-2: #555;       /* stronger borders */
   --c-text: #eee;           /* primary text */
   --c-text-2: #ccc;         /* secondary text */
-  --c-muted: #aaa;          /* muted / sublabels */
-  /* #898989, not #777: hint text at 11px has to clear 4.5:1 against both the
-     page (#1a1a1a) and a card (#222), and #777 reached only 3.89 and 3.55.
-     Reported for the footer, but the token is used for hints throughout, so
-     the fix belongs here rather than on one selector. */
-  --c-faint: #898989;       /* faint / hints */
+  --c-muted: #b5b5b5;       /* muted / sublabels */
+  /* Hint text sits on every surface, not only the page: a preset tile is
+     --c-surface-2 and turns --c-surface-3 under the mouse. #898989 cleared AA
+     on the page but measured 4.10:1 on a tile and 3.61:1 on a hovered one, and
+     the settings descriptions (.muted) use this token too, so a tester could
+     not read "hold = save..." or the start-volume help. #a6a6a6 is 5.90:1 on a
+     tile, 5.19:1 hovered. --c-muted went from #aaa to #b5b5b5 (7.00:1 on a
+     tile) so the bitrate line stays a step brighter than the hint.
+     themecontrast.test.js checks every text token on every surface. */
+  --c-faint: #a6a6a6;       /* faint / hints */
   --c-pill-alpha: #ef9a9a;   /* stage pills, see .alpha-pill */
   --c-pill-planned: #b0bec5;
   --c-pill-beta: #ffb74d;
@@ -53,6 +60,15 @@
   --group-c2: #d6a23d;
   --group-c3: #2aa9a9;
   --group-c4: #b27fd0;
+  /* Preset tile fills for the playing and error states (gradient start and
+     end). Tokens rather than literals so the light theme can flip them and the
+     contrast test can check the sublabels that sit on them. */
+  --c-tile-play-a: #1f2f1f;
+  --c-tile-play-b: #2a3a2a;
+  --c-tile-err-a: #2f1f1f;
+  --c-tile-err-b: #3a2a2a;
+  /* Amber text (the lost-key hint and the loss banner title). */
+  --c-amber-text: #e8c878;
 }
 
 /* Light theme. Greyscale tokens flip to a light palette and the brand/
@@ -81,18 +97,26 @@ html.a11y-light {
   --c-border-2: #b5b5ba;
   --c-text: #16181d;
   --c-text-2: #33363d;
-  --c-muted: #5a5e66;
-  --c-faint: #6b6f77;
-  --brand: #1769aa;
+  /* Darkened 2026-10-20: #6b6f77 hints measured 4.27:1 on a preset tile and
+     3.90:1 on a hovered one, #5a5e66 4.81:1 on the error tile. Now every text
+     token clears 5:1 on every light surface (themecontrast.test.js). */
+  --c-muted: #4a4e56;
+  --c-faint: #575b63;
+  --brand: #155f9a;
   --brand-hover: #0f4f80;
   --brand-bg: #e6f0f8;
   --brand-bg-soft: #d4e6f4;
   --brand-border: #9cc3e0;
   --brand-text: #0f3a5a;
-  --brand-text-mid: #2a6a9a;
-  --signal-green: #1a7f37;
-  --signal-yellow: #9a6700;
+  --brand-text-mid: #1f5a87;
+  --signal-green: #146c2e;
+  --signal-yellow: #7a5200;
   --signal-red: #b91c1c;
+  --c-tile-play-a: #e4f2e4;
+  --c-tile-play-b: #d3e8d3;
+  --c-tile-err-a: #f8e6e6;
+  --c-tile-err-b: #f0d8d8;
+  --c-amber-text: #7a5200;
 }
 
 /* High-contrast theme. Black base, pure-white text and borders, brighter
@@ -127,6 +151,7 @@ html.a11y-contrast {
   --signal-green: #7cfc7c;
   --signal-yellow: #ffe066;
   --signal-red: #ff8a8a;
+  --c-amber-text: #ffe066;
 }
 
 /* Fallback to color-scheme:dark above: force high-contrast colors on every
@@ -1269,7 +1294,7 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .library-whole-search { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .library-whole-search .library-search { flex: 1 1 220px; }
 .library-crumb-active { color: var(--c-text); font-weight: 600; }
-.library-crumb-sep { color: var(--c-border-2); padding: 0 4px; }
+.library-crumb-sep { color: var(--c-faint); padding: 0 4px; }
 .library-folder-actions { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 .library-search-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .library-search { flex: 1 1 auto; min-width: 0; background: var(--brand-bg); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
@@ -1420,8 +1445,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn-primary { background: linear-gradient(135deg, #58a 0%, #6bd 100%); color: white; border-color: #6bd; }
 .btn-primary:hover { background: linear-gradient(135deg, #6bd 0%, #8df 100%); }
 .btn-primary:disabled { background: var(--c-border); color: var(--c-faint); border-color: var(--c-border); cursor: not-allowed; }
-.btn-danger { background: var(--signal-red); color: white; border-color: var(--signal-red); }
-.btn-danger:hover { background: #d55; }
+/* --c-bg as the label colour: dark on the light dark-theme red (6.21:1, white
+   there is 2.9:1), white on the dark light-theme red, black in high contrast. */
+.btn-danger { background: var(--signal-red); color: var(--c-bg); border-color: var(--signal-red); }
+.btn-danger:hover { filter: brightness(1.08); }
 .btn-warning { background: #d97a1d; color: white; border-color: #d97a1d; }
 .btn-warning:hover { background: #e68a30; }
 .btn-warning:disabled { background: #6a4a30; color: #aa8; border-color: #6a4a30; cursor: not-allowed; }
@@ -1482,27 +1509,21 @@ html.a11y-contrast .btn-warning:disabled {
 .preset.empty { color: var(--c-faint); border-style: dashed; }
 /* preset.playing uses SIGNAL-GREEN: stays green as the "playing" marker */
 .preset.playing {
-  background: linear-gradient(135deg, #1f2f1f 0%, #2a3a2a 100%);
+  background: linear-gradient(135deg, var(--c-tile-play-a) 0%, var(--c-tile-play-b) 100%);
   border-color: var(--signal-green);
   box-shadow: 0 0 12px rgba(102, 204, 102, 0.25);
 }
 .preset.playing .name { color: #cfc; }
 .preset.error {
-  background: linear-gradient(135deg, #2f1f1f 0%, #3a2a2a 100%);
+  background: linear-gradient(135deg, var(--c-tile-err-a) 0%, var(--c-tile-err-b) 100%);
   border-color: var(--signal-red);
   box-shadow: 0 0 10px rgba(204, 102, 102, 0.25);
 }
 .preset.error .name { color: #fcc; }
-/* The playing/error tiles above hardcode DARK gradients. In the light theme
-   the sublabels (.num, bitrate, hint) switch to dark light-theme greys, which
-   vanished on those dark tiles; the tiles must flip with the theme. */
-html.a11y-light .preset.playing {
-  background: linear-gradient(135deg, #e4f2e4 0%, #d3e8d3 100%);
-}
+/* The playing/error tile fills flip with the theme through the --c-tile-*
+   tokens: the sublabels (.num, bitrate, hint) switch to dark light-theme
+   greys, which vanished on the old hard-coded dark tiles. */
 html.a11y-light .preset.playing .name { color: #0f5132; }
-html.a11y-light .preset.error {
-  background: linear-gradient(135deg, #f8e6e6 0%, #f0d8d8 100%);
-}
 html.a11y-light .preset.error .name { color: #991b1b; }
 .preset.long-press {
   transform: scale(0.96);
@@ -1523,18 +1544,18 @@ html.a11y-light .preset.error .name { color: #991b1b; }
    one theme was ever checked against. */
 .preset-account { font-size: 10px; font-weight: 400; color: var(--c-spotify-text); margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* DLNA preset: small muted "from <server>" badge, same shape as the Spotify account line. */
-.preset-source { font-size: 10px; font-weight: 400; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.6; }
+.preset-source { font-size: 10px; font-weight: 400; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-muted); }
 /* Box-native preset (one the box owns, e.g. Deezer): a subtly distinct tile and a
    small hint that tapping recalls it on the speaker. */
 .preset.box-native { border-style: dashed; border-color: var(--c-border); }
 .preset.box-native.playing { border-style: solid; }
-.preset-box-hint { font-size: 10px; font-weight: 400; color: var(--c-muted); margin-top: 2px; line-height: 1.1; opacity: 0.75; }
+.preset-box-hint { font-size: 10px; font-weight: 400; color: var(--c-faint); margin-top: 2px; line-height: 1.1; }
 /* A key STR wrote that the store no longer backs (left over from before a
    reinstall, #882): shown, named, but not offered as playable. Same amber as
    the loss banner above the grid, which explains it. */
 .preset.lost { border-style: dashed; border-color: var(--c-border); cursor: default; }
 .preset.lost .name { color: var(--c-muted); }
-.preset.lost .preset-box-hint { color: #e8c878; opacity: 1; }
+.preset.lost .preset-box-hint { color: var(--c-amber-text); }
 /* Banner above the preset grid warning that the box dropped account-linked
    presets STR cannot carry over yet (e.g. Deezer). Amber accent, dismissible. */
 .loss-notice {
@@ -1549,7 +1570,7 @@ html.a11y-light .preset.error .name { color: #991b1b; }
   background: rgba(217, 163, 58, 0.08);
 }
 .loss-notice-body { flex: 1 1 auto; min-width: 0; }
-.loss-notice-body strong { font-size: 13px; color: #e8c878; }
+.loss-notice-body strong { font-size: 13px; color: var(--c-amber-text); }
 .loss-notice-body .small { font-size: 12px; color: var(--c-muted); margin-top: 3px; line-height: 1.35; }
 .loss-notice-dismiss {
   flex: 0 0 auto;
@@ -2482,7 +2503,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-pick-hint { margin: 0 0 10px; padding: 0; }
 .zone-cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
 .zone-card { position: relative; min-width: 150px; max-width: 230px; padding: 12px 14px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface-2); color: var(--c-text); cursor: pointer; transition: border-color .12s, background .12s, box-shadow .12s; }
-.zone-card:hover { background: var(--c-border); }
+.zone-card:hover { background: var(--c-surface-3); }
 .zone-card.master { background: var(--brand-bg); border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
 /* Was hard-coded Material green #4caf50: an ok/success colour used for a pure
    selection state, in the same grid where .zone-card.master marks itself with
@@ -2491,7 +2512,9 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
    border was all but invisible in light mode. */
 .zone-card.selected { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
 .zone-card-name { font-weight: 600; font-size: 13px; }
-.zone-card-host { display: block; opacity: 0.6; font-size: 10px; margin-top: 2px; }
+/* A token instead of opacity: 0.6 over --c-text, which nobody could measure
+   per theme. */
+.zone-card-host { display: block; color: var(--c-faint); font-size: 10px; margin-top: 2px; }
 .zone-card-tick { position: absolute; top: 8px; right: 10px; font-size: 14px; line-height: 1; }
 .zone-card.master .zone-card-tick { color: var(--brand); }
 .zone-card.selected .zone-card-tick { color: var(--brand); }
