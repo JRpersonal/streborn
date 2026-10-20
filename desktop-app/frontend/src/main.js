@@ -1038,6 +1038,7 @@ const OSS_CREDITS = [
   { name: 'Go', license: 'BSD-3-Clause', url: 'https://go.dev', role: 'language and toolchain' },
   { name: 'Vite', license: 'MIT', url: 'https://vitejs.dev', role: 'frontend build tool' },
   { name: 'Octicons', by: 'GitHub', license: 'MIT', url: 'https://github.com/primer/octicons', role: 'interface icons' },
+  { name: 'Inter', by: 'The Inter Project Authors', license: 'OFL-1.1', url: 'https://github.com/rsms/inter', role: 'typeface of the track screen on the speaker display' },
   { name: 'Mozilla CA certificate store', by: 'curl project', license: 'MPL-2.0', url: 'https://curl.se/docs/caextract.html', role: 'public certificate authorities, so speakers built with an incomplete list can still reach stations' },
   { name: 'radio-browser.info', license: 'community service', url: 'https://www.radio-browser.info', role: 'radio station directory' },
   { name: 'DuckDuckGo icons', license: 'service', url: 'https://duckduckgo.com', role: 'station logos' },

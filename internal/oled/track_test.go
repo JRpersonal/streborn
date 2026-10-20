@@ -43,30 +43,37 @@ func TestWrapText(t *testing.T) {
 }
 
 func TestLayoutTrack(t *testing.T) {
-	// a single word longer than a big line is not split and not shrunk: one
-	// big line that scrolls
-	l := layoutTrack(TrackText{Station: "RADIO BOB", Artist: "AC/DC", Title: "THUNDERSTRUCK"}.sanitized())
-	if !reflect.DeepEqual(l.title, []string{"THUNDERSTRUCK"}) {
-		t.Errorf("a 13-letter word must stay whole on one line: %+v", l)
+	// a single word wider than a large line is not split and not shrunk: one
+	// large line that scrolls
+	l := layoutTrack(TrackText{Station: "Radio Bob", Artist: "AC/DC", Title: "Supercalifragilisticexpialidocious"}.sanitized())
+	if !reflect.DeepEqual(l.title, []string{"Supercalifragilisticexpialidocious"}) {
+		t.Errorf("a long word must stay whole on one line: %+v", l)
 	}
-	// a title that fits on two big lines is wrapped and stands
-	l = layoutTrack(TrackText{Artist: "QUEEN", Title: "Under Pressure"}.sanitized())
-	if !reflect.DeepEqual(l.title, []string{"UNDER", "PRESSURE"}) {
-		t.Errorf("short title: %+v", l)
+	// a title that fits on two large lines is wrapped and stands, every
+	// line within the box
+	l = layoutTrack(TrackText{Artist: "Queen", Title: "Under Pressure (Remastered)"}.sanitized())
+	if len(l.title) != 2 {
+		t.Errorf("two-line title: %+v", l)
+	}
+	for _, s := range l.title {
+		if w := textWidth(s, smoothLarge); w > blockBoxW {
+			t.Errorf("title line %q is %d px wide", s, w)
+		}
 	}
 	// long fields are kept whole for the marquee, nothing is cut
 	long := TrackText{
 		Station: "A station name that is far too long for one line",
-		Artist:  "Nick Cave & The Bad Seeds and Friends of the Band",
+		Artist:  "Nick Cave & The Bad Seeds and Friends of the Band and Their Families",
 		Title:   "Into My Arms (Live at the Royal Albert Hall, remastered edition 2024)",
 	}.sanitized()
 	l = layoutTrack(long)
 	if !reflect.DeepEqual(l.title, []string{long.Title}) || !reflect.DeepEqual(l.artist, []string{long.Artist}) || l.station != long.Station {
 		t.Fatalf("long text: %+v", l)
 	}
-	// an artist that fits on two small lines is wrapped there
-	l = layoutTrack(TrackText{Artist: "Nick Cave & The Bad Seeds", Title: "X"}.sanitized())
-	if !reflect.DeepEqual(l.artist, []string{"NICK CAVE + THE BAD", "SEEDS"}) {
+	// an artist that fits on two small lines is wrapped there, in its own
+	// case and with its own ampersand
+	l = layoutTrack(TrackText{Artist: "Nick Cave & The Bad Seeds with Warren Ellis", Title: "X"}.sanitized())
+	if len(l.artist) != 2 || !strings.HasPrefix(l.artist[0], "Nick Cave & The") {
 		t.Errorf("artist %q", l.artist)
 	}
 }
@@ -92,18 +99,31 @@ func litRows(buf []byte) (first, last int, bad bool) {
 
 func TestRenderTrack(t *testing.T) {
 	buf := make([]byte, FrameSize)
-	tt := TrackText{Station: "Radio", Artist: "Queen", Title: "Under Pressure"}.sanitized()
+	// capitals only in the station, so its first row is the capitals' top
+	tt := TrackText{Station: "RTL", Artist: "Queen", Title: "Under Pressure"}.sanitized()
 	renderTrack(tt, time.Time{}, trackAnim{}, 0, 0, 0, buf)
 	first, last, bad := litRows(buf)
 	if bad || first != trackTopY || last >= Height {
 		t.Fatalf("rows %d..%d bad=%v", first, last, bad)
 	}
-	// the title is the brightest text, the station a step above the artist
-	if v := buf[trackTopY*Width+Width/2-20 : (trackTopY+7)*Width]; maxByte(v) != lvlTrackStation {
+	// the title is the brightest text, the artist below it, the station
+	// dimmest
+	if v := buf[trackTopY*Width+Width/2-20 : (trackTopY+smoothSmall.capH)*Width]; maxByte(v) != lvlTrackStation {
 		t.Errorf("station level %d", maxByte(v))
+	}
+	for _, l := range trackLayout(tt, time.Time{}).lines {
+		if l.s != "Queen" {
+			continue
+		}
+		if v := buf[(l.y-smoothSmall.capH)*Width : (l.y+1)*Width]; maxByte(v) != lvlTrackArtist {
+			t.Errorf("artist level %d", maxByte(v))
+		}
 	}
 	if maxByte(buf) != lvlTrackTitle {
 		t.Errorf("title level %d", maxByte(buf))
+	}
+	if lvlTrackStation >= lvlTrackArtist || lvlTrackArtist >= lvlTrackTitle {
+		t.Error("levels out of rank")
 	}
 	// the shifted layout is the same picture one pixel to the right and down
 	moved := make([]byte, FrameSize)
@@ -224,7 +244,7 @@ func TestTrackScreenShowUpdateClear(t *testing.T) {
 	waitFor(t, "the panel to be held", p.held.Load)
 	// a new song redraws without letting go of the panel
 	s.show(TrackText{Station: "Radio", Artist: "Queen", Title: "Bohemian Rhapsody"})
-	waitFor(t, "the redraw", func() bool { v, _ := p.lastTxt.Load().(string); return v == "BOHEMIAN RHAPSODY" })
+	waitFor(t, "the redraw", func() bool { v, _ := p.lastTxt.Load().(string); return v == "Bohemian Rhapsody" })
 	if p.holds.Load() != 1 {
 		t.Errorf("a text change took the panel again: %d holds", p.holds.Load())
 	}
@@ -393,7 +413,7 @@ func TestRenderTrackClock(t *testing.T) {
 	// with a track: the station starts at the left edge, the time ends at the
 	// right edge of the top line, both inside the panel
 	renderTrack(TrackText{Station: "1LIVE", Artist: "ADELA", Title: "AIN'T IN LA", Clock: true}, at, trackAnim{}, 0, 0, 0, buf)
-	top := buf[trackTopY*Width : (trackTopY+7)*Width]
+	top := buf[clockTopY*Width : (clockTopY+smoothLarge.capH)*Width]
 	left, right := Width, -1
 	for i, v := range top {
 		if v != 0 {
@@ -414,7 +434,7 @@ func TestRenderTrackClock(t *testing.T) {
 	// without a track: the time is large in the middle
 	renderTrack(TrackText{Station: "1LIVE", Clock: true}, at, trackAnim{}, 0, 0, 0, buf)
 	first, last, bad := litRows(buf)
-	if bad || first != trackTopY || last-trackAreaY < 7*bigClockScale || last >= Height {
+	if bad || first != trackTopY || last-plainAreaY() < smoothClock.capH || last >= Height {
 		t.Errorf("big clock rows %d..%d bad=%v", first, last, bad)
 	}
 	if maxByte(buf) != lvlTrackTitle {

@@ -64,6 +64,26 @@ the Bose firmware trusts is left exactly as Bose shipped it. See
 
 ---
 
+## Inter typeface
+
+**What is distributed:** glyph bitmaps rasterised from Inter 4.1 (Medium and
+SemiBold) in `internal/oled/smoothfont_data.go`, linked into the agent binary,
+which draws the track screen on the speaker's display with them. The font
+files themselves are not distributed.
+
+**Licence:** SIL Open Font License 1.1, full text with the copyright notice in
+[`internal/oled/OFL-Inter.txt`](internal/oled/OFL-Inter.txt)
+(<https://openfontlicense.org>)
+
+**Copyright:** (c) 2016 The Inter Project Authors
+
+**Upstream:** <https://github.com/rsms/inter>, release v4.1. The generator
+(`internal/oled/fontgen`, a separate module that is never linked into a
+binary) fetches the release archive, checks it against a pinned SHA-256 and
+writes the tables; `make display-font` runs it.
+
+---
+
 ## Libraries linked into the STR binaries
 
 | Component | Licence | Source |

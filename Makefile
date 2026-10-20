@@ -25,6 +25,8 @@
 #                           phone remote (checked against the website's
 #                           rules, then committed).
 #                           SHARE_TARGETS_FILE=<path> reads a local copy.
+#   make display-font       regenerate the speaker display font tables from
+#                           the pinned Inter release (go generate).
 #   make test               go test ./...
 #   make vet                go vet ./...
 #   make tidy               go mod tidy
@@ -91,7 +93,7 @@ ENGINE_EMBED_OUT := desktop-app/agentbin/go-librespot-armv7l
 
 .PHONY: all build build-arm build-arm64 build-all \
         winformat-embed agent-embed engine-embed winres wails-dev wails-build \
-        share-targets test vet tidy clean
+        share-targets display-font test vet tidy clean
 
 all: build
 
@@ -198,6 +200,12 @@ wails-build: winformat-embed agent-embed winres
 # to what STR trusts is a reviewed edit rather than a silent refresh.
 ca-roots:
 	python internal/tlsgen/extractroots.py
+
+# Regenerate the speaker display's font tables (internal/oled/smoothfont_data.go)
+# from the pinned Inter release. The generator is its own module, so its
+# rasteriser never reaches the agent binary.
+display-font:
+	$(GO) generate ./internal/oled
 
 
 # The app never fetches the share registry at runtime. This refreshes the

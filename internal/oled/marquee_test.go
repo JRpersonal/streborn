@@ -42,7 +42,7 @@ func TestMarqueeAtCycle(t *testing.T) {
 }
 
 func TestMarqueeLine(t *testing.T) {
-	fit := marqueeLine{s: "UNDER", sc: 2, lvl: 15, x0: blockBoxX, w: blockBoxW}
+	fit := marqueeLine{s: "Under", f: smoothLarge, lvl: 15, x0: blockBoxX, w: blockBoxW, y: 40}
 	if fit.steps() != 0 {
 		t.Fatalf("a fitting line scrolls: %d steps", fit.steps())
 	}
@@ -52,10 +52,11 @@ func TestMarqueeLine(t *testing.T) {
 	if string(a) != string(b) {
 		t.Error("a fitting line moved with the marquee")
 	}
-	long := marqueeLine{s: "THUNDERSTRUCK", sc: 2, lvl: 15, x0: blockBoxX, w: blockBoxW}
-	// 13 characters at 12 px = 154 px in a 126 px box: 28 px, 14 steps of 2
-	if long.overflow() != 154-blockBoxW || long.steps() != (154-blockBoxW+1)/2 {
-		t.Fatalf("overflow %d steps %d", long.overflow(), long.steps())
+	long := marqueeLine{s: "Supercalifragilistic", f: smoothLarge, lvl: 15, x0: blockBoxX, w: blockBoxW, y: 40}
+	// wider than the box by a whole number of pixels, scrolled 2 px a step
+	tw := textWidth(long.s, smoothLarge)
+	if tw <= blockBoxW || long.overflow() != tw-blockBoxW || long.steps() != (tw-blockBoxW+1)/2 {
+		t.Fatalf("width %d overflow %d steps %d", tw, long.overflow(), long.steps())
 	}
 	for _, step := range []int{0, 5, long.steps(), long.steps() + 20} {
 		clear(a)
@@ -70,10 +71,11 @@ func TestMarqueeLine(t *testing.T) {
 			t.Errorf("step %d: drawn %d..%d outside the box", step, left, right)
 		}
 		switch {
-		case step == 0 && left != blockBoxX:
+		case step == 0 && left > blockBoxX+1:
+			// the "S" starts at the box's edge, less its side bearing
 			t.Errorf("start: first column %d", left)
 		case step >= long.steps() && right < blockBoxX+blockBoxW-2:
-			// the last "K" ends flush with the box
+			// the last "c" ends at the box's edge
 			t.Errorf("end: last column %d", right)
 		}
 	}
@@ -108,11 +110,17 @@ func TestTrackLayoutScrollsOnlyWhatDoesNotFit(t *testing.T) {
 	// the station never runs into the playing symbol or the time
 	f := trackLayout(TrackText{Station: strings.Repeat("W", 40), Title: "X", Clock: true}.sanitized(), at)
 	buf := make([]byte, FrameSize)
+	clockX := f.lines[0].x0 // the time is laid out first
 	for step := 0; step <= f.steps(); step++ {
 		f.render(trackAnim{}, step, 0, 0, buf)
-		for y := 0; y < trackTopY+14; y++ {
+		for y := 0; y < f.ruleY; y++ {
 			if buf[y*Width+stationBoxX-1] != 0 {
 				t.Fatalf("step %d: the station touches the bars at row %d", step, y)
+			}
+			for x := clockX - 3; x < clockX; x++ {
+				if buf[y*Width+x] != 0 {
+					t.Fatalf("step %d: the station touches the time at %d,%d", step, x, y)
+				}
 			}
 		}
 	}
@@ -157,7 +165,7 @@ func TestTrackScreenMarqueeTicker(t *testing.T) {
 	if d := s.nextDraw(); d < 10*time.Second {
 		t.Errorf("paused: next draw in %v", d)
 	}
-	if string(buf[trackAreaY*Width:]) != string(start[trackAreaY*Width:]) {
+	if string(buf[plainAreaY()*Width:]) != string(start[plainAreaY()*Width:]) {
 		t.Error("paused: the title is not at its start")
 	}
 	// playing again: the cycle starts over with the start pause

@@ -24,10 +24,10 @@ const (
 	// marqueeHoldEnd is how long its end stands before the jump back.
 	marqueeHoldEnd = 1500 * time.Millisecond
 	// marqueeStep is the time between two scroll frames. Every step moves a
-	// line by one font pixel (1 px at scale 1, 2 px at the large scale 2),
-	// so both sizes run at the same pace of about 2.5 characters a second
-	// and the large text never stands between its own pixels. 15 frames a
-	// second read smooth on the Portable's panel.
+	// line by its face's scroll pixels (1 px in the small face, 2 px in the
+	// large one), so both sizes run at about the same pace of two to three
+	// letters a second. 15 frames a second read smooth on the Portable's
+	// panel.
 	marqueeStep = 66 * time.Millisecond
 )
 
@@ -61,30 +61,29 @@ func marqueeAt(e time.Duration, maxSteps int) (step int, next time.Duration) {
 // marqueeLine is one line of text with the box it is drawn in. A text wider
 // than the box scrolls in it; one that fits is centred in it.
 type marqueeLine struct {
-	s       string
-	sc, lvl int
-	x0, w   int // the box, unshifted
-	y       int // top, unshifted
+	s     string
+	f     *smoothFont
+	lvl   int
+	x0, w int // the box, unshifted
+	y     int // baseline, unshifted
 	// left keeps a fitting text at the box's left edge instead of centring it
 	left bool
 }
 
-// textWidth is the width in pixels of s at font scale sc.
-func textWidth(s string, sc int) int {
-	if s == "" {
-		return 0
-	}
-	return len(s)*6*sc - sc
-}
+// textWidth is the width in pixels of s in face f.
+func textWidth(s string, f *smoothFont) int { return f.width(s) }
 
 // overflow is how many pixels the text is wider than its box (0: it fits).
-func (m marqueeLine) overflow() int { return max(0, textWidth(m.s, m.sc)-m.w) }
+func (m marqueeLine) overflow() int { return max(0, textWidth(m.s, m.f)-m.w) }
 
 // steps is how many marquee steps the line needs to show its end.
 func (m marqueeLine) steps() int {
 	ov := m.overflow()
-	return (ov + m.sc - 1) / m.sc
+	return (ov + m.f.scroll - 1) / m.f.scroll
 }
+
+// shift is how far the text has moved left at marquee step.
+func (m marqueeLine) shift(step int) int { return min(step*m.f.scroll, m.overflow()) }
 
 // draw paints the line at marquee step (ignored when it fits), moved by dx,
 // dy, clipped to its box.
@@ -94,41 +93,12 @@ func (m marqueeLine) draw(c canvas, step, dx, dy int) {
 	}
 	x0 := m.x0 + dx
 	x := x0
-	if ov := m.overflow(); ov > 0 {
-		x -= min(step*m.sc, ov)
+	if m.overflow() > 0 {
+		x -= m.shift(step)
 	} else if !m.left {
-		x += (m.w - textWidth(m.s, m.sc)) / 2
+		x += (m.w - textWidth(m.s, m.f)) / 2
 	}
-	c.textClip(m.s, x, m.y+dy, m.sc, m.lvl, x0, x0+m.w)
-}
-
-// textClip paints s with its left edge at x and its top at y, only the
-// columns from clipX0 up to (not including) clipX1. Characters wholly
-// outside are skipped, so a long scrolling line costs only what shows.
-func (c canvas) textClip(s string, x, y, sc, lvl, clipX0, clipX1 int) {
-	clipX0, clipX1 = max(clipX0, 0), min(clipX1, Width)
-	adv := 6 * sc
-	for _, ch := range s {
-		if x >= clipX1 {
-			return
-		}
-		if x+adv > clipX0 {
-			for gy, row := range font[ch] {
-				for gx, b := range row {
-					if b != '1' {
-						continue
-					}
-					px0 := x + gx*sc
-					for xx := max(px0, clipX0); xx < min(px0+sc, clipX1); xx++ {
-						for yy := y + gy*sc; yy < y+gy*sc+sc; yy++ {
-							c.px(xx, yy, lvl)
-						}
-					}
-				}
-			}
-		}
-		x += adv
-	}
+	m.f.draw(c, Width, m.s, x, m.y+dy, m.lvl, max(x0, 0), min(x0+m.w, Width), 0, Height)
 }
 
 // trackCache keeps what does not move between two marquee frames: the
@@ -200,34 +170,21 @@ func (tc *trackCache) build(t TrackText, now time.Time, dx, dy int) {
 }
 
 // strip draws the whole line once into a buffer of its own, textWidth wide
-// and 7*sc high.
+// and as high as the face reaches above and below the baseline.
 func (m marqueeLine) strip() []byte {
-	w, h := textWidth(m.s, m.sc), 7*m.sc
+	w, h := textWidth(m.s, m.f), m.f.top+m.f.bottom
 	s := make([]byte, w*h)
-	x := 0
-	for _, ch := range m.s {
-		for gy, row := range font[ch] {
-			for gx, b := range row {
-				if b != '1' {
-					continue
-				}
-				for yy := gy * m.sc; yy < (gy+1)*m.sc; yy++ {
-					for xx := x + gx*m.sc; xx < x+(gx+1)*m.sc && xx < w; xx++ {
-						s[yy*w+xx] = byte(m.lvl)
-					}
-				}
-			}
-		}
-		x += 6 * m.sc
-	}
+	m.f.draw(s, w, m.s, 0, m.f.top, m.lvl, 0, w, 0, h)
 	return s
 }
 
-// blit copies the window of the line's strip that shows at marquee step
-// into buf, clipped to the line's box and the panel.
+// blit lays the window of the line's strip that shows at marquee step over
+// buf, clipped to the line's box and the panel. It brightens like drawing
+// does (smoothFont.draw), so a strip whose empty rows reach over a
+// neighbouring line's accents or descenders leaves them standing.
 func (m marqueeLine) blit(buf, strip []byte, step, dx, dy int) {
-	w, h := textWidth(m.s, m.sc), 7*m.sc
-	off := min(step*m.sc, m.overflow())
+	w, h := textWidth(m.s, m.f), m.f.top+m.f.bottom
+	off := m.shift(step)
 	x0 := m.x0 + dx
 	// panel columns lo..hi show strip columns lo-x0+off.., all in range
 	lo, hi := max(x0, 0, x0-off), min(x0+m.w, Width, x0-off+w)
@@ -235,11 +192,15 @@ func (m marqueeLine) blit(buf, strip []byte, step, dx, dy int) {
 		return
 	}
 	s0 := lo - x0 + off
+	top := m.y + dy - m.f.top
 	for r := 0; r < h; r++ {
-		y := m.y + dy + r
+		y := top + r
 		if y < 0 || y >= Height {
 			continue
 		}
-		copy(buf[y*Width+lo:y*Width+hi], strip[r*w+s0:])
+		dst := buf[y*Width+lo : y*Width+hi]
+		for i, v := range strip[r*w+s0 : r*w+s0+hi-lo] {
+			dst[i] = max(dst[i], v)
+		}
 	}
 }
