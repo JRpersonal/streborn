@@ -153,17 +153,13 @@ func (t *titleSwapStore) put(station string, on bool) (changed bool, err error) 
 // Title" form every consumer reads. It cuts at the LAST dash: a song title
 // carries " - " far more often than an artist name does ("Song - Remastered
 // 2011 - Artist"), so the tail is the artist. The readers take " / " as
-// "Title / Artist"; on a flagged station it is the other way round, so
-// "Artist / Title" comes back as "Artist - Title". A title with no separator
-// is returned as it is.
+// "Title / Artist" when the title has no dash; on a flagged station it is the
+// other way round, so "Artist / Title" comes back as "Artist - Title". A dash
+// wins over a slash, as in the readers: a slash is also part of artist names
+// ("More Than You Know - Axwell / Ingrosso"). A title with no separator is
+// returned as it is.
 func swapStreamTitle(s string) string {
 	s = strings.TrimSpace(s)
-	if i := strings.Index(s, " / "); i > 0 {
-		left, right := strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+3:])
-		if left != "" && right != "" {
-			return left + " - " + right
-		}
-	}
 	best, bestLen := -1, 0
 	for _, sep := range []string{" - ", " – ", " — "} {
 		if i := strings.LastIndex(s, sep); i > best {
@@ -174,6 +170,13 @@ func swapStreamTitle(s string) string {
 		left, right := strings.TrimSpace(s[:best]), strings.TrimSpace(s[best+bestLen:])
 		if left != "" && right != "" {
 			return right + " - " + left
+		}
+		return s
+	}
+	if i := strings.Index(s, " / "); i > 0 {
+		left, right := strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+3:])
+		if left != "" && right != "" {
+			return left + " - " + right
 		}
 	}
 	return s

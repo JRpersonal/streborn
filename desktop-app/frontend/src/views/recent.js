@@ -22,6 +22,7 @@ import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
+import { splitStreamTitle } from '../titleswap.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -230,13 +231,12 @@ function recentClock(ts) {
 // stations: " - " is the Shoutcast de-facto standard "Artist - Title", while
 // " / " is "Title / Artist" (e.g. SWR3, verified live: "Don't let me go /
 // Kelvin Jones"). We normalise both to artist-first so the lead line is always
-// the artist. No separator: shown as-is on the lead line.
+// the artist. A dash wins over a slash, since a slash is also part of artist
+// names ("Axwell / Ingrosso - More Than You Know"); see splitStreamTitle. No
+// separator: shown as-is on the lead line.
 function formatTrack(raw) {
-  const m = (raw || '').match(/^(.*?)\s+([/–—-])\s+(.*)$/);
-  if (m && m[1].trim() && m[3].trim()) {
-    const left = m[1].trim(), sep = m[2], right = m[3].trim();
-    const artist = sep === '/' ? right : left;
-    const track = sep === '/' ? left : right;
+  const { artist, track } = splitStreamTitle(raw);
+  if (artist) {
     return `<span class="rc-tr-lead">${escapeHtml(artist)}</span>`
       + `<span class="rc-tr-sub">${escapeHtml(track)}</span>`;
   }
