@@ -23,3 +23,25 @@ func TestUnescapeTXT(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeMDNSText covers the instance-name half of the same fix (field report
+// 2026-10-20): the speaker list showed "K\195\131\194\188che", an escaped name
+// whose bytes were UTF-8 encoded twice. Both layers have to come off, and names
+// that were right all along must come through untouched.
+func TestDecodeMDNSText(t *testing.T) {
+	cases := map[string]string{
+		`K\195\131\194\188che`: "Küche",         // escaped AND double-encoded
+		`K\195\188che`:         "Küche",         // escaped only
+		"KÃ¼che":               "Küche",         // double-encoded only
+		"Küche":                "Küche",         // correct: unchanged
+		"Café":                 "Café",          // é alone is not a UTF-8 sequence
+		`caf\233`:              "caf\xe9",       // lone Latin-1 byte kept for the widening downstream
+		"Wohnzimmer 2":         "Wohnzimmer 2",  // ASCII
+		"Kühlschrank Ω":        "Kühlschrank Ω", // a rune above 0xFF: never folded
+	}
+	for in, want := range cases {
+		if got := decodeMDNSText(in); got != want {
+			t.Errorf("decodeMDNSText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
