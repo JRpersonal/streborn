@@ -174,6 +174,11 @@ header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; pa
 .row { display:grid; gap:8px; }
 .row.c2 { grid-template-columns:1fr 1fr; }
 .row.c3 { grid-template-columns:1fr 1fr 1fr; }
+.row.c6 { grid-template-columns:repeat(6,1fr); gap:6px; }
+.transport .btn { position:relative; min-height:48px; padding:6px 0; font-size:20px; }
+.transport .btn[aria-pressed="true"] { background:color-mix(in srgb, var(--accent) 18%, var(--card2)); }
+.transport .rep1 { position:absolute; top:3px; right:5px; font-size:11px; font-weight:700; color:var(--accent); }
+.vh { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
 /* One switch per line on the display card; a label is inline by default. */
 label.dsopt { display:flex; align-items:center; gap:10px; margin:12px 0 0; }
 label.dsopt[hidden] { display:none; }
@@ -550,17 +555,18 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 
 <div class="card">
 <div class="label" id="lblPlayback">Playback</div>
-<div class="row c2" style="margin-bottom:8px">
-<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Previous" title="Previous"><span aria-hidden="true" style="font-size:19px">&#9198;&#65039;</span><span id="btnPrevLbl">Previous</span></button>
-<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Next" title="Next"><span aria-hidden="true" style="font-size:19px">&#9197;&#65039;</span><span id="btnNextLbl">Next</span></button>
-</div>
-<div class="row c2" style="margin-top:8px;margin-bottom:8px">
-<button class="btn" id="btnShuffle" onclick="toggleShuffle()" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-pressed="false" aria-label="Shuffle" title="Shuffle"><span aria-hidden="true" style="font-size:17px">&#128256;</span><span id="btnShuffleLbl">Shuffle</span></button>
-<button class="btn" id="btnRepeat" onclick="cycleRepeat()" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-pressed="false" aria-label="Repeat" title="Repeat"><span aria-hidden="true" style="font-size:17px">&#128257;</span><span id="btnRepeatLbl">Repeat</span><span id="btnRepeatOne" style="font-weight:700" hidden>1</span></button>
-</div>
-<div class="row c2" style="margin-top:8px">
-<button class="btn" id="btnPause" onclick="togglePlayPause(this)" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true" style="font-size:19px">&#9208;&#65039;</span><span id="btnPauseLbl">Pause</span></button>
-<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" style="gap:12px; justify-content: flex-start; padding-left: 16px;" aria-label="Stop" title="Stop"><span aria-hidden="true" style="font-size:19px">&#9209;&#65039;</span><span id="btnStopLbl">Stop</span></button>
+<!-- One row of icon buttons (#1371): with a text label on each, the six
+     controls took three rows and pushed the preset keys below the fold on a
+     phone. The labels stay in the markup, visually hidden, as the no-JS text
+     and so the translation code keeps its targets; the name a screen reader
+     announces comes from aria-label, which applyStaticI18n localizes. -->
+<div class="row c6 transport">
+<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" aria-label="Previous" title="Previous"><span aria-hidden="true">&#9198;&#65039;</span><span class="vh" id="btnPrevLbl">Previous</span></button>
+<button class="btn" id="btnPause" onclick="togglePlayPause(this)" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true">&#9208;&#65039;</span><span class="vh" id="btnPauseLbl">Pause</span></button>
+<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" aria-label="Next" title="Next"><span aria-hidden="true">&#9197;&#65039;</span><span class="vh" id="btnNextLbl">Next</span></button>
+<button class="btn" id="btnShuffle" onclick="toggleShuffle()" aria-pressed="false" aria-label="Shuffle" title="Shuffle"><span aria-hidden="true">&#128256;</span><span class="vh" id="btnShuffleLbl">Shuffle</span></button>
+<button class="btn" id="btnRepeat" onclick="cycleRepeat()" aria-pressed="false" aria-label="Repeat" title="Repeat"><span aria-hidden="true">&#128257;</span><span class="vh" id="btnRepeatLbl">Repeat</span><span class="rep1" id="btnRepeatOne" aria-hidden="true" hidden>1</span></button>
+<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" aria-label="Stop" title="Stop"><span aria-hidden="true">&#9209;&#65039;</span><span class="vh" id="btnStopLbl">Stop</span></button>
 </div>
 </div>
 
@@ -920,10 +926,11 @@ function applyStaticI18n() {
   var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
   set('lblNow', T.now); set('lblVol', T.vol); set('lblInput', T.input); set('btnFindSrc', T.findSources);
   set('lblPlayback', T.playback);
-  // Pause/Stop pair a media glyph with a localized text label, like Prev/Next
-  // (#382). Only the label span is translated; the glyph stays in its own
-  // aria-hidden span. applyTransportUI swaps the pause glyph to play when paused.
+  // The transport row shows glyphs only (#1371); each button keeps a visually
+  // hidden label span, localized here, and its aria-label + title carry the
+  // name. applyTransportUI swaps the pause glyph to play when paused.
   set('btnPauseLbl', T.pause); set('btnStopLbl', T.stop);
+  var sp = document.getElementById('btnStop'); if (sp) { sp.setAttribute('aria-label', T.stop); sp.title = T.stop; }
   set('lblPresets', T.presets); set('lblPeers', T.swSpk);
   set('lblAlarm', T.alarm); set('lblAlarmAdd', T.alarmAdd); set('lblAlarmBadge', T.strOnly);
   var devBtn = document.getElementById('dev');
@@ -940,9 +947,8 @@ function applyStaticI18n() {
   var vu = document.getElementById('volUp'); if (vu) { vu.setAttribute('aria-label', T.louder); vu.title = T.louder; }
   var bs = document.getElementById('bass'); if (bs) bs.setAttribute('aria-label', T.bass);
   var pb = document.getElementById('powerBtn'); if (pb) { pb.setAttribute('aria-label', T.power); pb.title = T.power; }
-  // Prev/Next pair a media glyph with a visible text label (like the desktop
-  // app). The glyph stays put in its own aria-hidden span; only the sibling
-  // label span is localized, and the aria-label + title mirror it.
+  // Prev/Next: the glyph stays in its own aria-hidden span, the hidden label
+  // span is localized, and the aria-label + title mirror it.
   set('btnPrevLbl', T.prev); set('btnNextLbl', T.next);
   var pv = document.getElementById('btnPrev'); if (pv) { pv.setAttribute('aria-label', T.prev); pv.title = T.prev; }
   var nx = document.getElementById('btnNext'); if (nx) { nx.setAttribute('aria-label', T.next); nx.title = T.next; }
