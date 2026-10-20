@@ -669,7 +669,7 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 			inst := Instance{
 				// The instance name comes out of the same wire-decoder as the
 				// TXT values, in DNS presentation form, so "Küche" arrives as
-				// "K9588che". Left raw it reached the speaker list as
+				// "K\195\188che". Left raw it reached the speaker list as
 				// escapes and, being the longer string, beat the correct name
 				// from /info in pickBoxName (field report 2026-10-20).
 				Name: decodeMDNSText(e.Instance),
