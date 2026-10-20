@@ -530,7 +530,8 @@ func (s *Server) runFleet() {
 			s.logger.Info("self-update fleet: peer skipped", "peer", sp.Name, "ip", sp.IP, "version", sp.Version, "reason", sp.Reason)
 			continue
 		}
-		pctx, pcancel := context.WithTimeout(context.Background(), fleetPeerBudget+fleetEngineBudget+2*time.Minute)
+		// Room for the network retries too (updateFleetPeer).
+		pctx, pcancel := context.WithTimeout(context.Background(), 2*fleetPeerBudget+fleetEngineBudget+time.Duration(fleetNetRetries)*fleetNetPause+2*time.Minute)
 		s.updateFleetPeer(pctx, sp, func(fn func(*fleetSpeaker)) { s.fleet.edit(i, fn) })
 		pcancel()
 	}
@@ -588,86 +589,148 @@ func (s *Server) fleetUpdateSelf(i int) bool {
 
 // updateFleetPeer takes one peer through its update and reports every step
 // through edit. The peer does all the real work itself; this only starts it
-// and watches, bounded by ctx and fleetPeerBudget.
+// and watches, bounded by ctx and fleetPeerBudget. A failure that only means
+// the network was gone (selfupdate_netretry.go) starts the peer over once,
+// twice at most, after a pause; and before any failure is shown, the peer is
+// asked once more what it runs, so a speaker that did get the new version is
+// never reported as failed.
 func (s *Server) updateFleetPeer(ctx context.Context, sp fleetSpeaker, edit func(func(*fleetSpeaker))) {
 	base := fleetPeerBase(sp.IP, sp.Port)
-	fail := func(step, msg string) {
-		edit(func(r *fleetSpeaker) { r.State, r.Phase, r.Pct, r.Reason = fleetFailed, "", 0, msg })
-		s.logger.Info("self-update fleet: peer failed", "peer", sp.Name, "ip", sp.IP, "step", step, "err", msg)
+	for attempt := 0; ; attempt++ {
+		r := s.updateFleetPeerOnce(ctx, sp, base, edit)
+		if r.msg == "" {
+			return
+		}
+		if v, ok := fleetPeerRunsTarget(base, r.target); ok {
+			edit(func(row *fleetSpeaker) {
+				row.State, row.Phase, row.Pct, row.Version, row.Reason = fleetDone, "", 0, v, ""
+			})
+			s.logger.Info("self-update fleet: peer reported a failure but runs the new version", "peer", sp.Name, "ip", sp.IP, "version", v, "err", r.msg)
+			return
+		}
+		if (!r.network && !networkErrorText(r.msg)) || attempt >= fleetNetRetries || ctx.Err() != nil {
+			edit(func(row *fleetSpeaker) { row.State, row.Phase, row.Pct, row.Reason = fleetFailed, "", 0, r.msg })
+			s.logger.Info("self-update fleet: peer failed", "peer", sp.Name, "ip", sp.IP, "step", r.step, "err", r.msg)
+			return
+		}
+		edit(func(row *fleetSpeaker) { row.State, row.Phase, row.Pct, row.Reason = fleetUpdating, "network", 0, "" })
+		s.logger.Info("self-update fleet: peer lost the network, starting it over after a pause", "peer", sp.Name, "ip", sp.IP,
+			"step", r.step, "attempt", attempt+1, "err", r.msg)
+		if !sleepCtx(ctx, fleetNetPause) {
+			edit(func(row *fleetSpeaker) { row.State, row.Phase, row.Pct, row.Reason = fleetFailed, "", 0, r.msg })
+			return
+		}
 	}
-	edit(func(r *fleetSpeaker) { r.State, r.Phase = fleetUpdating, "checking" })
+}
+
+// fleetPeerResult is how one attempt at a peer ended: msg is empty when the
+// row is settled (done or skipped), the error otherwise.
+type fleetPeerResult struct {
+	step, msg, target string
+	// network is set when the peer simply stopped answering.
+	network bool
+}
+
+// fleetPeerRunsTarget asks a peer what it runs now. True with the version
+// when that is target or newer.
+func fleetPeerRunsTarget(base, target string) (string, bool) {
+	if target == "" {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	var now selfUpdateStatus
+	if _, err := fleetGetJSON(ctx, base+"/api/agent/self-update", 6*time.Second, &now); err != nil || now.Current == "" {
+		return "", false
+	}
+	return now.Current, !updatesig.VersionLess(now.Current, target)
+}
+
+// updateFleetPeerOnce is one attempt: check, install, wait.
+func (s *Server) updateFleetPeerOnce(ctx context.Context, sp fleetSpeaker, base string, edit func(func(*fleetSpeaker))) fleetPeerResult {
+	res := func(step, msg string) fleetPeerResult {
+		return fleetPeerResult{step: step, msg: msg, target: sp.Target}
+	}
+	edit(func(r *fleetSpeaker) { r.State, r.Phase, r.Reason = fleetUpdating, "checking", "" })
 	s.logger.Info("self-update fleet: peer check", "peer", sp.Name, "ip", sp.IP, "port", sp.Port, "running", sp.Version)
 
 	// The peer checks the release itself: its own keys, its own source.
 	code, st, raw, err := fleetPostAction(ctx, base, "check", 75*time.Second)
 	switch {
 	case err != nil:
-		fail("check", "no answer: "+err.Error())
-		return
+		r := res("check", "no answer: "+err.Error())
+		r.network = true
+		return r
 	case code == http.StatusNotFound || (code == http.StatusOK && st.State == ""):
 		edit(func(r *fleetSpeaker) { r.State, r.Phase, r.Reason = fleetSkipped, "", fleetSkipOldAgent })
 		s.logger.Info("self-update fleet: peer skipped", "peer", sp.Name, "ip", sp.IP, "reason", fleetSkipOldAgent)
-		return
+		return fleetPeerResult{}
 	case code == http.StatusConflict:
-		fail("check", "the speaker is busy with another update")
-		return
+		return res("check", "the speaker is busy with another update")
 	case code != http.StatusOK:
-		fail("check", fmt.Sprintf("the speaker refused (HTTP %d): %s", code, shortBody(raw)))
-		return
+		return res("check", fmt.Sprintf("the speaker refused (HTTP %d): %s", code, shortBody(raw)))
 	case st.State == "failed":
-		fail("check", st.Error)
-		return
+		return res("check", st.Error)
 	case !st.Available || st.Latest == "":
 		edit(func(r *fleetSpeaker) {
 			r.State, r.Phase, r.Reason, r.Version = fleetSkipped, "", fleetSkipCurrent, st.Current
 		})
 		s.logger.Info("self-update fleet: peer skipped", "peer", sp.Name, "ip", sp.IP, "reason", fleetSkipCurrent, "running", st.Current, "latest", st.Latest)
-		return
+		return fleetPeerResult{}
 	}
 	target := st.Latest
+	res = func(step, msg string) fleetPeerResult { return fleetPeerResult{step: step, msg: msg, target: target} }
 	edit(func(r *fleetSpeaker) { r.Target, r.Phase = target, "downloading" })
 
 	code, st, raw, err = fleetPostAction(ctx, base, "install", 30*time.Second)
 	switch {
 	case err != nil:
-		fail("install", "no answer: "+err.Error())
-		return
+		r := res("install", "no answer: "+err.Error())
+		r.network = true
+		return r
 	case code == http.StatusConflict:
-		fail("install", "the speaker is busy with another update")
-		return
+		return res("install", "the speaker is busy with another update")
 	case code != http.StatusAccepted && code != http.StatusOK:
-		fail("install", fmt.Sprintf("the speaker refused (HTTP %d): %s", code, shortBody(raw)))
-		return
+		return res("install", fmt.Sprintf("the speaker refused (HTTP %d): %s", code, shortBody(raw)))
 	}
 	s.logger.Info("self-update fleet: peer installing", "peer", sp.Name, "ip", sp.IP, "from", sp.Version, "to", target)
 
 	deadline := time.Now().Add(fleetPeerBudget)
 	var backAt time.Time
 	gone := false
+	// last is what the peer said before it stopped answering: only after a
+	// finished download or a "rebooting" is silence a restart. Silence in
+	// the middle of a download is the network, not a restart.
+	last, lastPct := "downloading", 0
 	for {
 		if ctx.Err() != nil {
-			fail("wait", fmt.Sprintf("gave up waiting for %s", target))
-			return
+			r := res("wait", fmt.Sprintf("gave up waiting for %s", target))
+			r.network = gone
+			return r
 		}
 		if backAt.IsZero() && time.Now().After(deadline) {
-			fail("wait", fmt.Sprintf("not back on %s within %d minutes", target, int(fleetPeerBudget/time.Minute)))
-			return
+			r := res("wait", fmt.Sprintf("not back on %s within %d minutes", target, int(fleetPeerBudget/time.Minute)))
+			r.network = gone && last != "rebooting"
+			return r
 		}
-		select {
-		case <-ctx.Done():
+		if !sleepCtx(ctx, fleetPollEvery) {
 			continue
-		case <-time.After(fleetPollEvery):
 		}
 		var now selfUpdateStatus
 		if _, err := fleetGetJSON(ctx, base+"/api/agent/self-update", 6*time.Second, &now); err != nil {
-			// Rebooting: the peer is off the network for a minute or two.
+			phase := "offline"
+			if last == "rebooting" || lastPct >= 99 {
+				phase = "rebooting"
+			}
 			if !gone {
 				gone = true
-				s.logger.Info("self-update fleet: peer restarting", "peer", sp.Name, "ip", sp.IP)
+				s.logger.Info("self-update fleet: peer stopped answering", "peer", sp.Name, "ip", sp.IP, "phase", phase)
 			}
-			edit(func(r *fleetSpeaker) { r.Phase, r.Pct = "rebooting", 0 })
+			edit(func(r *fleetSpeaker) { r.Phase, r.Pct = phase, 0 })
 			continue
 		}
+		gone = false
+		last = now.State
 		onTarget := now.Current != "" && !updatesig.VersionLess(now.Current, target)
 		switch {
 		case now.State == "failed" && onTarget:
@@ -676,10 +739,9 @@ func (s *Server) updateFleetPeer(ctx context.Context, sp fleetSpeaker, edit func
 				r.State, r.Phase, r.Pct, r.Version, r.Reason = fleetDone, "", 0, now.Current, now.Error
 			})
 			s.logger.Info("self-update fleet: peer updated, engine fetch failed", "peer", sp.Name, "ip", sp.IP, "version", now.Current, "err", now.Error)
-			return
+			return fleetPeerResult{}
 		case now.State == "failed":
-			fail("install", now.Error)
-			return
+			return res("install", now.Error)
 		case onTarget && now.State == "engine":
 			if backAt.IsZero() {
 				backAt = time.Now()
@@ -693,12 +755,20 @@ func (s *Server) updateFleetPeer(ctx context.Context, sp fleetSpeaker, edit func
 		case onTarget:
 			edit(func(r *fleetSpeaker) { r.State, r.Phase, r.Pct, r.Version = fleetDone, "", 0, now.Current })
 			s.logger.Info("self-update fleet: peer updated", "peer", sp.Name, "ip", sp.IP, "version", now.Current)
-			return
+			return fleetPeerResult{}
+		case now.Phase == "network":
+			// The peer waits for its own network to come back and tries
+			// again by itself (runSelfUpdate). Give it the time.
+			if until := time.Now().Add(3 * time.Minute); deadline.Before(until) {
+				deadline = until
+			}
+			edit(func(r *fleetSpeaker) { r.Phase, r.Pct = "network", 0 })
 		case now.State == "downloading" || now.State == "installing":
 			pct := 0
 			if now.Total > 0 {
 				pct = int(100 * now.Done / now.Total)
 			}
+			lastPct = pct
 			edit(func(r *fleetSpeaker) { r.Phase, r.Pct = "downloading", pct })
 		case now.State == "rebooting":
 			edit(func(r *fleetSpeaker) { r.Phase, r.Pct = "rebooting", 0 })

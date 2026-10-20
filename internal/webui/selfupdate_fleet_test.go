@@ -24,8 +24,9 @@ type fakePeer struct {
 	mu        sync.Mutex
 	version   string
 	target    string
-	behaviour string // success, timeout, fail, old, current, refuse
+	behaviour string // success, timeout, fail, old, current, refuse, netfail, outage
 	installed bool
+	installs  int
 	finished  bool
 	polls     int
 	inFlight  *int32 // shared across peers: installs running right now
@@ -58,8 +59,29 @@ func (p *fakePeer) handler() http.Handler {
 		if r.Method == http.MethodGet {
 			p.polls++
 			st := selfUpdateStatus{Current: p.version, State: "idle", Engine: "present"}
+			behaviour := p.behaviour
+			if behaviour == "netfail" && p.installs > 1 {
+				behaviour = "success" // the network is back for the second try
+			}
 			if p.installed {
-				switch p.behaviour {
+				switch behaviour {
+				case "netfail":
+					// The DNS of a router that is only just back (#1339).
+					st.State, st.Error = "failed", `download: Get "https://github.com/JRpersonal/streborn/releases/download/v1.0.13/streborn-armv7l": dial tcp: lookup github.com on 10.0.0.1:53: server misbehaving`
+					p.done()
+				case "outage":
+					switch p.polls {
+					case 1:
+						st.State, st.Done, st.Total = "downloading", 30, 100
+					case 2, 3:
+						// The router is off: no answer, in the MIDDLE of a download.
+						http.Error(w, "gone", http.StatusServiceUnavailable)
+						return
+					default:
+						p.version = p.target
+						st.Current = p.target
+						p.done()
+					}
 				case "success":
 					switch p.polls {
 					case 1:
@@ -94,6 +116,8 @@ func (p *fakePeer) handler() http.Handler {
 			writeJSON(w, http.StatusOK, st)
 		case "install":
 			p.installed = true
+			p.installs++
+			p.finished = false
 			p.polls = 0
 			n := atomic.AddInt32(p.inFlight, 1)
 			for {
@@ -127,6 +151,8 @@ type fleetHarness struct {
 	maxSeen  int32
 	order    []string
 	orderMu  sync.Mutex
+	// states is what the last runPeer showed on the row, in order.
+	states []string
 }
 
 // newFleetHarness wires fake peers behind loopback listeners and points the
@@ -154,11 +180,11 @@ func newFleetHarness(t *testing.T, self string, peers map[string]*fakePeer) *fle
 		PeerLink{Name: "Loopback", IP: "127.0.0.1", URL: "http://127.0.0.1:8888/"},
 	)
 	origBase, origClient := fleetPeerBase, fleetClient
-	origPoll, origBudget, origEngine := fleetPollEvery, fleetPeerBudget, fleetEngineBudget
+	origPoll, origBudget, origEngine, origNetPause := fleetPollEvery, fleetPeerBudget, fleetEngineBudget, fleetNetPause
 	origVer := agentVersion
 	t.Cleanup(func() {
 		fleetPeerBase, fleetClient = origBase, origClient
-		fleetPollEvery, fleetPeerBudget, fleetEngineBudget = origPoll, origBudget, origEngine
+		fleetPollEvery, fleetPeerBudget, fleetEngineBudget, fleetNetPause = origPoll, origBudget, origEngine, origNetPause
 		agentVersion = origVer
 	})
 	fleetPeerBase = func(ip string, _ int) string {
@@ -169,6 +195,7 @@ func newFleetHarness(t *testing.T, self string, peers map[string]*fakePeer) *fle
 	}
 	fleetClient = func(timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} }
 	fleetPollEvery, fleetPeerBudget, fleetEngineBudget = 5*time.Millisecond, 2*time.Second, 50*time.Millisecond
+	fleetNetPause = 10 * time.Millisecond
 	SetAgentVersion(self)
 
 	dir := t.TempDir()
@@ -271,6 +298,7 @@ func runPeer(t *testing.T, h *fleetHarness, ip string) fleetSpeaker {
 		}
 	})
 	t.Logf("%s: %s", p.name, strings.Join(states, " -> "))
+	h.states = states
 	return row
 }
 

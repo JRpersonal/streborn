@@ -41,6 +41,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -391,6 +392,15 @@ func (s *Server) selfUpdateCheck(ctx context.Context) (updatesig.Index, error) {
 	s.selfUpd.set("checking", "")
 	base, keys := selfUpdateSourceNow()
 	ix, err := s.fetchSignedIndex(ctx, base, base+"latest/download/", keys)
+	// A network that is only just back (DNS answers late after a router
+	// restart) gets a few more tries before the check counts as failed.
+	for until := time.Now().Add(selfUpdateCheckRetryFor); err != nil && isNetworkError(err) && time.Now().Before(until); {
+		s.logger.Info("self-update: check could not reach the release, trying again", "err", err)
+		if !sleepCtx(ctx, selfUpdateCheckRetryEvery) {
+			break
+		}
+		ix, err = s.fetchSignedIndex(ctx, base, base+"latest/download/", keys)
+	}
 	if err != nil {
 		s.selfUpd.fail(fmt.Errorf("could not check for updates: %w", err))
 		return updatesig.Index{}, err
@@ -539,6 +549,20 @@ func (s *Server) runSelfUpdate() {
 	s.selfUpd.set("downloading", "agent")
 	code, body, err := s.installDownloaded(base+"download/"+ix.Version+"/"+updatesig.AgentFile, agent,
 		"/api/agent/update", s.handleAgentUpdate)
+	// A download the network cut off is tried again once it is back
+	// (selfupdate_netretry.go). The phase tells the phone it is waiting.
+	for attempt := 0; err != nil && isNetworkError(err) && attempt < len(selfUpdateNetRetry); attempt++ {
+		s.logger.Warn("self-update: the download lost the network, waiting to try again",
+			"attempt", attempt+1, "waitSec", int(selfUpdateNetRetry[attempt]/time.Second), "err", err)
+		s.selfUpd.set("downloading", "network")
+		time.Sleep(selfUpdateNetRetry[attempt])
+		s.selfUpd.set("downloading", "agent")
+		code, body, err = s.installDownloaded(base+"download/"+ix.Version+"/"+updatesig.AgentFile, agent,
+			"/api/agent/update", s.handleAgentUpdate)
+	}
+	if err != nil && isNetworkError(err) {
+		err = fmt.Errorf("the speaker could not reach the internet: %w", err)
+	}
 	if err != nil || code != http.StatusOK {
 		_ = os.Remove(selfUpdatePendingPath)
 		if err == nil {
@@ -695,7 +719,8 @@ func (s *Server) installDownloaded(url string, want updatesig.File, path string,
 	if resp.ContentLength >= 0 && resp.ContentLength != want.Size {
 		return 0, "", fmt.Errorf("download %s: %d bytes offered, the release says %d", lastPathPart(url), resp.ContentLength, want.Size)
 	}
-	stall := time.AfterFunc(selfUpdateStallTimeout, cancel)
+	var stalled atomic.Bool
+	stall := time.AfterFunc(selfUpdateStallTimeout, func() { stalled.Store(true); cancel() })
 	defer stall.Stop()
 	body, err := newHeldBackBody(resp.Body, want, func(n int64) {
 		stall.Reset(selfUpdateStallTimeout)
@@ -713,6 +738,10 @@ func (s *Server) installDownloaded(url string, want updatesig.File, path string,
 	rec := &memResponse{header: http.Header{}, code: http.StatusOK}
 	handler(rec, up)
 	if body.err != nil {
+		if stalled.Load() {
+			// Not "context canceled": the network went away mid-download.
+			return rec.code, rec.body.String(), fmt.Errorf("%w (after %d of %d bytes)", errDownloadStalled, body.n, want.Size)
+		}
 		return rec.code, rec.body.String(), body.err
 	}
 	return rec.code, rec.body.String(), nil
