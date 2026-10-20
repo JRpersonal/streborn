@@ -152,10 +152,22 @@ func (s *Server) queuePlaysSlot(slot int) bool {
 		return false
 	}
 	s.queueMu.Lock()
-	fromKey := s.queueFolder.key == fmt.Sprintf("queue:slot:%d", slot)
+	folderKey := s.queueFolder.key
 	s.queueMu.Unlock()
-	return fromKey || (slot > 0 && s.queueSavedSlotHolds() == slot)
+	if folderKey == fmt.Sprintf("queue:slot:%d", slot) {
+		return true
+	}
+	if slot <= 0 {
+		return false
+	}
+	if queueSlotCardRe.MatchString(folderKey) {
+		return s.queueSavedSlotHolds() == slot
+	}
+	return s.queueKeySlot() == slot
 }
+
+// queueSlotCardRe matches the folder card of a queue that a key started.
+var queueSlotCardRe = regexp.MustCompile(`^queue:slot:\d+$`)
 
 // NoteQueueSavedSlot records that the running queue was just saved on slot
 // (#1217). The queue keeps its folder card; the saved slot is extra.
@@ -181,8 +193,17 @@ func (s *Server) queueSavedSlotHolds() int {
 		return 0
 	}
 	items, _, active := s.queue.contents()
-	if !active {
+	if !active || !presetHoldsQueueTracks(cur, items) {
 		return 0
+	}
+	return slot
+}
+
+// presetHoldsQueueTracks reports whether a folder key holds exactly the tracks
+// of a queue, in order (capped the way the key itself is capped).
+func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
+	if cur.Type != "queue" || len(cur.Items) == 0 {
+		return false
 	}
 	n := 0
 	for _, it := range items {
@@ -190,17 +211,44 @@ func (s *Server) queueSavedSlotHolds() int {
 			continue
 		}
 		if n >= len(cur.Items) || cur.Items[n].URL != it.URL {
-			return 0
+			return false
 		}
 		n++
 		if n == presets.MaxQueueItems {
 			break
 		}
 	}
-	if n != len(cur.Items) {
+	return n == len(cur.Items)
+}
+
+// queueKeySlot is the key the running folder belongs to, 0 when none: the key
+// it was saved on while it played, else a key that holds exactly these tracks.
+//
+// The second half is the folder started with "Play folder" that a key ALREADY
+// holds. It played the key's own playlist and the key stayed dark, because the
+// only link from a queue to a key was a save made while it played (#1366). The
+// lowest such key wins when several hold the same folder.
+func (s *Server) queueKeySlot() int {
+	if slot := s.queueSavedSlotHolds(); slot != 0 {
+		return slot
+	}
+	if s.presets == nil || s.queue == nil {
 		return 0
 	}
-	return slot
+	items, _, active := s.queue.contents()
+	if !active {
+		return 0
+	}
+	best := 0
+	for _, p := range s.presets.All() {
+		if p.Slot <= 0 || (best != 0 && p.Slot >= best) {
+			continue
+		}
+		if presetHoldsQueueTracks(p, items) {
+			best = p.Slot
+		}
+	}
+	return best
 }
 
 // Auto-advance tuning. The Bose box emits no native "track finished" event: a
@@ -396,6 +444,9 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	}
 	s.setQueueTiming(it.Duration)
 	s.ensureWatcher()
+	// A folder started from the Library names its server and carries the
+	// address that server answers at now: put that server's keys on it (#1366).
+	s.healQueuePresetsFromLiveQueue(card, items)
 	return nil
 }
 
@@ -1918,7 +1969,13 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 		s.recentMu.Lock()
 		snap.Card = s.recentQueueCard.key
 		s.recentMu.Unlock()
-		snap.Slot = s.queueSavedSlotHolds()
+		// A queue started from a key already names it in its card; matching the
+		// tracks as well would light a second key that holds the same folder.
+		if queueSlotCardRe.MatchString(snap.Card) {
+			snap.Slot = s.queueSavedSlotHolds()
+		} else {
+			snap.Slot = s.queueKeySlot()
+		}
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()
