@@ -23,6 +23,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/spotify"
@@ -94,6 +95,12 @@ type presetWsHandler struct {
 	// physical press of a bound key toggles its group instead of firing the
 	// key's webhook. nil-safe.
 	groupKeys *groupkeys.Store
+	// keyActions holds the built-in actions bound to the thumbs keys (the
+	// sleep timer). A physical press of a bound key runs onSleepKey instead
+	// of firing the key's webhook. nil-safe.
+	keyActions *keyactions.Store
+	// onSleepKey steps the sleep timer (webui.SleepKeyPress). nil-safe.
+	onSleepKey func()
 	// keyTrace follows the speaker's own key trace (internal/boxlog). When it
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.
@@ -954,6 +961,9 @@ func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 	// at all, which reads like the key was never pressed (#863).
 	if h.groupKeys.Bound(groupkeys.KeyThumbsUp) || h.groupKeys.Bound(groupkeys.KeyThumbsDown) {
 		h.logger.Info("a thumbs key carries a saved group, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so no group was formed or dissolved")
+	}
+	if h.keyActions.Bound(keyactions.KeyThumbsUp) || h.keyActions.Bound(keyactions.KeyThumbsDown) {
+		h.logger.Info("a thumbs key carries the sleep timer, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the timer was not stepped")
 	}
 	go func() {
 		src, _, status := h.nowPlayingSummary()

@@ -23,6 +23,11 @@ package oled
 // at once, ends a running notice (identify excepted), and the outcome of that
 // held key replaces it within the same panel hold.
 //
+// The sleep timer's notice is the other one: a newer sleep notice takes over
+// a showing one inside the same panel hold, and one waiting behind a sleep
+// notice does not wait for the gap (sleep.go). Every other kind keeps the
+// rules above.
+//
 // The per-speaker switch is NoticesFlagPath, absent = on. Only the identify
 // notice ignores it: it is the answer to a button the user just pressed.
 
@@ -72,6 +77,7 @@ const (
 	iconIdentify
 	iconKeyHold
 	iconKey
+	iconMoon
 )
 
 // Notice is one message for the panel. Build it with the constructors below.
@@ -92,6 +98,9 @@ type Notice struct {
 
 	prio int
 	icon noticeIcon
+	// swap, set by the queue for a notice a newer one of its kind may take
+	// over in place (sleep.go), is where playNotice picks that one up.
+	swap *noticeSwap
 }
 
 func (n Notice) same(o Notice) bool {
@@ -289,6 +298,12 @@ type noticeQueue struct {
 	showing   bool
 	cur       Notice
 	lastStart time.Time
+	// lastKind is the kind of the notice started last: a sleep notice
+	// following a sleep notice skips the start gap (Notice.supersedes).
+	lastKind NoticeKind
+	// curSwap is the showing notice's in-place hand-over, nil for a notice
+	// nothing takes over from.
+	curSwap   *noticeSwap
 	curQuit   chan struct{}
 	curDone   chan struct{}
 	quitOnce  *sync.Once
@@ -364,6 +379,15 @@ func (q *noticeQueue) post(n Notice) {
 		q.mu.Unlock()
 		return
 	}
+	if q.showing && q.curSwap != nil && n.supersedes(q.cur.Kind) && !q.cur.same(n) && q.curSwap.offer(n) {
+		// A newer sleep step takes over the showing one inside the same
+		// panel hold: no hand-back, no gap (sleep.go).
+		q.cur = n
+		q.mu.Unlock()
+		noticeLogger().Info("display notice shown", "kind", string(n.Kind), "key", n.Key,
+			"line1", n.Line1, "line2", n.Line2, "durationMs", n.Hold.Milliseconds(), "replaced", true)
+		return
+	}
 	switch {
 	case q.pending != nil && q.pending.same(n), q.showing && q.cur.same(n):
 		q.mu.Unlock()
@@ -407,7 +431,7 @@ func (q *noticeQueue) drain() {
 			q.mu.Unlock()
 			return
 		}
-		if wait := q.lastStart.Add(noticeGap).Sub(q.now()); !q.lastStart.IsZero() && wait > 0 {
+		if wait := q.lastStart.Add(noticeGap).Sub(q.now()); !q.lastStart.IsZero() && wait > 0 && !q.pending.supersedes(q.lastKind) {
 			q.mu.Unlock()
 			q.sleepGap(wait)
 			continue // the newest pending notice wins after the gap
@@ -484,19 +508,34 @@ func (q *noticeQueue) run(n Notice) {
 	}
 	quit := make(chan struct{})
 	done := make(chan struct{})
+	var swap *noticeSwap
+	if n.Kind == NoticeSleep {
+		swap = &noticeSwap{}
+	}
+	n.swap = swap
 	q.mu.Lock()
-	q.showing, q.cur = true, n
+	q.showing, q.cur, q.curSwap = true, n, swap
 	q.curQuit, q.curDone, q.quitOnce, q.requeue = quit, done, &sync.Once{}, false
-	q.lastStart = q.now()
+	q.lastStart, q.lastKind = q.now(), n.Kind
 	q.mu.Unlock()
 	noticeLogger().Info("display notice shown", "kind", string(n.Kind), "key", n.Key,
 		"line1", n.Line1, "line2", n.Line2, "durationMs", n.Hold.Milliseconds())
 	err := q.show(n, quit)
 	q.release()
+	var left *Notice
+	if swap != nil {
+		// a takeover that arrived as the hold ended shows the normal way
+		left = swap.close()
+	}
 	q.mu.Lock()
-	q.showing = false
+	q.showing, q.curSwap = false, nil
+	if left != nil && q.pending == nil {
+		left.swap = nil
+		q.pending = left
+	}
 	again := q.requeue && q.pending == nil
 	if again {
+		n.swap = nil
 		q.pending = &n
 		q.lastStart = time.Time{}
 	}
@@ -556,13 +595,28 @@ func acquirePanel(requeue bool) bool {
 }
 
 // playNotice draws n on the panel until its hold time is up or quit closes.
+// A notice of a kind that a newer one may take over (n.swap) switches to
+// that one in place, without a new fade-in, and holds for its full time.
 func playNotice(n Notice, quit <-chan struct{}) error {
 	r := newNoticeRenderer(n)
 	hold := n.Hold.Seconds()
+	maxDur := n.Hold + time.Second
+	if n.swap != nil {
+		maxDur = sleepNoticeMax
+	}
+	base := 0.0
 	return play(func(t float64, buf []byte) bool {
-		r.frame(t, buf)
-		return t < hold
-	}, nil, n.Hold+time.Second, quit)
+		if n.swap != nil {
+			if nn, ok := n.swap.take(); ok {
+				r = newNoticeRenderer(nn)
+				hold = nn.Hold.Seconds()
+				// start past the fade: the panel is already lit
+				base = t - noticeFadeIn
+			}
+		}
+		r.frame(t-base, buf)
+		return t-base < hold
+	}, nil, maxDur, quit)
 }
 
 // ---- drawing ----
@@ -638,6 +692,8 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 		c.busyDots(int(t * 3))
 	case iconKeyEmpty:
 		c.presetKey(n.Key, true)
+	case iconMoon:
+		c.bigMoon()
 	case iconKey:
 		c.presetKey(n.Key, false)
 		for i, l := range []string{n.Line1, n.Line2, n.Line3} {

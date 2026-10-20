@@ -12,6 +12,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
@@ -199,6 +200,12 @@ func WithWebhooks(w *webhooks.Store) Option {
 // (#863), served at /api/groupkeys.
 func WithGroupKeys(g *groupkeys.Store) Option {
 	return func(s *Server) { s.groupKeys = g }
+}
+
+// WithKeyActions wires the built-in actions bound to the remote's thumbs
+// keys (the sleep timer), served at /api/keyactions.
+func WithKeyActions(k *keyactions.Store) Option {
+	return func(s *Server) { s.keyActions = k }
 }
 
 // WithAlarms wires the alarm clock: the document an editor saves, served at

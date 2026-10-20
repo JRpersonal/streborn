@@ -130,6 +130,8 @@ export {
   SaveWebhookConfig,
   GetGroupKeys,
   SaveGroupKeys,
+  GetKeyActions,
+  SaveKeyActions,
   TestWebhook,
   TestWebhookAction,
   StreamBitrate,

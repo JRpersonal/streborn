@@ -18,6 +18,12 @@ package webui
 // failure it protects against is "the speaker does not fall asleep", which is
 // the harmless direction. A speaker that reboots at 3am and then stays on until
 // morning is a far smaller problem than one extra flash write per bedtime.
+//
+// A remote key can step the timer too (sleepkey.go): 15, 30, 60 minutes, off.
+// While a timer runs, the deadline is handed to STR's own screen on the
+// speaker's panel once (internal/oled SetSleepDeadline), which counts down
+// without asking the speaker anything; a group timer hands it to every
+// member's agent the same way (POST /api/display/sleep).
 
 import (
 	"context"
@@ -27,6 +33,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/oled"
 )
 
 // sleepMaxMinutes bounds the timer. Longer than any bedtime and short enough
@@ -53,6 +60,17 @@ type sleepState struct {
 	timer    *time.Timer
 	deadline time.Time
 	group    bool
+	// armed is the duration the running timer was armed with (from the
+	// phone, an alarm or the key): the key steps on from it (sleepkey.go).
+	armed time.Duration
+	// lastKey is when the key last stepped the timer, for the debounce.
+	lastKey time.Time
+	// peers: a group countdown went out to the members and was not cleared
+	// since, so a cancel has to tell them.
+	peers bool
+	// pushMu serialises the rounds that hand the countdown to the members,
+	// so a quick 15 -> 30 -> 60 cannot arrive at a member out of order.
+	pushMu sync.Mutex
 	// gen invalidates a timer that fired after being cancelled or replaced: the
 	// callback captures the generation it was armed with and does nothing when
 	// the state has moved on. Cheaper and less racy than trying to prove
@@ -115,26 +133,43 @@ func (s *Server) sleepStatus() map[string]any {
 	if remaining < 0 {
 		remaining = 0
 	}
-	return map[string]any{"active": true, "remainingSec": remaining, "group": s.sleep.group}
+	return map[string]any{"active": true, "remainingSec": remaining, "group": s.sleep.group, "minutes": int(s.sleep.armed / time.Minute)}
 }
 
 // armSleep replaces any running timer. Setting a new one while one is armed is
 // the common case (the user changes their mind), not an error.
-func (s *Server) armSleep(d time.Duration, group bool) {
+func (s *Server) armSleep(d time.Duration, group bool) { s.armSleepNotify(d, group, false) }
+
+// armSleepNotify is armSleep; notice asks the group members to show the step
+// as a notice too (a key press), not only the countdown.
+func (s *Server) armSleepNotify(d time.Duration, group, notice bool) {
 	s.sleep.mu.Lock()
 	if s.sleep.timer != nil {
 		s.sleep.timer.Stop()
 	}
 	s.sleep.gen++
 	gen := s.sleep.gen
-	s.sleep.deadline = time.Now().Add(d)
+	deadline := time.Now().Add(d)
+	s.sleep.deadline = deadline
 	s.sleep.group = group
+	s.sleep.armed = d
 	s.sleep.timer = time.AfterFunc(d, func() { s.fireSleep(gen) })
+	push := group || s.sleep.peers
+	if group {
+		s.sleep.peers = true
+	}
 	s.sleep.mu.Unlock()
 	s.logger.Info("sleep timer armed", "minutes", int(d.Minutes()), "group", group)
+	oled.SetSleepDeadline(deadline)
+	if push {
+		goSleepPush(func() { s.pushSleepToGroup(notice) })
+	}
 }
 
-func (s *Server) cancelSleep(why string) {
+func (s *Server) cancelSleep(why string) { s.cancelSleepNotify(why, false) }
+
+// cancelSleepNotify is cancelSleep; notice as for armSleepNotify.
+func (s *Server) cancelSleepNotify(why string, notice bool) {
 	s.sleep.mu.Lock()
 	had := s.sleep.timer != nil
 	if had {
@@ -143,9 +178,16 @@ func (s *Server) cancelSleep(why string) {
 	}
 	s.sleep.gen++
 	s.sleep.deadline = time.Time{}
+	s.sleep.armed = 0
+	push := s.sleep.peers
+	s.sleep.peers = false
 	s.sleep.mu.Unlock()
 	if had {
 		s.logger.Info("sleep timer cancelled", "why", why)
+	}
+	oled.SetSleepDeadline(time.Time{})
+	if push {
+		goSleepPush(func() { s.pushSleepToGroup(notice) })
 	}
 }
 
@@ -157,11 +199,15 @@ func (s *Server) fireSleep(gen uint64) {
 	if !stale {
 		s.sleep.timer = nil
 		s.sleep.deadline = time.Time{}
+		s.sleep.armed = 0
+		// the members' own countdowns run out at the same moment
+		s.sleep.peers = false
 	}
 	s.sleep.mu.Unlock()
 	if stale {
 		return // cancelled or replaced while the timer was running out
 	}
+	oled.SetSleepDeadline(time.Time{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

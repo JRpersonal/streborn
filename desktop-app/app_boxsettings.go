@@ -203,6 +203,37 @@ func (a *App) SaveGroupKeys(host string, port int, doc map[string]any) error {
 	return a.boxPut(host, port, "/api/groupkeys", doc)
 }
 
+// --- Key actions: the sleep timer on a thumbs key of one remote ------------
+//
+// Like the group keys, the document lives on the speaker whose remote is
+// pressed. A thumbs key carries a group OR the sleep timer; the agent refuses
+// the second with 409 and the reason, which is surfaced verbatim.
+
+// GetKeyActions reads the speaker's key-action document (GET /api/keyactions)
+// -> {keys: {thumbsUp: "sleep"}}.
+func (a *App) GetKeyActions(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/keyactions", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SaveKeyActions replaces the speaker's whole key-action document (PUT
+// /api/keyactions).
+func (a *App) SaveKeyActions(host string, port int, doc map[string]any) error {
+	a.logger.Info("key actions: saving", "host", host, "keys", anyMap(doc["keys"]))
+	return a.boxPut(host, port, "/api/keyactions", doc)
+}
+
 // anySlice and anyMap read a JSON-shaped value defensively for logging.
 func anySlice(v any) []any {
 	s, _ := v.([]any)

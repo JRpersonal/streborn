@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/JRpersonal/streborn/internal/groupkeys"
@@ -35,6 +36,14 @@ func (s *Server) handleGroupKeys(w http.ResponseWriter, r *http.Request) {
 		if err := d.Validate(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		// A thumbs key carries a group OR a key action (the sleep timer),
+		// never both; the key-actions PUT checks the other direction.
+		for key := range d.Bindings {
+			if s.keyActions.Bound(key) {
+				http.Error(w, fmt.Sprintf("key %q already carries the sleep timer; a key carries either a group or the sleep timer, switch the sleep timer off on that key first", key), http.StatusConflict)
+				return
+			}
 		}
 		if err := s.groupKeys.Set(d); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxlog"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 )
 
@@ -157,5 +158,58 @@ func TestBoundKeySkipsWebhook(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	if got := hits.Load(); got != 1 {
 		t.Fatalf("webhook target hit %d times, want exactly 1 (the unbound key)", got)
+	}
+}
+
+// TestSleepKeySkipsWebhook: a thumbs key that carries the sleep timer steps it
+// on every physical press and does NOT fire the key's webhook; the other
+// thumbs key keeps its webhook, and a press sent by an app does nothing.
+func TestSleepKeySkipsWebhook(t *testing.T) {
+	var hits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	wh, err := webhooks.Load(filepath.Join(t.TempDir(), "webhooks.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wh.Set(webhooks.Config{Buttons: map[string]webhooks.Trigger{
+		webhooks.KeyThumbsUp:   {Action: webhooks.Action{Enabled: true, URL: target.URL + "/up"}},
+		webhooks.KeyThumbsDown: {Action: webhooks.Action{Enabled: true, URL: target.URL + "/down"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	ka, err := keyactions.Load(filepath.Join(t.TempDir(), "key-actions.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ka.Set(keyactions.Document{Keys: map[string]string{keyactions.KeyThumbsUp: keyactions.ActionSleep}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var steps atomic.Int32
+	h := &presetWsHandler{logger: slog.Default(), webhooks: wh, keyActions: ka, onSleepKey: func() { steps.Add(1) }}
+	press := func(name string, prod boxlog.Producer) {
+		h.OnKeyEvent(boxlog.KeyEvent{Key: boxlog.KeyNumber(name), Name: name, Producer: prod,
+			State: boxlog.StatePressed, Origin: boxlog.OriginTrace, At: time.Now()})
+	}
+	press("THUMBS_UP", boxlog.ProducerIRRemote)
+	press("THUMBS_UP", boxlog.ProducerIRRemote)
+	if got := steps.Load(); got != 2 {
+		t.Fatalf("sleep key stepped %d times for two presses", got)
+	}
+	press("THUMBS_UP", boxlog.ProducerGabbo)
+	if got := steps.Load(); got != 2 {
+		t.Fatal("an app-sent key stepped the sleep timer")
+	}
+	press("THUMBS_DOWN", boxlog.ProducerIRRemote)
+	deadline := time.Now().Add(3 * time.Second)
+	for hits.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("webhook target hit %d times, want exactly 1 (the other key)", got)
 	}
 }

@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "A continuación, instala STR también en el otro altavoz de «{{name}}» ({{partner}}). El par se conserva en cuanto ambos altavoces tengan STR.",
   "setup.pairKept": "El par estéreo «{{name}}» está intacto en ambos altavoces.",
   "setup.pairRestored": "El par estéreo «{{name}}» se volvió a configurar en ambos altavoces.",
-  "setup.pairRestoreFailed": "No se pudo volver a configurar el par estéreo «{{name}}». Puedes emparejar los dos altavoces tú mismo en la pestaña Multi-Room."
+  "setup.pairRestoreFailed": "No se pudo volver a configurar el par estéreo «{{name}}». Puedes emparejar los dos altavoces tú mismo en la pestaña Multi-Room.",
+  "settingsView.sleepKeyLabel": "Temporizador de apagado en esta tecla (cada pulsación: 15, 30, 60 min, apagado)",
+  "settingsView.sleepKeyHelp": "Cada pulsación avanza el temporizador de apagado del altavoz: 15, 30 o 60 minutos y luego apagado. Los altavoces con pantalla muestran cada paso y, mientras funciona, una luna con los minutos restantes. En un grupo, el temporizador apaga todo el grupo.",
+  "settingsView.sleepKeyGroupConflict": "Esta tecla forma el grupo \"{{name}}\". Una tecla lleva un grupo o el temporizador de apagado: quita primero el grupo de esta tecla en la pestaña Multisala.",
+  "settingsView.sleepKeyOnToast": "El temporizador de apagado está ahora en esta tecla.",
+  "settingsView.sleepKeyOffToast": "El temporizador de apagado ya no está en esta tecla.",
+  "settingsView.webhookSleepKeyNote": "Esta tecla lleva el temporizador de apagado. Gana el temporizador: una pulsación lo avanza y el webhook no se dispara.",
+  "settingsView.webhookRemoteLegendSleep": "temporizador de apagado",
+  "settingsView.sleepKeyNeedsUpdate": "Actualiza este altavoz para poner el temporizador de apagado en una tecla.",
+  "multiroom.groupKeysKeySleep": "(temporizador de apagado)",
+  "multiroom.groupKeysSleepHint": "Una tecla de pulgar con el temporizador de apagado no puede formar también un grupo. Cámbialo en el mapa de teclas del mando en Ajustes."
 }

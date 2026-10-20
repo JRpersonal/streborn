@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Installeer STR daarna ook op de andere speaker van \"{{name}}\" ({{partner}}). Het paar blijft behouden zodra beide speakers STR hebben.",
   "setup.pairKept": "Het stereopaar \"{{name}}\" is op beide speakers intact.",
   "setup.pairRestored": "Het stereopaar \"{{name}}\" is op beide speakers opnieuw ingesteld.",
-  "setup.pairRestoreFailed": "Het stereopaar \"{{name}}\" kon niet opnieuw worden ingesteld. Je kunt de twee speakers zelf koppelen in het tabblad Multi-Room."
+  "setup.pairRestoreFailed": "Het stereopaar \"{{name}}\" kon niet opnieuw worden ingesteld. Je kunt de twee speakers zelf koppelen in het tabblad Multi-Room.",
+  "settingsView.sleepKeyLabel": "Slaaptimer op deze toets (per druk: 15, 30, 60 min, uit)",
+  "settingsView.sleepKeyHelp": "Elke druk zet de slaaptimer van de speaker een stap verder: 15, 30 of 60 minuten, dan uit. Speakers met een display tonen elke stap en, zolang hij loopt, een maan met de resterende minuten. In een groep zet de timer de hele groep uit.",
+  "settingsView.sleepKeyGroupConflict": "Deze toets vormt de groep \"{{name}}\". Een toets draagt een groep of de slaaptimer: haal de groep eerst van deze toets op het tabblad Multiroom.",
+  "settingsView.sleepKeyOnToast": "De slaaptimer staat nu op deze toets.",
+  "settingsView.sleepKeyOffToast": "De slaaptimer staat niet meer op deze toets.",
+  "settingsView.webhookSleepKeyNote": "Deze toets draagt de slaaptimer. De slaaptimer wint: een druk zet hem verder en de webhook wordt niet afgevuurd.",
+  "settingsView.webhookRemoteLegendSleep": "slaaptimer",
+  "settingsView.sleepKeyNeedsUpdate": "Werk deze speaker bij om de slaaptimer op een toets te zetten.",
+  "multiroom.groupKeysKeySleep": "(slaaptimer)",
+  "multiroom.groupKeysSleepHint": "Een duimtoets met de slaaptimer kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen."
 }

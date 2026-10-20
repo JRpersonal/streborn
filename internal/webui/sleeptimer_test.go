@@ -54,6 +54,13 @@ type fakeBox struct {
 	source   string
 	standbys []string
 	fail     map[string]bool
+	// pushes records what the group countdown sent to whom.
+	pushes []sentPush
+}
+
+type sentPush struct {
+	ip  string
+	msg sleepPeerMsg
 }
 
 func (f *fakeBox) install(t *testing.T) {
@@ -73,7 +80,21 @@ func (f *fakeBox) install(t *testing.T) {
 		f.standbys = append(f.standbys, host)
 		return nil
 	}
-	t.Cleanup(func() { sleepReadSource, sleepStandby = prevRead, prevOff })
+	// The countdown push to the group members runs in line and is recorded:
+	// otherwise it would dial the test addresses from a goroutine that
+	// outlives the test.
+	prevPush, prevGo := sleepPushPeer, goSleepPush
+	sleepPushPeer = func(_ context.Context, ip string, msg sleepPeerMsg) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.pushes = append(f.pushes, sentPush{ip, msg})
+		return nil
+	}
+	goSleepPush = func(fn func()) { fn() }
+	t.Cleanup(func() {
+		sleepReadSource, sleepStandby = prevRead, prevOff
+		sleepPushPeer, goSleepPush = prevPush, prevGo
+	})
 }
 
 func (f *fakeBox) offList() []string {

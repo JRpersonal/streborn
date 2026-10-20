@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Sonra STR'yi \"{{name}}\" çiftinin diğer hoparlörüne de kur ({{partner}}). İki hoparlörde de STR olunca çift korunur.",
   "setup.pairKept": "\"{{name}}\" stereo çifti iki hoparlörde de sağlam.",
   "setup.pairRestored": "\"{{name}}\" stereo çifti iki hoparlörde yeniden kuruldu.",
-  "setup.pairRestoreFailed": "\"{{name}}\" stereo çifti yeniden kurulamadı. İki hoparlörü Multi-Room sekmesinde kendin eşleştirebilirsin."
+  "setup.pairRestoreFailed": "\"{{name}}\" stereo çifti yeniden kurulamadı. İki hoparlörü Multi-Room sekmesinde kendin eşleştirebilirsin.",
+  "settingsView.sleepKeyLabel": "Bu tuşta uyku zamanlayıcısı (her basış: 15, 30, 60 dk, kapalı)",
+  "settingsView.sleepKeyHelp": "Her basış hoparlörün uyku zamanlayıcısını bir adım ilerletir: 15, 30 veya 60 dakika, sonra kapalı. Ekranı olan hoparlörler her adımı ve zamanlayıcı çalışırken kalan dakikalarla bir ay simgesi gösterir. Bir grupta zamanlayıcı tüm grubu kapatır.",
+  "settingsView.sleepKeyGroupConflict": "Bu tuş \"{{name}}\" grubunu oluşturur. Bir tuş ya bir grup ya da uyku zamanlayıcısı taşır: önce Multiroom sekmesinde grubu bu tuştan kaldırın.",
+  "settingsView.sleepKeyOnToast": "Uyku zamanlayıcısı artık bu tuşta.",
+  "settingsView.sleepKeyOffToast": "Uyku zamanlayıcısı bu tuştan kaldırıldı.",
+  "settingsView.webhookSleepKeyNote": "Bu tuş uyku zamanlayıcısını taşıyor. Zamanlayıcı kazanır: bir basış onu ilerletir, webhook tetiklenmez.",
+  "settingsView.webhookRemoteLegendSleep": "uyku zamanlayıcısı",
+  "settingsView.sleepKeyNeedsUpdate": "Uyku zamanlayıcısını bir tuşa koymak için bu hoparlörü güncelleyin.",
+  "multiroom.groupKeysKeySleep": "(uyku zamanlayıcısı)",
+  "multiroom.groupKeysSleepHint": "Uyku zamanlayıcısı taşıyan bir başparmak tuşu ayrıca grup oluşturamaz. Bunu Ayarlar'daki kumanda tuş haritasında değiştirin."
 }

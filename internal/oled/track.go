@@ -50,6 +50,11 @@ import (
 type TrackText struct {
 	Station, Artist, Title string
 	Clock, Hour12          bool
+
+	// sleepMin is the sleep timer's countdown in whole minutes (0: none).
+	// Not the caller's to set: the screen's draw fills it from the deadline
+	// (SetSleepDeadline), so the layout and the cache key both carry it.
+	sleepMin int
 }
 
 func (t TrackText) empty() bool { return !t.Clock && t.Artist == "" && t.Title == "" }
@@ -106,6 +111,9 @@ type trackScreen struct {
 	// flat and the screen stands still. Unknown counts as playing, because
 	// the screen only shows while one of STR's streams is on.
 	paused bool
+	// sleepUntil is when the sleep timer switches the speaker off (zero:
+	// none); the top line counts down to it (sleep.go).
+	sleepUntil time.Time
 	// cost counters for the display_cost debug section
 	draws     int64
 	drawNanos int64
@@ -475,6 +483,7 @@ func (s *trackScreen) draw(buf []byte) {
 		s.marqueeFrom = now
 	}
 	since := now.Sub(s.marqueeFrom)
+	t.sleepMin = sleepMinutes(s.sleepUntil, now)
 	s.mu.Unlock()
 	switch {
 	case back:
@@ -537,6 +546,10 @@ func (s *trackScreen) nextDraw() time.Duration {
 	moving := s.want != nil && !s.paused
 	marquee := s.marqueeNext
 	now := s.now()
+	toSleep := time.Duration(0)
+	if s.want != nil {
+		toSleep = toSleepStep(s.sleepUntil, now)
+	}
 	s.mu.Unlock()
 	var d time.Duration
 	if s.shiftEvery > 0 {
@@ -562,6 +575,10 @@ func (s *trackScreen) nextDraw() time.Duration {
 		if d <= 0 || toMinute < d {
 			d = toMinute
 		}
+	}
+	if toSleep > 0 && (d <= 0 || toSleep < d) {
+		// the sleep countdown's next minute, also with the clock off
+		d = toSleep
 	}
 	return d
 }
@@ -777,6 +794,9 @@ type trackFrame struct {
 	lines      []marqueeLine
 	barsBottom int
 	ruleY      int // -1: no rule
+	// moon: the sleep countdown's moon at moonX, moonY (top left, unshifted)
+	moon         bool
+	moonX, moonY int
 }
 
 // steps is how many marquee steps the longest scrolling line needs; 0 when
@@ -878,8 +898,16 @@ func (f *trackFrame) clockHeader(t TrackText, now time.Time) int {
 		f.lines = append(f.lines, marqueeLine{s: ampm, f: smoothSmall, lvl: lvlTrackStation, x0: ax, w: textWidth(ampm, smoothSmall), y: baseline, left: true})
 	}
 	f.barsBottom = baseline
-	if t.Station != "" {
-		f.lines = append(f.lines, marqueeLine{s: t.Station, f: smoothSmall, lvl: lvlTrackStation, x0: stationBoxX, w: x - 4 - stationBoxX, y: baseline, left: true})
+	// The sleep countdown sits between the station and the time; the
+	// station's box ends before it (a long name scrolls in what is left).
+	stationEnd := x - 4
+	if t.sleepMin > 0 {
+		sx := x - sleepClockGap - sleepWidth(t.sleepMin)
+		f.sleepIndicator(t.sleepMin, sx, baseline)
+		stationEnd = sx - 4
+	}
+	if t.Station != "" && stationEnd > stationBoxX {
+		f.lines = append(f.lines, marqueeLine{s: t.Station, f: smoothSmall, lvl: lvlTrackStation, x0: stationBoxX, w: stationEnd - stationBoxX, y: baseline, left: true})
 	}
 	f.ruleY = baseline + trackRuleGap
 	return f.ruleY + trackAreaGap
@@ -891,8 +919,16 @@ func (f *trackFrame) clockHeader(t TrackText, now time.Time) int {
 func (f *trackFrame) plainHeader(t TrackText) int {
 	baseline := trackTopY + smoothSmall.capH
 	f.barsBottom = baseline
+	// The sleep countdown flush right; the station's box shrinks by the same
+	// on both sides, so a centred station stays centred on the panel.
+	margin := stationBoxX
+	if t.sleepMin > 0 {
+		sx := Width - 1 - sleepWidth(t.sleepMin)
+		f.sleepIndicator(t.sleepMin, sx, baseline)
+		margin = max(margin, Width-sx+5)
+	}
 	if t.Station != "" {
-		f.lines = append(f.lines, marqueeLine{s: t.Station, f: smoothSmall, lvl: lvlTrackStation, x0: stationBoxX, w: Width - 2*stationBoxX, y: baseline})
+		f.lines = append(f.lines, marqueeLine{s: t.Station, f: smoothSmall, lvl: lvlTrackStation, x0: margin, w: Width - 2*margin, y: baseline})
 		f.ruleY = baseline + trackRuleGap
 	}
 	return plainAreaY()
@@ -927,11 +963,20 @@ func (f trackFrame) render(a trackAnim, step, dx, dy int, buf []byte) {
 		return
 	}
 	c.bars(1+dx, f.barsBottom+dy, a)
+	f.drawStanding(c, dx, dy)
+	for _, l := range f.lines {
+		l.draw(c, step, dx, dy)
+	}
+}
+
+// drawStanding paints the parts of the screen that are not text: the rule
+// and the sleep countdown's moon.
+func (f trackFrame) drawStanding(c canvas, dx, dy int) {
 	if f.ruleY >= 0 {
 		c.fill(24+dx, f.ruleY+dy, Width-48, 1, lvlTrackRule)
 	}
-	for _, l := range f.lines {
-		l.draw(c, step, dx, dy)
+	if f.moon {
+		c.moonIcon(f.moonX+dx, f.moonY+dy, lvlTrackMoon)
 	}
 }
 

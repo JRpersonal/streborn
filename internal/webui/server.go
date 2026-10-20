@@ -20,6 +20,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/groupkeys"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/oled"
@@ -155,6 +156,10 @@ type Server struct {
 	// groupKeys holds the saved groups bound to the remote's thumbs keys
 	// (#863). nil when not wired; the endpoint then reports unavailable.
 	groupKeys *groupkeys.Store
+	// keyActions holds the built-in actions bound to the thumbs keys (the
+	// sleep timer). nil when not wired; the endpoint then reports
+	// unavailable. See keyactions_http.go.
+	keyActions *keyactions.Store
 	// alarms holds the alarm clock document, and alarmState what has already
 	// been fired. nil when not wired; the endpoint then reports unavailable and
 	// no scheduler runs. See alarms.go.
@@ -1504,6 +1509,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/groupkeys", s.handleGroupKeys)
+	mux.HandleFunc("/api/keyactions", s.handleKeyActions)
+	mux.HandleFunc("/api/display/sleep", s.handleDisplaySleep)
 	mux.HandleFunc("/api/alarms", s.handleAlarms)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)

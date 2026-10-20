@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "Toliau įdiek STR ir kitame „{{name}}“ garsiakalbyje ({{partner}}). Pora išliks, kai abu garsiakalbiai turės STR.",
   "setup.pairKept": "Stereo pora „{{name}}“ išliko abiejuose garsiakalbiuose.",
   "setup.pairRestored": "Stereo pora „{{name}}“ vėl sukurta abiejuose garsiakalbiuose.",
-  "setup.pairRestoreFailed": "Stereo poros „{{name}}“ vėl sukurti nepavyko. Abu garsiakalbius gali susieti pats skirtuke Multi-Room."
+  "setup.pairRestoreFailed": "Stereo poros „{{name}}“ vėl sukurti nepavyko. Abu garsiakalbius gali susieti pats skirtuke Multi-Room.",
+  "settingsView.sleepKeyLabel": "Miego laikmatis šiame mygtuke (kiekvienas paspaudimas: 15, 30, 60 min., išjungta)",
+  "settingsView.sleepKeyHelp": "Kiekvienas paspaudimas perjungia garsiakalbio miego laikmatį: 15, 30 arba 60 minučių, tada išjungta. Garsiakalbiai su ekranu rodo kiekvieną žingsnį, o kol laikmatis veikia, mėnulį su likusiomis minutėmis. Grupėje laikmatis išjungia visą grupę.",
+  "settingsView.sleepKeyGroupConflict": "Šis mygtukas sudaro grupę \"{{name}}\". Mygtukas turi arba grupę, arba miego laikmatį: pirmiausia pašalinkite grupę nuo šio mygtuko skirtuke Multiroom.",
+  "settingsView.sleepKeyOnToast": "Miego laikmatis dabar šiame mygtuke.",
+  "settingsView.sleepKeyOffToast": "Miego laikmatis pašalintas nuo šio mygtuko.",
+  "settingsView.webhookSleepKeyNote": "Šiame mygtuke yra miego laikmatis. Laimi laikmatis: paspaudimas jį perjungia, o webhook nesuveikia.",
+  "settingsView.webhookRemoteLegendSleep": "miego laikmatis",
+  "settingsView.sleepKeyNeedsUpdate": "Atnaujinkite šį garsiakalbį, kad galėtumėte priskirti miego laikmatį mygtukui.",
+  "multiroom.groupKeysKeySleep": "(miego laikmatis)",
+  "multiroom.groupKeysSleepHint": "Nykščio mygtukas su miego laikmačiu negali kartu sudaryti grupės. Pakeiskite tai pulto mygtukų žemėlapyje nustatymuose."
 }

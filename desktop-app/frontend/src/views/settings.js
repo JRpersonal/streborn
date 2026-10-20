@@ -48,6 +48,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
+import { normalizeKeyActions, sleepOn, withSleep, sleepBlockedBy, SLEEP_KEY_IDS } from '../keyactions.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
@@ -108,6 +109,8 @@ import {
   SetBoxSSHPersistent,
   GetWebhooks,
   GetGroupKeys,
+  GetKeyActions,
+  SaveKeyActions,
   SaveWebhookConfig,
   TestWebhook,
   TestWebhookAction,
@@ -1181,7 +1184,14 @@ function remoteSvg() {
   // Hidden until the speaker's group keys are read; paintRemote shows it.
   const gmark = (id, x, y) =>
     `<text class="rc-gmark" data-gmark="${id}" x="${x}" y="${y}" style="display:none">G</text>`;
-  const marks = gmark('thumbsDown', 84, 372) + gmark('thumbsUp', 172, 372);
+  // A crescent moon in the same corner for a thumbs key that carries the
+  // sleep timer (a key carries a group or the timer, never both, so the two
+  // marks never show together). Drawn as a path, not a glyph, so it looks the
+  // same whatever fonts the system has.
+  const smark = (id, cx, cy) =>
+    `<path class="rc-smark" data-smark="${id}" style="display:none" d="M${cx + 2} ${cy - 4.58}A5 5 0 1 0 ${cx + 2} ${cy + 4.58}A5.5 5.5 0 0 1 ${cx + 2} ${cy - 4.58}Z"/>`;
+  const marks = gmark('thumbsDown', 84, 372) + gmark('thumbsUp', 172, 372)
+    + smark('thumbsDown', 85, 369) + smark('thumbsUp', 173, 369);
   return `<svg class="rc-svg" viewBox="0 0 200 428" role="img" aria-label="remote">`
     + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
 }
@@ -1582,7 +1592,7 @@ function renderBoxSettings(s, box) {
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
-          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}</small>
+          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}</small>
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteNoVol'))}</small>
         </div>
       </div>
@@ -1608,6 +1618,10 @@ function renderBoxSettings(s, box) {
           <option value="replace">${escapeHtml(t('settingsView.webhookModeReplace'))}</option>
         </select>
       </div>
+      <div class="setting-row hidden" id="sleepKeyRow">
+        <label class="sleep-key-label"><input type="checkbox" id="sleepKeyToggle" /> <span>${escapeHtml(t('settingsView.sleepKeyLabel'))}</span></label>
+      </div>
+      <small class="muted small hidden" id="sleepKeyNote"></small>
       <small class="muted small" id="webhookModeNote"></small>
       <div class="setting-row">
         <select id="webhookType" style="flex:0 0 200px;">
@@ -3186,6 +3200,13 @@ function renderBoxSettings(s, box) {
     // -> template name. A bound key is drawn with the "G" marker and its mode
     // note says the group wins over the webhook.
     let gkBindings = {};
+    // The speaker's key actions: which thumbs key carries the sleep timer.
+    // kaSupported is false for an agent that predates /api/keyactions.
+    let kaDoc = { keys: {} };
+    let kaSupported = true;
+    const sleepRow = $('sleepKeyRow');
+    const sleepToggle = $('sleepKeyToggle');
+    const sleepNote = $('sleepKeyNote');
     let prevTarget = whTarget.value || 'thumbsUp';
     const presetIds = new Set(['preset1', 'preset2', 'preset3', 'preset4', 'preset5', 'preset6']);
     // Keys the speaker's own key trace identifies (agent internal/boxlog):
@@ -3233,9 +3254,42 @@ function renderBoxSettings(s, box) {
           : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote')));
       whModeNote.textContent = gkBindings[tg]
         ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote
-        : modeNote;
+        : (sleepOn(kaDoc, tg) ? t('settingsView.webhookSleepKeyNote') + ' ' + modeNote : modeNote);
+      syncSleepRow(tg);
       syncType();
       paintRemote(tg);
+    };
+    // The sleep-timer switch shows for the thumbs keys only. A key that forms
+    // a group cannot take it: the switch is disabled and says which group to
+    // take off the key first.
+    const syncSleepRow = (tg) => {
+      if (!sleepRow || !sleepToggle || !sleepNote) return;
+      const thumbs = SLEEP_KEY_IDS.includes(tg);
+      sleepRow.classList.toggle('hidden', !thumbs);
+      sleepNote.classList.toggle('hidden', !thumbs);
+      if (!thumbs) return;
+      const group = sleepBlockedBy(gkBindings, tg);
+      sleepToggle.checked = sleepOn(kaDoc, tg);
+      sleepToggle.disabled = !kaSupported || (!!group && !sleepToggle.checked);
+      sleepNote.textContent = !kaSupported
+        ? t('settingsView.sleepKeyNeedsUpdate')
+        : (group ? t('settingsView.sleepKeyGroupConflict', { name: group }) : t('settingsView.sleepKeyHelp'));
+    };
+    if (sleepToggle) sleepToggle.onchange = async () => {
+      const tg = whTarget.value;
+      const on = sleepToggle.checked;
+      if (on && sleepBlockedBy(gkBindings, tg)) { syncSleepRow(tg); return; }
+      const next = withSleep(kaDoc, tg, on);
+      sleepToggle.disabled = true;
+      try {
+        await SaveKeyActions(box.host, box.port, next);
+        kaDoc = normalizeKeyActions(next);
+        showToast(t(on ? 'settingsView.sleepKeyOnToast' : 'settingsView.sleepKeyOffToast'));
+      } catch (e) {
+        showError(e);
+      }
+      // repaint from what the speaker holds now (a refusal leaves it as it was)
+      loadInto(tg);
     };
     // paintRemote marks every key that carries an enabled, configured trigger
     // and the key currently being edited. The legacy shared thumbs action
@@ -3251,9 +3305,14 @@ function renderBoxSettings(s, box) {
         el.classList.toggle('rc-on', on);
         el.classList.toggle('rc-sel', k === selected || (selected === 'thumb' && (k === 'thumbsUp' || k === 'thumbsDown')));
         el.classList.toggle('rc-group', !!gkBindings[k]);
+        el.classList.toggle('rc-sleep', !gkBindings[k] && sleepOn(kaDoc, k));
       });
       document.querySelectorAll('.rc-gmark[data-gmark]').forEach((m) => {
         m.style.display = gkBindings[m.getAttribute('data-gmark')] ? '' : 'none';
+      });
+      document.querySelectorAll('.rc-smark[data-smark]').forEach((m) => {
+        const k = m.getAttribute('data-smark');
+        m.style.display = !gkBindings[k] && sleepOn(kaDoc, k) ? '' : 'none';
       });
     };
     document.querySelectorAll('.rc-keyg[data-key]').forEach((g) => {
@@ -3294,10 +3353,14 @@ function renderBoxSettings(s, box) {
     (async () => {
       // Both reads in parallel: the group keys only decorate the map, so an
       // older agent without /api/groupkeys (404) simply shows no marker.
-      const [w, g] = await Promise.allSettled([GetWebhooks(box.host, box.port), GetGroupKeys(box.host, box.port)]);
+      const [w, g, ka] = await Promise.allSettled([GetWebhooks(box.host, box.port), GetGroupKeys(box.host, box.port), GetKeyActions(box.host, box.port)]);
       const wv = w.status === 'fulfilled' ? w.value : null;
       cfg = { thumb: (wv && wv.thumb) || {}, buttons: (wv && wv.buttons) || {} };
       gkBindings = normalizeDoc(g.status === 'fulfilled' ? g.value : null).bindings;
+      // An agent that predates the sleep-timer key answers its index page or
+      // a 404: the switch then asks for an update instead of failing on save.
+      kaSupported = ka.status === 'fulfilled';
+      kaDoc = normalizeKeyActions(kaSupported ? ka.value : null);
       loadInto(prevTarget);
       // Arrived from the Multi-Room tab's "show on the key map" link: open the
       // section and bring the remote into view, once, now that it is painted.

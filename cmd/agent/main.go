@@ -32,6 +32,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/groupkeys"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/internet"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/mdnshost"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
@@ -367,6 +368,14 @@ func run() error {
 		PeerDeviceIDs: peerDeviceIDsAt,
 	}))
 	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
+
+	// Key actions: the sleep timer on a thumbs key. Read once here, written
+	// only when the app saves; a press steps the RAM-only timer.
+	keyActionsStore, kaErr := keyactions.Load("/mnt/nv/streborn/key-actions.json", logger.With("comp", "keyactions"))
+	if kaErr != nil {
+		logger.Warn("key actions load failed, continuing with none", "err", kaErr)
+	}
+	webui.RegisterDebugSection("key_actions", keyActionsStore.Snapshot)
 
 	// Alarm clock: a preset, but timed. The document is read once here and
 	// written only when an editor saves it; the scheduler keeps what it has
@@ -985,6 +994,7 @@ func run() error {
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithGroupKeys(groupKeysStore),
+		webui.WithKeyActions(keyActionsStore),
 		webui.WithAlarms(alarmStore, alarmState),
 		webui.WithZones(zonesStore),
 		webui.WithMediaServers(mediaServerStore),
@@ -1166,6 +1176,10 @@ func run() error {
 		// A thumbs key that carries a saved group forms/dissolves it (#863)
 		// and wins over a webhook on the same key.
 		groupKeys: groupKeysStore,
+		// A thumbs key that carries the sleep timer steps it 15/30/60/off;
+		// it wins over a webhook on the same key, like a group.
+		keyActions: keyActionsStore,
+		onSleepKey: webuiSrv.SleepKeyPress,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.

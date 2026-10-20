@@ -1752,5 +1752,15 @@
   "setup.pairInstallPartnerNext": "接下來也請在「{{name}}」的另一台喇叭（{{partner}}）上安裝 STR。兩台都有 STR 後，配對就會保留。",
   "setup.pairKept": "立體聲配對「{{name}}」在兩台喇叭上都完整保留。",
   "setup.pairRestored": "立體聲配對「{{name}}」已在兩台喇叭上重新設定。",
-  "setup.pairRestoreFailed": "無法重新設定立體聲配對「{{name}}」。你可以在 Multi-Room 分頁自行配對這兩台喇叭。"
+  "setup.pairRestoreFailed": "無法重新設定立體聲配對「{{name}}」。你可以在 Multi-Room 分頁自行配對這兩台喇叭。",
+  "settingsView.sleepKeyLabel": "此按鍵設為睡眠定時器（每按一下：15、30、60 分鐘、關閉）",
+  "settingsView.sleepKeyHelp": "每按一下會切換喇叭的睡眠定時器：15、30 或 60 分鐘，然後關閉。有螢幕的喇叭會顯示每個步驟，計時期間顯示月亮與剩餘分鐘數。在群組中，定時器會關閉整個群組。",
+  "settingsView.sleepKeyGroupConflict": "這個按鍵會組成群組「{{name}}」。一個按鍵只能綁定群組或睡眠定時器其中之一：請先在多房間分頁將群組從此按鍵移除。",
+  "settingsView.sleepKeyOnToast": "睡眠定時器已設定在此按鍵。",
+  "settingsView.sleepKeyOffToast": "已從此按鍵移除睡眠定時器。",
+  "settingsView.webhookSleepKeyNote": "此按鍵設為睡眠定時器。定時器優先：按一下會切換定時器，Webhook 不會觸發。",
+  "settingsView.webhookRemoteLegendSleep": "睡眠定時器",
+  "settingsView.sleepKeyNeedsUpdate": "請更新這台喇叭，才能將睡眠定時器設定到按鍵上。",
+  "multiroom.groupKeysKeySleep": "（睡眠定時器）",
+  "multiroom.groupKeysSleepHint": "設為睡眠定時器的讚按鍵無法同時組成群組。請在設定的遙控器按鍵圖中更改。"
 }

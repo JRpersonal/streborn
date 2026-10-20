@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 )
@@ -66,9 +67,11 @@ const groupKeyToggleBudget = 75 * time.Second
 // existing paths (the box's own selection/source/power frames), so nothing
 // fires twice; volume and the rest are logged only.
 //
-// A thumbs key that carries a saved group (#863) toggles that group instead:
-// a key carries one action, and the group binding wins over a webhook on the
-// same key.
+// A thumbs key that carries a saved group (#863) toggles that group instead,
+// and one that carries the sleep timer steps it: a key carries one action,
+// and either binding wins over a webhook on the same key. Group and sleep
+// timer exclude each other at save time; should a hand-edited file carry
+// both, the group wins, as it was there first.
 func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 	h.logKeyEvent(ev)
 	// A preset key may be the start of a hold on STR's own stream; the hold
@@ -99,6 +102,13 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 			h.logger.Info("group key pressed", "key", ev.Name, "producer", ev.Producer.String())
 			h.groupKeys.Toggle(ctx, id)
 		}()
+		return
+	}
+	if h.keyActions.Action(id) == keyactions.ActionSleep && h.onSleepKey != nil {
+		// Synchronous: stepping the timer is a few field writes and a timer
+		// reset, and keeping it on the reader's goroutine keeps quick presses
+		// in order. The group push runs on its own goroutine.
+		h.onSleepKey()
 		return
 	}
 	if h.webhooks == nil {
