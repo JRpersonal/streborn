@@ -20,10 +20,12 @@
 }
 /* Light theme: the greyscale tokens flip to a light palette and the coral
    accent is darkened so it keeps contrast on white. color-scheme:light also
-   makes the native volume slider track render light. */
+   makes the native volume slider track render light. Muted text and the
+   accent stay above 5:1 on every light surface (WCAG AA is 4.5:1);
+   the first values were readable but pale on a phone (#1339). */
 html.a11y-light {
   color-scheme:light;
-  --bg:#f4f4f5; --card:#ffffff; --card2:#ececef; --line:#d4d4d8; --fg:#1a1a1a; --muted:#5a5e66; --accent:#bd3c2c;
+  --bg:#f4f4f5; --card:#ffffff; --card2:#ececef; --line:#d4d4d8; --fg:#1a1a1a; --muted:#44474d; --accent:#a8321f;
   --hover:#e6e6ea; --press:#dadade; --nowgrad1:#ffffff; --nowgrad2:#f0f0f3;
 }
 /* High-contrast theme: black base, pure-white text and borders, a bright
