@@ -131,6 +131,11 @@ type Server struct {
 	// not wired; the endpoints then still drive the box but nothing is restored
 	// after a restart.
 	mediaServers *mediaservers.Store
+	// queueHostAnswers and queueHealResolve are the two network steps of the
+	// folder-key heal (queuepresetheal.go), swapped out in tests. nil = the real
+	// TCP probe and the real media-server resolve.
+	queueHostAnswers func(ctx context.Context, rawURL string) bool
+	queueHealResolve func(ctx context.Context, serverID string) (location string, ok bool)
 	// mediaLoc remembers, per media server UDN, the device-description URL the
 	// last successful discovery resolved. A phone library search whose single
 	// M-SEARCH round goes unanswered then re-probes that address directly
