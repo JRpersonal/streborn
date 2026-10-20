@@ -17,6 +17,8 @@
 // current generation and describes the wanted context. Until then the line
 // shows the heading alone.
 
+import { spotifyURIFromContainer } from './utils.js';
+
 // How long a click's expectations hold. Past this the app goes back to trusting
 // the speaker's reply as it comes, so an engine that never reports a context
 // (it can stay empty, see the preset save in main.js) still gets its song shown.
@@ -120,6 +122,24 @@ export function spotifySlotForContext(presets, snapshot) {
     if (best === null || p.slot < best) best = p.slot;
   }
   return best;
+}
+
+// nativeSpotifySlot names the Spotify key that holds what the speaker's OWN
+// Spotify client plays (the "<speaker> (L+R)" entry in the Spotify app, not
+// STR's "(STR)" one). That session never goes through STR's engine, so neither
+// the per-slot URL nor the engine context can light a key, and a key saved from
+// it by a hold stayed dark although it holds exactly what plays (#1077 issue
+// 18). The speaker reports the playing context itself, as
+// /playback/container/<base64 spotify:...>, and that URI is what the save
+// stored on the key, so it is matched on that URI and nothing else. Another
+// playlist, another source or STR's own stream (whose location carries no
+// context) names no key.
+export function nativeSpotifySlot(presets, nowLocation) {
+  const loc = nowLocation || '';
+  if (/\/spotify\/stream/.test(loc)) return null;
+  const uri = spotifyURIFromContainer(loc);
+  if (!uri) return null;
+  return spotifySlotForContext(presets, { context: uri });
 }
 
 // spotifySongText is the "Artist - Track" part of the line, or '' when the

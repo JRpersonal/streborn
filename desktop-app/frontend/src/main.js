@@ -17,7 +17,7 @@ import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativ
 import { pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText } from './usservices.js';
 import {
   acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
-  spotifySlotForContext,
+  spotifySlotForContext, nativeSpotifySlot,
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText } from './nointernet.js';
@@ -6772,6 +6772,10 @@ function renderPresets() {
   if (spotifyPlaying && state.nowSpotifySlot == null) {
     state.nowSpotifySlot = spotifySlotForContext(state.presets, state.spotifyNow);
   }
+  // The speaker's own Spotify client (the "(L+R)" entry in the Spotify app)
+  // plays a context it names in its location; the key holding that context
+  // lights up, e.g. right after a hold saved it (#1077 issue 18).
+  const nativeSpotifyKey = spotifyPlaying ? null : nativeSpotifySlot(state.presets, state.nowLocation);
   // If the speaker is playing through the stream proxy, resolve the
   // real stream URL of the source slot. That lets us mark sibling
   // slots with the same station as active too. Otherwise only the
@@ -6820,6 +6824,7 @@ function renderPresets() {
       // which survives a next/prev that drops the slot from the now-playing
       // location. Never match on the preset name (see nowSpotifySlot note above).
       (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot) ||
+      (p.type === 'spotify' && nativeSpotifyKey != null && p.slot === nativeSpotifyKey) ||
       // Pandora / iHeartRadio: the speaker reports the service's own station
       // reference, which is exactly what the key stores.
       nativeServiceActive(p, state.nowLocation)
