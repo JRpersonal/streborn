@@ -9,6 +9,7 @@ import { dirname, join } from 'path';
 import {
   RECALL_EXPECT_MS, acceptSpotifyReply, beginRecall, normalizeSpotifyContext,
   recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
+  nativeSpotifySlot,
 } from './spotifynowplaying.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -125,5 +126,47 @@ describe('spotifySlotStillHolds', () => {
 
   it('is what renderPresets asks before keeping the remembered slot', () => {
     expect(main).toContain('!spotifySlotStillHolds(held.uri, state.spotifyNow)');
+  });
+});
+
+describe('a key holding what the speaker\'s own Spotify client plays (#1077 issue 18)', () => {
+  // The form the speaker reports for its native Spotify entry (the "(L+R)"
+  // speaker in the Spotify app): standard base64 of the context URI, exactly
+  // as in the reporter's bundle, where the hold had stored the same URI on key 1.
+  const container = (uri) => `/playback/container/${btoa(uri)}`;
+  const presets = [
+    { slot: 1, type: 'spotify', name: 'Top 100 Worship', uri: 'spotify:playlist:SAVED1' },
+    { slot: 2, type: 'stationurl', name: 'Jazz', stream_url: 'http://192.0.2.1/jazz' },
+    { slot: 4, type: 'spotify', name: 'Spotify', uri: 'spotify:album:OTHER' },
+  ];
+
+  it('lights the key that holds the playing context right after the save', () => {
+    expect(nativeSpotifySlot(presets, container('spotify:playlist:SAVED1'))).toBe(1);
+  });
+
+  it('decodes the URL-safe form STR itself writes as well', () => {
+    const loc = '/playback/container/' + btoa('spotify:album:OTHER').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    expect(nativeSpotifySlot(presets, loc)).toBe(4);
+  });
+
+  it('turns off as soon as another playlist plays', () => {
+    expect(nativeSpotifySlot(presets, container('spotify:playlist:SOMETHINGELSE'))).toBe(null);
+  });
+
+  it('names no key for other sources, an empty location or STR\'s own stream', () => {
+    expect(nativeSpotifySlot(presets, '')).toBe(null);
+    expect(nativeSpotifySlot(presets, 'http://192.0.2.1/jazz')).toBe(null);
+    expect(nativeSpotifySlot(presets, 'http://192.0.2.1:8888/spotify/stream.ogg')).toBe(null);
+    expect(nativeSpotifySlot(presets, '/playback/container/not-base64!')).toBe(null);
+  });
+
+  it('never matches on the name, only on the stored URI', () => {
+    const named = [{ slot: 3, type: 'spotify', name: 'Top 100 Worship', uri: '' }];
+    expect(nativeSpotifySlot(named, container('spotify:playlist:SAVED1'))).toBe(null);
+  });
+
+  it('is wired into the preset tile highlight', () => {
+    expect(main).toMatch(/const nativeSpotifyKey = spotifyPlaying \? null : nativeSpotifySlot\(state\.presets, state\.nowLocation\);/);
+    expect(main).toMatch(/p\.type === 'spotify' && nativeSpotifyKey != null && p\.slot === nativeSpotifyKey/);
   });
 });
