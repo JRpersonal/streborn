@@ -38,6 +38,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // TrackText is what the track screen shows. Station is the small top line;
@@ -53,13 +54,13 @@ type TrackText struct {
 
 func (t TrackText) empty() bool { return !t.Clock && t.Artist == "" && t.Title == "" }
 
-// sanitized returns t made drawable (SanitizeText rules, no cut yet: the
-// layout wraps and cuts).
+// sanitized returns t made drawable in the track screen's font
+// (sanitizeSmooth; no cut yet: the layout wraps and cuts).
 func (t TrackText) sanitized() TrackText {
 	return TrackText{
-		Station: SanitizeText(t.Station, trackTextMax),
-		Artist:  SanitizeText(t.Artist, trackTextMax),
-		Title:   SanitizeText(t.Title, trackTextMax),
+		Station: sanitizeSmooth(t.Station, trackTextMax),
+		Artist:  sanitizeSmooth(t.Artist, trackTextMax),
+		Title:   sanitizeSmooth(t.Title, trackTextMax),
 		Clock:   t.Clock,
 		Hour12:  t.Hour12,
 	}
@@ -67,7 +68,7 @@ func (t TrackText) sanitized() TrackText {
 
 const (
 	// trackTextMax bounds what is kept of one field before wrapping; far more
-	// than the panel can show, so the cut with "..." is the layout's.
+	// than the panel can show, so any cut is the layout's.
 	trackTextMax = 160
 	// trackRetry is how often a track screen that wants the panel tries to
 	// take it while something else holds it.
@@ -581,48 +582,56 @@ func trackShift(n int) (dx, dy int) {
 
 // ---- layout ----
 
-// Track screen layout: grey levels and character widths per font scale.
+// Track screen layout. Two text sizes and no more: the station and the artist
+// in the small face, the title and the time in the large one, so the eye
+// does not jump between three or four sizes (discussion #1305). The levels
+// rank the lines: the title brightest, the artist below it, the station
+// dimmest, as it changes least. Vertical positions are baselines.
 const (
-	lvlTrackStation  = 10
-	lvlTrackRule     = 3
-	lvlTrackArtist   = 9
-	lvlTrackTitle    = 15
-	lvlTrackClock    = 12
-	headerClockScale = 2  // the time in the top line: 12 px a character
-	bigClockScale    = 4  // "15:42" is 116 px wide at 24 px a character
-	smallCols        = 21 // 6 px a character at scale 1
-	bigCols          = 10 // 12 px a character at scale 2
-	smallLineH       = 10
-	bigLineH         = 18
-	trackTopY        = 5
-	trackRuleY       = 16
-	trackAreaY       = 20 // the text block is centred between here and the bottom
-	trackGap         = 6  // between the artist and the title block
+	lvlTrackStation = 9
+	lvlTrackRule    = 3
+	lvlTrackArtist  = 11
+	lvlTrackTitle   = 15
+	lvlTrackClock   = 12
+	// smallLineH and bigLineH are baseline to baseline within a wrapped
+	// field: the descender, then room for the accents of the next line.
+	smallLineH = 13
+	bigLineH   = 19
+	trackTopY  = 5 // top of the station's capitals without the time
+	clockTopY  = 4 // top of the time's digits in the top line
+	// trackRuleGap is how far below the top line's baseline the rule runs,
+	// clear of its descenders; trackAreaGap where the text block may start
+	// below the rule.
+	trackRuleGap = 4
+	trackAreaGap = 4
+	trackGap     = 5 // between the artist's descenders and the title
+	ampmGap      = 2 // between "3:42" and "PM" in the top line
 )
 
 // trackLines is the text of the track screen broken into panel lines.
 type trackLines struct {
 	station string
-	artist  []string // scale 1: up to two lines, or one that scrolls
-	title   []string // scale 2: up to two lines, or one that scrolls
+	artist  []string // small face: up to two lines, or one that scrolls
+	title   []string // large face: up to two lines, or one that scrolls
 }
 
 // layoutTrack breaks t (already sanitised) into lines. Nothing is drawn
 // smaller than its normal size and nothing is cut: the station is one line,
-// the artist is wrapped onto two lines at scale 1 when it fits there, the
-// title onto two lines at scale 2 when it fits there without splitting a
-// word; otherwise the field is one line that scrolls (marquee.go). Two
-// standing lines read at a glance and cost nothing, so wrapping wins where
-// it works; a third line would crowd the panel and a split word reads worse
-// than a moving one.
+// the artist is wrapped onto two small lines when it fits there, the title
+// onto two large lines when it fits there without splitting a word;
+// otherwise the field is one line that scrolls (marquee.go). Two standing
+// lines read at a glance and cost nothing, so wrapping wins where it works;
+// a third line would crowd the panel and a split word reads worse than a
+// moving one. Widths are pixels: the font is proportional, so "Männer" and
+// "MMMMMM" are not the same length.
 func layoutTrack(t TrackText) trackLines {
 	l := trackLines{station: t.Station}
-	if w, cut := wrapText(t.Artist, smallCols, 2); !cut {
+	if w, cut := wrapWidth(t.Artist, smoothSmall, blockBoxW, 2); !cut {
 		l.artist = w
 	} else {
 		l.artist = []string{t.Artist}
 	}
-	if w, cut := wrapText(t.Title, bigCols, 2); !cut && !hasLongWord(t.Title, bigCols) {
+	if w, cut := wrapWidth(t.Title, smoothLarge, blockBoxW, 2); !cut && !hasWideWord(t.Title, smoothLarge, blockBoxW) {
 		l.title = w
 	} else if t.Title != "" {
 		l.title = []string{t.Title}
@@ -630,21 +639,87 @@ func layoutTrack(t TrackText) trackLines {
 	return l
 }
 
-// hasLongWord reports whether a word of s is longer than cols: split across
-// two big lines it reads worse than scrolling on one.
-func hasLongWord(s string, cols int) bool {
-	for _, w := range strings.Fields(s) {
-		if len(w) > cols {
+// hasWideWord reports whether a word of s is wider than w pixels in face f:
+// split across two large lines it reads worse than scrolling on one.
+func hasWideWord(s string, f *smoothFont, w int) bool {
+	for _, word := range strings.Fields(s) {
+		if f.width(word) > w {
 			return true
 		}
 	}
 	return false
 }
 
+// wrapWidth breaks s into at most maxLines lines no wider than w pixels in
+// face f, at spaces, splitting a word only when it alone is wider than a
+// line. When s does not fit, the last line ends in an ellipsis and cut is
+// true.
+func wrapWidth(s string, f *smoothFont, w, maxLines int) (lines []string, cut bool) {
+	if s == "" || maxLines <= 0 {
+		return nil, false
+	}
+	cur := ""
+	words := strings.Fields(s)
+	for i := 0; i < len(words); i++ {
+		word := words[i]
+		switch {
+		case cur == "" && f.width(word) <= w:
+			cur = word
+		case cur != "" && f.width(cur+" "+word) <= w:
+			cur += " " + word
+		case cur == "":
+			// a word wider than a line: split it at the last rune that fits
+			// (always at least one, so a narrow box cannot loop)
+			n := fitRunes(word, f, w)
+			cur = word[:n]
+			words[i] = word[n:]
+			i--
+		default:
+			lines = append(lines, cur)
+			cur = ""
+			i--
+		}
+		if len(lines) == maxLines {
+			// a word is still waiting: it does not fit any more
+			cut = true
+			break
+		}
+	}
+	if !cut && cur != "" {
+		lines = append(lines, cur)
+	}
+	if cut {
+		const ell = "…"
+		last := lines[len(lines)-1]
+		for last != "" && f.width(last+ell) > w {
+			_, size := utf8.DecodeLastRuneInString(last)
+			last = last[:len(last)-size]
+		}
+		lines[len(lines)-1] = strings.TrimRight(last, " ") + ell
+	}
+	return lines, cut
+}
+
+// fitRunes is how many bytes of s fit into w pixels in face f, at least the
+// first rune.
+func fitRunes(s string, f *smoothFont, w int) int {
+	n, used := 0, 0
+	for i, r := range s {
+		g, _ := f.glyph(r)
+		if i > 0 && used+int(g.adv) > w {
+			return n
+		}
+		used += int(g.adv)
+		n = i + utf8.RuneLen(r)
+	}
+	return n
+}
+
 // wrapText breaks s into at most maxLines lines of cols characters at spaces,
 // splitting a word only when it alone is longer than a line. When s does not
-// fit, the last line ends in "..." and cut is true. s is sanitised, so one
-// byte is one character.
+// fit, the last line ends in "..." and cut is true. s is sanitised for the
+// dot-matrix font (SanitizeText), so one byte is one character. The notices
+// wrap with it; the track screen wraps by pixel width (wrapWidth).
 func wrapText(s string, cols, maxLines int) (lines []string, cut bool) {
 	if s == "" || maxLines <= 0 {
 		return nil, false
@@ -734,85 +809,112 @@ func trackLayout(t TrackText, now time.Time) trackFrame {
 		}
 		return f
 	}
-	areaY := trackAreaY
+	var areaY int
 	if t.Clock {
-		// The time at double size on the right of the top line, the station
-		// small on its left. At the normal size the time was too small to
-		// read from across a room (Jens, 2026-10-13).
+		// The time in the large face on the right of the top line, the
+		// station small on its left. At the small size the time was too
+		// small to read from across a room (Jens, 2026-10-13).
 		areaY = f.clockHeader(t, now)
 	} else {
-		f.plainHeader(t)
+		areaY = f.plainHeader(t)
 	}
 	l := layoutTrack(t)
-	h := len(l.artist)*smallLineH + len(l.title)*bigLineH
-	if len(l.artist) > 0 && len(l.title) > 0 {
-		h += trackGap
+	// The block runs from the top of the first line's capitals to the
+	// bottom of the last line's descenders, and is centred in the room left.
+	type ln struct {
+		s   string
+		f   *smoothFont
+		lvl int
 	}
-	y := areaY + (Height-areaY-h)/2
+	var block []ln
 	for _, s := range l.artist {
-		f.lines = append(f.lines, marqueeLine{s: s, sc: 1, lvl: lvlTrackArtist, x0: blockBoxX, w: blockBoxW, y: y})
-		y += smallLineH
-	}
-	if len(l.artist) > 0 && len(l.title) > 0 {
-		y += trackGap
+		block = append(block, ln{s, smoothSmall, lvlTrackArtist})
 	}
 	for _, s := range l.title {
-		f.lines = append(f.lines, marqueeLine{s: s, sc: 2, lvl: lvlTrackTitle, x0: blockBoxX, w: blockBoxW, y: y})
-		y += bigLineH
+		block = append(block, ln{s, smoothLarge, lvlTrackTitle})
+	}
+	if len(block) == 0 {
+		return f
+	}
+	// baselines relative to the first line's capital top
+	base := make([]int, len(block))
+	for i, b := range block {
+		switch {
+		case i == 0:
+			base[i] = b.f.capH
+		case b.f == block[i-1].f && b.f == smoothSmall:
+			base[i] = base[i-1] + smallLineH
+		case b.f == block[i-1].f:
+			base[i] = base[i-1] + bigLineH
+		default:
+			// from the artist to the title
+			base[i] = base[i-1] + block[i-1].f.bottom + trackGap + b.f.capH
+		}
+	}
+	last := block[len(block)-1]
+	h := base[len(base)-1] + last.f.bottom
+	y := areaY + (Height-areaY-h)/2
+	for i, b := range block {
+		f.lines = append(f.lines, marqueeLine{s: b.s, f: b.f, lvl: b.lvl, x0: blockBoxX, w: blockBoxW, y: y + base[i]})
 	}
 	return f
 }
 
-// clockHeader lays out the top line with the time: the time at double size
-// flush right ("PM" small after it on a 12-hour clock), the station small on
-// the left in the room left, and the rule under both. Returns where the text
-// block below may start.
+// clockHeader lays out the top line with the time: the time in the large
+// face flush right ("PM" small after it on a 12-hour clock), the station
+// small on the left in the room left, all on one baseline, and the rule
+// under them. Returns where the text block below may start.
 func (f *trackFrame) clockHeader(t TrackText, now time.Time) int {
 	hm, ampm := clockText(now, t.Hour12)
-	const sc = headerClockScale
-	w := textWidth(hm, sc)
+	w := textWidth(hm, smoothLarge)
 	if ampm != "" {
-		w += 2 + textWidth(ampm, 1)
+		w += ampmGap + textWidth(ampm, smoothSmall)
 	}
 	x := Width - w - 1
-	top := trackTopY
-	f.lines = append(f.lines, marqueeLine{s: hm, sc: sc, lvl: lvlTrackClock, x0: x, w: textWidth(hm, sc), y: top, left: true})
+	baseline := clockTopY + smoothLarge.capH
+	f.lines = append(f.lines, marqueeLine{s: hm, f: smoothLarge, lvl: lvlTrackClock, x0: x, w: textWidth(hm, smoothLarge), y: baseline, left: true})
 	if ampm != "" {
-		ax := x + textWidth(hm, sc) + 2
-		f.lines = append(f.lines, marqueeLine{s: ampm, sc: 1, lvl: lvlTrackStation, x0: ax, w: textWidth(ampm, 1), y: top + 7*sc - 7, left: true})
+		ax := x + textWidth(hm, smoothLarge) + ampmGap
+		f.lines = append(f.lines, marqueeLine{s: ampm, f: smoothSmall, lvl: lvlTrackStation, x0: ax, w: textWidth(ampm, smoothSmall), y: baseline, left: true})
 	}
-	textY := top + (7*sc-7)/2
-	f.barsBottom = textY + 7
+	f.barsBottom = baseline
 	if t.Station != "" {
-		f.lines = append(f.lines, marqueeLine{s: t.Station, sc: 1, lvl: lvlTrackStation, x0: stationBoxX, w: x - 4 - stationBoxX, y: textY, left: true})
+		f.lines = append(f.lines, marqueeLine{s: t.Station, f: smoothSmall, lvl: lvlTrackStation, x0: stationBoxX, w: x - 4 - stationBoxX, y: baseline, left: true})
 	}
-	f.ruleY = top + 7*sc + 3
-	return trackTopY + 7*sc + 6
+	f.ruleY = baseline + trackRuleGap
+	return f.ruleY + trackAreaGap
 }
 
 // plainHeader lays out the top line without the time: the playing symbol on
 // the left, the station centred between it and its mirror on the right, the
-// rule under the station.
-func (f *trackFrame) plainHeader(t TrackText) {
-	f.barsBottom = trackTopY + 7
+// rule under the station. Returns where the text block below may start.
+func (f *trackFrame) plainHeader(t TrackText) int {
+	baseline := trackTopY + smoothSmall.capH
+	f.barsBottom = baseline
 	if t.Station != "" {
-		f.lines = append(f.lines, marqueeLine{s: t.Station, sc: 1, lvl: lvlTrackStation, x0: stationBoxX, w: Width - 2*stationBoxX, y: trackTopY})
-		f.ruleY = trackRuleY
+		f.lines = append(f.lines, marqueeLine{s: t.Station, f: smoothSmall, lvl: lvlTrackStation, x0: stationBoxX, w: Width - 2*stationBoxX, y: baseline})
+		f.ruleY = baseline + trackRuleGap
 	}
+	return plainAreaY()
 }
+
+// plainAreaY is where the text block may start below the top line without
+// the time.
+func plainAreaY() int { return trackTopY + smoothSmall.capH + trackRuleGap + trackAreaGap }
 
 // bigClock lays out the time large below the header, "AM"/"PM" small under
 // it: the screen without a track.
 func (f *trackFrame) bigClock(t TrackText, now time.Time) {
 	hm, ampm := clockText(now, t.Hour12)
-	h := 7 * bigClockScale
+	areaY := plainAreaY()
+	h := smoothClock.capH
 	if ampm != "" {
-		h += trackGap + 7
+		h += trackGap + smoothSmall.capH
 	}
-	y := trackAreaY + (Height-trackAreaY-h)/2
-	f.lines = append(f.lines, marqueeLine{s: hm, sc: bigClockScale, lvl: lvlTrackTitle, x0: 0, w: Width, y: y})
+	y := areaY + (Height-areaY-h)/2
+	f.lines = append(f.lines, marqueeLine{s: hm, f: smoothClock, lvl: lvlTrackTitle, x0: 0, w: Width, y: y + smoothClock.capH})
 	if ampm != "" {
-		f.lines = append(f.lines, marqueeLine{s: ampm, sc: 1, lvl: lvlTrackArtist, x0: 0, w: Width, y: y + 7*bigClockScale + trackGap})
+		f.lines = append(f.lines, marqueeLine{s: ampm, f: smoothSmall, lvl: lvlTrackArtist, x0: 0, w: Width, y: y + h})
 	}
 }
 
