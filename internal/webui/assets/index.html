@@ -213,6 +213,17 @@ button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .volrock .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+/* All six keys are one size. Grid rows are sized by their content, so a name
+   that wraps or a Pandora key's service line made its row taller than the
+   others ("keys 1 and 2 are bigger than the four below"). Every key row is
+   1fr, which is as tall as the tallest key, and the columns are minmax(0,1fr)
+   so a long word in one key cannot widen its column either. The note row
+   above the keys (empty store, offline) stays sized to its text. */
+#presets { grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-rows:1fr; }
+#presets.has-note { grid-template-rows:auto; }
+/* The rename editor is taller than a key; while it is open only its own row
+   grows, instead of every key stretching to the editor's height. */
+#presets:has(.renaming) { grid-auto-rows:auto; }
 .grid-note { grid-column:1 / -1; color:var(--muted); font-size:13px; padding:2px 2px 4px; }
 .preset { position:relative; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:14px; cursor:pointer; min-height:80px; display:flex; flex-direction:column; justify-content:center; transition:background .15s, transform .15s; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 .preset.holding { transform:scale(.96); }
@@ -1924,6 +1935,7 @@ async function loadPresets() {
     // that could not be reached and a speaker with no presets looked the
     // same (#882). The 15 s re-read keeps trying.
     lastPresetSig = null;
+    grid.classList.add('has-note');
     grid.innerHTML = '<div class="grid-note">' + escapeHtml(T.offline) + '</div>';
     return;
   }
@@ -1941,6 +1953,7 @@ async function loadPresets() {
     return 0;
   })();
   grid.innerHTML = '';
+  grid.classList.toggle('has-note', !list.length);
   if (!list.length) {
     // Six empty keys ARE the truth for an empty store; the line says so in
     // words, because six dashed tiles alone read like a page that failed to
