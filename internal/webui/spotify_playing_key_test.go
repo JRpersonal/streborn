@@ -99,15 +99,23 @@ func TestStatusNamesThePlayingSpotifyKey(t *testing.T) {
 	}
 }
 
-// The phone page lights the key the agent names (#1077 issues 19, 20).
+// The phone page lights the key the agent names, and a hold saves the URI the
+// desktop app would: the speaker's own location while its own Spotify plays,
+// the engine's context only for the engine's stream (#1077 issues 19 to 21).
 func TestPhoneRemoteFollowsTheSpotifyKeyRules(t *testing.T) {
 	for _, want := range []string{
 		"r.headers.get('X-STR-Playing-Key')",
 		"markPlaying(nowLoc, queue, spKey);",
 		"(spKey >= 1 && spKey <= 6 ? spKey : 0)",
+		"var ctxUri = spotifySaveContextURI(src, loc, (info && info.context) || '');",
+		"function spotifyURIFromContainer(loc)",
+		"if (src === 'SPOTIFY' || boxURI) return boxURI;",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("phone page is missing %q", want)
 		}
+	}
+	if strings.Contains(indexHTML, "var ctxUri = (info && info.context) || '';") {
+		t.Error("the phone hold still saves the engine's context whatever plays")
 	}
 }
