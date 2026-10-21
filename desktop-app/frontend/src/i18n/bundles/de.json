@@ -382,6 +382,8 @@
   "controls.unmute": "Ton an",
   "controls.volumeUp": "Lauter",
   "controls.volumeWheelHint": "Regler anklicken, dann zum Anpassen scrollen",
+  "controls.pairVolumeLabel": "Lautstärke von {{name}}, beide Lautsprecher zusammen",
+  "controls.pairVolumeTitle": "Bewegt beide Lautsprecher von {{name}} gemeinsam und behält ihr Verhältnis bei",
   "toast.source": "Quelle: {{src}}",
   "toast.sourceUnavailable": "{{src}} ist auf diesem Lautsprecher nicht verfügbar",
   "status.playing": "spielt",

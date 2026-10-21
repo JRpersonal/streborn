@@ -382,6 +382,8 @@
   "controls.unmute": "Unmute",
   "controls.volumeUp": "Louder",
   "controls.volumeWheelHint": "Click the slider, then scroll to adjust the volume",
+  "controls.pairVolumeLabel": "Volume of {{name}}, both speakers together",
+  "controls.pairVolumeTitle": "Moves both speakers of {{name}} together and keeps their balance",
   "toast.source": "Source: {{src}}",
   "toast.sourceUnavailable": "{{src}} is not available on this speaker",
   "status.playing": "playing",

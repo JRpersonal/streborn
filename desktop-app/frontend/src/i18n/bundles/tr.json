@@ -356,6 +356,8 @@
   "controls.unmute": "Sesi aç",
   "controls.volumeUp": "Daha yüksek",
   "controls.volumeWheelHint": "Kaydırıcıya tıklayın, sonra ses düzeyini ayarlamak için kaydırın",
+  "controls.pairVolumeLabel": "{{name}} ses düzeyi, iki hoparlör birlikte",
+  "controls.pairVolumeTitle": "{{name}} çiftinin iki hoparlörünü birlikte ayarlar ve dengelerini korur",
   "toast.source": "Kaynak: {{src}}",
   "toast.sourceUnavailable": "{{src}} bu hoparlörde kullanılamıyor",
   "status.playing": "çalıyor",

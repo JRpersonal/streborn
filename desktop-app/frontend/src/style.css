@@ -1370,6 +1370,22 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn-source-icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
 .btn-source-icon svg { display: block; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1; min-width: 180px; max-width: 300px; }
+/* While a stereo pair half is selected the slider moves the whole pair, and the
+   pair's name sits in front of it (#1093). The row grows by the label's width so
+   the slider keeps its usual travel; a long name is cut with an ellipsis and
+   shown in full on hover. */
+.volume-control.is-pair { max-width: 420px; }
+.volume-control .vol-scope {
+  flex: 0 0 auto;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-muted);
+}
+.volume-control .vol-scope.hidden { display: none; }
 
 /* Stereo balance next to the volume. Read-only on purpose (the firmware takes
    no write we could make work), so it is styled as a quiet label rather than a

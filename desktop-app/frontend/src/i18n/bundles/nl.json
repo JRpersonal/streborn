@@ -356,6 +356,8 @@
   "controls.unmute": "Dempen opheffen",
   "controls.volumeUp": "Harder",
   "controls.volumeWheelHint": "Klik op de schuifregelaar en scrol om het volume aan te passen",
+  "controls.pairVolumeLabel": "Volume van {{name}}, beide speakers samen",
+  "controls.pairVolumeTitle": "Regelt beide speakers van {{name}} samen en behoudt hun balans",
   "toast.source": "Bron: {{src}}",
   "toast.sourceUnavailable": "{{src}} is niet beschikbaar op deze speaker",
   "status.playing": "speelt af",
