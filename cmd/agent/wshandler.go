@@ -575,6 +575,49 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	go h.recallPreset(ctx, seq, pressAt, slot, location, title)
 }
 
+// nativeRecentWait and nativeRecentPoll bound how long a native-service key
+// press is watched for the speaker switching to that service before its
+// Recently-played card is recorded. Vars so the tests can shorten them.
+var (
+	nativeRecentWait = 12 * time.Second
+	nativeRecentPoll = 1500 * time.Millisecond
+)
+
+// noteNativeRecentOnStart records a native-service key press (Pandora) into
+// Recently-played, but only once the speaker's now_playing names that
+// service: a key whose station the speaker refused (account gone, service
+// down) must not leave a card behind. A newer press ends the watch, as does
+// the deadline. Blocking; runs on the recall goroutine.
+func (h *presetWsHandler) noteNativeRecentOnStart(ctx context.Context, seq uint64, p presets.Preset) {
+	if h.noteRecentPreset == nil || p.Native == nil {
+		return
+	}
+	want := presets.NormalizeNativeSource(p.Native.Source)
+	deadline := time.Now().Add(nativeRecentWait)
+	for {
+		src := presets.NormalizeNativeSource(h.currentBoxSource())
+		// Checked after the probe: a press that landed while it ran owns
+		// whatever the speaker reports now.
+		if h.pressSeq.Load() != seq {
+			return
+		}
+		if src == want {
+			h.noteRecentPreset(p)
+			return
+		}
+		if !time.Now().Before(deadline) {
+			h.logger.Info("hardware preset: the speaker did not switch to the native service, no Recently-played card",
+				"slot", p.Slot, "source", p.Native.Source, "name", p.Name)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(nativeRecentPoll):
+		}
+	}
+}
+
 // presetOutcomeAfter is how long a preset press gets to bring sound before the
 // panel says it failed: past the recall's own verify and a slow station's
 // first buffer.
@@ -634,11 +677,17 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	// A Pandora or iHeartRadio key: the firmware's own client plays it with
 	// the account the speaker holds, and there is no stream STR could push.
 	// Stand back exactly like for a native radio station, without the radio
-	// bookkeeping (no last-play record and no Recently-played card: neither
-	// could replay a service STR does not play).
+	// last-play record (the power-on resume could not replay a service STR
+	// does not play). A Pandora key still gets its Recently-played card once
+	// the speaker has switched to Pandora: the card replays through the
+	// speaker's own client, the same way as a station started from the Find
+	// tab (#1101). iHeartRadio has no such replay path, so it gets no card.
 	if p, ok := h.store.Get(slot); ok && p.IsNative() {
 		h.logger.Info("hardware preset: native service preset, the box plays it itself",
 			"slot", slot, "source", p.Native.Source, "name", p.Name, "location", location)
+		if presets.NormalizeNativeSource(p.Native.Source) == "PANDORA" {
+			h.noteNativeRecentOnStart(ctx, seq, p)
+		}
 		return
 	}
 	// The URL stays the proxy URL (location = http://127.0.0.1:8888/stream/N)
