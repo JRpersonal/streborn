@@ -69,3 +69,23 @@ func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 		t.Error("phone remote uses an inline onerror attribute")
 	}
 }
+
+// All six keys on the phone remote are one size. The grid's rows used to be
+// sized by their content, so a key whose name wrapped (or a Pandora key with
+// its service line) made its row taller than the rest: "keys 1 and 2 are
+// bigger than the four below". Rows are 1fr and columns minmax(0,1fr) now,
+// the note row above the keys keeps its own height, and the rename editor
+// grows only its own row.
+func TestPhoneRemotePresetKeysAreEqualSize(t *testing.T) {
+	for _, want := range []string{
+		"#presets { grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-rows:1fr; }",
+		"#presets.has-note { grid-template-rows:auto; }",
+		"#presets:has(.renaming) { grid-auto-rows:auto; }",
+		"grid.classList.toggle('has-note', !list.length);",
+		"grid.classList.add('has-note');",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("phone remote preset grid is missing %q", want)
+		}
+	}
+}
