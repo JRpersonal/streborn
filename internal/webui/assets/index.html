@@ -2974,7 +2974,7 @@ async function loadVersion() {
 // refreshAll re-fetches every panel at once (used by pull-to-refresh and on
 // regaining foreground), with a short minimum so the spinner does not flash.
 function refreshAll(){
-  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone(), loadSleep(), loadAlarms(), loadMusicLib()]).catch(function(){});
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone(), loadSleep(), loadAlarms(), loadMusicLib(), loadFavorites(true)]).catch(function(){});
   var minSpin = new Promise(function(r){ setTimeout(r, 500); });
   return Promise.all([work, minSpin]);
 }
@@ -3034,6 +3034,8 @@ function showTab(name) {
   window.scrollTo(0, 0);
   if (name === 'Speakers') loadZone();
   if (name === 'More') loadDisplayCard();
+  // Favourites change from the desktop app too (#1389).
+  if (name === 'Browse') loadFavorites(true).catch(function(){});
 }
 (function wireTabs(){
   TAB_IDS.forEach(function(t){
@@ -3557,15 +3559,34 @@ async function playLibTrack(idx, btn) {
 // on my phone the stations I starred on the computer?" Nowhere, was the
 // honest answer, and that is what this fixes.
 var favStations = [];
+// favSig is the list as last painted, so a re-read that finds nothing new
+// leaves the rows (and a half-done remove confirmation) alone.
+var favSig = null;
 
-async function loadFavorites() {
+// loadFavorites reads the list from the speaker and paints it.
+//
+// It used to run once, when the page opened. A star taken off in the desktop
+// app reached every speaker within a second, but a page that stayed open, or
+// a home-screen app brought back from the background, kept showing the old
+// list until it was reloaded by hand (#1389, the tester's report: two
+// stations un-starred in the app at 9:37 and 9:38 were still listed at 9:40).
+// So it is read again when the app comes back to the foreground, when the
+// Find tab is opened, and every 15 seconds while that tab is on screen.
+// quiet is set for those re-reads: a failed read then keeps what is shown,
+// and an open remove confirmation is never painted over.
+async function loadFavorites(quiet) {
   var head = document.getElementById('lblFavSec');
   var box = document.getElementById('favResults');
   if (!box) return;
+  var list = await api('/api/favorites');
+  if (quiet && !Array.isArray(list)) return;
+  var next = Array.isArray(list) ? list : [];
+  var sig = JSON.stringify(next);
+  if (quiet && (sig === favSig || box.querySelector('.fav-confirm'))) return;
+  favSig = sig;
+  favStations = next;
   box.innerHTML = '';
   if (head) head.hidden = true;
-  var list = await api('/api/favorites');
-  favStations = Array.isArray(list) ? list : [];
   if (!favStations.length) return;
   if (head) { head.textContent = T.favSec; head.hidden = false; }
   favStations.forEach(function (st, i) {
@@ -5522,6 +5543,13 @@ setInterval(function(){ if (!document.getElementById('panelSpeakers').hidden || 
 // the names actually differ. The read hits the agent's own store, not the Bose
 // firmware, so it adds nothing to the load the transport poll is rationed for.
 setInterval(function(){ loadPresets().catch(function(){}); }, 15000);
+// Favourites the same way, but only while the Find tab shows them: a star
+// set or taken off in the desktop app is on every speaker within a second,
+// and this page has to notice it (#1389). The read is the agent's own file.
+setInterval(function(){
+  var p = document.getElementById('panelBrowse');
+  if (p && !p.hidden && document.visibilityState === 'visible') loadFavorites(true).catch(function(){});
+}, 15000);
 </script>
 </body>
 </html>

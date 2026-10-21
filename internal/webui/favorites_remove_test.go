@@ -241,6 +241,44 @@ func TestPhoneRemoteFavoritesCanBeRemoved(t *testing.T) {
 	}
 }
 
+// The phone page re-reads the favourites instead of keeping what it loaded on
+// open: a star taken off in the desktop app reached every speaker, and an open
+// page still listed it minutes later (#1389). Re-read on foreground and
+// pull-to-refresh (refreshAll), on opening the Find tab, and on a slow poll
+// while that tab shows; a quiet re-read never paints over a confirmation.
+func TestPhoneRemoteFavoritesFollowTheSpeaker(t *testing.T) {
+	section := func(from, to string) string {
+		at := strings.Index(indexHTML, from)
+		if at < 0 {
+			t.Fatalf("could not find %q in the phone page", from)
+		}
+		rest := indexHTML[at:]
+		if end := strings.Index(rest, to); end > 0 {
+			return rest[:end]
+		}
+		return rest
+	}
+	if all := section("function refreshAll(){", "\n}"); !strings.Contains(all, "loadFavorites(true)") {
+		t.Error("refreshAll (foreground, pull-to-refresh) does not re-read the favourites")
+	}
+	if tab := section("function showTab(name) {", "\n}"); !strings.Contains(tab, "name === 'Browse') loadFavorites(true)") {
+		t.Error("opening the Find tab does not re-read the favourites")
+	}
+	if !strings.Contains(indexHTML, "if (p && !p.hidden && document.visibilityState === 'visible') loadFavorites(true)") {
+		t.Error("no slow favourites re-read while the Find tab shows")
+	}
+	load := section("async function loadFavorites(", "function favKey(")
+	for _, want := range []string{
+		"if (quiet && !Array.isArray(list)) return;",
+		"box.querySelector('.fav-confirm')",
+		"sig === favSig",
+	} {
+		if !strings.Contains(load, want) {
+			t.Errorf("loadFavorites is missing %q", want)
+		}
+	}
+}
+
 // Every new favourites string exists in every locale bundle.
 func TestPhoneRemoteLocalesCarryFavoriteDelete(t *testing.T) {
 	bundles := strings.Count(indexHTML, "now:\"")
