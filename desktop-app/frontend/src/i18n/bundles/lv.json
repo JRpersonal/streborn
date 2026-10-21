@@ -356,6 +356,8 @@
   "controls.unmute": "Ieslēgt skaņu",
   "controls.volumeUp": "Skaļāk",
   "controls.volumeWheelHint": "Noklikšķiniet uz slīdņa un pēc tam ritiniet, lai pielāgotu skaļumu",
+  "controls.pairVolumeLabel": "{{name}} skaļums, abi skaļruņi kopā",
+  "controls.pairVolumeTitle": "Regulē abus {{name}} skaļruņus kopā un saglabā to līdzsvaru",
   "toast.source": "Avots: {{src}}",
   "toast.sourceUnavailable": "{{src}} nav pieejams šajā skaļrunī",
   "status.playing": "atskaņo",

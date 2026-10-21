@@ -356,6 +356,8 @@
   "controls.unmute": "ミュート解除",
   "controls.volumeUp": "大きく",
   "controls.volumeWheelHint": "スライダーをクリックし、スクロールで音量を調整します",
+  "controls.pairVolumeLabel": "{{name}} の音量（両方のスピーカー）",
+  "controls.pairVolumeTitle": "{{name}} の両方のスピーカーをまとめて調整し、バランスを保ちます",
   "toast.source": "ソース: {{src}}",
   "toast.sourceUnavailable": "{{src}} はこのスピーカーでは利用できません",
   "status.playing": "再生中",

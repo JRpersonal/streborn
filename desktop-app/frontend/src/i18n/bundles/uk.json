@@ -356,6 +356,8 @@
   "controls.unmute": "Увімкнути звук",
   "controls.volumeUp": "Гучніше",
   "controls.volumeWheelHint": "Клацніть повзунок, потім прокручуйте, щоб регулювати гучність",
+  "controls.pairVolumeLabel": "Гучність {{name}}, обидва динаміки разом",
+  "controls.pairVolumeTitle": "Регулює обидва динаміки {{name}} разом і зберігає їхній баланс",
   "toast.source": "Джерело: {{src}}",
   "toast.sourceUnavailable": "{{src}} недоступний на цій колонці",
   "status.playing": "відтворення",

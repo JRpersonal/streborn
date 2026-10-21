@@ -330,6 +330,7 @@ import {
   notifyZoneLive,
 } from './groups.js';
 import { pairDisplayName, healPairNames } from './stereoNames.js';
+import { pairVolumeTarget, createPairVolume, notePairRead, pairLevelsFor, pairAnchored, makePerHostThrottle } from './pairVolume.js';
 import { findStalePairs, confirmStalePairs, staleFindingFor, staleNoticeText } from './stalestereo.js';
 
 // The already-on-another-key refusal and the offer to move the station live in
@@ -1745,6 +1746,7 @@ $('view-box').innerHTML = `
         <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
+        <span class="vol-scope hidden" id="musicVolumeScope"></span>
         <button class="vol-icon vol-mute" id="volMute" aria-pressed="false" aria-label="${escapeAttr(t('controls.mute'))}" title="${escapeAttr(t('controls.mute'))}">&#128266;</button>
         <button class="btn btn-mini vol-step" id="volDown" aria-label="${escapeAttr(t('controls.volumeDown'))}" title="${escapeAttr(t('controls.volumeDown'))}">&#8722;</button>
         <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
@@ -1963,6 +1965,97 @@ let musicVolTimer = null;
 let musicVolBox = null;
 const musicVolEl = $('musicVolume');
 const musicVolValEl = $('musicVolumeVal');
+
+// Stereo pair volume (idea #1093, logic in pairVolume.js). While the selected
+// speaker is half of a live pair, this slider moves BOTH halves and carries the
+// pair's name, the way the phone remote's "Pair" scope does. Everything else
+// (a single speaker, a member of an ordinary multiroom group) keeps the slider
+// moving the selected speaker alone; a group has its own panel for the rest.
+const pairVol = createPairVolume();
+// Per-speaker throttle: the shared throttledSetVolume holds one pending call,
+// and two halves fed through it in turn would lose one half's level.
+const pairSetVolume = makePerHostThrottle(SetBoxVolume);
+state.desiredPairLevels = null;
+
+function currentPairTarget() {
+  return pairVolumeTarget(state.currentBox, state.zoneLive, state.boxes);
+}
+
+// renderVolumeScope names the pair next to the slider while the slider acts on
+// a pair, and puts the plain volume label back otherwise. The name is the one
+// the speaker list frames the pair with, so the two always agree.
+function renderVolumeScope(target = currentPairTarget()) {
+  const lbl = $('musicVolumeScope');
+  const wrap = musicVolEl ? musicVolEl.closest('.volume-control') : null;
+  const name = target ? (pairDisplayName(target.pair, () => renderVolumeScope()) || t('multiroom.stereoHeading')) : '';
+  if (lbl) {
+    lbl.textContent = name;
+    lbl.title = name ? t('controls.pairVolumeTitle', { name }) : '';
+    lbl.classList.toggle('hidden', !target);
+  }
+  if (wrap) wrap.classList.toggle('is-pair', !!target);
+  if (musicVolEl) {
+    musicVolEl.setAttribute('aria-label', target ? t('controls.pairVolumeLabel', { name }) : t('controls.volume'));
+    musicVolEl.title = target
+      ? t('controls.pairVolumeTitle', { name }) + '\n' + t('controls.volumeWheelHint')
+      : t('controls.volumeWheelHint');
+  }
+  return target;
+}
+
+// sendMusicVolume is the one write path of the music slider, its +/- buttons
+// and its wheel. On a pair both halves shift by the same offset from the
+// baseline the last read captured, so their balance stays as the user set it.
+function sendMusicVolume(box, pct) {
+  state.desiredVolume = pct;
+  const target = currentPairTarget();
+  if (target) {
+    const levels = pairLevelsFor(pairVol, target.key, target.halves.map(b => b.host), pct);
+    if (levels) {
+      target.halves.forEach(b => {
+        if (typeof levels[b.host] === 'number') pairSetVolume(b.host, b.port, levels[b.host]);
+      });
+      state.desiredPairLevels = { key: target.key, levels };
+      return;
+    }
+    // The pair was named before its levels were read (pairLevelsFor says why
+    // guessing is wrong). Move the selected speaker alone, as before, and read
+    // both halves so the next move carries the pair.
+    syncMusicTabVolumeFromBox();
+  }
+  state.desiredPairLevels = null;
+  throttledSetVolume(box.host, box.port, pct);
+}
+
+// readMusicVolume reads what the slider should show for box: its own settings,
+// and on a pair both halves' levels too. data is the selected speaker's
+// settings (for mute), or null when it did not answer.
+async function readMusicVolume(box) {
+  const target = renderVolumeScope();
+  if (!target) {
+    return { target: null, data: await BoxSettings(box.host, box.port), levels: null };
+  }
+  const levels = {};
+  let data = null;
+  await Promise.all(target.halves.map(async (b) => {
+    try {
+      const d = await BoxSettings(b.host, b.port);
+      if (sameBoxIdentity(b, box)) data = d;
+      const v = d && d.volume && d.volume.actual;
+      if (typeof v === 'number') levels[b.host] = v;
+    } catch {}
+  }));
+  return { target, data, levels };
+}
+
+// musicVolumeLevel turns a read into the level the slider shows: the speaker's
+// own, or for a pair the louder half (re-anchoring the pair baseline there, so
+// the caller must only ask while the user is not touching the slider).
+function musicVolumeLevel(r) {
+  if (r.target) return notePairRead(pairVol, r.target.key, r.levels);
+  const v = r.data && r.data.volume && r.data.volume.actual;
+  return typeof v === 'number' ? v : null;
+}
 // Mute, which STR could not do at all until a user asked for it and pointed at
 // this very symbol. It is the speaker's own MUTE key, not a volume pulled to
 // zero and remembered here: the box's remote and its physical buttons set the
@@ -2051,8 +2144,7 @@ if (musicVolEl) {
     if (!box) return;
     liftMuteForVolumeGesture();
     musicVolBox = box;
-    state.desiredVolume = parseInt(musicVolEl.value, 10);
-    throttledSetVolume(box.host, box.port, state.desiredVolume);
+    sendMusicVolume(box, parseInt(musicVolEl.value, 10));
   };
   // Keyboard arrows fire only `change`, not `input`, so we still
   // dispatch on change as a safety net for that path.
@@ -2060,8 +2152,7 @@ if (musicVolEl) {
     musicVolBox = state.currentBox;
     if (!musicVolBox) return;
     liftMuteForVolumeGesture();
-    state.desiredVolume = parseInt(musicVolEl.value, 10);
-    throttledSetVolume(musicVolBox.host, musicVolBox.port, state.desiredVolume);
+    sendMusicVolume(musicVolBox, parseInt(musicVolEl.value, 10));
   };
   // pointerdown/up flag is the most reliable cross-device drag
   // signal. Keyboard arrows fire only `change`, which is already
@@ -2095,10 +2186,9 @@ if (musicVolEl) {
     musicVolEl.value = String(next);
     if (musicVolValEl) musicVolValEl.textContent = String(next);
     musicVolBox = box;
-    state.desiredVolume = next;
     state.musicVolBusy = false;
     state.musicVolUntil = Date.now() + 1200;
-    throttledSetVolume(box.host, box.port, next);
+    sendMusicVolume(box, next);
   };
   const volDown = $('volDown');
   const volUp = $('volUp');
@@ -2136,7 +2226,9 @@ async function syncMusicTabVolumeFromBox() {
   if (state.musicVolBusy) return;
   if (Date.now() < (state.musicVolUntil || 0)) return;
   try {
-    const data = await BoxSettings(box.host, box.port);
+    // On a stereo pair this reads both halves (readMusicVolume).
+    const r = await readMusicVolume(box);
+    const data = r.data;
     // Guard against a box switch while the request was in flight: a late
     // reply from the previous speaker would show ITS volume for the new one,
     // and the user's first slider touch would then send that stale level.
@@ -2144,13 +2236,13 @@ async function syncMusicTabVolumeFromBox() {
     // Mute first, and on its own guard: it has to follow the speaker's own
     // remote and buttons, and it must still update on a speaker whose volume
     // the poll is holding off or whose level has not changed.
-    if (Date.now() >= (state.muteUntil || 0)) {
-      renderMuteState(data && data.volume && data.volume.muted);
+    if (data && Date.now() >= (state.muteUntil || 0)) {
+      renderMuteState(data.volume && data.volume.muted);
     }
     // The user may have started dragging during the round trip; re-check the
     // drag guards so the reply cannot yank the thumb from under them.
     if (state.musicVolBusy || Date.now() < (state.musicVolUntil || 0)) return;
-    const vol = (data && data.volume && data.volume.actual);
+    const vol = musicVolumeLevel(r);
     if (typeof vol !== 'number') return;
     const current = parseInt(musicVolEl.value, 10);
     if (current !== vol) {
@@ -2217,16 +2309,17 @@ async function loadMusicTabVolume() {
   const box = state.currentBox;
   if (!box || !musicVolEl) return;
   try {
-    const data = await BoxSettings(box.host, box.port);
+    const r = await readMusicVolume(box);
+    const data = r.data;
     // Guard against a box switch while the request was in flight: two quick
     // speaker clicks race their replies, and the slower (previous) speaker's
     // volume must not land on the newly selected one — the first slider
     // touch would send it there (a sudden loud jump).
     if (!sameBoxIdentity(state.currentBox, box)) return;
-    const vol = (data && data.volume && data.volume.actual) || 0;
+    const vol = musicVolumeLevel(r) || 0;
     musicVolEl.value = String(vol);
     if (musicVolValEl) musicVolValEl.textContent = String(vol);
-    renderMuteState(data && data.volume && data.volume.muted);
+    if (data) renderMuteState(data.volume && data.volume.muted);
   } catch {}
 }
 $('searchBtn').onclick = () => doSearch();
@@ -4066,6 +4159,15 @@ onZoneLive(updateMultiroomTabBadge);
 // field empty) gets it written back, so the Spotify picker and the phone remote
 // match this app again (#1077, issue 5). Rides the same poll, no timer.
 onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxes).catch(() => {}); });
+// A pair formed or undone while its half is selected switches the music slider
+// between pair and single speaker without waiting for a speaker click.
+// When the pair shows up after the slider was filled (the zone poll lands after
+// the speaker's own settings), read both halves straight away rather than at
+// the next status poll, so the slider reads the pair before it is touched.
+onZoneLive(() => {
+  const target = renderVolumeScope();
+  if (target && !pairAnchored(pairVol, target.key)) syncMusicTabVolumeFromBox();
+});
 
 // A speaker stuck as half of a stereo pair that no longer exists (see
 // stalestereo.js). Recomputed after every zone round from data the poll already
@@ -7672,7 +7774,20 @@ function reapplyDesiredVolume() {
     musicVolEl.value = String(v);
     if (musicVolValEl) musicVolValEl.textContent = String(v);
   }
-  const apply = () => { if (state.currentBox === box) throttledSetVolume(box.host, box.port, v); };
+  // A pair woke as two speakers, so both get the level the pair slider last
+  // gave them; one level for both would undo the balance between the halves.
+  const pairLevels = state.desiredPairLevels;
+  const apply = () => {
+    if (state.currentBox !== box) return;
+    const target = pairLevels && currentPairTarget();
+    if (target && target.key === pairLevels.key) {
+      target.halves.forEach(b => {
+        if (typeof pairLevels.levels[b.host] === 'number') pairSetVolume(b.host, b.port, pairLevels.levels[b.host]);
+      });
+      return;
+    }
+    throttledSetVolume(box.host, box.port, v);
+  };
   setTimeout(apply, 250);
   setTimeout(apply, 1500);
 }

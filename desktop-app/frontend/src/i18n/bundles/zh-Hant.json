@@ -382,6 +382,8 @@
   "controls.unmute": "取消靜音",
   "controls.volumeUp": "調大",
   "controls.volumeWheelHint": "點一下滑桿，再滾動調整音量",
+  "controls.pairVolumeLabel": "{{name}} 的音量（兩個喇叭一起）",
+  "controls.pairVolumeTitle": "同時調整 {{name}} 的兩個喇叭，並保持兩者的平衡",
   "toast.source": "來源：{{src}}",
   "toast.sourceUnavailable": "這台喇叭沒有 {{src}}",
   "status.playing": "播放中",

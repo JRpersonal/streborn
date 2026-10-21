@@ -356,6 +356,8 @@
   "controls.unmute": "Activar sonido",
   "controls.volumeUp": "Más alto",
   "controls.volumeWheelHint": "Haz clic en el control deslizante y desplázate para ajustar el volumen",
+  "controls.pairVolumeLabel": "Volumen de {{name}}, ambos altavoces a la vez",
+  "controls.pairVolumeTitle": "Mueve ambos altavoces de {{name}} a la vez y mantiene su equilibrio",
   "toast.source": "Fuente: {{src}}",
   "toast.sourceUnavailable": "{{src}} no está disponible en este altavoz",
   "status.playing": "reproduciendo",

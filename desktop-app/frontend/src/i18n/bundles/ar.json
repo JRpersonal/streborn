@@ -356,6 +356,8 @@
   "controls.unmute": "إلغاء كتم الصوت",
   "controls.volumeUp": "أعلى",
   "controls.volumeWheelHint": "انقر على شريط التمرير ثم مرّر لضبط مستوى الصوت",
+  "controls.pairVolumeLabel": "مستوى صوت {{name}}، السماعتان معًا",
+  "controls.pairVolumeTitle": "يحرّك سماعتي {{name}} معًا ويحافظ على التوازن بينهما",
   "toast.source": "المصدر: {{src}}",
   "toast.sourceUnavailable": "‏{{src}} غير متاح على هذه السمّاعة",
   "status.playing": "قيد التشغيل",

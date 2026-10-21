@@ -356,6 +356,8 @@
   "controls.unmute": "Rétablir le son",
   "controls.volumeUp": "Plus fort",
   "controls.volumeWheelHint": "Cliquez sur le curseur, puis faites défiler pour régler le volume",
+  "controls.pairVolumeLabel": "Volume de {{name}}, les deux enceintes ensemble",
+  "controls.pairVolumeTitle": "Règle les deux enceintes de {{name}} ensemble et conserve leur équilibre",
   "toast.source": "Source : {{src}}",
   "toast.sourceUnavailable": "{{src}} n’est pas disponible sur cette enceinte",
   "status.playing": "lecture",

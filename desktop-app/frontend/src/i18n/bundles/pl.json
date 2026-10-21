@@ -356,6 +356,8 @@
   "controls.unmute": "Włącz dźwięk",
   "controls.volumeUp": "Głośniej",
   "controls.volumeWheelHint": "Kliknij suwak, a następnie przewijaj, aby regulować głośność",
+  "controls.pairVolumeLabel": "Głośność {{name}}, oba głośniki razem",
+  "controls.pairVolumeTitle": "Reguluje oba głośniki {{name}} razem i zachowuje ich balans",
   "toast.source": "Źródło: {{src}}",
   "toast.sourceUnavailable": "{{src}} nie jest dostępne na tym głośniku",
   "status.playing": "odtwarza",

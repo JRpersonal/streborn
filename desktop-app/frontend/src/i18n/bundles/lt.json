@@ -356,6 +356,8 @@
   "controls.unmute": "Įjungti garsą",
   "controls.volumeUp": "Garsiau",
   "controls.volumeWheelHint": "Spustelėkite šliaužiklį, tada slinkite, kad reguliuotumėte garsumą",
+  "controls.pairVolumeLabel": "{{name}} garsumas, abu garsiakalbiai kartu",
+  "controls.pairVolumeTitle": "Reguliuoja abu {{name}} garsiakalbius kartu ir išlaiko jų balansą",
   "toast.source": "Šaltinis: {{src}}",
   "toast.sourceUnavailable": "{{src}} nepasiekiamas šiame garsiakalbyje",
   "status.playing": "grojama",
