@@ -22,19 +22,19 @@ func TestPhoneRemoteLightsTheQueueKey(t *testing.T) {
 			t.Errorf("queueSlot lost %q: it must only name a folder key of a running queue", want)
 		}
 	}
-	if !strings.Contains(indexHTML, "playingSlot(loc, lastPresetList) || queueSlot(queue, lastPresetList)") {
+	if !strings.Contains(indexHTML, "|| queueSlot(queue, lastPresetList);") {
 		t.Error("markPlaying does not fall back to the queue card")
 	}
 
 	rs := indexHTML[strings.Index(indexHTML, "async function refreshStatus("):]
 	rs = rs[:strings.Index(rs, "\n}\n")]
-	if strings.Count(rs, "markPlaying(") != 1 || !strings.Contains(rs, "markPlaying(nowLoc, queue)") {
+	if strings.Count(rs, "markPlaying(") != 1 || !strings.Contains(rs, "markPlaying(nowLoc, queue, spKey)") {
 		t.Error("refreshStatus must mark the key once, with the queue it read")
 	}
 	if strings.Count(rs, "currentQueue()") != 1 {
 		t.Error("the queue must be read once per status poll, not in a loop of its own")
 	}
-	if strings.Index(rs, "currentQueue()") > strings.Index(rs, "markPlaying(nowLoc, queue)") {
+	if strings.Index(rs, "currentQueue()") > strings.Index(rs, "markPlaying(nowLoc, queue, spKey)") {
 		t.Error("the key is marked before the queue was read")
 	}
 }

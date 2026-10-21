@@ -176,6 +176,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		body, code := s.statusBody, s.statusCode
 		s.statusMu.Unlock()
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		s.setPlayingKeyHeader(w, body)
 		w.WriteHeader(code)
 		_, _ = w.Write(s.withStationName(body))
 		return
@@ -215,6 +216,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-STR-Status-Stale", "1")
 			}
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			s.setPlayingKeyHeader(w, body)
 			w.WriteHeader(code)
 			_, _ = w.Write(s.withStationName(body))
 			return
@@ -237,6 +239,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	s.setPlayingKeyHeader(w, body)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(s.withStationName(body))
 }
