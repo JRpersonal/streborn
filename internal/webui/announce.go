@@ -133,6 +133,10 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "could not fetch announcement audio", "detail": err.Error()})
 		return
 	}
+	// Silence in front of the speech, so the speaker's late amplifier unmute
+	// does not swallow the first word (#826). Covers TTS and MP3 url clips;
+	// any other format is left untouched.
+	audio = withSilentLeadIn(audio, mime, announceLeadIn)
 	title := body.Text
 	if title == "" {
 		title = "Announcement"
