@@ -812,6 +812,7 @@
   "footer.saveLogsHint": "Sammelt App-Log + Status pro Lautsprecher in einem Zip, das du an ein GitHub-Issue hängen kannst. IPs und Geräte-IDs werden anonymisiert.",
   "footer.saveLogsDone": "{{size}} KB gespeichert nach {{path}}",
   "footer.donateSlogan": "Dir gefällt die App? Ich freue mich über einen Kaffee.",
+  "footer.fine": "Unabhängiges Open-Source-Projekt, mit Liebe gemacht in Deutschland. Spendenfinanziert, Apache-2.0.",
   "footer.shareLead": "Und wenn dir STR so richtig gefällt: teile es auf Social Media!",
   "banner.recommendationShort": "Empfehlung",
   "speaker.rebootNow": "Lautsprecher jetzt neu starten",

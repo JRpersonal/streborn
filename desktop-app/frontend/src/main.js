@@ -1182,7 +1182,7 @@ async function renderFooter() {
   $('appFooter').innerHTML = `
     <div class="footer-left">
       ST Reborn &middot; Version <a href="#" id="appVersionLink" class="footer-link" title="${escapeAttr(t('banner.whatsNew'))}"><b>${escapeHtml(i.version)}</b></a>${buildStr}${i.author ? ' &middot; ' + escapeHtml(i.author) : ''}
-      <div class="footer-fine">Independent open source project, donation funded, Apache-2.0 license.</div>
+      <div class="footer-fine">${escapeHtml(t('footer.fine'))}</div>
     </div>
     <div class="footer-right">${links.join(' &middot; ')}</div>
   `;

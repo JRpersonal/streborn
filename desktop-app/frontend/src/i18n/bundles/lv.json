@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Iepako lietotnes žurnālu + katra skaļruņa statusu zip failā, ko varat pievienot GitHub problēmai. IP adreses un ierīču ID tiek anonimizēti.",
   "footer.saveLogsDone": "Saglabāts {{size}} KB uz {{path}}",
   "footer.donateSlogan": "Patīk lietotne? Tase kafijas būtu novērtēta.",
+  "footer.fine": "Neatkarīgs atvērtā koda projekts, ar mīlestību radīts Vācijā. Finansēts no ziedojumiem, Apache-2.0.",
   "footer.shareLead": "Un ja STR tev tiešām patīk: padalies ar to sociālajos tīklos!",
   "banner.recommendationShort": "Ieteikums",
   "speaker.rebootNow": "Restartēt skaļruni tagad",

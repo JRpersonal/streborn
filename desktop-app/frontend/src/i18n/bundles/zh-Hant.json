@@ -812,6 +812,7 @@
   "footer.saveLogsHint": "把應用程式紀錄和每台喇叭的狀態打包成一個 zip，可以附在 GitHub issue 上。IP 和裝置 ID 都會匿名化。",
   "footer.saveLogsDone": "已儲存 {{size}} KB 到 {{path}}",
   "footer.donateSlogan": "喜歡這個應用程式嗎？請我喝杯咖啡我會很開心。",
+  "footer.fine": "獨立的開源專案，在德國用愛打造。由捐款支持，Apache-2.0。",
   "footer.shareLead": "如果你真的很喜歡 STR：在社群上分享吧！",
   "banner.recommendationShort": "建議",
   "speaker.rebootNow": "立即重新啟動喇叭",
