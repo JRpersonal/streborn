@@ -40,6 +40,18 @@ Order and resume rules (`runAnnouncement`, #1359):
   - anything else (Bluetooth, AUX, other speaker-owned sources): left alone.
 - A speaker that was in standby is woken for the clip and put back to standby.
 
+Silent lead-in (#826): the speaker opens its amplifier a few hundred
+milliseconds after a UPnP clip starts (it did the same with Bose's cloud-era
+notifications), which swallowed the first word. The agent therefore puts
+~800 ms of silent MP3 frames in front of the clip (`withSilentLeadIn`,
+`internal/webui/announce_leadin.go`, `announceLeadIn`). The frames copy the
+clip's own first frame header (version, sample rate, channel mode, bitrate)
+with all-zero side info, so they decode to digital silence and the stream stays
+one uniform MP3; a leading ID3v2 tag stays first. This covers TTS text and MP3
+`url` clips. A `url` clip that is not recognisably MP3 (Ogg, WAV, a single stray
+sync word) is served unchanged. Padding the text with unspoken characters is no
+longer needed.
+
 - Endpoint: `internal/webui/announce.go` (`handleAnnounce`, `handleAnnounceAudio`).
 - Desktop call: `desktop-app/announce.go` (`SendAnnounce`), routed through `boxDo`
   so it self-heals across `:8888` / `:17008` like every other box call. A raw POST
