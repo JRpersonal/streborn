@@ -972,6 +972,7 @@
   "usServices.connecting": "Обліковий запис надсилається на динамік…",
   "usServices.connectSent": "Надіслано. Динамік зараз входить, це може тривати хвилину.",
   "usServices.connectFailed": "Динамік не прийняв обліковий запис: {{err}}",
+  "usServices.iheartProfileTooLarge": "Вбудований у динамік клієнт iHeartRadio не підтримує новіші облікові записи iHeart, тому цей обліковий запис не можна додати. З самим обліковим записом усе гаразд.",
   "usServices.disconnectTitle": "Відключити {{service}}?",
   "usServices.disconnectBody": "Динамік забуде обліковий запис. Кнопки з його станціями не гратимуть, доки ви не підключите його знову.",
   "usServices.disconnected": "Відключено.",

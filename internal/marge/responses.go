@@ -496,10 +496,11 @@ func (s *Server) respondRecents(w http.ResponseWriter) {
 // it might compare against its request can differ. A body without a <recent>
 // element keeps the old list answer.
 //
-// STR's own Recently-played ring is not fed from here: the webui already
-// records native plays at the moment they start (app play, preset recall,
-// hardware key), and a second writer keyed on the firmware's record would
-// split one listen into two cards.
+// STR's own Recently-played ring is not fed from here: the webui records a
+// Pandora station itself once it started (Find-tab play, app slot recall,
+// and a hardware key after the speaker switched to Pandora), and a second
+// writer keyed on the firmware's record would split one listen into two
+// cards. iHeartRadio gets no card at all, since STR has no way to replay it.
 func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
 	// logRecentPayload consumes the body copy; the spy middleware buffered it,
 	// so read it once here and hand both uses the same bytes.

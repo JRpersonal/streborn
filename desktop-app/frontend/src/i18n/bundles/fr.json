@@ -972,6 +972,7 @@
   "usServices.connecting": "Envoi du compte à l'enceinte…",
   "usServices.connectSent": "Envoyé. L'enceinte se connecte, cela peut prendre une minute.",
   "usServices.connectFailed": "L'enceinte n'a pas accepté le compte : {{err}}",
+  "usServices.iheartProfileTooLarge": "Le client iHeartRadio intégré à l'enceinte ne gère pas les comptes iHeart récents, ce compte ne peut donc pas être ajouté. Le compte lui-même n'a aucun problème.",
   "usServices.disconnectTitle": "Déconnecter {{service}} ?",
   "usServices.disconnectBody": "L'enceinte oublie le compte. Les touches avec ses stations ne jouent plus tant que tu ne le reconnectes pas.",
   "usServices.disconnected": "Déconnecté.",

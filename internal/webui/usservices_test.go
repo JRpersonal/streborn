@@ -42,6 +42,7 @@ type fakeNativeBox struct {
 	removedSource, removedUser              string
 	removeErr                               error
 	removeCalls                             int
+	setErr                                  error
 	// sourcesAfterRemove, when set, is what /sources lists once the
 	// removal call was made (nil: the removal empties the service).
 	sourcesAfterRemove          []boxapi.Source
@@ -65,7 +66,7 @@ func (b *fakeNativeBox) SelectContentItem(_ context.Context, item string) error 
 
 func (b *fakeNativeBox) SetMusicServiceAccount(_ context.Context, source, display, user, pass string) error {
 	b.setSource, b.setDisplay, b.setUser, b.setPass = source, display, user, pass
-	return nil
+	return b.setErr
 }
 
 func (b *fakeNativeBox) RemoveMusicServiceAccount(_ context.Context, source, _, user string) error {
@@ -143,6 +144,60 @@ func TestNativeAccountOnUSSpeakerNeedsNoOptIn(t *testing.T) {
 	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodPost, "/api/iheart/account", `{"user":"u@example.com","password":"pw"}`, "192.168.1.5:5000", "application/json"))
 	if w.Code != http.StatusOK || box.setSource != "IHEART" || box.setDisplay != "iHeartRadio" {
 		t.Fatalf("US speaker: status %d, source %q display %q", w.Code, box.setSource, box.setDisplay)
+	}
+}
+
+// iheartProfileIDError is the shape of the speaker's answer when its iHeart
+// client cannot parse a newer account's profile id.
+const iheartProfileIDError = `box /setMusicServiceAccount: status 500: <?xml version="1.0" encoding="UTF-8" ?><errors deviceID="device-id-here">` +
+	`<error value="1005" name="MUSIC_SERVICE_PARSE_ERROR" severity="Unknown">Out-of-range error parsing number from json string ` +
+	`[{&quot;profileId&quot;:12345678901}] Field= [profileId]</error></errors>`
+
+func TestNativeLoginErrorCode(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{errors.New(iheartProfileIDError), codeIHeartProfileIDTooLarge},
+		{errors.New("OUT-OF-RANGE ERROR ... FIELD= [PROFILEID]"), codeIHeartProfileIDTooLarge},
+		{errors.New("box /setMusicServiceAccount: status 500: MUSIC_SERVICE_PARSE_ERROR invalid credentials"), ""},
+		{errors.New("Out-of-range error parsing number Field= [stationId]"), ""},
+		{nil, ""},
+	}
+	for _, tc := range cases {
+		if got := nativeLoginErrorCode(tc.err); got != tc.want {
+			t.Errorf("nativeLoginErrorCode(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+}
+
+// The firmware's profileId failure reaches the app as a coded JSON error with
+// a plain sentence, never as the raw speaker XML.
+func TestIHeartProfileIDTooLargeIsACodedError(t *testing.T) {
+	s, _, box := nativeTestServer(true)
+	box.setErr = errors.New(iheartProfileIDError)
+	w := httptest.NewRecorder()
+	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodPost, "/api/iheart/account", `{"user":"u@example.com","password":"pw"}`, "192.168.1.5:5000", "application/json"))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", w.Code)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body is not JSON: %v (%s)", err, w.Body.String())
+	}
+	if got["code"] != codeIHeartProfileIDTooLarge || !strings.Contains(got["error"], "iHeartRadio") {
+		t.Fatalf("body = %+v", got)
+	}
+	if strings.Contains(w.Body.String(), "MUSIC_SERVICE_PARSE_ERROR") || strings.Contains(w.Body.String(), "device-id-here") {
+		t.Fatalf("raw firmware answer leaked to the client: %s", w.Body.String())
+	}
+
+	// Any other refusal keeps the old plain answer with the speaker's reason.
+	box.setErr = errors.New("box /setMusicServiceAccount: status 500: bad credentials")
+	w = httptest.NewRecorder()
+	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodPost, "/api/iheart/account", `{"user":"u@example.com","password":"pw"}`, "192.168.1.5:5000", "application/json"))
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "bad credentials") {
+		t.Fatalf("other refusal: %d %s", w.Code, w.Body.String())
 	}
 }
 

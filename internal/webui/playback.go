@@ -399,6 +399,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		recallDelivered = true
+		// Only after the speaker took the item: a refused station leaves no
+		// card. NoteRecentPreset records Pandora (replayable through the
+		// speaker's own client) and skips iHeartRadio.
+		s.NoteRecentPreset(p)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": presets.TypeNative})
 		return
 	}
@@ -973,20 +977,29 @@ func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
 	s.recent.Add(recent.Entry{Source: "spotify", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: full, Account: c.account})
 }
 
-// NoteRecentPreset records a hardware-preset press into Recently-played. The
-// agent's gabbo handler calls it because the hardware recall goes straight to
-// the renderer, bypassing the webui play handlers.
+// NoteRecentPreset records a preset recall into Recently-played. The agent's
+// gabbo handler calls it for hardware presses (the hardware recall goes
+// straight to the box, bypassing the webui play handlers), and the app's slot
+// recall calls it for a native-service key once the speaker took the item.
 func (s *Server) NoteRecentPreset(p presets.Preset) {
 	if p.IsNative() {
 		// Pandora replays through the speaker's own client (/api/pandora/play),
-		// so its key gets a card (#1101). iHeartRadio has no such path yet, so
-		// a card could not replay it.
-		if p.Native.Source == pandoraSource {
+		// so its key gets a card (#1101), under the same "pandora:<location>"
+		// key a Find-tab start uses, so both collapse into one card.
+		// iHeartRadio has no such path yet, so a card could not replay it.
+		if presets.NormalizeNativeSource(p.Native.Source) == pandoraSource {
 			name := p.Name
 			if name == "" {
 				name = p.Native.ItemName
 			}
-			s.recentNotePandora(p.Native.Location, name, p.Native.ItemType, p.Native.ContainerArt)
+			art := p.Native.ContainerArt
+			if art == "" {
+				art = p.Art
+			}
+			if art == "" {
+				art = s.listedPandoraArt(p.Native.Location)
+			}
+			s.recentNotePandora(p.Native.Location, name, p.Native.ItemType, art)
 		}
 		return
 	}

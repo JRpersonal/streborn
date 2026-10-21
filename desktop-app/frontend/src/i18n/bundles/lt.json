@@ -972,6 +972,7 @@
   "usServices.connecting": "Paskyra siunčiama į garsiakalbį…",
   "usServices.connectSent": "Išsiųsta. Garsiakalbis dabar jungiasi, tai gali užtrukti minutę.",
   "usServices.connectFailed": "Garsiakalbis nepriėmė paskyros: {{err}}",
+  "usServices.iheartProfileTooLarge": "Garsiakalbio integruotas iHeartRadio klientas nepalaiko naujesnių iHeart paskyrų, todėl šios paskyros pridėti negalima. Su pačia paskyra viskas gerai.",
   "usServices.disconnectTitle": "Atjungti {{service}}?",
   "usServices.disconnectBody": "Garsiakalbis pamirš paskyrą. Mygtukai su jos stotimis negros, kol vėl ją prijungsite.",
   "usServices.disconnected": "Atjungta.",

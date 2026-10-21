@@ -972,6 +972,7 @@
   "usServices.connecting": "Account wordt naar de speaker gestuurd…",
   "usServices.connectSent": "Verstuurd. De speaker logt nu in, dit kan een minuut duren.",
   "usServices.connectFailed": "De speaker heeft het account niet geaccepteerd: {{err}}",
+  "usServices.iheartProfileTooLarge": "De ingebouwde iHeartRadio-client van de speaker kan niet overweg met nieuwere iHeart-accounts, dus dit account kan niet worden toegevoegd. Met het account zelf is niets mis.",
   "usServices.disconnectTitle": "{{service}} loskoppelen?",
   "usServices.disconnectBody": "De speaker vergeet het account. Toetsen met zenders daarvan spelen pas weer als je het opnieuw verbindt.",
   "usServices.disconnected": "Losgekoppeld.",

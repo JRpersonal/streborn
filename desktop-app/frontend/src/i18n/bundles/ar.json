@@ -972,6 +972,7 @@
   "usServices.connecting": "جارٍ إرسال الحساب إلى السمّاعة…",
   "usServices.connectSent": "تم الإرسال. تسجّل السمّاعة الدخول الآن، قد يستغرق ذلك دقيقة.",
   "usServices.connectFailed": "لم تقبل السمّاعة الحساب: {{err}}",
+  "usServices.iheartProfileTooLarge": "لا يستطيع عميل iHeartRadio المدمج في السمّاعة التعامل مع حسابات iHeart الأحدث، لذلك لا يمكن إضافة هذا الحساب. الحساب نفسه سليم.",
   "usServices.disconnectTitle": "قطع الاتصال بـ {{service}}؟",
   "usServices.disconnectBody": "ستنسى السمّاعة الحساب. الأزرار التي تحمل محطاته تتوقف عن التشغيل حتى تعيد ربطه.",
   "usServices.disconnected": "تم قطع الاتصال.",

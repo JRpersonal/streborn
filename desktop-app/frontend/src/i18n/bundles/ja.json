@@ -972,6 +972,7 @@
   "usServices.connecting": "アカウントをスピーカーに送信中…",
   "usServices.connectSent": "送信しました。スピーカーがログインしています。1 分ほどかかることがあります。",
   "usServices.connectFailed": "スピーカーがアカウントを受け付けませんでした: {{err}}",
+  "usServices.iheartProfileTooLarge": "スピーカー内蔵の iHeartRadio クライアントは新しい iHeart アカウントに対応していないため、このアカウントは追加できません。アカウント自体に問題はありません。",
   "usServices.disconnectTitle": "{{service}} の接続を解除しますか?",
   "usServices.disconnectBody": "スピーカーはアカウントを忘れます。そのステーションを登録したキーは、再接続するまで再生されません。",
   "usServices.disconnected": "接続を解除しました。",
