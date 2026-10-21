@@ -1505,6 +1505,10 @@ func run() error {
 	// stamp the same classifier.
 	renderer.OnTransportCommand = wsClient.NoteOwnTransportCommand
 	webuiSrv.SetTransportCommandHook(wsClient.NoteOwnTransportCommand)
+	// STR's own key presses (the STOP key ending a native station before a
+	// UPnP push) also make the box emit a userActivityUpdate, which must not
+	// veto that excusal as if a person had pressed stop (#1394).
+	webuiSrv.SetOwnKeyHook(wsClient.NoteOwnKeyPress)
 	// bmx_adapter answers the two questions a failed hardware preset press
 	// raises and no bundle could answer before (#600): what the speaker itself
 	// complained about and what it was acting on at the time, and whether it

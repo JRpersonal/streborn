@@ -49,6 +49,11 @@ const (
 	// userActivityUpdate alongside real key presses; STR's SOAP commands never
 	// produce one.
 	ownCmdKeyVeto = 1500 * time.Millisecond
+	// ownKeyEchoWindow bounds how soon after one of STR's OWN key presses
+	// (NoteOwnKeyPress) a userActivityUpdate still counts as that key's echo
+	// rather than a person at the speaker. The echo arrived ~120 ms after the
+	// key in the #1394 bundle; two seconds leaves room for a slow box.
+	ownKeyEchoWindow = 2 * time.Second
 	// ownCmdKeylessTeardownWindow replaces ownCmdTeardownWindow on firmware
 	// that has never emitted a userActivityUpdate: the key veto has no signal
 	// there, so the full 3s window would excuse EVERY stop within 3s of any of
@@ -126,12 +131,15 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 		c.thumbMu.Lock()
 		sinceKey := time.Since(c.lastUserActivityAt)
 		keySet := !c.lastUserActivityAt.IsZero()
+		ownKey := c.lastUserActivityOwn
 		c.thumbMu.Unlock()
 		window := ownCmdTeardownWindow
 		if !keySet {
 			window = ownCmdKeylessTeardownWindow
 		}
-		if sinceOwnCmd < window && (!keySet || sinceKey > ownCmdKeyVeto) {
+		// A key press that is the echo of STR's own key (the native-station
+		// STOP before a UPnP push, #1394) is no person and vetoes nothing.
+		if sinceOwnCmd < window && (!keySet || ownKey || sinceKey > ownCmdKeyVeto) {
 			return true, "STR's own transport command " + sinceOwnCmd.Round(time.Millisecond).String() + " ago"
 		}
 	}
@@ -146,6 +154,33 @@ func (c *Client) NoteOwnTransportCommand() {
 	c.mu.Lock()
 	c.lastOwnCmdAt = time.Now()
 	c.mu.Unlock()
+}
+
+// NoteOwnKeyPress stamps that STR itself is about to press a key on the
+// speaker (the /key API), for example the STOP key that ends a station the
+// speaker plays itself before a UPnP push takes over. It counts as an own
+// transport command, and it also marks the userActivityUpdate the firmware
+// answers every key press with as STR's echo, so that echo cannot veto the
+// excusal of the STOP_STATE that follows.
+//
+// Before this, the handover's STOP key latched a phantom user stop: the
+// single-track end watch of the library track that took over stood down on
+// its first tick, and the track never stopped at its end (#1394). Call it
+// BEFORE sending the key: the echo arrives before the key request returns.
+func (c *Client) NoteOwnKeyPress() {
+	c.mu.Lock()
+	now := time.Now()
+	c.lastOwnCmdAt = now
+	c.lastOwnKeyAt = now
+	c.mu.Unlock()
+}
+
+// ownKeyEcho reports whether a userActivityUpdate arriving now is the echo of
+// one of STR's own key presses.
+func (c *Client) ownKeyEcho() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.lastOwnKeyAt.IsZero() && time.Since(c.lastOwnKeyAt) < ownKeyEchoWindow
 }
 
 // LastOwnTransportCommand returns when STR last issued a transport-mutating

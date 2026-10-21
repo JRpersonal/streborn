@@ -56,9 +56,11 @@ func (s *Server) stopNativeStation(ctx context.Context) bool {
 	}
 	// The firmware answers the key with a STOP_STATE frame that would otherwise
 	// read as the user pressing stop and stand down the play this belongs to.
-	if s.renderer != nil && s.renderer.OnTransportCommand != nil {
-		s.renderer.OnTransportCommand()
-	}
+	// It also answers with a userActivityUpdate, the same ping a person's key
+	// press makes, so the stamp has to say "STR's key", not only "STR's
+	// command": a bare command stamp let that ping veto the excusal, and the
+	// library track that took over never stopped at its end (#1394).
+	s.noteOwnKeyPress()
 	return s.transportKeyFallback(ctx, "STOP")
 }
 
@@ -69,9 +71,7 @@ func (s *Server) resumeNativeStation(ctx context.Context) bool {
 	if s.nativeResumeFn != nil {
 		return s.nativeResumeFn(ctx)
 	}
-	if s.renderer != nil && s.renderer.OnTransportCommand != nil {
-		s.renderer.OnTransportCommand()
-	}
+	s.noteOwnKeyPress()
 	return s.transportKeyFallback(ctx, "PLAY")
 }
 

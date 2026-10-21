@@ -150,6 +150,13 @@ type Client struct {
 	// really did stop. Guarded by mu.
 	lastOwnCmdAt time.Time
 
+	// lastOwnKeyAt is when STR itself last pressed a key on the speaker through
+	// its /key API (NoteOwnKeyPress). Unlike a SOAP command, a key press makes
+	// the firmware emit a userActivityUpdate exactly like a person at the box
+	// does, so without this stamp STR's own STOP key vetoed its own excusal
+	// (#1394). Guarded by mu.
+	lastOwnKeyAt time.Time
+
 	// lastUpnpActiveAt is when STR's own source (UPNP) last stopped being the
 	// active source. The firmware's give-up after a failed self-activation
 	// reaches STANDBY through INVALID_SOURCE (UPNP -> INVALID_SOURCE ->
@@ -215,6 +222,10 @@ type Client struct {
 	// accompanied by such a frame, from the firmware spontaneously powering
 	// off STR's UPnP source with no user input at all (#419). Guarded by thumbMu.
 	lastUserActivityAt time.Time
+	// lastUserActivityOwn is true when the most recent userActivityUpdate
+	// arrived right after one of STR's own key presses (lastOwnKeyAt), so it
+	// is that key's echo and not a person. Guarded by thumbMu.
+	lastUserActivityOwn bool
 
 	// onLoginError fires when the box rejects a source because it considers
 	// itself not signed into an account (errorUpdate value 1036

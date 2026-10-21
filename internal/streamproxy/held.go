@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,12 +42,27 @@ const (
 	heldGrab = 2 * time.Second
 )
 
+// titleGate mutes the ICY title parse of one station connection while it is
+// held.
+//
+// The held connection keeps reading the station, and with it the metadata
+// blocks the ICY reader parses. Those used to keep setting the live title
+// after the box had gone: the end-of-stream wipe cleared the radio song five
+// seconds after the box left, the held read parsed the next block a moment
+// later and put the song straight back, and nothing wiped it again once the
+// held connection ran out. A library track started over a station then showed
+// that station's song under its own title for as long as it played (#1394,
+// the regression of #274 the hold brought in). Muted from the moment the box
+// lets go, unmuted only when a re-fetch of the same station claims it.
+type titleGate struct{ muted atomic.Bool }
+
 // heldConn is a station connection the box let go of, kept reading.
 type heldConn struct {
 	station string
 	status  int
 	header  http.Header
 	src     io.Reader
+	titles  *titleGate
 	closeFn func()
 
 	mu      sync.Mutex
@@ -61,8 +77,12 @@ type heldConn struct {
 // audio already in hand that never reached the box (the read that found the
 // box gone), tail what the box got last on this station, so a resume starts
 // on the very next byte of what it had.
-func (s *Server) park(station string, resp *http.Response, src io.Reader, closeFn func(), tail, lead []byte) {
+func (s *Server) park(station string, resp *http.Response, src io.Reader, titles *titleGate, closeFn func(), tail, lead []byte) {
+	if titles != nil {
+		titles.muted.Store(true)
+	}
 	h := &heldConn{
+		titles:  titles,
 		station: station,
 		status:  resp.StatusCode,
 		header:  resp.Header.Clone(),
@@ -181,12 +201,16 @@ func (s *Server) claimHeld(station string) (*http.Response, time.Duration, int) 
 		h.closeFn()
 		return nil, 0, 0
 	}
+	// The box is listening to this station again, so its song is live again.
+	if h.titles != nil {
+		h.titles.muted.Store(false)
+	}
 	resp := &http.Response{
 		StatusCode:    h.status,
 		Status:        http.StatusText(h.status),
 		Header:        h.header,
 		ContentLength: -1,
-		Body:          &heldBody{Reader: io.MultiReader(bytes.NewReader(kept), h.src), closeFn: h.closeFn},
+		Body:          &heldBody{Reader: io.MultiReader(bytes.NewReader(kept), h.src), closeFn: h.closeFn, titles: h.titles},
 	}
 	return resp, time.Since(h.at), len(kept)
 }
@@ -196,6 +220,8 @@ type heldBody struct {
 	io.Reader
 	once    sync.Once
 	closeFn func()
+	// titles is the title gate of the ICY reader inside Reader, if any.
+	titles *titleGate
 }
 
 func (b *heldBody) Close() error {
