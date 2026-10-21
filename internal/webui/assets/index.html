@@ -2247,17 +2247,58 @@ function consumeHold(el) {
   if (el.dataset.held) { delete el.dataset.held; return true; }
   return false;
 }
+// spotifyURIFromContainer recovers the spotify: URI from a now-playing location
+// /playback/container/<base64 spotify:...>, or ''. Same as the desktop app's
+// helper of that name (utils.js).
+function spotifyURIFromContainer(loc) {
+  var marker = '/playback/container/';
+  var i = (loc || '').indexOf(marker);
+  if (i < 0) return '';
+  var enc = loc.slice(i + marker.length);
+  var j = enc.search(/[/?#]/);
+  if (j >= 0) enc = enc.slice(0, j);
+  try {
+    var uri = atob(enc.replace(/-/g, '+').replace(/_/g, '/'));
+    return uri.indexOf('spotify:') === 0 ? uri : '';
+  } catch (e) { return ''; }
+}
+
+// spotifySaveContextURI is the spotify: URI a hold writes onto a key, by the
+// desktop app's rule (spotifySaveContextURI in its utils.js, #1077 issue 15):
+//
+//   - STR's engine stream (location .../spotify/stream*.ogg): the engine's
+//     context, the location carries none.
+//   - The speaker's OWN Spotify (source SPOTIFY, the plain speaker entry in
+//     the Spotify app, Free accounts included): the location names what plays.
+//     The engine may still hold an older, paused context then. This page used
+//     to take that one, so a hold either saved the wrong playlist under the
+//     playing album's name, which then never lit the key in either app, or,
+//     with no older context, refused with "nothing suitable is playing" where
+//     the desktop app saved (#1077 issues 20, 21).
+//   - Anything else is not Spotify, and the engine's leftover context must not
+//     turn a radio hold into a Spotify key.
+function spotifySaveContextURI(src, loc, engineCtx) {
+  loc = loc || '';
+  var boxURI = spotifyURIFromContainer(loc);
+  if (/\/spotify\/stream/.test(loc)) return engineCtx || boxURI || '';
+  if (src === 'SPOTIFY' || boxURI) return boxURI;
+  return '';
+}
+
 async function saveSpotifyToSlot(slot) {
   // Fresh reads, like the desktop app refreshing before a save: the cached
   // page state can lag the speaker by seconds.
   var name = '';
   var src = '';
+  var loc = '';
   try {
     var t = await (await fetch('/api/status')).text();
     var m = t.match(/<itemName>([^<]+)<\/itemName>/);
     if (m) name = decodeEntities(m[1]);
     var sm = t.match(/source="([^"]+)"/);
     if (sm) src = sm[1].toUpperCase();
+    var lm = t.match(/location="([^"]*)"/);
+    if (lm) loc = decodeEntities(lm[1]);
   } catch (e) {}
   // Pandora or iHeartRadio playing: the speaker's own client plays it, and the
   // speaker reads the exact item from its own now-playing when type is native.
@@ -2266,8 +2307,8 @@ async function saveSpotifyToSlot(slot) {
     return;
   }
   var info = await api('/spotify/info');
-  var ctxUri = (info && info.context) || '';
-  if (!/^spotify:(playlist|album|artist|show|track):/.test(ctxUri)) {
+  var ctxUri = spotifySaveContextURI(src, loc, (info && info.context) || '');
+  if (!/^spotify:./.test(ctxUri)) {
     // Not Spotify. A station started from the Find tab is the other thing a
     // hold is reached for, and it used to do nothing at all: the gesture only
     // ever handled Spotify, and the sentence saying so was painted over by
@@ -2282,7 +2323,8 @@ async function saveSpotifyToSlot(slot) {
     hideMoveOffer();
     holdNote(fmt(T.saved, { n: slot }));
     lastPresetSig = null;
-    loadPresets();
+    // The key holds what plays, so it lights up now, not on the next poll.
+    loadPresets().then(refreshStatus).catch(function(){});
     return;
   }
   // The playlist already sits on another key. Saving it here would have had to
@@ -2508,11 +2550,17 @@ function queueSlot(q, list) {
 }
 
 // markPlaying moves the highlight to the key the speaker is on. queue is the
-// agent's running play queue (or null), for a key holding a folder.
-function markPlaying(loc, queue) {
+// agent's running play queue (or null), for a key holding a folder. spKey is
+// the Spotify key the agent found playing (X-STR-Playing-Key on /api/status):
+// the one holding what STR's engine plays from the Spotify app, or what the
+// speaker's own Spotify plays. The desktop app lit those keys and this page
+// did not, so a key saved from what plays stayed dark here (#1077 issues 19,
+// 20). The agent decides, so both apps follow one rule; an older agent sends
+// no header and the page behaves as before.
+function markPlaying(loc, queue, spKey) {
   var grid = document.getElementById('presets');
   if (!grid) return;
-  var n = playingSlot(loc, lastPresetList) || queueSlot(queue, lastPresetList);
+  var n = playingSlot(loc, lastPresetList) || (spKey >= 1 && spKey <= 6 ? spKey : 0) || queueSlot(queue, lastPresetList);
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
       clearPendingStart(); // the speaker got there
@@ -2538,10 +2586,11 @@ var netFails = 0;
 var NET_FAIL_QUIET = 2;
 
 async function refreshStatus() {
-  var r, t;
+  var r, t, spKey = 0;
   try {
     r = await fetch('/api/status');
     t = await r.text();
+    spKey = parseInt(r.headers.get('X-STR-Playing-Key') || '', 10) || 0;
   } catch (e) {
     netFails++;
     if (netFails >= NET_FAIL_QUIET) {
@@ -2624,7 +2673,7 @@ async function refreshStatus() {
   // still holds the title of whatever radio stream it carried last (#274).
   const queue = (upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc)) ? await currentQueue() : null;
   // The same read lights the key a folder was started from (#1029).
-  markPlaying(nowLoc, queue);
+  markPlaying(nowLoc, queue, spKey);
   if (!song && playing && queue) song = queueSongMeta(queue);
   if (!song && !queue) song = (playing && proxySrc) ? await currentSong() : '';
   // No raw firmware enum on the screen, ever. The old fallback stripped
