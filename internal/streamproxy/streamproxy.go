@@ -1149,8 +1149,20 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// through untouched so the box de-interleaves and displays the track
 	// itself, gap-free. Without metaint the body passes through unchanged.
 	var src io.Reader = resp.Body
+	// titles goes quiet while this connection is held for the box's return
+	// (held.go): a station nobody listens to must not set the live title.
+	// A claimed held connection still parses through the ICY reader of the
+	// handler that first opened it, so it brings that reader's gate along: a
+	// second hold of the same connection must mute the same reader.
+	titles := &titleGate{}
+	if hb, ok := resp.Body.(*heldBody); ok && hb.titles != nil {
+		titles = hb.titles
+	}
 	if metaint > 0 && !boxWantsICY {
 		src = newICYReader(resp.Body, metaint, func(meta string) {
+			if titles.muted.Load() {
+				return
+			}
 			if title, ok := parseStreamTitle(meta); ok {
 				s.setTitle(station, title)
 			}
@@ -1368,7 +1380,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		// bytes just read never reached the box and lead what is kept.
 		handOver := func(why string) (bool, error) {
 			handedOver.Store(true)
-			s.park(station, resp, src, closeUpstream, s.tail.snapshot(tailStation), bytes.Clone(buf[:n]))
+			s.park(station, resp, src, titles, closeUpstream, s.tail.snapshot(tailStation), bytes.Clone(buf[:n]))
 			connSummary(why)
 			return false, nil
 		}
