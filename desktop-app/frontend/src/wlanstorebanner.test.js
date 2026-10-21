@@ -26,7 +26,7 @@ describe('Save Wi-Fi banner', () => {
     expect(fn).toContain('state.wlanStoreFor = null;');
     expect(fn).toContain("form.classList.remove('hidden')");
     expect(fn).toContain('await CurrentWiFi()');
-    expect(settings).toContain("wireWlanSwitch(box, wifi && !isWired ? wifi.ssid : '')");
+    expect(settings).toContain("wireWlanSwitch(box, nv.kind === 'wifi' ? nv.ssid : '')");
     expect(settings).toContain('id="wlanStoreHint"');
   });
 
