@@ -91,6 +91,8 @@ export function ExportBackup(arg1:string):Promise<Record<string, any>>;
 
 export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
 
+export function FavoriteRemovals(arg1:string,arg2:number):Promise<string>;
+
 export function FeatureWishes():Promise<main.WishList>;
 
 export function FlashBoseFirmware(arg1:string,arg2:boolean):Promise<main.FirmwareFlashResult>;
@@ -200,8 +202,6 @@ export function Prev(arg1:string,arg2:number):Promise<void>;
 export function ProbeSetupAP():Promise<main.SetupAPProbe>;
 
 export function ProbeTrackDelivery(arg1:string):Promise<main.TrackDelivery>;
-
-export function FavoriteRemovals(arg1:string,arg2:number):Promise<string>;
 
 export function PushFavorites(arg1:string,arg2:number,arg3:string):Promise<void>;
 

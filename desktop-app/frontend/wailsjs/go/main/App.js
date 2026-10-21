@@ -174,6 +174,10 @@ export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
 }
 
+export function FavoriteRemovals(arg1, arg2) {
+  return window['go']['main']['App']['FavoriteRemovals'](arg1, arg2);
+}
+
 export function FeatureWishes() {
   return window['go']['main']['App']['FeatureWishes']();
 }
@@ -392,10 +396,6 @@ export function ProbeSetupAP() {
 
 export function ProbeTrackDelivery(arg1) {
   return window['go']['main']['App']['ProbeTrackDelivery'](arg1);
-}
-
-export function FavoriteRemovals(arg1, arg2) {
-  return window['go']['main']['App']['FavoriteRemovals'](arg1, arg2);
 }
 
 export function PushFavorites(arg1, arg2, arg3) {
