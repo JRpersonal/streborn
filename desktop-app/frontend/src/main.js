@@ -2504,6 +2504,10 @@ function applyBoxList(list) {
         checkBoxUpdate();
       }
       refreshSourceButtons();
+      // Each discovery cycle re-checks the Pandora entry once the cached
+      // answer has run out, so a speaker that was not ready (or did not
+      // answer) at startup brings the entry back on its own (#1388).
+      updatePandoraModeBtn(changed);
     } else {
       state.currentBox = null;
       state.presets = [];
@@ -9152,15 +9156,19 @@ async function updatePandoraModeBtn(force) {
     return;
   }
   let visible = false;
+  let answered = true;
   try {
     visible = pandoraFindVisible(await USServicesStatus(box.host, box.port));
   } catch {
-    // An older agent or app build has no such call: no Pandora entry.
+    // An older agent or app build has no such call, or the speaker did not
+    // answer: no Pandora entry for now. Not cached, so the next view switch
+    // or discovery cycle asks again instead of trusting a timeout (#1388).
     visible = false;
+    answered = false;
   }
   // Another speaker was picked while the answer was on its way.
   if (!state.currentBox || state.currentBox.host !== box.host) return;
-  pandoraState = { host: box.host, at: Date.now(), visible };
+  pandoraState = { host: box.host, at: answered ? Date.now() : 0, visible };
   b.classList.toggle('hidden', !visible);
   if (!visible && state.searchLastMode === 'pandora') {
     state.searchLastMode = 'top';
@@ -10090,6 +10098,9 @@ renderFooter();
     refreshStatus();
     loadTaxonomy();
     loadStickRegion();
+    // The Pandora entry: selectBox asks for it, this cache path has to as
+    // well, or the entry stays hidden until another view is opened (#1388).
+    updatePandoraModeBtn();
     // Also fire the OTA check on boot. Without this, an app that
     // boots while speaker version === app version skips
     // checkBoxUpdate (it only fires from discoverBoxes on
