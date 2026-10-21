@@ -113,6 +113,41 @@ func (a *App) checkFirewall(force, bypassMin bool) FirewallCheck {
 	return c
 }
 
+// cachedFirewallCheck returns the last finished check without starting one,
+// nil when there is none. A check that is running right now holds mu for up
+// to its 30 s timeout, and the failure report must not wait for it, so a busy
+// lock reads as "nothing cached".
+func (a *App) cachedFirewallCheck() *FirewallCheck {
+	if !a.firewall.mu.TryLock() {
+		return nil
+	}
+	defer a.firewall.mu.Unlock()
+	if a.firewall.last == nil {
+		return nil
+	}
+	c := *a.firewall.last
+	return &c
+}
+
+// firewallReportLine is the failure report's firewall line: the profile state
+// read from the registry, plus the app's own rule check when that check found
+// this program blocked. The profile state alone only says the firewall is
+// switched on, so without the verdict a report showed nothing wrong even
+// though the app had already named the block rules on screen.
+func firewallReportLine(profiles string, c *FirewallCheck) string {
+	if c == nil || !c.Checked || !c.Blocked {
+		return profiles
+	}
+	verdict := "ST Reborn's own firewall check found it BLOCKED"
+	if len(c.BlockRules) > 0 {
+		verdict += " by inbound rule(s): " + strings.Join(c.BlockRules, "; ")
+	}
+	if profiles == "" {
+		return verdict
+	}
+	return profiles + "; " + verdict
+}
+
 func (a *App) runFirewallCheck() FirewallCheck {
 	c := FirewallCheck{Supported: true}
 	ctx, cancel := context.WithTimeout(a.appCtx(), 30*time.Second)

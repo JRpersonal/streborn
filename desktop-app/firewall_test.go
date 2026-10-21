@@ -174,3 +174,46 @@ func TestFirewallStepError(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// The failure report's firewall line carries the app's own verdict when that
+// check found the program blocked, so a report no longer reads "firewall on"
+// while the app already knew the block rules.
+func TestFirewallReportLineAddsTheCachedBlock(t *testing.T) {
+	profiles := "Windows firewall domain=on private=on public=on (this only says the firewall is switched on, not whether ST Reborn is allowed through it)"
+	blocked := &FirewallCheck{Supported: true, Checked: true, Blocked: true, BlockRules: []string{"str-windows (3).exe [Private]", "str-windows (3).exe [Public]"}}
+
+	got := firewallReportLine(profiles, blocked)
+	if !strings.HasPrefix(got, profiles) || !strings.Contains(got, "BLOCKED") || !strings.Contains(got, "str-windows (3).exe [Private]; str-windows (3).exe [Public]") {
+		t.Errorf("blocked: %q", got)
+	}
+	if got := firewallReportLine("", blocked); !strings.HasPrefix(got, "ST Reborn's own firewall check found it BLOCKED by inbound rule(s): ") {
+		t.Errorf("blocked without a profile line: %q", got)
+	}
+	for _, c := range []*FirewallCheck{
+		nil,
+		{Supported: true, Checked: true},
+		{Supported: true, Error: "could not read"},
+	} {
+		if got := firewallReportLine(profiles, c); got != profiles {
+			t.Errorf("%+v: line changed to %q", c, got)
+		}
+	}
+}
+
+// The report reads the cached check without starting one, and a check that
+// is running right now does not hold the report up.
+func TestCachedFirewallCheckNeverWaits(t *testing.T) {
+	a := &App{}
+	if a.cachedFirewallCheck() != nil {
+		t.Fatal("no check yet must read as nil")
+	}
+	a.firewall.last = &FirewallCheck{Checked: true, Blocked: true}
+	if c := a.cachedFirewallCheck(); c == nil || !c.Blocked {
+		t.Fatalf("cached = %+v", c)
+	}
+	a.firewall.mu.Lock()
+	defer a.firewall.mu.Unlock()
+	if a.cachedFirewallCheck() != nil {
+		t.Fatal("a running check must read as nothing cached")
+	}
+}

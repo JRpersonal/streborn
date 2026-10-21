@@ -612,7 +612,7 @@ func (a *App) gatherInstallFacts(ctx context.Context, host string) installFacts 
 
 	f.Ifaces = localIPv4Ifaces()
 	f.SubnetKnown, f.SameSubnet, f.SubnetVia = sameSubnet(host, f.Ifaces)
-	f.Firewall = localFirewallState()
+	f.Firewall = firewallReportLine(localFirewallState(), a.cachedFirewallCheck())
 	f.LAN = a.lanSightings(12)
 	for _, s := range f.LAN {
 		if s.Host == host {
