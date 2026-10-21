@@ -44,8 +44,11 @@ func (c *Client) noteExplainedActivity() {
 // (which emits volumeUpdated alongside userActivity, in either order) does not
 // misfire.
 func (c *Client) noteUserActivity(ctx context.Context, raw []byte) {
+	// Read before taking thumbMu: c.mu and thumbMu are never held together.
+	own := c.ownKeyEcho()
 	c.thumbMu.Lock()
 	defer c.thumbMu.Unlock()
+	c.lastUserActivityOwn = own
 	// Every userActivityUpdate is a physical key press (box or IR remote),
 	// whether or not it is later explained by a sibling event. Stamp it for
 	// LastUserActivity's spontaneous-power-off discriminator (#419).

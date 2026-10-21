@@ -449,6 +449,10 @@ type Server struct {
 	// nativeResumeFn seams the speaker's own PLAY key that brings the native
 	// station back after a handover the speaker refused, for the tests.
 	nativeResumeFn func(context.Context) bool
+	// ownKeyHook tells the gabbo classifier that STR itself is about to press
+	// a key on the speaker (boxws.NoteOwnKeyPress), so the userActivityUpdate
+	// the firmware answers with is not read as a person (#1394).
+	ownKeyHook func()
 	// selectFn seams the speaker's own /select (postSelect), for the tests.
 	// It gets the ContentItem body. nil = the real :8090 call.
 	selectFn func(ctx context.Context, body string) error

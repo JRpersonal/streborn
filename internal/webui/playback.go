@@ -785,6 +785,26 @@ func (s *Server) SetTransportCommandHook(fn func()) {
 	}
 }
 
+// SetOwnKeyHook wires the gabbo classifier's own-key stamp
+// (boxws.NoteOwnKeyPress). STR's key presses on the speaker, like the STOP key
+// that ends a native station before a UPnP push, make the firmware emit the
+// same userActivityUpdate a person does; without the stamp that echo vetoed
+// the own-command excusal and the box's STOP_STATE latched a phantom user stop
+// (#1394).
+func (s *Server) SetOwnKeyHook(fn func()) { s.ownKeyHook = fn }
+
+// noteOwnKeyPress stamps one of STR's own key presses for the classifier, and
+// falls back to the plain own-command stamp where no key hook is wired.
+func (s *Server) noteOwnKeyPress() {
+	if s.ownKeyHook != nil {
+		s.ownKeyHook()
+		return
+	}
+	if s.renderer != nil && s.renderer.OnTransportCommand != nil {
+		s.renderer.OnTransportCommand()
+	}
+}
+
 // --- Recently played (#135) ---
 //
 // These record the user's listening history into the capped, debounced ring.
