@@ -169,6 +169,11 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	// the forgotten networks stay out of the firmware's store? A file read,
 	// once per boot, before anything below can touch the store.
 	s.checkWLANForgetAfterBoot()
+	// Before anything below reads STR's records: if the owner has since moved
+	// the speaker to a network of their own choosing, those records are
+	// retired here and nothing below steers toward the old network
+	// (wlansupersede.go).
+	s.reconcileWlanIntent(s.liveWLANInterfaces(ctx))
 	iface, mech := detectWlanMechanism()
 	tgt, hasTarget := readWlanTarget()
 
@@ -238,6 +243,15 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	// target the user chose.
 	if !hasTarget {
 		return
+	}
+	// A network the speaker did not know when STR set the target is the owner's
+	// own choice, not drift back to an old network: retire the target rather
+	// than "correct" the owner (wlansupersede.go).
+	if assoc && cur != "" && cur != tgt.SSID {
+		s.reconcileWlanIntentLive(cur)
+		if tgt, hasTarget = readWlanTarget(); !hasTarget {
+			return
+		}
 	}
 	visible, surveyOK := s.targetInSurvey(ctx, tgt.SSID)
 	action, reason := guardDecision(assoc, cur, tgt.SSID, visible, tgt.BootsFailed)
@@ -423,6 +437,27 @@ func (s *Server) wlanGuardWeakVerify(tgt wlanTarget, iface string) {
 		noteWlanTargetVerdict("stood-down:no-box-host", budgetHold)
 		return
 	}
+	// Where the firmware names the live association (ST30 and Portable fill
+	// the SSID on their eth0), that is the answer and it is a real one. The
+	// scm ST20 never names it, and the stored-profile check below is all
+	// there is. It says what NetManager would pick, which after the owner
+	// re-onboarded the chip through its setup page can be a network the
+	// speaker is not on at all, and on a cable it says nothing about the
+	// cable. So its verdict is spelled as what it is.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	liveName := liveSSIDFrom(s.liveWLANInterfaces(ctx))
+	cancel()
+	if liveName != "" {
+		s.logger.Info("wlan guard: boot verdict (the firmware names the live network on this chassis)",
+			"match", liveName == tgt.SSID, "wantTag", ssidTag(tgt.SSID), "gotTag", ssidTag(liveName),
+			"gen", tgt.Gen, "verify", "live-networkInfo", "mech", "bco", "iface", iface)
+		if liveName == tgt.SSID {
+			noteWlanTargetVerdict(guardReasonOnTarget+" (live)", budgetReset)
+		} else {
+			noteWlanTargetVerdict("elsewhere (live, no correction on this chassis)", budgetHold)
+		}
+		return
+	}
 	active := activeWifiProfile(s.boxHost)
 	match := active != "" && active == tgt.SSID
 	stored := storedProfileTags()
@@ -434,7 +469,7 @@ func (s *Server) wlanGuardWeakVerify(tgt wlanTarget, iface string) {
 		"mech", "bco", "iface", iface,
 		"storeNets", len(stored), "storeTags", stored)
 	if match {
-		noteWlanTargetVerdict("on-target (stored-profile check)", budgetReset)
+		noteWlanTargetVerdict("stored-profile matches (association unknown)", budgetReset)
 		return
 	}
 	s.logger.Warn("wlan guard: could not confirm this speaker is on the intended network; this model has no live Wi-Fi channel to check or correct",
