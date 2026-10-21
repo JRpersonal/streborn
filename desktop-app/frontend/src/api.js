@@ -316,6 +316,12 @@ export function PushFavorites(host, port, favoritesJSON) {
   return callOptionalBinding('PushFavorites', [host, port, favoritesJSON]);
 }
 
+// FavoriteRemovals reads which favourites were removed on one speaker's phone
+// page (#1389), as raw JSON. Optional binding, per the note above.
+export function FavoriteRemovals(host, port) {
+  return callOptionalBinding('FavoriteRemovals', [host, port]);
+}
+
 // GetStartVolume / SetStartVolume drive the per-box level the speaker returns
 // to when it wakes and plays again. Optional bindings, per the note above.
 export function GetStartVolume(host, port) {

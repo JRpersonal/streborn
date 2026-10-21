@@ -201,6 +201,8 @@ export function ProbeSetupAP():Promise<main.SetupAPProbe>;
 
 export function ProbeTrackDelivery(arg1:string):Promise<main.TrackDelivery>;
 
+export function FavoriteRemovals(arg1:string,arg2:number):Promise<string>;
+
 export function PushFavorites(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function PushStereoPairNameToBox(arg1:string,arg2:number,arg3:string):Promise<void>;
