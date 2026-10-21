@@ -3679,7 +3679,9 @@ function wireWlanSwitch(box, currentSsid) {
         if (pw && $('boxWlanPass')) $('boxWlanPass').value = pw;
       } catch {}
     }
-    form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // The Network section and its group start folded up: open every <details>
+    // around the form, or the banner lands on a closed list (mail 2026-10-20).
+    revealInSettings(form);
     const pass = $('boxWlanPass');
     if (pass && !pass.value) pass.focus();
   }
