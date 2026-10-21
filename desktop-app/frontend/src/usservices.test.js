@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
   usServiceCanDisconnect, pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText,
-  usDisconnectError,
+  usDisconnectError, usConnectError,
 } from './usservices.js';
 
 // A GET /api/us-services answer in the agent's shape.
@@ -131,5 +131,17 @@ describe('usDisconnectError', () => {
     const refused = new Error('status 502: {"code":"remove-refused","error":"the speaker refused to remove the account: status 500"}');
     expect(usDisconnectError(refused)).toEqual(['usServices.disconnectFailed', { err: 'the speaker refused to remove the account: status 500' }]);
     expect(usDisconnectError('timeout')).toEqual(['usServices.disconnectFailed', { err: 'timeout' }]);
+  });
+});
+
+describe('usConnectError', () => {
+  it('turns the firmware iHeart profileId limit into its own sentence', () => {
+    const tooLarge = new Error('status 502: {"code":"iheart-profileid-too-large","error":"The speaker\'s built-in iHeartRadio client cannot handle newer iHeart accounts"}');
+    expect(usConnectError(tooLarge)).toEqual(['usServices.iheartProfileTooLarge', {}]);
+  });
+  it('passes any other refusal on with the agent reason', () => {
+    const refused = new Error('status 502: the speaker refused the account: status 500');
+    expect(usConnectError(refused)).toEqual(['usServices.connectFailed', { err: 'status 502: the speaker refused the account: status 500' }]);
+    expect(usConnectError('timeout')).toEqual(['usServices.connectFailed', { err: 'timeout' }]);
   });
 });

@@ -1081,6 +1081,7 @@
   "usServices.connecting": "Sending the account to the speaker…",
   "usServices.connectSent": "Sent. The speaker logs in now, this can take a minute.",
   "usServices.connectFailed": "The speaker did not accept the account: {{err}}",
+  "usServices.iheartProfileTooLarge": "The speaker's built-in iHeartRadio client cannot handle newer iHeart accounts, so this account cannot be added. Nothing is wrong with the account itself.",
   "usServices.disconnectTitle": "Disconnect {{service}}?",
   "usServices.disconnectBody": "The speaker forgets the account. Keys that hold its stations stop playing until you connect it again.",
   "usServices.disconnected": "Disconnected.",

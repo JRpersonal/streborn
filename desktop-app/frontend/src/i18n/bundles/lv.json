@@ -972,6 +972,7 @@
   "usServices.connecting": "Konts tiek sūtīts uz skaļruni…",
   "usServices.connectSent": "Nosūtīts. Skaļrunis tagad piesakās, tas var aizņemt minūti.",
   "usServices.connectFailed": "Skaļrunis nepieņēma kontu: {{err}}",
+  "usServices.iheartProfileTooLarge": "Skaļruņa iebūvētais iHeartRadio klients nespēj apstrādāt jaunākus iHeart kontus, tāpēc šo kontu nevar pievienot. Ar pašu kontu viss ir kārtībā.",
   "usServices.disconnectTitle": "Atvienot {{service}}?",
   "usServices.disconnectBody": "Skaļrunis aizmirsīs kontu. Taustiņi ar tā stacijām neskanēs, līdz to atkal savienosi.",
   "usServices.disconnected": "Atvienots.",

@@ -972,6 +972,7 @@
   "usServices.connecting": "Wysyłanie konta do głośnika…",
   "usServices.connectSent": "Wysłano. Głośnik się teraz loguje, może to potrwać minutę.",
   "usServices.connectFailed": "Głośnik nie przyjął konta: {{err}}",
+  "usServices.iheartProfileTooLarge": "Wbudowany w głośnik klient iHeartRadio nie obsługuje nowszych kont iHeart, więc tego konta nie da się dodać. Z samym kontem wszystko jest w porządku.",
   "usServices.disconnectTitle": "Rozłączyć {{service}}?",
   "usServices.disconnectBody": "Głośnik zapomni konto. Przyciski z jego stacjami przestaną grać, dopóki nie połączysz go ponownie.",
   "usServices.disconnected": "Rozłączono.",

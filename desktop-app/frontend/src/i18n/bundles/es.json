@@ -972,6 +972,7 @@
   "usServices.connecting": "Enviando la cuenta al altavoz…",
   "usServices.connectSent": "Enviado. El altavoz está iniciando sesión, puede tardar un minuto.",
   "usServices.connectFailed": "El altavoz no aceptó la cuenta: {{err}}",
+  "usServices.iheartProfileTooLarge": "El cliente de iHeartRadio integrado en el altavoz no admite las cuentas de iHeart más recientes, así que no se puede añadir esta cuenta. La cuenta en sí no tiene ningún problema.",
   "usServices.disconnectTitle": "¿Desconectar {{service}}?",
   "usServices.disconnectBody": "El altavoz olvida la cuenta. Las teclas con sus emisoras dejan de sonar hasta que la vuelvas a conectar.",
   "usServices.disconnected": "Desconectado.",

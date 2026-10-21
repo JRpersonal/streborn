@@ -56,7 +56,7 @@ import { runConflictCleanup } from '../conflictcleanup.js';
 import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../wlanforget.js';
 import {
   US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
-  usServiceCanDisconnect, agentErrorText, usDisconnectError,
+  usServiceCanDisconnect, agentErrorText, usDisconnectError, usConnectError,
 } from '../usservices.js';
 import {
   BoxSettings,
@@ -1018,7 +1018,8 @@ async function fillUSServices(box) {
         say('setup-ok', t('usServices.connectSent'));
         refreshSoon();
       } catch (e) {
-        say('setup-err', t('usServices.connectFailed', { err: agentErrorText(e) }));
+        const [key, params] = usConnectError(e);
+        say('setup-err', t(key, params));
       }
       btn.disabled = false;
     };

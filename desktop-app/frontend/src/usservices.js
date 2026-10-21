@@ -109,6 +109,15 @@ export function usDisconnectError(err) {
   return ['usServices.disconnectFailed', { err: agentErrorText(err) }];
 }
 
+// usConnectError picks the message for a failed account login: a known
+// firmware limit gets its own translated sentence instead of the speaker's
+// raw answer, anything else the generic line with the agent's reason.
+// Returns [i18n key, params].
+export function usConnectError(err) {
+  if (agentErrorCode(err) === 'iheart-profileid-too-large') return ['usServices.iheartProfileTooLarge', {}];
+  return ['usServices.connectFailed', { err: agentErrorText(err) }];
+}
+
 // agentErrorText pulls the agent's JSON "error" out of a binding error, or
 // returns the error as it is.
 export function agentErrorText(err) {

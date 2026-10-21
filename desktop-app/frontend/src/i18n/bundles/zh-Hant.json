@@ -1081,6 +1081,7 @@
   "usServices.connecting": "正在將帳號傳送到喇叭…",
   "usServices.connectSent": "已傳送。喇叭正在登入，可能需要一分鐘。",
   "usServices.connectFailed": "喇叭不接受這個帳號：{{err}}",
+  "usServices.iheartProfileTooLarge": "喇叭內建的 iHeartRadio 用戶端無法處理較新的 iHeart 帳號，因此無法加入這個帳號。帳號本身沒有任何問題。",
   "usServices.disconnectTitle": "要中斷 {{service}} 的連線嗎？",
   "usServices.disconnectBody": "喇叭會忘記這個帳號。存有其電台的按鍵在重新連線前都無法播放。",
   "usServices.disconnected": "已中斷連線。",

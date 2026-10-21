@@ -184,6 +184,16 @@ func (s *Server) handleNativeAccount(typ string) http.HandlerFunc {
 			}
 			if err := s.nativeBox().SetMusicServiceAccount(ctx, typ, display, req.User, req.Password); err != nil {
 				s.logger.Warn("us-services: the speaker refused the account", "service", typ, "err", err)
+				if code := nativeLoginErrorCode(err); code != "" {
+					// A known firmware limit, not a wrong password: answer with a
+					// code the apps turn into a plain sentence. The raw firmware
+					// XML stays in the log line above.
+					writeJSON(w, http.StatusBadGateway, map[string]any{
+						"error": nativeLoginErrorText[code],
+						"code":  code,
+					})
+					return
+				}
 				http.Error(w, "the speaker refused the account: "+err.Error(), http.StatusBadGateway)
 				return
 			}
@@ -196,6 +206,34 @@ func (s *Server) handleNativeAccount(typ string) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// codeIHeartProfileIDTooLarge names the firmware's iHeartRadio login failure
+// on a newer iHeart account: the speaker's client reads the account's
+// profileId with a 32-bit stoi, and newer iHeart profile ids no longer fit,
+// so it answers MUSIC_SERVICE_PARSE_ERROR with "Out-of-range error parsing
+// number from json string ... Field= [profileId]". The account itself is
+// fine; the speaker cannot hold it, and retrying never helps.
+const codeIHeartProfileIDTooLarge = "iheart-profileid-too-large"
+
+// nativeLoginErrorText is the English sentence sent along with each code, for
+// a client that does not know the code yet.
+var nativeLoginErrorText = map[string]string{
+	codeIHeartProfileIDTooLarge: "The speaker's built-in iHeartRadio client cannot handle newer iHeart accounts, so this account cannot be added. Nothing is wrong with the account itself.",
+}
+
+// nativeLoginErrorCode recognises a known firmware login failure in the
+// speaker's answer to setMusicServiceAccount and returns its code, "" for
+// anything else.
+func nativeLoginErrorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "out-of-range") && strings.Contains(msg, "profileid") {
+		return codeIHeartProfileIDTooLarge
+	}
+	return ""
 }
 
 // nativeRemoveSettle is the pause between the re-reads of /sources that

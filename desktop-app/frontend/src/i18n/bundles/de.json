@@ -1081,6 +1081,7 @@
   "usServices.connecting": "Konto wird an den Lautsprecher geschickt…",
   "usServices.connectSent": "Gesendet. Der Lautsprecher meldet sich jetzt an, das kann eine Minute dauern.",
   "usServices.connectFailed": "Der Lautsprecher hat das Konto nicht angenommen: {{err}}",
+  "usServices.iheartProfileTooLarge": "Der eingebaute iHeartRadio-Client des Lautsprechers kommt mit neueren iHeart-Konten nicht zurecht, deshalb lässt sich dieses Konto nicht hinzufügen. Mit deinem Konto selbst ist alles in Ordnung.",
   "usServices.disconnectTitle": "{{service}} trennen?",
   "usServices.disconnectBody": "Der Lautsprecher vergisst das Konto. Tasten mit Sendern davon spielen erst wieder, wenn du es neu verbindest.",
   "usServices.disconnected": "Getrennt.",

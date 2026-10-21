@@ -972,6 +972,7 @@
   "usServices.connecting": "Hesap hoparlöre gönderiliyor…",
   "usServices.connectSent": "Gönderildi. Hoparlör şimdi giriş yapıyor, bu bir dakika sürebilir.",
   "usServices.connectFailed": "Hoparlör hesabı kabul etmedi: {{err}}",
+  "usServices.iheartProfileTooLarge": "Hoparlörün yerleşik iHeartRadio istemcisi yeni iHeart hesaplarını işleyemiyor, bu yüzden bu hesap eklenemiyor. Hesabın kendisinde bir sorun yok.",
   "usServices.disconnectTitle": "{{service}} bağlantısı kesilsin mi?",
   "usServices.disconnectBody": "Hoparlör hesabı unutur. Bu hesabın istasyonlarını tutan tuşlar, hesabı yeniden bağlayana kadar çalmaz.",
   "usServices.disconnected": "Bağlantı kesildi.",
