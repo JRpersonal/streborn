@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "アプリのログとスピーカーごとの状態をzipにまとめ、GitHubのチケットに添付できます。IPとデバイスIDは匿名化されます。",
   "footer.saveLogsDone": "{{size}} KB を {{path}} に保存しました",
   "footer.donateSlogan": "アプリが気に入りましたか? コーヒー1杯いただけると嬉しいです。",
+  "footer.fine": "独立したオープンソースプロジェクト。ドイツで愛を込めて作られています。寄付で運営、Apache-2.0。",
   "footer.shareLead": "STR を本当に気に入ったら、SNS でシェアしてください！",
   "banner.recommendationShort": "推奨",
   "speaker.rebootNow": "今すぐスピーカーを再起動",

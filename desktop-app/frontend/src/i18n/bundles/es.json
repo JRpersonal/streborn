@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Agrupa el registro de la aplicación y el estado por altavoz en un zip que puedes adjuntar a un ticket de GitHub. Las IP y los identificadores de dispositivo se anonimizan.",
   "footer.saveLogsDone": "{{size}} KB guardados en {{path}}",
   "footer.donateSlogan": "¿Te gusta la aplicación? Agradecería un café.",
+  "footer.fine": "Proyecto de código abierto independiente, hecho con amor en Alemania. Financiado con donaciones, Apache-2.0.",
   "footer.shareLead": "Y si STR te encanta de verdad: ¡compártelo en redes sociales!",
   "banner.recommendationShort": "Recomendación",
   "speaker.rebootNow": "Reiniciar altavoz ahora",

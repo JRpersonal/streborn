@@ -812,6 +812,7 @@
   "footer.saveLogsHint": "Bundle the app log + per-speaker state into a zip you can attach to a GitHub issue. IPs and device IDs are anonymized.",
   "footer.saveLogsDone": "Saved {{size}} KB to {{path}}",
   "footer.donateSlogan": "Do you like the app? I'd appreciate a coffee.",
+  "footer.fine": "Independent open source project, made with love in Germany. Donation funded, Apache-2.0.",
   "footer.shareLead": "And if you really like STR: share it on social media!",
   "banner.recommendationShort": "Recommendation",
   "speaker.rebootNow": "Restart speaker now",

@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "يجمع سجلّ التطبيق وحالة كل سمّاعة في ملف مضغوط يمكنك إرفاقه بمسألة على GitHub. تُخفى عناوين IP ومعرّفات الأجهزة.",
   "footer.saveLogsDone": "تم حفظ {{size}} كيلوبايت في {{path}}",
   "footer.donateSlogan": "هل يعجبك التطبيق؟ سأقدّر فنجان قهوة.",
+  "footer.fine": "مشروع مستقل مفتوح المصدر، صُنع بحب في ألمانيا. ممول بالتبرعات، Apache-2.0.",
   "footer.shareLead": "وإذا أعجبك STR حقًا: شاركه على وسائل التواصل الاجتماعي!",
   "banner.recommendationShort": "توصية",
   "speaker.rebootNow": "إعادة تشغيل السمّاعة الآن",

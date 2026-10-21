@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Uygulama günlüğünü + her hoparlörün durumunu, GitHub sorununa ekleyebileceğiniz bir zip dosyasında paketler. IP adresleri ve cihaz kimlikleri anonimleştirilir.",
   "footer.saveLogsDone": "{{path}} konumuna {{size}} KB kaydedildi",
   "footer.donateSlogan": "Uygulamayı beğendiniz mi? Bir fincan kahve memnuniyetle karşılanır.",
+  "footer.fine": "Bağımsız açık kaynak proje, Almanya'da sevgiyle yapıldı. Bağışlarla finanse edilir, Apache-2.0.",
   "footer.shareLead": "STR'yi gerçekten beğendiysen: sosyal medyada paylaş!",
   "banner.recommendationShort": "Öneri",
   "speaker.rebootNow": "Hoparlörü şimdi yeniden başlat",

@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Bundelt het app-log + de status per speaker in een zip die je aan een GitHub-issue kunt toevoegen. IP's en apparaat-ID's worden geanonimiseerd.",
   "footer.saveLogsDone": "{{size}} KB opgeslagen in {{path}}",
   "footer.donateSlogan": "Vind je de app goed? Een kopje koffie wordt gewaardeerd.",
+  "footer.fine": "Onafhankelijk opensourceproject, met liefde gemaakt in Duitsland. Gefinancierd door donaties, Apache-2.0.",
   "footer.shareLead": "En als je STR echt geweldig vindt: deel het op social media!",
   "banner.recommendationShort": "Aanbeveling",
   "speaker.rebootNow": "Speaker nu herstarten",

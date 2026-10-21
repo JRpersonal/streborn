@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Pakuje log aplikacji + status każdego głośnika do pliku zip, który możesz dołączyć do zgłoszenia na GitHub. Adresy IP i identyfikatory urządzeń są anonimizowane.",
   "footer.saveLogsDone": "Zapisano {{size}} KB w {{path}}",
   "footer.donateSlogan": "Podoba Ci się aplikacja? Filiżanka kawy będzie mile widziana.",
+  "footer.fine": "Niezależny projekt open source, zrobiony z miłością w Niemczech. Finansowany z darowizn, Apache-2.0.",
   "footer.shareLead": "A jeśli STR naprawdę ci się podoba: podziel się nim w mediach społecznościowych!",
   "banner.recommendationShort": "Zalecenie",
   "speaker.rebootNow": "Uruchom głośnik ponownie teraz",

@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Regroupe le journal de l'application et l'état par enceinte dans un zip à joindre à un ticket GitHub. Les IP et identifiants d'appareil sont anonymisés.",
   "footer.saveLogsDone": "{{size}} Ko enregistrés dans {{path}}",
   "footer.donateSlogan": "Vous aimez l'application ? Un café serait apprécié.",
+  "footer.fine": "Projet open source indépendant, fait avec amour en Allemagne. Financé par les dons, Apache-2.0.",
   "footer.shareLead": "Et si STR vous plaît vraiment : partagez-le sur les réseaux sociaux !",
   "banner.recommendationShort": "Recommandation",
   "speaker.rebootNow": "Redémarrer l'enceinte maintenant",

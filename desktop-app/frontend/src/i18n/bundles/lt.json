@@ -767,6 +767,7 @@
   "footer.saveLogsHint": "Supakuoja programos žurnalą + kiekvieno garsiakalbio būseną į zip failą, kurį galite pridėti prie GitHub problemos. IP adresai ir įrenginių ID anonimizuojami.",
   "footer.saveLogsDone": "Išsaugota {{size}} KB į {{path}}",
   "footer.donateSlogan": "Patinka programa? Puodelis kavos būtų vertinamas.",
+  "footer.fine": "Nepriklausomas atvirojo kodo projektas, su meile sukurtas Vokietijoje. Finansuojamas aukomis, Apache-2.0.",
   "footer.shareLead": "O jei STR tau tikrai patinka: pasidalink juo socialiniuose tinkluose!",
   "banner.recommendationShort": "Rekomendacija",
   "speaker.rebootNow": "Paleisti garsiakalbį iš naujo dabar",
