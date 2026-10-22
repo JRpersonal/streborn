@@ -252,6 +252,10 @@ type presetWsHandler struct {
 	// boxSummaryFn seams the now_playing settle probe (boxNowPlayingSummary)
 	// the verify logs on success/exhaustion. nil = real :8090 fetch.
 	boxSummaryFn func() (source, itemName, playStatus string)
+	// boxOnSpotifyFn seams the "is the box on STR's Spotify stream" probe
+	// (boxPlayingSpotify) the Spotify wrong-state repair reads. nil = real
+	// :8090 fetch.
+	boxOnSpotifyFn func() bool
 
 	// slotPulled reports whether the box is credibly playing THIS slot's
 	// proxied stream for a recall anchored at the given time. It is the recall
@@ -1417,6 +1421,11 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 		}
 		gen = h.noteLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 	}
+	// The box answers a Spotify key with its own self-activation, which it
+	// refuses (1036) and tears down to INVALID_SOURCE, taking the push above
+	// with it. Put the box back on the stream as soon as that settles instead
+	// of at the first verify tick, see rePointSpotifyAfterSourceReject.
+	go h.rePointSpotifyAfterSourceReject(seq, gen, pressAt, slot, p)
 	// Wake from standby + ensure pairing (the box is awake on a hardware press,
 	// so these return fast); kept AFTER the display push so the buffering state
 	// shows without waiting on them.
@@ -1698,7 +1707,7 @@ func (h *presetWsHandler) displayMessage(kind webui.DisplayMsgKind) {
 // of that, so this both catches the rejection and lets the teardown finish; a
 // recall that simply started normally is already playing by now and is left
 // alone.
-const sourceRejectProbeDelay = 1500 * time.Millisecond
+var sourceRejectProbeDelay = 1500 * time.Millisecond
 
 // rePushAfterSourceReject re-issues a recall the box refused with 1036
 // UpnpRcvdContentItemInWrongState, without waiting for the first 5 s verify
@@ -1778,6 +1787,56 @@ func (h *presetWsHandler) clearTransportForRePush(ctx context.Context, slot int)
 	if err := h.renderer.ClearURI(ctx); err != nil {
 		h.logger.Debug("wrong-state repair: clear transport URI returned", "slot", slot, "err", err)
 	}
+}
+
+// rePointSpotifyAfterSourceReject is the Spotify counterpart of
+// rePushAfterSourceReject. A Spotify key is stored on the box as a UPNP
+// ContentItem, so every press makes the firmware try to activate it itself;
+// it refuses that (1036 UpnpRcvdContentItemInWrongState) and tears the source
+// down to INVALID_SOURCE, which is what puts its own "not available" message
+// on the display. STR's display push lands inside that teardown and is lost
+// with it, and the box then sits on INVALID_SOURCE until the first verify tick
+// five seconds later re-points it.
+//
+// That gap is what pressing the key of the playlist that already plays looked
+// like (live Portable, 2026-10-22, on v1.0.18 and on main alike): about seven
+// seconds of the firmware's message, and because the re-pressed key moves on
+// to the next track while nobody listens, the box re-attached after that
+// track's start had gone by and buffered for another twenty seconds until the
+// track after it began.
+//
+// So once the refusal has settled, put a box that is NOT on the Spotify stream
+// back on it. A box that is on the stream (playing or buffering) is left to
+// the verify loop, which owns everything after this single re-point.
+func (h *presetWsHandler) rePointSpotifyAfterSourceReject(seq, gen uint64, pressAt time.Time, slot int, p presets.Preset) {
+	time.Sleep(sourceRejectProbeDelay)
+	if !h.lastSourceRejectTime().After(pressAt) {
+		return // the box did not refuse this press; the verify governs
+	}
+	if h.recallStandDown(seq, gen, pressAt) {
+		return // newer press, power-off (#197) or a deliberate stop
+	}
+	if h.spotify != nil && h.spotify.Streaming() {
+		return
+	}
+	if h.boxOnSpotifyStream() {
+		return
+	}
+	h.logger.Info("spotify recall: the box refused its own copy of the key and dropped the stream, putting it back on the stream now", "slot", slot)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := h.renderer.PlayURLMime(ctx, boxurl.SpotifySlot(slot), p.Name, p.Art, "audio/ogg"); err != nil {
+		h.logger.Warn("spotify recall: re-point after the box's refusal failed, the verify retries", "slot", slot, "err", err)
+	}
+}
+
+// boxOnSpotifyStream reports whether the box is on STR's Spotify stream in a
+// play or buffering state. Seam-aware for the tests.
+func (h *presetWsHandler) boxOnSpotifyStream() bool {
+	if h.boxOnSpotifyFn != nil {
+		return h.boxOnSpotifyFn()
+	}
+	return boxPlayingSpotify(h.boxHost)
 }
 
 // verifySpotifyPlaying confirms the box reached a playing state after a Spotify
