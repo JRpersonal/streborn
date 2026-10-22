@@ -110,21 +110,7 @@ func validNativeItem(item *presets.NativeItem) error {
 // nowPlayingNativeItem reads the speaker's now-playing ContentItem and returns
 // it when it is a station of a service STR keeps natively.
 func (s *Server) nowPlayingNativeItem(ctx context.Context) (presets.NativeItem, bool, error) {
-	if s.boxHost == "" {
-		return presets.NativeItem{}, false, fmt.Errorf("box host not configured")
-	}
-	c, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+s.boxHost+":8090/now_playing", nil)
-	if err != nil {
-		return presets.NativeItem{}, false, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return presets.NativeItem{}, false, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	body, err := s.boxNowPlayingDoc(ctx)
 	if err != nil {
 		return presets.NativeItem{}, false, err
 	}
@@ -134,7 +120,8 @@ func (s *Server) nowPlayingNativeItem(ctx context.Context) (presets.NativeItem, 
 
 // parseNowPlayingNativeItem pulls the ContentItem out of a now_playing
 // document; ok is false unless it is a native-service station with a
-// location.
+// location. A readable document that is not one still comes back filled, so
+// the refusal can say what the speaker plays instead.
 func parseNowPlayingNativeItem(body []byte) (presets.NativeItem, bool) {
 	var doc struct {
 		Source string `xml:"source,attr"`
@@ -171,7 +158,7 @@ func parseNowPlayingNativeItem(body []byte) (presets.NativeItem, bool) {
 		item.ContainerArt = strings.TrimSpace(doc.Art)
 	}
 	if _, ok := presets.NativeServiceLabel(item.Source); !ok || item.Location == "" {
-		return presets.NativeItem{}, false
+		return item, false
 	}
 	return item, true
 }
@@ -188,6 +175,11 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 	} else {
 		got, ok, err := s.nowPlayingNativeItem(r.Context())
 		if err != nil {
+			// A hold that failed here left no trace in the bundle at all
+			// (#1407: a Pandora hold from the phone page).
+			s.logger.Warn("native preset save refused: the speaker's now-playing could not be read",
+				"slot", slot, "code", "native-nowplaying-unreadable", "reason", err.Error(),
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "The speaker could not be asked what it is playing. Try again in a moment.",
 				"code":  "native-nowplaying-unreadable",
@@ -195,6 +187,14 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		if !ok {
+			reason := "not a Pandora or iHeartRadio station"
+			if _, known := presets.NativeServiceLabel(got.Source); known {
+				reason = "the station has no location"
+			}
+			s.logger.Warn("native preset save refused: the speaker is not playing a native station",
+				"slot", slot, "code", "native-not-playing", "reason", reason,
+				"source", got.Source, "account", maskForLog(got.SourceAccount),
+				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 				"error": "The speaker is not playing a Pandora or iHeartRadio station right now.",
 				"code":  "native-not-playing",

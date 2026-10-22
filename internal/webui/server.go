@@ -440,6 +440,9 @@ type Server struct {
 	// boxNowFn seams the now_playing source and location read the speaker
 	// key hold-to-save uses (holdsave.go), for the tests.
 	boxNowFn func(ctx context.Context) (source, location string, ok bool)
+	// boxNowDocFn seams the raw :8090/now_playing document every "what plays
+	// right now" read in this package fetches, for the tests.
+	boxNowDocFn func(ctx context.Context) ([]byte, error)
 	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
 	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
 	holdSaveTestFn func(on bool, d time.Duration) time.Time
@@ -1432,6 +1435,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// two-step fallback. Off the prefix, an old agent has no handler at all and
 	// answers a plain 404, which cannot be confused with anything.
 	mux.HandleFunc("/api/box/preset-move", s.handlePresetMove)
+	mux.HandleFunc("/api/box/save-playing", s.handleSavePlaying)
 	mux.HandleFunc("/api/presets/", s.handlePresetSlot)
 	mux.HandleFunc("/api/play", s.handlePlay)
 	mux.HandleFunc("/api/play/", s.handlePlaySlot)
