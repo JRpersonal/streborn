@@ -99,6 +99,11 @@ func (s *Server) libraryPresetLength(p presets.Preset) time.Duration {
 			"name", p.Name, "trackSec", int(d.Seconds()))
 		return d
 	}
+	// A custom URL preset that is a file: the length its probe read from the
+	// file itself (#830, customfile.go).
+	if d := s.customFileLength(p.StreamURL); d > 0 {
+		return d
+	}
 	return 0
 }
 
@@ -221,9 +226,16 @@ func (t *trackLengths) get(url string) time.Duration {
 // recallLibraryFileSlot is RecallSlot's branch for a single library track. It
 // reports whether it claimed the press; a slot that holds anything else is
 // left to the caller.
+//
+// A custom URL preset that a probe shows to be a finite file is claimed the
+// same way (#830): through the radio proxy the speaker has no position to
+// return to, and Play/Pause on the remote started the file over.
 func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.Preset) bool {
-	mime := libraryFileMime(p)
-	if mime == "" || s.renderer == nil {
+	if s.renderer == nil {
+		return false
+	}
+	mime := s.directFileMime(ctx, p)
+	if mime == "" {
 		return false
 	}
 	// The press supersedes any verify still running from an earlier one, and a
@@ -236,7 +248,7 @@ func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
 	s.logger.Info("preset slot recall (hardware): library track, playing the file directly",
-		"slot", slot, "mime", mime)
+		"slot", slot, "mime", mime, "custom", p.Source == "")
 	if err := s.playLibraryFilePresetLocked(ctx, p, mime, recallStart); err != nil {
 		s.logger.Warn("hardware library track recall failed", "slot", slot, "err", err)
 	}

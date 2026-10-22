@@ -471,6 +471,9 @@ type Server struct {
 	// a key saved or recalled without a stored length can still end on time
 	// (#978). See librarykey.go.
 	trackLens trackLengths
+	// fileProbes caches, per URL, whether a custom URL preset is a finite
+	// file the speaker can be handed directly (#830). See customfile.go.
+	fileProbes fileProbes
 
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
