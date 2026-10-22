@@ -41,6 +41,11 @@ package webui
 // firmware's own reaction (switch to the AUX input) has always run already.
 // While an alarm rings that is the silence snooze wants, so no STOP is sent on
 // top. Outside a ringing alarm the press does nothing extra: AUX stays AUX.
+// With nothing plugged into AUX, the firmware skips the empty input and lands
+// on BLUETOOTH instead (SoundTouch 10, 27.0.6). A switch to BLUETOOTH
+// therefore counts as the AUX press too, but only with a key frame within
+// alarmAuxKeyWindow of it: a phone connecting by itself brings none. Where the
+// key trace names AUX_INPUT, that counts as well (AlarmAuxKeyPress).
 //
 // The alarm's switch-off counts from the latest (re)fire: a snooze cancels
 // the sleep timer the alarm armed (only that one, never a timer the user set
@@ -81,6 +86,15 @@ var (
 	// (the resume_standby.go discriminator exists for exactly that), and a
 	// snooze cancelled by its own stop would never ring again.
 	alarmSnoozeSettle = 10 * time.Second
+	// alarmAuxKeyWindow is how close a key frame has to be to a switch to
+	// BLUETOOTH for the switch to count as the AUX key (either side: the
+	// frame may arrive before or after the source change).
+	alarmAuxKeyWindow = 2 * time.Second
+	// alarmAuxKeyPoll is how often that window is checked for the frame.
+	alarmAuxKeyPoll = 50 * time.Millisecond
+	// alarmAuxRepeat: a second AUX signal this soon after an AUX snooze (the
+	// key trace and the source change of one press) is the same press.
+	alarmAuxRepeat = 4 * time.Second
 )
 
 // Seams for the tests, in the sleep timer's style: the real implementations
@@ -96,6 +110,14 @@ var (
 	}
 	// alarmSilence stops the alarm's playback for a snooze.
 	alarmSilence = func(s *Server, ctx context.Context) { s.silenceTransport(ctx) }
+	// alarmKeyActivity is when the speaker last reported a key press (the bare
+	// userActivityUpdate frame or the key trace, whichever is newer).
+	alarmKeyActivity = func(s *Server) time.Time {
+		if s.userActivityFn == nil {
+			return time.Time{}
+		}
+		return s.userActivityFn()
+	}
 	// showSnoozeNotice puts SNOOZE and the wake time on this speaker's panel.
 	// It shows even with the notices switched off, like the sleep key: it is
 	// the only answer to a key the user just pressed.
@@ -131,7 +153,8 @@ type alarmRing struct {
 	// snoozeUntil is when a snoozed alarm rings again, zero when not snoozed.
 	snoozeUntil time.Time
 	// snoozedViaAux: the snooze came from AUX, so the speaker sitting on AUX
-	// at the deadline is the snooze itself, not another input.
+	// (or on BLUETOOTH, where the AUX key lands when AUX is empty) at the
+	// deadline is the snooze itself, not another input.
 	snoozedViaAux bool
 	// standbyAfter: a drop to standby before this instant is the snooze's own
 	// stop settling, not the power key (alarmSnoozeSettle). Zero outside a
@@ -339,7 +362,65 @@ func (s *Server) AlarmSourceChanged(from, to string) {
 			return
 		}
 		go s.snoozePress(keyactions.KeyAux, from)
+	case "BLUETOOTH":
+		if s.keyActions.Action(keyactions.KeyAux) != keyactions.ActionSnooze {
+			return
+		}
+		at := time.Now()
+		go s.bluetoothSnoozeCandidate(from, at)
 	}
+}
+
+// AlarmAuxKeyPress is the AUX key as the speaker's key trace names it
+// (AUX_INPUT), for a speaker whose firmware logs it. It snoozes when AUX
+// carries snooze; the source change that follows the same press is then a
+// repeat and changes nothing.
+func (s *Server) AlarmAuxKeyPress() {
+	if s.keyActions.Action(keyactions.KeyAux) != keyactions.ActionSnooze {
+		return
+	}
+	s.snoozePress(keyactions.KeyAux, "")
+}
+
+// bluetoothSnoozeCandidate decides whether a switch to BLUETOOTH is the AUX
+// key. Measured on a SoundTouch 10 (27.0.6, PR #1418): with nothing plugged
+// into AUX, the AUX key skips the empty input and lands on BLUETOOTH, and the
+// only sign of a key is the bare userActivityUpdate frame, 21 ms after the
+// source change. So a switch to Bluetooth counts as the AUX press only with a
+// key frame within alarmAuxKeyWindow either side of it; a phone that connects
+// by itself brings no key frame and never snoozes anything.
+//
+// The wait (at most alarmAuxKeyWindow, a few cheap reads) runs only while an
+// alarm rings, so a speaker without a ringing alarm pays nothing.
+func (s *Server) bluetoothSnoozeCandidate(from string, at time.Time) {
+	s.ring.mu.Lock()
+	ringing := s.ring.active && s.ring.armed && s.ring.snoozeUntil.IsZero()
+	s.ring.mu.Unlock()
+	if !ringing {
+		s.logger.Debug("snooze: switch to Bluetooth with no alarm ringing, nothing to do", "from", from)
+		return
+	}
+	deadline := at.Add(alarmAuxKeyWindow)
+	for {
+		if k := alarmKeyActivity(s); !k.IsZero() && absDur(k.Sub(at)) <= alarmAuxKeyWindow {
+			s.logger.Info("snooze: switch to Bluetooth came with a key press, taking it as the AUX key (nothing plugged into AUX)",
+				"from", from, "keyOffsetMs", k.Sub(at).Milliseconds())
+			s.snoozePress(keyactions.KeyAux, from)
+			return
+		}
+		if time.Now().After(deadline) {
+			s.logger.Info("snooze: switch to Bluetooth without a key press (a phone connecting?), not a snooze", "from", from)
+			return
+		}
+		time.Sleep(alarmAuxKeyPoll)
+	}
+}
+
+func absDur(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
 }
 
 // snoozePress decides what a press of a snooze key does. prevSource is the
@@ -368,7 +449,12 @@ func (s *Server) snoozePress(key, prevSource string) {
 	}
 	if until := s.ring.snoozeUntil; !until.IsZero() {
 		id := s.ring.alarm.ID
+		repeat := viaAux && s.ring.snoozedViaAux && now.Sub(s.ring.since) < alarmAuxRepeat
 		s.ring.mu.Unlock()
+		if repeat {
+			s.logger.Debug("snooze: second signal of the same AUX press (key trace and source change), already snoozed", "id", id)
+			return
+		}
 		wake := s.alarmClockText(until)
 		s.logger.Info("snooze key pressed, the alarm is already snoozed", "key", key, "id", id, "until", wake)
 		showSnoozeNotice(wake)
@@ -496,7 +582,12 @@ func (s *Server) snoozeOver(seq uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), alarmLiveTimeout)
 	src, playing := alarmLiveState(s, ctx)
 	cancel()
-	snoozeInput := src == "AUX" && viaAux
+	// The input an AUX snooze landed on is the snooze itself: AUX, or
+	// BLUETOOTH on firmware that skips an empty AUX. AUX may report a play
+	// state with nothing plugged in, so it never counts as playing; Bluetooth
+	// that actually plays is a phone the user started streaming from.
+	snoozeInput := viaAux && (src == "AUX" || src == "BLUETOOTH")
+	playingElse := playing && (!viaAux || src != "AUX")
 	switch {
 	case src == "STANDBY":
 		// Not a reason to stand down on its own: a power-off during the
@@ -507,7 +598,7 @@ func (s *Server) snoozeOver(seq uint64) {
 	case otherInput(src) && !snoozeInput:
 		s.endRing(seq, "the speaker plays another input ("+src+")")
 		return
-	case playing && !snoozeInput:
+	case playingElse:
 		s.endRing(seq, "something else is playing ("+src+")")
 		return
 	}

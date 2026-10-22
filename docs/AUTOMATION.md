@@ -287,7 +287,14 @@ is the silence a snooze needs, so STR sends no stop on top, and at the end of
 the snooze the alarm comes back from AUX. Outside a ringing alarm a
 snooze-bound AUX does nothing extra: it is the normal AUX input, and the `aux`
 webhook does not fire (the key action wins). Any switch to AUX while an alarm
-rings counts, including choosing AUX in an app.
+rings counts, including choosing AUX in an app. With nothing plugged into AUX
+the firmware skips the empty input and lands on Bluetooth instead (measured on
+a SoundTouch 10, 27.0.6), so a switch to Bluetooth counts as the AUX press too,
+but only when the speaker reports a key press (the bare `userActivityUpdate`
+frame, or the key trace) within two seconds of it; a phone connecting by
+itself never snoozes. Where the key trace names `AUX_INPUT`, that counts as
+well. The alarm comes back from AUX or Bluetooth at the end of the snooze,
+unless a phone is actually streaming over Bluetooth by then.
 
 **Switch-off.** An alarm's switch-off counts from its latest ring: the snooze
 cancels the sleep timer that alarm armed (never one you set yourself since),

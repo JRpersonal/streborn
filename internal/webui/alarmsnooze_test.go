@@ -22,6 +22,14 @@ type snoozeProbe struct {
 	source   string
 	playing  bool
 	lastWake string
+	// keyAt is the last key frame the speaker reported (alarmKeyActivity).
+	keyAt time.Time
+}
+
+func (p *snoozeProbe) keyFrame(at time.Time) {
+	p.mu.Lock()
+	p.keyAt = at
+	p.mu.Unlock()
 }
 
 func (p *snoozeProbe) live(src string, playing bool) {
@@ -40,10 +48,19 @@ func newSnoozeHarness(t *testing.T, doc alarm.Document) (*alarmHarness, *snoozeP
 	p := &snoozeProbe{source: "UPNP"}
 	prevLive, prevSilence, prevNotice := alarmLiveState, alarmSilence, showSnoozeNotice
 	prevUnit, prevGap, prevSettle := alarmSnoozeUnit, snoozeMinGap, alarmSnoozeSettle
+	prevKey, prevWin := alarmKeyActivity, alarmAuxKeyWindow
 	t.Cleanup(func() {
 		alarmLiveState, alarmSilence, showSnoozeNotice = prevLive, prevSilence, prevNotice
 		alarmSnoozeUnit, snoozeMinGap, alarmSnoozeSettle = prevUnit, prevGap, prevSettle
+		alarmKeyActivity, alarmAuxKeyWindow = prevKey, prevWin
 	})
+	alarmKeyActivity = func(*Server) time.Time {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.keyAt
+	}
+	// Short, so a "no key frame" case gives up quickly.
+	alarmAuxKeyWindow = 150 * time.Millisecond
 	// Runs before the seams are restored (cleanups run last-in first-out):
 	// no snooze deadline may outlive the test.
 	t.Cleanup(func() { h.s.endRing(0, "test over") })
@@ -331,6 +348,119 @@ func TestAuxWithoutAnAlarmDoesNothingExtra(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if h.s.ringView() != nil || p.silenced.Load() != 0 || p.notices.Load() != 0 {
 		t.Error("AUX outside an alarm did something on top of switching the input")
+	}
+}
+
+// The field case (ST10, 27.0.6): with nothing plugged into AUX the AUX key
+// lands on BLUETOOTH, and the key frame arrives 21 ms after the source change.
+// That is the AUX press: snooze, no stop on top, and the alarm comes back from
+// Bluetooth at the end of the snooze.
+func TestAuxLandingOnBluetoothWithAKeyFrameSnoozes(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	h.ring(t)
+	p.live("BLUETOOTH", false)
+	h.s.AlarmSourceChanged("LOCAL_INTERNET_RADIO", "BLUETOOTH")
+	time.Sleep(20 * time.Millisecond)
+	p.keyFrame(time.Now()) // the bare userActivityUpdate, just after
+	if !waitFor(h.snoozed) {
+		t.Fatalf("AUX landing on Bluetooth with a key frame did not snooze: %+v", h.s.ringView())
+	}
+	if p.silenced.Load() != 0 {
+		t.Error("a STOP went out on top of the firmware's own input switch")
+	}
+	if !waitFor(func() bool { return h.firedCount() == 2 }) {
+		t.Fatal("the alarm did not come back from Bluetooth after the snooze")
+	}
+}
+
+// A key frame just BEFORE the switch counts too.
+func TestBluetoothKeyFrameBeforeTheSwitchCounts(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	h.ring(t)
+	p.keyFrame(time.Now().Add(-50 * time.Millisecond))
+	h.s.AlarmSourceChanged("UPNP", "BLUETOOTH")
+	if !waitFor(h.snoozed) {
+		t.Fatal("a key frame just before the Bluetooth switch was not taken as the AUX press")
+	}
+}
+
+// A phone connecting by itself switches to Bluetooth without any key frame:
+// never a snooze.
+func TestBluetoothWithoutAKeyFrameDoesNotSnooze(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	h.ring(t)
+	p.keyFrame(time.Now().Add(-10 * time.Second)) // an old press, long before
+	h.s.AlarmSourceChanged("UPNP", "BLUETOOTH")
+	time.Sleep(300 * time.Millisecond)
+	if h.snoozed() {
+		t.Error("a Bluetooth switch without a key press snoozed the alarm")
+	}
+}
+
+// Outside a ringing alarm, the AUX key landing on Bluetooth does nothing extra.
+func TestBluetoothWithAKeyFrameOutsideAnAlarmDoesNothing(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	p.keyFrame(time.Now())
+	h.s.AlarmSourceChanged("UPNP", "BLUETOOTH")
+	time.Sleep(200 * time.Millisecond)
+	if h.s.ringView() != nil || p.silenced.Load() != 0 || p.notices.Load() != 0 {
+		t.Error("the AUX key landing on Bluetooth did something outside an alarm")
+	}
+}
+
+// Without the snooze action on AUX, a Bluetooth switch with a key frame is
+// just the user choosing Bluetooth.
+func TestBluetoothWithAKeyFrameNeedsAuxBoundToSnooze(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	h.ring(t)
+	p.keyFrame(time.Now())
+	h.s.AlarmSourceChanged("UPNP", "BLUETOOTH")
+	time.Sleep(200 * time.Millisecond)
+	if h.snoozed() {
+		t.Error("Bluetooth snoozed although AUX carries no snooze")
+	}
+}
+
+// Snoozed onto Bluetooth, then a phone actually streams: that is the user's
+// music, and the alarm stands down.
+func TestBluetoothSnoozeStandsDownWhenAPhoneStreams(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	h.ring(t)
+	p.keyFrame(time.Now())
+	h.s.AlarmSourceChanged("UPNP", "BLUETOOTH")
+	if !waitFor(h.snoozed) {
+		t.Fatal("no snooze")
+	}
+	p.live("BLUETOOTH", true)
+	time.Sleep(150 * time.Millisecond)
+	if h.firedCount() != 1 {
+		t.Errorf("the alarm cut into a phone streaming over Bluetooth: %d recalls", h.firedCount())
+	}
+}
+
+// Where the key trace names AUX_INPUT, that snoozes; the source change of the
+// same press is a repeat and changes nothing.
+func TestAuxKeyTraceAndSourceChangeAreOnePress(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	alarmSnoozeUnit = time.Minute // keep the re-fire out of this test
+	h.ring(t)
+	h.s.AlarmAuxKeyPress()
+	if !h.snoozed() {
+		t.Fatal("AUX_INPUT from the key trace did not snooze")
+	}
+	h.s.AlarmSourceChanged("UPNP", "AUX")
+	time.Sleep(100 * time.Millisecond)
+	if p.notices.Load() != 1 || p.silenced.Load() != 0 {
+		t.Errorf("one AUX press acted twice: notices=%d stops=%d", p.notices.Load(), p.silenced.Load())
+	}
+	if v := h.s.ringView(); v == nil || v.Snoozes != 1 {
+		t.Errorf("ring after one AUX press: %+v", v)
 	}
 }
 

@@ -1183,8 +1183,9 @@ func run() error {
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).
-		onSnoozeKey:   webuiSrv.AlarmSnoozePress,
-		onAlarmSource: webuiSrv.AlarmSourceChanged,
+		onSnoozeKey:    webuiSrv.AlarmSnoozePress,
+		onAuxSnoozeKey: webuiSrv.AlarmAuxKeyPress,
+		onAlarmSource:  webuiSrv.AlarmSourceChanged,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.

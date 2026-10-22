@@ -105,6 +105,9 @@ type presetWsHandler struct {
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.
 	onSnoozeKey func(key string)
+	// onAuxSnoozeKey is the AUX key named by the key trace (AUX_INPUT) while
+	// AUX carries snooze (webui.AlarmAuxKeyPress). nil-safe.
+	onAuxSnoozeKey func()
 	// onAlarmSource hands every source change to the alarm clock
 	// (webui.AlarmSourceChanged): STANDBY ends a ringing alarm, and the switch
 	// to AUX is the AUX key, which snoozes when it carries snooze. nil-safe.

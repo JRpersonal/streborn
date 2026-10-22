@@ -90,6 +90,15 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		return
 	}
 	oled.FeedKey(ev.Name)
+	if ev.Name == "AUX_INPUT" && h.keyActions.Action(keyactions.KeyAux) == keyactions.ActionSnooze && h.onAuxSnoozeKey != nil {
+		// AUX has no webhook trigger here (its webhook follows the source
+		// change), but a trace that names the key is the surest sign of an
+		// AUX press for snooze; the source change of the same press is then a
+		// repeat. Off the reader's goroutine: a snooze sends a stop.
+		h.logger.Info("snooze key pressed", "key", ev.Name, "producer", ev.Producer.String())
+		go h.onAuxSnoozeKey()
+		return
+	}
 	id := webhooks.KeyTriggerID(ev.Name)
 	if id == "" {
 		return

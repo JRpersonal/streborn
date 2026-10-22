@@ -68,6 +68,37 @@ func TestSnoozeKeySkipsWebhook(t *testing.T) {
 	}
 }
 
+// TestAuxKeyTraceReachesSnooze: AUX_INPUT named by the key trace reaches the
+// alarm clock while AUX carries snooze, and not otherwise.
+func TestAuxKeyTraceReachesSnooze(t *testing.T) {
+	ka, err := keyactions.Load(filepath.Join(t.TempDir(), "key-actions.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	h := &presetWsHandler{logger: slog.Default(), keyActions: ka, onAuxSnoozeKey: func() { calls.Add(1) }}
+	press := func() {
+		h.OnKeyEvent(boxlog.KeyEvent{Key: boxlog.KeyNumber("AUX_INPUT"), Name: "AUX_INPUT", Producer: boxlog.ProducerIRRemote,
+			State: boxlog.StatePressed, Origin: boxlog.OriginTrace, At: time.Now()})
+	}
+	press()
+	time.Sleep(50 * time.Millisecond)
+	if calls.Load() != 0 {
+		t.Fatal("AUX_INPUT reached snooze although AUX carries nothing")
+	}
+	if err := ka.Set(keyactions.Document{Keys: map[string]string{keyactions.KeyAux: keyactions.ActionSnooze}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	press()
+	deadline := time.Now().Add(2 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("AUX_INPUT reached snooze %d times, want once", calls.Load())
+	}
+}
+
 // TestAuxSnoozeSkipsWebhook: AUX bound to snooze never fires the aux webhook
 // (the key action wins), and the source change still reaches the alarm clock,
 // which decides whether an alarm is ringing.
