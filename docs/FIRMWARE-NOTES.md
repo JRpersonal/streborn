@@ -817,6 +817,32 @@ of times an hour instead of rebooting at minute 20. Kill switch:
 `/mnt/nv/streborn/spotify-chain-mb` = `0`. The memory guard stays as the
 backstop.
 
+## Play after Pause freezes a directly played file
+
+**Symptom.** A finite file handed to the UPnP renderer directly (a music
+library track, a custom URL preset that is a file) pauses fine, but Play after
+the pause leaves the transport in `PLAYING` with `RelTime` and the
+`now_playing` `<time>` frozen at the pause position, silent, for at least a
+minute. The speaker's own PLAY_PAUSE key does the same.
+
+**Measured (2026-10-22, SoundTouch 10 rhino, FW 27.0.6, a 240 s MP3):** on
+the Play the firmware logs `CAudioInterface::Select(url) ... Retry Attempt = 0`
+and the HTTP server sees a new GET with `Range: bytes=<its buffer end>-`; then
+`IsCurrentUrlId(urlId:12) - urlId mismatch. m_urlId:14` and `Audio Path state
+'PLAYING error #0 for stale UrlID 12`. The re-opened file is discarded as
+belonging to a stale URL id. Reproduced with three HTTP servers and with raw
+UPnP pushes that bypassed STR, with and without a DIDL duration and
+`DLNA.ORG_OP=01`, so it is the firmware, for any file larger than its buffer
+(about 1 MB encoded). Seek to the paused position followed by Play stays
+frozen too.
+
+**What works:** Stop, Play, and about two seconds later
+`Seek(REL_TIME, paused position)`. STR does this for the app's resume of a
+paused lone file directly, and the lone-file end watch repairs a frozen resume
+from the speaker's key the same way, once per resume
+(`internal/webui/resumefile.go`). A library folder (the queue) is not covered
+yet.
+
 ## NetManager owns wpa_supplicant, and the conf file holds no credential
 
 Measured on a SoundTouch 10 (rhino/sm2, FW 27.0.6) on 2026-09-30.

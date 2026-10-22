@@ -602,6 +602,17 @@ type Server struct {
 	// position for.
 	pausePosMu sync.Mutex
 	pausePos   time.Duration
+	// pauseReqAt is when the app last asked for a pause. The lone-file end
+	// watch reads it to tell a pause (keep watching, the track continues
+	// later) from a stop (end the watch). See resumefile.go.
+	pauseReqAt time.Time
+
+	// activeFile is the lone finite file the end watch is following, and
+	// fileRestartUntil the quiet window while STR restarts it at its paused
+	// position. See resumefile.go (#830).
+	activeFileMu     sync.Mutex
+	activeFile       *activeDirectFile
+	fileRestartUntil time.Time
 
 	// lastStandbyStop debounces the #197 standby-bounce mitigation: some ST20
 	// (scm) firmware oscillates UPNP->STANDBY->UPNP on a power-off, re-selecting
