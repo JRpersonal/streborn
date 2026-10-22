@@ -105,6 +105,11 @@ func TestDisplayMessageGuards(t *testing.T) {
 	}{
 		{"switched off", func(s *Server) { _ = persistFlagFile(s.displayMsg.path, "0") }, "switched off for this speaker"},
 		{"no display", func(s *Server) { s.displayMsg.hasDisplayFn = func() (bool, bool) { return false, true } }, "speaker has no display"},
+		// The Wave's firmware says it has a display (its segment clock), but a
+		// title never shows there (#1305): the model name wins.
+		{"wave segment display", func(s *Server) {
+			s.SetBoxNameFn(func() (string, string) { return "Kitchen", "Wave SoundTouch music system IV" })
+		}, "speaker has no display"},
 		{"standby", func(s *Server) {
 			s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) { return boxNowPlaying{Source: "STANDBY"}, true }
 		}, "standby"},
@@ -225,7 +230,8 @@ func TestDisplayMessageLanguage(t *testing.T) {
 func TestModelHasDisplay(t *testing.T) {
 	cases := map[string]bool{
 		"SoundTouch 10": false, "SoundTouch 300": false, "SoundTouch SA-5 amplifier": false,
-		"SoundTouch 20": true, "SoundTouch 30": true, "SoundTouch Portable": true, "Wave SoundTouch music system IV": true,
+		"SoundTouch 20": true, "SoundTouch 30": true, "SoundTouch Portable": true,
+		"Wave SoundTouch music system IV": false, "Wave SoundTouch": false,
 	}
 	for model, want := range cases {
 		if got, known := modelHasDisplay(model); got != want || !known {

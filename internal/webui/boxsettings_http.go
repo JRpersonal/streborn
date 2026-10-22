@@ -649,7 +649,10 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		active, why := s.displayTrackActiveNow(r.Context())
 		writeJSON(w, http.StatusOK, map[string]any{
-			"supported": true,
+			// false on a Wave: its segment display shows neither STR's panel
+			// nor a now-playing title, so the setting could only cost audio
+			// gaps there (#1305).
+			"supported": !s.segmentDisplayOnly(),
 			"enabled":   s.displayTrackEnabled(),
 			"mode":      s.displayTrackMode(),
 			// activeNow says whether the setting can do anything on THIS speaker

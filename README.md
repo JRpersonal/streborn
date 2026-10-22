@@ -65,7 +65,7 @@ STR is at 1.0: every criterion I set myself for it is met (see [1.0](#10) below)
 - Speakers with a display show a short message when a key cannot play, and an STR logo animation after an install or update.
 - Wishes tab: every open feature wish with its votes, in the app's language and searchable, with links to vote and to suggest a new one.
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
-- And one thing that was never in the manual: a game hidden on the display of the SoundTouch 20, 30, Portable and Wave. How to start it is a riddle in the [Arcade](https://github.com/JRpersonal/streborn/discussions/1173), and that is also where the highscores go.
+- And one thing that was never in the manual: a game hidden on the display of the SoundTouch 20, 30 and Portable. How to start it is a riddle in the [Arcade](https://github.com/JRpersonal/streborn/discussions/1173), and that is also where the highscores go.
 
 ### In the works, and what comes next
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from './boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayTrackOffered, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
   it('is false for a missing or offline record: nothing answers, that is the dead case', () => {
@@ -45,6 +45,19 @@ describe('displayTrackState', () => {
     expect(settings).toContain('catch { paintDisplayTrack(null); }');
     expect(settings).not.toContain('catch { paintDisplayTrack(false); }');
     expect(settings).toContain("t('settingsView.displayTrackUnknown')");
+  });
+});
+
+describe('displayTrackOffered', () => {
+  it('hides the setting only when the speaker says it is not supported (a Wave, #1305)', () => {
+    expect(displayTrackOffered({ supported: false, enabled: false })).toBe(false);
+    expect(displayTrackOffered({ supported: true, enabled: false })).toBe(true);
+  });
+
+  it('keeps the setting for older agents and failed reads', () => {
+    expect(displayTrackOffered({ enabled: true })).toBe(true);
+    expect(displayTrackOffered(null)).toBe(true);
+    expect(displayTrackOffered(undefined)).toBe(true);
   });
 });
 

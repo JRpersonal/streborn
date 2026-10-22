@@ -12,8 +12,9 @@
 // the kernel releases the thread on its own. Nothing is written to NAND
 // except the small splash-seen marker.
 //
-// Only the SoundTouch panel geometry (ST20, ST30, Portable, Wave) is
-// recognised; on every other model, and
+// Only the SoundTouch panel geometry (ST20, ST30, Portable) is recognised;
+// on every other model (the Wave included: its firmware reports the panel,
+// its front is a segment display, model.go), and
 // when the user switched it off, all entry points return without touching
 // anything.
 package oled
@@ -181,5 +182,5 @@ func StartUpdating(logger *slog.Logger) (stop func()) {
 }
 
 // Supported reports whether this speaker has the one panel the splash knows
-// how to draw on (the Portable's).
+// how to draw on (the Portable's, also in the ST20 and ST30; not the Wave).
 func Supported() bool { return panelSupported() }

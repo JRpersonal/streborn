@@ -2233,9 +2233,14 @@ func (s *Server) HandleStreamTitle(title string) {
 // as the on-display title, keeping the stream URL / art / mime. It is the shared
 // box write behind both the ICY title push and the revert-to-default path. This
 // re-buffers the box (a brief audio gap), so callers gate it. Updates the
-// debounce stamp. No-op if nothing is playing.
+// debounce stamp. No-op if nothing is playing, and on a Wave, whose segment
+// display never shows the title (#1305): there it would only gap the audio.
 func (s *Server) setDisplayText(shown string) {
 	if s.renderer == nil || shown == "" {
+		return
+	}
+	if s.segmentDisplayOnly() {
+		s.logger.Info("display title not pushed: the segment display cannot show it", "shown", shown)
 		return
 	}
 	s.lastPlayMu.Lock()

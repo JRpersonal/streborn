@@ -50,7 +50,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 import { normalizeDoc } from '../groupkeys.js';
 import { normalizeKeyActions, sleepOn, withSleep, sleepBlockedBy, SLEEP_KEY_IDS } from '../keyactions.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
-import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
+import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayTrackOffered, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../wlanforget.js';
@@ -2799,6 +2799,11 @@ function renderBoxSettings(s, box) {
     (async () => {
       try {
         const r = await GetDisplayTrack(box.host, box.port);
+        if (!displayTrackOffered(r)) {
+          const sec = $('displayTrackSection');
+          if (sec) sec.classList.add('hidden');
+          return;
+        }
         if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
         dtOnPanel = displayTrackOnPanel(r);
         paintDtPath();

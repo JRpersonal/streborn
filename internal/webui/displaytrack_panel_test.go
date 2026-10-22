@@ -408,6 +408,39 @@ func TestDisplayTrackEndpointOnPanel(t *testing.T) {
 	}
 }
 
+// The Wave's front is a segment display (#1305): the firmware reports a panel
+// and a display, but neither STR's track screen nor a re-pushed title ever
+// shows. The setting is not offered there, and a title is never re-pushed
+// (it would only gap the audio).
+func TestDisplayTrackNotOfferedOnWave(t *testing.T) {
+	s, _, actions := newTrackServer(t, false)
+	s.SetBoxNameFn(func() (string, string) { return "Kitchen", "Wave SoundTouch music system IV" })
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/box/display-track", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	s.handleDisplayTrack(rr, req)
+	var got map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["supported"] != false || got["onPanel"] != false {
+		t.Fatalf("GET on a Wave = %v, want supported and onPanel false", got)
+	}
+
+	s.setDisplayText("Queen - Under Pressure")
+	if a := actions(); len(a) != 0 {
+		t.Fatalf("a title was re-pushed to a Wave: %v", a)
+	}
+
+	// the same server as an ST20 without the panel path does re-push
+	s.SetBoxNameFn(func() (string, string) { return "Kitchen", "SoundTouch 20" })
+	s.setDisplayText("Queen - Under Pressure")
+	if a := actions(); len(a) == 0 {
+		t.Fatal("control: an ST20 should have re-pushed the title")
+	}
+}
+
 func waitUntil(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
