@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -223,5 +225,57 @@ func TestPhoneCardHandlesANetworkOutage(t *testing.T) {
 				t.Errorf("%s uses a dash: %q", key, m[1])
 			}
 		}
+	}
+}
+
+// GitHub answering 404 once for a release file that exists does not fail the
+// check: it is asked again (live, ST10, 2026-10-22, "update.json.sig: HTTP 404"
+// while the same check worked a minute later).
+func TestSelfUpdateCheckRetriesAPassing404(t *testing.T) {
+	origVer := agentVersion
+	t.Cleanup(func() { agentVersion = origVer })
+	SetAgentVersion("v1.0.12")
+	s, realBase := selfUpdateFixture(t, "v1.0.13", []byte("agent-binary"), []byte("engine-binary"), nil)
+
+	target, _ := url.Parse(realBase)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	var sigHits atomic.Int32
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/update.json.sig") && sigHits.Add(1) == 1 {
+			http.NotFound(w, r)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+	b, _ := os.ReadFile(selfUpdateSourcePath)
+	if err := os.WriteFile(selfUpdateSourcePath, []byte(strings.Replace(string(b), strings.TrimSuffix(realBase, "/"), front.URL, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	origEvery, origFor := selfUpdateCheckRetryEvery, selfUpdateCheckRetryFor
+	t.Cleanup(func() { selfUpdateCheckRetryEvery, selfUpdateCheckRetryFor = origEvery, origFor })
+	selfUpdateCheckRetryEvery, selfUpdateCheckRetryFor = 50*time.Millisecond, 10*time.Second
+
+	st := postAction(t, s, "check")
+	if st.State != "idle" || st.Latest != "v1.0.13" || !st.Available {
+		t.Fatalf("a single 404 failed the check: %+v", st)
+	}
+	if n := sigHits.Load(); n != 2 {
+		t.Errorf("signature fetched %d times, want 2", n)
+	}
+}
+
+func TestTransientHTTPKnowsWhatToAskAgain(t *testing.T) {
+	for code, want := range map[int]bool{404: true, 408: true, 429: true, 500: true, 502: true, 503: true, 403: false, 401: false, 410: false} {
+		err := fmt.Errorf("could not check: %w", &httpStatusError{name: "update.json", code: code})
+		if got := isTransientHTTP(err); got != want {
+			t.Errorf("isTransientHTTP(%d) = %v, want %v", code, got, want)
+		}
+	}
+	if isTransientHTTP(errors.New("update.json: HTTP 404")) {
+		t.Error("only the typed error counts")
+	}
+	if got := (&httpStatusError{name: "update.json.sig", code: 404}).Error(); got != "update.json.sig: HTTP 404" {
+		t.Errorf("text changed: %q", got)
 	}
 }

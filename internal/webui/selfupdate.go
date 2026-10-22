@@ -394,7 +394,7 @@ func (s *Server) selfUpdateCheck(ctx context.Context) (updatesig.Index, error) {
 	ix, err := s.fetchSignedIndex(ctx, base, base+"latest/download/", keys)
 	// A network that is only just back (DNS answers late after a router
 	// restart) gets a few more tries before the check counts as failed.
-	for until := time.Now().Add(selfUpdateCheckRetryFor); err != nil && isNetworkError(err) && time.Now().Before(until); {
+	for until := time.Now().Add(selfUpdateCheckRetryFor); err != nil && (isNetworkError(err) || isTransientHTTP(err)) && time.Now().Before(until); {
 		s.logger.Info("self-update: check could not reach the release, trying again", "err", err)
 		if !sleepCtx(ctx, selfUpdateCheckRetryEvery) {
 			break
@@ -439,7 +439,7 @@ func fetchSmall(ctx context.Context, c *http.Client, url string, limit int64) ([
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: HTTP %d", lastPathPart(url), resp.StatusCode)
+		return nil, &httpStatusError{name: lastPathPart(url), code: resp.StatusCode}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
