@@ -209,6 +209,9 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "persist wlan creds: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Whatever the speaker knows right now is not the owner moving it
+	// elsewhere later: record it with the new credentials (wlansupersede.go).
+	rebaselineWlanKnown(req.SSID)
 	// Respond before switching: the box drops off the current network mid-switch,
 	// so the client rediscovers it on its new IP instead of waiting on this socket.
 	writeJSON(w, http.StatusOK, wlanSwitchResponse(mode, mech, req.SSID, req.ForgetOthers))

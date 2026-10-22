@@ -118,6 +118,11 @@ WIPED="$WIPED ${PERSIST}/SystemConfigurationDB.xml(reseeded)"
 if [ -f "$NV_STR/wlan-creds" ]; then
   rm -f "$NV_STR/wlan-creds" && WIPED="$WIPED $NV_STR/wlan-creds"
 fi
+for f in wlan-creds.superseded wlan-known.json; do
+  if [ -f "$NV_STR/$f" ]; then
+    rm -f "$NV_STR/$f" && WIPED="$WIPED $NV_STR/$f"
+  fi
+done
 sync
 echo "TFR_WIPED:$WIPED"
 `

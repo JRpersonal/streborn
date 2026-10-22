@@ -1504,7 +1504,10 @@ func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Reque
 // two firmware flashes. The scm bridge boxes keep it: their cold-boot
 // association failures are what the offline rescue re-pushes STR's copy for.
 func wlanCredsWarningWarranted() bool {
-	if hasSavedWLANCreds() {
+	// Credentials STR set aside because the owner moved the speaker to a
+	// network of their own (wlansupersede.go) are not a speaker about to
+	// strand: its Wi-Fi is in the owner's hands and the chip's own store.
+	if hasSavedWLANCreds() || wlanCredsRetired() {
 		return false
 	}
 	mode, err := os.ReadFile(filepath.Join(strNANDDir, "wlan-mode"))

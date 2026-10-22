@@ -140,6 +140,14 @@ type NetworkInterface struct {
 	State     string `json:"state"`
 	Signal    string `json:"signal"`
 	Mode      string `json:"mode"`
+	// SSIDSource and STRSSID are filled by the agent, never by the box.
+	// SSIDSource says where SSID came from: "box" (the firmware's own
+	// /networkInfo) or "live" (wpa_supplicant's current association). Empty
+	// when SSID is empty. STRSSID is the network STR itself last set for this
+	// speaker, shown for context only: it is NOT the network the speaker is
+	// on, which the scm chassis never reports.
+	SSIDSource string `json:"ssidSource,omitempty"`
+	STRSSID    string `json:"strSSID,omitempty"`
 }
 
 // Source is an entry from /sources (Spotify, AirPlay etc).

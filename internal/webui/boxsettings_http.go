@@ -207,100 +207,22 @@ func (s *Server) handleBoxSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	// wlan0/wpa boxes: STR changes Wi-Fi by rewriting wpa_supplicant directly,
-	// bypassing Bose, so Bose /networkInfo keeps reporting the OLD profile (stale
-	// SSID / frequency / signal even though the box is really associated
-	// elsewhere). Read the LIVE association from wpa_supplicant and let it win;
-	// /networkInfo is only the fallback when the live read is unavailable or the
-	// field is empty. BCO/eth0 boxes have no wpa_supplicant and keep the
-	// gabbo-signal + provisionedSSID path below untouched.
+	// Has the owner moved the speaker elsewhere since STR last set its Wi-Fi?
+	// Checked before the display is built, so a retired record is never shown
+	// (wlansupersede.go). File reads only, plus the interfaces just fetched.
+	s.reconcileWlanIntent(settings.Network.Interfaces)
+	var live *wlanlive.Status
 	if iface, mech := detectWlanMechanism(); mech == "wpa" {
-		if live := wlanlive.Read(ctx, iface); live.Associated {
-			for i := range settings.Network.Interfaces {
-				ni := &settings.Network.Interfaces[i]
-				if ni.Type != "WIFI_INTERFACE" {
-					continue
-				}
-				if live.SSID != "" {
-					ni.SSID = live.SSID
-				}
-				if live.FrequencyKHz != 0 {
-					ni.Frequency = live.FrequencyKHz
-				}
-				if live.Signal != "" {
-					ni.Signal = live.Signal
-				}
-			}
+		if st := wlanlive.Read(ctx, iface); st.Associated {
+			live = &st
 		}
 	}
-	// BCO speakers (Portable, scm ST20) report the connected interface as
-	// ethernet with no signal in /networkInfo, but the box does emit the
-	// Wi-Fi signal class over the gabbo WebSocket. Fill the connected
-	// interface's empty signal from there so the settings UI shows it on
-	// those models too.
+	gabbo := ""
 	if s.wifiSignalFn != nil {
-		if sig := s.wifiSignalFn(); sig != "" {
-			for i := range settings.Network.Interfaces {
-				ni := &settings.Network.Interfaces[i]
-				if ni.Signal == "" && (ni.State == "NETWORK_ETHERNET_CONNECTED" || ni.State == "NETWORK_WIFI_CONNECTED") {
-					ni.Signal = sig
-				}
-			}
-		}
+		gabbo = s.wifiSignalFn()
 	}
-	// Same for the SSID: BCO /networkInfo carries none, but STR knows the
-	// network it provisioned (its wlan-creds, or the AirplayConfiguration
-	// profile). Fill it on the connected interface when empty.
-	if ssid := provisionedSSID(); ssid != "" {
-		for i := range settings.Network.Interfaces {
-			ni := &settings.Network.Interfaces[i]
-			if ni.SSID == "" && (ni.State == "NETWORK_ETHERNET_CONNECTED" || ni.State == "NETWORK_WIFI_CONNECTED") {
-				ni.SSID = ssid
-			}
-		}
-	}
+	annotateNetworkForDisplay(settings.Network.Interfaces, live, gabbo, strConfiguredSSID())
 	writeJSON(w, http.StatusOK, settings)
-}
-
-// provisionedSSID returns the Wi-Fi SSID the speaker is on, from the most
-// reliable source available. Used to fill the SSID on BCO boxes (scm ST20,
-// Portable), whose /networkInfo reports only an ethernet coprocessor with
-// no ssid field.
-//
-// Sources, in order:
-//  1. STR's own wlan-creds: what STR last provisioned. Subject to the
-//     stick-mount race at cold boot, so it can be empty even on a box that
-//     is associated (issue #90).
-//  2. Bose NetManager's NetworkProfiles.xml: the box's own ground truth for
-//     the profile it associates to. Present before BoseApp's HTTP server is
-//     up, so it survives the boot race that leaves wlan-creds empty.
-//  3. The slot-0 PersistentWifiProfile in AirplayConfiguration.xml (WAC
-//     onboarding path).
-func provisionedSSID() string {
-	if b, err := os.ReadFile("/mnt/nv/streborn/wlan-creds"); err == nil {
-		for _, line := range strings.Split(string(b), "\n") {
-			if strings.HasPrefix(line, "SSID=") {
-				if v := strings.TrimSpace(strings.TrimPrefix(line, "SSID=")); v != "" {
-					return v
-				}
-			}
-		}
-	}
-	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/NetworkProfiles.xml"); len(m) > 0 {
-		if b, err := os.ReadFile(m[0]); err == nil {
-			if v := ssidAfter(string(b), "<profile"); v != "" {
-				return v
-			}
-		}
-	}
-	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml"); len(m) > 0 {
-		if b, err := os.ReadFile(m[0]); err == nil {
-			if v := ssidAfter(string(b), "PersistentWifiProfile"); v != "" {
-				return v
-			}
-		}
-	}
-	return ""
 }
 
 // ssidAfter extracts the first ssid="..." attribute value that appears at

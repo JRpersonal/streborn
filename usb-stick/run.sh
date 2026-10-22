@@ -2359,6 +2359,17 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                             fi
                             continue
                         fi
+                        # The agent sets the credentials aside once the owner has
+                        # moved the speaker to a network of their own outside STR
+                        # (internal/webui/wlansupersede.go). goform is the call that
+                        # SWITCHES the chip's network, so pushing the old set now
+                        # would drag the speaker back to a network the owner left,
+                        # quite possibly one that is switched off. Re-read before
+                        # every push: the agent may decide this after the loop began.
+                        if [ "$(sed -n 's/^SSID=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" 2>/dev/null | head -1)" != "$SSID" ]; then
+                            setup_log "hands-off rescue: STR's stored network was retired or replaced since boot; not pushing it"
+                            break
+                        fi
                         setup_log "hands-off rescue: still no lease at +${_rw}s, non-destructive goform re-push"
                         goform_wlan_push "$SSID" "$PASS"
                     done

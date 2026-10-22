@@ -36,6 +36,16 @@ Key traps:
   `connectionState` frame at connection transitions; treat it as a
   snapshot, never as a current measurement (the agent expires it after
   15 min since v0.9.7).
+- **STR's own Wi-Fi records go stale when the owner moves the speaker
+  outside STR** (Bose setup page after a Wi-Fi reset, the Bose app).
+  `wlan-creds` and `wlan-target` are never a statement of where the speaker
+  IS: the settings screen only names a network the firmware or wpa_supplicant
+  reported, and STR's own one travels separately as `strSSID`. When a network
+  that was not in the speaker's store at the time STR recorded its
+  credentials shows up later (`wlan-known.json` holds the salted tags of that
+  baseline), the agent sets the credentials aside as `wlan-creds.superseded`
+  and clears the target, so neither the offline rescue's goform re-push nor
+  the boot guard drags the speaker back (`internal/webui/wlansupersede.go`).
 - **`wlan-mode` on NAND** records the boot classification: `wlan0/wlan1`
   (wpa), `bco` (bridge classes; note a mojo ST30 classifies as `bco` when
   its firmware ships no wpa tools), `taigan-bco`, `ethernet-only`.

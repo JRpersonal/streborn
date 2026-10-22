@@ -54,6 +54,7 @@ import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessa
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../wlanforget.js';
+import { networkView } from '../netview.js';
 import {
   US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
   usServiceCanDisconnect, agentErrorText, usDisconnectError, usConnectError,
@@ -1251,24 +1252,10 @@ function renderBoxSettings(s, box) {
   const bassProps = bassSliderProps(bass);
   const net = s.network || {};
   const sources = rollupSources(s.sources || []);
-  // Series-II boxes expose Wi-Fi as a WIFI_INTERFACE in
-  // NETWORK_WIFI_CONNECTED. BCO boxes (Portable/taigan, ST20-spotty)
-  // drive Wi-Fi through a coprocessor exposed as eth0, so /networkInfo
-  // reports an ETHERNET_INTERFACE in NETWORK_ETHERNET_CONNECTED with the
-  // real LAN IP but no ssid/signal. Accept either, otherwise a fully
-  // connected BCO box is mislabelled "not connected to Wi-Fi" (ssid /
-  // signal then render as "-" since the coprocessor does not expose them).
-  const wifi = (net.interfaces || []).find(i =>
-    (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
-    (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
-  // A connected ETHERNET_INTERFACE is ambiguous: on BCO chassis it IS the
-  // Wi-Fi coprocessor, but on a box that also lists a real WIFI_INTERFACE
-  // (SA-5, sm2 ST20/ST30 on a cable) it is a genuine wired link, and calling
-  // that "Wi-Fi connected" with the wired IP was wrong (#641). The presence
-  // of a separate WIFI_INTERFACE in the box's own list is the discriminator:
-  // BCO boxes have none at all.
-  const hasRealWifiIface = (net.interfaces || []).some(i => i.type === 'WIFI_INTERFACE');
-  const isWired = !!(wifi && wifi.type !== 'WIFI_INTERFACE' && hasRealWifiIface);
+  // Which network the speaker is on, and how sure we can be: see netview.js.
+  // A name is only shown as the live network when the speaker reported it;
+  // STR's own last network is shown below it as context, never in its place.
+  const nv = networkView(net);
   const signalLabel = {
     'EXCELLENT_SIGNAL': t('signal.excellent'),
     'GOOD_SIGNAL': t('signal.good'),
@@ -1276,12 +1263,36 @@ function renderBoxSettings(s, box) {
     'POOR_SIGNAL': t('signal.poor'),
     'NO_SIGNAL': t('signal.none'),
   };
-  // BCO boxes (scm ST20, Portable) expose Wi-Fi as an ethernet coprocessor
-  // and report no signal class. Show an honest note instead of a bare "-"
-  // so it does not read like a missing/failed reading (issue #90).
-  const isCoprocessorWifi = wifi && wifi.type !== 'WIFI_INTERFACE' && !hasRealWifiIface;
-  const signalText = signalLabel[wifi && wifi.signal] || (wifi && wifi.signal) ||
-    (isCoprocessorWifi ? t('signal.notReported') : '-');
+  // A coprocessor speaker that names its network but no signal class: say so
+  // instead of a bare "-" that reads like a failed reading (issue #90).
+  const signalText = signalLabel[nv.signal] || nv.signal ||
+    (nv.coprocessor ? t('signal.notReported') : '-');
+  const kvRow = (key, val) =>
+    `<div class="kv-row"><span class="kv-key">${escapeHtml(t(key))}</span><span class="kv-val">${escapeHtml(val)}</span></div>`;
+  let netRows = '';
+  switch (nv.kind) {
+    case 'wired':
+      netRows = kvRow('settingsView.wlanIp', nv.ip || '-')
+        + `<div class="muted small">${escapeHtml(t('settingsView.wlanWired'))}</div>`;
+      break;
+    case 'wifi':
+    case 'wifi-unnamed':
+      netRows = kvRow('settingsView.wlanSsid', nv.ssid || t('settingsView.wlanSsidUnknown'))
+        + kvRow('settingsView.wlanIp', nv.ip || '-')
+        + kvRow('settingsView.wlanSignal', signalText)
+        + (nv.frequencyKHz ? kvRow('settingsView.wlanFrequency', `${(nv.frequencyKHz / 1000).toFixed(0)} MHz`) : '');
+      break;
+    case 'unknown-link':
+      netRows = kvRow('settingsView.netConnection', t('settingsView.netConnUnknown'))
+        + kvRow('settingsView.wlanIp', nv.ip || '-');
+      break;
+    default:
+      netRows = `<div class="muted small">${escapeHtml(t('settingsView.wlanNotConnected'))}</div>`;
+  }
+  if (nv.strSSID) {
+    netRows += `<div class="muted small">${escapeHtml(t('settingsView.wlanStrConfigured', { ssid: nv.strSSID }))}</div>`;
+  }
+  const netHeadingKey = (nv.kind === 'wired' || nv.kind === 'unknown-link') ? 'settingsView.netHeading' : 'settingsView.wlanHeading';
   const uid = uidSuffixFor(box);
 
   $('settingsBody').innerHTML = `
@@ -1387,16 +1398,8 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <h3>${escapeHtml(t(isWired ? 'settingsView.netHeading' : 'settingsView.wlanHeading'))}</h3>
-      ${wifi ? (isWired ? `
-        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
-        <div class="muted small">${escapeHtml(t('settingsView.wlanWired'))}</div>
-      ` : `
-        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSsid'))}</span><span class="kv-val">${escapeHtml(wifi.ssid || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSignal'))}</span><span class="kv-val">${escapeHtml(signalText)}</span></div>
-        ${wifi.frequencyKHz ? `<div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanFrequency'))}</span><span class="kv-val">${(wifi.frequencyKHz/1000).toFixed(0)} MHz</span></div>` : ''}
-      `) : `<div class="muted small">${escapeHtml(t('settingsView.wlanNotConnected'))}</div>`}
+      <h3>${escapeHtml(t(netHeadingKey))}</h3>
+      ${netRows}
       <small class="muted small" style="display:block;margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchHint'))}</small>
       <button class="btn" id="wlanSwitchToggle" style="margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchToggle'))}</button>
       <div id="wlanSwitchForm" class="hidden" style="margin-top:8px">
@@ -1954,7 +1957,7 @@ function renderBoxSettings(s, box) {
   // Wire the WLAN switch UI: collapsible form, PC-known SSIDs in
   // a dropdown with auto-password prefill, Save sends
   // PUT /api/box/wlan.
-  wireWlanSwitch(box, wifi && !isWired ? wifi.ssid : '');
+  wireWlanSwitch(box, nv.kind === 'wifi' ? nv.ssid : '');
   // The stored networks and "Forget the other networks" (wlanforget.js).
   wireWlanStored(box);
 
