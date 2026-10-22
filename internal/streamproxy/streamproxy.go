@@ -424,6 +424,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("stream proxy raw start", append([]any{"url", url}, requestFacts(r)...)...)
 	titleGen := s.noteStreamStart(url)
 	defer func() { s.clearTitleOnEnd(url, titleGen) }()
+	ctx := withFileResume(r.Context(), &fileResume{})
 	start := time.Now()
 	s.resetAudioGap()
 	headersSent := false
@@ -458,7 +459,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var boseAlive bool
-		boseAlive, lastErr = s.streamOne(r.Context(), w, r, s.edgeFor(url), url, !headersSent)
+		boseAlive, lastErr = s.streamOne(ctx, w, r, s.edgeFor(url), url, !headersSent)
 		if errors.Is(lastErr, errPlaylistIsHLS) && !headersSent {
 			// The URL had no .m3u8 suffix but its body is an HLS playlist; demux
 			// it (#252). serveHLS only errors before writing audio, so http.Error
@@ -630,6 +631,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	titleGen := s.noteStreamStart(p.StreamURL)
 	defer func() { s.clearTitleOnEnd(p.StreamURL, titleGen) }()
+	// A finite file that has to be refetched mid-way continues where the box
+	// is, not at byte 0 (fileresume.go).
+	ctx := withFileResume(r.Context(), &fileResume{})
 
 	// We do exactly one GET to the CDN and copy bytes to Bose. When the CDN
 	// returns EOF (token expiry), we reconnect internally and keep streaming —
@@ -699,7 +703,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		curURL := s.resolvePresetURL(slot, curStream)
-		boseAlive, err := s.streamOne(r.Context(), w, r, s.edgeFor(curURL), p.StreamURL, !headersSent)
+		boseAlive, err := s.streamOne(ctx, w, r, s.edgeFor(curURL), p.StreamURL, !headersSent)
 		lastErr = err
 		if errors.Is(err, errPlaylistIsHLS) && !headersSent {
 			// A preset whose URL had no .m3u8 suffix but serves an HLS playlist
@@ -890,6 +894,17 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			req.Header.Set("Range", rng)
 		}
 	}
+	// A reconnect inside a finite file asks for the rest of it. The box has
+	// every byte up to resumeAt, and a refetch from byte 0 would feed it the
+	// start of the file again into its running decode.
+	fr := fileResumeFrom(ctx)
+	var resumeAt int64
+	if !sendHeaders {
+		resumeAt = fr.offsetFor(station)
+		if resumeAt > 0 {
+			req.Header.Set("Range", "bytes="+strconv.FormatInt(resumeAt, 10)+"-")
+		}
+	}
 
 	started := time.Now()
 	var resp *http.Response
@@ -1050,6 +1065,20 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		return false, plErr
 	}
 
+	// Where in the file the first byte of this body sits, and whether the
+	// upstream is a finite file at all (fileresume.go).
+	bodyStart, err := fr.align(station, resp, partial, resumeAt)
+	if err != nil {
+		s.logger.Warn("stream proxy: could not continue the file where the box is, will reconnect",
+			"url", url, "resumeAt", resumeAt, "status", resp.StatusCode,
+			"contentRange", resp.Header.Get("Content-Range"), "err", err)
+		return true, err
+	}
+	if resumeAt > 0 {
+		s.logger.Info("stream proxy reconnect: continuing the file where the box is",
+			"url", url, "resumeAt", resumeAt, "status", resp.StatusCode, "total", fr.totalFor(station))
+	}
+
 	// Successful reach — clear any dedup entry so a future failure
 	// for this URL produces a fresh WARN immediately, and drop any recorded
 	// stream-status failure so the app stops reporting a now-recovered station.
@@ -1189,7 +1218,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		s.tail.reset(tailStation)
 		s.boxBuf.reset()
 	}
-	if !sendHeaders && knownBitrate {
+	if !sendHeaders && knownBitrate && resumeAt == 0 {
 		if bps := s.CurrentBitrate() * 1000 / 8; bps > 0 {
 			hole := s.audioGap()
 			keep := int(hole.Seconds() * float64(bps))
@@ -1238,6 +1267,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// every return past this point; the loops zero it before each attempt, so a
 	// failure that never reaches here correctly reads as "delivered nothing".
 	defer func() { s.noteConnResult(connBytes, time.Since(connStart)) }()
+	defer func() { fr.delivered(station, bodyStart+connBytes) }()
 	gotData := false
 	// Rolling short-window byte count: the number that decides between "the
 	// box bailed at full data rate" and "the upstream starved the box" is the
@@ -1463,8 +1493,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				// decode (kitbos bundle, 2026-08-24), and the sentinel keeps
 				// the caller's onDisconnect re-push out of the ending, which
 				// would otherwise restart the finished recording.
-				if resp.ContentLength > 0 && connBytes >= resp.ContentLength &&
-					strings.EqualFold(strings.TrimSpace(resp.Header.Get("Accept-Ranges")), "bytes") {
+				if (resp.ContentLength > 0 && connBytes >= resp.ContentLength &&
+					strings.EqualFold(strings.TrimSpace(resp.Header.Get("Accept-Ranges")), "bytes")) ||
+					fr.complete(station, bodyStart+connBytes) {
 					s.logger.Info("stream proxy upstream file complete, ending the stream",
 						"url", url, "connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
 					return false, errUpstreamFileComplete

@@ -101,6 +101,13 @@ func (s *Server) resumePlayback(ctx context.Context) (string, error) {
 	if s.transportKeyFallback(ctx, "PLAY") {
 		return "playing", nil
 	}
+	// A paused music file does not survive a plain Play on the speaker: it
+	// re-opens the file, discards the answer as stale and sits in PLAYING with
+	// the position frozen. So a file is restarted at its paused position
+	// instead. See resumefile.go.
+	if s.resumePausedFileLocked(ctx) {
+		return "playing", nil
+	}
 	if err := s.renderer.Play(ctx); err != nil {
 		if isWrongTransportState(err) {
 			// The box is no longer in PAUSED. Re-push the last stream so the user
@@ -250,6 +257,7 @@ func (s *Server) notePausePosition(ctx context.Context) {
 	} else {
 		s.pausePos = 0
 	}
+	s.pauseReqAt = time.Now()
 	s.pausePosMu.Unlock()
 }
 

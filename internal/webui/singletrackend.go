@@ -55,6 +55,7 @@ func (s *Server) armSingleTrackEnd(tr singleTrack, gen uint64) {
 	if s.renderer == nil {
 		return
 	}
+	s.noteActiveFile(tr, gen)
 	go s.watchSingleTrackEnd(tr, gen)
 }
 
@@ -144,6 +145,7 @@ func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
 			return
 		}
 		gen = next
+		s.noteActiveFile(tr, gen)
 	}
 }
 
@@ -166,6 +168,8 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		sawPlay   bool
 		// retried: the one start retry this play gets has been used.
 		retried bool
+		// resume: recognises a resume the firmware froze (resumefile.go).
+		resume fileResumeWatch
 	)
 	for {
 		select {
@@ -185,7 +189,20 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// that should call the end.
 			return false, gen
 		}
-		if s.userStoppedRecently() {
+		// STR is restarting the file at its paused position: the Stop and the
+		// position near zero on the way are not the track ending.
+		// The position starts over from where the restart seeks to, so the
+		// end nets measure from there too.
+		if s.fileRestarting() {
+			resume.restarted()
+			lastPos, lastPosAt = 0, time.Time{}
+			start = time.Now().Add(-s.pausePosition())
+			continue
+		}
+		// A pause from the app records a user stop as well, but the file stays
+		// loaded and will be resumed: keep watching, or the freeze after the
+		// resume and the end of the track both go unnoticed.
+		if s.userStoppedRecently() && !s.pausedNotStopped() {
 			return false, gen
 		}
 
@@ -205,6 +222,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		if tornDown && !sawPlay && !retried {
 			if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker dropped the track before it started"); ok {
 				gen, start, retried = next, time.Now(), true
+				s.noteActiveFile(tr, gen)
 				continue
 			}
 		}
@@ -222,6 +240,26 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		end := tr.dur
 		if obsTotal > end {
 			end = obsTotal
+		}
+
+		// A resume the firmware froze: PLAY_STATE after a pause with the
+		// position standing still. Only for a file STR can seek in.
+		if fileSeekable(tr) || obsTotal > 0 {
+			if ps == "PAUSE_STATE" {
+				s.notePausedAt(pos)
+			}
+			step := resume.observe(fileResumeObs{status: ps, pos: pos, end: end, now: time.Now(),
+				pauseHint: s.pauseHintSince(resume.lastMoveAt)})
+			if step.repair {
+				s.repairFrozenFileResume(tr, gen, step.at)
+				resume.restarted()
+				continue
+			}
+			if step.hold {
+				s.logger.Debug("single track: position not moving after a pause, watching the resume",
+					"title", title, "posSec", int(pos.Seconds()))
+				continue
+			}
 		}
 
 		switch ps {
