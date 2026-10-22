@@ -305,6 +305,12 @@ func samePresetItems(a, b presets.Preset) bool {
 // holdSaveThroughPut runs p through the per-slot PUT handler in process, so a
 // hold obeys every rule an app save does without a second copy of them.
 func (s *Server) holdSaveThroughPut(ctx context.Context, p presets.Preset, kind string, live bool) (HoldSaved, error) {
+	return s.saveThroughPut(ctx, p, kind, live, holdSaveUA, "speaker-key")
+}
+
+// saveThroughPut is holdSaveThroughPut for any caller: ua and remote are what
+// the PUT logs and decides its display notice on.
+func (s *Server) saveThroughPut(ctx context.Context, p presets.Preset, kind string, live bool, ua, remote string) (HoldSaved, error) {
 	if cur, have := s.presets.Get(p.Slot); have && holdSaveSameItem(cur, p) {
 		return HoldSaved{Slot: p.Slot, Kind: kind, Name: cur.Name, Unchanged: true}, nil
 	}
@@ -321,8 +327,8 @@ func (s *Server) holdSaveThroughPut(ctx context.Context, p presets.Preset, kind 
 		return HoldSaved{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", holdSaveUA)
-	req.RemoteAddr = "speaker-key"
+	req.Header.Set("User-Agent", ua)
+	req.RemoteAddr = remote
 	rec := &holdSaveRecorder{header: http.Header{}}
 	s.handlePresetSlot(rec, req)
 	if rec.status() == http.StatusOK {
@@ -401,22 +407,33 @@ func (s *Server) boxNowPlaying(ctx context.Context) (source, location string, ok
 	if s.boxNowFn != nil {
 		return s.boxNowFn(ctx)
 	}
-	if s.boxHost == "" {
+	b, err := s.boxNowPlayingDoc(ctx)
+	if err != nil {
 		return "", "", false
 	}
-	c, cancel := context.WithTimeout(ctx, 4*time.Second)
+	return parseNowPlayingSourceLocation(b)
+}
+
+// boxNowPlayingDoc fetches the speaker's :8090/now_playing document.
+func (s *Server) boxNowPlayingDoc(ctx context.Context) ([]byte, error) {
+	if s.boxNowDocFn != nil {
+		return s.boxNowDocFn(ctx)
+	}
+	if s.boxHost == "" {
+		return nil, errors.New("box host not configured")
+	}
+	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+s.boxHost+":8090/now_playing", nil)
 	if err != nil {
-		return "", "", false
+		return nil, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", false
+		return nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
-	return parseNowPlayingSourceLocation(b)
+	return io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 }
 
 // parseNowPlayingSourceLocation pulls the source and the ContentItem location

@@ -60,6 +60,7 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/presets` | - | The STR preset store (what the six slots point at). |
 | `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on key `N` to key `M` (1-6), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
+| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on key `N` (1-6): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
 | `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename key `1`-`6`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them. |
 | `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). |
