@@ -440,6 +440,14 @@ func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64,
 		if retries >= recallResumeRetries {
 			break
 		}
+		// The status read above takes a round trip; a recall abandoned or
+		// stopped meanwhile paused the engine on purpose (AbandonRecall).
+		m.mu.Lock()
+		superseded = m.recallSeq != seq || m.userStopAt.After(since)
+		m.mu.Unlock()
+		if superseded {
+			return
+		}
 		retries++
 		m.logger.Warn("spotify: the engine is still paused after the recall's resume, resuming again",
 			"uri", uri, "attempt", retries, "track", st.Track.URI, "loadLandedPaused", newLoad && commitPaused)
@@ -693,6 +701,28 @@ func (m *Manager) Prev(ctx context.Context) error { return m.apiPost(ctx, "/play
 // Pause and Resume mirror the obvious controls.
 func (m *Manager) Pause(ctx context.Context) error {
 	return m.apiPost(ctx, "/player/pause", "")
+}
+
+// AbandonRecall ends a recall the speaker never took and pauses the engine.
+//
+// A plain Pause was not enough: the recall's own background resume check
+// (resumeRecall) was still inside its confirm window, read the pause as the
+// engine landing paused, and resumed it 30 ms later ("the engine plays after
+// the extra resume"). The engine then played the playlist to nobody, and on an
+// account that is also in use on a phone it kept the playback away from that
+// phone (live Portable 2026-10-22, three presses in a row). Bumping recallSeq
+// stands that check down, and closing the recall window lets the drain treat
+// the engine as idle again.
+func (m *Manager) AbandonRecall(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	m.recallSeq++
+	m.recallUntil = time.Time{}
+	m.engineHotUntil = time.Time{}
+	m.mu.Unlock()
+	return m.Pause(ctx)
 }
 
 func (m *Manager) Resume(ctx context.Context) error {
