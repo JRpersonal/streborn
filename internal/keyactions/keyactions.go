@@ -1,17 +1,26 @@
 // Package keyactions holds the built-in actions a remote key can carry
-// instead of a webhook or a saved group. The first and so far only one is the
-// sleep timer: each press of the key steps it 15 -> 30 -> 60 minutes -> off
-// (the stepping itself lives with the timer, internal/webui sleeptimer.go).
+// instead of a webhook or a saved group. There are two:
 //
-// Only the thumbs keys can carry an action. On back, forward and play/pause
-// the firmware's own reaction always runs too, so an action there would fire
-// on top of a skip or a pause; the thumbs keys do nothing on their own.
+//   - "sleep" steps the sleep timer on each press, 15 -> 30 -> 60 minutes ->
+//     off (the stepping itself lives with the timer, internal/webui
+//     sleepkey.go).
+//   - "snooze" snoozes a ringing alarm (discussion #1415, internal/webui
+//     alarmsnooze.go). Outside a ringing alarm it does nothing.
 //
-// A thumbs key carries ONE thing: a saved group (internal/groupkeys), a key
-// action from here, or a webhook. Group and key action exclude each other and
-// both saves check it (Validate here, the group-keys PUT on the other side);
-// either of them wins over a webhook on the same key, as the group already
-// did.
+// Which key may carry which action follows from what the firmware does with
+// the key on its own. The thumbs keys do nothing by themselves, so both
+// actions may go there. On back, forward and play/pause the firmware's own
+// reaction always runs too, so no action goes there. AUX is the one key in
+// between: the firmware always switches to the AUX input, and STR only sees
+// the press as that source change. That is exactly what silences a ringing
+// alarm, so snooze may go on AUX; the sleep timer may not, because stepping
+// it would switch the input away from whatever plays.
+//
+// A key carries ONE thing: a saved group (internal/groupkeys, thumbs keys
+// only), a key action from here, or a webhook. Group and key action exclude
+// each other and both saves check it (Validate here, the group-keys PUT on
+// the other side); either of them wins over a webhook on the same key, as the
+// group already did.
 //
 // The document lives on the speaker whose remote is pressed and is written
 // only when the app saves it. A press writes nothing.
@@ -33,16 +42,37 @@ import (
 const (
 	KeyThumbsUp   = "thumbsUp"
 	KeyThumbsDown = "thumbsDown"
+	// KeyAux is the AUX key, seen as the source change to AUX.
+	KeyAux = "aux"
 )
 
-// ActionSleep steps the sleep timer on every press.
-const ActionSleep = "sleep"
+// The actions a key can carry.
+const (
+	// ActionSleep steps the sleep timer on every press.
+	ActionSleep = "sleep"
+	// ActionSnooze snoozes a ringing alarm and does nothing otherwise.
+	ActionSnooze = "snooze"
+)
 
-// BindableKey reports whether id is a key an action may be bound to.
-func BindableKey(id string) bool { return id == KeyThumbsUp || id == KeyThumbsDown }
+func thumbs(id string) bool { return id == KeyThumbsUp || id == KeyThumbsDown }
+
+// BindableKey reports whether id is a key some action may be bound to.
+func BindableKey(id string) bool { return thumbs(id) || id == KeyAux }
 
 // knownAction reports whether a is an action this agent can run.
-func knownAction(a string) bool { return a == ActionSleep }
+func knownAction(a string) bool { return a == ActionSleep || a == ActionSnooze }
+
+// AllowedOn reports whether action may be bound to key. See the package
+// comment for why AUX takes snooze but not the sleep timer.
+func AllowedOn(action, key string) bool {
+	switch action {
+	case ActionSleep:
+		return thumbs(key)
+	case ActionSnooze:
+		return thumbs(key) || key == KeyAux
+	}
+	return false
+}
 
 // Document is the whole per-speaker file: key id -> action.
 type Document struct {
@@ -61,13 +91,16 @@ func (d *Document) Validate(groupBound func(key string) bool) error {
 			continue
 		}
 		if !BindableKey(key) {
-			return fmt.Errorf("key %q cannot carry an action, only the thumbs keys can", key)
+			return fmt.Errorf("key %q cannot carry an action, only the thumbs keys and AUX can", key)
 		}
 		if !knownAction(action) {
 			return fmt.Errorf("unknown key action %q", action)
 		}
+		if !AllowedOn(action, key) {
+			return fmt.Errorf("the sleep timer can only go on a thumbs key: AUX always switches the input as well")
+		}
 		if groupBound != nil && groupBound(key) {
-			return fmt.Errorf("key %q already carries a saved group; a key carries either a group or the sleep timer, remove the group first", key)
+			return fmt.Errorf("key %q already carries a saved group; a key carries either a group or a key action, remove the group first", key)
 		}
 		out[key] = action
 	}

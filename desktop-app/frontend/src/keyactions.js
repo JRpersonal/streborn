@@ -1,45 +1,78 @@
-// keyactions.js — pure helpers for the built-in actions a thumbs key of one
-// speaker's remote can carry (the agent's /api/keyactions). The only action
-// so far is the sleep timer: every press steps it 15 -> 30 -> 60 min -> off.
+// keyactions.js — pure helpers for the built-in actions a key of one
+// speaker's remote can carry (the agent's /api/keyactions). Two actions:
+//   - 'sleep' steps the sleep timer 15 -> 30 -> 60 min -> off (thumbs keys);
+//   - 'snooze' snoozes a ringing alarm and does nothing otherwise (thumbs
+//     keys and AUX; AUX always switches the input too, which is the silence
+//     a ringing alarm needs, so the sleep timer cannot go there).
 //
-// Document shape: { keys: { thumbsUp: 'sleep', thumbsDown: 'sleep' } }
+// Document shape: { keys: { thumbsUp: 'sleep', thumbsDown: 'snooze', aux: 'snooze' } }
 //
-// A thumbs key carries a saved group (groupkeys.js) OR the sleep timer, never
+// A thumbs key carries a saved group (groupkeys.js) OR a key action, never
 // both; the agent refuses the second binding, and the views say so first.
 //
 // No DOM access, no imports from the views (the view-extraction trap).
 
 export const SLEEP_KEY_IDS = ['thumbsUp', 'thumbsDown'];
+export const SNOOZE_KEY_IDS = ['thumbsUp', 'thumbsDown', 'aux'];
+// Every key that can carry some action.
+export const KEY_ACTION_KEY_IDS = SNOOZE_KEY_IDS;
 export const ACTION_SLEEP = 'sleep';
+export const ACTION_SNOOZE = 'snooze';
+
+// actionAllowed reports whether action may go on key (the agent's
+// keyactions.AllowedOn).
+export function actionAllowed(action, key) {
+  if (action === ACTION_SLEEP) return SLEEP_KEY_IDS.includes(key);
+  if (action === ACTION_SNOOZE) return SNOOZE_KEY_IDS.includes(key);
+  return false;
+}
 
 // normalizeKeyActions turns whatever the agent (an older one answers 404, or
 // nothing) answered into a well-formed document.
 export function normalizeKeyActions(raw) {
   const keys = (raw && raw.keys && typeof raw.keys === 'object') ? raw.keys : {};
   const out = { keys: {} };
-  for (const k of SLEEP_KEY_IDS) {
-    if (String(keys[k] || '').trim().toLowerCase() === ACTION_SLEEP) out.keys[k] = ACTION_SLEEP;
+  for (const k of KEY_ACTION_KEY_IDS) {
+    const a = String(keys[k] || '').trim().toLowerCase();
+    if (actionAllowed(a, k)) out.keys[k] = a;
   }
   return out;
 }
 
+// actionOn returns the action key carries, '' for none.
+export function actionOn(doc, key) {
+  const a = doc && doc.keys && doc.keys[key];
+  return a === ACTION_SLEEP || a === ACTION_SNOOZE ? a : '';
+}
+
 // sleepOn reports whether key carries the sleep timer.
 export function sleepOn(doc, key) {
-  return !!(doc && doc.keys && doc.keys[key] === ACTION_SLEEP);
+  return actionOn(doc, key) === ACTION_SLEEP;
+}
+
+// snoozeOn reports whether key carries snooze.
+export function snoozeOn(doc, key) {
+  return actionOn(doc, key) === ACTION_SNOOZE;
+}
+
+// withAction returns a new document with key carrying action ('' for none).
+// An action the key cannot carry leaves the key without one.
+export function withAction(doc, key, action) {
+  const keys = { ...((doc && doc.keys) || {}) };
+  if (action && actionAllowed(action, key)) keys[key] = action;
+  else delete keys[key];
+  return { keys };
 }
 
 // withSleep returns a new document with the sleep timer on key switched on or
 // off. Keys other than the thumbs keys are left as they are (never added).
 export function withSleep(doc, key, on) {
-  const keys = { ...((doc && doc.keys) || {}) };
-  if (on && SLEEP_KEY_IDS.includes(key)) keys[key] = ACTION_SLEEP;
-  else delete keys[key];
-  return { keys };
+  return withAction(doc, key, on ? ACTION_SLEEP : '');
 }
 
-// sleepBlockedBy returns the name of the saved group that sits on key (so the
-// sleep timer cannot go there), or ''. groupBindings is the group-key
-// document's bindings: key id -> template name.
+// sleepBlockedBy returns the name of the saved group that sits on key (so no
+// key action can go there), or ''. groupBindings is the group-key document's
+// bindings: key id -> template name.
 export function sleepBlockedBy(groupBindings, key) {
   const name = groupBindings && groupBindings[key];
   return name ? String(name) : '';

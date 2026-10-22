@@ -95,12 +95,20 @@ type presetWsHandler struct {
 	// physical press of a bound key toggles its group instead of firing the
 	// key's webhook. nil-safe.
 	groupKeys *groupkeys.Store
-	// keyActions holds the built-in actions bound to the thumbs keys (the
-	// sleep timer). A physical press of a bound key runs onSleepKey instead
-	// of firing the key's webhook. nil-safe.
+	// keyActions holds the built-in actions bound to the thumbs keys and AUX
+	// (the sleep timer, snooze). A physical press of a bound key runs its
+	// action instead of firing the key's webhook. nil-safe.
 	keyActions *keyactions.Store
 	// onSleepKey steps the sleep timer (webui.SleepKeyPress). nil-safe.
 	onSleepKey func()
+	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
+	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
+	// nil-safe.
+	onSnoozeKey func(key string)
+	// onAlarmSource hands every source change to the alarm clock
+	// (webui.AlarmSourceChanged): STANDBY ends a ringing alarm, and the switch
+	// to AUX is the AUX key, which snoozes when it carries snooze. nil-safe.
+	onAlarmSource func(from, to string)
 	// keyTrace follows the speaker's own key trace (internal/boxlog). When it
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.
@@ -1016,7 +1024,7 @@ func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 		h.logger.Info("a thumbs key carries a saved group, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so no group was formed or dissolved")
 	}
 	if h.keyActions.Bound(keyactions.KeyThumbsUp) || h.keyActions.Bound(keyactions.KeyThumbsDown) {
-		h.logger.Info("a thumbs key carries the sleep timer, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the timer was not stepped")
+		h.logger.Info("a thumbs key carries a key action (sleep timer or snooze), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
 	}
 	go func() {
 		src, _, status := h.nowPlayingSummary()
@@ -1259,6 +1267,13 @@ func (h *presetWsHandler) OnSourcePlaying(_ context.Context, _ string) {
 // OnSourceAux fires the configured "aux" webhook when the box switches to the
 // AUX input. Additional-only.
 func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
+	// A key action on AUX (snooze) wins over its webhook, as on the thumbs
+	// keys: one thing per key. The alarm clock sees the press through
+	// OnSourceChanged.
+	if h.keyActions.Bound(keyactions.KeyAux) {
+		h.logger.Debug("aux carries a key action, its webhook does not fire", "action", h.keyActions.Action(keyactions.KeyAux))
+		return
+	}
 	if h.webhooks != nil {
 		// Async: the webhook HTTP request must not stall the gabbo read loop.
 		go func() {

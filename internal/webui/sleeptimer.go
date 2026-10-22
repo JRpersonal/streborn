@@ -168,6 +168,27 @@ func (s *Server) armSleepNotify(d time.Duration, group, notice bool) {
 
 func (s *Server) cancelSleep(why string) { s.cancelSleepNotify(why, false) }
 
+// sleepGeneration is the running timer's generation, for a caller that has to
+// cancel exactly the timer it armed later (an alarm's switch-off on a snooze).
+func (s *Server) sleepGeneration() uint64 {
+	s.sleep.mu.Lock()
+	defer s.sleep.mu.Unlock()
+	return s.sleep.gen
+}
+
+// cancelSleepIfGen cancels the timer only while it is still the one armed at
+// generation gen: a timer the user set since is theirs and stays.
+func (s *Server) cancelSleepIfGen(gen uint64, why string) bool {
+	s.sleep.mu.Lock()
+	match := s.sleep.timer != nil && s.sleep.gen == gen
+	s.sleep.mu.Unlock()
+	if !match {
+		return false
+	}
+	s.cancelSleep(why)
+	return true
+}
+
 // cancelSleepNotify is cancelSleep; notice as for armSleepNotify.
 func (s *Server) cancelSleepNotify(why string, notice bool) {
 	s.sleep.mu.Lock()

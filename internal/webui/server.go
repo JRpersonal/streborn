@@ -193,6 +193,9 @@ type Server struct {
 	// the evaluation that started them. The tests wait on it; nothing in
 	// production does yet, but a graceful shutdown would.
 	alarmBackground sync.WaitGroup
+	// ring is the alarm that is ringing (or snoozed) right now, if any. RAM
+	// only: see alarmsnooze.go.
+	ring alarmRing
 	// spotifySwitchedAway tells the Spotify manager the box was pointed at a
 	// non-Spotify source, so its #14 auto-attach does not yank the box back.
 	// nil when Spotify is not configured.

@@ -243,6 +243,10 @@ func (h *presetWsHandler) OnPlayFailure(ev boxlog.PlayFailure) {
 func (h *presetWsHandler) OnSourceChanged(_ context.Context, from, to string) {
 	// leaving STR's sources takes the track off the panel (displaytrack.go)
 	trackOnSourceChanged(from, to)
+	// the alarm clock: STANDBY ends a ringing alarm, AUX may snooze it
+	if h.onAlarmSource != nil {
+		h.onAlarmSource(from, to)
+	}
 	var seen time.Time
 	if h.stationActivity != nil {
 		seen = h.stationActivity()

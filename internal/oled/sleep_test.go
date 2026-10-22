@@ -163,6 +163,13 @@ func TestTrackSleepRenderAndCache(t *testing.T) {
 	}
 }
 
+func TestSnoozeNoticeText(t *testing.T) {
+	n := Snooze("06:39")
+	if n.Kind != NoticeSnooze || n.Line1 != "SNOOZE" || n.Line2 != "UNTIL 06:39" {
+		t.Errorf("snooze notice %+v", n)
+	}
+}
+
 func TestSleepNoticeTexts(t *testing.T) {
 	n := SleepSet(30)
 	if n.Kind != NoticeSleep || n.Line1 != "SLEEP 30" || n.Line2 != "MINUTES" {

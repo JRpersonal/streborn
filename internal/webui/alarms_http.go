@@ -31,6 +31,8 @@ type alarmStatus struct {
 	NextFire    string             `json:"nextFire,omitempty"`
 	NextAlarmID string             `json:"nextAlarmId,omitempty"`
 	LastFire    *alarm.FireOutcome `json:"lastFire,omitempty"`
+	// Ring is the alarm ringing or snoozed right now, absent when none.
+	Ring *alarmRingView `json:"ring,omitempty"`
 }
 
 // handleAlarms serves the per-speaker alarm clock document.
@@ -99,6 +101,7 @@ func (s *Server) alarmView() alarmView {
 			v.Status.LastFire = &last
 		}
 	}
+	v.Status.Ring = s.ringView()
 	return v
 }
 
@@ -116,6 +119,7 @@ func (s *Server) AlarmsSnapshot() any {
 		"next_fire":     v.Status.NextFire,
 		"next_alarm_id": v.Status.NextAlarmID,
 		"last_fire":     v.Status.LastFire,
+		"ring":          v.Status.Ring,
 		"alarms":        v.Alarms,
 	}
 }

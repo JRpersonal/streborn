@@ -88,7 +88,7 @@ func TestPhoneRemoteLocalesCarryTheAlarm(t *testing.T) {
 		"alarm", "alarmNone", "alarmAdd", "alarmSave", "alarmDelete", "alarmCancel",
 		"alarmPreset", "alarmVol", "alarmVolKeep", "alarmZone", "alarmClockBad",
 		"alarmFail", "alarmNext", "alarmDow", "alarmOff", "alarmOffNever",
-		"alarmOffMin", "alarmOffHours",
+		"alarmOffMin", "alarmOffHours", "alarmSnooze", "alarmSnoozeHint",
 	} {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
@@ -162,7 +162,7 @@ func TestPhoneRemoteAlarmHasASwitchOff(t *testing.T) {
 	}
 	// A new alarm switches off by itself an hour after it starts; the stored
 	// zero still means never, so an alarm saved without the field is unchanged.
-	if !strings.Contains(indexHTML, "volume: 0, autoOff: 60 }") {
+	if !strings.Contains(indexHTML, "volume: 0, autoOff: 60, snooze: 9 }") {
 		t.Error("a new alarm has to default to switching off after an hour")
 	}
 }
@@ -203,5 +203,25 @@ func TestPhoneRemoteAlarmVolumeIsASlider(t *testing.T) {
 	}
 	if !strings.Contains(indexHTML, "lab.textContent = Number(vol.value) > 0 ? vol.value : T.alarmVolKeep;") {
 		t.Error("the live label has to say 'leave as it is' at zero rather than showing 0")
+	}
+}
+
+// The snooze length (discussion #1415) is per alarm, offers exactly the
+// backend's alarm.SnoozeChoices, opens at 9 for an alarm saved before the
+// field existed, and goes through captureAlarmEditor like every other
+// DOM-only field, or it snaps back when a preset chip re-renders the editor.
+func TestPhoneRemoteAlarmHasASnoozeLength(t *testing.T) {
+	if !strings.Contains(indexHTML, `<select id="alarmSnooze">`) {
+		t.Error("the alarm editor is missing the snooze length")
+	}
+	choices := strings.ReplaceAll(fmt.Sprint(alarm.SnoozeChoices), " ", ", ")
+	if !strings.Contains(indexHTML, "var snoozes = "+choices+".map(") {
+		t.Errorf("the snooze list has to be %s, the backend's alarm.SnoozeChoices", choices)
+	}
+	if !strings.Contains(indexHTML, "var snoozeNow = Number(a.snooze) || 9;") {
+		t.Error("an alarm without a snooze length has to open at 9 minutes")
+	}
+	if !strings.Contains(indexHTML, "alarmDraft.snooze = Number(snz.value) || 9;") {
+		t.Error("the snooze length has to be captured before the editor re-renders")
 	}
 }

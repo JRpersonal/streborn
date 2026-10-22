@@ -48,7 +48,7 @@ import { balanceSourceBox, stereoPairsOf, inStereoPair } from '../groups.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../groupkeys.js';
-import { normalizeKeyActions, sleepOn, withSleep, sleepBlockedBy, SLEEP_KEY_IDS } from '../keyactions.js';
+import { normalizeKeyActions, sleepOn, snoozeOn, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../keyactions.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
@@ -1192,8 +1192,14 @@ function remoteSvg() {
   // same whatever fonts the system has.
   const smark = (id, cx, cy) =>
     `<path class="rc-smark" data-smark="${id}" style="display:none" d="M${cx + 2} ${cy - 4.58}A5 5 0 1 0 ${cx + 2} ${cy + 4.58}A5.5 5.5 0 0 1 ${cx + 2} ${cy - 4.58}Z"/>`;
+  // A "Z" in the same corner for a key that snoozes a ringing alarm (#1415):
+  // the thumbs keys and AUX. A key carries one action, so it never shares the
+  // corner with the G or the moon.
+  const zmark = (id, x, y) =>
+    `<text class="rc-zmark" data-zmark="${id}" x="${x}" y="${y}" style="display:none">Z</text>`;
   const marks = gmark('thumbsDown', 84, 372) + gmark('thumbsUp', 172, 372)
-    + smark('thumbsDown', 85, 369) + smark('thumbsUp', 173, 369);
+    + smark('thumbsDown', 85, 369) + smark('thumbsUp', 173, 369)
+    + zmark('thumbsDown', 84, 372) + zmark('thumbsUp', 172, 372) + zmark('aux', 172, 36);
   return `<svg class="rc-svg" viewBox="0 0 200 428" role="img" aria-label="remote">`
     + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
 }
@@ -1596,7 +1602,7 @@ function renderBoxSettings(s, box) {
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
-          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}</small>
+          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}<br><span class="rc-legend-snooze"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSnooze'))}</small>
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteNoVol'))}</small>
         </div>
       </div>
@@ -1622,8 +1628,13 @@ function renderBoxSettings(s, box) {
           <option value="replace">${escapeHtml(t('settingsView.webhookModeReplace'))}</option>
         </select>
       </div>
-      <div class="setting-row hidden" id="sleepKeyRow">
-        <label class="sleep-key-label"><input type="checkbox" id="sleepKeyToggle" /> <span>${escapeHtml(t('settingsView.sleepKeyLabel'))}</span></label>
+      <div class="setting-row key-action-row hidden" id="sleepKeyRow">
+        <label for="keyActionSelect">${escapeHtml(t('settingsView.keyActionLabel'))}</label>
+        <select id="keyActionSelect">
+          <option value="">${escapeHtml(t('settingsView.keyActionNone'))}</option>
+          <option value="sleep" id="keyActionSleepOpt">${escapeHtml(t('settingsView.sleepKeyLabel'))}</option>
+          <option value="snooze">${escapeHtml(t('settingsView.snoozeKeyLabel'))}</option>
+        </select>
       </div>
       <small class="muted small hidden" id="sleepKeyNote"></small>
       <small class="muted small" id="webhookModeNote"></small>
@@ -3204,12 +3215,14 @@ function renderBoxSettings(s, box) {
     // -> template name. A bound key is drawn with the "G" marker and its mode
     // note says the group wins over the webhook.
     let gkBindings = {};
-    // The speaker's key actions: which thumbs key carries the sleep timer.
-    // kaSupported is false for an agent that predates /api/keyactions.
+    // The speaker's key actions: which key carries the sleep timer (thumbs
+    // keys) or snoozes an alarm (thumbs keys and AUX). kaSupported is false
+    // for an agent that predates /api/keyactions.
     let kaDoc = { keys: {} };
     let kaSupported = true;
     const sleepRow = $('sleepKeyRow');
-    const sleepToggle = $('sleepKeyToggle');
+    const actionSelect = $('keyActionSelect');
+    const sleepOpt = $('keyActionSleepOpt');
     const sleepNote = $('sleepKeyNote');
     let prevTarget = whTarget.value || 'thumbsUp';
     const presetIds = new Set(['preset1', 'preset2', 'preset3', 'preset4', 'preset5', 'preset6']);
@@ -3258,37 +3271,55 @@ function renderBoxSettings(s, box) {
           : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote')));
       whModeNote.textContent = gkBindings[tg]
         ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote
-        : (sleepOn(kaDoc, tg) ? t('settingsView.webhookSleepKeyNote') + ' ' + modeNote : modeNote);
+        : (sleepOn(kaDoc, tg) ? t('settingsView.webhookSleepKeyNote') + ' ' + modeNote
+          : (snoozeOn(kaDoc, tg) ? t('settingsView.webhookSnoozeKeyNote') + ' ' + modeNote : modeNote));
       syncSleepRow(tg);
       syncType();
       paintRemote(tg);
     };
-    // The sleep-timer switch shows for the thumbs keys only. A key that forms
-    // a group cannot take it: the switch is disabled and says which group to
-    // take off the key first.
+    // The built-in action picker shows for the keys that can carry one: the
+    // thumbs keys (sleep timer or snooze) and AUX (snooze only). A key that
+    // forms a group cannot take one: the picker is disabled and says which
+    // group to take off the key first.
+    const keyActionHelp = (tg, action) => {
+      if (action === 'sleep') return t('settingsView.sleepKeyHelp');
+      if (tg === 'aux') return t('settingsView.snoozeKeyAuxHelp');
+      if (action === 'snooze') return t('settingsView.snoozeKeyHelp');
+      return t('settingsView.sleepKeyHelp') + ' ' + t('settingsView.snoozeKeyHelp');
+    };
     const syncSleepRow = (tg) => {
-      if (!sleepRow || !sleepToggle || !sleepNote) return;
-      const thumbs = SLEEP_KEY_IDS.includes(tg);
-      sleepRow.classList.toggle('hidden', !thumbs);
-      sleepNote.classList.toggle('hidden', !thumbs);
-      if (!thumbs) return;
+      if (!sleepRow || !actionSelect || !sleepNote) return;
+      const bindable = KEY_ACTION_KEY_IDS.includes(tg);
+      sleepRow.classList.toggle('hidden', !bindable);
+      sleepNote.classList.toggle('hidden', !bindable);
+      if (!bindable) return;
+      if (sleepOpt) {
+        const sleepFits = SLEEP_KEY_IDS.includes(tg);
+        sleepOpt.hidden = !sleepFits;
+        sleepOpt.disabled = !sleepFits;
+      }
       const group = sleepBlockedBy(gkBindings, tg);
-      sleepToggle.checked = sleepOn(kaDoc, tg);
-      sleepToggle.disabled = !kaSupported || (!!group && !sleepToggle.checked);
+      const cur = actionOn(kaDoc, tg);
+      actionSelect.value = cur;
+      actionSelect.disabled = !kaSupported || (!!group && !cur);
       sleepNote.textContent = !kaSupported
         ? t('settingsView.sleepKeyNeedsUpdate')
-        : (group ? t('settingsView.sleepKeyGroupConflict', { name: group }) : t('settingsView.sleepKeyHelp'));
+        : (group ? t('settingsView.keyActionGroupConflict', { name: group }) : keyActionHelp(tg, cur));
     };
-    if (sleepToggle) sleepToggle.onchange = async () => {
+    if (actionSelect) actionSelect.onchange = async () => {
       const tg = whTarget.value;
-      const on = sleepToggle.checked;
-      if (on && sleepBlockedBy(gkBindings, tg)) { syncSleepRow(tg); return; }
-      const next = withSleep(kaDoc, tg, on);
-      sleepToggle.disabled = true;
+      const action = actionSelect.value;
+      const before = actionOn(kaDoc, tg);
+      if (action && sleepBlockedBy(gkBindings, tg)) { syncSleepRow(tg); return; }
+      const next = withAction(kaDoc, tg, action);
+      actionSelect.disabled = true;
       try {
         await SaveKeyActions(box.host, box.port, next);
         kaDoc = normalizeKeyActions(next);
-        showToast(t(on ? 'settingsView.sleepKeyOnToast' : 'settingsView.sleepKeyOffToast'));
+        const toast = action === 'sleep' ? 'settingsView.sleepKeyOnToast'
+          : action === 'snooze' ? 'settingsView.snoozeKeyOnToast'
+            : (before === 'snooze' ? 'settingsView.snoozeKeyOffToast' : 'settingsView.sleepKeyOffToast');
+        showToast(t(toast));
       } catch (e) {
         showError(e);
       }
@@ -3310,6 +3341,11 @@ function renderBoxSettings(s, box) {
         el.classList.toggle('rc-sel', k === selected || (selected === 'thumb' && (k === 'thumbsUp' || k === 'thumbsDown')));
         el.classList.toggle('rc-group', !!gkBindings[k]);
         el.classList.toggle('rc-sleep', !gkBindings[k] && sleepOn(kaDoc, k));
+        el.classList.toggle('rc-snooze', !gkBindings[k] && snoozeOn(kaDoc, k));
+      });
+      document.querySelectorAll('.rc-zmark[data-zmark]').forEach((m) => {
+        const k = m.getAttribute('data-zmark');
+        m.style.display = !gkBindings[k] && snoozeOn(kaDoc, k) ? '' : 'none';
       });
       document.querySelectorAll('.rc-gmark[data-gmark]').forEach((m) => {
         m.style.display = gkBindings[m.getAttribute('data-gmark')] ? '' : 'none';

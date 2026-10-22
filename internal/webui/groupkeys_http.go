@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/JRpersonal/streborn/internal/groupkeys"
+	"github.com/JRpersonal/streborn/internal/keyactions"
 )
 
 // handleGroupKeys serves the per-speaker group-key document (#863): the saved
@@ -37,11 +38,15 @@ func (s *Server) handleGroupKeys(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// A thumbs key carries a group OR a key action (the sleep timer),
-		// never both; the key-actions PUT checks the other direction.
+		// A thumbs key carries a group OR a key action (the sleep timer or
+		// snooze), never both; the key-actions PUT checks the other direction.
 		for key := range d.Bindings {
 			if s.keyActions.Bound(key) {
-				http.Error(w, fmt.Sprintf("key %q already carries the sleep timer; a key carries either a group or the sleep timer, switch the sleep timer off on that key first", key), http.StatusConflict)
+				what := "the sleep timer"
+				if s.keyActions.Action(key) == keyactions.ActionSnooze {
+					what = "snooze"
+				}
+				http.Error(w, fmt.Sprintf("key %q already carries %s; a key carries either a group or a key action, take %s off that key first", key, what, what), http.StatusConflict)
 				return
 			}
 		}

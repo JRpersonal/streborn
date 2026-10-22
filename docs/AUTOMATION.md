@@ -103,7 +103,7 @@ Trigger ids, as stored in that file under `buttons`:
 | `prev`, `next` | Back / Forward on the remote | the press, additional only (also during playback, next to the skip) |
 | `playPause` | Play/Pause on the remote | the press, additional only |
 | `preset1` .. `preset6` | Preset keys (remote and top panel) | the speaker's preset selection; "replace" mode withholds STR's playback |
-| `aux` | AUX (top panel) | the source change to AUX |
+| `aux` | AUX (top panel) | the source change to AUX; not when AUX carries snooze (see "Snooze key") |
 | `power` | Power | the standby transition |
 | `thumb` (top-level field) | either thumbs key | fallback when the thumbs key has no trigger of its own |
 
@@ -188,7 +188,7 @@ the main speaker's stored permanent group; the template itself stays on the
 remote's speaker, and the next press forms it again with its permanent flag.
 
 **Rules.** A key carries one action: a thumbs key bound to a group does not
-fire its webhook, and cannot carry the sleep timer (next section). Presses that land while a form or dissolve for that key is
+fire its webhook, and cannot carry the sleep timer or snooze (next sections). Presses that land while a form or dissolve for that key is
 still running are ignored, and so is a second press within 3 s. The 2 s
 webhook rule for the other keys stays as it is.
 
@@ -205,8 +205,9 @@ the last action and the last error.
 ## Sleep timer key (a thumbs key steps the sleep timer)
 
 Instead of a group, a thumbs key can carry the sleep timer. Set it in the
-Settings tab's remote key map ("Sleep timer on this key"); the key is then
-drawn with a small moon. Each press steps the timer:
+Settings tab's remote key map (pick the key, then "Built-in action": "Sleep
+timer on this key"); the key is then drawn with a small moon. Each press steps
+the timer:
 
     not running -> 15 min -> 30 min -> 60 min -> off -> 15 min ...
 
@@ -221,12 +222,14 @@ speaker whose remote is pressed, `{"keys":{"thumbsUp":"sleep"}}`, written only
 when the app saves it (`PUT /api/keyactions`, LAN only; `GET` reads it back).
 The timer itself stays RAM-only, as before. A press writes nothing.
 
-**Rules.** A thumbs key carries ONE of: a group, the sleep timer, a webhook.
-Group and sleep timer exclude each other: `PUT /api/keyactions` refuses a key
-that carries a group, and `PUT /api/groupkeys` refuses a key that carries the
-sleep timer (both with 409 and the reason). Either wins over a webhook on the
-same key. Only the thumbs keys can carry it: back, forward and play/pause
-always run the firmware's own reaction too.
+**Rules.** A thumbs key carries ONE of: a group, a key action (the sleep timer
+or snooze), a webhook. Group and key action exclude each other:
+`PUT /api/keyactions` refuses a key that carries a group, and
+`PUT /api/groupkeys` refuses a key that carries a key action (both with 409
+and the reason). Either wins over a webhook on the same key. Only the thumbs
+keys can carry the sleep timer: back, forward and play/pause always run the
+firmware's own reaction too, and so does AUX, which can therefore carry only
+snooze (next section).
 
 **What the speaker shows.** On a speaker with a panel STR draws on (ST20, ST30,
 Portable, Wave), a press shows SLEEP 15 / 30 / 60 MINUTES or SLEEP OFF; a newer
@@ -243,6 +246,62 @@ to every live member's agent (`POST /api/display/sleep
 with a display shows it too. That call only draws; the arming speaker still
 switches the members off at the end. A member without STR, without a panel or
 that missed the call still goes off with the group.
+
+## Snooze key (a thumbs key or AUX snoozes a ringing alarm)
+
+A thumbs key or the AUX key can snooze a ringing alarm (discussion #1415). Set
+it in the same place as the sleep timer: the Settings tab's remote key map,
+pick the key, then "Built-in action": "Snooze a ringing alarm". The key is
+then drawn with a small "Z". It is stored in the same
+`/mnt/nv/streborn/key-actions.json`, as `"snooze"`
+(`{"keys":{"aux":"snooze"}}`), and follows the same one-thing-per-key rules.
+Whether an alarm can be snoozed at all is decided by this binding; how long it
+stays quiet is set per alarm (see "Alarm clock").
+
+**When does an alarm count as ringing.** From the moment its fire's preset
+recall returned until the first of: Stop or Pause in the app or on the phone
+page; the speaker going to standby (power key, standby, the alarm's own
+switch-off); something else played through STR; its switch-off time passing
+(two hours for an alarm without one); another alarm firing. While the speaker
+is still waking up for the alarm, a press is ignored, so it cannot snooze a
+preset that is still on its way.
+
+**What a press does.** While an alarm rings: STR stops playback, the speaker
+stays on and silent, and a speaker with a panel STR draws on shows SNOOZE and
+the wake time. After the alarm's snooze time the same
+preset plays again at the alarm's volume, through exactly the same path as a
+normal fire (wake, level, recall, the 45 s retry). Snoozes are unlimited.
+Some firmware drops STR's stream source to standby when it is stopped; a drop
+to standby in the first ten seconds after the snooze's own stop therefore
+does not count as the power key, and the alarm wakes the speaker at the end
+of the snooze.
+Power, Stop in the app or on the phone, playing something else (STR, a Bose
+preset, Bluetooth) or deleting or disabling the alarm during the snooze ends
+the alarm, and it does not ring again. A press on an alarm that is already
+snoozed only shows the wake time again. Outside a ringing alarm a thumbs key
+bound to snooze does nothing (it only logs the press).
+
+**AUX.** STR sees an AUX press only as the speaker's switch to the AUX input,
+so the firmware's own reaction always runs. During a ringing alarm that switch
+is the silence a snooze needs, so STR sends no stop on top, and at the end of
+the snooze the alarm comes back from AUX. Outside a ringing alarm a
+snooze-bound AUX does nothing extra: it is the normal AUX input, and the `aux`
+webhook does not fire (the key action wins). Any switch to AUX while an alarm
+rings counts, including choosing AUX in an app.
+
+**Switch-off.** An alarm's switch-off counts from its latest ring: the snooze
+cancels the sleep timer that alarm armed (never one you set yourself since),
+and the next ring arms it afresh. A 15-minute switch-off with a 15-minute
+snooze would otherwise switch the speaker off in the middle of the snooze.
+
+**Memory, groups, logs.** The snooze deadline is one timer in RAM; a press
+writes nothing to NAND and `alarms.json` only changes when an editor saves.
+An agent restart during a snooze loses it (the snooze log line says so). An
+alarm wakes only its own speaker, and a snooze acts only on that speaker. The
+agent logs every step (`snooze key pressed`, `alarm snoozed ... until`,
+`alarm: snooze over, ringing again`, `alarm: snooze cancelled ... why`), and
+`GET /api/alarms` reports a ringing or snoozed alarm in its status block
+(`ring`).
 
 ## Alarm clock (a preset, but timed)
 
@@ -274,10 +333,15 @@ If nothing is playing 45 seconds later it tries once more, and then stops: a
 dead station at 06:30 leaves a log line, not a speaker re-pushing a dead URL
 until somebody unplugs it.
 
-**Stopping it.** There is no snooze key. The alarm is ordinary playback, so the
-Stop button in the app or on the phone page, and the speaker's own power key,
-end it the way they end anything else; the retry stands down when it sees one of
-those. An alarm can also switch its speaker off by itself a set number of
+**Stopping it.** The alarm is ordinary playback, so the Stop button in the app
+or on the phone page, and the speaker's own power key, end it the way they end
+anything else; the retry stands down when it sees one of those.
+
+**Snoozing it.** Bind snooze to a thumbs key or to AUX in the app (see "Snooze
+key" above) and a press while the alarm rings silences it for the alarm's
+snooze time: 5, 9, 10 or 15 minutes, set per alarm in the phone page's alarm
+editor. An alarm saved before snooze existed snoozes for 9. Unlimited snoozes;
+Stop, power or playing something else ends the alarm. An alarm can also switch its speaker off by itself a set number of
 minutes after it starts, so one nobody is home for does not play all day. That
 arms the ordinary sleep timer, so it shows on the phone's sleep card as "Off in
 45 min" and can be cancelled there. Leave it at "Never" and the alarm plays until

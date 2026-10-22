@@ -39,6 +39,19 @@ func SleepOff() Notice {
 	return keyNotice(NoticeSleep, iconMoon, 0, "SLEEP OFF", "TIMER CANCELLED", sleepNoticeHold, 2)
 }
 
+// NoticeSnooze is a snoozed alarm's notice (internal/webui alarmsnooze.go).
+const NoticeSnooze NoticeKind = "snooze"
+
+// snoozeNoticeHold is how long the snooze notice stays: a little longer than
+// a sleep step, because somebody half asleep reads the wake time off it.
+const snoozeNoticeHold = 4 * time.Second
+
+// Snooze: a ringing alarm was snoozed and rings again at until, already
+// formatted as the alarm's local "15:04".
+func Snooze(until string) Notice {
+	return keyNotice(NoticeSnooze, iconMoon, 0, "SNOOZE", "UNTIL "+until, snoozeNoticeHold, 2)
+}
+
 // supersedes reports whether n may take over from a notice of kind last
 // without the start gap: only a sleep notice following a sleep notice.
 func (n Notice) supersedes(last NoticeKind) bool {

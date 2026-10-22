@@ -1180,6 +1180,11 @@ func run() error {
 		// it wins over a webhook on the same key, like a group.
 		keyActions: keyActionsStore,
 		onSleepKey: webuiSrv.SleepKeyPress,
+		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
+		// alarm clock also follows the source (STANDBY ends a ringing alarm,
+		// AUX is the AUX key).
+		onSnoozeKey:   webuiSrv.AlarmSnoozePress,
+		onAlarmSource: webuiSrv.AlarmSourceChanged,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.

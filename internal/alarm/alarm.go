@@ -44,7 +44,14 @@ const (
 	// Checking it here is load-bearing, not decorative: armSleep validates
 	// nothing, the bound lives only in the sleep timer's HTTP handler.
 	MaxAutoOffMinutes = 720
+	// DefaultSnoozeMinutes is the snooze length of an alarm that names none,
+	// which is every alarm saved before snooze existed (discussion #1415).
+	DefaultSnoozeMinutes = 9
 )
+
+// SnoozeChoices are the snooze lengths an alarm may carry, in minutes. The
+// editor offers exactly these; zero on the alarm means DefaultSnoozeMinutes.
+var SnoozeChoices = []int{5, 9, 10, 15}
 
 // Alarm is one entry: WHEN, and WHICH OF THE SIX.
 type Alarm struct {
@@ -69,6 +76,32 @@ type Alarm struct {
 	// omitempty on an int cannot tell absent from zero, so the editor supplies
 	// the useful default instead of hiding one here.
 	AutoOff int `json:"autoOff,omitempty"`
+	// Snooze is how many minutes a snoozed alarm stays quiet before it rings
+	// again, one of SnoozeChoices. Zero (an alarm saved before the field
+	// existed) means DefaultSnoozeMinutes. Whether snooze exists at all is not
+	// decided here but by binding the snooze action to a key
+	// (internal/keyactions).
+	Snooze int `json:"snooze,omitempty"`
+}
+
+// SnoozeMinutes is the alarm's snooze length with the default applied.
+func (a Alarm) SnoozeMinutes() int {
+	if a.Snooze <= 0 {
+		return DefaultSnoozeMinutes
+	}
+	return a.Snooze
+}
+
+func validSnooze(n int) bool {
+	if n == 0 {
+		return true
+	}
+	for _, c := range SnoozeChoices {
+		if n == c {
+			return true
+		}
+	}
+	return false
 }
 
 // SameSchedule reports whether a and b are due at the same wall-clock moments:
@@ -152,6 +185,9 @@ func (d *Document) Validate() error {
 		}
 		if a.AutoOff < 0 || a.AutoOff > MaxAutoOffMinutes {
 			return fmt.Errorf("the switch-off time has to be between 0 and %d minutes", MaxAutoOffMinutes)
+		}
+		if !validSnooze(a.Snooze) {
+			return fmt.Errorf("the snooze time has to be 5, 9, 10 or 15 minutes")
 		}
 		// An empty day set is a validation error, never an implicit "every
 		// day": a client that sends days:[] would otherwise arm a daily
