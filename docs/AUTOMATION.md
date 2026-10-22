@@ -229,7 +229,7 @@ same key. Only the thumbs keys can carry it: back, forward and play/pause
 always run the firmware's own reaction too.
 
 **What the speaker shows.** On a speaker with a panel STR draws on (ST20, ST30,
-Portable, Wave), a press shows SLEEP 15 / 30 / 60 MINUTES or SLEEP OFF; a newer
+Portable; not the Wave, whose front is a segment display), a press shows SLEEP 15 / 30 / 60 MINUTES or SLEEP OFF; a newer
 step replaces the one on screen at once. While a timer runs (set from the key,
 the phone or an alarm), STR's own playback screen shows a moon and the minutes
 left in its top line. That countdown costs no timer: the deadline is handed to

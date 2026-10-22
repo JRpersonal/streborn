@@ -19,7 +19,8 @@ package webui
 //
 // The guard rails, each for a reason:
 //   - only on a speaker with a display (its own /capabilities clockDisplay
-//     flag; an ST10 says false),
+//     flag; an ST10 says false; a Wave says true for its segment clock, and
+//     its model name overrides that),
 //   - never in standby, never while anything plays, never in a group,
 //   - once per message per displayMsgRepeat, so a user pressing a dead key
 //     five times sees it once rather than five silent-track interruptions,
@@ -42,6 +43,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/oled"
 )
 
 // DisplayMsgKind names one message the speaker display can show.
@@ -171,10 +173,13 @@ func modelHasDisplay(model string) (has, known bool) {
 		return false, false
 	case strings.Contains(m, "soundtouch 10"), strings.Contains(m, "soundtouch 300"),
 		strings.Contains(m, "sa-4"), strings.Contains(m, "sa-5"),
-		strings.Contains(m, "cinemate"), strings.Contains(m, "wireless link"):
+		strings.Contains(m, "cinemate"), strings.Contains(m, "wireless link"),
+		// the Wave's front is a segment display: the time and a few fixed
+		// words, never a title (#1305)
+		oled.ModelWithoutPanel(m):
 		return false, true
 	case strings.Contains(m, "soundtouch 20"), strings.Contains(m, "soundtouch 30"),
-		strings.Contains(m, "portable"), strings.Contains(m, "wave"):
+		strings.Contains(m, "portable"):
 		return true, true
 	}
 	return false, false
@@ -215,8 +220,27 @@ func (s *Server) displayMsgFlagPath() string {
 	return defaultDisplayMsgPath
 }
 
-// speakerHasDisplay asks the firmware first and the model name second.
+// segmentDisplayOnly reports a speaker whose front is a segment display that
+// shows the time and a few fixed words but no text: the Wave. Its firmware
+// still reports a pixel panel and a display, so the model name (or, until it
+// is known, the chassis, oled.PhantomPanel) decides.
+func (s *Server) segmentDisplayOnly() bool {
+	if s.boxNameFn != nil {
+		if _, model := s.boxNameFn(); oled.ModelWithoutPanel(model) {
+			return true
+		}
+	}
+	return oled.PhantomPanel()
+}
+
+// speakerHasDisplay asks the firmware first and the model name second, except
+// on a Wave: its firmware claims a display (clockDisplay true, its segment
+// display does show the time), but the segments cannot show a title, so the
+// model name wins there (#1305).
 func (s *Server) speakerHasDisplay() bool {
+	if s.segmentDisplayOnly() {
+		return false
+	}
 	if s.displayMsg.hasDisplayFn != nil {
 		has, _ := s.displayMsg.hasDisplayFn()
 		return has

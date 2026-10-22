@@ -32,6 +32,14 @@ export function displayTrackOnPanel(r) {
   return !!r && r.onPanel === true;
 }
 
+// displayTrackOffered says whether the display-track setting belongs on this
+// speaker at all. Only an explicit supported:false hides it: the agent says so
+// on a Wave, whose segment display shows neither STR's panel nor a title
+// (#1305). Older agents always said true, and a failed read keeps the section.
+export function displayTrackOffered(r) {
+  return !(r && r.supported === false);
+}
+
 // displayMessagesState reads the agent's /api/box/display-messages answer for
 // the "short message on the speaker display" setting. show is true only when
 // the speaker said it has a display (the setting does nothing elsewhere);

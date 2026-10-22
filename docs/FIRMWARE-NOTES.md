@@ -673,9 +673,22 @@ timer) rebooted the speaker after about 25 seconds.
 
 **Every SoundTouch display is recognised.** `internal/oled` checks the driver
 name and geometry in `/sys/class/graphics/fb0/` and does nothing on any other
-panel. The SoundTouch 20, 30 and Wave carry the same panel as the Portable and
+panel. The SoundTouch 20 and 30 carry the same panel as the Portable and
 pass the check (a live SoundTouch 30 reports the track screen as supported);
 the SoundTouch 10 and 300 have no such display.
+
+**The Wave reports a panel it does not have.** Its firmware exposes the same
+`ssdspi` 128 x 100 framebuffer and answers `<clockDisplay>true</clockDisplay>`
+in `/capabilities`, but the front of a Wave SoundTouch is a segment LED
+display: fixed segments for the time and a few fixed words, no pixels and no
+now-playing text (maintainer's own unit, user photo in discussion #1305).
+Whatever goes into `/dev/fb0` is never seen. So `internal/oled` refuses the
+panel on a Wave by model name (from `/info`), and before the agent knows the
+model, on the `lisa` chassis (`/proc/variant`, shared with the SA-4 and the
+CineMate consoles). The web UI treats the Wave as a speaker without a text
+display as well: no display messages, no title re-push, and the app hides
+the display settings. The firmware clock on the segments is Bose's own and
+is left alone.
 
 **Cost.** Measured on the Portable in standby (AM335x single core, no
 temperature sensor exposed): the stock standby screen keeps the system about

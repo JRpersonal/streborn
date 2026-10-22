@@ -24,9 +24,14 @@ const (
 	frameRate  = 30
 )
 
-// panelSupported recognises the SoundTouch panel (ST20, ST30, Portable, Wave)
-// by driver and geometry. Every other display is left alone.
+// panelSupported recognises the SoundTouch panel (ST20, ST30, Portable) by
+// driver and geometry. Every other display is left alone, and so is the
+// Wave, whose firmware reports the same framebuffer for a segment display
+// that cannot show it (model.go).
 func panelSupported() bool {
+	if PhantomPanel() {
+		return false
+	}
 	read := func(name string) string {
 		b, _ := os.ReadFile(fbSysfs + name)
 		return strings.TrimSpace(string(b))

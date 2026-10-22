@@ -154,6 +154,13 @@ refusal family, not a chassis incompatibility). Both generations present
 the same `lisa` fingerprint to STR, which is why the model table lists
 "Series III and IV" and the agent makes no distinction between them.
 
+**Display: segments, not pixels.** The Wave's firmware reports the same
+`ssdspi` 128 x 100 framebuffer as the Portable and `clockDisplay=true` in
+`/capabilities`, but its front is a segment LED display (the time and a few
+fixed words). STR treats the Wave as a speaker without its pixel panel,
+keyed on the `/info` type containing "Wave" and, until that is known, on
+`variant=lisa` (docs/FIRMWARE-NOTES.md, discussion #1305).
+
 ## Lifestyle (SoundTouch console)
 
 Two variants observed. STR is confirmed RUNNING on both (2026-08-03):

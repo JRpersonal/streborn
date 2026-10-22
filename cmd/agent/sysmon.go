@@ -18,6 +18,7 @@ import (
 	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/clocksync"
+	"github.com/JRpersonal/streborn/internal/oled"
 	strregion "github.com/JRpersonal/streborn/internal/region"
 	"github.com/JRpersonal/streborn/internal/spotify"
 )
@@ -123,6 +124,11 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregi
 		// music services; written to NAND only when it changes.
 		regionRes.SetBox(s.Info.CountryCode)
 		model := strings.TrimSpace(s.Info.Type)
+		if model != "" {
+			// The display code needs the model: the Wave reports a pixel
+			// panel it does not have (internal/oled/model.go).
+			oled.SetModel(model)
+		}
 		if model != "" && !modelEverFound {
 			logger.Info("box model detected", "type", model)
 			modelEverFound = true
