@@ -1930,7 +1930,7 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 	// open pull, audio may be seconds away and pausing would kill it.
 	if h.spotify != nil && !h.slotFetchLiveNow(slot) {
 		pctx, pcancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if perr := h.spotify.Pause(pctx); perr == nil {
+		if perr := h.spotify.AbandonRecall(pctx); perr == nil {
 			h.logger.Warn("spotify recall still not playing after retries; pausing the engine so it does not skip through the playlist with no listener", "slot", slot)
 		} else {
 			h.logger.Warn("spotify recall still not playing after retries (engine pause failed)", "slot", slot, "err", perr)
