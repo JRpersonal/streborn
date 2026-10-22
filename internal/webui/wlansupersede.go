@@ -181,7 +181,7 @@ func speakerStoredNets() []storedNet {
 		files, _ := filepath.Glob(spec.glob)
 		for _, f := range files {
 			for _, e := range parseStoredProfiles(readFileString(f), spec.element) {
-				out = append(out, storedNet{SSID: e.SSID, Open: e.Open})
+				out = append(out, storedNet(e))
 			}
 		}
 	}
