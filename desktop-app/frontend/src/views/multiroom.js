@@ -13,7 +13,7 @@ import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, Dissol
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
 import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
-import { normalizeKeyActions, sleepOn } from '../keyactions.js';
+import { normalizeKeyActions, sleepOn, snoozeOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID } from '../groups.js';
@@ -939,17 +939,23 @@ function renderGroupKeysSection(strBoxes) {
   const remoteName = remote ? zoneLabel(remote) : '';
   const opts = strBoxes.map(b =>
     `<option value="${escapeAttr(b.deviceID)}"${remote && b.deviceID === remote.deviceID ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`).join('');
-  // A thumbs key that carries the sleep timer cannot carry a group as well:
-  // it is offered disabled, marked, and a hint below says where to change it.
+  // A thumbs key that carries a key action (the sleep timer or snooze) cannot
+  // carry a group as well: it is offered disabled, marked, and a hint below
+  // says where to change it.
   const sleepKey = (v) => !!v && sleepOn(gk.sleep, v);
+  const snoozeKey = (v) => !!v && snoozeOn(gk.sleep, v);
   const keyOpts = (sel) => [['', t('multiroom.groupKeysKeyNone')], ['thumbsUp', t('multiroom.groupKeysKeyUp')], ['thumbsDown', t('multiroom.groupKeysKeyDown')]]
     .map(([v, l]) => {
-      const blocked = sleepKey(v) && v !== sel;
-      const label = blocked ? `${l} ${t('multiroom.groupKeysKeySleep')}` : l;
+      const blocked = (sleepKey(v) || snoozeKey(v)) && v !== sel;
+      const mark = snoozeKey(v) ? t('multiroom.groupKeysKeySnooze') : t('multiroom.groupKeysKeySleep');
+      const label = blocked ? `${l} ${mark}` : l;
       return `<option value="${v}"${v === sel ? ' selected' : ''}${blocked ? ' disabled' : ''}>${escapeHtml(label)}</option>`;
     }).join('');
-  const sleepHint = (doc && (sleepKey('thumbsUp') || sleepKey('thumbsDown')))
-    ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysSleepHint'))}</div>` : '';
+  const sleepHint = !doc ? ''
+    : (sleepKey('thumbsUp') || sleepKey('thumbsDown'))
+      ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysSleepHint'))}</div>`
+      : ((snoozeKey('thumbsUp') || snoozeKey('thumbsDown'))
+        ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysSnoozeHint'))}</div>` : '');
   let list = '';
   if (!remote) {
     list = `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;

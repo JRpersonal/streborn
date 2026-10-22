@@ -35,6 +35,53 @@ func TestValidateRejectsNonThumbsKeys(t *testing.T) {
 	}
 }
 
+// Snooze is known and may go on the thumbs keys and on AUX (discussion #1415).
+func TestValidateAcceptsSnoozeOnThumbsAndAux(t *testing.T) {
+	d := Document{Keys: map[string]string{"thumbsUp": "Snooze", "aux": " snooze "}}
+	if err := d.Validate(nil); err != nil {
+		t.Fatalf("snooze on thumbs and AUX refused: %v", err)
+	}
+	if d.Keys["thumbsUp"] != ActionSnooze || d.Keys["aux"] != ActionSnooze {
+		t.Errorf("snooze not normalised: %v", d.Keys)
+	}
+	if !BindableKey(KeyAux) || !AllowedOn(ActionSnooze, KeyAux) {
+		t.Error("AUX has to be bindable to snooze")
+	}
+}
+
+// AUX always switches the input, so the sleep timer cannot go there: stepping
+// it would also switch away from whatever plays.
+func TestValidateRejectsSleepOnAux(t *testing.T) {
+	d := Document{Keys: map[string]string{"aux": ActionSleep}}
+	if err := d.Validate(nil); err == nil {
+		t.Fatal("sleep timer on AUX accepted")
+	}
+	if AllowedOn(ActionSleep, KeyAux) {
+		t.Error("AllowedOn lets the sleep timer onto AUX")
+	}
+}
+
+// The transport keys keep their firmware reaction, so snooze cannot go there
+// either.
+func TestValidateRejectsSnoozeOnTransportKeys(t *testing.T) {
+	for _, key := range []string{"prev", "next", "playPause", "preset1", "power"} {
+		d := Document{Keys: map[string]string{key: ActionSnooze}}
+		if err := d.Validate(nil); err == nil {
+			t.Errorf("snooze on %q accepted", key)
+		}
+	}
+}
+
+// One thing per key: snooze and a group exclude each other like the sleep
+// timer and a group.
+func TestValidateRejectsSnoozeOnAGroupKey(t *testing.T) {
+	bound := func(k string) bool { return k == "thumbsDown" }
+	d := Document{Keys: map[string]string{"thumbsDown": ActionSnooze}}
+	if err := d.Validate(bound); err == nil || !strings.Contains(err.Error(), "group") {
+		t.Fatalf("snooze on a group key not refused with a group reason: %v", err)
+	}
+}
+
 func TestValidateRejectsUnknownAction(t *testing.T) {
 	d := Document{Keys: map[string]string{"thumbsUp": "reboot"}}
 	if err := d.Validate(nil); err == nil {

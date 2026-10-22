@@ -313,10 +313,16 @@ func (s *Server) fireAlarm(a alarm.Alarm, due time.Time) {
 	}()
 }
 
+// driveAlarm wakes the speaker and plays the alarm's preset. It is the fire
+// path for a scheduled fire and for the ring after a snooze alike
+// (alarmsnooze.go), so both get the same wake, level, recall and retry.
 func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 	firedAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), alarmFireTimeout)
 	defer cancel()
+	// The alarm is STARTING from here and ringing once the recall returned:
+	// a snooze key pressed in between is ignored (alarmsnooze.go).
+	ring := s.ringStart(a, due, firedAt)
 
 	// Armed BEFORE the wake, not after the recall: the firmware resumes its own
 	// last station on power-on (wakeForAlarm stops it a moment later), and that
@@ -339,8 +345,10 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 		detail := fmt.Sprintf("the preset could not be played (%d)", status)
 		s.logger.Warn("alarm: the preset could not be played, not retrying", "id", a.ID, "status", status)
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: false, Detail: detail})
+		s.endRing(ring, "the preset could not be played")
 		return
 	}
+	s.ringArmed(ring, gen)
 	if a.AutoOff > 0 {
 		// The sleep timer, armed from here: the same standby, the same "already
 		// asleep, stand down" guard and the same NoteUserStop (#419), and it
@@ -352,21 +360,41 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 		// A monotonic timer is right here, unlike the scheduler above: this is
 		// armed at fire time, a moment the scheduler has already judged the
 		// clock trustworthy, and it counts tens of minutes rather than hours.
+		//
+		// After a snooze this arms it afresh: the switch-off counts from the
+		// latest ring, and the snooze cancelled the one the earlier ring armed.
 		s.armSleep(time.Duration(a.AutoOff)*time.Minute, false)
+		s.ringNoteAutoOff(ring, s.sleepGeneration())
 	}
 	s.alarmBackground.Add(1)
 	go func() {
 		defer s.alarmBackground.Done()
-		s.verifyAlarm(a, due, gen, firedAt)
+		s.verifyAlarm(a, due, gen, firedAt, ring)
 	}()
+}
+
+// alarmVerifyStandsDownForRing reports, and records, whether the verify of
+// ring must stand down because the alarm was snoozed, ended or replaced since:
+// re-pushing the preset into a snooze would ring it early.
+func (s *Server) alarmVerifyStandsDownForRing(a alarm.Alarm, due time.Time, ring uint64) bool {
+	moved, how := s.ringMovedOn(ring)
+	if !moved {
+		return false
+	}
+	s.logger.Info("alarm: standing down", "id", a.ID, "why", how)
+	s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true, Detail: how})
+	return true
 }
 
 // verifyAlarm sits AFTER the recall's own verify (three attempts, five seconds
 // apart) has run out, and gives the alarm exactly one more try. One, not a
 // loop: a dead station at 06:30 should leave a diagnosable log line, not a
 // speaker re-pushing the same URL until somebody unplugs it.
-func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt time.Time) {
+func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt time.Time, ring uint64) {
 	time.Sleep(alarmVerifyDelay)
+	if s.alarmVerifyStandsDownForRing(a, due, ring) {
+		return
+	}
 	if reason := s.recallStandDownReason(gen, firedAt); reason != "" {
 		// The user already dealt with it. Pushing the station back thirty
 		// seconds after they hit stop is the #197 vector all over again.
@@ -380,6 +408,9 @@ func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt t
 	}
 
 	s.logger.Warn("alarm: the stream did not start, trying once more", "id", a.ID, "slot", a.Slot)
+	// Starting again until the retry's recall returned, so a snooze press in
+	// between is not read as "something else was played".
+	s.ringDisarm(ring)
 	retryAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), alarmFireTimeout)
 	// A second arm rather than one wider window on the first: this retry is a
@@ -391,8 +422,12 @@ func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt t
 	alarmRecallSlot(s, ctx, a.Slot)
 	retryGen := s.RecallGeneration()
 	cancel()
+	s.ringArmed(ring, retryGen)
 
 	time.Sleep(alarmVerifyDelay)
+	if s.alarmVerifyStandsDownForRing(a, due, ring) {
+		return
+	}
 	if reason := s.recallStandDownReason(retryGen, retryAt); reason != "" {
 		s.logger.Info("alarm: standing down after the retry", "id", a.ID, "why", reason)
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true, Detail: reason})

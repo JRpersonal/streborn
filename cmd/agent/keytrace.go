@@ -68,8 +68,9 @@ const groupKeyToggleBudget = 75 * time.Second
 // fires twice; volume and the rest are logged only.
 //
 // A thumbs key that carries a saved group (#863) toggles that group instead,
-// and one that carries the sleep timer steps it: a key carries one action,
-// and either binding wins over a webhook on the same key. Group and sleep
+// one that carries the sleep timer steps it, and one that carries snooze
+// snoozes a ringing alarm: a key carries one action, and any binding wins
+// over a webhook on the same key. Group and sleep
 // timer exclude each other at save time; should a hand-edited file carry
 // both, the group wins, as it was there first.
 func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
@@ -89,6 +90,15 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		return
 	}
 	oled.FeedKey(ev.Name)
+	if ev.Name == "AUX_INPUT" && h.keyActions.Action(keyactions.KeyAux) == keyactions.ActionSnooze && h.onAuxSnoozeKey != nil {
+		// AUX has no webhook trigger here (its webhook follows the source
+		// change), but a trace that names the key is the surest sign of an
+		// AUX press for snooze; the source change of the same press is then a
+		// repeat. Off the reader's goroutine: a snooze sends a stop.
+		h.logger.Info("snooze key pressed", "key", ev.Name, "producer", ev.Producer.String())
+		go h.onAuxSnoozeKey()
+		return
+	}
 	id := webhooks.KeyTriggerID(ev.Name)
 	if id == "" {
 		return
@@ -109,6 +119,14 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		// reset, and keeping it on the reader's goroutine keeps quick presses
 		// in order. The group push runs on its own goroutine.
 		h.onSleepKey()
+		return
+	}
+	if h.keyActions.Action(id) == keyactions.ActionSnooze && h.onSnoozeKey != nil {
+		// Off the reader's goroutine: deciding reads the speaker once and a
+		// snooze sends a stop. Outside a ringing alarm it does nothing, and
+		// the webhook still does not fire: the key carries snooze.
+		h.logger.Info("snooze key pressed", "key", ev.Name, "producer", ev.Producer.String())
+		go h.onSnoozeKey(id)
 		return
 	}
 	if h.webhooks == nil {

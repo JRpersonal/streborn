@@ -1055,6 +1055,9 @@ func (s *Server) NoteExplicitStop() {
 	s.lastExplicitStopMu.Lock()
 	s.lastExplicitStop = time.Now()
 	s.lastExplicitStopMu.Unlock()
+	// A stop or pause asked for in the app or on the phone ends a ringing
+	// alarm and cancels its pending snooze (alarmsnooze.go).
+	s.endRing(0, "playback was stopped or paused in the app or on the phone")
 }
 
 // explicitStopAfter reports whether the user asked for a pause or a stop after

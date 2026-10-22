@@ -249,10 +249,11 @@ func (s *Server) handleDisplaySleep(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"shown": true})
 }
 
-// handleKeyActions serves the per-speaker key-action document: which thumbs
-// key carries the sleep timer.
+// handleKeyActions serves the per-speaker key-action document: which key
+// carries the sleep timer (thumbs keys) or snooze (thumbs keys and AUX, see
+// alarmsnooze.go).
 //
-//	GET /api/keyactions -> {"keys":{"thumbsUp":"sleep"}}
+//	GET /api/keyactions -> {"keys":{"thumbsUp":"sleep","aux":"snooze"}}
 //	PUT /api/keyactions <- the whole document; validated, then persisted
 //
 // LAN only. The PUT is the one NAND write; a press writes nothing. A key that

@@ -101,10 +101,13 @@ takes the item from what the speaker plays.
 | `PUT`  | `/api/alarms` | the whole document | Replaces it wholesale. LAN only. |
 
 An alarm is
-`{"id","enabled","name","hour","minute","days","slot","volume","autoOff"}`:
+`{"id","enabled","name","hour","minute","days","slot","volume","autoOff","snooze"}`:
 `days` are weekdays with `0` = Sunday, `slot` is a preset 1-6, `volume` is
-1-100 or `0` to leave the speaker's own level alone, and `autoOff` switches the
-speaker off that many minutes after the alarm starts (1-720, or `0` for never).
+1-100 or `0` to leave the speaker's own level alone, `autoOff` switches the
+speaker off that many minutes after the alarm starts (1-720, or `0` for never),
+and `snooze` is how many minutes a snoozed alarm stays quiet (`5`, `9`, `10` or
+`15`; absent or `0` means 9). Snooze itself is a key action
+(`PUT /api/keyactions` with `{"keys":{"aux":"snooze"}}`, thumbs keys or `aux`).
 The document also carries one IANA `zone` for the speaker; an empty zone means
 UTC. At most 8 alarms, and an alarm with no days is rejected rather than treated
 as "every day".
@@ -114,8 +117,9 @@ and `autoOff` switches off only that speaker, not the group.
 
 A rejected `PUT` answers `400` with the reason as plain text, meant to be shown
 to the user as it stands. The `status` block reports `clockTrusted`,
-`zoneResolved`, `nextFire`, `nextAlarmId` and `lastFire`; it is ignored on the
-way in. `nextFire` comes from the speaker, so it is the honest answer to "when
+`zoneResolved`, `nextFire`, `nextAlarmId`, `lastFire` and, while an alarm rings
+or is snoozed, `ring` (`{"id","ringing","snoozedUntil","snoozes"}`); it is
+ignored on the way in. `nextFire` comes from the speaker, so it is the honest answer to "when
 will this actually go off", including its zone and its clock.
 
 ```bash
@@ -123,7 +127,7 @@ curl -s $BOX/api/alarms
 curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
   "zone":"Europe/Berlin",
   "alarms":[{"id":"weekdays","enabled":true,"hour":6,"minute":30,
-             "days":[1,2,3,4,5],"slot":3,"volume":25,"autoOff":60}]}'
+             "days":[1,2,3,4,5],"slot":3,"volume":25,"autoOff":60,"snooze":9}]}'
 ```
 
 See [AUTOMATION.md](AUTOMATION.md) for what a fire actually does and how the

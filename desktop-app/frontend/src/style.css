@@ -3291,6 +3291,14 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .rc-legend-sleep { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; border: 2px dotted #a99bff; }
 .sleep-key-label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
 
+/* A thumbs key or AUX that snoozes a ringing alarm (#1415): teal dotted frame
+   and a small "Z" in the corner. */
+.rc-key.rc-snooze { stroke: #4fc3c7; stroke-width: 2.5; stroke-dasharray: 2 3; }
+.rc-zmark { fill: #4fc3c7; font-size: 11px; font-weight: 700; pointer-events: none; }
+.rc-legend-snooze { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; border: 2px dotted #4fc3c7; }
+.key-action-row { gap: 8px; align-items: center; }
+.key-action-row select { flex: 1; }
+
 /* Group keys section on the Multi-Room tab. */
 .gk-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .gk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 8px; }
