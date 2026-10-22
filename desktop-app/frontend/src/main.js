@@ -39,6 +39,7 @@ import {
   RemoveConflictingMod,
   RestoreSTRCloud,
   PushFavorites,
+  FavoriteRemovals,
   RecordUpdateIntent,
   UpdateFailureReport,
   SetOTARunning,
@@ -428,6 +429,7 @@ import {
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
 import { renderRecent, initRecentView } from './views/recent.js';
+import { parseFavRemovals, applyFavRemovals } from './favremovals.js';
 import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
@@ -2626,6 +2628,9 @@ function applyBoxList(list) {
   // a favorites list saved in a previous session reliably brings the button back
   // even if the one-shot init call ran before storage was ready (#Dieter).
   updateFavModeBtn();
+  // Favourites removed on a speaker's phone page come off this app's list too
+  // (#1389), so the next star set here does not bring them back.
+  syncFavRemovals();
   // Setup-tab target picker reuses the same state.boxes feed.
   renderSetupTargetPicker();
   // Per-speaker pin invite for stick installs: the USB stick provisions the
@@ -9179,7 +9184,40 @@ function favMinimal(s) {
     bitrate: s.bitrate || 0, country: s.country, countrycode: s.countrycode,
     codec: s.codec, hls: s.hls || 0, tags: s.tags, votes: s.votes || 0, homepage: s.homepage,
     favicon: s.favicon, lastcheckok: s.lastcheckok,
+    // When it was starred (#1389). A removal on a phone page only takes a star
+    // set BEFORE it, so starring a removed station again here sticks.
+    starredAt: s.starredAt || 0,
   };
+}
+
+// syncFavRemovals takes the favourites removed on any speaker's phone page off
+// this app's list (#1389), then pushes the shorter list to every speaker, so
+// one that was off when the phone removed it catches up too. Throttled: the
+// box list refreshes often and the notes change only when somebody taps
+// remove on a phone. Best effort, like the push itself.
+let favRemovalsCheckedAt = 0;
+let favRemovalsRunning = false;
+async function syncFavRemovals() {
+  const now = Date.now();
+  if (favRemovalsRunning || now - favRemovalsCheckedAt < 60000) return;
+  if (!loadFavStore().length) return;
+  favRemovalsCheckedAt = now;
+  favRemovalsRunning = true;
+  try {
+    const boxes = (state.boxes || []).filter((b) => b && !b.offline && b.kind !== 'stock');
+    const answers = await Promise.all(boxes.map((b) =>
+      FavoriteRemovals(b.host, b.port).then(parseFavRemovals).catch(() => [])));
+    const { kept, changed } = applyFavRemovals(loadFavStore(), answers.flat(), favId);
+    if (!changed) return;
+    saveFavStore(kept);
+    updateFavModeBtn();
+    if (state.searchLastMode === 'favorites') {
+      state.searchResults = kept;
+      renderSearchResults();
+    }
+  } finally {
+    favRemovalsRunning = false;
+  }
 }
 function favId(s) { return s && (s.stationuuid || (s.name + '|' + (s.url || ''))); }
 // favStationsJSON / mergeFavStations are the backup hooks (#778): export hands
@@ -9219,7 +9257,7 @@ function toggleFav(s) {
   const idx = arr.findIndex(x => favId(x) === id);
   let nowFav;
   if (idx >= 0) { arr.splice(idx, 1); nowFav = false; }
-  else { arr.push(favMinimal(s)); nowFav = true; }
+  else { arr.push(favMinimal({ ...s, starredAt: Date.now() })); nowFav = true; }
   saveFavStore(arr);
   updateFavModeBtn();
   return nowFav;

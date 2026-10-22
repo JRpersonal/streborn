@@ -407,3 +407,25 @@ func (a *App) PushFavorites(host string, port int, favoritesJSON string) error {
 	}
 	return nil
 }
+
+// FavoriteRemovals reads which favourites were removed on ONE speaker's phone
+// page, and when (#1389), as the agent's raw JSON answer. The frontend drops
+// those stars from its own list before it pushes the list out again, so a
+// removal on the phone is not undone by the next star set on the PC. An older
+// agent answers with the plain favourites list, which the frontend reads as
+// "nothing removed".
+func (a *App) FavoriteRemovals(host string, port int) (string, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/favorites?removed=1", "", "")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", readHTTPError(resp)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
