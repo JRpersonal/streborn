@@ -26,7 +26,9 @@ package webui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -92,6 +94,31 @@ func isNetworkError(err error) bool {
 		return true
 	}
 	return networkErrorText(err.Error())
+}
+
+// httpStatusError is a release file that answered with something other than
+// 200. The text is the one the check always reported ("update.json.sig: HTTP
+// 404").
+type httpStatusError struct {
+	name string
+	code int
+}
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("%s: HTTP %d", e.name, e.code) }
+
+// isTransientHTTP reports an answer worth asking again: GitHub's release
+// download now and then answers 404 for an asset that exists, and the next
+// request gets it (live, ST10, 2026-10-22: update.json loaded, its signature
+// 404'd, and the same check a minute later worked on three speakers). A 404
+// also shows up while a release is being published and its files are still
+// uploading. 408, 429 and 5xx are the host saying "not now".
+func isTransientHTTP(err error) bool {
+	var he *httpStatusError
+	if !errors.As(err, &he) {
+		return false
+	}
+	return he.code == http.StatusNotFound || he.code == http.StatusRequestTimeout ||
+		he.code == http.StatusTooManyRequests || he.code >= 500
 }
 
 // sleepCtx waits d, or less when ctx ends first. False when ctx ended.
