@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { srcOf } from './test/source.js';
 
 // Both conditions for a Spotify preset were already written down and neither
 // was where somebody saving one would stand: "Spotify Premium" was a
@@ -11,7 +12,8 @@ import { readFileSync } from 'node:fs';
 // speaker's own Spotify entry, and "it took me a while to figure out that I
 // needed a Spotify Premium account".
 
-const view = readFileSync(new URL('./views/spotify.js', import.meta.url), 'utf8');
+// The Spotify tab renderer, which lays out the presets card.
+const view = srcOf('renderSpotifyAlpha');
 const bundle = (l) =>
   JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));
 const LANGS = ['en', 'de', 'nl', 'fr', 'es', 'pl', 'tr', 'uk', 'lt', 'lv', 'ja', 'zh-Hant', 'ar'];

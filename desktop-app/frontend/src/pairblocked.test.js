@@ -10,8 +10,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { allSource, srcOf } from './test/source.js';
 
-const view = readFileSync(new URL('./views/multiroom.js', import.meta.url), 'utf8');
+const view = allSource();
+// The Multi-Room renderer, where the stereo candidates are picked.
+const stereo = srcOf('renderMultiroom');
 const dir = fileURLToPath(new URL('./i18n/bundles/', import.meta.url));
 const langs = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''));
 const bundle = (l) => JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));
@@ -21,14 +24,14 @@ describe('the stereo pair refusal', () => {
     expect(view).toContain('fencedByGroup');
     expect(view).toContain('multiroom.stereoBlockedByGroup');
     // It may only claim "needs two" when there really are fewer than two.
-    const note = view.slice(view.indexOf('stereoBlockedByGroup') - 200, view.indexOf('stereoBlockedByGroup') + 200);
+    const note = stereo.slice(stereo.indexOf('stereoBlockedByGroup') - 200, stereo.indexOf('stereoBlockedByGroup') + 200);
     expect(note).toContain('stereoNeedTwo');
   });
 
   it('counts the ST10s that exist before the fence is applied', () => {
-    const at = view.indexOf('const fencedByGroup');
+    const at = stereo.indexOf('const fencedByGroup');
     expect(at, 'the reason flag is gone').toBeGreaterThan(-1);
-    const decl = view.slice(view.indexOf('const st10s'), at + 120);
+    const decl = stereo.slice(stereo.indexOf('const st10s'), at + 120);
     // Counted from all known speakers, not from the already-filtered candidates,
     // or the flag can never become true.
     expect(decl).toContain('strBoxes.filter');

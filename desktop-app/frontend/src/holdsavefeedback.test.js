@@ -1,9 +1,9 @@
 // #1217: a key saved by holding it while STR plays must light up as playing,
 // and the app must show the saved key without waiting out its 15 s timer.
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { presetRevChanged, queueSlotActive } from './utils.js';
 import { spotifySlotForContext } from './spotifynowplaying.js';
+import { srcOf } from './test/source.js';
 
 describe('spotifySlotForContext', () => {
   const presets = [
@@ -73,20 +73,16 @@ describe('presetRevChanged', () => {
   });
 });
 
-describe('main.js wiring', () => {
-  const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
-
+describe('the app wiring', () => {
   it('refreshQueue re-reads the presets when the revision moved', () => {
-    const at = main.indexOf('async function refreshQueue(');
-    const fn = main.slice(at, main.indexOf('\n}\n', at));
+    const fn = srcOf('refreshQueue');
     expect(fn).toContain('presetRevChanged(state.presetRev, rev)');
     expect(fn).toContain('_lastPresetCheck = 0');
     expect(fn).toContain('refreshPresetsIfChanged()');
   });
 
   it('renderPresets lights the Spotify key by its context', () => {
-    const at = main.indexOf('function renderPresets(');
-    const fn = main.slice(at, at + 4000);
+    const fn = srcOf('renderPresets');
     expect(fn).toContain('spotifySlotForContext(state.presets, state.spotifyNow)');
   });
 });

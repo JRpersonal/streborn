@@ -7,19 +7,15 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'views', 'library.js'), 'utf8').replace(/\r\n/g, '\n');
+const src = allSource();
 const phone = readFileSync(join(here, '..', '..', '..', 'internal', 'webui', 'assets', 'index.html'), 'utf8');
 const bundleDir = join(here, 'i18n', 'bundles');
 
-function cut(name) {
-  const at = src.indexOf(`function ${name}(`);
-  return src.slice(at, src.indexOf('\n}\n', at) + 2);
-}
-
 // eslint-disable-next-line no-new-func
-const note = new Function('t', `${cut('libraryWholeSearchNote')}\nreturn libraryWholeSearchNote;`)(
+const note = new Function('t', `${srcOf('libraryWholeSearchNote')}\nreturn libraryWholeSearchNote;`)(
   (k, v) => (v ? `${k}:${v.name}` : k));
 
 describe('the whole-library search', () => {

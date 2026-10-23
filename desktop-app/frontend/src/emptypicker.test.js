@@ -6,16 +6,12 @@
 // empty LAN is never swept every six seconds). A session that never saw a
 // speaker therefore had nobody watching for one.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { allSource, srcContaining } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
-
-// The interval that re-probes known speakers, sliced out by its cadence.
+// The interval that re-probes known speakers, found by its cadence: the one
+// top-level statement that ends in a 60 s period.
 function minuteTimer() {
-  const at = main.indexOf('setInterval(async () => {');
-  const end = main.indexOf('}, 60000);', at);
-  expect(end, 'the minute timer is gone').toBeGreaterThan(at);
-  return main.slice(at, end);
+  return srcContaining('}, 60000);');
 }
 
 describe('the empty speaker picker', () => {
@@ -43,6 +39,6 @@ describe('the empty speaker picker', () => {
   it('leaves the recovery burst refusing an empty LAN', () => {
     // The burst must keep its guard: sweeping every 6 s forever for somebody
     // who owns no speakers is what that line prevents.
-    expect(main).toContain('if (!hadBoxesBefore) return;');
+    expect(allSource()).toContain('if (!hadBoxesBefore) return;');
   });
 });

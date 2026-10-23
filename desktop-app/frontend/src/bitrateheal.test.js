@@ -7,14 +7,11 @@
 // It also hammered the flash: the same slot rewritten about twenty times in
 // twenty-five minutes, for a number that means nothing for a local file (#978).
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'main.js'), 'utf8');
+const src = allSource();
 
-// The predicate as main.js defines it.
+// The predicate as the app defines it.
 function isMeasurableStreamPreset(p) {
   if (!p) return false;
   if (p.type === 'spotify' || p.type === 'queue') return false;
@@ -64,9 +61,7 @@ describe('a metadata heal cannot change what a key is', () => {
   it('is wired into setPresetIfUnchanged, not only into the callers', () => {
     // The callers can be added to; this is the one place that has the LIVE
     // preset in hand, so the guard belongs there.
-    const at = src.indexOf('async function setPresetIfUnchanged');
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 1400);
+    const body = srcOf('setPresetIfUnchanged');
     expect(body).toContain('flattenable');
     expect(body).toContain("live.type === 'queue'");
     expect(body).toContain('live.source');

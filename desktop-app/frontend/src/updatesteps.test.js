@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { allSource, srcContaining, srcOf } from './test/source.js';
 
 // "Restarting" looks like the finish line and is roughly halfway.
 //
@@ -14,7 +15,7 @@ import { readFileSync } from 'node:fs';
 // unaufmerksamer user meinen das es fertig sei und schließt das fenster und
 // dann eventuell auch die app".
 
-const src = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const src = allSource();
 const en = JSON.parse(readFileSync(new URL('./i18n/bundles/en.json', import.meta.url), 'utf8'));
 const de = JSON.parse(readFileSync(new URL('./i18n/bundles/de.json', import.meta.url), 'utf8'));
 
@@ -26,9 +27,7 @@ describe('the phases say where they are in the sequence', () => {
   });
 
   it('numbers restart as 2 and the engine as 4, not the other way round', () => {
-    const at = src.indexOf('const UPDATE_STEPS');
-    expect(at).toBeGreaterThan(-1);
-    const decl = src.slice(at, at + 200);
+    const decl = srcOf('UPDATE_STEPS');
     expect(decl).toMatch(/send:\s*1/);
     expect(decl).toMatch(/restart:\s*2/);
     expect(decl).toMatch(/confirm:\s*3/);
@@ -63,26 +62,27 @@ describe('hiding the panel leaves something behind', () => {
   });
 
   it('only shows the strip while something is genuinely unfinished', () => {
-    const at = src.indexOf('const showMiniIfStillRunning');
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 420);
+    const body = srcOf('showMiniIfStillRunning');
     // Counted from the rows, not from a flag that can lie.
     expect(body).toContain('counts()');
     expect(body).toMatch(/left\s*<=\s*0/);
   });
 
   it('takes the strip away when the batch ends', () => {
-    const at = src.indexOf('// Batch done: release the global lock');
+    const batch = srcOf('runUpdateAllBoxes');
+    const at = batch.indexOf('// Batch done: release the global lock');
     expect(at).toBeGreaterThan(-1);
-    expect(src.slice(at, at + 300)).toContain("mini.classList.add('hidden')");
+    expect(batch.slice(at, at + 300)).toContain("mini.classList.add('hidden')");
   });
 
   it('does not disable the close button, which strands people', () => {
     // Tried once and reverted: a speaker that drops off Wi-Fi mid-update never
     // reaches a final state, so the panel could not be dismissed at all
     // (reported 2026-08-23).
-    const at = src.indexOf('id="uaClose"');
-    const around = src.slice(Math.max(0, at - 700), at + 200);
+    // The app shell template, the one statement that carries the overlay.
+    const shell = srcContaining('id="uaClose"');
+    const at = shell.indexOf('id="uaClose"');
+    const around = shell.slice(Math.max(0, at - 700), at + 200);
     expect(around).toContain('Never disabled');
   });
 });

@@ -8,10 +8,10 @@
 // 2. A folder key stores no art at preset level; its tracks carry the media
 //    server's albumArtURI, and that was never used for the tile.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { folderFallbackArt, presetOwnArt, queueSlotActive, shouldAdoptPresetArt } from './utils.js';
+import { allSource } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const main = allSource();
 
 // Shapes as the #1301 bundles carry them (addresses replaced).
 const COVER = 'http://192.0.2.32:9790/minimserver/*/Music/Boston/Third*20Stage/01*20Amanda.m4a/$!picture-14789-2322400.jpg';
@@ -80,7 +80,7 @@ describe('folderFallbackArt', () => {
 });
 
 describe('library folder save and play use the folder cover fallback', () => {
-  const lib = readFileSync(new URL('./views/library.js', import.meta.url), 'utf8');
+  const lib = main;
   it('carries the container cover into the breadcrumb and both save paths', () => {
     expect(lib).toContain("art: container.albumArtURL || ''");
     expect(lib).toContain('const art = folderFallbackArt(queueItems, last && last.art);');

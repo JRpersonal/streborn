@@ -6,19 +6,21 @@
 //
 // These are source-level assertions, like presettile.test.js next door, and for
 // the same reason: vitest runs with `environment: 'node'` (see vitest.config.js)
-// and renderPresets is DOM-bound, so the grid deliberately stays in main.js
-// rather than moving into an importable view module (the view-extraction trap).
-// Reading the file is the only way to pin down the two rules that actually
-// matter here, and each assertion fails on the tree before the pencil existed.
+// and renderPresets is DOM-bound, so the grid deliberately stays in the
+// non-importable app source rather than moving into an importable view module
+// (the view-extraction trap). Reading the source is the only way to pin down
+// the two rules that actually matter here, and each assertion fails on the
+// tree before the pencil existed.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const mainJS = readFileSync(join(here, 'main.js'), 'utf-8');
+const mainJS = allSource();
 const styleCSS = readFileSync(join(here, 'style.css'), 'utf-8');
-const apiJS = readFileSync(join(here, 'api.js'), 'utf-8');
+const apiJS = mainJS;
 
 describe('a preset key can be renamed', () => {
   it('offers the pencil on the key and wires it to the rename', () => {
@@ -30,10 +32,7 @@ describe('a preset key can be renamed', () => {
 
   it('writes the name alone, through the rename binding', () => {
     expect(apiJS).toContain('RenamePreset');
-    const fn = mainJS.slice(
-      mainJS.indexOf('async function renamePresetKey(slot)'),
-      mainJS.indexOf('\n// applyTrackScroll'),
-    );
+    const fn = srcOf('renamePresetKey');
     expect(fn).toContain('RenamePreset(state.currentBox.host, state.currentBox.port, slot, name)');
     // A rename must never go out as a station save: SetPreset would rewrite the
     // stream URL and a Spotify key's playlist with whatever the app has cached.
@@ -50,10 +49,7 @@ describe('a preset key can be renamed', () => {
     // and the hold-to-save, so a tap on either must not reach it.
     // isKeyChrome itself lives in utils.js and is covered in keychrome.test.js.
     expect(mainJS).toMatch(/^\s+isKeyChrome,$/m);
-    const handlers = mainJS.slice(
-      mainJS.indexOf('function attachPresetHandlers'),
-      mainJS.indexOf('const APP_PLAY_FRESH_MS'),
-    );
+    const handlers = srcOf('attachPresetHandlers');
     expect(handlers).toContain('if (isKeyChrome(e.target)) return;');
   });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { allSource, srcOf } from './test/source.js';
 
 // #938: the stereo section now tells an owner whose SoundTouch 10s all sit in
 // saved groups to "remove two of them from their group first, then pair them".
@@ -7,7 +8,7 @@ import { readFileSync } from 'node:fs';
 // deletes the whole group. These pin the shape of the control that closes that
 // gap, because the rest of it is DOM and a speaker.
 
-const src = readFileSync(new URL('./views/multiroom.js', import.meta.url), 'utf8');
+const src = allSource();
 const bundle = (lang) =>
   JSON.parse(readFileSync(new URL(`./i18n/bundles/${lang}.json`, import.meta.url), 'utf8'));
 
@@ -21,7 +22,8 @@ describe('taking one speaker out of a saved group', () => {
   // frame's own x already does that. Two controls for one action, one of them
   // in the wrong place, is how the previous confusion started.
   it('gives the main speaker no x of its own', () => {
-    const chips = src.slice(src.indexOf('const memberX ='), src.indexOf('return `<div class="box-group box-group-stored">'));
+    const view = srcOf('renderMultiroom');
+    const chips = view.slice(view.indexOf('const memberX ='), view.indexOf('return `<div class="box-group box-group-stored">'));
     const masterChip = chips.slice(chips.indexOf('g.masterBox ?'), chips.indexOf('g.members.filter(m => m.box)'));
     expect(masterChip).not.toContain('memberX');
   });
@@ -35,8 +37,7 @@ describe('taking one speaker out of a saved group', () => {
   // The same shape as the other per-frame actions: no startAction, exactly one
   // finishAction, or the tab is left spinning on an error.
   it('finishes the action once on both paths', () => {
-    const fn = src.slice(src.indexOf('async function doRemoveGroupMemberAt'),
-                         src.indexOf('// doDissolveZoneAt dissolves'));
+    const fn = srcOf('doRemoveGroupMemberAt');
     expect(fn).not.toContain('startAction');
     expect((fn.match(/finishAction\(\)/g) || []).length).toBe(1);
   });

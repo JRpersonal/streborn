@@ -9,9 +9,9 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { neverReadsStick } from './utils.js';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const setup = readFileSync(join(here, 'views', 'setup.js'), 'utf8');
 const bundleDir = join(here, 'i18n', 'bundles');
 
 describe('neverReadsStick', () => {
@@ -33,13 +33,14 @@ describe('neverReadsStick', () => {
 
 describe('install failure screen', () => {
   it('does not open the stick section for a no-stick model', () => {
-    const i = setup.indexOf("stickDetails.open = true");
+    const wait = srcOf('waitForBoxAfterSetup');
+    const i = wait.indexOf("stickDetails.open = true");
     expect(i).toBeGreaterThan(0);
-    const guard = setup.slice(Math.max(0, i - 600), i);
+    const guard = wait.slice(Math.max(0, i - 600), i);
     expect(guard).toContain('neverReadsStick(foundBox, result)');
   });
   it('has a firmware-first checklist for firmware-too-old on both paths', () => {
-    const n = setup.split("'firmware-too-old': ['firmwareFirst'").length - 1;
+    const n = allSource().split("'firmware-too-old': ['firmwareFirst'").length - 1;
     expect(n).toBe(2);
   });
   it('every bundle carries setup.help.firmwareFirst', () => {

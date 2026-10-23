@@ -8,18 +8,16 @@
 // (#491), and discussion #577. The CineMate owner reached for the Bose infrared
 // remote to get his television sound back.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { inputButtons, isActiveInput, localIsAuxSocket, physicalInputs, sourceRowKey } from './sourceinputs.js';
 import { setLocale } from './i18n/index.js';
 import en from './i18n/bundles/en.json';
+import { allSource } from './test/source.js';
 
 // The label of an input the speaker does not name itself comes from the bundle,
 // so pin the locale rather than inherit the test machine's.
 beforeAll(() => { setLocale('en'); });
 
-// Line endings normalised: the sources are checked out with CRLF on some
-// machines and the slices below key on a bare newline.
-const mainJS = readFileSync(new URL('./main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const mainJS = allSource();
 
 const src = (source, sourceAccount, status, isLocal, displayName = '') =>
   ({ source, sourceAccount, status, isLocal, displayName });

@@ -7,20 +7,14 @@
 // The view is read as source here, the same way the bass-control tests read it:
 // it cannot be imported without a DOM and the Wails runtime.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { allSource, fileSource, srcOf } from './test/source.js';
 
-// Newlines are normalised: a Windows checkout has CRLF here and a Linux one LF,
-// and the section slices below keyed on a newline. That cut a different amount
-// of text on each platform, so a real assertion passed on one and failed on the
-// other for a reason that had nothing to do with the code under test.
-const src = readFileSync(new URL('./firmware.js', import.meta.url), 'utf8')
-  .replace(/\r\n/g, '\n');
+const all = allSource();
 
 // The models the app tracks a latest firmware for. Any model listed there can
 // show the outdated banner, so any model listed there needs an article.
 function modelsWithLatestFw() {
-  const block = src.slice(src.indexOf('const LATEST_FW'), src.indexOf('};', src.indexOf('const LATEST_FW')));
-  return [...block.matchAll(/'(SoundTouch[^']*)'/g)].map(m => m[1]);
+  return [...srcOf('LATEST_FW').matchAll(/'(SoundTouch[^']*)'/g)].map(m => m[1]);
 }
 
 // modelSection returns one model's entry from the article table: from its key up
@@ -35,19 +29,18 @@ function modelSection(block, model) {
 }
 
 function articleBlock() {
-  const start = src.indexOf('const BOSE_FW_ARTICLES');
-  expect(start, 'the per-model article table must exist').toBeGreaterThan(-1);
-  return src.slice(start, src.indexOf('\n};', start));
+  return srcOf('BOSE_FW_ARTICLES');
 }
 
 describe('Bose firmware support links', () => {
   it('no longer sends every model to one hardcoded article', () => {
-    expect(src).not.toContain('BOSE_FW_SUPPORT_URL');
+    expect(all).not.toContain('BOSE_FW_SUPPORT_URL');
   });
 
+  // Read by file on purpose: this test is about which module imports which.
   it('lives outside the views, where both of them can import it', () => {
-    const settings = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
-    const setup = readFileSync(new URL('./views/setup.js', import.meta.url), 'utf8');
+    const settings = fileSource('views/settings.js');
+    const setup = fileSource('views/setup.js');
     expect(settings).toContain("from '../firmware.js'");
     // setup.js reaches the firmware facts through the guide, which imports them.
     expect(setup).toContain("from '../fwguide.js'");
@@ -88,8 +81,7 @@ describe('Bose firmware support links', () => {
   // Wired by class, because a model with two series renders two links and two
   // elements cannot share an id.
   it('wires the guide links by class rather than by id', () => {
-    const guide = readFileSync(new URL('./fwguide.js', import.meta.url), 'utf8');
-    expect(guide).toContain('fw-guide-link');
-    expect(guide).not.toContain(`$('fwGuideLink')`);
+    expect(all).toContain('fw-guide-link');
+    expect(all).not.toContain(`$('fwGuideLink')`);
   });
 });

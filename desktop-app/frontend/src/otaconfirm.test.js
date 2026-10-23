@@ -13,17 +13,12 @@
 // the loop breaker written to stop it repeating forever. So the two hashes are
 // separate fields and only the running one confirms.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { srcOf } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
-
-// The real closure, lifted with the four values it reads injected around it.
-const at = main.indexOf('  const updated = (v) => {');
-if (at < 0) throw new Error('the post-OTA confirmation predicate moved; fix this test rather than deleting it');
-const src = main.slice(at, main.indexOf('\n  };\n', at) + 6);
+// The real closure, lifted out of the update flow with the four values it
+// reads injected around it. srcOf throws if the predicate moved or was
+// renamed: fix this test rather than deleting it.
+const src = srcOf('updated', { within: 'runBoxUpdate' });
 
 function confirms({ appSha, appBuild, preBuild, preVersion }, v) {
   // eslint-disable-next-line no-new-func

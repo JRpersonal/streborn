@@ -12,22 +12,19 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcBetween } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8').replace(/\r\n/g, '\n');
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 
 // The clock block, from the format preselect to the resume-on-power-on section.
-const block = settings.slice(
-  settings.indexOf("// Preselect the box's current 12/24h format"),
-  settings.indexOf('// Resume last station on power-on'),
-);
+const block = srcBetween("// Preselect the box's current 12/24h format", '// Resume last station on power-on');
 
 describe('the clock state is tri-state, not a boolean that defaults to off', () => {
   it('has no boolean defaulting to false any more', () => {
     expect(block).not.toContain('let clockEnabled = false');
-    expect(settings).not.toContain('clockEnabled');
+    expect(allSource()).not.toContain('clockEnabled');
     expect(block).toContain('let clockState = null;');
   });
 

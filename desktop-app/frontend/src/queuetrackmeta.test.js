@@ -2,11 +2,8 @@
 // showed. The agent's GET /api/queue now names both per item; the queue line
 // shows them for the song the queue is on, in the Library row's own shape.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { queueTrackMeta } from './utils.js';
-
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
-const library = readFileSync(new URL('./views/library.js', import.meta.url), 'utf8');
+import { srcOf } from './test/source.js';
 
 const q = {
   active: true,
@@ -39,13 +36,13 @@ describe('queueTrackMeta', () => {
 
 describe('wiring', () => {
   it('the queue line shows it', () => {
-    const fn = main.slice(main.indexOf('function renderQueueControls'), main.indexOf('function resetNowPlaying'));
+    const fn = srcOf('renderQueueControls');
     expect(fn).toContain('queueTrackMeta(q)');
   });
 
   it('both folder plays send the album along with the artist', () => {
-    const play = library.slice(library.indexOf('async function libraryPlayFolder'), library.indexOf('function librarySaveFolderAsPreset'));
-    const save = library.slice(library.indexOf('function librarySaveFolderAsPreset'));
+    const play = srcOf('libraryPlayFolder');
+    const save = srcOf('librarySaveFolderAsPreset');
     for (const fn of [play, save]) {
       expect(fn).toContain("artist: it.artist || ''");
       expect(fn).toContain("album: it.album || ''");

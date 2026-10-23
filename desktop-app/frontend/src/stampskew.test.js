@@ -11,16 +11,10 @@
 // The stamp is fixed at the source. This pins the other half: the binary itself
 // decides, and a clock only gets a say when there is no binary to compare.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
+import { srcOf } from './test/source.js';
 
 // The real function, with the module-level state it reads injected.
-const at = main.indexOf('function boxNeedsUpdate(b) {');
-const src = main.slice(at, main.indexOf('\n}\n', at) + 2);
+const src = srcOf('boxNeedsUpdate');
 function needsUpdate(appInfo, box) {
   // eslint-disable-next-line no-new-func
   const fn = new Function('state', 'compareVerBuild', `${src}\nreturn boxNeedsUpdate;`)(

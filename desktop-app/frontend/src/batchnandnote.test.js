@@ -9,15 +9,17 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'main.js'), 'utf8');
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const KEY = 'updateAll.noteTightNand';
 
-// The pre-scan loop, from the notes array to the prompt that renders it.
-const scan = src.slice(src.indexOf('const notes = []'), src.indexOf('const notes = []') + 3200);
+// The pre-scan loop of the batch update, from the notes array to the prompt
+// that renders it.
+const batch = srcOf('runUpdateAllBoxes');
+const scan = batch.slice(batch.indexOf('const notes = []'), batch.indexOf('const notes = []') + 3200);
 
 describe('the batch update warns about tight storage', () => {
   it('asks the speaker during the pre-scan', () => {

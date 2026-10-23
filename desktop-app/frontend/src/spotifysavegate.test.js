@@ -15,27 +15,26 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcBetween, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'main.js'), 'utf8');
-const main = src.replace(/\r\n/g, '\n');
+const main = allSource();
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const KEY = 'preset.spotifyKeyNeedsLogin';
 const PREMIUM = 'preset.spotifyKeyNeedsPremium';
 const PLAN = 'preset.spotifyKeyPlanUnknown';
 
-const save = src.slice(src.indexOf('async function saveCurrentToSlot'),
-  src.indexOf('async function saveCurrentToSlot') + 10000);
+const save = srcOf('saveCurrentToSlot');
 const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`), 'utf8'));
 
-// The gate as the save path applies it, lifted out of main.js so the order of the
-// two questions is asserted as behaviour and not as spelling.
-const at = main.indexOf('      // Same order the speaker applies when the key is pressed');
-const gate = main.slice(at, main.indexOf('      // Which notice was shown', at));
+// The gate as the save path applies it, lifted out of the save function so the
+// order of the two questions is asserted as behaviour and not as spelling.
+const gate = srcBetween('      // Same order the speaker applies when the key is pressed',
+  '      // Which notice was shown');
 
 // One app run: the once-per-run flag lives as long as the returned function,
-// the way the module-level flag in main.js lives as long as the app.
+// the way the module-level flag in the app lives as long as the app.
 function appRun() {
   let shown = null;
   // eslint-disable-next-line no-new-func
@@ -100,10 +99,8 @@ describe('saving a Spotify key that cannot play', () => {
 
   it('keeps the once-per-run flag outside the save function', () => {
     // Declared inside saveCurrentToSlot it would reset on every save.
-    const fnAt = main.indexOf('async function saveCurrentToSlot');
-    const flagAt = main.indexOf('let spotifyPlanHintShown = false;');
-    expect(flagAt).toBeGreaterThan(-1);
-    expect(flagAt).toBeLessThan(fnAt);
+    expect(main).toContain('let spotifyPlanHintShown = false;');
+    expect(save).not.toContain('let spotifyPlanHintShown');
   });
 
   it('stays quiet when the speaker is too old to say', () => {

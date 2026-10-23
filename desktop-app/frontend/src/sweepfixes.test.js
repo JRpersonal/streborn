@@ -12,39 +12,37 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { allSource, srcOf } from './test/source.js';
 
-const library = readFileSync(new URL('./views/library.js', import.meta.url), 'utf8');
-const multiroom = readFileSync(new URL('./views/multiroom.js', import.meta.url), 'utf8');
-const api = readFileSync(new URL('./api.js', import.meta.url), 'utf8');
+const all = allSource();
+const probe = srcOf('probeDelivery');
+const verify = srcOf('verifyLibraryPlayback');
+const dissolve = srcOf('doDissolveStereo');
 const bundleDir = fileURLToPath(new URL('./i18n/bundles/', import.meta.url));
 const langs = readdirSync(bundleDir).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''));
 const bundle = (l) => JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));
 
 describe('the library delivery probe', () => {
   it('does not fetch the media server from this page', () => {
-    expect(library, 'the CORS-blind probe must be gone').not.toContain('serverDeliversTrack');
-    const fn = library.slice(library.indexOf('async function probeDelivery'),
-                             library.indexOf('async function probeDelivery') + 500);
-    expect(fn, 'the probe must go through the Go binding').toContain('ProbeTrackDelivery');
-    expect(fn).not.toContain('fetch(');
-    expect(api).toContain("callOptionalBinding('ProbeTrackDelivery'");
+    expect(all, 'the CORS-blind probe must be gone').not.toContain('serverDeliversTrack');
+    expect(probe, 'the probe must go through the Go binding').toContain('ProbeTrackDelivery');
+    expect(probe).not.toContain('fetch(');
+    expect(all).toContain("callOptionalBinding('ProbeTrackDelivery'");
   });
 
   // The three-state answer is the whole point. A probe that could not be taken
   // says nothing about the server, and the old code's own comment said so while
   // the code did the opposite.
   it('only blames the server on a probe that actually answered', () => {
-    const at = library.indexOf('const probe = await probeDelivery');
+    const at = verify.indexOf('const probe = await probeDelivery');
     expect(at).toBeGreaterThan(-1);
-    const decision = library.slice(at, at + 520);
+    const decision = verify.slice(at, at + 520);
     expect(decision).toContain('probe.known && !probe.delivered');
     expect(decision).toContain('library.serverNotDelivering');
     expect(decision).toContain('library.formatMaybeUnsupported');
     // An unknown probe keeps the older wording, so a blocked app cannot invent
     // a verdict about a server the speaker reaches perfectly well.
-    const fn = library.slice(library.indexOf('async function probeDelivery'),
-                             library.indexOf('async function probeDelivery') + 500);
-    expect(fn).toContain('known: false');
+    expect(probe).toContain('known: false');
   });
 });
 
@@ -77,20 +75,20 @@ describe('undo stereo pair', () => {
   // printed at the user as "Could not change the group: stereo-undo-unconfirmed".
   // A released agent still produces it, so this is not hypothetical.
   it('never shows the raw stereo-undo-unconfirmed token', () => {
-    expect(multiroom).toContain("includes('stereo-undo-unconfirmed')");
-    expect(multiroom).toContain('multiroom.stereoUndoUnconfirmed');
+    expect(all).toContain("includes('stereo-undo-unconfirmed')");
+    expect(all).toContain('multiroom.stereoUndoUnconfirmed');
     // Both dissolve paths, not just one.
-    expect(multiroom.match(/stereo-undo-unconfirmed/g).length).toBeGreaterThanOrEqual(2);
-    expect(multiroom.match(/multiroom\.stereoUndoUnconfirmed/g).length).toBeGreaterThanOrEqual(2);
+    expect(all.match(/stereo-undo-unconfirmed/g).length).toBeGreaterThanOrEqual(2);
+    expect(all.match(/multiroom\.stereoUndoUnconfirmed/g).length).toBeGreaterThanOrEqual(2);
   });
 
   // Not an error: the teardown may well have happened and the speaker simply did
   // not say so. It is shown as a warning, above the generic failure branch.
   it('reads as a warning, and is decided before the generic failure', () => {
-    const at = multiroom.indexOf('} else if (unconfirmed) {');
+    const at = dissolve.indexOf('} else if (unconfirmed) {');
     expect(at).toBeGreaterThan(-1);
-    expect(at).toBeLessThan(multiroom.indexOf('} else if (failure) {'));
-    expect(multiroom.slice(at, at + 420)).toContain('setup-warn');
+    expect(at).toBeLessThan(dissolve.indexOf('} else if (failure) {'));
+    expect(dissolve.slice(at, at + 420)).toContain('setup-warn');
   });
 
   it('has the text in every language', () => {

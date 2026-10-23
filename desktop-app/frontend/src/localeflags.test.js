@@ -3,17 +3,17 @@
 // Chinese drew nothing at all, because both fell through a lookup that
 // upper-cases the locale code and hopes it is a country.
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { localeFlagSvg, flagSvg } from './localization.js';
+import { srcOf } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const dir = fileURLToPath(new URL('./i18n/bundles/', import.meta.url));
 const locales = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''));
 
 // The picker's own mapping, mirrored here so the test exercises what ships.
 const ccFor = (code) => {
-  const m = main.match(/const LOCALE_FLAG_CC = \{([\s\S]*?)\n\};/);
+  const m = srcOf('LOCALE_FLAG_CC').match(/const LOCALE_FLAG_CC = \{([\s\S]*?)\n\};/);
   const map = {};
   for (const line of m[1].split('\n')) {
     const kv = line.match(/^\s*'?([\w-]+)'?:\s*'([^']*)'/);

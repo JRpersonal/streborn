@@ -2,14 +2,8 @@
 // an owner pressed it twice and nothing happened (#1083). Both buttons now run
 // one flow; these tests drive it with fakes.
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { runConflictCleanup } from './conflictcleanup.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8');
-const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8');
+import { allSource, srcOf } from './test/source.js';
 
 const box = { host: '192.0.2.1', port: 8888, friendlyName: 'Office', conflictingMod: 'OpenCloudTouch' };
 
@@ -72,12 +66,13 @@ describe('runConflictCleanup', () => {
 
 describe('both buttons run the same flow', () => {
   it('the banner button removes, it does not just switch pages', () => {
-    const wiring = main.slice(main.indexOf("const cb = $('boxIssueConflictBtn')"), main.indexOf("const d = $('boxIssueDismissBtn')"));
+    const banner = srcOf('checkBoxIssueBanner');
+    const wiring = banner.slice(banner.indexOf("const cb = $('boxIssueConflictBtn')"), banner.indexOf("const d = $('boxIssueDismissBtn')"));
     expect(wiring).toContain('runConflictCleanup(conflict[0]');
     expect(wiring).not.toContain("switchView('settings')");
   });
 
   it('the settings button uses it too', () => {
-    expect(settings).toContain('runConflictCleanup(box,');
+    expect(allSource()).toContain('runConflictCleanup(box,');
   });
 });

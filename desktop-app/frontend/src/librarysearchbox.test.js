@@ -11,21 +11,18 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'views', 'library.js'), 'utf8').replace(/\r\n/g, '\n');
+const src = allSource();
 const en = JSON.parse(readFileSync(join(here, 'i18n', 'bundles', 'en.json'), 'utf8'));
 const de = JSON.parse(readFileSync(join(here, 'i18n', 'bundles', 'de.json'), 'utf8'));
 
-// The real helpers, sliced out of the view and run against a fake libState.
+// The real helpers, cut out of the view and run against a fake libState.
 function build(page, filter) {
   const libState = { page, filter };
-  const cut = (name) => {
-    const at = src.indexOf(`function ${name}(`);
-    return src.slice(at, src.indexOf('\n}\n', at) + 2);
-  };
   // eslint-disable-next-line no-new-func
-  return new Function('libState', `${cut('libraryFilteredItems')}\n${cut('libraryFilteredContainers')}\n${cut('cappedKey')}\n${cut('libraryCountText')}\nreturn { libraryFilteredItems, libraryFilteredContainers, cappedKey, libraryCountText };`)(libState);
+  return new Function('libState', `${srcOf('libraryFilteredItems')}\n${srcOf('libraryFilteredContainers')}\n${srcOf('cappedKey')}\n${srcOf('libraryCountText')}\nreturn { libraryFilteredItems, libraryFilteredContainers, cappedKey, libraryCountText };`)(libState);
 }
 
 const albums = {

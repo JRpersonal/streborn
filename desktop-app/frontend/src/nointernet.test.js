@@ -9,10 +9,11 @@ import { dirname, join } from 'path';
 import {
   boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText,
 } from './nointernet.js';
+import { allSource } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8');
-const state = readFileSync(join(here, 'state.js'), 'utf8');
+const main = allSource();
+const state = main;
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const keys = ['speaker.noInternetChip', 'speaker.noInternetTitle', 'speaker.noInternetHint', 'speaker.noInternetBanner'];

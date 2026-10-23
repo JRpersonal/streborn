@@ -9,10 +9,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8');
-const api = readFileSync(join(here, 'api.js'), 'utf8');
+const main = allSource();
+const api = main;
 const boxops = readFileSync(join(here, '..', '..', 'app_boxops.go'), 'utf8');
 const webuiRoutes = readFileSync(join(here, '..', '..', '..', 'internal', 'webui', 'server.go'), 'utf8');
 const bindings = readFileSync(join(here, '..', 'wailsjs', 'go', 'main', 'App.d.ts'), 'utf8');

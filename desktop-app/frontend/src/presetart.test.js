@@ -9,9 +9,9 @@
 // surviving key, WDCB 90.9, is the one station whose stream host has a real
 // DDG icon, which is exactly the discriminator he suspected.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { appArtFromBoxArt, artCarriesBoxForm, escapeAttr } from './utils.js';
 import { spotifyCoverImgTag, SPOTIFY_LOGO } from './logos.js';
+import { allSource } from './test/source.js';
 
 // The wrapper exactly as the #696 bundle carries it (box-2.json, the playing
 // slot's <art> tag): the loopback art proxy around the DDG icon URL the agent
@@ -86,13 +86,13 @@ describe('artCarriesBoxForm', () => {
 
 // The defect was never in a helper, it was the persist sites handing box-form
 // art to SetPreset. There is no DOM here (the vitest environment is
-// deliberately DOM-free and renderPresets writes innerHTML), so main.js is
+// deliberately DOM-free and renderPresets writes innerHTML), so the app is
 // read as source and every site that persists or adopts art is checked for
 // the unwrap, the same way utils.test.js pins the bass gate onto the settings
 // view. Matched on the helper NAME so refactoring the calls stays possible;
 // what must never come back is art persisted raw off the box report.
-describe('main.js persists no box-form art (#696)', () => {
-  const src = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+describe('the app persists no box-form art (#696)', () => {
+  const src = allSource();
 
   it('the hold-save orion branch unwraps the descriptor imageUrl', () => {
     // The exact poisoned shape that shipped in v0.9.56:
@@ -130,7 +130,7 @@ describe('main.js persists no box-form art (#696)', () => {
     // grid must build its radio tiles with logoImgTag, and nothing may
     // produce a data-fallbacks img any more.
     expect(src).toContain("logoImgTag({");
-    expect(src, 'a raw data-fallbacks producer is back in main.js')
+    expect(src, 'a raw data-fallbacks producer is back')
       .not.toContain('data-fallbacks="');
   });
   it('the logo healer treats box-form art as needing a real re-lookup', () => {
@@ -173,7 +173,7 @@ describe('spotifyCoverImgTag (#1312)', () => {
     }
   });
   it('the preset grid draws Spotify keys from the stored, unwrapped art', () => {
-    const src = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+    const src = allSource();
     expect(src).toContain('addCands(appArtFromBoxArt(p.art));');
     expect(src).toContain("logo = spotifyCoverImgTag(presetCandidates[0], 'preset-logo');");
     expect(src, 'the Spotify branch went back to the bare glyph').not.toContain('addCands(SPOTIFY_LOGO)');

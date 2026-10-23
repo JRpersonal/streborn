@@ -15,8 +15,10 @@
 // cannot be imported without a DOM and the Wails runtime.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { srcOf } from './test/source.js';
 
-const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+// The settings loader, where the dead-speaker and no-network panels are drawn.
+const load = srcOf('loadBoxSettings');
 const bundle = (l) => JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));
 const en = bundle('en');
 const de = bundle('de');
@@ -48,18 +50,18 @@ describe('a dead network on this machine', () => {
   });
 
   it('gets its own panel instead of the dead-speaker one', () => {
-    const at = src.indexOf('if (noNetworkHere(lastErr))');
+    const at = load.indexOf('if (noNetworkHere(lastErr))');
     expect(at, 'the no-network branch must exist').toBeGreaterThan(-1);
-    const branch = src.slice(at, at + 900);
+    const branch = load.slice(at, at + 900);
     expect(branch).toContain('settingsView.noNetworkTitle');
     expect(branch).toContain('settingsView.noNetworkHelp');
     // And it must come BEFORE the dead-speaker panel, or that one wins.
-    expect(at).toBeLessThan(src.indexOf('settingsView.speakerDeadTitle'));
+    expect(at).toBeLessThan(load.indexOf('settingsView.speakerDeadTitle'));
   });
 
   it('recovers on its own when the network comes back', () => {
-    const at = src.indexOf('if (noNetworkHere(lastErr))');
-    const branch = src.slice(at, at + 900);
+    const at = load.indexOf('if (noNetworkHere(lastErr))');
+    const branch = load.slice(at, at + 900);
     // A re-check is scheduled. While the machine has no route the attempt fails
     // inside the socket layer and never reaches a speaker, so this costs the
     // speakers nothing.
@@ -67,8 +69,7 @@ describe('a dead network on this machine', () => {
   });
 
   it('never routes this cause through the speaker explanations', () => {
-    const fn = src.slice(src.indexOf('function friendlySettingsError'),
-                         src.indexOf('function friendlySettingsError') + 700);
+    const fn = srcOf('friendlySettingsError');
     expect(fn).toContain('noNetworkHere');
     // First, or one of the patterns below it matches a fragment of the dial
     // string and prints a speaker explanation for a laptop with no Wi-Fi.

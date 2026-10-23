@@ -13,33 +13,26 @@
 // install, which is what a SoundTouch 300 owner pressed, twice, in the week of
 // 2026-09-24 while his soundbar sat blinking with every port dead.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const setup = readFileSync(join(here, 'views', 'setup.js'), 'utf8').replace(/\r\n/g, '\n');
-const main = readFileSync(join(here, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
+const all = allSource();
+// The wait panel renderer, a function nested inside waitForBoxAfterSetup.
+const panel = srcOf('renderInstallWaiting');
 
 describe('the install counts as running while the wait panel is up', () => {
   it('installRunActive covers the panel, not only the awaited call', () => {
-    expect(setup).toContain('return networkInstallRunning || installWaitPanelLive;');
+    expect(all).toContain('return networkInstallRunning || installWaitPanelLive;');
   });
 
   it('the panel claims the flag when it is drawn and releases it when it stops', () => {
-    // Search the end anchor FROM the start offset. waitForBoxAfterSetup grew a
-    // 'const mine' of its own further up the file, and the unanchored indexOf
-    // found that one instead and sliced backwards into an empty string.
-    const at = setup.indexOf('function renderInstallWaiting');
-    const fn = setup.slice(at, setup.indexOf('const mine = () =>', at));
+    // The flag is claimed before the panel's own helpers are defined.
+    const fn = panel.slice(0, panel.indexOf('const mine = () =>'));
     expect(fn).toContain('installWaitPanelLive = true;');
-    const stop = setup.slice(setup.indexOf('const stopAll = () => {', setup.indexOf('function renderInstallWaiting')));
+    const stop = panel.slice(panel.indexOf('const stopAll = () => {'));
     expect(stop.slice(0, 400)).toContain('installWaitPanelLive = false;');
   });
 
   it('every way out of the panel goes through stopAll', () => {
-    const panel = setup.slice(setup.indexOf('function renderInstallWaiting'),
-      setup.indexOf('async function finishInstall'));
     // the user pressing stop, a late answer, the panel being replaced, and the
     // belt-and-braces timer
     expect(panel).toContain('stop.onclick = () => { stopAll(); giveUp(); }');
@@ -52,28 +45,25 @@ describe('the install counts as running while the wait panel is up', () => {
 
 describe('the Install button stays out of reach under the wait panel', () => {
   it('the panel disables it', () => {
-    // Search the end anchor FROM the start offset. waitForBoxAfterSetup grew a
-    // 'const mine' of its own further up the file, and the unanchored indexOf
-    // found that one instead and sliced backwards into an empty string.
-    const at = setup.indexOf('function renderInstallWaiting');
-    const fn = setup.slice(at, setup.indexOf('const mine = () =>', at));
+    const fn = panel.slice(0, panel.indexOf('const mine = () =>'));
     expect(fn).toContain("$('setupHeroInstall')");
     expect(fn).toContain('disabled = true');
   });
 
   it('the finally does not hand it back while the panel is live', () => {
-    const fin = setup.slice(setup.indexOf('networkInstallRunning = false;', setup.indexOf('async function startNetworkInstall')));
+    const start = srcOf('startNetworkInstall');
+    const fin = start.slice(start.indexOf('networkInstallRunning = false;'));
     expect(fin.slice(0, 500)).toContain('!installWaitPanelLive');
   });
 
   it('stopAll re-enables it, so a finished wait leaves a usable screen', () => {
-    const stop = setup.slice(setup.indexOf('const stopAll = () => {', setup.indexOf('function renderInstallWaiting')));
+    const stop = panel.slice(panel.indexOf('const stopAll = () => {'));
     expect(stop.slice(0, 400)).toContain('disabled = false');
   });
 });
 
 describe('the periodic refresh can no longer wipe a live panel', () => {
-  it('main.js gates the wipe on installRunActive', () => {
-    expect(main).toContain("if (!installRunActive()) { const r = $('setupResult'); if (r) r.innerHTML = ''; }");
+  it('the refresh gates the wipe on installRunActive', () => {
+    expect(all).toContain("if (!installRunActive()) { const r = $('setupResult'); if (r) r.innerHTML = ''; }");
   });
 });

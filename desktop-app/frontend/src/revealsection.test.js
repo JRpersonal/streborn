@@ -11,13 +11,15 @@
 // The view is read as source, the same way the bass-control tests read it: it
 // cannot be imported without a DOM and the Wails runtime.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { allSource, srcOf } from './test/source.js';
 
-const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+const src = allSource();
+// The settings page renderer, where both deep-link targets are wired.
+const render = srcOf('renderBoxSettings');
 
 describe('settings deep links', () => {
   it('has one helper that opens the ancestors, not just the target', () => {
-    const fn = src.slice(src.indexOf('function revealInSettings'), src.indexOf('\n}', src.indexOf('function revealInSettings')));
+    const fn = srcOf('revealInSettings');
     expect(fn, 'revealInSettings must exist').toContain('revealInSettings');
     // It has to walk UP. A single element.open cannot reveal a target whose
     // group is closed.
@@ -34,13 +36,13 @@ describe('settings deep links', () => {
     // collapsible group; neither may scroll on its own.
     // Anchor on the CONSUMPTION site, not on the `let pendingKeyMapOpen = false`
     // declaration further up the file.
-    const at = src.indexOf('if (pendingKeyMapOpen)');
+    const at = render.indexOf('if (pendingKeyMapOpen)');
     expect(at, 'the pending-intent block must still be findable').toBeGreaterThan(-1);
-    const keyMap = src.slice(at, at + 400);
+    const keyMap = render.slice(at, at + 400);
     expect(keyMap).toContain('revealInSettings');
     expect(keyMap).not.toContain('scrollIntoView');
 
-    const fwBtn = src.slice(src.indexOf("$('fwUpdateBtn')"), src.indexOf("$('fwUpdateBtn')") + 300);
+    const fwBtn = render.slice(render.indexOf("$('fwUpdateBtn')"), render.indexOf("$('fwUpdateBtn')") + 300);
     expect(fwBtn).toContain('revealInSettings');
     expect(fwBtn).not.toContain('scrollIntoView');
   });
@@ -55,7 +57,7 @@ describe('settings deep links', () => {
   // The reason the helper is needed at all: expert sections are grouped into
   // Advanced, and that group is created closed.
   it('the advanced group really does start closed', () => {
-    const groups = src.slice(src.indexOf('const GROUPS'), src.indexOf('];', src.indexOf('const GROUPS')));
+    const groups = srcOf('GROUPS', { within: 'groupSettingsSections' });
     expect(groups).toMatch(/key:\s*'advanced'[^}]*open:\s*false/);
   });
 });

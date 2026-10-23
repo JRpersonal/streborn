@@ -14,9 +14,11 @@
 // own description fetch either.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { srcOf } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
-const library = readFileSync(new URL('./views/library.js', import.meta.url), 'utf8');
+const update = srcOf('runAppUpdate');
+const verify = srcOf('verifyLibraryPlayback');
+const probe = srcOf('probeDelivery');
 const bundle = (l) => JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));
 const en = bundle('en');
 const de = bundle('de');
@@ -54,11 +56,11 @@ describe('an app-update download the network cut off', () => {
   });
 
   it('keeps the button as a retry instead of sending the user to a web page', () => {
-    const at = main.indexOf('if (downloadWasInterrupted(e))');
+    const at = update.indexOf('if (downloadWasInterrupted(e))');
     expect(at, 'the interrupted branch must exist').toBeGreaterThan(-1);
     // Only this arm: the else arm below it is the real-failure path and is
     // supposed to still carry showError and the downloads-page fallback.
-    const branch = main.slice(at, main.indexOf('} else {', at));
+    const branch = update.slice(at, update.indexOf('} else {', at));
     expect(branch).toContain('banner.retryAppUpdate');
     expect(branch).toContain('runAppUpdate(');
     // The two things his report was about: no copyable error, no downloads page.
@@ -67,8 +69,8 @@ describe('an app-update download the network cut off', () => {
   });
 
   it('still shows the full error for a failure that IS worth reporting', () => {
-    const at = main.indexOf('if (downloadWasInterrupted(e))');
-    const whole = main.slice(at, at + 1400);
+    const at = update.indexOf('if (downloadWasInterrupted(e))');
+    const whole = update.slice(at, at + 1400);
     expect(whole).toContain('showError');
     expect(whole).toContain('banner.getFromReleases');
   });
@@ -86,9 +88,7 @@ describe('an app-update download the network cut off', () => {
 
 describe('a library track that did not start', () => {
   it('waits past the speaker\'s own verdict before saying anything', () => {
-    const at = library.indexOf('async function verifyLibraryPlayback');
-    const fn = library.slice(at, at + 1600);
-    const m = fn.match(/Date\.now\(\)\s*\+\s*(\d+)/);
+    const m = verify.match(/Date\.now\(\)\s*\+\s*(\d+)/);
     expect(m, 'the verify window must be findable').toBeTruthy();
     // The box reports AUDIO_ERROR_TIMEOUT about 20 s in. Deciding before that
     // is guessing, which is what produced the format claim on a plain mp3.
@@ -100,11 +100,11 @@ describe('a library track that did not start', () => {
   // frontend version reported every server as dead. The intent is unchanged,
   // which is why this test stayed: measure, do not guess.
   it('measures whether the server delivers instead of blaming the format', () => {
-    expect(library).toContain('async function probeDelivery');
-    expect(library).toContain('ProbeTrackDelivery');
-    const at = library.indexOf('const probe = await probeDelivery');
+    expect(probe).toMatch(/^async function probeDelivery/);
+    expect(probe).toContain('ProbeTrackDelivery');
+    const at = verify.indexOf('const probe = await probeDelivery');
     expect(at).toBeGreaterThan(-1);
-    const decision = library.slice(at, at + 520);
+    const decision = verify.slice(at, at + 520);
     expect(decision).toContain('library.formatMaybeUnsupported');
     expect(decision).toContain('library.serverNotDelivering');
   });
@@ -115,11 +115,9 @@ describe('a library track that did not start', () => {
     // Three states, and the third is the point: a probe that could not be taken
     // is not a verdict against the server, because the app can be blocked from
     // one the speaker reaches perfectly well.
-    const at = library.indexOf('const probe = await probeDelivery');
-    expect(library.slice(at, at + 520)).toContain('probe.known && !probe.delivered');
-    const fn = library.slice(library.indexOf('async function probeDelivery'),
-                             library.indexOf('async function probeDelivery') + 600);
-    expect(fn).toContain('known: false');
+    const at = verify.indexOf('const probe = await probeDelivery');
+    expect(verify.slice(at, at + 520)).toContain('probe.known && !probe.delivered');
+    expect(probe).toContain('known: false');
   });
 
   it('has the new wording, and it does not mention the format', () => {
