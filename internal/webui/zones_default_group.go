@@ -85,35 +85,65 @@ func classifyMemberForRejoin(npSource, playStatus, memberZoneMaster, ourMaster s
 
 // Seams for the tests: every real implementation reaches a speaker on a fixed
 // port, which a test server on a random port can never be (same pattern as
-// hushforupload.go and dissolvestragglers.go).
-var (
-	rejoinReadNowPlaying = func(ctx context.Context, ip string) nowPlayingSnapshot {
-		return fetchNowPlaying(ctx, ip)
+// hushforupload.go and dissolvestragglers.go). A test installs the rejoin*Fn
+// fields on its own Server; nil is production.
+
+// rejoinReadNowPlaying reads what a member (or the master) plays right now.
+func (s *Server) rejoinReadNowPlaying(ctx context.Context, ip string) nowPlayingSnapshot {
+	if s.rejoinReadNowPlayingFn != nil {
+		return s.rejoinReadNowPlayingFn(ctx, ip)
 	}
-	rejoinReadZoneMaster = func(ctx context.Context, ip string) string {
-		z, err := boxapi.New(ip).GetZone(ctx)
-		if err != nil {
-			return ""
-		}
-		return z.Master
+	return fetchNowPlaying(ctx, ip)
+}
+
+// rejoinReadZoneMaster reads which master a member's firmware names, or ""
+// when it names none or does not answer.
+func (s *Server) rejoinReadZoneMaster(ctx context.Context, ip string) string {
+	if s.rejoinReadZoneMasterFn != nil {
+		return s.rejoinReadZoneMasterFn(ctx, ip)
 	}
-	rejoinWakeMember = func(ctx context.Context, ip string, logger *slog.Logger) {
-		wakeMemberAgent(ctx, ip, logger)
+	z, err := boxapi.New(ip).GetZone(ctx)
+	if err != nil {
+		return ""
 	}
-	rejoinLiveZone = func(ctx context.Context, host string) (boxapi.Zone, error) {
-		return boxapi.New(host).GetZone(ctx)
+	return z.Master
+}
+
+// rejoinWakeMember wakes a member through its own agent (wakeMemberAgent).
+func (s *Server) rejoinWakeMember(ctx context.Context, ip string, logger *slog.Logger) {
+	if s.rejoinWakeMemberFn != nil {
+		s.rejoinWakeMemberFn(ctx, ip, logger)
+		return
 	}
-	// rejoinReadAgentUptime is how long the member's agent has been up, in
-	// seconds, or -1 when it does not answer. It tells a member that just
-	// rebooted (and therefore sits in standby through no choice of anyone)
-	// from one somebody switched off on purpose.
-	rejoinReadAgentUptime = func(ctx context.Context, ip string) int {
-		return readAgentUptime(ctx, ip)
+	wakeMemberAgent(ctx, ip, logger)
+}
+
+// rejoinLiveZone reads the master's live /getZone.
+func (s *Server) rejoinLiveZone(ctx context.Context, host string) (boxapi.Zone, error) {
+	if s.rejoinLiveZoneFn != nil {
+		return s.rejoinLiveZoneFn(ctx, host)
 	}
-	rejoinSetZone = func(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
-		return boxapi.New(host).SetZone(ctx, master, slaves)
+	return boxapi.New(host).GetZone(ctx)
+}
+
+// rejoinReadAgentUptime is how long the member's agent has been up, in
+// seconds, or -1 when it does not answer. It tells a member that just
+// rebooted (and therefore sits in standby through no choice of anyone)
+// from one somebody switched off on purpose.
+func (s *Server) rejoinReadAgentUptime(ctx context.Context, ip string) int {
+	if s.rejoinReadAgentUptimeFn != nil {
+		return s.rejoinReadAgentUptimeFn(ctx, ip)
 	}
-)
+	return readAgentUptime(ctx, ip)
+}
+
+// rejoinSetZone drives the master's /setZone with the given members.
+func (s *Server) rejoinSetZone(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
+	if s.rejoinSetZoneFn != nil {
+		return s.rejoinSetZoneFn(ctx, host, master, slaves)
+	}
+	return boxapi.New(host).SetZone(ctx, master, slaves)
+}
 
 // wakeMemberAgent wakes one stored member through its own agent
 // (POST /api/box/wake, the same TAP wake the desktop app uses when enrolling a
@@ -190,7 +220,7 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 	// its presets) is not. Without this the whole group woke, and every
 	// member resumed its last station, at 03:28 after a fleet update
 	// (2026-09-06).
-	if np := rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+	if np := s.rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
 		s.logger.Info("default group: master is not playing, leaving the members alone",
 			"source", np.Source, "playStatus", np.PlayStatus)
 		return
@@ -217,10 +247,10 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 			defer wg.Done()
 			mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
 			defer mcancel()
-			np := rejoinReadNowPlaying(mctx, m.IP)
-			act := classifyMemberForRejoin(np.Source, np.PlayStatus, rejoinReadZoneMaster(mctx, m.IP), z.Master)
+			np := s.rejoinReadNowPlaying(mctx, m.IP)
+			act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master)
 			if act == rejoinWake {
-				rejoinWakeMember(mctx, m.IP, s.logger)
+				s.rejoinWakeMember(mctx, m.IP, s.logger)
 				act = rejoinJoin
 			}
 			verdicts[i] = verdict{m: m, act: act}
@@ -239,11 +269,11 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 		return
 	}
 	// Already complete? Then the firmware is left alone.
-	if live, err := rejoinLiveZone(ctx, s.boxHost); err == nil && zoneCarries(live, z.Master, joiners) {
+	if live, err := s.rejoinLiveZone(ctx, s.boxHost); err == nil && zoneCarries(live, z.Master, joiners) {
 		return
 	}
 	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
-	if err := rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
+	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
 		s.logger.Warn("default group: re-form on play failed", "err", err, "members", len(joiners))
 		return
 	}
@@ -251,24 +281,17 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 	s.holdDefaultGroupOnce(master, joiners)
 }
 
-// defaultGroupHoldCheckAfter is how long after a re-form the master looks
-// whether the zone is still standing. A member that was just woken can fall out
-// a second or two after joining: its own power-on resume fails late, the
-// firmware raises the error after the join and the member drops to
-// INVALID_SOURCE, which takes the zone down with it (Küche, 2026-10-17 09:51).
-// A variable so the tests do not wait for it.
-var defaultGroupHoldCheckAfter = 8 * time.Second
-
 // holdDefaultGroupOnce checks once, shortly after a re-form, that the zone still
 // carries the members it was formed with, and forms it one more time when it
 // does not. Only once: a member that keeps falling out has a reason of its own,
 // and driving the firmware in a loop would only hide it. The master must still
-// be playing, or the user has moved on and the group is left as it is.
+// be playing, or the user has moved on and the group is left as it is. The
+// wait before the look is on the zone clock (zoneTiming.defaultGroupHoldCheckAfter).
 func (s *Server) holdDefaultGroupOnce(master boxapi.ZoneMember, joiners []boxapi.ZoneMember) {
-	time.Sleep(defaultGroupHoldCheckAfter)
+	time.Sleep(s.zoneTimes().defaultGroupHoldCheckAfter)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	live, err := rejoinLiveZone(ctx, s.boxHost)
+	live, err := s.rejoinLiveZone(ctx, s.boxHost)
 	if err != nil {
 		// Unreadable is not evidence the group fell apart.
 		return
@@ -276,14 +299,14 @@ func (s *Server) holdDefaultGroupOnce(master boxapi.ZoneMember, joiners []boxapi
 	if zoneCarries(live, master.DeviceID, joiners) {
 		return
 	}
-	if np := rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+	if np := s.rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
 		s.logger.Info("default group: the zone fell apart after forming, but the master stopped playing, leaving it",
 			"source", np.Source, "playStatus", np.PlayStatus)
 		return
 	}
 	s.logger.Warn("default group: the zone fell apart right after forming, forming it once more",
 		"liveMaster", live.Master, "liveMembers", len(live.Members), "members", len(joiners))
-	if err := rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
+	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
 		s.logger.Warn("default group: forming it once more failed", "err", err, "members", len(joiners))
 		return
 	}
@@ -335,8 +358,8 @@ func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
 			defer wg.Done()
 			mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
 			defer mcancel()
-			if rejoinReadNowPlaying(mctx, m.IP).Source == "STANDBY" {
-				rejoinWakeMember(mctx, m.IP, s.logger)
+			if s.rejoinReadNowPlaying(mctx, m.IP).Source == "STANDBY" {
+				s.rejoinWakeMember(mctx, m.IP, s.logger)
 			}
 		}(m)
 	}
@@ -425,7 +448,7 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 	if !z.Permanent || z.Stereo || len(z.Slaves) == 0 || s.boxHost == "" {
 		return false
 	}
-	live, err := rejoinLiveZone(ctx, s.boxHost)
+	live, err := s.rejoinLiveZone(ctx, s.boxHost)
 	if err != nil || !strings.EqualFold(live.Master, z.Master) {
 		return false // not leading a live zone right now: the play kick owns that case
 	}
@@ -442,7 +465,7 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 	if len(missing) == 0 {
 		return false
 	}
-	if np := rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+	if np := s.rejoinReadNowPlaying(ctx, s.boxHost); np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
 		return false // nothing to bring anyone back to
 	}
 	joiners := make([]boxapi.ZoneMember, 0, len(live.Members)+len(missing))
@@ -452,16 +475,16 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 	added := 0
 	for _, m := range missing {
 		mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
-		np := rejoinReadNowPlaying(mctx, m.IP)
-		act := classifyMemberForRejoin(np.Source, np.PlayStatus, rejoinReadZoneMaster(mctx, m.IP), z.Master)
+		np := s.rejoinReadNowPlaying(mctx, m.IP)
+		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master)
 		if act == rejoinWake {
-			up := rejoinReadAgentUptime(mctx, m.IP)
+			up := s.rejoinReadAgentUptime(mctx, m.IP)
 			if up < 0 || time.Duration(up)*time.Second > rejoinFreshBootWindow {
 				s.logger.Info("default group: missing member is in standby and was not just rebooted, leaving it off", "ip", m.IP, "agentUptimeSec", up)
 				mcancel()
 				continue
 			}
-			rejoinWakeMember(mctx, m.IP, s.logger)
+			s.rejoinWakeMember(mctx, m.IP, s.logger)
 			act = rejoinJoin
 		}
 		mcancel()
@@ -475,7 +498,7 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 		return false
 	}
 	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
-	if err := rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
+	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
 		s.logger.Warn("default group: taking missing members back failed", "err", err, "added", added)
 		return false
 	}

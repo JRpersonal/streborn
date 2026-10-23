@@ -118,13 +118,23 @@ type sleepPeerMsg struct {
 
 var sleepPeerClient = &http.Client{Timeout: 3 * time.Second}
 
-// goSleepPush runs a push round off the caller's goroutine. A seam, so the
-// tests can run it in line and see what was sent.
-var goSleepPush = func(f func()) { go f() }
+// goSleepPush runs a push round off the caller's goroutine. A seam
+// (goSleepPushFn), so the tests can run it in line and see what was sent.
+func (s *Server) goSleepPush(f func()) {
+	if s.goSleepPushFn != nil {
+		s.goSleepPushFn(f)
+		return
+	}
+	go f()
+}
 
 // sleepPushPeer sends msg to the agent at ip, on either agent port (8888 on
-// sm2, 17008 through the REDIRECT on a BCO chassis). A seam for the tests.
-var sleepPushPeer = func(ctx context.Context, ip string, msg sleepPeerMsg) error {
+// sm2, 17008 through the REDIRECT on a BCO chassis). A seam for the tests
+// (sleepPushPeerFn).
+func (s *Server) sleepPushPeer(ctx context.Context, ip string, msg sleepPeerMsg) error {
+	if s.sleepPushPeerFn != nil {
+		return s.sleepPushPeerFn(ctx, ip, msg)
+	}
 	body, _ := json.Marshal(msg)
 	var lastErr error
 	for _, port := range []string{"17008", "8888"} {
@@ -184,7 +194,7 @@ func (s *Server) pushSleepToGroup(notice bool) {
 		wg.Add(1)
 		go func(name, ip string) {
 			defer wg.Done()
-			err := sleepPushPeer(ctx, ip, msg)
+			err := s.sleepPushPeer(ctx, ip, msg)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {

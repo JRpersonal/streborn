@@ -15,14 +15,14 @@ import (
 )
 
 // withDissolveSweepSeams makes the sweep passes instant and lets a test decide
-// what the master's firmware zone reads on each pass.
-func withDissolveSweepSeams(t *testing.T, zoneReads []boxapi.Zone, zoneErr error) *[]time.Duration {
-	t.Helper()
-	prevZone, prevSleep := firmwareZoneFn, dissolveSweepSleep
+// what the master's firmware zone reads on each pass. The seams are installed
+// on s alone, so the test shares nothing with its neighbours and needs nothing
+// restored.
+func withDissolveSweepSeams(s *Server, zoneReads []boxapi.Zone, zoneErr error) *[]time.Duration {
 	var mu sync.Mutex
 	slept := &[]time.Duration{}
 	call := 0
-	firmwareZoneFn = func(_ context.Context, _ string) (boxapi.Zone, error) {
+	s.firmwareZoneFn = func(_ context.Context, _ string) (boxapi.Zone, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if zoneErr != nil {
@@ -35,12 +35,11 @@ func withDissolveSweepSeams(t *testing.T, zoneReads []boxapi.Zone, zoneErr error
 		}
 		return boxapi.Zone{}, nil
 	}
-	dissolveSweepSleep = func(d time.Duration) {
+	s.dissolveSweepSleepFn = func(d time.Duration) {
 		mu.Lock()
 		*slept = append(*slept, d)
 		mu.Unlock()
 	}
-	t.Cleanup(func() { firmwareZoneFn, dissolveSweepSleep = prevZone, prevSleep })
 	return slept
 }
 
@@ -64,13 +63,13 @@ var sweepDoc = zones.Zone{Master: masterDeviceID, MasterIP: "192.0.2.10", Slaves
 // the next track, the follower still plays the earlier track from the same
 // server. After the delay, with the zone still gone, it is stopped.
 func TestFirmwareDissolveSweepStopsAFollowerStillOnTheProgramme(t *testing.T) {
+	t.Parallel()
 	const server = "http://192.0.2.17:10243/lib/"
 	follower := newFakeSpeaker("STORED_MUSIC", "PLAY_STATE", server+"track-1.mp3")
 	defer follower.srv.Close()
-	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": follower})
-	withDissolveSweepSeams(t, nil, nil) // every read: no zone
-
 	s := newSweepServer(t, sweepDoc)
+	withFakeFleet(s, map[string]*fakeSpeaker{"192.0.2.54": follower})
+	withDissolveSweepSeams(s, nil, nil) // every read: no zone
 	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 1 {
@@ -81,13 +80,13 @@ func TestFirmwareDissolveSweepStopsAFollowerStillOnTheProgramme(t *testing.T) {
 // The firmware also announces a dissolve on its way through a /setZone rebuild.
 // When the pass finds the zone live again, nothing is touched.
 func TestFirmwareDissolveSweepStandsDownWhenTheZoneIsBack(t *testing.T) {
+	t.Parallel()
 	const server = "http://192.0.2.17:10243/lib/"
 	follower := newFakeSpeaker("STORED_MUSIC", "PLAY_STATE", server+"track-1.mp3")
 	defer follower.srv.Close()
-	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": follower})
-	withDissolveSweepSeams(t, []boxapi.Zone{{Master: "DEV-M", Members: []boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}}}}, nil)
-
 	s := newSweepServer(t, sweepDoc)
+	withFakeFleet(s, map[string]*fakeSpeaker{"192.0.2.54": follower})
+	withDissolveSweepSeams(s, []boxapi.Zone{{Master: "DEV-M", Members: []boxapi.ZoneMember{{DeviceID: "DEV-A", IP: "192.0.2.54"}}}}, nil)
 	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 0 {
@@ -98,20 +97,21 @@ func TestFirmwareDissolveSweepStandsDownWhenTheZoneIsBack(t *testing.T) {
 // A follower unreachable on the first pass (the Wi-Fi drop that cost it the
 // zone) is caught by a later pass once it answers again.
 func TestFirmwareDissolveSweepRetriesAnUnreachableFollower(t *testing.T) {
+	t.Parallel()
 	const server = "http://192.0.2.17:10243/lib/"
 	follower := newFakeSpeaker("STORED_MUSIC", "PLAY_STATE", server+"track-1.mp3")
 	defer follower.srv.Close()
 	fleet := map[string]*fakeSpeaker{}
-	withFakeFleet(t, fleet) // empty fleet: nobody answers yet
-	slept := withDissolveSweepSeams(t, nil, nil)
+	s := newSweepServer(t, sweepDoc)
+	withFakeFleet(s, fleet) // empty fleet: nobody answers yet
+	slept := withDissolveSweepSeams(s, nil, nil)
 	// The follower "comes back" after the first sleep.
-	prev := dissolveSweepSleep
-	dissolveSweepSleep = func(d time.Duration) {
+	prev := s.dissolveSweepSleepFn
+	s.dissolveSweepSleepFn = func(d time.Duration) {
 		prev(d)
 		fleet["192.0.2.54"] = follower
 	}
 
-	s := newSweepServer(t, sweepDoc)
 	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 1 {
@@ -124,13 +124,13 @@ func TestFirmwareDissolveSweepRetriesAnUnreachableFollower(t *testing.T) {
 
 // A different group formed meanwhile takes care of itself; the old sweep stands down.
 func TestFirmwareDissolveSweepStandsDownForANewGroup(t *testing.T) {
+	t.Parallel()
 	const server = "http://192.0.2.17:10243/lib/"
 	follower := newFakeSpeaker("STORED_MUSIC", "PLAY_STATE", server+"track-1.mp3")
 	defer follower.srv.Close()
-	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": follower})
-	withDissolveSweepSeams(t, nil, nil)
-
 	s := newSweepServer(t, sweepDoc)
+	withFakeFleet(s, map[string]*fakeSpeaker{"192.0.2.54": follower})
+	withDissolveSweepSeams(s, nil, nil)
 	other := sweepDoc
 	other.Slaves = []zones.Member{{DeviceID: "DEV-B", IP: "192.0.2.55"}}
 	if err := s.zones.Set(other); err != nil {
@@ -145,13 +145,13 @@ func TestFirmwareDissolveSweepStandsDownForANewGroup(t *testing.T) {
 
 // An unreadable master zone is not "gone": no pass sweeps on it.
 func TestFirmwareDissolveSweepSkipsWhenTheZoneIsUnreadable(t *testing.T) {
+	t.Parallel()
 	const server = "http://192.0.2.17:10243/lib/"
 	follower := newFakeSpeaker("STORED_MUSIC", "PLAY_STATE", server+"track-1.mp3")
 	defer follower.srv.Close()
-	withFakeFleet(t, map[string]*fakeSpeaker{"192.0.2.54": follower})
-	withDissolveSweepSeams(t, nil, errors.New("timeout"))
-
 	s := newSweepServer(t, sweepDoc)
+	withFakeFleet(s, map[string]*fakeSpeaker{"192.0.2.54": follower})
+	withDissolveSweepSeams(s, nil, errors.New("timeout"))
 	s.runStragglerSweepAfterFirmwareDissolve(zoneDocFingerprint(sweepDoc), masterDeviceID, server+"track-2.mp3", sweepDoc.Slaves)
 
 	if got := follower.stops(); got != 0 {
@@ -161,6 +161,7 @@ func TestFirmwareDissolveSweepSkipsWhenTheZoneIsUnreadable(t *testing.T) {
 
 // Repeated dissolve frames for one collapse schedule one sweep.
 func TestFirmwareDissolveScheduleIsIdempotentWhileBusy(t *testing.T) {
+	t.Parallel()
 	s := newSweepServer(t, sweepDoc)
 	s.dissolveSweepBusy.Store(true)
 	s.scheduleStragglerSweepAfterFirmwareDissolve(sweepDoc) // must return at once, no goroutine

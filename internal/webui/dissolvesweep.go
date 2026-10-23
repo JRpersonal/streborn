@@ -36,20 +36,37 @@ import (
 // zone) when the first pass looked.
 var firmwareDissolveSweepDelays = []time.Duration{20 * time.Second, 40 * time.Second, 2 * time.Minute}
 
-// Seams for the tests: the firmware zone read and the sleep.
-var (
-	firmwareZoneFn = func(ctx context.Context, host string) (boxapi.Zone, error) {
-		return boxapi.New(host).GetZone(ctx)
+// Seams for the tests: the firmware zone read, the sleep and the follower-side
+// teardown. A test installs firmwareZoneFn / dissolveSweepSleepFn /
+// leaveZoneAtFollowerFn on its own Server; nil is production.
+
+// firmwareZone reads a speaker's live /getZone.
+func (s *Server) firmwareZone(ctx context.Context, host string) (boxapi.Zone, error) {
+	if s.firmwareZoneFn != nil {
+		return s.firmwareZoneFn(ctx, host)
 	}
-	dissolveSweepSleep = time.Sleep
-	// leaveZoneAtFollowerFn posts the teardown AT THE FOLLOWER. Every other
-	// teardown in the codebase posts it at the master, which is a no-op once
-	// the master's firmware has forgotten the zone, and that is precisely the
-	// state a stale membership survives in.
-	leaveZoneAtFollowerFn = func(ctx context.Context, followerIP string, master, follower boxapi.ZoneMember) error {
-		return boxapi.New(followerIP).RemoveZoneSlave(ctx, master, []boxapi.ZoneMember{follower})
+	return boxapi.New(host).GetZone(ctx)
+}
+
+// dissolveSweepSleep is the wait before a sweep pass.
+func (s *Server) dissolveSweepSleep(d time.Duration) {
+	if s.dissolveSweepSleepFn != nil {
+		s.dissolveSweepSleepFn(d)
+		return
 	}
-)
+	time.Sleep(d)
+}
+
+// leaveZoneAtFollower posts the teardown AT THE FOLLOWER. Every other
+// teardown in the codebase posts it at the master, which is a no-op once
+// the master's firmware has forgotten the zone, and that is precisely the
+// state a stale membership survives in.
+func (s *Server) leaveZoneAtFollower(ctx context.Context, followerIP string, master, follower boxapi.ZoneMember) error {
+	if s.leaveZoneAtFollowerFn != nil {
+		return s.leaveZoneAtFollowerFn(ctx, followerIP, master, follower)
+	}
+	return boxapi.New(followerIP).RemoveZoneSlave(ctx, master, []boxapi.ZoneMember{follower})
+}
 
 // staleMembershipBudget is the per-follower time for the read and the write.
 // Short on purpose: this runs over speakers that may be asleep or, between two
@@ -69,7 +86,7 @@ func (s *Server) scheduleStragglerSweepAfterFirmwareDissolve(z zones.Zone) {
 		return // a sweep for this collapse is already pending
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	masterLocation := playingLocation(ctx, s.boxHost)
+	masterLocation := s.playingLocation(ctx, s.boxHost)
 	cancel()
 	go func() {
 		defer s.dissolveSweepBusy.Store(false)
@@ -97,7 +114,7 @@ func (s *Server) runStragglerSweepAfterFirmwareDissolve(fingerprint, masterID, m
 		members = append(members, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP, Role: m.Role})
 	}
 	for i, delay := range firmwareDissolveSweepDelays {
-		dissolveSweepSleep(delay)
+		s.dissolveSweepSleep(delay)
 		if s.zones == nil {
 			return
 		}
@@ -129,7 +146,7 @@ func (s *Server) runStragglerSweepAfterFirmwareDissolve(fingerprint, masterID, m
 func (s *Server) sweepIfFirmwareZoneStillGone(masterLocation string, members []boxapi.ZoneMember, pass int) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), stragglerStopBudget)
 	defer cancel()
-	fz, err := firmwareZoneFn(ctx, s.boxHost)
+	fz, err := s.firmwareZone(ctx, s.boxHost)
 	if err != nil {
 		s.logger.Info("zone: firmware dissolve sweep skipped, the master's zone is unreadable", "pass", pass, "err", err)
 		return false
@@ -167,7 +184,7 @@ func (s *Server) clearStaleZoneMembership(masterID string, slaves []zones.Member
 		}
 		checked++
 		ctx, cancel := context.WithTimeout(context.Background(), staleMembershipBudget)
-		fz, err := firmwareZoneFn(ctx, ip)
+		fz, err := s.firmwareZone(ctx, ip)
 		if err != nil {
 			s.logger.Info("zone: a follower did not answer the stale-membership check, left as it is",
 				"follower", ip, "err", err)
@@ -185,7 +202,7 @@ func (s *Server) clearStaleZoneMembership(masterID string, slaves []zones.Member
 			continue
 		}
 		self := boxapi.ZoneMember{DeviceID: strings.TrimSpace(m.DeviceID), IP: ip, Role: m.Role}
-		if err := leaveZoneAtFollowerFn(ctx, ip, master, self); err != nil {
+		if err := s.leaveZoneAtFollower(ctx, ip, master, self); err != nil {
 			s.logger.Info("zone: could not clear a follower's stale group membership",
 				"follower", ip, "err", err)
 			cancel()

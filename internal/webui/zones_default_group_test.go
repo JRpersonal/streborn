@@ -12,7 +12,22 @@ import (
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
+// newRejoinServer is a quiet master at 10.0.0.1 whose hold check runs right
+// away (on a speaker it waits a few seconds). Every firmware and member call
+// the rejoin paths make goes through the rejoin*Fn seams, which each test
+// installs on this server alone, so nothing is shared or restored.
+func newRejoinServer() *Server {
+	fast := productionZoneTiming
+	fast.defaultGroupHoldCheckAfter = 0
+	return &Server{
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost:    "10.0.0.1",
+		zoneTiming: &fast,
+	}
+}
+
 func TestClassifyMemberForRejoin(t *testing.T) {
+	t.Parallel()
 	const master = "MASTER01"
 	for _, tc := range []struct {
 		name, src, status, zoneMaster string
@@ -41,18 +56,15 @@ func TestClassifyMemberForRejoin(t *testing.T) {
 // player out, and assert the zone with exactly the qualifying members. All
 // firmware/member traffic goes through the seams.
 func TestFormDefaultGroupOnPlay(t *testing.T) {
-	oldNP, oldZM, oldWake, oldLive, oldSet := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone
-	defer func() {
-		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone = oldNP, oldZM, oldWake, oldLive, oldSet
-	}()
-
+	t.Parallel()
 	var mu sync.Mutex
 	woken := map[string]bool{}
 	var setMaster boxapi.ZoneMember
 	var setSlaves []boxapi.ZoneMember
 	setCalls := 0
 
-	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+	s := newRejoinServer()
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
 		switch ip {
 		case "10.0.0.2":
 			return nowPlayingSnapshot{Source: "STANDBY"}
@@ -64,13 +76,13 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 			return nowPlayingSnapshot{Source: "INVALID_SOURCE"}
 		}
 	}
-	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
-	rejoinWakeMember = func(_ context.Context, ip string, _ *slog.Logger) {
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(_ context.Context, ip string, _ *slog.Logger) {
 		mu.Lock()
 		woken[ip] = true
 		mu.Unlock()
 	}
-	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if setCalls == 0 {
@@ -78,7 +90,7 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 		}
 		return boxapi.Zone{Master: setMaster.DeviceID, Members: setSlaves}, nil // the zone held
 	}
-	rejoinSetZone = func(_ context.Context, _ string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
+	s.rejoinSetZoneFn = func(_ context.Context, _ string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
 		mu.Lock()
 		setCalls++
 		setMaster, setSlaves = master, slaves
@@ -86,7 +98,6 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 		return nil
 	}
 
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	z := zones.Zone{
 		Master:    "MASTER01",
 		MasterIP:  "10.0.0.1",
@@ -139,24 +150,21 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 // A live zone that already carries every qualifying member leaves the
 // firmware alone.
 func TestFormDefaultGroupSkipsWhenComplete(t *testing.T) {
-	oldNP, oldZM, oldWake, oldLive, oldSet := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone
-	defer func() {
-		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone = oldNP, oldZM, oldWake, oldLive, oldSet
-	}()
-	rejoinReadNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+	t.Parallel()
+	s := newRejoinServer()
+	s.rejoinReadNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 		return nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE"}
 	}
-	rejoinReadZoneMaster = func(context.Context, string) string { return "MASTER01" }
-	rejoinWakeMember = func(context.Context, string, *slog.Logger) {}
-	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "MASTER01" }
+	s.rejoinWakeMemberFn = func(context.Context, string, *slog.Logger) {}
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
 		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "S1"}}}, nil
 	}
 	called := false
-	rejoinSetZone = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+	s.rejoinSetZoneFn = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
 		called = true
 		return nil
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	s.lastDefaultFormAt = time.Time{}
 	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true,
 		Slaves: []zones.Member{{DeviceID: "S1", IP: "10.0.0.2"}}}
@@ -172,14 +180,12 @@ func TestFormDefaultGroupSkipsWhenComplete(t *testing.T) {
 // after a fleet update (2026-09-06). The play kick may still arrive; the
 // re-form has to check the master's own play state before acting.
 func TestFormDefaultGroupOnPlayLeavesMembersAloneWhenMasterIsNotPlaying(t *testing.T) {
-	oldNP, oldZM, oldWake, oldLive, oldSet := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone
-	defer func() {
-		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone = oldNP, oldZM, oldWake, oldLive, oldSet
-	}()
+	t.Parallel()
 	var mu sync.Mutex
 	woken := map[string]bool{}
 	setCalls := 0
-	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+	s := newRejoinServer()
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
 		switch ip {
 		case "10.0.0.1":
 			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
@@ -187,20 +193,19 @@ func TestFormDefaultGroupOnPlayLeavesMembersAloneWhenMasterIsNotPlaying(t *testi
 			return nowPlayingSnapshot{Source: "STANDBY"}
 		}
 	}
-	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
-	rejoinWakeMember = func(_ context.Context, ip string, _ *slog.Logger) {
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(_ context.Context, ip string, _ *slog.Logger) {
 		mu.Lock()
 		woken[ip] = true
 		mu.Unlock()
 	}
-	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) { return boxapi.Zone{}, nil }
-	rejoinSetZone = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) { return boxapi.Zone{}, nil }
+	s.rejoinSetZoneFn = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
 		mu.Lock()
 		setCalls++
 		mu.Unlock()
 		return nil
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true,
 		Slaves: []zones.Member{{DeviceID: "SLEEPY", IP: "10.0.0.2"}}}
 	s.formDefaultGroupOnPlay(z)
@@ -214,16 +219,12 @@ func TestFormDefaultGroupOnPlayLeavesMembersAloneWhenMasterIsNotPlaying(t *testi
 // cooldown the real kick needs (#1353). A third kick right after the formed one
 // stays inside the cooldown.
 func TestFormDefaultGroupOnPlayAfterFailedStart(t *testing.T) {
-	oldNP, oldZM, oldWake, oldLive, oldSet, oldHold := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, defaultGroupHoldCheckAfter
-	defer func() {
-		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, defaultGroupHoldCheckAfter = oldNP, oldZM, oldWake, oldLive, oldSet, oldHold
-	}()
-	defaultGroupHoldCheckAfter = 0
-
+	t.Parallel()
 	var mu sync.Mutex
 	masterReads := 0
 	setCalls := 0
-	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+	s := newRejoinServer()
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
 		if ip != "10.0.0.1" {
 			return nowPlayingSnapshot{Source: "INVALID_SOURCE"}
 		}
@@ -235,9 +236,9 @@ func TestFormDefaultGroupOnPlayAfterFailedStart(t *testing.T) {
 		}
 		return nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE"}
 	}
-	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
-	rejoinWakeMember = func(context.Context, string, *slog.Logger) {}
-	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(context.Context, string, *slog.Logger) {}
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if setCalls == 0 {
@@ -245,13 +246,12 @@ func TestFormDefaultGroupOnPlayAfterFailedStart(t *testing.T) {
 		}
 		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "IDLE"}}}, nil
 	}
-	rejoinSetZone = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+	s.rejoinSetZoneFn = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
 		mu.Lock()
 		setCalls++
 		mu.Unlock()
 		return nil
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true,
 		Slaves: []zones.Member{{DeviceID: "IDLE", IP: "10.0.0.4"}}}
 
@@ -274,16 +274,14 @@ func TestFormDefaultGroupOnPlayAfterFailedStart(t *testing.T) {
 // member alone that somebody switched off (standby, long uptime), and does
 // nothing at all while the master is silent (2026-09-06).
 func TestRejoinMissingMembersTakesRebootedMembersBackOnly(t *testing.T) {
-	oldNP, oldZM, oldWake, oldLive, oldSet, oldUp := rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, rejoinReadAgentUptime
-	defer func() {
-		rejoinReadNowPlaying, rejoinReadZoneMaster, rejoinWakeMember, rejoinLiveZone, rejoinSetZone, rejoinReadAgentUptime = oldNP, oldZM, oldWake, oldLive, oldSet, oldUp
-	}()
+	t.Parallel()
 	var mu sync.Mutex
 	woken := map[string]bool{}
 	var setSlaves []boxapi.ZoneMember
 	setCalls := 0
 	masterStatus := "PLAY_STATE"
-	rejoinReadNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+	s := newRejoinServer()
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
 		switch ip {
 		case "10.0.0.1":
 			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: masterStatus}
@@ -295,25 +293,24 @@ func TestRejoinMissingMembersTakesRebootedMembersBackOnly(t *testing.T) {
 			return nowPlayingSnapshot{}
 		}
 	}
-	rejoinReadAgentUptime = func(_ context.Context, ip string) int {
+	s.rejoinReadAgentUptimeFn = func(_ context.Context, ip string) int {
 		if ip == "10.0.0.2" {
 			return 120 // just rebooted
 		}
 		return 5000 // switched off an hour ago
 	}
-	rejoinReadZoneMaster = func(context.Context, string) string { return "" }
-	rejoinWakeMember = func(_ context.Context, ip string, _ *slog.Logger) { mu.Lock(); woken[ip] = true; mu.Unlock() }
-	rejoinLiveZone = func(context.Context, string) (boxapi.Zone, error) {
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(_ context.Context, ip string, _ *slog.Logger) { mu.Lock(); woken[ip] = true; mu.Unlock() }
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
 		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "KEPT", IP: "10.0.0.5"}}}, nil
 	}
-	rejoinSetZone = func(_ context.Context, _ string, _ boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
+	s.rejoinSetZoneFn = func(_ context.Context, _ string, _ boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
 		mu.Lock()
 		setCalls++
 		setSlaves = slaves
 		mu.Unlock()
 		return nil
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "10.0.0.1"}
 	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true, Slaves: []zones.Member{
 		{DeviceID: "KEPT", IP: "10.0.0.5"},
 		{DeviceID: "REBOOTED", IP: "10.0.0.2"},

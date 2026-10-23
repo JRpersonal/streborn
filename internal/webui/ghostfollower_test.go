@@ -28,38 +28,35 @@ type fakeFollower struct {
 	left int
 }
 
-func withFollowers(t *testing.T, f map[string]*fakeFollower) {
-	t.Helper()
-	prevZone, prevLeave := firmwareZoneFn, leaveZoneAtFollowerFn
-	firmwareZoneFn = func(_ context.Context, host string) (boxapi.Zone, error) {
+// sweepServer is a quiet master whose follower reads and teardowns answer
+// from f. The seams are installed on the server alone, so the test shares
+// nothing with its neighbours and needs nothing restored.
+func sweepServer(host string, f map[string]*fakeFollower) *Server {
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: host}
+	s.firmwareZoneFn = func(_ context.Context, host string) (boxapi.Zone, error) {
 		if fb, ok := f[host]; ok {
 			return fb.zone, fb.err
 		}
 		return boxapi.Zone{}, errors.New("no such speaker")
 	}
-	leaveZoneAtFollowerFn = func(_ context.Context, host string, _, _ boxapi.ZoneMember) error {
+	s.leaveZoneAtFollowerFn = func(_ context.Context, host string, _, _ boxapi.ZoneMember) error {
 		if fb, ok := f[host]; ok {
 			fb.left++
 			return nil
 		}
 		return errors.New("no such speaker")
 	}
-	t.Cleanup(func() { firmwareZoneFn, leaveZoneAtFollowerFn = prevZone, prevLeave })
-}
-
-func sweepServer(host string) *Server {
-	return &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: host}
+	return s
 }
 
 func TestAFollowerStillNamingTheMasterIsFreed(t *testing.T) {
+	t.Parallel()
 	const master = "DEV#76eceba9"
 	f := map[string]*fakeFollower{
 		"192.0.2.11": {zone: boxapi.Zone{Master: master}},
 		"192.0.2.19": {zone: boxapi.Zone{Master: strings.ToLower(master)}}, // case must not matter
 	}
-	withFollowers(t, f)
-
-	sweepServer("192.0.2.10").clearStaleZoneMembership(master, []zones.Member{
+	sweepServer("192.0.2.10", f).clearStaleZoneMembership(master, []zones.Member{
 		{DeviceID: "DEV#ffffe004", IP: "192.0.2.11"},
 		{DeviceID: "DEV#030f2c92", IP: "192.0.2.19"},
 	})
@@ -76,15 +73,14 @@ func TestAFollowerStillNamingTheMasterIsFreed(t *testing.T) {
 // answer at all. Unreachable is not the same as wrong, and between two rhino
 // ST10s it is the normal case.
 func TestAFollowerIsOnlyFreedOnPositiveEvidence(t *testing.T) {
+	t.Parallel()
 	const master = "DEV#76eceba9"
 	f := map[string]*fakeFollower{
 		"192.0.2.11": {zone: boxapi.Zone{Master: ""}},             // already free
 		"192.0.2.19": {zone: boxapi.Zone{Master: "DEV#somebody"}}, // another group
 		"192.0.2.21": {err: errors.New("connection refused")},     // did not answer
 	}
-	withFollowers(t, f)
-
-	sweepServer("192.0.2.10").clearStaleZoneMembership(master, []zones.Member{
+	sweepServer("192.0.2.10", f).clearStaleZoneMembership(master, []zones.Member{
 		{IP: "192.0.2.11"}, {IP: "192.0.2.19"}, {IP: "192.0.2.21"},
 	})
 
@@ -98,9 +94,9 @@ func TestAFollowerIsOnlyFreedOnPositiveEvidence(t *testing.T) {
 // The master must never be sent its own teardown, and a document with no
 // master is not evidence of anything.
 func TestTheMasterAndAnEmptyDocumentAreSkipped(t *testing.T) {
+	t.Parallel()
 	f := map[string]*fakeFollower{"192.0.2.10": {zone: boxapi.Zone{Master: "DEV#76eceba9"}}}
-	withFollowers(t, f)
-	s := sweepServer("192.0.2.10")
+	s := sweepServer("192.0.2.10", f)
 
 	s.clearStaleZoneMembership("DEV#76eceba9", []zones.Member{{IP: "192.0.2.10"}})
 	s.clearStaleZoneMembership("", []zones.Member{{IP: "192.0.2.11"}})

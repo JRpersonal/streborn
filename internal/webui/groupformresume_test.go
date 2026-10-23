@@ -17,26 +17,27 @@ import (
 // the speaker's group changed a moment ago". The master is the group's source
 // after a form, and nobody had given it anything to play.
 
-func withMemberNowPlaying(t *testing.T, by map[string]nowPlayingSnapshot) {
-	t.Helper()
-	prev := memberNowPlaying
-	memberNowPlaying = func(_ context.Context, host string) nowPlayingSnapshot { return by[host] }
-	t.Cleanup(func() { memberNowPlaying = prev })
-}
-
-func resumeServer() *Server {
-	return &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.239"}
+// resumeServer is a quiet master whose member reads answer from by. The seam
+// is installed on the server alone, so the test shares nothing with its
+// neighbours and needs nothing restored.
+func resumeServer(by map[string]nowPlayingSnapshot) *Server {
+	return &Server{
+		logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost:            "192.0.2.239",
+		memberNowPlayingFn: func(_ context.Context, host string) nowPlayingSnapshot { return by[host] },
+	}
 }
 
 func TestTheMasterTakesOverAPlayingMembersStation(t *testing.T) {
+	t.Parallel()
 	// The shape the field bundle carries: a native station, whose location
 	// wraps the stream URL that the playing speaker serves on loopback.
 	loc := OrionStationLocation("http://127.0.0.1:8888/stream/6", "Exclusively Rush", "")
-	withMemberNowPlaying(t, map[string]nowPlayingSnapshot{
+	s := resumeServer(map[string]nowPlayingSnapshot{
 		"192.0.2.60": {PlayStatus: "PLAY_STATE", ItemName: "Exclusively Rush", Location: loc},
 	})
 
-	got := resumeServer().memberResumeForZone(context.Background(), []boxapi.ZoneMember{
+	got := s.memberResumeForZone(context.Background(), []boxapi.ZoneMember{
 		{IP: "192.0.2.4"}, {IP: "192.0.2.60"},
 	})
 	if got == nil {
@@ -58,12 +59,13 @@ func TestTheMasterTakesOverAPlayingMembersStation(t *testing.T) {
 // A member that is not audibly playing must contribute nothing, or forming a
 // group would start music nobody asked for.
 func TestASilentMemberIsNotTakenOver(t *testing.T) {
+	t.Parallel()
 	loc := OrionStationLocation("http://127.0.0.1:8888/stream/6", "Exclusively Rush", "")
-	withMemberNowPlaying(t, map[string]nowPlayingSnapshot{
+	s := resumeServer(map[string]nowPlayingSnapshot{
 		"192.0.2.60": {PlayStatus: "STOP_STATE", ItemName: "Exclusively Rush", Location: loc},
 		"192.0.2.4":  {PlayStatus: "PLAY_STATE"}, // playing, but no URL to take
 	})
-	if got := resumeServer().memberResumeForZone(context.Background(), []boxapi.ZoneMember{
+	if got := s.memberResumeForZone(context.Background(), []boxapi.ZoneMember{
 		{IP: "192.0.2.60"}, {IP: "192.0.2.4"},
 	}); got != nil {
 		t.Errorf("took over %v; a stopped member and a member with no URL both offer nothing", got)
@@ -73,11 +75,12 @@ func TestASilentMemberIsNotTakenOver(t *testing.T) {
 // The master must never take over from itself: its own capture already covers
 // that, and reading its loopback URL back would point it at itself.
 func TestTheMasterIsSkipped(t *testing.T) {
+	t.Parallel()
 	loc := OrionStationLocation("http://127.0.0.1:8888/stream/6", "Own", "")
-	withMemberNowPlaying(t, map[string]nowPlayingSnapshot{
+	s := resumeServer(map[string]nowPlayingSnapshot{
 		"192.0.2.239": {PlayStatus: "PLAY_STATE", ItemName: "Own", Location: loc},
 	})
-	if got := resumeServer().memberResumeForZone(context.Background(), []boxapi.ZoneMember{
+	if got := s.memberResumeForZone(context.Background(), []boxapi.ZoneMember{
 		{IP: "192.0.2.239"}, {IP: ""},
 	}); got != nil {
 		t.Errorf("took over the master's own stream: %v", got)
@@ -87,11 +90,12 @@ func TestTheMasterIsSkipped(t *testing.T) {
 // A UPnP push carries its URL in the location directly, which is the other
 // shape a member can be playing.
 func TestAPushedStreamIsAlsoTakenOver(t *testing.T) {
-	withMemberNowPlaying(t, map[string]nowPlayingSnapshot{
+	t.Parallel()
+	s := resumeServer(map[string]nowPlayingSnapshot{
 		"192.0.2.60": {PlayStatus: "PLAY_STATE", ItemName: "Some Station",
 			Location: "http://127.0.0.1:8888/stream/3"},
 	})
-	got := resumeServer().memberResumeForZone(context.Background(), []boxapi.ZoneMember{{IP: "192.0.2.60"}})
+	got := s.memberResumeForZone(context.Background(), []boxapi.ZoneMember{{IP: "192.0.2.60"}})
 	if got == nil || got.boxURL != "http://192.0.2.60:17008/stream/3" {
 		t.Errorf("got %v, want the member's own address", got)
 	}
@@ -108,6 +112,7 @@ func TestAPushedStreamIsAlsoTakenOver(t *testing.T) {
 // captured=http://192.0.2.60:17008/stream/6 current=http://127.0.0.1:8888/stream/5".
 // The group formed with nothing playing, which is the solid amber light.
 func TestAMemberTakeoverSurvivesTheMastersOwnOlderPlay(t *testing.T) {
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // master idle
 	// What the master itself last played, minutes ago. This is masterRef, and
@@ -131,6 +136,7 @@ func TestAMemberTakeoverSurvivesTheMastersOwnOlderPlay(t *testing.T) {
 // on the master between capture and push moves s.play.last away from masterRef,
 // and then the stale takeover must not overwrite what the user just started.
 func TestARealPlayOnTheMasterStillCancelsTheTakeover(t *testing.T) {
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false }
 	masterRef := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "181.FM"}

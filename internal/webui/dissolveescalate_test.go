@@ -15,12 +15,13 @@ import (
 // Pinned here: the follower-side route is actually reached, and it is reached
 // only after the cheaper one has been tried.
 
-func withFollowerLeave(t *testing.T, fn func(ctx context.Context, followerIP string, master, follower boxapi.ZoneMember) error) *[]string {
-	t.Helper()
+// withFollowerLeave records the follower-side teardowns s posts and hands
+// each to fn. The seam is installed on the server alone, so the test shares
+// nothing with its neighbours and needs nothing restored.
+func withFollowerLeave(s *Server, fn func(ctx context.Context, followerIP string, master, follower boxapi.ZoneMember) error) *[]string {
 	var mu sync.Mutex
 	var seen []string
-	prev := leaveZoneAtFollowerFn
-	leaveZoneAtFollowerFn = func(ctx context.Context, ip string, master, follower boxapi.ZoneMember) error {
+	s.leaveZoneAtFollowerFn = func(ctx context.Context, ip string, master, follower boxapi.ZoneMember) error {
 		mu.Lock()
 		seen = append(seen, ip)
 		mu.Unlock()
@@ -29,11 +30,11 @@ func withFollowerLeave(t *testing.T, fn func(ctx context.Context, followerIP str
 		}
 		return nil
 	}
-	t.Cleanup(func() { leaveZoneAtFollowerFn = prev })
 	return &seen
 }
 
 func TestMemberIDsNamesEverySpeakerOnce(t *testing.T) {
+	t.Parallel()
 	ms := []boxapi.ZoneMember{
 		{DeviceID: "AAA", IP: "192.0.2.2"},
 		{IP: "192.0.2.3"}, // no device id: the address is the name
@@ -49,8 +50,9 @@ func TestMemberIDsNamesEverySpeakerOnce(t *testing.T) {
 // An already-empty group must not start the escalation at all: the whole point
 // is that it only runs when the master kept the members.
 func TestNoEscalationWhenTheGroupIsAlreadyGone(t *testing.T) {
-	seen := withFollowerLeave(t, nil)
+	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	seen := withFollowerLeave(s, nil)
 	left, unverified := s.escalateDissolve(boxapi.New("127.0.0.1:1"), boxapi.ZoneMember{DeviceID: "M"}, nil)
 	if len(left) != 0 || unverified != "" {
 		t.Errorf("left=%v unverified=%q, want nothing to do", left, unverified)
@@ -64,8 +66,9 @@ func TestNoEscalationWhenTheGroupIsAlreadyGone(t *testing.T) {
 // "unverified" rather than claim the group is gone, which is the same rule the
 // batch loop already follows.
 func TestAnUnreadableZoneIsReportedAsUnverified(t *testing.T) {
-	seen := withFollowerLeave(t, nil)
+	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	seen := withFollowerLeave(s, nil)
 	// Nothing listening on this port, so every read and write fails fast.
 	c := boxapi.New("127.0.0.1:1")
 	left, unverified := s.escalateDissolve(c, boxapi.ZoneMember{DeviceID: "M"},

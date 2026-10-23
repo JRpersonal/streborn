@@ -46,9 +46,11 @@ func newSleepServer() *Server {
 	}
 }
 
-// fakeBox installs the test seams and records what the timer did. Without these
-// the box calls go to a fixed firmware port that no test server can occupy, so
-// every case would take the "cannot read it, stand down" path and prove nothing.
+// fakeBox installs the test seams on a server and records what the timer did.
+// Without these the box calls go to a fixed firmware port that no test server
+// can occupy, so every case would take the "cannot read it, stand down" path
+// and prove nothing. The seams live on the server, so nothing is shared
+// between tests and nothing needs restoring.
 type fakeBox struct {
 	mu       sync.Mutex
 	source   string
@@ -63,15 +65,13 @@ type sentPush struct {
 	msg sleepPeerMsg
 }
 
-func (f *fakeBox) install(t *testing.T) {
-	t.Helper()
-	prevRead, prevOff := sleepReadSource, sleepStandby
-	sleepReadSource = func(_ context.Context, _ string) string {
+func (f *fakeBox) install(s *Server) {
+	s.sleepReadSourceFn = func(_ context.Context, _ string) string {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		return f.source
 	}
-	sleepStandby = func(_ context.Context, host string) error {
+	s.sleepStandbyFn = func(_ context.Context, host string) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		if f.fail[host] {
@@ -83,18 +83,13 @@ func (f *fakeBox) install(t *testing.T) {
 	// The countdown push to the group members runs in line and is recorded:
 	// otherwise it would dial the test addresses from a goroutine that
 	// outlives the test.
-	prevPush, prevGo := sleepPushPeer, goSleepPush
-	sleepPushPeer = func(_ context.Context, ip string, msg sleepPeerMsg) error {
+	s.sleepPushPeerFn = func(_ context.Context, ip string, msg sleepPeerMsg) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.pushes = append(f.pushes, sentPush{ip, msg})
 		return nil
 	}
-	goSleepPush = func(fn func()) { fn() }
-	t.Cleanup(func() {
-		sleepReadSource, sleepStandby = prevRead, prevOff
-		sleepPushPeer, goSleepPush = prevPush, prevGo
-	})
+	s.goSleepPushFn = func(fn func()) { fn() }
 }
 
 func (f *fakeBox) offList() []string {
@@ -133,6 +128,7 @@ func waitFor(cond func() bool) bool {
 }
 
 func TestSleepArmsAndReports(t *testing.T) {
+	t.Parallel()
 	s := newSleepServer()
 	if got := sleepGet(t, s)["active"]; got != false {
 		t.Errorf("a fresh server reports active=%v, want false", got)
@@ -154,6 +150,7 @@ func TestSleepArmsAndReports(t *testing.T) {
 // DELETE and "0 minutes" are the same intent: the phone sends one, a script may
 // send the other.
 func TestSleepCancels(t *testing.T) {
+	t.Parallel()
 	s := newSleepServer()
 	sleepPost(t, s, `{"minutes":30}`)
 	w := httptest.NewRecorder()
@@ -170,6 +167,7 @@ func TestSleepCancels(t *testing.T) {
 }
 
 func TestSleepRejectsAnAbsurdDuration(t *testing.T) {
+	t.Parallel()
 	s := newSleepServer()
 	if w := sleepPost(t, s, `{"minutes":100000}`); w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
@@ -183,9 +181,10 @@ func TestSleepRejectsAnAbsurdDuration(t *testing.T) {
 // left alone. On some chassis the request itself is what wakes it, so acting
 // here would make the sleep timer the reason a speaker is awake.
 func TestSleepStandsDownWhenTheSpeakerIsAlreadyInStandby(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "STANDBY"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 
 	s.armSleep(10*time.Millisecond, false)
 	time.Sleep(150 * time.Millisecond)
@@ -200,9 +199,10 @@ func TestSleepStandsDownWhenTheSpeakerIsAlreadyInStandby(t *testing.T) {
 // Unreadable is the same case: if we cannot tell what the speaker is doing, we
 // do not act.
 func TestSleepStandsDownWhenTheSpeakerCannotBeRead(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: ""}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 
 	s.armSleep(10*time.Millisecond, false)
 	time.Sleep(150 * time.Millisecond)
@@ -212,9 +212,10 @@ func TestSleepStandsDownWhenTheSpeakerCannotBeRead(t *testing.T) {
 }
 
 func TestSleepSwitchesAPlayingSpeakerOff(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 
 	s.armSleep(10*time.Millisecond, false)
 	if !waitFor(func() bool { return len(f.offList()) == 1 }) {
@@ -231,9 +232,10 @@ func TestSleepSwitchesAPlayingSpeakerOff(t *testing.T) {
 // Re-arming replaces the old timer. If the old one still fired, the speaker
 // would switch off at a time the user had already changed.
 func TestSleepReArmingCancelsTheOldTimer(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 
 	s.armSleep(15*time.Millisecond, false)
 	s.armSleep(10*time.Second, false)
@@ -246,9 +248,10 @@ func TestSleepReArmingCancelsTheOldTimer(t *testing.T) {
 // Cancelling while the timer is running out must hold even if the callback is
 // already on its way.
 func TestSleepCancelBeatsAFiringTimer(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 
 	s.armSleep(30*time.Millisecond, false)
 	s.cancelSleep("test")
@@ -261,9 +264,10 @@ func TestSleepCancelBeatsAFiringTimer(t *testing.T) {
 // A group timer switches every member off, not only the speaker the timer was
 // set on: that is the whole point of the group option.
 func TestSleepGroupSwitchesEveryMemberOff(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	s.zones = fakeZoneStore(t, "192.0.2.20", "192.0.2.30")
 	// The group resolver asks the firmware whether the stored group is still
 	// live, so the speaker has to answer. Without this the test waits on a
@@ -289,9 +293,10 @@ func TestSleepGroupSwitchesEveryMemberOff(t *testing.T) {
 // half-executed sleep timer that gives up on the first error would leave a room
 // playing all night.
 func TestSleepGroupCarriesOnPastAnUnreachableMember(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP", fail: map[string]bool{"192.0.2.20": true}}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	s.zones = fakeZoneStore(t, "192.0.2.20", "192.0.2.30")
 	// The group resolver asks the firmware whether the stored group is still
 	// live, so the speaker has to answer. Without this the test waits on a
@@ -312,9 +317,10 @@ func TestSleepGroupCarriesOnPastAnUnreachableMember(t *testing.T) {
 
 // A speaker with no group ignores the group flag rather than failing.
 func TestSleepGroupOnAStandaloneSpeaker(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	noGroup(s) // the speaker answers "not grouped" instead of timing out
 
 	s.armSleep(10*time.Millisecond, true)

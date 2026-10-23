@@ -90,7 +90,7 @@ func (s *Server) escalateDissolve(c *boxapi.Client, master boxapi.ZoneMember, cu
 			continue
 		}
 		stepCtx, stepCancel := context.WithTimeout(ctx, dissolveEscalationStep)
-		err := leaveZoneAtFollowerFn(stepCtx, m.IP, master, m)
+		err := s.leaveZoneAtFollower(stepCtx, m.IP, master, m)
 		stepCancel()
 		posted++
 		s.logger.Info("zone: teardown posted at the follower itself",

@@ -210,6 +210,31 @@ type Server struct {
 	zoneTiming      *zoneTiming
 	fetchZoneFn     func(ctx context.Context, host string) (boxapi.Zone, error)
 	fetchDeviceIDFn func(ctx context.Context, host string) string
+	// The zone member seams: the box calls the join-volume match, the member
+	// takeover, the group wake, the pair standby, the dissolve sweeps and the
+	// default-group rejoin make. Every real implementation reaches a speaker
+	// on a fixed port (:8090), which a test server on a random port can never
+	// be, so a test installs these on its own Server and nothing is shared or
+	// restored. nil means production (see the method of the same name without
+	// the Fn suffix in zonejoinvolume.go, zones_stereo.go, zoneformwoken.go,
+	// dissolvestragglers.go, dissolvesweep.go and zones_default_group.go).
+	readMemberVolumeFn      func(ctx context.Context, host string) (boxapi.Volume, error)
+	setMemberVolumeFn       setMemberVolumeFunc
+	memberNowPlayingFn      func(ctx context.Context, host string) nowPlayingSnapshot
+	groupWakeNowPlayingFn   func(ctx context.Context, host string) nowPlayingSnapshot
+	groupWakeStopFn         func(ctx context.Context, host string) error
+	pairStandbySendFn       func(ctx context.Context, host string) error
+	playingStateFn          func(ctx context.Context, host string) playingState
+	stopKeyFn               func(ctx context.Context, host string) error
+	firmwareZoneFn          func(ctx context.Context, host string) (boxapi.Zone, error)
+	dissolveSweepSleepFn    func(d time.Duration)
+	leaveZoneAtFollowerFn   func(ctx context.Context, followerIP string, master, follower boxapi.ZoneMember) error
+	rejoinReadNowPlayingFn  func(ctx context.Context, ip string) nowPlayingSnapshot
+	rejoinReadZoneMasterFn  func(ctx context.Context, ip string) string
+	rejoinWakeMemberFn      func(ctx context.Context, ip string, logger *slog.Logger)
+	rejoinLiveZoneFn        func(ctx context.Context, host string) (boxapi.Zone, error)
+	rejoinReadAgentUptimeFn func(ctx context.Context, ip string) int
+	rejoinSetZoneFn         func(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error
 	// networkChangedFn is the post-switch state refresh, fired after a
 	// CONFIRMED live Wi-Fi switch (see SetNetworkChangedFn). nil = no refresh.
 	networkChangedFn func(reason string)
@@ -671,6 +696,18 @@ type Server struct {
 	// /getZone).
 	queueInZoneFn func() bool
 	queueTiming   *queueTiming // nil = productionQueueTiming; tests install a faster clock
+	// The sleep timer seams: the box reads and writes fireSleep makes, and
+	// the countdown push to the group members. The two box calls reach the
+	// firmware on a fixed port (:8090), so a test server on a random port can
+	// never be reached through them: without these, every test would silently
+	// take the "cannot read it, stand down" path and prove nothing about the
+	// decision it claims to test. A test installs them on its own Server. nil
+	// means production (see sleepReadSource, sleepStandby, goSleepPush and
+	// sleepPushPeer).
+	sleepReadSourceFn func(ctx context.Context, host string) string
+	sleepStandbyFn    func(ctx context.Context, host string) error
+	goSleepPushFn     func(f func())
+	sleepPushPeerFn   func(ctx context.Context, ip string, msg sleepPeerMsg) error
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

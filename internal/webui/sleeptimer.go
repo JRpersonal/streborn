@@ -43,16 +43,25 @@ const sleepMaxMinutes = 12 * 60
 // Seams for the tests. The two box calls below reach the firmware on a fixed
 // port (:8090), so a test server on a random port can never be reached through
 // them: without these, every test would silently take the "cannot read it,
-// stand down" path and prove nothing about the decision it claims to test.
-// Production always uses the real implementations.
-var (
-	sleepReadSource = func(ctx context.Context, host string) string {
-		return fetchNowPlaying(ctx, host).Source
+// stand down" path and prove nothing about the decision it claims to test. A
+// test installs sleepReadSourceFn / sleepStandbyFn on its own Server;
+// production (nil) always uses the real implementations.
+
+// sleepReadSource reads the source a speaker reports right now.
+func (s *Server) sleepReadSource(ctx context.Context, host string) string {
+	if s.sleepReadSourceFn != nil {
+		return s.sleepReadSourceFn(ctx, host)
 	}
-	sleepStandby = func(ctx context.Context, host string) error {
-		return boxapi.New(host).Standby(ctx)
+	return fetchNowPlaying(ctx, host).Source
+}
+
+// sleepStandby switches a speaker off.
+func (s *Server) sleepStandby(ctx context.Context, host string) error {
+	if s.sleepStandbyFn != nil {
+		return s.sleepStandbyFn(ctx, host)
 	}
-)
+	return boxapi.New(host).Standby(ctx)
+}
 
 // sleepState is the armed timer. Zero value means "not armed".
 type sleepState struct {
@@ -162,7 +171,7 @@ func (s *Server) armSleepNotify(d time.Duration, group, notice bool) {
 	s.logger.Info("sleep timer armed", "minutes", int(d.Minutes()), "group", group)
 	oled.SetSleepDeadline(deadline)
 	if push {
-		goSleepPush(func() { s.pushSleepToGroup(notice) })
+		s.goSleepPush(func() { s.pushSleepToGroup(notice) })
 	}
 }
 
@@ -208,7 +217,7 @@ func (s *Server) cancelSleepNotify(why string, notice bool) {
 	}
 	oled.SetSleepDeadline(time.Time{})
 	if push {
-		goSleepPush(func() { s.pushSleepToGroup(notice) })
+		s.goSleepPush(func() { s.pushSleepToGroup(notice) })
 	}
 }
 
@@ -237,7 +246,7 @@ func (s *Server) fireSleep(gen uint64) {
 	// must be left exactly where it is: on some chassis the request itself is
 	// what wakes it, so "switch off something already off" would be the one way
 	// this feature could keep a speaker awake. See the file header.
-	if src := sleepReadSource(ctx, s.boxHost); src == "STANDBY" || src == "" {
+	if src := s.sleepReadSource(ctx, s.boxHost); src == "STANDBY" || src == "" {
 		s.logger.Info("sleep timer: the speaker is already in standby, standing down", "source", src)
 		return
 	}
@@ -246,7 +255,7 @@ func (s *Server) fireSleep(gen uint64) {
 	// flip it causes is classified as a spontaneous firmware drop and the
 	// recovery machinery switches the speaker back on (#419).
 	s.NoteUserStop()
-	if err := sleepStandby(ctx, s.boxHost); err != nil {
+	if err := s.sleepStandby(ctx, s.boxHost); err != nil {
 		s.logger.Warn("sleep timer: could not switch this speaker off", "err", err)
 	} else {
 		s.logger.Info("sleep timer fired, speaker off")
@@ -268,7 +277,7 @@ func (s *Server) fireSleep(gen uint64) {
 		if m.IsSelf || m.IP == "" {
 			continue
 		}
-		if err := sleepStandby(ctx, m.IP); err != nil {
+		if err := s.sleepStandby(ctx, m.IP); err != nil {
 			s.logger.Warn("sleep timer: a group member stayed on", "member", m.Name, "ip", m.IP, "err", err)
 			continue
 		}
