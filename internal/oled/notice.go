@@ -87,7 +87,9 @@ type Notice struct {
 	// NoticeRestored).
 	Key int
 	// Line1 is the big line, Line2 and Line3 the small ones; all already
-	// sanitised to what the font can draw.
+	// sanitised to what the font can draw. The preset notice is the one
+	// exception: its three lines are the station name in one of the track
+	// screen's smooth faces, face (PresetPlaying).
 	Line1, Line2, Line3 string
 	// Hold is how long the notice stays, fade-in included.
 	Hold time.Duration
@@ -98,6 +100,9 @@ type Notice struct {
 
 	prio int
 	icon noticeIcon
+	// face is the smooth face the preset notice's lines are drawn in, nil
+	// for a notice in the dot matrix.
+	face *smoothFont
 	// swap, set by the queue for a notice a newer one of its kind may take
 	// over in place (sleep.go), is where playNotice picks that one up.
 	swap *noticeSwap
@@ -162,13 +167,25 @@ func KeysRestored(n int) Notice {
 // PresetPlaying: a preset key switched the station while STR's track or clock
 // screen holds the panel. BoseApp shows the key and the station on its own
 // screen, but under the track screen nobody saw it: the station just changed.
-// The key carries the number; the station name is the text, large, on up to
-// three lines (drawn by presetLines).
+// The key carries the number; the station name is the text, on up to three
+// lines in the track screen's large face, mixed case, wrapped by pixel width
+// and centred: the same lettering the track screen brings back when the
+// notice ends. In the dot matrix the name flashed up in capitals first, so
+// "the font looks different for a moment" at every station switch
+// (discussion #1305). A word the large face cannot fit on one line
+// ("Deutschlandfunk") reads worse split than the whole name a size smaller,
+// so such a name takes the small face, the station's size on the track
+// screen; the track screen scrolls such a title instead, which a notice of
+// 2.5 s cannot.
 func PresetPlaying(key int, name string) Notice {
-	n := Notice{Kind: NoticePreset, Key: key, icon: iconKey, prio: 1, Hold: 2500 * time.Millisecond}
-	lines, _ := wrapText(SanitizeText(name, trackTextMax), line1Max, 3)
+	n := Notice{Kind: NoticePreset, Key: key, icon: iconKey, prio: 1, Hold: 2500 * time.Millisecond, face: smoothLarge}
+	name = sanitizeSmooth(name, trackTextMax)
+	if hasWideWord(name, smoothLarge, presetTextW) {
+		n.face = smoothSmall
+	}
+	lines, _ := wrapWidth(name, n.face, presetTextW, 3)
 	if len(lines) == 0 {
-		lines = []string{"PRESET"}
+		lines = []string{"Preset"}
 	}
 	n.Line1 = lines[0]
 	if len(lines) > 1 {
@@ -628,15 +645,22 @@ const (
 	line2Y       = 66
 	line3Y       = 76
 	barY         = 89
-	// presetLineY and presetLineStep place the station name of a preset
-	// notice: three lines at font scale 2 under the key.
-	presetLineY    = 40
-	presetLineStep = 19
-	lvlLine1       = 15
-	lvlLine2       = 9
-	lvlLine3       = 6
-	badgeCX        = 78
-	badgeCY        = 34
+	// presetLineY and presetTextW place the station name of a preset
+	// notice: up to three lines of the track screen's large face
+	// (smoothLarge, capitals 12 px) under the key. presetLineY is the first
+	// line's baseline, its capitals start 7 px under the key, and the next
+	// lines follow baseline to baseline as a wrapped title does on the
+	// track screen (presetLineStep), so the third line's descenders end
+	// 6 px above the panel's edge. Each line is wrapped to presetTextW and
+	// centred. A name in the small face keeps the first baseline and the
+	// track screen's small line step.
+	presetLineY = 52
+	presetTextW = blockBoxW
+	lvlLine1    = 15
+	lvlLine2    = 9
+	lvlLine3    = 6
+	badgeCX     = 78
+	badgeCY     = 34
 )
 
 // noticeRenderer draws one notice. Static notices are drawn once at full
@@ -697,7 +721,7 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 	case iconKey:
 		c.presetKey(n.Key, false)
 		for i, l := range []string{n.Line1, n.Line2, n.Line3} {
-			c.text(l, presetLineY+i*presetLineStep, 2, lvlLine1)
+			c.smoothText(l, n.face, presetLineY+i*presetLineStep(n.face), lvlLine1)
 		}
 		return
 	case iconRestored:
@@ -867,6 +891,24 @@ func (c canvas) text(s string, y, sc, lvl int) {
 		c.glyph(ch, x, y, sc, lvl)
 		x += 6 * sc
 	}
+}
+
+// presetLineStep is baseline to baseline between the preset notice's lines
+// in face f: the track screen's step for a wrapped line of that face.
+func presetLineStep(f *smoothFont) int {
+	if f == smoothSmall {
+		return smallLineH
+	}
+	return bigLineH
+}
+
+// smoothText paints s in the smooth face f centred horizontally with its
+// baseline at y, the way the track screen draws a fitting line.
+func (c canvas) smoothText(s string, f *smoothFont, y, lvl int) {
+	if s == "" {
+		return
+	}
+	f.draw(c, Width, s, (Width-f.width(s))/2, y, lvl, 0, Width, 0, Height)
 }
 
 // presetKey is the 26x26 rounded key with its number at scale 2.

@@ -48,6 +48,19 @@ func TestRenderDisplayPNG(t *testing.T) {
 		writePNG(t, filepath.Join(dir, "display-"+c.name+".png"), buf, 1)
 		writePNG(t, filepath.Join(dir, "display-"+c.name+"@3x.png"), buf, 3)
 	}
+	// The notice a preset key shows over the track screen, in the track
+	// screen's own faces so the hand-over does not change the lettering
+	// (discussion #1305): one large line, a name with a word too wide for
+	// the large face (so in the small one), and a name cut at three lines.
+	for name, n := range map[string]Notice{
+		"preset-notice-short": PresetPlaying(1, "WDR 2"),
+		"preset-notice":       PresetPlaying(2, "Deutschlandfunk Kultur"),
+		"preset-notice-cut":   PresetPlaying(4, "Absolut relax - Entspannungsmusik und mehr für den ganzen Tag"),
+	} {
+		r := newNoticeRenderer(n)
+		writePNG(t, filepath.Join(dir, "display-"+name+".png"), r.full, 1)
+		writePNG(t, filepath.Join(dir, "display-"+name+"@3x.png"), r.full, 3)
+	}
 }
 
 // writePNG writes frame enlarged k times, each panel pixel a k x k block,
