@@ -7,7 +7,7 @@
 // gabbo WebSocket, so the write now goes there and this endpoint is the front
 // door for it.
 //
-// The box host is unroutable here, as everywhere else in this package, so the
+// The box host is one nothing answers on (deadhost_test.go), so the
 // firmware reads fail and what is pinned is what the handler decides on its
 // own. The one thing the handler must never do is report a write it could not
 // make: a slider that snaps back is a nuisance, a slider that lies about having
@@ -45,7 +45,8 @@ func postBalance(t *testing.T, s *Server, body string) (int, map[string]any) {
 // An agent with no socket to write on must say so, not fail and not pretend.
 // Every build without the box WebSocket lands here.
 func TestBalanceWriteWithoutASocketReportsUnsupported(t *testing.T) {
-	s := quietServer("192.0.2.10")
+	t.Parallel()
+	s := quietServer(deadBoxHost)
 	code, out := postBalance(t, s, `{"target":-3}`)
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
@@ -63,6 +64,7 @@ func TestBalanceWriteWithoutASocketReportsUnsupported(t *testing.T) {
 // there is no socket, and it must never be true on a speaker that reports no
 // balance at all.
 func TestBalanceReadSaysWhetherItCanBeSet(t *testing.T) {
+	t.Parallel()
 	if got := balanceWithSettable(boxapi.Balance{Available: true}, false)["settable"]; got != false {
 		t.Fatalf("settable = %v with no write function, want false", got)
 	}
@@ -85,7 +87,8 @@ func TestBalanceReadSaysWhetherItCanBeSet(t *testing.T) {
 // the centre position and the most likely value anybody sends, so the two must
 // not collapse into each other.
 func TestBalanceWriteNeedsAnExplicitTarget(t *testing.T) {
-	s := quietServer("192.0.2.10")
+	t.Parallel()
+	s := quietServer(deadBoxHost)
 	s.SetBalanceWriteFn(func(string, int) error { return nil })
 
 	if code, _ := postBalance(t, s, `{}`); code != http.StatusBadRequest {
@@ -100,7 +103,8 @@ func TestBalanceWriteNeedsAnExplicitTarget(t *testing.T) {
 // precisely so that a write is never sent into the dark, and its failure has to
 // surface as "unreachable" rather than as a write that happened.
 func TestBalanceWriteRefusesWhenTheSpeakerDoesNotAnswer(t *testing.T) {
-	s := quietServer("192.0.2.10") // unroutable, so the firmware read fails
+	t.Parallel()
+	s := quietServer(deadBoxHost) // nothing answers, so the firmware read fails
 	sent := 0
 	s.SetBalanceWriteFn(func(string, int) error { sent++; return nil })
 
@@ -121,7 +125,8 @@ func TestBalanceWriteRefusesWhenTheSpeakerDoesNotAnswer(t *testing.T) {
 
 // GET is unchanged, and the endpoint now takes exactly these two methods.
 func TestBalanceEndpointTakesGetAndPostOnly(t *testing.T) {
-	s := quietServer("192.0.2.10")
+	t.Parallel()
+	s := quietServer(deadBoxHost)
 	req := httptest.NewRequest(http.MethodDelete, "/api/box/balance", nil)
 	w := httptest.NewRecorder()
 	s.handleBoxBalance(w, req)
@@ -147,6 +152,7 @@ func TestBalanceEndpointTakesGetAndPostOnly(t *testing.T) {
 // a client built against that range must land inside this one instead of being
 // refused or written straight through.
 func TestBalanceIsClampedToWhatTheSpeakerReports(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ in, lo, hi, want int }{
 		{-50, -7, 7, -7}, // the community range, folded into the real one
 		{50, -7, 7, 7},
@@ -172,10 +178,11 @@ func TestBalanceIsClampedToWhatTheSpeakerReports(t *testing.T) {
 // the speaker is asleep or reconnecting, so it is common, and it must not be
 // dressed up as a success with verified:false.
 func TestBalanceWriteReportsASendFailureAsAFailure(t *testing.T) {
-	s := quietServer("192.0.2.10")
+	t.Parallel()
+	s := quietServer(deadBoxHost)
 	s.SetBalanceWriteFn(func(string, int) error { return errors.New("not connected") })
 
-	// The read fails first on an unroutable host, so this asserts the ordering
+	// The read fails first on a dead host, so this asserts the ordering
 	// rather than the send: nothing may claim ok:true on this path either.
 	_, out := postBalance(t, s, `{"target":-3}`)
 	if out["ok"] == true {

@@ -13,6 +13,7 @@ import (
 // and otherwise advance the STR play queue.
 
 func TestTransportSkipRoutesToSpotifyWhenStreaming(t *testing.T) {
+	t.Parallel()
 	got := make(chan bool, 4)
 	s := &Server{
 		queue:            newPlayQueue(),
@@ -45,6 +46,7 @@ func TestTransportSkipRoutesToSpotifyWhenStreaming(t *testing.T) {
 // reply while the next track loads: the old synchronous path blocked ~5 s per
 // press and stacked presses into a serial wait (live Portable, 2026-07-31).
 func TestTransportSkipDoesNotBlockOnSlowEngine(t *testing.T) {
+	t.Parallel()
 	calls := make(chan bool, 8)
 	s := &Server{
 		queue:            newPlayQueue(),
@@ -78,6 +80,7 @@ func TestTransportSkipDoesNotBlockOnSlowEngine(t *testing.T) {
 }
 
 func TestTransportSkipFallsBackToQueueWhenSpotifyIdle(t *testing.T) {
+	t.Parallel()
 	spotifyCalled := false
 	s := &Server{
 		queue:            newPlayQueue(), // inactive -> queueSkip is a graceful no-op
@@ -100,6 +103,7 @@ func TestTransportSkipFallsBackToQueueWhenSpotifyIdle(t *testing.T) {
 }
 
 func TestTransportSkipQueueWhenSpotifyUnconfigured(t *testing.T) {
+	t.Parallel()
 	s := &Server{queue: newPlayQueue()} // no Spotify hooks wired at all
 	src, err := s.transportSkip(context.Background(), false)
 	if err != nil {

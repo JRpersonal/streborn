@@ -14,6 +14,7 @@ import (
 // TestUserPlayedRecently_OwnsRetryAfterAPress: right after a preset press or an
 // app play, the recall owns the retry and the re-push must stand down.
 func TestUserPlayedRecently_OwnsRetryAfterAPress(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	if s.userPlayedRecently() {
 		t.Fatal("no play recorded yet, want false")
@@ -29,6 +30,7 @@ func TestUserPlayedRecently_OwnsRetryAfterAPress(t *testing.T) {
 // verify has run its course, an ordinary mid-playback dropout must be resumed
 // by the re-push again.
 func TestUserPlayedRecently_ExpiresSoTheDropRecoveryResumes(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	s.standbyStop.mu.Lock()
 	s.standbyStop.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow + time.Second))
@@ -44,6 +46,7 @@ func TestUserPlayedRecently_ExpiresSoTheDropRecoveryResumes(t *testing.T) {
 // verify's early pushes fell outside it, the collision this guard exists for
 // would come straight back.
 func TestRecallWindowOutlivesTheVerifyStorm(t *testing.T) {
+	t.Parallel()
 	// cmd/agent: the wrong-state re-push fires at 1.5 s and the verify ticks
 	// every 5 s. Two ticks plus the fast re-push must fit inside the window.
 	const fastRePush = 1500 * time.Millisecond
@@ -62,6 +65,7 @@ func TestRecallWindowOutlivesTheVerifyStorm(t *testing.T) {
 // maybeRePush returned permanently - the box sat silent with a clean log. The
 // re-push must wait out the window and then resume.
 func TestMaybeRePushRearmsAfterRecallOwnsRetryWindow(t *testing.T) {
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
 	s.setLastPlay("http://127.0.0.1:8888/stream/6", "Antenne", "", "")
@@ -90,6 +94,7 @@ func TestMaybeRePushRearmsAfterRecallOwnsRetryWindow(t *testing.T) {
 // absolute stamps, so it cannot expire out of the rolling 6s window during the
 // wait.
 func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false }
 	s.setLastPlay("http://127.0.0.1:8888/stream/2", "NDR", "", "")
@@ -120,6 +125,7 @@ func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
 // double SetURI+Play (two audible re-buffers), and the first goroutine's
 // deferred release then cleared the latch the second one owned.
 func TestStreamDropCoalescingSurvivesNewPlay(t *testing.T) {
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
 	s.setLastPlay("http://127.0.0.1:8888/stream/6", "First", "", "")
