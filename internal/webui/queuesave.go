@@ -187,7 +187,7 @@ func (s *Server) handleQueueSaveSlot(w http.ResponseWriter, r *http.Request) {
 	}
 	// The folder that plays now is this key's: light it (#1217).
 	s.NoteQueueSavedSlot(p.Slot)
-	s.noticeAppSave(r, prev, had, p)
+	s.noticeAppSave(r.Header.Get("User-Agent"), prev, had, p)
 	s.clearHeldRefusal(p.Slot)
 	s.logger.Info("queue preset save: stored the playing folder on a key",
 		"slot", p.Slot, "name", p.Name, "source", p.Source, "tracks", len(p.Items), "shuffle", p.Shuffle)

@@ -148,7 +148,7 @@ func (s *Server) rescueStuckSpotifyBuffering() {
 	rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
 	status := s.recallSlotClean(rctx, slot)
 	rcancel()
-	// recallSlotClean stamps a user play of its own (handlePlaySlot ->
+	// recallSlotClean stamps a user play of its own (playSlot ->
 	// NoteUserPlay). Re-stamp after it so that stamp does not reopen the
 	// episode, and anchor the "did the user act" check here.
 	recalled := time.Now()

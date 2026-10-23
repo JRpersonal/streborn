@@ -1,14 +1,11 @@
 package webui
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -297,55 +294,41 @@ func samePresetItems(a, b presets.Preset) bool {
 	return true
 }
 
-// holdSaveThroughPut runs p through the per-slot PUT handler in process, so a
+// holdSaveThroughPut runs p through the per-slot PUT service in process, so a
 // hold obeys every rule an app save does without a second copy of them.
 func (s *Server) holdSaveThroughPut(ctx context.Context, p presets.Preset, kind string, live bool) (HoldSaved, error) {
 	return s.saveThroughPut(ctx, p, kind, live, holdSaveUA, "speaker-key")
 }
 
 // saveThroughPut is holdSaveThroughPut for any caller: ua and remote are what
-// the PUT logs and decides its display notice on.
+// the PUT logs and decides its display notice on. It calls the PUT's service
+// (savePresetSlot) directly and maps its refusal onto HoldSaveError.
 func (s *Server) saveThroughPut(ctx context.Context, p presets.Preset, kind string, live bool, ua, remote string) (HoldSaved, error) {
 	if cur, have := s.presets.Get(p.Slot); have && holdSaveSameItem(cur, p) {
 		return HoldSaved{Slot: p.Slot, Kind: kind, Name: cur.Name, Unchanged: true}, nil
 	}
-	body, err := json.Marshal(p)
-	if err != nil {
-		return HoldSaved{}, err
+	saved, ref := s.savePresetSlot(ctx, presetSaveRequest{
+		Slot: p.Slot, Preset: p, Live: live, UserAgent: ua, RemoteAddr: remote,
+	})
+	if ref != nil {
+		return HoldSaved{}, holdSaveErrorFrom(ref)
 	}
-	target := "/api/presets/" + strconv.Itoa(p.Slot)
-	if live {
-		target += "?save=live"
+	if saved.Name == "" {
+		saved.Name = p.Name
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(body))
-	if err != nil {
-		return HoldSaved{}, err
+	return HoldSaved{Slot: p.Slot, Kind: kind, Name: saved.Name}, nil
+}
+
+// holdSaveErrorFrom maps a preset refusal onto the error the hold and
+// save-what-plays callers branch on. A JSON refusal carries its code and the
+// other key; a plain-text one (the 500s) becomes save-failed with the text
+// as the message, the way the old body parse read it.
+func holdSaveErrorFrom(ref *presetRefusal) *HoldSaveError {
+	if ref.Code == "" {
+		return &HoldSaveError{Status: ref.Status, Code: "save-failed", Message: strings.TrimSpace(ref.Error)}
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", ua)
-	req.RemoteAddr = remote
-	rec := &holdSaveRecorder{header: http.Header{}}
-	s.handlePresetSlot(rec, req)
-	if rec.status() == http.StatusOK {
-		var saved presets.Preset
-		if err := json.Unmarshal(rec.body.Bytes(), &saved); err != nil || saved.Name == "" {
-			saved.Name = p.Name
-		}
-		return HoldSaved{Slot: p.Slot, Kind: kind, Name: saved.Name}, nil
-	}
-	var refusal struct {
-		Code  string `json:"code"`
-		Slot  int    `json:"slot"`
-		Name  string `json:"name"`
-		Error string `json:"error"`
-	}
-	_ = json.Unmarshal(rec.body.Bytes(), &refusal)
-	if refusal.Code == "" {
-		refusal.Code = "save-failed"
-		refusal.Error = strings.TrimSpace(rec.body.String())
-	}
-	return HoldSaved{}, &HoldSaveError{Status: rec.status(), Code: refusal.Code,
-		OtherSlot: refusal.Slot, OtherName: refusal.Name, Message: refusal.Error}
+	return &HoldSaveError{Status: ref.Status, Code: ref.Code,
+		OtherSlot: ref.Slot, OtherName: ref.Name, Message: ref.Error}
 }
 
 // holdSaveSameItem reports whether the key already holds the item a hold
@@ -359,37 +342,6 @@ func holdSaveSameItem(cur, p presets.Preset) bool {
 		return p.URI != "" && cur.URI == p.URI
 	}
 	return p.StreamURL != "" && cur.StreamURL == p.StreamURL
-}
-
-// holdSaveRecorder is the minimal ResponseWriter for the in-process PUT
-// (net/http/httptest registers a command-line flag, so it stays out of the
-// agent binary).
-type holdSaveRecorder struct {
-	header http.Header
-	code   int
-	body   bytes.Buffer
-}
-
-func (r *holdSaveRecorder) Header() http.Header { return r.header }
-
-func (r *holdSaveRecorder) WriteHeader(code int) {
-	if r.code == 0 {
-		r.code = code
-	}
-}
-
-func (r *holdSaveRecorder) Write(b []byte) (int, error) {
-	if r.code == 0 {
-		r.code = http.StatusOK
-	}
-	return r.body.Write(b)
-}
-
-func (r *holdSaveRecorder) status() int {
-	if r.code == 0 {
-		return http.StatusOK
-	}
-	return r.code
 }
 
 // boxNowPlaying reads the speaker's active source and the location it plays

@@ -266,7 +266,7 @@ func TestEveryUPnPPushPathUsesTheHandover(t *testing.T) {
 	cases := []struct {
 		file, fn, want string
 	}{
-		{"playback.go", "func (s *Server) handlePlaySlot", "s.pushOverNativeStation(playCtx, p.Name"},
+		{"playback.go", "func (s *Server) playSlot", "s.pushOverNativeStation(playCtx, p.Name"},
 		{"boxsettings_http.go", "func (s *Server) playTrackWithWrongStateRepair", "s.pushOverNativeStation("},
 		{"librarykey.go", "func (s *Server) playLibraryFilePresetLocked", "s.pushOverNativeStation("},
 		{"queueplay.go", "func (s *Server) pushStream", "s.pushOverNativeStation("},

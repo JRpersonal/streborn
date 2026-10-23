@@ -54,7 +54,7 @@ func TestTheAnswerSaysTheReadBackDidNotHappen(t *testing.T) {
 // when the caller actually asked for members.
 func TestTheResumeStillRunsAfterAFailedReadBack(t *testing.T) {
 	src := zoneFormSource(t)
-	i := strings.Index(src, "if resume != nil && masterFormed {")
+	i := strings.Index(src, "if resume != nil && f.MasterFormed {")
 	if i < 0 {
 		t.Fatal("the post-form resume is gone")
 	}

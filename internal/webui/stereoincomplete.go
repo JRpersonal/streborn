@@ -129,17 +129,27 @@ func (s *Server) incompletePairReason(now time.Time) (incompletePair, bool) {
 // this speaker is stuck in an incomplete pair, and reports whether it did. Call
 // it BEFORE the wake: waking such a speaker is exactly what cannot succeed.
 func (s *Server) refuseIfIncompletePair(w http.ResponseWriter) bool {
+	ref := s.incompletePairRefusal()
+	if ref != nil {
+		writePlayRefusal(w, ref)
+	}
+	return ref != nil
+}
+
+// incompletePairRefusal is refuseIfIncompletePair without the wire: the 409
+// stereo-incomplete refusal, or nil when this speaker can play on its own.
+func (s *Server) incompletePairRefusal() *playRefusal {
 	// A partner recorded as gone may only have been missed (the agent start
 	// probe ran before the network was up, #1208). Ask it again before
 	// refusing; this costs nothing when no partner is recorded as gone.
 	s.recheckPartnerGone()
 	p, ok := s.incompletePairReason(time.Now())
 	if !ok {
-		return false
+		return nil
 	}
 	s.logger.Warn("play refused: this speaker is half of an incomplete stereo pair, the firmware will not start a source on it",
 		"reason", p.Reason, "master", p.Master, "partnerIP", p.PartnerIP, "partnerID", p.PartnerID)
-	writeJSON(w, http.StatusConflict, map[string]any{
+	return jsonRefusal(http.StatusConflict, map[string]any{
 		"error":     "stereo-incomplete",
 		"reason":    p.Reason,
 		"master":    p.Master,
@@ -148,5 +158,4 @@ func (s *Server) refuseIfIncompletePair(w http.ResponseWriter) bool {
 		"pairName":  p.Name,
 		"members":   p.Members,
 	})
-	return true
 }

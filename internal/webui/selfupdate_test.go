@@ -147,22 +147,22 @@ func TestInstallDownloadedFeedsTheHandlerTheVerifiedBody(t *testing.T) {
 	s, base := selfUpdateFixture(t, "v1.0.13", agent, []byte("engine-binary"), nil)
 	var got []byte
 	var gotLen int64
-	h := func(w http.ResponseWriter, r *http.Request) {
-		gotLen = r.ContentLength
-		if !isLocalLAN(r.RemoteAddr) {
+	h := func(up upload) *uploadRefusal {
+		gotLen = up.Size
+		if !isLocalLAN(up.Remote) {
 			t.Error("in-process call does not count as local")
 		}
-		got, _ = io.ReadAll(r.Body)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		got, _ = io.ReadAll(up.Body)
+		return nil
 	}
-	code, _, err := s.installDownloaded(base+"download/v1.0.13/"+updatesig.AgentFile, fileOf(agent), "/api/agent/update", h)
+	code, _, err := s.installDownloaded(base+"download/v1.0.13/"+updatesig.AgentFile, fileOf(agent), h)
 	if err != nil || code != http.StatusOK || !bytes.Equal(got, agent) || gotLen != int64(len(agent)) {
 		t.Fatalf("code=%d err=%v got=%d len=%d", code, err, len(got), gotLen)
 	}
 
 	// The same download against a different signed hash never completes.
 	other := fileOf(append([]byte{1}, agent[1:]...))
-	_, _, err = s.installDownloaded(base+"download/v1.0.13/"+updatesig.AgentFile, other, "/api/agent/update", h)
+	_, _, err = s.installDownloaded(base+"download/v1.0.13/"+updatesig.AgentFile, other, h)
 	if err == nil || len(got) >= len(agent) {
 		t.Fatalf("mismatched hash: err=%v delivered=%d", err, len(got))
 	}

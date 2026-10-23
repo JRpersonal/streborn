@@ -2014,7 +2014,7 @@ func (s *Server) maybeRePush() {
 	// it a stream with no headers where it expects a track boundary, which is
 	// the wedge repairResume already documents and avoids the same way.
 	//
-	// BEFORE boxCmdMu, deliberately: recallSlotClean re-enters handlePlaySlot,
+	// BEFORE boxCmdMu, deliberately: recallSlotClean runs the playSlot service,
 	// which takes that mutex itself, so calling it under the lock below would
 	// deadlock the agent. repairResume orders it the same way.
 	if slot := slotFromSpotifyStreamURL(boxURL); slot > 0 && strings.Contains(boxURL, "spotify/stream") {

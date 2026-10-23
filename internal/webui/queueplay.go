@@ -1763,49 +1763,19 @@ func (s *Server) currentSpotifySlot() int {
 // recallSlotClean recalls a preset slot through the exact same code path as the
 // app's POST /api/play/<slot>, so a hardware-driven recovery behaves identically
 // to a soft recall (SetRecalling before the box attaches, cold-engine wait,
-// background verify). It drives handlePlaySlot with a synthetic in-process request
-// and discards the body: the caller (HardwareSkip) only needs the box driven,
-// not the HTTP body.
+// background verify). It calls the playSlot service directly: the caller
+// (HardwareSkip's recovery net, the alarms, the stuck-buffer rescue) only
+// needs the box driven, not an HTTP body.
 //
 // The status IS returned, for the callers that need to tell "the box is being
 // driven" from "this preset cannot be played at all" (an unreplayable Spotify
-// record, no Spotify login). Zero means the handler answered without ever
-// setting one, which net/http treats as 200. Callers that do not care ignore it.
+// record, no Spotify login): 200 when the recall was delivered, the refusal's
+// status otherwise. Callers that do not care ignore it.
 func (s *Server) recallSlotClean(ctx context.Context, slot int) int {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/api/play/"+strconv.Itoa(slot), nil)
-	if err != nil {
-		return 0
+	if _, ref := s.playSlot(ctx, slot); ref != nil {
+		return ref.Status
 	}
-	w := &discardResponseWriter{}
-	s.handlePlaySlot(w, req)
-	if w.status == 0 {
-		return http.StatusOK
-	}
-	return w.status
-}
-
-// discardResponseWriter is a throwaway http.ResponseWriter for in-process handler
-// calls (recallSlotClean) whose response body nobody reads. It keeps the status
-// so the caller can still tell a refusal from a drive.
-type discardResponseWriter struct {
-	header http.Header
-	status int
-}
-
-func (w *discardResponseWriter) Header() http.Header {
-	if w.header == nil {
-		w.header = http.Header{}
-	}
-	return w.header
-}
-
-func (w *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
-
-func (w *discardResponseWriter) WriteHeader(status int) {
-	// First write wins, as with a real ResponseWriter.
-	if w.status == 0 {
-		w.status = status
-	}
+	return http.StatusOK
 }
 
 // spotifyIsStreaming is a nil-safe wrapper around the streaming predicate.

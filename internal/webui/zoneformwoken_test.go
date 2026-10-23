@@ -98,16 +98,21 @@ func TestMasterTheUserWasListeningToKeepsPlaying(t *testing.T) {
 
 // The form path has to ask before it captures anything to restart, once more
 // after its own wake, and once after forming; and it hands memberResumeForZone
-// only the members that were not just woken.
+// only the members that were not just woken. handleZoneForm is split into
+// phases, so the three that carry these steps are read in their order.
 func TestZoneFormNeverCarriesAGroupWakeResume(t *testing.T) {
 	t.Parallel()
 	src, err := os.ReadFile("zones_stereo.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := funcBody(t, string(src), "handleZoneForm")
-	if body == "" {
-		t.Fatal("handleZoneForm not found")
+	body := ""
+	for _, fn := range []string{"zoneFormPrepareResume", "zoneFormWakeMaster", "zoneFormVerify"} {
+		part := funcBody(t, string(src), fn)
+		if part == "" {
+			t.Fatalf("%s not found", fn)
+		}
+		body += part
 	}
 	before := strings.Index(body, `s.masterPlaysUsersMusic(ctx, "before forming"`)
 	capture := strings.Index(body, "masterResumeForZone(np, masterRef)")

@@ -27,6 +27,8 @@ import (
 // was that they drifted apart. Exercising formStereoPair properly needs a fake
 // speaker answering /now_playing, /addGroup and /info, and that would still not
 // have caught a sibling nobody remembered to update.
+//
+// handleZoneForm is split into phases; its wake lives in zoneFormWakeMaster.
 func TestBothGroupFormPathsWakeTheMasterQuietly(t *testing.T) {
 	src, err := os.ReadFile("zones_stereo.go")
 	if err != nil {
@@ -34,7 +36,7 @@ func TestBothGroupFormPathsWakeTheMasterQuietly(t *testing.T) {
 	}
 	text := string(src)
 
-	for _, fn := range []string{"handleZoneForm", "formStereoPair"} {
+	for _, fn := range []string{"zoneFormWakeMaster", "formStereoPair"} {
 		body := funcBody(t, text, fn)
 		if body == "" {
 			t.Fatalf("%s not found in zones_stereo.go; if it was renamed, update this test rather than deleting it", fn)

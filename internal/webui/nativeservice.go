@@ -154,28 +154,29 @@ func parseNowPlayingNativeItem(body []byte) (presets.NativeItem, bool) {
 	return item, true
 }
 
-// handleNativePresetSave stores a native-service preset on slot (PUT
-// /api/presets/<slot> with type "native"). A body carrying the item (a
-// box-to-box copy) is checked and stored; a body without one (the apps' hold
-// gesture while Pandora or iHeartRadio plays) takes the item the speaker is
-// playing right now, which is the only place the real item exists.
-func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, slot int, in presets.Preset) {
+// saveNativePreset stores a native-service preset on the slot (PUT
+// /api/presets/<slot> with type "native"; the service behind it is
+// savePresetSlot). A body carrying the item (a box-to-box copy) is checked
+// and stored; a body without one (the apps' hold gesture while Pandora or
+// iHeartRadio plays) takes the item the speaker is playing right now, which
+// is the only place the real item exists.
+func (s *Server) saveNativePreset(ctx context.Context, req presetSaveRequest, in presets.Preset) (presets.Preset, *presetRefusal) {
+	slot := req.Slot
 	var item presets.NativeItem
 	if in.Native != nil && in.Native.Location != "" {
 		item = *in.Native
 	} else {
-		got, ok, err := s.nowPlayingNativeItem(r.Context())
+		got, ok, err := s.nowPlayingNativeItem(ctx)
 		if err != nil {
 			// A hold that failed here left no trace in the bundle at all
 			// (#1407: a Pandora hold from the phone page).
 			s.logger.Warn("native preset save refused: the speaker's now-playing could not be read",
 				"slot", slot, "code", "native-nowplaying-unreadable", "reason", err.Error(),
-				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"from", req.RemoteAddr, "ua", req.UserAgent)
+			return presets.Preset{}, jsonPresetRefusal(http.StatusBadGateway, map[string]any{
 				"error": "The speaker could not be asked what it is playing. Try again in a moment.",
 				"code":  "native-nowplaying-unreadable",
 			})
-			return
 		}
 		if !ok {
 			reason := "not a Pandora or iHeartRadio station"
@@ -185,31 +186,28 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 			s.logger.Warn("native preset save refused: the speaker is not playing a native station",
 				"slot", slot, "code", "native-not-playing", "reason", reason,
 				"source", got.Source, "account", maskForLog(got.SourceAccount),
-				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"from", req.RemoteAddr, "ua", req.UserAgent)
+			return presets.Preset{}, jsonPresetRefusal(http.StatusUnprocessableEntity, map[string]any{
 				"error": "The speaker is not playing a Pandora or iHeartRadio station right now.",
 				"code":  "native-not-playing",
 			})
-			return
 		}
 		item = got
 	}
 	if err := validNativeItem(&item); err != nil {
 		s.logger.Warn("native preset save refused", "slot", slot, "err", err,
-			"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"from", req.RemoteAddr, "ua", req.UserAgent)
+		return presets.Preset{}, jsonPresetRefusal(http.StatusUnprocessableEntity, map[string]any{
 			"error": "This station can't be kept on a key.",
 			"code":  "native-item-invalid",
 		})
-		return
 	}
 	p, ok := presets.NewNativePreset(slot, item, in.Name)
 	if !ok {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+		return presets.Preset{}, jsonPresetRefusal(http.StatusUnprocessableEntity, map[string]any{
 			"error": "This station can't be kept on a key.",
 			"code":  "native-item-invalid",
 		})
-		return
 	}
 	// One station, one key (#836), same as every other save.
 	for _, other := range s.presets.All() {
@@ -218,12 +216,11 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 		}
 		s.logger.Info("preset save refused: this station is already on another slot",
 			"slot", slot, "existingSlot", other.Slot, "name", other.Name,
-			"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
-		s.noticeAppRefused(r, other.Slot)
-		writeJSON(w, http.StatusConflict, map[string]any{
+			"from", req.RemoteAddr, "ua", req.UserAgent)
+		s.noticeAppRefused(req.UserAgent, other.Slot)
+		return presets.Preset{}, jsonPresetRefusal(http.StatusConflict, map[string]any{
 			"code": "already-on-slot", "slot": other.Slot, "name": other.Name,
 		})
-		return
 	}
 	prevName := ""
 	prev, had := s.presets.Get(slot)
@@ -231,21 +228,20 @@ func (s *Server) handleNativePresetSave(w http.ResponseWriter, r *http.Request, 
 		prevName = prev.Name
 	}
 	if err := s.presets.SetSlot(p); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return presets.Preset{}, textPresetRefusal(http.StatusInternalServerError, err.Error())
 	}
-	s.noticeAppSave(r, prev, had, p)
+	s.noticeAppSave(req.UserAgent, prev, had, p)
 	s.clearHeldRefusal(slot)
 	s.logger.Info("preset write accepted",
 		"slot", slot, "was", prevName, "now", p.Name, "type", p.Type,
 		"source", p.Native.Source, "location", p.Native.Location,
-		"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+		"from", req.RemoteAddr, "ua", req.UserAgent)
 	if s.boxHost != "" {
-		boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		boxCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		if err := s.writeStorePresetToBox(boxCtx, p); err != nil {
 			s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 		}
 		cancel()
 	}
-	writeJSON(w, http.StatusOK, p)
+	return p, nil
 }

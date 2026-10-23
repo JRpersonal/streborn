@@ -548,7 +548,7 @@ func (s *Server) runSelfUpdate() {
 	s.logger.Info("self-update: installing", "from", from, "to", ix.Version, "bytes", agent.Size)
 	s.selfUpd.set("downloading", "agent")
 	code, body, err := s.installDownloaded(base+"download/"+ix.Version+"/"+updatesig.AgentFile, agent,
-		"/api/agent/update", s.handleAgentUpdate)
+		s.installAgentFromDownload)
 	// A download the network cut off is tried again once it is back
 	// (selfupdate_netretry.go). The phase tells the phone it is waiting.
 	for attempt := 0; err != nil && isNetworkError(err) && attempt < len(selfUpdateNetRetry); attempt++ {
@@ -558,7 +558,7 @@ func (s *Server) runSelfUpdate() {
 		time.Sleep(selfUpdateNetRetry[attempt])
 		s.selfUpd.set("downloading", "agent")
 		code, body, err = s.installDownloaded(base+"download/"+ix.Version+"/"+updatesig.AgentFile, agent,
-			"/api/agent/update", s.handleAgentUpdate)
+			s.installAgentFromDownload)
 	}
 	if err != nil && isNetworkError(err) {
 		err = fmt.Errorf("the speaker could not reach the internet: %w", err)
@@ -687,7 +687,10 @@ func (s *Server) ensureEngine(base, version string, want updatesig.File) error {
 	}
 	s.selfUpd.set("engine", "engine")
 	code, body, err := s.installDownloaded(base+"download/"+version+"/"+updatesig.EngineFile, want,
-		"/api/agent/sidecar", s.handleAgentSidecar)
+		func(up upload) *uploadRefusal {
+			_, ref := s.installEngineUpload(up)
+			return ref
+		})
 	if err != nil {
 		return err
 	}
@@ -698,9 +701,12 @@ func (s *Server) ensureEngine(base, version string, want updatesig.File) error {
 	return nil
 }
 
-// installDownloaded streams url into handler as an upload of exactly want.Size
-// bytes, verified against want.SHA256 on the way (heldBackBody).
-func (s *Server) installDownloaded(url string, want updatesig.File, path string, handler http.HandlerFunc) (int, string, error) {
+// installDownloaded streams url into install as an upload of exactly want.Size
+// bytes, verified against want.SHA256 on the way (heldBackBody). It reports
+// what the HTTP endpoint would have answered, status and body text (200 and
+// "" when install took the upload), plus the download error when the bytes
+// never arrived whole.
+func (s *Server) installDownloaded(url string, want updatesig.File, install func(upload) *uploadRefusal) (int, string, error) {
 	base, _ := selfUpdateSourceNow()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -729,22 +735,18 @@ func (s *Server) installDownloaded(url string, want updatesig.File, path string,
 	if err != nil {
 		return 0, "", err
 	}
-	up, err := http.NewRequest(http.MethodPost, "http://127.0.0.1"+path, body)
-	if err != nil {
-		return 0, "", err
+	code, text := http.StatusOK, ""
+	if ref := install(upload{Body: body, Size: want.Size, Remote: "127.0.0.1:0"}); ref != nil {
+		code, text = ref.Status, ref.bodyText()
 	}
-	up.ContentLength = want.Size
-	up.RemoteAddr = "127.0.0.1:0"
-	rec := &memResponse{header: http.Header{}, code: http.StatusOK}
-	handler(rec, up)
 	if body.err != nil {
 		if stalled.Load() {
 			// Not "context canceled": the network went away mid-download.
-			return rec.code, rec.body.String(), fmt.Errorf("%w (after %d of %d bytes)", errDownloadStalled, body.n, want.Size)
+			return code, text, fmt.Errorf("%w (after %d of %d bytes)", errDownloadStalled, body.n, want.Size)
 		}
-		return rec.code, rec.body.String(), body.err
+		return code, text, body.err
 	}
-	return rec.code, rec.body.String(), nil
+	return code, text, nil
 }
 
 // heldBackBody passes a download through but withholds its final byte until
@@ -835,29 +837,6 @@ func equalBytes(a, b []byte) bool {
 		d |= a[i] ^ b[i]
 	}
 	return d == 0
-}
-
-// memResponse collects a handler's answer for an in-process call.
-type memResponse struct {
-	header http.Header
-	code   int
-	body   strings.Builder
-	wrote  bool
-}
-
-func (m *memResponse) Header() http.Header { return m.header }
-func (m *memResponse) WriteHeader(code int) {
-	if !m.wrote {
-		m.code, m.wrote = code, true
-	}
-}
-
-func (m *memResponse) Write(p []byte) (int, error) {
-	m.wrote = true
-	if m.body.Len() < 4096 {
-		m.body.Write(p)
-	}
-	return len(p), nil
 }
 
 func writeJSONFile(path string, v any) error {

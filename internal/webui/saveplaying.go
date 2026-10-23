@@ -138,7 +138,7 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 				return HoldSaved{}, err
 			}
 			s.NoteQueueSavedSlot(slot)
-			s.noticeAppSave(r, prev, had, q)
+			s.noticeAppSave(ua, prev, had, q)
 			s.clearHeldRefusal(slot)
 			s.logger.Info("queue preset save: stored the playing folder on a key",
 				"slot", q.Slot, "name", q.Name, "source", q.Source, "tracks", len(q.Items),
