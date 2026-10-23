@@ -21,7 +21,6 @@ import {
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText } from './nointernet.js';
-import { speakerReachedTarget, waitForStableAgent } from './agentsettle.js';
 import { applyPositionReading, resetProgress, wantsFastPoll } from './trackprogress.js';
 import { titleSwapOffered } from './titleswap.js';
 import {
@@ -40,11 +39,10 @@ import {
   RestoreSTRCloud,
   PushFavorites,
   FavoriteRemovals,
-  RecordUpdateIntent,
   UpdateFailureReport,
-  SetOTARunning,
-  ClearUpdateIntent,
   PendingUpdateIntent,
+  RunSpeakerUpdate,
+  RunFleetUpdate,
   TrackPosition,
   SyncBoxPresets,
   BoxPresets,
@@ -74,11 +72,6 @@ import {
   EjectDrive,
   BoxAgentVersion,
   BoxStoragePreflight,
-  UpdateBoxAgent,
-  EnsureSpotifyEngine,
-  RecordOTAOutcome,
-  ClassifyOTAResult,
-  RestoreGroupAfterUpdate,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,
@@ -297,7 +290,6 @@ import {
   optimisticQueue,
   queueRecallConfirmed,
   queueReplyMerge,
-  agentCurrentEngineMissing,
   searchErrorText,
   stormBannerBoxes,
   holdRefusedBannerKey,
@@ -4321,82 +4313,26 @@ function otaStuck(box) {
   return null;
 }
 
-// isEngineStreamDrop matches errors that mean the ~16 MB engine push was cut
-// mid-stream (box rebooting or its network stack folding under the write):
-// re-streaming immediately races the next reboot with the very payload that
-// cut the last one (deqw's ST20 died exactly this way, 2026-07-12).
-function isEngineStreamDrop(msg) {
-  return /broken pipe|connection reset|deadline exceeded|forcibly closed|host is down|unexpected eof|wsarecv/i.test(msg);
+// The update sequence itself lives in Go: desktop-app/otaorchestrate.go
+// (RunSpeakerUpdate for one speaker, RunFleetUpdate for the house). It pushes
+// the agent, polls the version, holds the stability window, classifies a miss,
+// retries the one verdict a retry fixes, puts the Spotify engine back, and in
+// a batch serialises the byte pushes through its upload gate. This file keeps
+// what only a window can do: the pre-checks and their dialogs, the mapping of
+// a phase to a sentence, and the rendering of the box:update:phase events.
+//
+// noteOTAResult feeds the loop breaker from a finished run: a confirmed agent
+// clears the record, an unconfirmed one counts with the classifier's verdict.
+// Only the result carries both, which is why this reads the result and not a
+// phase event.
+function noteOTAResult(box, result) {
+  if (!result) return;
+  if (result.confirmed) { clearOTAStuck(box); return; }
+  if (result.outcome === 'timeout' || result.outcome === 'agentGone' || result.outcome === 'boxInSetup') {
+    noteOTAFailure(box, result.verdict || '');
+  }
 }
 
-// runBoxUpdate runs the per-box OTA sequence. It is the ONE implementation of
-// that sequence: the "update all speakers" batch (updateAllBoxes) and the
-// single-speaker button (doBoxUpdate) both go through here.
-//
-// It used to be a copy of the sequence inside doBoxUpdate, carrying a
-// "KEEP THE TWO IN SYNC" note that reality did not honour: #360's stability
-// window and #466's settle-gated engine window were each fixed in the batch
-// first and only ported to the single path later, so for a while updating one
-// speaker behaved worse than updating six. The batch sequence is the one that
-// has been run across the whole fleet, so it is the one that survives, and the
-// single path now differs only in how it reports (buttons and toasts instead of
-// overlay rows).
-//
-// It owns NO UI and NO lock: the caller drives status via onPhase(phase, data)
-// and owns the lock + the live byte-progress (box:update:progress, host-tagged).
-// Resolves to { outcome, version, engineDelivered?, engineTooFull? }:
-//   'done'    agent updated (engine present, or freshly delivered)
-//   'partial' agent updated but the engine could not be delivered in-window
-//             (self-heals next time the speaker is opened)
-//   'timeout' upload accepted but the box never confirmed the new build (6 min)
-// Throws ONLY on a hard failure (UpdateBoxAgent cleanly rejected the binary); a
-// timeout-class rejection is NOT a failure (the box is usually still applying it)
-// and falls through to the version poll, the real success signal.
-// phases: 'uploading' -> 'rebooting' -> 'verifying'{remainingMs} ->
-//   'settling'{remainingMs} -> 'confirmed'{version} -> 'engineQueued' ->
-//   'engineUploading' -> 'spotify'{attempt, remainingMs, reachable, version,
-//   engine} -> resolve. 'retrying'{attempt} restarts the sequence once.
-// A caller may ignore any phase it has no use for.
-// makeUploadGate serializes the network-heavy part of an update while leaving
-// everything else free to overlap.
-//
-// Updating a house used to run two speakers at a time from start to finish, so
-// a speaker that had already been written to held its slot for the whole of its
-// restart, four to six minutes in which it needs nothing from the network and
-// nobody else may start. Six speakers took the best part of an hour, almost all
-// of it spent watching speakers reboot one pair at a time (#390).
-//
-// Only the pushes actually compete: two concurrent ~16 MB streams saturate a
-// weak shared access point and trip the 60 s upload-stall watchdog, which is
-// what the old limit was protecting against. Restarting and waiting cost no
-// bandwidth at all. So the pushes queue here and everything else runs at once,
-// which turns a house of six into roughly one upload after another with all the
-// restarts happening in parallel behind them.
-function makeUploadGate(limit = 1) {
-  let active = 0;
-  const waiting = [];
-  const pump = () => {
-    while (active < limit && waiting.length) {
-      active++;
-      waiting.shift()();
-    }
-  };
-  return {
-    // run holds the gate for the duration of fn and always gives it back, so
-    // one speaker throwing mid-push cannot strand the queue behind it.
-    async run(fn) {
-      await new Promise((resolve) => { waiting.push(resolve); pump(); });
-      try {
-        return await fn();
-      } finally {
-        active--;
-        pump();
-      }
-    },
-  };
-}
-
-// gate is optional: a single-speaker update has nothing to queue behind.
 // spotifyPhaseText words the engine step for the user. The row used to
 // interpolate the speaker's raw "missing"/"present" report ("Spotify engine:
 // missing, waiting for the target state"), English inside a German UI and a
@@ -4406,317 +4342,6 @@ function makeUploadGate(limit = 1) {
 function spotifyPhaseText(d) {
   if (!d || !d.reachable) return t('updateAll.phase.spotifyUnreachable');
   return d.engine === 'present' ? t('updateAll.phase.spotifyChecking') : t('updateAll.phase.spotifyInstalling');
-}
-
-async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
-  const gated = (fn) => (gate ? gate.run(fn) : fn());
-  const phase = (p, d) => { try { if (onPhase) onPhase(p, d || {}); } catch {} };
-  const appBuild = state.appInfo && state.appInfo.build;
-  // Record what the box runs RIGHT NOW; the post-OTA success signal is "reachable
-  // AND no longer this pre-OTA build", which survives app/agent build-stamp drift.
-  let preBuild = '', preVersion = '', pv = null;
-  try {
-    pv = await BoxAgentVersion(box.host, box.port);
-    if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
-  } catch { /* pre-OTA version unknown: fall back to the appBuild match */ }
-  // A speaker that already runs exactly this agent and only lacks the Spotify
-  // engine gets the engine and nothing else. Pushing the agent again bought
-  // nothing and cost a reboot: on a slow chassis that reboot outlasts the verify
-  // window, the engine step after it never ran, and the speaker came back still
-  // without an engine, so every click on "Update" started the same round again
-  // (a CineMate, three rounds of about eight minutes each, 2026-10-10).
-  if (agentCurrentEngineMissing(pv, state.appInfo)) {
-    try { RecordOTAOutcome(box.host, `agent upload skipped: the speaker already runs build ${pv.build || '?'}, only the Spotify engine is missing`); } catch {}
-    return deliverEngineAfterAgent(box, pv, preVersion, phase, gated);
-  }
-  phase('uploading');
-  // Serialize only the BYTE push, not the box's whole reboot. UpdateBoxAgent
-  // does not return when the bytes land: the box replies, then reboots ~1.5 s
-  // later, and that reboot usually eats the reply, so the call then sits on a
-  // dead connection for up to ~107 s before its reply window times out (#466).
-  // Holding the upload gate for all of that keeps the next box from starting its
-  // push long after this box's bytes were delivered and it is already rebooting
-  // on its own, the serial-restart stall makeUploadGate exists to kill. So
-  // release the gate the moment the upload bytes are on the wire
-  // (box:update:progress pct>=100, the same signal the overlay uses to flip a
-  // row to "restarting") and await the real UpdateBoxAgent result OUTSIDE the
-  // gate. A box that never streams pct>=100 (a fast failure, or a chassis that
-  // does not emit progress) falls back to releasing when the call settles,
-  // exactly the old behavior, never worse. The single-box path (gate=null) has
-  // nothing to queue behind, so it runs the call directly.
-  let updatePromise;
-  if (gate) {
-    await new Promise((begun) => {
-      gate.run(() => new Promise((release) => {
-        let done = false, offProg = null;
-        const free = () => {
-          if (done) return;
-          done = true;
-          if (offProg) { try { offProg(); } catch {} }
-          release();
-        };
-        offProg = EventsOn('box:update:progress', (p) => {
-          if (p && p.host === box.host && p.pct != null && p.pct >= 100) free();
-        });
-        // try/catch so a (near-impossible) synchronous throw from the binding
-        // still lets begun() fire and the gate release, never stranding the run.
-        try { updatePromise = UpdateBoxAgent(box.host, box.port); }
-        catch (e) { updatePromise = Promise.reject(e); }
-        begun();
-        // Fallback: release on settle if pct>=100 never arrives, and give
-        // updatePromise a handler so no unhandledrejection can fire.
-        updatePromise.then(free, free);
-      })).catch(() => {});
-    });
-  } else {
-    updatePromise = UpdateBoxAgent(box.host, box.port);
-  }
-  try {
-    await updatePromise;
-  } catch (e) {
-    // A timeout-class rejection ("deadline exceeded ... while reading body",
-    // common on a slow link or with an HTTP-inspecting suite like Norton) does
-    // NOT mean the OTA failed: the box may still be applying it, so fall through
-    // to the poll. A clean reject (binary definitely refused) is a real failure.
-    if (!/deadline exceeded|client\.timeout|while reading body/i.test(String(e))) throw e;
-  }
-  phase('rebooting');
-  const deadlineMs = Date.now() + 360_000;
-  const appSha = state.appInfo && state.appInfo.agentSha256;
-  const updated = (v) => {
-    if (!v) return false;
-    // The binary the speaker is RUNNING, first, because that is the only answer
-    // a clock cannot spoil. Without it the v0.9.88 stamp skew made a successful
-    // update wait out the whole 360 s window and then report "the update did not
-    // take effect", which was false and told the user to stop trying.
-    //
-    // Not agentBinarySha256: that is what lies on the box's DISK, and the one
-    // case where the two differ is a push that landed and then did not boot
-    // (#381). Reading the disk here would report that rollback as a success.
-    if (appSha && v.agentRunningSha256 === appSha) return true;
-    if (appBuild && v.build === appBuild) return true;
-    if (preBuild && v.build && v.build !== preBuild) return true;
-    if (preVersion && v.version && v.version !== preVersion) return true;
-    return false;
-  };
-  let confirmedVer = null;
-  // Bootstrap-reboot stability window: the first boot after an OTA can
-  // deliberately reboot ONCE more (~35 s after the agent API is back) when the
-  // new agent refreshed run-override.sh/rc.local on the NAND. Reporting
-  // success on the first version match made the app say "done" while the
-  // speaker went down again and blinked through another boot with no
-  // explanation (ST300, 2026-07-09). Confirm only after the box stays
-  // reachable on the new version for a full window; a drop inside the window
-  // returns to waiting and the next match confirms immediately-ish (the
-  // bootstrap reboot is one-time and loop-guarded on the agent side).
-  const stabilityMs = 50_000;
-  let stableSince = 0, sawSecondDrop = false;
-  while (Date.now() < deadlineMs) {
-    // Only while we are still waiting for the box to come back. Once it has and
-    // we are merely holding it for the stability window, 'settling' below owns
-    // the line: emitting both every pass made the text flap between "restarting" and
-    // "back up, confirming" twice every two seconds.
-    if (!stableSince) phase('verifying', { remainingMs: deadlineMs - Date.now() });
-    await sleep(2_000);
-    try {
-      const v = await BoxAgentVersion(box.host, box.port);
-      if (updated(v)) {
-        if (!stableSince) stableSince = Date.now();
-        const windowDone = sawSecondDrop || (Date.now() - stableSince >= stabilityMs);
-        if (windowDone) { confirmedVer = v; break; }
-        // The speaker IS back on the new version; we are only holding it for
-        // the stability window before believing it. Saying "restarting" here
-        // reads as if the app had not noticed, which is exactly how it looked
-        // to Jens watching two speakers that had visibly already come back.
-        phase('settling', { remainingMs: stabilityMs - (Date.now() - stableSince) });
-      } else {
-        stableSince = 0;
-      }
-    } catch {
-      // Unreachable: either still mid-first-reboot, or the bootstrap reboot
-      // just took the box down again after we already saw the new version.
-      if (stableSince) sawSecondDrop = true;
-      stableSince = 0;
-    }
-  }
-  if (!confirmedVer) {
-    // Journal the real verdict and classify why (unreachable / not landed /
-    // landed-but-not-running), feeding the loop breaker so an update that
-    // cannot stick is not re-offered as a fresh one-click push forever.
-    let cls = '';
-    try { cls = await ClassifyOTAResult(box.host, box.port); } catch {}
-    // "confirmed" = the box IS on the new build, it just crossed the verify
-    // window late (slow boot / late reachability). Treating that as a timeout
-    // made update-all report a perfectly updated ST10 as stuck (live
-    // 2026-07-25, "confirmed late" at +6 min). Count it as updated and fall
-    // through to the engine step like any confirmed box.
-    if (cls === 'confirmed') {
-      try { confirmedVer = await BoxAgentVersion(box.host, box.port); } catch {}
-    }
-    // "not-landed" means the speaker took the whole file and the new software
-    // never reached its disk. That is the write squeezing itself into the last
-    // megabyte of a nearly full speaker: it stalls instead of failing, so the
-    // speaker reboots onto its old version. It is marginal rather than
-    // permanent, proven on two near-identical speakers where one stalled, and
-    // the very same push then succeeded on a retry. So retry once here rather
-    // than hand back a failure whose fix is "press the button again".
-    //
-    // Only this verdict. "landed-not-running" already knows an identical
-    // re-push cannot help, and an unreachable speaker is switched off or gone
-    // from the network, where retrying just hammers it.
-    if (!confirmedVer && cls === 'not-landed' && attempt < 2) {
-      try { RecordOTAOutcome(box.host, 'retrying once: the software never reached the speaker disk (marginal write)'); } catch {}
-      phase('retrying', { attempt: attempt + 1 });
-      return runBoxUpdate(box, onPhase, attempt + 1, gate);
-    }
-    if (!confirmedVer) {
-      try { noteOTAFailure(box, cls); } catch {}
-      // "agent-gone" is the speaker answering its OWN Bose web API while STR's
-      // agent is not running on it. That is not a timeout and not a network
-      // problem: the box is up, on the LAN, and reachable from this PC. It is
-      // also the one outcome with an exact, reliable fix, so it gets its own
-      // result instead of being folded into the generic "took longer than
-      // expected" line that sent a user hunting through his antivirus settings
-      // while three speakers sat there answering Bose's ports (2026-08-22).
-      if (cls === 'agent-gone') return { outcome: 'agentGone', version: null };
-      // "box-in-setup" is the speaker running Bose's OWN out-of-box setup: it
-      // leaves the network for minutes at a time while it does, so the update
-      // may well have landed and confirmLateOTA corrects the journal on its
-      // own. Its own outcome, because the advice is the opposite of
-      // agentGone's: do NOT pull the plug on a speaker mid-setup (#873).
-      if (cls === 'box-in-setup') return { outcome: 'boxInSetup', version: null };
-      return { outcome: 'timeout', version: null };
-    }
-  }
-  clearOTAStuck(box);
-  try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
-  // Put back the multiroom group the update reboot took apart. This is the one
-  // point EVERY confirmed update reaches, in-window or late, which is why it
-  // lives here and not next to the late-only ClassifyOTAResult call above.
-  // Fire and forget: a speaker whose group cannot be rebuilt must not hold up
-  // the rest of the update.
-  try { RestoreGroupAfterUpdate(box.host, box.port); } catch {}
-  return deliverEngineAfterAgent(box, confirmedVer, preVersion, phase, gated);
-}
-
-// deliverEngineAfterAgent is the second half of an update: the agent is on the
-// target build (just confirmed, or already there) and the Spotify engine is
-// put back if it is missing or outdated.
-async function deliverEngineAfterAgent(box, confirmedVer, preVersion, phase, gated) {
-  // The agent half is done and proven. Say so now rather than at the very end:
-  // the engine step below can run for another ten minutes, and a user watching a
-  // single speaker has earned the news that the update itself landed.
-  phase('confirmed', { version: confirmedVer });
-  // Post-reboot Spotify engine reconcile: covers the one-time pre-v0.8.22
-  // upgrade case (#240, engine missing) AND a present-but-outdated engine on a
-  // tight box whose pre-reboot staging was deferred (the old engine's space is
-  // reclaimable only after the reboot). EnsureSpotifyEngine is cheap when the
-  // engine is already current (one version GET, returns "current").
-  if (confirmedVer.goLibrespot) {
-    // 10 min window, and every push attempt is gated on a settled box. The
-    // old 240 s window with an ungated first push burned itself on exactly
-    // two doomed ~107 s streams per OTA (#466): the box reliably reboots or
-    // resets large uploads in its first post-OTA minutes, while a push at a
-    // genuinely settled box completes in ~15 s. Waiting out the settling
-    // window first costs a minute in the good case and wins the bad ones.
-    const engDeadlineMs = Date.now() + 600_000;
-    let attempt = 0;
-    // What actually happened to the engine, so the caller can say it. "Delivered"
-    // and "was already current" both end as a done update but only one of them is
-    // worth telling the user about, and "no room left" is the one case where the
-    // user has something to do about it.
-    let engineDelivered = false, engineTooFull = false;
-    while (Date.now() < engDeadlineMs) {
-      attempt++;
-      // Report the live state on every pass, not just "attempt 3": the user
-      // is being asked to wait, so they get to see WHAT is being waited for,
-      // whether the speaker is answering at all, which build it runs and
-      // whether the engine is there yet.
-      let live = null;
-      try { live = await BoxAgentVersion(box.host, box.port); } catch {}
-      phase('spotify', {
-        attempt,
-        remainingMs: engDeadlineMs - Date.now(),
-        reachable: !!live,
-        version: (live && live.version) || '',
-        engine: (live && live.goLibrespot) || 'unknown',
-      });
-      // Already in the target state (another pass landed it, or the agent
-      // hot-swapped it in): nothing left to do.
-      const verdict = speakerReachedTarget(live, preVersion, true, state.appInfo && state.appInfo.agentSha256);
-      if (verdict.done) {
-        try { ClearUpdateIntent(box.host, box.port); } catch {}
-        return { outcome: 'done', version: live, engineDelivered };
-      }
-      await waitForStableAgent(() => BoxAgentVersion(box.host, box.port), engDeadlineMs);
-      try {
-        // "Spotify engine: missing, waiting for the target state" described the
-        // speaker, not what the app was doing, so the ~16 MB delivery that
-        // follows looked like nothing was happening (Jens, watching a live run).
-        // Say that it is queued, then that it is being sent; the row's bar is
-        // already fed by the transfer's own progress events.
-        phase('engineQueued');
-        const engRes = await gated(() => {
-          phase('engineUploading');
-          return EnsureSpotifyEngine(box.host, box.port);
-        });
-        // A build that carries no engine cannot deliver one, so waiting the
-        // full window would only burn ten minutes to reach the same answer.
-        if (engRes && /no embedded engine/i.test(engRes)) {
-          try { ClearUpdateIntent(box.host, box.port); } catch {}
-          return { outcome: 'done', version: live || confirmedVer, engineDelivered };
-        }
-        // STR is being removed from this speaker: the delivery was skipped
-        // on purpose, and a "Spotify engine installed" toast in the middle
-        // of an uninstall reads as a bug (report of 2026-09-06). Finish quietly.
-        if (engRes && /^skipped:/i.test(engRes)) {
-          try { ClearUpdateIntent(box.host, box.port); } catch {}
-          return { outcome: 'done', version: live || confirmedVer, engineDelivered: false, quiet: true };
-        }
-        // "current" means nothing was sent: the engine was already the right one.
-        if (engRes !== 'current') engineDelivered = true;
-        // Do not take the delivery's word for it. The update may only be
-        // called finished when the speaker itself reports the state it was
-        // supposed to end up in.
-        const check = await BoxAgentVersion(box.host, box.port).catch(() => null);
-        if (check && check.goLibrespot === 'present') {
-          try { ClearUpdateIntent(box.host, box.port); } catch {}
-          return { outcome: 'done', version: check, engineDelivered };
-        }
-        continue; // delivered but not visible yet: stay in the loop
-      } catch (engErr) {
-        const m = String((engErr && engErr.message) || engErr || '');
-        // Too full even counting the reclaimable old engine: retrying cannot
-        // help, only freeing space can. The agent update itself succeeded, so
-        // the intent is CLEARED: keeping it "so the app finishes the job next
-        // time" made the supervisor toast a permanent per-session nag on a
-        // speaker whose state cannot change by itself (Walter's CineMate,
-        // green "unvollständig" window on every update, 2026-08-25). This
-        // run's own result already names what to free, and once space exists
-        // the next update run delivers the engine anyway.
-        if (/insufficient nand|no space|507/i.test(m)) {
-          engineTooFull = true;
-          try { ClearUpdateIntent(box.host, box.port); } catch {}
-          break;
-        }
-        try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
-        // Mid-stream drop: the box rebooted or reset the stream. Loop straight
-        // back: the top-of-loop settle gate does the waiting (reachable,
-        // uptime past the settling window, stable for 30 s).
-        if (isEngineStreamDrop(m)) continue;
-      }
-      // Exponential backoff (2s -> 30s cap): each failed attempt costs the
-      // box a probe, and during a slow agent start hammering it every 2s
-      // just prolongs the settling (#270).
-      await sleep(Math.min(30_000, 2_000 * Math.pow(2, attempt - 1)));
-    }
-    // The agent is on the target build but the engine is not there. The
-    // record stays, so the next time this speaker is seen the app finishes
-    // the job instead of leaving it half-done.
-    return { outcome: 'partial', version: confirmedVer, unmet: 'spotify-engine', engineTooFull };
-  }
-  try { ClearUpdateIntent(box.host, box.port); } catch {}
-  return { outcome: 'done', version: confirmedVer };
 }
 
 // showSt300PowerCycleNotice puts the SoundTouch 300 power-cycle instruction on
@@ -4827,7 +4452,7 @@ const BOX_BUSY_TOKEN = 'STR_BUSY:';
 let boxUpdateBusy = false;
 
 async function doBoxUpdate(targetBox) {
-  // Both latches, not just this one. The whole-house run drives runBoxUpdate
+  // Both latches, not just this one. The whole-house run calls RunFleetUpdate
   // directly so it does not contend here, but it holds the single-box global
   // lock for the entire batch, and a single-speaker click during it would walk
   // into the same duplicate-start the latch exists to stop.
@@ -4993,17 +4618,11 @@ async function runSingleBoxUpdate(targetBox) {
   // flag BEFORE first setStatus() so checkBoxUpdate() and the
   // setStatus guard both see a consistent (target, in-flight)
   // pair at every point in this flow. Reset together in finally{}.
-  // Write down what this speaker is supposed to end up running BEFORE any of
-  // it happens. From here on the target survives this app process: if the
-  // window is closed during the reboot, or the machine goes to sleep, the
-  // next run compares the speaker against this record and finishes the job.
-  try {
-    RecordUpdateIntent(targetBox.host, targetBox.port, (state.appInfo && state.appInfo.version) || '',
-      targetBox.deviceID || '', getBoxLabel(targetBox), true);
-  } catch {}
-  // Tell the backend an update owns the app now, so the window asks before
-  // closing. Cleared in the finally below.
-  try { SetOTARunning(true); } catch {}
+  //
+  // What this speaker is supposed to end up running is written down inside
+  // RunSpeakerUpdate, before any byte moves, and the backend reports itself
+  // busy for the whole run so the window asks before closing. Neither is done
+  // here any more; the Go side owns both for the headless harness too.
   state.otaTargetHost = targetBox.host;
   state.otaTargetName = getBoxLabel(targetBox);
   // Suppress the SSH "remove stick and reboot" banner for the whole
@@ -5041,81 +4660,64 @@ async function runSingleBoxUpdate(targetBox) {
   // touched the speaker, and telling those users to pull the plug is both
   // pointless and alarming.
   boxWasTouched = true;
-  // Countdown ticker for the phases that carry a deadline. runBoxUpdate reports
-  // about every two seconds; the seconds in between are ticked here so the
-  // remaining time counts down smoothly instead of jumping in steps.
-  let tickHandle = null, tickRender = null;
-  const stopTick = () => {
-    if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
-    tickRender = null;
-  };
-  const startTick = (render) => {
-    tickRender = render;
-    render();
-    if (!tickHandle) tickHandle = setInterval(() => { if (tickRender) tickRender(); }, 1000);
-  };
-  const countdown = (remainingMs, key, step) => {
-    const dl = Date.now() + (remainingMs || 0);
-    startTick(() => {
-      const text = t(key, { remaining: formatRemaining(dl - Date.now()) });
-      setStatus(step ? withStep(text, step) : text);
-    });
-  };
+  // The phases arrive from the Go sequence, one event per change and at least
+  // one per second while a countdown runs, so the remaining time counts down
+  // smoothly with no timer of our own: it is formatted here from remainingMs.
   let uploadedToastShown = false;
+  const offPhase = EventsOn('box:update:phase', (d) => {
+    if (!d || typeof d !== 'object' || d.host !== targetBox.host) return;
+    switch (d.phase) {
+      case 'uploading':
+        setStatus(withStep(t('update.uploading'), UPDATE_STEPS.send));
+        break;
+      case 'rebooting':
+        // The binary is on the speaker now. Said once, at the moment it
+        // becomes true, so the user knows the transfer is behind them: the
+        // agent detaches, waits out TIME_WAIT on its listener ports (see
+        // internal/webui handleAgentUpdate) and only then execs the new
+        // binary, so the speaker is away for minutes with nothing to show.
+        if (!uploadedToastShown) { uploadedToastShown = true; showToast(t('update.uploadedToast')); }
+        setStatus(withStep(t('update.rebooting'), UPDATE_STEPS.restart));
+        break;
+      case 'verifying':
+        setStatus(withStep(t('update.waitingForSpeaker', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.restart));
+        break;
+      // The speaker IS back on the new version and is only being held for the
+      // stability window before we believe it (a BCO box can reboot a second
+      // time on its own). Saying "restarting" through that window reads as if
+      // the app had not noticed the speaker was back.
+      case 'settling':
+        setStatus(withStep(t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.confirm));
+        break;
+      case 'retrying':
+        uploadedToastShown = false;
+        showToast(t('update.retrying'));
+        setStatus(t('update.retrying'));
+        break;
+      case 'confirmed':
+        // Not "update done": the Spotify-engine half may still follow (the
+        // grey Updating button stays for it), and calling the whole update
+        // done here while the card visibly kept working confused a reporter
+        // (#672). The single final "done" comes when the flow resolves.
+        showToast(t('update.agentDoneToast'));
+        break;
+      case 'engineQueued': setStatus(withStep(t('updateAll.phase.engineQueued'), UPDATE_STEPS.engine)); break;
+      case 'engineUploading':
+        engineStreaming = true;
+        setStatus(withStep(t('updateAll.phase.engineUploading'), UPDATE_STEPS.engine));
+        break;
+      case 'spotify':
+        engineStreaming = false;
+        setStatus(t('update.spotifyFinalStep', { remaining: formatRemaining(d.remainingMs) }));
+        break;
+    }
+  });
   try {
-    // One speaker and a whole house run the SAME sequence: runBoxUpdate. This
-    // path only differs in how it reports - a button, a status line and toasts
-    // instead of the overlay's rows. No upload gate is passed: a single speaker
-    // has nothing to queue behind.
-    const result = await runBoxUpdate(targetBox, (ph, d) => {
-      switch (ph) {
-        case 'uploading':
-          stopTick();
-          setStatus(withStep(t('update.uploading'), UPDATE_STEPS.send));
-          break;
-        case 'rebooting':
-          stopTick();
-          // The binary is on the speaker now. Said once, at the moment it
-          // becomes true, so the user knows the transfer is behind them: the
-          // agent detaches, waits out TIME_WAIT on its listener ports (see
-          // internal/webui handleAgentUpdate) and only then execs the new
-          // binary, so the speaker is away for minutes with nothing to show.
-          if (!uploadedToastShown) { uploadedToastShown = true; showToast(t('update.uploadedToast')); }
-          setStatus(withStep(t('update.rebooting'), UPDATE_STEPS.restart));
-          break;
-        case 'verifying': countdown(d.remainingMs, 'update.waitingForSpeaker', UPDATE_STEPS.restart); break;
-        // The speaker IS back on the new version and is only being held for the
-        // stability window before we believe it (a BCO box can reboot a second
-        // time on its own). Saying "restarting" through that window reads as if
-        // the app had not noticed the speaker was back.
-        case 'settling': countdown(d.remainingMs, 'updateAll.phase.settling', UPDATE_STEPS.confirm); break;
-        case 'retrying':
-          stopTick();
-          uploadedToastShown = false;
-          showToast(t('update.retrying'));
-          setStatus(t('update.retrying'));
-          break;
-        case 'confirmed':
-          stopTick();
-          // Not "update done": the Spotify-engine half may still follow (the
-          // grey Updating button stays for it), and calling the whole update
-          // done here while the card visibly kept working confused a reporter
-          // (#672). The single final "done" comes when the flow resolves.
-          showToast(t('update.agentDoneToast'));
-          break;
-        case 'engineQueued': stopTick(); setStatus(withStep(t('updateAll.phase.engineQueued'), UPDATE_STEPS.engine)); break;
-        case 'engineUploading':
-          stopTick();
-          engineStreaming = true;
-          setStatus(withStep(t('updateAll.phase.engineUploading'), UPDATE_STEPS.engine));
-          break;
-        case 'spotify':
-          engineStreaming = false;
-          countdown(d.remainingMs, 'update.spotifyFinalStep');
-          break;
-      }
-    });
-    stopTick();
+    // One speaker and a whole house run the SAME sequence, in Go. This path
+    // only differs in how it reports - a button, a status line and toasts
+    // instead of the overlay's rows.
+    const result = await RunSpeakerUpdate(targetBox.host, targetBox.port, targetBox.deviceID || '', getBoxLabel(targetBox));
+    noteOTAResult(targetBox, result);
     const confirmedVer = (result && result.version) || null;
     const confirmed = !!confirmedVer;
     if (result && result.outcome === 'done') {
@@ -5151,9 +4753,10 @@ async function runSingleBoxUpdate(targetBox) {
       // seconds, so say it plainly instead of "took longer than expected".
       showToast(t('update.agentGoneToast', { name: getBoxLabel(targetBox) }));
     } else {
-      // Timed out. runBoxUpdate has already journaled the verdict, classified
-      // why, retried the one class of failure a retry actually fixes, and fed
-      // the loop breaker, so all that is left here is to say so.
+      // Timed out. The Go sequence has already journaled the verdict,
+      // classified why, retried the one class of failure a retry actually
+      // fixes, and noteOTAResult fed the loop breaker, so all that is left
+      // here is to say so.
       showToast(t('update.tookLongerToast'));
     }
     // The SoundTouch 300 drops into its blinking update-pending state after an
@@ -5229,13 +4832,10 @@ async function runSingleBoxUpdate(targetBox) {
     }
     reset();
   } finally {
-    // Stop the countdown ticker on every exit, including a throw mid-poll:
-    // an interval left running keeps writing status into a finished update.
-    stopTick();
+    if (typeof offPhase === 'function') offPhase();
     if (typeof offBoxUp === 'function') offBoxUp();
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.
-    try { SetOTARunning(false); } catch {}
     state.otaInProgress = false;
     state.otaTargetHost = null;
     state.otaTargetName = null;
@@ -5249,11 +4849,12 @@ async function runSingleBoxUpdate(targetBox) {
 
 // updateAllBoxes updates every eligible speaker in one click with a live
 // per-box multi-progress overlay. Built for a household with several speakers,
-// some on weak Wi-Fi: it asks ONCE up front, runs a BOUNDED pool (2 at a time, so
-// concurrent ~16 MB Spotify-engine pushes do not saturate a weak shared AP and
-// trip the 60 s upload-stall watchdog), and never lets one slow/failed box block
-// the rest. Calls runBoxUpdate directly (not doBoxUpdate) so it does not contend
-// on the single-box global lock, which it holds for the whole batch.
+// some on weak Wi-Fi: it asks ONCE up front, then hands the whole list to
+// RunFleetUpdate, which starts every speaker at once and serialises only the
+// byte pushes (so concurrent ~16 MB streams do not saturate a weak shared AP
+// and trip the 60 s upload-stall watchdog), and never lets one slow/failed box
+// block the rest. Calls the Go batch directly (not doBoxUpdate) so it does not
+// contend on the single-box global lock, which it holds for the whole batch.
 //
 // Returns true when a batch was actually started, false when it backed out
 // (already running, nothing to do, user cancelled). Callers that took a button
@@ -5478,7 +5079,7 @@ async function runUpdateAllBoxes(onStart) {
     // therefore only follows the bar and never claims a restart it will not make.
     if (engineOnly.has(p.host)) { setRow(p.host, { pct: p.pct }); return; }
     // At 100% the binary is on the box and it reboots; its reply is often lost
-    // in that reboot, so runBoxUpdate's own 'rebooting' phase does not fire for
+    // in that reboot, so the sequence's own 'rebooting' phase does not fire for
     // another ~minute. Flip the row to "restarting" on upload completion so it
     // does not sit at "uploading" through a reboot the app cannot yet see.
     if (p.pct >= 100) { setRow(p.host, { phaseText: withStep(t('updateAll.phase.rebooting'), UPDATE_STEPS.restart), busy: true }); return; }
@@ -5518,53 +5119,32 @@ async function runUpdateAllBoxes(onStart) {
   // so it carries the same guarantees: the window asks before closing for
   // the whole run, every speaker's target is written down before its turn,
   // and a speaker that does not get there produces the copyable report
-  // instead of a red row nobody can act on.
-  try { SetOTARunning(true); } catch {}
+  // instead of a red row nobody can act on. The sequence, the upload gate
+  // that serialises only the byte pushes, and the honesty re-check all run in
+  // Go (RunFleetUpdate); what follows renders its phases into the rows.
 
   let uaReportShown = false;
-  // runEngineOnly puts the Spotify engine back on a speaker whose agent is
-  // already current. Nothing else is written to it, and a current agent
-  // hot-swaps the engine the moment it lands, so this normally costs no restart
-  // at all. It still records the target first, like every other speaker in the
-  // run, so a window closed halfway is noticed afterwards instead of looking
-  // like nothing ever happened.
-  const runEngineOnly = async (b, gate) => {
-    setRow(b.host, { phaseText: t('updateAll.phase.engineOnly'), busy: true });
-    let outcome = 'failed';
-    try {
-      RecordUpdateIntent(b.host, b.port, (state.appInfo && state.appInfo.version) || '',
-        b.deviceID || '', getBoxLabel(b), true);
-    } catch {}
-    try {
-      const res = await gate.run(() => EnsureSpotifyEngine(b.host, b.port));
-      if (/no embedded engine/i.test(String(res || ''))) {
-        // This app build carries no engine, so there is nothing to deliver.
-        outcome = 'partial';
+  // finishRow is a row's final word, from the terminal phase event or, if the
+  // window missed it, from the returned row. The engine-only rows have their
+  // own texts: nothing was written to those speakers but the engine, and a
+  // current agent hot-swaps it, so they never claim a restart.
+  const finishRow = (b, d) => {
+    const outcome = (d && d.outcome) || 'failed';
+    const err = String((d && d.err) || '');
+    if (engineOnly.has(b.host)) {
+      if (outcome === 'done') {
+        setRow(b.host, { phaseText: t('updateAll.phase.engineDone'), pct: 100, barClass: 'ua-done' });
+      } else if (outcome === 'partial' && d.unmet === 'no-embedded-engine') {
+        // This app build carries no engine, so there was nothing to deliver.
         setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
-      } else {
-        // The same honesty check the update path does: a speaker can lose the
-        // engine again to a reboot right after it was delivered, so confirm it
-        // is really there before the row goes green.
-        let stillMissing = false;
-        try {
-          const fv = await BoxAgentVersion(b.host, b.port);
-          stillMissing = !!(fv && fv.goLibrespot === 'missing');
-        } catch { /* still settling: trust the delivery */ }
-        outcome = stillMissing ? 'partial' : 'done';
-        if (stillMissing) {
-          setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
-        } else {
-          setRow(b.host, { phaseText: t('updateAll.phase.engineDone'), pct: 100, barClass: 'ua-done' });
-          try { ClearUpdateIntent(b.host, b.port); } catch {}
-        }
-      }
-    } catch (e) {
-      outcome = 'failed';
-      const m = String((e && e.message) || e || '');
-      // A full NAND is not something to retry blindly, so it gets its own row
-      // text instead of a bare "failed"; the speaker's own screen names the
-      // other SoundTouch software eating the space.
-      if (/insufficient nand|no space|507/i.test(m)) {
+      } else if (outcome === 'partial') {
+        // Delivered, and gone again to a reboot right after: the same honesty
+        // check the update path does, so the row does not go green on it.
+        setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
+      } else if (d.engineTooFull) {
+        // A full NAND is not something to retry blindly, so it gets its own
+        // row text instead of a bare "failed"; the speaker's own screen names
+        // the other SoundTouch software eating the space.
         setRow(b.host, { phaseText: t('updateAll.phase.engineTooFull'), barClass: 'ua-failed' });
       } else {
         setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
@@ -5572,66 +5152,12 @@ async function runUpdateAllBoxes(onStart) {
           uaReportShown = true;
           // The engine repair row reaches the speaker the same way, so it
           // loses the network the same way (#963).
-          if (noNetworkHere(m)) showUpdateNoNetworkNotice();
-          else showUpdateFailureReport(b, 'update-all-engine', String(e));
+          if (noNetworkHere(err)) showUpdateNoNetworkNotice();
+          else showUpdateFailureReport(b, 'update-all-engine', err);
         }
+        try { console.warn('update all: engine repair failed', b.host, err); } catch {}
       }
-      try { console.warn('update all: engine repair failed', b.host, e); } catch {}
-    } finally {
-      const r = rowState.get(b.host); if (r) r.outcome = outcome;
-      renderSummary();
-    }
-  };
-
-  const runOne = async (b, gate) => {
-    if (engineOnly.has(b.host)) return runEngineOnly(b, gate);
-    setRow(b.host, { phaseText: t('updateAll.phase.queued'), wait: true });
-    let outcome = 'failed';
-    try {
-      RecordUpdateIntent(b.host, b.port, (state.appInfo && state.appInfo.version) || '',
-        b.deviceID || '', getBoxLabel(b), true);
-    } catch {}
-    try {
-      const result = await runBoxUpdate(b, (ph, d) => {
-        switch (ph) {
-          // 'uploading' fires before the batch gate: the row keeps waiting
-          // until its first progress byte arrives (the progress handler above).
-          case 'uploading': setRow(b.host, { phaseText: t('updateAll.phase.queued'), wait: true }); break;
-          case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), busy: true }); break;
-          case 'verifying': setRow(b.host, { phaseText: withStep(t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.restart), busy: true }); break;
-          case 'retrying': setRow(b.host, { phaseText: t('updateAll.phase.retrying'), busy: true }); break;
-          case 'settling': setRow(b.host, { phaseText: withStep(t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.confirm), busy: true }); break;
-          case 'engineQueued': setRow(b.host, { phaseText: t('updateAll.phase.engineQueued'), wait: true }); break;
-          case 'engineUploading': setRow(b.host, { phaseText: t('updateAll.phase.engineUploading'), pct: 0 }); break;
-          case 'spotify': setRow(b.host, { phaseText: spotifyPhaseText(d), busy: true }); break;
-        }
-      }, 1, gate);
-      outcome = result.outcome;
-      // Honesty check: a box can LOSE its just-delivered engine to an extra
-      // reboot AFTER the engine step returned (tight-NAND ST30, the Portable's
-      // battery/fd-leak reboot). So before calling it "done", confirm the engine
-      // is actually present; if it is gone, report "Spotify pending" (deferred)
-      // instead of a green "done". Nothing re-delivers it later on its own any
-      // more, so the record of what this speaker should be running stays, and
-      // the user is told once the next time they open it.
-      if (outcome === 'done') {
-        try {
-          const fv = await BoxAgentVersion(b.host, b.port);
-          if (fv && fv.goLibrespot === 'missing') outcome = 'partial';
-        } catch { /* box still settling: keep the reported outcome */ }
-      }
-      // The SoundTouch 300 drops into its blinking update-pending state after an
-      // OTA and is non-functional until it is unplugged; the agent cannot clear
-      // it. Tell the user that on the row rather than a misleading plain "done".
-      if (outcome !== 'failed' && (b.model || '').includes('300')) {
-        setRow(b.host, { phaseText: t('update.st300PowerCycle'), pct: 100, barClass: 'ua-defer' });
-      } else if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
-      else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
-      else if (outcome === 'agentGone') setRow(b.host, { phaseText: t('updateAll.phase.agentGone'), barClass: 'ua-failed' });
-      else if (outcome === 'boxInSetup') setRow(b.host, { phaseText: t('updateAll.phase.boxInSetup'), pct: 100, barClass: 'ua-defer' });
-      else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
-    } catch (e) {
-      outcome = 'failed';
+    } else if (outcome === 'failed') {
       setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
       // Same account of the failure the single update gives, for the
       // FIRST speaker that fails: a wall of reports would help nobody, and
@@ -5644,26 +5170,88 @@ async function runUpdateAllBoxes(onStart) {
       // "failed at: update-all" (#963).
       if (!uaReportShown) {
         uaReportShown = true;
-        if (noNetworkHere(String(e))) showUpdateNoNetworkNotice();
-        else showUpdateFailureReport(b, 'update-all', String(e));
+        if (noNetworkHere(err)) showUpdateNoNetworkNotice();
+        else showUpdateFailureReport(b, 'update-all', err);
       }
-      try { console.warn('update all: box failed', b.host, e); } catch {}
-    } finally {
-      const r = rowState.get(b.host); if (r) r.outcome = outcome;
-      renderSummary();
-    }
+      try { console.warn('update all: box failed', b.host, err); } catch {}
+    } else if ((b.model || '').includes('300')) {
+      // The SoundTouch 300 drops into its blinking update-pending state after an
+      // OTA and is non-functional until it is unplugged; the agent cannot clear
+      // it. Tell the user that on the row rather than a misleading plain "done".
+      setRow(b.host, { phaseText: t('update.st300PowerCycle'), pct: 100, barClass: 'ua-defer' });
+    } else if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
+    else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
+    else if (outcome === 'agentGone') setRow(b.host, { phaseText: t('updateAll.phase.agentGone'), barClass: 'ua-failed' });
+    else if (outcome === 'boxInSetup') setRow(b.host, { phaseText: t('updateAll.phase.boxInSetup'), pct: 100, barClass: 'ua-defer' });
+    else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
+    const r = rowState.get(b.host); if (r) r.outcome = outcome;
+    renderSummary();
   };
+  const FINAL_PHASES = new Set(['done', 'partial', 'timeout', 'agentGone', 'boxInSetup', 'failed']);
+  const offPhase = EventsOn('box:update:phase', (d) => {
+    if (!d || typeof d !== 'object' || !d.host || !rowState.has(d.host)) return;
+    const b = rowState.get(d.host).box;
+    if (FINAL_PHASES.has(d.phase)) { if (!rowState.get(d.host).outcome) finishRow(b, d); return; }
+    if (engineOnly.has(d.host)) {
+      // Queued behind another speaker's push, then sending: both read as the
+      // one thing happening to this speaker, the engine being put back.
+      if (d.phase === 'engineQueued') setRow(d.host, { phaseText: t('updateAll.phase.engineOnly'), wait: true });
+      else if (d.phase === 'engineUploading') setRow(d.host, { phaseText: t('updateAll.phase.engineOnly'), busy: true });
+      return;
+    }
+    switch (d.phase) {
+      // 'uploading' fires before the batch gate: the row keeps waiting
+      // until its first progress byte arrives (the progress handler above).
+      case 'uploading': setRow(d.host, { phaseText: t('updateAll.phase.queued'), wait: true }); break;
+      case 'rebooting': setRow(d.host, { phaseText: t('updateAll.phase.rebooting'), busy: true }); break;
+      case 'verifying': setRow(d.host, { phaseText: withStep(t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.restart), busy: true }); break;
+      case 'retrying': setRow(d.host, { phaseText: t('updateAll.phase.retrying'), busy: true }); break;
+      case 'settling': setRow(d.host, { phaseText: withStep(t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), UPDATE_STEPS.confirm), busy: true }); break;
+      case 'engineQueued': setRow(d.host, { phaseText: t('updateAll.phase.engineQueued'), wait: true }); break;
+      case 'engineUploading': setRow(d.host, { phaseText: t('updateAll.phase.engineUploading'), pct: 0 }); break;
+      case 'spotify': setRow(d.host, { phaseText: spotifyPhaseText(d), busy: true }); break;
+    }
+  });
 
   // Every speaker starts at once and they queue only for the push itself, so
   // the restarts, which are the long part and need no network, all happen
-  // together instead of two at a time (see makeUploadGate).
-  const uploadGate = makeUploadGate(1);
-  await Promise.allSettled(targets.map(b => runOne(b, uploadGate)));
+  // together instead of two at a time (the upload gate in otaorchestrate.go).
+  const fleetTargets = targets.map(b => ({
+    host: b.host, port: b.port, deviceID: b.deviceID || '', name: getBoxLabel(b), engineOnly: engineOnly.has(b.host),
+  }));
+  let fleet = null;
+  try {
+    fleet = await RunFleetUpdate(fleetTargets);
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes(BOX_BUSY_TOKEN)) {
+      // The whole batch was turned away: another update owns the speakers.
+      // Nothing failed on any of them, so no reports, just the word.
+      showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
+      for (const r of rowState.values()) {
+        if (r.outcome) continue;
+        r.outcome = 'failed';
+        setRow(r.box.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
+      }
+      renderSummary();
+    } else {
+      for (const r of rowState.values()) if (!r.outcome) finishRow(r.box, { outcome: 'failed', err: msg });
+    }
+  }
+  // The rows are the record. A terminal event the window missed is filled in
+  // from them, and the loop breaker is fed from them, because only the rows
+  // carry the confirmation and the classifier's verdict.
+  for (const row of (fleet && fleet.rows) || []) {
+    const r = rowState.get(row.host);
+    if (!r) continue;
+    if (!r.outcome) finishRow(r.box, row);
+    if (!engineOnly.has(row.host)) noteOTAResult(r.box, row);
+  }
 
   // Batch done: release the global lock, refresh, summarize.
   offProg();
+  offPhase();
   if (mini) mini.classList.add('hidden');
-  try { SetOTARunning(false); } catch {}
   state.otaInProgress = false;
   state.otaTargetHost = null;
   state.otaTargetName = null;

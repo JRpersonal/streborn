@@ -171,6 +171,11 @@ type App struct {
 	// lanArtLog remembers which media-server covers already logged their
 	// failure, so a broken cover is explained once, not on every redraw.
 	lanArtLog lanArtLogged
+
+	// uploadTaps lets the fleet update's gate watch a speaker's upload
+	// progress, so the next push can start the moment this one's bytes are on
+	// the wire (otaorchestrate.go). Fed by transferProgress.report.
+	uploadTaps progressTaps
 }
 
 // NewApp creates a new App instance.

@@ -243,6 +243,17 @@ export function AllowThroughFirewall(includePublic) {
   return callOptionalBinding('AllowThroughFirewall', [!!includePublic]);
 }
 
+// RunSpeakerUpdate runs one speaker's update end to end in Go (push, verify,
+// stability window, classify, the one retry, the Spotify engine), reporting
+// its phases on the box:update:phase event; RunFleetUpdate is the whole-house
+// loop over it with the upload gate. Optional bindings, per the note above.
+export function RunSpeakerUpdate(host, port, deviceID, name) {
+  return callOptionalBinding('RunSpeakerUpdate', [host, port, deviceID || '', name || '']);
+}
+export function RunFleetUpdate(targets) {
+  return callOptionalBinding('RunFleetUpdate', [targets]);
+}
+
 // GetDisplayNotices / SetDisplayNotices read and switch STR's short notices on
 // the speaker display (a saved key, an empty key, ...); IdentifyBox shows
 // HELLO and the speaker's name there. Optional bindings, per the note above.

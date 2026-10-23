@@ -64,6 +64,10 @@ func (p *transferProgress) report(done int64) {
 	if el := now.Sub(p.start).Seconds(); el > 0 {
 		bps = int64(float64(done) / el)
 	}
+	// The fleet gate watches the same reading, window or not: it releases the
+	// next push when this one reaches 100%, so the tap runs before the Wails
+	// guard below.
+	p.app.uploadTaps.notify(p.host, pct)
 	// Only emit once the Wails runtime is live: EventsEmit REQUIRES the real
 	// lifecycle context and Fatals on any other (appCtx() falls back to
 	// Background before startup). A bound App method can legitimately run before
