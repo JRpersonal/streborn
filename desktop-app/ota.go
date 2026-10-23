@@ -11,7 +11,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1636,45 +1635,18 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// its engine and does not re-fetch it every SSH update (#119). Mirrors the
 	// on-box reclaimSpotifyEngine second tier.
 	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
-	uploadCmd := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
+	preamble := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
 		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; "+
-		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new && "+
-		"sync && echo STR_UPLOADED_$(wc -c < /mnt/nv/streborn/bin/streborn-armv7l.new)", needKB)
-	out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second)
-	if err != nil {
-		return fmt.Errorf("ssh upload (%d bytes) failed: %w (%s)", len(bin), err, strings.TrimSpace(out))
-	}
-	// The session can end "successfully" while the file never landed (stream cut,
-	// ENOSPC, or a reboot racing the write — live 2026-07-31: verify found no .new
-	// at all after a clean-looking upload). The command therefore syncs and echoes
-	// the on-box byte count; anything else means the box does not hold the binary.
-	if !strings.Contains(out, fmt.Sprintf("STR_UPLOADED_%d", len(bin))) {
-		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", len(bin), discovery.LastN(strings.TrimSpace(out), 160))
-	}
-	// Content-verify before the atomic rename so a half-uploaded OR corrupted
-	// file never becomes the live agent. A size check alone cannot do that
-	// job: consecutive releases are byte-equal in size (v0.9.4/5/6 are all
-	// exactly 12517538 bytes), so a stale same-size file would "verify".
-	// Prefer sha256sum, fall back to md5sum (ubiquitous on BusyBox), and only
-	// then size. sync after the rename so the swap survives the reboot that
-	// follows (UBIFS write-back, #381). Sentinel "OK_<size>" so the caller can
-	// distinguish a successful rename from any stderr noise.
-	sum := sha256.Sum256(bin)
-	md5sum := md5.Sum(bin)
-	verifyCmd := fmt.Sprintf(
-		"new=/mnt/nv/streborn/bin/streborn-armv7l.new; "+
-			"if command -v sha256sum >/dev/null 2>&1; then [ \"$(sha256sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"elif command -v md5sum >/dev/null 2>&1; then [ \"$(md5sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"else [ \"$(wc -c < $new)\" = \"%d\" ] || { echo STR_HASH_FAIL; exit 1; }; fi && "+
-			"chmod 0755 $new && "+
-			"mv $new /mnt/nv/streborn/bin/streborn-armv7l && "+
-			"sync && echo OK_%d",
-		hex.EncodeToString(sum[:]), hex.EncodeToString(md5sum[:]), len(bin), len(bin))
-	sentinel := fmt.Sprintf("OK_%d", len(bin))
-	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		return fmt.Errorf("ssh content-verify or rename failed: %w (%s)", err, strings.TrimSpace(out))
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; ", needKB)
+	// sshPushFile streams to .new, reads the on-box byte count back (the
+	// session can end "successfully" while the file never landed: stream cut,
+	// ENOSPC, or a reboot racing the write; live 2026-07-31), content-verifies
+	// (sha256sum, else md5sum, else size: consecutive releases are byte-equal
+	// in size, so a stale same-size file would pass a size check) and only
+	// then renames the verified file over the live agent and syncs (#381).
+	if err := sshPushFile(host, agentBinaryPath, bin, sshPushOptions{preamble: preamble}); err != nil {
+		return agentSSHPushError(err, len(bin))
 	}
 	// Always reboot after the binary swap. Jens 2026-06-01: an OTA that
 	// only SIGTERMs the agent and relies on run.sh's watchdog respawn
@@ -1719,38 +1691,51 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// binary into ENOSPC (that is what happened live on a tight ST20). The
 	// post-OTA EnsureSpotifyEngine retries once space frees.
 	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
-	uploadCmd := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
+	preamble := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
 		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; fi; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; "+
-		"mkdir -p /mnt/nv/streborn/bin && cat > %s.new", needKB, dst, dst, needKB, dst)
-	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
-		if strings.Contains(out, "STR_NO_SPACE") {
-			a.logger.Warn("sidecar SSH push skipped: NAND cannot hold the engine (agent OTA still proceeds; delivered later once space frees)", "host", host, "needKB", needKB)
-			return
-		}
-		a.logger.Warn("sidecar SSH upload failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
-		return
-	}
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; ", needKB, dst, dst, needKB)
 	sum := sha256.Sum256(bin)
 	sha := hex.EncodeToString(sum[:])
-	md5s := md5.Sum(bin)
-	// Content-verify (sha256sum, else md5sum, else size — same rationale as
+	// Content-verify (sha256sum, else md5sum, else size, same rationale as
 	// the agent binary above) and sync so the engine survives the reboot that
 	// follows the agent swap (an unsynced engine vanished across exactly that
-	// reboot, deqw 2026-07-12).
-	verifyCmd := fmt.Sprintf(
-		"new=%s.new; "+
-			"if command -v sha256sum >/dev/null 2>&1; then [ \"$(sha256sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"elif command -v md5sum >/dev/null 2>&1; then [ \"$(md5sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"else [ \"$(wc -c < $new)\" = \"%d\" ] || { echo STR_HASH_FAIL; exit 1; }; fi && "+
-			"chmod 0755 $new && mv $new %s && "+
-			"printf %%s %s > %s.sha256 && sync && echo OK_%d",
-		dst, sha, hex.EncodeToString(md5s[:]), len(bin), dst, sha, dst, len(bin))
-	sentinel := fmt.Sprintf("OK_%d", len(bin))
-	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		a.logger.Warn("sidecar SSH content-verify/rename failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
-		return
+	// reboot, deqw 2026-07-12). The content hash is stamped next to the engine
+	// after the rename so the agent can report it.
+	err := sshPushFile(host, dst, bin, sshPushOptions{
+		preamble:    preamble,
+		afterRename: fmt.Sprintf("printf %%s %s > %s.sha256", sha, dst),
+	})
+	var verifyErr *sshPushVerifyError
+	switch {
+	case err == nil:
+		a.logger.Info("sidecar push (SSH): go-librespot delivered over OTA", "host", host, "bytes", len(bin))
+	case errors.Is(err, errInsufficientNAND):
+		a.logger.Warn("sidecar SSH push skipped: NAND cannot hold the engine (agent OTA still proceeds; delivered later once space frees)", "host", host, "needKB", needKB)
+	case errors.As(err, &verifyErr):
+		a.logger.Warn("sidecar SSH content-verify/rename failed (agent OTA still proceeds)", "host", host, "err", verifyErr.err, "out", strings.TrimSpace(verifyErr.out))
+	default:
+		a.logger.Warn("sidecar SSH upload failed (agent OTA still proceeds)", "host", host, "err", err)
 	}
-	a.logger.Info("sidecar push (SSH): go-librespot delivered over OTA", "host", host, "bytes", len(bin))
+}
+
+// agentBinaryPath is where the agent lives on the speaker's NAND; the SSH-OTA
+// writes the new one next to it and renames it over.
+const agentBinaryPath = "/mnt/nv/streborn/bin/streborn-armv7l"
+
+// agentSSHPushError words an sshPushFile failure the way the SSH-OTA always
+// reported it: these texts reach the user as the update failure.
+func agentSSHPushError(err error, n int) error {
+	var up *sshPushUploadError
+	var short *sshPushShortError
+	var ver *sshPushVerifyError
+	switch {
+	case errors.As(err, &up):
+		return fmt.Errorf("ssh upload (%d bytes) failed: %w (%s)", n, up.err, strings.TrimSpace(up.out))
+	case errors.As(err, &short):
+		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", n, discovery.LastN(strings.TrimSpace(short.out), 160))
+	case errors.As(err, &ver):
+		return fmt.Errorf("ssh content-verify or rename failed: %w (%s)", ver.err, strings.TrimSpace(ver.out))
+	}
+	return err
 }

@@ -12,7 +12,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -1076,7 +1075,7 @@ type uploadTruncatedError struct{ msg string }
 func (e *uploadTruncatedError) Error() string { return e.msg }
 
 // stageRepairFiles uploads the embedded install file set into stageDir on the
-// box over SSH and verifies every file arrived byte-exact, so a truncated
+// box over SSH and verifies every file arrived intact, so a truncated
 // weak-Wi-Fi transfer is caught before install.sh trusts it. The agent binary
 // is the only large file and gets one upload retry, since a transient stall
 // mid-stream is exactly what staging-then-verify is meant to absorb. Returns a
@@ -1088,55 +1087,53 @@ func (e *uploadTruncatedError) Error() string { return e.msg }
 // where the box's sshd stalls ~10.5 s on reverse DNS (see boxssh.go): the old
 // 8-10 s budgets died mid-handshake there, and every staging target then
 // failed as "truncated"/"no space" even though the box was healthy.
+//
+// Each file goes through sshPushFile, the same upload-and-verify the agent
+// update uses: the on-box byte count is parsed out of the session's echo,
+// not string-matched against the whole blob (OpenSSH used to fold its
+// "Warning: Permanently added ... to the list of known hosts." banner in
+// ahead of the number via CombinedOutput, and an exact-match compare then
+// read a byte-perfect upload as "truncated" and falsely failed the whole SSH
+// NAND-install fallback for ST30 stick-power users, 13.06; LogLevel=ERROR
+// suppresses the banner at the source now, parsing keeps the check correct
+// regardless), and the content is checked with sha256sum, md5sum or, on a
+// BusyBox with neither, the size. Until this check the staging verified the
+// size alone.
 func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) error {
 	if out, err := boxSSHOutput(host, "rm -rf "+stageDir+" && mkdir -p "+stageDir+"/bin", 30*time.Second); err != nil {
 		return fmt.Errorf("could not create staging dir %s: %s", stageDir, classifySSHError(out, err))
 	}
 	for name, data := range files {
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			_, _ = boxSSHOutput(host, "mkdir -p "+stageDir+"/"+name[:i], 30*time.Second)
-		}
-		dst := stageDir + "/" + name
 		attempts := 1
 		if len(data) > 1<<20 { // only the agent binary; everything else is a few KB
 			attempts = 2
 		}
-		var lastErr error
-		for try := 0; try < attempts; try++ {
-			if out, err := boxSSHUploadStdin(host, "cat > "+dst, bytes.NewReader(data), 120*time.Second); err != nil {
-				lastErr = fmt.Errorf("upload %s failed: %s", name, classifySSHError(out, err))
-				continue
-			}
-			// Byte-count check catches a truncated transfer, the common
-			// weak-Wi-Fi failure mode, without a full checksum the BusyBox on
-			// the box may not carry. Parse the number out of the SSH output
-			// instead of string-matching the whole blob: OpenSSH folds its
-			// "Warning: Permanently added ... to the list of known hosts."
-			// banner (local stderr, forced every connect by
-			// UserKnownHostsFile=/dev/null) in ahead of wc's number via
-			// CombinedOutput, and an exact-match compare then read a
-			// byte-perfect upload as "truncated" and falsely failed the whole
-			// SSH NAND-install fallback for ST30 stick-power users (13.06).
-			// LogLevel=ERROR now suppresses that banner at the source,
-			// but parsing the count keeps the check correct against any
-			// residual stderr noise regardless.
-			got, _ := boxSSHOutput(host, "wc -c < "+dst+" 2>/dev/null", 30*time.Second)
-			if n, ok := lastIntField(got); ok && n == int64(len(data)) {
-				lastErr = nil
-				break
-			}
-			recv := "no byte count"
-			if n, ok := lastIntField(got); ok {
-				recv = strconv.FormatInt(n, 10)
-			}
-			lastErr = &uploadTruncatedError{msg: fmt.Sprintf("upload %s truncated: speaker received %s of %d bytes", name, recv, len(data))}
-		}
-		if lastErr != nil {
-			return lastErr
+		err := sshPushFile(host, stageDir+"/"+name, data, sshPushOptions{attempts: attempts, verifyTimeout: 30 * time.Second})
+		if err != nil {
+			return stagingPushError(name, len(data), err)
 		}
 	}
 	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 30*time.Second)
 	return nil
+}
+
+// stagingPushError words an sshPushFile failure for the install staging: the
+// file is named, a short upload is the uploadTruncatedError the staging
+// chooser keys its USB-stick guidance on (allTargetsTruncatedError), and a
+// failed content check names the check.
+func stagingPushError(name string, size int, err error) error {
+	var up *sshPushUploadError
+	var short *sshPushShortError
+	var ver *sshPushVerifyError
+	switch {
+	case errors.As(err, &up):
+		return fmt.Errorf("upload %s failed: %s", name, classifySSHError(up.out, up.err))
+	case errors.As(err, &short):
+		return &uploadTruncatedError{msg: fmt.Sprintf("upload %s truncated: speaker received %s of %d bytes", name, short.received(), size)}
+	case errors.As(err, &ver):
+		return fmt.Errorf("upload %s arrived with the right size but failed its checksum on the speaker: %s", name, classifySSHError(ver.out, ver.err))
+	}
+	return err
 }
 
 // lastIntField returns the LAST whitespace-separated token in out that parses as
