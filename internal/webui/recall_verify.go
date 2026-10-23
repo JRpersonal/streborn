@@ -145,7 +145,11 @@ var exhaustedRecallSettle = 5 * time.Second
 
 // exhaustedStandbySend is the standby seam for settleExhaustedRecall, for the
 // same reason as pairStandbySend: the real call reaches :8090 on a fixed port.
-var exhaustedStandbySend = func(ctx context.Context, host string) error {
+// A nil Server field (exhaustedStandbySendFn) means the real call.
+func (s *Server) exhaustedStandbySend(ctx context.Context, host string) error {
+	if s.exhaustedStandbySendFn != nil {
+		return s.exhaustedStandbySendFn(ctx, host)
+	}
 	return boxapi.New(host).Standby(ctx)
 }
 
@@ -188,7 +192,7 @@ func (s *Server) settleExhaustedRecall(gen uint64, started time.Time) string {
 			return ""
 		}
 		s.NoteUserStop()
-		if err := exhaustedStandbySend(ctx, s.boxHost); err != nil {
+		if err := s.exhaustedStandbySend(ctx, s.boxHost); err != nil {
 			s.logger.Warn("recall verify: could not put the speaker back to standby after the failed recall", "err", err)
 			return ""
 		}

@@ -73,26 +73,25 @@ func (b *handoverBox) seen() []string {
 	return append([]string(nil), b.events...)
 }
 
-// fastHandover shrinks the verify window so a test does not wait real seconds.
-func fastHandover(t *testing.T) {
-	t.Helper()
-	window, poll := nativeHandoverWindow, nativeHandoverPoll
-	nativeHandoverWindow, nativeHandoverPoll = 60*time.Millisecond, 5*time.Millisecond
-	t.Cleanup(func() { nativeHandoverWindow, nativeHandoverPoll = window, poll })
+// fastHandoverTiming shrinks the verify window so a test does not wait real
+// seconds. Installed on the server under test, never on a package variable,
+// so no cleanup is needed.
+func fastHandoverTiming() *nativeHandoverTiming {
+	return &nativeHandoverTiming{window: 60 * time.Millisecond, poll: 5 * time.Millisecond}
 }
 
 func newHandoverServer(t *testing.T, b *handoverBox) *Server {
 	t.Helper()
-	fastHandover(t)
 	srv := httptest.NewServer(b.handler())
 	t.Cleanup(srv.Close)
 	return &Server{
-		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		queue:          newPlayQueue(),
-		renderer:       &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
-		boxNowReadFn:   b.read,
-		nativeStopFn:   b.stopKey,
-		nativeResumeFn: b.playKey,
+		nativeHandoverTiming: fastHandoverTiming(),
+		logger:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		queue:                newPlayQueue(),
+		renderer:             &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
+		boxNowReadFn:         b.read,
+		nativeStopFn:         b.stopKey,
+		nativeResumeFn:       b.playKey,
 	}
 }
 
@@ -101,6 +100,7 @@ func joined(ev []string) string { return strings.Join(ev, ",") }
 // The common case must not change: a speaker already on STR's own stream gets
 // the push and nothing else, no stop key and no second push.
 func TestHandoverLeavesOtherSourcesAlone(t *testing.T) {
+	t.Parallel()
 	for _, src := range []string{"UPNP", "STANDBY", "INVALID_SOURCE", "BLUETOOTH", ""} {
 		b := &handoverBox{source: src} // never turns to UPNP on its own
 		s := newHandoverServer(t, b)
@@ -119,6 +119,7 @@ func TestHandoverLeavesOtherSourcesAlone(t *testing.T) {
 // The #1065 case where one stop is enough: the native station is stopped
 // BEFORE the push, and the push then takes.
 func TestHandoverStopsTheNativeStationBeforeThePush(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource, takeAfter: 1}
 	s := newHandoverServer(t, b)
 	w := httptest.NewRecorder()
@@ -135,6 +136,7 @@ func TestHandoverStopsTheNativeStationBeforeThePush(t *testing.T) {
 // The speaker swallows the first push: STR stops the station again and pushes
 // once more, and the second push counts as the play.
 func TestHandoverRetriesOnceWhenThePushIsSwallowed(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource, takeAfter: 2}
 	s := newHandoverServer(t, b)
 	err := s.pushOverNativeStation(t.Context(), "Station", func() error {
@@ -151,6 +153,7 @@ func TestHandoverRetriesOnceWhenThePushIsSwallowed(t *testing.T) {
 // The field symptom itself: every SOAP call succeeds, the speaker keeps its
 // native station. The app must get an error, not "playing".
 func TestHandoverReportsAPlayTheSpeakerIgnored(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource}
 	s := newHandoverServer(t, b)
 	w := httptest.NewRecorder()
@@ -182,6 +185,7 @@ func TestHandoverReportsAPlayTheSpeakerIgnored(t *testing.T) {
 // A refused handover is the same refusal the recall verify counts, so two of
 // them latch the speaker banner, and one alone stays quiet.
 func TestRefusedHandoverCountsTowardTheRefusalHint(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource}
 	s := newHandoverServer(t, b)
 	push := func() error { return s.renderer.PlayURL(t.Context(), "http://stream.example/a", "Station", "") }
@@ -203,6 +207,7 @@ func TestRefusedHandoverCountsTowardTheRefusalHint(t *testing.T) {
 // nothing to resume: a PLAY key then could start a station the user had
 // stopped themselves.
 func TestRefusedHandoverResumesOnlyWhatItStopped(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource}
 	s := newHandoverServer(t, b)
 	s.nativeStopFn = func(context.Context) bool { return false }
@@ -220,6 +225,7 @@ func TestRefusedHandoverResumesOnlyWhatItStopped(t *testing.T) {
 // The queue (a folder started from the app) shares the push, so it shares the
 // handover and its failure too.
 func TestHandoverCoversTheQueuePush(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource}
 	s := newHandoverServer(t, b)
 	err := s.pushStream(t.Context(), "http://media.example/a.mp3", "Track", "", "audio/mpeg", "", 0)
@@ -235,6 +241,7 @@ func TestHandoverCoversTheQueuePush(t *testing.T) {
 // on top of it: the handover only adds the source check to a push that
 // answered success.
 func TestHandoverKeepsThePushError(t *testing.T) {
+	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource}
 	s := newHandoverServer(t, b)
 	boom := errors.New("connection refused")
@@ -255,6 +262,7 @@ func TestHandoverKeepsThePushError(t *testing.T) {
 // Spotify key and the auto-attach need a live engine to drive end to end, so
 // they are pinned against the source like undoWakeAutoResume's stop order.
 func TestEveryUPnPPushPathUsesTheHandover(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		file, fn, want string
 	}{

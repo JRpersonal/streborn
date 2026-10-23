@@ -39,25 +39,46 @@ import (
 // watcher) or anything without a known length: the restart seeks, and a seek
 // is only meaningful on a finite file.
 
-// Tunables, variables so the tests can shrink them.
-var (
-	// fileRestartSeekDelay is how long after the Play the Seek goes out. The
+// fileResumeTiming is the file restart's clock: the pauses a test shrinks so
+// a restart runs in milliseconds. Production reads productionFileResumeTiming;
+// a test installs its own copy on the server (Server.fileResumeTiming), so no
+// test ever writes a package-level knob that a restart or an end watch of
+// another test still reads.
+type fileResumeTiming struct {
+	// seekDelay is how long after the Play the Seek goes out. The
 	// speaker needs to have opened the file again before it takes a seek;
 	// about two seconds is what worked on the ST10.
-	fileRestartSeekDelay = 2 * time.Second
-	// fileRestartSeekRetry is the pause before the one retry of a refused seek,
+	seekDelay time.Duration
+	// seekRetry is the pause before the one retry of a refused seek,
 	// for a speaker that is slower to open the file than the ST10 was.
-	fileRestartSeekRetry = 1500 * time.Millisecond
-	// fileRestartQuiet is how long the end watch ignores the speaker while STR
+	seekRetry time.Duration
+	// restartQuiet is how long the end watch ignores the speaker while STR
 	// restarts the file: the Stop shows up as STOP_STATE and the Play as a
 	// position near zero, and neither is the track ending.
-	fileRestartQuiet = 4 * time.Second
-	// fileResumeFreezeAfter is how long the position may stand still in
+	restartQuiet time.Duration
+	// freezeAfter is how long the position may stand still in
 	// PLAY_STATE after a pause before the watch calls it the freeze. The watch
 	// polls every few seconds, so in practice this is two reads in a row on the
 	// same second.
-	fileResumeFreezeAfter = 3 * time.Second
-)
+	freezeAfter time.Duration
+}
+
+// productionFileResumeTiming is the file restart's clock on a real speaker.
+var productionFileResumeTiming = fileResumeTiming{
+	seekDelay:    2 * time.Second,
+	seekRetry:    1500 * time.Millisecond,
+	restartQuiet: 4 * time.Second,
+	freezeAfter:  3 * time.Second,
+}
+
+// fileResumeTimes is the file restart's clock: the production values unless
+// a test installed a faster one.
+func (s *Server) fileResumeTimes() *fileResumeTiming {
+	if s.fileResumeTiming != nil {
+		return s.fileResumeTiming
+	}
+	return &productionFileResumeTiming
+}
 
 // activeDirectFile is the lone file the end watch is following, under the
 // recall generation of its play.
@@ -186,8 +207,9 @@ func (s *Server) restartFileAtLocked(ctx context.Context, tr singleTrack, at tim
 	// restart cut off between the Stop and the Play leaves silence behind.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
-	s.setFileRestartQuiet(fileRestartSeekDelay + fileRestartSeekRetry + fileRestartQuiet)
-	defer s.setFileRestartQuiet(fileRestartQuiet)
+	times := s.fileResumeTimes()
+	s.setFileRestartQuiet(times.seekDelay + times.seekRetry + times.restartQuiet)
+	defer s.setFileRestartQuiet(times.restartQuiet)
 	// Where the track continues, for the end watch's clock and for a later
 	// repair that has to put the file back.
 	s.notePausedAt(at)
@@ -209,12 +231,12 @@ func (s *Server) restartFileAtLocked(ctx context.Context, tr singleTrack, at tim
 		s.logger.Info("file restart: no paused position known, playing from the start", "title", tr.title, "why", why)
 		return true
 	}
-	time.Sleep(fileRestartSeekDelay)
+	time.Sleep(times.seekDelay)
 	err := s.renderer.Seek(rctx, at)
 	if err != nil {
 		s.logger.Info("file restart: the speaker refused the first seek, trying once more",
 			"title", tr.title, "why", why, "at", at.String(), "err", err)
-		time.Sleep(fileRestartSeekRetry)
+		time.Sleep(times.seekRetry)
 		err = s.renderer.Seek(rctx, at)
 	}
 	if err != nil {
@@ -273,6 +295,10 @@ type fileResumeWatch struct {
 	// endEpsilon is the end watch's "frozen at the end" slack (queueTiming);
 	// zero means the production value, so a bare literal needs none.
 	endEpsilon time.Duration
+	// freezeAfter is how long a still position counts as the freeze
+	// (fileResumeTiming.freezeAfter); zero means the production value, as
+	// for endEpsilon.
+	freezeAfter time.Duration
 }
 
 // fileResumeObs is one poll.
@@ -335,7 +361,11 @@ func (w *fileResumeWatch) observe(o fileResumeObs) fileResumeStep {
 		w.frozenSince = o.now
 		return fileResumeStep{hold: true}
 	}
-	if o.now.Sub(w.frozenSince) < fileResumeFreezeAfter {
+	freezeAfter := w.freezeAfter
+	if freezeAfter <= 0 {
+		freezeAfter = productionFileResumeTiming.freezeAfter
+	}
+	if o.now.Sub(w.frozenSince) < freezeAfter {
 		return fileResumeStep{hold: true}
 	}
 	at := w.pausedAt

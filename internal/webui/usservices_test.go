@@ -104,6 +104,7 @@ func nativeReq(method, path, body, remote, ct string) *http.Request {
 }
 
 func TestUSServiceEndpointsLANOnly(t *testing.T) {
+	t.Parallel()
 	s, _, _ := nativeTestServer(true)
 	for _, h := range []http.HandlerFunc{s.handleUSServices, s.handleNativeAccount("PANDORA"), s.handleNativeAccount("IHEART")} {
 		w := httptest.NewRecorder()
@@ -115,6 +116,7 @@ func TestUSServiceEndpointsLANOnly(t *testing.T) {
 }
 
 func TestUSServicesToggleNeedsJSON(t *testing.T) {
+	t.Parallel()
 	s, p, _ := nativeTestServer(false)
 	w := httptest.NewRecorder()
 	s.handleUSServices(w, nativeReq(http.MethodPost, "/api/us-services", `{"enabled":true}`, "192.168.1.5:5000", "application/x-www-form-urlencoded"))
@@ -129,6 +131,7 @@ func TestUSServicesToggleNeedsJSON(t *testing.T) {
 }
 
 func TestNativeAccountRequiresEnabledService(t *testing.T) {
+	t.Parallel()
 	s, _, box := nativeTestServer(false)
 	w := httptest.NewRecorder()
 	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodPost, "/api/iheart/account", `{"user":"u@example.com","password":"pw"}`, "192.168.1.5:5000", "application/json"))
@@ -138,6 +141,7 @@ func TestNativeAccountRequiresEnabledService(t *testing.T) {
 }
 
 func TestNativeAccountOnUSSpeakerNeedsNoOptIn(t *testing.T) {
+	t.Parallel()
 	s, p, box := nativeTestServer(false)
 	p.us = true
 	w := httptest.NewRecorder()
@@ -154,6 +158,7 @@ const iheartProfileIDError = `box /setMusicServiceAccount: status 500: <?xml ver
 	`[{&quot;profileId&quot;:12345678901}] Field= [profileId]</error></errors>`
 
 func TestNativeLoginErrorCode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err  error
 		want string
@@ -174,6 +179,7 @@ func TestNativeLoginErrorCode(t *testing.T) {
 // The firmware's profileId failure reaches the app as a coded JSON error with
 // a plain sentence, never as the raw speaker XML.
 func TestIHeartProfileIDTooLargeIsACodedError(t *testing.T) {
+	t.Parallel()
 	s, _, box := nativeTestServer(true)
 	box.setErr = errors.New(iheartProfileIDError)
 	w := httptest.NewRecorder()
@@ -202,6 +208,7 @@ func TestIHeartProfileIDTooLargeIsACodedError(t *testing.T) {
 }
 
 func TestPandoraAccountAddAndRemove(t *testing.T) {
+	t.Parallel()
 	s, p, box := nativeTestServer(true)
 	w := httptest.NewRecorder()
 	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodPost, "/api/pandora/account", `{"user":" u@example.com ","password":"pw"}`, "192.168.1.5:5000", "application/json"))
@@ -224,9 +231,10 @@ func TestPandoraAccountAddAndRemove(t *testing.T) {
 // removal must still reach the speaker with the account it lists, and the
 // carried-over entry must be dropped.
 func TestCarriedOverAccountIsRemovedFromSpeaker(t *testing.T) {
-	nativeRemoveSettle = 0
+	t.Parallel()
 	for _, typ := range []string{"PANDORA", "IHEART"} {
 		s, p, box := nativeTestServer(true)
+		s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
 		p.carried = map[string]string{typ: "old@example.com"}
 		box.sources = []boxapi.Source{{Source: "TUNEIN", Status: "READY"}, {Source: typ, Status: "READY", SourceAccount: "listed@example.com"}}
 		box.sourcesAfterRemove = []boxapi.Source{{Source: "TUNEIN", Status: "READY"}, {Source: typ, Status: "UNAVAILABLE"}}
@@ -245,8 +253,9 @@ func TestCarriedOverAccountIsRemovedFromSpeaker(t *testing.T) {
 }
 
 func TestCarriedOverAccountFallsBackToReflectEntry(t *testing.T) {
-	nativeRemoveSettle = 0
+	t.Parallel()
 	s, p, box := nativeTestServer(true)
+	s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
 	p.carried = map[string]string{"PANDORA": "old@example.com"}
 	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "UNAVAILABLE"}}
 	box.sourcesAfterRemove = box.sources
@@ -258,8 +267,9 @@ func TestCarriedOverAccountFallsBackToReflectEntry(t *testing.T) {
 }
 
 func TestRemovalStillListedIsAnError(t *testing.T) {
-	nativeRemoveSettle = 0
+	t.Parallel()
 	s, _, box := nativeTestServer(true)
+	s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
 	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "READY", SourceAccount: "listed@example.com"}}
 	box.keepAfterRemove = true
 	w := httptest.NewRecorder()
@@ -273,6 +283,7 @@ func TestRemovalStillListedIsAnError(t *testing.T) {
 }
 
 func TestRemovalRefusedIsAnError(t *testing.T) {
+	t.Parallel()
 	s, p, box := nativeTestServer(true)
 	p.users["IHEART"] = "u@example.com"
 	box.removeErr = errors.New("status 500")
@@ -284,6 +295,7 @@ func TestRemovalRefusedIsAnError(t *testing.T) {
 }
 
 func TestRemovalWithNothingLinkedStaysOK(t *testing.T) {
+	t.Parallel()
 	s, p, box := nativeTestServer(true)
 	w := httptest.NewRecorder()
 	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
@@ -293,6 +305,7 @@ func TestRemovalWithNothingLinkedStaysOK(t *testing.T) {
 }
 
 func TestUSServicesDebugSnapshotReadsBoxSources(t *testing.T) {
+	t.Parallel()
 	s, _, box := nativeTestServer(true)
 	s.regionRes = region.New("", nil)
 	s.regionRes.SetBox("US")
@@ -316,6 +329,7 @@ func TestUSServicesDebugSnapshotReadsBoxSources(t *testing.T) {
 }
 
 func TestAgentVersionReportsRegion(t *testing.T) {
+	t.Parallel()
 	s := quietServer("127.0.0.1")
 	s.regionRes = region.New("", nil)
 	get := func() map[string]string {
@@ -341,6 +355,7 @@ func TestAgentVersionReportsRegion(t *testing.T) {
 }
 
 func TestRegionPutFeedsResolver(t *testing.T) {
+	t.Parallel()
 	s := quietServer("127.0.0.1")
 	s.regionRes = region.New("", nil)
 	s.regionRes.SetBox("DE")
@@ -357,6 +372,7 @@ func TestRegionPutFeedsResolver(t *testing.T) {
 }
 
 func TestMaskForLog(t *testing.T) {
+	t.Parallel()
 	if got := maskForLog("listener@example.com"); got != "li***@example.com" {
 		t.Errorf("maskForLog = %q", got)
 	}

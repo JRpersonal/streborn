@@ -142,33 +142,35 @@ func (b *announceBox) seen() string {
 	return strings.Join(b.events, ",")
 }
 
-// fastAnnounce shrinks every announcement wait so a test runs in milliseconds.
-func fastAnnounce(t *testing.T) {
-	t.Helper()
-	poll, polls, tail, unknown, wake := announcePoll, announceStartPolls, announceTail, announceUnknownWait, announceWakeTimeout
-	announcePoll, announceStartPolls, announceTail, announceUnknownWait, announceWakeTimeout =
-		time.Millisecond, 3, 5*time.Millisecond, 50*time.Millisecond, 50*time.Millisecond
-	t.Cleanup(func() {
-		announcePoll, announceStartPolls, announceTail, announceUnknownWait, announceWakeTimeout = poll, polls, tail, unknown, wake
-	})
+// fastAnnounceTiming shrinks every announcement wait so a test runs in
+// milliseconds. Installed on the server under test, never on a package
+// variable, so no cleanup is needed.
+func fastAnnounceTiming() *announceTiming {
+	return &announceTiming{
+		poll:        time.Millisecond,
+		startPolls:  3,
+		tail:        5 * time.Millisecond,
+		unknownWait: 50 * time.Millisecond,
+		wakeTimeout: 50 * time.Millisecond,
+	}
 }
 
 func newAnnounceServer(t *testing.T, b *announceBox) *Server {
 	t.Helper()
-	fastAnnounce(t)
-	fastHandover(t)
 	srv := httptest.NewServer(b.handler())
 	t.Cleanup(srv.Close)
 	return &Server{
-		logger:              slog.New(slog.NewTextHandler(io.Discard, nil)),
-		queue:               newPlayQueue(),
-		renderer:            &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
-		boxNowReadFn:        b.read,
-		nativeStopFn:        b.stopKey,
-		nativeResumeFn:      b.playKey,
-		selectFn:            b.selectItem,
-		announceVolumeFn:    b.readVolume,
-		announceSetVolumeFn: b.setVolume,
+		announceTiming:       fastAnnounceTiming(),
+		nativeHandoverTiming: fastHandoverTiming(),
+		logger:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		queue:                newPlayQueue(),
+		renderer:             &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
+		boxNowReadFn:         b.read,
+		nativeStopFn:         b.stopKey,
+		nativeResumeFn:       b.playKey,
+		selectFn:             b.selectItem,
+		announceVolumeFn:     b.readVolume,
+		announceSetVolumeFn:  b.setVolume,
 	}
 }
 
@@ -185,6 +187,7 @@ const clipEvents = "seturi:" + announceAudioURL + ",setvolume:20,play"
 // volume is set, or the running radio blasts at that volume until the clip
 // takes over.
 func TestAnnounceStopsTheNativeStationBeforeRaisingTheVolume(t *testing.T) {
+	t.Parallel()
 	loc := nativeStationLocation()
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: nativeRadioSource, Location: loc, ItemName: "SWR3", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
@@ -200,6 +203,7 @@ func TestAnnounceStopsTheNativeStationBeforeRaisingTheVolume(t *testing.T) {
 // /select, with the descriptor it reported, never as a UPnP push of a relative
 // location the speaker cannot fetch. The volume goes back first.
 func TestAnnounceResumesTheNativeStationThroughSelect(t *testing.T) {
+	t.Parallel()
 	loc := nativeStationLocation()
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: nativeRadioSource, Location: loc, ItemName: "SWR3", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
@@ -217,6 +221,7 @@ func TestAnnounceResumesTheNativeStationThroughSelect(t *testing.T) {
 // A station the speaker refuses to /select falls back to the stream the
 // descriptor names, pushed over UPnP.
 func TestAnnounceFallsBackToTheDescribedStream(t *testing.T) {
+	t.Parallel()
 	loc := nativeStationLocation()
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: nativeRadioSource, Location: loc, ItemName: "SWR3", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
@@ -232,6 +237,7 @@ func TestAnnounceFallsBackToTheDescribedStream(t *testing.T) {
 // back through the wrong-state repair: a first push the box refuses in the
 // wrong transport state is cleared and pushed again.
 func TestAnnounceResumesAUPnPStreamWithTheWrongStateRepair(t *testing.T) {
+	t.Parallel()
 	radio := "http://stream.example/nova.mp3"
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: "UPNP", Location: radio, ItemName: "Nova", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
@@ -258,6 +264,7 @@ func TestAnnounceResumesAUPnPStreamWithTheWrongStateRepair(t *testing.T) {
 // it was, and a source STR cannot bring back (Bluetooth, AUX) is left alone.
 // The volume goes back in every case.
 func TestAnnounceResumesOnlyWhatWasPlaying(t *testing.T) {
+	t.Parallel()
 	cases := []nowPlayingSnapshot{
 		{Source: "UPNP", Location: "http://stream.example/a.mp3", PlayStatus: "STOP_STATE"},
 		{Source: "UPNP", Location: "http://stream.example/a.mp3", PlayStatus: "PAUSE_STATE"},
@@ -281,6 +288,7 @@ func TestAnnounceResumesOnlyWhatWasPlaying(t *testing.T) {
 
 // Without a volume in the request nothing touches the volume at all.
 func TestAnnounceWithoutVolumeLeavesTheVolumeAlone(t *testing.T) {
+	t.Parallel()
 	radio := "http://stream.example/nova.mp3"
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: "UPNP", Location: radio, PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
@@ -292,6 +300,7 @@ func TestAnnounceWithoutVolumeLeavesTheVolumeAlone(t *testing.T) {
 
 // A clip the speaker refuses puts the volume back and the previous stream on.
 func TestAnnounceUndoesAClipThatDidNotStart(t *testing.T) {
+	t.Parallel()
 	radio := "http://stream.example/nova.mp3"
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: "UPNP", Location: radio, PlayStatus: "PLAY_STATE"},
 		soapErr: map[string]string{"SetAVTransportURI": "Transition not available"}}
@@ -307,6 +316,7 @@ func TestAnnounceUndoesAClipThatDidNotStart(t *testing.T) {
 }
 
 func TestChunkText(t *testing.T) {
+	t.Parallel()
 	if got := chunkText("   ", 10); got != nil {
 		t.Errorf("blank text = %q, want nil", got)
 	}
@@ -329,6 +339,7 @@ func TestChunkText(t *testing.T) {
 }
 
 func TestMP3DurationSec(t *testing.T) {
+	t.Parallel()
 	// MPEG-1 Layer III, 128 kbit/s: 16000 bytes per second.
 	clip := make([]byte, 32000)
 	copy(clip[10:], []byte{0xFF, 0xFB, 0x90, 0x64})

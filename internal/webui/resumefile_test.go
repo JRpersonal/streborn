@@ -26,6 +26,7 @@ func obsAt(t0 time.Time, sec int, status string, pos time.Duration) fileResumeOb
 }
 
 func TestAFrozenResumeAfterAPauseIsRepairedOnceAtThePausedPosition(t *testing.T) {
+	t.Parallel()
 	var w fileResumeWatch
 	t0 := time.Now()
 	steps := []struct {
@@ -51,6 +52,7 @@ func TestAFrozenResumeAfterAPauseIsRepairedOnceAtThePausedPosition(t *testing.T)
 }
 
 func TestAResumeThatContinuesIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	var w fileResumeWatch
 	t0 := time.Now()
 	for i, o := range []fileResumeObs{
@@ -70,6 +72,7 @@ func TestAResumeThatContinuesIsLeftAlone(t *testing.T) {
 // A resume that is still coming up shows one read on the paused second; that
 // is held (no end nets), not repaired.
 func TestOneReadOnThePausedSecondIsNotYetAFreeze(t *testing.T) {
+	t.Parallel()
 	var w fileResumeWatch
 	t0 := time.Now()
 	w.observe(obsAt(t0, 0, "PAUSE_STATE", 30*time.Second))
@@ -84,6 +87,7 @@ func TestOneReadOnThePausedSecondIsNotYetAFreeze(t *testing.T) {
 // A pause shorter than the watch's poll is never read as PAUSE_STATE. The key
 // press (or the app's pause request) is what ties the freeze to a resume.
 func TestAShortPauseTheWatchNeverSawIsRecognisedByTheKeyPress(t *testing.T) {
+	t.Parallel()
 	var w fileResumeWatch
 	t0 := time.Now()
 	w.observe(obsAt(t0, 0, "PLAY_STATE", 40*time.Second))
@@ -102,6 +106,7 @@ func TestAShortPauseTheWatchNeverSawIsRecognisedByTheKeyPress(t *testing.T) {
 }
 
 func TestAFreezeWithoutAPauseOrAtTheEndIsNotAResume(t *testing.T) {
+	t.Parallel()
 	t0 := time.Now()
 	t.Run("no pause", func(t *testing.T) {
 		var w fileResumeWatch
@@ -187,16 +192,18 @@ func (b *pausedFileBox) commands() []string {
 	return out
 }
 
-func shrinkFileRestart(t *testing.T) {
-	t.Helper()
-	pd, pr, pq := fileRestartSeekDelay, fileRestartSeekRetry, fileRestartQuiet
-	fileRestartSeekDelay, fileRestartSeekRetry, fileRestartQuiet = 5*time.Millisecond, 5*time.Millisecond, 50*time.Millisecond
-	t.Cleanup(func() { fileRestartSeekDelay, fileRestartSeekRetry, fileRestartQuiet = pd, pr, pq })
+// shrinkFileRestart installs a restart clock on s that runs in milliseconds:
+// the seek pauses and the quiet window shrink, the freeze judgement keeps its
+// production value unless the test is about it. On the server under test,
+// never on a package variable, so no cleanup is needed.
+func shrinkFileRestart(s *Server) {
+	times := productionFileResumeTiming
+	times.seekDelay, times.seekRetry, times.restartQuiet = 5*time.Millisecond, 5*time.Millisecond, 50*time.Millisecond
+	s.fileResumeTiming = &times
 }
 
 func newPausedFileServer(t *testing.T, state string) (*Server, *pausedFileBox) {
 	t.Helper()
-	shrinkFileRestart(t)
 	box := &pausedFileBox{state: state, rel: "0:00:15"}
 	srv := httptest.NewServer(box)
 	t.Cleanup(srv.Close)
@@ -205,6 +212,7 @@ func newPausedFileServer(t *testing.T, state string) (*Server, *pausedFileBox) {
 		queue:    newPlayQueue(),
 		renderer: &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
 	}
+	shrinkFileRestart(s)
 	return s, box
 }
 
@@ -217,6 +225,7 @@ func armTestFile(s *Server) {
 }
 
 func TestAppResumeOfAPausedFileRestartsItAtThePausedPosition(t *testing.T) {
+	t.Parallel()
 	s, box := newPausedFileServer(t, "PAUSED_PLAYBACK")
 	armTestFile(s)
 
@@ -234,6 +243,7 @@ func TestAppResumeOfAPausedFileRestartsItAtThePausedPosition(t *testing.T) {
 }
 
 func TestAppResumeOfRadioKeepsThePlainPlay(t *testing.T) {
+	t.Parallel()
 	s, box := newPausedFileServer(t, "PAUSED_PLAYBACK")
 	s.setLastPlay("http://192.0.2.20:8000/live", "Station", "", "")
 
@@ -246,6 +256,7 @@ func TestAppResumeOfRadioKeepsThePlainPlay(t *testing.T) {
 }
 
 func TestAppResumeOfAFileThatIsNoLongerCurrentKeepsThePlainPlay(t *testing.T) {
+	t.Parallel()
 	s, box := newPausedFileServer(t, "PAUSED_PLAYBACK")
 	armTestFile(s)
 	// Something newer was played after the file.
@@ -260,6 +271,7 @@ func TestAppResumeOfAFileThatIsNoLongerCurrentKeepsThePlainPlay(t *testing.T) {
 }
 
 func TestAppResumeOfAFileThatIsNotPausedKeepsThePlainPlay(t *testing.T) {
+	t.Parallel()
 	s, box := newPausedFileServer(t, "STOPPED")
 	armTestFile(s)
 
@@ -274,14 +286,13 @@ func TestAppResumeOfAFileThatIsNotPausedKeepsThePlainPlay(t *testing.T) {
 // --- the speaker's own key, through the lone-file end watch -------------------
 
 func TestTheEndWatchRepairsAFrozenResumeFromTheSpeakersKey(t *testing.T) {
-	shrinkFileRestart(t)
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
+	shrinkFileRestart(s)
 	// The watch polls at the fast clock, so the freeze is judged at that clock
 	// too (the production 3 s is under one poll of the production 4 s).
-	prevFreeze := fileResumeFreezeAfter
-	fileResumeFreezeAfter = prevFreeze / queueTestScale
-	t.Cleanup(func() { fileResumeFreezeAfter = prevFreeze })
+	s.fileResumeTiming.freezeAfter = productionFileResumeTiming.freezeAfter / queueTestScale
 	gen := s.setLastPlay(testFileURL, "Podcast", "", "audio/mpeg")
 	np.set("PLAY_STATE", 14*time.Second, 240*time.Second)
 	s.armSingleTrackEnd(singleTrack{boxURL: testFileURL, title: "Podcast", mime: "audio/mpeg",
@@ -307,6 +318,7 @@ func TestTheEndWatchRepairsAFrozenResumeFromTheSpeakersKey(t *testing.T) {
 // watching it, nor the end of the track. A pause keeps the watch; a stop
 // still ends it.
 func TestAnAppPauseKeepsTheEndWatchButAStopEndsIt(t *testing.T) {
+	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	s.NoteUserStop()
 	s.pausePosMu.Lock()

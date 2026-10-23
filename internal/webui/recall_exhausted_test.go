@@ -19,6 +19,7 @@ import (
 // speaker into a clean state, and never wakes a sleeping one or overrides a
 // source somebody picked.
 func TestSettleExhaustedRecall(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		source     string
@@ -50,21 +51,18 @@ func TestSettleExhaustedRecall(t *testing.T) {
 				_, _ = w.Write([]byte(`<?xml version="1.0"?><s:Envelope><s:Body/></s:Envelope>`))
 			}))
 			t.Cleanup(srv.Close)
-			prev := exhaustedStandbySend
-			exhaustedStandbySend = func(context.Context, string) error {
-				mu.Lock()
-				standby = true
-				mu.Unlock()
-				return nil
-			}
-			t.Cleanup(func() { exhaustedStandbySend = prev })
-
 			src := c.source
 			s := &Server{
 				logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 				boxHost:      "192.0.2.1",
 				renderer:     &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
 				boxNowReadFn: scriptNowPlaying(src, "", ""),
+				exhaustedStandbySendFn: func(context.Context, string) error {
+					mu.Lock()
+					standby = true
+					mu.Unlock()
+					return nil
+				},
 			}
 			started := time.Now().Add(-30 * time.Second)
 			const gen = 7
@@ -94,13 +92,12 @@ func TestSettleExhaustedRecall(t *testing.T) {
 // The clean-up is a deliberate stop: the source drop it causes must not be
 // read as a spontaneous firmware drop and re-pushed by the #419 recovery.
 func TestSettleExhaustedRecallCountsAsADeliberateStop(t *testing.T) {
-	prev := exhaustedStandbySend
-	exhaustedStandbySend = func(context.Context, string) error { return nil }
-	t.Cleanup(func() { exhaustedStandbySend = prev })
+	t.Parallel()
 	s := &Server{
-		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		boxHost:      "192.0.2.1",
-		boxNowReadFn: scriptNowPlaying("INVALID_SOURCE", "", ""),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost:                "192.0.2.1",
+		boxNowReadFn:           scriptNowPlaying("INVALID_SOURCE", "", ""),
+		exhaustedStandbySendFn: func(context.Context, string) error { return nil },
 	}
 	if got := s.settleExhaustedRecall(0, time.Now().Add(-time.Minute)); got != "standby" {
 		t.Fatalf("settleExhaustedRecall = %q, want standby", got)

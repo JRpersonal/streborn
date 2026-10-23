@@ -170,7 +170,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// retried: the one start retry this play gets has been used.
 		retried bool
 		// resume: recognises a resume the firmware froze (resumefile.go).
-		resume = fileResumeWatch{endEpsilon: qt.endEpsilon}
+		resume = fileResumeWatch{endEpsilon: qt.endEpsilon, freezeAfter: s.fileResumeTimes().freezeAfter}
 	)
 	for {
 		select {
