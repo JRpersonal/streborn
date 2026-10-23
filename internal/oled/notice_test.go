@@ -3,6 +3,7 @@ package oled
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -288,10 +289,16 @@ func TestNoticesRender(t *testing.T) {
 	}
 	buf := make([]byte, FrameSize)
 	for _, n := range all {
+		// The preset notice's lines are the station name in the smooth
+		// font, laid out by TestPresetPlayingSmoothFont.
+		dotMatrix := n.Kind != NoticePreset
 		for _, l := range []struct {
 			s     string
 			limit int
 		}{{n.Line1, line1Max}, {n.Line2, line2Max}, {n.Line3, line2Max}} {
+			if !dotMatrix {
+				break
+			}
 			if len(l.s) > l.limit {
 				t.Errorf("%s: %q longer than %d", n.Kind, l.s, l.limit)
 			}
@@ -315,13 +322,13 @@ func TestNoticesRender(t *testing.T) {
 		if litIn(buf, iconX, iconY, 40, 40) < 30 {
 			t.Errorf("%s: icon area nearly empty", n.Kind)
 		}
-		if litIn(buf, 0, line1Y, Width, 14) < 40 {
+		if dotMatrix && litIn(buf, 0, line1Y, Width, 14) < 40 {
 			t.Errorf("%s: line 1 not drawn", n.Kind)
 		}
-		if n.Line2 != "" && litIn(buf, 0, line2Y, Width, 7) < 15 {
+		if dotMatrix && n.Line2 != "" && litIn(buf, 0, line2Y, Width, 7) < 15 {
 			t.Errorf("%s: line 2 not drawn", n.Kind)
 		}
-		if litIn(buf, 0, line3Y, Width, Height-line3Y) > 0 && n.Line3 == "" && n.Bar == 0 && n.Kind != NoticeIdentify {
+		if dotMatrix && litIn(buf, 0, line3Y, Width, Height-line3Y) > 0 && n.Line3 == "" && n.Bar == 0 && n.Kind != NoticeIdentify {
 			t.Errorf("%s: pixels below line 2 without a third line", n.Kind)
 		}
 		// Burn-in budget like the splash: a mostly dark screen.
@@ -389,10 +396,91 @@ func TestNoticesFlag(t *testing.T) {
 }
 
 // A long station name wraps over the large lines rather than being cut at
-// the first one.
+// the first one, by pixel width in the track screen's large face, and keeps
+// its case and umlauts: the notice shows right before the track screen, so
+// the lettering must not change in between (discussion #1305).
 func TestPresetPlayingWrapsTheName(t *testing.T) {
 	n := PresetPlaying(3, "Radio Arabella Oberösterreich")
-	if n.Line1 == "" || n.Line2 == "" || len(n.Line1) > line1Max || len(n.Line2) > line1Max || len(n.Line3) > line1Max {
+	if n.Line1 != "Radio Arabella" || n.Line2 != "Oberösterreich" || n.Line3 != "" {
 		t.Fatalf("got %q / %q / %q", n.Line1, n.Line2, n.Line3)
+	}
+	if n.face != smoothLarge {
+		t.Error("a name whose words fit the large face is not in it")
+	}
+	for _, l := range []string{n.Line1, n.Line2, n.Line3} {
+		if w := smoothLarge.width(l); w > presetTextW {
+			t.Errorf("%q is %d px wide, the line holds %d", l, w, presetTextW)
+		}
+	}
+	// A word too wide for a large line is not split: the whole name steps
+	// down to the small face.
+	n = PresetPlaying(2, "Deutschlandfunk Kultur")
+	if n.face != smoothSmall || n.Line1 != "Deutschlandfunk" || n.Line2 != "Kultur" || n.Line3 != "" {
+		t.Errorf("wide word: got %q / %q / %q, small face %v", n.Line1, n.Line2, n.Line3, n.face == smoothSmall)
+	}
+	// A name that does not fit three lines ends in an ellipsis; one that is
+	// empty says so.
+	n = PresetPlaying(4, "Absolut relax - Entspannungsmusik und mehr für den ganzen Tag")
+	if n.Line3 == "" || !strings.HasSuffix(n.Line3, "…") {
+		t.Errorf("long name not cut with an ellipsis: %q / %q / %q", n.Line1, n.Line2, n.Line3)
+	}
+	if n := PresetPlaying(1, ""); n.Line1 != "Preset" || n.Line2 != "" {
+		t.Errorf("empty name: got %q / %q", n.Line1, n.Line2)
+	}
+}
+
+// The preset notice draws its lines in the smooth font (anti-aliased, so
+// grey levels between dark and the text's level appear), centred, under the
+// key, and with the baselines a track screen line step apart.
+func TestPresetPlayingSmoothFont(t *testing.T) {
+	for _, name := range []string{"WDR 2", "Deutschlandfunk Kultur", "Radio Arabella Oberösterreich", "Absolut relax - Entspannungsmusik und mehr für den ganzen Tag"} {
+		n := PresetPlaying(2, name)
+		buf := make([]byte, FrameSize)
+		newNoticeRenderer(n).frame(1, buf)
+		lines := 0
+		for _, l := range []string{n.Line1, n.Line2, n.Line3} {
+			if l != "" {
+				lines++
+			}
+		}
+		f, step := n.face, presetLineStep(n.face)
+		keyBottom := iconY + 3 + 26
+		firstTop := presetLineY - f.top // accents and overshoot included
+		if lit := litIn(buf, 0, keyBottom, Width, firstTop-keyBottom); lit != 0 {
+			t.Errorf("%q: %d pixels between the key and the first line", name, lit)
+		}
+		lastBottom := presetLineY + (lines-1)*step + f.bottom
+		if lastBottom >= Height {
+			t.Fatalf("%q: last line ends at %d, off the panel", name, lastBottom)
+		}
+		if lit := litIn(buf, 0, lastBottom, Width, Height-lastBottom); lit != 0 {
+			t.Errorf("%q: %d pixels below the last line", name, lit)
+		}
+		grey := 0
+		for i := 0; i < lines; i++ {
+			y0 := presetLineY + i*step - f.capH
+			// the row band of this line's capitals: lit, and centred
+			lo, hi := Width, -1
+			for y := y0; y < y0+f.capH; y++ {
+				for x := 0; x < Width; x++ {
+					if v := buf[y*Width+x]; v > 0 {
+						lo, hi = min(lo, x), max(hi, x)
+						if v < lvlLine1 {
+							grey++
+						}
+					}
+				}
+			}
+			if hi < 0 {
+				t.Errorf("%q: line %d not drawn", name, i+1)
+				continue
+			}
+			if off := (lo + hi + 1) - Width; off < -2 || off > 2 {
+				t.Errorf("%q: line %d spans %d..%d, not centred", name, i+1, lo, hi)
+			}
+		}
+		if grey == 0 {
+			t.Errorf("%q: no anti-aliased pixels, drawn in the dot matrix?", name)
+		}
 	}
 }

@@ -14,7 +14,10 @@ package oled
 //
 // The glyphs are rasterised offline (fontgen, its own module) into
 // smoothfont_data.go: the agent carries a few tens of kilobytes of tables and
-// no font engine. The notices, the splash and the games keep the dot matrix.
+// no font engine. The notices, the splash and the games keep the dot matrix,
+// except the station name of the preset notice, which shows right before
+// the track screen and would otherwise change its lettering mid-switch
+// (notice.go, PresetPlaying).
 
 import (
 	"slices"

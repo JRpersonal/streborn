@@ -736,7 +736,8 @@ func fitRunes(s string, f *smoothFont, w int) int {
 // splitting a word only when it alone is longer than a line. When s does not
 // fit, the last line ends in "..." and cut is true. s is sanitised for the
 // dot-matrix font (SanitizeText), so one byte is one character. The notices
-// wrap with it; the track screen wraps by pixel width (wrapWidth).
+// wrap with it; the track screen and the preset notice's station name wrap
+// by pixel width (wrapWidth).
 func wrapText(s string, cols, maxLines int) (lines []string, cut bool) {
 	if s == "" || maxLines <= 0 {
 		return nil, false
