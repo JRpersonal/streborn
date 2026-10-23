@@ -25,6 +25,11 @@ const HEART_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="
 // (Simple Icons / Ko-fi brand kit composition) that stays recognisable at 14px.
 const COFFEE_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M20.216 6.415C19.964 5.43 19.066 4.78 18.057 4.78H5.943c-1.009 0-1.907.65-2.159 1.635C2.987 9.085 3 12.34 4.97 14.605c1.236 1.42 3.116 2.13 5.59 2.13 1.85 0 3.62-.404 4.97-1.137A6.43 6.43 0 0 0 19.046 14H19.5a3.5 3.5 0 1 0 0-7h-.07a4.8 4.8 0 0 0-.214-.585zM19 9.5h.5a1.5 1.5 0 0 1 0 3H19a4.21 4.21 0 0 0 .003-.123V9.535c0-.012-.002-.023-.003-.035zM7.5 19h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1 0-1z"/></svg>';
 
+// PayPal's two-tone "P" for the collapsed rail, the same mark the website's
+// floating strip uses (DonateIcon.astro, paypal-p): the wordmark needs the
+// full button width, a narrow strip only has room for the letter.
+const PAYPAL_P_SVG = '<svg viewBox="0 0 24 28" width="14" height="16" aria-hidden="true"><text x="3" y="22" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="900" fill="#009CDE" font-style="italic">P</text><text x="0" y="20" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="900" fill="#003087" font-style="italic">P</text></svg>';
+
 // donateButtonsHTML renders the three branded buttons. Brand colours and assets
 // follow each provider's guidelines: GitHub Sponsors white with a Mona Pink
 // border and heart, PayPal on #FFC439 with the two-tone wordmark, Ko-fi on
@@ -39,6 +44,7 @@ export function donateButtonsHTML() {
       <span class="donate-btn-label">Sponsor</span>
     </button>
     <button class="donate-btn donate-paypal" data-donate="paypal" type="button" title="PayPal">
+      <span class="donate-btn-icon donate-paypal-mark">${PAYPAL_P_SVG}</span>
       <span class="donate-paypal-wordmark"><span class="pay">Pay</span><span class="pal">Pal</span></span>
     </button>
     <button class="donate-btn donate-kofi" data-donate="kofi" type="button" title="Ko-fi">
