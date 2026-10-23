@@ -34,6 +34,41 @@ func TestASuccessfulInstallStillNamesAnOutdatedFirmware(t *testing.T) {
 		t.Errorf("%d message(s) in InstallSTROnBox skip the firmware note:\n  %s",
 			len(shown), strings.Join(shown, "\n  "))
 	}
+
+	// The four auto-repair sites end their install inside repairAndAwaitAgent,
+	// which returns a finished result; every message it ends on has to carry
+	// the note as well. Two of the four sites used to return the repair's own
+	// result without it, and the literal-string check above never saw them.
+	helper := funcBody(t, src, "func (a *App) repairAndAwaitAgent(")
+	for _, line := range strings.Split(helper, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.Contains(trimmed, ".Message = ") || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		if !strings.Contains(trimmed, "fwNote") {
+			t.Errorf("repairAndAwaitAgent ends an install on a message without the firmware note: %s", trimmed)
+		}
+	}
+	for _, ret := range []string{"return rr, true, nil", "return res, true, nil"} {
+		if !strings.Contains(helper, ret) {
+			t.Errorf("repairAndAwaitAgent no longer has the %q exit; if it was reshaped, move this test with it", ret)
+		}
+	}
+}
+
+// funcBody is the source of one top-level function, from its signature to
+// the next top-level func.
+func funcBody(t *testing.T, src, sig string) string {
+	t.Helper()
+	i := strings.Index(src, sig)
+	if i < 0 {
+		t.Fatalf("%s is gone; if it moved, move this test with it", sig)
+	}
+	rest := src[i+len(sig):]
+	if j := strings.Index(rest, "\nfunc "); j > 0 {
+		return rest[:j]
+	}
+	return rest
 }
 
 // The note itself must stay empty for a speaker on current firmware, or every

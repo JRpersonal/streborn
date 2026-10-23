@@ -11,7 +11,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -300,6 +299,55 @@ func (a *App) BoxStoragePreflight(host string, port int) (StoragePreflight, erro
 // it instead of backing off and re-asking a question whose answer stays no.
 var errInsufficientNAND = errors.New("insufficient NAND space")
 
+// nandFullError is the typed form of errInsufficientNAND: the speaker refused
+// a write for lack of space, with the figures when they are known. It is
+// returned wherever that verdict is reached (the app-side sidecar gate, the
+// agent answering HTTP 507, the SSH upload preamble's df refusal) so callers
+// ask errors.Is(err, errInsufficientNAND) instead of matching "507",
+// "insufficient nand" or "no space" in the text. Error() keeps the texts
+// those matches used to see: the frontend still matches them
+// (/insufficient nand|no space|507/ in main.js), and a 507 reply keeps its
+// "status 507: <body>" form, which the retry and connection-drop classifiers
+// key on ("status ").
+type nandFullError struct {
+	// free, reclaimable and need are bytes; all zero when unknown (a 507 from
+	// the agent names them in its body, not in a form worth parsing).
+	free, reclaimable, need int64
+	// status is the HTTP status the agent answered, 0 off the HTTP path.
+	status int
+	// detail is the agent's reply body, or the SSH path's context.
+	detail string
+}
+
+func (e *nandFullError) Error() string {
+	if e.status != 0 {
+		return fmt.Sprintf("status %d: %s", e.status, e.detail)
+	}
+	s := errInsufficientNAND.Error()
+	if e.need > 0 {
+		s += fmt.Sprintf(" (free=%d reclaimable=%d need=%d)", e.free, e.reclaimable, e.need)
+	}
+	if e.detail != "" {
+		s += ": " + e.detail
+	}
+	return s
+}
+
+// Is makes errors.Is(err, errInsufficientNAND) true for every nandFullError.
+func (e *nandFullError) Is(target error) bool { return target == errInsufficientNAND }
+
+// httpReplyMeansNANDFull reports whether an agent's non-2xx reply is the
+// speaker refusing for space: a 507, or (an older agent) a 5xx whose body
+// names the condition. This is the one place the reply text is matched; from
+// here on the verdict travels as a nandFullError.
+func httpReplyMeansNANDFull(status int, body string) bool {
+	if status == http.StatusInsufficientStorage {
+		return true
+	}
+	low := strings.ToLower(body)
+	return strings.Contains(low, "insufficient nand") || strings.Contains(low, "no space")
+}
+
 // UpdateBoxAgent ships the embedded ARM binary to the speaker. Preferred
 // path is HTTP POST to /api/agent/update on host:port — but only when a
 // preflight confirms STR's agent really answers there. On Series-I boxes
@@ -524,7 +572,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// SSH either (no :17000, or the unlock failed). Tell the user the
 			// one thing that always works — a one-time USB-stick update — rather
 			// than a raw "status 507".
-			if strings.Contains(err.Error(), "507") || strings.Contains(strings.ToLower(err.Error()), "insufficient nand") {
+			if errors.Is(err, errInsufficientNAND) {
 				return fmt.Errorf("the speaker's storage is full and it is on an older STR version that cannot free space over the network. Update this speaker once from a USB stick (that cleans up the storage and installs the current version); after that, updates manage the space themselves. Details: %w", err)
 			}
 			return fmt.Errorf("HTTP OTA failed (%w) and the SSH fallback also failed: %w", err, sshErr)
@@ -777,7 +825,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 		}
 		a.recordOTA(host, fmt.Sprintf("sidecar: not enough NAND for the engine right now (free=%dKB reclaimable=%dKB total=%dKB, need~%dKB) - skipping the upload to avoid thrashing; the agent will deliver it once space frees. See the diagnostic bundle's /mnt/nv listing for leftovers.", freeN/1024, reclaimable/1024, totalKB, need/1024))
 		a.logger.Warn("sidecar push: insufficient NAND, skipping the upload to avoid the retry thrash", "host", host, "freeBytes", freeN, "reclaimableBytes", reclaimable, "needBytes", need)
-		return false, fmt.Errorf("sidecar: %w (free=%d reclaimable=%d need=%d)", errInsufficientNAND, freeN, reclaimable, need)
+		return false, fmt.Errorf("sidecar: %w", &nandFullError{free: freeN, reclaimable: reclaimable, need: need})
 	}
 
 	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
@@ -1546,6 +1594,9 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if httpReplyMeansNANDFull(resp.StatusCode, string(body)) {
+			return "", finished, &nandFullError{status: resp.StatusCode, detail: string(body)}
+		}
 		return "", finished, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
 	// The success reply is small JSON (e.g. {mode: "ram-staged"}); return it so
@@ -1607,29 +1658,14 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 		// (Peter's ST10, 2026-07-09). Once SSH is open, the SSH upload command
 		// below frees the NAND (drops the ~16 MB engine when tight) and pushes
 		// the fresh agent, after which the box self-manages space. Only when
-		// :17000 answers.
-		opened := false
-		if tcpReachable(host, 17000, 2*time.Second) {
-			a.logger.Info("SSH-OTA: plain SSH closed, opening it stick-free via :17000 to recover a full/old box", "host", host)
-			var tlog string
-			opened, tlog = a.enableSSHViaTelnet(host, "")
-			if opened {
-				// Restore stock cloud URLs while :17000 is still plain Bose TAP,
-				// so the injected str-setup.invalid does not leave the box
-				// marge-checking a dead host (the light-bar sweep). Best-effort.
-				if rerr := a.resetBoseURLsViaTelnet(host); rerr != nil {
-					a.logger.Warn("SSH-OTA: could not restore cloud URLs after stick-free unlock", "host", host, "err", rerr)
-				}
-				a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
-			} else {
-				// The unlock may have written a dead .invalid URL; restore stock
-				// URLs + reboot so the box is never left marge-checking a dead
-				// host (also protects a later stick install's interception).
-				a.restoreStockBoseURLsAndReboot(host)
-				a.logger.Warn("SSH-OTA: stick-free :17000 unlock did not open SSH", "host", host, "log", discovery.LastN(tlog, 200))
-			}
-		}
-		if !opened {
+		// :17000 answers (ensureSSHOpen probes it and does nothing otherwise).
+		// Stock cloud URLs are restored on both outcomes in there, so the
+		// injected str-setup.invalid never leaves the box marge-checking a dead
+		// host (the light-bar sweep), and a failed unlock also reboots the box.
+		opened, _, _ := a.ensureSSHOpen(host, "", sshUnlockOptions{tag: "SSH-OTA"})
+		if opened {
+			a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
+		} else {
 			if hello, err := sshHandshake(host, 2); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
 				return fmt.Errorf("ssh handshake failed: %w (%s)", err, strings.TrimSpace(hello))
 			}
@@ -1651,45 +1687,18 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// its engine and does not re-fetch it every SSH update (#119). Mirrors the
 	// on-box reclaimSpotifyEngine second tier.
 	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
-	uploadCmd := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
+	preamble := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
 		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; "+
-		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new && "+
-		"sync && echo STR_UPLOADED_$(wc -c < /mnt/nv/streborn/bin/streborn-armv7l.new)", needKB)
-	out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second)
-	if err != nil {
-		return fmt.Errorf("ssh upload (%d bytes) failed: %w (%s)", len(bin), err, strings.TrimSpace(out))
-	}
-	// The session can end "successfully" while the file never landed (stream cut,
-	// ENOSPC, or a reboot racing the write — live 2026-07-31: verify found no .new
-	// at all after a clean-looking upload). The command therefore syncs and echoes
-	// the on-box byte count; anything else means the box does not hold the binary.
-	if !strings.Contains(out, fmt.Sprintf("STR_UPLOADED_%d", len(bin))) {
-		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", len(bin), discovery.LastN(strings.TrimSpace(out), 160))
-	}
-	// Content-verify before the atomic rename so a half-uploaded OR corrupted
-	// file never becomes the live agent. A size check alone cannot do that
-	// job: consecutive releases are byte-equal in size (v0.9.4/5/6 are all
-	// exactly 12517538 bytes), so a stale same-size file would "verify".
-	// Prefer sha256sum, fall back to md5sum (ubiquitous on BusyBox), and only
-	// then size. sync after the rename so the swap survives the reboot that
-	// follows (UBIFS write-back, #381). Sentinel "OK_<size>" so the caller can
-	// distinguish a successful rename from any stderr noise.
-	sum := sha256.Sum256(bin)
-	md5sum := md5.Sum(bin)
-	verifyCmd := fmt.Sprintf(
-		"new=/mnt/nv/streborn/bin/streborn-armv7l.new; "+
-			"if command -v sha256sum >/dev/null 2>&1; then [ \"$(sha256sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"elif command -v md5sum >/dev/null 2>&1; then [ \"$(md5sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"else [ \"$(wc -c < $new)\" = \"%d\" ] || { echo STR_HASH_FAIL; exit 1; }; fi && "+
-			"chmod 0755 $new && "+
-			"mv $new /mnt/nv/streborn/bin/streborn-armv7l && "+
-			"sync && echo OK_%d",
-		hex.EncodeToString(sum[:]), hex.EncodeToString(md5sum[:]), len(bin), len(bin))
-	sentinel := fmt.Sprintf("OK_%d", len(bin))
-	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		return fmt.Errorf("ssh content-verify or rename failed: %w (%s)", err, strings.TrimSpace(out))
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; ", needKB)
+	// sshPushFile streams to .new, reads the on-box byte count back (the
+	// session can end "successfully" while the file never landed: stream cut,
+	// ENOSPC, or a reboot racing the write; live 2026-07-31), content-verifies
+	// (sha256sum, else md5sum, else size: consecutive releases are byte-equal
+	// in size, so a stale same-size file would pass a size check) and only
+	// then renames the verified file over the live agent and syncs (#381).
+	if err := sshPushFile(host, agentBinaryPath, bin, sshPushOptions{preamble: preamble}); err != nil {
+		return agentSSHPushError(err, len(bin))
 	}
 	// Always reboot after the binary swap. Jens 2026-06-01: an OTA that
 	// only SIGTERMs the agent and relies on run.sh's watchdog respawn
@@ -1734,38 +1743,52 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// binary into ENOSPC (that is what happened live on a tight ST20). The
 	// post-OTA EnsureSpotifyEngine retries once space frees.
 	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
-	uploadCmd := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
+	preamble := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
 		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; fi; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; "+
-		"mkdir -p /mnt/nv/streborn/bin && cat > %s.new", needKB, dst, dst, needKB, dst)
-	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
-		if strings.Contains(out, "STR_NO_SPACE") {
-			a.logger.Warn("sidecar SSH push skipped: NAND cannot hold the engine (agent OTA still proceeds; delivered later once space frees)", "host", host, "needKB", needKB)
-			return
-		}
-		a.logger.Warn("sidecar SSH upload failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
-		return
-	}
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; ", needKB, dst, dst, needKB)
 	sum := sha256.Sum256(bin)
 	sha := hex.EncodeToString(sum[:])
-	md5s := md5.Sum(bin)
-	// Content-verify (sha256sum, else md5sum, else size — same rationale as
+	// Content-verify (sha256sum, else md5sum, else size, same rationale as
 	// the agent binary above) and sync so the engine survives the reboot that
 	// follows the agent swap (an unsynced engine vanished across exactly that
-	// reboot, deqw 2026-07-12).
-	verifyCmd := fmt.Sprintf(
-		"new=%s.new; "+
-			"if command -v sha256sum >/dev/null 2>&1; then [ \"$(sha256sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"elif command -v md5sum >/dev/null 2>&1; then [ \"$(md5sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
-			"else [ \"$(wc -c < $new)\" = \"%d\" ] || { echo STR_HASH_FAIL; exit 1; }; fi && "+
-			"chmod 0755 $new && mv $new %s && "+
-			"printf %%s %s > %s.sha256 && sync && echo OK_%d",
-		dst, sha, hex.EncodeToString(md5s[:]), len(bin), dst, sha, dst, len(bin))
-	sentinel := fmt.Sprintf("OK_%d", len(bin))
-	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		a.logger.Warn("sidecar SSH content-verify/rename failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
-		return
+	// reboot, deqw 2026-07-12). The content hash is stamped next to the engine
+	// after the rename so the agent can report it.
+	err := sshPushFile(host, dst, bin, sshPushOptions{
+		preamble:    preamble,
+		needBytes:   needKB * 1024,
+		afterRename: fmt.Sprintf("printf %%s %s > %s.sha256", sha, dst),
+	})
+	var verifyErr *sshPushVerifyError
+	switch {
+	case err == nil:
+		a.logger.Info("sidecar push (SSH): go-librespot delivered over OTA", "host", host, "bytes", len(bin))
+	case errors.Is(err, errInsufficientNAND):
+		a.logger.Warn("sidecar SSH push skipped: NAND cannot hold the engine (agent OTA still proceeds; delivered later once space frees)", "host", host, "needKB", needKB)
+	case errors.As(err, &verifyErr):
+		a.logger.Warn("sidecar SSH content-verify/rename failed (agent OTA still proceeds)", "host", host, "err", verifyErr.err, "out", strings.TrimSpace(verifyErr.out))
+	default:
+		a.logger.Warn("sidecar SSH upload failed (agent OTA still proceeds)", "host", host, "err", err)
 	}
-	a.logger.Info("sidecar push (SSH): go-librespot delivered over OTA", "host", host, "bytes", len(bin))
+}
+
+// agentBinaryPath is where the agent lives on the speaker's NAND; the SSH-OTA
+// writes the new one next to it and renames it over.
+const agentBinaryPath = "/mnt/nv/streborn/bin/streborn-armv7l"
+
+// agentSSHPushError words an sshPushFile failure the way the SSH-OTA always
+// reported it: these texts reach the user as the update failure.
+func agentSSHPushError(err error, n int) error {
+	var up *sshPushUploadError
+	var short *sshPushShortError
+	var ver *sshPushVerifyError
+	switch {
+	case errors.As(err, &up):
+		return fmt.Errorf("ssh upload (%d bytes) failed: %w (%s)", n, up.err, strings.TrimSpace(up.out))
+	case errors.As(err, &short):
+		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", n, discovery.LastN(strings.TrimSpace(short.out), 160))
+	case errors.As(err, &ver):
+		return fmt.Errorf("ssh content-verify or rename failed: %w (%s)", ver.err, strings.TrimSpace(ver.out))
+	}
+	return err
 }

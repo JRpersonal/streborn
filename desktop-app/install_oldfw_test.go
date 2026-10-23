@@ -115,8 +115,10 @@ func TestPreflightStopsOldFirmwareBeforeTheUnlock(t *testing.T) {
 	}
 	oldFW := idx("if fwTooOldForUnlock {")
 	recent := idx("recentUnlockReboot(host)")
-	unlock := idx("a.enableSSHViaTelnet(host, model)")
-	restore := idx("a.restoreStockBoseURLsAndReboot(host)")
+	// ensureSSHOpen is the unlock AND, on failure, the stock-URL restore plus
+	// the restart, so one anchor covers both.
+	unlock := idx("a.ensureSSHOpen(host, model,")
+	restore := unlock
 	if oldFW > unlock || oldFW > restore {
 		t.Error("the old-firmware stop must come before the unlock and before any restart")
 	}

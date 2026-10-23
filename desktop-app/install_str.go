@@ -12,7 +12,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -140,17 +139,17 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 // installSTROnBox is InstallSTROnBox's body; the exported name is the journal
 // wrapper above so no return path can forget to record its outcome.
 func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
-	res := InstallResult{Step: "start"}
+	r := &installRun{host: host, model: model, res: InstallResult{Step: "start"}}
 	if host == "" {
-		return res, fmt.Errorf("host is required")
+		return r.res, fmt.Errorf("host is required")
 	}
 	// One writer per speaker, see boxbusy.go: two installs racing each other
 	// corrupted the atomic write and cost a donor twenty minutes of reboots.
 	release, busyErr := writesInFlight.claim(host, "an install")
 	if busyErr != nil {
-		res.Step = "busy"
-		res.Message = busyErr.Error()
-		return res, busyErr
+		r.res.Step = "busy"
+		r.res.Message = busyErr.Error()
+		return r.res, busyErr
 	}
 	defer release()
 	a.logger.Info("install_str: starting", "host", host, "model", model)
@@ -173,6 +172,74 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	a.installSawSetup = false
 	defer func() { a.installPhase = ""; a.installMargeHits = nil }()
 
+	// The steps, top to bottom. Each one finishes the install (true) or hands
+	// over to the next; the result and the error to return with it live in r.
+	a.installReadFirmware(r)
+	if a.installPreflight(r) {
+		return r.res, r.err
+	}
+	if a.installHandshake(r) {
+		return r.res, r.err
+	}
+	if a.installProbeStick(r) {
+		return r.res, r.err
+	}
+	// Step 1c: wait for the box's boot-time CPU storm to subside before
+	// launching install.sh. Driven by the actual load average, not a blind
+	// timer (see waitForBoxLoad); capped so a permanently busy box still gets
+	// its install attempt. Emits live progress so the UI can show "reachable
+	// but still finishing boot" instead of a frozen screen.
+	r.res.Step = "settle"
+	a.waitForBoxLoad(host, model)
+	if a.installRunScript(r) {
+		return r.res, r.err
+	}
+	a.installRestartAndWait(r)
+	return r.res, r.err
+}
+
+// installRun is the state one install carries from step to step: the host
+// and model it was started for, the result being built and the error to
+// return with it, the firmware facts the preflight needs, and the stick
+// path the probe found. The step bodies are installSTROnBox's former body,
+// moved; each starts by naming the fields it reads the way that body did.
+type installRun struct {
+	host, model string
+	res         InstallResult
+	err         error
+	// fwNote is the outdated-firmware sentence, empty on current firmware;
+	// see withFW. fwTooOldForUnlock stops the stick-free unlock before it
+	// reboots a speaker it cannot open, and noStick picks advice without the
+	// USB stick for the models that never read one at boot.
+	fwNote            string
+	fwTooOldForUnlock bool
+	noStick           bool
+	stickPath         string
+}
+
+// Every message this function can end on gets the firmware note, and that
+// deliberately includes the ones that report SUCCESS. An install can run to
+// the end on a speaker whose firmware is years old and leave it unusable
+// afterwards: an scm/spotty SoundTouch 20 on 14.0.15 took the whole install,
+// answered "install: OK", and then boot-looped into recovery, while the app
+// had read "outdated=true" off the speaker minutes earlier and said nothing
+// because that path had ended in success (#854).
+//
+// It used to be appended only in the late branches, all of them past a
+// successful SSH handshake, so a box that failed the PREFLIGHT never
+// mentioned its firmware at all. That is the exact case where it matters most: a SoundTouch 30 on
+// firmware 10.0.11 (2015) failed the stick-free unlock three times, and the
+// user was told each time that a firewall or the wrong Wi-Fi was the likely
+// cause. He turned his firewall off for nothing while the app had read
+// "outdated=true" from the speaker seconds earlier and kept it to itself
+// (field report 2026-08-04).
+func (r *installRun) withFW(msg string) string { return msg + r.fwNote }
+
+// installReadFirmware reads the speaker's Bose firmware and identity into
+// the result and sets the firmware facts the preflight keys on, then sets
+// the speaker's language and clock when its own setup left them unset.
+func (a *App) installReadFirmware(r *installRun) {
+	res, host, model := &r.res, r.host, r.model
 	// Read the box firmware (Bose :8090/info, reachable on stock and STR boxes)
 	// up front so it lands in the result and the logs. An old firmware is a
 	// candidate cause when a box never brings up the agent, so capturing it here
@@ -217,26 +284,18 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			fwNote = firmwareTooOldNote(fw.Short, guide.Files)
 		}
 	}
-	// Every message this function can end on gets the firmware note, and that
-	// deliberately includes the ones that report SUCCESS. An install can run to
-	// the end on a speaker whose firmware is years old and leave it unusable
-	// afterwards: an scm/spotty SoundTouch 20 on 14.0.15 took the whole install,
-	// answered "install: OK", and then boot-looped into recovery, while the app
-	// had read "outdated=true" off the speaker minutes earlier and said nothing
-	// because that path had ended in success (#854).
-	//
-	// It used to be appended only in the late branches, all of them past a
-	// successful SSH handshake, so a box that failed the PREFLIGHT never
-	// mentioned its firmware at all. That is the exact case where it matters most: a SoundTouch 30 on
-	// firmware 10.0.11 (2015) failed the stick-free unlock three times, and the
-	// user was told each time that a firewall or the wrong Wi-Fi was the likely
-	// cause. He turned his firewall off for nothing while the app had read
-	// "outdated=true" from the speaker seconds earlier and kept it to itself
-	// (field report 2026-08-04).
-	withFW := func(msg string) string { return msg + fwNote }
+	r.fwNote, r.fwTooOldForUnlock, r.noStick = fwNote, fwTooOldForUnlock, noStick
 	a.ensureSpeakerLanguage(host)
 	a.ensureSpeakerClock(host)
+}
 
+// installPreflight is step 0a: with :22 TCP-closed, tell the cases apart
+// that need no unlock (already installed, firmware too old, still booting
+// from our own restart) before installUnlockOrAdvise tries the stick-free
+// unlock. Returns true when the install ends here.
+func (a *App) installPreflight(r *installRun) bool {
+	res, host := &r.res, r.host
+	withFW, fwTooOldForUnlock, noStick := r.withFW, r.fwTooOldForUnlock, r.noStick
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
 	// the box is simply not reachable (wrong/disconnected network, mid-reboot,
@@ -244,9 +303,6 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// Checking :22 first lets us return a human instruction instead of the
 	// raw SSH exit code.
 	res.Step = "preflight"
-	// Set when the failed stick-free unlock made us reboot the speaker: the
-	// reachability probes below then measure a booting speaker, not the network.
-	rebootedByUs := false
 	if !tcpReachable(host, 22, 4*time.Second) {
 		// :22 closed does NOT necessarily mean the box is off the network.
 		// Bose only opens sshd while the box boots with the stick inserted
@@ -262,7 +318,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			res.Message = withFW("The speaker at "+host+" already answers on the STR agent port (8888), "+
 				"so it looks like STR is installed already.") + "\n\n" + stickAdviceFor(noStick, alreadyInstalledAdvice, alreadyInstalledNoStickAdvice)
 			a.logger.Warn("install_str: preflight, :22 closed but :8888 up (already installed?)", "host", host)
-			return res, nil
+			return true
 		}
 		// A firmware far behind 27.0.6 never opened SSH through the stick-free
 		// unlock in any report this project has, and every failed unlock costs
@@ -280,7 +336,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				", which is too old for the install over the network.") + "\n\n" + firmwareFirstAdvice
 			a.logger.Warn("install_str: preflight, firmware too old for the stick-free :17000 unlock; not touching the speaker",
 				"host", host, "firmware", res.Firmware, "model", res.Model)
-			return res, nil
+			return true
 		}
 		// Our own unlock attempt restarted this speaker moments ago (an earlier
 		// press of Install). It is still booting, so :22 is closed for that
@@ -292,137 +348,152 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				"\n\n" + stickAdviceFor(noStick, restartingAfterUnlockAdvice, restartingAfterUnlockNoStickAdvice)
 			a.logger.Warn("install_str: preflight, speaker still booting from our own post-unlock restart in an earlier attempt; not unlocking again",
 				"host", host, "since", since.Round(time.Second))
-			return res, nil
+			return true
 		}
-		// :22 closed but on the LAN (Bose :8090 up): the install window is shut
-		// because the box did not boot with the stick. That is the SoundTouch 300
-		// (which does not read the stick at boot) and some stubborn ST30 units.
-		// Stick-free unlock: if the :17000 setup shell is open we can open SSH
-		// WITHOUT a stick by injecting the remote_services/sshd payload into the
-		// box cloud URLs (gesellix #471/#519), reboot to fire it, then push STR
-		// over SSH. This is the path that converts a SoundTouch 300 / Portable /
-		// SA-4 - none of which reliably read the stick at boot - with no stick or
-		// adapter. See telnet_enable_ssh.go for the mechanism and the factory-reset
-		// caveat (there the stick stays the reliable fallback).
-		// unlockOutcome says what actually happened on :17000, for the logs
-		// below: they used to claim "the unlock did not open SSH" even when
-		// :17000 was closed and no unlock had run at all.
-		unlockOutcome := "not attempted, :17000 setup port closed"
-		if tcpReachable(host, 17000, 2*time.Second) {
-			a.emitPhase("access")
-			// One stick-free unlock path covers every box: enableSSHViaTelnet seeds a
-			// throwaway marge account (unlockAccountID) so even a factory-fresh box
-			// with an empty margeAccountUUID runs the marge check the injection rides
-			// on, then injects, reboots and waits for :22. This replaced an earlier
-			// residual-UUID probe that diverted no-account boxes (every fresh Portable)
-			// to a local-responder bootstrap that needed inbound LAN reachability and
-			// never fired on taigan; seeding the account is firewall-free and opened
-			// :22 on the Portable live.
-			opened, tlog := a.enableSSHViaTelnet(host, model)
-			if opened {
-				a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
-				// Restore stock cloud URLs while :17000 is still the plain Bose TAP
-				// (STR's install may REDIRECT :17008 afterwards). Best-effort.
-				resetErr := a.resetBoseURLsViaTelnet(host)
-				if resetErr != nil {
-					a.logger.Warn("install_str: could not restore stock boseurls after stick-free unlock", "host", host, "err", resetErr)
-				}
-				a.emitPhase("copy")
-				instRes, instErr := a.RepairInstallViaSSH(host, model)
-				if resetErr != nil && instRes.OK {
-					instRes.Message += " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
-				}
-				// RepairInstallViaSSH reboots and returns before the agent is up. Wait
-				// for :8888 here so the OTA path returns OK only once STR is actually
-				// running - the frontend then immediately writes the Wi-Fi profile.
-				if instRes.OK && instErr == nil {
-					a.emitPhase("wait")
-					if _, werr := a.waitForAgent(host, model); werr != nil {
-						a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
-						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-					}
-				}
-				return instRes, instErr
-			}
-			// The unlock did not open SSH. It may have written a dead .invalid
-			// injection URL into the box config; restore stock URLs and reboot so the
-			// box is never left marge-checking a dead host, which would also defeat
-			// STR's later streaming.bose.com interception on a subsequent stick
-			// install. Best-effort.
-			a.restoreStockBoseURLsAndReboot(host)
-			markUnlockReboot(host)
-			res.Log = tlog
-			rebootedByUs = true
-			unlockOutcome = "unlock ran but did not open SSH; stock URLs restored and speaker restarted"
-			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs and restarted the speaker", "host", host)
-		} else {
-			a.logger.Info("install_str: :17000 setup port closed; no stick-free unlock attempted", "host", host)
-		}
+		return a.installUnlockOrAdvise(r)
+	}
+	return false
+}
 
-		// The box did not boot with a stick (:22 closed) and the stick-free unlock
-		// did not open SSH. Tell the user what to do, tailored to what the box is
-		// still answering on.
-		// rebootedByUs is checked FIRST. The restart was sent a moment ago and
-		// the speaker's ports keep answering for a few seconds before it goes
-		// down, so measuring :8090 or :8091 now says nothing about it. Checked
-		// after them, the 2026-10-22 Wave answered :8090 right after the
-		// restart command and was told "install window closed, use the stick"
-		// on all seven attempts instead of "it is restarting, wait".
-		if rebootedByUs {
-			// WE rebooted this speaker moments ago, as part of undoing the
-			// failed unlock. Of course nothing answers yet. Blaming a firewall
-			// here is not just unhelpful, it is actively misleading: a user
-			// with a SoundTouch 30 on 2015 firmware disabled his antivirus and
-			// tried three more times because the app said that was the likely
-			// cause, while the actual finding (a decade-old firmware) went
-			// only into the log (field report 2026-08-04).
-			res.Code = "restarting-after-unlock"
-			res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. "+
-				"It is still booting, which is why it does not answer right now.") +
-				"\n\n" + stickAdviceFor(noStick, restartingAfterUnlockAdvice, restartingAfterUnlockNoStickAdvice)
-			a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host, "unlock", unlockOutcome)
-			return res, nil
+// installUnlockOrAdvise is the rest of step 0a: the stick-free :17000 unlock
+// and, when it did not open SSH, the advice tailored to what the speaker is
+// still answering on. Always ends the install.
+func (a *App) installUnlockOrAdvise(r *installRun) bool {
+	res, host, model := &r.res, r.host, r.model
+	withFW, fwNote, noStick := r.withFW, r.fwNote, r.noStick
+	// Set when the failed stick-free unlock made us reboot the speaker: the
+	// reachability probes below then measure a booting speaker, not the network.
+	rebootedByUs := false
+	// :22 closed but on the LAN (Bose :8090 up): the install window is shut
+	// because the box did not boot with the stick. That is the SoundTouch 300
+	// (which does not read the stick at boot) and some stubborn ST30 units.
+	// Stick-free unlock: if the :17000 setup shell is open we can open SSH
+	// WITHOUT a stick by injecting the remote_services/sshd payload into the
+	// box cloud URLs (gesellix #471/#519), reboot to fire it, then push STR
+	// over SSH. This is the path that converts a SoundTouch 300 / Portable /
+	// SA-4 - none of which reliably read the stick at boot - with no stick or
+	// adapter. See telnet_enable_ssh.go for the mechanism and the factory-reset
+	// caveat (there the stick stays the reliable fallback).
+	// unlockOutcome says what actually happened on :17000, for the logs
+	// below: they used to claim "the unlock did not open SSH" even when
+	// :17000 was closed and no unlock had run at all.
+	unlockOutcome := "not attempted, :17000 setup port closed"
+	// One stick-free unlock path covers every box: enableSSHViaTelnet seeds a
+	// throwaway marge account (unlockAccountID) so even a factory-fresh box
+	// with an empty margeAccountUUID runs the marge check the injection rides
+	// on, then injects, reboots and waits for :22. This replaced an earlier
+	// residual-UUID probe that diverted no-account boxes (every fresh Portable)
+	// to a local-responder bootstrap that needed inbound LAN reachability and
+	// never fired on taigan; seeding the account is firewall-free and opened
+	// :22 on the Portable live. The rung itself (port probe, unlock, stock
+	// URL restore on both outcomes) is ensureSSHOpen, shared with the OTA and
+	// the uninstall; rememberReboot feeds the recentUnlockReboot check above.
+	opened, tlog, unlockErr := a.ensureSSHOpen(host, model, sshUnlockOptions{tag: "install_str", phase: "access", rememberReboot: true})
+	switch {
+	case opened:
+		a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
+		// Restore stock cloud URLs while :17000 is still the plain Bose TAP
+		// (STR's install may REDIRECT :17008 afterwards). Best-effort: a
+		// restore that failed is unlockErr here.
+		resetErr := unlockErr
+		a.emitPhase("copy")
+		plan := repairPlan{
+			site:             "stick-free unlock",
+			keepRepairResult: true,
+			notUpMsg:         "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.",
 		}
-		onLAN := tcpReachable(host, 8090, 3*time.Second)
-		if onLAN {
-			res.Code = "install-window-closed"
-			res.Message = withFW("The speaker at "+host+" is on the network, but the install access (SSH) is closed.") +
-				"\n\n" + stickAdviceFor(noStick, installWindowClosedAdvice, installWindowClosedNoStickAdvice)
-			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut)", "host", host, "unlock", unlockOutcome)
-		} else if tcpReachable(host, 8091, 3*time.Second) {
-			// :22, :8090 and :8888 are all closed, but the box still answers
-			// UPnP/DLNA on :8091 - its media renderer is a separate firmware
-			// process from the Bose REST API and the STR agent. So the box IS
-			// on the network and on Wi-Fi; only its control stack has wedged.
-			// This is the classic Portable "renderer up, control crashed"
-			// state (Andi M., 06.07.2026: SSDP + :8091 alive, :22/:8090/:8888
-			// all dead). The not-reachable branch below tells the user to
-			// re-onboard Wi-Fi, which is wrong and unactionable here: the box
-			// is already on Wi-Fi. A full power-cycle is what clears the wedge;
-			// keep the stick in so the reboot also re-runs the install if the
-			// STR agent itself stopped.
-			res.Code = "control-unresponsive"
-			// The Portable sentence is appended to the ADVICE paragraph, not to
-			// the whole message: the failure report lifts advice paragraphs out
-			// of the message and reprints them under the facts, and a sentence
-			// glued on after that split would be orphaned in the middle.
-			advice := stickAdviceFor(noStick, controlUnresponsiveAdvice, controlUnresponsiveNoStickAdvice)
-			if strings.Contains(strings.ToLower(model), "portable") {
-				advice += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
-			}
-			res.Message = withFW("The speaker at "+host+" is on your network (it still answers on the media port 8091), "+
-				"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH).") +
-				"\n\n" + advice
-			a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host, "unlock", unlockOutcome)
-		} else {
-			res.Code = "not-reachable"
-			res.Message = withFW("The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at "+host+").") +
-				"\n\n" + notReachableAdvice
-			a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host, "unlock", unlockOutcome)
+		if resetErr != nil {
+			plan.successNote = " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
 		}
-		return res, nil
+		// RepairInstallViaSSH reboots and returns before the agent is up. The
+		// helper waits for :8888 so the OTA path returns OK only once STR is
+		// actually running - the frontend then immediately writes the Wi-Fi
+		// profile.
+		instRes, _, instErr := a.repairAndAwaitAgent(*res, host, model, fwNote, plan)
+		r.res, r.err = instRes, instErr
+		return true
+	case errors.Is(unlockErr, errSetupPortClosed):
+		a.logger.Info("install_str: :17000 setup port closed; no stick-free unlock attempted", "host", host)
+	default:
+		// The unlock did not open SSH. It may have written a dead .invalid
+		// injection URL into the box config; ensureSSHOpen restored stock URLs
+		// and rebooted so the box is never left marge-checking a dead host,
+		// which would also defeat STR's later streaming.bose.com interception
+		// on a subsequent stick install. Best-effort.
+		res.Log = tlog
+		rebootedByUs = true
+		unlockOutcome = "unlock ran but did not open SSH; stock URLs restored and speaker restarted"
+		a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs and restarted the speaker", "host", host)
 	}
 
+	// The box did not boot with a stick (:22 closed) and the stick-free unlock
+	// did not open SSH. Tell the user what to do, tailored to what the box is
+	// still answering on.
+	// rebootedByUs is checked FIRST. The restart was sent a moment ago and
+	// the speaker's ports keep answering for a few seconds before it goes
+	// down, so measuring :8090 or :8091 now says nothing about it. Checked
+	// after them, the 2026-10-22 Wave answered :8090 right after the
+	// restart command and was told "install window closed, use the stick"
+	// on all seven attempts instead of "it is restarting, wait".
+	if rebootedByUs {
+		// WE rebooted this speaker moments ago, as part of undoing the
+		// failed unlock. Of course nothing answers yet. Blaming a firewall
+		// here is not just unhelpful, it is actively misleading: a user
+		// with a SoundTouch 30 on 2015 firmware disabled his antivirus and
+		// tried three more times because the app said that was the likely
+		// cause, while the actual finding (a decade-old firmware) went
+		// only into the log (field report 2026-08-04).
+		res.Code = "restarting-after-unlock"
+		res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. "+
+			"It is still booting, which is why it does not answer right now.") +
+			"\n\n" + stickAdviceFor(noStick, restartingAfterUnlockAdvice, restartingAfterUnlockNoStickAdvice)
+		a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host, "unlock", unlockOutcome)
+		return true
+	}
+	onLAN := tcpReachable(host, 8090, 3*time.Second)
+	if onLAN {
+		res.Code = "install-window-closed"
+		res.Message = withFW("The speaker at "+host+" is on the network, but the install access (SSH) is closed.") +
+			"\n\n" + stickAdviceFor(noStick, installWindowClosedAdvice, installWindowClosedNoStickAdvice)
+		a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut)", "host", host, "unlock", unlockOutcome)
+	} else if tcpReachable(host, 8091, 3*time.Second) {
+		// :22, :8090 and :8888 are all closed, but the box still answers
+		// UPnP/DLNA on :8091 - its media renderer is a separate firmware
+		// process from the Bose REST API and the STR agent. So the box IS
+		// on the network and on Wi-Fi; only its control stack has wedged.
+		// This is the classic Portable "renderer up, control crashed"
+		// state (Andi M., 06.07.2026: SSDP + :8091 alive, :22/:8090/:8888
+		// all dead). The not-reachable branch below tells the user to
+		// re-onboard Wi-Fi, which is wrong and unactionable here: the box
+		// is already on Wi-Fi. A full power-cycle is what clears the wedge;
+		// keep the stick in so the reboot also re-runs the install if the
+		// STR agent itself stopped.
+		res.Code = "control-unresponsive"
+		// The Portable sentence is appended to the ADVICE paragraph, not to
+		// the whole message: the failure report lifts advice paragraphs out
+		// of the message and reprints them under the facts, and a sentence
+		// glued on after that split would be orphaned in the middle.
+		advice := stickAdviceFor(noStick, controlUnresponsiveAdvice, controlUnresponsiveNoStickAdvice)
+		if strings.Contains(strings.ToLower(model), "portable") {
+			advice += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
+		}
+		res.Message = withFW("The speaker at "+host+" is on your network (it still answers on the media port 8091), "+
+			"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH).") +
+			"\n\n" + advice
+		a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host, "unlock", unlockOutcome)
+	} else {
+		res.Code = "not-reachable"
+		res.Message = withFW("The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at "+host+").") +
+			"\n\n" + notReachableAdvice
+		a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host, "unlock", unlockOutcome)
+	}
+	return true
+}
+
+// installHandshake is step 0b: SSH itself reachable and authenticated.
+func (a *App) installHandshake(r *installRun) bool {
+	res, host := &r.res, r.host
+	withFW := r.withFW
 	// Step 0b: SSH itself reachable + authenticated? We do this as a
 	// separate trivial command so a connect/auth/algorithm failure
 	// surfaces with a specific message instead of looking like a
@@ -443,10 +514,17 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		hint := classifySSHError(hello, helloErr)
 		res.Message = withFW("SSH handshake to speaker failed: " + hint)
 		a.logger.Warn("install_str: ssh handshake failed after retries", "host", host, "err", helloErr, "hint", hint)
-		return res, nil
+		return true
 	}
 	a.logger.Info("install_str: ssh ok", "host", host)
+	return false
+}
 
+// installProbeStick is step 1: find install.sh on the mounted stick, or,
+// with SSH open and no stick, install over the network from here.
+func (a *App) installProbeStick(r *installRun) bool {
+	res, host, model := &r.res, r.host, r.model
+	withFW, fwNote := r.withFW, r.fwNote
 	// Step 1: stick mounted, install.sh present. Retry up to ~60 s
 	// because sshd answers before the USB stack has finished
 	// mounting the stick on first boot. The probe checks a broad
@@ -486,7 +564,7 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				res.Message = withFW("ssh probe failed after retries: " + hint)
 				a.logger.Warn("install_str: ssh probe failed after retries", "host", host, "err", probeErr, "hint", hint)
 				// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
-				return res, nil
+				return true
 			}
 			// No stick mounted, but SSH is open and the box is reachable: this is the
 			// stick-free / OTA network-install case (a SoundTouch 300 that does not
@@ -497,17 +575,16 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			if len(agentbin.Bytes()) > 0 {
 				a.logger.Info("install_str: no stick mounted but SSH is open; installing STR over SSH (no stick needed)", "host", host)
 				res.Step = "repair-ssh"
-				instRes, instErr := a.RepairInstallViaSSH(host, model)
-				// RepairInstallViaSSH reboots and returns before the agent is up. Wait
-				// for :8888 so a network install returns OK only once STR is running.
-				if instRes.OK && instErr == nil {
-					a.emitPhase("wait")
-					if _, werr := a.waitForAgent(host, model); werr != nil {
-						a.logger.Warn("install_str: SSH-staged install ran but the agent did not come up in time", "host", host, "err", werr)
-						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-					}
-				}
-				return instRes, instErr
+				// RepairInstallViaSSH reboots and returns before the agent is up. The
+				// helper waits for :8888 so a network install returns OK only once
+				// STR is running.
+				instRes, _, instErr := a.repairAndAwaitAgent(*res, host, model, fwNote, repairPlan{
+					site:             "no stick, SSH open",
+					keepRepairResult: true,
+					notUpMsg:         "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.",
+				})
+				r.res, r.err = instRes, instErr
+				return true
 			}
 			res.Code = "stick-missing"
 			res.Message = withFW("install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
@@ -515,20 +592,20 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				"the rear USB-A port and the micro-USB port via a micro-USB OTG adapter. Reboot the speaker after inserting it." +
 				"If several sticks in both ports still do not mount, the speaker's USB port may be faulty.")
 			res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
-			return res, nil
+			return true
 		}
 		time.Sleep(3 * time.Second)
 	}
 	a.logger.Info("install_str: stick found", "host", host, "path", stickPath)
+	r.stickPath = stickPath
+	return false
+}
 
-	// Step 1c: wait for the box's boot-time CPU storm to subside before
-	// launching install.sh. Driven by the actual load average, not a blind
-	// timer (see waitForBoxLoad); capped so a permanently busy box still gets
-	// its install attempt. Emits live progress so the UI can show "reachable
-	// but still finishing boot" instead of a frozen screen.
-	res.Step = "settle"
-	a.waitForBoxLoad(host, model)
-
+// installRunScript is step 2: run install.sh from the stick, classify a
+// failure, and bypass an unreadable stick over the network.
+func (a *App) installRunScript(r *installRun) bool {
+	res, host, model := &r.res, r.host, r.model
+	withFW, fwNote, stickPath := r.withFW, r.fwNote, r.stickPath
 	// Step 2: run install.sh install. The timeout is model-aware: install.sh
 	// does heavy on-box work (copy the agent to NAND, rewrite wpa_supplicant,
 	// regenerate TLS) and on the bigger/slower models, or over a weak Wi-Fi
@@ -607,41 +684,44 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			a.logger.Info("install_str: media read failed but SSH up, auto NAND-install over SSH (bypassing the stick)",
 				"host", host, "code", res.Code)
 			res.Step = "stick-copy-repair"
-			rr, _ := a.RepairInstallViaSSH(host, model)
-			if rr.OK {
-				if _, werr := a.waitForAgent(host, model); werr == nil {
-					res.Step = "done"
-					res.OK = true
-					res.Message = withFW("The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888.")
-					return res, nil
-				}
-				// Installed over the network (stick bypassed); the agent just has
-				// not bound :8888 yet. Do NOT tell the user to swap sticks, this is
-				// now a plain slow boot.
-				a.logger.Warn("install_str: NAND-install over network ran but agent not up yet", "host", host)
-				res.Step = "wait-agent"
-				res = a.agentNotUp(res, host, model, "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-				res.Message += fwNote
-				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
-				return res, nil
+			// Installed over the network (stick bypassed) but the agent not up:
+			// the helper does NOT tell the user to swap sticks, this is now a
+			// plain slow boot. When the bypass itself could not complete, the
+			// classified cause and the manual Repair-over-SSH offer stay, with the
+			// repair output attached to the log.
+			if out, done, _ := a.repairAndAwaitAgent(*res, host, model, fwNote, repairPlan{
+				site:       "stick read failed",
+				successMsg: "The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888.",
+				notUpMsg:   "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.",
+				diag:       diag,
+				logSection: "SSH NAND-install repair",
+			}); done {
+				r.res = out
+				return true
+			} else {
+				*res = out
 			}
-			// Bypass itself could not complete: keep the classified cause and the
-			// manual Repair-over-SSH offer, and attach the repair output.
-			res.Log = res.Log + "\n\n--- SSH NAND-install repair ---\n" + rr.Message + "\n" + rr.Log
-			a.logger.Warn("install_str: auto NAND-install over SSH did not complete", "host", host, "repairMsg", rr.Message)
 		}
 
 		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
 		// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
-		return res, nil
+		return true
 	}
 	if strings.Contains(out, "FEHLER") || strings.Contains(out, "ERROR") {
 		res.Code = "install-script-error"
 		res.Message = withFW("install.sh reported an error. See log.")
-		return res, nil
+		return true
 	}
 	a.logger.Info("install_str: install.sh ran", "host", host, "outBytes", len(out))
+	return false
+}
 
+// installRestartAndWait is steps 3 and 4: reboot, wait for the agent, and
+// when it does not come up, find out why (an unreadable stick, a lost boot
+// race, a speaker not back on the network) and word the result.
+func (a *App) installRestartAndWait(r *installRun) {
+	res, host, model := &r.res, r.host, r.model
+	withFW, fwNote := r.withFW, r.fwNote
 	// Step 3: reboot. The ssh call ends with the box dropping the
 	// connection, which manifests as a non-zero exit — that is the
 	// expected success path here, not an error.
@@ -662,12 +742,11 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		// binary never reached NAND" case. Defined once; used from both the
 		// pre-retry detection and the post-retry re-check below.
 		const stickCopyMsg = "The speaker started but could not copy the STR program from the USB stick into its memory (stick read error), so it never finished starting up. The stick is most likely faulty or was not plugged in firmly. Re-create the stick, ideally on a different USB 2.0 stick (4 to 32 GB), plug it in firmly, then install again."
-		finishStickCopyFailed := func() (InstallResult, error) {
+		finishStickCopyFailed := func() {
 			res.Step = "wait-agent"
 			res.Code = "stick-copy-failed"
 			res.Message = stickCopyMsg + fwNote
 			res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
-			return res, nil
 		}
 
 		// Shared "how to get help" line, used by every failure branch below.
@@ -687,34 +766,30 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				if len(agentbin.Bytes()) > 0 {
 					a.logger.Info("install_str: auto NAND-copy repair over SSH, bypassing the unreadable stick", "host", host)
 					res.Step = "stick-copy-repair"
-					rr, _ := a.RepairInstallViaSSH(host, model)
-					if rr.OK {
-						if _, werr := a.waitForAgent(host, model); werr == nil {
-							res.Step = "done"
-							res.OK = true
-							res.Message = withFW("The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888.")
-							return res, nil
-						}
-						// The over-the-network install succeeded (the stick was
-						// bypassed), the agent just has not bound :8888 yet. Do NOT
-						// tell the user to recreate the stick: this is now a plain
-						// slow/failed boot, so return the agent-not-up guidance.
-						a.logger.Warn("install_str: NAND-copy repair installed over network but agent still not up", "host", host)
-						res.Step = "wait-agent"
-						res = a.agentNotUp(res, host, model, "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. "+logHint)
-						res.Message += fwNote
-						res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
-						return res, nil
+					// When the over-the-network install succeeded (the stick was
+					// bypassed) and the agent just has not bound :8888 yet, the
+					// helper does NOT tell the user to recreate the stick: this is
+					// now a plain slow/failed boot, so it returns the agent-not-up
+					// guidance. When the repair could not even complete (SSH
+					// copy/install failed), the stick-copy diagnosis + manual repair
+					// offer below stay.
+					if out, done, _ := a.repairAndAwaitAgent(*res, host, model, fwNote, repairPlan{
+						site:       "stick copy failed",
+						successMsg: "The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888.",
+						notUpMsg:   "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. " + logHint,
+						logSection: "SSH NAND-copy repair",
+					}); done {
+						r.res = out
+						return
+					} else {
+						*res = out
 					}
-					// Repair could not even complete (SSH copy/install failed):
-					// keep the stick-copy diagnosis + manual repair offer below.
-					res.Log = res.Log + "\n\n--- SSH NAND-copy repair ---\n" + rr.Message + "\n" + rr.Log
-					a.logger.Warn("install_str: NAND-copy repair did not complete", "host", host, "repairMsg", rr.Message)
 				}
 				// No embedded binary (dev build) or the auto-repair could not
 				// complete: report the specific stick-copy cause. The manual
 				// Repair-over-SSH button is also offered for this code.
-				return finishStickCopyFailed()
+				finishStickCopyFailed()
+				return
 			}
 
 			// Generic boot-race self-heal: reboot once and retry. This covers the
@@ -726,13 +801,14 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				res.Step = "done"
 				res.OK = true
 				res.Message = withFW("STR agent is up on port 8888 (after an automatic retry).")
-				return res, nil
+				return
 			}
 			// The first wait may have timed out before run.sh logged the copy
 			// failure; re-check after the retry so a stick-copy failure that only
 			// surfaced now still gets the specific cause, not the generic message.
 			if tcpReachable(host, 22, 4*time.Second) && a.agentLogShowsStickCopyFailure(host) {
-				return finishStickCopyFailed()
+				finishStickCopyFailed()
+				return
 			}
 		}
 		res.Step = "wait-agent"
@@ -746,14 +822,13 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		// "Did not bring up the agent" is only said when the speaker shows a
 		// sign of life; a speaker silent at every layer is reported as not
 		// back on the network yet, with a background re-check (installwait.go).
-		res = a.agentNotUp(res, host, model, generic)
+		*res = a.agentNotUp(*res, host, model, generic)
 		res.Message += fwNote
-		return res, nil
+		return
 	}
 	res.Step = "done"
 	res.OK = true
 	res.Message = withFW("STR agent is up on port 8888.")
-	return res, nil
 }
 
 // buildStickProbeCmd returns a single-line shell command (BusyBox-
@@ -809,6 +884,110 @@ func (a *App) boxHasResidualMargeUUID(host string) bool {
 		return true
 	}
 	return strings.TrimSpace(rest[:j]) != ""
+}
+
+// repairPlan is how one of the four auto-repair sites in installSTROnBox wants
+// the outcome of "RepairInstallViaSSH, then wait for the agent" shaped. The
+// four sites used to spell that sequence out themselves and had drifted: two
+// appended the firmware note and the box diagnostics to an agent-not-up
+// result, two did not. repairAndAwaitAgent does it once, the same way for all.
+type repairPlan struct {
+	// site names the caller in the log lines ("stick-free unlock", "no stick,
+	// SSH open", "stick read failed", "stick copy failed").
+	site string
+	// keepRepairResult hands back RepairInstallViaSSH's own result (its Step,
+	// its message, its Log) instead of the caller's res. The stick-free unlock
+	// site and the no-stick site do that: the repair IS the install there, and
+	// a repair that did not complete is the final answer. The two stick-bypass
+	// sites keep their own res, whose Log carries the failed stick attempt the
+	// user needs to see, and go on to their own classification when the
+	// bypass could not complete.
+	keepRepairResult bool
+	// successMsg is the message once the agent answers, for the sites that do
+	// not keep the repair's own message.
+	successMsg string
+	// successNote is appended to the repair's own message on success: the
+	// stick-free site's "cloud URLs could not be fully restored" note. It is
+	// not carried into an agent-not-up result, which agentNotUp words itself.
+	successNote string
+	// notUpMsg is the agentNotUp wording when the repair ran but :8888 stayed
+	// silent, the strict "did not bring up the agent" sentence agentNotUp keeps
+	// only for a speaker that is demonstrably on the network.
+	notUpMsg string
+	// diag is pre-gathered box diagnostics to attach to an agent-not-up
+	// result; empty gathers them now. The stick-read site passes the
+	// diagnostics it took before the bypass, because they carry the kernel
+	// dmesg of the I/O error that caused it.
+	diag string
+	// logSection labels the repair output appended to res.Log when the bypass
+	// itself did not complete and the caller goes on to its own cause.
+	logSection string
+}
+
+// repairAndAwaitAgent runs the SSH NAND install and waits for the agent to
+// answer, then shapes the result per plan. done reports whether the caller's
+// install ends here (true: return the result) or goes on to its own
+// classification with the repair output attached to its Log (false, only
+// without keepRepairResult).
+//
+// Every result that ends an install here carries the firmware note, success
+// and agent-not-up alike (#854: an install can run to the end on a speaker
+// whose firmware is years old and leave it unusable afterwards; the stick-free
+// and no-stick sites skipped the note because they returned the repair's own
+// result, which the source-reading test did not see). An agent-not-up result
+// also carries the box diagnostics, as every install failure with SSH up does
+// (boxInstallDiag), so a saved log holds the evidence in one shot.
+func (a *App) repairAndAwaitAgent(res InstallResult, host, model, fwNote string, p repairPlan) (out InstallResult, done bool, err error) {
+	rr, rerr := a.RepairInstallViaSSH(host, model)
+	diagOf := func() string {
+		if p.diag != "" {
+			return p.diag
+		}
+		return boxInstallDiag(host)
+	}
+	if p.keepRepairResult {
+		// RepairInstallViaSSH reboots and returns before the agent is up. Wait
+		// for :8888 so the network install returns OK only once STR is actually
+		// running; a repair that did not complete is returned as it is.
+		if !rr.OK || rerr != nil {
+			return rr, true, rerr
+		}
+		rr.Message += p.successNote
+		a.emitPhase("wait")
+		if _, werr := a.waitForAgent(host, model); werr != nil {
+			a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "site", p.site, "err", werr)
+			rr = a.agentNotUp(rr, host, model, p.notUpMsg)
+			rr.Message += fwNote
+			rr.Log = rr.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diagOf()
+			return rr, true, nil
+		}
+		rr.Message += fwNote
+		return rr, true, nil
+	}
+	if rr.OK {
+		a.emitPhase("wait")
+		if _, werr := a.waitForAgent(host, model); werr == nil {
+			res.Step = "done"
+			res.OK = true
+			res.Message = p.successMsg + fwNote
+			return res, true, nil
+		}
+		// Installed over the network (stick bypassed); the agent just has not
+		// bound :8888 yet. This is now a plain slow boot, so the agent-not-up
+		// guidance, never the stick advice.
+		a.logger.Warn("install_str: NAND-install over network ran but agent not up yet", "host", host, "site", p.site)
+		res.Step = "wait-agent"
+		res = a.agentNotUp(res, host, model, p.notUpMsg)
+		res.Message += fwNote
+		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diagOf()
+		return res, true, nil
+	}
+	// The bypass itself could not complete (SSH copy/install failed): the
+	// caller keeps its classified cause and the manual Repair-over-SSH offer,
+	// with the repair output attached.
+	res.Log = res.Log + "\n\n--- " + p.logSection + " ---\n" + rr.Message + "\n" + rr.Log
+	a.logger.Warn("install_str: auto NAND-install over SSH did not complete", "host", host, "site", p.site, "repairMsg", rr.Message)
+	return res, false, nil
 }
 
 // RepairInstallViaSSH is the install fallback for when the USB stick itself is
@@ -990,7 +1169,7 @@ type uploadTruncatedError struct{ msg string }
 func (e *uploadTruncatedError) Error() string { return e.msg }
 
 // stageRepairFiles uploads the embedded install file set into stageDir on the
-// box over SSH and verifies every file arrived byte-exact, so a truncated
+// box over SSH and verifies every file arrived intact, so a truncated
 // weak-Wi-Fi transfer is caught before install.sh trusts it. The agent binary
 // is the only large file and gets one upload retry, since a transient stall
 // mid-stream is exactly what staging-then-verify is meant to absorb. Returns a
@@ -1002,55 +1181,53 @@ func (e *uploadTruncatedError) Error() string { return e.msg }
 // where the box's sshd stalls ~10.5 s on reverse DNS (see boxssh.go): the old
 // 8-10 s budgets died mid-handshake there, and every staging target then
 // failed as "truncated"/"no space" even though the box was healthy.
+//
+// Each file goes through sshPushFile, the same upload-and-verify the agent
+// update uses: the on-box byte count is parsed out of the session's echo,
+// not string-matched against the whole blob (OpenSSH used to fold its
+// "Warning: Permanently added ... to the list of known hosts." banner in
+// ahead of the number via CombinedOutput, and an exact-match compare then
+// read a byte-perfect upload as "truncated" and falsely failed the whole SSH
+// NAND-install fallback for ST30 stick-power users, 13.06; LogLevel=ERROR
+// suppresses the banner at the source now, parsing keeps the check correct
+// regardless), and the content is checked with sha256sum, md5sum or, on a
+// BusyBox with neither, the size. Until this check the staging verified the
+// size alone.
 func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) error {
 	if out, err := boxSSHOutput(host, "rm -rf "+stageDir+" && mkdir -p "+stageDir+"/bin", 30*time.Second); err != nil {
 		return fmt.Errorf("could not create staging dir %s: %s", stageDir, classifySSHError(out, err))
 	}
 	for name, data := range files {
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			_, _ = boxSSHOutput(host, "mkdir -p "+stageDir+"/"+name[:i], 30*time.Second)
-		}
-		dst := stageDir + "/" + name
 		attempts := 1
 		if len(data) > 1<<20 { // only the agent binary; everything else is a few KB
 			attempts = 2
 		}
-		var lastErr error
-		for try := 0; try < attempts; try++ {
-			if out, err := boxSSHUploadStdin(host, "cat > "+dst, bytes.NewReader(data), 120*time.Second); err != nil {
-				lastErr = fmt.Errorf("upload %s failed: %s", name, classifySSHError(out, err))
-				continue
-			}
-			// Byte-count check catches a truncated transfer, the common
-			// weak-Wi-Fi failure mode, without a full checksum the BusyBox on
-			// the box may not carry. Parse the number out of the SSH output
-			// instead of string-matching the whole blob: OpenSSH folds its
-			// "Warning: Permanently added ... to the list of known hosts."
-			// banner (local stderr, forced every connect by
-			// UserKnownHostsFile=/dev/null) in ahead of wc's number via
-			// CombinedOutput, and an exact-match compare then read a
-			// byte-perfect upload as "truncated" and falsely failed the whole
-			// SSH NAND-install fallback for ST30 stick-power users (13.06).
-			// LogLevel=ERROR now suppresses that banner at the source,
-			// but parsing the count keeps the check correct against any
-			// residual stderr noise regardless.
-			got, _ := boxSSHOutput(host, "wc -c < "+dst+" 2>/dev/null", 30*time.Second)
-			if n, ok := lastIntField(got); ok && n == int64(len(data)) {
-				lastErr = nil
-				break
-			}
-			recv := "no byte count"
-			if n, ok := lastIntField(got); ok {
-				recv = strconv.FormatInt(n, 10)
-			}
-			lastErr = &uploadTruncatedError{msg: fmt.Sprintf("upload %s truncated: speaker received %s of %d bytes", name, recv, len(data))}
-		}
-		if lastErr != nil {
-			return lastErr
+		err := sshPushFile(host, stageDir+"/"+name, data, sshPushOptions{attempts: attempts, verifyTimeout: 30 * time.Second})
+		if err != nil {
+			return stagingPushError(name, len(data), err)
 		}
 	}
 	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 30*time.Second)
 	return nil
+}
+
+// stagingPushError words an sshPushFile failure for the install staging: the
+// file is named, a short upload is the uploadTruncatedError the staging
+// chooser keys its USB-stick guidance on (allTargetsTruncatedError), and a
+// failed content check names the check.
+func stagingPushError(name string, size int, err error) error {
+	var up *sshPushUploadError
+	var short *sshPushShortError
+	var ver *sshPushVerifyError
+	switch {
+	case errors.As(err, &up):
+		return fmt.Errorf("upload %s failed: %s", name, classifySSHError(up.out, up.err))
+	case errors.As(err, &short):
+		return &uploadTruncatedError{msg: fmt.Sprintf("upload %s truncated: speaker received %s of %d bytes", name, short.received(), size)}
+	case errors.As(err, &ver):
+		return fmt.Errorf("upload %s arrived with the right size but failed its checksum on the speaker: %s", name, classifySSHError(ver.out, ver.err))
+	}
+	return err
 }
 
 // lastIntField returns the LAST whitespace-separated token in out that parses as

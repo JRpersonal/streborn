@@ -1,8 +1,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -36,9 +36,10 @@ var (
 )
 
 // engineWillNeverFit reports a push refused for space: retrying cannot help.
+// The verdict travels as a nandFullError from the gate, the agent's 507 or
+// the SSH df refusal, so this no longer reads the text.
 func engineWillNeverFit(err error) bool {
-	m := strings.ToLower(err.Error())
-	return strings.Contains(m, "507") || strings.Contains(m, "insufficient nand") || strings.Contains(m, "no space")
+	return errors.Is(err, errInsufficientNAND)
 }
 
 // ensureEngineAfterInstall is the install's last step: the speaker ends with
