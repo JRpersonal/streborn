@@ -144,6 +144,10 @@ func TestRingEndReason(t *testing.T) {
 	}{
 		{"nothing happened", func(*ringFacts) {}, true},
 		{"another play", func(f *ringFacts) { f.curGen = 5 }, false},
+		{"another station", func(f *ringFacts) { f.curGen = 5; f.ringURL = "a"; f.curURL = "b" }, false},
+		// The speaker reports the alarm's own native station start once more,
+		// after the recall returned (SoundTouch 10, 2026-10-23).
+		{"the alarm's own station reported back", func(f *ringFacts) { f.curGen = 5; f.ringURL = "a"; f.curURL = "a" }, true},
 		{"power key after the fire", func(f *ringFacts) { f.standbyStop = since.Add(time.Second) }, false},
 		{"power-off before the fire", func(f *ringFacts) { f.standbyStop = since.Add(-time.Minute) }, true},
 		{"stop in the app after the fire", func(f *ringFacts) { f.explicitStop = since.Add(time.Second) }, false},

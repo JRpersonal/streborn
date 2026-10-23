@@ -152,6 +152,11 @@ type alarmRing struct {
 	// gen is the recall generation the alarm's own play (or the snooze) left
 	// behind; a different one means somebody played something else.
 	gen uint64
+	// url is the station the alarm's own play recorded. A later generation
+	// for the same station is the speaker reporting that very play back (a
+	// native preset's start arrives once more as a key event, sometimes after
+	// the recall returned), not somebody playing something else.
+	url string
 	// sleepGen is the sleep-timer generation of the switch-off this ring
 	// armed, 0 when none.
 	sleepGen uint64
@@ -178,6 +183,8 @@ type ringFacts struct {
 	since        time.Time
 	ringGen      uint64
 	curGen       uint64
+	ringURL      string
+	curURL       string
 	explicitStop time.Time
 	standbyStop  time.Time
 	// standbySince, when later than since, is where standby stamps start to
@@ -197,7 +204,7 @@ func ringEndReason(f ringFacts) string {
 		standbyRef = f.standbySince
 	}
 	switch {
-	case f.curGen != f.ringGen:
+	case f.curGen != f.ringGen && (f.ringURL == "" || f.curURL != f.ringURL):
 		return "something else was played since"
 	case !f.standbyStop.IsZero() && f.standbyStop.After(standbyRef):
 		return "the speaker was switched off"
@@ -229,9 +236,12 @@ func ringMaxFor(a alarm.Alarm) time.Duration {
 }
 
 // stopStamps reads the server-wide signals the end conditions are made of.
-func (s *Server) stopStamps() (curGen uint64, explicit, standby time.Time) {
+func (s *Server) stopStamps() (curGen uint64, curURL string, explicit, standby time.Time) {
 	s.lastPlayMu.Lock()
 	curGen = s.recallGen
+	if s.lastPlay != nil {
+		curURL = s.lastPlay.boxURL
+	}
 	s.lastPlayMu.Unlock()
 	s.lastExplicitStopMu.Lock()
 	explicit = s.lastExplicitStop
@@ -239,7 +249,7 @@ func (s *Server) stopStamps() (curGen uint64, explicit, standby time.Time) {
 	s.standbyStopMu.Lock()
 	standby = s.lastStandbyStop
 	s.standbyStopMu.Unlock()
-	return curGen, explicit, standby
+	return curGen, curURL, explicit, standby
 }
 
 // ringStart records a (re)fire of a, starting now. A snooze still pending
@@ -258,7 +268,7 @@ func (s *Server) ringStart(a alarm.Alarm, due, started time.Time) uint64 {
 	}
 	s.ring.active, s.ring.armed = true, false
 	s.ring.alarm, s.ring.due, s.ring.since = a, due, started
-	s.ring.gen, s.ring.sleepGen = 0, 0
+	s.ring.gen, s.ring.sleepGen, s.ring.url = 0, 0, ""
 	s.ring.snoozeUntil, s.ring.snoozedViaAux, s.ring.standbyAfter = time.Time{}, false, time.Time{}
 	s.ring.seq++
 	seq := s.ring.seq
@@ -271,11 +281,13 @@ func (s *Server) ringStart(a alarm.Alarm, due, started time.Time) uint64 {
 
 // ringArmed marks the (re)fire seq as ringing: its recall returned with gen.
 func (s *Server) ringArmed(seq, gen uint64) {
+	_, url, _, _ := s.stopStamps()
 	s.ring.mu.Lock()
 	defer s.ring.mu.Unlock()
 	if s.ring.active && s.ring.seq == seq {
 		s.ring.armed = true
 		s.ring.gen = gen
+		s.ring.url = url
 	}
 }
 
@@ -434,7 +446,7 @@ func absDur(d time.Duration) time.Duration {
 func (s *Server) snoozePress(key, prevSource string) {
 	now := time.Now()
 	viaAux := key == keyactions.KeyAux
-	curGen, explicit, standby := s.stopStamps()
+	curGen, curURL, explicit, standby := s.stopStamps()
 
 	s.ring.mu.Lock()
 	if !s.ring.lastPress.IsZero() && now.Sub(s.ring.lastPress) < snoozeMinGap {
@@ -474,6 +486,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 	a, seq := s.ring.alarm, s.ring.seq
 	facts := ringFacts{
 		since: s.ring.since, ringGen: s.ring.gen, curGen: curGen,
+		ringURL: s.ring.url, curURL: curURL,
 		explicitStop: explicit, standbyStop: standby,
 		maxRing: ringMaxFor(a), now: now,
 	}
@@ -615,7 +628,7 @@ func (s *Server) silenceTransport(ctx context.Context) {
 // snoozeOver is the snooze deadline: check once that nothing ended the alarm
 // meanwhile, then ring again through the normal fire path.
 func (s *Server) snoozeOver(seq uint64) {
-	curGen, explicit, standby := s.stopStamps()
+	curGen, curURL, explicit, standby := s.stopStamps()
 	s.ring.mu.Lock()
 	if !s.ring.active || s.ring.seq != seq {
 		s.ring.mu.Unlock()
@@ -625,6 +638,7 @@ func (s *Server) snoozeOver(seq uint64) {
 	a, due, viaAux := s.ring.alarm, s.ring.due, s.ring.snoozedViaAux
 	facts := ringFacts{
 		since: s.ring.since, ringGen: s.ring.gen, curGen: curGen,
+		ringURL: s.ring.url, curURL: curURL,
 		explicitStop: explicit, standbyStop: standby, standbySince: s.ring.standbyAfter,
 		now: time.Now(),
 	}
