@@ -46,10 +46,6 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.presets == nil || s.boxHost == "" {
-		http.Error(w, "presets store or box host not configured", http.StatusServiceUnavailable)
-		return
-	}
 	var in struct {
 		Slot int `json:"slot"`
 		// Commands lets the caller supply its own candidate command lines, so a
@@ -58,7 +54,15 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 		// substituted. Empty means "run the built-in list".
 		Commands []string `json:"commands"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	// A bare POST probes slot 6 with the built-in list; only a body that is
+	// there and broken is refused.
+	if !decodeOptionalJSONRequest(w, r, 1<<16, &in) {
+		return
+	}
+	if s.presets == nil || s.boxHost == "" {
+		http.Error(w, "presets store or box host not configured", http.StatusServiceUnavailable)
+		return
+	}
 	if in.Slot < 1 || in.Slot > 6 {
 		in.Slot = 6
 	}

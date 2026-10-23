@@ -96,6 +96,21 @@ func TestStartVolumeIgnoresADamagedFile(t *testing.T) {
 	}
 }
 
+// A broken or missing body must not decode to volume 0 and quietly switch the
+// start level off. It is refused, and the stored level stays what it was.
+func TestStartVolumeRejectsABrokenBody(t *testing.T) {
+	s := startVolServer(t)
+	postStartVol(t, s, `{"volume":40}`)
+	for _, body := range []string{`{"volume":`, `volume=40`, ``} {
+		if code, _ := postStartVol(t, s, body); code != http.StatusBadRequest {
+			t.Errorf("%q should be refused, got %d", body, code)
+		}
+	}
+	if v, ok := s.startVolume(); !ok || v != 40 {
+		t.Errorf("stored level after refused posts = %d ok=%v, want 40 true", v, ok)
+	}
+}
+
 func TestStartVolumeIsLANOnly(t *testing.T) {
 	s := startVolServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/api/box/start-volume", strings.NewReader(`{"volume":30}`))

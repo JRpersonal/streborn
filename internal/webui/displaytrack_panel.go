@@ -30,11 +30,9 @@ package webui
 
 import (
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -324,15 +322,7 @@ func clockPathFor(enabledPath string) string {
 // displayClockEnabled reports whether the time is shown during playback. Only
 // meaningful where STR draws on the panel.
 func (s *Server) displayClockEnabled() bool {
-	b, err := os.ReadFile(clockPathFor(s.displayTrackPath))
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
+	return readBoolFlag(clockPathFor(s.displayTrackPath), false)
 }
 
 // hour12Retry spaces out reads of the speaker's time format after one failed.
@@ -420,7 +410,9 @@ func (s *Server) handleDisplayClock(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Enabled bool `json:"enabled"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if !decodeJSONRequest(w, r, 4096, &body) {
+			return
+		}
 		val := "0"
 		if body.Enabled {
 			val = "1"

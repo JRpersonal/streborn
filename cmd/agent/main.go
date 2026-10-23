@@ -1074,9 +1074,11 @@ func run() error {
 	streamProxySrv.SetHoldMissingSlotFn(webuiSrv.QuietWakeEpisodeActive)
 
 	// ICY radio text: the proxy parses the live StreamTitle out of the
-	// stream; push it to the box display by re-issuing the current stream URI
-	// with the new title. Gated behind STR_ICY_DISPLAY inside the handler until
-	// the mid-stream re-set is verified not to glitch audio on real hardware.
+	// stream and hands it to the handler, which draws it on the panel where
+	// STR owns one (trackOnPanel) and otherwise re-issues the current stream
+	// URI with the new title, but only when the user switched the
+	// display-track setting on (displayTrackEnabled, a NAND flag file;
+	// STR_ICY_DISPLAY=1 only forces it on for dev/testing).
 	streamProxySrv.SetOnTitle(webuiSrv.HandleStreamTitle)
 	// On a speaker whose panel STR draws the track on (internal/oled), the
 	// end of the stream takes it off again.

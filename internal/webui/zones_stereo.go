@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -2395,16 +2394,7 @@ const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
 // must be actively playing, and standby or busy slaves are left alone, #342),
 // so this gate only governs the broken/harmful native re-assert.
 func (s *Server) zoneReconcileEnabled() bool {
-	b, err := os.ReadFile(defaultZoneReconcilePath)
-	if err != nil {
-		return false // default OFF (opt-in)
-	}
-	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "1", "true", "on", "yes":
-		return true // explicit opt-in
-	default:
-		return false
-	}
+	return readBoolFlag(defaultZoneReconcilePath, false) // default OFF (opt-in)
 }
 
 // PeriodicZoneReconcile re-pushes a persisted mirror group so it survives

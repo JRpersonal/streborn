@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -518,14 +519,16 @@ func (s *Server) handleBoxAirplayOpt(w http.ResponseWriter, r *http.Request) {
 			"enabled":   strings.Contains(string(raw), `BCOResetTimerEnabled="true"`),
 		})
 	case http.MethodPost:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if !decodeJSONRequest(w, r, 4096, &body) {
+			return
+		}
 		if path == "" {
 			http.Error(w, "no AirplayConfiguration.xml (not a BCO speaker)", http.StatusBadRequest)
 			return
 		}
-		var body struct {
-			Enabled bool `json:"enabled"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
 		val := "false"
 		if body.Enabled {
 			val = "true"
@@ -583,7 +586,9 @@ func (s *Server) handleResumeOnPowerOn(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Enabled bool `json:"enabled"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if !decodeJSONRequest(w, r, 4096, &body) {
+			return
+		}
 		path := s.resumeOnPowerOnPath
 		if path == "" {
 			path = defaultResumeOnPowerOnPath
@@ -672,7 +677,9 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 			Enabled bool   `json:"enabled"`
 			Mode    string `json:"mode"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if !decodeJSONRequest(w, r, 4096, &body) {
+			return
+		}
 		path := s.displayTrackPath
 		if path == "" {
 			path = defaultDisplayTrackPath
@@ -744,6 +751,24 @@ func (s *Server) boxStandby() string {
 	return ""
 }
 
+// decodeOptionalJSONRequest is decodeJSONRequest for endpoints whose body may
+// be left out on purpose (a bare POST means "the defaults"): an empty or
+// whitespace-only body leaves v untouched and returns true, while malformed
+// JSON still answers 400. Settings endpoints whose body is never optional use
+// decodeJSONRequest, where an empty body is a 400 too: a toggle silently
+// decoding to false and switching the setting off is exactly the bug.
+func decodeOptionalJSONRequest[T any](w http.ResponseWriter, r *http.Request, maxBytes int64, v *T) bool {
+	if r.Body == nil {
+		return true
+	}
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes)).Decode(v)
+	if err == nil || errors.Is(err, io.EOF) {
+		return true
+	}
+	http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+	return false
+}
+
 // writeFileAtomic writes data to path via a temp file and rename, so a crash
 // mid-write never leaves a torn file. Callers on NAND follow up with one sync.
 func writeFileAtomic(path string, data []byte) error {
@@ -755,6 +780,25 @@ func writeFileAtomic(path string, data []byte) error {
 		return fmt.Errorf("rename: %w", err)
 	}
 	return nil
+}
+
+// readBoolFlag reads a one-line NAND flag file as a switch. A missing or
+// unreadable file is def. Otherwise "1", "true", "on" and "yes" (any case,
+// surrounding whitespace ignored) are true, "0", "false", "off" and "no" are
+// false, and anything else (an empty or damaged file) is def again: garbage is
+// not an instruction, for a default-on switch as much as for a default-off one.
+func readBoolFlag(path string, def bool) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(string(b))) {
+	case "1", "true", "on", "yes":
+		return true
+	case "0", "false", "off", "no":
+		return false
+	}
+	return def
 }
 
 // writeFlagFile atomically writes a one-line value to a NAND flag file.

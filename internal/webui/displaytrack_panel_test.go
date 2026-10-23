@@ -353,6 +353,34 @@ func TestDisplayClockEndpoint(t *testing.T) {
 	}
 }
 
+// A broken or missing body on the two display toggles is refused: it used to
+// decode to enabled=false and switch the setting off behind the user's back.
+func TestDisplayTogglesRejectABrokenBody(t *testing.T) {
+	s, _, _ := newTrackServer(t, true)
+	setFlag(t, s.displayTrackPath, true)
+	setFlag(t, clockPathFor(s.displayTrackPath), true)
+	for _, c := range []struct {
+		path string
+		fn   func(http.ResponseWriter, *http.Request)
+	}{
+		{"/api/box/display-track", s.handleDisplayTrack},
+		{"/api/box/display-clock", s.handleDisplayClock},
+	} {
+		for _, body := range []string{`{"enabled":`, `enabled=false`, ``} {
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, c.path, strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:1234"
+			c.fn(rr, req)
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("%s with body %q: %d, want 400", c.path, body, rr.Code)
+			}
+		}
+	}
+	if !s.displayTrackEnabled() || !s.displayClockEnabled() {
+		t.Fatalf("a refused post changed a setting: track %v clock %v", s.displayTrackEnabled(), s.displayClockEnabled())
+	}
+}
+
 func TestClearIsANoOpWithoutPanel(t *testing.T) {
 	s, fp, _ := newTrackServer(t, false)
 	s.HandleStreamEnded()

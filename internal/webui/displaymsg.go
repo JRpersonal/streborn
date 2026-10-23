@@ -35,7 +35,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -202,15 +201,7 @@ func displayMsgBlockedBy(np boxNowPlaying, ok bool) string {
 // displayMessagesEnabled reads the per-speaker switch. On unless the flag
 // file says otherwise.
 func (s *Server) displayMessagesEnabled() bool {
-	b, err := os.ReadFile(s.displayMsgFlagPath())
-	if err != nil {
-		return true
-	}
-	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "0", "false", "off", "no":
-		return false
-	}
-	return true
+	return readBoolFlag(s.displayMsgFlagPath(), true)
 }
 
 func (s *Server) displayMsgFlagPath() string {

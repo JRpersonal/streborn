@@ -20,7 +20,6 @@ package webui
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
@@ -150,7 +149,9 @@ func (s *Server) handleStartVolume(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Volume int `json:"volume"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if !decodeJSONRequest(w, r, 4096, &body) {
+			return
+		}
 		if body.Volume < 0 || body.Volume > 100 {
 			http.Error(w, "volume must be 0 (off) or 1..100", http.StatusBadRequest)
 			return
