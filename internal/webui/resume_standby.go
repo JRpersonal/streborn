@@ -414,6 +414,9 @@ func (s *Server) boxSelectionStuck() bool {
 // nowPlayingLocationRe pulls the ContentItem location out of a now_playing body.
 var nowPlayingLocationRe = regexp.MustCompile(`location="([^"]*)"`)
 
+// nowPlayingSourceRe pulls the source attribute out of a now_playing body.
+var nowPlayingSourceRe = regexp.MustCompile(`source="([^"]*)"`)
+
 // boxStuckSelection reports whether the box is awake with a stuck STR selection
 // (see boxSelectionStuck's contract) AND the location of that selection, so the
 // caller can tell whether the box is stuck on OUR last stream (resume it) or on
@@ -1734,7 +1737,7 @@ func (s *Server) boxSourceNow() string {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	if m := regexp.MustCompile(`source="([^"]*)"`).FindSubmatch(b); len(m) == 2 {
+	if m := nowPlayingSourceRe.FindSubmatch(b); len(m) == 2 {
 		return string(m[1])
 	}
 	return ""
