@@ -531,7 +531,7 @@ func (s *Server) runFleet() {
 			continue
 		}
 		// Room for the network retries too (updateFleetPeer).
-		pctx, pcancel := context.WithTimeout(context.Background(), 2*fleetPeerBudget+fleetEngineBudget+time.Duration(fleetNetRetries)*fleetNetPause+2*time.Minute)
+		pctx, pcancel := context.WithTimeout(context.Background(), 2*fleetPeerBudget+fleetEngineBudget+time.Duration(fleetNetRetries)*(fleetNetPause+fleetNetWaitFor)+2*time.Minute)
 		s.updateFleetPeer(pctx, sp, func(fn func(*fleetSpeaker)) { s.fleet.edit(i, fn) })
 		pcancel()
 	}
@@ -591,7 +591,7 @@ func (s *Server) fleetUpdateSelf(i int) bool {
 // through edit. The peer does all the real work itself; this only starts it
 // and watches, bounded by ctx and fleetPeerBudget. A failure that only means
 // the network was gone (selfupdate_netretry.go) starts the peer over once,
-// twice at most, after a pause; and before any failure is shown, the peer is
+// twice at most, once the network is back; and before any failure is shown, the peer is
 // asked once more what it runs, so a speaker that did get the new version is
 // never reported as failed.
 func (s *Server) updateFleetPeer(ctx context.Context, sp fleetSpeaker, edit func(func(*fleetSpeaker))) {
@@ -614,12 +614,14 @@ func (s *Server) updateFleetPeer(ctx context.Context, sp fleetSpeaker, edit func
 			return
 		}
 		edit(func(row *fleetSpeaker) { row.State, row.Phase, row.Pct, row.Reason = fleetUpdating, "network", 0, "" })
-		s.logger.Info("self-update fleet: peer lost the network, starting it over after a pause", "peer", sp.Name, "ip", sp.IP,
+		s.logger.Info("self-update fleet: peer lost the network, waiting for it to come back", "peer", sp.Name, "ip", sp.IP,
 			"step", r.step, "attempt", attempt+1, "err", r.msg)
-		if !sleepCtx(ctx, fleetNetPause) {
+		if !waitFleetNetBack(ctx, base) {
 			edit(func(row *fleetSpeaker) { row.State, row.Phase, row.Pct, row.Reason = fleetFailed, "", 0, r.msg })
+			s.logger.Info("self-update fleet: the network did not come back, peer failed", "peer", sp.Name, "ip", sp.IP, "err", r.msg)
 			return
 		}
+		s.logger.Info("self-update fleet: network back, starting the peer over", "peer", sp.Name, "ip", sp.IP)
 	}
 }
 

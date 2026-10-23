@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -43,10 +44,65 @@ var (
 	selfUpdateCheckRetryEvery = 5 * time.Second
 	selfUpdateCheckRetryFor   = 30 * time.Second
 	// fleetNetRetries is how often the driving speaker starts a peer over
-	// after a network failure, and fleetNetPause how long it waits first.
+	// after a network failure. Before each start it waits at least
+	// fleetNetPause, and then until the network is back (waitFleetNetBack),
+	// fleetNetWaitFor at most: a fixed 30 s pause used to start the peer over
+	// into the same outage, so a router that was off for a few minutes failed
+	// the peer for good after about three.
 	fleetNetRetries = 2
 	fleetNetPause   = 30 * time.Second
+	fleetNetWaitFor = 10 * time.Minute
+	// fleetNetProbeEvery is how often the wait asks whether the network is back.
+	fleetNetProbeEvery = 10 * time.Second
+	// fleetReleaseReachable reports whether this speaker reaches the release
+	// host again. The peers sit behind the same router, so this is the best
+	// guess at whether a peer's own check would get through. A seam for tests.
+	fleetReleaseReachable = releaseHostReachable
 )
+
+// releaseHostReachable resolves the release host and opens a connection to
+// it. No request is sent: it only answers "is the internet back".
+func releaseHostReachable(ctx context.Context) bool {
+	base, _ := selfUpdateSourceNow()
+	u, err := url.Parse(base)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+		if u.Scheme == "http" {
+			port = "80"
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(u.Hostname(), port))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+// waitFleetNetBack waits until the peer answers on the LAN again and this
+// speaker reaches the release host, fleetNetWaitFor at most. False when the
+// network did not come back in time or ctx ended.
+func waitFleetNetBack(ctx context.Context, base string) bool {
+	if !sleepCtx(ctx, fleetNetPause) {
+		return false
+	}
+	until := time.Now().Add(fleetNetWaitFor)
+	for {
+		var st selfUpdateStatus
+		if _, err := fleetGetJSON(ctx, base+"/api/agent/self-update", 6*time.Second, &st); err == nil && fleetReleaseReachable(ctx) {
+			return true
+		}
+		if time.Now().After(until) || !sleepCtx(ctx, fleetNetProbeEvery) {
+			return false
+		}
+	}
+}
 
 // errDownloadStalled replaces the bare "context canceled" a stalled download
 // used to end with.

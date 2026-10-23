@@ -182,9 +182,11 @@ func newFleetHarness(t *testing.T, self string, peers map[string]*fakePeer) *fle
 	origBase, origClient := fleetPeerBase, fleetClient
 	origPoll, origBudget, origEngine, origNetPause := fleetPollEvery, fleetPeerBudget, fleetEngineBudget, fleetNetPause
 	origVer := agentVersion
+	origWait, origProbe, origReach := fleetNetWaitFor, fleetNetProbeEvery, fleetReleaseReachable
 	t.Cleanup(func() {
 		fleetPeerBase, fleetClient = origBase, origClient
 		fleetPollEvery, fleetPeerBudget, fleetEngineBudget, fleetNetPause = origPoll, origBudget, origEngine, origNetPause
+		fleetNetWaitFor, fleetNetProbeEvery, fleetReleaseReachable = origWait, origProbe, origReach
 		agentVersion = origVer
 	})
 	fleetPeerBase = func(ip string, _ int) string {
@@ -196,6 +198,8 @@ func newFleetHarness(t *testing.T, self string, peers map[string]*fakePeer) *fle
 	fleetClient = func(timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} }
 	fleetPollEvery, fleetPeerBudget, fleetEngineBudget = 5*time.Millisecond, 2*time.Second, 50*time.Millisecond
 	fleetNetPause = 10 * time.Millisecond
+	fleetNetWaitFor, fleetNetProbeEvery = time.Second, 5*time.Millisecond
+	fleetReleaseReachable = func(context.Context) bool { return true }
 	SetAgentVersion(self)
 
 	dir := t.TempDir()
