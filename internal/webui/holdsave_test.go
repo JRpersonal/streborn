@@ -199,14 +199,22 @@ func TestHoldSaveLiveDuplicateOnEmptyKeyMoves(t *testing.T) {
 	}
 }
 
-func TestParseNowPlayingSourceLocation(t *testing.T) {
-	doc := []byte(`<?xml version="1.0" encoding="UTF-8" ?><nowPlaying deviceID="AABBCCDDEEFF" source="UPNP" sourceAccount="UPnPUserName"><ContentItem source="UPNP" location="http://192.0.2.28:50002/m/a.mp3?x=1&amp;y=2" sourceAccount="UPnPUserName" isPresetable="false"><itemName>One Alpha</itemName></ContentItem></nowPlaying>`)
-	src, loc, ok := parseNowPlayingSourceLocation(doc)
+// The hold-to-save reads the source and the decoded location through the
+// boxapi reader; the seam-free path is pinned here on the two shapes it
+// decides on.
+func TestHoldSaveReadsSourceAndDecodedLocation(t *testing.T) {
+	s := &Server{boxNowReadFn: scriptNowPlayingDoc(`<?xml version="1.0" encoding="UTF-8" ?><nowPlaying deviceID="AABBCCDDEEFF" source="UPNP" sourceAccount="UPnPUserName"><ContentItem source="UPNP" location="http://192.0.2.28:50002/m/a.mp3?x=1&amp;y=2" sourceAccount="UPnPUserName" isPresetable="false"><itemName>One Alpha</itemName></ContentItem></nowPlaying>`)}
+	src, loc, ok := s.boxNowPlaying(context.Background())
 	if !ok || src != "UPNP" || loc != "http://192.0.2.28:50002/m/a.mp3?x=1&y=2" {
 		t.Fatalf("got %q %q %v", src, loc, ok)
 	}
-	src, loc, ok = parseNowPlayingSourceLocation([]byte(`<nowPlaying deviceID="AABBCCDDEEFF" source="STANDBY"><ContentItem source="STANDBY" isPresetable="false" /></nowPlaying>`))
+	s.boxNowReadFn = scriptNowPlayingDoc(`<nowPlaying deviceID="AABBCCDDEEFF" source="STANDBY"><ContentItem source="STANDBY" isPresetable="false" /></nowPlaying>`)
+	src, loc, ok = s.boxNowPlaying(context.Background())
 	if !ok || src != "STANDBY" || loc != "" {
 		t.Fatalf("standby: got %q %q %v", src, loc, ok)
+	}
+	s.boxNowReadFn = scriptNowPlayingUnreadable()
+	if _, _, ok := s.boxNowPlaying(context.Background()); ok {
+		t.Fatal("an unreadable speaker reported ok")
 	}
 }
