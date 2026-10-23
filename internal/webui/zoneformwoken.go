@@ -90,14 +90,21 @@ func (s *Server) userPlayedSince(t time.Time) bool {
 	return s.play.userPlayedSince(t)
 }
 
-// groupWakeNowPlaying is the read seam for stopGroupWakeSelfResume, the same
-// shape as quietWakeNowPlaying: the real read reaches :8090 on a fixed port.
-var groupWakeNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
+// groupWakeNowPlaying is the read seam (groupWakeNowPlayingFn) for
+// stopGroupWakeSelfResume, the same shape as quietWakeNowPlaying: the real
+// read reaches :8090 on a fixed port.
+func (s *Server) groupWakeNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
+	if s.groupWakeNowPlayingFn != nil {
+		return s.groupWakeNowPlayingFn(ctx, host)
+	}
 	return fetchNowPlaying(ctx, host)
 }
 
-// groupWakeStop is the STOP seam, for the same reason.
-var groupWakeStop = func(ctx context.Context, host string) error {
+// groupWakeStop is the STOP seam (groupWakeStopFn), for the same reason.
+func (s *Server) groupWakeStop(ctx context.Context, host string) error {
+	if s.groupWakeStopFn != nil {
+		return s.groupWakeStopFn(ctx, host)
+	}
 	return boxapi.New(host).Key(ctx, "STOP")
 }
 
@@ -108,11 +115,11 @@ func (s *Server) stopGroupWakeSelfResume(ctx context.Context, when string) bool 
 	if !active || s.boxHost == "" {
 		return false
 	}
-	np := groupWakeNowPlaying(ctx, s.boxHost)
+	np := s.groupWakeNowPlaying(ctx, s.boxHost)
 	if !isSelfResume(true, s.userPlayedSince(since), np) {
 		return false
 	}
-	if err := groupWakeStop(ctx, s.boxHost); err != nil {
+	if err := s.groupWakeStop(ctx, s.boxHost); err != nil {
 		s.logger.Warn("zone: could not stop the master's own resume after the group wake", "when", when, "err", err)
 		return false
 	}
@@ -225,9 +232,12 @@ func (s *Server) scheduleLateSelfResumeCheckThen(when string, then func(context.
 // standby decision.
 const pairStandbySettle = time.Second
 
-// pairStandbySend is the standby seam, for the same reason as groupWakeStop:
-// the real call reaches :8090 on a fixed port.
-var pairStandbySend = func(ctx context.Context, host string) error {
+// pairStandbySend is the standby seam (pairStandbySendFn), for the same reason
+// as groupWakeStop: the real call reaches :8090 on a fixed port.
+func (s *Server) pairStandbySend(ctx context.Context, host string) error {
+	if s.pairStandbySendFn != nil {
+		return s.pairStandbySendFn(ctx, host)
+	}
 	return boxapi.New(host).Standby(ctx)
 }
 
@@ -302,7 +312,7 @@ func (s *Server) returnSilentPairToStandby(ctx context.Context, since time.Time)
 	if active, woke := s.groupWakeEpisode(); active && woke.Before(since) {
 		since = woke
 	}
-	np := groupWakeNowPlaying(ctx, s.boxHost)
+	np := s.groupWakeNowPlaying(ctx, s.boxHost)
 	ok, why := pairStandbyDecision(np, s.userPlayedSince(since))
 	if !ok {
 		s.logger.Info("stereo: leaving the pair on after pairing it out of standby",
@@ -315,7 +325,7 @@ func (s *Server) returnSilentPairToStandby(ctx context.Context, since time.Time)
 	// what wakes it.
 	s.restoreQuietWakeVolume("pair back to standby")
 	s.NoteUserStop()
-	if err := pairStandbySend(ctx, s.boxHost); err != nil {
+	if err := s.pairStandbySend(ctx, s.boxHost); err != nil {
 		s.logger.Warn("stereo: could not put the pair back to standby after pairing it out of standby", "err", err)
 		return false
 	}

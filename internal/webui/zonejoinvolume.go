@@ -40,14 +40,29 @@ import (
 )
 
 // Test seams. boxapi pins :8090, which a httptest server can never serve, so
-// the live calls sit behind vars the tests replace. Same pattern as
-// dissolvestragglers.go.
-var (
-	readMemberVolumeFn = func(ctx context.Context, host string) (boxapi.Volume, error) {
-		return boxapi.New(host).GetVolume(ctx)
+// the live calls sit behind readMemberVolumeFn / setMemberVolumeFn on the
+// Server, which a test sets on its own instance; nil is production. Same
+// pattern as dissolvestragglers.go.
+
+// setMemberVolumeFunc is the shape of the join-volume write seam
+// (setJoinerVolume), named so the Server field needs no netip import.
+type setMemberVolumeFunc func(ctx context.Context, addr netip.Addr, pct int) error
+
+// readMemberVolume reads a speaker's live /volume.
+func (s *Server) readMemberVolume(ctx context.Context, host string) (boxapi.Volume, error) {
+	if s.readMemberVolumeFn != nil {
+		return s.readMemberVolumeFn(ctx, host)
 	}
-	setMemberVolumeFn = setJoinerVolume
-)
+	return boxapi.New(host).GetVolume(ctx)
+}
+
+// setMemberVolume writes a joining member's level (setJoinerVolume).
+func (s *Server) setMemberVolume(ctx context.Context, addr netip.Addr, pct int) error {
+	if s.setMemberVolumeFn != nil {
+		return s.setMemberVolumeFn(ctx, addr, pct)
+	}
+	return setJoinerVolume(ctx, addr, pct)
+}
 
 // lanPeerAddr parses a member address from the request body and returns it ONLY
 // if it is a bare LAN IP. The parsed value is what every caller uses from then
@@ -218,7 +233,7 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 20*time.Second)
 	defer cancel()
 
-	v, err := readMemberVolumeFn(ctx, s.boxHost)
+	v, err := s.readMemberVolume(ctx, s.boxHost)
 	// Target over Actual: a master that is muted, or mid-ramp, reports Actual 0
 	// while Target still carries the level the user set.
 	want := v.Target
@@ -257,7 +272,7 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 		wg.Add(1)
 		go func(tg target) {
 			defer wg.Done()
-			if err := setMemberVolumeFn(ctx, tg.addr, want); err != nil {
+			if err := s.setMemberVolume(ctx, tg.addr, want); err != nil {
 				s.logger.Warn("zone: could not set a joining member's volume", "ip", tg.addr.String(), "err", err)
 			}
 		}(tg)
@@ -282,7 +297,7 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 	}
 	corrected := 0
 	for _, tg := range list {
-		got, rerr := readMemberVolumeFn(ctx, tg.addr.String())
+		got, rerr := s.readMemberVolume(ctx, tg.addr.String())
 		if rerr != nil {
 			continue
 		}
@@ -299,7 +314,7 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 				"ip", tg.addr.String(), "set", want, "now", have)
 			continue
 		}
-		if err := setMemberVolumeFn(ctx, tg.addr, want); err != nil {
+		if err := s.setMemberVolume(ctx, tg.addr, want); err != nil {
 			s.logger.Warn("zone: could not re-apply a joining member's volume", "ip", tg.addr.String(), "err", err)
 			continue
 		}

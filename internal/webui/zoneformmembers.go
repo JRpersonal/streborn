@@ -63,7 +63,7 @@ func (s *Server) everyMemberCarriesTheGroup(ctx context.Context, members []boxap
 			return false, "member " + m.DeviceID + " has no address to ask"
 		}
 		asked++
-		st := memberNowPlaying(ctx, ip)
+		st := s.memberNowPlaying(ctx, ip)
 		if !isPlayingStatus(st.PlayStatus) {
 			return false, "member " + ip + " is not playing (" + st.PlayStatus + ")"
 		}

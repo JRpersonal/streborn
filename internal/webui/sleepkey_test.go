@@ -16,6 +16,7 @@ import (
 )
 
 func TestNextSleepStep(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		active bool
@@ -63,9 +64,10 @@ func sleepMinutesArmed(s *Server) (bool, int) {
 }
 
 func TestSleepKeyCycles(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	// The stub lives on s, so the cancel's group push in the cleanup still
 	// finds it rather than the real speaker.
 	noGroup(s)
@@ -97,9 +99,10 @@ func TestSleepKeyCycles(t *testing.T) {
 // One press reported twice (trace line and analytics line slipping past the
 // reader's own dedup) steps once.
 func TestSleepKeyDebouncesOnePress(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	noGroup(s)
 	t.Cleanup(func() { s.cancelSleep("test") })
 	s.SleepKeyPress()
@@ -111,9 +114,10 @@ func TestSleepKeyDebouncesOnePress(t *testing.T) {
 
 // A timer set on the phone steps on from what it was set to.
 func TestSleepKeyStepsOnFromThePhone(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	t.Cleanup(func() { s.cancelSleep("test") })
 	noGroup(s)
 	sleepPost(t, s, `{"minutes":45}`)
@@ -131,9 +135,10 @@ func TestSleepKeyStepsOnFromThePhone(t *testing.T) {
 // In a group the countdown, and the notice for a key press, go to every live
 // member; switching it off tells them too.
 func TestSleepKeyPushesToTheGroup(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	t.Cleanup(func() { s.cancelSleep("test") })
 	s.zones = fakeZoneStore(t, "192.0.2.20", "192.0.2.30")
 	withSpeakers(s,
@@ -176,9 +181,10 @@ func TestSleepKeyPushesToTheGroup(t *testing.T) {
 
 // A single-speaker timer from the phone tells nobody.
 func TestSleepSingleTimerPushesNothing(t *testing.T) {
+	t.Parallel()
 	f := &fakeBox{source: "UPNP"}
-	f.install(t)
 	s := newSleepServer()
+	f.install(s)
 	t.Cleanup(func() { s.cancelSleep("test") })
 	noGroup(s)
 	s.zones = fakeZoneStore(t, "192.0.2.20")
@@ -201,6 +207,7 @@ func displaySleepReq(s *Server, method, remote, body string) *httptest.ResponseR
 
 // The member's side draws and never arms a timer of its own.
 func TestDisplaySleepHandler(t *testing.T) {
+	t.Parallel()
 	s := newSleepServer()
 	const lan = "192.168.1.20:5555"
 	if w := displaySleepReq(s, http.MethodPost, lan, `{"remainingSec":900,"notice":true}`); w.Code != http.StatusOK {
@@ -250,6 +257,7 @@ func putTo(h http.HandlerFunc, path, body string) *httptest.ResponseRecorder {
 // A thumbs key carries a group or the sleep timer, never both, and both
 // endpoints refuse the second binding with the reason.
 func TestKeyActionsEndpointAndGroupConflict(t *testing.T) {
+	t.Parallel()
 	s := keyActionsServer(t)
 	if w := putTo(s.handleKeyActions, "/api/keyactions", `{"keys":{"prev":"sleep"}}`); w.Code != http.StatusBadRequest {
 		t.Errorf("sleep on prev: %d, want 400", w.Code)

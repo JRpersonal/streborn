@@ -576,7 +576,7 @@ func TestAlarmHushesTheGroupReForm(t *testing.T) {
 
 // autoOffDoc is weekdayDoc with a switch-off. Deliberately long: the real
 // time.AfterFunc must never fire during a test, or fireSleep would reach the
-// unstubbed sleepReadSource against an empty boxHost.
+// real sleepReadSource seam against an empty boxHost.
 func autoOffDoc(minutes int) alarm.Document {
 	d := weekdayDoc()
 	d.Alarms[0].AutoOff = minutes

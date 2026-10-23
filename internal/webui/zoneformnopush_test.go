@@ -25,14 +25,12 @@ func memberState(source, playStatus, location string) nowPlayingSnapshot {
 	return nowPlayingSnapshot{Source: source, PlayStatus: playStatus, Location: location}
 }
 
-// withMemberStates replaces the member read seam for one test.
-func withMemberStates(t *testing.T, byIP map[string]nowPlayingSnapshot) {
-	t.Helper()
-	prev := memberNowPlaying
-	memberNowPlaying = func(_ context.Context, ip string) nowPlayingSnapshot {
+// withMemberStates installs the member read seam on s alone, so the test
+// shares nothing with its neighbours and needs nothing restored.
+func withMemberStates(s *Server, byIP map[string]nowPlayingSnapshot) {
+	s.memberNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
 		return byIP[ip]
 	}
-	t.Cleanup(func() { memberNowPlaying = prev })
 }
 
 func carryServer(t *testing.T) *Server {
@@ -45,8 +43,9 @@ func carryServer(t *testing.T) *Server {
 const groupLoc = "http://192.0.2.1:8888/stream/1"
 
 func TestEveryMemberCarrying_SkipsThePush(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{
+	withMemberStates(s, map[string]nowPlayingSnapshot{
 		"192.0.2.2": memberState("GROUP_SLAVE", "PLAY_STATE", ""),
 		"192.0.2.3": memberState("UPNP", "PLAY_STATE", groupLoc),
 	})
@@ -60,8 +59,9 @@ func TestEveryMemberCarrying_SkipsThePush(t *testing.T) {
 // Martin's case, and the one that must never regress: the master plays, the
 // freshly joined member does not.
 func TestASilentFreshMemberStillGetsThePush(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{
+	withMemberStates(s, map[string]nowPlayingSnapshot{
 		"192.0.2.2": memberState("INVALID_SOURCE", "STOP_STATE", ""),
 	})
 	if ok, _ := s.everyMemberCarriesTheGroup(context.Background(),
@@ -73,8 +73,9 @@ func TestASilentFreshMemberStillGetsThePush(t *testing.T) {
 // A follower can report GROUP_SLAVE while sitting in STOP_STATE. That is
 // exactly a silent member, and the source name alone must not excuse it.
 func TestAGroupSlaveThatIsNotPlayingIsNotServed(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{
+	withMemberStates(s, map[string]nowPlayingSnapshot{
 		"192.0.2.2": memberState("GROUP_SLAVE", "STOP_STATE", ""),
 	})
 	if ok, _ := s.everyMemberCarriesTheGroup(context.Background(),
@@ -85,8 +86,9 @@ func TestAGroupSlaveThatIsNotPlayingIsNotServed(t *testing.T) {
 
 // One good member does not vouch for a bad one.
 func TestOneMemberNotCarryingIsEnoughToPush(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{
+	withMemberStates(s, map[string]nowPlayingSnapshot{
 		"192.0.2.2": memberState("GROUP_SLAVE", "PLAY_STATE", ""),
 		"192.0.2.3": memberState("BLUETOOTH", "PLAY_STATE", "bt://x"),
 	})
@@ -98,8 +100,9 @@ func TestOneMemberNotCarryingIsEnoughToPush(t *testing.T) {
 
 // Unreadable is not "fine". The historical safe behaviour is to push.
 func TestAnUnreadableMemberPushes(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{}) // every read comes back empty
+	withMemberStates(s, map[string]nowPlayingSnapshot{}) // every read comes back empty
 	if ok, _ := s.everyMemberCarriesTheGroup(context.Background(),
 		[]boxapi.ZoneMember{{IP: "192.0.2.2"}}, groupLoc); ok {
 		t.Fatal("an unreadable member counted as carrying the group")
@@ -110,6 +113,7 @@ func TestAnUnreadableMemberPushes(t *testing.T) {
 // also what keeps TestResumeAfterZoneFormPushesTheSurvivorOnAFreshForm honest:
 // it passes no members, so it must still push.
 func TestNoMembersMeansPush(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
 	if ok, _ := s.everyMemberCarriesTheGroup(context.Background(), nil, groupLoc); ok {
 		t.Fatal("an empty member list counted as served")
@@ -119,8 +123,9 @@ func TestNoMembersMeansPush(t *testing.T) {
 // The master itself is in the member list on some paths; asking it about itself
 // proves nothing, and if it were the only entry there is nobody to vouch.
 func TestOnlyTheMasterItselfMeansPush(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{})
+	withMemberStates(s, map[string]nowPlayingSnapshot{})
 	if ok, _ := s.everyMemberCarriesTheGroup(context.Background(),
 		[]boxapi.ZoneMember{{IP: "192.0.2.1"}}, groupLoc); ok {
 		t.Fatal("a list containing only the master counted as served")
@@ -133,8 +138,9 @@ func TestOnlyTheMasterItselfMeansPush(t *testing.T) {
 // bridges them, and it was the trap that would have made a string compare
 // useless (live capture, 2026-09-24).
 func TestTheProxyHostBridgesTheTwoEncodings(t *testing.T) {
+	t.Parallel()
 	s := carryServer(t)
-	withMemberStates(t, map[string]nowPlayingSnapshot{
+	withMemberStates(s, map[string]nowPlayingSnapshot{
 		"192.0.2.2": memberState("UPNP", "PLAY_STATE", "http://192.0.2.1:8888/stream/raw?u=abc"),
 	})
 	if ok, why := s.everyMemberCarriesTheGroup(context.Background(),
@@ -147,6 +153,7 @@ func TestTheProxyHostBridgesTheTwoEncodings(t *testing.T) {
 // push. It used to be skipped, which let one verified member vouch for a second
 // nobody had checked: exactly the silent speaker this function exists to catch.
 func TestAMemberWithNoAddressCountsAsDoubt(t *testing.T) {
+	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.1"}
 	members := []boxapi.ZoneMember{
 		{DeviceID: "MASTER", IP: "192.0.2.1"},

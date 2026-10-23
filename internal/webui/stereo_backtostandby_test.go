@@ -13,13 +13,12 @@ import (
 // speakers in standby correctly started no audio, but the master stayed on
 // with no source selected, solid amber, and never went back to sleep.
 
-// withPairStandbySend records the standby calls instead of reaching :8090.
-func withPairStandbySend(t *testing.T, err error) *[]string {
-	t.Helper()
-	prev := pairStandbySend
-	t.Cleanup(func() { pairStandbySend = prev })
+// withPairStandbySend records the standby calls on s instead of reaching
+// :8090. The seam is installed on the server alone, so the test shares
+// nothing with its neighbours and needs nothing restored.
+func withPairStandbySend(s *Server, err error) *[]string {
 	var calls []string
-	pairStandbySend = func(_ context.Context, host string) error {
+	s.pairStandbySendFn = func(_ context.Context, host string) error {
 		calls = append(calls, host)
 		return err
 	}
@@ -27,6 +26,7 @@ func withPairStandbySend(t *testing.T, err error) *[]string {
 }
 
 func TestPairStandbyDecision(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		np         nowPlayingSnapshot
@@ -57,8 +57,9 @@ func TestPairStandbyDecision(t *testing.T) {
 // silent, and the master is idle with no source. It goes back to standby, and
 // the self-wake guard stays armed so the next power-on resumes nothing.
 func TestSilentPairFromStandbyGoesBackToStandby(t *testing.T) {
+	t.Parallel()
 	s, stops := selfResumeTestServer(t, nowPlayingSnapshot{Source: "INVALID_SOURCE", PlayStatus: "STOP_STATE"})
-	calls := withPairStandbySend(t, nil)
+	calls := withPairStandbySend(s, nil)
 	start := time.Now()
 	s.noteQuietWakeEpisode()
 
@@ -82,8 +83,9 @@ func TestSilentPairFromStandbyGoesBackToStandby(t *testing.T) {
 // The user started a station through STR while the pair was forming: the pair
 // stays on, whatever the speaker reports at that instant.
 func TestPairStaysOnWhenTheUserPlayedSinceTheWake(t *testing.T) {
+	t.Parallel()
 	s, _ := selfResumeTestServer(t, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
-	calls := withPairStandbySend(t, nil)
+	calls := withPairStandbySend(s, nil)
 	start := time.Now()
 	s.noteQuietWakeEpisode()
 	time.Sleep(5 * time.Millisecond)
@@ -97,8 +99,9 @@ func TestPairStaysOnWhenTheUserPlayedSinceTheWake(t *testing.T) {
 // Something started on the pair by other means (the phone's Spotify app, a
 // hardware preset): the transport reads playing right before, so no standby.
 func TestPairStaysOnWhenSomethingPlays(t *testing.T) {
+	t.Parallel()
 	s, _ := selfResumeTestServer(t, nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE"})
-	calls := withPairStandbySend(t, nil)
+	calls := withPairStandbySend(s, nil)
 	if s.returnSilentPairToStandby(context.Background(), time.Now()) || len(*calls) != 0 {
 		t.Fatalf("standby sent into playing audio, calls=%v", *calls)
 	}
@@ -106,8 +109,9 @@ func TestPairStaysOnWhenSomethingPlays(t *testing.T) {
 
 // A failing standby call is reported, not retried.
 func TestPairStandbyFailureIsReported(t *testing.T) {
+	t.Parallel()
 	s, _ := selfResumeTestServer(t, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
-	calls := withPairStandbySend(t, errors.New("box unreachable"))
+	calls := withPairStandbySend(s, errors.New("box unreachable"))
 	if s.returnSilentPairToStandby(context.Background(), time.Now()) {
 		t.Fatal("a failed standby was reported as sent")
 	}
@@ -121,6 +125,7 @@ func TestPairStandbyFailureIsReported(t *testing.T) {
 // form path must NOT put its master back to standby: a native zone dissolves
 // when its master drops to STANDBY.
 func TestOnlyTheSilentPairFromStandbyIsPutBackToSleep(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("zones_stereo.go")
 	if err != nil {
 		t.Fatal(err)

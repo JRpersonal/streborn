@@ -25,6 +25,7 @@ func ids(ms []boxapi.ZoneMember) []string {
 }
 
 func TestNewlyJoinedMembers(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name        string
 		want        []boxapi.ZoneMember
@@ -129,6 +130,7 @@ func TestNewlyJoinedMembers(t *testing.T) {
 }
 
 func TestDropMembersRemovesUnverifiedJoins(t *testing.T) {
+	t.Parallel()
 	in := []boxapi.ZoneMember{member("AA", "192.0.2.11"), member("BB", "192.0.2.12")}
 	got := ids(dropMembers(in, []string{"bb"}))
 	if len(got) != 1 || got[0] != "AA" {
@@ -187,13 +189,10 @@ func (f *fakeVolumes) set(_ context.Context, addr netip.Addr, pct int) error {
 	return nil
 }
 
-func withFakeVolumes(t *testing.T, f *fakeVolumes) {
-	t.Helper()
-	origRead, origSet := readMemberVolumeFn, setMemberVolumeFn
-	readMemberVolumeFn, setMemberVolumeFn = f.read, f.set
-	t.Cleanup(func() {
-		readMemberVolumeFn, setMemberVolumeFn = origRead, origSet
-	})
+// withFakeVolumes installs f as the two live seams on s alone, so the test
+// shares nothing with its neighbours and needs nothing restored.
+func withFakeVolumes(s *Server, f *fakeVolumes) {
+	s.readMemberVolumeFn, s.setMemberVolumeFn = f.read, f.set
 }
 
 // newJoinVolServer is a quiet server whose zone clock has the confirming read
@@ -210,11 +209,11 @@ func newJoinVolServer(host string) *Server {
 }
 
 func TestMatchNewMembersSkipsWhenMasterReportsNothing(t *testing.T) {
+	t.Parallel()
 	f := newFakeVolumes()
 	f.errFor["192.0.2.10"] = errors.New("box busy")
-	withFakeVolumes(t, f)
-
 	s := newJoinVolServer("192.0.2.10")
+	withFakeVolumes(s, f)
 	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{member("AA", "192.0.2.11")}, s.zoneFormSeq.Load())
 
 	if len(f.writes) != 0 {
@@ -224,7 +223,7 @@ func TestMatchNewMembersSkipsWhenMasterReportsNothing(t *testing.T) {
 	// Same again, this time the master answers 0: a muted or mid-wake leader.
 	f2 := newFakeVolumes()
 	f2.level["192.0.2.10"] = 0
-	withFakeVolumes(t, f2)
+	withFakeVolumes(s, f2)
 	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{member("AA", "192.0.2.11")}, s.zoneFormSeq.Load())
 	if len(f2.writes) != 0 {
 		t.Fatalf("a leader reporting 0 must not silence the joiner, wrote %v", f2.writes)
@@ -232,11 +231,11 @@ func TestMatchNewMembersSkipsWhenMasterReportsNothing(t *testing.T) {
 }
 
 func TestMatchNewMembersStandsDownForANewerEdit(t *testing.T) {
+	t.Parallel()
 	f := newFakeVolumes()
 	f.level["192.0.2.10"] = 40
-	withFakeVolumes(t, f)
-
 	s := newJoinVolServer("192.0.2.10")
+	withFakeVolumes(s, f)
 	stale := s.zoneFormSeq.Load()
 	s.zoneFormSeq.Add(1) // a newer group edit arrived
 	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{member("AA", "192.0.2.11")}, stale)
@@ -254,15 +253,15 @@ func TestMatchNewMembersStandsDownForANewerEdit(t *testing.T) {
 // link-local, so the documentation range used by the pure tables above would
 // silently write to nobody here.
 func TestMatchNewMembersAppliesAndCorrectsTheWakeDefault(t *testing.T) {
+	t.Parallel()
 	f := newFakeVolumes()
 	f.level["192.168.10.10"] = 12 // the group leader, a quiet evening
 	f.level["192.168.10.11"] = 30
 	f.level["192.168.10.12"] = 30
 	// This one snaps back to its wake default right after we set it.
 	f.revertTo["192.168.10.11"] = 30
-	withFakeVolumes(t, f)
-
 	s := newJoinVolServer("192.168.10.10")
+	withFakeVolumes(s, f)
 	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{
 		member("AA", "192.168.10.11"),
 		member("BB", "192.168.10.12"),
@@ -295,13 +294,13 @@ func TestMatchNewMembersAppliesAndCorrectsTheWakeDefault(t *testing.T) {
 // alone: #548's rule that a control which cannot tell whose intent it is
 // enforcing must not enforce one.
 func TestMatchNewMembersLeavesAHumanChangeAlone(t *testing.T) {
+	t.Parallel()
 	f := newFakeVolumes()
 	f.level["192.168.10.10"] = 12
 	f.level["192.168.10.11"] = 30
 	f.revertTo["192.168.10.11"] = 45 // somebody turned it up in the meantime
-	withFakeVolumes(t, f)
-
 	s := newJoinVolServer("192.168.10.10")
+	withFakeVolumes(s, f)
 	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{member("AA", "192.168.10.11")}, s.zoneFormSeq.Load())
 
 	f.mu.Lock()
@@ -322,6 +321,7 @@ func TestMatchNewMembersLeavesAHumanChangeAlone(t *testing.T) {
 // A boolean "looks fine" check would leave the raw string in the request; this
 // returns a re-serialised address or nothing.
 func TestLanPeerAddrRejectsEverythingButALANIP(t *testing.T) {
+	t.Parallel()
 	good := []string{"192.168.178.49", "10.0.0.1", "172.16.5.5", "169.254.1.2", " 192.168.1.7 "}
 	for _, in := range good {
 		if a, ok := lanPeerAddr(in); !ok || !a.IsValid() {
@@ -351,11 +351,11 @@ func TestLanPeerAddrRejectsEverythingButALANIP(t *testing.T) {
 
 // A member whose address is not a LAN IP is skipped entirely, not dialled.
 func TestMatchNewMembersSkipsANonLANMember(t *testing.T) {
+	t.Parallel()
 	f := newFakeVolumes()
 	f.level["192.168.10.10"] = 20
-	withFakeVolumes(t, f)
-
 	s := newJoinVolServer("192.168.10.10")
+	withFakeVolumes(s, f)
 	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{
 		{DeviceID: "AA", IP: "8.8.8.8"},
 		{DeviceID: "BB", IP: "evil.example.com"},

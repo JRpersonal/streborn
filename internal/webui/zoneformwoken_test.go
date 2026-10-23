@@ -13,6 +13,7 @@ import (
 )
 
 func TestIsSelfResume(t *testing.T) {
+	t.Parallel()
 	playing := nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 	cases := []struct {
 		name        string
@@ -41,6 +42,7 @@ func TestIsSelfResume(t *testing.T) {
 // the master must not take that over (the #954 takeover is for a member the
 // user was actually listening to).
 func TestMembersNotWokenForGroup(t *testing.T) {
+	t.Parallel()
 	members := []boxapi.ZoneMember{{DeviceID: "a", IP: "192.0.2.2"}, {DeviceID: "b", IP: "192.0.2.3"}}
 	got := membersNotWokenForGroup(members, wokenMemberSet([]string{" 192.0.2.2 ", ""}))
 	if len(got) != 1 || got[0].IP != "192.0.2.3" {
@@ -51,19 +53,22 @@ func TestMembersNotWokenForGroup(t *testing.T) {
 	}
 }
 
+// selfResumeTestServer is a master that reads np and counts the STOPs it
+// sends. The seams are installed on the server alone, so the test shares
+// nothing with its neighbours and needs nothing restored.
 func selfResumeTestServer(t *testing.T, np nowPlayingSnapshot) (*Server, *int) {
 	t.Helper()
-	prevRead, prevStop := groupWakeNowPlaying, groupWakeStop
-	t.Cleanup(func() { groupWakeNowPlaying, groupWakeStop = prevRead, prevStop })
-	groupWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot { return np }
 	stops := 0
-	groupWakeStop = func(context.Context, string) error { stops++; return nil }
-	return &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}, &stops
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	s.groupWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot { return np }
+	s.groupWakeStopFn = func(context.Context, string) error { stops++; return nil }
+	return s, &stops
 }
 
 // Fleet run 2026-10-04: two idle SoundTouch 10s grouped, and the master started
 // its last station. Whatever it plays inside the group-wake window is stopped.
 func TestFormingFromIdleStopsTheMastersOwnResume(t *testing.T) {
+	t.Parallel()
 	s, stops := selfResumeTestServer(t, nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"})
 	s.noteQuietWakeEpisode()
 	if !s.stopGroupWakeSelfResume(context.Background(), "test") || *stops != 1 {
@@ -72,6 +77,7 @@ func TestFormingFromIdleStopsTheMastersOwnResume(t *testing.T) {
 }
 
 func TestMasterTheUserWasListeningToKeepsPlaying(t *testing.T) {
+	t.Parallel()
 	playing := nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 
 	// No group wake: the master was awake and playing before the group.
@@ -94,6 +100,7 @@ func TestMasterTheUserWasListeningToKeepsPlaying(t *testing.T) {
 // after its own wake, and once after forming; and it hands memberResumeForZone
 // only the members that were not just woken.
 func TestZoneFormNeverCarriesAGroupWakeResume(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("zones_stereo.go")
 	if err != nil {
 		t.Fatal(err)
@@ -124,6 +131,7 @@ func TestZoneFormNeverCarriesAGroupWakeResume(t *testing.T) {
 // pair. It has to run the same three checks as the group path, in the same
 // order, and hold the auto-attach across the /addGroup round trip.
 func TestStereoPairNeverCarriesAGroupWakeResume(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("zones_stereo.go")
 	if err != nil {
 		t.Fatal(err)
@@ -176,6 +184,7 @@ func selfResumeFormServer(t *testing.T, standby, busy bool, np nowPlayingSnapsho
 // user had played before standby). That is not the user's music: it is
 // stopped, the pair has nothing to carry, and the auto-attach is held off.
 func TestIdlePairStaysSilentWhenTheMasterSelfResumesAfterTheWake(t *testing.T) {
+	t.Parallel()
 	s, stops, holds := selfResumeFormServer(t, false, true, nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE", Location: "http://127.0.0.1:8888/spotify.ogg"})
 	s.noteQuietWakeEpisode()
 
@@ -194,6 +203,7 @@ func TestIdlePairStaysSilentWhenTheMasterSelfResumesAfterTheWake(t *testing.T) {
 // exactly the moment the engine struck in #1074, so the hold is armed before
 // the wake. Nothing is stopped: there is nothing playing yet.
 func TestStandbyMasterHoldsTheAutoAttachBeforeTheWake(t *testing.T) {
+	t.Parallel()
 	s, stops, holds := selfResumeFormServer(t, true, false, nowPlayingSnapshot{Source: "STANDBY"})
 
 	if s.masterPlaysUsersMusic(context.Background(), "before pairing", stereoPairAutoAttachHold) {
@@ -211,6 +221,7 @@ func TestStandbyMasterHoldsTheAutoAttachBeforeTheWake(t *testing.T) {
 // playing music the user started must still carry it. No STOP, no hold on
 // the Spotify engine, and the caller goes on to capture the stream.
 func TestGenuinelyPlayingMasterStillCarriesItsMusic(t *testing.T) {
+	t.Parallel()
 	playing := nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE", Location: "http://127.0.0.1:8888/spotify.ogg"}
 
 	// Never woken by STR: the user was listening before the pairing.
@@ -244,6 +255,7 @@ func TestGenuinelyPlayingMasterStillCarriesItsMusic(t *testing.T) {
 // The late look after a silent form holds the auto-attach across its own wait,
 // and a server without Spotify must not trip over the missing hook.
 func TestLateSelfResumeCheckHoldsTheAutoAttach(t *testing.T) {
+	t.Parallel()
 	s, _, holds := selfResumeFormServer(t, false, false, nowPlayingSnapshot{})
 	s.scheduleLateSelfResumeCheck("after pairing")
 	if len(*holds) != 1 || (*holds)[0] != lateSelfResumeHold {

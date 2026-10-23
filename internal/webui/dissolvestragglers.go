@@ -39,8 +39,8 @@ const stragglerStopBudget = 8 * time.Second
 // playingLocation returns a speaker's now-playing location if it is actually
 // producing sound, and "" otherwise. A speaker that is idle, in standby or
 // unreadable is not a straggler and must not be touched.
-func playingLocation(ctx context.Context, host string) string {
-	return playingStateFn(ctx, host).Location
+func (s *Server) playingLocation(ctx context.Context, host string) string {
+	return s.memberPlayingState(ctx, host).Location
 }
 
 // playingState is what the straggler sweep knows about a former member: the
@@ -59,20 +59,29 @@ const groupSlaveSource = "GROUP_SLAVE"
 // Seams for the tests. Both calls below reach the firmware on a fixed port, so
 // a test server on a random port can never be reached through them: without
 // these, every case would silently take the "unreadable, leave it alone" path
-// and assert nothing at all. Production always uses the real implementations.
-var (
-	playingStateFn = func(ctx context.Context, host string) playingState {
-		np := fetchNowPlayingPeer(ctx, host)
-		switch np.PlayStatus {
-		case "PLAY_STATE", "BUFFERING_STATE":
-			return playingState{Source: np.Source, Location: np.Location}
-		}
-		return playingState{}
+// and assert nothing at all. A test installs playingStateFn / stopKeyFn on its
+// own Server; production (nil) always uses the real implementations.
+
+// memberPlayingState reads what a former member plays right now.
+func (s *Server) memberPlayingState(ctx context.Context, host string) playingState {
+	if s.playingStateFn != nil {
+		return s.playingStateFn(ctx, host)
 	}
-	stopKeyFn = func(ctx context.Context, host string) error {
-		return boxapi.New(host).Key(ctx, "STOP")
+	np := fetchNowPlayingPeer(ctx, host)
+	switch np.PlayStatus {
+	case "PLAY_STATE", "BUFFERING_STATE":
+		return playingState{Source: np.Source, Location: np.Location}
 	}
-)
+	return playingState{}
+}
+
+// stopKey sends a former member the STOP key.
+func (s *Server) stopKey(ctx context.Context, host string) error {
+	if s.stopKeyFn != nil {
+		return s.stopKeyFn(ctx, host)
+	}
+	return boxapi.New(host).Key(ctx, "STOP")
+}
 
 // stopStragglers silences group members that are still carrying the master's
 // content after the firmware teardown. A member is a straggler when it is still
@@ -123,7 +132,7 @@ func (s *Server) stopStragglers(ctx context.Context, masterLocation, mirrorHostP
 		if m.IP == "" || m.IP == s.boxHost {
 			continue // no address, or ourselves: the master keeps playing
 		}
-		st := playingStateFn(ctx, m.IP)
+		st := s.memberPlayingState(ctx, m.IP)
 		loc := st.Location
 		if loc == "" && st.Source != groupSlaveSource {
 			continue // idle or unreadable: nothing to stop
@@ -139,7 +148,7 @@ func (s *Server) stopStragglers(ctx context.Context, masterLocation, mirrorHostP
 				"member", m.IP)
 			continue
 		}
-		if err := stopKeyFn(ctx, m.IP); err != nil {
+		if err := s.stopKey(ctx, m.IP); err != nil {
 			s.logger.Warn("dissolve: a member kept playing and did not take the stop key",
 				"member", m.IP, "err", err)
 			continue

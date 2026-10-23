@@ -1184,12 +1184,20 @@ type zoneTiming struct {
 	// confirming read. A variable so the tests can shorten it; the value is the
 	// production one.
 	joinVolumeConfirmAfter time.Duration
+	// defaultGroupHoldCheckAfter is how long after a re-form the master looks
+	// whether the zone is still standing. A member that was just woken can fall
+	// out a second or two after joining: its own power-on resume fails late, the
+	// firmware raises the error after the join and the member drops to
+	// INVALID_SOURCE, which takes the zone down with it (Küche, 2026-10-17
+	// 09:51). On the zone clock so the tests do not wait for it.
+	defaultGroupHoldCheckAfter time.Duration
 }
 
 var productionZoneTiming = zoneTiming{
-	mirrorKickDelay:        6 * time.Second,
-	formResumeSettle:       1500 * time.Millisecond,
-	joinVolumeConfirmAfter: 2500 * time.Millisecond,
+	mirrorKickDelay:            6 * time.Second,
+	formResumeSettle:           1500 * time.Millisecond,
+	joinVolumeConfirmAfter:     2500 * time.Millisecond,
+	defaultGroupHoldCheckAfter: 8 * time.Second,
 }
 
 // zoneTimes is the zone clock: the production values unless a test installed a
@@ -2822,7 +2830,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// the only way to tell, afterwards, whether a member that is still making
 	// noise is carrying the group's content or something of its own. See
 	// dissolvestragglers.go.
-	masterLocation := playingLocation(ctx, s.boxHost)
+	masterLocation := s.playingLocation(ctx, s.boxHost)
 	// What the caller is told at the end. Empty means the speaker confirmed the
 	// zone is gone; anything else names the reason it could not be confirmed.
 	dissolveUnverified := ""
@@ -3300,10 +3308,15 @@ func (s *Server) restorePreviousZoneVia(ctx context.Context,
 //
 // The first audibly playing member wins. With more than one there is no right
 // answer to compute, and the alternative, silence, is the outcome being fixed.
-// memberNowPlaying is the read seam, the same shape hushReadNowPlaying uses:
-// the real one reaches :8090 on a fixed port, so a test without it would only
-// ever exercise the "nothing there" branch.
-var memberNowPlaying = fetchNowPlaying
+// memberNowPlaying is the read seam (memberNowPlayingFn), the same shape
+// hushReadNowPlaying uses: the real one reaches :8090 on a fixed port, so a
+// test without it would only ever exercise the "nothing there" branch.
+func (s *Server) memberNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
+	if s.memberNowPlayingFn != nil {
+		return s.memberNowPlayingFn(ctx, host)
+	}
+	return fetchNowPlaying(ctx, host)
+}
 
 func (s *Server) memberResumeForZone(ctx context.Context, members []boxapi.ZoneMember) *lastPlayInfo {
 	for _, m := range members {
@@ -3311,7 +3324,7 @@ func (s *Server) memberResumeForZone(ctx context.Context, members []boxapi.ZoneM
 		if ip == "" || ip == s.boxHost {
 			continue
 		}
-		if r := partnerResumeForPair(memberNowPlaying(ctx, ip), ip); r != nil {
+		if r := partnerResumeForPair(s.memberNowPlaying(ctx, ip), ip); r != nil {
 			s.logger.Info("zone: the master has nothing to play, taking over the stream a member was playing",
 				"member", ip, "title", r.title)
 			return r
