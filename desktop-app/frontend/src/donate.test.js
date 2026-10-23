@@ -70,3 +70,12 @@ describe('donate footer link', () => {
     expect(html).toContain('footer.donateSlogan');
   });
 });
+
+describe('the collapsed rail', () => {
+  it('carries the PayPal P mark next to the wordmark, so the narrow strip has an icon', async () => {
+    const { donateButtonsHTML } = await import('./donate.js');
+    const html = donateButtonsHTML();
+    expect(html).toContain('donate-paypal-mark');
+    expect(html).toContain('donate-paypal-wordmark');
+  });
+});
