@@ -933,56 +933,12 @@ func run() error {
 		webui.WithRegion(region),
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv),
-		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
-		webui.WithSpotifyControl(func(ctx context.Context, uri, account string, shuffle, repeat bool) error {
-			return spotifyMgr.PlayAccount(ctx, uri, account, spotify.PlayOptions{Shuffle: shuffle, Repeat: repeat})
-		}),
-		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
+		// The whole Spotify control plane, audio plane and engine lifecycle
+		// in one value; see spotify_adapter.go for the glue that is not a
+		// plain 1:1 forward (Streaming, Skip).
+		webui.WithSpotify(&spotifyEngine{m: spotifyMgr}),
 		webui.WithPairPartnerGone(margeSrv.PartnerUnreachable),
 		webui.WithPairPartnerRecheck(margeSrv.RecheckPartner),
-		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
-		webui.WithSpotifyShuffle(spotifyMgr.ShufflingContext),
-		webui.WithSpotifyRepeat(spotifyMgr.RepeatingContext),
-		webui.WithSpotifySkipBoundary(spotifyMgr.LastSkipBoundary),
-		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
-		// "Streaming" must mean audio is actually flowing, not merely that the
-		// box holds the connection open: a stalled sink (attached, zero audio
-		// pages) used to satisfy the recall verify, so a failed Spotify recall
-		// reported success while the user stared at a spinner until the box
-		// timed out (field 2026-07-27). Treat a stall as not-streaming so the
-		// verify keeps working on it and the failure becomes visible.
-		webui.WithSpotifyStreaming(func() bool {
-			return spotifyMgr.Streaming() && !spotifyMgr.StreamStalled()
-		}),
-		webui.WithSpotifySkip(func(ctx context.Context, forward bool) error {
-			// Arm the skip-cut first, so the boundary this skip produces drops
-			// the old track's unsent tail instead of playing it out.
-			spotifyMgr.NoteSkip()
-			if forward {
-				return spotifyMgr.Next(ctx)
-			}
-			return spotifyMgr.Prev(ctx)
-		}),
-		webui.WithSpotifyReady(spotifyMgr.Ready),
-		webui.WithSpotifyCanRecall(spotifyMgr.CanRecall),
-		webui.WithSpotifyPremiumRequired(spotifyMgr.PremiumRequired),
-		webui.WithSpotifyExportCred(spotifyMgr.ExportCredential),
-		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
-		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
-		// Recall boundary cut: armed with SetRecalling so a preset re-press
-		// never feeds the box the old track's audio during the load preamble;
-		// the stale-KB probe lets the recall re-push stand down when the cut
-		// kept the box clean.
-		webui.WithSpotifyArmRecallCut(spotifyMgr.ArmRecallCut),
-		webui.WithSpotifyBoundaryStaleKB(spotifyMgr.LastBoundaryStaleKB),
-		webui.WithSpotifySuppressActivate(spotifyMgr.SuppressActivate),
-		webui.WithSpotifyExpectReattach(spotifyMgr.ExpectReattach),
-		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
-		webui.WithSpotifyQuality(spotifyMgr.ServeQuality),
-		webui.WithSpotifyReload(spotifyMgr.ReloadBinary),
-		webui.WithSpotifyStop(spotifyMgr.StopEngine),
-		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
-		webui.WithSpotifyUserStopped(spotifyMgr.UserStopped),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
 		}),
@@ -1005,8 +961,8 @@ func run() error {
 			}
 			margeSrv.SetStoredMusicSources(out)
 		}),
-		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup, margeSrv.RenameGroup, margeSrv.GroupName),
-		webui.WithMargeForward(margeSrv.SetForward),
+		// The stereo-pair record and the developer relay (marge_adapter.go).
+		webui.WithMarge(margeSrv),
 		webui.WithNativeServices(margeSrv),
 		webui.WithRegionResolver(regionRes),
 		webui.WithRecent(recentStore))
