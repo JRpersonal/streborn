@@ -42,6 +42,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/versioncmp"
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -112,7 +113,7 @@ func (a *App) tryHandOffTo(other string) bool {
 	if ov == "" {
 		ov = versionFromFilenameRE.FindString(filepath.Base(other))
 	}
-	if ov == "" || !versionLess(appVersion, ov) {
+	if ov == "" || !versioncmp.Less(appVersion, ov) {
 		return false
 	}
 	a.logger.Info("second instance is a newer build; handing off instead of just focusing",
@@ -761,7 +762,7 @@ func (a *App) pruneStagedUpdates(keepFrom string) {
 			if v == "" {
 				continue // not one of our installers, leave it alone
 			}
-			if v != keepFrom && !versionLess(v, keepFrom) {
+			if v != keepFrom && !versioncmp.Less(v, keepFrom) {
 				continue // newer than what we run: a pending update, keep it
 			}
 		}

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/sticksetup"
+	"github.com/JRpersonal/streborn/versioncmp"
 	"streborn-app/agentbin"
 )
 
@@ -78,10 +79,10 @@ func agentDowngradeRefused(appVer, boxVer string) bool {
 	if appVer == "" || boxVer == "" || strings.TrimPrefix(appVer, "v") == "1.0.0" {
 		return false
 	}
-	if len(parseVersionParts(appVer)) == 0 || len(parseVersionParts(boxVer)) == 0 {
+	if len(versioncmp.Parts(appVer)) == 0 || len(versioncmp.Parts(boxVer)) == 0 {
 		return false
 	}
-	return versionLess(appVer, boxVer)
+	return versioncmp.Less(appVer, boxVer)
 }
 
 // recordNANDHeadroom logs the box's writable-volume headroom to the OTA journal
@@ -405,7 +406,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// failure here falls through to the normal HTTP path, which is exactly
 	// today's behaviour - this detour can only improve things.
 	if verr == nil {
-		if bv := strings.TrimSpace(ver["version"]); bv != "" && versionLess(bv, "v0.9.26") {
+		if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, "v0.9.26") {
 			a.recordOTA(host, "agent "+bv+" predates the streamed upload path (v0.9.26): updating over SSH, the old agent dies receiving large HTTP bodies")
 			a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)
 			a.enableAgentSSH(host, port)
@@ -853,7 +854,7 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	// engine push and killed the box before the agent update could even start.
 	// Those agents must never be fed the engine pre-reboot; the post-reboot
 	// delivery to the NEW agent (which streams to disk) is the path that works.
-	if bv := strings.TrimSpace(ver["version"]); bv != "" && versionLess(bv, "v0.9.26") {
+	if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, "v0.9.26") {
 		a.recordOTA(host, "sidecar: box agent "+bv+" predates the streamed upload path (v0.9.26) and dies under a 16 MB push; deferring the engine to the post-reboot delivery")
 		a.logger.Info("stageSidecarBeforeReboot: agent too old for a pre-reboot engine push, deferring to post-OTA delivery",
 			"host", host, "agent", bv)

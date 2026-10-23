@@ -28,6 +28,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/JRpersonal/streborn/versioncmp"
 )
 
 // IndexName and SigName are the release file names the agent fetches.
@@ -127,43 +129,11 @@ func Parse(payload []byte) (Index, error) {
 	return ix, nil
 }
 
-// VersionLess reports whether release version a is strictly older than b. Both
-// may carry a leading "v" and a git-describe or pre-release suffix
-// ("-3-gabc123-dirty", "-rc1"); only the leading numeric segments count, the
-// same rule the desktop app's version comparison uses, so a dev build off
-// v1.2.3 compares equal to the v1.2.3 release.
+// VersionLess reports whether release version a is strictly older than b. It
+// is the shared versioncmp rule, the same one the desktop app compares with,
+// so the speaker and the app can never disagree about which build is newer.
+// This used to carry its own copy that cut everything after the first "-",
+// which read v1.0.19-preview.1 and v1.0.19-preview.2 as equal.
 func VersionLess(a, b string) bool {
-	pa, pb := versionParts(a), versionParts(b)
-	for i := 0; i < len(pa) || i < len(pb); i++ {
-		var x, y int
-		if i < len(pa) {
-			x = pa[i]
-		}
-		if i < len(pb) {
-			y = pb[i]
-		}
-		if x != y {
-			return x < y
-		}
-	}
-	return false
-}
-
-func versionParts(v string) []int {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	if i := strings.IndexByte(v, '-'); i >= 0 {
-		v = v[:i]
-	}
-	var parts []int
-	for _, seg := range strings.Split(v, ".") {
-		n := 0
-		for _, r := range seg {
-			if r < '0' || r > '9' {
-				break
-			}
-			n = n*10 + int(r-'0')
-		}
-		parts = append(parts, n)
-	}
-	return parts
+	return versioncmp.Less(a, b)
 }
