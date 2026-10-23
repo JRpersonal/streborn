@@ -189,7 +189,7 @@ func (s *Server) blockfallPlay(ctx context.Context, url string, track oled.Track
 			if !current() {
 				return false
 			}
-			np := fetchNowPlaying(ctx, s.boxHost)
+			np := s.readBoxSnapshot(ctx)
 			if np.Location == url && (np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE") {
 				s.logger.Info("game: music playing", "url", url, "attempt", attempt)
 				return true
@@ -305,7 +305,7 @@ func (s *Server) startGame(id string) {
 			if !watching.Load() {
 				continue
 			}
-			np := fetchNowPlaying(ctx, s.boxHost)
+			np := s.readBoxSnapshot(ctx)
 			if blockfallTakenOver(np, phase.Load() == bfGame) {
 				s.logger.Info("game: speaker taken over, ending the round", "source", np.Source)
 				takenOver.Store(true)

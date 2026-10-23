@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 )
 
@@ -155,16 +155,7 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) probeReadSlot(ctx context.Context, slot int) (string, bool) {
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+s.boxHost+":8090/presets", nil)
-	if err != nil {
-		return "", false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", false
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	body, err := boxapi.New(s.boxHost).GetRaw(c, "/presets")
 	if err != nil {
 		return "", false
 	}

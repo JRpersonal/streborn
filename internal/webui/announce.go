@@ -279,10 +279,7 @@ func truncateLoc(loc string) string {
 // snapshotNowPlaying reads the box's current now_playing so STR can restore it
 // after the announcement. Best-effort: a read error yields an empty snapshot.
 func (s *Server) snapshotNowPlaying(ctx context.Context) nowPlayingSnapshot {
-	if s.announceNowFn != nil {
-		return s.announceNowFn(ctx)
-	}
-	return fetchNowPlaying(ctx, s.boxHost)
+	return s.readBoxSnapshot(ctx)
 }
 
 // readVolume returns the box's current target volume, or -1 on error.

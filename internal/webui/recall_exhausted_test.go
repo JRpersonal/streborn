@@ -61,10 +61,10 @@ func TestSettleExhaustedRecall(t *testing.T) {
 
 			src := c.source
 			s := &Server{
-				logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-				boxHost:     "192.0.2.1",
-				renderer:    &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
-				boxSourceFn: func() string { return src },
+				logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+				boxHost:      "192.0.2.1",
+				renderer:     &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
+				boxNowReadFn: scriptNowPlaying(src, "", ""),
 			}
 			started := time.Now().Add(-30 * time.Second)
 			const gen = 7
@@ -98,9 +98,9 @@ func TestSettleExhaustedRecallCountsAsADeliberateStop(t *testing.T) {
 	exhaustedStandbySend = func(context.Context, string) error { return nil }
 	t.Cleanup(func() { exhaustedStandbySend = prev })
 	s := &Server{
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		boxHost:     "192.0.2.1",
-		boxSourceFn: func() string { return "INVALID_SOURCE" },
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost:      "192.0.2.1",
+		boxNowReadFn: scriptNowPlaying("INVALID_SOURCE", "", ""),
 	}
 	if got := s.settleExhaustedRecall(0, time.Now().Add(-time.Minute)); got != "standby" {
 		t.Fatalf("settleExhaustedRecall = %q, want standby", got)

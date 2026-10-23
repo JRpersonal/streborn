@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"encoding/xml"
-	"io"
 	"log/slog"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -390,16 +389,7 @@ func probeNativeRadioReady(ctx context.Context, boxHost string) bool {
 	}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+boxHost+":8090/sources", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	body, err := boxapi.New(boxHost).GetRaw(c, "/sources")
 	if err != nil {
 		return false
 	}

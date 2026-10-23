@@ -43,9 +43,9 @@ func TestContentLocationsReadsEveryItem(t *testing.T) {
 	body := `<nowPlaying source="INVALID_SOURCE">` +
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>` +
 		`<previous location="http://127.0.0.1:8888/stream/2"/></nowPlaying>`
-	got := contentLocations(body)
+	got := parseBoxReading(body).locations
 	if len(got) != 2 || got[0] != "http://192.0.2.50:8095/stream/flow.mp3" {
-		t.Fatalf("contentLocations = %v, want both items in document order", got)
+		t.Fatalf("locations = %v, want both items in document order", got)
 	}
 }
 
@@ -76,7 +76,7 @@ func TestForeignContentStandDownReadsEachReadingOnItsOwn(t *testing.T) {
 	}
 	for _, c := range cases {
 		s, _ := newPlayTestServer(t)
-		s.nowPlayingBodyFn = func() string { return c.now }
+		s.boxNowReadFn = scriptNowPlayingDoc(c.now)
 		if got := s.foreignContentStandDown(parseBoxReading(c.prior), ownStream); got != c.want {
 			t.Errorf("%s: stand down = %v, want %v", c.name, got, c.want)
 		}
@@ -96,7 +96,7 @@ func resumeTestServer(t *testing.T, nowPlaying string) (*Server, *soapRecorder) 
 	s, rec := newPlayTestServer(t)
 	s.resumeOnPowerOnPath = t.TempDir() + "/resume-on-power-on" // absent = default on
 	s.playStateFn = func() (standby, busy bool) { return false, false }
-	s.nowPlayingBodyFn = func() string { return nowPlaying }
+	s.boxNowReadFn = scriptNowPlayingDoc(nowPlaying)
 	s.lastPlayMu.Lock()
 	s.lastPlay = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", title: "Last Station", ts: time.Now()}
 	s.lastPlayMu.Unlock()
@@ -192,11 +192,9 @@ func TestForeignStandDownLogsTheHostAndNotTheURL(t *testing.T) {
 	var buf bytes.Buffer
 	s, _ := newPlayTestServer(t)
 	s.logger = slog.New(slog.NewTextHandler(&buf, nil))
-	s.nowPlayingBodyFn = func() string {
-		return `<nowPlaying source="UPNP"><ContentItem source="UPNP" ` +
-			`location="http://192.0.2.50:8095/stream/flow.mp3?token=s3cr3tsession"/>` +
-			`<playStatus>PLAY_STATE</playStatus></nowPlaying>`
-	}
+	s.boxNowReadFn = scriptNowPlayingDoc(`<nowPlaying source="UPNP"><ContentItem source="UPNP" ` +
+		`location="http://192.0.2.50:8095/stream/flow.mp3?token=s3cr3tsession"/>` +
+		`<playStatus>PLAY_STATE</playStatus></nowPlaying>`)
 	if !s.foreignContentStandDown(boxReading{}, "http://127.0.0.1:8888/stream/2") {
 		t.Fatal("a live foreign stream must stand the resume down")
 	}
@@ -216,9 +214,7 @@ func TestForeignStandDownLogsTheHostAndNotTheURL(t *testing.T) {
 // that already owns that case further down ResumeLastPlay.
 func TestForeignGuardIgnoresALivePlayStatusWithNoContentAtAll(t *testing.T) {
 	s, _ := newPlayTestServer(t)
-	s.nowPlayingBodyFn = func() string {
-		return `<nowPlaying source="AUX"><playStatus>PLAY_STATE</playStatus></nowPlaying>`
-	}
+	s.boxNowReadFn = scriptNowPlayingDoc(`<nowPlaying source="AUX"><playStatus>PLAY_STATE</playStatus></nowPlaying>`)
 	if s.foreignContentStandDown(boxReading{}, "http://127.0.0.1:8888/stream/2") {
 		t.Fatal("a play status with no content location must not read as foreign content")
 	}

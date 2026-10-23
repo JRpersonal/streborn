@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
+)
 
 // A trimmed but shape-faithful now_playing document as the firmware emits it.
 const sampleNowPlaying = `<?xml version="1.0" encoding="UTF-8" ?>
@@ -20,32 +24,38 @@ const sampleSpotifyBuffering = `<nowPlaying source="UPNP">
   <playStatus>BUFFERING_STATE</playStatus>
 </nowPlaying>`
 
+// The probes in boxprobe.go are boxapi verdicts over one read; this pins the
+// ones the recall verify and the memory guard depend on, over the shapes
+// they were written against.
 func TestNowPlayingVerdicts(t *testing.T) {
-	if got := firstAttr(sampleNowPlaying, "source"); got != "LOCAL_INTERNET_RADIO" {
-		t.Errorf("firstAttr source = %q", got)
+	radio := boxapi.ParseNowPlaying([]byte(sampleNowPlaying))
+	if radio.Source != "LOCAL_INTERNET_RADIO" {
+		t.Errorf("source = %q", radio.Source)
 	}
-	src, item, status := nowPlayingSummary(sampleNowPlaying)
+	src, item, status := radio.Summary()
 	if src != "LOCAL_INTERNET_RADIO" || item != "Radio Paradise" || status != "PLAY_STATE" {
-		t.Errorf("nowPlayingSummary = %q, %q, %q", src, item, status)
+		t.Errorf("Summary = %q, %q, %q", src, item, status)
 	}
-	if !nowPlayingIsPlaying(sampleNowPlaying) {
-		t.Error("nowPlayingIsPlaying(sample) = false")
+	if !radio.IsPlaying() {
+		t.Error("IsPlaying(sample) = false")
 	}
-	if nowPlayingIsPlaying(sampleStandby) {
-		t.Error("nowPlayingIsPlaying(standby) = true")
+	standby := boxapi.ParseNowPlaying([]byte(sampleStandby))
+	if standby.IsPlaying() {
+		t.Error("IsPlaying(standby) = true")
 	}
-	if src, item, status := nowPlayingSummary(sampleStandby); src != "STANDBY" || item != "" || status != "STOP_STATE" {
-		t.Errorf("nowPlayingSummary(standby) = %q, %q, %q", src, item, status)
+	if src, item, status := standby.Summary(); src != "STANDBY" || item != "" || status != "STOP_STATE" {
+		t.Errorf("Summary(standby) = %q, %q, %q", src, item, status)
 	}
-	if !nowPlayingIsSpotify(sampleSpotifyBuffering) {
-		t.Error("nowPlayingIsSpotify(buffering) = false")
+	buffering := boxapi.ParseNowPlaying([]byte(sampleSpotifyBuffering))
+	if !buffering.IsSpotify() {
+		t.Error("IsSpotify(buffering) = false")
 	}
 	// The strict form refuses BUFFERING: re-pointing a box that is merely
 	// buffering restarts the track.
-	if nowPlayingReallySpotify(sampleSpotifyBuffering) {
-		t.Error("nowPlayingReallySpotify(buffering) = true")
+	if buffering.ReallySpotify() {
+		t.Error("ReallySpotify(buffering) = true")
 	}
-	if nowPlayingIsSpotify(sampleNowPlaying) {
-		t.Error("nowPlayingIsSpotify(radio) = true")
+	if radio.IsSpotify() {
+		t.Error("IsSpotify(radio) = true")
 	}
 }

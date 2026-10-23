@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -44,11 +45,11 @@ func newSavePlayingServer(t *testing.T, doc []byte) *Server {
 		presets: store,
 		queue:   newPlayQueue(),
 		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		boxNowDocFn: func(context.Context) ([]byte, error) {
+		boxNowReadFn: func(context.Context) (*boxapi.NowPlaying, error) {
 			if doc == nil {
 				return nil, errors.New("connection refused")
 			}
-			return doc, nil
+			return boxapi.ParseNowPlaying(doc), nil
 		},
 	}
 }

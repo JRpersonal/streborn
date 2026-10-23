@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
@@ -85,7 +86,10 @@ func (b *announceBox) now(context.Context) nowPlayingSnapshot {
 	return b.np
 }
 
-func (b *announceBox) source() string { return b.now(context.Background()).Source }
+// read is the box's answer on the Server's now_playing seam.
+func (b *announceBox) read(ctx context.Context) (*boxapi.NowPlaying, error) {
+	return scriptSnapshot(b.now(ctx))
+}
 
 func (b *announceBox) readVolume(context.Context) int {
 	b.mu.Lock()
@@ -159,11 +163,10 @@ func newAnnounceServer(t *testing.T, b *announceBox) *Server {
 		logger:              slog.New(slog.NewTextHandler(io.Discard, nil)),
 		queue:               newPlayQueue(),
 		renderer:            &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
-		boxSourceFn:         b.source,
+		boxNowReadFn:        b.read,
 		nativeStopFn:        b.stopKey,
 		nativeResumeFn:      b.playKey,
 		selectFn:            b.selectItem,
-		announceNowFn:       b.now,
 		announceVolumeFn:    b.readVolume,
 		announceSetVolumeFn: b.setVolume,
 	}

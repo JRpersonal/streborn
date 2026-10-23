@@ -300,7 +300,7 @@ func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
 	// The #419 shape: the firmware killed the SOURCE while the box stayed
 	// awake. Only then may the recovery push immediately (a box that is
 	// actually off is handled by the deferred path, see the test below).
-	s.boxSourceFn = func() string { return "UPNP" }
+	s.boxNowReadFn = scriptNowPlaying("UPNP", "", "")
 
 	s.HandleEnterStandby()
 
@@ -372,7 +372,7 @@ func TestHandleEnterStandby_StandbyDefersInsteadOfWaking(t *testing.T) {
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
 	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
 	s.setLastPlay("http://127.0.0.1:8888/stream/3", "Station", "", "")
-	s.boxSourceFn = func() string { return "STANDBY" }
+	s.boxNowReadFn = scriptNowPlaying("STANDBY", "", "")
 
 	s.HandleEnterStandby()
 

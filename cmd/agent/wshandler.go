@@ -7,9 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1198,17 +1196,11 @@ func (h *presetWsHandler) logStandbyRaceSignature() {
 	}
 	// Let the reconnect and the box's own (failing) self-activation settle.
 	time.Sleep(4 * time.Second)
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + h.boxHost + ":8090/now_playing")
-	if err != nil {
+	np, ok := fetchNowPlaying(h.boxHost)
+	if !ok {
 		return
 	}
-	doc, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	_ = resp.Body.Close()
-	s := string(doc)
-	source := firstAttr(s, "source")
-	location := firstAttr(s, "location")
-	playing := strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+	source, location, playing := np.Source, np.Location(), np.IsPlaying()
 	if isSTRStreamURL(location) && !playing {
 		h.logger.Warn("standby-race probe: box parked on an STR preset stream but NOT playing after a gabbo reconnect; candidate missed first-press (#435)",
 			"location", location, "source", source)

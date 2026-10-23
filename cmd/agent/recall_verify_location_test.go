@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // TestSourceRejectIsScopedToThisRecall covers the trigger of the fast re-push:
@@ -30,7 +32,7 @@ func TestSourceRejectIsScopedToThisRecall(t *testing.T) {
 }
 
 // The radio recall verify decides success from the box's now_playing document.
-// These cover nowPlayingIsURL, the discriminator behind boxPlayingURL.
+// These cover boxapi.NowPlaying.IsURL, the discriminator behind boxPlayingURL.
 
 // TestNowPlayingIsURL_StalePlayStateOnOtherStream is the field failure the
 // verify used to pass silently: a Wave rejects the recall (1036
@@ -43,7 +45,7 @@ func TestNowPlayingIsURL_StalePlayStateOnOtherStream(t *testing.T) {
 		`<ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/4"><itemName>RSH Live</itemName></ContentItem>` +
 		`<playStatus>PLAY_STATE</playStatus></nowPlaying>`
 
-	if nowPlayingIsURL(doc, "http://127.0.0.1:8888/stream/1") {
+	if boxapi.ParseNowPlaying([]byte(doc)).IsURL("http://127.0.0.1:8888/stream/1") {
 		t.Fatal("a play state on a DIFFERENT stream must not count as this recall playing")
 	}
 }
@@ -56,7 +58,7 @@ func TestNowPlayingIsURL_MatchingStreamPlays(t *testing.T) {
 		`<ContentItem source="UPNP" location="http://192.168.1.50:8888/stream/5"><itemName>RSH Sylt</itemName></ContentItem>` +
 		`<playStatus>BUFFERING_STATE</playStatus></nowPlaying>`
 
-	if !nowPlayingIsURL(doc, "http://127.0.0.1:8888/stream/5") {
+	if !boxapi.ParseNowPlaying([]byte(doc)).IsURL("http://127.0.0.1:8888/stream/5") {
 		t.Fatal("the box playing this recall's slot must count as success regardless of host spelling")
 	}
 }
@@ -68,7 +70,7 @@ func TestNowPlayingIsURL_NoLocationKeepsPlayStateVerdict(t *testing.T) {
 	doc := `<?xml version="1.0" encoding="UTF-8" ?><nowPlaying deviceID="x" source="UPNP">` +
 		`<playStatus>PLAY_STATE</playStatus></nowPlaying>`
 
-	if !nowPlayingIsURL(doc, "http://127.0.0.1:8888/stream/2") {
+	if !boxapi.ParseNowPlaying([]byte(doc)).IsURL("http://127.0.0.1:8888/stream/2") {
 		t.Fatal("without a reported location the plain play-state verdict must stand")
 	}
 }
@@ -78,7 +80,7 @@ func TestNowPlayingIsURL_StandbyIsNotPlaying(t *testing.T) {
 	doc := `<?xml version="1.0" encoding="UTF-8" ?><nowPlaying deviceID="x" source="STANDBY">` +
 		`<ContentItem source="STANDBY" /></nowPlaying>`
 
-	if nowPlayingIsURL(doc, "http://127.0.0.1:8888/stream/3") {
+	if boxapi.ParseNowPlaying([]byte(doc)).IsURL("http://127.0.0.1:8888/stream/3") {
 		t.Fatal("a box in standby is not playing this recall")
 	}
 }
@@ -90,10 +92,10 @@ func TestNowPlayingIsURL_RawStreamMatches(t *testing.T) {
 	doc := `<?xml version="1.0" encoding="UTF-8" ?><nowPlaying source="UPNP">` +
 		`<ContentItem source="UPNP" location="` + raw + `" /><playStatus>PLAY_STATE</playStatus></nowPlaying>`
 
-	if !nowPlayingIsURL(doc, raw) {
+	if !boxapi.ParseNowPlaying([]byte(doc)).IsURL(raw) {
 		t.Fatal("an app-driven raw-stream play must verify against its own URL")
 	}
-	if nowPlayingIsURL(doc, "http://127.0.0.1:8888/stream/2") {
+	if boxapi.ParseNowPlaying([]byte(doc)).IsURL("http://127.0.0.1:8888/stream/2") {
 		t.Fatal("a raw-stream play must not satisfy a slot recall's verify")
 	}
 }

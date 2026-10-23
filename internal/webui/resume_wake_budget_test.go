@@ -10,8 +10,11 @@
 package webui
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // A box that is slow to answer :8090 at the wake instant must not cost the
@@ -28,9 +31,9 @@ func TestASlowBoxReadDoesNotSpendThePowerOffBounceWindow(t *testing.T) {
 	// installs for the decision tests (its cleanup restores the value anyway).
 	resumeWakeSettle = 2 * time.Second
 	// As slow as the production read can be: readBox's own HTTP timeout.
-	s.nowPlayingBodyFn = func() string {
+	s.boxNowReadFn = func(context.Context) (*boxapi.NowPlaying, error) {
 		time.Sleep(4 * time.Second)
-		return `<nowPlaying source="UPNP"/>`
+		return boxapi.ParseNowPlaying([]byte(`<nowPlaying source="UPNP"/>`)), nil
 	}
 	// The power-off STR saw, and the bounce restore that follows it ~200 ms
 	// later. noteStandbyStop arms both stamps, so both are set here.

@@ -49,7 +49,7 @@ func stuckBufServer(t *testing.T, states ...[3]bool) (*Server, *soapRecorder) {
 	s, rec := newPlayTestServer(t)
 	s.displayMsg.path = t.TempDir() + "/display-messages"
 	s.stuckBufWait = 10 * time.Millisecond
-	s.boxSourceFn = func() string { return "UPNP" }
+	s.boxNowReadFn = scriptNowPlaying("UPNP", "", "")
 	i := 0
 	s.playStateDetailFn = func() (bool, bool, bool) {
 		st := states[min(i, len(states)-1)]
@@ -120,7 +120,7 @@ func TestStuckBufferingLeavesARecoveredSpeaker(t *testing.T) {
 
 func TestStuckBufferingStandsDownOnAUserSource(t *testing.T) {
 	s, rec := stuckBufServer(t, stBuffering)
-	s.boxSourceFn = func() string { return "BLUETOOTH" }
+	s.boxNowReadFn = scriptNowPlaying("BLUETOOTH", "", "")
 	s.rescueStuckSpotifyBuffering()
 	if rec.count() != 0 {
 		t.Errorf("the rescue fought a source the user picked: %v", rec.list())

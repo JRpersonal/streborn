@@ -6,11 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
-	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -397,57 +394,30 @@ func (r *holdSaveRecorder) status() int {
 	return r.code
 }
 
-var (
-	holdNowSourceRe   = regexp.MustCompile(`<nowPlaying[^>]*\ssource="([^"]*)"`)
-	holdNowLocationRe = regexp.MustCompile(`<ContentItem[^>]*\slocation="([^"]*)"`)
-)
-
-// boxNowPlaying reads the speaker's active source and the location it plays.
+// boxNowPlaying reads the speaker's active source and the location it plays
+// (entity-decoded). ok is false for an unreadable speaker and for a document
+// with no source attribute at all.
 func (s *Server) boxNowPlaying(ctx context.Context) (source, location string, ok bool) {
-	if s.boxNowFn != nil {
-		return s.boxNowFn(ctx)
-	}
-	b, err := s.boxNowPlayingDoc(ctx)
-	if err != nil {
-		return "", "", false
-	}
-	return parseNowPlayingSourceLocation(b)
-}
-
-// boxNowPlayingDoc fetches the speaker's :8090/now_playing document.
-func (s *Server) boxNowPlayingDoc(ctx context.Context) ([]byte, error) {
-	if s.boxNowDocFn != nil {
-		return s.boxNowDocFn(ctx)
-	}
-	if s.boxHost == "" {
-		return nil, errors.New("box host not configured")
-	}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+s.boxHost+":8090/now_playing", nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-}
-
-// parseNowPlayingSourceLocation pulls the source and the ContentItem location
-// out of a now_playing document.
-func parseNowPlayingSourceLocation(b []byte) (source, location string, ok bool) {
-	m := holdNowSourceRe.FindSubmatch(b)
-	if m == nil {
+	np, err := s.readBoxNow(c)
+	if err != nil || np.Source == "" {
 		return "", "", false
 	}
-	source = string(m[1])
-	if l := holdNowLocationRe.FindSubmatch(b); l != nil {
-		location = html.UnescapeString(string(l[1]))
+	return np.Source, np.Location(), true
+}
+
+// boxNowPlayingDoc fetches the speaker's :8090/now_playing document verbatim,
+// for the readers that parse the ContentItem themselves (the save-playing
+// and native-service paths).
+func (s *Server) boxNowPlayingDoc(ctx context.Context) ([]byte, error) {
+	c, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	np, err := s.readBoxNow(c)
+	if err != nil {
+		return nil, err
 	}
-	return source, location, true
+	return np.Raw, nil
 }
 
 // SetHoldSaveTestFn wires the switch behind POST /api/debug/hold-save-test.

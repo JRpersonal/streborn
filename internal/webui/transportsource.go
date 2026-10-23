@@ -52,7 +52,7 @@ func (s *Server) transportKeyFallback(ctx context.Context, key string) bool {
 	if s.boxHost == "" {
 		return false
 	}
-	src := fetchNowPlaying(ctx, s.boxHost).Source
+	src := s.readBoxSnapshot(ctx).Source
 	if !boxOwnedSource(src) {
 		return false
 	}

@@ -4,8 +4,6 @@ package webui
 
 import (
 	"context"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -416,45 +414,35 @@ func (s *Server) boxSelectionStuck() bool {
 	return stuck
 }
 
-// nowPlayingLocationRe pulls the ContentItem location out of a now_playing body.
+// nowPlayingLocationRe pulls the ContentItem location out of a now_playing body
+// (the status proxy and the playing-key header scan the raw body).
 var nowPlayingLocationRe = regexp.MustCompile(`location="([^"]*)"`)
-
-// nowPlayingSourceRe pulls the source attribute out of a now_playing body.
-var nowPlayingSourceRe = regexp.MustCompile(`source="([^"]*)"`)
 
 // boxStuckSelection reports whether the box is awake with a stuck STR selection
 // (see boxSelectionStuck's contract) AND the location of that selection, so the
 // caller can tell whether the box is stuck on OUR last stream (resume it) or on
 // something else (leave it). An empty location means the box carries no
-// ContentItem (a bare INVALID_SOURCE), the #183 recovery target.
+// ContentItem (a bare INVALID_SOURCE), the #183 recovery target. An unreadable
+// box is not stuck: the recovery never acts on a guess.
 func (s *Server) boxStuckSelection() (stuck bool, location string) {
-	if s.boxHost == "" {
-		return false, ""
-	}
-	cl := &http.Client{Timeout: 5 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	np, err := s.readBoxNowWithin(5 * time.Second)
 	if err != nil {
 		return false, ""
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	body := string(b)
-	if strings.Contains(body, "STANDBY") {
+	if np.IsStandby() {
 		return false, "" // box asleep: a routine idle reconnect, nothing to recover
 	}
-	if strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE") {
+	if np.IsBusy() {
 		return false, "" // already playing/paused
 	}
 	// Only recover an STR-owned selection (UPNP) or the box's failed
 	// self-activation of it (INVALID_SOURCE). A native source the user picked
-	// (AUX, BLUETOOTH, ...) is left alone.
-	if !strings.Contains(body, `source="UPNP"`) && !strings.Contains(body, "INVALID_SOURCE") {
+	// (AUX, BLUETOOTH, ...) is left alone. The ContentItem's own source counts
+	// too: a torn-down STR stream keeps source="UPNP" on the item.
+	if np.Source != "UPNP" && np.ContentItem.Source != "UPNP" && !np.SourceTornDown() {
 		return false, ""
 	}
-	if m := nowPlayingLocationRe.FindStringSubmatch(body); m != nil {
-		location = m[1]
-	}
-	return true, location
+	return true, np.Location()
 }
 
 // sameStream reports whether two box-facing stream URLs point at the same STR
@@ -1716,23 +1704,11 @@ func resumeSafeSource(src string) bool {
 // source while the box stayed awake" (recoverable right now) from "the box is
 // off" (must never be powered on automatically, #487).
 func (s *Server) boxSourceNow() string {
-	if s.boxSourceFn != nil {
-		return s.boxSourceFn()
-	}
-	if s.boxHost == "" {
-		return ""
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	np, err := s.readBoxNowWithin(4 * time.Second)
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	if m := nowPlayingSourceRe.FindSubmatch(b); len(m) == 2 {
-		return string(m[1])
-	}
-	return ""
+	return np.Source
 }
 
 // deferredResume is a stream the firmware dropped while the box was (or went)
@@ -2380,24 +2356,17 @@ func (s *Server) boxPlayStateDetail() (standby, busy, buffering bool) {
 	if s.boxHost == "" {
 		return true, false, false
 	}
-	cl := &http.Client{Timeout: 5 * time.Second}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
 			time.Sleep(400 * time.Millisecond)
 		}
-		resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+		np, err := s.readBoxNowWithin(5 * time.Second)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		resp.Body.Close()
-		body := string(b)
-		standby = strings.Contains(body, "STANDBY")
-		buffering = strings.Contains(body, "BUFFERING_STATE")
-		busy = strings.Contains(body, "PLAY_STATE") || buffering || strings.Contains(body, "PAUSE_STATE")
-		return standby, busy, buffering
+		return np.IsStandby(), np.IsBusy(), np.IsBuffering()
 	}
 	// Could not read the box state: assume standby so we never resume/wake on an
 	// uncertain state (silence beats spontaneous playback).

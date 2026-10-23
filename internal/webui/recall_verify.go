@@ -4,8 +4,6 @@ package webui
 
 import (
 	"context"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -273,33 +271,22 @@ func recallLocationMatches(expected, nowLocation string) bool {
 }
 
 // xmlAttrUnescape decodes the predefined XML entities the box emits in
-// now_playing attribute values (location="...&amp;..."), so the recall verify
-// compares real URLs, not encodings.
+// attribute values (the Wi-Fi profile store, location="...&amp;..."), so
+// comparisons see real values, not encodings.
 func xmlAttrUnescape(s string) string {
 	r := strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'")
 	return r.Replace(s)
 }
 
 // boxPlayLocation reads now_playing once and reports the ContentItem location
-// the box is tuned to plus whether it is busy (playing, buffering or paused).
-// Best-effort: ("", false) when the box cannot be read; verifyRecall treats an
-// unreadable location as a match, so this can only ever ADD a justified retry,
-// never a spurious one.
+// the box is tuned to (entity-decoded, so the verify compares real URLs) plus
+// whether it is busy (playing, buffering or paused). Best-effort: ("", false)
+// when the box cannot be read; verifyRecall treats an unreadable location as
+// a match, so this can only ever ADD a justified retry, never a spurious one.
 func (s *Server) boxPlayLocation() (location string, busy bool) {
-	if s.boxHost == "" {
-		return "", false
-	}
-	cl := &http.Client{Timeout: 5 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	np, err := s.readBoxNowWithin(5 * time.Second)
 	if err != nil {
 		return "", false
 	}
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	resp.Body.Close()
-	body := string(b)
-	if m := reNowPlayLocation.FindStringSubmatch(body); m != nil {
-		location = xmlAttrUnescape(m[1])
-	}
-	busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
-	return location, busy
+	return np.Location(), np.IsBusy()
 }
