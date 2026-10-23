@@ -82,8 +82,8 @@ func (s *Server) handleIdentify(w http.ResponseWriter, r *http.Request) {
 // that only renames, re-states, or heals the metadata of what the key
 // already held shows nothing, and neither does the internal write of a held
 // key (that path shows its own notice, cmd/agent/holdsave.go).
-func (s *Server) noticeAppSave(r *http.Request, prev presets.Preset, had bool, now presets.Preset) {
-	if r.Header.Get("User-Agent") == holdSaveUA {
+func (s *Server) noticeAppSave(ua string, prev presets.Preset, had bool, now presets.Preset) {
+	if ua == holdSaveUA {
 		return
 	}
 	if had && sameKeyItem(prev, now) {
@@ -94,8 +94,8 @@ func (s *Server) noticeAppSave(r *http.Request, prev presets.Preset, had bool, n
 
 // noticeAppRefused puts "ON KEY M / ALREADY SAVED" on the display for a save
 // the one-station-one-key rule refused (#836).
-func (s *Server) noticeAppRefused(r *http.Request, otherSlot int) {
-	if r.Header.Get("User-Agent") == holdSaveUA {
+func (s *Server) noticeAppRefused(ua string, otherSlot int) {
+	if ua == holdSaveUA {
 		return
 	}
 	oled.Show(oled.AlreadyOnKey(otherSlot))
