@@ -213,6 +213,13 @@ func run() error {
 	slog.SetDefault(logger)
 	logger.Info("streborn starting", "version", version)
 
+	// The one root context, created before the first goroutine starts: every
+	// background loop below derives from it, so a SIGTERM (or a listener
+	// failure, which cancels it too) reaches all of them. Only the signal
+	// context itself is allowed to start from context.Background().
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	// FIRST, before anything can open a TLS connection. crypto/x509 builds the
 	// system pool once per process and caches it, so this has to happen while
 	// nothing has needed it yet; a later call would look correct in a test and
@@ -522,7 +529,7 @@ func run() error {
 	// as its firmware responds. Runs in the background so a slow-booting box
 	// never delays the listeners; the box's addDevice POST corrects the value
 	// too, so this is the first of two independent paths to the right id.
-	go correctDeviceIDFromBox(context.Background(), margeSrv, *boxHost, logger)
+	go correctDeviceIDFromBox(ctx, margeSrv, *boxHost, logger)
 
 	// Forensic sections for /api/debug/state. The marge trail (millisecond
 	// timestamps) is what lets a bundle answer whether the box exchanged
@@ -592,8 +599,14 @@ func run() error {
 		armRestoreNotice(time.Now())
 	}
 	go func() {
+		ledger := time.NewTicker(time.Hour)
+		defer ledger.Stop()
 		for {
-			time.Sleep(time.Hour)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ledger.C:
+			}
 			if line := boxwrites.Format(boxwrites.SnapshotReset()); line != "" {
 				logger.Warn("box-write ledger: writes in the last hour", "writes", line)
 			}
@@ -612,11 +625,15 @@ func run() error {
 			c := boxapi.New(*boxHost)
 			emptyReads := 0
 			for i := 0; i < 40; i++ { // give a slow boot up to ~20 min
-				time.Sleep(30 * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(30 * time.Second):
+				}
 				if !margeSrv.GroupRestoredUnconfirmed() {
 					return // confirmed by a live signal meanwhile
 				}
-				gctx, gcancel := context.WithTimeout(context.Background(), 6*time.Second)
+				gctx, gcancel := context.WithTimeout(ctx, 6*time.Second)
 				g, err := c.GetGroup(gctx)
 				gcancel()
 				if err != nil {
@@ -636,7 +653,7 @@ func run() error {
 	// A pair the firmware holds but STR does not (first boot after installing
 	// STR on a speaker paired in the Bose app) is adopted before the firmware's
 	// group poll can be answered without it.
-	go adoptFirmwarePairAtStartup(context.Background(), margeSrv, *boxHost, logger.With("comp", "groupadopt"))
+	go adoptFirmwarePairAtStartup(ctx, margeSrv, *boxHost, logger.With("comp", "groupadopt"))
 	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
 	// display_clock: the firmware's own view of the clock on the display, read
 	// only when a diagnostic is taken (#841: a frozen display clock while the
@@ -821,7 +838,7 @@ func run() error {
 	var mdnsHostResp *mdnshost.Responder
 	if label := mdnshost.LabelFor(deviceID); label != "" {
 		if ip := routableIPv4(); ip != nil {
-			if resp, err := mdnshost.Start(context.Background(), logger.With("comp", "mdnshost"), label, ip); err != nil {
+			if resp, err := mdnshost.Start(ctx, logger.With("comp", "mdnshost"), label, ip); err != nil {
 				logger.Warn("mdns host: not answering for this speaker's own name, leaving the engine on the chassis name",
 					"err", err, "label", label)
 			} else {
@@ -877,8 +894,8 @@ func run() error {
 			if !ok {
 				return nil
 			}
-			gctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
+			gctx, gcancel := context.WithTimeout(ctx, 3*time.Second)
+			defer gcancel()
 			z, err := boxapi.New(*boxHost).GetZone(gctx)
 			if err != nil || z.Master == "" || !strings.EqualFold(z.Master, persisted.Master) {
 				// No live zone (or led by someone else): nothing to fan to.
@@ -910,8 +927,13 @@ func run() error {
 	go func() {
 		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
-		for range t.C {
-			_ = browsePeers(context.Background(), logger.With("comp", "peers"))
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			_ = browsePeers(ctx, logger.With("comp", "peers"))
 		}
 	}()
 
@@ -1008,7 +1030,7 @@ func run() error {
 	// only after a real box boot (the guard checks bootReason itself) and only
 	// when the user has moved this speaker at least once; a healthy boot costs
 	// one wpa_cli status read. See internal/webui/wlanguard.go.
-	go webuiSrv.StartWLANBootGuard(context.Background(), bootReason)
+	go webuiSrv.StartWLANBootGuard(ctx, bootReason)
 
 	// Publish the user's DLNA/UPnP music sources into the marge account, which
 	// the box polls for itself at boot and keeps whatever it finds there, exactly
@@ -1033,7 +1055,7 @@ func run() error {
 	// see at all: while the firmware raises its setup access point the speaker
 	// leaves the LAN, and the app's install wait then times out and calls a
 	// successful install a failure (#873).
-	go leaveSetupSourceWatcher(context.Background(), *boxHost, logger, webuiSrv)
+	go leaveSetupSourceWatcher(ctx, *boxHost, logger, webuiSrv)
 	// The cause behind a SETUP source that comes back on every wake: a box
 	// whose language was never set (sysLanguage 0, SETUP_LANG_NOT_SET). Close
 	// that gate once per boot (boxlanguage.go).
@@ -1041,7 +1063,7 @@ func run() error {
 	if *regionFile != "" {
 		langFile = filepath.Join(filepath.Dir(*regionFile), "lang.txt")
 	}
-	go newBoxLanguageGate(*boxHost, langFile, regionRes.Country, logger.With("comp", "boxlang")).run(context.Background())
+	go newBoxLanguageGate(*boxHost, langFile, regionRes.Country, logger.With("comp", "boxlang")).run(ctx)
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
@@ -1263,7 +1285,7 @@ func run() error {
 	// recall commands are filtered inside the manager.
 	spotifyMgr.SetConnectIntentHooks(
 		func(event string) {
-			wsHandler.OnUserStop(context.Background())
+			wsHandler.OnUserStop(ctx)
 			// Durable half of the app-pause fix (Klaus, 2026-08): with the
 			// engine paused the box keeps its UPnP selection, drains its
 			// buffer on the starved stream and re-fetches it, which used to
@@ -1277,8 +1299,8 @@ func run() error {
 			// cannot stall the engine's event loop this hook runs on.
 			if spotifyMgr.Streaming() {
 				go func() {
-					sctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-					defer cancel()
+					sctx, scancel := context.WithTimeout(ctx, 8*time.Second)
+					defer scancel()
 					if err := renderer.Stop(sctx); err != nil {
 						logger.Debug("spotify: stopping the box transport after a Spotify-app pause failed", "err", err, "event", event)
 						return
@@ -1605,9 +1627,6 @@ func run() error {
 		logger.With("comp", "presetrecovery"),
 		func() { close(seedFirstRead) })
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
 
@@ -1729,8 +1748,11 @@ func run() error {
 	// are already serving. Slow steps are isolated in their own
 	// goroutines so a stall in one (e.g. TLS CA generation on a
 	// flash-bound NAND) does not delay another (e.g. mDNS announce).
-	// All goroutines respect ctx so shutdown still terminates them
-	// promptly.
+	// Every goroutine run() starts derives from ctx (the signal context
+	// created at the top of run()), so shutdown terminates them promptly;
+	// the handful of helpers that take no context (the preset reconcile,
+	// the stick run.sh sync, the OLED splash) are one-shot or sleep-bound
+	// and end with the process.
 	//
 	// Order within each goroutine is preserved from the previous
 	// sync flow; only the cross-goroutine ordering changes.
@@ -1811,7 +1833,7 @@ func run() error {
 	setNativeReadyLogger(logger)
 	boxcli.SetDiagLogger(logger)
 	webuiSrv.SetNativePresetLocatorFn(func(name, streamURL, art string) string {
-		if !nativeRadioReady(context.Background(), *boxHost) {
+		if !nativeRadioReady(ctx, *boxHost) {
 			return ""
 		}
 		return webui.OrionStationLocation(streamURL, name, art)
@@ -1867,7 +1889,7 @@ func run() error {
 	}()
 
 	if *pendingNameFile != "" {
-		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, logger)
+		go applyPendingBoxName(ctx, *boxHost, *pendingNameFile, logger)
 	}
 
 	// Correct an implausibly old system clock in the background. SoundTouch
