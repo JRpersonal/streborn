@@ -2150,11 +2150,10 @@ func (s *Server) maybeRePush() {
 	}
 }
 
-// icyDisplayPushEnabled reports whether STR should push live ICY StreamTitle
-// updates to the box's now-playing/display by re-issuing SetAVTransportURI
-// mid-stream. Off by default: re-setting the URI can make some renderers
-// re-buffer (an audible gap on every track change), so this stays behind an
-// env flag until verified on the target hardware. Set STR_ICY_DISPLAY=1.
+// icyDisplayPushEnabled is the dev/test override for the display-track
+// setting: STR_ICY_DISPLAY=1 forces displayTrackEnabled() on regardless of the
+// NAND flag file. It is not the gate itself; the user's choice in the app
+// (/api/box/display-track, persisted as a flag file) is.
 func icyDisplayPushEnabled() bool {
 	return os.Getenv("STR_ICY_DISPLAY") == "1"
 }
@@ -2164,10 +2163,14 @@ func icyDisplayPushEnabled() bool {
 // told the box to play with the new title as DIDL metadata. The URL stays the
 // stable proxy URL, only the title changes.
 //
-// Gated behind STR_ICY_DISPLAY: a URI re-set may cost an audio gap on some
-// renderers (see icyDisplayPushEnabled), so we keep the safe default of
-// surfacing the title only in the app (via /api/stream/title) until the
-// mid-stream re-set is verified on real hardware. Wired from the stream proxy.
+// Two paths, decided here: on a speaker whose panel STR draws on itself
+// (trackOnPanel) the title goes to the panel and the stream is never re-sent.
+// Elsewhere the re-send runs only when the user switched the display-track
+// setting on (displayTrackEnabled, a NAND flag file set from the app; the env
+// override STR_ICY_DISPLAY=1 merely forces it on for dev/testing), because a
+// URI re-set costs an audio gap on some renderers. With the setting off the
+// title still reaches the app (via /api/stream/title) and Recently played.
+// Wired from the stream proxy.
 func (s *Server) HandleStreamTitle(title string) {
 	// A placeholder ("Now playing info goes here", "Unknown", the station's
 	// own name) is no song: it must not reach the display, Recently played or
