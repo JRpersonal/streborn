@@ -5,20 +5,34 @@ package main
 // while it is in GroupSlave, so writing presets into it is wasted NAND writes
 // and, worse, a log that claims keys were healed when nothing was stored.
 
-import "strings"
+import (
+	"strings"
+	"sync/atomic"
+)
 
-// groupFollowerFn is wired in main: the stereo-pair record STR keeps in marge
-// first (a pair formed through STR leaves the zone store empty), the speaker's
-// own zone second. nil (tests, early start) means "not a follower".
-var groupFollowerFn func() (bool, string)
+// groupFollowerFn is wired in main (setGroupFollowerFn): the stereo-pair
+// record STR keeps in marge first (a pair formed through STR leaves the zone
+// store empty), the speaker's own zone second. Unset (tests, early start)
+// means "not a follower". Atomic because the reconcile loop starts before the
+// webui server that answers it exists.
+var groupFollowerFn atomic.Pointer[func() (bool, string)]
+
+func setGroupFollowerFn(fn func() (bool, string)) {
+	if fn == nil {
+		groupFollowerFn.Store(nil)
+		return
+	}
+	groupFollowerFn.Store(&fn)
+}
 
 // presetWriteGroupFollower reports whether the preset writes must be skipped
 // because this speaker follows a group, and why.
 func presetWriteGroupFollower() (bool, string) {
-	if groupFollowerFn == nil {
+	fn := groupFollowerFn.Load()
+	if fn == nil {
 		return false, ""
 	}
-	return groupFollowerFn()
+	return (*fn)()
 }
 
 // pairRole reads the stereo-pair record: decided is false when it says

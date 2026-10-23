@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
@@ -284,8 +285,28 @@ func savePersistedPeersLocked(logger *slog.Logger) {
 // the same async probe the browse sweep uses.
 // peerSelfNameFn reports this speaker's own display name, so the roster can
 // recognise an entry that is really us. Wired at startup from the mDNS
-// announcer, which is the same source the version envelope uses.
-var peerSelfNameFn func() string
+// announcer (setPeerSelfNameFn), which is the same source the version envelope
+// uses. Atomic because the peer sweep and the web UI's peer handlers start
+// before the announcer it reads from exists.
+var peerSelfNameFn atomic.Pointer[func() string]
+
+func setPeerSelfNameFn(fn func() string) {
+	if fn == nil {
+		peerSelfNameFn.Store(nil)
+		return
+	}
+	peerSelfNameFn.Store(&fn)
+}
+
+// peerSelfName is this speaker's own display name, trimmed, or "" while the
+// seam is not wired or the announcer has no name yet.
+func peerSelfName() string {
+	fn := peerSelfNameFn.Load()
+	if fn == nil {
+		return ""
+	}
+	return strings.TrimSpace((*fn)())
+}
 
 // peerSelfDeviceIDsFn reports every id this speaker answers under: the one
 // signal that survives BOTH an address change and a placeholder name. The
@@ -300,7 +321,17 @@ var peerSelfNameFn func() string
 // identity: the agent's own deviceID and the firmware's SoundTouch id, and
 // those can be different values for the same box. Whichever of them a record
 // names, it names us.
-var peerSelfDeviceIDsFn func() []string
+//
+// Wired by setPeerSelfDeviceIDsFn; atomic for the same reason as the name.
+var peerSelfDeviceIDsFn atomic.Pointer[func() []string]
+
+func setPeerSelfDeviceIDsFn(fn func() []string) {
+	if fn == nil {
+		peerSelfDeviceIDsFn.Store(nil)
+		return
+	}
+	peerSelfDeviceIDsFn.Store(&fn)
+}
 
 // selfDeviceIDs builds that list from the announcer's live TXT values plus the
 // id this agent booted with, in that order, without empties or duplicates.
@@ -343,10 +374,11 @@ func announcerSelfDeviceIDs(ann *discovery.Announcer, bootID string) []string {
 }
 
 func peerSelfDeviceIDs() []string {
-	if peerSelfDeviceIDsFn == nil {
+	fn := peerSelfDeviceIDsFn.Load()
+	if fn == nil {
 		return nil
 	}
-	return peerSelfDeviceIDsFn()
+	return (*fn)()
 }
 
 // matchesSelfDeviceID reports whether id names THIS speaker. Case-insensitive:
@@ -371,10 +403,7 @@ func matchesSelfDeviceID(id string) bool {
 // refresh: the entry for the address the box just left would otherwise be
 // re-dialed every sweep until its 12 h TTL.
 func purgeSelfPeers(logger *slog.Logger) {
-	selfName := ""
-	if peerSelfNameFn != nil {
-		selfName = strings.TrimSpace(peerSelfNameFn())
-	}
+	selfName := peerSelfName()
 	peersMu.Lock()
 	defer peersMu.Unlock()
 	removed := 0
@@ -397,10 +426,7 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		return
 	}
 	mine := ownIPv4s()
-	selfName := ""
-	if peerSelfNameFn != nil {
-		selfName = strings.TrimSpace(peerSelfNameFn())
-	}
+	selfName := peerSelfName()
 	now := time.Now()
 	peersMu.Lock()
 	added := 0
@@ -657,10 +683,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		probeStalePeers(logger)
 	}
 
-	selfName := ""
-	if peerSelfNameFn != nil {
-		selfName = strings.TrimSpace(peerSelfNameFn())
-	}
+	selfName := peerSelfName()
 	mineNow := ownIPv4s()
 	peersMu.Lock()
 	defer peersMu.Unlock()

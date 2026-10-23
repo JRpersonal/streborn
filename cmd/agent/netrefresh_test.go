@@ -57,10 +57,10 @@ func TestStaleRedirectDeleteArgs(t *testing.T) {
 // forced true (#697, adversarial review of d842293). Both identity forms must
 // hold, the deviceID (new apps) and the display name (apps that send none).
 func TestSeedPeersDropsSelf(t *testing.T) {
-	prevDev, prevName := peerSelfDeviceIDsFn, peerSelfNameFn
-	defer func() { peerSelfDeviceIDsFn, peerSelfNameFn = prevDev, prevName }()
-	peerSelfDeviceIDsFn = func() []string { return []string{"AABBCCDDEEFF"} }
-	peerSelfNameFn = func() string { return "Küche" }
+	prevDev, prevName := peerSelfDeviceIDsFn.Load(), peerSelfNameFn.Load()
+	defer func() { peerSelfDeviceIDsFn.Store(prevDev); peerSelfNameFn.Store(prevName) }()
+	setPeerSelfDeviceIDsFn(func() []string { return []string{"AABBCCDDEEFF"} })
+	setPeerSelfNameFn(func() string { return "Küche" })
 	peersMu.Lock()
 	peersByIP = map[string]*peerEntry{}
 	peersMu.Unlock()
@@ -90,10 +90,10 @@ func TestSeedPeersDropsSelf(t *testing.T) {
 // re-adopted at the old address as "str-<old-ip>"), plus name-matching ones,
 // and leave real peers alone.
 func TestPurgeSelfPeers(t *testing.T) {
-	prevDev, prevName := peerSelfDeviceIDsFn, peerSelfNameFn
-	defer func() { peerSelfDeviceIDsFn, peerSelfNameFn = prevDev, prevName }()
-	peerSelfDeviceIDsFn = func() []string { return []string{"AABBCCDDEEFF"} }
-	peerSelfNameFn = func() string { return "Küche" }
+	prevDev, prevName := peerSelfDeviceIDsFn.Load(), peerSelfNameFn.Load()
+	defer func() { peerSelfDeviceIDsFn.Store(prevDev); peerSelfNameFn.Store(prevName) }()
+	setPeerSelfDeviceIDsFn(func() []string { return []string{"AABBCCDDEEFF"} })
+	setPeerSelfNameFn(func() string { return "Küche" })
 
 	peersMu.Lock()
 	peersByIP = map[string]*peerEntry{

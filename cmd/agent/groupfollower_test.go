@@ -27,13 +27,13 @@ func TestPairRole(t *testing.T) {
 }
 
 func TestPresetWriteGroupFollowerNilIsStandalone(t *testing.T) {
-	old := groupFollowerFn
-	t.Cleanup(func() { groupFollowerFn = old })
-	groupFollowerFn = nil
+	old := groupFollowerFn.Load()
+	t.Cleanup(func() { groupFollowerFn.Store(old) })
+	setGroupFollowerFn(nil)
 	if f, _ := presetWriteGroupFollower(); f {
 		t.Fatal("an unwired check must not hold the preset writes")
 	}
-	groupFollowerFn = func() (bool, string) { return true, "stereo pair follower" }
+	setGroupFollowerFn(func() (bool, string) { return true, "stereo pair follower" })
 	if f, why := presetWriteGroupFollower(); !f || why == "" {
 		t.Fatal("a follower must hold the preset writes and say why")
 	}
