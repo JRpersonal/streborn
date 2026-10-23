@@ -21,7 +21,8 @@ import {
   showError,
   spotifyURIFromContainer,
 } from '../../utils.js';
-import { deps } from './deps.js';
+import { refreshPresetsIfChanged } from './presets.js';
+import { applyTrackScroll, renderPresets } from './presettiles.js';
 import { sourceListCache } from './sources.js';
 import { mstate } from './state.js';
 import { refreshStatus } from './status.js';
@@ -68,7 +69,7 @@ export async function refreshQueue() {
     // highlight waited for an unrelated status change (#1190). Same for the
     // key a playing folder was just saved on (#1217).
     const slotNow = state.queue ? state.queue.slot : undefined;
-    if ((queueSlotCard(state.queue) !== before || slotNow !== beforeSlot) && state.presets.length > 0) deps.renderPresets();
+    if ((queueSlotCard(state.queue) !== before || slotNow !== beforeSlot) && state.presets.length > 0) renderPresets();
     // The agent's preset store was written (a save on this app, the phone, or
     // a hold on the speaker's own key): re-read the presets now instead of on
     // the slow recheck timer, which kept a held key unshown for up to 15 s
@@ -76,7 +77,7 @@ export async function refreshQueue() {
     const rev = q ? q.preset_rev : undefined;
     if (presetRevChanged(state.presetRev, rev)) {
       mstate._lastPresetCheck = 0;
-      deps.refreshPresetsIfChanged();
+      refreshPresetsIfChanged();
     }
     if (typeof rev === 'number') state.presetRev = rev;
   } catch {
@@ -290,7 +291,7 @@ export function renderNowPlayingBar() {
     state.lastStatusHTML = statusHTML;
     const main = $('statusMain');
     if (main) main.innerHTML = statusHTML;
-    requestAnimationFrame(() => deps.applyTrackScroll('.status-bar .now'));
+    requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
   }
 }
 

@@ -7,22 +7,20 @@
 // vitest can read it) before main.js has run.
 
 export let deps = {
-  applyTrackScroll() {},
   // The refresh button also re-asks whether a newer app exists (wiring.js).
   checkAppUpdate() {},
   // The status poll re-checks the SSH reminder banner on every tick (status.js).
   checkSshBanner() {},
-  decodeProxyUrl() {},
   // The refresh button, and the status poll when a speaker has stopped
   // answering (wiring.js, status.js).
   discoverBoxes() {},
   doRefilter() {},
-  isMeasurableStreamPreset() {},
+  effectivePlayTarget() {},
   // The world map invite rides the status poll (status.js).
   maybeInviteWorldMap() {},
-  refreshPresetsIfChanged() {},
-  renderPresets() {},
-  setPresetIfUnchanged() {},
+  renderGroupControl() {},
+  // play() names a stale stereo pair in its error text (play.js).
+  stereoStaleForError() {},
   updateFilterIndicators() {},
 };
 

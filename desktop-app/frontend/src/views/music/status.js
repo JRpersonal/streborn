@@ -28,6 +28,8 @@ import {
   resetTrackProgress,
   trackPos,
 } from './nowplaying.js';
+import { refreshPresetsIfChanged } from './presets.js';
+import { renderPresets } from './presettiles.js';
 import { highlightActiveSource } from './sources.js';
 import { syncMusicTabVolumeFromBox } from './volume.js';
 
@@ -98,7 +100,7 @@ export async function refreshStatus() {
   // to the same speaker, and until now the tiles here kept whatever they were
   // loaded with, so a key reassigned from the phone showed the old station
   // until the speaker was reselected.
-  if (!barOnly) deps.refreshPresetsIfChanged();
+  if (!barOnly) refreshPresetsIfChanged();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     _statusFailCount = 0; // the box answered: it is reachable at its current IP
@@ -298,7 +300,7 @@ export async function refreshStatus() {
           // only redraws on renderPresets. Re-render when the cover changes so
           // the preset logo tracks the song in step with the title instead of
           // lagging a track behind.
-          if (coverChanged || contextChanged) deps.renderPresets();
+          if (coverChanged || contextChanged) renderPresets();
         }).catch(() => {});
       }
     } else {
@@ -393,7 +395,7 @@ export async function refreshStatus() {
       state.stuckBuf = r.tracker;
       if (r.stuck && !state.presetErrors[slot]) {
         state.presetErrors[slot] = t('preset.errNoStart');
-        deps.renderPresets();
+        renderPresets();
       }
     }
 
@@ -427,7 +429,7 @@ export async function refreshStatus() {
     }
 
     if ((gridChanged || iconAdoptable) && state.presets.length > 0) {
-      deps.renderPresets();
+      renderPresets();
     }
 
     // Now-playing status line. Rendered from cached state so the live-title

@@ -15,17 +15,11 @@ import { musicViewMarkup } from './markup.js';
 import { mountWiring } from './wiring.js';
 import { mountSources, purgeSourceCacheForSpeaker } from './sources.js';
 import { mountVolume } from './volume.js';
+import { purgePresetStateForSpeaker } from './presets.js';
 
 export { initMusicView } from './deps.js';
 export { refreshSourceButtons } from './sources.js';
-export {
-  currentPairTarget,
-  loadMusicTabVolume,
-  musicVolEl,
-  musicVolValEl,
-  pairSetVolume,
-  syncVolumeScopeOnZoneLive,
-} from './volume.js';
+export { loadMusicTabVolume, syncVolumeScopeOnZoneLive } from './volume.js';
 export {
   loadLanguagesForCountry,
   loadStickRegion,
@@ -43,7 +37,9 @@ export {
   trackPos,
 } from './nowplaying.js';
 export { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
-export { mstate } from './state.js';
+export { loadPresets } from './presets.js';
+export { renderPresets } from './presettiles.js';
+export { presetMoveOffer } from './save.js';
 
 // mountMusicView builds #view-box and attaches the static handlers, in the
 // order the statements had in main.js: markup first, then each module's
@@ -60,4 +56,5 @@ export function mountMusicView() {
 // STR).
 export function purgeMusicStateForSpeaker(host) {
   purgeSourceCacheForSpeaker(host);
+  purgePresetStateForSpeaker(host);
 }

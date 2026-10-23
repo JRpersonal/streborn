@@ -8,8 +8,9 @@ import {
   orionStationPayload,
   proxiedRadioPlaying,
 } from '../../utils.js';
-import { deps } from './deps.js';
 import { renderNowPlayingBar } from './nowplaying.js';
+import { decodeProxyUrl, isMeasurableStreamPreset, setPresetIfUnchanged } from './presets.js';
+import { renderPresets } from './presettiles.js';
 
 // scheduleLiveBitrate fetches the agent's detected stream bitrate after a
 // station starts and reflects it into now-playing + the active preset tile.
@@ -64,9 +65,9 @@ export function scheduleLiveBitrate() {
           presetName: p.name,
           presetUrl: p.stream_url,
           playingName: typeof orionNow.name === 'string' ? orionNow.name : '',
-          playingUrl: orionNow.streamUrl ? deps.decodeProxyUrl(orionNow.streamUrl) : '',
+          playingUrl: orionNow.streamUrl ? decodeProxyUrl(orionNow.streamUrl) : '',
         });
-        if (p && !stale && p.bitrate !== br && deps.isMeasurableStreamPreset(p)) {
+        if (p && !stale && p.bitrate !== br && isMeasurableStreamPreset(p)) {
           p.bitrate = br;
           // Persist for radio only. SetPreset is radio-only (type=radio, no
           // uri), so persisting a Spotify preset would wipe its URI. The
@@ -74,10 +75,10 @@ export function scheduleLiveBitrate() {
           // Guarded: the write is skipped when the slot changed on the box
           // since this list was loaded (#758).
           if (!isSpotify) {
-            deps.setPresetIfUnchanged(box, p, { bitrate: br });
+            setPresetIfUnchanged(box, p, { bitrate: br });
           }
         }
-        deps.renderPresets();
+        renderPresets();
       }
       return; // got it
     }
