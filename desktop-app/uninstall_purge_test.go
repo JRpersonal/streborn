@@ -76,6 +76,9 @@ func TestPurgeSpeakerStateDropsEveryRecord(t *testing.T) {
 	a.rememberPort(stays, 8888)
 	a.notePostOTA(gone)
 	a.notePostOTA(stays)
+	a.rememberOTAPort(gone, 17008)
+	a.rememberOTAPort(stays, 8888)
+	a.noteOTAUnconfirmed(gone, "unreachable")
 	boxSSHClients.slot(gone)
 	boxSSHClients.slot(stays)
 	t.Cleanup(func() { boxSSHClients.forgetHost(stays) })
@@ -122,6 +125,19 @@ func TestPurgeSpeakerStateDropsEveryRecord(t *testing.T) {
 	}
 	if p, ok := a.cachedPort(stays); !ok || p != 8888 {
 		t.Errorf("portCache lost the bystander: %d %v", p, ok)
+	}
+	// The update verification memo: a stock speaker has no update to verify,
+	// and a stale "unconfirmed" record would let a later discovery sighting
+	// journal a verdict about an update that no longer exists.
+	a.otaVerifyMu.Lock()
+	_, verifyGone := a.otaVerify[gone]
+	_, verifyStays := a.otaVerify[stays]
+	a.otaVerifyMu.Unlock()
+	if verifyGone {
+		t.Error("otaVerify kept the removed speaker's update verification memo")
+	}
+	if !verifyStays {
+		t.Error("otaVerify lost the bystander's update verification memo")
 	}
 	boxSSHClients.mu.Lock()
 	_, sshGone := boxSSHClients.hosts[gone]
