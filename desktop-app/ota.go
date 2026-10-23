@@ -299,6 +299,55 @@ func (a *App) BoxStoragePreflight(host string, port int) (StoragePreflight, erro
 // it instead of backing off and re-asking a question whose answer stays no.
 var errInsufficientNAND = errors.New("insufficient NAND space")
 
+// nandFullError is the typed form of errInsufficientNAND: the speaker refused
+// a write for lack of space, with the figures when they are known. It is
+// returned wherever that verdict is reached (the app-side sidecar gate, the
+// agent answering HTTP 507, the SSH upload preamble's df refusal) so callers
+// ask errors.Is(err, errInsufficientNAND) instead of matching "507",
+// "insufficient nand" or "no space" in the text. Error() keeps the texts
+// those matches used to see: the frontend still matches them
+// (/insufficient nand|no space|507/ in main.js), and a 507 reply keeps its
+// "status 507: <body>" form, which the retry and connection-drop classifiers
+// key on ("status ").
+type nandFullError struct {
+	// free, reclaimable and need are bytes; all zero when unknown (a 507 from
+	// the agent names them in its body, not in a form worth parsing).
+	free, reclaimable, need int64
+	// status is the HTTP status the agent answered, 0 off the HTTP path.
+	status int
+	// detail is the agent's reply body, or the SSH path's context.
+	detail string
+}
+
+func (e *nandFullError) Error() string {
+	if e.status != 0 {
+		return fmt.Sprintf("status %d: %s", e.status, e.detail)
+	}
+	s := errInsufficientNAND.Error()
+	if e.need > 0 {
+		s += fmt.Sprintf(" (free=%d reclaimable=%d need=%d)", e.free, e.reclaimable, e.need)
+	}
+	if e.detail != "" {
+		s += ": " + e.detail
+	}
+	return s
+}
+
+// Is makes errors.Is(err, errInsufficientNAND) true for every nandFullError.
+func (e *nandFullError) Is(target error) bool { return target == errInsufficientNAND }
+
+// httpReplyMeansNANDFull reports whether an agent's non-2xx reply is the
+// speaker refusing for space: a 507, or (an older agent) a 5xx whose body
+// names the condition. This is the one place the reply text is matched; from
+// here on the verdict travels as a nandFullError.
+func httpReplyMeansNANDFull(status int, body string) bool {
+	if status == http.StatusInsufficientStorage {
+		return true
+	}
+	low := strings.ToLower(body)
+	return strings.Contains(low, "insufficient nand") || strings.Contains(low, "no space")
+}
+
 // UpdateBoxAgent ships the embedded ARM binary to the speaker. Preferred
 // path is HTTP POST to /api/agent/update on host:port — but only when a
 // preflight confirms STR's agent really answers there. On Series-I boxes
@@ -523,7 +572,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// SSH either (no :17000, or the unlock failed). Tell the user the
 			// one thing that always works — a one-time USB-stick update — rather
 			// than a raw "status 507".
-			if strings.Contains(err.Error(), "507") || strings.Contains(strings.ToLower(err.Error()), "insufficient nand") {
+			if errors.Is(err, errInsufficientNAND) {
 				return fmt.Errorf("the speaker's storage is full and it is on an older STR version that cannot free space over the network. Update this speaker once from a USB stick (that cleans up the storage and installs the current version); after that, updates manage the space themselves. Details: %w", err)
 			}
 			return fmt.Errorf("HTTP OTA failed (%w) and the SSH fallback also failed: %w", err, sshErr)
@@ -776,7 +825,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 		}
 		a.recordOTA(host, fmt.Sprintf("sidecar: not enough NAND for the engine right now (free=%dKB reclaimable=%dKB total=%dKB, need~%dKB) - skipping the upload to avoid thrashing; the agent will deliver it once space frees. See the diagnostic bundle's /mnt/nv listing for leftovers.", freeN/1024, reclaimable/1024, totalKB, need/1024))
 		a.logger.Warn("sidecar push: insufficient NAND, skipping the upload to avoid the retry thrash", "host", host, "freeBytes", freeN, "reclaimableBytes", reclaimable, "needBytes", need)
-		return false, fmt.Errorf("sidecar: %w (free=%d reclaimable=%d need=%d)", errInsufficientNAND, freeN, reclaimable, need)
+		return false, fmt.Errorf("sidecar: %w", &nandFullError{free: freeN, reclaimable: reclaimable, need: need})
 	}
 
 	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
@@ -1545,6 +1594,9 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if httpReplyMeansNANDFull(resp.StatusCode, string(body)) {
+			return "", finished, &nandFullError{status: resp.StatusCode, detail: string(body)}
+		}
 		return "", finished, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
 	// The success reply is small JSON (e.g. {mode: "ram-staged"}); return it so
@@ -1704,6 +1756,7 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// after the rename so the agent can report it.
 	err := sshPushFile(host, dst, bin, sshPushOptions{
 		preamble:    preamble,
+		needBytes:   needKB * 1024,
 		afterRename: fmt.Sprintf("printf %%s %s > %s.sha256", sha, dst),
 	})
 	var verifyErr *sshPushVerifyError

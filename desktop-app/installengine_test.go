@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -43,7 +44,9 @@ func TestInstallEndsWithTheEngineAfterATransientFailure(t *testing.T) {
 }
 
 func TestInstallEngineGivesUpAtOnceWhenItCannotFit(t *testing.T) {
-	a, calls, _ := engineTestApp(t, []error{errors.New("sidecar push: 507 insufficient NAND")})
+	// What EnsureSpotifyEngine returns when the agent answers 507: the typed
+	// verdict, wrapped the way pushSidecarIfNeeded wraps it.
+	a, calls, _ := engineTestApp(t, []error{fmt.Errorf("sidecar upload failed: %w", &nandFullError{status: 507, detail: "insufficient NAND space"})})
 	if why := a.ensureEngineAfterInstall("192.0.2.1"); !strings.Contains(why, "507") {
 		t.Fatalf("want the space refusal reported, got %q", why)
 	}

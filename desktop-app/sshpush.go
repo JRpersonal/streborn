@@ -27,9 +27,11 @@ type sshPushOptions struct {
 	// preamble is shell run in the upload session before the file is written:
 	// the space reclaim and df gates. Every statement ends with "; " so the
 	// mkdir that follows reads on from it. A preamble that refuses for space
-	// prints STR_NO_SPACE and exits 1; sshPushFile reports that as
-	// errInsufficientNAND instead of a failed upload.
-	preamble string
+	// prints STR_NO_SPACE and exits 1; sshPushFile reports that as a
+	// nandFullError (errors.Is errInsufficientNAND) instead of a failed
+	// upload, carrying needBytes when the caller states it.
+	preamble  string
+	needBytes int64
 	// afterRename is shell run after the verified file is renamed into place
 	// and before the final sync (the engine's .sha256 stamp). No trailing "&&".
 	afterRename string
@@ -179,7 +181,7 @@ func sshPushFile(host, dst string, data []byte, o sshPushOptions) error {
 		out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(data), o.uploadTimeout)
 		if err != nil {
 			if strings.Contains(out, "STR_NO_SPACE") {
-				return fmt.Errorf("%w: the speaker refused the push of %s for lack of space", errInsufficientNAND, dst)
+				return &nandFullError{need: o.needBytes, detail: "the speaker's df refused the push of " + dst}
 			}
 			lastErr = &sshPushUploadError{dst: dst, want: n, err: err, out: out}
 			continue
