@@ -226,7 +226,7 @@ func TestHandoverCoversTheQueuePush(t *testing.T) {
 	if !errors.Is(err, errNativeStationKept) {
 		t.Fatalf("err = %v, want errNativeStationKept", err)
 	}
-	if s.lastPlay != nil {
+	if s.play.last != nil {
 		t.Error("a push the speaker ignored was recorded as the last play")
 	}
 }

@@ -68,9 +68,9 @@ func TestSettleExhaustedRecall(t *testing.T) {
 			}
 			started := time.Now().Add(-30 * time.Second)
 			const gen = 7
-			s.recallGen = gen
+			s.play.recallGen = gen
 			if c.superseded {
-				s.recallGen = gen + 1
+				s.play.recallGen = gen + 1
 			}
 			if c.userStop {
 				s.NoteUserStop()

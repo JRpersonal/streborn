@@ -158,9 +158,9 @@ func TestResumeAfterZoneFormStandsDownWhenANewerPlaySupersededTheCapture(t *test
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // idle
 	newer := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "user's pick", ts: time.Now()}
-	s.lastPlayMu.Lock()
-	s.lastPlay = &newer
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.last = &newer
+	s.play.mu.Unlock()
 	s.resumeAfterZoneForm(zoneResume{
 		push: lastPlayInfo{boxURL: "http://192.0.2.33:17008/stream/2", title: "captured", ts: time.Now().Add(-time.Minute)},
 		ref:  nil, // nothing was on the master when the capture was taken

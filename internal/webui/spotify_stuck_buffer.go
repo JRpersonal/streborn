@@ -108,10 +108,7 @@ func (s *Server) stuckBufUserActed(since time.Time, boxURL string) (bool, string
 	if src := s.boxSourceNow(); !resumeSafeSource(src) {
 		return true, "the speaker is on a source the user chose: " + src
 	}
-	s.lastPlayMu.Lock()
-	same := s.lastPlay != nil && s.lastPlay.boxURL == boxURL
-	s.lastPlayMu.Unlock()
-	if !same {
+	if s.play.currentURL() != boxURL {
 		return true, "a different stream is on record"
 	}
 	return false, ""
@@ -122,14 +119,7 @@ func (s *Server) stuckBufUserActed(since time.Time, boxURL string) (bool, string
 // rescue) when a detach found the box still BUFFERING. Non-Spotify streams and
 // app-driven Spotify sessions are left as before.
 func (s *Server) rescueStuckSpotifyBuffering() {
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	var boxURL string
-	if lp != nil {
-		boxURL = lp.boxURL
-	}
-	lastRescue := s.stuckBufRescueAt
-	s.lastPlayMu.Unlock()
+	boxURL, lastRescue := s.play.stuckBufEpisode()
 	slot := slotFromSpotifyStreamURL(boxURL)
 	if slot <= 0 || !strings.Contains(boxURL, "spotify/stream") {
 		return
@@ -159,9 +149,7 @@ func (s *Server) rescueStuckSpotifyBuffering() {
 		s.logger.Info("spotify stuck buffering: not recalling, " + why)
 		return
 	}
-	s.lastPlayMu.Lock()
-	s.stuckBufRescueAt = time.Now()
-	s.lastPlayMu.Unlock()
+	s.play.noteStuckBufRescue(time.Now())
 	s.logger.Warn("spotify stuck buffering: recalling the preset once, cleanly", "slot", slot)
 	rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
 	status := s.recallSlotClean(rctx, slot)
@@ -170,9 +158,7 @@ func (s *Server) rescueStuckSpotifyBuffering() {
 	// NoteUserPlay). Re-stamp after it so that stamp does not reopen the
 	// episode, and anchor the "did the user act" check here.
 	recalled := time.Now()
-	s.lastPlayMu.Lock()
-	s.stuckBufRescueAt = recalled
-	s.lastPlayMu.Unlock()
+	s.play.noteStuckBufRescue(recalled)
 	if status >= 400 {
 		s.logger.Warn("spotify stuck buffering: the recall was refused", "slot", slot, "status", status)
 	}
@@ -194,12 +180,7 @@ func (s *Server) rescueStuckSpotifyBuffering() {
 // the detach saw; comparing against itself keeps that from reading as "the
 // user switched".
 func (s *Server) currentLastPlayURL() string {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	if s.lastPlay == nil {
-		return ""
-	}
-	return s.lastPlay.boxURL
+	return s.play.currentURL()
 }
 
 // stopStuckBuffering ends the stuck state: a plain transport stop (no power
@@ -210,11 +191,7 @@ func (s *Server) stopStuckBuffering(slot int) {
 	if s.renderer == nil {
 		return
 	}
-	s.lastPlayMu.Lock()
-	if s.lastPlay != nil {
-		s.lastPlay.failed = true
-	}
-	s.lastPlayMu.Unlock()
+	s.play.markFailed()
 	s.boxCmdMu.Lock()
 	// Re-check under the command mutex: a key press that held it meanwhile
 	// may have started the box.

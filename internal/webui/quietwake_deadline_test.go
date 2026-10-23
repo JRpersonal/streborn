@@ -128,11 +128,11 @@ func TestQuietWakeResumeWatchIsBounded(t *testing.T) {
 func TestNativeActivationIsNotAUserPlay(t *testing.T) {
 	s := quietServer("")
 	before := time.Now().Add(-time.Second)
-	s.lastPlay = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", ts: time.Now(), fromBox: true}
+	s.play.last = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", ts: time.Now(), fromBox: true}
 	if s.userPlayedSince(before) {
 		t.Fatal("the firmware's own native activation counted as a user play")
 	}
-	s.lastPlay = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/3", ts: time.Now()}
+	s.play.last = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/3", ts: time.Now()}
 	if !s.userPlayedSince(before) {
 		t.Fatal("a play STR pushed must still count")
 	}

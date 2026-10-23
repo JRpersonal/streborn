@@ -1146,12 +1146,10 @@ type zoneResume struct {
 // anything look superseded, so the takeover was captured and then dropped 1.5 s
 // later and the group formed with nothing to play (#965).
 func (s *Server) captureMasterResume() *lastPlayInfo {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	if s.lastPlay == nil {
+	cp, ok := s.play.snapshot()
+	if !ok {
 		return nil
 	}
-	cp := *s.lastPlay
 	return &cp
 }
 
@@ -1261,9 +1259,7 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
-	s.lastPlayMu.Lock()
-	cur := s.lastPlay
-	s.lastPlayMu.Unlock()
+	cur := s.play.current()
 	if resumeRefSuperseded(rz.ref, cur) {
 		s.logger.Info("zone: not restarting playback after forming, a newer play superseded it",
 			"captured", lp.boxURL, "current", lastPlayURL(cur))
@@ -2281,9 +2277,7 @@ func (s *Server) pushGroupDocToPartner(ctx context.Context, partnerIP, doc strin
 // each slave is only (re)pointed per slaveMirrorAction (never woken from
 // standby, never taken off another source it is playing).
 func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone, reconcile bool) {
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	lp := s.play.current()
 	if lp == nil || lp.boxURL == "" {
 		s.logger.Info("zone mirror: master is not playing yet; slaves will mirror once you start playback and the reconcile fires (beta)")
 		return

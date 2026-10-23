@@ -111,12 +111,12 @@ func TestAMemberTakeoverSurvivesTheMastersOwnOlderPlay(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // master idle
 	// What the master itself last played, minutes ago. This is masterRef, and
-	// it is also what s.lastPlay still holds, so nothing was superseded.
+	// it is also what s.play.last still holds, so nothing was superseded.
 	masterRef := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "181.FM"}
-	s.lastPlayMu.Lock()
+	s.play.mu.Lock()
 	cp := masterRef
-	s.lastPlay = &cp
-	s.lastPlayMu.Unlock()
+	s.play.last = &cp
+	s.play.mu.Unlock()
 	// What a member is playing and the master must take over.
 	member := lastPlayInfo{boxURL: "http://192.0.2.60:17008/stream/6", title: "Exclusively Rush"}
 
@@ -128,16 +128,16 @@ func TestAMemberTakeoverSurvivesTheMastersOwnOlderPlay(t *testing.T) {
 }
 
 // The other half of the same argument: the gate still has to fire. A real play
-// on the master between capture and push moves s.lastPlay away from masterRef,
+// on the master between capture and push moves s.play.last away from masterRef,
 // and then the stale takeover must not overwrite what the user just started.
 func TestARealPlayOnTheMasterStillCancelsTheTakeover(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false }
 	masterRef := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "181.FM"}
-	s.lastPlayMu.Lock()
+	s.play.mu.Lock()
 	newer := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", title: "something the user just pressed"}
-	s.lastPlay = &newer
-	s.lastPlayMu.Unlock()
+	s.play.last = &newer
+	s.play.mu.Unlock()
 	member := lastPlayInfo{boxURL: "http://192.0.2.60:17008/stream/6", title: "Exclusively Rush"}
 
 	s.resumeAfterZoneForm(zoneResume{push: member, ref: &masterRef, survivorReachesMembers: false})

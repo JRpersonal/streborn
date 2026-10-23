@@ -439,9 +439,6 @@ type Server struct {
 	// writes to wlan-creds / wpa_supplicant.conf.
 	wlanMu sync.Mutex
 
-	// lastPlay remembers the stream STR last told the box to play, so the
-	// auto-re-push (#4) can resume it when the Bose renderer drops a long
-	// stream on its own (reported: radio stops after ~11 min, no STR error).
 	// boxNowReadFn is THE test seam for "what does this speaker play right
 	// now": every own-box now_playing read in this package goes through
 	// readBoxNow (boxread.go), which calls this when set. nil = the real
@@ -481,42 +478,16 @@ type Server struct {
 	// file the speaker can be handed directly (#830). See customfile.go.
 	fileProbes fileProbes
 
-	lastPlayMu sync.Mutex
-	lastPlay   *lastPlayInfo
-	// rePushInFlight coalesces stream-drop resumes (see HandleStreamDisconnect).
-	// A SERVER-level latch on purpose, guarded by lastPlayMu: it used to live on
-	// lastPlayInfo, but setLastPlay replaces that struct on every fresh play, so
-	// a drop of the NEW stream while an older maybeRePush was still waiting out
-	// the recall-ownership window spawned a second concurrent re-pusher, and the
-	// first one's deferred release then cleared the latch the second one owned -
-	// the box got double SetURI+Play (two audible re-buffers) and a third
-	// goroutine could stack. One latch per Server survives the struct swap.
-	rePushInFlight bool
-	// stuckBufRescueAt is when the stuck-buffering rescue (spotify_stuck_
-	// buffer.go) last acted, guarded by lastPlayMu. One rescue per episode:
-	// only a user play newer than this opens the next one.
-	stuckBufRescueAt time.Time
+	// play is the stream STR last told the box to play and the bookkeeping
+	// that travels with it: recall generation, re-push latch, stuck-buffer
+	// rescue stamp, auto-resume guard, live ICY title, display-push debounce.
+	// See playsession.go; it has its own mutex.
+	play playSession
 	// stuckBufWait overrides the rescue's two waits for tests (0 = real).
 	stuckBufWait time.Duration
 	// playStateDetailFn overrides boxPlayStateDetail for tests. nil = the
 	// real :8090 probe (or playStateFn when only that one is set).
 	playStateDetailFn func() (standby, busy, buffering bool)
-	// recallGen counts every stream push recorded via setLastPlay. Each
-	// recall's verify loop captures the generation of its own play; any later
-	// play bumps it, telling the older verify it was superseded so it stands
-	// down instead of re-pushing its now-unwanted stream over the user's newer
-	// choice (two rapid preset presses used to ping-pong stations for ~15s).
-	// Guarded by lastPlayMu.
-	recallGen uint64
-	// resumeAttempts counts consecutive AUTOMATIC resume attempts (power-on
-	// resume / reconnect recovery) that never reached stable playback, and
-	// lastResumeAt is when the newest one was pushed. They drive the
-	// auto-resume crash-loop guard (#381, see resume_guard.go): a stream that
-	// crashes the box on playback otherwise loops boot -> auto-resume ->
-	// crash -> watchdog reboot forever. Guarded by lastPlayMu; persisted
-	// inside last-play.json so the count survives the very reboot it counts.
-	resumeAttempts int
-	lastResumeAt   time.Time
 	// lastPlayPath is the NAND file the last-played stream is persisted to, so
 	// the power-on resume survives an agent restart across a long/overnight
 	// standby (in-RAM only lost the station and the box fell back to its native
@@ -738,25 +709,6 @@ type Server struct {
 	// clock format (displaytrack_panel.go).
 	panelState
 
-	// lastDisplayPush debounces the ICY display push so a station that flips its
-	// StreamTitle between the song and promo/talk lines does not cause a re-buffer
-	// gap every few seconds. Guarded by lastPlayMu.
-	lastDisplayPush time.Time
-	// lastDisplayShown and lastDisplayFor remember what the last display push
-	// put on screen and for which play. A push re-buffers the box, so a title
-	// change that would show the SAME text (artist mode across two songs by one
-	// artist, or a station that blanks its StreamTitle between songs and then
-	// resends the same one) is skipped instead of costing an audible gap for
-	// nothing (#500). Keyed on the lastPlay pointer so a new play always pushes.
-	// Guarded by lastPlayMu.
-	lastDisplayShown string
-	lastDisplayFor   *lastPlayInfo
-	// lastICYTitle is the most recent radio StreamTitle seen, kept so enabling the
-	// display push or changing its mode can show the CURRENT track immediately
-	// instead of waiting for the next title change. Guarded by lastPlayMu.
-	lastICYTitle  string
-	tuneInStation tuneInNowStation // the TuneIn station last resolved, for the now-playing answer (#500)
-
 	// displayMsg is the bookkeeping for the short messages on the speaker
 	// display when a key cannot play (displaymsg.go).
 	displayMsg displayMsgState
@@ -925,9 +877,9 @@ type recentCardCtx struct {
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
 // drives an exponential backoff; once it hits maxRePushes the stream is marked
 // failed and never re-pushed again until a fresh play (setLastPlay) replaces it.
-// The drop-coalescing latch lives on the Server (rePushInFlight), NOT here: a
-// per-play latch died with every setLastPlay struct swap and let concurrent
-// re-pushers stack (see the Server field).
+// The drop-coalescing latch lives on the playSession (rePushInFlight), NOT
+// here: a per-play latch died with every setLastPlay struct swap and let
+// concurrent re-pushers stack (see playsession.go).
 type lastPlayInfo struct {
 	boxURL, title, art, mime string
 	ts                       time.Time

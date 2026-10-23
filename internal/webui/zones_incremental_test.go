@@ -131,10 +131,10 @@ func TestResumeAfterZoneFormPushesTheSurvivorOnAFreshForm(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, true } // still playing
 	lp := lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"}
-	s.lastPlayMu.Lock()
+	s.play.mu.Lock()
 	cp := lp
-	s.lastPlay = &cp
-	s.lastPlayMu.Unlock()
+	s.play.last = &cp
+	s.play.mu.Unlock()
 	s.resumeAfterZoneForm(zoneResume{push: lp, ref: &cp, survivorReachesMembers: false})
 	if !rec.has("SetAVTransportURI") {
 		t.Fatalf("fresh form with a surviving master stream, but no re-push reached the members: %v", rec.list())
@@ -146,10 +146,10 @@ func TestResumeAfterZoneFormPushesWhenBoxWentSilent(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // idle
 	lp := lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"}
-	s.lastPlayMu.Lock()
+	s.play.mu.Lock()
 	cp := lp
-	s.lastPlay = &cp // the capture in handleZoneForm is a copy of lastPlay
-	s.lastPlayMu.Unlock()
+	s.play.last = &cp // the capture in handleZoneForm is a copy of lastPlay
+	s.play.mu.Unlock()
 	s.resumeAfterZoneForm(zoneResume{push: lp, ref: &cp, survivorReachesMembers: true})
 	if !rec.has("SetAVTransportURI") {
 		t.Fatalf("box went silent but no re-push was sent: %v", rec.list())

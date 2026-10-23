@@ -195,10 +195,7 @@ func (s *Server) handleTuneInStation(r *http.Request) (int, []byte) {
 	d.Links = map[string]bmxLink{"bmx_nowplaying": {Href: np, UseInternalClient: "ALWAYS"}}
 	d.NowPlayingURI = np
 	// a title from the previous station must not reach this one
-	s.lastPlayMu.Lock()
-	s.lastICYTitle = ""
-	s.tuneInStation = tuneInNowStation{id: id, name: name, image: d.ImageURL}
-	s.lastPlayMu.Unlock()
+	s.play.setTuneInStation(tuneInNowStation{id: id, name: name, image: d.ImageURL})
 	s.logger.Info("bmx tunein: station resolved", "path", r.URL.Path, "id", id, "name", name, "streamHost", host, "nowPlaying", np)
 	return bmxJSON(http.StatusOK, d)
 }
@@ -220,9 +217,7 @@ type tuneInNowStation struct {
 // title of the station the speaker plays, split into artist and song where
 // the title reads "Artist - Song". Without a title yet, the station name.
 func (s *Server) handleTuneInNowPlaying(r *http.Request) (int, []byte) {
-	s.lastPlayMu.Lock()
-	title, st := s.lastICYTitle, s.tuneInStation
-	s.lastPlayMu.Unlock()
+	title, st := s.play.tuneInNow()
 	var np tuneInNowPlaying
 	np.Links = map[string]bmxLink{"self": {Href: strings.TrimPrefix(r.URL.Path, "/bmx/tunein")}}
 	np.StreamType = "liveRadio"

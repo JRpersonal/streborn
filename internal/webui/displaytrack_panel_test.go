@@ -69,7 +69,7 @@ func newTrackServer(t *testing.T, panel bool) (*Server, *fakeTrackPanel, func() 
 	if err := writeFlagFile(s.displayTrackPath, "1"); err != nil {
 		t.Fatal(err)
 	}
-	s.lastPlay = &lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "Radio Bob", mime: "audio/mpeg"}
+	s.play.last = &lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "Radio Bob", mime: "audio/mpeg"}
 	return s, fp, func() []string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -159,9 +159,9 @@ func TestPlaceholderStreamTitleShowsTheStationName(t *testing.T) {
 		if want := (oled.TrackText{Title: "Radio Bob"}); len(shown) != 2 || shown[1] != want {
 			t.Errorf("%q: panel got %+v, want the station name alone last", in, shown)
 		}
-		s.lastPlayMu.Lock()
-		last := s.lastICYTitle
-		s.lastPlayMu.Unlock()
+		s.play.mu.Lock()
+		last := s.play.lastICYTitle
+		s.play.mu.Unlock()
 		if last != "" {
 			t.Errorf("%q: lastICYTitle = %q, want it forgotten", in, last)
 		}

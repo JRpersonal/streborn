@@ -92,9 +92,7 @@ func (s *Server) groupWakeEpisode() (active bool, since time.Time) {
 // firmware activated by itself does not count: inside a group wake that is its
 // power-on resume (NoteNativeLastPlay).
 func (s *Server) userPlayedSince(t time.Time) bool {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	return s.lastPlay != nil && !s.lastPlay.fromBox && s.lastPlay.ts.After(t)
+	return s.play.userPlayedSince(t)
 }
 
 // groupWakeNowPlaying is the read seam for stopGroupWakeSelfResume, the same

@@ -160,7 +160,7 @@ func TestTuneInNowPlaying(t *testing.T) {
 	var logs bytes.Buffer
 	s := bmxTestServer(&logs)
 	// a title left over from whatever played before
-	s.lastICYTitle = "Old Artist - Old Song"
+	s.play.lastICYTitle = "Old Artist - Old Song"
 
 	rr := httptest.NewRecorder()
 	s.handleBMX(rr, httptest.NewRequest(http.MethodGet, "/bmx/tunein/v1/playback/station/s25260", nil))

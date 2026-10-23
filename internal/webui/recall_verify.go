@@ -218,9 +218,7 @@ func (s *Server) settleExhaustedRecall(gen uint64, started time.Time) string {
 // recallStandDownReason gathers the live inputs for verifyStandDownReason: the
 // current recall generation and the last user-stop / power-off stamps.
 func (s *Server) recallStandDownReason(gen uint64, started time.Time) string {
-	s.lastPlayMu.Lock()
-	curGen := s.recallGen
-	s.lastPlayMu.Unlock()
+	curGen := s.play.gen()
 	s.lastUserStopMu.Lock()
 	userStop := s.lastUserStop
 	s.lastUserStopMu.Unlock()

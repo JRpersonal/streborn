@@ -195,11 +195,9 @@ func (s *Server) panelText() (oled.TrackText, bool) {
 		return oled.TrackText{}, false
 	}
 	if m.kind == panelRadio {
-		s.lastPlayMu.Lock()
-		if s.lastPlay != nil {
-			m.station = s.lastPlay.title
+		if lp := s.play.current(); lp != nil {
+			m.station = lp.title
 		}
-		s.lastPlayMu.Unlock()
 	}
 	t := oled.TrackText{Station: m.station}
 	if trackOn {

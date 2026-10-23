@@ -257,13 +257,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // station name of its own, the empty <stationName> gets lastPlay's title. The
 // body stays the speaker's own XML otherwise: clients regex-parse it.
 func (s *Server) withStationName(body []byte) []byte {
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
 	var url, title string
-	if lp != nil {
+	if lp := s.play.current(); lp != nil {
 		url, title = lp.boxURL, lp.title
 	}
-	s.lastPlayMu.Unlock()
 	return annotateStationName(body, url, title)
 }
 

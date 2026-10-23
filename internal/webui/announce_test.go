@@ -235,7 +235,7 @@ func TestAnnounceResumesAUPnPStreamWithTheWrongStateRepair(t *testing.T) {
 	radio := "http://stream.example/nova.mp3"
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: "UPNP", Location: radio, ItemName: "Nova", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
-	s.lastPlay = &lastPlayInfo{boxURL: radio, title: "Nova", art: "http://art.example/nova.png", mime: "audio/mpeg"}
+	s.play.last = &lastPlayInfo{boxURL: radio, title: "Nova", art: "http://art.example/nova.png", mime: "audio/mpeg"}
 	// Arm the fault only for the resume: the clip has played by then.
 	s.announceSetVolumeFn = func(ctx context.Context, v int) error {
 		if v == 35 {

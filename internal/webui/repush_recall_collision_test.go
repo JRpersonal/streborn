@@ -145,9 +145,9 @@ func TestStreamDropCoalescingSurvivesNewPlay(t *testing.T) {
 	}
 	// The deferred release must free the SERVER latch even though lastPlay was
 	// swapped mid-run, so a later genuine drop can re-arm.
-	s.lastPlayMu.Lock()
-	latched := s.rePushInFlight
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	latched := s.play.rePushInFlight
+	s.play.mu.Unlock()
 	if latched {
 		t.Fatal("the coalescing latch must be released after the re-pusher exits")
 	}

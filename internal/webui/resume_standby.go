@@ -62,27 +62,22 @@ func (s *Server) ResumeLastPlay() {
 		s.logger.Info("wake resume: box was just rebooted for an agent update, not resuming (post-OTA suppression)")
 		return
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
 	// Split the two no-resume reasons so a diagnostic shows which one hit, and
 	// allow a much longer age than the old 12h: a power press after an overnight
 	// (or weekend) standby still expects the last station back, like Bose did
 	// (#119 Klaus). The persisted lastPlay (NAND) survives the agent restart that
 	// a long standby often triggers, so this age is what actually gates now.
-	if lp == nil {
-		s.lastPlayMu.Unlock()
+	lp, tooOld, ok := s.play.rearmForResume(resumeMaxAge)
+	if !ok {
+		if tooOld {
+			age := time.Since(lp.ts)
+			s.logger.Info("wake resume: last station too old to resume", "ageHours", int(age.Hours()), "maxHours", int(resumeMaxAge.Hours()))
+			return
+		}
 		s.logger.Info("wake resume: no last station remembered (no resume target on NAND yet)")
 		return
 	}
-	if age := time.Since(lp.ts); age >= resumeMaxAge {
-		s.lastPlayMu.Unlock()
-		s.logger.Info("wake resume: last station too old to resume", "ageHours", int(age.Hours()), "maxHours", int(resumeMaxAge.Hours()))
-		return
-	}
-	lp.failed = false
-	lp.rePushes = 0
 	boxURL, title, art, mime, capturedTS := lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
-	s.lastPlayMu.Unlock()
 
 	go func() {
 		// What the box reports at the MOMENT of the wake, before the settle
@@ -220,9 +215,7 @@ func (s *Server) ResumeLastPlay() {
 		// captured at entry would replace the user's NEW station with the
 		// PREVIOUS one (#252: recall slot 5 right after a wake ended up back on
 		// slot 4). Re-read lastPlay under the lock and stand down when it moved.
-		s.lastPlayMu.Lock()
-		cur := s.lastPlay
-		s.lastPlayMu.Unlock()
+		cur := s.play.current()
 		if resumeIsStale(boxURL, capturedTS, cur) {
 			s.logger.Info("wake resume: a newer play started while this resume waited, standing down",
 				"captured", boxURL, "current", lastPlayURL(cur))
@@ -323,17 +316,14 @@ func (s *Server) RecoverAfterReconnect() {
 		s.logger.Info("reconnect recovery: box just dropped to standby, not resuming (#197)")
 		return
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
 	// The strict age gate depends on WHAT the box is stuck on and is applied
 	// below once the selection is known (reconnectResumeWindow); here only the
 	// generous outer bound shared with the power-on resume applies.
-	if lp == nil || time.Since(lp.ts) >= resumeMaxAge {
-		s.lastPlayMu.Unlock()
+	lp, ok := s.play.snapshot()
+	if !ok || time.Since(lp.ts) >= resumeMaxAge {
 		return
 	}
 	boxURL, title, art, mime, capturedTS := lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
-	s.lastPlayMu.Unlock()
 
 	go func() {
 		// Let the wake settle so the box's reported state is unambiguous before
@@ -375,9 +365,7 @@ func (s *Server) RecoverAfterReconnect() {
 		// Same anti-clobber guard as the power-on resume (#252): a play/recall
 		// that held boxCmdMu while this recovery waited has updated lastPlay, and
 		// pushing the entry capture now would replace the user's new stream.
-		s.lastPlayMu.Lock()
-		cur := s.lastPlay
-		s.lastPlayMu.Unlock()
+		cur := s.play.current()
 		if resumeIsStale(boxURL, capturedTS, cur) {
 			s.logger.Info("reconnect recovery: a newer play started while this recovery waited, standing down",
 				"captured", boxURL, "current", lastPlayURL(cur))
@@ -1574,14 +1562,11 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 			"reason", map[bool]string{true: "another recovery ran just now", false: "auto-resume blocked (crash-loop guard or opt-out)"}[tooSoon])
 		return
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
 	var boxURL, title, art, mime string
 	var capturedTS time.Time
-	if lp != nil {
+	if lp, ok := s.play.snapshot(); ok {
 		boxURL, title, art, mime, capturedTS = lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
 	}
-	s.lastPlayMu.Unlock()
 	if boxURL == "" {
 		s.logger.Info("spontaneous-off recovery: no last-play to restore, standing down")
 		return
@@ -1624,9 +1609,7 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		s.boxCmdMu.Lock()
 		defer s.boxCmdMu.Unlock()
 		// A newer user play may have raced this recovery; never clobber it (#252).
-		s.lastPlayMu.Lock()
-		cur := s.lastPlay
-		s.lastPlayMu.Unlock()
+		cur := s.play.current()
 		if resumeIsStale(boxURL, capturedTS, cur) {
 			s.logger.Info("spontaneous-off recovery: a newer play started while settling, standing down")
 			return
@@ -1766,9 +1749,7 @@ func (s *Server) RunDeferredResume() {
 		s.logger.Info("deferred resume: a deliberate stop or a zone is in play, standing down")
 		return
 	}
-	s.lastPlayMu.Lock()
-	cur := s.lastPlay
-	s.lastPlayMu.Unlock()
+	cur := s.play.current()
 	if resumeIsStale(d.boxURL, d.capturedTS, cur) {
 		s.logger.Info("deferred resume: a newer play took over, standing down")
 		return
@@ -1802,20 +1783,12 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 	if upstreamErr != nil {
 		return // upstream failed; not a box-side drop, leave it alone
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
 	// Coalesce. Skip when there is no recent stream, the stream was already
-	// declared dead, or a resume is already in flight. A dead/moved URL fires a
-	// disconnect on EVERY failed resume; without this latch each one spawned a
-	// fresh maybeRePush goroutine, producing the dozens-per-second runaway that
-	// starved :8888 (v0.7.5). The latch is Server-level so it survives
-	// setLastPlay swapping the lastPlayInfo struct mid-wait.
-	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || s.rePushInFlight {
-		s.lastPlayMu.Unlock()
+	// declared dead, or a resume is already in flight (see tryClaimRePush for
+	// the v0.7.5 runaway the latch exists for).
+	if !s.play.tryClaimRePush() {
 		return
 	}
-	s.rePushInFlight = true
-	s.lastPlayMu.Unlock()
 	go s.maybeRePush()
 }
 
@@ -1839,14 +1812,9 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 // a live Ogg. Which detaches are worth reporting is decided in the Spotify
 // manager, not here.
 func (s *Server) HandleSpotifyStreamDetach(attachedMs int64) {
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || s.rePushInFlight {
-		s.lastPlayMu.Unlock()
+	if !s.play.tryClaimRePush() {
 		return
 	}
-	s.rePushInFlight = true
-	s.lastPlayMu.Unlock()
 	s.logger.Info("spotify: the speaker dropped the stream, checking whether to bring it back", "playedForSec", attachedMs/1000)
 	go s.maybeRePush()
 }
@@ -1862,11 +1830,7 @@ func (s *Server) maybeRePush() {
 	// (HandleStreamDisconnect refuses to spawn a second goroutine until then).
 	// The latch is a Server field, so this release cannot land on the wrong
 	// struct after setLastPlay swapped lastPlay mid-run.
-	defer func() {
-		s.lastPlayMu.Lock()
-		s.rePushInFlight = false
-		s.lastPlayMu.Unlock()
-	}()
+	defer s.play.releaseRePush()
 
 	// Exponential backoff keyed on how many attempts this stream already took:
 	// 2s, 2s, 4s, 8s, 16s (capped at 30s). A dead/moved URL drops the moment it
@@ -1874,14 +1838,10 @@ func (s *Server) maybeRePush() {
 	// second; the backoff spaces the (few) attempts out instead. The first wait
 	// also serves the original purpose of telling a user power-off (box reaches
 	// STANDBY in ~1-2s) from a renderer drop while the box stays on.
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	if lp == nil {
-		s.lastPlayMu.Unlock()
+	attempt, ok := s.play.rePushAttempt()
+	if !ok {
 		return
 	}
-	attempt := lp.rePushes
-	s.lastPlayMu.Unlock()
 	backoff := 2 * time.Second
 	if attempt > 1 {
 		backoff = time.Duration(1<<uint(attempt)) * time.Second
@@ -1961,11 +1921,7 @@ func (s *Server) maybeRePush() {
 		// decorative (#844). A box that is buffering has not recovered, it is
 		// still trying.
 		if !buffering {
-			s.lastPlayMu.Lock()
-			if s.lastPlay != nil {
-				s.lastPlay.rePushes = 0
-			}
-			s.lastPlayMu.Unlock()
+			s.play.resetRePushes()
 			return
 		}
 		// A box that let go of the stream but still shows BUFFERING used to
@@ -2049,27 +2005,20 @@ func (s *Server) maybeRePush() {
 		return
 	}
 
-	s.lastPlayMu.Lock()
-	lp = s.lastPlay
-	if lp == nil {
-		s.lastPlayMu.Unlock()
+	lp, gaveUp, ok := s.play.nextRePush()
+	if !ok {
 		return
 	}
-	if lp.rePushes >= maxRePushes {
+	if gaveUp {
 		// Hard stop. The stream keeps dropping (a dead/moved radio-browser URL,
-		// 503, etc.). Mark it dead so no further disconnect re-arms it; only a
-		// fresh play (setLastPlay) clears this. This is the fix for the runaway
-		// that re-armed forever and starved the control port.
-		lp.failed = true
-		url := lp.boxURL
-		s.lastPlayMu.Unlock()
+		// 503, etc.). nextRePush marked it dead so no further disconnect
+		// re-arms it; only a fresh play (setLastPlay) clears this. This is the
+		// fix for the runaway that re-armed forever and starved the control port.
 		s.logger.Warn("re-push: stream keeps dropping, giving up for good (likely a dead/moved URL); not retrying until a new play",
-			"url", url, "attempts", maxRePushes)
+			"url", lp.boxURL, "attempts", maxRePushes)
 		return
 	}
-	lp.rePushes++
 	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
-	s.lastPlayMu.Unlock()
 
 	// A Spotify preset goes back through the clean slot recall, not through the
 	// bare re-point below. Re-pointing the box at a live Ogg mid-stream hands
@@ -2145,12 +2094,10 @@ func (s *Server) HandleStreamTitle(title string) {
 	// the remembered live title (#1305). It counts as "no title".
 	placeholder := false
 	if title != "" {
-		s.lastPlayMu.Lock()
 		station := ""
-		if s.lastPlay != nil {
-			station = s.lastPlay.title
+		if lp := s.play.current(); lp != nil {
+			station = lp.title
 		}
-		s.lastPlayMu.Unlock()
 		if isPlaceholderStreamTitle(title, station) {
 			s.logger.Debug("stream title dropped as placeholder", "title", title, "station", station)
 			title, placeholder = "", true
@@ -2164,9 +2111,7 @@ func (s *Server) HandleStreamTitle(title string) {
 	// the CURRENT track immediately (see pushDisplayNow), not only the next one.
 	// A placeholder forgets the song before it: that one is no longer playing.
 	if title != "" || placeholder {
-		s.lastPlayMu.Lock()
-		s.lastICYTitle = title
-		s.lastPlayMu.Unlock()
+		s.play.setICYTitle(title)
 	}
 	enabled := s.displayTrackEnabled()
 	// Where STR can draw on the panel itself, the track goes there and the
@@ -2190,10 +2135,7 @@ func (s *Server) HandleStreamTitle(title string) {
 	}
 	// Rate-limit: re-buffering the box on every StreamTitle flip (song <-> promo)
 	// would gap the audio constantly. Skip if we pushed within the last window.
-	s.lastPlayMu.Lock()
-	throttled := !s.lastDisplayPush.IsZero() && time.Since(s.lastDisplayPush) < minDisplayPushInterval
-	s.lastPlayMu.Unlock()
-	if throttled {
+	if s.play.displayPushThrottled(minDisplayPushInterval) {
 		s.logger.Debug("display title push throttled", "title", title)
 		return
 	}
@@ -2220,16 +2162,12 @@ func (s *Server) setDisplayText(shown string) {
 		s.logger.Info("display title not pushed: the segment display cannot show it", "shown", shown)
 		return
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
+	lp := s.play.claimDisplayPush()
 	if lp == nil {
-		s.lastPlayMu.Unlock()
 		s.logger.Info("display push skipped: no active stream", "shown", shown)
 		return
 	}
 	boxURL, art, mime := lp.boxURL, lp.art, lp.mime
-	s.lastDisplayPush = time.Now()
-	s.lastPlayMu.Unlock()
 	if boxURL == "" {
 		s.logger.Info("display push skipped: empty box URL", "shown", shown)
 		return
@@ -2260,18 +2198,14 @@ func (s *Server) setDisplayText(shown string) {
 // noteDisplayShown records that shown is on the display for play lp, so an
 // identical follow-up push can be skipped (see displayAlreadyShows).
 func (s *Server) noteDisplayShown(lp *lastPlayInfo, shown string) {
-	s.lastPlayMu.Lock()
-	s.lastDisplayShown, s.lastDisplayFor = shown, lp
-	s.lastPlayMu.Unlock()
+	s.play.noteDisplayShown(lp, shown)
 }
 
 // displayAlreadyShows reports whether the last successful display push for the
 // CURRENT play put exactly shown on screen. A new play (a new lastPlay record)
 // never counts as shown, so a station switch always gets its first push.
 func (s *Server) displayAlreadyShows(shown string) bool {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	return shown != "" && s.lastPlay != nil && s.lastDisplayFor == s.lastPlay && s.lastDisplayShown == shown
+	return s.play.displayAlreadyShows(shown)
 }
 
 // pushDisplayTitle re-issues the now-playing metadata so the configured display
@@ -2297,10 +2231,7 @@ func (s *Server) pushDisplayNow() {
 	if !s.displayTrackEnabled() {
 		return
 	}
-	s.lastPlayMu.Lock()
-	cur := s.lastICYTitle
-	s.lastPlayMu.Unlock()
-	if cur != "" {
+	if cur := s.play.icyTitle(); cur != "" {
 		s.pushDisplayTitle(cur)
 	}
 }
@@ -2314,12 +2245,10 @@ func (s *Server) pushDisplayDefault() {
 	if standby, busy := s.boxPlayState(); standby || !busy {
 		return
 	}
-	s.lastPlayMu.Lock()
 	title := ""
-	if s.lastPlay != nil {
-		title = s.lastPlay.title
+	if lp := s.play.current(); lp != nil {
+		title = lp.title
 	}
-	s.lastPlayMu.Unlock()
 	if title != "" {
 		s.setDisplayText(title)
 	}

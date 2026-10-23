@@ -427,15 +427,10 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 	// re-push the last station from under the lock.
 	s.NoteUserPlay()
 	s.ensureBoxReady(r.Context())
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
 	var boxURL, title, art, mime string
-	if lp != nil {
-		lp.failed = false
-		lp.rePushes = 0
+	if lp, _, ok := s.play.rearmForResume(0); ok {
 		boxURL, title, art, mime = lp.boxURL, lp.title, lp.art, lp.mime
 	}
-	s.lastPlayMu.Unlock()
 	if boxURL != "" {
 		if err := s.renderer.PlayURLMime(r.Context(), boxURL, title, art, mime); err != nil {
 			s.logger.Warn("power on: resume of last station failed", "err", err)
