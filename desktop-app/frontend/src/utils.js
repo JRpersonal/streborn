@@ -713,6 +713,18 @@ export function presetRevChanged(prev, next) {
   return next !== prev;
 }
 
+// isLibraryPreset reports whether a key plays from a music library: a saved
+// album or folder (type queue), or a single track that names its media server
+// (source) or carries a track list. The radio-directory logo heal must skip
+// these: a folder named "Jazz" would otherwise be looked up as a station and
+// painted with some radio's logo while its own cover sits on the server (#1366).
+export function isLibraryPreset(p) {
+  if (!p) return false;
+  if (p.type === 'queue') return true;
+  if (p.source) return true;
+  return !!(p.items && p.items.length);
+}
+
 // presetOwnArt is the artwork a key carries itself: its stored art, or for a
 // music-library album or folder key, which stores none at preset level, the
 // cover of the first track that has one (the media server's upnp:albumArtURI,

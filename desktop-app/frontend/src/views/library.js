@@ -67,6 +67,7 @@ const libState = {
   capped: false,      // true when a folder exceeds LIB_MAX and was truncated
   filter: '',         // folder search text (client-side filter over the loaded items)
   browseToken: 0,     // bumped on each browse so a stale background page-loop abandons
+  nudged: new Set(),  // "box|udn|address" the speaker was told to look up (nudgeBoxLibrary)
   shuffle: false,     // "Play folder" shuffle toggle (UI state, default off)
   repeat: 'off',      // "Play folder" repeat mode: "off" | "all" | "one" (default off)
   // The whole-library search across every media server (#1325). active means
@@ -386,6 +387,31 @@ export function looksUnreachable(e) {
   ].some(x => m.includes(x));
 }
 
+// nudgeBoxLibrary has the speaker look the server up itself, once per server
+// and address this session, right after this app browsed it.
+//
+// The app browses a media server on its own, so the speaker only hears where
+// the server lives when a folder is played from here. A folder key whose
+// server got a new address therefore stayed on the old one, dark and with a
+// placeholder for a cover, until somebody pressed it or played its folder
+// (#1366). The agent's own browse of the server's root resolves the server
+// afresh and moves that server's keys to the address it answers at; its reply
+// is of no interest here. The address is not handed over: the speaker finds
+// the server itself, so this cannot point a key anywhere a browse would not.
+// Fire and forget, generously timed: on a box that cannot see the server at
+// once, the resolve walks the whole chain before it answers, and an aborted
+// request would cancel that walk. An older agent simply answers the page.
+function nudgeBoxLibrary(udn) {
+  const box = state.currentBox;
+  if (!box || box.kind === 'stock' || !udn) return;
+  const srv = libState.servers.find(s => s.udn === udn);
+  const key = `${box.host}|${udn}|${(srv && srv.address) || ''}`;
+  if (libState.nudged.has(key)) return;
+  libState.nudged.add(key);
+  const path = `/api/library/browse?udn=${encodeURIComponent(udn)}&id=0&start=0`;
+  boxFetch(box, path, {}, 75000).catch(() => { /* box asleep or older agent */ });
+}
+
 async function libraryBrowseCurrent() {
   if (!libState.currentUDN) return;
   const top = libState.stack[libState.stack.length - 1];
@@ -419,6 +445,7 @@ async function libraryBrowseCurrent() {
         libState.loadingMore = !done && !capped;
         renderLibrary();
         first = false;
+        nudgeBoxLibrary(libState.currentUDN);
       }
       if (done || capped) {
         libState.capped = capped && !done;
