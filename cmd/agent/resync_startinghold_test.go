@@ -40,17 +40,17 @@ func TestAPlayThatIsStartingHoldsTheForcedPass(t *testing.T) {
 }
 
 func TestSinceLastUserPlayWithoutAWebuiIsUnknown(t *testing.T) {
-	old := lastUserPlayStartFn
-	t.Cleanup(func() { lastUserPlayStartFn = old })
-	lastUserPlayStartFn = nil
+	old := lastUserPlayStartFn.Load()
+	t.Cleanup(func() { lastUserPlayStartFn.Store(old) })
+	setLastUserPlayStartFn(nil)
 	if d := sinceLastUserPlay(); d >= 0 {
 		t.Fatalf("no webui wired, got %v, want -1", d)
 	}
-	lastUserPlayStartFn = func() time.Time { return time.Time{} }
+	setLastUserPlayStartFn(func() time.Time { return time.Time{} })
 	if d := sinceLastUserPlay(); d >= 0 {
 		t.Fatalf("never played, got %v, want -1", d)
 	}
-	lastUserPlayStartFn = func() time.Time { return time.Now().Add(-5 * time.Second) }
+	setLastUserPlayStartFn(func() time.Time { return time.Now().Add(-5 * time.Second) })
 	if d := sinceLastUserPlay(); d < 4*time.Second || d > 10*time.Second {
 		t.Fatalf("played 5 s ago, got %v", d)
 	}
@@ -77,7 +77,7 @@ func TestTheReconcileLoopUsesTheStartHoldAndForgetsStandbyTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(m), "lastUserPlayStartFn = webuiSrv.LastUserPlayStart") {
+	if !strings.Contains(string(m), "setLastUserPlayStartFn(webuiSrv.LastUserPlayStart)") {
 		t.Error("the start hold is not wired to the webui, so it never holds")
 	}
 }

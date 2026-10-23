@@ -55,9 +55,9 @@ func TestSelfDeviceIDsDropsEmpties(t *testing.T) {
 // matchesSelfDeviceIDWith runs the roster's self-check against a fixed list, so
 // the case rules can be tested without touching the package seam.
 func matchesSelfDeviceIDWith(ids []string, id string) bool {
-	prev := peerSelfDeviceIDsFn
-	defer func() { peerSelfDeviceIDsFn = prev }()
-	peerSelfDeviceIDsFn = func() []string { return ids }
+	prev := peerSelfDeviceIDsFn.Load()
+	defer func() { peerSelfDeviceIDsFn.Store(prev) }()
+	setPeerSelfDeviceIDsFn(func() []string { return ids })
 	return matchesSelfDeviceID(id)
 }
 
@@ -81,14 +81,14 @@ func TestMatchesSelfDeviceIDIgnoresCase(t *testing.T) {
 // resolves a speaker's id from the firmware where it can, so its seeds and zone
 // rows can name a box by an id its own mDNS record never carried.
 func TestPurgeSelfPeersAlsoDropsTheFirmwareIdentity(t *testing.T) {
-	prevDev, prevName := peerSelfDeviceIDsFn, peerSelfNameFn
-	defer func() { peerSelfDeviceIDsFn, peerSelfNameFn = prevDev, prevName }()
-	peerSelfDeviceIDsFn = func() []string {
+	prevDev, prevName := peerSelfDeviceIDsFn.Load(), peerSelfNameFn.Load()
+	defer func() { peerSelfDeviceIDsFn.Store(prevDev); peerSelfNameFn.Store(prevName) }()
+	setPeerSelfDeviceIDsFn(func() []string {
 		return selfDeviceIDs("AABBCCDDEEFF",
 			func() string { return "AABBCCDDEEFF" },
 			func() string { return "112233445566" })
-	}
-	peerSelfNameFn = func() string { return "Küche" }
+	})
+	setPeerSelfNameFn(func() string { return "Küche" })
 
 	peersMu.Lock()
 	peersByIP = map[string]*peerEntry{

@@ -648,10 +648,19 @@ func resyncSafeSource(src string) bool {
 	}
 }
 
-// lastUserPlayStartFn is wired to the webui's LastUserPlayStart in main.go.
-// Left nil in tests and in builds without a webui, where it reads as "no play
-// is starting".
-var lastUserPlayStartFn func() time.Time
+// lastUserPlayStartFn is wired to the webui's LastUserPlayStart in main.go
+// (setLastUserPlayStartFn). Unset in tests and in builds without a webui,
+// where it reads as "no play is starting". Atomic because the reconcile loop
+// starts before the webui server that answers it exists.
+var lastUserPlayStartFn atomic.Pointer[func() time.Time]
+
+func setLastUserPlayStartFn(fn func() time.Time) {
+	if fn == nil {
+		lastUserPlayStartFn.Store(nil)
+		return
+	}
+	lastUserPlayStartFn.Store(&fn)
+}
 
 // userPlayStartWindow is how long after an app or phone play the speaker may
 // still be on its way to the stream: woken from standby, switching off its
@@ -684,10 +693,11 @@ func userPlayStartingHold(src string, playing, playKnown bool, sinceUserPlay tim
 // sinceLastUserPlay is how long ago a user last asked for playback, -1 when
 // unknown or never.
 func sinceLastUserPlay() time.Duration {
-	if lastUserPlayStartFn == nil {
+	fn := lastUserPlayStartFn.Load()
+	if fn == nil {
 		return -1
 	}
-	at := lastUserPlayStartFn()
+	at := (*fn)()
 	if at.IsZero() {
 		return -1
 	}

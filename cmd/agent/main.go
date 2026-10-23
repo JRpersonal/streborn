@@ -978,15 +978,15 @@ func run() error {
 	// its own native preset write makes the firmware select the radio source
 	// and play, which is silent on a speaker that was already idle and a room
 	// full of music on one that was just woken and un-muted (#900). The
-	// reconcile loop sleeps before its first pass, so wiring it here is early
-	// enough.
-	quietWakeEpisodeActive = webuiSrv.QuietWakeEpisodeActive
+	// reconcile loop sleeps before its first pass, and the seams are atomic,
+	// so wiring it here is early enough and race-free.
+	setQuietWakeEpisodeActive(webuiSrv.QuietWakeEpisodeActive)
 	// ... and when the user last asked for playback, so a forced pass does not
 	// write into a play that is still starting (#1322).
-	lastUserPlayStartFn = webuiSrv.LastUserPlayStart
+	setLastUserPlayStartFn(webuiSrv.LastUserPlayStart)
 	// ... and whether this speaker follows a group or stereo pair: its
 	// firmware refuses every preset write while it does (#1077).
-	groupFollowerFn = func() (bool, string) {
+	setGroupFollowerFn(func() (bool, string) {
 		master, _, ok := margeSrv.GroupPair()
 		if decided, follower := pairRole(master, margeSrv.DeviceID(), ok); decided {
 			if follower {
@@ -995,7 +995,7 @@ func run() error {
 			return false, ""
 		}
 		return webuiSrv.GroupFollower()
-	}
+	})
 
 	// Re-assert a persisted multiroom group (native or mirror) so it survives
 	// reboot/standby/Wi-Fi outage without the user re-grouping (#70 beta).
@@ -1749,13 +1749,13 @@ func run() error {
 	// /info probe is slow right after this agent restarts (#108).
 	// The peer roster needs our own name to recognise a stale entry for an
 	// address we no longer hold (see browsePeers).
-	peerSelfNameFn = func() string {
+	setPeerSelfNameFn(func() string {
 		mdnsMu.Lock()
 		ann := mdnsAnnouncer
 		mdnsMu.Unlock()
 		n, _ := ann.Snapshot()
 		return n
-	}
+	})
 	// The roster's second self-signal: every id this speaker answers under, so
 	// an entry adopted from our own stale announcement compares equal even under
 	// a placeholder name and an address we no longer hold (#697). Read from the
@@ -1767,12 +1767,12 @@ func run() error {
 	// box has answered: the app resolves a speaker's id from the firmware where
 	// it can, so a record naming this box can carry an id our own announcement
 	// never did.
-	peerSelfDeviceIDsFn = func() []string {
+	setPeerSelfDeviceIDsFn(func() []string {
 		mdnsMu.Lock()
 		ann := mdnsAnnouncer
 		mdnsMu.Unlock()
 		return announcerSelfDeviceIDs(ann, deviceID)
-	}
+	})
 	// Post-switch network refresh (#697): fired by the webui after a CONFIRMED
 	// live Wi-Fi switch. Runs on its own goroutine (the webui hook spawns it)
 	// and waits for the new DHCP lease itself before repointing the mDNS
