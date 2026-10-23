@@ -279,13 +279,14 @@ func TestPhoneRemoteFavoritesFollowTheSpeaker(t *testing.T) {
 	}
 }
 
-// Every new favourites string exists in every locale bundle.
+// Every new favourites string exists in every locale bundle (favKeepRec is the
+// "it stays in Recently played" line of the unstar question, #1339).
 func TestPhoneRemoteLocalesCarryFavoriteDelete(t *testing.T) {
 	bundles := strings.Count(indexHTML, "now:\"")
 	if bundles == 0 {
 		t.Fatal("could not find any locale bundle in indexHTML")
 	}
-	for _, key := range []string{"favDel", "favDelQ", "favDelYes"} {
+	for _, key := range []string{"favDel", "favDelQ", "favDelYes", "favKeepRec"} {
 		if got := strings.Count(indexHTML, key+":\""); got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
 		}
