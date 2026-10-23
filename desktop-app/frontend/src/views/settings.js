@@ -51,6 +51,10 @@ import { normalizeDoc } from '../groupkeys.js';
 import { normalizeKeyActions, sleepOn, snoozeOn, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../keyactions.js';
 import { purgeSpeakerLocalState } from '../speakerPurge.js';
 import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayTrackOffered, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from '../boxstate.js';
+// The On/Off pair every switchable speaker setting is drawn with: one paint,
+// one read that hides the section, one write that repaints the old state when
+// the speaker refuses it (togglesection.js, vitest-covered).
+import { wireToggleSection } from '../togglesection.js';
 import { copyScreenshot, scoreText } from '../arcadeshare.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../wlanforget.js';
@@ -171,6 +175,9 @@ let deps = {
 export function initSettingsView(d) {
   deps = { ...deps, ...d };
 }
+// What wireToggleSection needs from this view: the element lookup, the i18n
+// lookup and the two ways a write's outcome is reported.
+const toggleDeps = { $, t, showToast, showError };
 
 // mountSettingsShell builds the settings view's static shell (box switcher + body
 // container) and wires the box-switcher controls. Run LAZILY on first open, NOT
@@ -2746,30 +2753,15 @@ function renderBoxSettings(s, box) {
   // current state; toggling applies live on the box (no reboot). The next real
   // power press either brings the last station back, like Bose did, or stays
   // silent. A self-wake (zone/stereo pair) never resumes regardless.
-  const ropOn = $('resumeOnPowerOn');
-  const ropOff = $('resumeOnPowerOff');
-  const paintResumeOnPower = (enabled) => {
-    if (ropOn) ropOn.classList.toggle('active', enabled === true);
-    if (ropOff) ropOff.classList.toggle('active', enabled === false);
-  };
-  if (ropOn && ropOff) {
-    (async () => {
-      try {
-        const r = await GetResumeOnPowerOn(box.host, box.port);
-        // Default on: treat anything other than an explicit false as enabled.
-        paintResumeOnPower(r && r.enabled === false ? false : true);
-      } catch { paintResumeOnPower(true); }
-    })();
-    const setROP = async (enabled) => {
-      paintResumeOnPower(enabled);
-      try {
-        await SetResumeOnPowerOn(box.host, box.port, enabled);
-        showToast(t('settingsView.resumeOnPowerSavedToast'));
-      } catch (e) { showError(e); }
-    };
-    ropOn.onclick = () => setROP(true);
-    ropOff.onclick = () => setROP(false);
-  }
+  wireToggleSection({
+    sectionId: 'resumeOnPowerSection', onId: 'resumeOnPowerOn', offId: 'resumeOnPowerOff',
+    get: () => GetResumeOnPowerOn(box.host, box.port),
+    // Default on: treat anything other than an explicit false as enabled.
+    stateFn: (r) => ({ show: true, enabled: r && r.enabled === false ? false : true }),
+    onGetError: { show: true, enabled: true },
+    set: (enabled) => SetResumeOnPowerOn(box.host, box.port, enabled),
+    toastKey: 'settingsView.resumeOnPowerSavedToast',
+  }, toggleDeps);
 
   // Show the live radio track on the speaker display (opt-in, default off).
   // Where the speaker's panel is STR's to draw on (onPanel), STR draws the
@@ -2777,8 +2769,6 @@ function renderBoxSettings(s, box) {
   // enabling it makes the box re-buffer (a brief audio dropout) on each text
   // change, so there turning it ON asks for confirmation first. A sub-row lets
   // the user pick what to show: artist, title, or both.
-  const dtOn = $('displayTrackOn');
-  const dtOff = $('displayTrackOff');
   const dtModeRow = $('displayTrackModeRow');
   const dtModeBtns = { artist: $('displayTrackModeArtist'), title: $('displayTrackModeTitle'), both: $('displayTrackModeBoth') };
   let dtMode = 'both';
@@ -2794,55 +2784,56 @@ function renderBoxSettings(s, box) {
     if (dtHelp) dtHelp.classList.toggle('hidden', dtOnPanel);
     if (dtHelpPanel) dtHelpPanel.classList.toggle('hidden', !dtOnPanel);
   };
-  // enabled is true, false, or null for "could not be read". A failed read used
-  // to paint Off, so a speaker that was restarting showed the setting off while
-  // it was on and pushing titles (#1083). Unknown lights neither button.
-  const paintDisplayTrack = (enabled) => {
-    if (dtOn) dtOn.classList.toggle('active', enabled === true);
-    if (dtOff) dtOff.classList.toggle('active', enabled === false);
-    if (dtModeRow) dtModeRow.classList.toggle('hidden', enabled !== true);
-    if (dtUnknown) dtUnknown.classList.toggle('hidden', enabled !== null);
-  };
   const paintDtMode = () => {
     for (const [m, b] of Object.entries(dtModeBtns)) { if (b) b.classList.toggle('active', m === dtMode); }
   };
-  if (dtOn && dtOff) {
-    (async () => {
-      try {
-        const r = await GetDisplayTrack(box.host, box.port);
-        if (!displayTrackOffered(r)) {
-          const sec = $('displayTrackSection');
-          if (sec) sec.classList.add('hidden');
-          return;
-        }
-        if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
-        dtOnPanel = displayTrackOnPanel(r);
-        paintDtPath();
-        paintDisplayTrack(displayTrackState(r));
-        paintDtMode();
-      } catch { paintDisplayTrack(null); }
-    })();
-    const save = async (enabled) => {
-      try {
-        await SetDisplayTrack(box.host, box.port, enabled, dtMode);
-        showToast(t('settingsView.displayTrackSavedToast'));
-      } catch (e) { showError(e); }
-    };
-    dtOn.onclick = async () => {
-      // Confirm before enabling where it interrupts the audio on every text
-      // change; on a panel STR draws on there is nothing to warn about.
-      if (!dtOnPanel) {
-        const ok = await confirmWarn(t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
-        if (!ok) return;
-      }
-      paintDisplayTrack(true);
+  // enabled is true, false, or null for "could not be read". A failed read used
+  // to paint Off, so a speaker that was restarting showed the setting off while
+  // it was on and pushing titles (#1083). Unknown lights neither button.
+  wireToggleSection({
+    sectionId: 'displayTrackSection', onId: 'displayTrackOn', offId: 'displayTrackOff',
+    get: () => GetDisplayTrack(box.host, box.port),
+    stateFn: (r) => ({ show: displayTrackOffered(r), enabled: displayTrackState(r), answer: r }),
+    onGetError: { show: true, enabled: null },
+    onLoaded: (st) => {
+      const r = st.answer;
+      if (!st.show) return;
+      if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
+      dtOnPanel = displayTrackOnPanel(r);
+      paintDtPath();
       paintDtMode();
-      save(true);
-    };
-    dtOff.onclick = () => { paintDisplayTrack(false); save(false); };
-    for (const [m, b] of Object.entries(dtModeBtns)) {
-      if (b) b.onclick = () => { dtMode = m; paintDtMode(); save(true); };
+    },
+    onPaint: (enabled) => {
+      if (dtModeRow) dtModeRow.classList.toggle('hidden', enabled !== true);
+      if (dtUnknown) dtUnknown.classList.toggle('hidden', enabled !== null);
+      if (enabled === true) paintDtMode();
+    },
+    // Confirm before enabling where it interrupts the audio on every text
+    // change; on a panel STR draws on there is nothing to warn about.
+    confirm: async (enabled) => {
+      if (!enabled || dtOnPanel) return true;
+      return confirmWarn(t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
+    },
+    set: (enabled) => SetDisplayTrack(box.host, box.port, enabled, dtMode),
+    toastKey: 'settingsView.displayTrackSavedToast',
+  }, toggleDeps);
+  // The mode buttons write the same setting with the track left on; a refused
+  // write puts the previous mode back, the same rule as the On/Off pair.
+  const saveDtMode = async (m) => {
+    const before = dtMode;
+    dtMode = m;
+    paintDtMode();
+    try {
+      await SetDisplayTrack(box.host, box.port, true, dtMode);
+      showToast(t('settingsView.displayTrackSavedToast'));
+    } catch (e) {
+      dtMode = before;
+      paintDtMode();
+      showError(e);
     }
+  };
+  for (const [m, b] of Object.entries(dtModeBtns)) {
+    if (b) b.onclick = () => saveDtMode(m);
   }
 
   // The time on the speaker display during playback. Independent of the track
@@ -2850,127 +2841,63 @@ function renderBoxSettings(s, box) {
   // large), and only offered where STR draws on the speaker's panel itself:
   // an older agent or a speaker without one answers no or nothing, and the
   // row stays hidden.
-  const dcRow = $('displayClockRow');
-  const dcOn = $('displayClockOn');
-  const dcOff = $('displayClockOff');
-  const dcHelp = $('displayClockHelp');
-  const paintDisplayClock = (enabled) => {
-    if (dcOn) dcOn.classList.toggle('active', enabled === true);
-    if (dcOff) dcOff.classList.toggle('active', enabled === false);
-  };
-  if (dcRow && dcOn && dcOff) {
-    (async () => {
-      try {
-        const r = await GetDisplayClock(box.host, box.port);
-        if (!r || r.supported !== true) return;
-        dcRow.classList.remove('hidden');
-        if (dcHelp) dcHelp.classList.remove('hidden');
-        paintDisplayClock(typeof r.enabled === 'boolean' ? r.enabled : null);
-      } catch { /* older agent: no clock setting */ }
-    })();
-    const saveClock = async (enabled) => {
-      paintDisplayClock(enabled);
-      try {
-        await SetDisplayClock(box.host, box.port, enabled);
-        showToast(t('settingsView.displayTrackSavedToast'));
-      } catch (e) { showError(e); }
-    };
-    dcOn.onclick = () => saveClock(true);
-    dcOff.onclick = () => saveClock(false);
-  }
+  // The "section" here is the one row inside the track section; an older
+  // agent (no clock setting) leaves it hidden.
+  wireToggleSection({
+    sectionId: 'displayClockRow', onId: 'displayClockOn', offId: 'displayClockOff',
+    get: () => GetDisplayClock(box.host, box.port),
+    stateFn: (r) => ({
+      show: !!r && r.supported === true,
+      enabled: r && typeof r.enabled === 'boolean' ? r.enabled : null,
+    }),
+    onLoaded: (st) => {
+      const dcHelp = $('displayClockHelp');
+      if (st.show && dcHelp) dcHelp.classList.remove('hidden');
+    },
+    set: (enabled) => SetDisplayClock(box.host, box.port, enabled),
+    toastKey: 'settingsView.displayTrackSavedToast',
+  }, toggleDeps);
 
   // Short message on the speaker display when a key cannot play (default on).
   // Only shown for a speaker that has a display; elsewhere the setting does
   // nothing, so the section stays hidden.
-  const dmSection = $('displayMsgSection');
-  const dmOn = $('displayMsgOn');
-  const dmOff = $('displayMsgOff');
-  const dmLast = $('displayMsgLast');
-  const paintDisplayMsg = (enabled) => {
-    if (dmOn) dmOn.classList.toggle('active', enabled === true);
-    if (dmOff) dmOff.classList.toggle('active', enabled === false);
-  };
-  if (dmSection && dmOn && dmOff) {
-    (async () => {
-      try {
-        const st = displayMessagesState(await GetDisplayMessages(box.host, box.port));
-        dmSection.classList.toggle('hidden', !st.show);
-        paintDisplayMsg(st.enabled);
-        if (dmLast) {
-          dmLast.textContent = st.last ? t('settingsView.displayMsgLast', { text: st.last }) : '';
-          dmLast.classList.toggle('hidden', !st.last);
-        }
-      } catch { dmSection.classList.add('hidden'); }
-    })();
-    const saveDM = async (enabled) => {
-      paintDisplayMsg(enabled);
-      try {
-        await SetDisplayMessages(box.host, box.port, enabled);
-        showToast(t('settingsView.displayMsgSavedToast'));
-      } catch (e) { showError(e); }
-    };
-    dmOn.onclick = () => saveDM(true);
-    dmOff.onclick = () => saveDM(false);
-  }
+  wireToggleSection({
+    sectionId: 'displayMsgSection', onId: 'displayMsgOn', offId: 'displayMsgOff',
+    get: () => GetDisplayMessages(box.host, box.port),
+    stateFn: displayMessagesState,
+    onLoaded: (st) => {
+      const dmLast = $('displayMsgLast');
+      if (dmLast) {
+        dmLast.textContent = st.last ? t('settingsView.displayMsgLast', { text: st.last }) : '';
+        dmLast.classList.toggle('hidden', !st.last);
+      }
+    },
+    set: (enabled) => SetDisplayMessages(box.host, box.port, enabled),
+    toastKey: 'settingsView.displayMsgSavedToast',
+  }, toggleDeps);
 
   // STR logo animation on the speaker display after an install or update, at
   // start-up and while an update lands (default on). Only shown where the agent
   // can draw on the panel (the Portable); elsewhere the section stays hidden.
-  const dsSection = $('displaySplashSection');
-  const dsOn = $('displaySplashOn');
-  const dsOff = $('displaySplashOff');
-  const paintDisplaySplash = (enabled) => {
-    if (dsOn) dsOn.classList.toggle('active', enabled === true);
-    if (dsOff) dsOff.classList.toggle('active', enabled === false);
-  };
-  if (dsSection && dsOn && dsOff) {
-    (async () => {
-      try {
-        const st = displaySplashState(await GetDisplaySplash(box.host, box.port));
-        dsSection.classList.toggle('hidden', !st.show);
-        paintDisplaySplash(st.enabled);
-      } catch { dsSection.classList.add('hidden'); }
-    })();
-    const saveDS = async (enabled) => {
-      paintDisplaySplash(enabled);
-      try {
-        await SetDisplaySplash(box.host, box.port, enabled);
-        showToast(t('settingsView.displaySplashSavedToast'));
-      } catch (e) { showError(e); }
-    };
-    dsOn.onclick = () => saveDS(true);
-    dsOff.onclick = () => saveDS(false);
-  }
+  wireToggleSection({
+    sectionId: 'displaySplashSection', onId: 'displaySplashOn', offId: 'displaySplashOff',
+    get: () => GetDisplaySplash(box.host, box.port),
+    stateFn: displaySplashState,
+    set: (enabled) => SetDisplaySplash(box.host, box.port, enabled),
+    toastKey: 'settingsView.displaySplashSavedToast',
+  }, toggleDeps);
 
   // STR's short notices on the speaker display (a saved key, an empty key,
   // keys restored after a reboot; default on). Same rule as the splash: only
   // where the agent can draw on the panel, hidden elsewhere and on an agent
   // or app build that does not know the setting yet.
-  const dnSection = $('displayNoticesSection');
-  const dnOn = $('displayNoticesOn');
-  const dnOff = $('displayNoticesOff');
-  const paintDisplayNotices = (enabled) => {
-    if (dnOn) dnOn.classList.toggle('active', enabled === true);
-    if (dnOff) dnOff.classList.toggle('active', enabled === false);
-  };
-  if (dnSection && dnOn && dnOff) {
-    (async () => {
-      try {
-        const st = displayNoticesState(await GetDisplayNotices(box.host, box.port));
-        dnSection.classList.toggle('hidden', !st.show);
-        paintDisplayNotices(st.enabled);
-      } catch { dnSection.classList.add('hidden'); }
-    })();
-    const saveDN = async (enabled) => {
-      paintDisplayNotices(enabled);
-      try {
-        await SetDisplayNotices(box.host, box.port, enabled);
-        showToast(t('settingsView.displayNoticesSavedToast'));
-      } catch (e) { showError(e); }
-    };
-    dnOn.onclick = () => saveDN(true);
-    dnOff.onclick = () => saveDN(false);
-  }
+  wireToggleSection({
+    sectionId: 'displayNoticesSection', onId: 'displayNoticesOn', offId: 'displayNoticesOff',
+    get: () => GetDisplayNotices(box.host, box.port),
+    stateFn: displayNoticesState,
+    set: (enabled) => SetDisplayNotices(box.host, box.port, enabled),
+    toastKey: 'settingsView.displayNoticesSavedToast',
+  }, toggleDeps);
 
   // The hidden games on the speaker display: per game the score, the last
   // screen, and buttons to copy or save them for the GitHub thread. Hidden
@@ -3101,89 +3028,52 @@ function renderBoxSettings(s, box) {
   // current state; the section stays hidden on non-BCO models. Toggling
   // reboots the speaker to apply it (BoseApp reads BCOResetTimerEnabled
   // at boot, same as the Bose app), so confirm first.
-  const aoSection = $('airplayOptSection');
-  const aoOn = $('airplayOptOn');
-  const aoOff = $('airplayOptOff');
   // Same active-highlight pattern as the clock toggle: the lit button
   // is the state, no separate status line. null = unknown (neither lit).
-  const paintAirplay = (enabled) => {
-    if (aoOn) aoOn.classList.toggle('active', enabled === true);
-    if (aoOff) aoOff.classList.toggle('active', enabled === false);
-  };
-  if (aoSection && aoOn && aoOff) {
-    (async () => {
-      try {
-        const r = await GetAirplayOpt(box.host, box.port);
-        if (r && r.supported) {
-          aoSection.classList.remove('hidden');
-          paintAirplay(r.enabled === true ? true : (r.enabled === false ? false : null));
-        }
-      } catch { /* leave the section hidden on error */ }
-    })();
-    const setAO = async (enabled) => {
-      const ok = await confirmWarn(
-        t('settingsView.airplayOptConfirmTitle'),
-        t('settingsView.airplayOptConfirmBody'),
-      );
-      if (!ok) return;
-      paintAirplay(enabled);
-      try {
-        await SetAirplayOpt(box.host, box.port, enabled);
-        showToast(t('settingsView.airplayOptSavedToast'));
-        setTimeout(deps.discoverBoxes, 60000);
-      } catch (e) { showError(e); }
-    };
-    aoOn.onclick = () => setAO(true);
-    aoOff.onclick = () => setAO(false);
-  }
+  wireToggleSection({
+    sectionId: 'airplayOptSection', onId: 'airplayOptOn', offId: 'airplayOptOff',
+    get: () => GetAirplayOpt(box.host, box.port),
+    stateFn: (r) => ({
+      show: !!(r && r.supported),
+      enabled: r && r.enabled === true ? true : (r && r.enabled === false ? false : null),
+    }),
+    confirm: () => confirmWarn(
+      t('settingsView.airplayOptConfirmTitle'),
+      t('settingsView.airplayOptConfirmBody'),
+    ),
+    set: (enabled) => SetAirplayOpt(box.host, box.port, enabled),
+    afterSet: () => { setTimeout(deps.discoverBoxes, 60000); },
+    toastKey: 'settingsView.airplayOptSavedToast',
+  }, toggleDeps);
 
   // The speaker's SSH port. Off by default since the opt-in landed, but two
   // users run it deliberately (#1061) and the only way to say so used to be a
   // file on the speaker reachable only over SSH, which is a circle. Hidden on an
   // agent too old to know the endpoint rather than shown dead.
-  const sshSection = $('sshSection');
-  const sshOn = $('sshOn');
-  const sshOff = $('sshOff');
   const sshBoseNote = $('sshBoseNote');
-  const paintSSH = (on) => {
-    if (sshOn) sshOn.classList.toggle('active', on === true);
-    if (sshOff) sshOff.classList.toggle('active', on === false);
+  // Bose's own marker keeps the port open whatever this switch says, and
+  // STR does not delete a file it did not write. Say so instead of
+  // promising to close something it cannot.
+  const paintSSHNote = (r) => {
+    if (sshBoseNote) sshBoseNote.classList.toggle('hidden', !r || r.boseMarker !== true);
   };
-  if (sshSection && sshOn && sshOff) {
-    const applyState = (r) => {
-      paintSSH(r.persistent === true);
-      // Bose's own marker keeps the port open whatever this switch says, and
-      // STR does not delete a file it did not write. Say so instead of
-      // promising to close something it cannot.
-      if (sshBoseNote) sshBoseNote.classList.toggle('hidden', r.boseMarker !== true);
-    };
-    (async () => {
-      try {
-        const r = await BoxSSHStatus(box.host, box.port);
-        if (r && r.supported) {
-          sshSection.classList.remove('hidden');
-          applyState(r);
-        }
-      } catch { /* leave the section hidden on error */ }
-    })();
-    const setSSH = async (on) => {
-      if (on) {
-        const ok = await confirmWarn(
-          t('settingsView.sshConfirmTitle'),
-          t('settingsView.sshConfirmBody'),
-        );
-        if (!ok) return;
-      }
-      paintSSH(on);
-      try {
-        const r = await SetBoxSSHPersistent(box.host, box.port, on);
-        applyState(r);
-        showToast(on ? t('settingsView.sshOnToast') : t('settingsView.sshOffToast'));
-      } catch (e) { showError(e); }
-    };
-    sshOn.onclick = () => setSSH(true);
-    sshOff.onclick = () => setSSH(false);
-  }
+  const ssh = wireToggleSection({
+    sectionId: 'sshSection', onId: 'sshOn', offId: 'sshOff',
+    get: () => BoxSSHStatus(box.host, box.port),
+    stateFn: (r) => ({ show: !!(r && r.supported), enabled: !!r && r.persistent === true, answer: r }),
+    onLoaded: (st) => { if (st.show) paintSSHNote(st.answer); },
+    confirm: async (on) => {
+      if (!on) return true;
+      return confirmWarn(
+        t('settingsView.sshConfirmTitle'),
+        t('settingsView.sshConfirmBody'),
+      );
+    },
+    set: (on) => SetBoxSSHPersistent(box.host, box.port, on),
+    // The answer to the write is the state the speaker holds now.
+    afterSet: (r) => { ssh.paint(!!r && r.persistent === true); paintSSHNote(r); },
+    toastKey: (on) => (on ? 'settingsView.sshOnToast' : 'settingsView.sshOffToast'),
+  }, toggleDeps);
 
   // Smart-home / webhook: the remote thumbs keys (up and down are
   // indistinguishable on this firmware, so one shared toggle trigger) fire a
