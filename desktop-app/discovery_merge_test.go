@@ -1,0 +1,211 @@
+package main
+
+import (
+	"reflect"
+	"testing"
+)
+
+// Per-field pins for the two record merges. Every BoxInfo field gets at least
+// one row per merge so a change in either function's behaviour for that field
+// fails here by name, not somewhere downstream as list flicker or a wrong
+// badge. The rows were written against the hand-written merges and must stay
+// green across any reimplementation.
+
+// mergePin is one pinned outcome: merging prev (or a) with cur (or b) must
+// yield want in field.
+type mergePin struct {
+	field string
+	prev  BoxInfo // mergeBoxInfo: the cached record. mergeSameKind: a.
+	cur   BoxInfo // mergeBoxInfo: this cycle's record. mergeSameKind: b.
+	want  any
+	why   string
+}
+
+// fieldValue reads one BoxInfo field by name.
+func fieldValue(t *testing.T, b BoxInfo, field string) any {
+	t.Helper()
+	v := reflect.ValueOf(b).FieldByName(field)
+	if !v.IsValid() {
+		t.Fatalf("BoxInfo has no field %q", field)
+	}
+	return v.Interface()
+}
+
+func runMergePins(t *testing.T, merge func(BoxInfo, BoxInfo) BoxInfo, pins []mergePin) {
+	t.Helper()
+	for _, p := range pins {
+		out := merge(p.prev, p.cur)
+		if got := fieldValue(t, out, p.field); !reflect.DeepEqual(got, p.want) {
+			t.Errorf("%s: got %v, want %v (%s)", p.field, got, p.want, p.why)
+		}
+	}
+}
+
+// TestMergeBoxInfoFieldPins pins mergeBoxInfo(prev, cur): this cycle's record
+// is the base, the cached one only fills what the cycle came back without.
+func TestMergeBoxInfoFieldPins(t *testing.T) {
+	str := func(b BoxInfo) BoxInfo { b.Kind = "str"; return b }
+	runMergePins(t, mergeBoxInfo, []mergePin{
+		{"Name", str(BoxInfo{Name: "STR-AAAAAA"}), str(BoxInfo{Name: "str-192.0.2.1"}), "str-192.0.2.1", "this cycle's mDNS name wins"},
+		{"Name", str(BoxInfo{Name: "STR-AAAAAA"}), str(BoxInfo{}), "", "the cache never fills the technical name"},
+		{"Host", str(BoxInfo{Host: "192.0.2.1"}), str(BoxInfo{Host: "192.0.2.2"}), "192.0.2.2", "the live host wins"},
+
+		{"Port", str(BoxInfo{Port: 17008, PortVerified: true}), str(BoxInfo{Port: 8888}), 17008, "a verified cached port beats an announced one"},
+		{"PortVerified", str(BoxInfo{Port: 17008, PortVerified: true}), str(BoxInfo{Port: 8888}), true, "the restored port is verified"},
+		{"Port", str(BoxInfo{Port: 17008, PortVerified: true}), str(BoxInfo{Port: 8888, PortVerified: true}), 8888, "a verified live port wins over a verified cached one"},
+		{"Port", str(BoxInfo{Port: 8090}), str(BoxInfo{Port: 8888}), 8888, "with nothing verified the live port stands"},
+		{"PortVerified", str(BoxInfo{Port: 8090}), str(BoxInfo{Port: 8888}), false, "nothing verified stays unverified"},
+		{"Port", str(BoxInfo{Port: 0, PortVerified: true}), str(BoxInfo{Port: 8888}), 8888, "a verified cached record without a port cannot restore one"},
+		{"PortVerified", str(BoxInfo{Port: 0, PortVerified: true}), str(BoxInfo{Port: 8888}), false, "and does not mark the live port verified"},
+
+		{"DeviceID", str(BoxInfo{DeviceID: "OLD"}), str(BoxInfo{DeviceID: "NEW"}), "NEW", "the live deviceID wins"},
+		{"DeviceID", str(BoxInfo{DeviceID: "OLD"}), str(BoxInfo{}), "OLD", "an empty live deviceID is filled from the cache"},
+		{"BoxDeviceID", str(BoxInfo{BoxDeviceID: "OLD"}), str(BoxInfo{BoxDeviceID: "NEW"}), "NEW", "the live box id wins"},
+		{"BoxDeviceID", str(BoxInfo{BoxDeviceID: "OLD"}), str(BoxInfo{}), "OLD", "a speaker cannot stop being what the firmware calls it"},
+
+		{"FriendlyName", str(BoxInfo{FriendlyName: "Küche"}), str(BoxInfo{FriendlyName: "Bose SoundTouch 1234"}), "Küche", "a real cached name beats the factory default"},
+		{"FriendlyName", str(BoxInfo{FriendlyName: "Küche"}), str(BoxInfo{}), "Küche", "a thin cycle must not blank the name (#108)"},
+		{"FriendlyName", str(BoxInfo{FriendlyName: "Küche unten"}), str(BoxInfo{FriendlyName: "Küche"}), "Küche", "between two real names the live one wins, there is no length contest here"},
+		{"FriendlyName", str(BoxInfo{FriendlyName: "Bose SoundTouch 1234"}), str(BoxInfo{FriendlyName: "Bose SoundTouch 9999"}), "Bose SoundTouch 9999", "two factory names: the live one"},
+
+		{"Model", str(BoxInfo{Model: "SoundTouch 10"}), str(BoxInfo{Model: "SoundTouch"}), "SoundTouch 10", "the generic model gives way to the specific cached one"},
+		{"Model", str(BoxInfo{Model: "SoundTouch 10"}), str(BoxInfo{}), "SoundTouch 10", "an empty model is filled"},
+		{"Model", str(BoxInfo{Model: "SoundTouch 10"}), str(BoxInfo{Model: "SoundTouch 20"}), "SoundTouch 20", "two specific models: the live one"},
+
+		{"Version", str(BoxInfo{Version: "v1.0.17"}), str(BoxInfo{Version: "v1.0.18"}), "v1.0.18", "the live version wins"},
+		{"Version", str(BoxInfo{Version: "v1.0.17"}), str(BoxInfo{}), "v1.0.17", "an empty live version is filled from the cache"},
+		{"Build", str(BoxInfo{Build: "2026-10-01-1200"}), str(BoxInfo{Build: "2026-10-20-1200"}), "2026-10-20-1200", "the live build wins"},
+		{"Build", str(BoxInfo{Build: "2026-10-01-1200"}), str(BoxInfo{}), "2026-10-01-1200", "an empty live build is filled"},
+		{"AgentBinarySha256", str(BoxInfo{AgentBinarySha256: "old"}), str(BoxInfo{AgentBinarySha256: "new"}), "new", "the live hash wins"},
+		{"AgentBinarySha256", str(BoxInfo{AgentBinarySha256: "old"}), str(BoxInfo{}), "old", "an empty live hash is filled (older agent, or mDNS only)"},
+		{"AgentRunningSha256", str(BoxInfo{AgentRunningSha256: "old"}), str(BoxInfo{AgentRunningSha256: "new"}), "new", "the live running hash wins"},
+		{"AgentRunningSha256", str(BoxInfo{AgentRunningSha256: "old"}), str(BoxInfo{}), "old", "an empty live running hash is filled"},
+
+		{"Offline", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), false, "a cached offline marker never survives a sighting"},
+		{"OfflineSinceSec", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), 0, "nor does its age"},
+		{"STRSilent", str(BoxInfo{STRSilent: true}), str(BoxInfo{}), false, "STRSilent is per cycle, never carried"},
+		{"OTAPending", str(BoxInfo{OTAPending: true}), str(BoxInfo{}), false, "OTAPending is per cycle, never carried"},
+
+		{"STRNotRunning", BoxInfo{Kind: "stock", STRNotRunning: true}, BoxInfo{Kind: "stock"}, true, "a plain stock sighting keeps the 'STR not running' memory"},
+		{"STRNotRunning", BoxInfo{Kind: "stock", STRNotRunning: true}, BoxInfo{Kind: "str", Version: "v1.0.17"}, true, "an unverified STR label (a stale announcement) does not lift it"},
+		{"Kind", BoxInfo{Kind: "stock", STRNotRunning: true}, BoxInfo{Kind: "str", Version: "v1.0.17"}, "stock", "and the record is degraded to stock"},
+		{"Version", BoxInfo{Kind: "stock", STRNotRunning: true}, BoxInfo{Kind: "str", Version: "v1.0.17"}, "", "without the stale version badge"},
+		{"STRNotRunning", BoxInfo{Kind: "stock", STRNotRunning: true}, BoxInfo{Kind: "str", Port: 8888, PortVerified: true}, false, "only a live agent probe lifts it"},
+		{"Kind", BoxInfo{Kind: "stock", STRNotRunning: true}, BoxInfo{Kind: "str", Port: 8888, PortVerified: true}, "str", "and the box is STR again"},
+		{"STRNotRunning", BoxInfo{Kind: "stock"}, BoxInfo{Kind: "stock", STRNotRunning: true}, true, "a live degrade stands"},
+
+		{"BoxHealth", str(BoxInfo{BoxHealth: "wedged"}), str(BoxInfo{BoxHealth: "ok"}), "ok", "a fresh verdict wins"},
+		{"BoxHealth", str(BoxInfo{BoxHealth: "wedged"}), str(BoxInfo{}), "wedged", "an empty verdict keeps the last one so the hint does not flicker"},
+		{"Internet", str(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), str(BoxInfo{Internet: "ok"}), "ok", "a fresh verdict wins"},
+		{"InternetReason", str(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), str(BoxInfo{Internet: "ok"}), "", "and takes its own (empty) reason with it"},
+		{"Internet", str(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), str(BoxInfo{}), "unreachable", "an mDNS-only sighting keeps the last verdict"},
+		{"InternetReason", str(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), str(BoxInfo{}), "dns", "with its reason"},
+		{"ArcadeAt", str(BoxInfo{ArcadeAt: "100"}), str(BoxInfo{ArcadeAt: "200"}), "200", "fresh wins"},
+		{"ArcadeAt", str(BoxInfo{ArcadeAt: "100"}), str(BoxInfo{}), "100", "empty is filled"},
+
+		{"ConflictingMod", str(BoxInfo{ConflictingMod: "AfterTouch"}), str(BoxInfo{}), "", "warnings are not carried from the cache (a live probe sets them)"},
+		{"ConflictingMod", str(BoxInfo{}), str(BoxInfo{ConflictingMod: "AfterTouch"}), "AfterTouch", "a live warning stands"},
+		{"ForeignCloudURL", str(BoxInfo{ForeignCloudURL: "https://example.invalid"}), str(BoxInfo{}), "", "not carried"},
+		{"GroupKeyError", str(BoxInfo{GroupKeyError: "no partner"}), str(BoxInfo{}), "", "not carried"},
+		{"GroupKeyError", str(BoxInfo{}), str(BoxInfo{GroupKeyError: "no partner"}), "no partner", "a live reason stands"},
+		{"HoldRefusedSource", str(BoxInfo{HoldRefusedSource: "SPOTIFY"}), str(BoxInfo{}), "", "not carried"},
+		{"HoldRefusedSlot", str(BoxInfo{HoldRefusedSlot: "3"}), str(BoxInfo{}), "", "not carried"},
+		{"Storm1036", str(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), str(BoxInfo{}), false, "not carried"},
+		{"Storm1036SinceSec", str(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), str(BoxInfo{}), 0, "not carried"},
+		{"RecallRefusal", str(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), str(BoxInfo{}), false, "not carried"},
+		{"RecallRefusalSinceSec", str(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), str(BoxInfo{}), 0, "not carried"},
+		{"WLANCredsMissing", str(BoxInfo{WLANCredsMissing: true}), str(BoxInfo{}), false, "not carried (#270: a stale mid-boot snapshot must not stick)"},
+		{"WLANCredsMissing", str(BoxInfo{}), str(BoxInfo{WLANCredsMissing: true}), true, "a live warning stands"},
+
+		{"SerialNumber", str(BoxInfo{SerialNumber: "069236P60560580AE"}), str(BoxInfo{}), "069236P60560580AE", "an empty serial is filled"},
+		{"SerialNumber", str(BoxInfo{SerialNumber: "OLD"}), str(BoxInfo{SerialNumber: "NEW"}), "NEW", "a live serial wins"},
+
+		{"Kind", BoxInfo{Kind: "str"}, BoxInfo{Kind: "stock"}, "str", "an STR agent, once seen, outranks a stock-only sighting"},
+		{"Kind", BoxInfo{Kind: "stock"}, BoxInfo{Kind: "str"}, "str", "a live STR sighting stands"},
+		{"Kind", BoxInfo{Kind: "stock"}, BoxInfo{Kind: "stock"}, "stock", "two stock sightings stay stock"},
+	})
+}
+
+// TestMergeSameKindFieldPins pins mergeSameKind(a, b): two sightings of the
+// same box in one cycle, the first the base, the live-probed side (PortVerified)
+// authoritative for what only a live probe can know.
+func TestMergeSameKindFieldPins(t *testing.T) {
+	// v marks a record as the live probe; m is the mDNS announcement.
+	v := func(b BoxInfo) BoxInfo { b.Kind = "str"; b.PortVerified = true; return b }
+	m := func(b BoxInfo) BoxInfo { b.Kind = "str"; return b }
+	runMergePins(t, mergeSameKind, []mergePin{
+		{"Name", m(BoxInfo{Name: "STR-AAAAAA"}), v(BoxInfo{Name: "str-192.0.2.1"}), "STR-AAAAAA", "the first name stands"},
+		{"Name", m(BoxInfo{}), v(BoxInfo{Name: "str-192.0.2.1"}), "str-192.0.2.1", "an empty first name is filled"},
+		{"Host", m(BoxInfo{Host: "192.0.2.1"}), v(BoxInfo{Host: "192.0.2.1"}), "192.0.2.1", "same host by construction"},
+
+		{"Port", m(BoxInfo{Port: 8888}), v(BoxInfo{Port: 17008}), 17008, "a verified port beats an announced one (BCO boxes announce :8888 but answer :17008)"},
+		{"PortVerified", m(BoxInfo{Port: 8888}), v(BoxInfo{Port: 17008}), true, "and the merged record is verified"},
+		{"Port", v(BoxInfo{Port: 17008}), m(BoxInfo{Port: 8888}), 17008, "the same with the probe first"},
+		{"PortVerified", v(BoxInfo{Port: 17008}), m(BoxInfo{Port: 8888}), true, "still verified"},
+		{"Port", v(BoxInfo{Port: 8888}), v(BoxInfo{Port: 17008}), 8888, "two verified ports: the first (#1190, no flip between refreshes)"},
+		{"Port", m(BoxInfo{Port: 8888}), m(BoxInfo{Port: 17008}), 8888, "two announced ports: the first"},
+		{"PortVerified", m(BoxInfo{Port: 8888}), m(BoxInfo{Port: 17008}), false, "two announced ports: still unverified"},
+		{"Port", m(BoxInfo{Port: 8888}), v(BoxInfo{Port: 0}), 8888, "a verified record without a port cannot win"},
+		{"PortVerified", m(BoxInfo{Port: 8888}), v(BoxInfo{Port: 0}), false, "and does not verify the announced one"},
+
+		{"DeviceID", m(BoxInfo{DeviceID: "74DAEA99C34C"}), v(BoxInfo{DeviceID: "68C90B85A0A9"}), "68C90B85A0A9", "the /info deviceID wins over the mDNS wlan0 MAC (#70)"},
+		{"DeviceID", v(BoxInfo{DeviceID: "68C90B85A0A9"}), m(BoxInfo{DeviceID: "74DAEA99C34C"}), "68C90B85A0A9", "regardless of order"},
+		{"DeviceID", m(BoxInfo{DeviceID: "74DAEA99C34C"}), v(BoxInfo{}), "74DAEA99C34C", "a blank verified deviceID falls back to the announced one"},
+		{"DeviceID", m(BoxInfo{DeviceID: "A"}), m(BoxInfo{DeviceID: "B"}), "A", "two announcements: the first"},
+		{"DeviceID", m(BoxInfo{}), m(BoxInfo{DeviceID: "B"}), "B", "an empty first is filled"},
+		{"BoxDeviceID", m(BoxInfo{BoxDeviceID: "A"}), v(BoxInfo{BoxDeviceID: "B"}), "A", "no contest: both sides carry the same value when set"},
+		{"BoxDeviceID", m(BoxInfo{}), v(BoxInfo{BoxDeviceID: "B"}), "B", "whichever side has one"},
+
+		{"FriendlyName", m(BoxInfo{FriendlyName: "Wohnzimmer"}), v(BoxInfo{}), "Wohnzimmer", "the real name from mDNS survives a nameless probe (#108)"},
+		{"FriendlyName", m(BoxInfo{FriendlyName: "Bose SoundTouch 1234"}), v(BoxInfo{FriendlyName: "Küche"}), "Küche", "a real name beats the factory default"},
+		{"FriendlyName", m(BoxInfo{FriendlyName: "Küche"}), v(BoxInfo{FriendlyName: "Küche unten"}), "Küche unten", "between two real names the longer wins"},
+		{"FriendlyName", m(BoxInfo{FriendlyName: "Küche unten"}), v(BoxInfo{FriendlyName: "Küche"}), "Küche unten", "in either order"},
+		{"FriendlyName", m(BoxInfo{FriendlyName: "Bad"}), v(BoxInfo{FriendlyName: "Flu"}), "Bad", "equal length: the first"},
+		{"Model", m(BoxInfo{Model: "SoundTouch"}), v(BoxInfo{Model: "SoundTouch 10"}), "SoundTouch 10", "the specific model beats the generic one"},
+		{"Model", m(BoxInfo{Model: "SoundTouch 10"}), v(BoxInfo{Model: "SoundTouch 20"}), "SoundTouch 10", "two specific models: the first"},
+
+		{"Version", m(BoxInfo{Version: "v1.0.17"}), v(BoxInfo{Version: "v1.0.18"}), "v1.0.18", "the live probe's version beats a lagging announcement (#108)"},
+		{"Version", v(BoxInfo{Version: "v1.0.18"}), m(BoxInfo{Version: "v1.0.17"}), "v1.0.18", "in either order"},
+		{"Version", m(BoxInfo{Version: "v1.0.17"}), v(BoxInfo{}), "v1.0.17", "a probe without a version leaves the announced one"},
+		{"Version", m(BoxInfo{Version: "v1.0.17"}), m(BoxInfo{Version: "v1.0.18"}), "v1.0.17", "two announcements: the first"},
+		{"Version", m(BoxInfo{}), m(BoxInfo{Version: "v1.0.18"}), "v1.0.18", "an empty first is filled"},
+		{"Build", m(BoxInfo{Build: "old"}), v(BoxInfo{Build: "new"}), "new", "same for the build stamp"},
+		{"Build", m(BoxInfo{Build: "old"}), v(BoxInfo{}), "old", "a probe without a build leaves the announced one"},
+
+		{"Offline", m(BoxInfo{Offline: true}), v(BoxInfo{}), true, "per-cycle annotation: the first"},
+		{"OfflineSinceSec", m(BoxInfo{OfflineSinceSec: 9}), v(BoxInfo{}), 9, "the first"},
+		{"STRNotRunning", m(BoxInfo{STRNotRunning: true}), v(BoxInfo{}), true, "the first"},
+		{"STRSilent", m(BoxInfo{STRSilent: true}), v(BoxInfo{}), true, "the first"},
+		{"OTAPending", m(BoxInfo{OTAPending: true}), v(BoxInfo{}), true, "the first"},
+		{"Kind", m(BoxInfo{}), v(BoxInfo{}), "str", "same kind by construction"},
+
+		{"BoxHealth", m(BoxInfo{BoxHealth: "wedged"}), v(BoxInfo{}), "", "the live probe's reading wins, including its no-warning reading (#270)"},
+		{"BoxHealth", v(BoxInfo{}), m(BoxInfo{BoxHealth: "wedged"}), "", "in either order"},
+		{"BoxHealth", m(BoxInfo{}), m(BoxInfo{BoxHealth: "wedged"}), "wedged", "with no probe, whichever side has a value"},
+		{"Internet", m(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), v(BoxInfo{Internet: "ok"}), "ok", "the live verdict"},
+		{"InternetReason", m(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), v(BoxInfo{Internet: "ok"}), "", "with its own reason"},
+		{"Internet", m(BoxInfo{}), m(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), "unreachable", "no probe: the side with a verdict"},
+		{"InternetReason", m(BoxInfo{}), m(BoxInfo{Internet: "unreachable", InternetReason: "dns"}), "dns", "and its reason"},
+		{"ArcadeAt", m(BoxInfo{ArcadeAt: "100"}), v(BoxInfo{}), "", "the live reading, even empty"},
+		{"ArcadeAt", m(BoxInfo{}), m(BoxInfo{ArcadeAt: "100"}), "100", "no probe: whichever has one"},
+		{"ConflictingMod", m(BoxInfo{ConflictingMod: "AfterTouch"}), v(BoxInfo{}), "", "the live no-warning reading clears a stale one (#270)"},
+		{"ConflictingMod", m(BoxInfo{}), v(BoxInfo{ConflictingMod: "AfterTouch"}), "AfterTouch", "a live warning stands"},
+		{"ConflictingMod", m(BoxInfo{}), m(BoxInfo{ConflictingMod: "AfterTouch"}), "AfterTouch", "no probe: whichever has one"},
+		{"ForeignCloudURL", m(BoxInfo{ForeignCloudURL: "x"}), v(BoxInfo{}), "", "the live reading"},
+		{"ForeignCloudURL", m(BoxInfo{}), m(BoxInfo{ForeignCloudURL: "x"}), "x", "no probe: whichever has one"},
+		{"Storm1036", m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), v(BoxInfo{}), false, "the live reading"},
+		{"Storm1036SinceSec", m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), v(BoxInfo{}), 0, "with its age"},
+		{"Storm1036", m(BoxInfo{}), m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), true, "no probe: a storm on either side"},
+		{"Storm1036SinceSec", m(BoxInfo{}), m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), 30, "with that side's age"},
+		{"Storm1036SinceSec", m(BoxInfo{Storm1036: true, Storm1036SinceSec: 3}), m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), 3, "both sides: the first's age"},
+		{"RecallRefusal", m(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), v(BoxInfo{}), false, "the live reading"},
+		{"RecallRefusalSinceSec", m(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), v(BoxInfo{}), 0, "with its age"},
+		{"RecallRefusal", m(BoxInfo{}), m(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), true, "no probe: a refusal on either side"},
+		{"RecallRefusalSinceSec", m(BoxInfo{}), m(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), 30, "with that side's age"},
+		{"WLANCredsMissing", m(BoxInfo{WLANCredsMissing: true}), v(BoxInfo{}), false, "the live reading clears a stale warning"},
+		{"WLANCredsMissing", m(BoxInfo{}), m(BoxInfo{WLANCredsMissing: true}), true, "no probe: a warning on either side"},
+
+		{"SerialNumber", m(BoxInfo{SerialNumber: "A"}), v(BoxInfo{SerialNumber: "B"}), "A", "the first"},
+		{"SerialNumber", m(BoxInfo{}), v(BoxInfo{SerialNumber: "B"}), "B", "an empty first is filled"},
+	})
+}

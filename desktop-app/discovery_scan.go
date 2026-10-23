@@ -41,47 +41,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	}
 
 	seen := map[string]BoxInfo{}
-	upsert := func(b BoxInfo) {
-		if b.Host == "" {
-			return
-		}
-		// Dedup primary key is host (the IPv4 address). Two records
-		// at the same IP are the same physical device, regardless
-		// of which port they expose (STR runs on 8888, stock Bose
-		// API on 8090). Using DeviceID was fragile because some
-		// Bose mDNS announcements (the stock _soundtouch._tcp
-		// service surfaced through our v0.4.1 scan) do not include
-		// MAC in their TXT, so STR and stock records for the same
-		// speaker landed under different keys and the user saw the
-		// box listed twice.
-		key := b.Host
-		prev, exists := seen[key]
-		if !exists {
-			seen[key] = b
-			return
-		}
-		// STR announcement always wins over a stock entry for the same
-		// physical device.
-		if prev.Kind == "str" && b.Kind == "stock" {
-			return
-		}
-		if b.Kind == "str" && prev.Kind == "stock" {
-			seen[key] = b
-			return
-		}
-		// Same kind: combine the two records field by field instead of
-		// picking one whole winner. The two sources disagree in opposite
-		// directions right after an OTA: the mDNS TXT carries the real
-		// FriendlyName but a stale version (the re-announce lags the
-		// restart), while the live :8888 probe carries the fresh version
-		// and a verified port. Picking one whole record lost either the
-		// name (box shows "str-<ip>") or the new version (update not
-		// flagged) — the two halves of #108. mergeSameKind keeps the
-		// best of each, including the verified-port rule the BCO boxes
-		// need (agent announces :8888 via mDNS but only the REDIRECTed
-		// :17008 is reachable).
-		seen[key] = mergeSameKind(prev, b)
-	}
+	upsert := func(b BoxInfo) { upsertSighting(seen, b) }
 
 	// Cold-start safety net: probe the speakers persisted from earlier runs
 	// directly and in parallel with the whole discovery. A speaker at its
@@ -303,6 +263,52 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		return out[i].Host < out[j].Host
 	})
 	return out, nil
+}
+
+// upsertSighting folds one sighting into this cycle's result set, keyed by
+// host. It is the merge step of DiscoverBoxes, lifted out so the exact
+// sequence a cycle produces (mDNS announcement first, live probe second) can
+// be replayed in a test.
+func upsertSighting(seen map[string]BoxInfo, b BoxInfo) {
+	if b.Host == "" {
+		return
+	}
+	// Dedup primary key is host (the IPv4 address). Two records
+	// at the same IP are the same physical device, regardless
+	// of which port they expose (STR runs on 8888, stock Bose
+	// API on 8090). Using DeviceID was fragile because some
+	// Bose mDNS announcements (the stock _soundtouch._tcp
+	// service surfaced through our v0.4.1 scan) do not include
+	// MAC in their TXT, so STR and stock records for the same
+	// speaker landed under different keys and the user saw the
+	// box listed twice.
+	key := b.Host
+	prev, exists := seen[key]
+	if !exists {
+		seen[key] = b
+		return
+	}
+	// STR announcement always wins over a stock entry for the same
+	// physical device.
+	if prev.Kind == "str" && b.Kind == "stock" {
+		return
+	}
+	if b.Kind == "str" && prev.Kind == "stock" {
+		seen[key] = b
+		return
+	}
+	// Same kind: combine the two records field by field instead of
+	// picking one whole winner. The two sources disagree in opposite
+	// directions right after an OTA: the mDNS TXT carries the real
+	// FriendlyName but a stale version (the re-announce lags the
+	// restart), while the live :8888 probe carries the fresh version
+	// and a verified port. Picking one whole record lost either the
+	// name (box shows "str-<ip>") or the new version (update not
+	// flagged) — the two halves of #108. mergeSameKind keeps the
+	// best of each, including the verified-port rule the BCO boxes
+	// need (agent announces :8888 via mDNS but only the REDIRECTed
+	// :17008 is reachable).
+	seen[key] = mergeSameKind(prev, b)
 }
 
 // boxSortName is the case-insensitive key a box is ordered by in the speaker
