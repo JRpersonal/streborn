@@ -761,9 +761,7 @@ func (s *Server) bumpRecallGen() {
 // stamp cannot expire between two verify ticks, so a power-off mid-recall
 // reliably stands the re-push down for the recall's whole lifetime (#197).
 func (s *Server) StandbyStoppedAfter(t time.Time) bool {
-	s.standbyStopMu.Lock()
-	defer s.standbyStopMu.Unlock()
-	return !s.lastStandbyStop.IsZero() && s.lastStandbyStop.After(t)
+	return s.standbyStop.stoppedAfter(t)
 }
 
 // SetTransportCommandHook wires the webui's own renderer into the gabbo

@@ -94,11 +94,8 @@ func (s *Server) stuckBufDur(def time.Duration) time.Duration {
 // speaker's own power button) took over: a newer play, a stop, a power-off, a
 // source of the user's own, or a different stream on record.
 func (s *Server) stuckBufUserActed(since time.Time, boxURL string) (bool, string) {
-	s.standbyStopMu.Lock()
-	playedAfter := s.lastUserPlayStart.After(since)
-	s.standbyStopMu.Unlock()
 	switch {
-	case playedAfter:
+	case s.standbyStop.userPlayedAfter(since):
 		return true, "a newer play started"
 	case s.userStoppedAfter(since):
 		return true, "the user stopped"
@@ -124,10 +121,7 @@ func (s *Server) rescueStuckSpotifyBuffering() {
 	if slot <= 0 || !strings.Contains(boxURL, "spotify/stream") {
 		return
 	}
-	s.standbyStopMu.Lock()
-	lastUserPlay := s.lastUserPlayStart
-	s.standbyStopMu.Unlock()
-	if !stuckBufEpisodeOpen(lastRescue, lastUserPlay) {
+	if !stuckBufEpisodeOpen(lastRescue, s.standbyStop.userPlayStart()) {
 		s.logger.Warn("spotify stuck buffering: already rescued once since the last key press, leaving it", "slot", slot)
 		return
 	}

@@ -573,32 +573,10 @@ type Server struct {
 	activeFile       *activeDirectFile
 	fileRestartUntil time.Time
 
-	// lastStandbyStop debounces the #197 standby-bounce mitigation: some ST20
-	// (scm) firmware oscillates UPNP->STANDBY->UPNP on a power-off, re-selecting
-	// STR's UPnP source so the box turns itself back on. HandleEnterStandby clears
-	// the transport once per standbyStopDebounce so the rapid flip does not issue a
-	// burst of Stops.
-	standbyStopMu   sync.Mutex
-	lastStandbyStop time.Time
-	// lastStandbyClear rate-limits the transport clear during a power-off bounce
-	// (separate from lastStandbyStop, which gates the resume-suppression window):
-	// the clear re-fires on each flip of the UPNP<->STANDBY oscillation so a clear
-	// that lost the ~170 ms race is retried, bounded by standbyClearMinGap.
-	lastStandbyClear time.Time
-	// lastZoneStandbyLog rate-limits the "zoned box powered off, leaving its
-	// transport alone" line to one per power-off episode (the firmware can flap
-	// UPNP<->STANDBY several times within a second).
-	lastZoneStandbyLog time.Time
-	// lastUserPlayStart is when a user last explicitly asked for playback (a
-	// hardware preset press or an app play). HandleEnterStandby reads it to tell
-	// a UPNP->STANDBY flip that interrupts the user's own fresh recall (firmware
-	// settling, #419) from a real power-off, and NoteUserPlay stamps it while
-	// clearing the stop latches (the press is newer intent than any prior stop).
-	// Guarded by standbyStopMu.
-	lastUserPlayStart time.Time
-	// lastSpontResume single-flights the spontaneous-power-off recovery so a
-	// flapping source cannot stack resume goroutines. Guarded by standbyStopMu.
-	lastSpontResume time.Time
+	// standbyStop is the power-off bookkeeping: the #197 standby-bounce
+	// stamps and rate limits, the last user play and the spontaneous-off
+	// recovery single-flight (standbystopstate.go, own mutex).
+	standbyStop standbyStopState
 	// userActivityFn reports when the box last emitted a userActivityUpdate
 	// frame (a physical key press, box or IR remote); zero = none seen. Wired to
 	// boxws.LastUserActivity. HandleEnterStandby uses it to recognise the

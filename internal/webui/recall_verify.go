@@ -222,9 +222,7 @@ func (s *Server) recallStandDownReason(gen uint64, started time.Time) string {
 	s.lastUserStopMu.Lock()
 	userStop := s.lastUserStop
 	s.lastUserStopMu.Unlock()
-	s.standbyStopMu.Lock()
-	standbyStop := s.lastStandbyStop
-	s.standbyStopMu.Unlock()
+	standbyStop := s.standbyStop.lastStandbyStop()
 	return verifyStandDownReason(gen, curGen, started, userStop, standbyStop)
 }
 

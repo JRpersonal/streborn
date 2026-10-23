@@ -1070,9 +1070,7 @@ const standbyBounceWakeWindow = 6 * time.Second
 // DO_NOT_RESUME / reconnect / stream-drop that follows a power-OFF) instead of
 // re-waking a box the user just switched off.
 func (s *Server) standbyStoppedRecently() bool {
-	s.standbyStopMu.Lock()
-	defer s.standbyStopMu.Unlock()
-	return !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyBounceWakeWindow
+	return s.standbyStop.stoppedWithin(standbyBounceWakeWindow)
 }
 
 // RecentlyPoweredOff reports whether STR saw this box's UPnP source drop to
@@ -1089,9 +1087,7 @@ func (s *Server) RecentlyPoweredOff() bool { return s.standbyStoppedRecently() }
 // govern only the transport-clear, but the suppression must stay armed for all
 // three wake paths (ResumeLastPlay, maybeRePush, RecoverAfterReconnect) regardless.
 func (s *Server) noteStandbyStop() {
-	s.standbyStopMu.Lock()
-	s.lastStandbyStop = time.Now()
-	s.standbyStopMu.Unlock()
+	s.standbyStop.noteStop()
 	s.NoteUserStop()
 	// Switched off at the speaker: an engine kept running by a recall window
 	// must not decode on to nobody and bring the speaker back.
@@ -1187,9 +1183,7 @@ const recallOwnsRetryWindow = 12 * time.Second
 // window is almost always the PREVIOUS stream being torn down by the new
 // selection, not a box-side dropout worth resuming.
 func (s *Server) userPlayedRecently() bool {
-	s.standbyStopMu.Lock()
-	defer s.standbyStopMu.Unlock()
-	return !s.lastUserPlayStart.IsZero() && time.Since(s.lastUserPlayStart) < recallOwnsRetryWindow
+	return s.standbyStop.userPlayedWithin(recallOwnsRetryWindow)
 }
 
 // SetUserActivityFn wires boxws.LastUserActivity so HandleEnterStandby can tell
@@ -1263,10 +1257,7 @@ func (s *Server) SetOwnTransportCmdFn(fn func() time.Time) {
 // power pull). It also stamps lastUserPlayStart for HandleEnterStandby's
 // mid-recall discriminator.
 func (s *Server) NoteUserPlay() {
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now()
-	s.lastStandbyStop = time.Time{}
-	s.standbyStopMu.Unlock()
+	s.standbyStop.noteUserPlay()
 	s.ClearUserStop()
 }
 
@@ -1274,9 +1265,7 @@ func (s *Server) NoteUserPlay() {
 // when never. The agent's preset reconcile reads it so a forced key write does
 // not land on a play that is still starting (#1322).
 func (s *Server) LastUserPlayStart() time.Time {
-	s.standbyStopMu.Lock()
-	defer s.standbyStopMu.Unlock()
-	return s.lastUserPlayStart
+	return s.standbyStop.userPlayStart()
 }
 
 // HandleEnterStandby reacts to the box's own UPnP source dropping to STANDBY
@@ -1315,9 +1304,7 @@ func (s *Server) HandleEnterStandby() {
 	// falls through to the conservative power-off handling, so #197 behaviour
 	// is unchanged wherever the discriminator has no signal.
 	now := time.Now()
-	s.standbyStopMu.Lock()
-	playStart := s.lastUserPlayStart
-	s.standbyStopMu.Unlock()
+	playStart := s.standbyStop.userPlayStart()
 	var lastKey time.Time
 	if s.userActivityFn != nil {
 		lastKey = s.userActivityFn()
@@ -1412,13 +1399,7 @@ func (s *Server) HandleEnterStandby() {
 		// One line per power-off episode (the flap can re-fire within a second):
 		// on a zone master this is also where a firmware end-of-file standby lands
 		// (#1190), so the log must show the power-off reading was taken.
-		s.standbyStopMu.Lock()
-		logIt := s.lastZoneStandbyLog.IsZero() || now.Sub(s.lastZoneStandbyLog) >= zoneStandbyLogGap
-		if logIt {
-			s.lastZoneStandbyLog = now
-		}
-		s.standbyStopMu.Unlock()
-		if logIt {
+		if s.standbyStop.claimZoneLog(now, zoneStandbyLogGap) {
 			sinceKey := -1 // no key press seen
 			if !lastKey.IsZero() {
 				sinceKey = int(now.Sub(lastKey).Seconds())
@@ -1434,13 +1415,7 @@ func (s *Server) HandleEnterStandby() {
 	// single Stop loses the ~170 ms STANDBY->UPNP race and the firmware re-selects
 	// STR's still-loaded URI. A short min-gap keeps a fast flap from flooding the
 	// box with SOAP calls.
-	s.standbyStopMu.Lock()
-	doClear := s.lastStandbyClear.IsZero() || time.Since(s.lastStandbyClear) >= standbyClearMinGap
-	if doClear {
-		s.lastStandbyClear = time.Now()
-	}
-	s.standbyStopMu.Unlock()
-	if !doClear {
+	if !s.standbyStop.claimClear(standbyClearMinGap) {
 		return
 	}
 
@@ -1468,9 +1443,7 @@ func (s *Server) HandleEnterStandby() {
 		ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
 		defer cancel()
 		staleClear := func() bool {
-			s.standbyStopMu.Lock()
-			defer s.standbyStopMu.Unlock()
-			return s.lastUserPlayStart.After(clearArmedAt)
+			return s.standbyStop.userPlayedAfter(clearArmedAt)
 		}
 		if staleClear() {
 			s.logger.Info("standby bounce: a newer user play superseded the transport clear, leaving the fresh recall alone")
@@ -1547,12 +1520,7 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 	// Single-flight + crash-loop guard. The #381 attempt counter caps a
 	// firmware that re-drops the source on every recovery at
 	// maxAutoResumeAttempts per window instead of a wake/drop tug-of-war.
-	s.standbyStopMu.Lock()
-	tooSoon := !s.lastSpontResume.IsZero() && time.Since(s.lastSpontResume) < spontResumeMinGap
-	if !tooSoon {
-		s.lastSpontResume = time.Now()
-	}
-	s.standbyStopMu.Unlock()
+	tooSoon := s.standbyStop.claimSpontResume(spontResumeMinGap)
 	if tooSoon || s.autoResumeBlocked() {
 		s.logger.Info("spontaneous-off recovery: standing down",
 			"reason", map[bool]string{true: "another recovery ran just now", false: "auto-resume blocked (crash-loop guard or opt-out)"}[tooSoon])
@@ -1880,9 +1848,7 @@ func (s *Server) maybeRePush() {
 		// of a rolling window during the wait.
 		s.logger.Info("re-push: a preset/play the user just started owns the retry; re-checking once the ownership window ends")
 		waitStart := time.Now()
-		s.standbyStopMu.Lock()
-		playStart := s.lastUserPlayStart
-		s.standbyStopMu.Unlock()
+		playStart := s.standbyStop.userPlayStart()
 		if remain := recallOwnsRetryWindow - time.Since(playStart) + time.Second; remain > 0 {
 			time.Sleep(remain)
 		}

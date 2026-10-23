@@ -20,18 +20,18 @@ func TestStandbyStoppedRecently(t *testing.T) {
 	// Mirrors HandleEnterStandby stamping the transport clear. The bounce's
 	// DO_NOT_RESUME wake fires ~200 ms later and ResumeLastPlay settles 2 s before
 	// it checks, so a stamp ~2 s old must still read as "recent".
-	s.standbyStopMu.Lock()
-	s.lastStandbyStop = time.Now().Add(-2 * time.Second)
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastStop = time.Now().Add(-2 * time.Second)
+	s.standbyStop.mu.Unlock()
 	if !s.standbyStoppedRecently() {
 		t.Fatal("standby-stop ~2s ago is within the bounce window, want true")
 	}
 
 	// A power-on long after a power-off (the overnight case the resume default is
 	// for) is past the window and must be allowed to resume.
-	s.standbyStopMu.Lock()
-	s.lastStandbyStop = time.Now().Add(-(standbyBounceWakeWindow + time.Second))
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastStop = time.Now().Add(-(standbyBounceWakeWindow + time.Second))
+	s.standbyStop.mu.Unlock()
 	if s.standbyStoppedRecently() {
 		t.Fatal("standby-stop older than the bounce window, want false")
 	}
@@ -137,9 +137,9 @@ func waitForAction(t *testing.T, rec *soapRecorder, action string) bool {
 // before.
 func TestHandleEnterStandby_PowerOffDuringRecallStillLatches(t *testing.T) {
 	s, rec := newPlayTestServer(t)
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-10 * time.Second) // recall still active
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-10 * time.Second) // recall still active
+	s.standbyStop.mu.Unlock()
 	s.SetUserActivityFn(func() time.Time { return time.Now() }) // fresh power press
 
 	s.HandleEnterStandby()
@@ -163,9 +163,9 @@ func TestHandleEnterStandby_PowerOffDuringRecallStillLatches(t *testing.T) {
 // itself off on every preset press" (#252).
 func TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch(t *testing.T) {
 	s, rec := newPlayTestServer(t)
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-20 * time.Second) // recall still active
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-20 * time.Second) // recall still active
+	s.standbyStop.mu.Unlock()
 	// New key since the press (outside the trailing-frame epsilon) but NOT
 	// adjacent to the flip: a volume tweak ~8s ago, flip now.
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-8 * time.Second) })
@@ -190,9 +190,9 @@ func TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch(t *testing.T) {
 // down instead of turning the speaker back on.
 func TestHandleEnterStandby_QuickOffDuringLoginGiveupLatches(t *testing.T) {
 	s, _ := newPlayTestServer(t)
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
+	s.standbyStop.mu.Unlock()
 	s.NoteBoxLoginError()                                       // 1036 just landed
 	s.SetUserActivityFn(func() time.Time { return time.Now() }) // fresh adjacent power press
 
@@ -212,9 +212,9 @@ func TestHandleEnterStandby_QuickOffDuringLoginGiveupLatches(t *testing.T) {
 // the verify loop keeps recovery armed; nothing may latch or clear here.
 func TestHandleEnterStandby_LoginGiveupWithoutKeyStaysExempt(t *testing.T) {
 	s, rec := newPlayTestServer(t)
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-3 * time.Second) // recall still active
+	s.standbyStop.mu.Unlock()
 	s.NoteBoxLoginError()
 	s.SetUserActivityFn(func() time.Time { return time.Time{} }) // no key signal
 
@@ -344,9 +344,9 @@ func TestHandleEnterStandby_FlipAfterOwnPushIsNotAPowerOff(t *testing.T) {
 // key), so the conservative power-off handling must win.
 func TestHandleEnterStandby_KeyAfterOwnPushStillLatches(t *testing.T) {
 	s, rec := newPlayTestServer(t)
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-10 * time.Second) // recall still active
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-10 * time.Second) // recall still active
+	s.standbyStop.mu.Unlock()
 	s.SetOwnTransportCmdFn(func() time.Time { return time.Now().Add(-2 * time.Second) })
 	s.SetUserActivityFn(func() time.Time { return time.Now() }) // power press AFTER our push
 

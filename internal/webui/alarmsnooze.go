@@ -241,9 +241,7 @@ func (s *Server) stopStamps() (curGen uint64, curURL string, explicit, standby t
 	s.lastExplicitStopMu.Lock()
 	explicit = s.lastExplicitStop
 	s.lastExplicitStopMu.Unlock()
-	s.standbyStopMu.Lock()
-	standby = s.lastStandbyStop
-	s.standbyStopMu.Unlock()
+	standby = s.standbyStop.lastStandbyStop()
 	return curGen, curURL, explicit, standby
 }
 

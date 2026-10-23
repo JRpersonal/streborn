@@ -30,9 +30,9 @@ func TestUserPlayedRecently_OwnsRetryAfterAPress(t *testing.T) {
 // by the re-push again.
 func TestUserPlayedRecently_ExpiresSoTheDropRecoveryResumes(t *testing.T) {
 	s := &Server{}
-	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow + time.Second))
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow + time.Second))
+	s.standbyStop.mu.Unlock()
 
 	if s.userPlayedRecently() {
 		t.Fatal("past the window the drop recovery must take over again")
@@ -65,13 +65,13 @@ func TestMaybeRePushRearmsAfterRecallOwnsRetryWindow(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
 	s.setLastPlay("http://127.0.0.1:8888/stream/6", "Antenne", "", "")
-	s.standbyStopMu.Lock()
+	s.standbyStop.mu.Lock()
 	// The drop lands inside the recall's window: after the re-push's own 2 s
 	// backoff there is still half a second of ownership to wait out. (The
 	// field case was 6 s into the recall; the shape is the same, the wait
 	// shorter.)
-	s.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow - 2500*time.Millisecond))
-	s.standbyStopMu.Unlock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow - 2500*time.Millisecond))
+	s.standbyStop.mu.Unlock()
 
 	done := make(chan struct{})
 	go func() { s.maybeRePush(); close(done) }()
@@ -93,11 +93,11 @@ func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false }
 	s.setLastPlay("http://127.0.0.1:8888/stream/2", "NDR", "", "")
-	s.standbyStopMu.Lock()
+	s.standbyStop.mu.Lock()
 	// As above: the ownership wait runs from ~2 s (after the backoff) to
 	// ~3.5 s, and the stop lands in the middle of it.
-	s.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow - 2500*time.Millisecond))
-	s.standbyStopMu.Unlock()
+	s.standbyStop.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow - 2500*time.Millisecond))
+	s.standbyStop.mu.Unlock()
 	stopTimer := time.AfterFunc(2700*time.Millisecond, s.NoteUserStop)
 	defer stopTimer.Stop()
 
