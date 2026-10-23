@@ -1837,7 +1837,7 @@ func run() error {
 				HostName:     mdnsHostLabel,
 				Port:         8888,
 				DeviceID:     deviceID,
-				FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
+				FriendlyName: "Bose SoundTouch " + discovery.LastN(deviceID, 6),
 				Model:        "SoundTouch",
 				Version:      version,
 				Build:        buildStamp,
