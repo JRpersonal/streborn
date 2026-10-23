@@ -96,12 +96,16 @@ html.a11y-light {
   --c-border: #cccccf;
   --c-border-2: #b5b5ba;
   --c-text: #16181d;
-  --c-text-2: #33363d;
+  --c-text-2: #2a2d33;
   /* Darkened 2026-10-20: #6b6f77 hints measured 4.27:1 on a preset tile and
-     3.90:1 on a hovered one, #5a5e66 4.81:1 on the error tile. Now every text
-     token clears 5:1 on every light surface (themecontrast.test.js). */
-  --c-muted: #4a4e56;
-  --c-faint: #575b63;
+     3.90:1 on a hovered one, #5a5e66 4.81:1 on the error tile. Darkened again
+     2026-10-23 (discussion #1077): the hint grey #575b63 (6.81:1 on white)
+     still read as too light, the reporter asked for near black. The secondary
+     tiers now sit close to black and only step down a little from --c-text:
+     --c-text-2 13.80:1, --c-muted 12.10:1, --c-faint 10.38:1 on the page,
+     and the faint tier still 7.67:1 on the error tile (themecontrast.test.js). */
+  --c-muted: #33363d;
+  --c-faint: #3d4047;
   --brand: #155f9a;
   --brand-hover: #0f4f80;
   --brand-bg: #e6f0f8;
