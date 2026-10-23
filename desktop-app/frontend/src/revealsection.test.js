@@ -14,8 +14,10 @@ import { describe, it, expect } from 'vitest';
 import { allSource, srcOf } from './test/source.js';
 
 const src = allSource();
-// The settings page renderer, where both deep-link targets are wired.
-const render = srcOf('renderBoxSettings');
+// The two settings group modules where the deep-link targets are wired: the
+// key map in Advanced, the firmware banner in Status & info.
+const advanced = srcOf('wireAdvancedSections');
+const info = srcOf('wireInfoSections');
 
 describe('settings deep links', () => {
   it('has one helper that opens the ancestors, not just the target', () => {
@@ -36,13 +38,15 @@ describe('settings deep links', () => {
     // collapsible group; neither may scroll on its own.
     // Anchor on the CONSUMPTION site, not on the `let pendingKeyMapOpen = false`
     // declaration further up the file.
-    const at = render.indexOf('if (pendingKeyMapOpen)');
+    const at = advanced.indexOf('if (pendingKeyMapOpen)');
     expect(at, 'the pending-intent block must still be findable').toBeGreaterThan(-1);
-    const keyMap = render.slice(at, at + 400);
+    const keyMap = advanced.slice(at, at + 400);
     expect(keyMap).toContain('revealInSettings');
     expect(keyMap).not.toContain('scrollIntoView');
 
-    const fwBtn = render.slice(render.indexOf("$('fwUpdateBtn')"), render.indexOf("$('fwUpdateBtn')") + 300);
+    const fwAt = info.indexOf("$('fwUpdateBtn')");
+    expect(fwAt, 'the firmware button wiring must still be findable').toBeGreaterThan(-1);
+    const fwBtn = info.slice(fwAt, fwAt + 300);
     expect(fwBtn).toContain('revealInSettings');
     expect(fwBtn).not.toContain('scrollIntoView');
   });

@@ -39,8 +39,13 @@ describe('displayTrackState', () => {
 
   it('the settings view paints a failed read as unknown', () => {
     const settings = allSource();
-    expect(settings).toContain('catch { paintDisplayTrack(null); }');
-    expect(settings).not.toContain('catch { paintDisplayTrack(false); }');
+    // The toggle is wired through wireToggleSection; its read-failure fallback
+    // is the state painted when the speaker did not answer.
+    const at = settings.indexOf("sectionId: 'displayTrackSection'");
+    expect(at, 'the display-track toggle must still be wired').toBeGreaterThan(-1);
+    const wiring = settings.slice(at, settings.indexOf('toggleDeps', at));
+    expect(wiring).toContain('onGetError: { show: true, enabled: null }');
+    expect(wiring).not.toContain('enabled: false }');
     expect(settings).toContain("t('settingsView.displayTrackUnknown')");
   });
 });
@@ -72,7 +77,9 @@ describe('displayTrackOnPanel', () => {
 
   it('the settings view confirms only on the re-buffer path', () => {
     const settings = allSource();
-    expect(settings).toContain('if (!dtOnPanel) {');
+    // The confirm hook of the display-track toggle: nothing to ask when the
+    // speaker draws on its own panel, or when the press turns the setting off.
+    expect(settings).toContain('if (!enabled || dtOnPanel) return true;');
     expect(settings).toContain("t('settingsView.displayTrackHelpPanel')");
   });
 });

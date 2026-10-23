@@ -152,9 +152,9 @@ describe('bassControlsDisabled', () => {
   // not be the how-to-use help, which is instructions for a control that
   // cannot move.
   it('the settings view explains the disabled row instead of showing the usage help', () => {
-    const src = srcOf('renderBoxSettings');
-    // Anchor on the slider's id, not on the heading key: the heading key also
-    // appears in the section-name lookup table elsewhere.
+    const src = srcOf('renderBasicsSections');
+    // Anchor on the slider's id, not on the heading key: the heading key is
+    // what a section-name lookup elsewhere would use too.
     const start = src.indexOf('id="boxBass"');
     const section = src.slice(start, src.indexOf('settings-section', start + 1));
     expect(start, 'the bass section must still be findable').toBeGreaterThan(-1);
