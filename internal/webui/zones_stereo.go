@@ -509,20 +509,122 @@ func sameMembers(a, b zones.Zone) bool {
 // (looser sync, works more widely). Either way the group is persisted so it
 // auto-reforms after a reboot/standby. The caller supplies the master's and
 // slaves' deviceID+IP from discovery, so the agent need not self-identify.
+//
+// The phases, top to bottom, each one finishing the form with an answer or
+// handing over to the next; the answers are rendered by writeZoneFormAnswer
+// and nowhere else. The desktop app (FormZone), the phone remote and the
+// groupkeys client all read these bodies, so they are pinned byte for byte.
 func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	var req zoneFormReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	run, ans := s.zoneFormStart(req)
+	if ans != nil {
+		writeZoneFormAnswer(w, ans)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), zoneFormBudget(len(run.slaves)))
+	defer cancel()
+	run.ctx, run.c = ctx, boxapi.New(s.boxHost)
+	s.zoneFormResolveMembers(run)
+	if ans := s.zoneFormDefineOnly(run); ans != nil {
+		writeZoneFormAnswer(w, ans)
+		return
+	}
+	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a
+	// multiroom zone. It needs exactly one partner; the master is the LEFT
+	// channel and the partner the RIGHT by Bose convention. Only the ST10
+	// actually pairs, but every model lists /addGroup, so we let the firmware
+	// be the authority and surface its real response to the app.
+	if req.Stereo {
+		s.formStereoPair(w, ctx, run.c, run.master, run.slaves, req.Name, wokenMemberSet(req.WokenFromStandby))
+		return
+	}
+	writeZoneFormAnswer(w, s.zoneFormDrive(run))
+}
+
+// zoneFormAnswer is what POST /api/box/zone answers, before it is rendered:
+// a plain-text refusal (Text, written with http.Error) or a JSON body.
+type zoneFormAnswer struct {
+	Status int
+	Text   string
+	JSON   map[string]any
+}
+
+func zoneFormRefusal(status int, msg string) *zoneFormAnswer {
+	return &zoneFormAnswer{Status: status, Text: msg}
+}
+
+func zoneFormOK(body map[string]any) *zoneFormAnswer {
+	return &zoneFormAnswer{Status: http.StatusOK, JSON: body}
+}
+
+// writeZoneFormAnswer renders an answer onto the wire, byte for byte what
+// the handler wrote before it was split into phases.
+func writeZoneFormAnswer(w http.ResponseWriter, a *zoneFormAnswer) {
+	if a.JSON == nil {
+		http.Error(w, a.Text, a.Status)
+		return
+	}
+	writeJSON(w, a.Status, a.JSON)
+}
+
+// zoneFormRun is the state one group form carries from phase to phase: the
+// request as the caller sent it, the normalised mode and members, the
+// budgeted context and the firmware client, and what the phases learn on
+// the way (the sequence number of this form, the before-picture of the
+// group, the stored record, what to restart afterwards). The phase bodies
+// are handleZoneForm's former body, moved; each starts by naming the fields
+// it reads the way that body did.
+type zoneFormRun struct {
+	req    zoneFormReq
+	mode   string
+	master boxapi.ZoneMember
+	slaves []boxapi.ZoneMember
+	ctx    context.Context
+	c      *boxapi.Client
+
+	// mySeq is this form's sequence number in the coalescing of rapid
+	// successive forms (zoneFormCoalesce).
+	mySeq uint64
+	// The before-picture: the stored document and the live zone as they
+	// stood before anything was changed, for the restore on failure.
+	prevDoc     zones.Zone
+	hadPrevDoc  bool
+	prevLive    boxapi.Zone
+	prevLiveErr error
+	// newlyJoined are the members actually joining, the only ones that get
+	// the group's volume (#401); nil when the before-picture is not trusted.
+	newlyJoined []boxapi.ZoneMember
+	// z is the record being stored for this group.
+	z zones.Zone
+	// What to restart on the master after a native form (zoneFormPrepareResume).
+	masterRef     *lastPlayInfo
+	resume        *lastPlayInfo
+	masterBlocked bool
+	// The native drive's working state (zoneFormDriveNative).
+	toAdd, toRemove []boxapi.ZoneMember
+	usedIncremental bool
+	heldIncremental bool
+	readBackFailed  bool
+	z2              boxapi.Zone
+	missing         []string
+	unverifiable    []string
+}
+
+// zoneFormStart checks the decoded request and normalises it: the mode, the
+// member records, and the log line that names WHO is being grouped. It
+// answers 400 when no member was asked for.
+func (s *Server) zoneFormStart(req zoneFormReq) (*zoneFormRun, *zoneFormAnswer) {
 	// The master's deviceID is optional. It is resolved from this box's own
 	// firmware /info a few lines below and the supplied value is overwritten
 	// anyway, so requiring it only kept out the one client that cannot know it:
 	// the phone remote is served BY the master and has no reason to be told
 	// which speaker it is running on.
 	if len(req.Slaves) == 0 {
-		http.Error(w, "at least one slave is required", http.StatusBadRequest)
-		return
+		return nil, zoneFormRefusal(http.StatusBadRequest, "at least one slave is required")
 	}
 	mode := req.Mode
 	if mode != "mirror" {
@@ -542,11 +644,14 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("zone: forming (beta)", "mode", mode, "master", master.DeviceID, "masterIP", master.IP,
 		"slaves", len(slaves), "slaveList", strings.Join(slaveIDs, ","), "stereo", req.Stereo, "name", req.Name)
+	return &zoneFormRun{req: req, mode: mode, master: master, slaves: slaves}, nil
+}
 
-	ctx, cancel := context.WithTimeout(r.Context(), zoneFormBudget(len(slaves)))
-	defer cancel()
-	c := boxapi.New(s.boxHost)
-
+// zoneFormResolveMembers replaces the deviceIDs the caller supplied with the
+// ones the speakers' own firmware reports, the master's from this box and
+// each member's from its /info.
+func (s *Server) zoneFormResolveMembers(run *zoneFormRun) {
+	ctx, c, slaves := run.ctx, run.c, run.slaves
 	// The master is always THIS box, so resolve its deviceID from the local
 	// firmware /info rather than trusting the app-supplied value (#70). The
 	// desktop derives a member's deviceID from discovery, where a two-chip
@@ -555,7 +660,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// /addGroup on (that is the SCM MAC in /info). For the master that mismatch
 	// is fatal: the firmware never recognizes itself as master, so the zone reads
 	// back empty (the "0.8.x regression" deqw and Albrecht hit was really this).
-	master.DeviceID = s.localDeviceID(ctx, c, master.DeviceID)
+	run.master.DeviceID = s.localDeviceID(ctx, c, run.master.DeviceID)
 
 	// The same correction for the SLAVES, for the same reason and from the same
 	// evidence. A speaker has two MACs and only one of them is the SoundTouch
@@ -625,7 +730,12 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			"ip", slaves[i].IP, "supplied", slaves[i].DeviceID, "firmware", real)
 		slaves[i].DeviceID = real
 	}
+}
 
+// zoneFormDefineOnly stores a permanent group as a template and ends the
+// form there, or hands over (nil) when the request is a live form.
+func (s *Server) zoneFormDefineOnly(run *zoneFormRun) *zoneFormAnswer {
+	req, mode, master, slaves := run.req, run.mode, run.master, run.slaves
 	// Defining a permanent group persists the TEMPLATE only and stops here: no
 	// wake, no /setZone, no stream re-push. Forming the live zone below has to
 	// wake the master, and a woken master resumes its last source, so creating a
@@ -635,35 +745,63 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// (formDefaultGroupOnPlay), so defining it must be silent. Member deviceIDs
 	// were just resolved above, so the stored template is correct for that
 	// play-time formation. Native only; the app never sends DefineOnly with Stereo.
-	if req.DefineOnly && !req.Stereo {
-		z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name, Permanent: true}
-		for _, m := range slaves {
-			z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
-		}
-		if s.zones != nil {
-			if err := s.zones.Set(z); err != nil {
-				s.logger.Warn("zone: permanent template persist failed", "err", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			s.forgetZoneDocDoubt()
-		}
-		s.logger.Info("zone: permanent group defined (template saved, not formed live)",
-			"master", master.DeviceID, "slaves", len(slaves))
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native", "permanent": true, "defined": true})
-		return
+	if !req.DefineOnly || req.Stereo {
+		return nil
 	}
-
-	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a
-	// multiroom zone. It needs exactly one partner; the master is the LEFT
-	// channel and the partner the RIGHT by Bose convention. Only the ST10
-	// actually pairs, but every model lists /addGroup, so we let the firmware
-	// be the authority and surface its real response to the app.
-	if req.Stereo {
-		s.formStereoPair(w, ctx, c, master, slaves, req.Name, wokenMemberSet(req.WokenFromStandby))
-		return
+	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name, Permanent: true}
+	for _, m := range slaves {
+		z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
 	}
+	if s.zones != nil {
+		if err := s.zones.Set(z); err != nil {
+			s.logger.Warn("zone: permanent template persist failed", "err", err)
+			return zoneFormRefusal(http.StatusInternalServerError, err.Error())
+		}
+		s.forgetZoneDocDoubt()
+	}
+	s.logger.Info("zone: permanent group defined (template saved, not formed live)",
+		"master", master.DeviceID, "slaves", len(slaves))
+	return zoneFormOK(map[string]any{"ok": true, "mode": "native", "permanent": true, "defined": true})
+}
 
+// zoneFormDrive forms the live multiroom zone: the coalescing of rapid
+// forms, the leader probe, the before-picture and the record, then the
+// mirror push or the native drive. It always ends with an answer.
+func (s *Server) zoneFormDrive(run *zoneFormRun) *zoneFormAnswer {
+	if ans := s.zoneFormSettle(run); ans != nil {
+		return ans
+	}
+	s.zoneFormSerial.Lock()
+	defer s.zoneFormSerial.Unlock()
+	if ans := s.zoneFormSuperseded(run); ans != nil {
+		return ans
+	}
+	if ans := s.zoneFormProbeLeader(run); ans != nil {
+		return ans
+	}
+	s.zoneFormBeforePicture(run)
+	s.zoneFormPersist(run)
+	if ans := s.zoneFormDeferPermanent(run); ans != nil {
+		return ans
+	}
+	if ans := s.zoneFormMirror(run); ans != nil {
+		return ans
+	}
+	s.zoneFormPrepareResume(run)
+	if ans := s.zoneFormWakeMaster(run); ans != nil {
+		return ans
+	}
+	if ans := s.zoneFormDriveNative(run); ans != nil {
+		return ans
+	}
+	return s.zoneFormVerify(run)
+}
+
+// zoneFormSettle stamps this form with its sequence number and waits out
+// the settle before it takes its turn; a caller that gave up meanwhile gets
+// 408.
+func (s *Server) zoneFormSettle(run *zoneFormRun) *zoneFormAnswer {
+	ctx := run.ctx
 	// Coalesce rapid successive form requests (adding speakers one tap after
 	// another): every caller sends the FULL member list it wants, so the
 	// newest request carries the newest intent and older ones can stand down.
@@ -672,29 +810,38 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// answers with the live zone instead of driving a stale list. Without
 	// this, N quick taps ran N full drives back to back (live 2026-08-21,
 	// three drives in 20 s, each one restarting the master's stream).
-	mySeq := s.zoneFormSeq.Add(1)
+	run.mySeq = s.zoneFormSeq.Add(1)
 	select {
 	case <-time.After(zoneCoalesceSettle):
 	case <-ctx.Done():
-		http.Error(w, "canceled", http.StatusRequestTimeout)
-		return
+		return zoneFormRefusal(http.StatusRequestTimeout, "canceled")
 	}
-	s.zoneFormSerial.Lock()
-	defer s.zoneFormSerial.Unlock()
-	if latest := s.zoneFormSeq.Load(); latest != mySeq {
+	return nil
+}
+
+// zoneFormSuperseded stands down, with the live zone as the answer, when a
+// newer member list arrived during the settle. Called with zoneFormSerial
+// held; the read below runs under it, as it always did.
+func (s *Server) zoneFormSuperseded(run *zoneFormRun) *zoneFormAnswer {
+	ctx, c := run.ctx, run.c
+	if latest := s.zoneFormSeq.Load(); latest != run.mySeq {
 		liveNow, lerr := c.GetZone(ctx)
-		s.logger.Info("zone: form request superseded by a newer member list, standing down", "seq", mySeq, "latest", latest)
+		s.logger.Info("zone: form request superseded by a newer member list, standing down", "seq", run.mySeq, "latest", latest)
 		if lerr != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native", "superseded": true})
-			return
+			return zoneFormOK(map[string]any{"ok": true, "mode": "native", "superseded": true})
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		return zoneFormOK(map[string]any{
 			"ok": true, "mode": "native", "superseded": true,
 			"master": liveNow.Master, "senderIP": liveNow.SenderIP, "members": liveNow.Members,
 		})
-		return
 	}
+	return nil
+}
 
+// zoneFormProbeLeader asks the leader one cheap question before anything
+// is touched and refuses when it does not answer.
+func (s *Server) zoneFormProbeLeader(run *zoneFormRun) *zoneFormAnswer {
+	ctx, c, mode, master := run.ctx, run.c, run.mode, run.master
 	// Ask the leader ONE cheap question before touching anything. On 2026-08-18
 	// a fleet bundle showed the leader's BoseApp (:8090) frozen for minutes
 	// BEFORE the user added a third speaker: the form then burned ~30 s in
@@ -708,11 +855,17 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		if perr := s.speakerStaysSilent(ctx, c); perr != nil {
 			s.logger.Warn("zone: the speaker leading the group is not answering, not starting the group change",
 				"probeErr", perr, "master", master.DeviceID)
-			http.Error(w, "the speaker leading the group is not answering: "+perr.Error(), http.StatusBadGateway)
-			return
+			return zoneFormRefusal(http.StatusBadGateway, "the speaker leading the group is not answering: "+perr.Error())
 		}
 	}
+	return nil
+}
 
+// zoneFormBeforePicture reads what the user already had, before anything is
+// changed: the stored document, the live zone, and from both who is
+// actually joining.
+func (s *Server) zoneFormBeforePicture(run *zoneFormRun) {
+	ctx, c, master, slaves := run.ctx, run.c, run.master, run.slaves
 	// What the user already had, read BEFORE anything is changed. Adding a
 	// speaker to a group that is playing must not be able to end with no group
 	// at all, and on 2026-08-16 it did: a working pair, a third speaker added,
@@ -754,7 +907,14 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		s.logger.Info("zone: no reliable before-picture of this group, leaving every member's volume alone")
 		newlyJoined = nil
 	}
+	run.prevDoc, run.hadPrevDoc, run.prevLive, run.prevLiveErr = prevDoc, hadPrevDoc, prevLive, prevLiveErr
+	run.newlyJoined = newlyJoined
+}
 
+// zoneFormPersist stores the group record first, so a transient drive error
+// still leaves the group on record for the reconcile loop to retry.
+func (s *Server) zoneFormPersist(run *zoneFormRun) {
+	req, mode, master, slaves := run.req, run.mode, run.master, run.slaves
 	// Persist first so a transient drive error still leaves the group on record
 	// for the reconcile loop to retry. Only the master persists.
 	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name, Permanent: req.Permanent}
@@ -784,7 +944,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// against an earlier group can never be spent on this one (boxInZone).
 		s.forgetZoneDocDoubt()
 	}
+	run.z = z
+}
 
+// zoneFormDeferPermanent leaves a permanent group whose master is idle to
+// the next play instead of waking it, and says so.
+func (s *Server) zoneFormDeferPermanent(run *zoneFormRun) *zoneFormAnswer {
+	req, mode, master, slaves := run.req, run.mode, run.master, run.slaves
 	// A PERMANENT group whose master is idle must not be woken and formed now.
 	// Waking a standby speaker (sys power) resumes its last station, so creating
 	// a permanent group started music on the speakers (reported live 2026-09-03).
@@ -796,27 +962,37 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		if standby, busy := s.boxPlayState(); standby || !busy {
 			s.logger.Info("zone: permanent group stored, forming deferred to the next play (master idle, not waking it)",
 				"master", master.DeviceID, "slaves", len(slaves), "mode", mode)
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": mode, "deferred": true})
-			return
+			return zoneFormOK(map[string]any{"ok": true, "mode": mode, "deferred": true})
 		}
 	}
+	return nil
+}
 
-	if mode == "mirror" {
-		// Deliberate user action: push unconditionally (reconcile=false), the
-		// user just asked for exactly this group.
-		s.mirrorToSlaves(ctx, z, false)
-		// Detached: the volume match settles for a couple of seconds and the form
-		// budget is already capped at 38s against an app that gives up at 45s.
-		// It also must not race mirrorToSlaves' own PlayURL push, which is the
-		// play-start a raw volume write is documented to kill - the applier's
-		// settle covers that.
-		if len(newlyJoined) > 0 {
-			go s.matchNewMembersToMasterVolume(newlyJoined, mySeq)
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "mirror"})
-		return
+// zoneFormMirror is the mirror mode's whole drive: each member's box is
+// pointed at the master's stream over UPnP. Hands over (nil) in native mode.
+func (s *Server) zoneFormMirror(run *zoneFormRun) *zoneFormAnswer {
+	ctx, mode, z, newlyJoined, mySeq := run.ctx, run.mode, run.z, run.newlyJoined, run.mySeq
+	if mode != "mirror" {
+		return nil
 	}
+	// Deliberate user action: push unconditionally (reconcile=false), the
+	// user just asked for exactly this group.
+	s.mirrorToSlaves(ctx, z, false)
+	// Detached: the volume match settles for a couple of seconds and the form
+	// budget is already capped at 38s against an app that gives up at 45s.
+	// It also must not race mirrorToSlaves' own PlayURL push, which is the
+	// play-start a raw volume write is documented to kill - the applier's
+	// settle covers that.
+	if len(newlyJoined) > 0 {
+		go s.matchNewMembersToMasterVolume(newlyJoined, mySeq)
+	}
+	return zoneFormOK(map[string]any{"ok": true, "mode": "mirror"})
+}
 
+// zoneFormPrepareResume captures what to restart on the master once the
+// native zone is formed, because /setZone tears the playing session down.
+func (s *Server) zoneFormPrepareResume(run *zoneFormRun) {
+	ctx, req, slaves := run.ctx, run.req, run.slaves
 	// Native: drive the firmware zone and read back what it actually formed.
 	//
 	// /setZone tears down the master's in-flight UPnP session (#70): the
@@ -860,7 +1036,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	if resume == nil && !masterBlocked {
 		resume = s.memberResumeForZone(ctx, membersNotWokenForGroup(slaves, wokenMemberSet(req.WokenFromStandby)))
 	}
+	run.masterRef, run.resume, run.masterBlocked = masterRef, resume, masterBlocked
+}
 
+// zoneFormWakeMaster wakes a sleeping master quietly and refuses, with the
+// previous group restored, when the speaker does not answer at all.
+func (s *Server) zoneFormWakeMaster(run *zoneFormRun) *zoneFormAnswer {
+	ctx, c, master, resume := run.ctx, run.c, run.master, run.resume
 	// Never form against a standby master: the firmware then wakes INTO its
 	// stale UPnP item, throws the 1036 wrong-state error and self-dissolves
 	// the fresh zone ~300ms after reporting ok (#70, observed live).
@@ -896,10 +1078,9 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		perr := s.speakerStaysSilent(ctx, c)
 		if perr != nil {
 			s.logger.Warn("zone: the speaker leading the group is not answering at all, not sending setZone",
-				"wakeErr", err, "probeErr", perr, "master", master.DeviceID, "prevMembers", len(prevLive.Members))
-			s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
-			http.Error(w, "the speaker leading the group is not answering: "+perr.Error(), http.StatusBadGateway)
-			return
+				"wakeErr", err, "probeErr", perr, "master", master.DeviceID, "prevMembers", len(run.prevLive.Members))
+			s.restorePreviousZone(ctx, c, master, run.prevDoc, run.hadPrevDoc, run.prevLive)
+			return zoneFormRefusal(http.StatusBadGateway, "the speaker leading the group is not answering: "+perr.Error())
 		}
 		s.logger.Info("zone: the speaker did not report waking, but it is answering, so the group is formed anyway",
 			"wakeErr", err, "master", master.DeviceID)
@@ -910,7 +1091,15 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	if resume == nil {
 		s.stopGroupWakeSelfResume(ctx, "after the wake")
 	}
+	return nil
+}
 
+// zoneFormDriveNative drives the firmware zone, as an incremental join over
+// a live zone led by this master or as a full /setZone, reads it back, asks
+// each follower, and re-forms once when no added member confirmed. A
+// /setZone the firmware refused restores the previous group and refuses.
+func (s *Server) zoneFormDriveNative(run *zoneFormRun) *zoneFormAnswer {
+	ctx, c, master, slaves := run.ctx, run.c, run.master, run.slaves
 	// Read the live zone ONCE: it carries both the members the user dropped
 	// (which /setZone alone never removes - "briefly leaves then comes back",
 	// Albrecht, 7-box fleet, 2026-07-14) and the decision between the
@@ -956,9 +1145,8 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	if !usedIncremental {
 		if err := c.SetZone(ctx, master, slaves); err != nil {
 			s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
-			s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
-			http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
-			return
+			s.restorePreviousZone(ctx, c, master, run.prevDoc, run.hadPrevDoc, run.prevLive)
+			return zoneFormRefusal(http.StatusBadGateway, "setZone: "+err.Error())
 		}
 	}
 	z2, err := c.GetZone(ctx)
@@ -1015,9 +1203,8 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("zone: no added member confirmed the incremental join, re-forming the whole zone once", "adding", len(toAdd))
 		if err := c.SetZone(ctx, master, slaves); err != nil {
 			s.logger.Warn("zone: fallback setZone failed", "err", err, "master", master.DeviceID)
-			s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
-			http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
-			return
+			s.restorePreviousZone(ctx, c, master, run.prevDoc, run.hadPrevDoc, run.prevLive)
+			return zoneFormRefusal(http.StatusBadGateway, "setZone: "+err.Error())
 		}
 		if z2, err = c.GetZone(ctx); err != nil {
 			// Same as the first read-back: carry on with what was asked for
@@ -1030,6 +1217,33 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 		missing, unverifiable = verifyFollowersJoined(ctx, s.logger, z2.Master, slaves, fetchFollower)
 	}
+	run.toAdd, run.toRemove = toAdd, toRemove
+	run.usedIncremental, run.heldIncremental, run.readBackFailed = usedIncremental, heldIncremental, readBackFailed
+	run.z2, run.missing, run.unverifiable = z2, missing, unverifiable
+	return nil
+}
+
+// zoneFormed is the verdict of a native drive, computed from the master's
+// read-back and the followers' own answers. Pure, so it can be tested
+// without a speaker; answer renders it as the form's final 200 body.
+type zoneFormed struct {
+	Live      boxapi.Zone
+	Requested int
+	// Verified counts the requested members that confirmed; pre-existing
+	// members of an incremental join count as verified, since only the added
+	// ones were polled and "missing" can only name those.
+	Verified      int
+	Missing       []string
+	Unverifiable  []string
+	MasterMissing []string
+	// MasterFormed is false when the master's own read-back shows no zone at
+	// all after /setZone: the firmware never actually formed one.
+	MasterFormed   bool
+	ReadBackFailed bool
+}
+
+// zoneVerdict compares what the master reads back with what was asked for.
+func zoneVerdict(z2 boxapi.Zone, slaves []boxapi.ZoneMember, missing, unverifiable []string, readBackFailed bool) zoneFormed {
 	masterLive := make(map[string]bool, len(z2.Members))
 	for _, m := range z2.Members {
 		masterLive[strings.ToLower(m.DeviceID)] = true
@@ -1040,35 +1254,66 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			masterMissing = append(masterMissing, sl.DeviceID)
 		}
 	}
-	// Pre-existing members of an incremental join count as verified: only the
-	// added ones were polled, so "missing" can only name those.
-	verified := len(slaves) - len(missing)
+	return zoneFormed{
+		Live: z2, Requested: len(slaves), Verified: len(slaves) - len(missing),
+		Missing: missing, Unverifiable: unverifiable, MasterMissing: masterMissing,
+		MasterFormed:   len(z2.Members) > 0 && z2.Master != "",
+		ReadBackFailed: readBackFailed,
+	}
+}
+
+// ok is the form's verdict for the caller: at least one member confirmed.
+func (f zoneFormed) ok() bool { return f.Verified > 0 }
+
+// answer is the final 200 body of a native form. ok:false carries no error
+// field; the desktop app and the phone remote read ok, missing and
+// unverifiable, and that shape is pinned.
+func (f zoneFormed) answer() *zoneFormAnswer {
+	out := map[string]any{
+		"ok": f.ok(), "mode": "native", "master": f.Live.Master, "senderIP": f.Live.SenderIP,
+		"members": f.Live.Members, "requested": f.Requested,
+		"verified": f.Verified, "missing": f.Missing, "unverifiable": f.Unverifiable,
+		"masterMissing": f.MasterMissing,
+	}
+	if f.ReadBackFailed {
+		// Say it plainly: the group was formed and the stream was pushed, but
+		// the speaker never confirmed its own zone, so none of the numbers
+		// above were read back from it.
+		out["readBack"] = "failed"
+	}
+	return zoneFormOK(out)
+}
+
+// zoneFormVerify turns the drive's read-back into the verdict, gives the
+// joining members the group's volume, restarts the music, and answers.
+func (s *Server) zoneFormVerify(run *zoneFormRun) *zoneFormAnswer {
+	slaves, z2, missing, unverifiable := run.slaves, run.z2, run.missing, run.unverifiable
+	resume, masterRef, newlyJoined, mySeq := run.resume, run.masterRef, run.newlyJoined, run.mySeq
+	f := zoneVerdict(z2, slaves, missing, unverifiable, run.readBackFailed)
 	// Regression guard (#70 / Albrecht 0.8.x): if the master's own read-back shows
 	// no members and no master after SetZone, the firmware never actually formed a
 	// zone (it worked in 0.7.29, broke in 0.8.0x). Report that honestly as ok=false
 	// so the app stops claiming success when nothing joined, instead of leaning on
 	// the optimistic "ok=true" the old code always returned.
-	masterFormed := len(z2.Members) > 0 && z2.Master != ""
-	ok := verified > 0
-	if !masterFormed {
+	if !f.MasterFormed {
 		s.logger.Warn("zone: master read-back empty after setZone (slaves did not join — possible 0.8.x regression)",
 			"liveMaster", z2.Master, "liveMembers", len(z2.Members), "requestedSlaves", len(slaves))
 	}
-	s.logger.Info("zone: formed", "mode", "native", "ok", ok, "liveMaster", z2.Master,
+	s.logger.Info("zone: formed", "mode", "native", "ok", f.ok(), "liveMaster", z2.Master,
 		"requestedSlaves", len(slaves), "liveMembers", len(z2.Members),
-		"masterMissing", strings.Join(masterMissing, ","),
-		"verified", verified, "missing", strings.Join(missing, ","),
+		"masterMissing", strings.Join(f.MasterMissing, ","),
+		"verified", f.Verified, "missing", strings.Join(missing, ","),
 		"unverifiable", strings.Join(unverifiable, ","))
 	// Verify-first. A member that never confirmed the join (missing) must not be
 	// given the group's level: that is a speaker in another room, in no group at
 	// all, jumping to the living room's volume. Same for a zone the firmware
 	// never actually formed.
-	if masterFormed && verified > 0 {
+	if f.MasterFormed && f.Verified > 0 {
 		if joining := dropMembers(newlyJoined, missing); len(joining) > 0 {
 			go s.matchNewMembersToMasterVolume(joining, mySeq)
 		}
 	}
-	if resume != nil && masterFormed {
+	if resume != nil && f.MasterFormed {
 		// The staleness reference is the MASTER's own entry, never the stream
 		// being pushed: a member-derived takeover (#954) compared against the
 		// master's live entry always mismatches. A real user play on the master
@@ -1077,7 +1322,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// change that held as an incremental join may skip the push when the
 		// master's stream survived; on a fresh (or re-formed) zone the members
 		// have nothing yet (Martin, 2026-08-24).
-		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: heldIncremental, members: z2.Members})
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: run.heldIncremental, members: z2.Members})
 	} else if resume == nil {
 		// A group formed silent out of a group wake gets one more look: the
 		// firmware's resume can start after the zone formed, and the zone then
@@ -1089,19 +1334,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// that would dissolve the group the user just created.
 		s.scheduleLateSelfResumeCheck("after forming")
 	}
-	out := map[string]any{
-		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
-		"members": z2.Members, "requested": len(slaves),
-		"verified": verified, "missing": missing, "unverifiable": unverifiable,
-		"masterMissing": masterMissing,
-	}
-	if readBackFailed {
-		// Say it plainly: the group was formed and the stream was pushed, but
-		// the speaker never confirmed its own zone, so none of the numbers
-		// above were read back from it.
-		out["readBack"] = "failed"
-	}
-	writeJSON(w, http.StatusOK, out)
+	return f.answer()
 }
 
 // zoneResume is what resumeAfterZoneForm needs to restore playback after a
