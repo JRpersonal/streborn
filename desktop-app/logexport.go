@@ -942,31 +942,41 @@ var (
 	anonymizeText       = anonymise.ScrubPII
 )
 
+// The identifying fields of a Bose /info answer: deviceID="...",
+// <macAddress>...</macAddress>, <serialNumber>...</serialNumber>,
+// <name>...</name>, <margeAccountUUID>...</margeAccountUUID>. Compiled once;
+// the export walks every speaker's /info through them.
+var (
+	boseInfoDeviceIDRegex  = regexp.MustCompile(`deviceID="([^"]+)"`)
+	boseInfoMACRegex       = regexp.MustCompile(`<macAddress>([^<]+)</macAddress>`)
+	boseInfoSerialRegex    = regexp.MustCompile(`<serialNumber>([^<]+)</serialNumber>`)
+	boseInfoNameRegex      = regexp.MustCompile(`<name>([^<]+)</name>`)
+	boseInfoMargeUUIDRegex = regexp.MustCompile(`<margeAccountUUID>([^<]+)</margeAccountUUID>`)
+)
+
 func anonymizeBoseInfoXML(xml string) string {
 	if xml == "" {
 		return ""
 	}
-	// Bose /info has deviceID="...", <macAddress>...</macAddress>,
-	// <serialNumber>...</serialNumber>, <name>...</name>,
-	// <margeAccountUUID>...</margeAccountUUID>, <ipAddress>...
+	// The IP addresses (<ipAddress>...) are masked by anonymise.MaskIPs below.
 	out := xml
-	out = regexp.MustCompile(`deviceID="([^"]+)"`).ReplaceAllStringFunc(out, func(m string) string {
+	out = boseInfoDeviceIDRegex.ReplaceAllStringFunc(out, func(m string) string {
 		v := strings.TrimSuffix(strings.TrimPrefix(m, `deviceID="`), `"`)
 		return `deviceID="DEV#` + hashShort(v) + `"`
 	})
-	out = regexp.MustCompile(`<macAddress>([^<]+)</macAddress>`).ReplaceAllStringFunc(out, func(m string) string {
+	out = boseInfoMACRegex.ReplaceAllStringFunc(out, func(m string) string {
 		v := strings.TrimSuffix(strings.TrimPrefix(m, `<macAddress>`), `</macAddress>`)
 		return `<macAddress>MAC#` + hashShort(v) + `</macAddress>`
 	})
-	out = regexp.MustCompile(`<serialNumber>([^<]+)</serialNumber>`).ReplaceAllStringFunc(out, func(m string) string {
+	out = boseInfoSerialRegex.ReplaceAllStringFunc(out, func(m string) string {
 		v := strings.TrimSuffix(strings.TrimPrefix(m, `<serialNumber>`), `</serialNumber>`)
 		return `<serialNumber>SERIAL#` + hashShort(v) + `</serialNumber>`
 	})
-	out = regexp.MustCompile(`<name>([^<]+)</name>`).ReplaceAllStringFunc(out, func(m string) string {
+	out = boseInfoNameRegex.ReplaceAllStringFunc(out, func(m string) string {
 		v := strings.TrimSuffix(strings.TrimPrefix(m, `<name>`), `</name>`)
 		return `<name>NAME#` + hashShort(v) + `</name>`
 	})
-	out = regexp.MustCompile(`<margeAccountUUID>([^<]+)</margeAccountUUID>`).ReplaceAllStringFunc(out, func(m string) string {
+	out = boseInfoMargeUUIDRegex.ReplaceAllStringFunc(out, func(m string) string {
 		v := strings.TrimSuffix(strings.TrimPrefix(m, `<margeAccountUUID>`), `</margeAccountUUID>`)
 		return `<margeAccountUUID>MARGE#` + hashShort(v) + `</margeAccountUUID>`
 	})
