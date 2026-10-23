@@ -75,7 +75,8 @@ func noteKeysRestored(n int) {
 
 // heldGestureSaver is the running hold saver, so the marge keeper can tell
 // the firmware's store gesture from its boot-time sync: only a store that
-// follows a physical press of that key within heldNoticeWindow is a gesture.
+// follows a physical press of that key within heldNoticeWindow, which the
+// speaker did not read as a tap, is a gesture.
 var heldGestureSaver atomic.Pointer[holdSaver]
 
 // heldNoticeWindow is how long after a physical press of a key the
@@ -98,11 +99,13 @@ func (e *alreadyOnKeyError) Unwrap() error { return errNotKeepable }
 
 // noticeHeldStore puts the outcome of the firmware's own store gesture on the
 // display. The boot-time sync and a retried PUT reach the keeper too, so
-// nothing is shown unless a person pressed that key moments ago. A UPnP item
-// is left to holdsave.go, which saves what STR plays on the same hold.
+// nothing is shown unless a person HELD that key moments ago: a tap within the
+// window is not enough (a key re-sync PUT after a tap on a dead key showed a
+// false "SAVED 6", 2026-10-22). A UPnP item is left to holdsave.go, which
+// saves what STR plays on the same hold.
 func noticeHeldStore(item marge.HeldItem, name string, err error) {
 	hs := heldGestureSaver.Load()
-	if hs == nil || !hs.recentPhysicalPress(item.Slot, heldNoticeWindow) {
+	if hs == nil || !hs.recentPhysicalHold(item.Slot, heldNoticeWindow) {
 		return
 	}
 	var dup *alreadyOnKeyError

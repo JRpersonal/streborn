@@ -426,6 +426,41 @@ func (h *holdSaver) recentPhysicalPress(slot int, d time.Duration) bool {
 	return p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())
 }
 
+// recentPhysicalHold is recentPhysicalPress narrowed to a press the speaker
+// did not read as a tap: the marge keeper's "was this a person's HOLD".
+//
+// A press alone is not enough. STR's own boot-time key re-sync PUTs every slot
+// through the same keeper, and on a SoundTouch 20 (field bundle 2026-10-22)
+// the re-sync's PUT for slot 6 landed twelve seconds after a TAP on key 6 the
+// firmware had read as a tap (the keys were dead, which is why it was being
+// pressed): the display said "SAVED 6" for a store nobody made.
+//
+// A press counts when its hold was confirmed (paired with a hold verdict, or
+// read as one by statsHold), or when a hold verdict of its own arrived late.
+// A press with no verdict and no activation yet still counts: a chassis that
+// only has the analytics line gets its hold reading from statsHold at
+// holdConfirmAfter, which can land just after the firmware's own PUT. A tap
+// verdict or a preset activation since shortly before the press is a tap.
+func (h *holdSaver) recentPhysicalHold(slot int, d time.Duration) bool {
+	if !h.recentPhysicalPress(slot, d) {
+		return false
+	}
+	h.mu.Lock()
+	p, veto, verdictAt, verdictHold := h.press, h.vetoAt, h.verdictAt, h.verdictHold
+	h.mu.Unlock()
+	if p.slot != slot {
+		return false
+	}
+	if p.used {
+		return true
+	}
+	from := p.at.Add(-holdVetoLookback)
+	if !verdictAt.IsZero() && !verdictAt.Before(from) {
+		return verdictHold
+	}
+	return veto.IsZero() || veto.Before(from)
+}
+
 // checkUnpaired is the one-shot look back after a physical preset press: if
 // no hold verdict was paired with it, say so, together with the newest
 // verdict and how it relates to the press (#1217). Every tap ends here too,
