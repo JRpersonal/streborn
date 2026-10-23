@@ -19,7 +19,10 @@ package main
 // covers both and claims nothing before it has looked.
 
 import (
+	"log/slog"
 	"sort"
+	"sync/atomic"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxcli"
 )
@@ -71,4 +74,60 @@ func splitHealedFromRewritten(landed []int, before map[int]string) (healed, rewr
 		healed = append(healed, slot)
 	}
 	return healed, rewritten
+}
+
+// presetRefusalSource reports when the firmware last refused a preset write in
+// its own syslog (boxlog.Reader.LastPresetRefusal). Wired once in main; unset
+// (tests, a box without the syslog ring) it reports nothing.
+var presetRefusalSource atomic.Pointer[func() time.Time]
+
+func setPresetRefusalSource(fn func() time.Time) {
+	if fn == nil {
+		presetRefusalSource.Store(nil)
+		return
+	}
+	presetRefusalSource.Store(&fn)
+}
+
+// firmwareRefusedPresetWriteSince reports whether the firmware logged a
+// refused preset write at or after since.
+func firmwareRefusedPresetWriteSince(since time.Time) bool {
+	p := presetRefusalSource.Load()
+	if p == nil {
+		return false
+	}
+	at := (*p)()
+	return !at.IsZero() && !at.Before(since)
+}
+
+// reportRewrittenSlots logs the forced rewrite of slots the box already listed
+// and reports whether the firmware refused it.
+//
+// The readback cannot tell such a rewrite from a refused one: the slot is
+// listed either way. The firmware's own syslog can, and on a just-booted box it
+// did: "UpdatePresetFailureCB ... MargeHSM is in the wrong state" for the
+// boot-time full re-sync, while STR logged "rewrote slots the box already
+// held, it still lists them" twice and stood the initial sync down (SoundTouch
+// 20 field bundle 2026-10-22). The hardware keys were dead. So a refusal seen
+// during the sweep is logged as one, and without one the line says what it
+// does and does not know instead of reading as success.
+//
+// The caller asks for a routine re-sync on a refusal rather than dropping into
+// the 10 s fast cadence: the refusal means the account layer is not up yet,
+// every AddPreset flips the box to UPNP, and the autopair re-assert that brings
+// the account layer up waits for an idle box. Hammering writes would hold off
+// the very re-assert that cures it; the landed re-assert asks for its own
+// re-sync anyway (autopair onPaired).
+func reportRewrittenSlots(logger *slog.Logger, kept []int, refused bool) bool {
+	if len(kept) == 0 {
+		return false
+	}
+	if refused {
+		logger.Warn("preset reconcile: the speaker refused the rewrite (its firmware logged a preset update failure, the account layer was not ready); the hardware keys for these slots may be dead until a retry lands",
+			"slots", kept)
+		return true
+	}
+	logger.Info("preset reconcile: rewrote slots the box already held; the speaker logged no refusal, but its list cannot confirm a rewrite",
+		"slots", kept)
+	return false
 }

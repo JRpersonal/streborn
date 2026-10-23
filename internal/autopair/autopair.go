@@ -87,7 +87,8 @@ type Manager struct {
 	firstAssertDone atomic.Bool
 
 	// onPaired fires when the box transitions from unpaired to paired (a
-	// completed (re-)onboarding). The firmware wipes its hardware-key preset
+	// completed (re-)onboarding), and after a re-assert of an already-paired
+	// box lands (the same onboarding, without a visible transition). The firmware wipes its hardware-key preset
 	// registrations during exactly that onboarding, so the agent hooks this to
 	// schedule an immediate key re-sync instead of waiting for the reconcile
 	// cadence. Set once at wiring time, before RunBackground starts.
@@ -327,6 +328,19 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 	// exactly what the start-up re-assert exists to guarantee.
 	m.firstAssertDone.Store(true)
 	m.logger.Warn("autopair phase: box paired successfully", "accountID", m.cfg.AccountID)
+	if paired && m.onPaired != nil {
+		// The re-assert re-onboards the box just like a first pairing does,
+		// and the firmware wipes its hardware-key preset registrations in that
+		// onboarding. On this path the box already read paired before the
+		// POST, so the next status read sees no unpaired->paired transition
+		// and recordPairedState never fires the hook: the keys stayed dead
+		// until a press tripped the dead-key self-heal (SoundTouch 20 field
+		// bundle 2026-10-22, re-assert at 19:06:11, keys back at 19:06:57).
+		// The unpaired path needs nothing here: its transition fires the hook
+		// on the next status read.
+		m.logger.Info("autopair phase: account re-asserted, asking for a hardware-key preset re-sync (the re-onboarding wipes the key registrations)")
+		m.onPaired()
+	}
 	return nil
 }
 
@@ -401,7 +415,8 @@ func (m *Manager) pairedState() (known, paired bool) {
 	return true, *m.lastPaired
 }
 
-// SetOnPaired registers the unpaired->paired transition hook. Call before
+// SetOnPaired registers the onboarding hook: it fires on the unpaired->paired
+// transition and after a landed re-assert of an already-paired box. Call before
 // RunBackground starts; the callback must be fast (it runs inside the pair
 // cycle).
 func (m *Manager) SetOnPaired(fn func()) {
