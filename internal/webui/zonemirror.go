@@ -17,7 +17,6 @@ package webui
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
@@ -95,50 +95,44 @@ func hostPortOf(raw string) string {
 	return u.Host
 }
 
-// fetchNowPlaying reads a box's :8090/now_playing. Best-effort: any error
-// yields an empty snapshot (Source == ""), which every caller treats as
-// "state unreadable — do nothing".
+// snapshotReadTimeout is the bound every snapshot read has always had (the
+// old per-call http.Client carried it), applied on top of the caller's
+// context.
+const snapshotReadTimeout = 4 * time.Second
+
+// fetchNowPlaying reads a box's :8090/now_playing by host, for the package
+// seams that take a host (quietWakeNowPlaying and friends) and for a zone
+// member the agent addresses directly. Best-effort: any error yields an
+// empty snapshot (Source == ""), which every caller treats as "state
+// unreadable, do nothing". The speaker's own reads go through
+// Server.readBoxSnapshot, which adds the seam and the status cache.
 func fetchNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
-	// The speaker this agent runs on: the host comes from its own configuration.
-	return fetchNowPlayingURL(ctx, "http://"+host+":8090/now_playing", boxGet)
+	return fetchNowPlayingWith(ctx, boxapi.New(host))
 }
 
 // fetchNowPlayingPeer is the same read aimed at ANOTHER speaker, whose address
 // came from outside this agent (a zone member, a group the app formed). Two
-// separate things guard it, because they answer different questions: the URL is
-// built by JOINING a validated bare address, so a host cannot smuggle its own
-// port and path, and the dial goes through the guarded dialer, so a name that
-// resolves inwards is refused at connect time.
+// separate things guard it, because they answer different questions: the host
+// has to be a bare LAN address, so it cannot smuggle its own port and path
+// (boxapi joins it), and the dial goes through the guarded dialer, so a name
+// that resolves inwards is refused at connect time.
 func fetchNowPlayingPeer(ctx context.Context, host string) nowPlayingSnapshot {
-	u := peerBoxURL(host, "/now_playing")
-	if u == "" {
+	if !isLANPeer(host) {
 		return nowPlayingSnapshot{}
 	}
-	return fetchNowPlayingURL(ctx, u, boxGetPeer)
+	c := boxapi.New(host)
+	c.HTTP = netutil.GuardedClient(snapshotReadTimeout)
+	return fetchNowPlayingWith(ctx, c)
 }
 
-func fetchNowPlayingURL(ctx context.Context, u string,
-	get func(context.Context, string, int64) ([]byte, error)) nowPlayingSnapshot {
-	var snap nowPlayingSnapshot
-	b, err := get(ctx, u, 16<<10)
+func fetchNowPlayingWith(ctx context.Context, c *boxapi.Client) nowPlayingSnapshot {
+	ctx, cancel := context.WithTimeout(ctx, snapshotReadTimeout)
+	defer cancel()
+	np, err := c.NowPlaying(ctx)
 	if err != nil {
-		return snap
+		return nowPlayingSnapshot{}
 	}
-	var np struct {
-		Source      string `xml:"source,attr"`
-		ContentItem struct {
-			Location string `xml:"location,attr"`
-			ItemName string `xml:"itemName"`
-		} `xml:"ContentItem"`
-		PlayStatus string `xml:"playStatus"`
-	}
-	if xml.Unmarshal(b, &np) == nil {
-		snap.Source = np.Source
-		snap.Location = np.ContentItem.Location
-		snap.ItemName = np.ContentItem.ItemName
-		snap.PlayStatus = np.PlayStatus
-	}
-	return snap
+	return snapshotOf(np)
 }
 
 // logMirrorSkip logs a reconcile skip at INFO only when the reason for that

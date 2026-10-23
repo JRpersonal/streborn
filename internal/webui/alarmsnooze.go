@@ -110,7 +110,7 @@ var (
 		if s.boxHost == "" {
 			return "", false
 		}
-		np := fetchNowPlaying(ctx, s.boxHost)
+		np := s.readBoxSnapshot(ctx)
 		return np.Source, np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE"
 	}
 	// alarmSilence stops the alarm's playback for a snooze.

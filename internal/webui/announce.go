@@ -282,7 +282,7 @@ func (s *Server) snapshotNowPlaying(ctx context.Context) nowPlayingSnapshot {
 	if s.announceNowFn != nil {
 		return s.announceNowFn(ctx)
 	}
-	return fetchNowPlaying(ctx, s.boxHost)
+	return s.readBoxSnapshot(ctx)
 }
 
 // readVolume returns the box's current target volume, or -1 on error.

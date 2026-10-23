@@ -845,7 +845,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// on a URL STR never recorded, and re-pushing the recorded one replaced
 		// the user's live playlist with an old station in every room. See
 		// masterResumeForZone.
-		np := fetchNowPlaying(ctx, s.boxHost)
+		np := s.readBoxSnapshot(ctx)
 		var why string
 		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
 		s.logger.Info("zone: what to restart on the master after forming",
@@ -885,7 +885,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// app side). The quiet wake mutes, stops the resumed station and gives
 	// the level back on the join; the group then forms silent and plays
 	// what the user starts next.
-	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "STANDBY" {
+	if np := s.readBoxSnapshot(ctx); np.Source == "STANDBY" {
 		if err := s.quietWake(ctx); err != nil {
 			s.logger.Warn("zone: quiet wake of the sleeping master failed, trying the plain wake", "err", err)
 		} else {
@@ -1215,7 +1215,7 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 	// the next diagnostic can tell a firmware tear-down apart from our own
 	// re-push, which today it cannot.
 	npCtx, npCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	settleNP := fetchNowPlaying(npCtx, s.boxHost)
+	settleNP := s.readBoxSnapshot(npCtx)
 	npCancel()
 	s.logger.Info("zone: master state after the form settle",
 		"incremental", rz.survivorReachesMembers,
@@ -1758,7 +1758,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	masterBlocked := false
 	quietPair := !s.masterPlaysUsersMusic(ctx, "before pairing", stereoPairAutoAttachHold)
 	if !quietPair {
-		np := fetchNowPlaying(ctx, s.boxHost)
+		np := s.readBoxSnapshot(ctx)
 		var why string
 		resume, masterBlocked, why = masterResumeForZone(np, masterRef)
 		s.logger.Info("stereo: what to restart on the pair after pairing",
@@ -1797,7 +1797,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// playing LOCAL_INTERNET_RADIO). The resume this function wants was already
 	// captured above, so muting and stopping the firmware's own resume here
 	// costs nothing: the pair still restarts what the user was listening to.
-	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "STANDBY" {
+	if np := s.readBoxSnapshot(ctx); np.Source == "STANDBY" {
 		masterWasAsleep = true
 		if err := s.quietWake(ctx); err != nil {
 			s.logger.Warn("stereo: quiet wake of the sleeping master failed, trying the plain wake", "err", err)

@@ -80,6 +80,8 @@ func (s *Server) readBoxNowCached(ctx context.Context) (*boxapi.NowPlaying, erro
 // zero snapshot (Source == ""), which every consumer treats as "unknown, do
 // nothing".
 func (s *Server) readBoxSnapshot(ctx context.Context) nowPlayingSnapshot {
+	ctx, cancel := context.WithTimeout(ctx, snapshotReadTimeout)
+	defer cancel()
 	np, err := s.readBoxNow(ctx)
 	if err != nil {
 		return nowPlayingSnapshot{}
