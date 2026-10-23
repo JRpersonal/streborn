@@ -315,6 +315,7 @@ func TestSleepGroupOnAStandaloneSpeaker(t *testing.T) {
 	f := &fakeBox{source: "UPNP"}
 	f.install(t)
 	s := newSleepServer()
+	noGroup(t) // the speaker answers "not grouped" instead of timing out
 
 	s.armSleep(10*time.Millisecond, true)
 	if !waitFor(func() bool { return len(f.offList()) == 1 }) {

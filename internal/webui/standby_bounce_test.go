@@ -292,6 +292,7 @@ func TestHandleEnterStandby_AppStandbyStaysDeliberate(t *testing.T) {
 // interrupted a stream the box was actively pulling, STR must re-push it (the
 // firmware hiccup, not the user, stopped the music, #419).
 func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
+	shrinkSpontaneousOffSettle(t)
 	s, rec := newPlayTestServer(t)
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
 	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
@@ -303,13 +304,13 @@ func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
 
 	s.HandleEnterStandby()
 
-	// The recovery settles ~3s before pushing; poll for the re-push.
+	// The recovery settles before pushing; poll for the re-push.
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		if rec.has("SetAVTransportURI") {
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("spontaneous-off recovery never re-pushed the interrupted stream, got %v", rec.list())
 }
@@ -366,6 +367,7 @@ func TestHandleEnterStandby_KeyAfterOwnPushStillLatches(t *testing.T) {
 // used to live here switched the speaker back on 6 s after its owner had
 // switched it off. The resume must be deferred to the user's next wake.
 func TestHandleEnterStandby_StandbyDefersInsteadOfWaking(t *testing.T) {
+	shrinkSpontaneousOffSettle(t)
 	s, rec := newPlayTestServer(t)
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
 	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
@@ -385,7 +387,16 @@ func TestHandleEnterStandby_StandbyDefersInsteadOfWaking(t *testing.T) {
 			}
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("the resume was not deferred for the next user wake, actions %v", rec.list())
+}
+
+// shrinkSpontaneousOffSettle shortens the spontaneous-off recovery's settle
+// for a test that is about the decision after it, not about its length.
+func shrinkSpontaneousOffSettle(t *testing.T) {
+	t.Helper()
+	prev := spontaneousOffSettle
+	spontaneousOffSettle = 100 * time.Millisecond
+	t.Cleanup(func() { spontaneousOffSettle = prev })
 }

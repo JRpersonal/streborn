@@ -1170,6 +1170,10 @@ func resumeRefSuperseded(ref, cur *lastPlayInfo) bool {
 	return cur.boxURL != ref.boxURL || !cur.ts.Equal(ref.ts)
 }
 
+// zoneFormResumeSettle is the settle before resumeAfterZoneForm's push. A
+// variable so the tests can shorten it; the value is the production one.
+var zoneFormResumeSettle = 1500 * time.Millisecond
+
 // resumeAfterZoneForm (re)starts the stream that was playing before a group
 // change tore it down or left members without it (see handleZoneForm and
 // formStereoPair). The firmware needs a settle moment after /setZone before it
@@ -1181,7 +1185,7 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 		return
 	}
 	lp := rz.push
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(zoneFormResumeSettle)
 	if s.userStoppedRecently() {
 		s.logger.Info("zone: not restarting playback after forming, user stopped meanwhile")
 		return
@@ -2423,6 +2427,10 @@ func (s *Server) PeriodicZoneReconcile() {
 	}
 }
 
+// mirrorKickDelay is how long kickMirrorAfterPlay waits before the round. A
+// variable so the tests can shorten it; the value is the production one.
+var mirrorKickDelay = 6 * time.Second
+
 // kickMirrorAfterPlay asks for an out-of-turn reconcile shortly after a fresh
 // play, so the other speakers in a group join within seconds.
 //
@@ -2471,7 +2479,7 @@ func (s *Server) kickMirrorAfterPlay() {
 		return
 	}
 	go func() {
-		time.Sleep(6 * time.Second)
+		time.Sleep(mirrorKickDelay)
 		s.mirrorKickPending.Store(false)
 		select {
 		case s.mirrorKick <- struct{}{}:

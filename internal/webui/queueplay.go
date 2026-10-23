@@ -257,15 +257,27 @@ func (s *Server) queueKeySlot() int {
 // position, or wall-clock elapsed when the box reports none) plus a wall-clock
 // timer as a safety net, per the chosen "position + timer" strategy.
 const (
-	queuePollInterval = 4 * time.Second  // how often the watcher reads now_playing
-	queueEndEpsilon   = 12 * time.Second // progress within this of the end == "ended"
 	// queueDeadTrackLimit is how many tracks in a row the box may drop without
 	// playing before the queue gives up. One is a bad file and worth skipping;
 	// three in a row is the server having gone away, and racing through the
 	// remaining fifty tracks to prove it helps nobody.
 	queueDeadTrackLimit = 3
-	queueTimerMargin    = 6 * time.Second  // grace past the track length before the net trips
-	queueStallTimeout   = 25 * time.Second // a track that never starts is skipped
+	// queueTakeoverPolls is how many polls in a row the box must report
+	// another source playing before the watcher ends the queue (#1366). One
+	// poll could catch a source change in flight; two, eight seconds apart,
+	// are the user having moved on.
+	queueTakeoverPolls = 2
+)
+
+// The watcher's durations are variables, not constants, so the tests can run
+// the same state machine at a faster clock (fastQueueTiming in
+// queuetiming_test.go scales every one of them by the same factor). The
+// production values below are what runs on the speaker.
+var (
+	queuePollInterval = 4 * time.Second  // how often the watcher reads now_playing
+	queueEndEpsilon   = 12 * time.Second // progress within this of the end == "ended"
+	queueTimerMargin  = 6 * time.Second  // grace past the track length before the net trips
+	queueStallTimeout = 25 * time.Second // a track that never starts is skipped
 	// queueFrozenTimeout advances when the box sits in PLAY_STATE with its
 	// position frozen and the track length is UNKNOWN. Some DLNA servers (a
 	// FRITZ!Box mediaserver) expose no duration AND the box reports no total, so
@@ -280,11 +292,6 @@ const (
 	// the end is noise; more than that is a box still playing audio the length
 	// says does not exist (#1065).
 	queueOverrunSlack = 2 * time.Second
-	// queueTakeoverPolls is how many polls in a row the box must report
-	// another source playing before the watcher ends the queue (#1366). One
-	// poll could catch a source change in flight; two, eight seconds apart,
-	// are the user having moved on.
-	queueTakeoverPolls = 2
 	// queueOwnEndSlack is how close a still-climbing position must be to the
 	// box's OWN reported total to count as "the box says this is the end".
 	queueOwnEndSlack = 1 * time.Second

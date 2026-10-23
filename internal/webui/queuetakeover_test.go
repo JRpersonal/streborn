@@ -117,8 +117,11 @@ func (b *sourceScriptedBox) src() string {
 	return b.source
 }
 
+// takeoverWatchServer runs the queue watcher at the fast test clock
+// (fastQueueTiming); scenarios are written in qsec.
 func takeoverWatchServer(t *testing.T, box *sourceScriptedBox, firstDur time.Duration, logs *syncBuf) *Server {
 	t.Helper()
+	fastQueueTiming(t)
 	s, _ := newPlayTestServer(t)
 	s.logger = slog.New(slog.NewTextHandler(logs, nil))
 	s.nowPlayingFn = box.poll
@@ -142,15 +145,15 @@ func TestQueueWatcherEndsTheQueueWhenAnotherSourceTakesOver(t *testing.T) {
 	}
 	box := &sourceScriptedBox{}
 	logs := &syncBuf{}
-	box.set("UPNP", "PLAY_STATE", time.Second, 0)
-	s := takeoverWatchServer(t, box, 6*time.Second, logs)
+	box.set("UPNP", "PLAY_STATE", qsec, 0)
+	s := takeoverWatchServer(t, box, 6*qsec, logs)
 
-	time.Sleep(5 * time.Second) // one poll on the queue's own source
+	time.Sleep(betweenPolls(1)) // one poll on the queue's own source
 	box.set("PANDORA", "PLAY_STATE", 0, 0)
 
 	deadline := time.Now().Add(20 * time.Second)
 	for s.queue.isActive() && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	if s.queue.isActive() {
 		t.Fatalf("the queue is still active while Pandora plays; log:\n%s", logs.String())
@@ -172,14 +175,14 @@ func TestQueueWatcherIgnoresOneForeignPoll(t *testing.T) {
 	}
 	box := &sourceScriptedBox{}
 	logs := &syncBuf{}
-	box.set("UPNP", "PLAY_STATE", time.Second, 0)
+	box.set("UPNP", "PLAY_STATE", qsec, 0)
 	s := takeoverWatchServer(t, box, 5*time.Minute, logs)
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(betweenPolls(1))
 	box.set("PANDORA", "PLAY_STATE", 0, 0)
-	time.Sleep(4 * time.Second) // exactly one poll sees it
-	box.set("UPNP", "PLAY_STATE", 10*time.Second, 0)
-	time.Sleep(9 * time.Second)
+	time.Sleep(queuePollInterval) // exactly one poll sees it
+	box.set("UPNP", "PLAY_STATE", 10*qsec, 0)
+	time.Sleep(9 * qsec) // two more polls
 	if !s.queue.isActive() {
 		t.Fatalf("one poll on another source ended the queue; log:\n%s", logs.String())
 	}

@@ -30,9 +30,18 @@ func (f *fakeNowPlaying) set(status string, pos, total time.Duration) {
 	f.mu.Unlock()
 }
 
+// singleTrackServer runs the end watch at the fast test clock (fastQueueTiming):
+// the scenarios below are written in qsec, one box second at that clock.
 func singleTrackServer(t *testing.T, np *fakeNowPlaying) (*Server, *soapRecorder) {
 	t.Helper()
+	fastQueueTiming(t)
 	s, rec := newPlayTestServer(t)
+	// The end watch runs under the server's base context; cancelling it at the
+	// end of the test sends a watch that nothing superseded away instead of
+	// leaving it ticking for the rest of the test binary.
+	ctx, cancel := context.WithCancel(context.Background())
+	s.baseCtx = ctx
+	t.Cleanup(cancel)
 	s.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	s.nowPlayingFn = func() (string, time.Duration, time.Duration, bool) {
 		np.mu.Lock()
@@ -45,12 +54,12 @@ func singleTrackServer(t *testing.T, np *fakeNowPlaying) (*Server, *soapRecorder
 
 func waitForTrackEnd(t *testing.T, why string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(40 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", why)
 }
@@ -62,10 +71,10 @@ func TestALoneTrackFrozenAtItsEndIsStopped(t *testing.T) {
 
 	// A short track that the box plays and then freezes on, exactly the shape
 	// in the reporter's bundle.
-	np.set("PLAY_STATE", 2*time.Second, 5*time.Second)
-	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/28082.flac", title: "Photographs And Memories", mime: "audio/x-flac", dur: 5 * time.Second}, gen)
-	time.Sleep(6 * time.Second)
-	np.set("PLAY_STATE", 5*time.Second, 5*time.Second) // frozen at the end
+	np.set("PLAY_STATE", 2*qsec, 5*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/28082.flac", title: "Photographs And Memories", mime: "audio/x-flac", dur: 5 * qsec}, gen)
+	time.Sleep(betweenPolls(1))          // the watch has seen it playing
+	np.set("PLAY_STATE", 5*qsec, 5*qsec) // frozen at the end
 
 	waitForTrackEnd(t, "the box to be stopped at the end of the track", func() bool { return rec.has("Stop") })
 }
@@ -74,13 +83,15 @@ func TestANewerPlayCallsOffTheEndWatch(t *testing.T) {
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	gen := s.setLastPlay("http://192.0.2.9/a.flac", "First", "", "audio/x-flac")
-	np.set("PLAY_STATE", 1*time.Second, 3*time.Second)
-	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * time.Second}, gen)
+	np.set("PLAY_STATE", 1*qsec, 3*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * qsec}, gen)
 
 	// The user starts something else before the first track would have ended.
 	s.setLastPlay("http://192.0.2.9/b.flac", "Second", "", "audio/x-flac")
 
-	time.Sleep(14 * time.Second)
+	// Well past the track's length plus the margin: a stale watch would have
+	// stopped the box by now.
+	time.Sleep(14 * qsec)
 	if rec.has("Stop") {
 		t.Fatal("the stale watch stopped the box, which would cut off the track the user just started")
 	}
@@ -90,13 +101,13 @@ func TestAPoweredOffBoxIsLeftAlone(t *testing.T) {
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	gen := s.setLastPlay("http://192.0.2.9/a.flac", "First", "", "audio/x-flac")
-	np.set("PLAY_STATE", 1*time.Second, 3*time.Second)
+	np.set("PLAY_STATE", 1*qsec, 3*qsec)
 	np.mu.Lock()
 	np.standby = true
 	np.mu.Unlock()
-	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * time.Second}, gen)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * qsec}, gen)
 
-	time.Sleep(14 * time.Second)
+	time.Sleep(14 * qsec)
 	if rec.has("Stop") {
 		t.Fatal("STR sent a command to a sleeping speaker")
 	}
@@ -134,12 +145,16 @@ func TestRepeatOnePlaysALoneTrackAgainInsteadOfStopping(t *testing.T) {
 	withPlayMode(t, s, "shuffle=0 repeat=one\n")
 	gen := s.setLastPlay("http://192.0.2.9/what-i-deserve.m4a", "What I Deserve", "", "audio/mp4")
 
-	np.set("PLAY_STATE", 2*time.Second, 5*time.Second)
-	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/what-i-deserve.m4a", title: "What I Deserve", mime: "audio/mp4", dur: 5 * time.Second}, gen)
-	time.Sleep(6 * time.Second)
-	np.set("PLAY_STATE", 5*time.Second, 5*time.Second) // frozen at the end
+	np.set("PLAY_STATE", 2*qsec, 5*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/what-i-deserve.m4a", title: "What I Deserve", mime: "audio/mp4", dur: 5 * qsec}, gen)
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", 5*qsec, 5*qsec) // frozen at the end
 
-	waitForTrackEnd(t, "the track to be played again", func() bool { return rec.countOf("SetAVTransportURI") >= 1 })
+	// The replay is complete once the push went out AND it was registered as a
+	// play (the push lands a moment before the registration).
+	waitForTrackEnd(t, "the track to be played again", func() bool {
+		return rec.countOf("SetAVTransportURI") >= 1 && s.RecallGeneration() != gen
+	})
 	if rec.has("Stop") {
 		t.Fatalf("repeat one stopped the box instead of playing the track again: %v", rec.list())
 	}
@@ -154,13 +169,13 @@ func TestRepeatOneAlsoCoversABoxThatStoppedByItself(t *testing.T) {
 	withPlayMode(t, s, "shuffle=0 repeat=one\n")
 	gen := s.setLastPlay("http://192.0.2.9/a.flac", "First", "", "audio/x-flac")
 
-	np.set("PLAY_STATE", 1*time.Second, 3*time.Second)
-	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * time.Second}, gen)
-	// Past the first 4 s poll, not on it: a sleep of exactly one poll interval
+	np.set("PLAY_STATE", 1*qsec, 3*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/a.flac", title: "First", mime: "audio/x-flac", dur: 3 * qsec}, gen)
+	// Past the first poll, not on it: a sleep of exactly one poll interval
 	// raced the ticker, and a watch whose first poll already saw STOP never saw
 	// playback and waited forever.
-	time.Sleep(queuePollInterval + time.Second)
-	np.set("STOP_STATE", 3*time.Second, 3*time.Second)
+	time.Sleep(betweenPolls(1))
+	np.set("STOP_STATE", 3*qsec, 3*qsec)
 
 	waitForTrackEnd(t, "the track to be played again after the box stopped", func() bool { return rec.countOf("SetAVTransportURI") >= 1 })
 	if s.userStoppedRecently() {
@@ -174,10 +189,10 @@ func TestRepeatAllLeavesALoneTrackAlone(t *testing.T) {
 	withPlayMode(t, s, "shuffle=0 repeat=all\n")
 	gen := s.setLastPlay("http://192.0.2.9/28082.flac", "Photographs And Memories", "", "audio/x-flac")
 
-	np.set("PLAY_STATE", 2*time.Second, 5*time.Second)
-	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/28082.flac", title: "Photographs And Memories", mime: "audio/x-flac", dur: 5 * time.Second}, gen)
-	time.Sleep(6 * time.Second)
-	np.set("PLAY_STATE", 5*time.Second, 5*time.Second)
+	np.set("PLAY_STATE", 2*qsec, 5*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/28082.flac", title: "Photographs And Memories", mime: "audio/x-flac", dur: 5 * qsec}, gen)
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", 5*qsec, 5*qsec)
 
 	waitForTrackEnd(t, "the box to be stopped", func() bool { return rec.has("Stop") })
 	if rec.countOf("SetAVTransportURI") != 0 {
@@ -194,12 +209,12 @@ func TestALibraryTrackFromAPresetKeyIsStoppedAtItsEnd(t *testing.T) {
 	s, rec := singleTrackServer(t, np)
 	seedLibraryTrackPreset(t, s, 3)
 
-	np.set("PLAY_STATE", 2*time.Second, 5*time.Second)
+	np.set("PLAY_STATE", 2*qsec, 5*qsec)
 	if !s.RecallSlot(context.Background(), 3) {
 		t.Fatal("RecallSlot did not claim the library track key")
 	}
-	time.Sleep(6 * time.Second)
-	np.set("PLAY_STATE", 5*time.Second, 5*time.Second) // frozen at the end
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", 5*qsec, 5*qsec) // frozen at the end
 
 	waitForTrackEnd(t, "the box to be stopped at the end of the preset's track", func() bool { return rec.has("Stop") })
 }

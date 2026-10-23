@@ -21,6 +21,11 @@ import (
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
+// resumeWakeSettle is the settle sleep inside ResumeLastPlay's goroutine, the
+// 2 s the standbyBounceWakeWindow is sized against. A variable so the tests
+// can shorten it; the value is the production one.
+var resumeWakeSettle = 2 * time.Second
+
 // ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On
 // the SoundTouch firmware a power press emits NO powerStateUpdated frame; the box
 // only reports a source change out of STANDBY and, because it can no longer play
@@ -101,7 +106,7 @@ func (s *Server) ResumeLastPlay() {
 		// unambiguous before we decide. The DO_NOT_RESUME wake that triggers this
 		// fires on a power-on, but the box can also reach standby again right
 		// after, so settle then read the real state.
-		time.Sleep(2 * time.Second)
+		time.Sleep(resumeWakeSettle)
 		var priorRead boxReading
 		select {
 		case priorRead = <-priorCh:
@@ -1522,6 +1527,11 @@ func (s *Server) HandleEnterStandby() {
 	}()
 }
 
+// spontaneousOffSettle is how long the spontaneous-off recovery lets the flip
+// settle before it decides. A variable so the tests can shorten it; the value
+// is the production one.
+var spontaneousOffSettle = 3 * time.Second
+
 // handleSpontaneousSourceOff handles a UPNP->STANDBY drop with no physical key
 // press anywhere near it: the firmware powered STR's source off on its own
 // (#419, observed on ST10+ST30 correlating with Wi-Fi/router instability, e.g.
@@ -1593,7 +1603,7 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		// discriminator somehow missed reaches stable STANDBY here and the
 		// user-stop latch check below (armed by a STOP_STATE on some models)
 		// still gets a chance to hold it.
-		time.Sleep(3 * time.Second)
+		time.Sleep(spontaneousOffSettle)
 		if s.userStoppedRecently() || s.standbyStoppedRecently() {
 			s.logger.Info("spontaneous-off recovery: a deliberate stop arrived while settling, standing down")
 			return

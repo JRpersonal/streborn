@@ -90,7 +90,9 @@ func TestJoiningAZoneStampsTheChange(t *testing.T) {
 // confused for one another: at the moment the push lands, the quiet wake is
 // already over and the zone change is not.
 func TestTheZoneStampOutlivesTheQuietWake(t *testing.T) {
-	s := quietServer("192.0.2.10")
+	// No box host: the join's level restore is a write to the speaker, and
+	// this test is about the two stamps around it, not the write.
+	s := quietServer("")
 	s.armQuietWakeRestore(30)        // group operation begins, level muted
 	s.NoteBoxZoneState("DEV-MASTER") // the join: restores the level AND stamps
 

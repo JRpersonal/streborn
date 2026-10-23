@@ -277,15 +277,20 @@ func TestTheEndWatchRepairsAFrozenResumeFromTheSpeakersKey(t *testing.T) {
 	shrinkFileRestart(t)
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
+	// The watch polls at the fast clock, so the freeze is judged at that clock
+	// too (the production 3 s is under one poll of the production 4 s).
+	prevFreeze := fileResumeFreezeAfter
+	fileResumeFreezeAfter = prevFreeze / queueTestScale
+	t.Cleanup(func() { fileResumeFreezeAfter = prevFreeze })
 	gen := s.setLastPlay(testFileURL, "Podcast", "", "audio/mpeg")
 	np.set("PLAY_STATE", 14*time.Second, 240*time.Second)
 	s.armSingleTrackEnd(singleTrack{boxURL: testFileURL, title: "Podcast", mime: "audio/mpeg",
 		meta: upnp.TrackMeta{Duration: 240 * time.Second, Seekable: true}, dur: 240 * time.Second}, gen)
 
-	time.Sleep(4500 * time.Millisecond)
+	time.Sleep(betweenPolls(1))                            // the first poll saw the position moving
 	np.set("PAUSE_STATE", 15*time.Second, 240*time.Second) // key pause
-	time.Sleep(4 * time.Second)
-	np.set("PLAY_STATE", 15*time.Second, 240*time.Second) // key resume, frozen
+	time.Sleep(betweenPolls(1))                            // one poll saw the pause
+	np.set("PLAY_STATE", 15*time.Second, 240*time.Second)  // key resume, frozen
 
 	waitForTrackEnd(t, "the frozen resume to be restarted", func() bool { return rec.has("Seek") })
 	got := strings.Join(rec.list(), ",")
