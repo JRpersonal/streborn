@@ -262,7 +262,7 @@ func TestEveryUPnPPushPathUsesTheHandover(t *testing.T) {
 		{"boxsettings_http.go", "func (s *Server) playTrackWithWrongStateRepair", "s.pushOverNativeStation("},
 		{"librarykey.go", "func (s *Server) playLibraryFilePresetLocked", "s.pushOverNativeStation("},
 		{"queueplay.go", "func (s *Server) pushStream", "s.pushOverNativeStation("},
-		{"../../cmd/agent/main.go", "spotifyMgr.SetOnActivate(", "webuiSrv.PushOverNativeStation("},
+		{"../../cmd/agent/agent.go", "spotifyMgr.SetOnActivate(", "webuiSrv.PushOverNativeStation("},
 	}
 	for _, tc := range cases {
 		src, err := readSourceFile(tc.file)
