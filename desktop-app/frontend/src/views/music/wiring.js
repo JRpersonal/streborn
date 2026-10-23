@@ -7,6 +7,7 @@ import { state } from '../../state.js';
 import { $, clearNoticeDismissal, showError } from '../../utils.js';
 import { renderStreamSource } from '../streamsource.js';
 import { deps } from './deps.js';
+import { action, queueAction, renderNowPlayingBar } from './nowplaying.js';
 
 // stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
 // is deliberately excluded: nothing is loaded there, so Play would promise
@@ -36,7 +37,7 @@ export function mountWiring() {
   // button still read Pause and sent pause to a transport that had already
   // stopped: nothing happened and there was no way back to the music. Same fault,
   // same fix as the phone remote.
-  $('pauseBtn').onclick = () => deps.action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
+  $('pauseBtn').onclick = () => action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
   // "Artist and title are the wrong way round for this station": the agent keeps
   // the flag per station and answers with the corrected live title, so the line
   // above flips at once instead of with the next song.
@@ -53,27 +54,27 @@ export function mountWiring() {
       e.target.checked = !want;
       showError(err);
     }
-    deps.renderNowPlayingBar();
+    renderNowPlayingBar();
   };
 
-  $('stopBtn').onclick = () => deps.action('stop');
+  $('stopBtn').onclick = () => action('stop');
   // Track skip for a Spotify playlist (the DLNA folder queue has its own controls
   // in #queueControls). The agent's /api/next//api/prev are source-aware.
-  $('trackNextBtn').onclick = () => deps.action('next');
-  $('trackPrevBtn').onclick = () => deps.action('prev');
+  $('trackNextBtn').onclick = () => action('next');
+  $('trackPrevBtn').onclick = () => action('prev');
 
   // Queue transport controls (DLNA folder play queue). Each fires its action and
   // then a quick GetQueue refresh so the indicator and toggle states catch up
   // before the next status poll.
-  $('queuePrevBtn').onclick = () => deps.queueAction(QueuePrev);
-  $('queueNextBtn').onclick = () => deps.queueAction(QueueNext);
+  $('queuePrevBtn').onclick = () => queueAction(QueuePrev);
+  $('queueNextBtn').onclick = () => queueAction(QueueNext);
   $('queueShuffleBtn').onclick = () => {
     const on = !(state.queue && state.queue.shuffle);
-    deps.queueAction((h, p) => QueueShuffle(h, p, on));
+    queueAction((h, p) => QueueShuffle(h, p, on));
   };
   $('queueRepeatBtn').onclick = () => {
     const cur = (state.queue && state.queue.repeat) || 'off';
     const nextMode = cur === 'off' ? 'all' : cur === 'all' ? 'one' : 'off';
-    deps.queueAction((h, p) => QueueRepeat(h, p, nextMode));
+    queueAction((h, p) => QueueRepeat(h, p, nextMode));
   };
 }

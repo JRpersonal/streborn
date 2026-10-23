@@ -3,25 +3,23 @@ import { pinPromptKey } from './worldmapinvite.js';
 import { noteNotReady, noteWakeSucceeded, escalationForCount } from './wakeescalation.js';
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import { spotifyAccountName } from './spotifyaccountlabel.js';
-import { nextStuckBuffering } from './stuckbuffering.js';
-import { statusTickScope } from './statusrefreshscope.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { announceHighscores } from './arcadeshare.js';
 import { openHighscorePopup } from './arcadepopup.js';
 import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from './firewallbanner.js';
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
-import { sourceAccountFrom } from './nowsourceaccount.js';
 import { isNativeServicePreset, nativeServiceLabel, nativeServiceSaveable, nativeServiceBadge, nativeServiceActive } from './nativeservice.js';
 import { pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText } from './usservices.js';
 import {
-  acceptSpotifyReply, beginRecall, recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
-  spotifySlotForContext, nativeSpotifySlot,
+  beginRecall,
+  spotifySlotStillHolds,
+  spotifySlotForContext,
+  nativeSpotifySlot,
 } from './spotifynowplaying.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, playFailedForNoInternet, noInternetText } from './nointernet.js';
-import { applyPositionReading, resetProgress, wantsFastPoll } from './trackprogress.js';
-import { titleSwapOffered } from './titleswap.js';
+import { wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
@@ -42,7 +40,6 @@ import {
   PendingUpdateIntent,
   RunSpeakerUpdate,
   RunFleetUpdate,
-  TrackPosition,
   SyncBoxPresets,
   BoxPresets,
   BoxSnapshot,
@@ -50,13 +47,8 @@ import {
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
   BoxInstallReachable,
-  Pause,
-  Resume,
   Stop,
-  Next,
-  Prev,
   Status,
-  GetQueue,
   ListDrives,
   WriteStickFiles,
   FormatStick,
@@ -106,9 +98,6 @@ import {
   SetWebhooks,
   SaveWebhookConfig,
   TestWebhook,
-  StreamBitrate,
-  StreamTitleInfo,
-  SpotifyBitrate,
   SpotifyNowPlaying,
   LogSpotifySaveGate,
   SaveSpotifyPreset,
@@ -143,7 +132,6 @@ import {
   WakeBox,
   EventsOn,
   boxFetch,
-  readBoxBalance,
   GetArcade,
   CheckFirewall,
   AllowThroughFirewall,
@@ -239,7 +227,6 @@ import {
   $,
   escapeHtml,
   escapeAttr,
-  decodeXmlEntities,
   formatNumber,
   debounce,
   sleep,
@@ -253,7 +240,6 @@ import {
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
-  spotifyURIFromContainer,
   spotifySaveContextURI,
   libraryPlayMatches,
   presetBitrateLine,
@@ -261,25 +247,18 @@ import {
   dismissNotice,
   noticeDismissed,
   activeSlotFromLocation,
-  proxiedRadioPlaying,
-  queueSlotCard,
   queueSlotActive,
-  presetRevChanged,
   presetOwnArt,
-  queueTrackMeta,
   isKeyChrome,
   orionStationPayload,
   nativeSlotStale,
   isLostStrKey,
   clearNoticeDismissal,
-  balanceLabel,
   shouldAdoptPresetArt,
   appArtFromBoxArt,
   artCarriesBoxForm,
   optimisticSpotifyLocation,
   optimisticQueue,
-  queueRecallConfirmed,
-  queueReplyMerge,
   searchErrorText,
   stormBannerBoxes,
   holdRefusedBannerKey,
@@ -303,10 +282,8 @@ import {
   parsePlayRejection,
   resolveBoxByRef,
   stereoPairsOf,
-  inStereoPair,
   masterBoxForKey,
   pairMemberBoxes,
-  balanceSourceBox,
   groupCount,
   groupCountSplit,
   onZoneLive,
@@ -397,7 +374,6 @@ import { renderWishes, initWishesView } from './views/wishes.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
 // each button is called (sourceinputs.js, vitest-covered).
-import { localIsAuxSocket } from './sourceinputs.js';
 // Turning a refused preset transfer into a readable sentence is a pure
 // decision (copyreport.js, vitest-covered).
 import { presetCopyConflict } from './copyreport.js';
@@ -449,7 +425,6 @@ import { onSpeakerPurge } from './speakerPurge.js';
 // and the other views still call.
 import {
   currentPairTarget,
-  highlightActiveSource,
   initMusicView,
   loadLanguagesForCountry,
   loadMusicTabVolume,
@@ -457,16 +432,23 @@ import {
   loadTaxonomy,
   localizeLanguageName,
   mountMusicView,
+  mstate,
   musicVolEl,
   musicVolValEl,
   pairSetVolume,
+  pollTrackPosition,
   purgeMusicStateForSpeaker,
+  refreshBalance,
   refreshSourceButtons,
+  refreshStatus,
   renderGenreChips,
-  sourceListCache,
-  stoppedOrPaused,
-  syncMusicTabVolumeFromBox,
+  renderNowPlayingBar,
+  renderTrackProgress,
+  resetNowPlaying,
+  scheduleLiveBitrate,
+  scheduleLiveTitle,
   syncVolumeScopeOnZoneLive,
+  trackPos,
 } from './views/music/index.js';
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
@@ -507,7 +489,7 @@ initStreamSourceView({
 initWishesView();
 // Music view deps: the shell helpers the Music modules call (see
 // views/music/deps.js for what each one is used for).
-initMusicView({ action, checkAppUpdate, discoverBoxes, doRefilter, queueAction, refreshStatus, renderNowPlayingBar, updateFilterIndicators });
+initMusicView({ applyTrackScroll, checkAppUpdate, checkSshBanner, decodeProxyUrl, discoverBoxes, doRefilter, isMeasurableStreamPreset, maybeInviteWorldMap, refreshPresetsIfChanged, renderPresets, setPresetIfUnchanged, updateFilterIndicators });
 // Session maps this file keeps per speaker, cleared when STR is removed from
 // that speaker (Settings > Remove STR calls purgeSpeakerLocalState; see
 // speakerPurge.js). Registered as a hook because speakerPurge.js cannot import
@@ -2282,12 +2264,6 @@ function updateRecoveryBurst(hadBoxesBefore, foundNow) {
     discoverBoxes(); // re-sweeps; a successful cycle calls updateRecoveryBurst and clears this
   }, 6000);
 }
-
-// Active-box health: how many consecutive status polls have failed, and when we
-// last kicked a rediscovery because of it. See refreshStatus's catch: a box that
-// goes unreachable for several polls has almost certainly changed IP under us.
-let _statusFailCount = 0;
-let _lastUnreachableRediscover = 0;
 
 let _autoRefreshTimer = null;
 function scheduleNextAutoRefresh() {
@@ -4471,8 +4447,6 @@ function presetSignature(list) {
     .map(p => [p.slot, p.type || '', p.name || '', p.stream_url || '', p.art || ''].join(''))
     .join('');
 }
-
-let _lastPresetCheck = 0;
 // How often the preset list is re-read from the speaker. Deliberately slower
 // than the status poll: this only has to catch a change made somewhere else,
 // which is a human pressing save on their phone, and nothing here is worth
@@ -4487,8 +4461,8 @@ const PRESET_RECHECK_MS = 15000;
 async function refreshPresetsIfChanged() {
   const box = state.currentBox;
   if (!box || state.view !== 'box') return;
-  if (Date.now() - _lastPresetCheck < PRESET_RECHECK_MS) return;
-  _lastPresetCheck = Date.now();
+  if (Date.now() - mstate._lastPresetCheck < PRESET_RECHECK_MS) return;
+  mstate._lastPresetCheck = Date.now();
   let fresh;
   try {
     fresh = await GetPresets(box.host, box.port) || [];
@@ -4559,7 +4533,7 @@ async function setPresetIfUnchanged(box, cached, patch) {
     // instead of overwriting it. Same transient-empty guard the pollers use.
     if (fresh.length > 0 || state.presets.length === 0) {
       state.presets = fresh;
-      _lastPresetCheck = Date.now();
+      mstate._lastPresetCheck = Date.now();
       renderPresets();
     }
     return false;
@@ -4609,7 +4583,7 @@ async function loadPresets(retry = 0) {
     state.presets = fresh;
     // This IS a fresh read, so the background re-check starts its interval
     // from here instead of firing again right after a box switch or a save.
-    _lastPresetCheck = Date.now();
+    mstate._lastPresetCheck = Date.now();
     renderPresets();
     healPresetLogos();
     loadBoxPresets();
@@ -6696,951 +6670,6 @@ function friendlyPlayError(s, host) {
     return t('play.errUnreachable');
   }
   return t('play.errGeneric');
-}
-
-// scheduleLiveBitrate fetches the agent's detected stream bitrate after a
-// station starts and reflects it into now-playing + the active preset tile.
-// Two delayed reads, not a timer: the first catches an icy-br value (known
-// instantly), the second catches the throughput estimate, which the agent
-// only has after it has skipped the buffer-fill and measured ~6 s of
-// steady-state playback (~10 s in). Routed through the StreamBitrate Go
-// binding so it self-heals across :8888 / :17008 like every other box call
-// (a raw fetch pinned to box.port silently failed on BCO speakers).
-let liveBitrateTimer = null;
-function scheduleLiveBitrate() {
-  if (liveBitrateTimer) { clearTimeout(liveBitrateTimer); liveBitrateTimer = null; }
-  const box = state.currentBox;
-  if (!box) return;
-  // The agent only has a throughput bitrate ~10 s after the stream itself
-  // starts, and the stream start lags the play click by a few seconds
-  // (wake + UPnP). A fixed delay therefore races the measurement and can
-  // read 0 forever. So retry every 4 s until a value appears, then stop;
-  // bounded to ~32 s so it never polls indefinitely. icy-br stations
-  // resolve on the first attempt. Routed through the StreamBitrate Go
-  // binding so it self-heals across :8888 / :17008.
-  let tries = 0;
-  const attempt = async () => {
-    liveBitrateTimer = null;
-    if (state.currentBox !== box) return;
-    tries++;
-    // Spotify streams report their measured rate through a separate agent
-    // endpoint and carry no slot in the location, so resolve the preset by
-    // name (the now-playing title is the preset name).
-    const isSpotify = /\/spotify\/stream/.test(state.nowLocation || '');
-    let br = 0;
-    try {
-      br = ((isSpotify ? await SpotifyBitrate(box.host, box.port)
-                       : await StreamBitrate(box.host, box.port)) | 0);
-    } catch {}
-    if (br > 0) {
-      if (br !== state.nowBitrate) {
-        state.nowBitrate = br;
-        // status bar repaints on its own 1 s tick; setting nowBitrate is enough.
-        // Correct the active preset's stored bitrate to the real value
-        // (radio-browser's catalogue number is often missing or wrong; a
-        // Spotify preset never had one).
-        const p = isSpotify
-          ? state.presets.find(x => x.type === 'spotify' && x.name === state.nowName)
-          : (() => { const s = activeSlotFromLocation(state.nowLocation); return s !== null ? state.presets.find(x => x.slot === s) : null; })();
-        // The slot lookup goes by NUMBER, so after a sync replaced the slot's
-        // station the rate measured from the still-playing OLD stream must not
-        // be stamped onto the NEW station (#758: a Jazz-stream reading written
-        // onto the freshly-saved key). Same identity check the tile uses.
-        const orionNow = orionStationPayload(state.nowLocation);
-        const stale = !isSpotify && p && orionNow && nativeSlotStale({
-          presetName: p.name,
-          presetUrl: p.stream_url,
-          playingName: typeof orionNow.name === 'string' ? orionNow.name : '',
-          playingUrl: orionNow.streamUrl ? decodeProxyUrl(orionNow.streamUrl) : '',
-        });
-        if (p && !stale && p.bitrate !== br && isMeasurableStreamPreset(p)) {
-          p.bitrate = br;
-          // Persist for radio only. SetPreset is radio-only (type=radio, no
-          // uri), so persisting a Spotify preset would wipe its URI. The
-          // Spotify rate stays live via state.nowBitrate + /spotify/info.
-          // Guarded: the write is skipped when the slot changed on the box
-          // since this list was loaded (#758).
-          if (!isSpotify) {
-            setPresetIfUnchanged(box, p, { bitrate: br });
-          }
-        }
-        renderPresets();
-      }
-      return; // got it
-    }
-    if (tries < 11) liveBitrateTimer = setTimeout(attempt, 3000);
-  };
-  // First attempt soon: a station measured earlier this session is cached
-  // agent-side and answers instantly. Fresh stations return 0 here and the
-  // retries (every 3 s, ~33 s total) pick up the value once the agent's
-  // ~10 s throughput window completes.
-  liveBitrateTimer = setTimeout(attempt, 2000);
-}
-
-// scheduleLiveTitle polls the agent's live ICY StreamTitle for the radio
-// station currently playing and reflects it into the now-playing bar above the
-// preset grid. Unlike the bitrate (stable, read once) the title changes
-// per song, so this re-polls every 12 s while a proxied radio stream is the
-// active source. It stops when the speaker changes or playback stops; Spotify
-// is skipped (it shows its own track via /spotify/info).
-// liveTitleActive guards a single running poll loop: scheduleLiveTitle may be
-// called from the play handler AND from every refreshStatus tick, so without
-// this each call would reset the timer and it would never fire. The loop
-// clears the flag when it stops (speaker change or playback stop), so the next
-// play restarts it.
-let liveTitleActive = false;
-function scheduleLiveTitle() {
-  if (liveTitleActive) return;
-  const box = state.currentBox;
-  if (!box) return;
-  liveTitleActive = true;
-  const tick = async () => {
-    if (state.currentBox !== box) { liveTitleActive = false; return; }   // speaker changed
-    const loc = state.nowLocation || '';
-    if (loc === '') { liveTitleActive = false; return; }                 // playback stopped
-    // Anything the stream proxy is serving, which is where a live title comes
-    // from. This used to ask for a preset SLOT instead, which is a narrower
-    // question: a station started from Find stations has no slot, so the poll
-    // never ran and the Play tab showed no artist or track while the speaker's
-    // own page showed both (#922). The predicate still covers the ORION
-    // descriptor a native preset carries (#597/#555) and still says no to a
-    // native station pointing straight at a CDN, where there is no title to get.
-    const isRadio = proxiedRadioPlaying(loc);
-    if (isRadio) {
-      let title = '';
-      let swapped = false;
-      try {
-        const info = await StreamTitleInfo(box.host, box.port);
-        title = (info && info.title) || '';
-        swapped = !!(info && info.swapped);
-      } catch {}
-      if (state.currentBox !== box) { liveTitleActive = false; return; }
-      if (title !== state.nowTitle || swapped !== !!state.nowTitleSwapped) {
-        state.nowTitle = title;
-        state.nowTitleSwapped = swapped;
-        // Only the status line. The preset grid is NOT rebuilt here any more:
-        // since the keys stopped showing the live title (2026-08-23) a rebuild
-        // would re-create six <img class="preset-logo"> every 12 s for a value
-        // no tile displays. The tile's own inputs have their own triggers: the
-        // highlight from gridChanged in refreshStatus, the bitrate from
-        // scheduleLiveBitrate.
-        renderNowPlayingBar();
-      }
-    }
-    // Poll fast (every 2 s) while there is no title yet, so a just-started
-    // station or a fresh preset switch shows its track within a couple of
-    // seconds instead of waiting a full cycle; relax to 12 s once a title is
-    // showing. An empty title (station between songs / no metadata) keeps the
-    // fast cadence so it re-acquires quickly.
-    setTimeout(tick, state.nowTitle ? 12000 : 2000);
-  };
-  // First read soon: the station emits its first metadata block a moment after
-  // the stream starts.
-  setTimeout(tick, 1200);
-}
-
-async function action(kind) {
-  if (!state.currentBox) return;
-  const fn = kind === 'pause' ? Pause
-    : kind === 'resume' ? Resume
-      : kind === 'next' ? Next
-        : kind === 'prev' ? Prev
-          : Stop;
-  try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
-  // Skip lands on a new track fast; poll a touch sooner so the title updates.
-  setTimeout(refreshStatus, (kind === 'next' || kind === 'prev') ? 600 : 1000);
-}
-
-// queueAction runs a queue binding for the current box, then refreshes the
-// status (which pulls a fresh GetQueue) so the transport controls reflect the
-// new position / toggle state promptly.
-async function queueAction(fn) {
-  if (!state.currentBox) return;
-  try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
-  setTimeout(refreshStatus, 600);
-}
-
-// refreshQueue pulls the box's current queue state and folds it into state.queue,
-// then repaints the transport controls. Called from the status poll so it shares
-// the existing cadence. Best-effort: a failed read just leaves the controls as is.
-async function refreshQueue() {
-  const box = state.currentBox;
-  if (!box) { state.queue = null; renderQueueControls(); return; }
-  try {
-    const q = await GetQueue(box.host, box.port);
-    if (state.currentBox !== box) return; // box switched mid-fetch
-    const before = queueSlotCard(state.queue);
-    const beforeSlot = state.queue ? state.queue.slot : undefined;
-    // A reply that does not name the key just clicked yet (sent before the
-    // agent started the queue) must not wipe the optimistic card (#978).
-    const pending = Date.now() < (state.optimisticUntil || 0) ? state.optimisticQueueSlot : null;
-    state.queue = queueReplyMerge(state.queue, q, pending);
-    // A library-album key lights up from the queue card, which arrives here and
-    // not with the status poll: repaint the keys when it changes, or the
-    // highlight waited for an unrelated status change (#1190). Same for the
-    // key a playing folder was just saved on (#1217).
-    const slotNow = state.queue ? state.queue.slot : undefined;
-    if ((queueSlotCard(state.queue) !== before || slotNow !== beforeSlot) && state.presets.length > 0) renderPresets();
-    // The agent's preset store was written (a save on this app, the phone, or
-    // a hold on the speaker's own key): re-read the presets now instead of on
-    // the slow recheck timer, which kept a held key unshown for up to 15 s
-    // (#1217). The revision rides this reply, so it costs no request of its own.
-    const rev = q ? q.preset_rev : undefined;
-    if (presetRevChanged(state.presetRev, rev)) {
-      _lastPresetCheck = 0;
-      refreshPresetsIfChanged();
-    }
-    if (typeof rev === 'number') state.presetRev = rev;
-  } catch {
-    // leave the last known queue state on screen
-  }
-  renderQueueControls();
-}
-
-// renderQueueControls shows/hides the queue transport controls and reflects the
-// shuffle/repeat/position state. Purely DOM-driven from state.queue.
-function renderQueueControls() {
-  const wrap = $('queueControls');
-  if (!wrap) return;
-  const q = state.queue;
-  const active = !!(q && q.active);
-  wrap.classList.toggle('hidden', !active);
-  if (!active) return;
-  const shuffleBtn = $('queueShuffleBtn');
-  if (shuffleBtn) shuffleBtn.classList.toggle('active', !!q.shuffle);
-  const repeatBtn = $('queueRepeatBtn');
-  if (repeatBtn) {
-    const mode = q.repeat || 'off';
-    repeatBtn.classList.toggle('active', mode !== 'off');
-    // "Repeat one" gets a small superscript 1 so the two repeat modes are
-    // distinguishable at a glance.
-    repeatBtn.innerHTML = mode === 'one' ? '&#128257;¹' : '&#128257;';
-  }
-  const pos = $('queuePos');
-  if (pos) {
-    const items = q.items || [];
-    const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
-    // The running song's artist and album, as its Library row named them
-    // (#1033); the title itself is already on the now-playing line.
-    const meta = queueTrackMeta(q);
-    const of = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
-    pos.textContent = [of, meta].filter(Boolean).join(' · ');
-  }
-}
-
-// resetNowPlaying drops the cached now-playing line so switching speakers (in
-// particular tapping a different box / a group member) starts from a neutral
-// placeholder instead of showing the previously selected box's track until the
-// next status poll lands. Without this the marquee kept the previous speaker's
-// station + track for 5-10 s after a switch, and in a group it stuck on the
-// member's pre-group selection (#207).
-function resetNowPlaying() {
-  state.nowLocation = '';
-  state.nowName = '';
-  state.nowTitle = '';
-  state.nowSource = '';
-  state.nowSourceAccount = '';
-  state.nowPlayState = '';
-  state.nowIcon = '';
-  state.nowBitrate = 0;
-  state.spotifyNow = null;
-  state.spotifyRecall = null;
-  state.spotifyNowGen = (state.spotifyNowGen || 0) + 1;
-  state.optimisticUntil = 0;
-  state.lastStatusHTML = '';
-}
-
-// renderNowPlayingBar paints the now-playing status line purely from cached
-// state (no network), so it can be called both from the status poll and from
-// the live-title poller the moment a track arrives, instead of the track only
-// appearing on the next poll. Since 2026-08-23 this bar is the only place the
-// running title is shown. Guarded on the rendered HTML so it does not restart
-// the marquee animation when nothing changed.
-// spotifyContextLabelKey names what is playing by what the URI says it is. The
-// line used to say "Playlist" for everything, so an album played from the Spotify
-// app was announced as a playlist (#709). Anything unrecognised keeps the old
-// word rather than inventing one.
-function spotifyContextLabelKey(uri) {
-  const kind = String(uri || '').split(':')[1] || '';
-  if (kind === 'album') return 'status.albumLabel';
-  if (kind === 'artist') return 'status.artistLabel';
-  if (kind === 'show' || kind === 'episode') return 'status.podcastLabel';
-  return 'status.playlistLabel';
-}
-
-function renderNowPlayingBar() {
-  const bar = $('statusBar');
-  if (!bar) return;
-  const ps = state.nowPlayState || '';
-  const src = state.nowSource || '';
-  const loc = state.nowLocation || '';
-  const name = state.nowName || '';
-  // Transport button doubles as Play/Pause: when the box is paused it offers
-  // Play (resume from the paused position, like the Bose remote), otherwise
-  // Pause (#202).
-  const ppBtn = $('pauseBtn');
-  if (ppBtn) {
-    ppBtn.innerHTML = stoppedOrPaused(ps)
-      ? '&#9205; ' + escapeHtml(t('controls.play'))
-      : '&#9208; ' + escapeHtml(t('controls.pause'));
-  }
-  // Track skip/previous: only for a Spotify playlist (the DLNA folder queue has
-  // its own prev/next in #queueControls). The buttons flank Play/Pause and hide
-  // for radio and single sources, which have nothing to skip.
-  const isSpotify = /\/spotify\/stream/.test(loc);
-  const nextBtn = $('trackNextBtn');
-  const prevBtn = $('trackPrevBtn');
-  if (nextBtn) nextBtn.classList.toggle('hidden', !isSpotify);
-  if (prevBtn) prevBtn.classList.toggle('hidden', !isSpotify);
-  let displayName = name;
-  // Either Spotify: the one STR serves through its own proxy, or the one the
-  // speaker serves itself after a phone picked it in Connect. Same line, two
-  // sources for the song.
-  // STR's own Spotify is drawn from ONE snapshot of one /spotify/info reply, so
-  // song, artist and context always describe the same thing (#1077).
-  const snap = state.spotifyNow;
-  const song = state.nowBoxSpotify
-    ? spotifySongText(state.nowBoxSpotify)
-    : (/\/spotify\/stream/.test(loc) ? spotifySongText(snap) : '');
-  if (song) {
-    const spotifyCtx = snap ? snap.context : '';
-    displayName = name ? `${t(spotifyContextLabelKey(spotifyCtx || spotifyURIFromContainer(loc)))}: "${name}" · ${song}` : song;
-  } else if (proxiedRadioPlaying(loc) && state.nowTitle) {
-    // The same predicate as the title poller above, and it has to be the same
-    // one: fixing only the poll would fetch a title that this line then refused
-    // to print (#922).
-    displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
-  }
-  // The per-station "artist and title are the wrong way round" switch, only
-  // while a proxied station plays a two-part title (titleswap.js).
-  const swapRow = $('titleSwapRow');
-  if (swapRow) {
-    const offered = !song && titleSwapOffered(proxiedRadioPlaying(loc), state.nowTitle);
-    swapRow.classList.toggle('hidden', !offered);
-    const box = $('titleSwapToggle');
-    if (box && offered) box.checked = !!state.nowTitleSwapped;
-  }
-  // Match the source case-insensitively: the firmware is not consistent about
-  // casing across models, and AirPlay in particular can read as AIRPLAY,
-  // AirPlay2, etc. depending on the speaker (#122).
-  const srcU = src.toUpperCase();
-  const isAirplay = srcU.includes('AIRPLAY');
-  let stateLabel, stateClass;
-  if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
-  else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
-  else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
-  else if (srcU === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
-  else { stateLabel = ''; stateClass = 'idle'; }
-  // LOCAL is what a Cinemate calls the very same analogue input, so it gets
-  // the same line rather than falling through to the generic "some source is
-  // active" case, which is why a speaker playing through it showed nothing
-  // useful at all (#491).
-  // `name || generic`, not the generic outright. The box names its own socket
-  // in <itemName> and the app had already parsed and stored it one line above,
-  // then overwrote it here, so a speaker with two or three inputs showed the
-  // same "AUX input" for all of them while the phone remote printed the real
-  // name (#274). The generic label stays as the FALLBACK: a CineMate reported
-  // no name at all and fell through to "some source is active", which was
-  // worse than a generic one (#491).
-  // On a Wave, LOCAL is the console's own CD, radio or Aux, not a socket STR
-  // can name, so it gets a neutral label instead of "AUX input" (#1322).
-  const npBox = state.currentBox;
-  const auxGeneric = (srcU === 'LOCAL' && !localIsAuxSocket(npBox ? sourceListCache.get(npBox.host) : null, npBox ? npBox.model : ''))
-    ? t('status.ownSource') : t('status.auxInput');
-  if (srcU === 'AUX' || srcU === 'LOCAL') { displayName = name || auxGeneric; if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
-  else if (srcU === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
-  else if (isAirplay) { displayName = t('status.airplay'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
-  else if (srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && ps !== 'STOP_STATE' && !stateLabel && !displayName) {
-    // The box has an active source STR does not specifically label (some models
-    // report AirPlay/Spotify Connect/other inputs under a different name and
-    // without a playStatus). Reflect it as active rather than letting it fall
-    // through to a misleading "ready" while audio is actually playing. An
-    // explicit STOP_STATE is excluded so a stopped box still reads as idle.
-    stateLabel = t('status.active');
-    stateClass = 'play';
-  }
-  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && srcU !== 'AUX' && srcU !== 'BLUETOOTH' && !isAirplay;
-  // The bitrate readout only means something for a measured live stream: radio
-  // through the proxy (/stream/...) or Spotify. A direct library file is played
-  // straight to the box and STR never measures its rate, so it must not show a
-  // number (a leftover radio value) or a misleading "- kbit/s" (#310). Until
-  // the rate is measured the bar shows nothing rather than a unit with no
-  // number in front of it (#1077, Issue 17).
-  const measuredStream = /\/stream\//.test(state.nowLocation || '') || /\/spotify\/stream/.test(state.nowLocation || '');
-  const brLabel = (isStreamSrc && measuredStream && state.nowBitrate > 0) ? ` <small class="now-bitrate">${state.nowBitrate} kbit/s</small>` : '';
-  bar.className = 'status-bar status-' + stateClass;
-  // Glyph reflects the actual transport state so play vs pause is not conveyed
-  // by colour alone (accessibility): play arrow normally, pause bars when paused.
-  const stateGlyph = stoppedOrPaused(ps) ? '&#9208;' : '&#9205;';
-  let statusHTML;
-  if (displayName) {
-    // displayName sits in a .track-inner so a too-long "Station: ... · track"
-    // marquees inside .now. This bar is the full window wide, which is why it
-    // is the one place that carries the running title (report 2026-08-23).
-    statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
-  } else if (stateLabel) {
-    statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
-  } else if (state.currentBox && state.currentBox.offline) {
-    // Not "stopped". A failed poll deliberately keeps the last known
-    // now-playing rather than blanking the bar, and with nothing playing
-    // that fell through to the stopped text (then "ready"), so a speaker that had gone off the
-    // network was reported as an idle speaker waiting for input, for as long
-    // as the app stayed open. The tile greys out but the status line said the
-    // opposite (#165). Discovery already knows; this just stops contradicting it.
-    statusHTML = `<span class="muted">${escapeHtml(t('status.unreachable'))}</span>`;
-  } else {
-    // Nothing playing is "stopped", the word the phone page uses too. It was
-    // "ready" here and "Idle" there for the same speaker (#1034).
-    statusHTML = `<span class="muted">${escapeHtml(t('status.stopped'))}</span>`;
-  }
-  // Only rewrite the DOM when the line changes, so the marquee animation is not
-  // restarted on every poll (it would never get to scroll).
-  // Written into .status-main, NOT into the bar itself: the elapsed time and
-  // the progress bar are siblings inside the same bar now, and replacing the
-  // bar's whole content would delete them on every status poll.
-  if (statusHTML !== state.lastStatusHTML) {
-    state.lastStatusHTML = statusHTML;
-    const main = $('statusMain');
-    if (main) main.innerHTML = statusHTML;
-    requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
-  }
-}
-
-// Stereo balance, read-only.
-//
-// Balance exists only while two speakers are paired, and only the MASTER of the
-// pair reports it; ask the other one and it says it has none. The picker lists
-// the two halves of a pair individually and marks neither as the master, so
-// asking the selected speaker meant the balance simply vanished for whoever
-// picked the other half, and the feature looked absent (reported 2026-08-06).
-// balanceSourceBox therefore routes the question to the pair's master whichever
-// half is selected. Range and centre come from the speaker (-7..+7, 0 centred
-// on a SoundTouch 10) rather than from a constant, because a widely-copied
-// community value of -50..+50 does not match what the firmware actually says.
-//
-// Shown, not settable yet. Every write ATTEMPT OVER HTTP hung and left the
-// speaker's balance endpoint unresponsive until it was woken again. The
-// WebSocket bus is reported to accept it (#70) and has never been tried,
-// because STR's client there cannot send. Displaying it still earns its place, because a pair that was set
-// off-centre in the old Bose app otherwise just sounds lopsided for no visible
-// reason.
-//
-// Fetched on demand, never on the status poll: the speaker does not answer this
-// while it is in deep standby, it simply hangs.
-async function refreshBalance() {
-  const el = $('musicBalance');
-  if (!el) return;
-  const selected = state.currentBox;
-  if (!selected || selected.kind === 'stock') { el.classList.add('hidden'); return; }
-  // Resolve the pair that CONTAINS the selected box, not just the first: either
-  // half of any pair must show that pair's balance (#70), which was only true
-  // for the first pair while stereoPairOf returned it alone.
-  const balPair = stereoPairsOf(state.zoneLive || {}).find(p => inStereoPair(selected, p)) || null;
-  const box = balanceSourceBox(selected, balPair, state.boxes) || selected;
-  if (box.kind === 'stock') { el.classList.add('hidden'); return; }
-  const v = await readBoxBalance(box);
-  if (v === null) { el.classList.add('hidden'); return; }
-  el.textContent = balanceLabel(v);
-  el.title = t('controls.balanceTitle');
-  el.classList.remove('hidden');
-}
-
-// Track progress (#399). The speaker's own AVTransport clock is the source of
-// truth, polled on the status cadence; between polls the bar advances locally
-// so it moves smoothly instead of stepping every few seconds.
-//
-// Two rules keep it honest. It never runs backwards on its own: now_playing and
-// the transport can disagree for a second around a track change, and a bar that
-// jumps back reads as a bug even when the number is momentarily right. And a
-// track change resets it hard, because that is the one moment when going back
-// to zero is correct.
-const trackPos = { sec: 0, dur: 0, at: 0, key: '', resetAt: 0, polling: false };
-
-function fmtClock(sec) {
-  sec = Math.max(0, Math.floor(sec));
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m + ':' + String(s).padStart(2, '0');
-}
-
-function resetTrackProgress(key) {
-  resetProgress(trackPos, key, Date.now());
-  renderTrackProgress();
-}
-
-function renderTrackProgress() {
-  const wrap = $('trackProgress');
-  if (!wrap) return;
-  const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
-  if (!playing || trackPos.at === 0) { wrap.classList.add('hidden'); return; }
-  // Interpolate forward from the last reading while the speaker is playing.
-  const drift = state.nowPlayState === 'PLAY_STATE' ? (Date.now() - trackPos.at) / 1000 : 0;
-  const shown = trackPos.sec + drift;
-  wrap.classList.remove('hidden');
-  $('trackElapsed').textContent = fmtClock(shown);
-  const bar = $('trackBar');
-  const fill = $('trackBarFill');
-  if (trackPos.dur > 0) {
-    // A track with a known length: show the bar and the total.
-    bar.classList.remove('hidden');
-    fill.style.width = Math.min(100, (shown / trackPos.dur) * 100).toFixed(1) + '%';
-    $('trackTotal').textContent = fmtClock(trackPos.dur);
-  } else {
-    // Radio has no end. Elapsed time only, no bar to fill.
-    bar.classList.add('hidden');
-    $('trackTotal').textContent = '';
-  }
-}
-
-async function pollTrackPosition() {
-  // No view gate here any more. The bar this feeds is on screen in every tab,
-  // and refreshStatus decides what a tick is allowed to cost (#845).
-  if (trackPos.polling || !state.currentBox) return;
-  const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
-  if (!playing) { trackPos.at = 0; trackPos.resetAt = 0; renderTrackProgress(); return; }
-  trackPos.polling = true;
-  // A reading that lands after the track changed describes the old track.
-  // refreshStatus fires this poll before its own status read, so around a
-  // track change that is the normal order, not a rare race (#845).
-  const keyAtStart = trackPos.key;
-  try {
-    // One object, read by field name. It used to be destructured as a pair,
-    // which Wails cannot return: a bound method with two results keeps the
-    // first and treats the second as an error, so the answer arrived as a
-    // plain number and destructuring it threw on every single tick. The catch
-    // below swallowed that, so the duration stayed 0, no bar was ever drawn,
-    // and the elapsed clock was pure extrapolation rather than a reading.
-    const p = await TrackPosition(state.currentBox.host, state.currentBox.port);
-    // A failed read, a stale one, or a momentary zero length keeps the last
-    // reading; see trackprogress.js. Hiding the bar on any of those is what
-    // made it blink out for a poll during playback (#845).
-    applyPositionReading(trackPos, p, keyAtStart, Date.now());
-  } catch {
-    // leave the last reading in place
-  } finally {
-    trackPos.polling = false;
-    renderTrackProgress();
-  }
-}
-
-// spotifyKeyUsableFor answers one question for the built-in-Spotify notice:
-// could a saved Spotify key on THIS speaker play anything at all? Only the
-// speaker knows, so it is asked, once, and the answer cached per host.
-//
-// Returns true, false, or undefined while no answer has arrived yet. The caller
-// shows the notice only on true, so a speaker that has not answered stays
-// silent for a poll rather than repeating an instruction that already went out
-// wrong twice (#973).
-//
-// canRecall absent means the agent predates the field, not "no". Reading it as
-// no would hide the notice from everyone who has not updated their speaker.
-function spotifyKeyUsableFor(box) {
-  if (!box || !box.host) return undefined;
-  const cache = state.spotifyKeyUsable || (state.spotifyKeyUsable = {});
-  if (box.host in cache) return cache[box.host];
-  if (state.spotifyKeyUsablePending === box.host) return undefined;
-  state.spotifyKeyUsablePending = box.host;
-  SpotifyNowPlaying(box.host, box.port)
-    .then(np => {
-      state.spotifyKeyUsablePending = '';
-      if (!np) return;
-      const canRecall = np.canRecall === null || np.canRecall === undefined ? true : !!np.canRecall;
-      cache[box.host] = canRecall && !np.premiumRequired;
-    })
-    .catch(() => {
-      state.spotifyKeyUsablePending = '';
-    });
-  return undefined;
-}
-
-async function refreshStatus() {
-  if (!state.currentBox) return;
-  // The status bar is visible in EVERY tab: it hangs off boxControls, which is
-  // gated only on having a speaker. This function used to return immediately
-  // outside the box view, so on the Library or Recently-played tab the bar sat
-  // frozen. No play state, no track position, and the progress bar hid itself
-  // because its last reading never refreshed, which is exactly where single
-  // tracks get started from. Reported as "the desktop app does not show a
-  // progress bar" while the phone remote did, and the phone has one view and
-  // therefore never skipped a tick (#845).
-  //
-  // Outside the box view only what the visible bar needs is refreshed. The
-  // queue, the preset tiles and the volume slider belong to controls that are
-  // not on screen, and this polls a speaker whose NAND and CPU nobody can
-  // replace. The cadence out there stays the slow one; the bar interpolates
-  // between readings once a second, so it still moves like a clock.
-  const barOnly = !statusTickScope({ hasBox: true, view: state.view }).controls;
-  // Reflect hardware-button volume changes back into the slider.
-  // Fired in parallel with the Status fetch so a slow Status call
-  // does not delay the volume update. Cheap, drag-aware.
-  if (!barOnly) syncMusicTabVolumeFromBox();
-  // Keep the queue transport controls in step with the box. Fired alongside the
-  // Status fetch (not awaited) so it shares the poll cadence without delaying it.
-  if (!barOnly) refreshQueue();
-  // Track position rides the same cadence, not awaited so a slow AVTransport
-  // read cannot delay the status poll.
-  pollTrackPosition();
-  // This app is not the only thing that writes presets: the phone remote saves
-  // to the same speaker, and until now the tiles here kept whatever they were
-  // loaded with, so a key reassigned from the phone showed the old station
-  // until the speaker was reselected.
-  if (!barOnly) refreshPresetsIfChanged();
-  try {
-    const xml = await Status(state.currentBox.host, state.currentBox.port);
-    _statusFailCount = 0; // the box answered: it is reachable at its current IP
-    // The station name wins when the speaker (or the agent, #1170) reports one:
-    // with the track shown on the speaker display, itemName carries the song.
-    const name = decodeXmlEntities((xml.match(/<stationName>([^<]+)<\/stationName>/) || [])[1]
-      || (xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
-    const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
-    state.nowSource = src;
-    // A speaker with more than one socket of the same kind (an SA-5 reports
-    // three AUX inputs) says which one is playing only in the account, so the
-    // input row needs it to light the right button (#274). It is not always in
-    // the same place: UPnP puts it on the outer element AND on the ContentItem,
-    // AUX only on the ContentItem, so reading the outer one alone found nothing
-    // for exactly the speaker that needed it. See nowsourceaccount.js.
-    state.nowSourceAccount = sourceAccountFrom(xml);
-    // The speaker's OWN Spotify receiver names the song in the same response,
-    // and that is not true of every source: on radio <track> merely repeats the
-    // station, which is why the song has always had to come from STR's stream
-    // proxy instead (#593). Confirmed on firmware 27.0.6 with the cloud gone
-    // and a FREE Spotify account: <track>, <artist>, <album> and the cover are
-    // all filled while <itemName> carries the playlist. So a phone-started
-    // Connect session can show the song with no extra request, and STR's own
-    // engine must not be asked about it, because it is not the one playing.
-    state.nowBoxSpotify = null;
-    if (src === 'SPOTIFY') {
-      const bt = decodeXmlEntities((xml.match(/<track>([^<]*)<\/track>/) || [])[1] || '');
-      if (bt) {
-        state.nowBoxSpotify = {
-          track: bt,
-          artist: decodeXmlEntities((xml.match(/<artist>([^<]*)<\/artist>/) || [])[1] || ''),
-          cover: (xml.match(/<art\b[^>]*>([^<]*)<\/art>/) || [])[1] || '',
-        };
-      }
-    }
-
-    // Piggy-back an SSH status check on the polling we are doing
-    // anyway. Toggle the global banner so the user sees it on every
-    // tab rather than only after entering the Settings tab.
-    checkSshBanner();
-    const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
-
-    // Native Bose Spotify receiver detection: source=SPOTIFY means a phone
-    // connected to the speaker's built-in Spotify Connect, not STR's
-    // go-librespot (STR's own playback is always source=UPNP via the stream
-    // proxy). STR cannot recall a preset on the native receiver, so say so
-    // once per episode and reset when the speaker leaves SPOTIFY again.
-    //
-    // Two conditions, both from the same report (#950). The notice opens with
-    // "Playing on the speaker's built-in Spotify" and used to fire on a PAUSED
-    // session, because the play state was read further down than the notice.
-    // And it tells the user to press a saved Spotify key, which a free account
-    // cannot create at all, so it sent a free-account user looking for a button
-    // that does not exist. It now needs a speaker that is really playing and a
-    // key that really exists, and it is remembered per speaker, not globally.
-    // Two conditions were not enough. The reporter HAS a saved Spotify key
-    // and his speaker WAS playing, so both gates passed and he still got a
-    // notice telling him to press a key he cannot use (#973, on v0.9.83 which
-    // already had the first fix). The key existing was never the question;
-    // being able to use it is.
-    //
-    // The third attempt has to ask the SPEAKER, and it has to ask here.
-    // state.spotifyPremiumRequired looked like the answer, but it is only ever
-    // written while STR's own stream is the thing playing (isSpotifyNow, below),
-    // and that is false exactly when this notice fires, because what is playing
-    // is the box's OWN receiver. The flag was therefore always undefined at this
-    // point. A free account is also only half of it: a speaker that was never
-    // picked in Spotify at all cannot use the key either, and reports
-    // premiumRequired=false because it has no account to judge.
-    const spotifyKeySaved = (state.presets || []).some(p => p && p.type === 'spotify');
-    const spotifyWarnKey = (state.currentBox && state.currentBox.host) || '';
-    if (src === 'SPOTIFY' && ps === 'PLAY_STATE' && spotifyKeySaved) {
-      // Silent until the speaker has answered. One poll's delay on a hint is
-      // cheaper than a third wrong instruction to the same person.
-      if (state.nativeSpotifyWarned !== spotifyWarnKey && spotifyKeyUsableFor(state.currentBox) === true) {
-        state.nativeSpotifyWarned = spotifyWarnKey;
-        showToast(t('play.nativeSpotifyHint'));
-      }
-    } else if (src !== 'SPOTIFY') {
-      state.nativeSpotifyWarned = '';
-      // Forget the verdict too: the user may go and tap the speaker in Spotify
-      // precisely because the key did not work, and the app must notice.
-      state.spotifyKeyUsable = {};
-    }
-    const loc = decodeXmlEntities((xml.match(/location="([^"]+)"/) || [])[1] || '');
-    // Extract the art URL from the <art ...>URL</art> tag. Bose
-    // emits it for stations with an image (for example after a
-    // radio-search play). Without this refresh, state.nowIcon would
-    // stay stuck from the previous soft click ("logo of the
-    // previous station" bug).
-    const artRaw = decodeXmlEntities((xml.match(/<art[^>]*>([^<]+)<\/art>/) || [])[1] || '');
-
-    // Optimistic guard: after a user preset click we set nowLocation
-    // straight to the desired stream. Until optimisticUntil expires,
-    // refreshStatus must NOT overwrite location/name. Otherwise the
-    // button flickers grey between click and the actual stream
-    // start. Once the speaker confirms our location, release the
-    // optimistic guard.
-    const optimistic = Date.now() < (state.optimisticUntil || 0);
-    if (optimistic && loc && loc === state.nowLocation) {
-      state.optimisticUntil = 0;
-    }
-    // A library album or folder key has no location to compare: the recall is
-    // confirmed once the queue names the clicked key and the speaker reports a
-    // location other than the one it had before the click (#978).
-    if (optimistic && queueRecallConfirmed(state.optimisticQueueSlot, state.queue, loc, state.optimisticQueuePrevLoc)) {
-      state.optimisticUntil = 0;
-      state.optimisticQueueSlot = null;
-    }
-    const newLoc = optimistic ? state.nowLocation : loc;
-    const prevLoc = state.nowLocation;
-    const newName = optimistic ? state.nowName : name;
-    // The preset grid reads the play state and the location, never the track
-    // name (a key shows what is SAVED on it). Rebuilding all six keys for a name
-    // change re-created their markup mid-song, which made the window jump while
-    // the speaker briefly reported a different name for the same track (#1190).
-    const gridChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc;
-    // A different track means the progress must start over; anything else keeps
-    // its reading so the bar does not stutter on an unrelated status change.
-    const trackKey = newLoc + '|' + newName;
-    if (trackKey !== trackPos.key) resetTrackProgress(trackKey);
-    else if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') && trackPos.at === 0) {
-      // Playing again with no reading yet (the same track resumed after a
-      // stop): open the fast-poll window so the bar does not wait a full
-      // status interval either.
-      trackPos.resetAt = Date.now();
-    }
-    // #810: the Recently-played view now refreshes now-playing itself (recent.js
-    // syncCurrentNowPlaying), because refreshStatus returns early on any non-box
-    // view, so an "if (state.view === 'recent')" branch here was unreachable.
-    state.nowPlayState = ps;
-    state.nowLocation = newLoc;
-    state.nowName = newName;
-    // Live Spotify track metadata for the now-playing line: poll the agent's
-    // /spotify/info (throttled) while a Spotify stream is active so the desktop
-    // shows the current song + artist, not just the playlist/preset name.
-    // A container location is also what the speaker's own receiver reports, and
-    // for that one the song came out of the status XML above. Asking STR's
-    // engine then answers about a session it is not serving and blanks the line.
-    const isSpotifyNow = /\/spotify\/stream|\/playback\/container/.test(newLoc) && !state.nowBoxSpotify;
-    if (isSpotifyNow) {
-      const npBox = state.currentBox;
-      if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {
-        state.lastSpotifyNowFetch = Date.now();
-        const sentGen = state.spotifyNowGen || 0;
-        SpotifyNowPlaying(npBox.host, npBox.port).then(np => {
-          if (!np) return;
-          // Only a reply about the preset clicked last may paint the line, and
-          // only as a whole (#1077). A rejected reply leaves the previous
-          // snapshot (none, right after a click) in place and the next status
-          // poll asks again instead of waiting out the throttle. The account
-          // and entitlement fields below are not about the song and are read
-          // either way.
-          let coverChanged = false;
-          let contextChanged = false;
-          if (acceptSpotifyReply(np, {
-            sentGen, currentGen: state.spotifyNowGen || 0, recall: state.spotifyRecall, now: Date.now(),
-          })) {
-            const snap = snapshotFromReply(np);
-            coverChanged = (state.spotifyNow ? state.spotifyNow.cover : '') !== snap.cover;
-            // The context names the key to light when no key started the
-            // playback (#1217): repaint the keys when it changes too.
-            contextChanged = (state.spotifyNow ? state.spotifyNow.context : '') !== snap.context;
-            state.spotifyNow = snap;
-            if (recallSettled(snap)) state.spotifyRecall = null;
-            renderNowPlayingBar();
-          } else if (sentGen === (state.spotifyNowGen || 0)) {
-            state.lastSpotifyNowFetch = 0;
-          }
-          // What the speaker has learned each account is CALLED, which is what
-          // a preset tile and a Recently-played card draw. The account id never
-          // goes on screen in any form, so an account with no remembered name
-          // simply shows no line. Merged rather than replaced: two speakers can
-          // each have met a different household account, and a payload without
-          // the field (an older agent) must not wipe what another one told us.
-          if (np.accountNames && typeof np.accountNames === 'object') {
-            state.spotifyAccountNames = { ...(state.spotifyAccountNames || {}), ...np.accountNames };
-          }
-          // A free account cannot start a playlist from a preset key, so any
-          // message that tells the user to press one is wrong for them (#973).
-          state.spotifyPremiumRequired = !!np.premiumRequired;
-          // Spotify refused the audio key for track after track. Without this
-          // the playlist just races past in silence and the speaker looks
-          // broken, when in fact Spotify is refusing this engine for this
-          // account. Said once per episode: the condition clears itself on the
-          // speaker after ten quiet minutes, and repeating it every three
-          // seconds would be worse than the silence.
-          if (np.audioKeyRefused) {
-            if (!state.spotifyKeyRefusalShown) {
-              state.spotifyKeyRefusalShown = true;
-              showError(t('spotify.audioKeyRefused'));
-            }
-          } else {
-            state.spotifyKeyRefusalShown = false;
-          }
-          // The now-playing line redraws every status poll, but the tile cover
-          // only redraws on renderPresets. Re-render when the cover changes so
-          // the preset logo tracks the song in step with the title instead of
-          // lagging a track behind.
-          if (coverChanged || contextChanged) renderPresets();
-        }).catch(() => {});
-      }
-    } else {
-      state.spotifyNow = null;
-    }
-    // The tile adopts state.nowIcon (and persists it) only while the active
-    // preset still has no stored art. That render used to come for free from
-    // the 12 s live-title rebuild; since the key stopped showing the running
-    // title (2026-08-23) nothing repaints the grid between two status changes,
-    // so a speaker that reports an empty <art> on the poll which first shows
-    // the new location and fills it in a poll later would leave the key on its
-    // fallback favicon for the rest of the song, with the real logo never
-    // saved. False again the moment the art is stored, so this renders once
-    // per station, not once per poll.
-    let iconAdoptable = false;
-    // Update state.nowIcon. Prefer the art tag from now_playing.
-    // If that is empty AND we are playing through the stream proxy,
-    // adopt the logo of the source preset. Bose UPnP items emitted
-    // by hardware key presses carry no art tag, so we need this
-    // fallback.
-    if (!optimistic) {
-      const slotFromProxy = activeSlotFromLocation(newLoc);
-      const ap = slotFromProxy !== null ? state.presets.find(p => p.slot === slotFromProxy) : null;
-      if (artRaw) {
-        state.nowIcon = artRaw;
-      } else if (ap) {
-        state.nowIcon = ap.art || '';
-      } else if (!newLoc) {
-        state.nowIcon = '';
-      }
-      // Mirror of the grid's adopt gate in renderPresets: judge the UNWRAPPED
-      // icon, because for a native play the box's <art> is the agent's own
-      // loopback art-proxy URL and can leave nothing adoptable once unwrapped
-      // (#696). Judging the raw value here while the grid persists the
-      // unwrapped one would re-render for an adopt that never happens.
-      iconAdoptable = shouldAdoptPresetArt(appArtFromBoxArt(state.nowIcon), ap);
-      // Keep the now-playing bitrate in sync with the active preset
-      // (hardware key press or app restart did not go through the play
-      // path that sets it). Cleared when nothing is playing.
-      if (/\/spotify\/stream/.test(newLoc)) {
-        // Spotify stream: never inherit the previous radio station's bitrate.
-        // Use the matching Spotify preset's stored (measured) rate, or 0 so the
-        // live fetch below recomputes it from the actual stream.
-        // A rate the live fetch already measured for this same stream stays:
-        // resetting it on every poll left "- kbit/s" in the bar most of the
-        // time (#1077, Issue 17).
-        const sp = state.presets.find(p => p.type === 'spotify' && p.name === newName);
-        if (!(prevLoc === newLoc && state.nowBitrate > 0)) {
-          state.nowBitrate = (sp && sp.bitrate) ? sp.bitrate : 0;
-        }
-      } else if (ap && ap.bitrate) {
-        state.nowBitrate = ap.bitrate;
-      } else if (!newLoc ||
-                 (!/\/stream\//.test(newLoc) && !/\/spotify\/stream/.test(newLoc))) {
-        // Nothing playing, or a direct library file: a library track is played
-        // straight to the box (not through the stream proxy), so there is no
-        // measured live bitrate. Clear it instead of leaving a previous radio
-        // station's value behind (#310).
-        state.nowBitrate = 0;
-      }
-      // Still playing through the stream proxy but with no bitrate yet
-      // (app restart, hardware key press, or a preset whose stored bitrate
-      // is 0): kick the live fetch. It writes state.nowBitrate once the
-      // agent has measured and then self-stops, so this does not re-trigger
-      // on every poll once a value is in.
-      if (!state.nowBitrate &&
-          (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
-          (activeSlotFromLocation(newLoc) !== null || /\/spotify\/stream/.test(newLoc))) {
-        scheduleLiveBitrate();
-      }
-      // Keep the live radio track flowing into the now-playing bar for playback
-      // STR did not itself start (hardware key, app restart). Self-guarded, so
-      // calling it on every poll is safe; it no-ops while already polling.
-      // Any proxied radio stream, not only a preset slot: a station started
-      // from Find stations plays as /stream/raw and has no slot (#1190).
-      if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
-          proxiedRadioPlaying(newLoc)) {
-        scheduleLiveTitle();
-      }
-    }
-
-    // A key that stays BUFFERING for 30 s without ever playing gets an error
-    // instead of "stream starting ..." forever (#1077: a stereo pair whose
-    // follower could not decode the first frame left the lead speaker
-    // buffering for good). The agent gives such a Spotify key one clean
-    // retry; a PLAY_STATE below clears this error again.
-    {
-      const box = state.currentBox;
-      const slot = state.activePresetSlot;
-      const key = box && slot != null ? `${box.host}#${slot}` : null;
-      const r = nextStuckBuffering(state.stuckBuf || null, key, ps, Date.now());
-      state.stuckBuf = r.tracker;
-      if (r.stuck && !state.presetErrors[slot]) {
-        state.presetErrors[slot] = t('preset.errNoStart');
-        renderPresets();
-      }
-    }
-
-    // If the speaker is now playing successfully, clear the preset
-    // error. The speaker's ContentItems run through the stream
-    // proxy, so accept the slot match from /stream/<slot> too.
-    if (ps === 'PLAY_STATE') {
-      // Any successful playback is a valid "your box is alive again" moment, not
-      // just internet radio. The old filter (proxy /stream/ and not /spotify/)
-      // missed every Spotify, media-library, AUX/Bluetooth and hardware-button
-      // user, which is why so many never saw the pin invite. maybeInviteWorldMap
-      // is once-ever-guarded (synchronous flag + durable Go-side flag), so
-      // broadening the trigger only widens reach, it cannot double-invite.
-      maybeInviteWorldMap();
-      const slotFromProxy = activeSlotFromLocation(loc);
-      const ap = state.presets.find(p =>
-        p.stream_url === loc || (slotFromProxy !== null && p.slot === slotFromProxy)
-      );
-      if (ap && state.presetErrors[ap.slot]) {
-        delete state.presetErrors[ap.slot];
-      }
-      // Spotify presets carry no stream_url and the location (/spotify/stream)
-      // has no slot, so the match above never fires. When a Spotify stream is
-      // confirmed playing, clear ALL Spotify preset errors so a stale
-      // "speaker still starting" no longer sticks on the tile.
-      if (/\/spotify\/stream/.test(loc)) {
-        for (const p of state.presets) {
-          if (p.type === 'spotify') delete state.presetErrors[p.slot];
-        }
-      }
-    }
-
-    if ((gridChanged || iconAdoptable) && state.presets.length > 0) {
-      renderPresets();
-    }
-
-    // Now-playing status line. Rendered from cached state so the live-title
-    // poller can refresh it the instant a track arrives, not only on the next
-    // status poll. It is the only place the running title is shown.
-    renderNowPlayingBar();
-
-    highlightActiveSource();
-  } catch {
-    // Transient status-fetch failure (a single poll timing out while the
-    // box is briefly busy, e.g. BoseApp's :8090 under load). Keep the last
-    // known now-playing on screen instead of blanking it to a dash, which
-    // looked like the display flickering to "---" and back even though
-    // nothing actually changed. The next successful poll refreshes it.
-    _statusFailCount++;
-    // Several consecutive failures mean the active box is genuinely unreachable,
-    // most likely because its IP changed under us (a router restart re-leased the
-    // whole LAN, or a LAN<->Wi-Fi / band switch). Kick a full rediscovery so the
-    // /24 sweep finds it at its new address and applyBoxList re-binds it by
-    // deviceID. Debounced so a box that is simply switched off does not sweep the
-    // LAN every few seconds.
-    if (_statusFailCount >= 4 && Date.now() - _lastUnreachableRediscover > 20000) {
-      _lastUnreachableRediscover = Date.now();
-      _statusFailCount = 0;
-      discoverBoxes();
-    }
-  }
 }
 
 // ---------- Community world map invite ----------

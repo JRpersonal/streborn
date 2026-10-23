@@ -17,15 +17,13 @@ import { mountSources, purgeSourceCacheForSpeaker } from './sources.js';
 import { mountVolume } from './volume.js';
 
 export { initMusicView } from './deps.js';
-export { stoppedOrPaused } from './wiring.js';
-export { highlightActiveSource, refreshSourceButtons, sourceListCache } from './sources.js';
+export { refreshSourceButtons } from './sources.js';
 export {
   currentPairTarget,
   loadMusicTabVolume,
   musicVolEl,
   musicVolValEl,
   pairSetVolume,
-  syncMusicTabVolumeFromBox,
   syncVolumeScopeOnZoneLive,
 } from './volume.js';
 export {
@@ -35,6 +33,17 @@ export {
   localizeLanguageName,
   renderGenreChips,
 } from './taxonomy.js';
+export { refreshStatus } from './status.js';
+export {
+  pollTrackPosition,
+  refreshBalance,
+  renderNowPlayingBar,
+  renderTrackProgress,
+  resetNowPlaying,
+  trackPos,
+} from './nowplaying.js';
+export { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
+export { mstate } from './state.js';
 
 // mountMusicView builds #view-box and attaches the static handlers, in the
 // order the statements had in main.js: markup first, then each module's

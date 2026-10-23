@@ -11,13 +11,14 @@
 // the flag was always undefined at the gate and nothing changed for the
 // reporter. The third asks the speaker itself.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { srcOf } from './test/source.js';
 
-const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.js'), 'utf8');
+// The notice sits inside refreshStatus (views/music/status.js); the gate it
+// asks is spotifyKeyUsableFor next to it. Both are looked up by name so a
+// move between files cannot turn this red.
+const src = srcOf('refreshStatus');
 const block = src.slice(src.indexOf('const spotifyKeySaved'), src.indexOf('const spotifyKeySaved') + 900);
-const helper = src.slice(src.indexOf('function spotifyKeyUsableFor'), src.indexOf('function spotifyKeyUsableFor') + 1200);
+const helper = srcOf('spotifyKeyUsableFor');
 
 describe('native Spotify notice', () => {
   it('needs a speaker that is actually playing', () => {

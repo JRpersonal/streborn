@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { applyPositionReading, resetProgress, wantsFastPoll, FAST_POLL_WINDOW_MS } from './trackprogress.js';
+import { srcOf } from './test/source.js';
 
 function fresh(key = 'loc|song', now = 1000) {
   const tp = { sec: 0, dur: 0, at: 0, key: '', resetAt: 0 };
@@ -108,7 +106,7 @@ describe('a briefly different track name mid-song', () => {
 // must not rebuild the preset grid, whose keys never show the running name.
 describe('refreshStatus and the preset grid', () => {
   it('rebuilds the grid on a play state or location change, not on a name change', () => {
-    const main = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.js'), 'utf-8');
+    const main = srcOf('refreshStatus');
     expect(main).toContain('const gridChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc;');
     expect(main).toContain('if ((gridChanged || iconAdoptable) && state.presets.length > 0) {');
   });

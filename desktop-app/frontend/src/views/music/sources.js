@@ -6,7 +6,7 @@ import { t } from '../../i18n/index.js';
 import { inputButtons, isActiveInput, sourceRowKey } from '../../sourceinputs.js';
 import { state } from '../../state.js';
 import { $, escapeAttr, escapeHtml, showError, showToast } from '../../utils.js';
-import { deps } from './deps.js';
+import { refreshStatus } from './status.js';
 
 async function selectSource(btn) {
   const box = state.currentBox;
@@ -22,7 +22,7 @@ async function selectSource(btn) {
   try {
     await SelectBoxSource(box.host, box.port, src, account);
     showToast(t('toast.source', { src: shown }));
-    setTimeout(deps.refreshStatus, 800);
+    setTimeout(refreshStatus, 800);
   } catch (e) {
     // A button is only drawn for an input the speaker listed, but if the box
     // refuses it anyway (1005 UNKNOWN_SOURCE_ERROR, relayed by the agent as
