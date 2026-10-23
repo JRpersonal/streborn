@@ -431,6 +431,12 @@ type Server struct {
 	// readBoxNow (boxread.go), which calls this when set. nil = the real
 	// :8090 read via boxapi. Tests script it with scriptNowPlaying.
 	boxNowReadFn func(ctx context.Context) (*boxapi.NowPlaying, error)
+	// Quiet-wake seams: the state read and the STOP a quiet wake sends, and
+	// the pause before the second read in WakeSilentlyForPlay. nil / zero =
+	// production (quietWakeNowPlaying, quietWakeStop, wakeForPlayRetry).
+	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
+	quietWakeStopFn       func(ctx context.Context, host string) error
+	wakeForPlayReadRetry  time.Duration
 	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
 	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
 	holdSaveTestFn func(on bool, d time.Duration) time.Time
@@ -982,11 +988,15 @@ func quietWakeNeeded(np nowPlayingSnapshot) bool {
 	return np.Source == "" || np.Source == "STANDBY"
 }
 
-// quietWakeNowPlaying is the seam for the tests: the real read reaches the
-// firmware on a fixed port, so a test server on a random port cannot be
-// reached through it (same pattern as hushforupload.go and
-// dissolvestragglers.go). Production always uses the real implementation.
-var quietWakeNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
+// quietWakeNowPlaying reads the speaker's state for a quiet wake. The field
+// behind it is the seam for the tests: the real read reaches the firmware on
+// a fixed port, so a test server on a random port cannot be reached through
+// it (same pattern as hushforupload.go and dissolvestragglers.go). Production
+// never sets the field and always uses the real implementation.
+func (s *Server) quietWakeNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
+	if s.quietWakeNowPlayingFn != nil {
+		return s.quietWakeNowPlayingFn(ctx, host)
+	}
 	return fetchNowPlayingPeer(ctx, host)
 }
 
@@ -1006,7 +1016,7 @@ func (s *Server) quietWake(ctx context.Context) error {
 	// other callers check standby themselves (zones_stereo.go, rejoinDecision),
 	// so for them this early return never fires; the app path is the one that
 	// wakes speakers that are already playing.
-	if !quietWakeNeeded(quietWakeNowPlaying(ctx, s.boxHost)) {
+	if !quietWakeNeeded(s.quietWakeNowPlaying(ctx, s.boxHost)) {
 		return nil
 	}
 	// Stamped before the wake, not after it: a wake that fails half way still
@@ -1072,8 +1082,12 @@ func quietWakeStepCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), quietWakeStepBudget)
 }
 
-// quietWakeStop is the STOP seam, for the same reason as quietWakeNowPlaying.
-var quietWakeStop = func(ctx context.Context, host string) error {
+// quietWakeStop sends the STOP of a quiet wake; seamed for the same reason as
+// quietWakeNowPlaying.
+func (s *Server) quietWakeStop(ctx context.Context, host string) error {
+	if s.quietWakeStopFn != nil {
+		return s.quietWakeStopFn(ctx, host)
+	}
 	return boxapi.New(host).Key(ctx, "STOP")
 }
 
@@ -1097,14 +1111,14 @@ func (s *Server) stopQuietWakeResume() {
 	deadline := time.Now().Add(quietWakeResumeWatch)
 	for {
 		ctx, cancel := quietWakeStepCtx()
-		np := quietWakeNowPlaying(ctx, s.boxHost)
+		np := s.quietWakeNowPlaying(ctx, s.boxHost)
 		cancel()
 		switch {
 		case np.Source == "" || np.Source == "STANDBY" || np.Source == "INVALID_SOURCE":
 			return
 		case np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE":
 			ctx, cancel = quietWakeStepCtx()
-			err := quietWakeStop(ctx, s.boxHost)
+			err := s.quietWakeStop(ctx, s.boxHost)
 			cancel()
 			if err != nil {
 				s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err)
@@ -1135,7 +1149,7 @@ func (s *Server) setVolumeOnFirstLife(ctx context.Context, vol int) <-chan struc
 		defer close(done)
 		c := boxapi.New(s.boxHost)
 		for ctx.Err() == nil {
-			if np := quietWakeNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
+			if np := s.quietWakeNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
 				_ = c.SetVolume(ctx, vol)
 				return
 			}

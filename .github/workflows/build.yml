@@ -65,15 +65,15 @@ jobs:
         with:
           go-version: "stable"
           cache: true
-      # Scoped to the packages that are green under the detector today.
-      # internal/webui is deliberately NOT here yet: it has pre-existing
-      # test-only seam races (a t.Cleanup restoring a package-level test seam
-      # while the production goroutine it spawned still reads it, e.g.
-      # resume_settle_test.go / watchResume). Clean those up, then add
-      # ./internal/webui/... here. (The zone_verify_test.go counter race is
-      # already fixed.)
+      # Scoped to the packages that are green under the detector.
+      # internal/webui joined on 2026-10-23 once its test-only seam races
+      # were gone (a t.Cleanup used to restore a package-level knob while the
+      # production goroutine it spawned still read it; the knobs now live on
+      # the Server under test, see queueTiming, snoozeTiming, resumeTiming,
+      # zoneTiming and the *Fn fields). Keep new test seams on the Server,
+      # not in package variables, or this job turns red again.
       - name: go test -race
-        run: go test -race -count=1 ./internal/streamproxy/... ./internal/marge/... ./radiobrowser/...
+        run: go test -race -count=1 ./internal/streamproxy/... ./internal/marge/... ./internal/webui/... ./radiobrowser/...
 
   lint:
     name: golangci-lint

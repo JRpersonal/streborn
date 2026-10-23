@@ -43,7 +43,7 @@ func (s *Server) WakeSilentlyForPlay(ctx context.Context) (restore func()) {
 	// still unknown, the speaker is left alone.
 	np := s.wakeForPlayRead(ctx)
 	if np.Source == "" {
-		time.Sleep(wakeForPlayReadRetry)
+		time.Sleep(s.wakeForPlayRetry())
 		np = s.wakeForPlayRead(ctx)
 	}
 	if np.Source != "STANDBY" {
@@ -87,11 +87,19 @@ func (s *Server) WakeSilentlyForPlay(ctx context.Context) (restore func()) {
 	}
 }
 
-// wakeForPlayReadRetry is the pause before the second state read.
-var wakeForPlayReadRetry = 300 * time.Millisecond
+// productionWakeForPlayReadRetry is the pause before the second state read.
+const productionWakeForPlayReadRetry = 300 * time.Millisecond
+
+// wakeForPlayRetry is that pause, unless a test shortened it on the server.
+func (s *Server) wakeForPlayRetry() time.Duration {
+	if s.wakeForPlayReadRetry > 0 {
+		return s.wakeForPlayReadRetry
+	}
+	return productionWakeForPlayReadRetry
+}
 
 func (s *Server) wakeForPlayRead(ctx context.Context) nowPlayingSnapshot {
 	readCtx, readCancel := context.WithTimeout(ctx, quietWakeStepBudget)
 	defer readCancel()
-	return quietWakeNowPlaying(readCtx, s.boxHost)
+	return s.quietWakeNowPlaying(readCtx, s.boxHost)
 }

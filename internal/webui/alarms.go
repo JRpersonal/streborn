@@ -469,7 +469,7 @@ func (s *Server) wakeForAlarm(ctx context.Context, vol int) {
 		return
 	}
 	c := boxapi.New(s.boxHost)
-	if !quietWakeNeeded(quietWakeNowPlaying(ctx, s.boxHost)) {
+	if !quietWakeNeeded(s.quietWakeNowPlaying(ctx, s.boxHost)) {
 		// Already up, so the write lands and stays.
 		if vol > 0 {
 			if err := c.SetVolume(ctx, vol); err != nil {
@@ -508,7 +508,7 @@ func (s *Server) wakeForAlarm(ctx context.Context, vol int) {
 	// preset starts on an idle speaker. Without this the room gets half a
 	// minute of yesterday's station, at the alarm's level, before the recall
 	// lands.
-	if np := quietWakeNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
+	if np := s.quietWakeNowPlaying(ctx, s.boxHost); np.PlayStatus != "" && np.PlayStatus != "STOP_STATE" && np.Source != "STANDBY" {
 		_ = c.Key(ctx, "STOP")
 	}
 }
