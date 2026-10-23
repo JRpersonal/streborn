@@ -16,17 +16,15 @@ import { mountWiring } from './wiring.js';
 import { mountSources, purgeSourceCacheForSpeaker } from './sources.js';
 import { mountVolume } from './volume.js';
 import { purgePresetStateForSpeaker } from './presets.js';
+import { mountSearch } from './search.js';
+import { mountFavorites } from './favorites.js';
+import { mountPandora } from './pandora.js';
+import { mountPicker } from './picker.js';
 
 export { initMusicView } from './deps.js';
 export { refreshSourceButtons } from './sources.js';
 export { loadMusicTabVolume, syncVolumeScopeOnZoneLive } from './volume.js';
-export {
-  loadLanguagesForCountry,
-  loadStickRegion,
-  loadTaxonomy,
-  localizeLanguageName,
-  renderGenreChips,
-} from './taxonomy.js';
+export { loadStickRegion, loadTaxonomy, localizeLanguageName } from './taxonomy.js';
 export { refreshStatus } from './status.js';
 export {
   pollTrackPosition,
@@ -36,10 +34,18 @@ export {
   resetNowPlaying,
   trackPos,
 } from './nowplaying.js';
-export { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
 export { loadPresets } from './presets.js';
-export { renderPresets } from './presettiles.js';
-export { presetMoveOffer } from './save.js';
+export { playStation, updateFilterIndicators } from './search.js';
+export {
+  favStationsJSON,
+  isFav,
+  mergeFavStations,
+  syncFavRemovals,
+  toggleFav,
+  updateFavModeBtn,
+} from './favorites.js';
+export { openPandoraPick, updatePandoraModeBtn } from './pandora.js';
+export { openPick, showSlotPicker } from './picker.js';
 
 // mountMusicView builds #view-box and attaches the static handlers, in the
 // order the statements had in main.js: markup first, then each module's
@@ -47,8 +53,12 @@ export { presetMoveOffer } from './save.js';
 export function mountMusicView() {
   $('view-box').innerHTML = musicViewMarkup();
   mountWiring();
+  mountSearch();
   mountSources();
   mountVolume();
+  mountFavorites();
+  mountPandora();
+  mountPicker();
 }
 
 // purgeMusicStateForSpeaker clears the per-speaker session maps the Music

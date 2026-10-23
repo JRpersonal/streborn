@@ -6,7 +6,7 @@ import { getLocale, t, tLookup } from '../../i18n/index.js';
 import { canonGenre, GENRE_BY_COUNTRY, GENRE_CORE, translateGenre } from '../../localization.js';
 import { state } from '../../state.js';
 import { $, escapeAttr, escapeHtml, formatNumber } from '../../utils.js';
-import { deps } from './deps.js';
+import { doRefilter, updateFilterIndicators } from './search.js';
 
 // LOCALE_TO_RADIO_LANG maps the app UI locale to radio-browser's English
 // language name, so the radio language filter can default to the chosen app
@@ -59,7 +59,7 @@ export async function loadStickRegion() {
       if (!state.searchLang) {
         state.searchLang = LOCALE_TO_RADIO_LANG[getLocale()] || data.language || '';
       }
-      deps.updateFilterIndicators();
+      updateFilterIndicators();
       // Re-render the language dropdown so the locale-based default is
       // injected and selected even when this resolves after loadTaxonomy
       // (the two run concurrently on box selection).
@@ -176,7 +176,7 @@ export function renderGenreChips() {
       }
       state.searchTag = btn.dataset.tag || '';
       renderGenreChips();
-      deps.doRefilter();
+      doRefilter();
     };
   });
 }

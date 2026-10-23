@@ -14,14 +14,17 @@ export let deps = {
   // The refresh button, and the status poll when a speaker has stopped
   // answering (wiring.js, status.js).
   discoverBoxes() {},
-  doRefilter() {},
   effectivePlayTarget() {},
   // The world map invite rides the status poll (status.js).
   maybeInviteWorldMap() {},
   renderGroupControl() {},
+  // The "speaker has no internet" prompt hands the speaker to the settings
+  // tab before switching there (search.js).
+  speakerPickedInTab() {},
   // play() names a stale stereo pair in its error text (play.js).
   stereoStaleForError() {},
-  updateFilterIndicators() {},
+  // The "speaker has no internet" prompt opens the settings tab (search.js).
+  switchView() {},
 };
 
 export function initMusicView(d) {
