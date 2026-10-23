@@ -384,6 +384,11 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 			continue
 		}
 		setupState, systemState := boxSetupState(boxHost)
+		if systemState == systemStateLangNotSet {
+			// The language gate is what keeps raising this; let the gate
+			// check run now rather than after its first delay.
+			nudgeBoxLanguage()
+		}
 		attempts++
 		lctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		err := client.LeaveSetup(lctx)
