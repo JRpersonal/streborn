@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
@@ -141,6 +142,43 @@ func TestFleetPeerNetworkRetriesAreBounded(t *testing.T) {
 	row := runPeer(t, h, "10.0.0.2")
 	if row.State != fleetFailed || !strings.Contains(row.Reason, "server misbehaving") {
 		t.Fatalf("row %+v", row)
+	}
+}
+
+// The peer is started over only once the internet is back, not blindly after
+// the pause: an outage longer than the pause used to fail the peer for good.
+func TestFleetPeerRetryWaitsForTheNetwork(t *testing.T) {
+	h := newFleetHarness(t, "v1.0.12", map[string]*fakePeer{
+		"10.0.0.2": {name: "Kitchen", version: "v1.0.12", behaviour: "netfail"},
+	})
+	var probes int32
+	fleetReleaseReachable = func(context.Context) bool { return atomic.AddInt32(&probes, 1) > 20 }
+	row := runPeer(t, h, "10.0.0.2")
+	if row.State != fleetDone {
+		t.Fatalf("row %+v", row)
+	}
+	if n := atomic.LoadInt32(&probes); n <= 20 {
+		t.Fatalf("started over after %d probes, before the network was back", n)
+	}
+	if n := h.peers["10.0.0.2"].installs; n != 2 {
+		t.Fatalf("%d installs, want one more once the network was back", n)
+	}
+}
+
+// A network that never comes back fails the peer with its error once the
+// wait is over, without starting it over into the outage.
+func TestFleetPeerGivesUpWhenTheNetworkStaysGone(t *testing.T) {
+	h := newFleetHarness(t, "v1.0.12", map[string]*fakePeer{
+		"10.0.0.2": {name: "Kitchen", version: "v1.0.12", behaviour: "netfail"},
+	})
+	fleetNetWaitFor = 50 * time.Millisecond
+	fleetReleaseReachable = func(context.Context) bool { return false }
+	row := runPeer(t, h, "10.0.0.2")
+	if row.State != fleetFailed || !strings.Contains(row.Reason, "server misbehaving") {
+		t.Fatalf("row %+v", row)
+	}
+	if n := h.peers["10.0.0.2"].installs; n != 1 {
+		t.Fatalf("%d installs, want none while the network was gone", n)
 	}
 }
 
