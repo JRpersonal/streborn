@@ -19,14 +19,15 @@ import (
 // it is the first thing a reporter suspects when a group is missing after an
 // update, which is how it surfaced again on 2026-09-09.
 func TestUngroupKeepsAPermanentGroupSaved(t *testing.T) {
+	t.Parallel()
 	group := zones.Zone{
-		Master: "DEV-MASTER", MasterIP: "192.0.2.10", Permanent: true,
+		Master: "DEV-MASTER", MasterIP: deadBoxHost, Permanent: true,
 		Slaves: []zones.Member{
-			{DeviceID: "DEV-A", IP: "192.0.2.20"},
-			{DeviceID: "DEV-B", IP: "192.0.2.21"},
+			{DeviceID: "DEV-A", IP: deadMemberA},
+			{DeviceID: "DEV-B", IP: deadMemberB},
 		},
 	}
-	s, st := staleDocServer(t, "192.0.2.10", group, true)
+	s, st := staleDocServer(t, deadBoxHost, group, true)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil)
 	w := httptest.NewRecorder()
@@ -44,11 +45,12 @@ func TestUngroupKeepsAPermanentGroupSaved(t *testing.T) {
 // the document goes with it. Without this the guard above would quietly turn
 // every dissolve into a no-op on the store and leave stale documents behind.
 func TestUngroupStillClearsAnOrdinaryGroup(t *testing.T) {
+	t.Parallel()
 	group := zones.Zone{
-		Master: "DEV-MASTER", MasterIP: "192.0.2.10",
-		Slaves: []zones.Member{{DeviceID: "DEV-A", IP: "192.0.2.20"}},
+		Master: "DEV-MASTER", MasterIP: deadBoxHost,
+		Slaves: []zones.Member{{DeviceID: "DEV-A", IP: deadMemberA}},
 	}
-	s, st := staleDocServer(t, "192.0.2.10", group, true)
+	s, st := staleDocServer(t, deadBoxHost, group, true)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil)
 	w := httptest.NewRecorder()

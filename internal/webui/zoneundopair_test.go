@@ -11,7 +11,7 @@
 //
 // These tests pin the contract in both directions: under stereo intent, act
 // only on a POSITIVELY confirmed pair, and never on a group. The box host is
-// unroutable, as everywhere else in this package, so the firmware reads fail and
+// one nothing answers on (deadhost_test.go), so the firmware reads fail and
 // the assertions are about what the handler decides on its own.
 
 package webui
@@ -43,10 +43,10 @@ func undoPair(t *testing.T, s *Server) map[string]any {
 
 func multiroomDoc(permanent bool) zones.Zone {
 	return zones.Zone{
-		Master: "DEV-MASTER", MasterIP: "192.0.2.10", Permanent: permanent,
+		Master: "DEV-MASTER", MasterIP: deadBoxHost, Permanent: permanent,
 		Slaves: []zones.Member{
-			{DeviceID: "DEV-A", IP: "192.0.2.20"},
-			{DeviceID: "DEV-B", IP: "192.0.2.21"},
+			{DeviceID: "DEV-A", IP: deadMemberA},
+			{DeviceID: "DEV-B", IP: deadMemberB},
 		},
 	}
 }
@@ -54,7 +54,8 @@ func multiroomDoc(permanent bool) zones.Zone {
 // #907 itself. A plain multiroom group and no confirmed pair: refuse, report it
 // as a no-op rather than a success, and leave the document alone.
 func TestUndoStereoPairRefusesAMultiroomGroup(t *testing.T) {
-	s, st := staleDocServer(t, "192.0.2.10", multiroomDoc(false), true)
+	t.Parallel()
+	s, st := staleDocServer(t, deadBoxHost, multiroomDoc(false), true)
 
 	out := undoPair(t, s)
 	if out["noPair"] != true || out["nothing"] != true {
@@ -75,7 +76,8 @@ func TestUndoStereoPairRefusesAMultiroomGroup(t *testing.T) {
 // in the multiroom fall-through protects a permanent document there; this asserts
 // the stereo path never gets that far.
 func TestUndoStereoPairKeepsAPermanentGroupDocument(t *testing.T) {
-	s, st := staleDocServer(t, "192.0.2.10", multiroomDoc(true), true)
+	t.Parallel()
+	s, st := staleDocServer(t, deadBoxHost, multiroomDoc(true), true)
 
 	out := undoPair(t, s)
 	if out["noPair"] != true {
@@ -88,11 +90,12 @@ func TestUndoStereoPairKeepsAPermanentGroupDocument(t *testing.T) {
 
 // An unreadable pair authority must refuse as well. /getGroup hangs rather than
 // refuses on scm/BCO chassis, and treating a hang as "carry on" is what put the
-// multiroom teardown behind this button. The unroutable host in this package
+// multiroom teardown behind this button. The dead host in this package
 // makes every read fail, so this is the shape every test here exercises, and it
 // must never come out as a teardown.
 func TestUndoStereoPairRefusesWhenThePairCannotBeConfirmed(t *testing.T) {
-	s, st := staleDocServer(t, "192.0.2.10", multiroomDoc(false), true)
+	t.Parallel()
+	s, st := staleDocServer(t, deadBoxHost, multiroomDoc(false), true)
 
 	out := undoPair(t, s)
 	if out["pairReadable"] != false {
@@ -109,11 +112,12 @@ func TestUndoStereoPairRefusesWhenThePairCannotBeConfirmed(t *testing.T) {
 // Regression, the direction that must keep working: a pair STR formed itself is
 // persisted with Stereo=true and needs no read at all, so it still dissolves.
 func TestUndoStereoPairStillDissolvesAPersistedPair(t *testing.T) {
+	t.Parallel()
 	pair := zones.Zone{
-		Master: "DEV-MASTER", MasterIP: "192.0.2.10", Stereo: true,
-		Slaves: []zones.Member{{DeviceID: "DEV-SLAVE", IP: "192.0.2.20", Role: "RIGHT"}},
+		Master: "DEV-MASTER", MasterIP: deadBoxHost, Stereo: true,
+		Slaves: []zones.Member{{DeviceID: "DEV-SLAVE", IP: deadMemberA, Role: "RIGHT"}},
 	}
-	s, _ := staleDocServer(t, "192.0.2.10", pair, true)
+	s, _ := staleDocServer(t, deadBoxHost, pair, true)
 
 	out := undoPair(t, s)
 	if out["noPair"] == true {
@@ -129,7 +133,8 @@ func TestUndoStereoPairStillDissolvesAPersistedPair(t *testing.T) {
 // refusal is scoped to group state for exactly this reason; refusing here too
 // would have closed that escape hatch.
 func TestUndoStereoPairOnAnEmptySpeakerStillReportsNothingToDissolve(t *testing.T) {
-	s, _ := staleDocServer(t, "192.0.2.10", zones.Zone{}, false)
+	t.Parallel()
+	s, _ := staleDocServer(t, deadBoxHost, zones.Zone{}, false)
 
 	out := undoPair(t, s)
 	if out["nothing"] != true {
@@ -143,11 +148,12 @@ func TestUndoStereoPairOnAnEmptySpeakerStillReportsNothingToDissolve(t *testing.
 // A plain Ungroup is unchanged by all of this: no ?stereo=1 means the multiroom
 // path, and #843's guard still keeps a persisted pair intact.
 func TestPlainUngroupIsUnaffectedByTheStereoGuard(t *testing.T) {
+	t.Parallel()
 	pair := zones.Zone{
-		Master: "DEV-MASTER", MasterIP: "192.0.2.10", Stereo: true,
-		Slaves: []zones.Member{{DeviceID: "DEV-SLAVE", IP: "192.0.2.20", Role: "RIGHT"}},
+		Master: "DEV-MASTER", MasterIP: deadBoxHost, Stereo: true,
+		Slaves: []zones.Member{{DeviceID: "DEV-SLAVE", IP: deadMemberA, Role: "RIGHT"}},
 	}
-	s, st := staleDocServer(t, "192.0.2.10", pair, true)
+	s, st := staleDocServer(t, deadBoxHost, pair, true)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil) // no ?stereo=1
 	w := httptest.NewRecorder()

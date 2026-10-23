@@ -19,6 +19,7 @@ import (
 // tried to drive the firmware zone it would fail fast rather than block - the
 // test asserts it returns ok with the template stored instead.
 func TestDefineOnlyPersistsPermanentTemplateWithoutDriving(t *testing.T) {
+	t.Parallel()
 	zs, err := zones.Load(filepath.Join(t.TempDir(), "zone.json"))
 	if err != nil {
 		t.Fatalf("zones.Load: %v", err)
@@ -57,6 +58,7 @@ func TestDefineOnlyPersistsPermanentTemplateWithoutDriving(t *testing.T) {
 // sets it. This pins that the ad-hoc path is untouched by the new branch (it
 // would fall through to the live drive, which fails fast against the dead host).
 func TestDefineOnlyIgnoredWithoutPermanentDoc(t *testing.T) {
+	t.Parallel()
 	zs, err := zones.Load(filepath.Join(t.TempDir(), "zone.json"))
 	if err != nil {
 		t.Fatalf("zones.Load: %v", err)
