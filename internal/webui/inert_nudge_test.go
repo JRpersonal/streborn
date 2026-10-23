@@ -30,7 +30,7 @@ func TestRecallBoxInert(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 			src := c.source
-			s.boxSourceFn = func() string { return src }
+			s.boxNowReadFn = scriptNowPlaying(src, "", "")
 			if c.activity {
 				lf := c.lastFetch
 				s.streamActivityFn = func() (time.Time, time.Time) { return lf, time.Time{} }

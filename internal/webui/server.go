@@ -447,15 +447,6 @@ type Server struct {
 	// readBoxNow (boxread.go), which calls this when set. nil = the real
 	// :8090 read via boxapi. Tests script it with scriptNowPlaying.
 	boxNowReadFn func(ctx context.Context) (*boxapi.NowPlaying, error)
-	// boxSourceFn seams the now_playing source read (boxSourceNow) so the
-	// standby-vs-awake decision is assertable without a live box.
-	boxSourceFn func() string
-	// boxNowFn seams the now_playing source and location read the speaker
-	// key hold-to-save uses (holdsave.go), for the tests.
-	boxNowFn func(ctx context.Context) (source, location string, ok bool)
-	// boxNowDocFn seams the raw :8090/now_playing document every "what plays
-	// right now" read in this package fetches, for the tests.
-	boxNowDocFn func(ctx context.Context) ([]byte, error)
 	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
 	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
 	holdSaveTestFn func(on bool, d time.Duration) time.Time
@@ -472,10 +463,9 @@ type Server struct {
 	// selectFn seams the speaker's own /select (postSelect), for the tests.
 	// It gets the ContentItem body. nil = the real :8090 call.
 	selectFn func(ctx context.Context, body string) error
-	// announceNowFn, announceVolumeFn and announceSetVolumeFn seam the
-	// now_playing read, the volume read and the volume write of an
-	// announcement (announce.go), for the tests. nil = the real box.
-	announceNowFn       func(ctx context.Context) nowPlayingSnapshot
+	// announceVolumeFn and announceSetVolumeFn seam the volume read and the
+	// volume write of an announcement (announce.go), for the tests. nil =
+	// the real box. The now_playing read goes through boxNowReadFn.
 	announceVolumeFn    func(ctx context.Context) int
 	announceSetVolumeFn func(ctx context.Context, vol int) error
 	// deferred holds a resume waiting for the user to switch the box on; STR
@@ -724,11 +714,6 @@ type Server struct {
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).
 	queueInZoneFn func() bool
-
-	// nowPlayingBodyFn seams the raw now_playing read behind the foreign-content
-	// guard (resume_foreign.go), so the decision is assertable without a live
-	// box. nil = the real :8090 fetch.
-	nowPlayingBodyFn func() string
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

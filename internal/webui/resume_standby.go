@@ -1704,9 +1704,6 @@ func resumeSafeSource(src string) bool {
 // source while the box stayed awake" (recoverable right now) from "the box is
 // off" (must never be powered on automatically, #487).
 func (s *Server) boxSourceNow() string {
-	if s.boxSourceFn != nil {
-		return s.boxSourceFn()
-	}
 	np, err := s.readBoxNowWithin(4 * time.Second)
 	if err != nil {
 		return ""

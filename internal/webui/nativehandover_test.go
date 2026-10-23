@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
@@ -44,10 +45,12 @@ func (b *handoverBox) handler() http.HandlerFunc {
 	}
 }
 
-func (b *handoverBox) currentSource() string {
+// read is the box's answer on the Server's now_playing seam: its current
+// source, nothing playing.
+func (b *handoverBox) read(context.Context) (*boxapi.NowPlaying, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.source
+	return scriptSnapshot(nowPlayingSnapshot{Source: b.source})
 }
 
 func (b *handoverBox) stopKey(context.Context) bool {
@@ -87,7 +90,7 @@ func newHandoverServer(t *testing.T, b *handoverBox) *Server {
 		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		queue:          newPlayQueue(),
 		renderer:       &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
-		boxSourceFn:    b.currentSource,
+		boxNowReadFn:   b.read,
 		nativeStopFn:   b.stopKey,
 		nativeResumeFn: b.playKey,
 	}

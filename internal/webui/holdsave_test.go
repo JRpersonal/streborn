@@ -32,12 +32,10 @@ func newHoldTestServer(t *testing.T, source, location string) *Server {
 		t.Fatal(err)
 	}
 	return &Server{
-		presets: store,
-		queue:   newPlayQueue(),
-		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		boxNowFn: func(context.Context) (string, string, bool) {
-			return source, location, true
-		},
+		presets:      store,
+		queue:        newPlayQueue(),
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxNowReadFn: scriptNowPlaying(source, "", location),
 	}
 }
 

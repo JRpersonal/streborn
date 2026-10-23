@@ -398,9 +398,6 @@ func (r *holdSaveRecorder) status() int {
 // (entity-decoded). ok is false for an unreadable speaker and for a document
 // with no source attribute at all.
 func (s *Server) boxNowPlaying(ctx context.Context) (source, location string, ok bool) {
-	if s.boxNowFn != nil {
-		return s.boxNowFn(ctx)
-	}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	np, err := s.readBoxNow(c)
@@ -414,9 +411,6 @@ func (s *Server) boxNowPlaying(ctx context.Context) (source, location string, ok
 // for the readers that parse the ContentItem themselves (the save-playing
 // and native-service paths).
 func (s *Server) boxNowPlayingDoc(ctx context.Context) ([]byte, error) {
-	if s.boxNowDocFn != nil {
-		return s.boxNowDocFn(ctx)
-	}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	np, err := s.readBoxNow(c)

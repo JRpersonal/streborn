@@ -114,9 +114,6 @@ type boxReading struct {
 // unreadable box returns the zero reading, which the caller reads as "no
 // evidence of foreign content" and proceeds exactly as before.
 func (s *Server) readBox() boxReading {
-	if s.nowPlayingBodyFn != nil {
-		return parseBoxReading(s.nowPlayingBodyFn())
-	}
 	np, err := s.readBoxNowWithin(4 * time.Second)
 	if err != nil {
 		return boxReading{}

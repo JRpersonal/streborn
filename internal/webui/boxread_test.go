@@ -53,6 +53,16 @@ func scriptNowPlayingDoc(body string) func(context.Context) (*boxapi.NowPlaying,
 	}
 }
 
+// scriptSnapshot answers one seam read from a snapshot, for the fake
+// speakers that keep their state in that shape. An empty source is an
+// unreadable speaker.
+func scriptSnapshot(np nowPlayingSnapshot) (*boxapi.NowPlaying, error) {
+	if np.Source == "" {
+		return nil, errors.New("connection refused")
+	}
+	return boxapi.ParseNowPlaying([]byte(nowPlayingXML(np.Source, np.PlayStatus, np.Location, np.ItemName))), nil
+}
+
 // scriptNowPlayingUnreadable scripts a speaker that does not answer.
 func scriptNowPlayingUnreadable() func(context.Context) (*boxapi.NowPlaying, error) {
 	return func(context.Context) (*boxapi.NowPlaying, error) {

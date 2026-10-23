@@ -388,7 +388,7 @@ func TestNowPlayingSampleIndexesStillPointAtTheRightSamples(t *testing.T) {
 // The client read: the body comes back raw, the deadline is the caller's,
 // and a non-200 is a typed BoxError that still carries the body.
 func TestClientNowPlaying(t *testing.T) {
-	var status int = http.StatusOK
+	status := http.StatusOK
 	body := nowPlayingSamples[0].body
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/now_playing" {
