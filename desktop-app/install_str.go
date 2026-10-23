@@ -327,20 +327,19 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			// restore that failed is unlockErr here.
 			resetErr := unlockErr
 			a.emitPhase("copy")
-			instRes, instErr := a.RepairInstallViaSSH(host, model)
-			if resetErr != nil && instRes.OK {
-				instRes.Message += " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
+			plan := repairPlan{
+				site:             "stick-free unlock",
+				keepRepairResult: true,
+				notUpMsg:         "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.",
 			}
-			// RepairInstallViaSSH reboots and returns before the agent is up. Wait
-			// for :8888 here so the OTA path returns OK only once STR is actually
-			// running - the frontend then immediately writes the Wi-Fi profile.
-			if instRes.OK && instErr == nil {
-				a.emitPhase("wait")
-				if _, werr := a.waitForAgent(host, model); werr != nil {
-					a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
-					instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-				}
+			if resetErr != nil {
+				plan.successNote = " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
 			}
+			// RepairInstallViaSSH reboots and returns before the agent is up. The
+			// helper waits for :8888 so the OTA path returns OK only once STR is
+			// actually running - the frontend then immediately writes the Wi-Fi
+			// profile.
+			instRes, _, instErr := a.repairAndAwaitAgent(res, host, model, fwNote, plan)
 			return instRes, instErr
 		case errors.Is(unlockErr, errSetupPortClosed):
 			a.logger.Info("install_str: :17000 setup port closed; no stick-free unlock attempted", "host", host)
@@ -494,16 +493,14 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			if len(agentbin.Bytes()) > 0 {
 				a.logger.Info("install_str: no stick mounted but SSH is open; installing STR over SSH (no stick needed)", "host", host)
 				res.Step = "repair-ssh"
-				instRes, instErr := a.RepairInstallViaSSH(host, model)
-				// RepairInstallViaSSH reboots and returns before the agent is up. Wait
-				// for :8888 so a network install returns OK only once STR is running.
-				if instRes.OK && instErr == nil {
-					a.emitPhase("wait")
-					if _, werr := a.waitForAgent(host, model); werr != nil {
-						a.logger.Warn("install_str: SSH-staged install ran but the agent did not come up in time", "host", host, "err", werr)
-						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-					}
-				}
+				// RepairInstallViaSSH reboots and returns before the agent is up. The
+				// helper waits for :8888 so a network install returns OK only once
+				// STR is running.
+				instRes, _, instErr := a.repairAndAwaitAgent(res, host, model, fwNote, repairPlan{
+					site:             "no stick, SSH open",
+					keepRepairResult: true,
+					notUpMsg:         "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.",
+				})
 				return instRes, instErr
 			}
 			res.Code = "stick-missing"
@@ -604,28 +601,22 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			a.logger.Info("install_str: media read failed but SSH up, auto NAND-install over SSH (bypassing the stick)",
 				"host", host, "code", res.Code)
 			res.Step = "stick-copy-repair"
-			rr, _ := a.RepairInstallViaSSH(host, model)
-			if rr.OK {
-				if _, werr := a.waitForAgent(host, model); werr == nil {
-					res.Step = "done"
-					res.OK = true
-					res.Message = withFW("The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888.")
-					return res, nil
-				}
-				// Installed over the network (stick bypassed); the agent just has
-				// not bound :8888 yet. Do NOT tell the user to swap sticks, this is
-				// now a plain slow boot.
-				a.logger.Warn("install_str: NAND-install over network ran but agent not up yet", "host", host)
-				res.Step = "wait-agent"
-				res = a.agentNotUp(res, host, model, "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-				res.Message += fwNote
-				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
-				return res, nil
+			// Installed over the network (stick bypassed) but the agent not up:
+			// the helper does NOT tell the user to swap sticks, this is now a
+			// plain slow boot. When the bypass itself could not complete, the
+			// classified cause and the manual Repair-over-SSH offer stay, with the
+			// repair output attached to the log.
+			if out, done, _ := a.repairAndAwaitAgent(res, host, model, fwNote, repairPlan{
+				site:       "stick read failed",
+				successMsg: "The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888.",
+				notUpMsg:   "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.",
+				diag:       diag,
+				logSection: "SSH NAND-install repair",
+			}); done {
+				return out, nil
+			} else {
+				res = out
 			}
-			// Bypass itself could not complete: keep the classified cause and the
-			// manual Repair-over-SSH offer, and attach the repair output.
-			res.Log = res.Log + "\n\n--- SSH NAND-install repair ---\n" + rr.Message + "\n" + rr.Log
-			a.logger.Warn("install_str: auto NAND-install over SSH did not complete", "host", host, "repairMsg", rr.Message)
 		}
 
 		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
@@ -684,29 +675,23 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 				if len(agentbin.Bytes()) > 0 {
 					a.logger.Info("install_str: auto NAND-copy repair over SSH, bypassing the unreadable stick", "host", host)
 					res.Step = "stick-copy-repair"
-					rr, _ := a.RepairInstallViaSSH(host, model)
-					if rr.OK {
-						if _, werr := a.waitForAgent(host, model); werr == nil {
-							res.Step = "done"
-							res.OK = true
-							res.Message = withFW("The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888.")
-							return res, nil
-						}
-						// The over-the-network install succeeded (the stick was
-						// bypassed), the agent just has not bound :8888 yet. Do NOT
-						// tell the user to recreate the stick: this is now a plain
-						// slow/failed boot, so return the agent-not-up guidance.
-						a.logger.Warn("install_str: NAND-copy repair installed over network but agent still not up", "host", host)
-						res.Step = "wait-agent"
-						res = a.agentNotUp(res, host, model, "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. "+logHint)
-						res.Message += fwNote
-						res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
-						return res, nil
+					// When the over-the-network install succeeded (the stick was
+					// bypassed) and the agent just has not bound :8888 yet, the
+					// helper does NOT tell the user to recreate the stick: this is
+					// now a plain slow/failed boot, so it returns the agent-not-up
+					// guidance. When the repair could not even complete (SSH
+					// copy/install failed), the stick-copy diagnosis + manual repair
+					// offer below stay.
+					if out, done, _ := a.repairAndAwaitAgent(res, host, model, fwNote, repairPlan{
+						site:       "stick copy failed",
+						successMsg: "The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888.",
+						notUpMsg:   "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. " + logHint,
+						logSection: "SSH NAND-copy repair",
+					}); done {
+						return out, nil
+					} else {
+						res = out
 					}
-					// Repair could not even complete (SSH copy/install failed):
-					// keep the stick-copy diagnosis + manual repair offer below.
-					res.Log = res.Log + "\n\n--- SSH NAND-copy repair ---\n" + rr.Message + "\n" + rr.Log
-					a.logger.Warn("install_str: NAND-copy repair did not complete", "host", host, "repairMsg", rr.Message)
 				}
 				// No embedded binary (dev build) or the auto-repair could not
 				// complete: report the specific stick-copy cause. The manual
@@ -806,6 +791,110 @@ func (a *App) boxHasResidualMargeUUID(host string) bool {
 		return true
 	}
 	return strings.TrimSpace(rest[:j]) != ""
+}
+
+// repairPlan is how one of the four auto-repair sites in installSTROnBox wants
+// the outcome of "RepairInstallViaSSH, then wait for the agent" shaped. The
+// four sites used to spell that sequence out themselves and had drifted: two
+// appended the firmware note and the box diagnostics to an agent-not-up
+// result, two did not. repairAndAwaitAgent does it once, the same way for all.
+type repairPlan struct {
+	// site names the caller in the log lines ("stick-free unlock", "no stick,
+	// SSH open", "stick read failed", "stick copy failed").
+	site string
+	// keepRepairResult hands back RepairInstallViaSSH's own result (its Step,
+	// its message, its Log) instead of the caller's res. The stick-free unlock
+	// site and the no-stick site do that: the repair IS the install there, and
+	// a repair that did not complete is the final answer. The two stick-bypass
+	// sites keep their own res, whose Log carries the failed stick attempt the
+	// user needs to see, and go on to their own classification when the
+	// bypass could not complete.
+	keepRepairResult bool
+	// successMsg is the message once the agent answers, for the sites that do
+	// not keep the repair's own message.
+	successMsg string
+	// successNote is appended to the repair's own message on success: the
+	// stick-free site's "cloud URLs could not be fully restored" note. It is
+	// not carried into an agent-not-up result, which agentNotUp words itself.
+	successNote string
+	// notUpMsg is the agentNotUp wording when the repair ran but :8888 stayed
+	// silent, the strict "did not bring up the agent" sentence agentNotUp keeps
+	// only for a speaker that is demonstrably on the network.
+	notUpMsg string
+	// diag is pre-gathered box diagnostics to attach to an agent-not-up
+	// result; empty gathers them now. The stick-read site passes the
+	// diagnostics it took before the bypass, because they carry the kernel
+	// dmesg of the I/O error that caused it.
+	diag string
+	// logSection labels the repair output appended to res.Log when the bypass
+	// itself did not complete and the caller goes on to its own cause.
+	logSection string
+}
+
+// repairAndAwaitAgent runs the SSH NAND install and waits for the agent to
+// answer, then shapes the result per plan. done reports whether the caller's
+// install ends here (true: return the result) or goes on to its own
+// classification with the repair output attached to its Log (false, only
+// without keepRepairResult).
+//
+// Every result that ends an install here carries the firmware note, success
+// and agent-not-up alike (#854: an install can run to the end on a speaker
+// whose firmware is years old and leave it unusable afterwards; the stick-free
+// and no-stick sites skipped the note because they returned the repair's own
+// result, which the source-reading test did not see). An agent-not-up result
+// also carries the box diagnostics, as every install failure with SSH up does
+// (boxInstallDiag), so a saved log holds the evidence in one shot.
+func (a *App) repairAndAwaitAgent(res InstallResult, host, model, fwNote string, p repairPlan) (out InstallResult, done bool, err error) {
+	rr, rerr := a.RepairInstallViaSSH(host, model)
+	diagOf := func() string {
+		if p.diag != "" {
+			return p.diag
+		}
+		return boxInstallDiag(host)
+	}
+	if p.keepRepairResult {
+		// RepairInstallViaSSH reboots and returns before the agent is up. Wait
+		// for :8888 so the network install returns OK only once STR is actually
+		// running; a repair that did not complete is returned as it is.
+		if !rr.OK || rerr != nil {
+			return rr, true, rerr
+		}
+		rr.Message += p.successNote
+		a.emitPhase("wait")
+		if _, werr := a.waitForAgent(host, model); werr != nil {
+			a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "site", p.site, "err", werr)
+			rr = a.agentNotUp(rr, host, model, p.notUpMsg)
+			rr.Message += fwNote
+			rr.Log = rr.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diagOf()
+			return rr, true, nil
+		}
+		rr.Message += fwNote
+		return rr, true, nil
+	}
+	if rr.OK {
+		a.emitPhase("wait")
+		if _, werr := a.waitForAgent(host, model); werr == nil {
+			res.Step = "done"
+			res.OK = true
+			res.Message = p.successMsg + fwNote
+			return res, true, nil
+		}
+		// Installed over the network (stick bypassed); the agent just has not
+		// bound :8888 yet. This is now a plain slow boot, so the agent-not-up
+		// guidance, never the stick advice.
+		a.logger.Warn("install_str: NAND-install over network ran but agent not up yet", "host", host, "site", p.site)
+		res.Step = "wait-agent"
+		res = a.agentNotUp(res, host, model, p.notUpMsg)
+		res.Message += fwNote
+		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diagOf()
+		return res, true, nil
+	}
+	// The bypass itself could not complete (SSH copy/install failed): the
+	// caller keeps its classified cause and the manual Repair-over-SSH offer,
+	// with the repair output attached.
+	res.Log = res.Log + "\n\n--- " + p.logSection + " ---\n" + rr.Message + "\n" + rr.Log
+	a.logger.Warn("install_str: auto NAND-install over SSH did not complete", "host", host, "site", p.site, "repairMsg", rr.Message)
+	return res, false, nil
 }
 
 // RepairInstallViaSSH is the install fallback for when the USB stick itself is
