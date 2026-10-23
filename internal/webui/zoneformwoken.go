@@ -79,12 +79,7 @@ func isSelfResume(wokenForGroup, userPlayedSinceWake bool, np nowPlayingSnapshot
 // groupWakeEpisode reports whether STR woke this speaker for a group operation
 // inside the episode window, and when that wake happened.
 func (s *Server) groupWakeEpisode() (active bool, since time.Time) {
-	s.quietWakeMu.Lock()
-	defer s.quietWakeMu.Unlock()
-	if !time.Now().Before(s.quietWakeEpisodeUntil) {
-		return false, time.Time{}
-	}
-	return true, s.quietWakeEpisodeUntil.Add(-quietWakeEpisodeWindow)
+	return s.groupWake.episode(quietWakeEpisodeWindow)
 }
 
 // userPlayedSince reports whether STR pushed a play to this speaker after t,

@@ -28,10 +28,10 @@ func TestQuietWakeMarksTheWakeAsSTRsOwn(t *testing.T) {
 		t.Fatal("no quiet wake armed, must not report one")
 	}
 
-	s.quietWakeMu.Lock()
-	s.quietWakeVol = 32
-	s.quietWakeUntil = time.Now().Add(quietWakeRestoreAfter)
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.vol = 32
+	s.groupWake.until = time.Now().Add(quietWakeRestoreAfter)
+	s.groupWake.mu.Unlock()
 
 	if !s.quietWakeActive() {
 		t.Error("a wake STR did for a group operation must be recognisable as its own")
@@ -40,9 +40,9 @@ func TestQuietWakeMarksTheWakeAsSTRsOwn(t *testing.T) {
 	// The zone join clears it, and from then on a power press is a power press
 	// again. Cleared here the way restoreQuietWakeVolume does, without the box
 	// call it would make.
-	s.quietWakeMu.Lock()
-	s.quietWakeUntil = time.Time{}
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.until = time.Time{}
+	s.groupWake.mu.Unlock()
 
 	if s.quietWakeActive() {
 		t.Error("once the quiet wake is over, a wake must count as a user press again")
@@ -53,11 +53,11 @@ func TestQuietWakeMarksTheWakeAsSTRsOwn(t *testing.T) {
 // for good because one group operation touched it.
 func TestQuietWakeWindowIsBounded(t *testing.T) {
 	s := &Server{}
-	s.quietWakeMu.Lock()
-	s.quietWakeVol = 20
-	s.quietWakeUntil = time.Now().Add(quietWakeRestoreAfter)
-	until := s.quietWakeUntil
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.vol = 20
+	s.groupWake.until = time.Now().Add(quietWakeRestoreAfter)
+	until := s.groupWake.until
+	s.groupWake.mu.Unlock()
 
 	if d := time.Until(until); d > time.Minute {
 		t.Errorf("quiet wake window is %v, too long to suppress a user's power press", d)

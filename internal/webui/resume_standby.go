@@ -730,17 +730,13 @@ const zoneSettleWindow = 15 * time.Second
 
 // noteZoneChanged stamps a zone membership change.
 func (s *Server) noteZoneChanged() {
-	s.quietWakeMu.Lock()
-	s.zoneChangedAt = time.Now()
-	s.quietWakeMu.Unlock()
+	s.groupWake.noteZoneChanged()
 }
 
 // zoneJustChanged reports whether the speaker joined, led or left a zone within
 // zoneSettleWindow, and how long ago.
 func (s *Server) zoneJustChanged() (bool, time.Duration) {
-	s.quietWakeMu.Lock()
-	at := s.zoneChangedAt
-	s.quietWakeMu.Unlock()
+	at := s.groupWake.lastZoneChange()
 	if at.IsZero() {
 		return false, 0
 	}

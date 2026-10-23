@@ -61,30 +61,12 @@ type Server struct {
 	groupStepMu   sync.Mutex
 	groupStepBase map[string]int
 	groupStepAt   time.Time
-	// quietWake is a member wake done for a group join: the level the speaker
-	// had before it was muted for the wake, restored once the speaker joins a
-	// zone or the window runs out. Guarded by quietWakeMu.
-	// zoneChangedAt is when the speaker last joined, led or left a zone, as the
-	// firmware itself reported it. It exists so the re-push watchdog can tell a
-	// stream that DROPPED from one that ended because the group changed under it
-	// (#900). Deliberately not derived from quietWakeUntil: the zone join is what
-	// CLEARS that, so reading it here is a race that the push wins or loses by a
-	// quarter of a second. Guarded by quietWakeMu, which already covers the other
-	// piece of group-wake state and is taken on the same events.
-	zoneChangedAt time.Time
-
-	quietWakeMu    sync.Mutex
-	quietWakeVol   int
-	quietWakeUntil time.Time
-	// quietWakeEpisodeUntil is how long this speaker counts as "STR woke me for
-	// a group operation", independently of the mute. quietWakeUntil answers a
-	// different question (is the level still held down) and the zone join
-	// CLEARS it, which is why the preset reconcile could not use it: the join
-	// lands a second before the reconcile looks (#900). This one is a plain
-	// deadline that nothing clears early. Guarded by quietWakeMu.
-	quietWakeEpisodeUntil time.Time
-	logger                *slog.Logger
-	presets               *presets.Store
+	// groupWake is the quiet-wake bookkeeping: the level a member wake for a
+	// group join muted from, the settling window of that operation and the
+	// last firmware-reported zone change (quietwakestate.go, own mutex).
+	groupWake quietWakeState
+	logger    *slog.Logger
+	presets   *presets.Store
 	// snapshotPath is the NAND file where the agent persisted the box's
 	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
 	// by GET /api/box/snapshot so the app can warn about account-linked cloud
@@ -1178,9 +1160,7 @@ const quietWakeEpisodeWindow = 30 * time.Second
 // noteQuietWakeEpisode stamps the settling window. Called by the quiet wake
 // itself, so every group wake is covered whichever caller made it.
 func (s *Server) noteQuietWakeEpisode() {
-	s.quietWakeMu.Lock()
-	s.quietWakeEpisodeUntil = time.Now().Add(quietWakeEpisodeWindow)
-	s.quietWakeMu.Unlock()
+	s.groupWake.noteEpisode(quietWakeEpisodeWindow)
 }
 
 // QuietWakeEpisodeActive reports whether STR woke this speaker for a group
@@ -1194,9 +1174,7 @@ func (s *Server) noteQuietWakeEpisode() {
 // ms apart). The forced pass already stands down in front of live audio for
 // the mirror-image reason.
 func (s *Server) QuietWakeEpisodeActive() bool {
-	s.quietWakeMu.Lock()
-	defer s.quietWakeMu.Unlock()
-	return time.Now().Before(s.quietWakeEpisodeUntil)
+	return s.groupWake.episodeActive()
 }
 
 // quietWakeActive reports whether a quiet wake is still holding this speaker
@@ -1218,9 +1196,7 @@ func (s *Server) QuietWakeEpisodeActive() bool {
 // The mute did not save it either: the zone join lifts the mute a second later
 // and the resumed stream becomes audible at full level.
 func (s *Server) quietWakeActive() bool {
-	s.quietWakeMu.Lock()
-	defer s.quietWakeMu.Unlock()
-	return !s.quietWakeUntil.IsZero()
+	return s.groupWake.active()
 }
 
 // wokenForGroup is the self-wake guard of the power-on resume: either a quiet
@@ -1242,38 +1218,18 @@ const quietWakeRestoreAfter = 20 * time.Second
 // armQuietWakeRestore remembers the level a quiet wake muted from and starts
 // the bounded fallback that restores it if no zone join does.
 func (s *Server) armQuietWakeRestore(vol int) {
-	s.quietWakeMu.Lock()
-	// The level already armed wins: a SECOND quiet wake inside the window
-	// would otherwise snapshot the level the first one already muted (0) and
-	// then "restore" the speaker to silence. That is the normal case, not an
-	// edge one: the app races each wake against a 4 s deadline and retries,
-	// while a real wake out of standby needs longer than that. So a repeat
-	// arming only pushes the deadline out.
-	if s.quietWakeUntil.IsZero() {
-		s.quietWakeVol = vol
-	}
-	s.quietWakeUntil = time.Now().Add(quietWakeRestoreAfter)
-	s.quietWakeMu.Unlock()
+	// A repeat arming inside the window keeps the level already armed and
+	// only pushes the deadline out (see quietWakeState.arm).
+	s.groupWake.arm(vol, quietWakeRestoreAfter)
 	time.AfterFunc(quietWakeRestoreAfter, func() { s.restoreQuietWakeVolume("timeout") })
 }
 
 // restoreQuietWakeVolume puts the level back that a quiet wake muted, once.
+// The timer of an earlier wake stands down while a later one still holds
+// the speaker (see quietWakeState.release); a zone join always restores.
 func (s *Server) restoreQuietWakeVolume(why string) {
-	s.quietWakeMu.Lock()
-	vol, until := s.quietWakeVol, s.quietWakeUntil
-	armed := !until.IsZero()
-	// A repeat arming pushed the deadline out and started its own timer, so
-	// the timer of the earlier wake must not un-mute a speaker that a later
-	// quiet wake is still holding down. It leaves the arming alone and the
-	// later timer does the work. A zone join is not a deadline and always
-	// restores.
-	if armed && why == "timeout" && time.Now().Before(until) {
-		s.quietWakeMu.Unlock()
-		return
-	}
-	s.quietWakeUntil = time.Time{}
-	s.quietWakeMu.Unlock()
-	if !armed || vol < 0 || s.boxHost == "" {
+	vol, restore := s.groupWake.release(why == "timeout")
+	if !restore || vol < 0 || s.boxHost == "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
