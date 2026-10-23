@@ -1131,11 +1131,6 @@ func nearEnd(progress, end time.Duration) bool {
 	return progress >= end-queueEndEpsilon
 }
 
-// reNowPlayLocation reads the ContentItem location attribute: the URL the
-// box is currently tuned to. Used by the recall verify to detect the box
-// playing a DIFFERENT stream than the one just recalled (#252).
-var reNowPlayLocation = regexp.MustCompile(`\blocation="([^"]*)"`)
-
 // pollNowPlaying reads the box's now_playing once and returns the play status,
 // the current/total position, whether the box is in standby or dropped its
 // source, and the source attribute ("" when unknown). Zero values on any
