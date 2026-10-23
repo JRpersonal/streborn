@@ -630,10 +630,22 @@ func (s *Server) zoneFormStart(req zoneFormReq) (*zoneFormRun, *zoneFormAnswer) 
 	if mode != "mirror" {
 		mode = "native"
 	}
-	master := boxapi.ZoneMember{DeviceID: req.Master.DeviceID, IP: req.Master.IP}
+	// The member addresses are the one part of the request that ends up in a
+	// URL the agent fetches, so they are taken as IP addresses and nothing
+	// else: parsed, then written back in canonical form. A name, a port or a
+	// multicast address is refused here, before anything is dialled.
+	masterIP, err := memberAddr(req.Master.IP)
+	if err != nil {
+		return nil, zoneFormRefusal(http.StatusBadRequest, "master: "+err.Error())
+	}
+	master := boxapi.ZoneMember{DeviceID: req.Master.DeviceID, IP: masterIP}
 	slaves := make([]boxapi.ZoneMember, 0, len(req.Slaves))
 	for _, m := range req.Slaves {
-		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+		ip, err := memberAddr(m.IP)
+		if err != nil {
+			return nil, zoneFormRefusal(http.StatusBadRequest, "slave "+m.DeviceID+": "+err.Error())
+		}
+		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: ip})
 	}
 	// Log WHO, not just how many: the 2026-08-18 third-speaker bundle could
 	// not say which box was being added, because every log line carried only
