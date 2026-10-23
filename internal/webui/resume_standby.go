@@ -19,10 +19,42 @@ import (
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
-// resumeWakeSettle is the settle sleep inside ResumeLastPlay's goroutine, the
-// 2 s the standbyBounceWakeWindow is sized against. A variable so the tests
-// can shorten it; the value is the production one.
-var resumeWakeSettle = 2 * time.Second
+// resumeTiming is the resume clock: every sleep and window the power-on resume,
+// the spontaneous-off recovery and the resume watcher wait on. The tests install
+// a faster copy on the Server instead of mutating package state, so they can run
+// in parallel.
+type resumeTiming struct {
+	// wakeSettle is the settle sleep inside ResumeLastPlay's goroutine, the
+	// 2 s the standbyBounceWakeWindow is sized against.
+	wakeSettle time.Duration
+	// spontaneousOffSettle is how long the spontaneous-off recovery lets the
+	// flip settle before it decides.
+	spontaneousOffSettle time.Duration
+	// settleWindow and settleStep are how long the speaker gets to come back
+	// after a resume before STR puts the content back itself, and how often
+	// watchResume looks. Long enough to cover a slow re-attach and the lag in
+	// now_playing (it trails the real state by a second or so), short enough
+	// that a listener who pressed play is not left in silence wondering.
+	settleWindow time.Duration
+	settleStep   time.Duration
+}
+
+// productionResumeTiming holds the real values; the tests shrink copies of it.
+var productionResumeTiming = resumeTiming{
+	wakeSettle:           2 * time.Second,
+	spontaneousOffSettle: 3 * time.Second,
+	settleWindow:         6 * time.Second,
+	settleStep:           750 * time.Millisecond,
+}
+
+// resumeTimes is the resume clock: the production values unless a test
+// installed a faster one.
+func (s *Server) resumeTimes() *resumeTiming {
+	if s.resumeTiming != nil {
+		return s.resumeTiming
+	}
+	return &productionResumeTiming
+}
 
 // ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On
 // the SoundTouch firmware a power press emits NO powerStateUpdated frame; the box
@@ -99,7 +131,7 @@ func (s *Server) ResumeLastPlay() {
 		// unambiguous before we decide. The DO_NOT_RESUME wake that triggers this
 		// fires on a power-on, but the box can also reach standby again right
 		// after, so settle then read the real state.
-		time.Sleep(resumeWakeSettle)
+		time.Sleep(s.resumeTimes().wakeSettle)
 		var priorRead boxReading
 		select {
 		case priorRead = <-priorCh:
@@ -1472,11 +1504,6 @@ func (s *Server) HandleEnterStandby() {
 	}()
 }
 
-// spontaneousOffSettle is how long the spontaneous-off recovery lets the flip
-// settle before it decides. A variable so the tests can shorten it; the value
-// is the production one.
-var spontaneousOffSettle = 3 * time.Second
-
 // handleSpontaneousSourceOff handles a UPNP->STANDBY drop with no physical key
 // press anywhere near it: the firmware powered STR's source off on its own
 // (#419, observed on ST10+ST30 correlating with Wi-Fi/router instability, e.g.
@@ -1540,7 +1567,7 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		// discriminator somehow missed reaches stable STANDBY here and the
 		// user-stop latch check below (armed by a STOP_STATE on some models)
 		// still gets a chance to hold it.
-		time.Sleep(spontaneousOffSettle)
+		time.Sleep(s.resumeTimes().spontaneousOffSettle)
 		if s.userStoppedRecently() || s.standbyStoppedRecently() {
 			s.logger.Info("spontaneous-off recovery: a deliberate stop arrived while settling, standing down")
 			return

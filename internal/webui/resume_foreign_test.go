@@ -86,14 +86,15 @@ func TestForeignContentStandDownReadsEachReadingOnItsOwn(t *testing.T) {
 // resumeTestServer builds a Server that can run ResumeLastPlay end to end
 // without touching a box: no boxHost (so the wake and the zone probe are
 // no-ops), a seamed play state and a seamed now_playing body. The resume's
-// settle sleep is shortened: these tests are about the decision after it, not
-// about its length (resume_wake_budget_test.go is, and puts it back).
+// settle sleep is shortened on this server only: these tests are about the
+// decision after it, not about its length (resume_wake_budget_test.go is, and
+// runs with the production clock).
 func resumeTestServer(t *testing.T, nowPlaying string) (*Server, *soapRecorder) {
 	t.Helper()
-	prevSettle := resumeWakeSettle
-	resumeWakeSettle = 100 * time.Millisecond
-	t.Cleanup(func() { resumeWakeSettle = prevSettle })
 	s, rec := newPlayTestServer(t)
+	timing := productionResumeTiming
+	timing.wakeSettle = 100 * time.Millisecond
+	s.resumeTiming = &timing
 	s.resumeOnPowerOnPath = t.TempDir() + "/resume-on-power-on" // absent = default on
 	s.playStateFn = func() (standby, busy bool) { return false, false }
 	s.boxNowReadFn = scriptNowPlayingDoc(nowPlaying)
@@ -105,7 +106,7 @@ func resumeTestServer(t *testing.T, nowPlaying string) (*Server, *soapRecorder) 
 
 // noResume is how long a test waits before concluding the resume goroutine
 // declined: many times the (shortened) settle after which it would have pushed.
-func noResume() time.Duration { return 10 * resumeWakeSettle }
+func noResume(s *Server) time.Duration { return 10 * s.resumeTimes().wakeSettle }
 
 // waitForSOAP waits for the resume goroutine (settle, then decide) to either
 // push or give up.
@@ -124,11 +125,12 @@ func waitForSOAP(rec *soapRecorder, d time.Duration) bool {
 // DO_NOT_RESUME restore arrives. Pushing STR's last station over it is the
 // audible "the speaker wants to switch presets".
 func TestResumeLastPlayDeclinesOnForeignContent(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, `<nowPlaying source="INVALID_SOURCE">`+
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>`+
 		`<playStatus>PLAY_STATE</playStatus></nowPlaying>`)
 	s.ResumeLastPlay()
-	if waitForSOAP(rec, noResume()) {
+	if waitForSOAP(rec, noResume(s)) {
 		t.Fatalf("STR pushed its own station onto a speaker streaming from elsewhere: %v", rec.list())
 	}
 }
@@ -136,11 +138,12 @@ func TestResumeLastPlayDeclinesOnForeignContent(t *testing.T) {
 // A paused foreign stream is still somebody's speaker: pushing a station over it
 // is the same interruption, so PAUSE counts as live.
 func TestResumeLastPlayDeclinesOnPausedForeignContent(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, `<nowPlaying source="UPNP">`+
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>`+
 		`<playStatus>PAUSE_STATE</playStatus></nowPlaying>`)
 	s.ResumeLastPlay()
-	if waitForSOAP(rec, noResume()) {
+	if waitForSOAP(rec, noResume(s)) {
 		t.Fatalf("STR pushed its own station over a paused foreign stream: %v", rec.list())
 	}
 }
@@ -150,6 +153,7 @@ func TestResumeLastPlayDeclinesOnPausedForeignContent(t *testing.T) {
 // that foreign item when they switch the speaker on - with nothing playing.
 // Standing down on it would turn the power-on resume off for that user for good.
 func TestResumeLastPlayProceedsOnAStaleForeignSelection(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, `<nowPlaying source="INVALID_SOURCE">`+
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>`+
 		`<playStatus>STOP_STATE</playStatus></nowPlaying>`)
@@ -162,6 +166,7 @@ func TestResumeLastPlayProceedsOnAStaleForeignSelection(t *testing.T) {
 // The same shape as the box reports it after a night in standby: the restored
 // selection, and no play status at all.
 func TestResumeLastPlayProceedsOnAForeignSelectionWithNoPlayState(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, `<nowPlaying source="INVALID_SOURCE">`+
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/></nowPlaying>`)
 	s.ResumeLastPlay()
@@ -173,6 +178,7 @@ func TestResumeLastPlayProceedsOnAForeignSelectionWithNoPlayState(t *testing.T) 
 // The other half: a genuine power-on, where the box carries STR's own selection
 // (or none at all), still brings the last station back.
 func TestResumeLastPlayProceedsOnItsOwnContent(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, `<nowPlaying source="INVALID_SOURCE">`+
 		`<ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/2"/></nowPlaying>`)
 	s.ResumeLastPlay()
@@ -223,6 +229,7 @@ func TestForeignGuardIgnoresALivePlayStatusWithNoContentAtAll(t *testing.T) {
 // An unreadable box must not disable the resume: the guard only ever acts on
 // evidence it actually has.
 func TestResumeLastPlayProceedsWhenTheBoxSaysNothing(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, "")
 	s.ResumeLastPlay()
 	if !waitForSOAP(rec, 6*time.Second) {

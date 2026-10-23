@@ -150,9 +150,7 @@ func powerOnServer(t *testing.T, playing *atomic.Bool) (*Server, *atomic.Int32, 
 		last.Store(int32(v))
 		return nil
 	}
-	prevFor, prevPoll := startVolumeWatchFor, startVolumeWatchPoll
-	startVolumeWatchFor, startVolumeWatchPoll = 400*time.Millisecond, 20*time.Millisecond
-	t.Cleanup(func() { startVolumeWatchFor, startVolumeWatchPoll = prevFor, prevPoll })
+	s.startVolumeTiming = &startVolumeTiming{watchFor: 400 * time.Millisecond, watchPoll: 20 * time.Millisecond}
 	return s, &calls, &last
 }
 
@@ -170,6 +168,7 @@ func waitForStartVol(cond func() bool, d time.Duration) bool {
 // The Portable resumes its station by itself on a power-on with the remote;
 // the start level must apply then too.
 func TestStartVolumeAppliesWhenTheSpeakerResumesByItself(t *testing.T) {
+	t.Parallel()
 	var playing atomic.Bool
 	s, calls, last := powerOnServer(t, &playing)
 	s.applyStartVolumeAfterPowerOn()
@@ -181,10 +180,11 @@ func TestStartVolumeAppliesWhenTheSpeakerResumesByItself(t *testing.T) {
 }
 
 func TestStartVolumeLeavesASilentSpeakerAlone(t *testing.T) {
+	t.Parallel()
 	var playing atomic.Bool
 	s, calls, _ := powerOnServer(t, &playing)
 	s.applyStartVolumeAfterPowerOn()
-	time.Sleep(startVolumeWatchFor + startVolumeApplyDelay + 300*time.Millisecond)
+	time.Sleep(s.startVolumeTimes().watchFor + startVolumeApplyDelay + 300*time.Millisecond)
 	if calls.Load() != 0 {
 		t.Fatalf("a speaker that never plays must not get a level, got %d writes", calls.Load())
 	}
@@ -192,6 +192,7 @@ func TestStartVolumeLeavesASilentSpeakerAlone(t *testing.T) {
 
 // STR's own resume and the power-on watch both see the same start: one write.
 func TestStartVolumeOncePerPowerOn(t *testing.T) {
+	t.Parallel()
 	var playing atomic.Bool
 	playing.Store(true)
 	s, calls, _ := powerOnServer(t, &playing)

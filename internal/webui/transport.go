@@ -124,24 +124,28 @@ func (s *Server) resumePlayback(ctx context.Context) (string, error) {
 	return "playing", nil
 }
 
-// How long the speaker gets to come back after a resume before STR puts the
-// content back itself. Long enough to cover a slow re-attach and the lag in
-// now_playing (it trails the real state by a second or so), short enough that a
-// listener who pressed play is not left in silence wondering.
-// Variables, not constants, so the tests can shrink the window instead of
+// The settle window and step watchResume waits on live in resumeTiming
+// (resume_standby.go): the tests shrink the window on the Server instead of
 // sleeping through it.
-var (
-	resumeSettleWindow = 6 * time.Second
-	resumeSettleStep   = 750 * time.Millisecond
 
-	// Seams, same reason as in hushforupload.go: the real reader reaches the
-	// firmware on a fixed port, so without them every test case would take the
-	// "unreadable" path and assert nothing.
-	resumeReadNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
-		return fetchNowPlaying(ctx, host)
+// resumeReadNowPlaying and resumeRepair are seams, same reason as in
+// hushforupload.go: the real reader reaches the firmware on a fixed port, so
+// without them every test case would take the "unreadable" path and assert
+// nothing. nil = production.
+func (s *Server) resumeReadNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
+	if s.resumeReadNowPlayingFn != nil {
+		return s.resumeReadNowPlayingFn(ctx, host)
 	}
-	resumeRepair = func(ctx context.Context, s *Server) { s.repairResume(ctx) }
-)
+	return fetchNowPlaying(ctx, host)
+}
+
+func (s *Server) resumeRepair(ctx context.Context) {
+	if s.resumeRepairFn != nil {
+		s.resumeRepairFn(ctx)
+		return
+	}
+	s.repairResume(ctx)
+}
 
 // watchResume polls the speaker after a resume and repairs it if it never
 // starts playing. Runs in the background so the caller's request is not held
@@ -161,8 +165,9 @@ func (s *Server) watchResume() {
 		defer cancel()
 		var last nowPlayingSnapshot
 		playingSeen := 0
-		for deadline := time.Now().Add(resumeSettleWindow); time.Now().Before(deadline); {
-			time.Sleep(resumeSettleStep)
+		times := s.resumeTimes()
+		for deadline := time.Now().Add(times.settleWindow); time.Now().Before(deadline); {
+			time.Sleep(times.settleStep)
 			// The user changed their mind mid-window: their action wins, this
 			// one is stale. Deliberately explicitStopAfter and NOT
 			// userStoppedRecently: a speaker collapsing out of a resume emits a
@@ -173,7 +178,7 @@ func (s *Server) watchResume() {
 			if s.explicitStopAfter(startedAt) {
 				return
 			}
-			last = resumeReadNowPlaying(ctx, s.boxHost)
+			last = s.resumeReadNowPlaying(ctx, s.boxHost)
 			if isPlayingStatus(last.PlayStatus) {
 				playingSeen++
 			}
@@ -184,7 +189,7 @@ func (s *Server) watchResume() {
 		s.logger.Warn("resume: the speaker did not hold the play, putting the content back",
 			"source", last.Source, "playStatus", last.PlayStatus, "item", last.ItemName,
 			"playingReadsBeforeItDropped", playingSeen)
-		resumeRepair(ctx, s)
+		s.resumeRepair(ctx)
 	}()
 }
 

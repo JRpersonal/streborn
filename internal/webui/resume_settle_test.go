@@ -21,17 +21,17 @@ func newResumeServer() *Server {
 	}
 }
 
-// withResumeSeams shrinks the settle window and reports what the box "says",
-// returning a channel that receives once a repair is triggered.
-func withResumeSeams(t *testing.T, states ...nowPlayingSnapshot) chan struct{} {
+// withResumeSeams shrinks the settle window on s and reports what the box
+// "says", returning a channel that receives once a repair is triggered.
+func withResumeSeams(t *testing.T, s *Server, states ...nowPlayingSnapshot) chan struct{} {
 	t.Helper()
-	prevWindow, prevStep := resumeSettleWindow, resumeSettleStep
-	prevRead, prevRepair := resumeReadNowPlaying, resumeRepair
-	resumeSettleWindow = 60 * time.Millisecond
-	resumeSettleStep = 10 * time.Millisecond
+	timing := productionResumeTiming
+	timing.settleWindow = 60 * time.Millisecond
+	timing.settleStep = 10 * time.Millisecond
+	s.resumeTiming = &timing
 
 	i := 0
-	resumeReadNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+	s.resumeReadNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 		if i < len(states) {
 			s := states[i]
 			i++
@@ -43,24 +43,22 @@ func withResumeSeams(t *testing.T, states ...nowPlayingSnapshot) chan struct{} {
 		return states[len(states)-1]
 	}
 	repaired := make(chan struct{}, 1)
-	resumeRepair = func(context.Context, *Server) {
+	s.resumeRepairFn = func(context.Context) {
 		select {
 		case repaired <- struct{}{}:
 		default:
 		}
 	}
-	t.Cleanup(func() {
-		resumeSettleWindow, resumeSettleStep = prevWindow, prevStep
-		resumeReadNowPlaying, resumeRepair = prevRead, prevRepair
-	})
 	return repaired
 }
 
 // The reported failure: the speaker never comes back, so STR has to put the
 // content back instead of leaving the listener in silence.
 func TestResumeRepairsASpeakerThatNeverStarts(t *testing.T) {
-	repaired := withResumeSeams(t, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
-	newResumeServer().watchResume()
+	t.Parallel()
+	s := newResumeServer()
+	repaired := withResumeSeams(t, s, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
+	s.watchResume()
 	select {
 	case <-repaired:
 	case <-time.After(2 * time.Second):
@@ -73,11 +71,13 @@ func TestResumeRepairsASpeakerThatNeverStarts(t *testing.T) {
 // needed. now_playing lags the real state, so the first read can still be
 // stale.
 func TestResumeLeavesASlowButWorkingSpeakerAlone(t *testing.T) {
-	repaired := withResumeSeams(t,
+	t.Parallel()
+	s := newResumeServer()
+	repaired := withResumeSeams(t, s,
 		nowPlayingSnapshot{Source: "UPNP", PlayStatus: "STOP_STATE"},
 		nowPlayingSnapshot{Source: "UPNP", PlayStatus: "BUFFERING_STATE"},
 	)
-	newResumeServer().watchResume()
+	s.watchResume()
 	select {
 	case <-repaired:
 		t.Fatal("a speaker that started playing was repaired anyway")
@@ -91,12 +91,14 @@ func TestResumeLeavesASlowButWorkingSpeakerAlone(t *testing.T) {
 // the first playing read walks away from exactly this case, so the verdict has
 // to be the state at the END of the window.
 func TestResumeRepairsAPlayThatDoesNotHold(t *testing.T) {
-	repaired := withResumeSeams(t,
+	t.Parallel()
+	s := newResumeServer()
+	repaired := withResumeSeams(t, s,
 		nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE", ItemName: "One Alpha"},
 		nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE", ItemName: "One Alpha"},
 		nowPlayingSnapshot{Source: "INVALID_SOURCE"},
 	)
-	newResumeServer().watchResume()
+	s.watchResume()
 	select {
 	case <-repaired:
 	case <-time.After(2 * time.Second):
@@ -107,8 +109,9 @@ func TestResumeRepairsAPlayThatDoesNotHold(t *testing.T) {
 // A user who changes their mind mid-window owns the speaker; the stale resume
 // must not push its content back on top.
 func TestResumeStandsDownWhenTheUserStops(t *testing.T) {
-	repaired := withResumeSeams(t, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
+	t.Parallel()
 	s := newResumeServer()
+	repaired := withResumeSeams(t, s, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
 	s.watchResume()
 	time.Sleep(15 * time.Millisecond)
 	s.NoteExplicitStop() // the user pressed stop while the watcher was running
@@ -124,8 +127,9 @@ func TestResumeStandsDownWhenTheUserStops(t *testing.T) {
 // records as a user stop. Reading THAT as intent means standing down at the one
 // moment the repair is needed, so only an explicit request may stop the watcher.
 func TestResumeRepairsDespiteTheBoxReportingItsOwnStop(t *testing.T) {
-	repaired := withResumeSeams(t, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
+	t.Parallel()
 	s := newResumeServer()
+	repaired := withResumeSeams(t, s, nowPlayingSnapshot{Source: "INVALID_SOURCE"})
 	s.NoteUserStop() // what the box's own STOP_STATE frame does
 	s.watchResume()
 	select {

@@ -292,8 +292,9 @@ func TestHandleEnterStandby_AppStandbyStaysDeliberate(t *testing.T) {
 // interrupted a stream the box was actively pulling, STR must re-push it (the
 // firmware hiccup, not the user, stopped the music, #419).
 func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
-	shrinkSpontaneousOffSettle(t)
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
+	shrinkSpontaneousOffSettle(s)
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
 	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
 	s.setLastPlay("http://127.0.0.1:8888/stream/3", "Station", "", "")
@@ -367,8 +368,9 @@ func TestHandleEnterStandby_KeyAfterOwnPushStillLatches(t *testing.T) {
 // used to live here switched the speaker back on 6 s after its owner had
 // switched it off. The resume must be deferred to the user's next wake.
 func TestHandleEnterStandby_StandbyDefersInsteadOfWaking(t *testing.T) {
-	shrinkSpontaneousOffSettle(t)
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
+	shrinkSpontaneousOffSettle(s)
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
 	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
 	s.setLastPlay("http://127.0.0.1:8888/stream/3", "Station", "", "")
@@ -392,11 +394,10 @@ func TestHandleEnterStandby_StandbyDefersInsteadOfWaking(t *testing.T) {
 	t.Fatalf("the resume was not deferred for the next user wake, actions %v", rec.list())
 }
 
-// shrinkSpontaneousOffSettle shortens the spontaneous-off recovery's settle
-// for a test that is about the decision after it, not about its length.
-func shrinkSpontaneousOffSettle(t *testing.T) {
-	t.Helper()
-	prev := spontaneousOffSettle
-	spontaneousOffSettle = 100 * time.Millisecond
-	t.Cleanup(func() { spontaneousOffSettle = prev })
+// shrinkSpontaneousOffSettle shortens the spontaneous-off recovery's settle on
+// s for a test that is about the decision after it, not about its length.
+func shrinkSpontaneousOffSettle(s *Server) {
+	timing := productionResumeTiming
+	timing.spontaneousOffSettle = 100 * time.Millisecond
+	s.resumeTiming = &timing
 }
