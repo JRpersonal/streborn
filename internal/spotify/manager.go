@@ -151,7 +151,7 @@ type Manager struct {
 	// onTrack fires when the playing Spotify track changes, so the recently-
 	// played ring records each song under the active Spotify card (#135). nil
 	// until wired; lastNotifiedTrack dedups repeated metadata/status updates.
-	onTrack           func(track, artist string)
+	onTrack           func(TrackChange)
 	lastNotifiedTrack string
 	// onSinkDetach fires when the box lets go of a Spotify stream it had been
 	// playing for a while, so the watchdog that already recovers a dropped

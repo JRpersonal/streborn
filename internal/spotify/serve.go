@@ -145,8 +145,29 @@ func (m *Manager) liveNowPlayingState(ctx context.Context) (track, artist, cover
 	return track, artist, cover, liveStatusTrack
 }
 
+// TrackChange is what the onTrack hook receives for each new song: the song
+// itself plus the two things Recently played needs to file it without STR
+// having started the playback. A session the user starts in the Spotify app
+// (Connect) never passes through a preset recall, so the hook used to carry
+// only track and artist and the webui dropped every such song for want of a
+// card (#135; the maintainer's ST30, 2026-10-24: the engine logged track 23,
+// 24, 25 while the newest Recently played entry was six days old). ContextURI
+// is the playlist/album the engine announced for the song, so the webui can
+// open a card for it; Cover is the album art for the no-context fallback.
+type TrackChange struct {
+	Track, Artist, Cover string
+	// TrackURI is the song's spotify:track: URI, "" when the engine did not
+	// name it.
+	TrackURI string
+	// ContextURI is the engine's playlist/album context as announced (not
+	// normalised; a station wrapper may be present). It can be stale: the
+	// engine never clears it, so after a plain-track play it may still name
+	// an older playlist. See the liveStatusNoTrack note in ServeInfo.
+	ContextURI string
+}
+
 // SetOnTrack registers the recently-played hook (webui.NoteRecentSpotifyTrack).
-func (m *Manager) SetOnTrack(fn func(track, artist string)) {
+func (m *Manager) SetOnTrack(fn func(TrackChange)) {
 	m.mu.Lock()
 	m.onTrack = fn
 	m.mu.Unlock()
@@ -179,14 +200,19 @@ const sinkDetachWorthRecovering = 20 * time.Second
 // poll from re-recording. The callback runs outside the lock. Cheap (#135).
 func (m *Manager) notifyTrack() {
 	m.mu.Lock()
-	cb, track, artist := m.onTrack, m.curName, m.curArtist
+	cb, track := m.onTrack, m.curName
 	if cb == nil || track == "" || track == m.lastNotifiedTrack {
 		m.mu.Unlock()
 		return
 	}
 	m.lastNotifiedTrack = track
+	// The context is read in the same critical section as the song: the
+	// will_play event that names the context lands before the song's metadata
+	// (volume.go), so at this point lastContext is the context this song plays
+	// from, which is what Recently played files the song under.
+	tc := TrackChange{Track: track, Artist: m.curArtist, Cover: m.curCover, TrackURI: m.curTrackURI, ContextURI: m.lastContext}
 	m.mu.Unlock()
-	cb(track, artist)
+	cb(tc)
 }
 
 // ServeInfo answers GET /spotify/info with the live state the UI needs: whether

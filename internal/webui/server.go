@@ -780,6 +780,14 @@ type Server struct {
 	recentMu          sync.Mutex
 	recentRadioCard   recentCardCtx
 	recentSpotifyCard recentCardCtx
+	// recentSpotifyMetaCache remembers a playlist's resolved title and cover
+	// per context URI, so a session started in the Spotify app asks the oEmbed
+	// endpoint once per playlist, not once per song (recent_spotify.go). Under
+	// recentMu; bounded by recentSpotifyMetaCacheMax.
+	recentSpotifyMetaCache map[string]recentSpotifyMeta
+	// recentSpotifyMetaTimeout bounds one oEmbed lookup; the zero value means
+	// the default. Tests shorten it.
+	recentSpotifyMetaTimeout time.Duration
 	// recentRadioLastTrack is the last ICY title recorded under the CURRENT
 	// radio card, and recentRadioStaleTrack is the PREVIOUS card's last title,
 	// carried across a station change so the first ICY title after the switch is
@@ -914,6 +922,14 @@ type recentCardCtx struct {
 	key, name, art, url, account, homepage, mime, source string
 	// durationSec is the length of url when it is a library file, 0 otherwise.
 	durationSec int
+	// spotifyCtx is the normalised Spotify context (playlist/album URI) the
+	// engine announced for the songs filed under a Spotify card: set when the
+	// card is opened from the engine's announcement (a session started in the
+	// Spotify app), else learned from the first song that arrives under a
+	// recall card. A later song under a different context means the user
+	// switched playlists in the Spotify app, and it opens a new card
+	// (recent_spotify.go).
+	spotifyCtx string
 }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the

@@ -953,29 +953,6 @@ func (s *Server) recentNoteRadioTrack(track string) {
 	s.recent.Add(recent.Entry{Source: "radio", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track, Homepage: c.homepage})
 }
 
-// NoteRecentSpotifyTrack hangs a live Spotify song under the current Spotify card.
-// Wired to the Spotify manager's onTrack hook. No-op until a Spotify card has been
-// recorded (a track that starts outside an STR recall has no card to attach to).
-func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
-	if s.recent == nil || track == "" {
-		return
-	}
-	s.recentMu.Lock()
-	c := s.recentSpotifyCard
-	s.recentMu.Unlock()
-	if c.key == "" {
-		return
-	}
-	// Store artist-first ("Artist - Title"). The view's formatTrack reads " - " as
-	// the Shoutcast "Artist - Title" order, so this renders the artist on the lead
-	// line exactly like radio, instead of mislabelling the song title as artist.
-	full := track
-	if artist != "" {
-		full = artist + " - " + track
-	}
-	s.recent.Add(recent.Entry{Source: "spotify", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: full, Account: c.account})
-}
-
 // NoteRecentPreset records a preset recall into Recently-played. The agent's
 // gabbo handler calls it for hardware presses (the hardware recall goes
 // straight to the box, bypassing the webui play handlers), and the app's slot
