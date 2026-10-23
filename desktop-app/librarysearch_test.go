@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,9 +16,14 @@ import (
 func TestSearchServersMergesEveryServerAndNamesTheMissingOnes(t *testing.T) {
 	old := librarySearchFn
 	t.Cleanup(func() { librarySearchFn = old })
+	// Written by every server's goroutine at once, so it needs the lock or the
+	// race detector flags the test itself.
+	var mu sync.Mutex
 	var gotField string
 	librarySearchFn = func(ctx context.Context, srv dlna.Server, query, field string) (dlna.BrowseResult, error) {
+		mu.Lock()
 		gotField = field
+		mu.Unlock()
 		switch srv.FriendlyName {
 		case "Zeta NAS":
 			// Five matches, one handed over: the list is not the whole answer.
