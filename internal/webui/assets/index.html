@@ -2701,7 +2701,14 @@ async function refreshStatus() {
     spKey = parseInt(r.headers.get('X-STR-Playing-Key') || '', 10) || 0;
   } catch (e) {
     netFails++;
-    if (netFails >= NET_FAIL_QUIET) {
+    // Not while a fleet update is in flight: the update card already says
+    // "Not answering right now. Waiting for it." for the speaker it waits
+    // for, and the general offline state on top of it read as the update
+    // having been given up (#1339: a tester with the router off for eleven
+    // minutes saw "not reachable" while the run was still waiting, and the
+    // summary later was right). The card's own words stand until the run
+    // ends; then this resumes.
+    if (netFails >= NET_FAIL_QUIET && !(window.suUpdateInFlight && window.suUpdateInFlight())) {
       clearPendingStart();
       setNow(T.offline || 'The speaker is not reachable right now.', '');
       var sc = document.getElementById('statusCard');
@@ -4791,6 +4798,10 @@ async function saveDisplay(kind, enabled) {
     renderFleet();
   }
   window.suRender = render;
+  /* For the status poll: a fleet update is in flight, this phone's run or one
+     the serving speaker drives, so the page's general offline state stands
+     down and the update card keeps the word (#1339). */
+  window.suUpdateInFlight = function() { return runActive() || fleetRunning(); };
   async function load() { var r = await api(SU); if (r && typeof r === 'object') st = r; return r; }
   /* Asks each peer of the plan directly what it runs: the port the serving
      speaker knows first, then the other agent port. */
@@ -5173,9 +5184,12 @@ async function saveDisplay(kind, enabled) {
     if (st && ['downloading','installing','rebooting','engine'].indexOf(st.state) >= 0) { poll(); return; }
     if (!checked) check();
   });
-  /* A reload in the middle of a run picks it up where it stood. */
+  /* A reload in the middle of a run picks it up where it stood, and opens
+     on the update card: a page always loads on Play, and a phone that
+     reloaded the page while the router was off showed the Play screen with
+     "not reachable" instead of the run it was still driving (#1339). */
   run = loadRun();
-  if (runActive()) { load().then(function(){ render(); drive(); }); }
+  if (runActive()) { showTab('More'); load().then(function(){ render(); drive(); }); }
   else render();
 })();
 
