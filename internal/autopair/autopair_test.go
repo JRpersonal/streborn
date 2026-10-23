@@ -285,6 +285,61 @@ func TestOnPairedDoesNotFireOnInitialPairedObservation(t *testing.T) {
 	}
 }
 
+// TestOnPairedFiresAfterLandedReassert pins the 2026-10-22 SoundTouch 20
+// field case: the box read paired at agent start, the start-up re-assert
+// landed a minute later and wiped the hardware-key registrations, and because
+// paired stayed paired no transition fired the hook. The keys stayed dead until
+// a press tripped the self-heal. A landed re-assert must fire the hook once; a
+// failed or deferred one must not.
+func TestOnPairedFiresAfterLandedReassert(t *testing.T) {
+	box := &fakeBox{infoBody: pairedInfo, pairStatus: http.StatusInternalServerError}
+	m := newTestManager(t, box)
+	fired := 0
+	m.SetOnPaired(func() { fired++ })
+
+	// Re-assert refused (the 1038 boot window): no re-sync ask yet.
+	if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err == nil {
+		t.Fatalf("ensure should report the failed re-assert")
+	}
+	if fired != 0 {
+		t.Fatalf("a failed re-assert must not fire the hook, got %d", fired)
+	}
+
+	// Re-assert lands: exactly one ask.
+	box.mu.Lock()
+	box.pairStatus = http.StatusOK
+	box.mu.Unlock()
+	if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err != nil {
+		t.Fatalf("retried re-assert: %v", err)
+	}
+	if fired != 1 {
+		t.Fatalf("a landed re-assert of a paired box must fire the hook once, got %d", fired)
+	}
+
+	// Steady paired ticks afterwards: no more asks.
+	if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err != nil {
+		t.Fatalf("steady tick: %v", err)
+	}
+	if fired != 1 {
+		t.Fatalf("steady paired ticks must not re-fire, got %d", fired)
+	}
+}
+
+// TestOnPairedNotFiredWhenReassertDeferred: a playing box defers the
+// re-assert, so nothing was re-onboarded and nothing may be re-synced.
+func TestOnPairedNotFiredWhenReassertDeferred(t *testing.T) {
+	box := &fakeBox{infoBody: pairedInfo, nowPlaying: `<nowPlaying source="LOCAL_INTERNET_RADIO"></nowPlaying>`}
+	m := newTestManager(t, box)
+	fired := 0
+	m.SetOnPaired(func() { fired++ })
+	if err := m.ensure(context.Background(), true); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if fired != 0 {
+		t.Fatalf("a deferred re-assert must not fire the hook, got %d", fired)
+	}
+}
+
 func TestShouldSettleToSteady(t *testing.T) {
 	const fastFor = 2 * time.Minute
 	const unpairedMax = 10 * time.Minute

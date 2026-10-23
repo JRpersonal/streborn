@@ -570,8 +570,13 @@ type forensics struct {
 	tail        *ring[string]
 	lastLogged  map[Class]time.Time
 	lastPlayErr Event
-	dropped     uint64
-	classified  uint64
+	// lastPresetRefusal is when the firmware last logged that it refused a
+	// preset write (UpdatePresetFailureCB). The CLI answers such a write as if
+	// it had succeeded, so this line is the only evidence; see
+	// Reader.LastPresetRefusal.
+	lastPresetRefusal time.Time
+	dropped           uint64
+	classified        uint64
 	// lastPower is the first line of the newest standby/wake transition; the
 	// other daemon's line about the same transition is folded into it (see
 	// power.go).
@@ -648,6 +653,9 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	if class.Playback() {
 		f.lastPlayErr = ev
 	}
+	if class == ClassMargeError && strings.Contains(l.Message, "UpdatePresetFailureCB") {
+		f.lastPresetRefusal = now
+	}
 	if gap := class.logGap(); gap > 0 && !ringOnlyLine(class, msg) && now.Sub(f.lastLogged[class]) >= gap {
 		f.lastLogged[class] = now
 		logIt = true
@@ -664,6 +672,14 @@ func (f *forensics) lastPlaybackFailure(now time.Time, d time.Duration) (Event, 
 		return Event{}, false
 	}
 	return f.lastPlayErr, true
+}
+
+// presetRefusalAt returns when the firmware last refused a preset write, zero
+// when it never did.
+func (f *forensics) presetRefusalAt() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastPresetRefusal
 }
 
 // eventsSnapshot is the box_syslog_events debug section.

@@ -1131,6 +1131,14 @@ func (c *Client) GetSysLanguage(ctx context.Context) (int, error) {
 	return raw.Sys, nil
 }
 
+// SetSysLanguage writes the speaker's display language (POST /language). Any
+// value from 1 to 25 except 14 also opens the firmware's out-of-box language
+// gate (systemstate SETUP_LANG_NOT_SET -> SETUP_LANG_SET); 0 is the factory
+// "unset" value and leaves the gate closed. The caller validates n.
+func (c *Client) SetSysLanguage(ctx context.Context, n int) error {
+	return c.postXML(ctx, "/language", fmt.Sprintf("<sysLanguage>%d</sysLanguage>", n))
+}
+
 // displayHosts caches, per box host, whether the speaker has a display. A
 // definite answer only: a failed read stores nothing, so a box that was still
 // booting is asked again next time.

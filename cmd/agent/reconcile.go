@@ -1071,6 +1071,9 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		// which slot the batch started with (the flip lands ~23-43 ms in, i.e.
 		// during the FIRST AddPreset, not the batch as a whole).
 		srcBefore := boxNowPlayingSource(boxHost)
+		// The firmware's refusal of a write arrives in its syslog, not in the
+		// CLI answer; anything stamped from here on belongs to this sweep.
+		sweepStart := time.Now()
 		boxwrites.NoteN("addpreset", srcBefore, len(missing))
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
 		if srcAfter := boxNowPlayingSource(boxHost); srcAfter != srcBefore {
@@ -1107,11 +1110,11 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 					restored++ // not a webhook-only placeholder
 				}
 			}
-			if len(kept) > 0 {
-				// These were on the box before the write, so finding them after
-				// it proves nothing: a refused rewrite reads exactly the same.
-				logger.Info("preset reconcile: rewrote slots the box already held, it still lists them",
-					"slots", kept)
+			// kept were on the box before the write, so finding them after it
+			// proves nothing: a refused rewrite reads exactly the same. The
+			// firmware's own refusal line decides (presetwriteverify.go).
+			if reportRewrittenSlots(logger, kept, firmwareRefusedPresetWriteSince(sweepStart)) {
+				requestPresetKeyResync(logger, "refused-rewrite")
 			}
 			if len(lost) > 0 {
 				syncFailed = true

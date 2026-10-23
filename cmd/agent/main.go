@@ -1078,6 +1078,14 @@ func run() error {
 	// leaves the LAN, and the app's install wait then times out and calls a
 	// successful install a failure (#873).
 	go leaveSetupSourceWatcher(context.Background(), *boxHost, logger, webuiSrv)
+	// The cause behind a SETUP source that comes back on every wake: a box
+	// whose language was never set (sysLanguage 0, SETUP_LANG_NOT_SET). Close
+	// that gate once per boot (boxlanguage.go).
+	langFile := "/mnt/nv/streborn/lang.txt"
+	if *regionFile != "" {
+		langFile = filepath.Join(filepath.Dir(*regionFile), "lang.txt")
+	}
+	go newBoxLanguageGate(*boxHost, langFile, regionRes.Country, logger.With("comp", "boxlang")).run(context.Background())
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
@@ -1415,6 +1423,9 @@ func run() error {
 		wsHandler.OnKeyEvent,
 	)
 	wsHandler.keyTrace = keyTrace
+	// The firmware refuses a preset write in its syslog only; the reconcile
+	// reads this to tell a refused rewrite from a landed one.
+	setPresetRefusalSource(keyTrace.LastPresetRefusal)
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
 	// The ring is also the wake signal: the firmware logs every standby and
 	// wake transition there, so a speaker switched on at the box or by its

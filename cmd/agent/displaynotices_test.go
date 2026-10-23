@@ -186,6 +186,48 @@ func TestHeldStoreNotices(t *testing.T) {
 	}
 }
 
+// TestHeldStoreNoticeNeedsAHold pins the 2026-10-22 SoundTouch 20 bundle: a
+// tap on (dead) key 6, the firmware's tap verdict 3 ms later, and STR's own
+// key re-sync PUT for slot 6 twelve seconds after that. The display said
+// "SAVED 6" for a store nobody made. Only a hold may confirm a store.
+func TestHeldStoreNoticeNeedsAHold(t *testing.T) {
+	l := swapShowNotice(t)
+	t.Cleanup(func() { heldGestureSaver.Store(nil) })
+	item := marge.HeldItem{Slot: 6, Source: "LOCAL_INTERNET_RADIO"}
+
+	// The field case: tap verdict, then the re-sync PUT inside the window.
+	r := newHoldRig(t)
+	r.hs.now = func() time.Time { return r.now }
+	heldGestureSaver.Store(r.hs)
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginTrace, 0)
+	r.gesture(false, 3)
+	r.now = r.now.Add(12 * time.Second)
+	noticeHeldStore(item, "Adroit Jazz Underground", nil)
+	l.none(t)
+
+	// A preset activation after the press is a tap too (no verdict line).
+	r = newHoldRig(t)
+	r.hs.now = func() time.Time { return r.now }
+	heldGestureSaver.Store(r.hs)
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginStats, 0)
+	r.now = r.now.Add(300 * time.Millisecond)
+	r.hs.NoteSelection()
+	r.now = r.now.Add(2 * time.Second)
+	noticeHeldStore(item, "Adroit Jazz Underground", nil)
+	l.none(t)
+
+	// A real hold: verdict paired with the press, the firmware's PUT follows.
+	r = newHoldRig(t)
+	r.err = webui.ErrHoldNotUPnP
+	r.hs.now = func() time.Time { return r.now }
+	heldGestureSaver.Store(r.hs)
+	r.press("PRESET_6", boxlog.ProducerConsole, boxlog.OriginTrace, 0)
+	r.gesture(true, 1600)
+	r.now = r.now.Add(3 * time.Second)
+	noticeHeldStore(item, "Adroit Jazz Underground", nil)
+	l.only(t, oled.NoticeSavedByKey, 6)
+}
+
 func TestKeysRestoredNotice(t *testing.T) {
 	l := swapShowNotice(t)
 	t.Cleanup(func() { restoreNoticeArmedAt.Store(0) })
