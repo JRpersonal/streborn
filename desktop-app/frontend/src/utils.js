@@ -266,6 +266,52 @@ export function libraryPlayMatches(rec, nowLocation, decodedLocation) {
   return rec.url === nowLocation || rec.url === decodedLocation;
 }
 
+// libraryTrackMeta returns "artist — album" of the single library track the app
+// last started, in the shape queueTrackMeta gives a folder's running song, and
+// only while the speaker still plays that track (the same match a hold-save
+// uses). A folder play showed artist and album on its queue line while a
+// single track from the same Library row showed the bare title (#1394): the
+// speaker reports neither for a direct file, so the app has to remember what
+// its own Library row said.
+export function libraryTrackMeta(rec, nowLocation, decodedLocation) {
+  if (!libraryPlayMatches(rec, nowLocation, decodedLocation)) return '';
+  return [rec.artist, rec.album].filter(Boolean).join(' — ');
+}
+
+// beginLibraryNowPlaying moves the cached now-playing state onto a library
+// track or folder the app just sent to the speaker, the way a station play
+// does for a station. The caller repaints the bar and asks the speaker again
+// shortly after.
+//
+// Without this the bar kept the previous radio station's song for 5 to 15 s
+// after a single track was clicked (#1394): the line prints the song only while
+// the location is a proxied stream, and the location only moved on the next
+// status poll. Clearing the title and the measured rate here, and pointing the
+// location at the track, makes the line change with the click.
+//
+// The optimistic window (the same six seconds a preset recall uses) is opened
+// only for a known URL: a shuffled folder does not know which track the speaker
+// starts with, and guarding an empty location would hide the real one until
+// the window ran out.
+export function beginLibraryNowPlaying(st, play, now) {
+  const url = (play && play.url) || '';
+  st.nowPlayState = 'BUFFERING_STATE';
+  st.nowLocation = url;
+  st.nowName = (play && play.name) || '';
+  st.nowIcon = (play && play.art) || '';
+  st.nowBitrate = 0;
+  st.nowTitle = '';
+  st.nowUUID = '';
+  // A Spotify song still cached from the previous play must not be printed
+  // over the library track; the status poll fills these again if the speaker
+  // really still plays Spotify.
+  st.spotifyNow = null;
+  st.spotifyRecall = null;
+  st.spotifyNowGen = (st.spotifyNowGen || 0) + 1;
+  st.nowBoxSpotify = null;
+  st.optimisticUntil = url ? now + 6000 : 0;
+}
+
 // presetBitrateLine is the bitrate line of a preset key: "<n> kbit/s", the
 // "- kbit/s" placeholder of a radio key with no rate yet, or '' for no line at
 // all. A key that plays from a media server (a single library track, a saved

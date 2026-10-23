@@ -10,9 +10,11 @@ import { srcOf } from './test/source.js';
 const BOX = { host: '192.0.2.10', port: 17008 };
 
 describe('replaying a Recently-played library track', () => {
+  // No selected speaker: the now-playing move the replay also does (#1394,
+  // pinned in librarynowplaying.test.js) stays out of these calls.
   // eslint-disable-next-line no-new-func
-  const makeReplay = (PlayURL) => new Function('PlayURL',
-    `${srcOf('replayLibraryTrack')}\nreturn replayLibraryTrack;`)(PlayURL);
+  const makeReplay = (PlayURL) => new Function('PlayURL', 'state', 'beginLibraryNowPlaying', 'deps',
+    `${srcOf('replayLibraryTrack')}\nreturn replayLibraryTrack;`)(PlayURL, { currentBox: null }, () => {}, {});
 
   it('hands the stored length to the speaker', async () => {
     const play = vi.fn().mockResolvedValue(undefined);
