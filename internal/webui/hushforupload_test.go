@@ -10,7 +10,7 @@ import (
 )
 
 // stopCounter records stop calls so a test can tell "we silenced the speaker"
-// from "we left it alone". Installed over the hushStop seam, because the
+// from "we left it alone". Installed over the hushStopFn seam, because the
 // renderer field is a concrete type with no interface to fake.
 type stopCounter struct {
 	mu    sync.Mutex
@@ -24,26 +24,22 @@ func (r *stopCounter) count() int {
 	return r.stops
 }
 
-func withStopSeam(t *testing.T, r *stopCounter) {
-	t.Helper()
-	prev := hushStop
-	hushStop = func(context.Context, *Server) error {
+// withStopSeam installs the stop seam on s. On the server under test, never
+// on a package variable, so no cleanup is needed.
+func withStopSeam(s *Server, r *stopCounter) {
+	s.hushStopFn = func(context.Context) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.stops++
 		return r.err
 	}
-	t.Cleanup(func() { hushStop = prev })
 }
 
-// withNowPlaying installs the read seam. The real one reaches :8090 on a fixed
-// port, so without this every case would take the "unreadable, leave it alone"
-// branch and prove nothing.
-func withNowPlaying(t *testing.T, np nowPlayingSnapshot) {
-	t.Helper()
-	prev := hushReadNowPlaying
-	hushReadNowPlaying = func(context.Context, string) nowPlayingSnapshot { return np }
-	t.Cleanup(func() { hushReadNowPlaying = prev })
+// withNowPlaying installs the read seam on s. The real one reaches :8090 on a
+// fixed port, so without this every case would take the "unreadable, leave it
+// alone" branch and prove nothing.
+func withNowPlaying(s *Server, np nowPlayingSnapshot) {
+	s.hushReadNowPlayingFn = func(context.Context, string) nowPlayingSnapshot { return np }
 }
 
 func newHushServer() *Server {
@@ -56,10 +52,11 @@ func newHushServer() *Server {
 // The reported case: the speaker is playing STR's own stream and a 16 MB engine
 // upload is about to start. It must go quiet first.
 func TestPlaybackIsStoppedBeforeAnUpload(t *testing.T) {
-	withNowPlaying(t, nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE"})
-	r := &stopCounter{}
-	withStopSeam(t, r)
+	t.Parallel()
 	s := newHushServer()
+	withNowPlaying(s, nowPlayingSnapshot{Source: "UPNP", PlayStatus: "PLAY_STATE"})
+	r := &stopCounter{}
+	withStopSeam(s, r)
 
 	s.hushForUpload("sidecar")
 
@@ -76,12 +73,13 @@ func TestPlaybackIsStoppedBeforeAnUpload(t *testing.T) {
 // A speaker playing Bluetooth is not ours to silence. The transfer disturbs it
 // too, but reaching in is the bigger intrusion.
 func TestASourceTheSpeakerOwnsIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	for _, src := range []string{"BLUETOOTH", "AUX", "SPOTIFY"} {
 		t.Run(src, func(t *testing.T) {
-			withNowPlaying(t, nowPlayingSnapshot{Source: src, PlayStatus: "PLAY_STATE"})
-			r := &stopCounter{}
-			withStopSeam(t, r)
 			s := newHushServer()
+			withNowPlaying(s, nowPlayingSnapshot{Source: src, PlayStatus: "PLAY_STATE"})
+			r := &stopCounter{}
+			withStopSeam(s, r)
 
 			s.hushForUpload("agent-update")
 
@@ -98,6 +96,7 @@ func TestASourceTheSpeakerOwnsIsLeftAlone(t *testing.T) {
 // Nothing playing, nothing to do. Sending a stop anyway would be a needless
 // write to a speaker that may be counting down to deep standby.
 func TestASilentSpeakerIsNotTouched(t *testing.T) {
+	t.Parallel()
 	cases := []nowPlayingSnapshot{
 		{Source: "STANDBY", PlayStatus: "STOP_STATE"},
 		{Source: "INVALID_SOURCE"},
@@ -105,10 +104,10 @@ func TestASilentSpeakerIsNotTouched(t *testing.T) {
 		{Source: "UPNP", PlayStatus: "PAUSE_STATE"},
 	}
 	for _, np := range cases {
-		withNowPlaying(t, np)
-		r := &stopCounter{}
-		withStopSeam(t, r)
 		s := newHushServer()
+		withNowPlaying(s, np)
+		r := &stopCounter{}
+		withStopSeam(s, r)
 
 		s.hushForUpload("sidecar")
 
@@ -121,10 +120,11 @@ func TestASilentSpeakerIsNotTouched(t *testing.T) {
 // A speaker that will not say what it is playing gets left alone: stopping
 // blind could silence a source STR does not own.
 func TestAnUnreadableSpeakerIsLeftAlone(t *testing.T) {
-	withNowPlaying(t, nowPlayingSnapshot{})
-	r := &stopCounter{}
-	withStopSeam(t, r)
+	t.Parallel()
 	s := newHushServer()
+	withNowPlaying(s, nowPlayingSnapshot{})
+	r := &stopCounter{}
+	withStopSeam(s, r)
 
 	s.hushForUpload("sidecar")
 
@@ -136,10 +136,11 @@ func TestAnUnreadableSpeakerIsLeftAlone(t *testing.T) {
 // The update is what the user is waiting for. A speaker that refuses the stop
 // must not hold it up, and must not leave the code path in a broken state.
 func TestAFailedStopDoesNotBlockTheUpload(t *testing.T) {
-	withNowPlaying(t, nowPlayingSnapshot{Source: "UPNP", PlayStatus: "BUFFERING_STATE"})
-	r := &stopCounter{err: errors.New("box refused")}
-	withStopSeam(t, r)
+	t.Parallel()
 	s := newHushServer()
+	withNowPlaying(s, nowPlayingSnapshot{Source: "UPNP", PlayStatus: "BUFFERING_STATE"})
+	r := &stopCounter{err: errors.New("box refused")}
+	withStopSeam(s, r)
 
 	s.hushForUpload("agent-update") // must simply return
 
@@ -152,11 +153,12 @@ func TestAFailedStopDoesNotBlockTheUpload(t *testing.T) {
 // real read runs, cannot reach a firmware port from a unit test, and the
 // function must fall through to "leave it alone" rather than stopping blind.
 func TestWithoutTheSeamsNothingIsStopped(t *testing.T) {
+	t.Parallel()
 	r := &stopCounter{}
-	withStopSeam(t, r) // installed on purpose: it is the WITNESS, not the subject
 	s := newHushServer()
+	withStopSeam(s, r) // installed on purpose: it is the WITNESS, not the subject
 
-	// hushReadNowPlaying is deliberately NOT installed, so the real read runs.
+	// hushReadNowPlayingFn is deliberately NOT installed, so the real read runs.
 	// It cannot reach a firmware port from a unit test, and the function must
 	// then fall through to "leave it alone" rather than stopping blind.
 	s.hushForUpload("sidecar")

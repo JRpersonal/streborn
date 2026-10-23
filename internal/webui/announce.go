@@ -39,21 +39,43 @@ const (
 	announceAudioURL = "http://127.0.0.1:8888/announce/audio"
 )
 
-// Announcement timing. Variables so the tests do not wait for real seconds.
-var (
-	// announcePoll is the gap between two now_playing reads while the clip
+// announceTiming is the announcement clock: the waits a test shrinks so an
+// announcement runs in milliseconds. Production reads
+// productionAnnounceTiming; a test installs its own copy on the server
+// (Server.announceTiming), so no test ever writes a package-level knob that
+// an announcement of another test still reads.
+type announceTiming struct {
+	// poll is the gap between two now_playing reads while the clip
 	// starts and plays.
-	announcePoll = 500 * time.Millisecond
-	// announceStartPolls bounds the wait for the clip to start (12 x 500 ms).
-	announceStartPolls = 12
-	// announceTail is added to the clip's own length for the box's buffer.
-	announceTail = 2 * time.Second
-	// announceUnknownWait is the safe upper bound for a clip whose length
+	poll time.Duration
+	// startPolls bounds the wait for the clip to start (12 x 500 ms).
+	startPolls int
+	// tail is added to the clip's own length for the box's buffer.
+	tail time.Duration
+	// unknownWait is the safe upper bound for a clip whose length
 	// could not be read.
-	announceUnknownWait = 20 * time.Second
-	// announceWakeTimeout bounds the wake of a speaker that was in standby.
-	announceWakeTimeout = 8 * time.Second
-)
+	unknownWait time.Duration
+	// wakeTimeout bounds the wake of a speaker that was in standby.
+	wakeTimeout time.Duration
+}
+
+// productionAnnounceTiming is the announcement clock on a real speaker.
+var productionAnnounceTiming = announceTiming{
+	poll:        500 * time.Millisecond,
+	startPolls:  12,
+	tail:        2 * time.Second,
+	unknownWait: 20 * time.Second,
+	wakeTimeout: 8 * time.Second,
+}
+
+// announceTimes is the announcement clock: the production values unless a
+// test installed a faster one.
+func (s *Server) announceTimes() *announceTiming {
+	if s.announceTiming != nil {
+		return s.announceTiming
+	}
+	return &productionAnnounceTiming
+}
 
 // nowPlayingSnapshot is the slice of the box's now_playing STR needs to restore
 // playback after an announcement.
@@ -188,7 +210,7 @@ func (s *Server) runAnnouncement(ctx context.Context, audio []byte, mime, title 
 	}
 
 	if wasStandby {
-		if err := boxcli.WakeAndWait(ctx, s.boxHost, announceWakeTimeout, s.logger); err != nil {
+		if err := boxcli.WakeAndWait(ctx, s.boxHost, s.announceTimes().wakeTimeout, s.logger); err != nil {
 			s.logger.Warn("announce: wake failed, playing anyway", "err", err)
 		}
 	}
@@ -315,17 +337,18 @@ func (s *Server) announceSetVolume(ctx context.Context, vol int) error {
 // box moving off the announcement URL (firmware that does report it), ends the
 // wait early. estDur<=0 (unparsable audio) falls back to a safe fixed cap.
 func (s *Server) waitAnnounceDone(ctx context.Context, estDur float64) {
+	times := s.announceTimes()
 	// Wait for it to actually start playing (max 6s).
-	for i := 0; i < announceStartPolls && ctx.Err() == nil; i++ {
+	for i := 0; i < times.startPolls && ctx.Err() == nil; i++ {
 		np := s.snapshotNowPlaying(ctx)
 		if strings.Contains(np.Location, "/announce/audio") && np.PlayStatus == "PLAY_STATE" {
 			break
 		}
-		time.Sleep(announcePoll)
+		time.Sleep(times.poll)
 	}
-	wait := announceUnknownWait
+	wait := times.unknownWait
 	if estDur > 0 {
-		wait = time.Duration(estDur*float64(time.Second)) + announceTail
+		wait = time.Duration(estDur*float64(time.Second)) + times.tail
 	}
 	deadline := time.Now().Add(wait)
 	for ctx.Err() == nil && time.Now().Before(deadline) {
@@ -336,7 +359,7 @@ func (s *Server) waitAnnounceDone(ctx context.Context, estDur float64) {
 		if np.PlayStatus == "STOP_STATE" {
 			return
 		}
-		time.Sleep(announcePoll)
+		time.Sleep(times.poll)
 	}
 }
 

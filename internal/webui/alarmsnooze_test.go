@@ -127,6 +127,7 @@ func withAuxSnooze(t *testing.T, s *Server) {
 }
 
 func TestRingEndReason(t *testing.T) {
+	t.Parallel()
 	since := time.Date(2026, 9, 7, 6, 30, 0, 0, time.UTC)
 	base := ringFacts{since: since, ringGen: 4, curGen: 4, maxRing: time.Hour, now: since.Add(time.Minute)}
 	tests := []struct {
@@ -159,6 +160,7 @@ func TestRingEndReason(t *testing.T) {
 // The core of discussion #1415: a press while the alarm rings silences it,
 // the speaker stays on, and the same alarm rings again after its snooze time.
 func TestSnoozeWhileRingingRingsAgainAfterTheLength(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -195,6 +197,7 @@ func TestSnoozeWhileRingingRingsAgainAfterTheLength(t *testing.T) {
 
 // Old alarms snooze for nine minutes; the length on the alarm wins otherwise.
 func TestSnoozeUsesTheAlarmsLength(t *testing.T) {
+	t.Parallel()
 	doc := weekdayDoc()
 	doc.Alarms[0].Snooze = 15
 	h, _ := newSnoozeHarness(t, doc)
@@ -212,6 +215,7 @@ func TestSnoozeUsesTheAlarmsLength(t *testing.T) {
 
 // Unlimited snoozes: every re-fire can be snoozed again.
 func TestSnoozeIsUnlimited(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	for i := 1; i <= 3; i++ {
@@ -233,6 +237,7 @@ func TestSnoozeIsUnlimited(t *testing.T) {
 
 // Outside a ringing alarm the key does nothing at all.
 func TestSnoozePressWithoutAnAlarmDoesNothing(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsDown)
 	if h.s.ringView() != nil || p.silenced.Load() != 0 || p.notices.Load() != 0 {
@@ -244,6 +249,7 @@ func TestSnoozePressWithoutAnAlarmDoesNothing(t *testing.T) {
 // While the alarm is still waking the speaker, a press must not snooze a
 // recall that is on its way.
 func TestSnoozePressWhileStartingIsIgnored(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.s.ringStart(weekdayDoc().Alarms[0], time.Now(), time.Now())
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -253,6 +259,7 @@ func TestSnoozePressWhileStartingIsIgnored(t *testing.T) {
 }
 
 func TestSnoozeCancelledByStopInTheApp(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -267,6 +274,7 @@ func TestSnoozeCancelledByStopInTheApp(t *testing.T) {
 }
 
 func TestSnoozeCancelledByThePowerKey(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -284,6 +292,7 @@ func TestSnoozeCancelledByThePowerKey(t *testing.T) {
 // STANDBY right after the snooze's own stop. That is not the power key: the
 // snooze stays, and the alarm wakes the speaker at the end of it.
 func TestSnoozeSurvivesItsOwnStopDroppingToStandby(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.s.snoozeTiming.settle = time.Minute
 	h.ring(t)
@@ -302,6 +311,7 @@ func TestSnoozeSurvivesItsOwnStopDroppingToStandby(t *testing.T) {
 }
 
 func TestSnoozeCancelledByAnotherPlay(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -318,6 +328,7 @@ func TestSnoozeCancelledByAnotherPlay(t *testing.T) {
 // Something the firmware plays by itself (a Bose preset, Bluetooth) never
 // moves the recall generation, so the deadline reads the speaker once.
 func TestSnoozeDeadlineStandsDownWhenSomethingElsePlays(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -330,6 +341,7 @@ func TestSnoozeDeadlineStandsDownWhenSomethingElsePlays(t *testing.T) {
 
 // A press while the speaker plays another input is not a press on the alarm.
 func TestSnoozePressOnAnotherInputDoesNothing(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	p.live("BLUETOOTH", true)
@@ -342,6 +354,7 @@ func TestSnoozePressOnAnotherInputDoesNothing(t *testing.T) {
 // AUX bound to snooze: while the alarm rings the firmware's own switch to AUX
 // is the silence, so STR sends no stop on top, and the alarm rings again.
 func TestAuxSnoozesARingingAlarm(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.ring(t)
@@ -360,6 +373,7 @@ func TestAuxSnoozesARingingAlarm(t *testing.T) {
 
 // Outside a ringing alarm a snooze-bound AUX is just AUX: nothing extra.
 func TestAuxWithoutAnAlarmDoesNothingExtra(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.s.AlarmSourceChanged("UPNP", "AUX")
@@ -374,6 +388,7 @@ func TestAuxWithoutAnAlarmDoesNothingExtra(t *testing.T) {
 // That is the AUX press: snooze, no stop on top, and the alarm comes back from
 // Bluetooth at the end of the snooze.
 func TestAuxLandingOnBluetoothWithAKeyFrameSnoozes(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.ring(t)
@@ -396,6 +411,7 @@ func TestAuxLandingOnBluetoothWithAKeyFrameSnoozes(t *testing.T) {
 // pairing and anybody nearby could connect a phone. The snooze moves it on to
 // AUX, which is just as silent.
 func TestAuxSnoozeOnBluetoothMovesToAux(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.s.snoozeTiming.unit = time.Minute // keep the re-fire out of this test
@@ -422,6 +438,7 @@ func TestAuxSnoozeOnBluetoothMovesToAux(t *testing.T) {
 // A speaker that snoozed straight onto AUX (something plugged in, or a
 // firmware that does not skip the empty input) is left alone.
 func TestAuxSnoozeOnAuxSelectsNothing(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.s.snoozeTiming.unit = time.Minute
@@ -439,6 +456,7 @@ func TestAuxSnoozeOnAuxSelectsNothing(t *testing.T) {
 
 // A key frame just BEFORE the switch counts too.
 func TestBluetoothKeyFrameBeforeTheSwitchCounts(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.ring(t)
@@ -452,6 +470,7 @@ func TestBluetoothKeyFrameBeforeTheSwitchCounts(t *testing.T) {
 // A phone connecting by itself switches to Bluetooth without any key frame:
 // never a snooze.
 func TestBluetoothWithoutAKeyFrameDoesNotSnooze(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.ring(t)
@@ -465,6 +484,7 @@ func TestBluetoothWithoutAKeyFrameDoesNotSnooze(t *testing.T) {
 
 // Outside a ringing alarm, the AUX key landing on Bluetooth does nothing extra.
 func TestBluetoothWithAKeyFrameOutsideAnAlarmDoesNothing(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	p.keyFrame(time.Now())
@@ -478,6 +498,7 @@ func TestBluetoothWithAKeyFrameOutsideAnAlarmDoesNothing(t *testing.T) {
 // Without the snooze action on AUX, a Bluetooth switch with a key frame is
 // just the user choosing Bluetooth.
 func TestBluetoothWithAKeyFrameNeedsAuxBoundToSnooze(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	p.keyFrame(time.Now())
@@ -491,6 +512,7 @@ func TestBluetoothWithAKeyFrameNeedsAuxBoundToSnooze(t *testing.T) {
 // Snoozed onto Bluetooth, then a phone actually streams: that is the user's
 // music, and the alarm stands down.
 func TestBluetoothSnoozeStandsDownWhenAPhoneStreams(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.ring(t)
@@ -509,6 +531,7 @@ func TestBluetoothSnoozeStandsDownWhenAPhoneStreams(t *testing.T) {
 // Where the key trace names AUX_INPUT, that snoozes; the source change of the
 // same press is a repeat and changes nothing.
 func TestAuxKeyTraceAndSourceChangeAreOnePress(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
 	h.s.snoozeTiming.unit = time.Minute // keep the re-fire out of this test
@@ -530,6 +553,7 @@ func TestAuxKeyTraceAndSourceChangeAreOnePress(t *testing.T) {
 // An AUX that does NOT carry snooze never snoozes; the switch to AUX simply
 // ends the alarm's claim on the key at the next press.
 func TestUnboundAuxDoesNotSnooze(t *testing.T) {
+	t.Parallel()
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	h.ring(t)
 	h.s.AlarmSourceChanged("UPNP", "AUX")
@@ -542,6 +566,7 @@ func TestUnboundAuxDoesNotSnooze(t *testing.T) {
 // The alarm's switch-off counts from the latest ring: the snooze cancels the
 // one the alarm armed, the re-fire arms it again.
 func TestSnoozePausesTheAlarmsSwitchOff(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, autoOffDoc(45))
 	h.ring(t)
 	if !waitFor(func() bool { return h.s.sleepStatus()["active"] == true }) {
@@ -558,6 +583,7 @@ func TestSnoozePausesTheAlarmsSwitchOff(t *testing.T) {
 
 // A sleep timer the user set themselves is theirs: a snooze leaves it alone.
 func TestSnoozeKeepsTheUsersOwnSleepTimer(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, autoOffDoc(45))
 	h.ring(t)
 	if !waitFor(func() bool { return h.s.sleepStatus()["active"] == true }) {
@@ -575,9 +601,10 @@ func TestSnoozeKeepsTheUsersOwnSleepTimer(t *testing.T) {
 // The fire's own verify must never re-push a snoozed alarm: that would ring
 // it again long before the snooze is over.
 func TestSnoozeStandsTheFiresRetryDown(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, weekdayDoc())
-	alarmPlayingCheck = func(*Server, int, time.Time) bool { return false } // would retry
-	alarmVerifyDelay = 150 * time.Millisecond
+	h.s.alarmPlayingCheckFn = func(int, time.Time) bool { return false } // would retry
+	h.s.alarmTiming.verifyDelay = 150 * time.Millisecond
 	h.s.snoozeTiming.unit = time.Minute // keep the snooze's own re-fire out of this test
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -593,6 +620,7 @@ func TestSnoozeStandsTheFiresRetryDown(t *testing.T) {
 
 // The status block shows a ringing and a snoozed alarm.
 func TestAlarmStatusShowsTheRing(t *testing.T) {
+	t.Parallel()
 	h, _ := newSnoozeHarness(t, weekdayDoc())
 	if h.s.alarmView().Status.Ring != nil {
 		t.Fatal("a ring is reported before anything fired")

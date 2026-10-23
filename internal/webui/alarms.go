@@ -48,7 +48,21 @@ var (
 	// an agent restart or an OTA plus the wake itself, short enough that a late
 	// boot is silent.
 	alarmGrace = 5 * time.Minute
-	// alarmMaxSleep caps how long the runner sleeps between evaluations while
+	// alarmFireTimeout bounds one wake-and-recall.
+	alarmFireTimeout = 90 * time.Second
+	// alarmWakeTimeout bounds the wake alone, so a speaker that never comes out
+	// of standby cannot hold the recall up for the whole fire budget.
+	alarmWakeTimeout = 20 * time.Second
+)
+
+// alarmTiming is the scheduler's clock: the durations a test shrinks so a
+// runner that sleeps half a minute between evaluations, and a verify that
+// waits most of a minute, run out in milliseconds. Production reads
+// productionAlarmTiming; a test installs its own copy on the server
+// (Server.alarmTiming), so no test ever writes a package-level knob that a
+// runner or verify goroutine of another test still reads.
+type alarmTiming struct {
+	// maxSleep caps how long the runner sleeps between evaluations while
 	// an alarm is scheduled at all.
 	//
 	// This cap is the whole reason the runner is a loop rather than one
@@ -63,34 +77,59 @@ var (
 	// on the reload channel with no timer at all: most speakers in the fleet
 	// will never set an alarm, and they should not pay a wake-up twice a minute
 	// for a feature they do not use.
-	alarmMaxSleep = 30 * time.Second
-	// alarmMinSleep keeps the loop from spinning if a fire leaves an alarm due.
-	alarmMinSleep = time.Second
-	// alarmFireTimeout bounds one wake-and-recall.
-	alarmFireTimeout = 90 * time.Second
-	// alarmWakeTimeout bounds the wake alone, so a speaker that never comes out
-	// of standby cannot hold the recall up for the whole fire budget.
-	alarmWakeTimeout = 20 * time.Second
-	// alarmVerifyDelay is how long to let the recall's own verify (three
-	// attempts, five seconds apart) finish before second-guessing it. A var so
-	// the tests can shorten it.
-	alarmVerifyDelay = 45 * time.Second
-)
+	maxSleep time.Duration
+	// minSleep keeps the loop from spinning if a fire leaves an alarm due.
+	minSleep time.Duration
+	// verifyDelay is how long to let the recall's own verify (three
+	// attempts, five seconds apart) finish before second-guessing it.
+	verifyDelay time.Duration
+}
 
-// Seams for the tests, in the sleep timer's style: the real implementations
-// reach the firmware on fixed ports, which a test server on a random port
-// cannot stand in for. Production always uses these.
-var (
-	alarmWakeBox = func(s *Server, ctx context.Context, vol int) {
-		s.wakeForAlarm(ctx, vol)
+// productionAlarmTiming is the scheduler's clock on a real speaker.
+var productionAlarmTiming = alarmTiming{
+	maxSleep:    30 * time.Second,
+	minSleep:    time.Second,
+	verifyDelay: 45 * time.Second,
+}
+
+// alarmTimes is the scheduler's clock: the production values unless a test
+// installed a faster one.
+func (s *Server) alarmTimes() *alarmTiming {
+	if s.alarmTiming != nil {
+		return s.alarmTiming
 	}
-	alarmRecallSlot = func(s *Server, ctx context.Context, slot int) int {
-		return s.recallSlotClean(ctx, slot)
+	return &productionAlarmTiming
+}
+
+// Seams for the tests, in the package's style (selectFn, alarmLiveStateFn): a
+// nil Server field means the real implementation, which reaches the firmware
+// on fixed ports that a test server on a random port cannot stand in for.
+
+// alarmWakeBox wakes the speaker for a fire and sets the alarm's volume.
+func (s *Server) alarmWakeBox(ctx context.Context, vol int) {
+	if s.alarmWakeBoxFn != nil {
+		s.alarmWakeBoxFn(ctx, vol)
+		return
 	}
-	alarmPlayingCheck = func(s *Server, slot int, since time.Time) bool {
-		return s.alarmPlaying(slot, since)
+	s.wakeForAlarm(ctx, vol)
+}
+
+// alarmRecallSlot recalls the alarm's preset and reports the recall's status.
+func (s *Server) alarmRecallSlot(ctx context.Context, slot int) int {
+	if s.alarmRecallSlotFn != nil {
+		return s.alarmRecallSlotFn(ctx, slot)
 	}
-)
+	return s.recallSlotClean(ctx, slot)
+}
+
+// alarmPlayingCheck reports whether the alarm's preset has been playing since
+// the fire.
+func (s *Server) alarmPlayingCheck(slot int, since time.Time) bool {
+	if s.alarmPlayingCheckFn != nil {
+		return s.alarmPlayingCheckFn(slot, since)
+	}
+	return s.alarmPlaying(slot, since)
+}
 
 // alarmNowTime is the runner's clock. Nil means time.Now; the tests set it.
 func (s *Server) alarmNowTime() time.Time {
@@ -140,11 +179,12 @@ func (s *Server) runAlarms(ctx context.Context) {
 			continue
 		}
 		wait := next.Sub(now)
-		if wait > alarmMaxSleep {
-			wait = alarmMaxSleep
+		times := s.alarmTimes()
+		if wait > times.maxSleep {
+			wait = times.maxSleep
 		}
-		if wait < alarmMinSleep {
-			wait = alarmMinSleep
+		if wait < times.minSleep {
+			wait = times.minSleep
 		}
 		t := time.NewTimer(wait)
 		select {
@@ -332,8 +372,8 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 	// Clears the stop latches, so the recall's own verify does not read a
 	// stale user-stop as a reason to stand down (#419).
 	s.NoteUserPlay()
-	alarmWakeBox(s, ctx, a.Volume)
-	status := alarmRecallSlot(s, ctx, a.Slot)
+	s.alarmWakeBox(ctx, a.Volume)
+	status := s.alarmRecallSlot(ctx, a.Slot)
 	gen := s.RecallGeneration()
 	s.logger.Info("alarm: fired", "id", a.ID, "slot", a.Slot, "volume", a.Volume,
 		"autoOffMin", a.AutoOff, "status", status)
@@ -391,7 +431,7 @@ func (s *Server) alarmVerifyStandsDownForRing(a alarm.Alarm, due time.Time, ring
 // loop: a dead station at 06:30 should leave a diagnosable log line, not a
 // speaker re-pushing the same URL until somebody unplugs it.
 func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt time.Time, ring uint64) {
-	time.Sleep(alarmVerifyDelay)
+	time.Sleep(s.alarmTimes().verifyDelay)
 	if s.alarmVerifyStandsDownForRing(a, due, ring) {
 		return
 	}
@@ -402,7 +442,7 @@ func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt t
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true, Detail: reason})
 		return
 	}
-	if alarmPlayingCheck(s, a.Slot, firedAt) {
+	if s.alarmPlayingCheck(a.Slot, firedAt) {
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true})
 		return
 	}
@@ -418,13 +458,13 @@ func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt t
 	// it re-opens every group re-form path the first one did.
 	s.hushGroupForm(groupFormHushWindow)
 	s.NoteUserPlay()
-	alarmWakeBox(s, ctx, a.Volume)
-	alarmRecallSlot(s, ctx, a.Slot)
+	s.alarmWakeBox(ctx, a.Volume)
+	s.alarmRecallSlot(ctx, a.Slot)
 	retryGen := s.RecallGeneration()
 	cancel()
 	s.ringArmed(ring, retryGen)
 
-	time.Sleep(alarmVerifyDelay)
+	time.Sleep(s.alarmTimes().verifyDelay)
 	if s.alarmVerifyStandsDownForRing(a, due, ring) {
 		return
 	}
@@ -433,7 +473,7 @@ func (s *Server) verifyAlarm(a alarm.Alarm, due time.Time, gen uint64, firedAt t
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true, Detail: reason})
 		return
 	}
-	if alarmPlayingCheck(s, a.Slot, retryAt) {
+	if s.alarmPlayingCheck(a.Slot, retryAt) {
 		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true, Detail: "played after a retry"})
 		return
 	}

@@ -39,14 +39,33 @@ const nativeRadioSource = "LOCAL_INTERNET_RADIO"
 // works, and the one thing that usually helps.
 var errNativeStationKept = errors.New("the speaker is refusing what STR sends it right now, so its radio station was put back on. Presets with Spotify, the music library or the queue fail while radio stations still play. A restart of the speaker usually fixes it")
 
-// Handover timing. Variables so the tests do not wait for real seconds.
-var (
-	// nativeHandoverWindow is how long the speaker gets to report the UPnP
+// nativeHandoverTiming is the handover's clock: the window a test shrinks so
+// a handover runs in milliseconds. Production reads
+// productionNativeHandoverTiming; a test installs its own copy on the server
+// (Server.nativeHandoverTiming), so no test ever writes a package-level knob
+// that a handover of another test still reads.
+type nativeHandoverTiming struct {
+	// window is how long the speaker gets to report the UPnP
 	// source after a push.
-	nativeHandoverWindow = 3 * time.Second
-	// nativeHandoverPoll is the gap between two source reads in that window.
-	nativeHandoverPoll = 500 * time.Millisecond
-)
+	window time.Duration
+	// poll is the gap between two source reads in that window.
+	poll time.Duration
+}
+
+// productionNativeHandoverTiming is the handover's clock on a real speaker.
+var productionNativeHandoverTiming = nativeHandoverTiming{
+	window: 3 * time.Second,
+	poll:   500 * time.Millisecond,
+}
+
+// nativeHandoverTimes is the handover's clock: the production values unless
+// a test installed a faster one.
+func (s *Server) nativeHandoverTimes() *nativeHandoverTiming {
+	if s.nativeHandoverTiming != nil {
+		return s.nativeHandoverTiming
+	}
+	return &productionNativeHandoverTiming
+}
 
 // stopNativeStation sends the speaker's own STOP key to end a station it plays
 // itself. Returns whether the key was delivered.
@@ -84,7 +103,8 @@ func (s *Server) resumeNativeStation(ctx context.Context) bool {
 // doubt: the check exists to catch the native station that stays in charge,
 // not to turn a slow probe into an error.
 func (s *Server) awaitUPnPSource(ctx context.Context) (string, bool) {
-	deadline := time.Now().Add(nativeHandoverWindow)
+	times := s.nativeHandoverTimes()
+	deadline := time.Now().Add(times.window)
 	last := ""
 	for {
 		if src := strings.TrimSpace(s.boxSourceNow()); src != "" {
@@ -99,7 +119,7 @@ func (s *Server) awaitUPnPSource(ctx context.Context) (string, bool) {
 		select {
 		case <-ctx.Done():
 			return last, !boxOwnedSource(last)
-		case <-time.After(nativeHandoverPoll):
+		case <-time.After(times.poll):
 		}
 	}
 }

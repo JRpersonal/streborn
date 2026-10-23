@@ -49,30 +49,27 @@ func newAlarmHarness(t *testing.T, doc alarm.Document) *alarmHarness {
 	h.clock.Store(&start)
 	h.s.alarmNow = func() time.Time { return *h.clock.Load() }
 
-	prevWake, prevRecall, prevPlaying := alarmWakeBox, alarmRecallSlot, alarmPlayingCheck
-	prevDelay := alarmVerifyDelay
-	// Registered first, so it runs LAST: the seams must not be put back while a
-	// fire's verify goroutine is still reading them.
-	t.Cleanup(func() {
-		alarmWakeBox, alarmRecallSlot, alarmPlayingCheck = prevWake, prevRecall, prevPlaying
-		alarmVerifyDelay = prevDelay
-	})
+	// No fire's verify goroutine may outlive the test.
 	t.Cleanup(h.s.alarmBackground.Wait)
-	alarmWakeBox = func(_ *Server, _ context.Context, vol int) {
+	// The seams live on this test's own server, so nothing is restored and no
+	// other test's runner or verify goroutine ever reads them.
+	times := productionAlarmTiming
+	times.verifyDelay = time.Millisecond
+	h.s.alarmTiming = &times
+	h.s.alarmWakeBoxFn = func(_ context.Context, vol int) {
 		h.wakes.Add(1)
 		select {
 		case h.volumes <- vol:
 		default:
 		}
 	}
-	alarmRecallSlot = func(_ *Server, _ context.Context, _ int) int {
+	h.s.alarmRecallSlotFn = func(_ context.Context, _ int) int {
 		h.recalls.Add(1)
 		return 200
 	}
 	// The default is "it played", so a test that is not about the fallback
 	// never waits for one.
-	alarmPlayingCheck = func(*Server, int, time.Time) bool { return true }
-	alarmVerifyDelay = time.Millisecond
+	h.s.alarmPlayingCheckFn = func(int, time.Time) bool { return true }
 	return h
 }
 
@@ -97,6 +94,7 @@ func weekdayDoc() alarm.Document {
 }
 
 func TestAlarmFiresWhenDue(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	h.at(berlinTime(t, 2026, time.September, 7, 6, 30)) // a Monday
 	h.s.evaluateAlarms(h.s.alarmNowTime())
@@ -118,6 +116,7 @@ func TestAlarmFiresWhenDue(t *testing.T) {
 
 // The evaluation runs at least twice a minute, so "already fired" has to hold.
 func TestAlarmFiresOnlyOnce(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	now := berlinTime(t, 2026, time.September, 7, 6, 30)
 	h.at(now)
@@ -137,6 +136,7 @@ func TestAlarmFiresOnlyOnce(t *testing.T) {
 }
 
 func TestAlarmDisabledNeverFires(t *testing.T) {
+	t.Parallel()
 	doc := weekdayDoc()
 	doc.Alarms[0].Enabled = false
 	h := newAlarmHarness(t, doc)
@@ -151,6 +151,7 @@ func TestAlarmDisabledNeverFires(t *testing.T) {
 
 // A box first plugged in at 09:00 must not start the radio for a 06:30 alarm.
 func TestAlarmSkippedWhenTooLate(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	now := berlinTime(t, 2026, time.September, 7, 9, 0)
 	h.at(now)
@@ -166,6 +167,7 @@ func TestAlarmSkippedWhenTooLate(t *testing.T) {
 // the stored document as its baseline, so the alarm found there is a restart
 // survivor, not a fresh save, and it fires.
 func TestAlarmFiresInsideTheGraceWindow(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	now := berlinTime(t, 2026, time.September, 7, 6, 33)
 	h.at(now)
@@ -197,6 +199,7 @@ func (h *alarmHarness) settled(now time.Time) {
 // acknowledges the save instead: the current due instant is recorded, nothing
 // plays now, and Tuesday goes off.
 func TestAlarmSavedInsideItsOwnWindowWaitsForTheNextOne(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, alarm.Document{Zone: "Europe/Berlin"})
 	h.settled(berlinTime(t, 2026, time.September, 7, 6, 0)) // Monday, the baseline
 
@@ -221,6 +224,7 @@ func TestAlarmSavedInsideItsOwnWindowWaitsForTheNextOne(t *testing.T) {
 // existing id: a disabled alarm is never marked, so without the
 // acknowledgement it would go off the moment it is re-enabled.
 func TestAlarmReEnabledInsideItsOwnWindowWaitsForTheNextOne(t *testing.T) {
+	t.Parallel()
 	off := weekdayDoc()
 	off.Alarms[0].Enabled = false
 	h := newAlarmHarness(t, off)
@@ -245,6 +249,7 @@ func TestAlarmReEnabledInsideItsOwnWindowWaitsForTheNextOne(t *testing.T) {
 
 // Moving a 07:00 alarm to 06:32 at 06:33 is a save inside the new window too.
 func TestAlarmMovedIntoItsOwnWindowWaitsForTheNextOne(t *testing.T) {
+	t.Parallel()
 	late := weekdayDoc()
 	late.Alarms[0].Hour, late.Alarms[0].Minute = 7, 0
 	h := newAlarmHarness(t, late)
@@ -262,6 +267,7 @@ func TestAlarmMovedIntoItsOwnWindowWaitsForTheNextOne(t *testing.T) {
 // The acknowledgement is per alarm: saving a second, unrelated alarm at 06:31
 // must not swallow the 06:30 one that has not fired yet.
 func TestAlarmUntouchedByASaveStillFires(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	h.settled(berlinTime(t, 2026, time.September, 7, 6, 0))
 
@@ -279,6 +285,7 @@ func TestAlarmUntouchedByASaveStillFires(t *testing.T) {
 }
 
 func TestAlarmNeverFiresOnAnImplausibleClock(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	// The firmware build epoch the speakers boot with, having no RTC.
 	now := berlinTime(t, 2015, time.June, 1, 6, 30)
@@ -302,6 +309,7 @@ func TestAlarmNeverFiresOnAnImplausibleClock(t *testing.T) {
 // act on time it had witnessed. It was wrong, and this test is the case that
 // showed it.
 func TestAlarmFiresWhenTheClockIsRepairedInsideTheGraceWindow(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 
 	// Several evaluations on the pre-repair clock. None may fire (rule 1).
@@ -335,6 +343,7 @@ func TestAlarmFiresWhenTheClockIsRepairedInsideTheGraceWindow(t *testing.T) {
 // quiet. A station starting at 09:40 because the box was offline at 06:30 is
 // the failure everyone remembers.
 func TestAlarmStaysQuietWhenTheClockIsRepairedTooLate(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	bad := berlinTime(t, 2015, time.June, 1, 6, 31)
 	h.at(bad)
@@ -350,6 +359,7 @@ func TestAlarmStaysQuietWhenTheClockIsRepairedTooLate(t *testing.T) {
 }
 
 func TestAlarmEmptyPresetDoesNotWakeTheSpeaker(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	h.s.presets = presets.New() // slot 3 is empty
 	now := berlinTime(t, 2026, time.September, 7, 6, 30)
@@ -368,6 +378,7 @@ func TestAlarmEmptyPresetDoesNotWakeTheSpeaker(t *testing.T) {
 }
 
 func TestAlarmFiresWithAPopulatedPreset(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	ps, err := presets.Load(filepath.Join(t.TempDir(), "presets.json"))
 	if err != nil {
@@ -391,6 +402,7 @@ func TestAlarmFiresWithAPopulatedPreset(t *testing.T) {
 // case this guards: a file written by a newer agent, or a zone dropped from a
 // future tzdata.
 func TestAlarmUnknownZoneSchedulesNothing(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "alarms.json")
 	raw := `{"zone":"Mars/Olympus","alarms":[{"id":"wake","enabled":true,"hour":6,"minute":30,"days":[1,2,3,4,5],"slot":3}]}`
 	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
@@ -431,6 +443,7 @@ func (h *alarmHarness) startRunner(t *testing.T) {
 
 // A save has to be picked up at once, not at the next evaluation.
 func TestAlarmReloadKickWakesTheRunner(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	h.at(berlinTime(t, 2026, time.September, 7, 3, 0)) // hours before the alarm
 	h.startRunner(t)
@@ -461,22 +474,21 @@ func (h *alarmHarness) countingClock() *atomic.Int64 {
 }
 
 // shortenAlarmSleeps makes the runner's cap and floor test-sized, so a test
-// sees several evaluations inside a few hundred milliseconds.
-func shortenAlarmSleeps(t *testing.T) {
-	t.Helper()
-	prevMax, prevMin := alarmMaxSleep, alarmMinSleep
-	alarmMaxSleep, alarmMinSleep = 10*time.Millisecond, time.Millisecond
-	t.Cleanup(func() { alarmMaxSleep, alarmMinSleep = prevMax, prevMin })
+// sees several evaluations inside a few hundred milliseconds. Called before
+// startRunner: the runner reads the clock it was started with.
+func (h *alarmHarness) shortenAlarmSleeps() {
+	h.s.alarmTiming.maxSleep, h.s.alarmTiming.minSleep = 10*time.Millisecond, time.Millisecond
 }
 
 // Most speakers will never set an alarm, and they must not pay for the feature:
 // with nothing scheduled the runner evaluates once and then parks on the
 // reload channel, with no timer at all. A save wakes it, once.
 func TestAlarmRunnerSleepsWithNothingScheduled(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, alarm.Document{Zone: "Europe/Berlin"})
 	reads := h.countingClock()
 	h.at(berlinTime(t, 2026, time.September, 7, 3, 0))
-	shortenAlarmSleeps(t)
+	h.shortenAlarmSleeps()
 	h.startRunner(t)
 
 	if !waitFor(func() bool { return reads.Load() == 1 }) {
@@ -498,10 +510,11 @@ func TestAlarmRunnerSleepsWithNothingScheduled(t *testing.T) {
 // runner still re-derives the next fire on every cap, because a timer armed
 // for hours on a clock that may still be stepped cannot be trusted.
 func TestAlarmRunnerTicksOnTheCapWhenSomethingIsScheduled(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	reads := h.countingClock()
 	h.at(berlinTime(t, 2026, time.September, 7, 3, 0))
-	shortenAlarmSleeps(t)
+	h.shortenAlarmSleeps()
 	h.startRunner(t)
 
 	if !waitFor(func() bool { return reads.Load() >= 3 }) {
@@ -513,6 +526,7 @@ func TestAlarmRunnerTicksOnTheCapWhenSomethingIsScheduled(t *testing.T) {
 }
 
 func TestKickAlarmsNeverBlocks(t *testing.T) {
+	t.Parallel()
 	s := &Server{alarmReload: make(chan struct{}, 1)}
 	for i := 0; i < 10; i++ {
 		s.KickAlarms() // the second and later sends would block on a full channel
@@ -523,8 +537,9 @@ func TestKickAlarmsNeverBlocks(t *testing.T) {
 
 // The retry exists, but only one, and only when nothing played.
 func TestAlarmRetriesOnceWhenNothingPlayed(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
-	alarmPlayingCheck = func(*Server, int, time.Time) bool { return false }
+	h.s.alarmPlayingCheckFn = func(int, time.Time) bool { return false }
 	now := berlinTime(t, 2026, time.September, 7, 6, 30)
 	h.at(now)
 	h.s.evaluateAlarms(now)
@@ -546,6 +561,7 @@ func TestAlarmRetriesOnceWhenNothingPlayed(t *testing.T) {
 // recall, because the firmware's own power-on resume of yesterday's station
 // already reports a play start over gabbo, and that is a group re-form trigger.
 func TestAlarmHushesTheGroupReForm(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, weekdayDoc())
 	if h.s.groupFormHushed() {
 		t.Fatal("nothing has fired yet, so nothing should be hushed")
@@ -568,6 +584,7 @@ func autoOffDoc(minutes int) alarm.Document {
 }
 
 func TestAlarmArmsTheAutoOff(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, autoOffDoc(45))
 	now := berlinTime(t, 2026, time.September, 7, 6, 30)
 	h.at(now)
@@ -588,6 +605,7 @@ func TestAlarmArmsTheAutoOff(t *testing.T) {
 }
 
 func TestAlarmWithoutAnAutoOffArmsNothing(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, autoOffDoc(0))
 	now := berlinTime(t, 2026, time.September, 7, 6, 30)
 	h.at(now)
@@ -604,8 +622,9 @@ func TestAlarmWithoutAnAutoOffArmsNothing(t *testing.T) {
 // Pins the placement AFTER the status >= 400 return: a preset that could not be
 // played must not leave the speaker scheduled to switch itself off.
 func TestAlarmThatCouldNotPlayArmsNoAutoOff(t *testing.T) {
+	t.Parallel()
 	h := newAlarmHarness(t, autoOffDoc(45))
-	alarmRecallSlot = func(_ *Server, _ context.Context, _ int) int { return 500 }
+	h.s.alarmRecallSlotFn = func(_ context.Context, _ int) int { return 500 }
 	now := berlinTime(t, 2026, time.September, 7, 6, 30)
 	h.at(now)
 	h.s.evaluateAlarms(now)

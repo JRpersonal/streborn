@@ -236,9 +236,30 @@ func nativeLoginErrorCode(err error) string {
 	return ""
 }
 
-// nativeRemoveSettle is the pause between the re-reads of /sources that
-// confirm a removal, in case the firmware updates the list a moment late.
-var nativeRemoveSettle = time.Second
+// nativeRemoveTiming is the account removal's clock. Production reads
+// productionNativeRemoveTiming; a test installs its own copy on the server
+// (Server.nativeRemoveTiming), so no test ever writes a package-level knob
+// that a removal of another test still reads.
+type nativeRemoveTiming struct {
+	// settle is the pause between the re-reads of /sources that
+	// confirm a removal, in case the firmware updates the list a moment late.
+	settle time.Duration
+}
+
+// productionNativeRemoveTiming is the account removal's clock on a real
+// speaker.
+var productionNativeRemoveTiming = nativeRemoveTiming{
+	settle: time.Second,
+}
+
+// nativeRemoveTimes is the account removal's clock: the production values
+// unless a test installed a faster one.
+func (s *Server) nativeRemoveTimes() *nativeRemoveTiming {
+	if s.nativeRemoveTiming != nil {
+		return s.nativeRemoveTiming
+	}
+	return &productionNativeRemoveTiming
+}
 
 // nativeRemoveRereads is how many times /sources is read to confirm a removal.
 const nativeRemoveRereads = 3
@@ -305,7 +326,7 @@ func (s *Server) removeNativeAccount(ctx context.Context, w http.ResponseWriter,
 			if i > 0 {
 				select {
 				case <-ctx.Done():
-				case <-time.After(nativeRemoveSettle):
+				case <-time.After(s.nativeRemoveTimes().settle):
 				}
 			}
 			srcs, err := box.GetSources(ctx)

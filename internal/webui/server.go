@@ -458,6 +458,9 @@ type Server struct {
 	// the real box. The now_playing read goes through boxNowReadFn.
 	announceVolumeFn    func(ctx context.Context) int
 	announceSetVolumeFn func(ctx context.Context, vol int) error
+	// announceTiming is the announcement clock; nil = production (see
+	// announceTimes).
+	announceTiming *announceTiming
 	// deferred holds a resume waiting for the user to switch the box on; STR
 	// never powers a speaker on by itself (#487). Guarded by deferredMu.
 	deferredMu sync.Mutex
@@ -603,6 +606,13 @@ type Server struct {
 	alarmSilenceFn     func(ctx context.Context)
 	alarmKeyActivityFn func() time.Time
 	showSnoozeNoticeFn func(until string)
+	// Alarm scheduler seams (alarms.go): nil means production, the tests set
+	// a faster clock and box-free wake, recall and playing checks on their own
+	// server (see alarmTimes, alarmWakeBox, alarmRecallSlot, alarmPlayingCheck).
+	alarmTiming         *alarmTiming
+	alarmWakeBoxFn      func(ctx context.Context, vol int)
+	alarmRecallSlotFn   func(ctx context.Context, slot int) int
+	alarmPlayingCheckFn func(slot int, since time.Time) bool
 
 	// storm1036Fn reports whether the box is currently rejecting essentially
 	// every recall (1036), how many rejections are in the window and since
@@ -651,6 +661,16 @@ type Server struct {
 	startVolumeTiming      *startVolumeTiming
 	resumeReadNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	resumeRepairFn         func(ctx context.Context)
+	// File resume, native handover, native account removal, exhausted recall
+	// and upload hush seams; nil = production (see fileResumeTimes,
+	// nativeHandoverTimes, nativeRemoveTimes, exhaustedStandbySend,
+	// hushReadNowPlaying and hushStop).
+	fileResumeTiming       *fileResumeTiming
+	nativeHandoverTiming   *nativeHandoverTiming
+	nativeRemoveTiming     *nativeRemoveTiming
+	exhaustedStandbySendFn func(ctx context.Context, host string) error
+	hushReadNowPlayingFn   func(ctx context.Context, host string) nowPlayingSnapshot
+	hushStopFn             func(ctx context.Context) error
 	// setVolumeFn overrides the start-volume write for tests. nil = the box.
 	setVolumeFn func(ctx context.Context, vol int) error
 	// startVolumeMu guards startVolumeAt, when the start level was last

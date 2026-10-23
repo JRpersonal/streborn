@@ -40,18 +40,27 @@ const hushBudget = 6 * time.Second
 // Seams for the tests. Both reach the firmware on a fixed port, so a test server
 // on a random port cannot be reached through them; without these every case
 // would take the "cannot read the source, leave it alone" path and assert
-// nothing. Production always uses the real implementations.
-var (
-	hushReadNowPlaying = func(ctx context.Context, host string) nowPlayingSnapshot {
-		return fetchNowPlayingPeer(ctx, host)
+// nothing. A nil Server field (hushReadNowPlayingFn, hushStopFn) means the
+// real implementation, which production always uses.
+
+// hushReadNowPlaying reads what the speaker plays before an upload.
+func (s *Server) hushReadNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
+	if s.hushReadNowPlayingFn != nil {
+		return s.hushReadNowPlayingFn(ctx, host)
 	}
-	hushStop = func(ctx context.Context, s *Server) error {
-		if s.renderer == nil {
-			return errNoRenderer
-		}
-		return s.renderer.Stop(ctx)
+	return fetchNowPlayingPeer(ctx, host)
+}
+
+// hushStop stops STR's own transport on the speaker.
+func (s *Server) hushStop(ctx context.Context) error {
+	if s.hushStopFn != nil {
+		return s.hushStopFn(ctx)
 	}
-)
+	if s.renderer == nil {
+		return errNoRenderer
+	}
+	return s.renderer.Stop(ctx)
+}
 
 // errNoRenderer: nothing of STR's is driving this speaker, so there is nothing
 // of ours to stop.
@@ -64,7 +73,7 @@ func (s *Server) hushForUpload(what string) {
 	ctx, cancel := context.WithTimeout(context.Background(), hushBudget)
 	defer cancel()
 
-	np := hushReadNowPlaying(ctx, s.boxHost)
+	np := s.hushReadNowPlaying(ctx, s.boxHost)
 	switch {
 	case np.Source == "":
 		// Unreadable. Stopping blind could silence a source STR does not own,
@@ -86,7 +95,7 @@ func (s *Server) hushForUpload(what string) {
 	// the re-push machinery puts the stream straight back on, which is the
 	// exact fight this is meant to end.
 	s.NoteUserStop()
-	if err := hushStop(ctx, s); err != nil {
+	if err := s.hushStop(ctx); err != nil {
 		s.logger.Warn("upload: could not stop playback before the transfer", "endpoint", what, "err", err)
 		return
 	}
