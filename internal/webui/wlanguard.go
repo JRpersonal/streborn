@@ -541,7 +541,7 @@ func (s *Server) ownerIsProvisioning(ctx context.Context) bool {
 	if s.boxHost == "" {
 		return false
 	}
-	np := quietWakeNowPlaying(ctx, s.boxHost)
+	np := s.quietWakeNowPlaying(ctx, s.boxHost)
 	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(np.Source)), "SETUP")
 }
 func (s *Server) recoverUnassociatedRadio(iface string) bool {

@@ -38,9 +38,7 @@ func TestTheSetupEpisodeAgesOut(t *testing.T) {
 // The live source is the second signal, for a setup that started after the
 // episode counter was last written.
 func TestOwnerIsProvisioningFromTheLiveSource(t *testing.T) {
-	old := quietWakeNowPlaying
-	t.Cleanup(func() { quietWakeNowPlaying = old })
-
+	t.Parallel()
 	s := &Server{boxHost: "192.0.2.1"}
 	for src, want := range map[string]bool{
 		"SETUP":                true,
@@ -50,7 +48,7 @@ func TestOwnerIsProvisioningFromTheLiveSource(t *testing.T) {
 		"STANDBY":              false,
 		"":                     false,
 	} {
-		quietWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+		s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 			return nowPlayingSnapshot{Source: src}
 		}
 		if got := s.ownerIsProvisioning(context.Background()); got != want {

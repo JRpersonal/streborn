@@ -14,10 +14,9 @@ import (
 // firmware's resumed station became audible on the zone join. Each step after
 // the wake now gets a deadline of its own.
 func TestQuietWakeStopGetsItsOwnDeadline(t *testing.T) {
-	prevNP, prevStop := quietWakeNowPlaying, quietWakeStop
-	t.Cleanup(func() { quietWakeNowPlaying, quietWakeStop = prevNP, prevStop })
-
-	quietWakeNowPlaying = func(ctx context.Context, _ string) nowPlayingSnapshot {
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	s.quietWakeNowPlayingFn = func(ctx context.Context, _ string) nowPlayingSnapshot {
 		if ctx.Err() != nil {
 			return nowPlayingSnapshot{}
 		}
@@ -25,14 +24,13 @@ func TestQuietWakeStopGetsItsOwnDeadline(t *testing.T) {
 	}
 	var stopLeft time.Duration
 	stops := 0
-	quietWakeStop = func(ctx context.Context, _ string) error {
+	s.quietWakeStopFn = func(ctx context.Context, _ string) error {
 		stops++
 		if dl, ok := ctx.Deadline(); ok {
 			stopLeft = time.Until(dl)
 		}
 		return ctx.Err()
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	s.stopQuietWakeResume()
 	if stops != 1 {
 		t.Fatalf("STOP sent %d times, want once for a speaker that resumed", stops)
@@ -43,19 +41,19 @@ func TestQuietWakeStopGetsItsOwnDeadline(t *testing.T) {
 }
 
 func TestQuietWakeStopLeavesAnIdleSpeakerAlone(t *testing.T) {
-	prevNP, prevStop := quietWakeNowPlaying, quietWakeStop
-	t.Cleanup(func() { quietWakeNowPlaying, quietWakeStop = prevNP, prevStop })
+	t.Parallel()
 	for _, np := range []nowPlayingSnapshot{
 		{},
 		{Source: "STANDBY"},
 		{Source: "INVALID_SOURCE"},
 	} {
-		quietWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot { return np }
-		quietWakeStop = func(context.Context, string) error {
+		s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+		s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot { return np }
+		s.quietWakeStopFn = func(context.Context, string) error {
 			t.Fatalf("STOP sent for %+v", np)
 			return nil
 		}
-		(&Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}).stopQuietWakeResume()
+		s.stopQuietWakeResume()
 	}
 }
 
@@ -90,10 +88,10 @@ func TestPowerOnResumeStandsDownWhileTheGroupWakeRuns(t *testing.T) {
 // speaker that shows its source selected but not yet playing is watched, and
 // the STOP goes out once it plays (fleet run 2026-10-04).
 func TestQuietWakeStopCatchesALateResume(t *testing.T) {
-	prevNP, prevStop := quietWakeNowPlaying, quietWakeStop
-	t.Cleanup(func() { quietWakeNowPlaying, quietWakeStop = prevNP, prevStop })
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	reads := 0
-	quietWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 		reads++
 		if reads < 3 {
 			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
@@ -101,8 +99,8 @@ func TestQuietWakeStopCatchesALateResume(t *testing.T) {
 		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 	}
 	stops := 0
-	quietWakeStop = func(context.Context, string) error { stops++; return nil }
-	(&Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}).stopQuietWakeResume()
+	s.quietWakeStopFn = func(context.Context, string) error { stops++; return nil }
+	s.stopQuietWakeResume()
 	if stops != 1 {
 		t.Fatalf("STOP sent %d times after a late resume, want once", stops)
 	}
@@ -110,14 +108,14 @@ func TestQuietWakeStopCatchesALateResume(t *testing.T) {
 
 // A speaker that stays selected but idle is watched for a bounded time only.
 func TestQuietWakeResumeWatchIsBounded(t *testing.T) {
-	prevNP, prevStop := quietWakeNowPlaying, quietWakeStop
-	t.Cleanup(func() { quietWakeNowPlaying, quietWakeStop = prevNP, prevStop })
-	quietWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
 	}
-	quietWakeStop = func(context.Context, string) error { t.Fatal("STOP for an idle speaker"); return nil }
+	s.quietWakeStopFn = func(context.Context, string) error { t.Fatal("STOP for an idle speaker"); return nil }
 	start := time.Now()
-	(&Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}).stopQuietWakeResume()
+	s.stopQuietWakeResume()
 	if el := time.Since(start); el > quietWakeResumeWatch+2*quietWakeResumePoll {
 		t.Fatalf("watched for %s, longer than the bound", el)
 	}

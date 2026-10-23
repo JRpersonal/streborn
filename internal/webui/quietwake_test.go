@@ -38,14 +38,13 @@ func TestQuietWakeNeededOnlyForASleepingSpeaker(t *testing.T) {
 // STOP. boxHost is a TEST-NET-1 address, so a call that did go out would take
 // seconds and fail; returning fast and clean is the proof it went nowhere.
 func TestQuietWakeLeavesAnAwakeSpeakerUntouched(t *testing.T) {
-	prev := quietWakeNowPlaying
-	t.Cleanup(func() { quietWakeNowPlaying = prev })
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	reads := 0
-	quietWakeNowPlaying = func(context.Context, string) nowPlayingSnapshot {
+	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 		reads++
 		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	start := time.Now()
 	if err := s.quietWake(context.Background()); err != nil {
 		t.Fatalf("quietWake on an awake speaker: %v", err)
