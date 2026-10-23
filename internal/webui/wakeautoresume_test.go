@@ -136,9 +136,9 @@ func TestASpotifyRecallThatCannotSucceedNeverReachesTheSpeaker(t *testing.T) {
 			}
 			// The refusal ran before the recall was recorded as a user play,
 			// which is the same point in the handler as the standby wake.
-			s.standbyStopMu.Lock()
-			started := s.lastUserPlayStart
-			s.standbyStopMu.Unlock()
+			s.standbyStop.mu.Lock()
+			started := s.standbyStop.lastUserPlayStart
+			s.standbyStop.mu.Unlock()
 			if !started.IsZero() {
 				t.Error("the recall was recorded as a user play, so the handler had already gone past the wake")
 			}

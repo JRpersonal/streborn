@@ -22,9 +22,9 @@ import (
 func spotifyDropServer(t *testing.T, boxURL string) *Server {
 	t.Helper()
 	s, _ := resumeTestServer(t, `<nowPlaying source="INVALID_SOURCE"><playStatus>STOP_STATE</playStatus></nowPlaying>`)
-	s.lastPlayMu.Lock()
-	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: "Regen", ts: time.Now()}
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.last = &lastPlayInfo{boxURL: boxURL, title: "Regen", ts: time.Now()}
+	s.play.mu.Unlock()
 	return s
 }
 
@@ -32,9 +32,9 @@ func spotifyDropServer(t *testing.T, boxURL string) *Server {
 // whether a recovery goroutine is running. That flag is the observable decision;
 // what the goroutine then does is maybeRePush's own, already-tested business.
 func rePushArmed(s *Server) bool {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	return s.rePushInFlight
+	s.play.mu.Lock()
+	defer s.play.mu.Unlock()
+	return s.play.rePushInFlight
 }
 
 func TestSpotifyDetachArmsTheRecovery(t *testing.T) {
@@ -51,9 +51,9 @@ func TestSpotifyDetachArmsTheRecovery(t *testing.T) {
 func TestSpotifyDetachDoesNotStackRecoveries(t *testing.T) {
 	s := spotifyDropServer(t, "http://127.0.0.1:8888/spotify/stream-4.ogg")
 	s.HandleSpotifyStreamDetach((2 * time.Hour).Milliseconds())
-	s.lastPlayMu.Lock()
-	armed := s.rePushInFlight
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	armed := s.play.rePushInFlight
+	s.play.mu.Unlock()
 	if !armed {
 		t.Fatal("first detach did not arm the recovery")
 	}
@@ -61,11 +61,11 @@ func TestSpotifyDetachDoesNotStackRecoveries(t *testing.T) {
 	// no-op rather than a second goroutine. Observable as the flag staying set
 	// without a second owner: if the guard were missing, both calls would pass
 	// it and two goroutines would race on the same lastPlay.
-	before := s.lastPlay.rePushes
+	before := s.play.last.rePushes
 	s.HandleSpotifyStreamDetach((2 * time.Hour).Milliseconds())
-	s.lastPlayMu.Lock()
-	after := s.lastPlay.rePushes
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	after := s.play.last.rePushes
+	s.play.mu.Unlock()
 	if after != before {
 		t.Fatalf("a second detach started its own recovery: rePushes %d -> %d", before, after)
 	}
@@ -76,9 +76,9 @@ func TestSpotifyDetachDoesNotStackRecoveries(t *testing.T) {
 // to stop.
 func TestSpotifyDetachRespectsAGivenUpStream(t *testing.T) {
 	s := spotifyDropServer(t, "http://127.0.0.1:8888/spotify/stream-4.ogg")
-	s.lastPlayMu.Lock()
-	s.lastPlay.failed = true
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.last.failed = true
+	s.play.mu.Unlock()
 	s.HandleSpotifyStreamDetach((2 * time.Hour).Milliseconds())
 	if rePushArmed(s) {
 		t.Fatal("a stream STR had already given up on re-armed the recovery")
@@ -89,9 +89,9 @@ func TestSpotifyDetachRespectsAGivenUpStream(t *testing.T) {
 // session STR never started.
 func TestSpotifyDetachWithNothingRecordedDoesNothing(t *testing.T) {
 	s := spotifyDropServer(t, "http://127.0.0.1:8888/spotify/stream-4.ogg")
-	s.lastPlayMu.Lock()
-	s.lastPlay = nil
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.last = nil
+	s.play.mu.Unlock()
 	s.HandleSpotifyStreamDetach((2 * time.Hour).Milliseconds())
 	if rePushArmed(s) {
 		t.Fatal("a detach with no recorded last play armed a recovery with nothing to push")

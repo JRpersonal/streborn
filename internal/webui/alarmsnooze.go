@@ -237,18 +237,11 @@ func ringMaxFor(a alarm.Alarm) time.Duration {
 
 // stopStamps reads the server-wide signals the end conditions are made of.
 func (s *Server) stopStamps() (curGen uint64, curURL string, explicit, standby time.Time) {
-	s.lastPlayMu.Lock()
-	curGen = s.recallGen
-	if s.lastPlay != nil {
-		curURL = s.lastPlay.boxURL
-	}
-	s.lastPlayMu.Unlock()
+	curGen, curURL = s.play.genAndURL()
 	s.lastExplicitStopMu.Lock()
 	explicit = s.lastExplicitStop
 	s.lastExplicitStopMu.Unlock()
-	s.standbyStopMu.Lock()
-	standby = s.lastStandbyStop
-	s.standbyStopMu.Unlock()
+	standby = s.standbyStop.lastStandbyStop()
 	return curGen, curURL, explicit, standby
 }
 

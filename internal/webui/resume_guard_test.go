@@ -54,18 +54,18 @@ func TestAutoResumeGuardTripsAndSurvivesRestart(t *testing.T) {
 // from 1 again, so a box whose crash was transient heals itself.
 func TestAutoResumeGuardDecay(t *testing.T) {
 	s := newGuardTestServer(t)
-	s.lastPlayMu.Lock()
-	s.resumeAttempts = maxAutoResumeAttempts
-	s.lastResumeAt = time.Now().Add(-autoResumeAttemptWindow - time.Minute)
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.resumeAttempts = maxAutoResumeAttempts
+	s.play.lastResumeAt = time.Now().Add(-autoResumeAttemptWindow - time.Minute)
+	s.play.mu.Unlock()
 
 	if s.autoResumeBlocked() {
 		t.Fatal("a tripped count older than the window must not block anymore")
 	}
 	s.noteAutoResumeAttempt()
-	s.lastPlayMu.Lock()
-	got := s.resumeAttempts
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	got := s.play.resumeAttempts
+	s.play.mu.Unlock()
 	if got != 1 {
 		t.Fatalf("attempt after the decay window counted as %d, want a fresh 1", got)
 	}
@@ -104,30 +104,30 @@ func TestSetLastPlayRearmsAutoResume(t *testing.T) {
 func TestClearResumeAttemptsIfQuiet(t *testing.T) {
 	s := newGuardTestServer(t)
 	s.noteAutoResumeAttempt()
-	s.lastPlayMu.Lock()
-	first := s.lastResumeAt
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	first := s.play.lastResumeAt
+	s.play.mu.Unlock()
 
 	// A newer attempt (must land on a different timestamp for the guard's
 	// identity check, so nudge it explicitly rather than sleeping).
-	s.lastPlayMu.Lock()
-	s.resumeAttempts++
-	s.lastResumeAt = first.Add(time.Second)
-	second := s.lastResumeAt
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.resumeAttempts++
+	s.play.lastResumeAt = first.Add(time.Second)
+	second := s.play.lastResumeAt
+	s.play.mu.Unlock()
 
 	s.clearResumeAttemptsIfQuiet(first) // stale timer: must be a no-op
-	s.lastPlayMu.Lock()
-	got := s.resumeAttempts
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	got := s.play.resumeAttempts
+	s.play.mu.Unlock()
 	if got != 2 {
 		t.Fatalf("stale stability timer cleared a newer attempt count: got %d, want 2", got)
 	}
 
 	s.clearResumeAttemptsIfQuiet(second) // current timer: playback proved stable
-	s.lastPlayMu.Lock()
-	got = s.resumeAttempts
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	got = s.play.resumeAttempts
+	s.play.mu.Unlock()
 	if got != 0 {
 		t.Fatalf("stability timer did not clear the count: got %d, want 0", got)
 	}

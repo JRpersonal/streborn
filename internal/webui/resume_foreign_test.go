@@ -97,9 +97,9 @@ func resumeTestServer(t *testing.T, nowPlaying string) (*Server, *soapRecorder) 
 	s.resumeOnPowerOnPath = t.TempDir() + "/resume-on-power-on" // absent = default on
 	s.playStateFn = func() (standby, busy bool) { return false, false }
 	s.boxNowReadFn = scriptNowPlayingDoc(nowPlaying)
-	s.lastPlayMu.Lock()
-	s.lastPlay = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", title: "Last Station", ts: time.Now()}
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.last = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/2", title: "Last Station", ts: time.Now()}
+	s.play.mu.Unlock()
 	return s, rec
 }
 

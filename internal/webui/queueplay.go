@@ -1540,12 +1540,7 @@ func (s *Server) spotifyRecoverAfterSkip() {
 	if s.renderer == nil {
 		return
 	}
-	s.lastPlayMu.Lock()
-	var boxURL string
-	if s.lastPlay != nil {
-		boxURL = s.lastPlay.boxURL
-	}
-	s.lastPlayMu.Unlock()
+	boxURL := s.play.currentURL()
 	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
 		return
 	}
@@ -1673,12 +1668,10 @@ func (s *Server) reattachAfterHardwareSkip(slot int) {
 // app-driven one included. Best effort: on failure the skip worker's recovery
 // net performs the clean slot recall.
 func (s *Server) repushSpotifyStream(why string, requireSlot int) {
-	s.lastPlayMu.Lock()
 	var boxURL, title, art, mime string
-	if s.lastPlay != nil {
-		boxURL, title, art, mime = s.lastPlay.boxURL, s.lastPlay.title, s.lastPlay.art, s.lastPlay.mime
+	if lp := s.play.current(); lp != nil {
+		boxURL, title, art, mime = lp.boxURL, lp.title, lp.art, lp.mime
 	}
-	s.lastPlayMu.Unlock()
 	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
 		return // playback changed while the flap settled; nothing to re-attach
 	}
@@ -1720,12 +1713,7 @@ func (s *Server) repushSpotifyStream(why string, requireSlot int) {
 // slot-less /spotify/stream.ogg, i.e. app-driven playback, or a non-Spotify
 // source). Read from lastPlay, the URL STR last pointed the box at.
 func (s *Server) currentSpotifySlot() int {
-	s.lastPlayMu.Lock()
-	var boxURL string
-	if s.lastPlay != nil {
-		boxURL = s.lastPlay.boxURL
-	}
-	s.lastPlayMu.Unlock()
+	boxURL := s.play.currentURL()
 	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
 		return 0
 	}

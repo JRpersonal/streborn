@@ -93,7 +93,7 @@ func TestHoldSaveLiveLibrarySong(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.mediaServers = reg
-	s.lastPlay = &lastPlayInfo{boxURL: holdTestFileURL, title: "One Alpha", art: "http://192.0.2.10:50002/art/15.jpg", mime: "audio/mpeg", ts: time.Now()}
+	s.play.last = &lastPlayInfo{boxURL: holdTestFileURL, title: "One Alpha", art: "http://192.0.2.10:50002/art/15.jpg", mime: "audio/mpeg", ts: time.Now()}
 	s.trackLens.put(holdTestFileURL, 18*time.Second)
 	saved, err := s.HoldSaveLive(context.Background(), 2)
 	if err != nil || saved.Kind != "library" || saved.Name != "One Alpha" {
@@ -123,7 +123,7 @@ func TestHoldSaveLiveLibrarySong(t *testing.T) {
 // the play is older than what plays now) is not saved.
 func TestHoldSaveLiveUnknownStream(t *testing.T) {
 	s := newHoldTestServer(t, "UPNP", "http://192.0.2.50:8200/MediaItems/22.flac")
-	s.lastPlay = &lastPlayInfo{boxURL: holdTestFileURL, title: "One Alpha", mime: "audio/mpeg"}
+	s.play.last = &lastPlayInfo{boxURL: holdTestFileURL, title: "One Alpha", mime: "audio/mpeg"}
 	if _, err := s.HoldSaveLive(context.Background(), 2); !errors.Is(err, ErrHoldUnknownStream) {
 		t.Fatalf("err = %v, want ErrHoldUnknownStream", err)
 	}

@@ -629,16 +629,9 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // verifyRecall so the verify stands down as soon as a later play bumps it.
 func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	now := time.Now()
-	s.lastPlayMu.Lock()
-	newStream := s.lastPlay == nil || s.lastPlay.boxURL != boxURL
-	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
-	s.recallGen++
-	gen := s.recallGen
-	// A fresh play is an explicit user "play this" and may well be a different
-	// stream: re-arm the auto-resume crash-loop guard (#381).
-	s.resumeAttempts = 0
-	s.lastResumeAt = time.Time{}
-	s.lastPlayMu.Unlock()
+	// record also re-arms the auto-resume crash-loop guard (#381): a fresh
+	// play is an explicit user "play this" and may well be a different stream.
+	gen, newStream := s.play.record(&lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now})
 	// The track on the panel belonged to the previous stream: the new one's
 	// name replaces it until its first song is known. The same stream pushed
 	// again keeps it (its title is not reported again). Synchronous, so it
@@ -711,13 +704,9 @@ func (s *Server) loadLastPlay() {
 	if json.Unmarshal(b, &p) != nil || p.BoxURL == "" || p.TS.IsZero() {
 		return
 	}
-	s.lastPlayMu.Lock()
-	s.lastPlay = &lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS}
-	// Restore the auto-resume guard count (#381): after a crash-caused reboot
-	// this is what tells the automatic resume it is looping.
-	s.resumeAttempts = p.ResumeAttempts
-	s.lastResumeAt = p.LastResumeAt
-	s.lastPlayMu.Unlock()
+	// The auto-resume guard count comes back with it (#381): after a
+	// crash-caused reboot this is what tells the automatic resume it is looping.
+	s.play.restore(&lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS}, p.ResumeAttempts, p.LastResumeAt)
 	s.logger.Info("last-play restored from NAND for power-on resume", "title", p.Title, "ageMin", int(time.Since(p.TS).Minutes()), "resumeAttempts", p.ResumeAttempts)
 }
 
@@ -745,11 +734,7 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 // carry a group wake's self-resume into every room (fleet run 2026-10-04).
 func (s *Server) NoteNativeLastPlay(boxURL, title, art, mime string) uint64 {
 	gen := s.NoteLastPlay(boxURL, title, art, mime)
-	s.lastPlayMu.Lock()
-	if s.lastPlay != nil && s.recallGen == gen {
-		s.lastPlay.fromBox = true
-	}
-	s.lastPlayMu.Unlock()
+	s.play.markFromBoxIfGen(gen)
 	return gen
 }
 
@@ -760,18 +745,14 @@ func (s *Server) NoteNativeLastPlay(boxURL, title, art, mime string) uint64 {
 // stand down instead of re-pushing its old URL over the user's newest choice
 // ("pressed 2, got 1").
 func (s *Server) RecallGeneration() uint64 {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	return s.recallGen
+	return s.play.gen()
 }
 
 // bumpRecallGen advances the recall generation without recording a lastPlay.
 // Used by recall paths whose own setLastPlay only runs on success (the queue
 // preset start), so the claim itself already supersedes any older verify loop.
 func (s *Server) bumpRecallGen() {
-	s.lastPlayMu.Lock()
-	s.recallGen++
-	s.lastPlayMu.Unlock()
+	s.play.bumpGen()
 }
 
 // StandbyStoppedAfter reports whether STR saw this box's UPnP source drop to
@@ -780,9 +761,7 @@ func (s *Server) bumpRecallGen() {
 // stamp cannot expire between two verify ticks, so a power-off mid-recall
 // reliably stands the re-push down for the recall's whole lifetime (#197).
 func (s *Server) StandbyStoppedAfter(t time.Time) bool {
-	s.standbyStopMu.Lock()
-	defer s.standbyStopMu.Unlock()
-	return !s.lastStandbyStop.IsZero() && s.lastStandbyStop.After(t)
+	return s.standbyStop.stoppedAfter(t)
 }
 
 // SetTransportCommandHook wires the webui's own renderer into the gabbo

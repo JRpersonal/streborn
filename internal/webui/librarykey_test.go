@@ -57,9 +57,9 @@ func TestHardwareKeyOnLibraryTrackPlaysTheFileDirectly(t *testing.T) {
 	if !rec.has("SetAVTransportURI") || !rec.has("Play") {
 		t.Fatalf("the file was not pushed to the speaker: recorded actions %v", rec.list())
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	lp := s.play.last
+	s.play.mu.Unlock()
 	if lp == nil || lp.boxURL != libraryTrackURL || lp.mime != "audio/mp4" {
 		t.Fatalf("last play = %+v, want the file itself with audio/mp4", lp)
 	}

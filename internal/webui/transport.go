@@ -112,10 +112,7 @@ func (s *Server) resumePlayback(ctx context.Context) (string, error) {
 		if isWrongTransportState(err) {
 			// The box is no longer in PAUSED. Re-push the last stream so the user
 			// still gets audio (from the start for a finite track).
-			s.lastPlayMu.Lock()
-			lp := s.lastPlay
-			s.lastPlayMu.Unlock()
-			if lp != nil {
+			if lp := s.play.current(); lp != nil {
 				if perr := s.renderer.PlayURLMime(ctx, lp.boxURL, lp.title, lp.art, lp.mime); perr == nil {
 					return "playing", nil
 				}
@@ -200,9 +197,7 @@ func (s *Server) watchResume() {
 // skip path already learned to avoid. Anything else is the URL STR last pushed,
 // so a library track continues from its start rather than not at all.
 func (s *Server) repairResume(ctx context.Context) {
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	lp := s.play.current()
 	if lp == nil || lp.boxURL == "" {
 		s.logger.Warn("resume repair: nothing recorded to put back")
 		return

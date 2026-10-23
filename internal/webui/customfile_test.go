@@ -234,9 +234,9 @@ func TestHardwareKeyOnCustomFilePlaysTheFileDirectly(t *testing.T) {
 	if !rec.has("SetAVTransportURI") {
 		t.Fatalf("the file was not pushed to the speaker: %v", rec.list())
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	lp := s.play.last
+	s.play.mu.Unlock()
 	if lp == nil || lp.boxURL != url || lp.mime != "audio/mpeg" {
 		t.Fatalf("last play = %+v, want the file itself with audio/mpeg", lp)
 	}

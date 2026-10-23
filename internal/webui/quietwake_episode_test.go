@@ -24,9 +24,9 @@ func TestQuietWakeEpisodeOutlivesTheMute(t *testing.T) {
 
 	// What the zone join does: arm, then restore. Both touch quietWakeUntil.
 	s.armQuietWakeRestore(26)
-	s.quietWakeMu.Lock()
-	s.quietWakeUntil = time.Time{}
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.until = time.Time{}
+	s.groupWake.mu.Unlock()
 
 	if s.quietWakeActive() {
 		t.Fatal("the mute is meant to be gone after the zone join restored it")
@@ -39,9 +39,9 @@ func TestQuietWakeEpisodeOutlivesTheMute(t *testing.T) {
 // It is a deadline, so a stuck flag can never block hardware-key registration.
 func TestQuietWakeEpisodeExpires(t *testing.T) {
 	s := &Server{}
-	s.quietWakeMu.Lock()
-	s.quietWakeEpisodeUntil = time.Now().Add(-time.Second)
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.episodeUntil = time.Now().Add(-time.Second)
+	s.groupWake.mu.Unlock()
 	if s.QuietWakeEpisodeActive() {
 		t.Error("a window whose deadline has passed still reports active")
 	}

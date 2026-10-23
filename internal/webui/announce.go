@@ -506,12 +506,7 @@ func (s *Server) resumeUPnPAfterAnnounce(ctx context.Context, prev nowPlayingSna
 
 // lastPlayCopy returns a copy of the last play, if there is one.
 func (s *Server) lastPlayCopy() (lastPlayInfo, bool) {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	if s.lastPlay == nil {
-		return lastPlayInfo{}, false
-	}
-	return *s.lastPlay, true
+	return s.play.snapshot()
 }
 
 // isAbsoluteHTTP reports whether loc is a URL the speaker's UPnP player can

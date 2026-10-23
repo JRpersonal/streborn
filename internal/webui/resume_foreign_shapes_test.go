@@ -33,12 +33,12 @@ func TestResumeLastPlayProceedsOnANativeStationDescriptor(t *testing.T) {
 func TestResumeLastPlayProceedsOnALibraryTrackFromTheSameServer(t *testing.T) {
 	s, rec := resumeTestServer(t, `<nowPlaying source="INVALID_SOURCE">`+
 		`<ContentItem source="UPNP" location="http://192.0.2.28:9000/disk/track-42.flac"/></nowPlaying>`)
-	s.lastPlayMu.Lock()
-	s.lastPlay = &lastPlayInfo{
+	s.play.mu.Lock()
+	s.play.last = &lastPlayInfo{
 		boxURL: "http://192.0.2.28:9000/disk/track-43.flac",
 		title:  "Next Track", mime: "audio/flac", ts: time.Now(),
 	}
-	s.lastPlayMu.Unlock()
+	s.play.mu.Unlock()
 
 	s.ResumeLastPlay()
 	if !waitForSOAP(rec, 6*time.Second) {

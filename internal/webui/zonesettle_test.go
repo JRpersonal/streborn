@@ -47,9 +47,9 @@ func TestTheWindowOutlastsAGroupFormation(t *testing.T) {
 		t.Fatalf("zoneSettleWindow is %s; the observed handshake alone spans ~3 s and the firmware trails it", zoneSettleWindow)
 	}
 	s := quietServer("192.0.2.10")
-	s.quietWakeMu.Lock()
-	s.zoneChangedAt = time.Now().Add(-(zoneSettleWindow - 2*time.Second))
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.zoneChangedAt = time.Now().Add(-(zoneSettleWindow - 2*time.Second))
+	s.groupWake.mu.Unlock()
 	if held, _ := s.zoneJustChanged(); !held {
 		t.Fatal("a change two seconds inside the window did not hold")
 	}
@@ -59,9 +59,9 @@ func TestTheWindowOutlastsAGroupFormation(t *testing.T) {
 // recovery for good.
 func TestTheHoldExpires(t *testing.T) {
 	s := quietServer("192.0.2.10")
-	s.quietWakeMu.Lock()
-	s.zoneChangedAt = time.Now().Add(-(zoneSettleWindow + time.Second))
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.zoneChangedAt = time.Now().Add(-(zoneSettleWindow + time.Second))
+	s.groupWake.mu.Unlock()
 	if held, age := s.zoneJustChanged(); held {
 		t.Fatalf("still held %s after the change; recovery would never run again", age)
 	}

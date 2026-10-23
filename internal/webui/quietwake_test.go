@@ -56,9 +56,9 @@ func TestQuietWakeLeavesAnAwakeSpeakerUntouched(t *testing.T) {
 	if reads != 1 {
 		t.Fatalf("read the state %d times, want the single gate read", reads)
 	}
-	s.quietWakeMu.Lock()
-	armed := !s.quietWakeUntil.IsZero()
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	armed := !s.groupWake.until.IsZero()
+	s.groupWake.mu.Unlock()
 	if armed {
 		t.Fatal("armed a level restore for a speaker it never muted")
 	}
@@ -76,16 +76,16 @@ func quietWakeTestServer() *Server {
 func TestArmQuietWakeRestoreKeepsTheFirstLevel(t *testing.T) {
 	s := quietWakeTestServer()
 	s.armQuietWakeRestore(30)
-	s.quietWakeMu.Lock()
-	firstUntil := s.quietWakeUntil
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	firstUntil := s.groupWake.until
+	s.groupWake.mu.Unlock()
 
 	time.Sleep(5 * time.Millisecond)
 	s.armQuietWakeRestore(0) // the retry reads the level the first wake muted
 
-	s.quietWakeMu.Lock()
-	vol, until := s.quietWakeVol, s.quietWakeUntil
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	vol, until := s.groupWake.vol, s.groupWake.until
+	s.groupWake.mu.Unlock()
 	if vol != 30 {
 		t.Fatalf("armed level = %d, want the 30 the first wake muted from", vol)
 	}
@@ -104,9 +104,9 @@ func TestEarlierQuietWakeTimeoutDoesNotUnmute(t *testing.T) {
 
 	s.restoreQuietWakeVolume("timeout") // the earlier wake's timer
 
-	s.quietWakeMu.Lock()
-	vol, armed := s.quietWakeVol, !s.quietWakeUntil.IsZero()
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	vol, armed := s.groupWake.vol, !s.groupWake.until.IsZero()
+	s.groupWake.mu.Unlock()
 	if !armed {
 		t.Fatal("the earlier timer disarmed a restore that a later quiet wake still owns")
 	}
@@ -123,9 +123,9 @@ func TestZoneJoinRestoresInsideTheWindow(t *testing.T) {
 
 	s.restoreQuietWakeVolume("zone joined")
 
-	s.quietWakeMu.Lock()
-	armed := !s.quietWakeUntil.IsZero()
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	armed := !s.groupWake.until.IsZero()
+	s.groupWake.mu.Unlock()
 	if armed {
 		t.Fatal("a zone join left the restore armed")
 	}
@@ -135,16 +135,16 @@ func TestZoneJoinRestoresInsideTheWindow(t *testing.T) {
 // second run of it does nothing.
 func TestQuietWakeTimeoutRestoresOnceAfterTheWindow(t *testing.T) {
 	s := quietWakeTestServer()
-	s.quietWakeMu.Lock()
-	s.quietWakeVol = 30
-	s.quietWakeUntil = time.Now().Add(-time.Second)
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	s.groupWake.vol = 30
+	s.groupWake.until = time.Now().Add(-time.Second)
+	s.groupWake.mu.Unlock()
 
 	s.restoreQuietWakeVolume("timeout")
 
-	s.quietWakeMu.Lock()
-	armed := !s.quietWakeUntil.IsZero()
-	s.quietWakeMu.Unlock()
+	s.groupWake.mu.Lock()
+	armed := !s.groupWake.until.IsZero()
+	s.groupWake.mu.Unlock()
 	if armed {
 		t.Fatal("the expired window stayed armed")
 	}

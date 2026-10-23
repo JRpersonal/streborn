@@ -37,9 +37,9 @@ func TestASlowBoxReadDoesNotSpendThePowerOffBounceWindow(t *testing.T) {
 	}
 	// The power-off STR saw, and the bounce restore that follows it ~200 ms
 	// later. noteStandbyStop arms both stamps, so both are set here.
-	s.standbyStopMu.Lock()
-	s.lastStandbyStop = time.Now().Add(-200 * time.Millisecond)
-	s.standbyStopMu.Unlock()
+	s.standbyStop.mu.Lock()
+	s.standbyStop.lastStop = time.Now().Add(-200 * time.Millisecond)
+	s.standbyStop.mu.Unlock()
 	s.lastUserStopMu.Lock()
 	s.lastUserStop = time.Now().Add(-200 * time.Millisecond)
 	s.lastUserStopMu.Unlock()

@@ -85,7 +85,7 @@ func TestSavePlayingStoresAStationStartedElsewhere(t *testing.T) {
 func TestSavePlayingPrefersTheAgentsRecordOfThePlay(t *testing.T) {
 	loc := boxurl.RawStream(savePlayingStation)
 	s := newSavePlayingServer(t, nowPlayingDoc("UPNP", loc, "radio-one.mp3", ""))
-	s.lastPlay = &lastPlayInfo{boxURL: loc, title: "Radio One", art: "https://img.example/r1.png", ts: time.Now()}
+	s.play.last = &lastPlayInfo{boxURL: loc, title: "Radio One", art: "https://img.example/r1.png", ts: time.Now()}
 	if rec, _ := postSavePlaying(t, s, 2); rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -151,7 +151,7 @@ func TestSavePlayingCopyOfAnEmptyKeyIsRefused(t *testing.T) {
 func TestSavePlayingStoresTheLibrarySong(t *testing.T) {
 	const file = "http://127.0.0.1:1/m/NDLNA/Purpose%20For%20Pain.m4a"
 	s := newSavePlayingServer(t, nowPlayingDoc("UPNP", file, "Purpose For Pain", ""))
-	s.lastPlay = &lastPlayInfo{boxURL: file, title: "Purpose For Pain", mime: "audio/mp4", ts: time.Now()}
+	s.play.last = &lastPlayInfo{boxURL: file, title: "Purpose For Pain", mime: "audio/mp4", ts: time.Now()}
 	rec, out := postSavePlaying(t, s, 4)
 	if rec.Code != http.StatusOK || out["kind"] != "library" {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())

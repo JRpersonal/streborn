@@ -209,9 +209,7 @@ func (s *Server) holdSwapKeys(ctx context.Context, slot, other int, kind string)
 // server. The length is filled by the per-slot save from what the play
 // learned (#978). ok is false unless the speaker plays exactly that file.
 func (s *Server) liveLibraryFilePreset(slot int, loc string) (presets.Preset, bool) {
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	lp := s.play.current()
 	if lp == nil || lp.fromBox || lp.mime == "" || !isPlainHTTPURL(lp.boxURL) {
 		return presets.Preset{}, false
 	}

@@ -110,7 +110,7 @@ func TestDisplayTrackText(t *testing.T) {
 func TestDisplayAlreadyShows(t *testing.T) {
 	s := &Server{}
 	play := &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/3"}
-	s.lastPlay = play
+	s.play.last = play
 	if s.displayAlreadyShows("Lobo") {
 		t.Fatal("nothing pushed yet, but reported as shown")
 	}
@@ -124,7 +124,7 @@ func TestDisplayAlreadyShows(t *testing.T) {
 	if s.displayAlreadyShows("") {
 		t.Error("empty text is never 'shown'")
 	}
-	s.lastPlay = &lastPlayInfo{boxURL: play.boxURL}
+	s.play.last = &lastPlayInfo{boxURL: play.boxURL}
 	if s.displayAlreadyShows("Lobo") {
 		t.Error("a new play must get its first push even with the same text")
 	}

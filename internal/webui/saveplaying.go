@@ -188,9 +188,7 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 			art = st.Art
 		}
 	}
-	s.lastPlayMu.Lock()
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	lp := s.play.current()
 	if lp != nil && !lp.fromBox && (lp.boxURL == loc || lp.boxURL == stream) {
 		// The agent's own record of the play knows the name and the art the
 		// app or the page started it with.

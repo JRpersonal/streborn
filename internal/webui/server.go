@@ -61,30 +61,12 @@ type Server struct {
 	groupStepMu   sync.Mutex
 	groupStepBase map[string]int
 	groupStepAt   time.Time
-	// quietWake is a member wake done for a group join: the level the speaker
-	// had before it was muted for the wake, restored once the speaker joins a
-	// zone or the window runs out. Guarded by quietWakeMu.
-	// zoneChangedAt is when the speaker last joined, led or left a zone, as the
-	// firmware itself reported it. It exists so the re-push watchdog can tell a
-	// stream that DROPPED from one that ended because the group changed under it
-	// (#900). Deliberately not derived from quietWakeUntil: the zone join is what
-	// CLEARS that, so reading it here is a race that the push wins or loses by a
-	// quarter of a second. Guarded by quietWakeMu, which already covers the other
-	// piece of group-wake state and is taken on the same events.
-	zoneChangedAt time.Time
-
-	quietWakeMu    sync.Mutex
-	quietWakeVol   int
-	quietWakeUntil time.Time
-	// quietWakeEpisodeUntil is how long this speaker counts as "STR woke me for
-	// a group operation", independently of the mute. quietWakeUntil answers a
-	// different question (is the level still held down) and the zone join
-	// CLEARS it, which is why the preset reconcile could not use it: the join
-	// lands a second before the reconcile looks (#900). This one is a plain
-	// deadline that nothing clears early. Guarded by quietWakeMu.
-	quietWakeEpisodeUntil time.Time
-	logger                *slog.Logger
-	presets               *presets.Store
+	// groupWake is the quiet-wake bookkeeping: the level a member wake for a
+	// group join muted from, the settling window of that operation and the
+	// last firmware-reported zone change (quietwakestate.go, own mutex).
+	groupWake quietWakeState
+	logger    *slog.Logger
+	presets   *presets.Store
 	// snapshotPath is the NAND file where the agent persisted the box's
 	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
 	// by GET /api/box/snapshot so the app can warn about account-linked cloud
@@ -439,9 +421,6 @@ type Server struct {
 	// writes to wlan-creds / wpa_supplicant.conf.
 	wlanMu sync.Mutex
 
-	// lastPlay remembers the stream STR last told the box to play, so the
-	// auto-re-push (#4) can resume it when the Bose renderer drops a long
-	// stream on its own (reported: radio stops after ~11 min, no STR error).
 	// boxNowReadFn is THE test seam for "what does this speaker play right
 	// now": every own-box now_playing read in this package goes through
 	// readBoxNow (boxread.go), which calls this when set. nil = the real
@@ -481,42 +460,16 @@ type Server struct {
 	// file the speaker can be handed directly (#830). See customfile.go.
 	fileProbes fileProbes
 
-	lastPlayMu sync.Mutex
-	lastPlay   *lastPlayInfo
-	// rePushInFlight coalesces stream-drop resumes (see HandleStreamDisconnect).
-	// A SERVER-level latch on purpose, guarded by lastPlayMu: it used to live on
-	// lastPlayInfo, but setLastPlay replaces that struct on every fresh play, so
-	// a drop of the NEW stream while an older maybeRePush was still waiting out
-	// the recall-ownership window spawned a second concurrent re-pusher, and the
-	// first one's deferred release then cleared the latch the second one owned -
-	// the box got double SetURI+Play (two audible re-buffers) and a third
-	// goroutine could stack. One latch per Server survives the struct swap.
-	rePushInFlight bool
-	// stuckBufRescueAt is when the stuck-buffering rescue (spotify_stuck_
-	// buffer.go) last acted, guarded by lastPlayMu. One rescue per episode:
-	// only a user play newer than this opens the next one.
-	stuckBufRescueAt time.Time
+	// play is the stream STR last told the box to play and the bookkeeping
+	// that travels with it: recall generation, re-push latch, stuck-buffer
+	// rescue stamp, auto-resume guard, live ICY title, display-push debounce.
+	// See playsession.go; it has its own mutex.
+	play playSession
 	// stuckBufWait overrides the rescue's two waits for tests (0 = real).
 	stuckBufWait time.Duration
 	// playStateDetailFn overrides boxPlayStateDetail for tests. nil = the
 	// real :8090 probe (or playStateFn when only that one is set).
 	playStateDetailFn func() (standby, busy, buffering bool)
-	// recallGen counts every stream push recorded via setLastPlay. Each
-	// recall's verify loop captures the generation of its own play; any later
-	// play bumps it, telling the older verify it was superseded so it stands
-	// down instead of re-pushing its now-unwanted stream over the user's newer
-	// choice (two rapid preset presses used to ping-pong stations for ~15s).
-	// Guarded by lastPlayMu.
-	recallGen uint64
-	// resumeAttempts counts consecutive AUTOMATIC resume attempts (power-on
-	// resume / reconnect recovery) that never reached stable playback, and
-	// lastResumeAt is when the newest one was pushed. They drive the
-	// auto-resume crash-loop guard (#381, see resume_guard.go): a stream that
-	// crashes the box on playback otherwise loops boot -> auto-resume ->
-	// crash -> watchdog reboot forever. Guarded by lastPlayMu; persisted
-	// inside last-play.json so the count survives the very reboot it counts.
-	resumeAttempts int
-	lastResumeAt   time.Time
 	// lastPlayPath is the NAND file the last-played stream is persisted to, so
 	// the power-on resume survives an agent restart across a long/overnight
 	// standby (in-RAM only lost the station and the box fell back to its native
@@ -620,32 +573,10 @@ type Server struct {
 	activeFile       *activeDirectFile
 	fileRestartUntil time.Time
 
-	// lastStandbyStop debounces the #197 standby-bounce mitigation: some ST20
-	// (scm) firmware oscillates UPNP->STANDBY->UPNP on a power-off, re-selecting
-	// STR's UPnP source so the box turns itself back on. HandleEnterStandby clears
-	// the transport once per standbyStopDebounce so the rapid flip does not issue a
-	// burst of Stops.
-	standbyStopMu   sync.Mutex
-	lastStandbyStop time.Time
-	// lastStandbyClear rate-limits the transport clear during a power-off bounce
-	// (separate from lastStandbyStop, which gates the resume-suppression window):
-	// the clear re-fires on each flip of the UPNP<->STANDBY oscillation so a clear
-	// that lost the ~170 ms race is retried, bounded by standbyClearMinGap.
-	lastStandbyClear time.Time
-	// lastZoneStandbyLog rate-limits the "zoned box powered off, leaving its
-	// transport alone" line to one per power-off episode (the firmware can flap
-	// UPNP<->STANDBY several times within a second).
-	lastZoneStandbyLog time.Time
-	// lastUserPlayStart is when a user last explicitly asked for playback (a
-	// hardware preset press or an app play). HandleEnterStandby reads it to tell
-	// a UPNP->STANDBY flip that interrupts the user's own fresh recall (firmware
-	// settling, #419) from a real power-off, and NoteUserPlay stamps it while
-	// clearing the stop latches (the press is newer intent than any prior stop).
-	// Guarded by standbyStopMu.
-	lastUserPlayStart time.Time
-	// lastSpontResume single-flights the spontaneous-power-off recovery so a
-	// flapping source cannot stack resume goroutines. Guarded by standbyStopMu.
-	lastSpontResume time.Time
+	// standbyStop is the power-off bookkeeping: the #197 standby-bounce
+	// stamps and rate limits, the last user play and the spontaneous-off
+	// recovery single-flight (standbystopstate.go, own mutex).
+	standbyStop standbyStopState
 	// userActivityFn reports when the box last emitted a userActivityUpdate
 	// frame (a physical key press, box or IR remote); zero = none seen. Wired to
 	// boxws.LastUserActivity. HandleEnterStandby uses it to recognise the
@@ -737,25 +668,6 @@ type Server struct {
 	// panelState is what the panel shows during playback and the speaker's
 	// clock format (displaytrack_panel.go).
 	panelState
-
-	// lastDisplayPush debounces the ICY display push so a station that flips its
-	// StreamTitle between the song and promo/talk lines does not cause a re-buffer
-	// gap every few seconds. Guarded by lastPlayMu.
-	lastDisplayPush time.Time
-	// lastDisplayShown and lastDisplayFor remember what the last display push
-	// put on screen and for which play. A push re-buffers the box, so a title
-	// change that would show the SAME text (artist mode across two songs by one
-	// artist, or a station that blanks its StreamTitle between songs and then
-	// resends the same one) is skipped instead of costing an audible gap for
-	// nothing (#500). Keyed on the lastPlay pointer so a new play always pushes.
-	// Guarded by lastPlayMu.
-	lastDisplayShown string
-	lastDisplayFor   *lastPlayInfo
-	// lastICYTitle is the most recent radio StreamTitle seen, kept so enabling the
-	// display push or changing its mode can show the CURRENT track immediately
-	// instead of waiting for the next title change. Guarded by lastPlayMu.
-	lastICYTitle  string
-	tuneInStation tuneInNowStation // the TuneIn station last resolved, for the now-playing answer (#500)
 
 	// displayMsg is the bookkeeping for the short messages on the speaker
 	// display when a key cannot play (displaymsg.go).
@@ -925,9 +837,9 @@ type recentCardCtx struct {
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
 // drives an exponential backoff; once it hits maxRePushes the stream is marked
 // failed and never re-pushed again until a fresh play (setLastPlay) replaces it.
-// The drop-coalescing latch lives on the Server (rePushInFlight), NOT here: a
-// per-play latch died with every setLastPlay struct swap and let concurrent
-// re-pushers stack (see the Server field).
+// The drop-coalescing latch lives on the playSession (rePushInFlight), NOT
+// here: a per-play latch died with every setLastPlay struct swap and let
+// concurrent re-pushers stack (see playsession.go).
 type lastPlayInfo struct {
 	boxURL, title, art, mime string
 	ts                       time.Time
@@ -1226,9 +1138,7 @@ const quietWakeEpisodeWindow = 30 * time.Second
 // noteQuietWakeEpisode stamps the settling window. Called by the quiet wake
 // itself, so every group wake is covered whichever caller made it.
 func (s *Server) noteQuietWakeEpisode() {
-	s.quietWakeMu.Lock()
-	s.quietWakeEpisodeUntil = time.Now().Add(quietWakeEpisodeWindow)
-	s.quietWakeMu.Unlock()
+	s.groupWake.noteEpisode(quietWakeEpisodeWindow)
 }
 
 // QuietWakeEpisodeActive reports whether STR woke this speaker for a group
@@ -1242,9 +1152,7 @@ func (s *Server) noteQuietWakeEpisode() {
 // ms apart). The forced pass already stands down in front of live audio for
 // the mirror-image reason.
 func (s *Server) QuietWakeEpisodeActive() bool {
-	s.quietWakeMu.Lock()
-	defer s.quietWakeMu.Unlock()
-	return time.Now().Before(s.quietWakeEpisodeUntil)
+	return s.groupWake.episodeActive()
 }
 
 // quietWakeActive reports whether a quiet wake is still holding this speaker
@@ -1266,9 +1174,7 @@ func (s *Server) QuietWakeEpisodeActive() bool {
 // The mute did not save it either: the zone join lifts the mute a second later
 // and the resumed stream becomes audible at full level.
 func (s *Server) quietWakeActive() bool {
-	s.quietWakeMu.Lock()
-	defer s.quietWakeMu.Unlock()
-	return !s.quietWakeUntil.IsZero()
+	return s.groupWake.active()
 }
 
 // wokenForGroup is the self-wake guard of the power-on resume: either a quiet
@@ -1290,38 +1196,18 @@ const quietWakeRestoreAfter = 20 * time.Second
 // armQuietWakeRestore remembers the level a quiet wake muted from and starts
 // the bounded fallback that restores it if no zone join does.
 func (s *Server) armQuietWakeRestore(vol int) {
-	s.quietWakeMu.Lock()
-	// The level already armed wins: a SECOND quiet wake inside the window
-	// would otherwise snapshot the level the first one already muted (0) and
-	// then "restore" the speaker to silence. That is the normal case, not an
-	// edge one: the app races each wake against a 4 s deadline and retries,
-	// while a real wake out of standby needs longer than that. So a repeat
-	// arming only pushes the deadline out.
-	if s.quietWakeUntil.IsZero() {
-		s.quietWakeVol = vol
-	}
-	s.quietWakeUntil = time.Now().Add(quietWakeRestoreAfter)
-	s.quietWakeMu.Unlock()
+	// A repeat arming inside the window keeps the level already armed and
+	// only pushes the deadline out (see quietWakeState.arm).
+	s.groupWake.arm(vol, quietWakeRestoreAfter)
 	time.AfterFunc(quietWakeRestoreAfter, func() { s.restoreQuietWakeVolume("timeout") })
 }
 
 // restoreQuietWakeVolume puts the level back that a quiet wake muted, once.
+// The timer of an earlier wake stands down while a later one still holds
+// the speaker (see quietWakeState.release); a zone join always restores.
 func (s *Server) restoreQuietWakeVolume(why string) {
-	s.quietWakeMu.Lock()
-	vol, until := s.quietWakeVol, s.quietWakeUntil
-	armed := !until.IsZero()
-	// A repeat arming pushed the deadline out and started its own timer, so
-	// the timer of the earlier wake must not un-mute a speaker that a later
-	// quiet wake is still holding down. It leaves the arming alone and the
-	// later timer does the work. A zone join is not a deadline and always
-	// restores.
-	if armed && why == "timeout" && time.Now().Before(until) {
-		s.quietWakeMu.Unlock()
-		return
-	}
-	s.quietWakeUntil = time.Time{}
-	s.quietWakeMu.Unlock()
-	if !armed || vol < 0 || s.boxHost == "" {
+	vol, restore := s.groupWake.release(why == "timeout")
+	if !restore || vol < 0 || s.boxHost == "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

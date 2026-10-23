@@ -56,9 +56,9 @@ func stuckBufServer(t *testing.T, states ...[3]bool) (*Server, *soapRecorder) {
 		i++
 		return st[0], st[1], st[2]
 	}
-	s.lastPlayMu.Lock()
-	s.lastPlay = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/spotify/stream-4.ogg", title: "Key 4", ts: time.Now()}
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	s.play.last = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/spotify/stream-4.ogg", title: "Key 4", ts: time.Now()}
+	s.play.mu.Unlock()
 	return s, rec
 }
 
@@ -77,10 +77,10 @@ func TestStuckBufferingStopsAfterOneFailedRecall(t *testing.T) {
 	if !rec.has("Stop") {
 		t.Fatalf("a speaker stuck buffering after the rescue recall was left loading; SOAP: %v", rec.list())
 	}
-	s.lastPlayMu.Lock()
-	failed := s.lastPlay != nil && s.lastPlay.failed
-	at := s.stuckBufRescueAt
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	failed := s.play.last != nil && s.play.last.failed
+	at := s.play.stuckBufRescueAt
+	s.play.mu.Unlock()
 	if !failed {
 		t.Error("the stream was not marked given up, a later detach would re-arm it")
 	}
@@ -102,9 +102,9 @@ func TestStuckBufferingStandsDownOnStandby(t *testing.T) {
 	if rec.count() != 0 {
 		t.Errorf("a speaker in standby got transport commands: %v", rec.list())
 	}
-	s.lastPlayMu.Lock()
-	at := s.stuckBufRescueAt
-	s.lastPlayMu.Unlock()
+	s.play.mu.Lock()
+	at := s.play.stuckBufRescueAt
+	s.play.mu.Unlock()
 	if !at.IsZero() {
 		t.Error("a stand-down spent the episode's one rescue")
 	}
@@ -131,9 +131,9 @@ func TestStuckBufferingStandsDownOnAUserSource(t *testing.T) {
 func TestStuckBufferingIgnoresNonPresetStreams(t *testing.T) {
 	for _, u := range []string{"http://127.0.0.1:8888/stream/2", "http://127.0.0.1:8888/spotify/stream.ogg"} {
 		s, rec := stuckBufServer(t, stBuffering)
-		s.lastPlayMu.Lock()
-		s.lastPlay.boxURL = u
-		s.lastPlayMu.Unlock()
+		s.play.mu.Lock()
+		s.play.last.boxURL = u
+		s.play.mu.Unlock()
 		s.rescueStuckSpotifyBuffering()
 		if rec.count() != 0 {
 			t.Errorf("%s: rescue acted on a stream that is not a Spotify key: %v", u, rec.list())

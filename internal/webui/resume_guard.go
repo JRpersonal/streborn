@@ -53,10 +53,7 @@ const (
 // playback. Manual plays are never blocked; any of them re-arms the resume via
 // setLastPlay's reset.
 func (s *Server) autoResumeBlocked() bool {
-	s.lastPlayMu.Lock()
-	defer s.lastPlayMu.Unlock()
-	return s.resumeAttempts >= maxAutoResumeAttempts &&
-		time.Since(s.lastResumeAt) < autoResumeAttemptWindow
+	return s.play.autoResumeBlocked()
 }
 
 // noteAutoResumeAttempt records that an automatic resume is about to push the
@@ -65,16 +62,7 @@ func (s *Server) autoResumeBlocked() bool {
 // It also arms the stability timer that clears the count when the agent
 // outlives the attempt (see clearResumeAttemptsIfQuiet).
 func (s *Server) noteAutoResumeAttempt() {
-	s.lastPlayMu.Lock()
-	if time.Since(s.lastResumeAt) >= autoResumeAttemptWindow {
-		s.resumeAttempts = 0
-	}
-	s.resumeAttempts++
-	s.lastResumeAt = time.Now()
-	attempts := s.resumeAttempts
-	at := s.lastResumeAt
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
+	attempts, at, lp := s.play.noteAutoResumeAttempt()
 	if lp != nil {
 		s.persistLastPlay(lp.boxURL, lp.title, lp.art, lp.mime, lp.ts, attempts, at)
 	}
@@ -91,15 +79,10 @@ func (s *Server) noteAutoResumeAttempt() {
 // the whole box, so the timer that calls this never fires). A newer attempt
 // means a reboot DID happen in between; leave its count alone.
 func (s *Server) clearResumeAttemptsIfQuiet(at time.Time) {
-	s.lastPlayMu.Lock()
-	if s.resumeAttempts == 0 || !s.lastResumeAt.Equal(at) {
-		s.lastPlayMu.Unlock()
+	lp, cleared := s.play.clearResumeAttemptsIfQuiet(at)
+	if !cleared {
 		return
 	}
-	s.resumeAttempts = 0
-	s.lastResumeAt = time.Time{}
-	lp := s.lastPlay
-	s.lastPlayMu.Unlock()
 	if lp != nil {
 		s.persistLastPlay(lp.boxURL, lp.title, lp.art, lp.mime, lp.ts, 0, time.Time{})
 	}
