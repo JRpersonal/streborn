@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,71 @@ func runMergePins(t *testing.T, merge func(BoxInfo, BoxInfo) BoxInfo, pins []mer
 		if got := fieldValue(t, out, p.field); !reflect.DeepEqual(got, p.want) {
 			t.Errorf("%s: got %v, want %v (%s)", p.field, got, p.want, p.why)
 		}
+	}
+}
+
+// TestBoxFieldPolicyCoversEveryField fails the moment BoxInfo has a field the
+// policy table does not name, names twice, or names that does not exist, so a
+// new field cannot be silently left out of either merge (which is how the
+// agent hashes went missing from the same-cycle merge). A follower must come
+// after the field it follows, or the merge would panic at runtime.
+func TestBoxFieldPolicyCoversEveryField(t *testing.T) {
+	typ := reflect.TypeOf(BoxInfo{})
+	inStruct := map[string]bool{}
+	for i := 0; i < typ.NumField(); i++ {
+		inStruct[typ.Field(i).Name] = true
+	}
+	inTable := map[string]bool{}
+	decided := map[string]bool{}
+	for _, p := range boxFieldPolicy {
+		if !inStruct[p.field] {
+			t.Errorf("boxFieldPolicy names %q, which is not a BoxInfo field", p.field)
+		}
+		if inTable[p.field] {
+			t.Errorf("boxFieldPolicy names %q twice", p.field)
+		}
+		inTable[p.field] = true
+		if p.cache.pick == nil || p.sameKind.pick == nil {
+			t.Errorf("boxFieldPolicy: %s has an empty rule", p.field)
+		}
+		for _, r := range []fieldRule{p.cache, p.sameKind} {
+			if key, ok := strings.CutPrefix(r.name, "follows("); ok {
+				key = strings.TrimSuffix(key, ")")
+				if !decided[key] {
+					t.Errorf("boxFieldPolicy: %s follows %s, which must come before it", p.field, key)
+				}
+			}
+		}
+		decided[p.field] = true
+	}
+	for name := range inStruct {
+		if !inTable[name] {
+			t.Errorf("BoxInfo.%s has no rule in boxFieldPolicy: say how both merges treat it", name)
+		}
+	}
+	if len(boxFieldPolicy) != typ.NumField() {
+		t.Errorf("boxFieldPolicy has %d rows, BoxInfo has %d fields", len(boxFieldPolicy), typ.NumField())
+	}
+	// The table, for the reader of a verbose run.
+	for _, p := range boxFieldPolicy {
+		t.Logf("%-22s cache=%-18s sameKind=%s", p.field, p.cache.name, p.sameKind.name)
+	}
+}
+
+// A field rule must never read a field it was not asked about by accident:
+// merging a record with itself is the identity for every rule.
+func TestMergeWithSelfIsIdentity(t *testing.T) {
+	full := BoxInfo{Name: "n", Host: "h", Port: 17008, DeviceID: "d", BoxDeviceID: "bd", FriendlyName: "Küche",
+		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2",
+		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
+		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
+		GroupKeyError: "g", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", Storm1036: true, Storm1036SinceSec: 2,
+		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, SerialNumber: "sn", Kind: "str", PortVerified: true}
+	if got := mergeBoxInfo(full, full); !reflect.DeepEqual(got, full) {
+		t.Errorf("mergeBoxInfo(x, x) != x:\n got %+v\nwant %+v", got, full)
+	}
+	if got := mergeSameKind(full, full); !reflect.DeepEqual(got, full) {
+		t.Errorf("mergeSameKind(x, x) != x:\n got %+v\nwant %+v", got, full)
 	}
 }
 
