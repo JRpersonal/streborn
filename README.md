@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/OS%20Hero/app-listen.jpg" alt="ST Reborn desktop app" width="820">
+  <img src="docs/screenshots/en/app-listen.png" alt="ST Reborn desktop app" width="820">
 </p>
 
 Bose announced the end of the SoundTouch cloud for February 2026 and switched the servers off for good on 6 May 2026. STR keeps the speakers usable: a small Go agent is installed onto the speaker itself, stands in for the discontinued cloud locally, and brings back internet radio, Spotify, your own media library, multiroom, and the hardware preset buttons. **The install runs over your home network from the desktop app**, so no USB stick and no second device are needed. The agent persists on the speaker and starts with it on every boot.
@@ -29,12 +29,23 @@ The desktop app: browse and assign presets, search internet radio, control Spoti
 
 | | | |
 |:--:|:--:|:--:|
-| [![Presets and playback](docs/screenshots/OS%20Hero/app-listen.jpg)](docs/screenshots/OS%20Hero/app-listen.jpg) | [![Internet radio search](docs/screenshots/OS%20Hero/app-search.jpg)](docs/screenshots/OS%20Hero/app-search.jpg) | [![Speaker settings](docs/screenshots/OS%20Hero/app-settings1.jpg)](docs/screenshots/OS%20Hero/app-settings1.jpg) |
-| Presets and playback | Internet radio search | Speaker settings |
-| [![DLNA library](docs/screenshots/OS%20Hero/app-library.jpg)](docs/screenshots/OS%20Hero/app-library.jpg) | [![USB stick setup](docs/screenshots/OS%20Hero/app-stick-step1.jpg)](docs/screenshots/OS%20Hero/app-stick-step1.jpg) | [![Stick: Wi-Fi, name, region](docs/screenshots/OS%20Hero/app-stick-step2.jpg)](docs/screenshots/OS%20Hero/app-stick-step2.jpg) |
-| DLNA music library | Install and setup | Wi-Fi, name, region |
+| [![Presets and playback](docs/screenshots/en/app-listen.png)](docs/screenshots/en/app-listen.png) | [![Internet radio search](docs/screenshots/en/app-search.png)](docs/screenshots/en/app-search.png) | [![Recently played](docs/screenshots/en/app-recent.png)](docs/screenshots/en/app-recent.png) |
+| Presets and playback | Internet radio search | Recently played |
+| [![DLNA library](docs/screenshots/en/app-library.png)](docs/screenshots/en/app-library.png) | [![Speaker settings](docs/screenshots/en/app-settings1.png)](docs/screenshots/en/app-settings1.png) | [![Install over the network](docs/screenshots/en/app-install.png)](docs/screenshots/en/app-install.png) |
+| DLNA music library | Speaker settings and phone QR code | Install STR over the network |
 
-The interface is available in thirteen languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic, Traditional Chinese). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
+### Phone remote
+
+Every speaker running STR serves its own remote in the phone browser: scan the QR code in the speaker settings and add the page to the home screen. No app store, no account.
+
+<p align="center">
+  <a href="docs/screenshots/phone/en/phone-play.png"><img src="docs/screenshots/phone/en/phone-play.png" alt="Phone remote: now playing, volume and presets" width="200"></a>
+  <a href="docs/screenshots/phone/en/phone-browse.png"><img src="docs/screenshots/phone/en/phone-browse.png" alt="Phone remote: station search and favourites" width="200"></a>
+  <a href="docs/screenshots/phone/en/phone-speakers.png"><img src="docs/screenshots/phone/en/phone-speakers.png" alt="Phone remote: switch speakers and group them" width="200"></a>
+  <a href="docs/screenshots/phone/en/phone-alarm.png"><img src="docs/screenshots/phone/en/phone-alarm.png" alt="Phone remote: sleep timer and alarm clock" width="200"></a>
+</p>
+
+The interface is available in thirteen languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic, Traditional Chinese). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed; `npm run shoot-phone` does the same for the phone remote.
 
 ## Status (October 2026)
 
