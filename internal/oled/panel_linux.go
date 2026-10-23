@@ -46,6 +46,51 @@ func boseAppDisplayReady() bool {
 	return pid != 0 && findThread(pid, flipThread) != 0
 }
 
+// boseAppAge is how long BoseApp has been running, from its start time in
+// /proc/<pid>/stat against /proc/uptime; zero when it is not running or
+// either read fails. The kernel on every SoundTouch chassis ticks at 100 Hz.
+func boseAppAge() time.Duration {
+	pid := findProcess("BoseApp")
+	if pid == 0 {
+		return 0
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0
+	}
+	up, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0
+	}
+	return processAge(string(stat), string(up), 100)
+}
+
+// processAge computes a process age from the stat and uptime texts; the
+// start time is the 22nd stat field, in clock ticks since boot.
+func processAge(stat, uptime string, hz int) time.Duration {
+	end := strings.LastIndexByte(stat, ')')
+	if end < 0 || hz <= 0 {
+		return 0
+	}
+	fields := strings.Fields(stat[end+1:])
+	if len(fields) < 20 {
+		return 0
+	}
+	var startTicks float64
+	if _, err := fmt.Sscan(fields[19], &startTicks); err != nil {
+		return 0
+	}
+	var upSec float64
+	if _, err := fmt.Sscan(strings.Fields(uptime)[0], &upSec); err != nil {
+		return 0
+	}
+	age := upSec - startTicks/float64(hz)
+	if age <= 0 {
+		return 0
+	}
+	return time.Duration(age * float64(time.Second))
+}
+
 // ProcessCPUms is the CPU time (user plus system) the named process has used
 // since it started, in milliseconds; -1 when it is not running. For the
 // display_cost debug section: the panel hold stops BoseApp's flip thread, and

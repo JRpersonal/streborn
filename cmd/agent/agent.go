@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
@@ -87,6 +88,10 @@ type agent struct {
 
 	// bootstrap
 	deviceID string
+	// boxLog is the syslog reader once buildBoxLink made it; the start-up
+	// splash, which runs from bootstrap, asks it whether the firmware's
+	// display controller has finished booting.
+	boxLog atomic.Pointer[boxlog.Reader]
 
 	// buildStores
 	store            *presets.Store
@@ -580,7 +585,10 @@ func (a *agent) buildMarge() error {
 	// by webui.New further down; drawn in the background once BoseApp's
 	// display thread is up.
 	splashKind := oled.DecideKind(agentStamp(), webui.OTARebootPending(), strings.HasPrefix(bootReason, "box-boot"))
-	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"))
+	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"), func() bool {
+		r := a.boxLog.Load()
+		return r != nil && r.DisplayControllerUp()
+	})
 	// The short display notices (saved keys, empty keys, find this speaker)
 	// log under the same component; a box boot arms the "keys restored
 	// after reboot" notice, shown once per speaker (displaynotices.go).
@@ -1444,6 +1452,7 @@ func (a *agent) buildBoxLink() error {
 		wsHandler.OnKeyEvent,
 	)
 	wsHandler.keyTrace = keyTrace
+	a.boxLog.Store(keyTrace)
 	// The firmware refuses a preset write in its syslog only; the reconcile
 	// reads this to tell a refused rewrite from a landed one.
 	setPresetRefusalSource(keyTrace.LastPresetRefusal)

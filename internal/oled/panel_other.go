@@ -13,6 +13,8 @@ func panelSupported() bool { return false }
 
 func boseAppDisplayReady() bool { return false }
 
+func boseAppAge() time.Duration { return 0 }
+
 func play(func(float64, []byte) bool, func(float64), time.Duration, <-chan struct{}) error {
 	return errors.New("no panel on this platform")
 }

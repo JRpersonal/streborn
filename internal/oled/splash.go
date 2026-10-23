@@ -116,18 +116,44 @@ func DecideKind(stamp string, otaMarker, boxBoot bool) Kind {
 // first ends a display notice that holds it.
 var busy sync.Mutex
 
-// ShowAtStart waits for BoseApp to be up and plays the splash for kind once.
-// Blocking; run it in its own goroutine.
-func ShowAtStart(kind Kind, logger *slog.Logger) {
+// boseAppSettledAge is how old BoseApp has to be for its display to count as
+// booted when the syslog has not said so: an agent restarted under a BoseApp
+// that has been up for minutes (a self-update, a crash respawn) starts
+// following the log after the display controller's boot lines went by.
+const boseAppSettledAge = 2 * time.Minute
+
+// splashMayStart is the gate in front of the panel hold at start-up: the
+// flip thread exists, and the display controller has either been seen past
+// its boot state or BoseApp is old enough that it must be. Holding the flip
+// thread while the controller was still in Bootup left an ST30's panel
+// unpainted by the firmware until the next reboot (internal/boxlog,
+// displayready.go, 2026-10-23); the flip thread alone appears seconds before
+// the controller is done with it.
+func splashMayStart(flipThreadUp, controllerUp bool, boseAppAge time.Duration) bool {
+	return flipThreadUp && (controllerUp || boseAppAge >= boseAppSettledAge)
+}
+
+// ShowAtStart waits for BoseApp's display to be up and plays the splash for
+// kind once. displayUp reports whether the firmware's display controller has
+// been seen past its boot state (nil means never). Blocking; run it in its
+// own goroutine.
+func ShowAtStart(kind Kind, logger *slog.Logger, displayUp func() bool) {
 	if kind == KindNone || !Enabled() || !panelSupported() {
 		return
 	}
+	if displayUp == nil {
+		displayUp = func() bool { return false }
+	}
 	// At a box boot the agent is usually up before BoseApp has its display
-	// thread; wait for it (bounded), then give BoseApp a moment to settle.
+	// thread, and the thread is there before the display controller is done
+	// booting; wait for both (bounded), then give BoseApp a moment to settle.
+	// Past the bound the splash is skipped: a splash is cosmetic, a panel the
+	// firmware never paints again is not.
 	deadline := time.Now().Add(3 * time.Minute)
-	for !boseAppDisplayReady() {
+	for !splashMayStart(boseAppDisplayReady(), displayUp(), boseAppAge()) {
 		if time.Now().After(deadline) {
-			logger.Info("oled splash skipped: BoseApp display thread never appeared")
+			logger.Info("oled splash skipped: BoseApp display not up in time",
+				"flipThread", boseAppDisplayReady(), "controllerUp", displayUp(), "boseAppAge", boseAppAge().Round(time.Second))
 			return
 		}
 		time.Sleep(2 * time.Second)
