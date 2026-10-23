@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"encoding/json"
+	"github.com/JRpersonal/streborn/anonymise"
 	"os"
 	"path/filepath"
 	"sort"
@@ -135,7 +136,7 @@ func (m *Manager) rememberAccountName(id, name string) {
 	}
 	// The NAME is not logged. It is the personal part, and this file exists so
 	// that it has exactly one place to be. The id is enough to read the line by.
-	m.logger.Info("spotify: learned what an account is called", "user", id)
+	m.logger.Info("spotify: learned what an account is called", "user", anonymise.MaskAccount(id))
 }
 
 // AccountNames returns a copy of what is known, id to display name, for the apps
