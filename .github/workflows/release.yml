@@ -101,6 +101,7 @@ jobs:
   # a release fails here, not after a 10 minute multi-OS build.
   verify-source:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # sign_windows steers whether the sign-windows job (self-hosted runner on
     # the maintainer's machine) runs at all. Job-level `if:` cannot read
     # secrets directly, so the gate is exported here as a job output. Two
@@ -244,6 +245,7 @@ jobs:
             suffix: amd64
 
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -452,6 +454,7 @@ jobs:
   build-go-librespot:
     needs: verify-source
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -518,6 +521,7 @@ jobs:
   build-desktop-windows:
     needs: [build-agent, build-go-librespot]
     runs-on: windows-latest
+    timeout-minutes: 30
     # Code signing happens in the separate sign-windows job below (self-hosted
     # runner with the maintainer's live SimplySign session), gated on the same
     # CERT_THUMBPRINT secret via the verify-source signing gate. This build job
@@ -773,6 +777,7 @@ jobs:
   build-desktop-linux:
     needs: [build-agent, build-go-librespot]
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -991,6 +996,7 @@ jobs:
     # and one built on 24.04 (glibc 2.39) refuses to start on Raspberry Pi OS
     # Bookworm (Debian 12, glibc 2.36), which most Pi 5s still run.
     runs-on: ubuntu-22.04-arm
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -1669,6 +1675,7 @@ jobs:
       needs.build-desktop-macos.result == 'success' &&
       (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       id-token: write
