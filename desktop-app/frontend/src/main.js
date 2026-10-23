@@ -5,7 +5,6 @@ import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from '
 import { spotifyAccountName } from './spotifyaccountlabel.js';
 import { nextStuckBuffering } from './stuckbuffering.js';
 import { statusTickScope } from './statusrefreshscope.js';
-import { muteView, muteAfterPress } from './mutebutton.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { announceHighscores } from './arcadeshare.js';
@@ -57,10 +56,6 @@ import {
   Next,
   Prev,
   Status,
-  QueueNext,
-  QueuePrev,
-  QueueShuffle,
-  QueueRepeat,
   GetQueue,
   ListDrives,
   WriteStickFiles,
@@ -95,7 +90,6 @@ import {
   SetBoxName,
   SetBoxVolume,
   SetBoxBass,
-  SelectBoxSource,
   GetClockDisplay,
   SetClockDisplay,
   GetClockFormat24,
@@ -114,7 +108,6 @@ import {
   TestWebhook,
   StreamBitrate,
   StreamTitleInfo,
-  SetStreamTitleSwap,
   SpotifyBitrate,
   SpotifyNowPlaying,
   LogSpotifySaveGate,
@@ -135,8 +128,6 @@ import {
   RadioStationsByURL,
   ClassifyStreamURL,
   isMissingBinding,
-  RadioTags,
-  RadioLanguages,
   RadioVote,
   RadioClick,
   TrueFactoryReset,
@@ -153,7 +144,6 @@ import {
   EventsOn,
   boxFetch,
   readBoxBalance,
-  setBoxMute,
   GetArcade,
   CheckFirewall,
   AllowThroughFirewall,
@@ -323,7 +313,6 @@ import {
   notifyZoneLive,
 } from './groups.js';
 import { pairDisplayName, healPairNames } from './stereoNames.js';
-import { pairVolumeTarget, createPairVolume, notePairRead, pairLevelsFor, pairAnchored, makePerHostThrottle } from './pairVolume.js';
 import { findStalePairs, confirmStalePairs, staleFindingFor, staleNoticeText } from './stalestereo.js';
 
 // The already-on-another-key refusal and the offer to move the station live in
@@ -344,11 +333,7 @@ import {
 import {
   COUNTRIES,
   ORDERS,
-  GENRE_CORE,
-  GENRE_BY_COUNTRY,
   translateCountry,
-  canonGenre,
-  translateGenre,
   translateTags,
   flagFromCC,
   flagSvg,
@@ -358,7 +343,6 @@ import {
 
 import {
   t,
-  tLookup,
   getLocale,
   setLocale,
   AVAILABLE_LOCALES,
@@ -386,24 +370,6 @@ const LOCALE_FLAG_CC = {
   uk: 'UA',
 };
 
-// LOCALE_TO_RADIO_LANG maps the app UI locale to radio-browser's English
-// language name, so the radio language filter can default to the chosen app
-// language (e.g. a Dutch UI defaults the filter to Dutch stations) rather
-// than to the stick region's language or a last-used value.
-const LOCALE_TO_RADIO_LANG = {
-  en: 'english',
-  de: 'german',
-  fr: 'french',
-  es: 'spanish',
-  ja: 'japanese',
-  uk: 'ukrainian',
-  nl: 'dutch',
-  pl: 'polish',
-  lt: 'lithuanian',
-  lv: 'latvian',
-  tr: 'turkish',
-};
-
 import {
   extractHost,
   rootDomain,
@@ -426,12 +392,12 @@ import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
-import { renderStreamSource, initStreamSourceView } from './views/streamsource.js';
+import { initStreamSourceView } from './views/streamsource.js';
 import { renderWishes, initWishesView } from './views/wishes.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
 // each button is called (sourceinputs.js, vitest-covered).
-import { inputButtons, isActiveInput, localIsAuxSocket, sourceRowKey } from './sourceinputs.js';
+import { localIsAuxSocket } from './sourceinputs.js';
 // Turning a refused preset transfer into a readable sentence is a pure
 // decision (copyreport.js, vitest-covered).
 import { presetCopyConflict } from './copyreport.js';
@@ -474,6 +440,34 @@ import {
   installRunActive,
 } from './views/setup.js';
 import { onSpeakerPurge } from './speakerPurge.js';
+// The Music view ("Listen": now playing, presets, volume, sources, search,
+// favourites, Pandora, the group panel and the status poll), extracted from
+// this monolith into src/views/music/. Same pattern as the views above:
+// mountMusicView builds #view-box where the markup used to be assigned
+// inline, initMusicView injects the main.js-local helpers the view calls,
+// and the names below are the Music functions the shell, the boot sequence
+// and the other views still call.
+import {
+  currentPairTarget,
+  highlightActiveSource,
+  initMusicView,
+  loadLanguagesForCountry,
+  loadMusicTabVolume,
+  loadStickRegion,
+  loadTaxonomy,
+  localizeLanguageName,
+  mountMusicView,
+  musicVolEl,
+  musicVolValEl,
+  pairSetVolume,
+  purgeMusicStateForSpeaker,
+  refreshSourceButtons,
+  renderGenreChips,
+  sourceListCache,
+  stoppedOrPaused,
+  syncMusicTabVolumeFromBox,
+  syncVolumeScopeOnZoneLive,
+} from './views/music/index.js';
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
@@ -511,14 +505,18 @@ initStreamSourceView({
   }, { streamSource: true }),
 });
 initWishesView();
+// Music view deps: the shell helpers the Music modules call (see
+// views/music/deps.js for what each one is used for).
+initMusicView({ action, checkAppUpdate, discoverBoxes, doRefilter, queueAction, refreshStatus, renderNowPlayingBar, updateFilterIndicators });
 // Session maps this file keeps per speaker, cleared when STR is removed from
 // that speaker (Settings > Remove STR calls purgeSpeakerLocalState; see
 // speakerPurge.js). Registered as a hook because speakerPurge.js cannot import
 // this file. The maps are declared further down; the hook only runs on a
-// purge, long after the module has finished evaluating.
+// purge, long after the module has finished evaluating. The Music view's own
+// per-speaker maps are cleared by purgeMusicStateForSpeaker.
 onSpeakerPurge(({ host }) => {
   if (host) {
-    sourceListCache.delete(host);
+    purgeMusicStateForSpeaker(host);
     groupOpPending.delete(host);
     pendingGroupEdits.delete(host);
     worldMapKindSeen.delete(host);
@@ -1699,119 +1697,12 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
   }
 }
 
-// ---------- Box steuern View ----------
-
-$('view-box').innerHTML = `
-  <div class="topbar">
-    <div class="topbar-head">
-      <div class="topbar-title">${escapeHtml(t('topbar.title'))}</div>
-      <button class="btn-icon" id="refreshBtn" aria-label="${escapeAttr(t('topbar.refreshTitle'))}" title="${escapeAttr(t('topbar.refreshTitle'))}"><span class="refresh-icon" aria-hidden="true">&#x21bb;</span></button>
-    </div>
-    <div class="box-select" id="boxSelect">${escapeHtml(t('speaker.searching'))}</div>
-  </div>
-  <div id="boxHint" class="box-hint hidden">
-    <p>${escapeHtml(t('speaker.choose'))}</p>
-  </div>
-  <div id="boxControls" class="hidden">
-    <div class="status-bar" id="statusBar" role="status" aria-live="polite">
-      <div class="status-main" id="statusMain"></div>
-      <div class="track-progress hidden" id="trackProgress">
-        <span class="track-time" id="trackElapsed">0:00</span>
-        <div class="track-bar" id="trackBar"><div class="track-bar-fill" id="trackBarFill"></div></div>
-        <span class="track-time" id="trackTotal"></span>
-      </div>
-    </div>
-    <label class="title-swap-row hidden" id="titleSwapRow"><input type="checkbox" id="titleSwapToggle"> <span>${escapeHtml(t('status.titleSwap'))}</span></label>
-    <div class="group-control" id="groupControl"></div>
-    <div class="controls">
-      <button class="btn btn-mini hidden" id="trackPrevBtn" title="${escapeAttr(t('controls.prev'))}" aria-label="${escapeAttr(t('controls.prev'))}">&#9198;</button>
-      <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
-      <button class="btn btn-mini hidden" id="trackNextBtn" title="${escapeAttr(t('controls.next'))}" aria-label="${escapeAttr(t('controls.next'))}">&#9197;</button>
-      <button class="btn" id="stopBtn">&#9209; ${escapeHtml(t('controls.stop'))}</button>
-      <div class="queue-controls hidden" id="queueControls">
-        <button class="btn btn-mini" id="queuePrevBtn" title="${escapeAttr(t('controls.prev'))}">&#9198; ${escapeHtml(t('controls.prev'))}</button>
-        <button class="btn btn-mini" id="queueNextBtn" title="${escapeAttr(t('controls.next'))}">&#9197; ${escapeHtml(t('controls.next'))}</button>
-        <button class="btn btn-mini toggle-btn" id="queueShuffleBtn" aria-label="${escapeAttr(t('controls.shuffle'))}" title="${escapeAttr(t('controls.shuffle'))}">&#128256;</button>
-        <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" aria-label="${escapeAttr(t('controls.repeat'))}" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
-        <span class="queue-pos" id="queuePos"></span>
-      </div>
-      <div class="source-buttons" id="sourceButtons">
-        <span class="source-inputs" id="sourceInputs"></span>
-        <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
-      </div>
-      <div class="volume-control">
-        <span class="vol-scope hidden" id="musicVolumeScope"></span>
-        <button class="vol-icon vol-mute" id="volMute" aria-pressed="false" aria-label="${escapeAttr(t('controls.mute'))}" title="${escapeAttr(t('controls.mute'))}">&#128266;</button>
-        <button class="btn btn-mini vol-step" id="volDown" aria-label="${escapeAttr(t('controls.volumeDown'))}" title="${escapeAttr(t('controls.volumeDown'))}">&#8722;</button>
-        <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
-        <button class="btn btn-mini vol-step" id="volUp" aria-label="${escapeAttr(t('controls.volumeUp'))}" title="${escapeAttr(t('controls.volumeUp'))}">+</button>
-        <span class="vol-val" id="musicVolumeVal">--</span>
-        
-      </div>
-    </div>
-    <div class="grid" id="presets"></div>
-    <div class="preset-copy-row">
-      <button class="btn btn-mini preset-transfer-btn" id="presetTransferBtn" aria-label="" title="" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg> ${escapeHtml(t('presets.transferBtn'))}</button>
-    </div>
-    <div class="search">
-      <h3>${escapeHtml(t('search.heading'))} <small>(${escapeHtml(t('search.headingSub'))})</small></h3>
-      <details class="stream-source-embed" id="streamSourceDetails">
-        <summary>${escapeHtml(t('streamSource.title'))}</summary>
-        <div id="streamSourceInline"></div>
-      </details>
-      <div class="search-input-row">
-        <input type="text" id="searchQ" placeholder="${escapeAttr(t('search.placeholder'))}" />
-        <button class="btn" id="searchBtn">${escapeHtml(t('search.btn'))}</button>
-        <button class="btn btn-mini" id="topBtn">${escapeHtml(t('search.topBtn'))}</button>
-        <button class="btn btn-mini hidden" id="favModeBtn" title="${escapeAttr(t('search.favBtnTitle'))}">${escapeHtml(t('search.favBtn'))}</button>
-        <button class="btn btn-mini hidden" id="pandoraModeBtn" title="${escapeAttr(t('pandora.btnTitle'))}">Pandora</button>
-      </div>
-      <div class="search-filters">
-        <label>${escapeHtml(t('search.countryLabel'))}:
-          <select id="searchCountry"></select>
-        </label>
-        <label>${escapeHtml(t('search.languageLabel'))}:
-          <select id="searchLang"><option value="">${escapeHtml(t('search.allLanguages'))}</option></select>
-        </label>
-        <label>${escapeHtml(t('search.orderLabel'))}:
-          <select id="searchOrder"></select>
-        </label>
-        <label>${escapeHtml(t('search.bitrateLabel'))}:
-          <select id="searchBitrate">
-            <option value="0">${escapeHtml(t('search.bitrateAny'))}</option>
-            <option value="64">&ge; 64 kbit/s</option>
-            <option value="96">&ge; 96 kbit/s</option>
-            <option value="128">&ge; 128 kbit/s</option>
-            <option value="192">&ge; 192 kbit/s</option>
-            <option value="256">&ge; 256 kbit/s</option>
-            <option value="320">&ge; 320 kbit/s</option>
-          </select>
-        </label>
-        <label><input type="checkbox" id="searchOnlyOK" checked /> ${escapeHtml(t('search.onlyOK'))}</label>
-        <label><input type="checkbox" id="searchOnlyBose" checked /> ${escapeHtml(t('search.onlyBose'))}</label>
-      </div>
-      <div class="genre-chips" id="genreChips"></div>
-      <div class="search-count muted small hidden" id="searchCount"></div>
-      <details class="search-addhint" id="addStationBox">
-        <summary>${escapeHtml(t('search.addStationCta'))}</summary>
-        <div class="search-addhint-body">
-          ${escapeHtml(t('search.addStationHint'))}
-          <div class="search-addhint-actions">
-            <button class="btn btn-mini" id="addStationOpenBtn">radio-browser.info</button>
-          </div>
-        </div>
-      </details>
-      <div class="search-results" id="searchResults"></div>
-      <div class="load-more-row hidden" id="loadMoreRow">
-        <button class="btn btn-mini" id="loadMoreBtn">${escapeHtml(t('search.loadMore'))}</button>
-      </div>
-    </div>
-  </div>
-`;
-
-$('streamSourceDetails').addEventListener('toggle', () => {
-  if ($('streamSourceDetails').open) renderStreamSource();
-});
+// ---------- Music view ----------
+// The #view-box markup and its static wiring used to be assigned right here;
+// they now live in views/music/ and are mounted at this same point in the boot
+// order (after the skeleton above, before the global security banner handlers
+// below, which read elements the skeleton owns).
+mountMusicView();
 
 // Filter Dropdowns befuellen
 $('searchCountry').innerHTML = COUNTRIES.map(c =>
@@ -1824,18 +1715,6 @@ $('searchCountry').value = state.searchCountry;
 $('searchOrder').value = state.searchOrder;
 $('searchOnlyOK').checked = state.searchOnlyOK;
 $('searchOnlyBose').checked = state.searchOnlyBose;
-
-// The refresh button also re-asks whether a newer app exists, and forgets any
-// earlier dismissal while doing so. Until now the app version was only checked
-// 8 s after start and then every 12 hours, so a user who had put the notice
-// away, or who moved back to an older build, had no way to be offered the
-// update again and pressing refresh appeared to do nothing at all (discussion
-// #597: "How do I force it to check for updates?"). Somebody pressing refresh
-// is asking, so a stored "not now" must not answer for them.
-$('refreshBtn').onclick = () => {
-  try { clearNoticeDismissal('appUpdate'); checkAppUpdate(); } catch {}
-  discoverBoxes();
-};
 
 // Globaler Security Reboot Knopf (im Top Banner)
 const gsb = $('globalSecurityRebootBtn');
@@ -1863,388 +1742,6 @@ if (gsd) gsd.onclick = () => {
   const gb = $('globalSecurityBanner');
   if (gb) gb.classList.add('hidden');
 };
-// A STOPPED stream resumes too. Only a paused one counted, so after Stop the
-// button still read Pause and sent pause to a transport that had already
-// stopped: nothing happened and there was no way back to the music. Same fault,
-// same fix as the phone remote.
-$('pauseBtn').onclick = () => action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
-// "Artist and title are the wrong way round for this station": the agent keeps
-// the flag per station and answers with the corrected live title, so the line
-// above flips at once instead of with the next song.
-$('titleSwapToggle').onchange = async (e) => {
-  const box = state.currentBox;
-  if (!box) return;
-  const want = !!e.target.checked;
-  try {
-    const title = await SetStreamTitleSwap(box.host, box.port, want);
-    if (state.currentBox !== box) return;
-    state.nowTitleSwapped = want;
-    if (title) state.nowTitle = title;
-  } catch (err) {
-    e.target.checked = !want;
-    showError(err);
-  }
-  renderNowPlayingBar();
-};
-
-// stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
-// is deliberately excluded: nothing is loaded there, so Play would promise
-// something that cannot happen.
-function stoppedOrPaused(ps) { return ps === 'PAUSE_STATE' || ps === 'STOP_STATE'; }
-$('stopBtn').onclick = () => action('stop');
-// Track skip for a Spotify playlist (the DLNA folder queue has its own controls
-// in #queueControls). The agent's /api/next//api/prev are source-aware.
-$('trackNextBtn').onclick = () => action('next');
-$('trackPrevBtn').onclick = () => action('prev');
-
-// Queue transport controls (DLNA folder play queue). Each fires its action and
-// then a quick GetQueue refresh so the indicator and toggle states catch up
-// before the next status poll.
-$('queuePrevBtn').onclick = () => queueAction(QueuePrev);
-$('queueNextBtn').onclick = () => queueAction(QueueNext);
-$('queueShuffleBtn').onclick = () => {
-  const on = !(state.queue && state.queue.shuffle);
-  queueAction((h, p) => QueueShuffle(h, p, on));
-};
-$('queueRepeatBtn').onclick = () => {
-  const cur = (state.queue && state.queue.repeat) || 'off';
-  const nextMode = cur === 'off' ? 'all' : cur === 'all' ? 'one' : 'off';
-  queueAction((h, p) => QueueRepeat(h, p, nextMode));
-};
-
-// The input row and the standby button in the music tab, both routed through
-// the agent's /api/box/source endpoint via the SelectBoxSource binding.
-//
-// Delegated from the row because the input buttons are built per speaker now: a
-// soundbar's TV and HDMI sockets only exist once that speaker has reported them,
-// so there is no fixed set of buttons left to bind at startup.
-$('sourceButtons').addEventListener('click', (ev) => {
-  const btn = ev.target.closest('.btn-source');
-  if (btn) selectSource(btn);
-});
-
-async function selectSource(btn) {
-  const box = state.currentBox;
-  if (!box) { showToast(t('speaker.noneSelected')); return; }
-  // The name that goes to the speaker is the name the speaker itself reported,
-  // which is why a CineMate's analogue input is switched with LOCAL and an
-  // SA-5's second line input needs the account alongside it: without the
-  // account its three AUX sockets are indistinguishable (#491, #274).
-  const src = btn.dataset.source;
-  const account = btn.dataset.sourceAccount || '';
-  const shown = btn.dataset.sourceLabel || src;
-  btn.disabled = true;
-  try {
-    await SelectBoxSource(box.host, box.port, src, account);
-    showToast(t('toast.source', { src: shown }));
-    setTimeout(refreshStatus, 800);
-  } catch (e) {
-    // A button is only drawn for an input the speaker listed, but if the box
-    // refuses it anyway (1005 UNKNOWN_SOURCE_ERROR, relayed by the agent as
-    // source_unavailable) show a clear message instead of the raw box error.
-    if (String(e).includes('source_unavailable')) {
-      showToast(t('toast.sourceUnavailable', { src: shown }));
-      btn.classList.add('hidden');
-    } else {
-      showError(e);
-    }
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// Volume slider in the music tab. Uses SetBoxVolume, debounced so a
-// drag does not fire a hundred API calls.
-let musicVolTimer = null;
-let musicVolBox = null;
-const musicVolEl = $('musicVolume');
-const musicVolValEl = $('musicVolumeVal');
-
-// Stereo pair volume (idea #1093, logic in pairVolume.js). While the selected
-// speaker is half of a live pair, this slider moves BOTH halves and carries the
-// pair's name, the way the phone remote's "Pair" scope does. Everything else
-// (a single speaker, a member of an ordinary multiroom group) keeps the slider
-// moving the selected speaker alone; a group has its own panel for the rest.
-const pairVol = createPairVolume();
-// Per-speaker throttle: the shared throttledSetVolume holds one pending call,
-// and two halves fed through it in turn would lose one half's level.
-const pairSetVolume = makePerHostThrottle(SetBoxVolume);
-state.desiredPairLevels = null;
-
-function currentPairTarget() {
-  return pairVolumeTarget(state.currentBox, state.zoneLive, state.boxes);
-}
-
-// renderVolumeScope names the pair next to the slider while the slider acts on
-// a pair, and puts the plain volume label back otherwise. The name is the one
-// the speaker list frames the pair with, so the two always agree.
-function renderVolumeScope(target = currentPairTarget()) {
-  const lbl = $('musicVolumeScope');
-  const wrap = musicVolEl ? musicVolEl.closest('.volume-control') : null;
-  const name = target ? (pairDisplayName(target.pair, () => renderVolumeScope()) || t('multiroom.stereoHeading')) : '';
-  if (lbl) {
-    lbl.textContent = name;
-    lbl.title = name ? t('controls.pairVolumeTitle', { name }) : '';
-    lbl.classList.toggle('hidden', !target);
-  }
-  if (wrap) wrap.classList.toggle('is-pair', !!target);
-  if (musicVolEl) {
-    musicVolEl.setAttribute('aria-label', target ? t('controls.pairVolumeLabel', { name }) : t('controls.volume'));
-    musicVolEl.title = target
-      ? t('controls.pairVolumeTitle', { name }) + '\n' + t('controls.volumeWheelHint')
-      : t('controls.volumeWheelHint');
-  }
-  return target;
-}
-
-// sendMusicVolume is the one write path of the music slider, its +/- buttons
-// and its wheel. On a pair both halves shift by the same offset from the
-// baseline the last read captured, so their balance stays as the user set it.
-function sendMusicVolume(box, pct) {
-  state.desiredVolume = pct;
-  const target = currentPairTarget();
-  if (target) {
-    const levels = pairLevelsFor(pairVol, target.key, target.halves.map(b => b.host), pct);
-    if (levels) {
-      target.halves.forEach(b => {
-        if (typeof levels[b.host] === 'number') pairSetVolume(b.host, b.port, levels[b.host]);
-      });
-      state.desiredPairLevels = { key: target.key, levels };
-      return;
-    }
-    // The pair was named before its levels were read (pairLevelsFor says why
-    // guessing is wrong). Move the selected speaker alone, as before, and read
-    // both halves so the next move carries the pair.
-    syncMusicTabVolumeFromBox();
-  }
-  state.desiredPairLevels = null;
-  throttledSetVolume(box.host, box.port, pct);
-}
-
-// readMusicVolume reads what the slider should show for box: its own settings,
-// and on a pair both halves' levels too. data is the selected speaker's
-// settings (for mute), or null when it did not answer.
-async function readMusicVolume(box) {
-  const target = renderVolumeScope();
-  if (!target) {
-    return { target: null, data: await BoxSettings(box.host, box.port), levels: null };
-  }
-  const levels = {};
-  let data = null;
-  await Promise.all(target.halves.map(async (b) => {
-    try {
-      const d = await BoxSettings(b.host, b.port);
-      if (sameBoxIdentity(b, box)) data = d;
-      const v = d && d.volume && d.volume.actual;
-      if (typeof v === 'number') levels[b.host] = v;
-    } catch {}
-  }));
-  return { target, data, levels };
-}
-
-// musicVolumeLevel turns a read into the level the slider shows: the speaker's
-// own, or for a pair the louder half (re-anchoring the pair baseline there, so
-// the caller must only ask while the user is not touching the slider).
-function musicVolumeLevel(r) {
-  if (r.target) return notePairRead(pairVol, r.target.key, r.levels);
-  const v = r.data && r.data.volume && r.data.volume.actual;
-  return typeof v === 'number' ? v : null;
-}
-// Mute, which STR could not do at all until a user asked for it and pointed at
-// this very symbol. It is the speaker's own MUTE key, not a volume pulled to
-// zero and remembered here: the box's remote and its physical buttons set the
-// same flag, so they and this icon always agree, and closing the app loses
-// nothing that would have to be restored.
-const volMuteEl = $('volMute');
-// muteUntil holds the 2 s status poll off for a moment after a press, exactly
-// as the slider does. The speaker needs a round trip before it reports the new
-// state, and a poll landing in that gap would flip the icon back, which reads
-// as a button that does not work.
-state.muteUntil = 0;
-// renderMuteState draws what the SPEAKER says, not what we last clicked.
-function renderMuteState(muted) {
-  if (!volMuteEl) return;
-  const v = muteView(muted);
-  volMuteEl.innerHTML = v.glyph;
-  volMuteEl.setAttribute('aria-pressed', v.pressed ? 'true' : 'false');
-  const label = t(v.labelKey);
-  volMuteEl.setAttribute('aria-label', label);
-  volMuteEl.title = label;
-  volMuteEl.classList.toggle('is-muted', v.pressed);
-}
-// Moving the volume while the speaker is muted means "I want to hear this".
-//
-// The firmware does not draw that conclusion. Measured on a speaker: mute, then
-// PUT a volume, and it answers vol=6 muteenabled=true. So the slider moves, the
-// number changes, and nothing comes out, which reads as an app that does not
-// work rather than as a speaker that is doing exactly what it was told.
-//
-// Lifting it here rather than in the agent is deliberate. The agent cannot tell
-// a person reaching for the slider from STR re-asserting a level after a wake,
-// and the second one must not undo a mute somebody meant. At this end the
-// gesture is the evidence.
-function liftMuteForVolumeGesture() {
-  const box = state.currentBox;
-  if (!box || !volMuteEl) return;
-  if (volMuteEl.getAttribute('aria-pressed') !== 'true') return;
-  // Drawn first, which also disarms this for the rest of the drag: a slider
-  // sends an event per pixel and this must fire once, not forty times.
-  renderMuteState(false);
-  state.muteUntil = Date.now() + 1500;
-  setBoxMute(box, false).then((res) => {
-    if (!sameBoxIdentity(state.currentBox, box)) return;
-    renderMuteState(muteAfterPress(res, false));
-  }).catch(() => {});
-}
-
-if (volMuteEl) {
-  volMuteEl.onclick = async () => {
-    const box = state.currentBox;
-    if (!box) return;
-    // Optimistic: the speaker takes a moment to answer, and a button that
-    // looks dead for half a second gets pressed a second time.
-    const want = volMuteEl.getAttribute('aria-pressed') !== 'true';
-    renderMuteState(want);
-    state.muteUntil = Date.now() + 1500;
-    volMuteEl.disabled = true;
-    try {
-      const res = await setBoxMute(box, want);
-      // A speaker switch mid-flight would otherwise paint the old speaker's
-      // answer onto the new one.
-      if (!sameBoxIdentity(state.currentBox, box)) return;
-      // The speaker has the last word. Our guess only filled the gap, and if
-      // it could not be reached the icon must go back rather than lie.
-      renderMuteState(muteAfterPress(res, want));
-    } finally {
-      volMuteEl.disabled = false;
-    }
-  };
-}
-// Drag-busy + grace period so the 2 s periodic refresh in
-// refreshStatus does not yank the thumb out from under the user
-// while they are wischen. musicVolUntil is the timestamp at which
-// auto-refresh is allowed to take over again after a release.
-state.musicVolBusy = false;
-state.musicVolUntil = 0;
-if (musicVolEl) {
-  // Live-update during drag: each input event throttles a
-  // SetBoxVolume call so the user sees the level move on the
-  // speaker WHILE they wipe, not only on release. The throttle
-  // collapses bursts so the box's tiny HTTP server never has more
-  // than one volume PUT in flight at a time.
-  musicVolEl.oninput = () => {
-    if (musicVolValEl) musicVolValEl.textContent = musicVolEl.value;
-    const box = state.currentBox;
-    if (!box) return;
-    liftMuteForVolumeGesture();
-    musicVolBox = box;
-    sendMusicVolume(box, parseInt(musicVolEl.value, 10));
-  };
-  // Keyboard arrows fire only `change`, not `input`, so we still
-  // dispatch on change as a safety net for that path.
-  musicVolEl.onchange = () => {
-    musicVolBox = state.currentBox;
-    if (!musicVolBox) return;
-    liftMuteForVolumeGesture();
-    sendMusicVolume(musicVolBox, parseInt(musicVolEl.value, 10));
-  };
-  // pointerdown/up flag is the most reliable cross-device drag
-  // signal. Keyboard arrows fire only `change`, which is already
-  // wired above, so the busy flag is unnecessary there. Add a
-  // ~1.2 s grace period after release so the network round-trip
-  // to the box (and its own state update) does not race with us.
-  const beginBusy = () => { state.musicVolBusy = true; };
-  const endBusy = () => {
-    state.musicVolBusy = false;
-    state.musicVolUntil = Date.now() + 1200;
-  };
-  musicVolEl.addEventListener('pointerdown', beginBusy);
-  musicVolEl.addEventListener('pointerup', endBusy);
-  musicVolEl.addEventListener('pointercancel', endBusy);
-  musicVolEl.addEventListener('pointerleave', () => {
-    if (state.musicVolBusy) endBusy();
-  });
-
-  // Precise stepping: the +/- buttons and the mouse wheel both nudge the volume
-  // by exactly one, sharing one clamped helper. stepVolume mirrors what an
-  // oninput drag does (move the thumb, update the label, push to the box) and
-  // holds off the periodic auto-refresh for the same grace period so it does not
-  // snap the thumb back before the box has applied the change.
-  const stepVolume = (delta) => {
-    const box = state.currentBox;
-    if (!box) return;
-    const cur = parseInt(musicVolEl.value, 10) || 0;
-    const next = Math.max(0, Math.min(100, cur + delta));
-    if (next === cur) return;
-    liftMuteForVolumeGesture();
-    musicVolEl.value = String(next);
-    if (musicVolValEl) musicVolValEl.textContent = String(next);
-    musicVolBox = box;
-    state.musicVolBusy = false;
-    state.musicVolUntil = Date.now() + 1200;
-    sendMusicVolume(box, next);
-  };
-  const volDown = $('volDown');
-  const volUp = $('volUp');
-  // Focusing the slider on a button press also arms the wheel gesture below, so
-  // a user can click "+" once and then keep scrolling to fine-tune.
-  if (volDown) volDown.onclick = () => { musicVolEl.focus(); stepVolume(-1); };
-  if (volUp) volUp.onclick = () => { musicVolEl.focus(); stepVolume(1); };
-
-  // Mouse wheel over the slider adjusts the volume, but ONLY while the slider is
-  // focused (the user clicked it or used the +/- buttons). Passively scrolling
-  // the page with the cursor merely passing over the slider must never change
-  // the volume: that accidental blast is exactly what we are guarding against.
-  // When not engaged we do not preventDefault, so the page scrolls as usual.
-  // Rate-limited to one step per notch so a fast flick moves one at a time.
-  let volWheelAt = 0;
-  musicVolEl.addEventListener('wheel', (e) => {
-    if (document.activeElement !== musicVolEl) return;
-    e.preventDefault();
-    const now = Date.now();
-    if (now - volWheelAt < 60) return;
-    volWheelAt = now;
-    stepVolume(e.deltaY < 0 ? 1 : -1);
-  }, { passive: false });
-}
-
-// syncMusicTabVolumeFromBox refreshes the music-tab slider so
-// hardware-button volume changes on the box (or any other client
-// changing the volume out from under us) show up here within ~2 s.
-// Called from refreshStatus on every poll. Cheap to call: BoxSettings
-// caches well on the agent side.
-async function syncMusicTabVolumeFromBox() {
-  const box = state.currentBox;
-  if (!box || !musicVolEl) return;
-  if (state.view !== 'box') return;
-  if (state.musicVolBusy) return;
-  if (Date.now() < (state.musicVolUntil || 0)) return;
-  try {
-    // On a stereo pair this reads both halves (readMusicVolume).
-    const r = await readMusicVolume(box);
-    const data = r.data;
-    // Guard against a box switch while the request was in flight: a late
-    // reply from the previous speaker would show ITS volume for the new one,
-    // and the user's first slider touch would then send that stale level.
-    if (!sameBoxIdentity(state.currentBox, box)) return;
-    // Mute first, and on its own guard: it has to follow the speaker's own
-    // remote and buttons, and it must still update on a speaker whose volume
-    // the poll is holding off or whose level has not changed.
-    if (data && Date.now() >= (state.muteUntil || 0)) {
-      renderMuteState(data.volume && data.volume.muted);
-    }
-    // The user may have started dragging during the round trip; re-check the
-    // drag guards so the reply cannot yank the thumb from under them.
-    if (state.musicVolBusy || Date.now() < (state.musicVolUntil || 0)) return;
-    const vol = musicVolumeLevel(r);
-    if (typeof vol !== 'number') return;
-    const current = parseInt(musicVolEl.value, 10);
-    if (current !== vol) {
-      musicVolEl.value = String(vol);
-      if (musicVolValEl) musicVolValEl.textContent = String(vol);
-    }
-  } catch {}
-}
 
 // checkSshBanner queries /api/stick/status to find out whether SSH is
 // open on the current speaker and toggles the global top banner
@@ -2296,26 +1793,6 @@ async function checkSshBanner() {
   const show = sshBannerShow({ reachable, status: data, dismissed: warnDismissed(box, 'ssh') });
   gb.classList.toggle('hidden', !show);
 }
-
-// loadMusicTabVolume fetches the current volume on a tab switch so
-// the slider position is in sync.
-async function loadMusicTabVolume() {
-  const box = state.currentBox;
-  if (!box || !musicVolEl) return;
-  try {
-    const r = await readMusicVolume(box);
-    const data = r.data;
-    // Guard against a box switch while the request was in flight: two quick
-    // speaker clicks race their replies, and the slower (previous) speaker's
-    // volume must not land on the newly selected one — the first slider
-    // touch would send it there (a sudden loud jump).
-    if (!sameBoxIdentity(state.currentBox, box)) return;
-    const vol = musicVolumeLevel(r) || 0;
-    musicVolEl.value = String(vol);
-    if (musicVolValEl) musicVolValEl.textContent = String(vol);
-    if (data) renderMuteState(data.volume && data.volume.muted);
-  } catch {}
-}
 $('searchBtn').onclick = () => doSearch();
 $('topBtn').onclick = () => doTop();
 $('favModeBtn').onclick = () => loadFavorites();
@@ -2355,15 +1832,6 @@ $('searchCountry').onchange = () => {
   renderGenreChips();
   doRefilter();
 };
-
-async function loadLanguagesForCountry() {
-  try {
-    const cc = state.searchCountry || '';
-    // App-side: no box needed; query radio-browser directly.
-    state.languages = await RadioLanguages(cc, cc ? 60 : 40) || [];
-    renderLanguageOptions();
-  } catch {}
-}
 $('searchLang').onchange    = () => {
   state.searchLang = $('searchLang').value;
   updateFilterIndicators();
@@ -3736,312 +3204,6 @@ function selectBox(box) {
   refreshSourceButtons();
 }
 
-// refreshSourceButtons draws one button per input the selected speaker reports,
-// and is run after every selectBox() AND after every discovery refresh so the
-// row tracks model detection that lands later (Bose stock /info enrichment).
-//
-// Two layers. The speaker's own source list is the answer, and until it arrives
-// the row holds the classic AUX plus Bluetooth pair, minus what the model name
-// rules out. The list then replaces them, which is what brings a soundbar's TV,
-// CBL-Sat, BD-DVD and Game sockets in (#385, #491, #577), splits an SA-5's three
-// line inputs (#274), and still catches the ST20 variants that ship without
-// Bluetooth and used to answer a BT /select with 1005 UNKNOWN_SOURCE_ERROR
-// (#102). The row is rebuilt on every box switch, so a button hidden after a
-// 1005 rejection on one speaker comes back on a speaker that has the input
-// (#417: it stayed hidden for every box until an app restart).
-//
-// sourceListCache remembers each speaker's list. The startup pair is drawn
-// first on every refresh, and for a speaker whose list had already dropped a
-// button that made the button blink in and out every minute (Jens,
-// 2026-09-06), so a list already read wins from the first frame.
-const sourceListCache = new Map();
-async function refreshSourceButtons() {
-  const row = $('sourceInputs');
-  if (!row || !state.currentBox) return;
-  const box = state.currentBox;
-  renderSourceButtons(inputButtons(sourceListCache.get(box.host), box.model || ''), box.host);
-  try {
-    const settings = await BoxSettings(box.host, box.port);
-    // Guard against a box switch while the request was in flight.
-    if (state.currentBox !== box) return;
-    const sources = (settings && settings.sources) || [];
-    // Only trust a non-empty list. An empty one means the speaker did not
-    // answer /sources, and the startup pair is the better guess than no inputs
-    // at all on a box that has them.
-    if (Array.isArray(sources) && sources.length) {
-      sourceListCache.set(box.host, sources);
-      renderSourceButtons(inputButtons(sources, box.model || ''), box.host);
-    }
-  } catch {
-    // Keep what is on screen on any error.
-  }
-}
-
-// The Bluetooth glyph, so that input keeps the icon it has always had in this
-// row while every other input is drawn from the name the speaker gives it.
-const BLUETOOTH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg>';
-
-let sourceRowDrawn = '';
-
-function renderSourceButtons(buttons, host) {
-  const row = $('sourceInputs');
-  if (!row) return;
-  const key = sourceRowKey(host, buttons);
-  if (key === sourceRowDrawn) {
-    highlightActiveSource();
-    return;
-  }
-  sourceRowDrawn = key;
-  row.innerHTML = buttons.map((b) => {
-    const title = escapeAttr(t('controls.inputTitle', { input: b.label }));
-    const data = `data-source="${escapeAttr(b.source)}" data-source-account="${escapeAttr(b.sourceAccount)}" data-source-label="${escapeAttr(b.label)}"`;
-    if (b.bluetooth) {
-      return `<button class="btn btn-source btn-source-icon" ${data} aria-label="${escapeAttr(b.label)}" title="${title}">${BLUETOOTH_ICON}</button>`;
-    }
-    return `<button class="btn btn-source" ${data} title="${title}">${escapeHtml(b.label)}</button>`;
-  }).join('');
-  highlightActiveSource();
-}
-
-// highlightActiveSource marks the input the speaker is playing from. Called
-// after every status poll and again after a rebuild of the row, because the
-// buttons are replaced now and would otherwise come back unlit while the
-// speaker is still on that input.
-function highlightActiveSource() {
-  document.querySelectorAll('.btn-source').forEach((b) => {
-    const button = { source: b.dataset.source, sourceAccount: b.dataset.sourceAccount };
-    b.classList.toggle('active', isActiveInput(button, state.nowSource, state.nowSourceAccount));
-  });
-}
-
-// boxFetch lives in api.js next to boxURL, imported above.
-
-let regionLoaded = false;
-async function loadStickRegion() {
-  if (regionLoaded || !state.currentBox) return;
-  try {
-    const r = await boxFetch(state.currentBox, '/api/region');
-    if (!r.ok) return;
-    const data = await r.json();
-    if (data && data.country) {
-      // Deliberately do NOT seed the radio-search country filter from the
-      // stick region. STR is a worldwide app; the radio search defaults to
-      // all countries so a German-provisioned box does not silently hide
-      // every non-German station. The country filter stays at the user's
-      // own choice (persisted, issue #86) or "all countries" until they
-      // pick one. The region still drives only the language default below.
-      //
-      // Default the language filter to the APP language, not the stick
-      // region's language and not a last-used value. Only when the app
-      // locale has no obvious radio-browser language do we fall back to the
-      // region's language.
-      if (!state.searchLang) {
-        state.searchLang = LOCALE_TO_RADIO_LANG[getLocale()] || data.language || '';
-      }
-      updateFilterIndicators();
-      // Re-render the language dropdown so the locale-based default is
-      // injected and selected even when this resolves after loadTaxonomy
-      // (the two run concurrently on box selection).
-      renderLanguageOptions();
-      regionLoaded = true;
-    }
-  } catch {}
-}
-
-// loadTaxonomy fetches the genre tag list and the language list from
-// the stick once, then renders the genre chips and the language
-// dropdown.
-async function loadTaxonomy() {
-  // App-side: query radio-browser directly, no box needed.
-  if (state.tags.length === 0) {
-    try {
-      state.tags = await RadioTags(24) || [];
-      renderGenreChips();
-    } catch {}
-  }
-  if (state.languages.length === 0) {
-    try {
-      state.languages = await RadioLanguages('', 40) || [];
-      renderLanguageOptions();
-    } catch {}
-  }
-}
-
-// Tracks whether the user has clicked "Mehr Genres" to expand the
-// long tail of auto-fetched tags. Resets on every fresh page load.
-state.showMoreGenres = false;
-
-function renderGenreChips() {
-  const wrap = $('genreChips');
-  if (!wrap) return;
-
-  // 1. Aggregate the live counts from radio-browser so each chip can
-  //    show "N Sender" in its tooltip. State.tags may be empty on
-  //    first paint — that's fine, core chips still render with 0.
-  const liveCounts = {};
-  for (const t of state.tags) {
-    const canon = canonGenre(t.name);
-    if (!canon) continue;
-    liveCounts[canon] = (liveCounts[canon] || 0) + (t.stationcount || 0);
-  }
-
-  // 2. Country-boost pills (max 2). state.searchCountry is the user's
-  //    selected country in the search filter — it falls back to the
-  //    stick's region.txt if the user hasn't manually picked one.
-  const cc = (state.searchCountry || '').toUpperCase();
-  const boost = GENRE_BY_COUNTRY[cc] || [];
-
-  const chipHtml = (canon, label, count, extraClass) => {
-    const active = state.searchTag === canon ? ' active' : '';
-    const cls = ['chip', active.trim(), extraClass || ''].filter(Boolean).join(' ');
-    const title = count > 0 ? t('search.nStations', { n: formatNumber(count) }) : '';
-    return `<button class="${cls}" data-tag="${escapeAttr(canon)}" title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
-  };
-  const labelFor = (canon) => translateGenre(canon) || canon.replace(/\b\w/g, c => c.toUpperCase());
-
-  const seen = new Set();
-  const parts = [];
-
-  parts.push('<button class="chip' + (!state.searchTag ? ' active' : '') + '" data-tag="">' + escapeHtml(t('search.allGenres')) + '</button>');
-
-  for (const canon of boost) {
-    if (!canon || seen.has(canon)) continue;
-    seen.add(canon);
-    parts.push(chipHtml(canon, labelFor(canon), liveCounts[canon] || 0, 'chip--boost'));
-  }
-  for (const canon of GENRE_CORE) {
-    if (seen.has(canon)) continue;
-    seen.add(canon);
-    parts.push(chipHtml(canon, labelFor(canon), liveCounts[canon] || 0));
-  }
-
-  // 3. Long tail: tags from state.tags that the user might recognise
-  //    but we did not promote into the core set. Shown only when the
-  //    user expands via "Mehr Genres".
-  const tail = Object.keys(liveCounts)
-    .filter(canon => !seen.has(canon) && liveCounts[canon] > 0)
-    .map(canon => ({ canon, count: liveCounts[canon] }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 24);
-
-  if (state.showMoreGenres) {
-    for (const t of tail) {
-      seen.add(t.canon);
-      parts.push(chipHtml(t.canon, labelFor(t.canon), t.count));
-    }
-  }
-
-  // 4. Toggle button at the end. Hidden when there is no tail to
-  //    reveal, or when the currently selected tag is in the tail (so
-  //    the user does not lose their selection by collapsing).
-  const showSelectedInTail = state.searchTag && !seen.has(state.searchTag);
-  if (tail.length > 0 || state.showMoreGenres) {
-    const label = state.showMoreGenres ? t('search.fewerGenres') : t('search.moreGenres', { n: tail.length });
-    parts.push(`<button class="chip chip--more" id="genreMoreToggle">${escapeHtml(label)}</button>`);
-  }
-  if (showSelectedInTail) {
-    // Selection points to a tag the tail dropdown is hiding — force
-    // expand so the user sees their own filter.
-    state.showMoreGenres = true;
-  }
-
-  wrap.innerHTML = parts.join('');
-  wrap.querySelectorAll('.chip').forEach(btn => {
-    btn.onclick = () => {
-      if (btn.id === 'genreMoreToggle') {
-        state.showMoreGenres = !state.showMoreGenres;
-        renderGenreChips();
-        return;
-      }
-      state.searchTag = btn.dataset.tag || '';
-      renderGenreChips();
-      doRefilter();
-    };
-  });
-}
-
-// localizeLanguageName looks up the display name for a language emitted
-// by radio-browser.info. The API hands us lowercased English names
-// ("german", "english", ...). The i18n bundle holds the per-locale
-// translation under `lang.<name>`. Unknown languages fall back to a
-// capitalised version of the raw API value.
-// radio-browser hands us lowercase English language names; map the
-// common ones to ISO 639 codes so Intl.DisplayNames can localize them
-// into the active app language (works for every locale, no per-language
-// tables).
-const LANG_NAME_TO_CODE = {
-  german: 'de', english: 'en', french: 'fr', spanish: 'es', italian: 'it',
-  dutch: 'nl', portuguese: 'pt', russian: 'ru', polish: 'pl', turkish: 'tr',
-  arabic: 'ar', japanese: 'ja', chinese: 'zh', mandarin: 'zh', cantonese: 'yue',
-  swedish: 'sv', norwegian: 'nb', danish: 'da', finnish: 'fi', czech: 'cs',
-  hungarian: 'hu', romanian: 'ro', greek: 'el', ukrainian: 'uk', bulgarian: 'bg',
-  croatian: 'hr', serbian: 'sr', slovak: 'sk', slovenian: 'sl', estonian: 'et',
-  latvian: 'lv', lithuanian: 'lt', irish: 'ga', welsh: 'cy', catalan: 'ca',
-  galician: 'gl', basque: 'eu', icelandic: 'is', hindi: 'hi', thai: 'th',
-  vietnamese: 'vi', korean: 'ko', indonesian: 'id', malay: 'ms', persian: 'fa',
-  hebrew: 'he', bengali: 'bn', tamil: 'ta', urdu: 'ur', maltese: 'mt',
-};
-let _langDN = null;
-let _langDNLocale = null;
-// localizeLanguageName localizes a radio-browser language name to the
-// active app language via Intl.DisplayNames (per-locale cached), falling
-// back to the i18n lang table, then a capitalized form of the raw name.
-function localizeLanguageName(name) {
-  if (!name) return '';
-  // Localize to the active app language via Intl.DisplayNames, exactly like
-  // regionName does for countries (the Wails webview is Chromium and honours
-  // the locale argument, as the localized country dropdown proves). So a
-  // French UI shows French language names, Dutch shows Dutch, and so on,
-  // for every app language without hand-translated tables. Cached per locale.
-  const code = LANG_NAME_TO_CODE[name.toLowerCase().trim()];
-  if (code) {
-    try {
-      const loc = getLocale();
-      if (_langDNLocale !== loc) {
-        _langDN = new Intl.DisplayNames([loc], { type: 'language' });
-        _langDNLocale = loc;
-      }
-      const n = _langDN.of(code);
-      if (n && n.toLowerCase() !== code) return n;
-    } catch (_) {
-      // Intl unavailable / bad code: fall through to the table.
-    }
-  }
-  // Names not in the code map (e.g. "american english"), or if Intl failed:
-  // the i18n lang table (selected language for de/en, else English), then the
-  // raw radio-browser name title-cased.
-  const translated = tLookup('lang', name.toLowerCase().trim());
-  if (translated) return translated;
-  return name.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function renderLanguageOptions() {
-  const sel = $('searchLang');
-  if (!sel) return;
-  const sorted = (state.languages || [])
-    .filter((l) => l.name)
-    .map((l) => ({ name: l.name, stationcount: l.stationcount, label: localizeLanguageName(l.name) }));
-  // Ensure the language matching the app UI locale is always selectable,
-  // even when radio-browser's top-N-by-count list omits it (smaller
-  // languages like Lithuanian or Latvian fall outside the limit).
-  // Without this the locale-based pre-selection (LOCALE_TO_RADIO_LANG)
-  // cannot apply, because the matching <option> would not exist.
-  const want = state.searchLang || LOCALE_TO_RADIO_LANG[getLocale()] || '';
-  if (want && !sorted.some((l) => l.name.toLowerCase() === want.toLowerCase())) {
-    sorted.push({ name: want, stationcount: null, label: localizeLanguageName(want) });
-  }
-  // Sort alphabetically by the localized display name, consistent with
-  // the country dropdown. The API returns languages by station count.
-  sorted.sort((a, b) => a.label.localeCompare(b.label));
-  const opts = [`<option value="">${escapeHtml(t('search.allLanguages'))}</option>`];
-  for (const l of sorted) {
-    const count = (l.stationcount == null) ? '' : ` (${l.stationcount})`;
-    opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(l.label)}${count}</option>`);
-  }
-  sel.innerHTML = opts.join('');
-  sel.value = state.searchLang;
-}
-
 // updateSettingsTabBadge shows a small blue dot on the speaker
 // settings tab whenever at least one discovered speaker reports a
 // version or build stamp different from the desktop app's own. The
@@ -4161,10 +3323,7 @@ onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxe
 // When the pair shows up after the slider was filled (the zone poll lands after
 // the speaker's own settings), read both halves straight away rather than at
 // the next status poll, so the slider reads the pair before it is touched.
-onZoneLive(() => {
-  const target = renderVolumeScope();
-  if (target && !pairAnchored(pairVol, target.key)) syncMusicTabVolumeFromBox();
-});
+onZoneLive(syncVolumeScopeOnZoneLive);
 
 // A speaker stuck as half of a stereo pair that no longer exists (see
 // stalestereo.js). Recomputed after every zone round from data the poll already
