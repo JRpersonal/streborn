@@ -926,11 +926,18 @@ var T = pickDict();
 // caller, never as markup.
 // boxLang is the speaker's own display language as a two-letter code, or ''
 // until it has been read. The firmware reports an integer; this is the table
-// the desktop app resolved in full.
+// the desktop app resolved in full (BOSE_LANGS in views/settings.js), and a
+// vitest there holds the two copies together. It carried only ids 1 to 12 for
+// a while, so a speaker set to Polish (19) or Turkish (24) got the phone's
+// language instead of its own although both dictionaries were on board. Ids
+// without a dictionary here still resolve, so pickDict falls through to the
+// phone's languages exactly as it does for a speaker that never answered.
 var boxLang = '';
 var BOSE_LANG_CODES = {
   1: 'da', 2: 'de', 3: 'en', 4: 'es', 5: 'fr', 6: 'it',
   7: 'nl', 8: 'sv', 9: 'ja', 10: 'zh', 11: 'zh', 12: 'ko',
+  13: 'th', 15: 'cs', 16: 'fi', 17: 'el', 18: 'no', 19: 'pl',
+  20: 'pt', 21: 'ro', 22: 'ru', 23: 'sl', 24: 'tr', 25: 'hu',
 };
 
 // loadBoxLanguage asks the speaker once. Best effort: an older agent has no
