@@ -346,8 +346,9 @@ func (s *Server) registeredServerByUDN(udn string) (mediaservers.Server, bool) {
 	return mediaservers.Server{}, false
 }
 
-// healQueuePresetsForServer puts every folder key of reg on the address the
-// sighting names, the store entry included, and persists what changed.
+// healQueuePresetsForServer puts every folder key and every single-track
+// library key of reg on the address the sighting names, the store entry
+// included, and persists what changed.
 //
 // Two registered servers sharing reg's name is not certain enough: a key only
 // records the name, so nothing moves then. A key whose tracks sit on the live
@@ -375,9 +376,13 @@ func (s *Server) healQueuePresetsForServer(ctx context.Context, reg mediaservers
 			return
 		}
 	}
+	regs := s.mediaServers.List()
+	// The store's address BEFORE this sighting: a single-track key without a
+	// usable name is matched against it below (librarykeyheal.go).
+	regHost := urlHost(reg.Location)
 	// The store learns the address too, so the agent's own browse and the next
 	// key press start from where the server is instead of where it was.
-	if regHost := urlHost(reg.Location); regHost != "" && regHost != liveHost {
+	if regHost != "" && regHost != liveHost {
 		if loc, okRe := rewriteURLHost(reg.Location, regHost, liveHost); okRe {
 			if err := s.mediaServers.SetLocation(reg.ID, loc); err != nil {
 				s.logger.Info("queue preset: could not store the server's new address", "err", err)
@@ -393,13 +398,27 @@ func (s *Server) healQueuePresetsForServer(ctx context.Context, reg mediaservers
 	}
 	keep := s.artHostKeeper(reg.ID)
 	for _, p := range s.presets.All() {
-		if p.Type != "queue" || len(p.Items) == 0 {
+		// A folder key and a single library track on a key (#1366, #919) are
+		// the same case here: both carry the server's address, both follow it.
+		// The folder key is reg's by name; the single-track key by name, else
+		// by the host it was saved on.
+		var first, what string
+		var rewrite func(p *presets.Preset, oldHost, oldPort, newHost, newPort string) int
+		switch {
+		case p.Type == "queue" && len(p.Items) > 0:
+			if strings.TrimSpace(strings.ToLower(p.Source)) != name {
+				continue
+			}
+			first, what, rewrite = p.Items[0].URL, "queue preset", rewriteQueuePresetAddr
+		case isLibraryTrackKey(p):
+			if !libraryTrackKeyBelongsTo(regs, reg, regHost, liveHost, p) {
+				continue
+			}
+			first, what, rewrite = p.StreamURL, "library key", rewriteLibraryKeyAddr
+		default:
 			continue
 		}
-		if strings.TrimSpace(strings.ToLower(p.Source)) != name {
-			continue
-		}
-		oldHost, oldPort := urlHost(p.Items[0].URL), urlPort(p.Items[0].URL)
+		oldHost, oldPort := urlHost(first), urlPort(first)
 		if oldHost == "" {
 			continue
 		}
@@ -410,9 +429,9 @@ func (s *Server) healQueuePresetsForServer(ctx context.Context, reg mediaservers
 		moved := 0
 		switch {
 		case oldHost != liveHost:
-			moved = rewriteQueuePresetAddr(&p, oldHost, oldPort, liveHost, newPort)
-		case newPort != oldPort && !s.queueTrackHostAnswers(ctx, p.Items[0].URL):
-			moved = rewriteQueuePresetAddr(&p, oldHost, oldPort, liveHost, newPort)
+			moved = rewrite(&p, oldHost, oldPort, liveHost, newPort)
+		case newPort != oldPort && !s.queueTrackHostAnswers(ctx, first):
+			moved = rewrite(&p, oldHost, oldPort, liveHost, newPort)
 		}
 		onLive := moved > 0 || oldHost == liveHost
 		artMoved := onLive && realignQueuePresetArt(&p, liveHost, keep)
@@ -420,15 +439,15 @@ func (s *Server) healQueuePresetsForServer(ctx context.Context, reg mediaservers
 			continue
 		}
 		if moved > 0 {
-			s.logger.Info("queue preset: the music server moved, pointing the key at its new address",
+			s.logger.Info(what+": the music server moved, pointing the key at its new address",
 				"slot", p.Slot, "server", p.Source, "was", net.JoinHostPort(oldHost, oldPort),
-				"now", net.JoinHostPort(liveHost, newPort), "tracks", len(p.Items), "learned", seen.learned)
+				"now", net.JoinHostPort(liveHost, newPort), "tracks", max(len(p.Items), 1), "learned", seen.learned)
 		} else {
-			s.logger.Info("queue preset: the key's cover still named the music server's old address, moved it",
+			s.logger.Info(what+": the key's cover still named the music server's old address, moved it",
 				"slot", p.Slot, "server", p.Source, "now", liveHost, "learned", seen.learned)
 		}
 		if err := s.presets.SetSlot(p); err != nil {
-			s.logger.Info("queue preset: could not store the corrected address", "slot", p.Slot, "err", err)
+			s.logger.Info(what+": could not store the corrected address", "slot", p.Slot, "err", err)
 		}
 	}
 }

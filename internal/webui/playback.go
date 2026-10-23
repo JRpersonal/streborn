@@ -569,6 +569,11 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// A custom URL preset joins this path only when a probe shows its URL is a
 	// finite, seekable file (#830, customfile.go); a station ending in .mp3
 	// stays on the proxy.
+	// The file carries the music server's address, so a server that moved
+	// takes the key with it, the way it took the folder keys (#1366, #919).
+	// Put the key on the address the server answers at now before the file is
+	// handed over; a radio station is left alone.
+	s.healLibraryKeyIfMoved(playCtx, slot, &p)
 	if mime := s.directFileMime(playCtx, p); mime != "" {
 		s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime, "custom", p.Source == "")
 		if err := s.playLibraryFilePresetLocked(playCtx, p, mime, recallStart); err != nil {
