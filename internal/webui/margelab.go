@@ -16,7 +16,6 @@ package webui
 // on the next boot; the target must be a private LAN address.
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
@@ -42,7 +41,11 @@ func (s *Server) handleMargeLab(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Target string `json:"target"`
 		}
-		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in)
+		// A bare POST clears the relay like DELETE does; only a body that is
+		// there and broken is refused.
+		if !decodeOptionalJSONRequest(w, r, 4096, &in) {
+			return
+		}
 		target = in.Target
 	}
 	if err := s.margeForward(target); err != nil {

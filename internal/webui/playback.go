@@ -92,8 +92,11 @@ func (s *Server) handleWebhooksTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var a webhooks.Action
-	if r.Body != nil {
-		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&a)
+	// The body is optional (no body = test the saved thumb action), but a body
+	// that is there and broken is refused instead of quietly firing the wrong
+	// action.
+	if !decodeOptionalJSONRequest(w, r, 1<<16, &a) {
+		return
 	}
 	// Fall back to the saved thumb action only when nothing testable was posted.
 	// Configured() (not a bare URL check) so a udp/wol action, which has no URL,

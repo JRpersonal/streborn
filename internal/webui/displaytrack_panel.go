@@ -30,7 +30,6 @@ package webui
 
 import (
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -420,7 +419,9 @@ func (s *Server) handleDisplayClock(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Enabled bool `json:"enabled"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if !decodeJSONRequest(w, r, 4096, &body) {
+			return
+		}
 		val := "0"
 		if body.Enabled {
 			val = "1"

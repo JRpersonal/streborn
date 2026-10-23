@@ -47,6 +47,43 @@ func TestWriteCapableDebugEndpointsAreOffByDefault(t *testing.T) {
 	}
 }
 
+// The developer endpoints take an optional body: a bare POST means the
+// defaults (clear the relay, probe slot 6). A body that is there and broken is
+// refused before anything happens.
+func TestDevToolsEndpointsTakeAnEmptyBodyButNotABrokenOne(t *testing.T) {
+	t.Setenv("STR_DEV_TOOLS", "1")
+	s := New(":0", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var targets []string
+	s.margeForward = func(target string) error {
+		targets = append(targets, target)
+		return nil
+	}
+	post := func(path string, fn func(http.ResponseWriter, *http.Request), body string) int {
+		w := httptest.NewRecorder()
+		fn(w, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+		return w.Code
+	}
+
+	if code := post("/api/debug/marge-lab", s.handleMargeLab, ""); code != http.StatusOK {
+		t.Fatalf("bare POST to marge-lab: %d, want 200 (clears the relay)", code)
+	}
+	if code := post("/api/debug/marge-lab", s.handleMargeLab, `{"target":`); code != http.StatusBadRequest {
+		t.Fatalf("broken marge-lab body: %d, want 400", code)
+	}
+	if len(targets) != 1 || targets[0] != "" {
+		t.Fatalf("forward calls = %q, want one empty clear from the bare POST only", targets)
+	}
+
+	// No presets store in this server: a bare body gets as far as that check
+	// (503), a broken one is refused before it (400).
+	if code := post("/api/debug/native-preset-probe", s.handleNativeProbe, ""); code != http.StatusServiceUnavailable {
+		t.Fatalf("bare POST to native-preset-probe: %d, want 503", code)
+	}
+	if code := post("/api/debug/native-preset-probe", s.handleNativeProbe, `{"slot":`); code != http.StatusBadRequest {
+		t.Fatalf("broken native-preset-probe body: %d, want 400", code)
+	}
+}
+
 func TestDevToolsOptIn(t *testing.T) {
 	t.Setenv("STR_DEV_TOOLS", "1")
 	if !devToolsEnabled() {
