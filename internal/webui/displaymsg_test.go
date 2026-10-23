@@ -67,9 +67,7 @@ func newDisplayMsgServer(t *testing.T) (*Server, *fakeRenderer, *func()) {
 	s.displayMsg.settle = time.Nanosecond
 	s.displayMsg.hasDisplayFn = func() (bool, bool) { return true, true }
 	s.displayMsg.langFn = func() int { return 3 }
-	s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) {
-		return boxNowPlaying{Source: "INVALID_SOURCE"}, true
-	}
+	s.boxNowReadFn = scriptNowPlaying("INVALID_SOURCE", "", "")
 	s.displayMsg.after = func(_ time.Duration, f func()) { pendingStop = f }
 	return s, rec, &pendingStop
 }
@@ -111,15 +109,13 @@ func TestDisplayMessageGuards(t *testing.T) {
 			s.SetBoxNameFn(func() (string, string) { return "Kitchen", "Wave SoundTouch music system IV" })
 		}, "speaker has no display"},
 		{"standby", func(s *Server) {
-			s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) { return boxNowPlaying{Source: "STANDBY"}, true }
+			s.boxNowReadFn = scriptNowPlaying("STANDBY", "", "")
 		}, "standby"},
 		{"playing", func(s *Server) {
-			s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) {
-				return boxNowPlaying{Source: "BLUETOOTH", PlayStatus: "PLAY_STATE"}, true
-			}
+			s.boxNowReadFn = scriptNowPlaying("BLUETOOTH", "PLAY_STATE", "")
 		}, "something is playing"},
 		{"state unknown", func(s *Server) {
-			s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) { return boxNowPlaying{}, false }
+			s.boxNowReadFn = scriptNowPlayingUnreadable()
 		}, "speaker state unknown"},
 	}
 	for _, tc := range cases {
@@ -146,17 +142,13 @@ func TestDisplayMessageRepeatLimitAndStop(t *testing.T) {
 		t.Fatalf("overlap: %q", got)
 	}
 	// The stop runs only while the speaker still plays the message.
-	s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) {
-		np := boxNowPlaying{Source: "UPNP", PlayStatus: "PLAY_STATE"}
-		np.Item.Location = "http://127.0.0.1:8888" + displayMsgAudioPath + "?n=1"
-		return np, true
-	}
+	s.boxNowReadFn = scriptNowPlaying("UPNP", "PLAY_STATE", "http://127.0.0.1:8888"+displayMsgAudioPath+"?n=1")
 	(*stop)()
 	got := rec.seen()
 	if len(got) != 4 || got[2] != "Stop" || got[3] != "SetAVTransportURI" {
 		t.Fatalf("after the hold the speaker got %v, want Stop then an emptied transport", got)
 	}
-	s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) { return boxNowPlaying{Source: "INVALID_SOURCE"}, true }
+	s.boxNowReadFn = scriptNowPlaying("INVALID_SOURCE", "", "")
 	if got := s.showKeyMessage(DisplayMsgStationDown, false); got != "shown recently" {
 		t.Fatalf("repeat: %q", got)
 	}
@@ -172,17 +164,13 @@ func TestDisplayMessageStopLeavesANewPlayAlone(t *testing.T) {
 		t.Fatalf("outcome %q", got)
 	}
 	// The user pressed another key: the speaker plays something else now.
-	s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) {
-		np := boxNowPlaying{Source: "UPNP", PlayStatus: "PLAY_STATE"}
-		np.Item.Location = "http://127.0.0.1:8888/stream/3"
-		return np, true
-	}
+	s.boxNowReadFn = scriptNowPlaying("UPNP", "PLAY_STATE", "http://127.0.0.1:8888/stream/3")
 	(*stop)()
 	if got := rec.seen(); len(got) != 2 {
 		t.Fatalf("the stop cut off the user's new play: %v", got)
 	}
 	// The slot is free again.
-	s.displayMsg.nowPlayingFn = func() (boxNowPlaying, bool) { return boxNowPlaying{Source: "INVALID_SOURCE"}, true }
+	s.boxNowReadFn = scriptNowPlaying("INVALID_SOURCE", "", "")
 	if got := s.showKeyMessage(DisplayMsgSpotifyLogin, false); got != "shown" {
 		t.Fatalf("after the stop: %q", got)
 	}

@@ -31,7 +31,6 @@ package webui
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,19 +106,9 @@ type displayMsgState struct {
 	// Test seams. Zero values mean the real behaviour.
 	path         string
 	settle, hold time.Duration
-	nowPlayingFn func() (boxNowPlaying, bool)
 	langFn       func() int
 	hasDisplayFn func() (has, ok bool)
 	after        func(time.Duration, func())
-}
-
-// boxNowPlaying is the slice of /now_playing the gate needs.
-type boxNowPlaying struct {
-	Source     string `xml:"source,attr"`
-	PlayStatus string `xml:"playStatus"`
-	Item       struct {
-		Location string `xml:"location,attr"`
-	} `xml:"ContentItem"`
 }
 
 // displayMsgTexts holds the messages per Bose sysLanguage (2 German, 3
@@ -186,9 +175,9 @@ func modelHasDisplay(model string) (has, known bool) {
 
 // displayMsgBlockedBy says why the speaker's current state rules a message
 // out, or "" when it is free. Fails closed on an unreadable state.
-func displayMsgBlockedBy(np boxNowPlaying, ok bool) string {
+func displayMsgBlockedBy(np *boxapi.NowPlaying, ok bool) string {
 	switch {
-	case !ok:
+	case !ok || np == nil:
 		return "speaker state unknown"
 	case strings.EqualFold(np.Source, "STANDBY"):
 		return "standby"
@@ -252,23 +241,21 @@ func (s *Server) speakerHasDisplay() bool {
 	return false
 }
 
-func (s *Server) displayMsgNowPlaying() (boxNowPlaying, bool) {
-	if s.displayMsg.nowPlayingFn != nil {
-		return s.displayMsg.nowPlayingFn()
+// displayMsgNowPlaying reads the speaker state for the gate. The pre-show
+// gate asks a coarse question (asleep? something playing?) and can take an
+// answer up to statusCacheTTL old, so it shares the /api/status cache; the
+// stop check after the hold acts on the speaker and reads fresh. ok is false
+// for an unreadable speaker and for a body that was not XML at all.
+func (s *Server) displayMsgNowPlaying(fresh bool) (*boxapi.NowPlaying, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	read := s.readBoxNowCached
+	if fresh {
+		read = s.readBoxNow
 	}
-	var np boxNowPlaying
-	if s.boxHost == "" {
-		return np, false
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
-	if err != nil {
-		return np, false
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
-	if err != nil || resp.StatusCode != http.StatusOK || xml.Unmarshal(b, &np) != nil {
-		return np, false
+	np, err := read(ctx)
+	if err != nil || !np.Parsed {
+		return nil, false
 	}
 	return np, true
 }
@@ -352,7 +339,7 @@ func (s *Server) showKeyMessage(kind DisplayMsgKind, preview bool) string {
 	if s.boxInZone() {
 		return s.noteDisplayMsgAttempt(kind, "speaker is in a group")
 	}
-	np, ok := s.displayMsgNowPlaying()
+	np, ok := s.displayMsgNowPlaying(false)
 	if why := displayMsgBlockedBy(np, ok); why != "" {
 		return s.noteDisplayMsgAttempt(kind, why)
 	}
@@ -411,9 +398,13 @@ func (s *Server) endDisplayMessage(token, gen uint64) {
 		s.logger.Info("display message: a new play took over, leaving it alone")
 		return
 	}
-	np, ok := s.displayMsgNowPlaying()
-	if !ok || !strings.Contains(np.Item.Location, displayMsgAudioPath) {
-		s.logger.Info("display message: the speaker moved on by itself, leaving it alone", "source", np.Source)
+	np, ok := s.displayMsgNowPlaying(true)
+	if !ok || !strings.Contains(np.Location(), displayMsgAudioPath) {
+		source := ""
+		if np != nil {
+			source = np.Source
+		}
+		s.logger.Info("display message: the speaker moved on by itself, leaving it alone", "source", source)
 		return
 	}
 	s.boxCmdMu.Lock()
