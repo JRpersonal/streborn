@@ -172,6 +172,30 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 			out.Build = b.Build
 		}
 	}
+	// The agent hashes follow the same rule as the version they belong to:
+	// only the live probe reports them (an announcement never does), so with
+	// the announcement as the base they were silently dropped here, and the
+	// cache merge then refilled them from the PRE-update record. The list
+	// said the speaker still ran the old agent right after a successful
+	// update, and the update badge keyed on exactly that hash.
+	switch {
+	case b.PortVerified && !a.PortVerified:
+		if b.AgentBinarySha256 != "" {
+			out.AgentBinarySha256 = b.AgentBinarySha256
+		}
+		if b.AgentRunningSha256 != "" {
+			out.AgentRunningSha256 = b.AgentRunningSha256
+		}
+	case a.PortVerified && !b.PortVerified:
+		// keep a's hashes
+	default:
+		if out.AgentBinarySha256 == "" {
+			out.AgentBinarySha256 = b.AgentBinarySha256
+		}
+		if out.AgentRunningSha256 == "" {
+			out.AgentRunningSha256 = b.AgentRunningSha256
+		}
+	}
 
 	// Port: prefer a verified one.
 	if b.PortVerified && !a.PortVerified && b.Port != 0 {
@@ -232,12 +256,25 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.Storm1036SinceSec = b.Storm1036SinceSec
 		out.RecallRefusal = b.RecallRefusal
 		out.RecallRefusalSinceSec = b.RecallRefusalSinceSec
+		// The key-refusal readings are agent-only like the warnings above and
+		// were missing from this list, so a refused key press went unexplained
+		// whenever the announcement came first.
+		out.GroupKeyError = b.GroupKeyError
+		out.HoldRefusedSource = b.HoldRefusedSource
+		out.HoldRefusedSlot = b.HoldRefusedSlot
 	default:
 		if out.ConflictingMod == "" {
 			out.ConflictingMod = b.ConflictingMod
 		}
 		if out.ForeignCloudURL == "" {
 			out.ForeignCloudURL = b.ForeignCloudURL
+		}
+		if out.GroupKeyError == "" {
+			out.GroupKeyError = b.GroupKeyError
+		}
+		if out.HoldRefusedSource == "" {
+			out.HoldRefusedSource = b.HoldRefusedSource
+			out.HoldRefusedSlot = b.HoldRefusedSlot
 		}
 		if !out.Storm1036 {
 			out.Storm1036 = b.Storm1036
