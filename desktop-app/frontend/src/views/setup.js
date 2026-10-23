@@ -31,6 +31,7 @@ import {
   formatRemaining,
   boxModelSupport,
   isSoundTouch300,
+  neverReadsStick,
 } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -1946,6 +1947,10 @@ const INSTALL_HELP_STEPS = {
   // NAND cache), so the agent never came up. A flaky/loose stick; the remedy is
   // a fresh stick firmly inserted, or the SSH repair that bypasses the stick.
   'stick-copy-failed': ['stickCopyFailed', 'stickInserted', 'differentStick', 'usbPicky', 'logs'],
+  // The speaker's Bose firmware is far too old for the install to open it, so
+  // the install stopped before touching it. The firmware guide renders above
+  // this list; the one step is "update first, retrying only restarts it".
+  'firmware-too-old': ['firmwareFirst', 'logs'],
 };
 
 // INSTALL_HELP_STEPS_NET is the OTA/network-install counterpart of the map
@@ -1967,6 +1972,7 @@ const INSTALL_HELP_STEPS_NET = {
   'install-window-closed': ['netRetry'],
   'control-unresponsive': ['netRetry', 'netLogs'],
   'stick-copy-failed': ['netRetry', 'netLogs'],
+  'firmware-too-old': ['firmwareFirst', 'netLogs'],
 };
 const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'];
 
@@ -2498,7 +2504,11 @@ function verifyInstalledState(box, onState) {
     // If the network path genuinely cannot proceed (no install window, box not
     // reachable, controls wedged), reveal the USB-stick fallback (relocated into
     // <details id="setupStickDetails">) so the user has an immediate next step.
-    if (result && ['install-window-closed', 'not-reachable', 'control-unresponsive'].indexOf(result.code) >= 0) {
+    // Not on a model that never reads a stick at boot: the section would offer
+    // a route that speaker cannot take (a Wave owner wrote a stick for nothing,
+    // 2026-10-22).
+    if (result && ['install-window-closed', 'not-reachable', 'control-unresponsive'].indexOf(result.code) >= 0
+        && !neverReadsStick(foundBox, result)) {
       const stickDetails = $('setupStickDetails');
       if (stickDetails) stickDetails.open = true;
     }

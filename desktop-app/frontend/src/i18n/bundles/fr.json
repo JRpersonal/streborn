@@ -1264,6 +1264,7 @@
   "setup.help.netOnNetwork": "Vérifiez que l'enceinte est allumée et apparaît dans la liste des enceintes. Si elle a disparu, attendez qu'elle revienne avant de réessayer.",
   "setup.help.netRetry": "Laissez à l'enceinte une minute pour finir de redémarrer, puis appuyez à nouveau sur Installer.",
   "setup.help.netLogs": "Si cela échoue toujours, utilisez Enregistrer les journaux en bas de la fenêtre et joignez le fichier à votre rapport.",
+  "setup.help.firmwareFirst": "Mettez d'abord à jour le firmware de l'enceinte avec le guide ci-dessus, puis appuyez de nouveau sur Installer. D'ici là, l'installation ne peut pas fonctionner et ne fait que redémarrer l'enceinte.",
   "setup.help.waitRefresh": "Attendez quelques minutes, puis appuyez sur Actualiser dans la liste des enceintes. Si l'enceinte apparaît avec une version ST Reborn, l'installation a réussi et il n'y a rien d'autre à faire.",
   "setup.awaitBoxReadyTitle": "Maintenant, faites ceci sur l'enceinte :",
   "setup.awaitSearching": "Je cherche ton enceinte. Une fois la clé branchée et l'enceinte éteinte puis rallumée, il faut environ une minute pour qu'elle apparaisse. Garde cette fenêtre ouverte : le statut se met à jour tout seul ici. ({{remaining}} restant)",

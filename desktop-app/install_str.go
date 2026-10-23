@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JRpersonal/streborn/sticksetup"
@@ -177,7 +178,17 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// candidate cause when a box never brings up the agent, so capturing it here
 	// lets us confirm or rule it out, and warn the user to update (#114).
 	fwNote := ""
+	// What /info said, kept for the preflight below: fwTooOldForUnlock stops
+	// the stick-free unlock before it reboots a speaker it cannot open, and
+	// noStick picks advice without the USB stick for the models that never
+	// read one at boot. The model the frontend passed in is folded into
+	// noStick too, because a very old firmware can report no moduleType or
+	// variant at all (the 2.1.51 Wave of 2026-10-22 reported neither).
+	fwTooOldForUnlock := false
+	noStick := neverReadsStickAtBoot(model, "")
 	if fw, ferr := a.GetBoxFirmware(host); ferr == nil && fw.Reachable {
+		fwTooOldForUnlock = fw.Outdated && unlockNeedsNewerFirmware(fw.Short)
+		noStick = noStick || neverReadsStickAtBoot(fw.Model, fw.Variant)
 		res.Firmware = fw.Short
 		res.Model, res.ModuleType, res.Variant = fw.Model, fw.ModuleType, fw.Variant
 		a.logger.Info("install_str: box firmware", "host", host, "model", fw.Model,
@@ -249,8 +260,38 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		if tcpReachable(host, 8888, 3*time.Second) {
 			res.Code = "already-installed"
 			res.Message = withFW("The speaker at "+host+" already answers on the STR agent port (8888), "+
-				"so it looks like STR is installed already.") + "\n\n" + alreadyInstalledAdvice
+				"so it looks like STR is installed already.") + "\n\n" + stickAdviceFor(noStick, alreadyInstalledAdvice, alreadyInstalledNoStickAdvice)
 			a.logger.Warn("install_str: preflight, :22 closed but :8888 up (already installed?)", "host", host)
+			return res, nil
+		}
+		// A firmware far behind 27.0.6 never opened SSH through the stick-free
+		// unlock in any report this project has, and every failed unlock costs
+		// the speaker two restarts (the unlock's own, then the one that puts its
+		// stock settings back). A Wave on 2.1.51 went through seven attempts and
+		// about twelve restarts in 26 minutes with no chance of success
+		// (2026-10-22); an ST30 on 10.0.11 failed three (2026-08-04). Stop here,
+		// before anything is written to or restarted on the speaker, and send the
+		// owner to the firmware update, which is the one route that works.
+		// SSH already open (step 0b onwards) is NOT blocked: that box needs no
+		// unlock, and the firmware note travels with its result anyway.
+		if fwTooOldForUnlock {
+			res.Code = "firmware-too-old"
+			res.Message = withFW("The speaker at "+host+" runs Bose firmware "+res.Firmware+
+				", which is too old for the install over the network.") + "\n\n" + firmwareFirstAdvice
+			a.logger.Warn("install_str: preflight, firmware too old for the stick-free :17000 unlock; not touching the speaker",
+				"host", host, "firmware", res.Firmware, "model", res.Model)
+			return res, nil
+		}
+		// Our own unlock attempt restarted this speaker moments ago (an earlier
+		// press of Install). It is still booting, so :22 is closed for that
+		// reason alone, and running the unlock again would only restart it a
+		// third time. Report the restart instead of starting another round.
+		if since, ok := recentUnlockReboot(host); ok {
+			res.Code = "restarting-after-unlock"
+			res.Message = withFW("ST Reborn restarted this speaker "+since.Round(time.Second).String()+" ago after the last install attempt, and it is still starting up.") +
+				"\n\n" + stickAdviceFor(noStick, restartingAfterUnlockAdvice, restartingAfterUnlockNoStickAdvice)
+			a.logger.Warn("install_str: preflight, speaker still booting from our own post-unlock restart in an earlier attempt; not unlocking again",
+				"host", host, "since", since.Round(time.Second))
 			return res, nil
 		}
 		// :22 closed but on the LAN (Bose :8090 up): the install window is shut
@@ -263,6 +304,10 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		// SA-4 - none of which reliably read the stick at boot - with no stick or
 		// adapter. See telnet_enable_ssh.go for the mechanism and the factory-reset
 		// caveat (there the stick stays the reliable fallback).
+		// unlockOutcome says what actually happened on :17000, for the logs
+		// below: they used to claim "the unlock did not open SSH" even when
+		// :17000 was closed and no unlock had run at all.
+		unlockOutcome := "not attempted, :17000 setup port closed"
 		if tcpReachable(host, 17000, 2*time.Second) {
 			a.emitPhase("access")
 			// One stick-free unlock path covers every box: enableSSHViaTelnet seeds a
@@ -305,20 +350,45 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			// STR's later streaming.bose.com interception on a subsequent stick
 			// install. Best-effort.
 			a.restoreStockBoseURLsAndReboot(host)
+			markUnlockReboot(host)
 			res.Log = tlog
 			rebootedByUs = true
-			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs, giving stick guidance", "host", host)
+			unlockOutcome = "unlock ran but did not open SSH; stock URLs restored and speaker restarted"
+			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs and restarted the speaker", "host", host)
+		} else {
+			a.logger.Info("install_str: :17000 setup port closed; no stick-free unlock attempted", "host", host)
 		}
 
 		// The box did not boot with a stick (:22 closed) and the stick-free unlock
 		// did not open SSH. Tell the user what to do, tailored to what the box is
 		// still answering on.
+		// rebootedByUs is checked FIRST. The restart was sent a moment ago and
+		// the speaker's ports keep answering for a few seconds before it goes
+		// down, so measuring :8090 or :8091 now says nothing about it. Checked
+		// after them, the 2026-10-22 Wave answered :8090 right after the
+		// restart command and was told "install window closed, use the stick"
+		// on all seven attempts instead of "it is restarting, wait".
+		if rebootedByUs {
+			// WE rebooted this speaker moments ago, as part of undoing the
+			// failed unlock. Of course nothing answers yet. Blaming a firewall
+			// here is not just unhelpful, it is actively misleading: a user
+			// with a SoundTouch 30 on 2015 firmware disabled his antivirus and
+			// tried three more times because the app said that was the likely
+			// cause, while the actual finding (a decade-old firmware) went
+			// only into the log (field report 2026-08-04).
+			res.Code = "restarting-after-unlock"
+			res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. "+
+				"It is still booting, which is why it does not answer right now.") +
+				"\n\n" + stickAdviceFor(noStick, restartingAfterUnlockAdvice, restartingAfterUnlockNoStickAdvice)
+			a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host, "unlock", unlockOutcome)
+			return res, nil
+		}
 		onLAN := tcpReachable(host, 8090, 3*time.Second)
 		if onLAN {
 			res.Code = "install-window-closed"
 			res.Message = withFW("The speaker at "+host+" is on the network, but the install access (SSH) is closed.") +
-				"\n\n" + installWindowClosedAdvice
-			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut; stick-free :17000 unlock did not open SSH)", "host", host)
+				"\n\n" + stickAdviceFor(noStick, installWindowClosedAdvice, installWindowClosedNoStickAdvice)
+			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut)", "host", host, "unlock", unlockOutcome)
 		} else if tcpReachable(host, 8091, 3*time.Second) {
 			// :22, :8090 and :8888 are all closed, but the box still answers
 			// UPnP/DLNA on :8091 - its media renderer is a separate firmware
@@ -336,32 +406,19 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 			// the whole message: the failure report lifts advice paragraphs out
 			// of the message and reprints them under the facts, and a sentence
 			// glued on after that split would be orphaned in the middle.
-			advice := controlUnresponsiveAdvice
+			advice := stickAdviceFor(noStick, controlUnresponsiveAdvice, controlUnresponsiveNoStickAdvice)
 			if strings.Contains(strings.ToLower(model), "portable") {
 				advice += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
 			}
 			res.Message = withFW("The speaker at "+host+" is on your network (it still answers on the media port 8091), "+
 				"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH).") +
 				"\n\n" + advice
-			a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host)
-		} else if rebootedByUs {
-			// WE rebooted this speaker moments ago, as part of undoing the
-			// failed unlock. Of course nothing answers yet. Blaming a firewall
-			// here is not just unhelpful, it is actively misleading: a user
-			// with a SoundTouch 30 on 2015 firmware disabled his antivirus and
-			// tried three more times because the app said that was the likely
-			// cause, while the actual finding (a decade-old firmware) went
-			// only into the log (field report 2026-08-04).
-			res.Code = "restarting-after-unlock"
-			res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. "+
-				"It is still booting, which is why it does not answer right now.") +
-				"\n\n" + restartingAfterUnlockAdvice
-			a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host)
+			a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host, "unlock", unlockOutcome)
 		} else {
 			res.Code = "not-reachable"
 			res.Message = withFW("The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at "+host+").") +
 				"\n\n" + notReachableAdvice
-			a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host)
+			a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host, "unlock", unlockOutcome)
 		}
 		return res, nil
 	}
@@ -1151,6 +1208,83 @@ func parseDfAvailBytes(out string) int64 {
 		return 0
 	}
 	return availKB * 1024
+}
+
+// neverReadsStickAtBoot reports whether a speaker is one of the models that
+// never read a USB stick at boot, so advice to "boot it with the STR stick" is
+// advice its owner cannot follow. The list is docs/MODELS.md's: SoundTouch 300
+// (ginger), Wave, SA-4 and CineMate 520/SoundTouch 520 (lisa), SA-5 (burns),
+// the Lifestyle consoles (bardeen or lisa), and the Wireless Link Adapter
+// (binky). Both the model name and the variant are read, because an old
+// firmware can report no variant at all (a Wave on 2.1.51, 2026-10-22) and a
+// stock box found by discovery may carry only a model name.
+//
+// The SoundTouch 10, 20, 30 and Portable read the stick and return false; so
+// does an unknown model, which keeps the stick advice that has always been
+// shown to it.
+func neverReadsStickAtBoot(model, variant string) bool {
+	switch strings.ToLower(strings.TrimSpace(variant)) {
+	case "lisa", "ginger", "burns", "bardeen", "binky":
+		return true
+	}
+	m := strings.ToLower(model)
+	for _, k := range []string{"wave", "300", "sa-4", "sa-5", "sa4", "sa5", "cinemate", "lifestyle", "adapter", "520"} {
+		if strings.Contains(m, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// unlockMinFirmwareMajor is the oldest Bose firmware major on which the
+// install still tries the stick-free :17000 unlock. Every unlock this project
+// has seen succeed ran on 27.0.6, and every one seen on a far older firmware
+// failed after restarting the speaker twice per attempt: a Wave on 2.1.51
+// (seven attempts, 2026-10-22), a SoundTouch 30 on 10.0.11 (three attempts,
+// 2026-08-04) and a CineMate on 10.0.11 (2026-08-25). There is no report at
+// all from majors 15 to 26, so the line is drawn just above the oldest known
+// failures instead of at 27: a firmware in that unknown range still gets its
+// try, and is told about the firmware update either way.
+const unlockMinFirmwareMajor = 15
+
+// unlockNeedsNewerFirmware reports whether a short firmware version ("2.1.51")
+// is clearly too old for the stick-free unlock. An unparsable version returns
+// false: no evidence is no reason to block.
+func unlockNeedsNewerFirmware(short string) bool {
+	major, _, _ := strings.Cut(strings.TrimSpace(short), ".")
+	n, err := strconv.Atoi(major)
+	if err != nil || n <= 0 {
+		return false
+	}
+	return n < unlockMinFirmwareMajor
+}
+
+// unlockReboots remembers when a failed stick-free unlock last made us restart
+// a speaker, per host. rebootedByUs in installSTROnBox only covers the attempt
+// that did it; a second press of Install a minute later used to find :22
+// closed (because the speaker was still booting), run the unlock again, and
+// restart it once more.
+var unlockReboots sync.Map // host -> time.Time
+
+// unlockRebootGrace is how long after our own restart a closed :22 is put
+// down to the speaker still booting. A SoundTouch is back on the network
+// within about two to three minutes of a soft restart.
+const unlockRebootGrace = 3 * time.Minute
+
+func markUnlockReboot(host string) { unlockReboots.Store(host, time.Now()) }
+
+// recentUnlockReboot reports how long ago we restarted host after a failed
+// unlock, when that was within unlockRebootGrace.
+func recentUnlockReboot(host string) (time.Duration, bool) {
+	v, ok := unlockReboots.Load(host)
+	if !ok {
+		return 0, false
+	}
+	since := time.Since(v.(time.Time))
+	if since < 0 || since > unlockRebootGrace {
+		return 0, false
+	}
+	return since, true
 }
 
 // slowBootModel reports whether a box model boots slowly enough to need the
