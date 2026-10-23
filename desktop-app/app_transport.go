@@ -520,7 +520,38 @@ const (
 	restartingAfterUnlockAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing: power it off, plug the STR stick in, power it back on, and then leave it alone for five minutes. That is what brought another speaker in exactly this state back, with the clock and the Wi-Fi symbol on its display again. Do not press Install while the stick is still working, a second attempt on top of the first one made it worse for the owner who tried."
 
 	alreadyInstalledAdvice = "Refresh the speaker list. If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
+
+	// The no-stick variants of the four paragraphs above that name the STR
+	// stick. A SoundTouch 300, Wave, SA-4/SA-5, CineMate, Lifestyle console or
+	// Wireless Link Adapter never reads a USB stick at boot (docs/MODELS.md),
+	// so "boot it with the stick" is advice its owner cannot follow. A Wave
+	// owner was told exactly that on 2026-10-22, wrote a stick, and the Wave
+	// ignored it, as it always does. stickAdviceFor picks the variant.
+	installWindowClosedNoStickAdvice = "This speaker model never reads a USB stick, so ST Reborn has to open the install access over the network, and the speaker did not open it this time. Leave the speaker switched on and on your Wi-Fi, wait about two minutes, then press Install once more. If it fails again, stop there: every attempt restarts the speaker. Use \"Save diagnostic logs\" and send the file in instead."
+
+	controlUnresponsiveNoStickAdvice = "Power the speaker fully off and back on: unplug it for about 30 seconds, plug it back in, wait 2 to 3 minutes, then refresh the speaker list and try again. This model does not read a USB stick, so no stick is needed."
+
+	restartingAfterUnlockNoStickAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing, unplug it for about 30 seconds, plug it back in and leave it alone for five minutes. Do not press Install while it is still starting: a second attempt on top of the first one only restarts it again."
+
+	alreadyInstalledNoStickAdvice = "Refresh the speaker list: ST Reborn already runs on this speaker, and this model never needs a USB stick."
+
+	// firmwareFirstAdvice closes the message for a speaker whose Bose firmware
+	// is too old for the stick-free unlock (see unlockNeedsNewerFirmware). The
+	// install stops before it touches the speaker, and the advice says why
+	// pressing Install again is pointless: a Wave on firmware 2.1.51 was
+	// restarted about twelve times in 26 minutes by seven attempts that could
+	// never work (2026-10-22).
+	firmwareFirstAdvice = "Update the speaker firmware first with the firmware update guide, then press Install again. Until then the install cannot work on this speaker: on this firmware it never opens the install access over the network, and every further attempt would only restart it. ST Reborn left the speaker as it was."
 )
+
+// stickAdviceFor returns the no-stick variant of a stick-naming advice
+// paragraph when the speaker never reads a USB stick at boot.
+func stickAdviceFor(noStick bool, withStick, withoutStick string) string {
+	if noStick {
+		return withoutStick
+	}
+	return withStick
+}
 
 // answeredNotSTR reports whether the failure carries evidence that the speaker
 // replied: an HTTP status line rather than a connection that never completed.

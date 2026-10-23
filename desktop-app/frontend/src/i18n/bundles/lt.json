@@ -1264,6 +1264,7 @@
   "setup.help.netOnNetwork": "Patikrinkite, ar garsiakalbis įjungtas ir matomas garsiakalbių sąraše. Jei jis dingo, palaukite, kol vėl atsiras, tada bandykite dar kartą.",
   "setup.help.netRetry": "Palaukite minutę, kol garsiakalbis baigs paleidimą iš naujo, tada dar kartą paspauskite Įdiegti.",
   "setup.help.netLogs": "Jei vis tiek nepavyksta, apačioje lange naudokite Įrašyti žurnalus ir prisekite failą prie savo pranešimo.",
+  "setup.help.firmwareFirst": "Pirmiausia atnaujinkite garsiakalbio programinę įrangą pagal aukščiau pateiktą vadovą, tada vėl paspauskite Įdiegti. Iki tol diegimas negali pavykti ir tik paleidžia garsiakalbį iš naujo.",
   "setup.help.waitRefresh": "Palaukite kelias minutes, tada garsiakalbių sąraše paspauskite Atnaujinti. Jei garsiakalbis rodomas su ST Reborn versija, diegimas pavyko ir daugiau nieko daryti nereikia.",
   "setup.awaitBoxReadyTitle": "Dabar atlikite tai su garsiakalbiu:",
   "setup.awaitSearching": "Ieškoma jūsų kolonėlės. Kai įkišite atmintuką ir išjungsite bei vėl įjungsite kolonėlę, ji pasirodys maždaug po minutės. Palikite šį langą atidarytą: būsena čia atsinaujins savaime. (liko {{remaining}})",

@@ -1264,6 +1264,7 @@
   "setup.help.netOnNetwork": "Pārbaudiet, vai skaļrunis ir ieslēgts un parādās skaļruņu sarakstā. Ja tas ir pazudis, pagaidiet, līdz tas atgriežas, un tad mēģiniet vēlreiz.",
   "setup.help.netRetry": "Dodiet skaļrunim minūti, lai tas pabeidz pārstartēšanu, un tad vēlreiz nospiediet Instalēt.",
   "setup.help.netLogs": "Ja joprojām neizdodas, izmantojiet Saglabāt žurnālus loga apakšā un pievienojiet failu savam ziņojumam.",
+  "setup.help.firmwareFirst": "Vispirms atjauniniet skaļruņa programmaparatūru pēc iepriekš dotās pamācības, tad vēlreiz nospiediet Instalēt. Līdz tam instalēšana nevar izdoties un tikai restartē skaļruni.",
   "setup.help.waitRefresh": "Pagaidiet dažas minūtes un pēc tam skaļruņu sarakstā nospiediet Atjaunināt. Ja skaļrunis parādās ar ST Reborn versiju, instalēšana ir izdevusies un vairāk nekas nav jādara.",
   "setup.awaitBoxReadyTitle": "Tagad veiciet šo ar skaļruni:",
   "setup.awaitSearching": "Tiek meklēts jūsu skaļrunis. Kad esat ievietojuši zibatmiņu un izslēguši un atkal ieslēguši skaļruni, tas parādās aptuveni minūtes laikā. Atstājiet šo logu atvērtu: statuss šeit atjauninās pats. (atlikušas {{remaining}})",

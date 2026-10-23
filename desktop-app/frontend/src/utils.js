@@ -104,6 +104,24 @@ export function isSoundTouch300(box) {
   return /soundtouch\s*300\b/.test(m) || /\bsoundbar\s*300\b/.test(m);
 }
 
+// neverReadsStick reports whether a speaker is one of the models that never
+// read a USB stick at boot (docs/MODELS.md): SoundTouch 300 (ginger), Wave,
+// SA-4, CineMate and SoundTouch 520 (lisa), SA-5 (burns), Lifestyle consoles
+// (bardeen or lisa) and the Wireless Link Adapter (binky). Mirrors
+// neverReadsStickAtBoot in install_str.go. Any number of records can be passed
+// (the discovered box, the install result); one match is enough, because an
+// old firmware may report no variant at all (a Wave on 2.1.51, 2026-10-22).
+export function neverReadsStick(...recs) {
+  return recs.some((r) => {
+    if (!r) return false;
+    const v = String(r.variant || '').toLowerCase().trim();
+    if (['lisa', 'ginger', 'burns', 'bardeen', 'binky'].indexOf(v) >= 0) return true;
+    const m = String(r.model || r.type || '').toLowerCase();
+    return ['wave', '300', 'sa-4', 'sa-5', 'sa4', 'sa5', 'cinemate', 'lifestyle', 'adapter', '520']
+      .some((k) => m.includes(k));
+  });
+}
+
 // decodeXmlEntities decodes the five named XML entity sequences plus
 // numeric character references that the Bose /now_playing XML
 // occasionally emits. Without this, "Bryan Adams &amp; Tina Turner"

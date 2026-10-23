@@ -1264,6 +1264,7 @@
   "setup.help.netOnNetwork": "Hoparlörün açık olduğunu ve hoparlör listesinde göründüğünü kontrol edin. Listeden düştüyse, yeniden denemeden önce geri gelmesini bekleyin.",
   "setup.help.netRetry": "Hoparlöre yeniden başlatmayı bitirmesi için bir dakika verin, ardından tekrar Yükle düğmesine basın.",
   "setup.help.netLogs": "Yine de başarısız olursa pencerenin altındaki Günlükleri kaydet seçeneğini kullanın ve dosyayı raporunuza ekleyin.",
+  "setup.help.firmwareFirst": "Önce yukarıdaki kılavuzla hoparlörün donanım yazılımını güncelleyin, ardından tekrar Yükle'ye basın. O zamana kadar kurulum çalışamaz ve yalnızca hoparlörü yeniden başlatır.",
   "setup.help.waitRefresh": "Birkaç dakika bekleyin, ardından hoparlör listesinde Yenile'ye basın. Hoparlör bir ST Reborn sürümüyle görünürse kurulum başarılı olmuştur ve yapılacak başka bir şey yoktur.",
   "setup.awaitBoxReadyTitle": "Şimdi hoparlörle şunu yapın:",
   "setup.awaitSearching": "Hoparlörünüz aranıyor. Belleği taktıktan ve hoparlörü kapatıp tekrar açtıktan sonra görünmesi yaklaşık bir dakika sürer. Bu pencereyi açık tutun: durum burada kendiliğinden güncellenir. (kalan {{remaining}})",

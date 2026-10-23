@@ -1264,6 +1264,7 @@
   "setup.help.netOnNetwork": "Comprueba que el altavoz esté encendido y aparezca en la lista de altavoces. Si ha desaparecido, espera a que vuelva antes de reintentar.",
   "setup.help.netRetry": "Dale al altavoz un minuto para terminar de reiniciarse y pulsa Instalar de nuevo.",
   "setup.help.netLogs": "Si sigue fallando, usa Guardar registros en la parte inferior de la ventana y adjunta el archivo a tu informe.",
+  "setup.help.firmwareFirst": "Primero actualiza el firmware del altavoz con la guía de arriba y después pulsa Instalar de nuevo. Hasta entonces la instalación no puede funcionar y solo reinicia el altavoz.",
   "setup.help.waitRefresh": "Espera unos minutos y pulsa Actualizar en la lista de altavoces. Si el altavoz aparece con una versión de ST Reborn, la instalación ha funcionado y no hay nada más que hacer.",
   "setup.awaitBoxReadyTitle": "Ahora haz esto en el altavoz:",
   "setup.awaitSearching": "Estamos buscando tu altavoz. Después de conectar la memoria y apagar y volver a encender el altavoz, tarda alrededor de un minuto en aparecer. Mantén esta ventana abierta: el estado se actualiza aquí solo. (quedan {{remaining}})",

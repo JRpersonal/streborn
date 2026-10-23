@@ -1391,6 +1391,7 @@
   "setup.help.netOnNetwork": "確認喇叭已開機，而且有出現在喇叭清單裡。如果它不見了，等它回來再重試。",
   "setup.help.netRetry": "給喇叭一分鐘把重新啟動跑完，然後再按一次「安裝」。",
   "setup.help.netLogs": "如果還是失敗，請用視窗下方的「儲存紀錄」，把檔案附在你的回報裡。",
+  "setup.help.firmwareFirst": "請先依照上方的指南更新喇叭韌體，然後再按一次「安裝」。在那之前，安裝不可能成功，只會讓喇叭重新啟動。",
   "setup.help.waitRefresh": "請等幾分鐘，然後在喇叭清單中按「重新整理」。如果喇叭顯示出 ST Reborn 版本，表示安裝已成功，不需要再做任何事。",
   "setup.awaitBoxReadyTitle": "現在請在喇叭上這樣做：",
   "setup.awaitSearching": "正在尋找你的喇叭。插上隨身碟、把喇叭關掉再開機之後，大約要一分鐘才會出現。喇叭會照常開機，把 ST Reborn 從隨身碟複製到自己裡面，然後重新啟動一次；它不是從隨身碟開機。請讓這個視窗開著：狀態會自己更新。（還剩 {{remaining}}）",

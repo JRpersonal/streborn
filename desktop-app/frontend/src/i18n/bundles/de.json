@@ -1391,6 +1391,7 @@
   "setup.help.netOnNetwork": "Prüfe, ob der Lautsprecher eingeschaltet ist und in der Lautsprecherliste erscheint. Ist er verschwunden, warte, bis er wieder da ist, bevor du es erneut versuchst.",
   "setup.help.netRetry": "Gib dem Lautsprecher eine Minute, bis er fertig neu gestartet ist, und drücke dann erneut auf Installieren.",
   "setup.help.netLogs": "Wenn es weiter fehlschlägt, nutze unten im Fenster Protokolle speichern und hänge die Datei an deine Meldung an.",
+  "setup.help.firmwareFirst": "Aktualisiere zuerst die Firmware des Lautsprechers mit der Anleitung oben und drücke danach erneut auf Installieren. Vorher kann die Installation nicht klappen und würde den Lautsprecher nur neu starten.",
   "setup.help.waitRefresh": "Warte ein paar Minuten und drücke dann in der Lautsprecherliste auf Aktualisieren. Erscheint der Lautsprecher mit einer ST Reborn-Version, hat die Installation geklappt und es ist nichts weiter zu tun.",
   "setup.awaitBoxReadyTitle": "Mach das jetzt am Lautsprecher:",
   "setup.awaitSearching": "Suche deinen Lautsprecher. Nachdem du den Stick eingesteckt und den Lautsprecher aus- und wieder eingeschaltet hast, dauert es etwa eine Minute, bis er auftaucht. Der Lautsprecher startet ganz normal und kopiert ST Reborn vom Stick in seinen Speicher, dann startet er einmal neu; er bootet nicht vom Stick. Lass dieses Fenster offen: der Status aktualisiert sich von selbst. (noch {{remaining}})",

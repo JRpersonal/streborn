@@ -167,6 +167,11 @@ func adviceParagraphs() []string {
 		restartingAfterUnlockAdvice,
 		alreadyInstalledAdvice,
 		boxInSetupAdvice,
+		installWindowClosedNoStickAdvice,
+		controlUnresponsiveNoStickAdvice,
+		restartingAfterUnlockNoStickAdvice,
+		alreadyInstalledNoStickAdvice,
+		firmwareFirstAdvice,
 	}
 }
 
