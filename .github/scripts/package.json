@@ -7,6 +7,7 @@
     "mermaid": "11.17.2"
   },
   "overrides": {
-    "katex": "0.19.0"
+    "katex": "0.19.0",
+    "dompurify": "3.4.17"
   }
 }
