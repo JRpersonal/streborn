@@ -31,7 +31,7 @@ const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
 // app-logs is a cropped shot of the settings tail with the "Save diagnostic
 // logs" footer link highlighted; the website FAQ uses it to show where the
 // log lives. Override with SHOOT_VIEWS=app-logs to re-shoot a subset.
-const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app-settings1', 'app-settings2', 'app-settings3', 'app-install', 'app-stick-step1', 'app-stick-step2', 'app-logs'];
+const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app-settings1', 'app-settings2', 'app-settings3', 'app-install', 'app-stick-step1', 'app-stick-step2', 'app-logs', 'app-snooze'];
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
   ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
   : ALL_VIEWS;
@@ -225,6 +225,11 @@ function installMocks({ locale, view, demo }) {
     GetAirplayOpt: () => P({ enabled: true }),
     // Readable display-track setting (a null answer paints "speaker did not
     // answer"); onPanel hides the re-buffer warning.
+    // The remote key map in Speaker settings: AUX and thumbs down snooze a
+    // ringing alarm (#1415), so app-snooze shows the Z markers.
+    GetKeyActions: () => P({ keys: { aux: 'snooze', thumbsDown: 'snooze' } }),
+    GetWebhooks: () => P({ thumb: {}, buttons: {} }),
+    GetGroupKeys: () => P({ bindings: {} }),
     GetDisplayTrack: () => P({ enabled: false, mode: 'both', onPanel: true, supported: true }),
     ListMediaServers: () => P(demo.mediaServers),
     BrowseLibrary: () => P(demo.libraryPage),
@@ -316,6 +321,20 @@ async function drive(page, view) {
       await page.waitForTimeout(250);
       await scrollY(100000);
     }
+  } else if (view === 'app-snooze') {
+    // The remote key map with AUX selected and its built-in action set to
+    // snooze. The section lives in a collapsed group, so open them all.
+    await click('.tab-btn[data-view="settings"]');
+    await page.waitForSelector('#view-settings:not(.hidden) #webhookSection', { state: 'attached', timeout: 9000 });
+    await page.evaluate(() => {
+      document.querySelectorAll('#view-settings .settings-group').forEach((d) => { d.open = true; });
+      document.getElementById('webhookSection').open = true;
+    });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => { const t = document.getElementById('webhookTarget'); t.value = 'aux'; t.dispatchEvent(new Event('change')); });
+    await page.waitForTimeout(400);
+    await scrollIntoView('#webhookSection');
+    await page.waitForTimeout(300);
   } else if (view === 'app-logs') {
     // Settings tail with the footer link that saves the diagnostic logs,
     // ringed so the eye lands on it. Groups stay collapsed: the point is
