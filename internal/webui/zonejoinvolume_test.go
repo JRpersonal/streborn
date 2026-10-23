@@ -191,18 +191,22 @@ func withFakeVolumes(t *testing.T, f *fakeVolumes) {
 	t.Helper()
 	origRead, origSet := readMemberVolumeFn, setMemberVolumeFn
 	readMemberVolumeFn, setMemberVolumeFn = f.read, f.set
-	// The confirming read waits for the firmware's wake default to land; the
-	// fake answers at once, so the wait only has to be an observable pause.
-	origConfirm := joinVolumeConfirmAfter
-	joinVolumeConfirmAfter = 50 * time.Millisecond
 	t.Cleanup(func() {
 		readMemberVolumeFn, setMemberVolumeFn = origRead, origSet
-		joinVolumeConfirmAfter = origConfirm
 	})
 }
 
+// newJoinVolServer is a quiet server whose zone clock has the confirming read
+// close behind the write: the fake answers at once, so the wait for the
+// firmware's wake default only has to be an observable pause.
 func newJoinVolServer(host string) *Server {
-	return &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: host}
+	fast := productionZoneTiming
+	fast.joinVolumeConfirmAfter = 50 * time.Millisecond
+	return &Server{
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost:    host,
+		zoneTiming: &fast,
+	}
 }
 
 func TestMatchNewMembersSkipsWhenMasterReportsNothing(t *testing.T) {

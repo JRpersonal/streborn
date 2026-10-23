@@ -240,14 +240,16 @@ func TestHandleZonePurge(t *testing.T) {
 // a native zone and a stereo pair are re-formed by the firmware, and kicking
 // those would fight it.
 func TestKickMirrorAfterPlay(t *testing.T) {
+	t.Parallel()
 	// The kick's delay is what every subtest waits on, positive or negative;
-	// shortened so the negative cases can wait several delays in a blink.
-	prevDelay := mirrorKickDelay
-	mirrorKickDelay = 50 * time.Millisecond
-	t.Cleanup(func() { mirrorKickDelay = prevDelay })
+	// shortened so the negative cases can wait several delays in a blink. The
+	// clock is installed per server, so the goroutine the kick leaves behind
+	// never reads a value another test restored.
+	fast := productionZoneTiming
+	fast.mirrorKickDelay = 50 * time.Millisecond
 	// noKick is how long a negative case waits before concluding the kick is
 	// not coming: several delays, with room for a slow scheduler.
-	noKick := 6 * mirrorKickDelay
+	noKick := 6 * fast.mirrorKickDelay
 	newServer := func(t *testing.T, z *zones.Zone) *Server {
 		t.Helper()
 		store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
@@ -263,6 +265,7 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 			zones:      store,
 			mirrorKick: make(chan struct{}, 1),
 			logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+			zoneTiming: &fast,
 		}
 	}
 	// The kick is deliberately delayed (the master's stream has to start before

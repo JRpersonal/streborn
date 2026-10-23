@@ -10,8 +10,9 @@ package webui
 // master and started refusing stations, and the agent's single-slot zone store
 // overwrote the group document with the pair (field, 2026-09-07).
 //
-// The refusal is read through the same fetchZone seam the other box tests in
-// this package use, so nothing here needs a speaker on :8090.
+// The refusal is read through the same fetchZone seam (fetchZoneFn on the
+// Server) the other box tests in this package use, so nothing here needs a
+// speaker on :8090.
 
 import (
 	"context"
@@ -43,11 +44,12 @@ func groupedZone() boxapi.Zone {
 }
 
 func TestPairRefusedWhenTheBoxReportsAZone(t *testing.T) {
-	withSpeakers(t, map[string]boxapi.Zone{
+	t.Parallel()
+	s := quietServer(pairSelfHost)
+	withSpeakers(s, map[string]boxapi.Zone{
 		pairSelfHost:    groupedZone(),
 		pairPartnerHost: {},
 	}, nil)
-	s := quietServer(pairSelfHost)
 
 	got := s.zonedPairCandidates(context.Background(), pairPartnerHost)
 
@@ -57,13 +59,14 @@ func TestPairRefusedWhenTheBoxReportsAZone(t *testing.T) {
 }
 
 func TestPairRefusedWhenThePARTNERReportsAZone(t *testing.T) {
+	t.Parallel()
 	// The partner is the half the user did not think about: it carries the
 	// group the pair would swallow just as well as this box does.
-	withSpeakers(t, map[string]boxapi.Zone{
+	s := quietServer(pairSelfHost)
+	withSpeakers(s, map[string]boxapi.Zone{
 		pairSelfHost:    {},
 		pairPartnerHost: groupedZone(),
 	}, nil)
-	s := quietServer(pairSelfHost)
 
 	got := s.zonedPairCandidates(context.Background(), pairPartnerHost)
 
@@ -73,15 +76,16 @@ func TestPairRefusedWhenThePARTNERReportsAZone(t *testing.T) {
 }
 
 func TestPairAllowedWhenBothSpeakersAreStandalone(t *testing.T) {
+	t.Parallel()
 	// This is also the shape a HEALTHY EXISTING PAIR reports: a stereo pair is
 	// a firmware GROUP (/getGroup), and a paired speaker's /getZone answers no
 	// master and no members, exactly like a standalone one. So re-forming or
 	// renaming a pair must not be caught by this guard either.
-	withSpeakers(t, map[string]boxapi.Zone{
+	s := quietServer(pairSelfHost)
+	withSpeakers(s, map[string]boxapi.Zone{
 		pairSelfHost:    {},
 		pairPartnerHost: {},
 	}, nil)
-	s := quietServer(pairSelfHost)
 
 	if got := s.zonedPairCandidates(context.Background(), pairPartnerHost); len(got) != 0 {
 		t.Fatalf("two standalone speakers must pair, got %v", got)
@@ -89,15 +93,14 @@ func TestPairAllowedWhenBothSpeakersAreStandalone(t *testing.T) {
 }
 
 func TestPairAllowedWhenTheZoneReadFails(t *testing.T) {
+	t.Parallel()
 	// Best effort, the same policy the desktop's own pair guard follows:
 	// refusing a pairing because a speaker was busy for a moment would block a
 	// legitimate action on no evidence at all.
-	prev := fetchZone
-	fetchZone = func(context.Context, string) (boxapi.Zone, error) {
+	s := quietServer(pairSelfHost)
+	s.fetchZoneFn = func(context.Context, string) (boxapi.Zone, error) {
 		return boxapi.Zone{}, errors.New("speaker busy")
 	}
-	t.Cleanup(func() { fetchZone = prev })
-	s := quietServer(pairSelfHost)
 
 	if got := s.zonedPairCandidates(context.Background(), pairPartnerHost); len(got) != 0 {
 		t.Fatalf("an unreadable zone must not refuse the pairing, got %v", got)
@@ -111,8 +114,9 @@ func TestPairAllowedWhenTheZoneReadFails(t *testing.T) {
 // music and a refusal that arrives after that has already changed the thing it
 // refused to change.
 func TestPairRefusalAnswersTheAppWithTheReason(t *testing.T) {
-	withSpeakers(t, map[string]boxapi.Zone{pairSelfHost: groupedZone()}, nil)
+	t.Parallel()
 	s := quietServer(pairSelfHost)
+	withSpeakers(s, map[string]boxapi.Zone{pairSelfHost: groupedZone()}, nil)
 	rec := httptest.NewRecorder()
 
 	s.formStereoPair(rec, context.Background(), boxapi.New(pairSelfHost),
@@ -164,14 +168,15 @@ func storedServer(t *testing.T, z zones.Zone) *Server {
 // only copy of that group is gone (the same class of loss as the wipe of
 // 2026-09-03), so the stored document has to be consulted next to the live read.
 func TestPairRefusedWhenAGroupIsStoredButNotLive(t *testing.T) {
-	withSpeakers(t, map[string]boxapi.Zone{
-		pairSelfHost:    {}, // idle: the permanent group is not formed right now
-		pairPartnerHost: {},
-	}, nil)
+	t.Parallel()
 	s := storedServer(t, zones.Zone{
 		Master: "AABBCCDDEEFF", MasterIP: pairSelfHost, Permanent: true,
 		Slaves: []zones.Member{{DeviceID: "112233445566", IP: "192.0.2.30"}},
 	})
+	withSpeakers(s, map[string]boxapi.Zone{
+		pairSelfHost:    {}, // idle: the permanent group is not formed right now
+		pairPartnerHost: {},
+	}, nil)
 	rec := httptest.NewRecorder()
 
 	s.formStereoPair(rec, context.Background(), boxapi.New(pairSelfHost),
@@ -212,14 +217,15 @@ func TestPairRefusedWhenAGroupIsStoredButNotLive(t *testing.T) {
 // dissolve - so refusing on it means those two speakers can never be paired
 // again, with no way to clear the block from the app.
 func TestPairAllowedWhenTheStoredGroupIsAStaleTemporaryOne(t *testing.T) {
-	withSpeakers(t, map[string]boxapi.Zone{
-		pairSelfHost:    {}, // the zone this document describes is long gone
-		pairPartnerHost: {},
-	}, nil)
+	t.Parallel()
 	s := storedServer(t, zones.Zone{
 		Master: "AABBCCDDEEFF", MasterIP: pairSelfHost, // Permanent deliberately unset
 		Slaves: []zones.Member{{DeviceID: "112233445566", IP: "192.0.2.30"}},
 	})
+	withSpeakers(s, map[string]boxapi.Zone{
+		pairSelfHost:    {}, // the zone this document describes is long gone
+		pairPartnerHost: {},
+	}, nil)
 
 	if refused, z := s.storedGroupBlocksPair(); refused {
 		t.Fatalf("a stale temporary group document must not block a pairing: %+v", z)
@@ -230,14 +236,15 @@ func TestPairAllowedWhenTheStoredGroupIsAStaleTemporaryOne(t *testing.T) {
 // read rather than by the stored document. Same store, same speakers; the only
 // difference is that the firmware confirms the zone.
 func TestPairRefusedWhenTheTemporaryGroupIsActuallyLive(t *testing.T) {
-	withSpeakers(t, map[string]boxapi.Zone{
-		pairSelfHost:    groupedZone(),
-		pairPartnerHost: {},
-	}, nil)
+	t.Parallel()
 	s := storedServer(t, zones.Zone{
 		Master: "AABBCCDDEEFF", MasterIP: pairSelfHost,
 		Slaves: []zones.Member{{DeviceID: "112233445566", IP: "192.0.2.30"}},
 	})
+	withSpeakers(s, map[string]boxapi.Zone{
+		pairSelfHost:    groupedZone(),
+		pairPartnerHost: {},
+	}, nil)
 
 	if got := s.zonedPairCandidates(context.Background(), pairPartnerHost); len(got) != 1 {
 		t.Fatalf("the live zone must still refuse the pairing, got %v", got)
@@ -247,14 +254,15 @@ func TestPairRefusedWhenTheTemporaryGroupIsActuallyLive(t *testing.T) {
 // A stored PAIR is not a group: re-pairing the same two speakers and renaming
 // an existing pair both come through this handler, and both must stay possible.
 func TestPairAllowedWhenTheStoredDocumentIsAPair(t *testing.T) {
-	withSpeakers(t, map[string]boxapi.Zone{
-		pairSelfHost:    {},
-		pairPartnerHost: {},
-	}, nil)
+	t.Parallel()
 	s := storedServer(t, zones.Zone{
 		Master: "AABBCCDDEEFF", MasterIP: pairSelfHost, Stereo: true, Name: "Living room",
 		Slaves: []zones.Member{{DeviceID: "112233445566", IP: pairPartnerHost}},
 	})
+	withSpeakers(s, map[string]boxapi.Zone{
+		pairSelfHost:    {},
+		pairPartnerHost: {},
+	}, nil)
 
 	if refused, _ := s.storedGroupBlocksPair(); refused {
 		t.Fatal("a stored stereo pair must not block re-pairing or renaming")
@@ -264,6 +272,7 @@ func TestPairAllowedWhenTheStoredDocumentIsAPair(t *testing.T) {
 // A master-only document (a group whose members were all removed) is no group
 // either: there is nothing to lose, so nothing to refuse.
 func TestPairAllowedWhenTheStoredDocumentHasNoMembers(t *testing.T) {
+	t.Parallel()
 	s := storedServer(t, zones.Zone{Master: "AABBCCDDEEFF", MasterIP: pairSelfHost, Permanent: true})
 
 	if refused, _ := s.storedGroupBlocksPair(); refused {
@@ -273,6 +282,7 @@ func TestPairAllowedWhenTheStoredDocumentHasNoMembers(t *testing.T) {
 
 // No store at all (a speaker that never formed a group) must not refuse either.
 func TestPairAllowedWithNoZoneStore(t *testing.T) {
+	t.Parallel()
 	if refused, _ := quietServer(pairSelfHost).storedGroupBlocksPair(); refused {
 		t.Fatal("a speaker with no zone store must not refuse a pairing")
 	}

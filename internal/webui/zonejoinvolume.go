@@ -200,11 +200,6 @@ func setJoinerVolume(ctx context.Context, addr netip.Addr, pct int) error {
 	return nil
 }
 
-// joinVolumeConfirmAfter is the pause before matchNewMembersToMasterVolume's
-// confirming read. A variable so the tests can shorten it; the value is the
-// production one.
-var joinVolumeConfirmAfter = 2500 * time.Millisecond
-
 // matchNewMembersToMasterVolume gives every freshly joined member the group's
 // current level. Detached by its callers (it settles for a couple of seconds)
 // and bounded: one write, one confirming read, at most one correction.
@@ -280,7 +275,8 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 	// enforcing must not enforce one. So: re-write only a member that came back
 	// at neither our value nor anything a person would have chosen on purpose,
 	// i.e. one that reverted to a level it had before we wrote.
-	time.Sleep(joinVolumeConfirmAfter)
+	// The pause is on the zone clock (zoneTimes), where a test can shorten it.
+	time.Sleep(s.zoneTimes().joinVolumeConfirmAfter)
 	if s.zoneFormSeq.Load() != seq {
 		return
 	}

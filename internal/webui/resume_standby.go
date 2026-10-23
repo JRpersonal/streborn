@@ -825,7 +825,7 @@ func (s *Server) boxInZone() bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	z, err := fetchZone(ctx, s.boxHost)
+	z, err := s.fetchZone(ctx, s.boxHost)
 	if err != nil {
 		// Unreadable is not evidence the group is gone. A speaker that is asleep,
 		// busy, or still refusing :8090 right after the agent started (field

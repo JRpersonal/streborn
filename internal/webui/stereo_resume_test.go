@@ -135,8 +135,9 @@ func TestDecodeOrionStationLocationAcceptsTheStandardAlphabet(t *testing.T) {
 // capture time and no entry at resume time means nothing superseded anything:
 // the push must fire.
 func TestResumeAfterZoneFormPartnerCaptureFiresOnAMasterThatNeverPlayed(t *testing.T) {
-	shrinkZoneFormResumeSettle(t)
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
+	shrinkZoneFormResumeSettle(s)
 	s.playStateFn = func() (bool, bool) { return false, false } // idle after the wake
 	s.resumeAfterZoneForm(zoneResume{
 		push: lastPlayInfo{boxURL: "http://192.0.2.33:17008/stream/2", title: "Oude Piraten Hits", ts: time.Now()},
@@ -154,8 +155,9 @@ func TestResumeAfterZoneFormPartnerCaptureFiresOnAMasterThatNeverPlayed(t *testi
 // between the capture and the resume outranks the capture. The live lastPlay
 // no longer matches the reference, so the push stands down.
 func TestResumeAfterZoneFormStandsDownWhenANewerPlaySupersededTheCapture(t *testing.T) {
-	shrinkZoneFormResumeSettle(t)
+	t.Parallel()
 	s, rec := newPlayTestServer(t)
+	shrinkZoneFormResumeSettle(s)
 	s.playStateFn = func() (bool, bool) { return false, false } // idle
 	newer := lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", title: "user's pick", ts: time.Now()}
 	s.play.mu.Lock()
