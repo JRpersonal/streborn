@@ -3,6 +3,8 @@
 package webui
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -364,24 +366,97 @@ func (s *Server) remoteDisplayName() string {
 	return strings.TrimSpace(name)
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	s.noteStrayBoxRequest(r)
-	s.notePhoneLanguage(r.Header.Get("Accept-Language"))
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+// indexPage is the phone remote rendered for one speaker name: the bytes in
+// both encodings the page is served in, each with its own strong ETag. Built
+// once per name and kept, because the page is ~425 KB and the box CPU is slow:
+// hashing it on every open was measurable, compressing it on every open would
+// not be affordable at all.
+type indexPage struct {
+	plain, gzipped    []byte
+	etagPlain, etagGz string
+}
+
+// indexPageCap bounds the per-name cache. A speaker has one name and is renamed
+// rarely, so a handful covers every rename an agent sees between restarts; when
+// the cap is hit the whole map is dropped rather than tracking recency.
+const indexPageCap = 4
+
+// renderIndexPage stamps the speaker's name into the page identity so "Add to
+// Home Screen" saves one distinguishable app PER SPEAKER: iOS takes its label
+// from the apple-mobile-web-app-title meta (and the title tag) at save time;
+// each speaker is its own origin, so the phone keeps them apart as separate
+// apps. The generic "ST Reborn" is only the fallback for a box whose name is
+// not known yet.
+func renderIndexPage(name string) *indexPage {
 	page := indexHTML
-	// Stamp the speaker's name into the page identity so "Add to Home Screen"
-	// saves one distinguishable app PER SPEAKER: iOS takes its label from the
-	// apple-mobile-web-app-title meta (and the title tag) at save time; each
-	// speaker is its own origin, so the phone keeps them apart as separate
-	// apps. The generic "ST Reborn" is only the fallback for a box whose name
-	// is not known yet.
-	if name := s.remoteDisplayName(); name != "" {
+	if name != "" {
 		esc := html.EscapeString(name)
 		page = strings.Replace(page, "<title>ST Reborn</title>", "<title>"+esc+"</title>", 1)
 		page = strings.Replace(page,
 			`<meta name="apple-mobile-web-app-title" content="ST Reborn">`,
 			`<meta name="apple-mobile-web-app-title" content="`+esc+`">`, 1)
 	}
+	p := &indexPage{plain: []byte(page), etagPlain: indexETag(page)}
+	var buf bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	_, _ = zw.Write(p.plain)
+	_ = zw.Close()
+	p.gzipped = buf.Bytes()
+	// A different representation gets a different strong tag (RFC 9110
+	// section 8.8.3.1): a cache holding the compressed page must never have
+	// its tag accepted for a client that cannot decompress it.
+	p.etagGz = strings.TrimSuffix(p.etagPlain, `"`) + `-gz"`
+	return p
+}
+
+// indexPageFor returns the rendered page for the speaker's current name,
+// building and remembering it on first use.
+func (s *Server) indexPageFor(name string) *indexPage {
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
+	if p := s.indexPages[name]; p != nil {
+		return p
+	}
+	if s.indexPages == nil || len(s.indexPages) >= indexPageCap {
+		s.indexPages = make(map[string]*indexPage, indexPageCap)
+	}
+	p := renderIndexPage(name)
+	s.indexPages[name] = p
+	return p
+}
+
+// acceptsGzip reports whether an Accept-Encoding header lets the server send
+// gzip. Every phone browser does, so the plain path is for curl and the tests.
+func acceptsGzip(accept string) bool {
+	for _, part := range strings.Split(accept, ",") {
+		fields := strings.Split(strings.TrimSpace(part), ";")
+		coding := strings.ToLower(strings.TrimSpace(fields[0]))
+		if coding != "gzip" && coding != "*" {
+			continue
+		}
+		for _, param := range fields[1:] {
+			if q := strings.TrimSpace(param); strings.HasPrefix(q, "q=") {
+				if v, err := strconv.ParseFloat(strings.TrimPrefix(q, "q="), 64); err == nil && v == 0 {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	s.noteStrayBoxRequest(r)
+	s.notePhoneLanguage(r.Header.Get("Accept-Language"))
+	p := s.indexPageFor(s.remoteDisplayName())
+	body, etag := p.plain, p.etagPlain
+	gz := acceptsGzip(r.Header.Get("Accept-Encoding"))
+	if gz {
+		body, etag = p.gzipped, p.etagGz
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
 	// The page carried NO caching instruction at all: no Cache-Control, no
 	// ETag, no Last-Modified. A browser then applies its own heuristic and may
 	// hold the page for a long time, so an agent update that changes the remote
@@ -392,21 +467,28 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	//
 	// no-cache, not no-store: the browser must revalidate every time, but a
 	// speaker that has not changed answers 304 with no body, so the common case
-	// stays as cheap as a cache hit. The tag covers the name substitution above,
-	// since two speakers serve different bytes from the same build.
-	etag := indexETag(page)
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "no-cache")
+	// stays as cheap as a cache hit. The tag covers the name substitution, since
+	// two speakers serve different bytes from the same build, and the encoding,
+	// since the compressed and the plain page are different bytes too. Vary is
+	// set on every answer, the 304 included, so a cache keys the page on the
+	// encoding it asked for and a home-screen app never gets the other one.
+	h.Set("ETag", etag)
+	h.Set("Cache-Control", "no-cache")
+	h.Set("Vary", "Accept-Encoding")
+	if gz {
+		h.Set("Content-Encoding", "gzip")
+	}
 	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	_, _ = fmt.Fprint(w, page)
+	h.Set("Content-Length", strconv.Itoa(len(body)))
+	_, _ = w.Write(body)
 }
 
-// indexETag is a strong validator for the exact bytes served. Hashing a ~110 KB
-// string per request is cheap next to the transfer it can save, and it keeps
-// the tag honest when the page is rewritten per speaker.
+// indexETag is a strong validator for the exact bytes served. It is computed
+// once per rendered page (see indexPage), and it keeps the tag honest when the
+// page is rewritten per speaker.
 func indexETag(page string) string {
 	sum := sha256.Sum256([]byte(page))
 	return `"` + hex.EncodeToString(sum[:8]) + `"`
