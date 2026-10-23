@@ -926,11 +926,18 @@ var T = pickDict();
 // caller, never as markup.
 // boxLang is the speaker's own display language as a two-letter code, or ''
 // until it has been read. The firmware reports an integer; this is the table
-// the desktop app resolved in full.
+// the desktop app resolved in full (BOSE_LANGS in views/settings.js), and a
+// vitest there holds the two copies together. It carried only ids 1 to 12 for
+// a while, so a speaker set to Polish (19) or Turkish (24) got the phone's
+// language instead of its own although both dictionaries were on board. Ids
+// without a dictionary here still resolve, so pickDict falls through to the
+// phone's languages exactly as it does for a speaker that never answered.
 var boxLang = '';
 var BOSE_LANG_CODES = {
   1: 'da', 2: 'de', 3: 'en', 4: 'es', 5: 'fr', 6: 'it',
   7: 'nl', 8: 'sv', 9: 'ja', 10: 'zh', 11: 'zh', 12: 'ko',
+  13: 'th', 15: 'cs', 16: 'fi', 17: 'el', 18: 'no', 19: 'pl',
+  20: 'pt', 21: 'ro', 22: 'ru', 23: 'sl', 24: 'tr', 25: 'hu',
 };
 
 // loadBoxLanguage asks the speaker once. Best effort: an older agent has no
@@ -3021,8 +3028,10 @@ async function loadPeers() {
 // opening can show stale dim states (the agent re-probes peers on demand and
 // in a 60 s background tick, so a just-opened page may be seconds ahead of
 // the freshest verdict). Re-fetching keeps dim/clickable live without a
-// reload. 20 s matches the agent's sweep cadence without hammering it.
-setInterval(function(){ loadPeers().catch(function(){}); }, 20000);
+// reload. 20 s matches the agent's sweep cadence without hammering it. Not
+// while the tab is in the background: the visibilitychange handler below
+// refreshes everything on return, so a hidden page has nothing to show.
+setInterval(function(){ if (document.visibilityState !== 'visible') return; loadPeers().catch(function(){}); }, 20000);
 
 async function loadVersion() {
   const v = await api('/api/agent/version');
@@ -5695,17 +5704,23 @@ async function loadRemembered() {
 })();
 
 applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone(); loadSleep(); loadAlarms(); loadMusicLib(); loadPlayMode().catch(function(){}); loadRecent().catch(function(){}); loadFavorites().catch(function(){}); loadPandora().catch(function(){}); loadBrowseServers().catch(function(){}); loadRemembered().catch(function(){});
-setInterval(function(){ refreshStatus(); refreshWedge(); }, 5000);
+// None of these ticks run while the page is in the background. A phone that
+// went back to its home screen, or a tab behind another, kept asking the
+// speaker every 5 s for a page nobody was looking at, and a speaker with a few
+// such phones around it answered them instead of the one in use. The
+// visibilitychange handler refreshes everything the moment the page is back,
+// the same way the favourites tick and the fleet updater already wait.
+setInterval(function(){ if (document.visibilityState !== 'visible') return; refreshStatus(); refreshWedge(); }, 5000);
 // The group is polled far more slowly than the transport: it changes when
 // somebody forms or dissolves one, not second by second, and every poll costs
 // the speaker a round trip to each member.
-setInterval(function(){ if (!document.getElementById('panelSpeakers').hidden || zone.grouped) loadZone(); }, 15000);
+setInterval(function(){ if (document.visibilityState !== 'visible') return; if (!document.getElementById('panelSpeakers').hidden || zone.grouped) loadZone(); }, 15000);
 // Presets change from the desktop app too, and this page used to keep whatever
 // it loaded on open. Re-read on the same slow cadence as the group: it only has
 // to catch somebody pressing save elsewhere, and the grid is left alone unless
 // the names actually differ. The read hits the agent's own store, not the Bose
 // firmware, so it adds nothing to the load the transport poll is rationed for.
-setInterval(function(){ loadPresets().catch(function(){}); }, 15000);
+setInterval(function(){ if (document.visibilityState !== 'visible') return; loadPresets().catch(function(){}); }, 15000);
 // Favourites the same way, but only while the Find tab shows them: a star
 // set or taken off in the desktop app is on every speaker within a second,
 // and this page has to notice it (#1389). The read is the agent's own file.

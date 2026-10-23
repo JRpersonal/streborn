@@ -419,6 +419,11 @@ type Server struct {
 	// Guarded by statusMu; reset whenever a fresh body is cached.
 	statusStaleWarned bool
 
+	// indexMu guards indexPages, the phone remote page rendered per speaker
+	// name (plain and gzip bytes plus their ETags), see handleIndex.
+	indexMu    sync.Mutex
+	indexPages map[string]*indexPage
+
 	// boxCmdMu serializes state-changing commands sent to the speaker
 	// (play, volume, pause, stop, source, bass). The Bose firmware's tiny
 	// HTTP/UPnP server mishandles concurrent commands: a volume PUT landing
