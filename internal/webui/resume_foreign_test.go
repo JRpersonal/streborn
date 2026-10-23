@@ -43,9 +43,9 @@ func TestContentLocationsReadsEveryItem(t *testing.T) {
 	body := `<nowPlaying source="INVALID_SOURCE">` +
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>` +
 		`<previous location="http://127.0.0.1:8888/stream/2"/></nowPlaying>`
-	got := contentLocations(body)
+	got := parseBoxReading(body).locations
 	if len(got) != 2 || got[0] != "http://192.0.2.50:8095/stream/flow.mp3" {
-		t.Fatalf("contentLocations = %v, want both items in document order", got)
+		t.Fatalf("locations = %v, want both items in document order", got)
 	}
 }
 

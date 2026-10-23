@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"regexp"
@@ -1132,65 +1131,18 @@ func nearEnd(progress, end time.Duration) bool {
 	return progress >= end-queueEndEpsilon
 }
 
-var (
-	reNowPlayStatus = regexp.MustCompile(`<playStatus>([^<]+)</playStatus>`)
-	reNowPlayTime   = regexp.MustCompile(`<time total="(\d+)"\s*>(\d+)</time>`)
-	// reNowPlaySource reads the <nowPlaying source="..."> attribute (not a track
-	// title), so a station/track literally named "STANDBY" cannot be mistaken for
-	// the box being off.
-	reNowPlaySource = regexp.MustCompile(`<nowPlaying[^>]*\bsource="([^"]*)"`)
-	// reNowPlayLocation reads the ContentItem location attribute: the URL the
-	// box is currently tuned to. Used by the recall verify to detect the box
-	// playing a DIFFERENT stream than the one just recalled (#252).
-	reNowPlayLocation = regexp.MustCompile(`\blocation="([^"]*)"`)
-)
-
-// nowPlayingStandby reports whether the box's now_playing says it is in standby
-// (powered off). The box reports source="STANDBY" (some firmwares
-// "NETWORK_STANDBY") on the nowPlaying root when it is off.
-func nowPlayingStandby(body string) bool {
-	if m := reNowPlaySource.FindStringSubmatch(body); m != nil {
-		return strings.Contains(m[1], "STANDBY")
-	}
-	return false
-}
-
-// nowPlayingSourceTornDown reports whether the box has dropped the source it
-// was playing. The firmware answers a starved or rejected stream by tearing
-// the source down to INVALID_SOURCE, and such a document carries no
-// <playStatus> at all, which is why the watcher used to see nothing.
-func nowPlayingSourceTornDown(body string) bool {
-	if m := reNowPlaySource.FindStringSubmatch(body); m != nil {
-		return strings.Contains(m[1], "INVALID_SOURCE")
-	}
-	return false
-}
-
-// nowPlayingStatus reads the play status out of a now_playing body, empty when
-// the box reported none (a box that has just left standby, and the source
-// teardown while it is in progress). The typed element first so a track title
-// containing "STOP_STATE" cannot be mistaken for one; some firmwares put the
-// status on an attribute instead, which is what the scan covers.
-func nowPlayingStatus(body string) string {
-	if m := reNowPlayStatus.FindStringSubmatch(body); m != nil {
-		return m[1]
-	}
-	switch {
-	case strings.Contains(body, "PLAY_STATE"):
-		return "PLAY_STATE"
-	case strings.Contains(body, "BUFFERING_STATE"):
-		return "BUFFERING_STATE"
-	case strings.Contains(body, "PAUSE_STATE"):
-		return "PAUSE_STATE"
-	case strings.Contains(body, "STOP_STATE"):
-		return "STOP_STATE"
-	}
-	return ""
-}
+// reNowPlayLocation reads the ContentItem location attribute: the URL the
+// box is currently tuned to. Used by the recall verify to detect the box
+// playing a DIFFERENT stream than the one just recalled (#252).
+var reNowPlayLocation = regexp.MustCompile(`\blocation="([^"]*)"`)
 
 // pollNowPlaying reads the box's now_playing once and returns the play status,
 // the current/total position, whether the box is in standby or dropped its
-// source, and the source attribute ("" when unknown). Zero values on any error.
+// source, and the source attribute ("" when unknown). Zero values on any
+// error. The verdicts are boxapi's: standby and a teardown (INVALID_SOURCE,
+// the firmware's answer to a starved stream, a document with no <playStatus>
+// at all) are read off the root source attribute, so a track literally named
+// "STANDBY" cannot be mistaken for the box being off.
 func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby, tornDown bool, source string) {
 	// Test seam, the same one boxPlayStateDetail has: the end detection is a
 	// state machine over what the box reports, and it is only testable if the
@@ -1206,32 +1158,11 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 		}
 		return st, p, t, sb, false, source
 	}
-	if s.boxHost == "" {
-		return "", 0, 0, false, false, ""
-	}
-	cl := &http.Client{Timeout: 3 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	np, err := s.readBoxNowWithin(3 * time.Second)
 	if err != nil {
 		return "", 0, 0, false, false, ""
 	}
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	resp.Body.Close()
-	body := string(b)
-	standby = nowPlayingStandby(body)
-	tornDown = nowPlayingSourceTornDown(body)
-	status = nowPlayingStatus(body)
-	if m := reNowPlaySource.FindStringSubmatch(body); m != nil {
-		source = m[1]
-	}
-	if m := reNowPlayTime.FindStringSubmatch(body); m != nil {
-		if t, err := strconv.Atoi(m[1]); err == nil {
-			total = time.Duration(t) * time.Second
-		}
-		if c, err := strconv.Atoi(m[2]); err == nil {
-			pos = time.Duration(c) * time.Second
-		}
-	}
-	return status, pos, total, standby, tornDown, source
+	return np.Status(), np.Position, np.Total, np.IsStandby(), np.SourceTornDown(), np.Source
 }
 
 // --- HTTP handlers -------------------------------------------------------
@@ -1668,24 +1599,8 @@ func (s *Server) spotifyRecoverAfterSkip() {
 // attached/BUFFERING. The strict signal spotifyRecoverAfterSkip needs to tell a
 // genuinely playing box from one stuck buffering on a stalled stream.
 func (s *Server) boxSpotifyReallyPlaying() bool {
-	host := s.boxHost
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":8090/now_playing", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := (&http.Client{Timeout: 4 * time.Second}).Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	s2 := string(b)
-	return strings.Contains(s2, "spotify/stream") && strings.Contains(s2, "PLAY_STATE")
+	np, err := s.readBoxNowWithin(4 * time.Second)
+	return err == nil && np.ReallySpotify()
 }
 
 // TransportSkip advances playback to the next (forward=true) or previous track,
@@ -1892,22 +1807,10 @@ func isTimeoutErr(err error) bool {
 // Next/Prev reach go-librespot even when a Spotify playlist is paused (where
 // spotifyStreaming() is false, since the Ogg sink has detached).
 func (s *Server) boxSourceIsSpotify(ctx context.Context) bool {
-	host := s.boxHost
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":8090/now_playing", nil)
-	if err != nil {
-		return false
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	return strings.Contains(string(b), "spotify/stream")
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	np, err := s.readBoxNow(ctx)
+	return err == nil && np.OnSpotifyStream()
 }
 
 func (s *Server) handleTransportNext(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,8 @@ package webui
 import (
 	"strings"
 	"testing"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // The shapes a real speaker produces when a library file starves. Measured in a
@@ -27,12 +29,12 @@ func TestATornDownSourceIsRecognised(t *testing.T) {
 		``,
 	}
 	for _, x := range tornDown {
-		if !nowPlayingSourceTornDown(x) {
+		if !boxapi.ParseNowPlaying([]byte(x)).SourceTornDown() {
 			t.Errorf("a torn-down source was not recognised, so the queue would wait out the whole track: %s", x)
 		}
 	}
 	for _, x := range playing {
-		if nowPlayingSourceTornDown(x) {
+		if boxapi.ParseNowPlaying([]byte(x)).SourceTornDown() {
 			t.Errorf("read as torn down, so a live track would be skipped: %s", x)
 		}
 	}
@@ -46,10 +48,10 @@ func TestStandbyAndTeardownDoNotOverlap(t *testing.T) {
 	standby := `<nowPlaying deviceID="DEV#1" source="STANDBY"><ContentItem source="STANDBY" /></nowPlaying>`
 	torn := `<nowPlaying deviceID="DEV#1" source="INVALID_SOURCE"><ContentItem source="INVALID_SOURCE" /></nowPlaying>`
 
-	if !nowPlayingStandby(standby) || nowPlayingSourceTornDown(standby) {
+	if !boxapi.ParseNowPlaying([]byte(standby)).IsStandby() || boxapi.ParseNowPlaying([]byte(standby)).SourceTornDown() {
 		t.Error("a standby document must read as standby and NOT as a teardown")
 	}
-	if nowPlayingStandby(torn) || !nowPlayingSourceTornDown(torn) {
+	if boxapi.ParseNowPlaying([]byte(torn)).IsStandby() || !boxapi.ParseNowPlaying([]byte(torn)).SourceTornDown() {
 		t.Error("a teardown document must read as a teardown and NOT as standby")
 	}
 }

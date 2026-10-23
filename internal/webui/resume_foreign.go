@@ -32,11 +32,11 @@
 package webui
 
 import (
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // strAgentPorts are the ports an STR agent answers audio on: 8888 direct (sm2
@@ -117,39 +117,24 @@ func (s *Server) readBox() boxReading {
 	if s.nowPlayingBodyFn != nil {
 		return parseBoxReading(s.nowPlayingBodyFn())
 	}
-	if s.boxHost == "" {
-		return boxReading{}
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	np, err := s.readBoxNowWithin(4 * time.Second)
 	if err != nil {
 		return boxReading{}
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	return parseBoxReading(string(b))
+	return readingOf(np)
 }
 
-// parseBoxReading turns one now_playing body into a reading. PAUSE counts as
-// live: a paused foreign stream is still somebody's speaker, and pushing a
-// station over it is the same interruption.
+// parseBoxReading turns one now_playing body into a reading.
 func parseBoxReading(body string) boxReading {
-	switch nowPlayingStatus(body) {
-	case "PLAY_STATE", "BUFFERING_STATE", "PAUSE_STATE":
-		return boxReading{locations: contentLocations(body), playing: true}
-	}
-	return boxReading{locations: contentLocations(body)}
+	return readingOf(boxapi.ParseNowPlaying([]byte(body)))
 }
 
-// contentLocations pulls the location attributes out of a now_playing body,
-// in document order.
-func contentLocations(body string) []string {
-	ms := reNowPlayLocation.FindAllStringSubmatch(body, -1)
-	out := make([]string, 0, len(ms))
-	for _, m := range ms {
-		out = append(out, m[1])
-	}
-	return out
+// readingOf projects a parsed now_playing onto a reading. PAUSE counts as
+// live: a paused foreign stream is still somebody's speaker, and pushing a
+// station over it is the same interruption. Every location attribute in the
+// document is kept, in document order.
+func readingOf(np *boxapi.NowPlaying) boxReading {
+	return boxReading{locations: np.Locations(), playing: np.IsBusy()}
 }
 
 // foreignContentStandDown reports whether the box is PLAYING content STR does

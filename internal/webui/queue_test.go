@@ -3,6 +3,8 @@ package webui
 import (
 	"math/rand"
 	"testing"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 func mkItems(n int) []queueItem {
@@ -161,11 +163,11 @@ func TestQueueSetShuffleKeepsCurrent(t *testing.T) {
 // named "STANDBY" while actually playing must NOT be mistaken for it.
 func TestNowPlayingStandby(t *testing.T) {
 	standby := `<?xml version="1.0"?><nowPlaying deviceID="x" source="STANDBY"><ContentItem source="STANDBY" isPresetable="false" /></nowPlaying>`
-	if !nowPlayingStandby(standby) {
+	if !boxapi.ParseNowPlaying([]byte(standby)).IsStandby() {
 		t.Fatal("a source=STANDBY nowPlaying must be detected as standby")
 	}
 	playing := `<?xml version="1.0"?><nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://a"><itemName>STANDBY (band)</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>`
-	if nowPlayingStandby(playing) {
+	if boxapi.ParseNowPlaying([]byte(playing)).IsStandby() {
 		t.Fatal("a playing UPNP track named STANDBY must NOT count as standby")
 	}
 }
