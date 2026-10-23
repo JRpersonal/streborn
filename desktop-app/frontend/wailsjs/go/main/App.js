@@ -538,6 +538,14 @@ export function RevealUpdateFile(arg1) {
   return window['go']['main']['App']['RevealUpdateFile'](arg1);
 }
 
+export function RunFleetUpdate(arg1) {
+  return window['go']['main']['App']['RunFleetUpdate'](arg1);
+}
+
+export function RunSpeakerUpdate(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['RunSpeakerUpdate'](arg1, arg2, arg3, arg4);
+}
+
 export function SaveArcadeScreenshot(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveArcadeScreenshot'](arg1, arg2, arg3);
 }

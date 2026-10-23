@@ -791,6 +791,16 @@ sequenceDiagram
   end
 ```
 
+The sequence after the push (the version poll, the 50 s stability
+window, the classification of a miss and its one retry, the Spotify
+engine step, and in a whole-house run the gate that serialises only
+the byte pushes) runs in Go: `desktop-app/otaorchestrate.go`,
+bound as `RunSpeakerUpdate` and `RunFleetUpdate`. The frontend keeps
+the pre-checks and dialogs, maps the `box:update:phase` events to
+text, and renders them. The live harnesses
+(`ota_live_contract_test.go`, `ota_live_fleet_test.go`) drive the
+same two methods headless.
+
 Build-stamp coupling is critical: the desktop app and the embedded
 ARM agent must come from the same release pipeline run, or the
 version check loops. See the build-stamp-sync memory and

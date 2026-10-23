@@ -273,6 +273,10 @@ export function Resume(arg1:string,arg2:number):Promise<void>;
 
 export function RevealUpdateFile(arg1:string):Promise<void>;
 
+export function RunFleetUpdate(arg1:Array<main.FleetTarget>):Promise<main.FleetOutcome>;
+
+export function RunSpeakerUpdate(arg1:string,arg2:number,arg3:string,arg4:string):Promise<main.UpdateOutcome>;
+
 export function SaveArcadeScreenshot(arg1:string,arg2:number,arg3:string):Promise<string>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
