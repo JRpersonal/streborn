@@ -1168,9 +1168,38 @@ func resumeRefSuperseded(ref, cur *lastPlayInfo) bool {
 	return cur.boxURL != ref.boxURL || !cur.ts.Equal(ref.ts)
 }
 
-// zoneFormResumeSettle is the settle before resumeAfterZoneForm's push. A
-// variable so the tests can shorten it; the value is the production one.
-var zoneFormResumeSettle = 1500 * time.Millisecond
+// zoneTiming is the zone clock: the waits the group paths sleep through. A
+// struct on the Server so a test can install a faster one without touching a
+// package-level variable (a goroutine still reading it after the test's cleanup
+// restored it is a data race); the production values are in
+// productionZoneTiming.
+type zoneTiming struct {
+	// mirrorKickDelay is how long kickMirrorAfterPlay waits before the round. A
+	// variable so the tests can shorten it; the value is the production one.
+	mirrorKickDelay time.Duration
+	// formResumeSettle is the settle before resumeAfterZoneForm's push. A
+	// variable so the tests can shorten it; the value is the production one.
+	formResumeSettle time.Duration
+	// joinVolumeConfirmAfter is the pause before matchNewMembersToMasterVolume's
+	// confirming read. A variable so the tests can shorten it; the value is the
+	// production one.
+	joinVolumeConfirmAfter time.Duration
+}
+
+var productionZoneTiming = zoneTiming{
+	mirrorKickDelay:        6 * time.Second,
+	formResumeSettle:       1500 * time.Millisecond,
+	joinVolumeConfirmAfter: 2500 * time.Millisecond,
+}
+
+// zoneTimes is the zone clock: the production values unless a test installed a
+// faster one.
+func (s *Server) zoneTimes() *zoneTiming {
+	if s.zoneTiming != nil {
+		return s.zoneTiming
+	}
+	return &productionZoneTiming
+}
 
 // resumeAfterZoneForm (re)starts the stream that was playing before a group
 // change tore it down or left members without it (see handleZoneForm and
@@ -1183,7 +1212,7 @@ func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 		return
 	}
 	lp := rz.push
-	time.Sleep(zoneFormResumeSettle)
+	time.Sleep(s.zoneTimes().formResumeSettle)
 	if s.userStoppedRecently() {
 		s.logger.Info("zone: not restarting playback after forming, user stopped meanwhile")
 		return
@@ -1561,7 +1590,7 @@ func (s *Server) dropStereoDocAfterFailure(why string) {
 // for a moment would block a legitimate action on no evidence, the same
 // best-effort policy the desktop's own boxInStereoPair guard follows.
 //
-// Reads through the package's fetchZone seam, so tests need no :8090 server.
+// Reads through the Server's fetchZone seam, so tests need no :8090 server.
 func (s *Server) zonedPairCandidates(ctx context.Context, partnerIP string) []string {
 	hosts := make([]string, 0, 2)
 	if s.boxHost != "" {
@@ -1573,7 +1602,7 @@ func (s *Server) zonedPairCandidates(ctx context.Context, partnerIP string) []st
 	out := make([]string, 0, len(hosts))
 	for _, h := range hosts {
 		zctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		z, err := fetchZone(zctx, h)
+		z, err := s.fetchZone(zctx, h)
 		cancel()
 		if err != nil {
 			s.logger.Info("stereo: could not read the live zone before pairing, going ahead", "host", h, "err", err)
@@ -2421,10 +2450,6 @@ func (s *Server) PeriodicZoneReconcile() {
 	}
 }
 
-// mirrorKickDelay is how long kickMirrorAfterPlay waits before the round. A
-// variable so the tests can shorten it; the value is the production one.
-var mirrorKickDelay = 6 * time.Second
-
 // kickMirrorAfterPlay asks for an out-of-turn reconcile shortly after a fresh
 // play, so the other speakers in a group join within seconds.
 //
@@ -2473,7 +2498,7 @@ func (s *Server) kickMirrorAfterPlay() {
 		return
 	}
 	go func() {
-		time.Sleep(mirrorKickDelay)
+		time.Sleep(s.zoneTimes().mirrorKickDelay)
 		s.mirrorKickPending.Store(false)
 		select {
 		case s.mirrorKick <- struct{}{}:
@@ -3061,11 +3086,11 @@ func (s *Server) leaderZone(ctx context.Context, z boxapi.Zone) ([]boxapi.ZoneMe
 	if master == "" || senderIP == "" {
 		return nil, false
 	}
-	ownID := fetchDeviceID(ctx, s.boxHost)
+	ownID := s.fetchDeviceID(ctx, s.boxHost)
 	if ownID == "" || strings.EqualFold(ownID, master) {
 		return nil, false // we lead it, or cannot tell who we are
 	}
-	lz, err := fetchZone(ctx, senderIP)
+	lz, err := s.fetchZone(ctx, senderIP)
 	if err != nil || len(lz.Members) == 0 {
 		return nil, false
 	}

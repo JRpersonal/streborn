@@ -154,7 +154,7 @@ func (s *Server) storedGroupIsLive(own ownZoneAnswer) bool {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		z, err := fetchZone(ctx, s.boxHost)
+		z, err := s.fetchZone(ctx, s.boxHost)
 		if err != nil {
 			return true // unreachable right now is not evidence the group is gone
 		}
@@ -383,19 +383,29 @@ func (s *Server) zoneVolumeSet(w http.ResponseWriter, r *http.Request) {
 
 // The two firmware reads liveGroupView makes, behind seams. boxapi pins port
 // 8090, which a test cannot serve, and the same swap is what the other box
-// tests in this package use.
-var (
-	fetchZone = func(ctx context.Context, host string) (boxapi.Zone, error) {
-		return boxapi.New(host).GetZone(ctx)
+// tests in this package use. A test installs fetchZoneFn / fetchDeviceIDFn on
+// its own Server; nil is production.
+
+// fetchZone reads a speaker's live /getZone.
+func (s *Server) fetchZone(ctx context.Context, host string) (boxapi.Zone, error) {
+	if s.fetchZoneFn != nil {
+		return s.fetchZoneFn(ctx, host)
 	}
-	fetchDeviceID = func(ctx context.Context, host string) string {
-		info, err := boxapi.New(host).GetInfo(ctx)
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(info.DeviceID)
+	return boxapi.New(host).GetZone(ctx)
+}
+
+// fetchDeviceID reads a speaker's own deviceID from its /info, or "" when the
+// speaker does not answer.
+func (s *Server) fetchDeviceID(ctx context.Context, host string) string {
+	if s.fetchDeviceIDFn != nil {
+		return s.fetchDeviceIDFn(ctx, host)
 	}
-)
+	info, err := boxapi.New(host).GetInfo(ctx)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(info.DeviceID)
+}
 
 // ownZoneAnswer is what this speaker's own firmware said about its zone, passed
 // from the one place that reads it to the one that would otherwise repeat the
@@ -435,7 +445,7 @@ func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool, o
 	if s.boxHost == "" {
 		return nil, false, ownZoneAnswer{}
 	}
-	live, err := fetchZone(ctx, s.boxHost)
+	live, err := s.fetchZone(ctx, s.boxHost)
 	if err != nil {
 		return nil, false, ownZoneAnswer{}
 	}
@@ -444,7 +454,7 @@ func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool, o
 	if master == "" {
 		return nil, false, own
 	}
-	ownID := fetchDeviceID(ctx, s.boxHost)
+	ownID := s.fetchDeviceID(ctx, s.boxHost)
 	if ownID == "" || strings.EqualFold(ownID, master) {
 		// We lead it, or the speaker cannot say who it is. Either way the
 		// stored document is the better source and the caller keeps it.
@@ -462,7 +472,7 @@ func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool, o
 		{Name: s.groupSelfName(zones.Zone{}), IP: s.boxHost, DeviceID: ownID, IsSelf: true, Volume: -1},
 	}
 
-	mz, err := fetchZone(ctx, masterIP)
+	mz, err := s.fetchZone(ctx, masterIP)
 	if err != nil {
 		return certain, true, own // the leader is not answering
 	}

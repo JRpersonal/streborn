@@ -268,7 +268,7 @@ func TestSleepGroupSwitchesEveryMemberOff(t *testing.T) {
 	// The group resolver asks the firmware whether the stored group is still
 	// live, so the speaker has to answer. Without this the test waits on a
 	// real connection to an unroutable address.
-	withSpeakers(t,
+	withSpeakers(s,
 		map[string]boxapi.Zone{"192.0.2.10": {Master: "DEV-SELF", Members: []boxapi.ZoneMember{
 			{DeviceID: "DEV-192.0.2.20", IP: "192.0.2.20"}, {DeviceID: "DEV-192.0.2.30", IP: "192.0.2.30"}}}},
 		map[string]string{"192.0.2.10": "DEV-SELF"})
@@ -296,7 +296,7 @@ func TestSleepGroupCarriesOnPastAnUnreachableMember(t *testing.T) {
 	// The group resolver asks the firmware whether the stored group is still
 	// live, so the speaker has to answer. Without this the test waits on a
 	// real connection to an unroutable address.
-	withSpeakers(t,
+	withSpeakers(s,
 		map[string]boxapi.Zone{"192.0.2.10": {Master: "DEV-SELF", Members: []boxapi.ZoneMember{
 			{DeviceID: "DEV-192.0.2.20", IP: "192.0.2.20"}, {DeviceID: "DEV-192.0.2.30", IP: "192.0.2.30"}}}},
 		map[string]string{"192.0.2.10": "DEV-SELF"})
@@ -315,7 +315,7 @@ func TestSleepGroupOnAStandaloneSpeaker(t *testing.T) {
 	f := &fakeBox{source: "UPNP"}
 	f.install(t)
 	s := newSleepServer()
-	noGroup(t) // the speaker answers "not grouped" instead of timing out
+	noGroup(s) // the speaker answers "not grouped" instead of timing out
 
 	s.armSleep(10*time.Millisecond, true)
 	if !waitFor(func() bool { return len(f.offList()) == 1 }) {

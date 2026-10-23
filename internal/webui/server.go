@@ -205,6 +205,11 @@ type Server struct {
 	// peersFn lists the other STR speakers on the LAN for the on-box page's
 	// "Other speakers" section. nil hides the section.
 	peersFn func(ctx context.Context) []PeerLink
+	// The zone test seams and clock: nil means production (see zoneTimes,
+	// fetchZone and fetchDeviceID).
+	zoneTiming      *zoneTiming
+	fetchZoneFn     func(ctx context.Context, host string) (boxapi.Zone, error)
+	fetchDeviceIDFn func(ctx context.Context, host string) string
 	// networkChangedFn is the post-switch state refresh, fired after a
 	// CONFIRMED live Wi-Fi switch (see SetNetworkChangedFn). nil = no refresh.
 	networkChangedFn func(reason string)

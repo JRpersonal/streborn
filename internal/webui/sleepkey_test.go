@@ -41,9 +41,8 @@ func TestNextSleepStep(t *testing.T) {
 
 // noGroup makes the speaker answer "not grouped" at once, so the group
 // resolver behind every key press does not dial the test address.
-func noGroup(t *testing.T) {
-	t.Helper()
-	withSpeakers(t, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-SELF"})
+func noGroup(s *Server) {
+	withSpeakers(s, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-SELF"})
 }
 
 // pressSleep presses the key as a user tapping through would: past the
@@ -67,9 +66,9 @@ func TestSleepKeyCycles(t *testing.T) {
 	f := &fakeBox{source: "UPNP"}
 	f.install(t)
 	s := newSleepServer()
-	// noGroup before the cancel cleanup: cleanups run last-in first-out, and
-	// the cancel's group push must still find the stub, not the real speaker.
-	noGroup(t)
+	// The stub lives on s, so the cancel's group push in the cleanup still
+	// finds it rather than the real speaker.
+	noGroup(s)
 	t.Cleanup(func() { s.cancelSleep("test") })
 
 	for i, want := range []int{15, 30, 60, 0, 15} {
@@ -101,7 +100,7 @@ func TestSleepKeyDebouncesOnePress(t *testing.T) {
 	f := &fakeBox{source: "UPNP"}
 	f.install(t)
 	s := newSleepServer()
-	noGroup(t) // before the cancel cleanup, see TestSleepKeyCycles
+	noGroup(s)
 	t.Cleanup(func() { s.cancelSleep("test") })
 	s.SleepKeyPress()
 	s.SleepKeyPress()
@@ -116,7 +115,7 @@ func TestSleepKeyStepsOnFromThePhone(t *testing.T) {
 	f.install(t)
 	s := newSleepServer()
 	t.Cleanup(func() { s.cancelSleep("test") })
-	noGroup(t)
+	noGroup(s)
 	sleepPost(t, s, `{"minutes":45}`)
 	pressSleep(s)
 	if _, m := sleepMinutesArmed(s); m != 60 {
@@ -137,7 +136,7 @@ func TestSleepKeyPushesToTheGroup(t *testing.T) {
 	s := newSleepServer()
 	t.Cleanup(func() { s.cancelSleep("test") })
 	s.zones = fakeZoneStore(t, "192.0.2.20", "192.0.2.30")
-	withSpeakers(t,
+	withSpeakers(s,
 		map[string]boxapi.Zone{"192.0.2.10": {Master: "DEV-SELF", Members: []boxapi.ZoneMember{
 			{DeviceID: "DEV-192.0.2.20", IP: "192.0.2.20"}, {DeviceID: "DEV-192.0.2.30", IP: "192.0.2.30"}}}},
 		map[string]string{"192.0.2.10": "DEV-SELF"})
@@ -181,7 +180,7 @@ func TestSleepSingleTimerPushesNothing(t *testing.T) {
 	f.install(t)
 	s := newSleepServer()
 	t.Cleanup(func() { s.cancelSleep("test") })
-	noGroup(t)
+	noGroup(s)
 	s.zones = fakeZoneStore(t, "192.0.2.20")
 	sleepPost(t, s, `{"minutes":30}`)
 	s.cancelSleep("test")

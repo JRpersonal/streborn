@@ -60,6 +60,7 @@ func contains(hay, needle string) bool { return strings.Contains(hay, needle) }
 // has moved once already, and a test that reads the code cannot tell a
 // refactor from a regression.
 func TestStereoPairIsNotJudgedByGetZone(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := zones.Load(filepath.Join(dir, "zones.json"))
 	if err != nil {
@@ -69,11 +70,11 @@ func TestStereoPairIsNotJudgedByGetZone(t *testing.T) {
 		Slaves: []zones.Member{{DeviceID: "DEV-RIGHT", IP: "192.0.2.20", Role: "right"}}}); err != nil {
 		t.Fatalf("store the pair: %v", err)
 	}
-	// What a healthy pair's firmware answers: nothing at all about a zone.
-	withSpeakers(t, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-SELF"})
-
 	s := quietServer("192.0.2.10")
 	s.zones = st
+	// What a healthy pair's firmware answers: nothing at all about a zone.
+	withSpeakers(s, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-SELF"})
+
 	members, grouped, stereo := s.groupView(context.Background())
 	if !grouped || !stereo {
 		t.Fatalf("a healthy stereo pair read as grouped=%v stereo=%v, and an empty /getZone must not decide that", grouped, stereo)
