@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // A view must not set state.currentBox just before handing the speaker to
@@ -20,6 +20,18 @@ import { join } from 'node:path';
 
 const VIEWS = join(import.meta.dirname, 'views');
 
+// viewFiles lists every view module, including the ones split into a folder
+// of their own (views/music/, views/settings/), as paths relative to views/.
+function viewFiles(dir = '') {
+  const out = [];
+  for (const name of readdirSync(join(VIEWS, dir))) {
+    const rel = dir ? `${dir}/${name}` : name;
+    if (statSync(join(VIEWS, rel)).isDirectory()) out.push(...viewFiles(rel));
+    else if (name.endsWith('.js') && !name.endsWith('.test.js')) out.push(rel);
+  }
+  return out;
+}
+
 // linesBefore returns the CODE lines preceding an index, comments and blanks
 // dropped, newest first. Comments are dropped on purpose: the explanation of
 // this very trap sits above the call and mentions the assignment.
@@ -34,11 +46,12 @@ function codeLinesBefore(lines, idx, howMany) {
 }
 
 describe('the speakerPicked contract, checked in the source', () => {
-  const files = readdirSync(VIEWS).filter((f) => f.endsWith('.js') && !f.endsWith('.test.js'));
+  const files = viewFiles();
 
   it('finds the views, so a rename cannot turn this into a test of nothing', () => {
     expect(files.length).toBeGreaterThan(0);
     expect(files).toContain('library.js');
+    expect(files).toContain('music/search.js');
   });
 
   for (const file of files) {
