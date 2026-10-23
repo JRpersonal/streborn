@@ -13,6 +13,7 @@ import { optimisticQueue, optimisticSpotifyLocation, showToast } from '../../uti
 import { escalationForCount, noteNotReady, noteWakeSucceeded } from '../../wakeescalation.js';
 import { throttledSetVolume } from '../settings.js';
 import { deps } from './deps.js';
+import { effectivePlayTarget } from './group.js';
 import { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
 import { renderNowPlayingBar } from './nowplaying.js';
 import { BOX_LOOPBACK } from './presets.js';
@@ -150,7 +151,7 @@ export async function play(slot) {
     // agents send a raw SOAP string and take the error path unchanged.
     const rej = parsePlayRejection(e0);
     if (rej.grouped) {
-      const mb = resolveBoxByRef(rej.master, state.boxes) || deps.effectivePlayTarget();
+      const mb = resolveBoxByRef(rej.master, state.boxes) || effectivePlayTarget();
       if (mb && state.currentBox && mb.host !== state.currentBox.host) {
         try {
           await PlaySlot(mb.host, mb.port, slot);

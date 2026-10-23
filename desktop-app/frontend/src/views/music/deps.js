@@ -14,10 +14,12 @@ export let deps = {
   // The refresh button, and the status poll when a speaker has stopped
   // answering (wiring.js, status.js).
   discoverBoxes() {},
-  effectivePlayTarget() {},
   // The world map invite rides the status poll (status.js).
   maybeInviteWorldMap() {},
-  renderGroupControl() {},
+  // The group panel re-reads the live zones after a member toggle (group.js).
+  refreshMusicZones() {},
+  // The group panel repaints the speaker picker's group frames (group.js).
+  renderBoxSelect() {},
   // The "speaker has no internet" prompt hands the speaker to the settings
   // tab before switching there (search.js).
   speakerPickedInTab() {},

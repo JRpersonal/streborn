@@ -46,6 +46,7 @@ import {
 } from '../../utils.js';
 import { deps } from './deps.js';
 import { isFav, loadFavStore, toggleFav } from './favorites.js';
+import { effectivePlayTarget } from './group.js';
 import { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
 import { renderNowPlayingBar } from './nowplaying.js';
 import { renderPandoraStations } from './pandora.js';
@@ -396,7 +397,7 @@ export function preferMp3SiblingForBox(s, list) {
 export async function playStation(s, options = {}) {
   const isStreamSource = options.streamSource === true;
   // A play aimed at a zone follower must go to its master instead (#70).
-  let box = deps.effectivePlayTarget();
+  let box = effectivePlayTarget();
   if (!box) return false;
   // The user-facing selection when this play started. Every await below
   // re-checks it: without the guard, a speaker switch during the retry loop

@@ -25,7 +25,7 @@ import {
   showError,
   showToast,
 } from '../../utils.js';
-import { deps } from './deps.js';
+import { renderGroupControl } from './group.js';
 import { play } from './play.js';
 import {
   boxSourceLabel,
@@ -47,7 +47,7 @@ export function renderPresets() {
   // The transfer row lives right under the grid and follows the selection.
   wirePresetTransferRow();
   updatePresetTransferRow();
-  deps.renderGroupControl();
+  renderGroupControl();
   const activeSlot = activeSlotFromLocation(state.nowLocation);
   // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg
   // URL. A hardware next/prev advances go-librespot but can drop the slot from

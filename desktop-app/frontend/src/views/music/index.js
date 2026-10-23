@@ -20,6 +20,7 @@ import { mountSearch } from './search.js';
 import { mountFavorites } from './favorites.js';
 import { mountPandora } from './pandora.js';
 import { mountPicker } from './picker.js';
+import { purgeGroupStateForSpeaker } from './group.js';
 
 export { initMusicView } from './deps.js';
 export { refreshSourceButtons } from './sources.js';
@@ -46,6 +47,7 @@ export {
 } from './favorites.js';
 export { openPandoraPick, updatePandoraModeBtn } from './pandora.js';
 export { openPick, showSlotPicker } from './picker.js';
+export { dissolveIncompleteMessage, effectivePlayTarget, renderGroupControl } from './group.js';
 
 // mountMusicView builds #view-box and attaches the static handlers, in the
 // order the statements had in main.js: markup first, then each module's
@@ -67,4 +69,5 @@ export function mountMusicView() {
 export function purgeMusicStateForSpeaker(host) {
   purgeSourceCacheForSpeaker(host);
   purgePresetStateForSpeaker(host);
+  purgeGroupStateForSpeaker(host);
 }
