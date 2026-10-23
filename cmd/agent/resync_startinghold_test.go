@@ -73,7 +73,7 @@ func TestTheReconcileLoopUsesTheStartHoldAndForgetsStandbyTime(t *testing.T) {
 	if k < 0 || !strings.Contains(src[k:min(k+800, len(src))], "forceHeldSince = time.Time{}") {
 		t.Error("the standby wait no longer resets the hold ceiling, so a night asleep fires the pass into the morning's resume")
 	}
-	m, err := os.ReadFile("main.go")
+	m, err := os.ReadFile("agent.go")
 	if err != nil {
 		t.Fatal(err)
 	}
