@@ -26,9 +26,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"streborn-app/agentbin"
+
+	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/sticksetup"
 	"github.com/JRpersonal/streborn/versioncmp"
-	"streborn-app/agentbin"
 )
 
 // BoxAgentVersion queries the box's Stick Agent version.
@@ -1624,7 +1626,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 				// URLs + reboot so the box is never left marge-checking a dead
 				// host (also protects a later stick install's interception).
 				a.restoreStockBoseURLsAndReboot(host)
-				a.logger.Warn("SSH-OTA: stick-free :17000 unlock did not open SSH", "host", host, "log", lastN(tlog, 200))
+				a.logger.Warn("SSH-OTA: stick-free :17000 unlock did not open SSH", "host", host, "log", discovery.LastN(tlog, 200))
 			}
 		}
 		if !opened {
@@ -1664,7 +1666,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// at all after a clean-looking upload). The command therefore syncs and echoes
 	// the on-box byte count; anything else means the box does not hold the binary.
 	if !strings.Contains(out, fmt.Sprintf("STR_UPLOADED_%d", len(bin))) {
-		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", len(bin), lastN(strings.TrimSpace(out), 160))
+		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", len(bin), discovery.LastN(strings.TrimSpace(out), 160))
 	}
 	// Content-verify before the atomic rename so a half-uploaded OR corrupted
 	// file never becomes the live agent. A size check alone cannot do that

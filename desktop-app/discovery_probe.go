@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/discovery"
 )
 
 // The STR agent and stock Bose probes behind discovery. Split out of app_discovery.go.
@@ -303,7 +305,7 @@ func probeStockDetail(ctx context.Context, ip string) (BoxInfo, bool, error) {
 	model := extractTag(s, "type")
 	serial := extractPackagedProductSerial(s)
 	return BoxInfo{
-		Name:         "stock-" + lastN(deviceID, 6),
+		Name:         "stock-" + discovery.LastN(deviceID, 6),
 		Host:         ip,
 		Port:         8090,
 		DeviceID:     deviceID,

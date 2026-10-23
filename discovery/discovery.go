@@ -159,7 +159,7 @@ func Announce(logger *slog.Logger, cfg Config) (*Announcer, error) {
 	}
 	if cfg.InstanceName == "" {
 		if cfg.DeviceID != "" {
-			cfg.InstanceName = "STR-" + lastN(cfg.DeviceID, 6)
+			cfg.InstanceName = "STR-" + LastN(cfg.DeviceID, 6)
 		} else {
 			cfg.InstanceName = "STR"
 		}
@@ -868,7 +868,10 @@ func lanAddrStrings() []string {
 	return out
 }
 
-func lastN(s string, n int) string {
+// LastN returns the last n bytes of s, or s itself when it is shorter. Used
+// for the "STR-xxxxxx" / "stock-xxxxxx" instance names built from the tail
+// of a device id, and by the desktop app to trim log excerpts.
+func LastN(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}

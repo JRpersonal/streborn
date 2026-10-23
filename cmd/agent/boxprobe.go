@@ -84,14 +84,6 @@ func boxInSetupOOB(boxHost string) bool {
 	return strings.Contains(string(body), "SETUP_AP_OOB")
 }
 
-// lastN returns the last n characters of s.
-func lastN(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[len(s)-n:]
-}
-
 // boxNowPlayingSource returns the source attribute of the box's now_playing
 // (e.g. "SETUP", "STANDBY", "UPNP", "INVALID_SOURCE"), or "" on any error.
 func boxNowPlayingSource(boxHost string) string {
