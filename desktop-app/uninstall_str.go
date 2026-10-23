@@ -148,21 +148,11 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		// FALLBACK: the STR agent was not reachable (e.g. a wedged box). Try the
 		// stick-free :17000 unlock like the installer, and restore stock cloud URLs
 		// on EVERY exit so a failed attempt never leaves the box dialing the unlock
-		// URL (the review-caught gap the install path already guards).
-		if tcpReachable(host, 17000, 2*time.Second) {
-			a.logger.Info("uninstall_str: STR agent unreachable; trying the :17000 stick-free unlock", "host", host)
-			opened, _ := a.enableSSHViaTelnet(host, "")
-			if !opened {
-				opened, _ = a.enableSSHViaTelnetBootstrap(host, "")
-			}
-			if opened {
-				if rerr := a.resetBoseURLsViaTelnet(host); rerr != nil {
-					a.logger.Warn("uninstall_str: could not restore stock boseurls after the :17000 unlock", "host", host, "err", rerr)
-				}
-				hello, helloErr = sshHandshake(host, 4)
-			} else {
-				a.restoreStockBoseURLsAndReboot(host)
-			}
+		// URL (the review-caught gap the install path already guards). The
+		// uninstall is the one caller that keeps the factory-reset bootstrap as a
+		// second rung after the plain unlock (ensureSSHOpen's bootstrap option).
+		if opened, _, _ := a.ensureSSHOpen(host, "", sshUnlockOptions{tag: "uninstall_str", bootstrap: true}); opened {
+			hello, helloErr = sshHandshake(host, 4)
 		}
 	}
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {

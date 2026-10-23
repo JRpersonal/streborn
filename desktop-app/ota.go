@@ -1607,29 +1607,14 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 		// (Peter's ST10, 2026-07-09). Once SSH is open, the SSH upload command
 		// below frees the NAND (drops the ~16 MB engine when tight) and pushes
 		// the fresh agent, after which the box self-manages space. Only when
-		// :17000 answers.
-		opened := false
-		if tcpReachable(host, 17000, 2*time.Second) {
-			a.logger.Info("SSH-OTA: plain SSH closed, opening it stick-free via :17000 to recover a full/old box", "host", host)
-			var tlog string
-			opened, tlog = a.enableSSHViaTelnet(host, "")
-			if opened {
-				// Restore stock cloud URLs while :17000 is still plain Bose TAP,
-				// so the injected str-setup.invalid does not leave the box
-				// marge-checking a dead host (the light-bar sweep). Best-effort.
-				if rerr := a.resetBoseURLsViaTelnet(host); rerr != nil {
-					a.logger.Warn("SSH-OTA: could not restore cloud URLs after stick-free unlock", "host", host, "err", rerr)
-				}
-				a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
-			} else {
-				// The unlock may have written a dead .invalid URL; restore stock
-				// URLs + reboot so the box is never left marge-checking a dead
-				// host (also protects a later stick install's interception).
-				a.restoreStockBoseURLsAndReboot(host)
-				a.logger.Warn("SSH-OTA: stick-free :17000 unlock did not open SSH", "host", host, "log", discovery.LastN(tlog, 200))
-			}
-		}
-		if !opened {
+		// :17000 answers (ensureSSHOpen probes it and does nothing otherwise).
+		// Stock cloud URLs are restored on both outcomes in there, so the
+		// injected str-setup.invalid never leaves the box marge-checking a dead
+		// host (the light-bar sweep), and a failed unlock also reboots the box.
+		opened, _, _ := a.ensureSSHOpen(host, "", sshUnlockOptions{tag: "SSH-OTA"})
+		if opened {
+			a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
+		} else {
 			if hello, err := sshHandshake(host, 2); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
 				return fmt.Errorf("ssh handshake failed: %w (%s)", err, strings.TrimSpace(hello))
 			}

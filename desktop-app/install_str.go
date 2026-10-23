@@ -308,55 +308,52 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 		// below: they used to claim "the unlock did not open SSH" even when
 		// :17000 was closed and no unlock had run at all.
 		unlockOutcome := "not attempted, :17000 setup port closed"
-		if tcpReachable(host, 17000, 2*time.Second) {
-			a.emitPhase("access")
-			// One stick-free unlock path covers every box: enableSSHViaTelnet seeds a
-			// throwaway marge account (unlockAccountID) so even a factory-fresh box
-			// with an empty margeAccountUUID runs the marge check the injection rides
-			// on, then injects, reboots and waits for :22. This replaced an earlier
-			// residual-UUID probe that diverted no-account boxes (every fresh Portable)
-			// to a local-responder bootstrap that needed inbound LAN reachability and
-			// never fired on taigan; seeding the account is firewall-free and opened
-			// :22 on the Portable live.
-			opened, tlog := a.enableSSHViaTelnet(host, model)
-			if opened {
-				a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
-				// Restore stock cloud URLs while :17000 is still the plain Bose TAP
-				// (STR's install may REDIRECT :17008 afterwards). Best-effort.
-				resetErr := a.resetBoseURLsViaTelnet(host)
-				if resetErr != nil {
-					a.logger.Warn("install_str: could not restore stock boseurls after stick-free unlock", "host", host, "err", resetErr)
-				}
-				a.emitPhase("copy")
-				instRes, instErr := a.RepairInstallViaSSH(host, model)
-				if resetErr != nil && instRes.OK {
-					instRes.Message += " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
-				}
-				// RepairInstallViaSSH reboots and returns before the agent is up. Wait
-				// for :8888 here so the OTA path returns OK only once STR is actually
-				// running - the frontend then immediately writes the Wi-Fi profile.
-				if instRes.OK && instErr == nil {
-					a.emitPhase("wait")
-					if _, werr := a.waitForAgent(host, model); werr != nil {
-						a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
-						instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
-					}
-				}
-				return instRes, instErr
+		// One stick-free unlock path covers every box: enableSSHViaTelnet seeds a
+		// throwaway marge account (unlockAccountID) so even a factory-fresh box
+		// with an empty margeAccountUUID runs the marge check the injection rides
+		// on, then injects, reboots and waits for :22. This replaced an earlier
+		// residual-UUID probe that diverted no-account boxes (every fresh Portable)
+		// to a local-responder bootstrap that needed inbound LAN reachability and
+		// never fired on taigan; seeding the account is firewall-free and opened
+		// :22 on the Portable live. The rung itself (port probe, unlock, stock
+		// URL restore on both outcomes) is ensureSSHOpen, shared with the OTA and
+		// the uninstall; rememberReboot feeds the recentUnlockReboot check above.
+		opened, tlog, unlockErr := a.ensureSSHOpen(host, model, sshUnlockOptions{tag: "install_str", phase: "access", rememberReboot: true})
+		switch {
+		case opened:
+			a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
+			// Restore stock cloud URLs while :17000 is still the plain Bose TAP
+			// (STR's install may REDIRECT :17008 afterwards). Best-effort: a
+			// restore that failed is unlockErr here.
+			resetErr := unlockErr
+			a.emitPhase("copy")
+			instRes, instErr := a.RepairInstallViaSSH(host, model)
+			if resetErr != nil && instRes.OK {
+				instRes.Message += " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
 			}
+			// RepairInstallViaSSH reboots and returns before the agent is up. Wait
+			// for :8888 here so the OTA path returns OK only once STR is actually
+			// running - the frontend then immediately writes the Wi-Fi profile.
+			if instRes.OK && instErr == nil {
+				a.emitPhase("wait")
+				if _, werr := a.waitForAgent(host, model); werr != nil {
+					a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
+					instRes = a.agentNotUp(instRes, host, model, "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute.")
+				}
+			}
+			return instRes, instErr
+		case errors.Is(unlockErr, errSetupPortClosed):
+			a.logger.Info("install_str: :17000 setup port closed; no stick-free unlock attempted", "host", host)
+		default:
 			// The unlock did not open SSH. It may have written a dead .invalid
-			// injection URL into the box config; restore stock URLs and reboot so the
-			// box is never left marge-checking a dead host, which would also defeat
-			// STR's later streaming.bose.com interception on a subsequent stick
-			// install. Best-effort.
-			a.restoreStockBoseURLsAndReboot(host)
-			markUnlockReboot(host)
+			// injection URL into the box config; ensureSSHOpen restored stock URLs
+			// and rebooted so the box is never left marge-checking a dead host,
+			// which would also defeat STR's later streaming.bose.com interception
+			// on a subsequent stick install. Best-effort.
 			res.Log = tlog
 			rebootedByUs = true
 			unlockOutcome = "unlock ran but did not open SSH; stock URLs restored and speaker restarted"
 			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs and restarted the speaker", "host", host)
-		} else {
-			a.logger.Info("install_str: :17000 setup port closed; no stick-free unlock attempted", "host", host)
 		}
 
 		// The box did not boot with a stick (:22 closed) and the stick-free unlock
