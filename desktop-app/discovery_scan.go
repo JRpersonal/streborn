@@ -82,7 +82,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// not announce mDNS at all on the home LAN. Observed live
 	// 2026-05-23 on a Windows laptop where zeroconf-go returned 0
 	// instances despite the ST10 on the same LAN answering :8888
-	// with HTTP 200 — see #69-followup.
+	// with HTTP 200, see #69-followup.
 	mdnsHits := len(seen)
 	a.logger.Info("discovery: mDNS phase done", "instancesFromMDNS", mdnsHits)
 
@@ -94,7 +94,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// browse closed, the ST10 on 192.168.178.66 (Wi-Fi 1) never made
 	// it into the result channel even though both interfaces were
 	// joined for multicast. Running the TCP sweep unconditionally
-	// catches every speaker the user actually has — the upsert dedupe
+	// catches every speaker the user actually has: the upsert dedupe
 	// downstream collapses any double-counts. Cost: ~12 s of parallel
 	// HTTP probes per refresh; acceptable given the auto-refresh
 	// cadence is throttled to a few times per minute.
@@ -304,7 +304,7 @@ func upsertSighting(seen map[string]BoxInfo, b BoxInfo) {
 	// restart), while the live :8888 probe carries the fresh version
 	// and a verified port. Picking one whole record lost either the
 	// name (box shows "str-<ip>") or the new version (update not
-	// flagged) — the two halves of #108. mergeSameKind keeps the
+	// flagged): the two halves of #108. mergeSameKind keeps the
 	// best of each, including the verified-port rule the BCO boxes
 	// need (agent announces :8888 via mDNS but only the REDIRECTed
 	// :17008 is reachable).
