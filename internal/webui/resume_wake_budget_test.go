@@ -25,11 +25,12 @@ import (
 // re-wakes a speaker the user had just switched off (#197 deqw, and the ST10
 // shape Svagerka reported as "off does not stick").
 func TestASlowBoxReadDoesNotSpendThePowerOffBounceWindow(t *testing.T) {
+	t.Parallel()
 	s, rec := resumeTestServer(t, `<nowPlaying source="UPNP"/>`)
 	// This test is about the settle's share of the 6 s bounce budget, so it
-	// runs with the production settle, not the short one resumeTestServer
-	// installs for the decision tests (its cleanup restores the value anyway).
-	resumeWakeSettle = 2 * time.Second
+	// runs with the production clock, not the short settle resumeTestServer
+	// installs for the decision tests.
+	s.resumeTiming = &productionResumeTiming
 	// As slow as the production read can be: readBox's own HTTP timeout.
 	s.boxNowReadFn = func(context.Context) (*boxapi.NowPlaying, error) {
 		time.Sleep(4 * time.Second)

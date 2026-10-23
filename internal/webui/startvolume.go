@@ -98,12 +98,28 @@ func (s *Server) applyStartVolume(reason string) {
 // one power-on, one level.
 const startVolumeOnce = 30 * time.Second
 
-// Waiting for the speaker to play after a power-on. Vars so tests can shorten
-// them.
-var (
-	startVolumeWatchFor  = 15 * time.Second
-	startVolumeWatchPoll = time.Second
-)
+// startVolumeTiming is how long the power-on watch waits for the speaker to
+// play, and how often it looks. The tests install a faster copy on the Server
+// instead of mutating package state, so they can run in parallel.
+type startVolumeTiming struct {
+	watchFor  time.Duration
+	watchPoll time.Duration
+}
+
+// productionStartVolumeTiming holds the real values; the tests shrink copies.
+var productionStartVolumeTiming = startVolumeTiming{
+	watchFor:  15 * time.Second,
+	watchPoll: time.Second,
+}
+
+// startVolumeTimes is the power-on watch clock: the production values unless a
+// test installed a faster one.
+func (s *Server) startVolumeTimes() *startVolumeTiming {
+	if s.startVolumeTiming != nil {
+		return s.startVolumeTiming
+	}
+	return &productionStartVolumeTiming
+}
 
 // applyStartVolumeAfterPowerOn watches the first seconds after the speaker
 // was switched on and sets the start level once it plays, whoever started
@@ -113,9 +129,10 @@ func (s *Server) applyStartVolumeAfterPowerOn() {
 		return
 	}
 	go func() {
-		deadline := time.Now().Add(startVolumeWatchFor)
+		times := s.startVolumeTimes()
+		deadline := time.Now().Add(times.watchFor)
 		for time.Now().Before(deadline) {
-			time.Sleep(startVolumeWatchPoll)
+			time.Sleep(times.watchPoll)
 			if standby, busy := s.boxPlayState(); busy && !standby {
 				s.applyStartVolume("power-on")
 				return

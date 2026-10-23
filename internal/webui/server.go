@@ -626,6 +626,12 @@ type Server struct {
 
 	// playStateFn overrides boxPlayState for tests. nil = the real :8090 probe.
 	playStateFn func() (standby, busy bool)
+	// Resume and start volume test knobs; nil = production (see resumeTimes,
+	// startVolumeTimes, resumeReadNowPlaying and resumeRepair).
+	resumeTiming           *resumeTiming
+	startVolumeTiming      *startVolumeTiming
+	resumeReadNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
+	resumeRepairFn         func(ctx context.Context)
 	// setVolumeFn overrides the start-volume write for tests. nil = the box.
 	setVolumeFn func(ctx context.Context, vol int) error
 	// startVolumeMu guards startVolumeAt, when the start level was last
