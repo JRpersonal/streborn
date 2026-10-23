@@ -10,17 +10,11 @@
 // replays the single track, and a REAL refusal is shown rather than hidden behind
 // a fallback that would look exactly like the old bug.
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { srcOf } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'views', 'recent.js'), 'utf8').replace(/\r\n/g, '\n');
-
-// The real function, not a copy of it: slice it out of the view and give it the
-// four things it reaches for.
-const at = src.indexOf('async function replayFolderCard');
-const fnSrc = src.slice(at, src.indexOf('\n}\n', at) + 2);
+// The real function, not a copy of it: cut out of the view and given the four
+// things it reaches for.
+const fnSrc = srcOf('replayFolderCard');
 const MISSING = 'missing_binding';
 
 function build(replay) {
@@ -77,7 +71,8 @@ describe('replaying a Recently-played folder card', () => {
 
   it('is asked before the single-track replay runs', () => {
     // The order is the fix. If PlayURL ran first the queue would be cleared.
-    const branch = src.slice(src.indexOf("} else if (c.source === 'upnp') {"));
+    const card = srcOf('wireCard');
+    const branch = card.slice(card.indexOf("} else if (c.source === 'upnp') {"));
     const askedAt = branch.indexOf('if (await replayFolderCard(c, box)) return;');
     const playedAt = branch.indexOf('await replayLibraryTrack(');
     expect(askedAt).toBeGreaterThan(-1);

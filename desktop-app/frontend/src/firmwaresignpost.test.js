@@ -20,34 +20,38 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { boseFwArticles, firmwareOlderThanLatest, LATEST_BOSE_FIRMWARE } from './firmware.js';
+import { allSource, fileSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const setup = readFileSync(join(here, 'views', 'setup.js'), 'utf8').replace(/\r\n/g, '\n');
-const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8').replace(/\r\n/g, '\n');
+const all = allSource();
+// The setup view by file, for the one negative below that must stay scoped to
+// it: fwguide.js names btu.bose.com in a comment explaining why that route is
+// wrong, so "no screen names it" cannot be asserted over every file.
+const setup = fileSource('views/setup.js');
 const installGo = readFileSync(join(here, '..', '..', 'install_str.go'), 'utf8').replace(/\r\n/g, '\n');
 const firmwareGo = readFileSync(join(here, '..', '..', 'app_firmware.go'), 'utf8').replace(/\r\n/g, '\n');
-const firmware = readFileSync(join(here, 'firmware.js'), 'utf8').replace(/\r\n/g, '\n');
+// firmware.js by file: the importability test below is about this one module.
+const firmware = fileSource('firmware.js');
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 
 describe('the firmware route is rendered where a stock speaker can reach it', () => {
   it('lives in the setup view, next to the failure', () => {
-    expect(setup).toContain('function outdatedFirmwareHtml(box, short, result)');
-    expect(setup).toContain('firmwareGuideMount(');
+    expect(all).toContain('function outdatedFirmwareHtml(box, short, result)');
+    expect(all).toContain('firmwareGuideMount(');
     expect(setup).not.toContain('btu.bose.com');
   });
 
   it('is on all three screens an install can end on', () => {
     // the plain failure, the wait, and the give-up after the watcher's ceiling
-    expect(setup).toContain('outdatedFirmwareHtml(foundBox, result && result.firmware, result)');
-    expect(setup.match(/\+ \(fwBlock \|\| ''\)/g) || []).toHaveLength(2);
+    expect(all).toContain('outdatedFirmwareHtml(foundBox, result && result.firmware, result)');
+    expect(all.match(/\+ \(fwBlock \|\| ''\)/g) || []).toHaveLength(2);
     // 1 definition + 3 install screens + the stick wait
-    expect(setup.match(/wireOutdatedFirmwareLinks\(\)/g) || []).toHaveLength(5);
+    expect(all.match(/wireOutdatedFirmwareLinks\(\)/g) || []).toHaveLength(5);
   });
 
   it('renders nothing for a speaker whose firmware is current', () => {
-    const fn = setup.slice(setup.indexOf('function outdatedFirmwareHtml'),
-      setup.indexOf('// wireOutdatedFirmwareLinks'));
+    const fn = srcOf('outdatedFirmwareHtml');
     expect(fn).toContain("if (!firmwareGuideNeeded(short)) return '';");
   });
 
@@ -91,9 +95,9 @@ describe('an unknown model gets no article rather than the wrong one', () => {
   });
 
   it('shows the same firmware update guide in the speaker settings', () => {
-    expect(settings).toContain('firmwareGuideMount(');
-    expect(settings).toContain("context: 'settings'");
-    expect(settings).not.toContain('BOSE_FW_USB_URL');
+    expect(all).toContain('firmwareGuideMount(');
+    expect(all).toContain("context: 'settings'");
+    expect(all).not.toContain('BOSE_FW_USB_URL');
   });
 
   // The helpers live outside the views because a view reads navigator at module

@@ -7,9 +7,9 @@
 // could not be closed at all until the app was restarted. Reported 2026-08-23
 // by an owner whose speakers were dropping off a congested network.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { allSource } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const main = allSource();
 
 describe('the update-all window', () => {
   it('renders its Close button enabled', () => {

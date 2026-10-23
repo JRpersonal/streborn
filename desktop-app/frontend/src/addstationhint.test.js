@@ -8,8 +8,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { addStationGuideFold } from './searchflow.js';
+import { allSource, srcContaining } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+// The statement that lays out the search box, found by the hint it contains.
+const main = srcContaining('class="search-addhint"');
+const all = allSource();
 const css = readFileSync(new URL('./style.css', import.meta.url), 'utf8');
 const dir = fileURLToPath(new URL('./i18n/bundles/', import.meta.url));
 const locales = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''));
@@ -35,7 +38,7 @@ describe('the add-a-station line is reachable while results are on screen', () =
   });
 
   it('offers the directory itself as the action', () => {
-    expect(main).toContain("BrowserOpenURL('https://www.radio-browser.info/')");
+    expect(all).toContain("BrowserOpenURL('https://www.radio-browser.info/')");
   });
 
   it('no longer dims the line into the background', () => {
@@ -45,7 +48,7 @@ describe('the add-a-station line is reachable while results are on screen', () =
   });
 
   it('prints the guide once, so the empty result does not repeat it', () => {
-    expect(main).not.toContain('emptyAddStationHint');
+    expect(all).not.toContain('emptyAddStationHint');
   });
 });
 

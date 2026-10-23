@@ -9,17 +9,17 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
-const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8').replace(/\r\n/g, '\n');
+const main = allSource();
+const settings = main;
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const bundle = (l) => JSON.parse(readFileSync(join(here, 'i18n', 'bundles', `${l}.json`), 'utf8'));
 
-// The real mapper, lifted out of main.js.
-const at = main.indexOf('function spotifyContextLabelKey');
+// The real mapper, lifted out of the app source.
 // eslint-disable-next-line no-new-func
-const labelKey = new Function(`${main.slice(at, main.indexOf('\n}\n', at) + 2)}\nreturn spotifyContextLabelKey;`)();
+const labelKey = new Function(`${srcOf('spotifyContextLabelKey')}\nreturn spotifyContextLabelKey;`)();
 
 describe('what the now-playing line calls a Spotify context', () => {
   it('calls an album an album', () => {
@@ -70,8 +70,7 @@ describe('the balance control has a label of its own', () => {
     // A heading over a hidden slider is a label for nothing.
     expect(settings).toContain('const show = (on) => { row.hidden = !on; if (head) head.hidden = !on; };');
     // Inside the balance function only: the start-volume row below it has its own.
-    const fn = settings.slice(settings.indexOf('export async function refreshBoxBalanceRow'),
-      settings.indexOf('export async function refreshStartVolume'));
+    const fn = srcOf('refreshBoxBalanceRow');
     expect(fn).not.toMatch(/row\.hidden = (true|false);/);
   });
 

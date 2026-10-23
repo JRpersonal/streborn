@@ -9,18 +9,13 @@
 // reported that STR had failed on his 300. The headline above the checklist had
 // told him to unplug it since v0.9.84. The list under it outvoted the headline.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { isSoundTouch300 } from './utils.js';
+import { allSource, srcBetween } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const setup = readFileSync(join(here, 'views', 'setup.js'), 'utf8');
+const setup = allSource();
 
-const help = setup.slice(
-  setup.indexOf('const ST300_STUCK_CODES'),
-  setup.indexOf('// waitForBoxAfterSetup runs after'),
-);
+// The install help block: the stuck-code table and the checklist builder.
+const help = srcBetween('const ST300_STUCK_CODES', '// waitForBoxAfterSetup runs after');
 
 describe('the checklist knows which speaker it is talking about', () => {
   it('takes the box, not only the failure code', () => {
@@ -55,8 +50,7 @@ describe('the checklist knows which speaker it is talking about', () => {
 
 describe('the waiting screen shows the 300 its one remaining step', () => {
   it('renders the mandatory power-cycle block above the checklist', () => {
-    const draw = setup.slice(setup.indexOf('const st300 = isSoundTouch300(foundBox)'),
-      setup.indexOf("const save = $('setupWaitSaveLogs')"));
+    const draw = srcBetween('const st300 = isSoundTouch300(foundBox)', "const save = $('setupWaitSaveLogs')");
     expect(draw).toContain('powerCycleAdviceHtml(foundBox)');
     // Above the countdown and above the checklist. Asserted by position rather
     // than by an exact string so another block joining the same render call

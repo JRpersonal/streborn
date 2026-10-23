@@ -14,8 +14,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { srcOf } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+// The chip handler that forms or leaves a group from the Musik hoeren tab.
+const main = srcOf('runGroupMemberToggle');
 const dir = fileURLToPath(new URL('./i18n/bundles/', import.meta.url));
 const langs = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''));
 const bundle = (l) => JSON.parse(readFileSync(new URL(`./i18n/bundles/${l}.json`, import.meta.url), 'utf8'));

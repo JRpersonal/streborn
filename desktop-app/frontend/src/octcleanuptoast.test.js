@@ -6,17 +6,18 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcBetween, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8');
-const main = readFileSync(join(here, 'main.js'), 'utf8');
-const state = readFileSync(join(here, 'state.js'), 'utf8');
+const settings = allSource();
+const main = settings;
+const state = settings;
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 
 // The flow both cleanup buttons run (#1083 moved it out of the settings view so
 // the banner's button does the same thing instead of only switching pages).
-const handler = readFileSync(join(here, 'conflictcleanup.js'), 'utf8');
+const handler = srcOf('runConflictCleanup');
 
 describe('the conflicting-mod cleanup says what it actually did', () => {
   it('reports a cleanup that removed nothing as a problem, not a success', () => {
@@ -54,10 +55,7 @@ describe('the banner names the speaker asking a dead cloud address', () => {
   });
 
   it('is not dismissible: nothing plays on such a speaker', () => {
-    const banner = main.slice(
-      main.indexOf('const foreignCloud = boxes.filter'),
-      main.indexOf('const noWifi = boxes.filter'),
-    );
+    const banner = srcBetween('const foreignCloud = boxes.filter', 'const noWifi = boxes.filter');
     expect(banner).not.toContain('warnDismissed');
   });
 

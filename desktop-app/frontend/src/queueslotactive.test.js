@@ -6,10 +6,8 @@
 // renderPresets can name the key. The agent already says which key started the
 // queue: GET /api/queue reports card "queue:slot:<n>" while it plays.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { queueSlotActive, queueSlotCard } from './utils.js';
-
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+import { srcOf } from './test/source.js';
 
 const key = (slot, type = 'queue') => ({ slot, type, stream_url: '' });
 
@@ -55,16 +53,17 @@ describe('the preset grid uses it', () => {
   it('as one of the ways a key counts as playing', () => {
     // Outside the location gate, so the optimistic card of a just-clicked
     // folder key (empty location) lights it at once (#978).
-    const at = main.indexOf('const queueLit = ');
+    const grid = srcOf('renderPresets');
+    const at = grid.indexOf('const queueLit = ');
     expect(at).toBeGreaterThan(-1);
-    expect(main.slice(at, at + 200)).toContain('queueSlotActive(p, state.queue, state.nowLocation)');
-    expect(main.slice(at, at + 400)).toContain('const baseActive = p && (queueLit ||');
+    expect(grid.slice(at, at + 200)).toContain('queueSlotActive(p, state.queue, state.nowLocation)');
+    expect(grid.slice(at, at + 400)).toContain('const baseActive = p && (queueLit ||');
   });
 
   it('and repaints the keys when the queue card changes', () => {
     // The card arrives with the queue read, not the status poll, so without the
     // repaint the highlight waited for an unrelated status change.
-    const fn = main.slice(main.indexOf('async function refreshQueue()'), main.indexOf('function renderQueueControls'));
+    const fn = srcOf('refreshQueue');
     expect(fn).toContain('queueSlotCard(state.queue) !== before');
     expect(fn).toContain('renderPresets()');
   });

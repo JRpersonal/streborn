@@ -13,34 +13,38 @@
 // The first two groups are source-level assertions, not DOM ones, and that is
 // forced: vitest runs with `environment: 'node'` on purpose (see
 // vitest.config.js) and renderPresets is DOM-bound, so it deliberately stays in
-// main.js rather than being extracted into an importable view module (the
-// view-extraction trap). Reading the two files the key is built from is the
-// only way to pin down "the title is rendered in exactly one place"; each of
-// those assertions fails on the tree that shipped the duplicate. They are kept
-// deliberately few, and about this rule alone: the rest of the key's markup and
-// the theming of the playing key are not this test's business, and asserting
-// them here would only break the next honest refactor.
+// the non-importable app source rather than being extracted into an importable
+// view module (the view-extraction trap). Reading the source the key is built
+// from is the only way to pin down "the title is rendered in exactly one
+// place"; each of those assertions fails on the tree that shipped the
+// duplicate. They are kept deliberately few, and about this rule alone: the
+// rest of the key's markup and the theming of the playing key are not this
+// test's business, and asserting them here would only break the next honest
+// refactor.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { shouldAdoptPresetArt, isStrOriginLocation, isLostStrKey, WEBHOOK_PLACEHOLDER_NAME } from './utils.js';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const mainJS = readFileSync(join(here, 'main.js'), 'utf-8');
+const mainJS = allSource();
 const styleCSS = readFileSync(join(here, 'style.css'), 'utf-8');
+// The grid renderer, which is where every key template lives.
+const grid = srcOf('renderPresets');
 
 // The preset key template: from the innerHTML that opens with .preset-head to
 // the long-press bar that closes it. Everything a key renders is in here.
 const tileTemplate = (() => {
-  const start = mainJS.indexOf('<div class="preset-head">');
-  const end = mainJS.indexOf('<div class="long-press-bar" id="lp-bar-', start);
+  const start = grid.indexOf('<div class="preset-head">');
+  const end = grid.indexOf('<div class="long-press-bar" id="lp-bar-', start);
   // Throw rather than assert: this runs at module load, outside any test, and a
   // renamed marker must fail loudly instead of silently matching an empty span.
   if (start < 0 || end <= start) {
-    throw new Error('preset tile template not found in main.js; update the markers in this test');
+    throw new Error('preset tile template not found in renderPresets; update the markers in this test');
   }
-  return mainJS.slice(start, end);
+  return grid.slice(start, end);
 })();
 
 // The rule bodies of style.css with the comments stripped, so a class named in
@@ -106,10 +110,10 @@ describe('isStrOriginLocation', () => {
 describe('a dead STR key renders as lost, not as playable', () => {
   // The branch between the store tile and the box-native tile.
   const lostBranch = (() => {
-    const start = mainJS.indexOf('} else if (bp && lostStrKey(bp)) {');
-    const end = mainJS.indexOf('} else if (bp) {', start);
-    if (start < 0 || end <= start) throw new Error('lost-key branch not found in main.js; update the markers');
-    return mainJS.slice(start, end);
+    const start = grid.indexOf('} else if (bp && lostStrKey(bp)) {');
+    const end = grid.indexOf('} else if (bp) {', start);
+    if (start < 0 || end <= start) throw new Error('lost-key branch not found in renderPresets; update the markers');
+    return grid.slice(start, end);
   })();
   it('explains the key instead of offering to play it', () => {
     expect(lostBranch).toContain("t('preset.lostOnSpeaker')");
@@ -117,14 +121,13 @@ describe('a dead STR key renders as lost, not as playable', () => {
     expect(lostBranch).toContain("div.classList.add('lost')");
   });
   it('wires a tap to the explanation, never to the hardware recall', () => {
-    const start = mainJS.indexOf('if (bp && lostStrKey(bp)) {', mainJS.indexOf('} else if (bp) {'));
-    const wiring = mainJS.slice(start, mainJS.indexOf('} else if (bp) {', start));
+    const start = grid.indexOf('if (bp && lostStrKey(bp)) {', grid.indexOf('} else if (bp) {'));
+    const wiring = grid.slice(start, grid.indexOf('} else if (bp) {', start));
     expect(wiring).toContain("showToast(t('preset.lostOnSpeakerToast'))");
     expect(wiring).not.toContain('recallBoxPreset');
   });
   it('delegates the decision to isLostStrKey', () => {
-    const start = mainJS.indexOf('function lostStrKey(bp)');
-    const fn = mainJS.slice(start, mainJS.indexOf('\n}', start));
+    const fn = srcOf('lostStrKey');
     expect(fn).toContain('isLostStrKey(bp)');
   });
   it('has the lost-key styling', () => {

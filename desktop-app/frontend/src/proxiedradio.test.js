@@ -12,10 +12,10 @@
 // want to know is whether the stream proxy is in the path, because that is where
 // an ICY title comes from.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { proxiedRadioPlaying, activeSlotFromLocation } from './utils.js';
+import { allSource, srcOf } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const main = allSource();
 
 // A real ORION descriptor: /station?data=<base64url of the JSON>.
 const orion = (streamUrl) =>
@@ -57,7 +57,7 @@ describe('both places that ask', () => {
   // Fixing only the poll would fetch a title the status line then refused to
   // print, so the two have to agree.
   it('use the one predicate, not a slot number', () => {
-    const poll = main.slice(main.indexOf('const isRadio ='), main.indexOf('const isRadio =') + 120);
+    const poll = srcOf('isRadio', { within: 'scheduleLiveTitle' });
     expect(poll).toContain('proxiedRadioPlaying(loc)');
     expect(poll).not.toContain('activeSlotFromLocation');
 
@@ -70,12 +70,16 @@ describe('both places that ask', () => {
   // fallback still gated on a preset slot, so the title only showed when a loop
   // from an earlier preset play happened to be alive.
   it('is started by a Find stations play and by the status poll for any proxied stream', () => {
-    const play = main.slice(main.indexOf('async function playStation(s'), main.indexOf('await PlayURL(box.host'));
+    // The app's playStation, not the stream-source view's helper of the same
+    // name: the one that pushes the URL to the speaker itself.
+    const station = srcOf('playStation', { has: 'await PlayURL(box.host' });
+    const play = station.slice(0, station.indexOf('await PlayURL(box.host'));
     expect(play).toContain("state.nowTitle = '';");
     expect(play).toContain('scheduleLiveTitle();');
 
-    const at = main.indexOf('scheduleLiveTitle();', main.indexOf('Keep the live radio track flowing'));
-    const gate = main.slice(at - 200, at);
+    const status = srcOf('refreshStatus');
+    const at = status.indexOf('scheduleLiveTitle();', status.indexOf('Keep the live radio track flowing'));
+    const gate = status.slice(at - 200, at);
     expect(gate).toContain('proxiedRadioPlaying(newLoc)');
     expect(gate).not.toContain('activeSlotFromLocation');
   });

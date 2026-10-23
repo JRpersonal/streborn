@@ -4,7 +4,7 @@
 // badge, no stream-shaped extras, the key lit while the speaker plays it, and
 // a hold-to-save that asks the speaker for the item instead of saving a URL.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { allSource, srcOf } from './test/source.js';
 import {
   nativeServiceLabel,
   isNativeServicePreset,
@@ -13,8 +13,7 @@ import {
   nativeServiceActive,
 } from './nativeservice.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
-const api = readFileSync(new URL('./api.js', import.meta.url), 'utf8');
+const all = allSource();
 
 const pandoraKey = {
   slot: 1, name: 'Little Big Town Radio', type: 'native', source: 'Pandora', stream_url: '',
@@ -52,32 +51,32 @@ describe('native service presets', () => {
 
 describe('the app wires native keys', () => {
   it('saves a hold while Pandora or iHeartRadio plays through SaveNativePreset, before any URL path', () => {
-    const fn = main.slice(main.indexOf('async function saveCurrentToSlot'));
+    const fn = srcOf('saveCurrentToSlot');
     const native = fn.indexOf('nativeServiceSaveable(state.nowSource)');
     const urlCase = fn.indexOf('savePresetCase(');
     expect(native).toBeGreaterThan(-1);
     expect(native).toBeLessThan(urlCase);
     expect(fn.slice(native, urlCase)).toContain('saveNativeToSlot(slot)');
-    const helper = main.slice(main.indexOf('async function saveNativeToSlot'), main.indexOf('async function saveCurrentToSlot'));
+    const helper = srcOf('saveNativeToSlot');
     expect(helper).toContain('SaveNativePreset(');
     expect(helper).toContain('showPresetSaveError(err, slot)');
   });
 
   it('imports the binding as an optional one', () => {
-    expect(api).toContain("callOptionalBinding('SaveNativePreset'");
-    expect(main).toMatch(/\bSaveNativePreset,/);
+    expect(all).toContain("callOptionalBinding('SaveNativePreset'");
+    expect(all).toMatch(/\bSaveNativePreset,/);
   });
 
   it('shows no bitrate line and runs no directory logo lookup on a native key', () => {
-    const tile = main.slice(main.indexOf('function renderPresets()'));
+    const tile = srcOf('renderPresets');
     expect(tile).toContain("isNativeServicePreset(p) ? '' : presetBitrateLine(p, tileBitrate)");
     expect(tile).toContain('${bitrateLine ? `<div class="preset-bitrate">');
-    const heal = main.slice(main.indexOf('async function healPresetLogos()'));
+    const heal = srcOf('healPresetLogos');
     expect(heal.slice(0, heal.indexOf('RadioSearch('))).toContain('!isNativeServicePreset(p)');
   });
 
   it('never flattens a native key with a metadata self-heal', () => {
-    const guard = main.slice(main.indexOf('const flattenable ='));
+    const guard = srcOf('flattenable', { within: 'setPresetIfUnchanged' });
     expect(guard.slice(0, 200)).toContain('isNativeServicePreset(live)');
   });
 });

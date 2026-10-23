@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { groupCountSplit, groupCount } from './groups.js';
+import { srcOf } from './test/source.js';
 
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('./style.css', import.meta.url), 'utf8');
 
 const BOXES = [
@@ -36,7 +36,7 @@ describe('the Multi-Room count badge', () => {
   });
 
   it('wears the muted class only while every counted group is a saved one', () => {
-    const fn = main.slice(main.indexOf('function updateMultiroomTabBadge'), main.indexOf('onZoneLive(updateMultiroomTabBadge)'));
+    const fn = srcOf('updateMultiroomTabBadge');
     expect(fn).toContain('tab-badge-stored');
     expect(fn).toContain('split.live === 0');
     expect(fn).toContain('n > 0');

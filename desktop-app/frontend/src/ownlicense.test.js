@@ -5,9 +5,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8');
+const main = allSource();
 const bundles = join(here, 'i18n', 'bundles');
 
 describe('own license in the credits dialog', () => {

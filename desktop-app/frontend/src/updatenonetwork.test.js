@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { allSource, srcOf } from './test/source.js';
 
 // shorty310 pulled the router in the middle of a three-speaker update and got
 // the full copyable fault report, about three speakers that were fine
@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 // speaker list out for a computer with no network was sitting unused two
 // functions away, and the update path never asked it.
 
-const src = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const src = allSource();
 
 // The predicate, as views/settings.js defines it.
 const noNetworkHere = (err) => {
@@ -42,9 +42,10 @@ describe('a speaker update that failed because THIS computer lost its network', 
   it('is actually consulted before the report is opened', () => {
     // Pinning the wiring, not just the predicate: the predicate existed all
     // along and that is exactly why this went unnoticed.
-    const at = src.indexOf('showUpdateFailureReport(targetBox');
+    const single = srcOf('runSingleBoxUpdate');
+    const at = single.indexOf('showUpdateFailureReport(targetBox');
     expect(at).toBeGreaterThan(-1);
-    const before = src.slice(Math.max(0, at - 600), at);
+    const before = single.slice(Math.max(0, at - 600), at);
     expect(before).toContain('noNetworkHere(msg)');
   });
 
@@ -53,11 +54,12 @@ describe('a speaker update that failed because THIS computer lost its network', 
     // reporter had used the batch: his own report header read
     // "failed at: update-all". A test that only pinned the single-speaker
     // wiring is what let that through, so every call site is checked here.
+    const batch = srcOf('runUpdateAllBoxes');
     const sites = ['update-all-engine', 'update-all'];
     for (const phase of sites) {
-      const at = src.indexOf("showUpdateFailureReport(b, '" + phase + "'");
+      const at = batch.indexOf("showUpdateFailureReport(b, '" + phase + "'");
       expect(at).toBeGreaterThan(-1);
-      const before = src.slice(Math.max(0, at - 400), at);
+      const before = batch.slice(Math.max(0, at - 400), at);
       expect(before).toContain('noNetworkHere(');
       expect(before).toContain('showUpdateNoNetworkNotice()');
     }
@@ -65,8 +67,7 @@ describe('a speaker update that failed because THIS computer lost its network', 
 
   it('shows a notice rather than the copyable report', () => {
     expect(src).toContain('function showUpdateNoNetworkNotice()');
-    const at = src.indexOf('function showUpdateNoNetworkNotice()');
-    const body = src.slice(at, at + 400);
+    const body = srcOf('showUpdateNoNetworkNotice');
     expect(body).toContain('settingsView.noNetworkTitle');
     expect(body).toContain('settingsView.noNetworkHelp');
     // It must not reach for the report it exists to replace.

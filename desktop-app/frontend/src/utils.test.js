@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { savePresetCase, spotifySaveContextURI, spotifyURIFromContainer, libraryPlayMatches, queueSaveFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
+import { allSource, srcOf } from './test/source.js';
 
 const FRESH_MS = 2 * 60 * 1000;
 const NOW = 1_000_000_000;
@@ -137,7 +138,7 @@ describe('bassControlsDisabled', () => {
   // the argument or hoisting the call into a local does not fail a view that
   // is still correct; what must never come back is a control with no gate.
   it('is applied to the slider AND the reset button in the settings view', () => {
-    const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+    const src = allSource();
     const slider = src.match(/<input type="range" id="boxBass"[\s\S]*?\/>/);
     const resetBtn = src.match(/<button[^>]*id="boxBassReset"[\s\S]*?>/);
     expect(slider, 'the bass slider markup must still be findable').not.toBeNull();
@@ -151,9 +152,9 @@ describe('bassControlsDisabled', () => {
   // not be the how-to-use help, which is instructions for a control that
   // cannot move.
   it('the settings view explains the disabled row instead of showing the usage help', () => {
-    const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+    const src = srcOf('renderBoxSettings');
     // Anchor on the slider's id, not on the heading key: the heading key also
-    // appears in the section-name lookup table further up the file.
+    // appears in the section-name lookup table elsewhere.
     const start = src.indexOf('id="boxBass"');
     const section = src.slice(start, src.indexOf('settings-section', start + 1));
     expect(start, 'the bass section must still be findable').toBeGreaterThan(-1);
@@ -196,7 +197,7 @@ describe('bassSliderProps', () => {
   // hardcoded step="1", which posts values a tone-controls speaker is free
   // to refuse.
   it('the settings view slider takes min/max/step/value from this helper', () => {
-    const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+    const src = allSource();
     const slider = src.match(/<input type="range" id="boxBass"[\s\S]*?\/>/);
     expect(slider, 'the bass slider markup must still be findable').not.toBeNull();
     expect(slider[0]).not.toContain('step="1"');

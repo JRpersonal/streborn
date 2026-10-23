@@ -2,11 +2,12 @@
 // Both now say stopped; the app's key is status.stopped in every bundle.
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
+import { allSource } from './test/source.js';
 
 const dir = new URL('./i18n/bundles/', import.meta.url);
 const bundles = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.json'))
   .map((f) => [f.slice(0, -5), JSON.parse(readFileSync(new URL(f, dir), 'utf8'))]));
-const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const main = allSource();
 
 describe('stopped wording', () => {
   it('every bundle has status.stopped and no status.ready', () => {

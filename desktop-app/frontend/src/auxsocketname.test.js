@@ -7,12 +7,9 @@
 // fell through to "some source is active", which read worse than a generic
 // label (#491). So it is the fallback, not the answer.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { allSource } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'main.js'), 'utf8');
+const src = allSource();
 
 // The AUX/LOCAL branch of renderNowPlayingBar.
 const auxLine = src.split(/\r?\n/).find(l => l.includes("srcU === 'AUX'")) || '';

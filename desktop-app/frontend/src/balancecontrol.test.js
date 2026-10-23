@@ -17,17 +17,15 @@
 // they cannot be imported without a DOM and the Wails runtime.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { allSource, srcOf } from './test/source.js';
 
-const settings = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
-const multiroom = readFileSync(new URL('./views/multiroom.js', import.meta.url), 'utf8');
-const api = readFileSync(new URL('./api.js', import.meta.url), 'utf8');
+const all = allSource();
 const en = JSON.parse(readFileSync(new URL('./i18n/bundles/en.json', import.meta.url), 'utf8'));
 const de = JSON.parse(readFileSync(new URL('./i18n/bundles/de.json', import.meta.url), 'utf8'));
 
 describe('the balance write', () => {
   it('posts to the balance endpoint and returns the answer', () => {
-    const fn = api.slice(api.indexOf('export async function writeBoxBalance'),
-                         api.indexOf('export async function writeBoxBalance') + 700);
+    const fn = srcOf('writeBoxBalance');
     expect(fn).toContain("'/api/box/balance'");
     expect(fn).toContain("method: 'POST'");
     expect(fn).toContain('JSON.stringify({ target');
@@ -40,20 +38,21 @@ describe('the balance write', () => {
   // community implementation assumes -50..+50 while the firmware answers -7..+7,
   // so a slider built on a constant would be wrong by a factor of seven.
   it('reads the bounds from the speaker, not from a constant', () => {
-    const fn = api.slice(api.indexOf('export async function readBoxBalanceInfo'),
-                         api.indexOf('// readBoxBalance reads just the current position'));
+    const fn = srcOf('readBoxBalanceInfo');
     expect(fn).toContain('min:');
     expect(fn).toContain('max:');
     expect(fn).toContain('settable:');
-    const slider = settings.slice(settings.indexOf('slider.min ='), settings.indexOf('slider.min =') + 200);
+    const row = srcOf('refreshBoxBalanceRow');
+    const slider = row.slice(row.indexOf('slider.min ='), row.indexOf('slider.min =') + 200);
     expect(slider).toContain('String(b.min)');
     expect(slider).toContain('String(b.max)');
   });
 
   it('leaves the read-out alone when the speaker cannot be written to', () => {
-    const at = settings.indexOf('if (!b.settable)');
+    const row = srcOf('refreshBoxBalanceRow');
+    const at = row.indexOf('if (!b.settable)');
     expect(at, 'the settable gate must exist').toBeGreaterThan(-1);
-    const gate = settings.slice(at, at + 160);
+    const gate = row.slice(at, at + 160);
     expect(gate).toContain('slider.hidden = true');
     expect(gate).toContain('centre.hidden = true');
   });
@@ -61,20 +60,20 @@ describe('the balance write', () => {
   // One write per gesture. oninput fires per pixel of slider travel, and each
   // write puts a frame on the speaker's own bus plus a read-back behind it.
   it('writes on release, not on every drag step', () => {
-    const at = settings.indexOf('slider.oninput =');
+    const row = srcOf('refreshBoxBalanceRow');
+    const at = row.indexOf('slider.oninput =');
     expect(at).toBeGreaterThan(-1);
-    const input = settings.slice(at, settings.indexOf('slider.onchange ='));
+    const input = row.slice(at, row.indexOf('slider.onchange ='));
     expect(input, 'dragging may only move the label').not.toContain('applyBalance');
-    const change = settings.slice(settings.indexOf('slider.onchange ='),
-                                 settings.indexOf('slider.onchange =') + 120);
+    const change = row.slice(row.indexOf('slider.onchange ='),
+                             row.indexOf('slider.onchange =') + 120);
     expect(change).toContain('applyBalance');
   });
 
   // The three outcomes, kept apart. Refused is a failure; accepted-but-unseen is
   // not; plainly worked says nothing.
   it('tells a refused write apart from an unconfirmed one', () => {
-    const fn = settings.slice(settings.indexOf('async function applyBalance'),
-                              settings.indexOf('function setBalanceNote'));
+    const fn = srcOf('applyBalance');
     expect(fn).toContain("res.ok !== true");
     expect(fn).toContain("controls.balanceFailed");
     expect(fn).toContain("res.verified === false");
@@ -84,8 +83,7 @@ describe('the balance write', () => {
   // The agent clamps to the speaker's range, so what landed can differ from what
   // was asked for. The slider has to follow the speaker, not its own last value.
   it('snaps the slider to the value the speaker actually took', () => {
-    const fn = settings.slice(settings.indexOf('async function applyBalance'),
-                              settings.indexOf('function setBalanceNote'));
+    const fn = srcOf('applyBalance');
     expect(fn).toContain('res.target');
   });
 });
@@ -96,8 +94,8 @@ describe('the balance texts', () => {
       expect(bundle['controls.balanceTitle'], lang).not.toMatch(/SoundTouch app|SoundTouch App/);
     }
     // The multiroom read-out points at the control instead of at Bose.
-    expect(multiroom).toContain("t('controls.balanceInSettings')");
-    expect(multiroom).not.toContain("balanceLabel(v) + '. ' + t('controls.balanceTitle')");
+    expect(all).toContain("t('controls.balanceInSettings')");
+    expect(all).not.toContain("balanceLabel(v) + '. ' + t('controls.balanceTitle')");
   });
 
   it('has every new key in English and German', () => {

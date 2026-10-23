@@ -3,17 +3,14 @@
 // `Playlist: "Purpose for Pain" · Rush - Tom Sawyer`: the new preset's name over
 // the old song (discussion #1077).
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import {
   RECALL_EXPECT_MS, acceptSpotifyReply, beginRecall, normalizeSpotifyContext,
   recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
   nativeSpotifySlot,
 } from './spotifynowplaying.js';
+import { allSource, srcOf } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const main = readFileSync(join(here, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
+const main = allSource();
 
 const OLD = { track: 'Tom Sawyer', artist: 'Rush', cover: 'http://c/old.jpg', context: 'spotify:playlist:OLD' };
 const WANT = 'spotify:playlist:NEW';
@@ -83,10 +80,10 @@ describe('the snapshot', () => {
   });
 });
 
-describe('main.js wiring', () => {
+describe('the app wiring', () => {
   it('drops the old song and starts a new generation on a preset click', () => {
-    const at = main.indexOf('async function play(slot)');
-    const play = main.slice(at, main.indexOf('await PlaySlot(state.currentBox.host', at));
+    const fn = srcOf('play');
+    const play = fn.slice(0, fn.indexOf('await PlaySlot(state.currentBox.host'));
     expect(play).toContain('beginRecall(p.uri, state.spotifyNow, Date.now())');
     expect(play).toContain('state.spotifyNow = null;');
     expect(play).toContain('state.spotifyNowGen = (state.spotifyNowGen || 0) + 1;');

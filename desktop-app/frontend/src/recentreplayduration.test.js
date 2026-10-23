@@ -4,26 +4,15 @@
 // 0. The box now keeps the length on the history entry; these tests pin that
 // the card carries it and the replay passes it on.
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { srcOf } from './test/source.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, 'views', 'recent.js'), 'utf8').replace(/\r\n/g, '\n');
-
-// The real functions, sliced out of the view (it imports the Wails runtime).
-function slice(sig) {
-  const at = src.indexOf(sig);
-  expect(at).toBeGreaterThan(-1);
-  return src.slice(at, src.indexOf('\n}\n', at) + 2);
-}
-
+// The real functions, cut out of the view (it imports the Wails runtime).
 const BOX = { host: '192.0.2.10', port: 17008 };
 
 describe('replaying a Recently-played library track', () => {
   // eslint-disable-next-line no-new-func
   const makeReplay = (PlayURL) => new Function('PlayURL',
-    `${slice('async function replayLibraryTrack')}\nreturn replayLibraryTrack;`)(PlayURL);
+    `${srcOf('replayLibraryTrack')}\nreturn replayLibraryTrack;`)(PlayURL);
 
   it('hands the stored length to the speaker', async () => {
     const play = vi.fn().mockResolvedValue(undefined);
@@ -40,7 +29,7 @@ describe('replaying a Recently-played library track', () => {
 
 describe('grouping history into cards', () => {
   // eslint-disable-next-line no-new-func
-  const group = new Function(`${slice('function groupRecentCards')}\nreturn groupRecentCards;`)();
+  const group = new Function(`${srcOf('groupRecentCards')}\nreturn groupRecentCards;`)();
 
   it('keeps the length on the card', () => {
     const cards = group([

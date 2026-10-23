@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { allSource } from './test/source.js';
 import { answersWithoutSTR, displayTrackState, displayTrackOnPanel, displayTrackOffered, displayMessagesState, displaySplashState, displayNoticesState, identifyOutcome, arcadeState } from './boxstate.js';
 
 describe('answersWithoutSTR', () => {
@@ -40,8 +38,7 @@ describe('displayTrackState', () => {
   });
 
   it('the settings view paints a failed read as unknown', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8');
+    const settings = allSource();
     expect(settings).toContain('catch { paintDisplayTrack(null); }');
     expect(settings).not.toContain('catch { paintDisplayTrack(false); }');
     expect(settings).toContain("t('settingsView.displayTrackUnknown')");
@@ -74,8 +71,7 @@ describe('displayTrackOnPanel', () => {
   });
 
   it('the settings view confirms only on the re-buffer path', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const settings = readFileSync(join(here, 'views', 'settings.js'), 'utf8');
+    const settings = allSource();
     expect(settings).toContain('if (!dtOnPanel) {');
     expect(settings).toContain("t('settingsView.displayTrackHelpPanel')");
   });

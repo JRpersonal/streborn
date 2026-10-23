@@ -12,18 +12,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const setup = readFileSync(join(here, 'views', 'setup.js'), 'utf8').replace(/\r\n/g, '\n');
+const setup = allSource();
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 
-const watcher = setup.slice(
-  setup.indexOf('async function watchForSpeakerReady'),
-  setup.indexOf('// outdatedFirmwareHtml') >= 0
-    ? setup.indexOf('// outdatedFirmwareHtml')
-    : setup.indexOf('// INSTALL_HELP_STEPS maps'),
-);
+const watcher = srcOf('watchForSpeakerReady');
 
 describe('the watcher separates being on the network from answering', () => {
   it('keeps two timestamps', () => {
@@ -52,7 +48,7 @@ describe('the watcher separates being on the network from answering', () => {
   });
 
   it('counts the silent state as having been on the network at timeout', () => {
-    const tail = setup.slice(setup.indexOf('const wasOnNetwork'), setup.indexOf('setup.awaitSearchAgain'));
+    const tail = watcher.slice(watcher.indexOf('const wasOnNetwork'), watcher.indexOf('setup.awaitSearchAgain'));
     expect(tail).toContain("lastSeenState === 'silent'");
     expect(tail).toContain("lastSeenState === 'booting'");
   });
@@ -91,9 +87,9 @@ describe('only the newest watcher owns the screen', () => {
   });
 
   it('a retired watcher writes neither the status line nor the button', () => {
-    const status = setup.slice(setup.indexOf('const setStatus = (cls, txt, extraHtml) => {'));
+    const status = watcher.slice(watcher.indexOf('const setStatus = (cls, txt, extraHtml) => {'));
     expect(status.slice(0, 200)).toContain('if (!mine()) return;');
-    const arm = setup.slice(setup.indexOf('const arm = (label, onclick) => {'));
+    const arm = watcher.slice(watcher.indexOf('const arm = (label, onclick) => {'));
     expect(arm.slice(0, 200)).toContain('if (!mine()) return;');
   });
 
@@ -109,8 +105,8 @@ describe('only the newest watcher owns the screen', () => {
 // user confirmed, the progress was off screen while the finished "do this on the
 // speaker now" steps stayed on it.
 describe('the install is shown where the user is looking', () => {
-  const fn = setup.slice(setup.indexOf('async function waitForBoxAfterSetup'),
-    setup.indexOf('const deadline = Date.now() + 5 * 60 * 1000'));
+  const wait = srcOf('waitForBoxAfterSetup');
+  const fn = wait.slice(0, wait.indexOf('const deadline = Date.now() + 5 * 60 * 1000'));
 
   it('takes the finished await panel down', () => {
     expect(fn).toContain("const awaitPanel = $('setupAwaitResult');");
@@ -128,8 +124,8 @@ describe('the install is shown where the user is looking', () => {
 
 describe('the stick wizard folds away when the install starts', () => {
   it('the handoff collapses the section it is done with', () => {
-    const hand = setup.slice(setup.indexOf('const handoff = () => {'),
-      setup.indexOf('while (Date.now() < deadline'));
+    const hand = watcher.slice(watcher.indexOf('const handoff = () => {'),
+      watcher.indexOf('while (Date.now() < deadline'));
     expect(hand).toContain("const stickDetails = $('setupStickDetails');");
     expect(hand).toContain('stickDetails.open = false;');
   });
