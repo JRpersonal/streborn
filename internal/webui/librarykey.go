@@ -234,6 +234,9 @@ func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.
 	if s.renderer == nil {
 		return false
 	}
+	// Same as the app's recall: a server that moved takes the key with it
+	// (#1366, #919), so the key goes to the server's current address first.
+	s.healLibraryKeyIfMoved(ctx, slot, &p)
 	mime := s.directFileMime(ctx, p)
 	if mime == "" {
 		return false
