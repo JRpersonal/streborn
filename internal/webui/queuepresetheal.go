@@ -18,10 +18,13 @@
 // by NAME rather than by the address last seen. This is that lesson applied one
 // layer further in, to the URLs already written into a preset.
 //
-// Deliberately narrow: only the HOST is rewritten, never the port or the path.
-// A DLNA server's content port is not always its description port (Synology
-// serves descriptions on 50001 and content on 50002), so a port "correction"
-// would break working keys to fix a case nobody reported.
+// Deliberately narrow: the HOST is rewritten, never the path. The port moves
+// only when the server was seen through a TRACK URL whose port differs from the
+// key's and the key's old address no longer answers (#1366: a server that comes
+// back on another port is a move too). A device-description URL never moves a
+// port: a DLNA server's content port is not always its description port
+// (Synology serves descriptions on 50001 and content on 50002), so a port
+// "correction" from there would break working keys.
 
 package webui
 
@@ -32,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -60,24 +64,23 @@ func (s *Server) healQueuePresetHost(ctx context.Context, p *presets.Preset) (ch
 	if len(regs) == 0 {
 		return false, "", ""
 	}
-	// Still at that address: nothing to do, and this is the normal case.
+	// Still at an address that answers: nothing to do, and this is the normal
+	// case.
 	//
-	// The store saying so is not enough on its own. Only the agent's OWN library
-	// resolves write the address into it, and the desktop app browses the server
-	// itself, so on a box driven from the desktop the store keeps the address it
-	// was given when the server was enabled. When the server then moved, store
-	// and key agreed on the dead address and the heal stood down on exactly the
-	// case it was written for (#1366: the server moved overnight, both folder keys
-	// went silent, "Play folder" on the same playlist worked). So ask the address
-	// once, a single TCP connect: on a server that is there this costs a few
-	// milliseconds, and only a host that does not answer goes on to the resolve.
-	for _, reg := range regs {
-		if urlHost(reg.Location) == oldHost {
-			if s.queueTrackHostAnswers(ctx, p.Items[0].URL) {
-				return false, "", ""
-			}
-			break
-		}
+	// The store is not asked about that, in either direction. Only the agent's
+	// OWN library resolves write the address into it, and the desktop app
+	// browses the server itself, so on a box driven from the desktop the store
+	// keeps the address it was given when the server was enabled. When the
+	// server then moved, store and key agreed on the dead address and the heal
+	// stood down on exactly the case it was written for (#1366: the server moved
+	// overnight, both folder keys went silent, "Play folder" on the same
+	// playlist worked). And a key that already sits where the server answers
+	// must not be dragged back to a stale store address either. So ask the
+	// key's own address once, a single TCP connect: on a server that is there
+	// this costs a few milliseconds, and only a host that does not answer goes
+	// on to the store and the resolve.
+	if s.queueTrackHostAnswers(ctx, p.Items[0].URL) {
+		return false, "", ""
 	}
 	// Which server was this key saved from? The preset records the server's
 	// display name (Source), which is exactly the identity #733 established as
@@ -112,25 +115,106 @@ func (s *Server) healQueuePresetHost(ctx context.Context, p *presets.Preset) (ch
 // dead address too, so the key showed the placeholder (#1366). It returns how
 // many TRACKS moved; a cover alone moving is not a heal.
 func rewriteQueuePresetHost(p *presets.Preset, oldHost, newHost string) int {
+	return rewriteQueuePresetAddr(p, oldHost, "", newHost, "")
+}
+
+// rewriteQueuePresetAddr is rewriteQueuePresetHost with a port move on top: a
+// URL on oldHost whose port is oldPort ends up on newHost:newPort, every other
+// URL on oldHost only changes host. Empty ports leave every port as it is.
+func rewriteQueuePresetAddr(p *presets.Preset, oldHost, oldPort, newHost, newPort string) int {
 	// The store hands out presets whose Items share its own backing array, so
 	// rewriting in place would change the stored key behind the store's lock.
 	p.Items = append([]presets.PresetItem(nil), p.Items...)
 	n := 0
 	for i := range p.Items {
-		if u, okRe := rewriteURLHost(p.Items[i].URL, oldHost, newHost); okRe {
+		if u, okRe := rewriteURLAddr(p.Items[i].URL, oldHost, oldPort, newHost, newPort); okRe {
 			p.Items[i].URL = u
 			n++
 		}
-		if u, okRe := rewriteURLHost(p.Items[i].Art, oldHost, newHost); okRe {
+		if u, okRe := rewriteURLAddr(p.Items[i].Art, oldHost, oldPort, newHost, newPort); okRe {
 			p.Items[i].Art = u
 		}
 	}
 	if n > 0 {
-		if u, okRe := rewriteURLHost(p.Art, oldHost, newHost); okRe {
+		if u, okRe := rewriteURLAddr(p.Art, oldHost, oldPort, newHost, newPort); okRe {
 			p.Art = u
 		}
 	}
 	return n
+}
+
+// realignQueuePresetArt moves the covers of a folder key onto host, the host
+// its tracks sit on, and reports whether any cover moved.
+//
+// The first version of this heal (v0.9.88) moved the tracks and left the covers
+// behind, so a key pressed after the server moved played again but showed the
+// placeholder for a cover from then on; #1366 is that key, noticed after an app
+// update that had nothing to do with it. Those keys have their tracks on the
+// live address already, which is why no later sighting of the server moved
+// them: a track rewrite finds nothing on the old host. A cover of a library key
+// is always the media server's own (its upnp:albumArtURI), so a cover on a
+// different host than the tracks is a cover left on a dead address.
+//
+// keep names the hosts a cover must NOT be taken off: another registered
+// server's, the speaker's own, and loopback. A cover there is not this server's
+// stale address, whatever else it is.
+func realignQueuePresetArt(p *presets.Preset, host string, keep func(string) bool) bool {
+	if p == nil || host == "" {
+		return false
+	}
+	move := func(raw string) (string, bool) {
+		h := urlHost(raw)
+		if h == "" || h == host || keep(h) {
+			return raw, false
+		}
+		return rewriteURLHost(raw, h, host)
+	}
+	moved := false
+	if u, ok := move(p.Art); ok {
+		p.Art, moved = u, true
+	}
+	for i := range p.Items {
+		u, ok := move(p.Items[i].Art)
+		if !ok {
+			continue
+		}
+		if !moved {
+			// Same rule as the track rewrite: never write into the store's
+			// backing array.
+			p.Items = append([]presets.PresetItem(nil), p.Items...)
+		}
+		p.Items[i].Art, moved = u, true
+	}
+	return moved
+}
+
+// artHostKeeper is the keep rule for realignQueuePresetArt: hosts that are
+// some other registered server's address, the speaker's own address, or
+// loopback are never mistaken for a stale address of the server named by id.
+func (s *Server) artHostKeeper(id string) func(string) bool {
+	keep := map[string]bool{}
+	if s.mediaServers != nil {
+		for _, r := range s.mediaServers.List() {
+			if udnKey(r.ID) == udnKey(id) {
+				continue
+			}
+			if h := urlHost(r.Location); h != "" {
+				keep[h] = true
+			}
+		}
+	}
+	if h := strings.TrimSpace(s.boxHost); h != "" {
+		keep[h] = true
+	}
+	return func(h string) bool {
+		if keep[h] {
+			return true
+		}
+		if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+			return true
+		}
+		return strings.EqualFold(h, "localhost")
+	}
 }
 
 // queueHostProbeTimeout bounds the connect that asks whether the address a key
@@ -178,6 +262,20 @@ func (s *Server) queueHealResolveServer(ctx context.Context, id string) (string,
 	return srv.Location, true
 }
 
+// serverSighting is one moment STR is TOLD where a registered media server
+// lives now: a URL on its current address, and whether that URL is a track.
+//
+// A track URL carries the content port, so a key whose tracks sit on the same
+// host but another port has moved too. A device-description URL says nothing
+// about the content port, so only the host counts then.
+type serverSighting struct {
+	url   string
+	track bool
+	// learned names the sighting in the log: "library" for a folder started
+	// from the Library, "browse" for a folder the app opened.
+	learned string
+}
+
 // healQueuePresetsFromLiveQueue corrects the folder keys of a media server from
 // a queue that was just started from that server's Library.
 //
@@ -197,31 +295,82 @@ func (s *Server) healQueuePresetsFromLiveQueue(card recentCardCtx, items []queue
 	if s.presets == nil || s.mediaServers == nil || len(items) == 0 {
 		return
 	}
-	liveHost := urlHost(items[0].URL)
-	if liveHost == "" {
-		return
-	}
 	udn, _, ok := s.splitQueueCardKey(card.key)
 	if !ok {
 		return
 	}
-	regs := s.mediaServers.List()
-	var reg mediaservers.Server
-	found := false
-	for _, r := range regs {
-		if udnKey(r.ID) == udnKey(udn) {
-			reg, found = r, true
+	reg, found := s.registeredServerByUDN(udn)
+	if !found {
+		return
+	}
+	s.healQueuePresetsForServer(context.Background(), reg, serverSighting{url: items[0].URL, track: true, learned: "library"})
+}
+
+// healQueuePresetsFromBrowse corrects the folder keys of a media server the app
+// just browsed through the agent: the Browse answered, so the resolved address
+// is where the server lives now (#1366). The desktop app browses servers on its
+// own and calls this endpoint once per server it opened, precisely so the keys
+// follow the server at that moment and not only on a key press or "Play folder".
+//
+// A page with tracks names the content port; a page of folders only (the root
+// of most servers) moves the host alone.
+func (s *Server) healQueuePresetsFromBrowse(ctx context.Context, srv dlna.Server, res dlna.BrowseResult) {
+	if s.presets == nil || s.mediaServers == nil {
+		return
+	}
+	reg, found := s.registeredServerByUDN(srv.UDN)
+	if !found {
+		return
+	}
+	seen := serverSighting{url: srv.Location, learned: "browse"}
+	for _, it := range res.Items {
+		if strings.TrimSpace(it.StreamURL) != "" {
+			seen = serverSighting{url: it.StreamURL, track: true, learned: "browse"}
 			break
 		}
 	}
-	if !found {
+	s.healQueuePresetsForServer(ctx, reg, seen)
+}
+
+// registeredServerByUDN finds the registered media server with that UDN, with
+// or without the "uuid:" prefix.
+func (s *Server) registeredServerByUDN(udn string) (mediaservers.Server, bool) {
+	if s.mediaServers == nil || udnKey(udn) == "" {
+		return mediaservers.Server{}, false
+	}
+	for _, r := range s.mediaServers.List() {
+		if udnKey(r.ID) == udnKey(udn) {
+			return r, true
+		}
+	}
+	return mediaservers.Server{}, false
+}
+
+// healQueuePresetsForServer puts every folder key of reg on the address the
+// sighting names, the store entry included, and persists what changed.
+//
+// Two registered servers sharing reg's name is not certain enough: a key only
+// records the name, so nothing moves then. A key whose tracks sit on the live
+// host but another port is only moved after its own address stopped answering:
+// a server that serves two ports keeps both keys working, and the probe is the
+// one network call this path can make.
+func (s *Server) healQueuePresetsForServer(ctx context.Context, reg mediaservers.Server, seen serverSighting) {
+	if s.presets == nil || s.mediaServers == nil {
 		return
+	}
+	liveHost := urlHost(seen.url)
+	if liveHost == "" {
+		return
+	}
+	livePort := ""
+	if seen.track {
+		livePort = urlPort(seen.url)
 	}
 	name := strings.TrimSpace(strings.ToLower(reg.Name))
 	if name == "" {
 		return
 	}
-	for _, r := range regs {
+	for _, r := range s.mediaServers.List() {
 		if r.ID != reg.ID && strings.TrimSpace(strings.ToLower(r.Name)) == name {
 			return
 		}
@@ -239,9 +388,10 @@ func (s *Server) healQueuePresetsFromLiveQueue(card recentCardCtx, items []queue
 			}
 			s.mediaLocMu.Unlock()
 			s.logger.Info("queue preset: the library showed the music server at a new address",
-				"server", reg.Name, "was", regHost, "now", liveHost)
+				"server", reg.Name, "was", regHost, "now", liveHost, "learned", seen.learned)
 		}
 	}
+	keep := s.artHostKeeper(reg.ID)
 	for _, p := range s.presets.All() {
 		if p.Type != "queue" || len(p.Items) == 0 {
 			continue
@@ -249,16 +399,34 @@ func (s *Server) healQueuePresetsFromLiveQueue(card recentCardCtx, items []queue
 		if strings.TrimSpace(strings.ToLower(p.Source)) != name {
 			continue
 		}
-		oldHost := urlHost(p.Items[0].URL)
-		if oldHost == "" || oldHost == liveHost {
+		oldHost, oldPort := urlHost(p.Items[0].URL), urlPort(p.Items[0].URL)
+		if oldHost == "" {
 			continue
 		}
-		if rewriteQueuePresetHost(&p, oldHost, liveHost) == 0 {
+		newPort := oldPort
+		if livePort != "" && livePort != oldPort {
+			newPort = livePort
+		}
+		moved := 0
+		switch {
+		case oldHost != liveHost:
+			moved = rewriteQueuePresetAddr(&p, oldHost, oldPort, liveHost, newPort)
+		case newPort != oldPort && !s.queueTrackHostAnswers(ctx, p.Items[0].URL):
+			moved = rewriteQueuePresetAddr(&p, oldHost, oldPort, liveHost, newPort)
+		}
+		onLive := moved > 0 || oldHost == liveHost
+		artMoved := onLive && realignQueuePresetArt(&p, liveHost, keep)
+		if moved == 0 && !artMoved {
 			continue
 		}
-		s.logger.Info("queue preset: the music server moved, pointing the key at its new address",
-			"slot", p.Slot, "server", p.Source, "was", oldHost, "now", liveHost,
-			"tracks", len(p.Items), "learned", "library")
+		if moved > 0 {
+			s.logger.Info("queue preset: the music server moved, pointing the key at its new address",
+				"slot", p.Slot, "server", p.Source, "was", net.JoinHostPort(oldHost, oldPort),
+				"now", net.JoinHostPort(liveHost, newPort), "tracks", len(p.Items), "learned", seen.learned)
+		} else {
+			s.logger.Info("queue preset: the key's cover still named the music server's old address, moved it",
+				"slot", p.Slot, "server", p.Source, "now", liveHost, "learned", seen.learned)
+		}
 		if err := s.presets.SetSlot(p); err != nil {
 			s.logger.Info("queue preset: could not store the corrected address", "slot", p.Slot, "err", err)
 		}
@@ -295,10 +463,33 @@ func urlHost(raw string) string {
 	return u.Hostname()
 }
 
+// urlPort is the port of an absolute URL, the scheme's default when the URL
+// names none, so "http://h/x" and "http://h:80/x" sit on the same address.
+func urlPort(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u == nil || u.Hostname() == "" {
+		return ""
+	}
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		return "443"
+	}
+	return "80"
+}
+
 // rewriteURLHost swaps the host of an absolute URL, keeping scheme, port, path
 // and query exactly as they were. Reports false when the URL does not sit on
 // that host at all, so a folder mixing two servers only moves what moved.
 func rewriteURLHost(raw, oldHost, newHost string) (string, bool) {
+	return rewriteURLAddr(raw, oldHost, "", newHost, "")
+}
+
+// rewriteURLAddr is rewriteURLHost with a port move on top: a URL on
+// oldHost:oldPort ends up on newHost:newPort; one on oldHost with another port
+// only changes host. Empty ports leave the port exactly as it was.
+func rewriteURLAddr(raw, oldHost, oldPort, newHost, newPort string) (string, bool) {
 	if strings.TrimSpace(raw) == "" {
 		return raw, false
 	}
@@ -306,7 +497,11 @@ func rewriteURLHost(raw, oldHost, newHost string) (string, bool) {
 	if err != nil || u == nil || u.Hostname() != oldHost {
 		return raw, false
 	}
-	if port := u.Port(); port != "" {
+	port := u.Port()
+	if oldPort != "" && newPort != "" && oldPort != newPort && urlPort(raw) == oldPort {
+		port = newPort
+	}
+	if port != "" {
 		u.Host = net.JoinHostPort(newHost, port)
 	} else {
 		u.Host = newHost
@@ -317,13 +512,27 @@ func rewriteURLHost(raw, oldHost, newHost string) (string, bool) {
 // healQueuePresetIfMoved runs the heal for one slot and persists the result.
 // Written only when something actually changed, because this runs on a key press
 // and the speaker's flash is not free.
+//
+// The covers are checked even when the tracks did not move: a key an older
+// agent healed has its tracks on the live address and its covers on the dead
+// one (#1366), and the press is the moment that key is in hand.
 func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *presets.Preset) {
 	changed, from, to := s.healQueuePresetHost(ctx, p)
-	if !changed {
+	artMoved := false
+	if p != nil && p.Type == "queue" && len(p.Items) > 0 && s.mediaServers != nil {
+		reg, _ := matchRegisteredServer(s.mediaServers.List(), p.Source)
+		artMoved = realignQueuePresetArt(p, urlHost(p.Items[0].URL), s.artHostKeeper(reg.ID))
+	}
+	if !changed && !artMoved {
 		return
 	}
-	s.logger.Info("queue preset: the music server moved, pointing the key at its new address",
-		"slot", slot, "server", p.Source, "was", from, "now", to, "tracks", len(p.Items))
+	if changed {
+		s.logger.Info("queue preset: the music server moved, pointing the key at its new address",
+			"slot", slot, "server", p.Source, "was", from, "now", to, "tracks", len(p.Items))
+	} else {
+		s.logger.Info("queue preset: the key's cover still named the music server's old address, moved it",
+			"slot", slot, "server", p.Source, "now", urlHost(p.Items[0].URL))
+	}
 	if s.presets == nil {
 		return
 	}

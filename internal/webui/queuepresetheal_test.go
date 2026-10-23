@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -25,9 +26,9 @@ func healServer(t *testing.T, regs ...mediaservers.Server) *Server {
 	return &Server{
 		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		mediaServers: store,
-		// Every address answers unless a test says otherwise, and nothing is
+		// No address answers unless a test says otherwise, and nothing is
 		// resolved over the network: these tests never leave the process.
-		queueHostAnswers: func(context.Context, string) bool { return true },
+		queueHostAnswers: func(context.Context, string) bool { return false },
 		queueHealResolve: func(context.Context, string) (string, bool) { return "", false },
 	}
 }
@@ -210,6 +211,7 @@ func TestQueuePresetHealProbeOutcomes(t *testing.T) {
 
 	t.Run("answers", func(t *testing.T) {
 		s := healServer(t, reg)
+		s.queueHostAnswers = func(context.Context, string) bool { return true }
 		s.queueHealResolve = func(context.Context, string) (string, bool) {
 			t.Error("resolved a server that answered at its address")
 			return "", false
@@ -382,5 +384,220 @@ func TestPlayFolderLightsTheKeyThatHoldsIt(t *testing.T) {
 	s.queueFolder = s.recentQueueCard
 	if got := s.queueSnapshotWithCard().Slot; got != 0 {
 		t.Fatalf("other folder: queue.slot = %d, want 0", got)
+	}
+}
+
+// #1366, the browse half: the desktop app browses a media server on its own and
+// tells the agent once per server it opened, through the agent's own browse
+// endpoint. A page with tracks carries the server's address AND its content
+// port, so the server's keys follow both; the store learns the host.
+func TestBrowsePutsTheServersKeysOnItsNewAddress(t *testing.T) {
+	s := liveQueueServer(t,
+		mediaservers.Server{ID: "uuid:AAAA-BBBB", Name: "MinimServer", Location: "http://192.0.2.32:9791/AAAA-BBBB/Upnp/device.xml"},
+		mediaservers.Server{ID: "uuid:CCCC-DDDD", Name: "Synology", Location: "http://192.0.2.60:50001/desc.xml"})
+	s.queueHostAnswers = func(context.Context, string) bool {
+		t.Error("probed the network; the browse already says where the server is")
+		return false
+	}
+	key := queueKey("MinimServer", "http://192.0.2.32:9790/m/1.m4a", "http://192.0.2.32:9790/m/2.m4a")
+	key.Slot, key.Art = 2, "http://192.0.2.32:9790/m/cover.jpg"
+	other := queueKey("Synology", "http://192.0.2.60:50002/x/1.mp3")
+	other.Slot = 4
+	for _, p := range []presets.Preset{key, other} {
+		if err := s.presets.SetSlot(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := dlna.Server{UDN: "uuid:AAAA-BBBB", Location: "http://192.0.2.101:9791/AAAA-BBBB/Upnp/device.xml", FriendlyName: "MinimServer"}
+	s.healQueuePresetsFromBrowse(context.Background(), srv, dlna.BrowseResult{
+		Items: []dlna.Item{{Title: "x", StreamURL: "http://192.0.2.101:9790/m/9.m4a"}},
+	})
+
+	got, _ := s.presets.Get(2)
+	if got.Items[0].URL != "http://192.0.2.101:9790/m/1.m4a" || got.Items[1].URL != "http://192.0.2.101:9790/m/2.m4a" {
+		t.Fatalf("key not moved: %+v", got.Items)
+	}
+	if got.Art != "http://192.0.2.101:9790/m/cover.jpg" {
+		t.Fatalf("cover not moved: %q", got.Art)
+	}
+	if got4, _ := s.presets.Get(4); got4.Items[0].URL != "http://192.0.2.60:50002/x/1.mp3" {
+		t.Fatalf("another server's key was moved: %q", got4.Items[0].URL)
+	}
+	for _, r := range s.mediaServers.List() {
+		if r.Name == "MinimServer" && r.Location != "http://192.0.2.101:9791/AAAA-BBBB/Upnp/device.xml" {
+			t.Fatalf("store not moved (port and path must stay): %q", r.Location)
+		}
+	}
+}
+
+// A root page lists folders only, so the sighting is the device description:
+// the host moves, the content port is not the description port and stays.
+func TestBrowseOfFoldersOnlyMovesTheHostAlone(t *testing.T) {
+	s := liveQueueServer(t, mediaservers.Server{ID: "CCCC-DDDD", Name: "Synology", Location: "http://192.0.2.60:50001/desc.xml"})
+	key := queueKey("Synology", "http://192.0.2.60:50002/x/1.mp3")
+	if err := s.presets.SetSlot(key); err != nil {
+		t.Fatal(err)
+	}
+	srv := dlna.Server{UDN: "uuid:CCCC-DDDD", Location: "http://192.0.2.70:50001/desc.xml"}
+	s.healQueuePresetsFromBrowse(context.Background(), srv, dlna.BrowseResult{
+		Containers: []dlna.Container{{ID: "1", Title: "Music"}},
+	})
+	if got, _ := s.presets.Get(1); got.Items[0].URL != "http://192.0.2.70:50002/x/1.mp3" {
+		t.Fatalf("want the host moved and the content port kept, got %q", got.Items[0].URL)
+	}
+
+	// A server that is not registered changes nothing.
+	s.healQueuePresetsFromBrowse(context.Background(), dlna.Server{UDN: "uuid:ZZZZ", Location: "http://192.0.2.99:1/d.xml"},
+		dlna.BrowseResult{Items: []dlna.Item{{StreamURL: "http://192.0.2.99:2/a.mp3"}}})
+	if got, _ := s.presets.Get(1); got.Items[0].URL != "http://192.0.2.70:50002/x/1.mp3" {
+		t.Fatalf("a stranger's browse moved the key: %q", got.Items[0].URL)
+	}
+}
+
+// A server that comes back on the same host but another port has moved too
+// (#1366): the keys follow once their own address stopped answering. A server
+// that serves two ports keeps both keys as they are.
+func TestServerKeysFollowAChangedPort(t *testing.T) {
+	seed := func(t *testing.T, answers bool) *Server {
+		t.Helper()
+		s := liveQueueServer(t, mediaservers.Server{ID: "uuid:AAAA-BBBB", Name: "MinimServer", Location: "http://192.0.2.32:9791/d.xml"})
+		s.queueHostAnswers = func(_ context.Context, raw string) bool {
+			if raw != "http://192.0.2.32:9790/m/1.m4a" {
+				t.Errorf("probed %q, want the key's own first track", raw)
+			}
+			return answers
+		}
+		key := queueKey("MinimServer", "http://192.0.2.32:9790/m/1.m4a", "http://192.0.2.32:9790/m/2.m4a")
+		key.Items[0].Art = "http://192.0.2.32:9790/m/1.m4a/$!picture-1.jpg"
+		key.Art = "http://192.0.2.32:9791/folder.jpg" // the description port, not the content port: stays
+		if err := s.presets.SetSlot(key); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	items := []queueItem{{URL: "http://192.0.2.32:9800/m/1.m4a"}}
+
+	t.Run("old port dead", func(t *testing.T) {
+		s := seed(t, false)
+		s.healQueuePresetsFromLiveQueue(recentCardCtx{key: "queue:uuid:AAAA-BBBB:0$=Playlist"}, items)
+		got, _ := s.presets.Get(1)
+		if got.Items[0].URL != "http://192.0.2.32:9800/m/1.m4a" || got.Items[1].URL != "http://192.0.2.32:9800/m/2.m4a" {
+			t.Fatalf("tracks not moved to the new port: %+v", got.Items)
+		}
+		if got.Items[0].Art != "http://192.0.2.32:9800/m/1.m4a/$!picture-1.jpg" {
+			t.Fatalf("track cover on the content port not moved: %q", got.Items[0].Art)
+		}
+		if got.Art != "http://192.0.2.32:9791/folder.jpg" {
+			t.Fatalf("a cover on another port of the same host was touched: %q", got.Art)
+		}
+	})
+
+	t.Run("old port still answers", func(t *testing.T) {
+		s := seed(t, true)
+		s.healQueuePresetsFromLiveQueue(recentCardCtx{key: "queue:uuid:AAAA-BBBB:0$=Playlist"}, items)
+		if got, _ := s.presets.Get(1); got.Items[0].URL != "http://192.0.2.32:9790/m/1.m4a" {
+			t.Fatalf("moved a key off a port that answers: %q", got.Items[0].URL)
+		}
+	})
+}
+
+// The reported key (#1366): an older agent moved its tracks on a key press and
+// left the covers on the dead address, so it played and showed the placeholder.
+// Its tracks already sit where the server is, so no track rewrite ever found
+// anything to do; the covers follow the tracks instead, on a browse and on the
+// next press.
+func TestCoverFollowsTracksHealedByAnOlderAgent(t *testing.T) {
+	regs := []mediaservers.Server{
+		{ID: "uuid:AAAA-BBBB", Name: "MinimServer", Location: "http://192.0.2.32:9791/d.xml"}, // the store is stale too
+		{ID: "uuid:CCCC-DDDD", Name: "Synology", Location: "http://192.0.2.60:50001/desc.xml"},
+	}
+	healed := func() presets.Preset {
+		p := queueKey("MinimServer", "http://192.0.2.101:9790/m/1.m4a", "http://192.0.2.101:9790/m/2.m4a")
+		p.Items[0].Art = "http://192.0.2.32:9790/m/1.m4a/$!picture-1.jpg"
+		p.Items[1].Art = "http://192.0.2.60:50002/not/ours.jpg" // another registered server's: kept
+		p.Art = "http://192.0.2.32:9790/m/cover.jpg"
+		return p
+	}
+
+	t.Run("on a browse", func(t *testing.T) {
+		s := liveQueueServer(t, regs...)
+		s.boxHost = "192.0.2.5"
+		p := healed()
+		p.Slot = 3
+		if err := s.presets.SetSlot(p); err != nil {
+			t.Fatal(err)
+		}
+		s.healQueuePresetsFromBrowse(context.Background(),
+			dlna.Server{UDN: "uuid:AAAA-BBBB", Location: "http://192.0.2.101:9791/d.xml"}, dlna.BrowseResult{})
+		got, _ := s.presets.Get(3)
+		if got.Art != "http://192.0.2.101:9790/m/cover.jpg" || got.Items[0].Art != "http://192.0.2.101:9790/m/1.m4a/$!picture-1.jpg" {
+			t.Fatalf("covers left on the dead address: %q / %q", got.Art, got.Items[0].Art)
+		}
+		if got.Items[1].Art != "http://192.0.2.60:50002/not/ours.jpg" {
+			t.Fatalf("a cover on another registered server was taken: %q", got.Items[1].Art)
+		}
+		if got.Items[0].URL != "http://192.0.2.101:9790/m/1.m4a" {
+			t.Fatalf("tracks changed: %q", got.Items[0].URL)
+		}
+	})
+
+	t.Run("on a key press", func(t *testing.T) {
+		s := liveQueueServer(t, regs...)
+		// The key's tracks answer, so the stale store must not drag them back.
+		s.queueHostAnswers = func(context.Context, string) bool { return true }
+		s.queueHealResolve = func(context.Context, string) (string, bool) {
+			t.Error("resolved a server whose tracks answer")
+			return "", false
+		}
+		p := healed()
+		p.Slot = 3
+		if err := s.presets.SetSlot(p); err != nil {
+			t.Fatal(err)
+		}
+		pressed, _ := s.presets.Get(3)
+		s.healQueuePresetIfMoved(context.Background(), 3, &pressed)
+		if pressed.Art != "http://192.0.2.101:9790/m/cover.jpg" {
+			t.Fatalf("cover not moved in hand: %q", pressed.Art)
+		}
+		if got, _ := s.presets.Get(3); got.Art != "http://192.0.2.101:9790/m/cover.jpg" || got.Items[0].Art != "http://192.0.2.101:9790/m/1.m4a/$!picture-1.jpg" {
+			t.Fatalf("cover not persisted: %q / %q", got.Art, got.Items[0].Art)
+		}
+	})
+
+	t.Run("box-local and loopback covers are not the server's", func(t *testing.T) {
+		s := liveQueueServer(t, regs...)
+		s.boxHost = "192.0.2.5"
+		keep := s.artHostKeeper("uuid:AAAA-BBBB")
+		p := queueKey("MinimServer", "http://192.0.2.101:9790/m/1.m4a")
+		p.Art = "http://127.0.0.1:8888/icon.png"
+		p.Items[0].Art = "http://192.0.2.5:8888/art?u=x"
+		if realignQueuePresetArt(&p, "192.0.2.101", keep) {
+			t.Fatalf("moved a cover that never was on the server: %q / %q", p.Art, p.Items[0].Art)
+		}
+		p.Art = "data:image/png;base64,AAAA"
+		if realignQueuePresetArt(&p, "192.0.2.101", keep) {
+			t.Fatal("moved an inline cover")
+		}
+	})
+}
+
+func TestRewriteURLAddrMovesOnlyTheMatchingPort(t *testing.T) {
+	cases := []struct{ in, oldPort, newPort, want string }{
+		{"http://192.0.2.11:9790/1.flac", "9790", "9800", "http://192.0.2.50:9800/1.flac"},
+		{"http://192.0.2.11:9791/d.xml", "9790", "9800", "http://192.0.2.50:9791/d.xml"},
+		{"http://192.0.2.11/1.flac", "80", "8080", "http://192.0.2.50:8080/1.flac"},
+		{"http://192.0.2.11:9790/1.flac", "", "", "http://192.0.2.50:9790/1.flac"},
+	}
+	for _, c := range cases {
+		got, ok := rewriteURLAddr(c.in, "192.0.2.11", c.oldPort, "192.0.2.50", c.newPort)
+		if !ok || got != c.want {
+			t.Errorf("rewriteURLAddr(%q, %q->%q) = %q (%v), want %q", c.in, c.oldPort, c.newPort, got, ok, c.want)
+		}
+	}
+	if got := urlPort("https://192.0.2.11/x"); got != "443" {
+		t.Errorf("urlPort(https) = %q", got)
+	}
+	if got := urlPort("not a url"); got != "" {
+		t.Errorf("urlPort(garbage) = %q", got)
 	}
 }
