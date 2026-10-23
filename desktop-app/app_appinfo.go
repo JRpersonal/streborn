@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/versioncmp"
 )
 
 // AppVersion returns the semver version of the running app.
@@ -111,45 +113,9 @@ func (a *App) AppInfo() AppInfo {
 	}
 }
 
-// versionLess reports whether dotted numeric version a is strictly less
-// than b. Both may carry a leading "v" and a git-describe suffix
-// ("-3-gabc123-dirty"); only the leading numeric segments are compared,
-// so a dev build off tag v0.6.5 compares equal to the v0.6.5 release.
-func versionLess(a, b string) bool {
-	pa, pb := parseVersionParts(a), parseVersionParts(b)
-	for i := 0; i < len(pa) || i < len(pb); i++ {
-		var x, y int
-		if i < len(pa) {
-			x = pa[i]
-		}
-		if i < len(pb) {
-			y = pb[i]
-		}
-		if x != y {
-			return x < y
-		}
-	}
-	return false
-}
-
-func parseVersionParts(v string) []int {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	var parts []int
-	for _, seg := range strings.Split(v, ".") {
-		n, ok := 0, false
-		for _, r := range seg { // stop at the first non-numeric rune (git suffix)
-			if r < '0' || r > '9' {
-				break
-			}
-			n, ok = n*10+int(r-'0'), true
-		}
-		if !ok {
-			break
-		}
-		parts = append(parts, n)
-	}
-	return parts
-}
+// Version ordering (the update check below, the OTA downgrade guard, the
+// update intent) goes through versioncmp.Less: the one rule shared with the
+// speaker's self-update, documented there.
 
 // CheckAppUpdate fetches the UpdateManifestURL and returns the manifest
 // when the remote version is strictly newer than the running one.
@@ -258,7 +224,7 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 	// Only surface the banner when the remote version is strictly newer
 	// than the running one; equal or older (e.g. a dev build ahead of the
 	// published tag) stays silent.
-	if rv == "" || !versionLess(info.Version, rv) {
+	if rv == "" || !versioncmp.Less(info.Version, rv) {
 		return map[string]string{}, nil
 	}
 	return m, nil

@@ -4,10 +4,12 @@ package main
 //
 // UninstallSTR puts the speaker back to stock, but the app kept remembering
 // it as the STR speaker it used to be: the agent port it answered on, the
-// post-OTA pin, an unfinished update intent (which toasted "update unfinished"
-// for two weeks on a speaker that had no STR left), the stereo-pair name it
-// was half of, the world-map "already invited for this box" flag, and its
-// line in known-speakers.json. None of those records is true any more once the
+// post-OTA pin, the update verification memo (which port the last update went
+// through and whether its verify window ended without a verdict), an
+// unfinished update intent (which toasted "update unfinished" for two weeks on
+// a speaker that had no STR left), the stereo-pair name it was half of, the
+// world-map "already invited for this box" flag, and its line in
+// known-speakers.json. None of those records is true any more once the
 // speaker is stock, and each one made the speaker come back looking like
 // something other than the plain installable speaker it now is.
 //
@@ -54,7 +56,7 @@ func (a *App) purgeSpeakerState(host, deviceID string) {
 	a.forgetPort(host)
 	a.clearPostOTA(host)
 	boxSSHClients.forgetHost(host)
-	// TODO(#866): call a.forgetOTAVerify(host) here once App.otaVerify lands on main.
+	a.forgetOTAVerify(host)
 
 	// On-disk records under the OS user-config dir.
 	a.ClearUpdateIntent(host, 0)

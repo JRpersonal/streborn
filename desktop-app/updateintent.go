@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/versioncmp"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -171,7 +172,7 @@ func reconcileIntent(in updateIntent, actualVersion string, engineState string, 
 	// to v0.9.67) otherwise flags the speaker on every app start, forever,
 	// because the flag path never clears (field report, 2026-08-29: "Update
 	// for Bose 1 is unfinished" on a fleet that was fully current).
-	agentDone := actualVersion != "" && !versionLess(actualVersion, in.TargetVersion)
+	agentDone := actualVersion != "" && !versioncmp.Less(actualVersion, in.TargetVersion)
 	engineOK := !in.WantEngine || engineState == "present"
 	switch {
 	case agentDone && engineOK:
