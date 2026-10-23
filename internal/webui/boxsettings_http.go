@@ -782,6 +782,25 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
+// readBoolFlag reads a one-line NAND flag file as a switch. A missing or
+// unreadable file is def. Otherwise "1", "true", "on" and "yes" (any case,
+// surrounding whitespace ignored) are true, "0", "false", "off" and "no" are
+// false, and anything else (an empty or damaged file) is def again: garbage is
+// not an instruction, for a default-on switch as much as for a default-off one.
+func readBoolFlag(path string, def bool) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(string(b))) {
+	case "1", "true", "on", "yes":
+		return true
+	case "0", "false", "off", "no":
+		return false
+	}
+	return def
+}
+
 // writeFlagFile atomically writes a one-line value to a NAND flag file.
 func writeFlagFile(path, val string) error {
 	return writeFileAtomic(path, []byte(val+"\n"))

@@ -562,16 +562,7 @@ func (s *Server) displayTrackEnabled() bool {
 	if path == "" {
 		path = defaultDisplayTrackPath
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "1", "true", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return readBoolFlag(path, false)
 }
 
 // defaultDisplayTrackModePath is the NAND file for WHAT the display push shows:
@@ -1023,16 +1014,7 @@ func (s *Server) resumeOnPowerOnEnabled() bool {
 	if path == "" {
 		path = defaultResumeOnPowerOnPath
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return true
-	}
-	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "0", "false", "off", "no":
-		return false
-	default:
-		return true
-	}
+	return readBoolFlag(path, true)
 }
 
 // userStopWindow is how long after a deliberate user stop the auto-re-push
