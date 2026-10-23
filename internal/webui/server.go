@@ -442,6 +442,11 @@ type Server struct {
 	// lastPlay remembers the stream STR last told the box to play, so the
 	// auto-re-push (#4) can resume it when the Bose renderer drops a long
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
+	// boxNowReadFn is THE test seam for "what does this speaker play right
+	// now": every own-box now_playing read in this package goes through
+	// readBoxNow (boxread.go), which calls this when set. nil = the real
+	// :8090 read via boxapi. Tests script it with scriptNowPlaying.
+	boxNowReadFn func(ctx context.Context) (*boxapi.NowPlaying, error)
 	// boxSourceFn seams the now_playing source read (boxSourceNow) so the
 	// standby-vs-awake decision is assertable without a live box.
 	boxSourceFn func() string

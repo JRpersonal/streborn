@@ -5,11 +5,12 @@ package webui
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
+	"errors"
 	"html"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/region"
 )
 
@@ -185,12 +187,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	s.statusMu.Unlock()
 
-	// A bounded client, NOT http.Get: a BoseApp that accepts the connection
-	// but never answers (the documented Portable freeze) would otherwise hang
-	// every /api/status poll forever.
-	cl := &http.Client{Timeout: 5 * time.Second}
-	resp, err := cl.Get(fmt.Sprintf("http://%s:8090/now_playing", s.boxHost))
-	s.noteBoseAppFetch(err == nil)
+	// A bounded read: a BoseApp that accepts the connection but never answers
+	// (the documented Portable freeze) would otherwise hang every /api/status
+	// poll forever. readBoxNow records the verdict in the outage tracker and
+	// caches a 200 body; a firmware error reply comes back as a BoxError and
+	// is served through below, uncached, so the next poll retries the box.
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	np, err := s.readBoxNow(ctx)
+	var boxErr *boxapi.BoxError
+	if errors.As(err, &boxErr) {
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		s.setPlayingKeyHeader(w, []byte(boxErr.Body))
+		w.WriteHeader(boxErr.Status)
+		_, _ = w.Write(s.withStationName([]byte(boxErr.Body)))
+		return
+	}
 	if err != nil {
 		// Fall back to the last cached body on a box error so a brief BoseApp
 		// hiccup does not blank the now-playing display. The body must stay
@@ -226,23 +238,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-
-	// Cache only successful bodies; an error status is served through but
-	// not memoised, so the next poll retries the box.
-	if resp.StatusCode == http.StatusOK {
-		s.statusMu.Lock()
-		s.statusBody = body
-		s.statusCode = resp.StatusCode
-		s.statusAt = time.Now()
-		s.statusStaleWarned = false
-		s.statusMu.Unlock()
-	}
-
+	body := np.Raw
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	s.setPlayingKeyHeader(w, body)
-	w.WriteHeader(resp.StatusCode)
+	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(s.withStationName(body))
 }
 
