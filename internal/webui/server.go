@@ -585,6 +585,14 @@ type Server struct {
 	// to the conservative power-off handling.
 	userActivityFn func() time.Time
 
+	// Alarm snooze seams (alarmsnooze.go): nil means production, the tests
+	// set a faster clock and box-free implementations on their own server.
+	snoozeTiming       *snoozeTiming
+	alarmLiveStateFn   func(ctx context.Context) (source string, playing bool)
+	alarmSilenceFn     func(ctx context.Context)
+	alarmKeyActivityFn func() time.Time
+	showSnoozeNoticeFn func(until string)
+
 	// storm1036Fn reports whether the box is currently rejecting essentially
 	// every recall (1036), how many rejections are in the window and since
 	// when. Wired to boxws.Storm1036. Surfaced on the version envelope so the
