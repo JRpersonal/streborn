@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -70,6 +71,10 @@ type Reader struct {
 	available func() bool
 	// retryDelays paces enableTraceWithRetry; shortened by tests.
 	retryDelays []time.Duration
+
+	// displayUp latches the firmware's display controller leaving its boot
+	// state (displayready.go).
+	displayUp atomic.Bool
 
 	mu           sync.Mutex
 	running      bool
@@ -250,6 +255,7 @@ func (r *Reader) handleLine(line string, now time.Time) {
 	r.lastLine = now
 	r.linesSeen++
 	r.mu.Unlock()
+	r.noteDisplayLine(line)
 	if fev, logIt, ok := r.forensics.observe(line, now); ok {
 		if logIt {
 			r.logger.Info("box syslog: "+string(fev.Class), "process", fev.Process, "facility", fev.Facility, "msg", fev.Message)
