@@ -22,6 +22,7 @@ import {
   appArtFromBoxArt,
   artCarriesBoxForm,
   confirmWarn,
+  isLibraryPreset,
   escapeAttr,
   escapeHtml,
   getBoxLabel,
@@ -382,8 +383,13 @@ async function healPresetLogos() {
   // false, so this adds no recurring work for healthy keys.
   // A Pandora or iHeartRadio key is no directory station: looking its name up
   // in the radio directory could only paint some unrelated station's logo.
+  // Neither is a music-library key (a saved folder stores no preset-level art
+  // at all when its tracks carry covers): its cover is the media server's, and
+  // a directory hit for the folder's name would paint a radio logo over it
+  // until the next reload (#1366).
   const missing = state.presets.filter(p =>
-    p.name && (!appArtFromBoxArt(p.art) || artCarriesBoxForm(p.art)) && !isNativeServicePreset(p));
+    p.name && (!appArtFromBoxArt(p.art) || artCarriesBoxForm(p.art)) &&
+    !isNativeServicePreset(p) && !isLibraryPreset(p));
   if (missing.length === 0) return;
   healingInProgress = true;
   try {
@@ -418,9 +424,10 @@ async function healPresetLogos() {
         const logo = stationLogoChain(pick);
         if (!logo) return;
         // Radio-only: SetPreset sends type=radio with no uri, so never persist
-        // onto a Spotify preset or its URI is lost. Guarded: the heal must not
-        // revert a slot another client re-saved meanwhile (#758).
-        if (p.type === 'spotify') return;
+        // onto a Spotify preset or its URI is lost, nor onto a library key
+        // (#1366). Guarded: the heal must not revert a slot another client
+        // re-saved meanwhile (#758).
+        if (p.type === 'spotify' || isLibraryPreset(p)) return;
         p.art = logo;
         await setPresetIfUnchanged(state.currentBox, p, { art: logo });
       } catch {}

@@ -531,7 +531,7 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("library browse: retrying at a freshly resolved address",
 				"server", fresh.FriendlyName, "wasControl", srv.CDSControlURL, "nowControl", fresh.CDSControlURL)
 			if res2, err2 := dlna.Browse(ctx, fresh, id, start, libraryBrowsePage); err2 == nil {
-				res, err = res2, nil
+				res, err, srv = res2, nil, fresh
 			}
 		}
 	}
@@ -541,6 +541,10 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.libraryOfflineReply(udnKey(udn), live))
 		return
 	}
+	// The Browse answered, so this is where the server lives now: put its folder
+	// keys there before anyone presses one (#1366). The desktop app calls this
+	// endpoint once per server it opened in its own Library for exactly this.
+	s.healQueuePresetsFromBrowse(ctx, srv, res)
 
 	type folderOut struct {
 		ID         string `json:"id"`
