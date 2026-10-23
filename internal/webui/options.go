@@ -4,9 +4,7 @@ package webui
 
 import (
 	"context"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/JRpersonal/streborn/internal/alarm"
 	"github.com/JRpersonal/streborn/internal/autopair"
@@ -215,20 +213,6 @@ func WithAlarms(a *alarm.Store, st *alarm.StateStore) Option {
 	return func(s *Server) { s.alarms, s.alarmState = a, st }
 }
 
-// WithSpotifySwitchedAway wires the Spotify manager's source-switch hook, called
-// when the box is pointed at a non-Spotify source so the #14 auto-attach stands
-// down (otherwise a radio recall jumps back to Spotify a second later).
-func WithSpotifySwitchedAway(f func(ctx context.Context)) Option {
-	return func(s *Server) { s.spotifySwitchedAway = f }
-}
-
-// WithSpotifyUserStopped wires the Spotify manager's user-stop hook, called on
-// the app's Stop and Pause and when the speaker is switched off, so a Spotify
-// preset stopped inside its recall window does not come back by itself.
-func WithSpotifyUserStopped(f func(ctx context.Context, reason string)) Option {
-	return func(s *Server) { s.spotifyUserStopped = f }
-}
-
 // tellSpotifyUserStopped forwards a user stop to the Spotify manager without
 // holding the caller up: the engine pause is a local HTTP call with its own
 // short deadline.
@@ -237,44 +221,6 @@ func (s *Server) tellSpotifyUserStopped(reason string) {
 		return
 	}
 	go s.spotifyUserStopped(context.Background(), reason)
-}
-
-// WithSpotifyStream registers the handler that serves go-librespot's
-// live Ogg to the box at /spotify/stream (the Spotify-preset audio
-// plane).
-func WithSpotifyStream(h http.HandlerFunc) Option {
-	return func(s *Server) { s.spotifyStream = h }
-}
-
-// WithSpotifyInfo registers the handler that reports live Spotify state
-// (ready, measured bitrate, device name) at /spotify/info.
-func WithSpotifyInfo(h http.HandlerFunc) Option {
-	return func(s *Server) { s.spotifyInfo = h }
-}
-
-// WithSpotifyQuality registers the handler for GET/POST /spotify/quality:
-// the engine's preferred streaming bitrate, per speaker (#728).
-func WithSpotifyQuality(h http.HandlerFunc) Option {
-	return func(s *Server) { s.spotifyQuality = h }
-}
-
-// WithSpotifyReload injects the Spotify manager's live engine reload, called
-// after an OTA sidecar write (handleAgentSidecar) so a freshly delivered
-// go-librespot is hot-swapped in place without a box reboot. The function
-// returns whether a running engine was restarted. Wiring it also makes the
-// version endpoint advertise engineHotSwap=true so the desktop app skips its
-// post-delivery activation reboot (#240).
-func WithSpotifyReload(f func() bool) Option {
-	return func(s *Server) { s.spotifyReload = f }
-}
-
-// WithSpotifyStop injects the Spotify manager's engine-stop, used by the
-// space-pressed OTA write to genuinely free the regenerable go-librespot engine
-// (stop the process so its NAND blocks release, then drop the binary) when a tight
-// box cannot otherwise hold the agent update (#119). nil leaves the previous
-// best-effort os.Remove (a no-op while the engine runs).
-func WithSpotifyStop(f func() bool) Option {
-	return func(s *Server) { s.spotifyStop = f; engineStopHook = f }
 }
 
 // PeerLink is one other STR speaker on the LAN, as shown in the on-box page's
@@ -327,14 +273,6 @@ func WithPeerForget(fn func(host string) bool) Option {
 	return func(s *Server) { s.peerForgetFn = fn }
 }
 
-// WithSpotifyControl registers the function that starts playback of a
-// Spotify URI on a given account in go-librespot (the Spotify-preset
-// control plane). An empty account plays with the current login; shuffle
-// selects a fresh random start over the default resume-where-left-off.
-func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuffle, repeat bool) error) Option {
-	return func(s *Server) { s.spotifyPlay = play }
-}
-
 // WithPairPartnerGone registers the lookup for the other half of a restored
 // stereo pair that did not answer at agent start. The firmware refuses every
 // source activation while a pair is incomplete, so a speaker in that state
@@ -354,101 +292,6 @@ func WithPairPartnerRecheck(fn func() (ip, deviceID string)) Option {
 	return func(s *Server) { s.pairPartnerRecheck = fn }
 }
 
-// WithSpotifyUser registers the resolver for go-librespot's current account,
-// used to stamp the account onto a newly saved Spotify preset.
-func WithSpotifyUser(user func(ctx context.Context) string) Option {
-	return func(s *Server) { s.spotifyUser = user }
-}
-
-// WithSpotifyContext registers the resolver for the Spotify context URI
-// go-librespot is currently playing, used by the preset-save path to stamp the
-// live account when saving the content that is playing right now.
-func WithSpotifyContext(ctxURI func() string) Option {
-	return func(s *Server) { s.spotifyContext = ctxURI }
-}
-
-// WithSpotifyShuffle registers the resolver for go-librespot's live shuffle
-// state, used by the preset-save path to stamp the shuffle flag onto a Spotify
-// preset saved from the running playback (long-press save / desktop save of
-// what is playing). Without it such a save always produced a resume preset
-// that replayed the identical track order on every press.
-func WithSpotifyShuffle(shuffle func(ctx context.Context) bool) Option {
-	return func(s *Server) { s.spotifyShuffle = shuffle }
-}
-
-// WithSpotifyRepeat registers the resolver for go-librespot's live repeat
-// state, used by the preset-save path to stamp the repeat flag onto a Spotify
-// preset saved from the running playback. Without it a listener who wants a
-// playlist to loop all evening had to set repeat by hand in the Spotify app
-// after every single preset press.
-func WithSpotifyRepeat(repeat func(ctx context.Context) bool) Option {
-	return func(s *Server) { s.spotifyRepeat = repeat }
-}
-
-// WithSpotifySkipBoundary registers the resolver for when a user skip's track
-// boundary last reached the forwarded Ogg stream. The soft-skip re-push waits
-// for it before dropping the box's buffered audio.
-func WithSpotifySkipBoundary(boundary func() time.Time) Option {
-	return func(s *Server) { s.spotifySkipBoundary = boundary }
-}
-
-// WithSpotifyArmRecallCut registers the hook that arms the engine's boundary
-// cut for a preset recall, so the box's fresh attachment never re-buffers the
-// old track's audio while the new context loads.
-func WithSpotifyArmRecallCut(arm func()) Option {
-	return func(s *Server) { s.spotifyArmRecallCut = arm }
-}
-
-// WithSpotifyBoundaryStaleKB registers the resolver for how many stale
-// (pre-boundary) KB the box's current attachment was fed before the last cut
-// boundary; the recall re-push uses it to skip the buffer-dropping push when
-// the cut already kept the box clean.
-func WithSpotifyBoundaryStaleKB(staleKB func() int64) Option {
-	return func(s *Server) { s.spotifyBoundaryStaleKB = staleKB }
-}
-
-// WithSpotifyMeta registers the resolver for a Spotify context's stable cover
-// image and human title, stamped onto a newly saved Spotify preset.
-func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {
-	return func(s *Server) { s.spotifyMeta = meta }
-}
-
-// WithSpotifyStreaming registers the predicate that reports whether the box is
-// currently pulling the Ogg stream, used by verifyRecall to avoid a disruptive
-// re-issue while Spotify is already playing.
-func WithSpotifyStreaming(streaming func() bool) Option {
-	return func(s *Server) { s.spotifyStreaming = streaming }
-}
-
-// WithSpotifyReady registers the predicate that reports whether go-librespot has
-// finished authenticating, so a soft Spotify recall can wait out a cold start.
-func WithSpotifyReady(ready func() bool) Option {
-	return func(s *Server) { s.spotifyReady = ready }
-}
-
-// WithSpotifySkip registers the hook that skips go-librespot to the next
-// (forward=true) or previous track, wired to the phone remote's Previous/Next
-// controls. Mirrors the hardware remote's Spotify skip.
-func WithSpotifySkip(skip func(ctx context.Context, forward bool) error) Option {
-	return func(s *Server) { s.spotifySkip = skip }
-}
-
-// WithSpotifyPremiumRequired registers the predicate that reports whether the
-// logged-in Spotify account is free/open and so cannot do the autonomous recall
-// playback a preset needs (#45). The recall handler uses it to answer with a
-// clear "needs Premium" message instead of failing silently.
-func WithSpotifyPremiumRequired(f func() bool) Option {
-	return func(s *Server) { s.spotifyPremiumRequired = f }
-}
-
-// WithSpotifyCanRecall registers the predicate that reports whether a Spotify
-// recall can proceed (a live go-librespot session OR a persisted credential), so
-// a recall on a genuinely-never-logged-in speaker fails with a clear, actionable
-// message while one with a live session still plays (#45; Patrick, 2026-06-24).
-func WithSpotifyCanRecall(f func(ctx context.Context) bool) Option {
-	return func(s *Server) { s.spotifyCanRecall = f }
-}
-
 // WithNativeServices wires the firmware's own US services (Pandora,
 // iHeartRadio; #243) to /api/us-services, the account endpoints and the
 // diagnostic bundle. Nil leaves the endpoints answering 501.
@@ -465,6 +308,8 @@ func WithRegionResolver(r *region.Resolver) Option {
 // WithMargeGroups bridges the marge stereo-pair record (get/set/clear) so the
 // pairing and dissolve flows keep BOTH members' marges on one canonical pair
 // document, and /api/marge/group lets the desktop app relay it to the partner.
+// cmd/agent wires the same fields through WithMarge (engines.go); this form
+// takes the five functions one by one.
 func WithMargeGroups(get func() (string, bool, bool), set func(string) error, clear func(string), rename func(string) error, name func() string) Option {
 	return func(s *Server) {
 		s.margeGroupGet = get
@@ -473,44 +318,6 @@ func WithMargeGroups(get func() (string, bool, bool), set func(string) error, cl
 		s.margeGroupRename = rename
 		s.margeGroupName = name
 	}
-}
-
-// WithMargeForward registers the marge stub's developer relay switch, enabling
-// POST /api/debug/marge-lab. Unset leaves the endpoint disabled.
-func WithMargeForward(f func(target string) error) Option {
-	return func(s *Server) { s.margeForward = f }
-}
-
-// WithSpotifyExportCred registers the function that returns this box's active
-// go-librespot credential so it can be copied to other speakers (#45 sync).
-func WithSpotifyExportCred(f func() ([]byte, error)) Option {
-	return func(s *Server) { s.spotifyExportCred = f }
-}
-
-// WithSpotifyImportCred registers the function that installs a credential copied
-// from another speaker and restarts go-librespot to log in with it (#45 sync).
-func WithSpotifyImportCred(f func(ctx context.Context, data []byte) error) Option {
-	return func(s *Server) { s.spotifyImportCred = f }
-}
-
-// WithSpotifySetRecalling registers the hook that marks an in-flight recall so
-// ServeOgg drives the new track from its start.
-func WithSpotifySetRecalling(setRecalling func()) Option {
-	return func(s *Server) { s.spotifySetRecalling = setRecalling }
-}
-
-// WithSpotifyExpectReattach registers the hook that marks the next box
-// re-attach to the Ogg stream as deliberate (STR's own re-push), so the
-// engine's re-attach storm damping does not count it.
-func WithSpotifyExpectReattach(expect func(time.Duration)) Option {
-	return func(s *Server) { s.spotifyExpectReattach = expect }
-}
-
-// WithSpotifySuppressActivate registers the hook that holds go-librespot's
-// auto-repoint off for a window, so the hardware-skip recovery's clean slot
-// recall is not raced by the #14 auto-attach.
-func WithSpotifySuppressActivate(suppress func(time.Duration)) Option {
-	return func(s *Server) { s.spotifySuppressActivate = suppress }
 }
 
 // WithRecent wires the recently-played ring (#135) so the play handlers record
