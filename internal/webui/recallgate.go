@@ -36,13 +36,23 @@ const spotifyGateTimeout = 4 * time.Second
 // Anything added here must be answerable with the box asleep. A check that
 // needs the speaker belongs after the wake, where it always did.
 func (s *Server) recallRefusedBeforeWake(w http.ResponseWriter, slot int, pp *presets.Preset) bool {
+	ref := s.recallRefusal(slot, pp)
+	if ref != nil {
+		writePlayRefusal(w, ref)
+	}
+	return ref != nil
+}
+
+// recallRefusal is recallRefusedBeforeWake without the wire: it returns the
+// refusal, or nil when the recall may go on to wake the speaker. The service
+// behind POST /api/play/<slot> and every in-process recall ask here.
+func (s *Server) recallRefusal(slot int, pp *presets.Preset) *playRefusal {
 	p := *pp
 	// A saved folder with nothing left in it cannot play either, and the
 	// check is the length of a slice.
 	if p.Type == "queue" && len(presetItemsToQueue(p.Items)) == 0 {
 		s.logger.Warn("preset recall (app): the saved folder has no playable tracks, not waking the speaker", "slot", slot)
-		http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
-		return true
+		return textRefusal(http.StatusUnprocessableEntity, "preset has no playable tracks")
 	}
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
@@ -58,24 +68,22 @@ func (s *Server) recallRefusedBeforeWake(w http.ResponseWriter, slot int, pp *pr
 			s.logger.Info("preset recall: healed legacy spotify preset", "slot", slot, "uri", uri)
 		} else if looksLikeSpotifyStreamURL(p.StreamURL) {
 			s.logger.Warn("preset recall: spotify preset has no replayable URI", "slot", slot, "url", p.StreamURL)
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			return jsonRefusal(http.StatusUnprocessableEntity, map[string]any{
 				"error": "This Spotify preset was saved in an older version and can't be replayed. Please open the playlist and save it to the preset again.",
 				"code":  "spotify-preset-unreplayable",
 				"slot":  slot, "name": p.Name,
 			})
-			return true
 		}
 	}
 	*pp = p
 	if p.Type != "spotify" || p.URI == "" {
-		return false
+		return nil
 	}
 	if s.spotifyPlay == nil {
 		s.logger.Warn("spotify preset recall (app): Spotify not configured on this box, not waking the speaker", "slot", slot)
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		return jsonRefusal(http.StatusServiceUnavailable, map[string]any{
 			"error": "Spotify not configured", "slot": slot, "name": p.Name,
 		})
-		return true
 	}
 	// A speaker that has never been logged into Spotify AND holds no live
 	// session has no way for go-librespot to start playback on its own, so the
@@ -101,12 +109,11 @@ func (s *Server) recallRefusedBeforeWake(w http.ResponseWriter, slot int, pp *pr
 			// speaker has to be picked in Spotify once so it stores a credential.
 			// The desktop app branches on the code, so this wording is free to be
 			// the accurate, non-Bose-linking instruction.
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			return jsonRefusal(http.StatusUnprocessableEntity, map[string]any{
 				"error": "A Spotify preset needs two things: a Spotify Premium account, and this speaker picked once in Spotify. In the Spotify app on a device on the same Wi-Fi, tap the Connect/devices icon, choose the entry for this speaker ending in (STR), and play any track. A free Spotify account cannot pick that entry.",
 				"code":  "spotify-not-logged-in",
 				"slot":  slot, "name": p.Name,
 			})
-			return true
 		}
 	}
 	// A free/open Spotify account cannot do the autonomous on-demand playback a
@@ -114,12 +121,11 @@ func (s *Server) recallRefusedBeforeWake(w http.ResponseWriter, slot int, pp *pr
 	// recall would silently fail. Tell the user it needs Premium instead (#45).
 	if s.spotifyPremiumRequired != nil && s.spotifyPremiumRequired() {
 		s.logger.Info("spotify preset recall (app): account is free/open, recall needs Premium, not waking the speaker", "slot", slot)
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+		return jsonRefusal(http.StatusUnprocessableEntity, map[string]any{
 			"error": "This speaker's Spotify account is free. Spotify preset recall needs Spotify Premium.",
 			"code":  "spotify-premium-required",
 			"slot":  slot, "name": p.Name,
 		})
-		return true
 	}
-	return false
+	return nil
 }

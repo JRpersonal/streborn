@@ -272,30 +272,66 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
 }
 
+// handlePlaySlot is the HTTP adapter of POST /api/play/<slot>: it decodes the
+// slot, calls playSlot and renders the answer. Every status code and body is
+// pinned (see playRefusal); the logic lives in playSlot so the in-process
+// recalls (alarms, the stuck-buffer rescue, the idle re-push, the resume
+// repair) share it without going through HTTP.
 func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	s.boxCmdMu.Lock()
-	defer s.boxCmdMu.Unlock()
-	if s.renderer == nil {
-		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if s.presets == nil {
-		http.Error(w, "presets store not initialized", http.StatusServiceUnavailable)
 		return
 	}
 	slotStr := strings.TrimPrefix(r.URL.Path, "/api/play/")
 	slot, err := strconv.Atoi(slotStr)
 	if err != nil {
-		http.Error(w, "invalid slot", http.StatusBadRequest)
+		writePlayRefusal(w, s.invalidSlotRefusal())
 		return
+	}
+	res, ref := s.playSlot(r.Context(), slot)
+	if ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
+	writeJSON(w, http.StatusOK, res.body())
+}
+
+// recallUnavailable is the pair of 503s a recall answers before it looks at
+// the slot: no renderer, no preset store. Called with boxCmdMu held.
+func (s *Server) recallUnavailable() *playRefusal {
+	if s.renderer == nil {
+		return textRefusal(http.StatusServiceUnavailable, "renderer not configured")
+	}
+	if s.presets == nil {
+		return textRefusal(http.StatusServiceUnavailable, "presets store not initialized")
+	}
+	return nil
+}
+
+// invalidSlotRefusal keeps the answer order of the old handler for a slot
+// that is not a number: the 503s come first, then 400 "invalid slot".
+func (s *Server) invalidSlotRefusal() *playRefusal {
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	if ref := s.recallUnavailable(); ref != nil {
+		return ref
+	}
+	return textRefusal(http.StatusBadRequest, "invalid slot")
+}
+
+// playSlot recalls a preset slot the way the app's POST /api/play/<slot> does
+// and reports either what started or why it was refused. It takes boxCmdMu
+// itself, so a caller must not hold it (maybeRePush and repairResume order
+// themselves around that). ctx is the caller's: the box-facing steps are
+// detached from it below (#252), the same as for the HTTP request before.
+func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefusal) {
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	if ref := s.recallUnavailable(); ref != nil {
+		return playResult{}, ref
 	}
 	p, ok := s.presets.Get(slot)
 	if !ok {
-		http.Error(w, "preset not configured", http.StatusNotFound)
-		return
+		return playResult{}, textRefusal(http.StatusNotFound, "preset not configured")
 	}
 	// Refuse a Spotify recall that cannot succeed BEFORE touching the speaker.
 	//
@@ -305,13 +341,13 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// it again was a race STR kept losing. These three preconditions need
 	// nothing from an awake speaker, so asked here they cost one local probe
 	// and the box stays asleep.
-	if s.recallRefusedBeforeWake(w, slot, &p) {
-		return
+	if ref := s.recallRefusal(slot, &p); ref != nil {
+		return playResult{}, ref
 	}
 	// Half of an incomplete stereo pair cannot start anything; waking it and
 	// waiting is what used to run every recall into the app's timeout.
-	if s.refuseIfIncompletePair(w) {
-		return
+	if ref := s.incompletePairRefusal(); ref != nil {
+		return playResult{}, ref
 	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the
 	// standby-flip discriminator (#419). Before the wake: the wake itself can
@@ -335,7 +371,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			s.undoWakeAutoResume(slot)
 		}
 	}()
-	s.ensureBoxReady(r.Context())
+	s.ensureBoxReady(ctx)
 	// recallStart anchors the verify's stand-down decision: a deliberate user
 	// stop/pause/power-off that arrives AFTER this moment must end the verify
 	// retries (the rolling userStopWindow alone expires between the 5s ticks).
@@ -345,14 +381,25 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// caller that gave up must not cancel the playback it asked for mid-start.
 	// Previously only the radio branch was detached; the Spotify, library and
 	// queue recalls still died with "context canceled" after a slow wake.
-	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
+	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(ctx), playDetachTimeout)
 	defer playCancel()
+	// playFailed is the 502 every branch answers when the speaker did not take
+	// what it was handed, or the 409 box-grouped when it refused as a follower.
+	playFailed := func(msg string, err error) *playRefusal {
+		if isGroupedRejection(err) {
+			return s.groupedPlayRefusal(err)
+		}
+		return jsonRefusal(http.StatusBadGateway, map[string]any{
+			"error": msg, "detail": guessErrorReason(err),
+			"slot": slot, "name": p.Name,
+		})
+	}
 	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
 	// instead of the single-URL play below: reload its ordered tracks with the
 	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
 	// use the *Locked variant (startQueue would re-lock and deadlock).
 	if p.Type == "queue" {
-		// Emptiness was answered before the wake, in recallRefusedBeforeWake.
+		// Emptiness was answered before the wake, in recallRefusal.
 		// The tracks carry the music server's address, so a server that moved
 		// takes every folder key with it (#977). Put the key on the address the
 		// server answers at now before the queue is built from it.
@@ -365,19 +412,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		s.armQueueRecall(slot)
 		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art, source: p.Source}
 		if err := s.startQueueLocked(playCtx, items, 0, p.Shuffle, repeatOff, card); err != nil {
-			if isGroupedRejection(err) {
-				s.writeGroupedPlayError(w, err)
-				return
-			}
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "Folder could not be played", "detail": guessErrorReason(err),
-				"slot": slot, "name": p.Name,
-			})
-			return
+			return playResult{}, playFailed("Folder could not be played", err)
 		}
 		recallDelivered = true
-		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "queue"})
-		return
+		return playResult{Slot: slot, Name: p.Name, Type: "queue"}, nil
 	}
 	// Every non-queue recall replaces an active library queue. Without this the
 	// queue watcher kept evaluating the OLD track's timing and, when its
@@ -395,19 +433,19 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		if err := s.selectNativeItem(playCtx, *p.Native, p.Name); err != nil {
 			s.logger.Warn("preset slot recall (app): the speaker refused the native service item",
 				"slot", slot, "source", p.Native.Source, "err", err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+			// Not through playFailed: the detail is the raw error, the body
+			// carries a code, and the box-grouped mapping never applied here.
+			return playResult{}, jsonRefusal(http.StatusBadGateway, map[string]any{
 				"error": "The speaker could not start this station", "detail": err.Error(),
 				"code": "native-select-refused", "slot": slot, "name": p.Name,
 			})
-			return
 		}
 		recallDelivered = true
 		// Only after the speaker took the item: a refused station leaves no
 		// card. NoteRecentPreset records Pandora (replayable through the
 		// speaker's own client) and skips iHeartRadio.
 		s.NoteRecentPreset(p)
-		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": presets.TypeNative})
-		return
+		return playResult{Slot: slot, Name: p.Name, Type: presets.TypeNative}, nil
 	}
 	// Spotify presets have no playable HTTP StreamURL. Mirror the hardware-press
 	// recall (cmd/agent playSpotifyPreset) so a soft recall behaves identically:
@@ -456,15 +494,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return s.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg")
 		}); err != nil {
 			s.logger.Warn("spotify preset recall (app): the speaker did not take the stream", "slot", slot, "err", err)
-			if isGroupedRejection(err) {
-				s.writeGroupedPlayError(w, err)
-				return
-			}
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
-				"slot": slot, "name": p.Name,
-			})
-			return
+			return playResult{}, playFailed("Spotify stream could not be played", err)
 		}
 		gen := s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "", "") // #135
@@ -523,8 +553,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			}, s.spotifyStreaming)
 		}()
 		recallDelivered = true
-		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
-		return
+		return playResult{Slot: slot, Name: p.Name, Type: "spotify"}, nil
 	}
 	// Radio recall: tell Spotify the box switched away so its #14 auto-attach
 	// does not yank the box back to a still-advancing go-librespot.
@@ -543,20 +572,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	if mime := s.directFileMime(playCtx, p); mime != "" {
 		s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime, "custom", p.Source == "")
 		if err := s.playLibraryFilePresetLocked(playCtx, p, mime, recallStart); err != nil {
-			if isGroupedRejection(err) {
-				s.writeGroupedPlayError(w, err)
-				return
-			}
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "Track could not be played", "detail": guessErrorReason(err),
-				"slot": slot, "name": p.Name,
-			})
-			return
+			return playResult{}, playFailed("Track could not be played", err)
 		}
 		s.recentNoteLibraryCard(p.StreamURL, p.Name, p.Art, p.StreamURL, mime, s.recentPresetLengthSec(p)) // #135
 		recallDelivered = true
-		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
-		return
+		return playResult{Slot: slot, Name: p.Name}, nil
 	}
 	// Use the stream proxy URL so playback continues even after token
 	// expiry (Bose sees the stable loopback URL).
@@ -577,8 +597,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			s.setLastPlay(playURL, p.Name, p.Art, upnp.MimeForCodecOrURL(p.Codec, p.StreamURL))
 			s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage, "") // #135
 			recallDelivered = true
-			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
-			return
+			return playResult{Slot: slot, Name: p.Name}, nil
 		} else {
 			s.logger.Warn("preset slot recall (app): the speaker refused the native station, falling back to the UPnP push",
 				"slot", slot, "name", p.Name, "err", err)
@@ -596,17 +615,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		// that apparently never happened (#252).
 		s.logger.Warn("preset slot recall (app): radio play failed",
 			"slot", slot, "name", p.Name, "playURL", playURL, "err", playErr)
-		if isGroupedRejection(playErr) {
-			s.writeGroupedPlayError(w, playErr)
-			return
-		}
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error":  "Station could not be played",
-			"detail": guessErrorReason(playErr),
-			"slot":   slot,
-			"name":   p.Name,
-		})
-		return
+		return playResult{}, playFailed("Station could not be played", playErr)
 	}
 	gen := s.setLastPlay(playURL, p.Name, p.Art, mime)
 	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage, "") // #135
@@ -619,7 +628,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 	}, nil)
 	recallDelivered = true
-	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+	return playResult{Slot: slot, Name: p.Name}, nil
 }
 
 // setLastPlay records the box-facing stream + metadata for the auto-re-push. A

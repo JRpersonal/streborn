@@ -163,13 +163,19 @@ func (s *Server) pushWithWrongStateRepair(ctx context.Context, url, title, art, 
 // there) rather than showing an inscrutable UPnP error. The master hint is
 // best-effort and omitted when unknown.
 func (s *Server) writeGroupedPlayError(w http.ResponseWriter, err error) {
+	writePlayRefusal(w, s.groupedPlayRefusal(err))
+}
+
+// groupedPlayRefusal is writeGroupedPlayError without the wire: the 409
+// box-grouped refusal with the best-effort master hint.
+func (s *Server) groupedPlayRefusal(err error) *playRefusal {
 	resp := map[string]string{"error": "box-grouped"}
 	if master := s.groupMasterHint(); master != "" {
 		resp["master"] = master
 	}
 	s.logger.Info("play rejected: box is a grouped follower, answering 409 box-grouped",
 		"master", resp["master"], "err", err)
-	writeJSON(w, http.StatusConflict, resp)
+	return &playRefusal{Status: http.StatusConflict, Error: "box-grouped", JSON: resp}
 }
 
 // groupMasterHint resolves the current zone master (deviceID, falling back to
