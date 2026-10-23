@@ -1427,11 +1427,15 @@ func (a *agent) buildBoxLink() error {
 	})
 	// Record each Spotify song into the recently-played ring under the active
 	// Spotify card (#135), so its card shows the songs that played, not just the
-	// playlist frame. No-op until a Spotify card has been recorded via a recall.
+	// playlist frame. The engine's context rides along so a session started in
+	// the Spotify app, which no recall ever opened a card for, gets its own
+	// playlist card instead of being dropped (recent_spotify.go).
 	// ...and to the speaker display, where STR draws the playback screen.
-	spotifyMgr.SetOnTrack(func(track, artist string) {
-		webuiSrv.NoteRecentSpotifyTrack(track, artist)
-		webuiSrv.PanelSpotifyTrack(track, artist)
+	spotifyMgr.SetOnTrack(func(tc spotify.TrackChange) {
+		webuiSrv.NoteRecentSpotifyTrack(webui.SpotifyNowPlaying{
+			Track: tc.Track, Artist: tc.Artist, Cover: tc.Cover, TrackURI: tc.TrackURI, ContextURI: tc.ContextURI,
+		})
+		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist)
 	})
 	refreshTrackPanel = webuiSrv.RefreshTrackPanel
 	wsClient := boxws.New(
