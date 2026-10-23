@@ -15,7 +15,7 @@
 // app (App-First, keep the box light).
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
@@ -35,6 +35,11 @@ let deps = {
   toggleFav: null,
   isFav: null,
   openPandoraPick: null,
+  // The now-playing bar and the status poll, so a replayed library track
+  // replaces the previous station's song on the line at once instead of on
+  // the next slow poll (#1394). Both live in views/music; main.js hands them in.
+  renderNowPlayingBar() {},
+  refreshStatus() {},
 };
 export function initRecentView(d) {
   deps = { ...deps, ...d };
@@ -396,6 +401,14 @@ async function replayFolderCard(c, box) {
 async function replayLibraryTrack(c, box, art) {
   const dur = c.durationSec > 0 ? Math.round(c.durationSec) : 0;
   await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', dur);
+  // The bar describes the selected speaker, so only a replay on that speaker
+  // moves the line (a card can belong to another one). Same instant change as
+  // a Library click (#1394).
+  if (state.currentBox && box.host === state.currentBox.host) {
+    beginLibraryNowPlaying(state, { url: c.url, name: c.name || '', art }, Date.now());
+    deps.renderNowPlayingBar();
+    setTimeout(deps.refreshStatus, 1500);
+  }
 }
 
 // replayPandoraCard starts a Pandora card on the speaker's own Pandora client,

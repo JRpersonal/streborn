@@ -372,7 +372,7 @@ import {
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
-initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav, openPandoraPick });
+initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav, openPandoraPick, renderNowPlayingBar, refreshStatus });
 // openSpeakerSettings selects a speaker and shows its settings, which is where
 // its update lives. The Multi-Room tab needs it: a card that says a speaker
 // must be updated first has to be able to take the owner there.
@@ -392,7 +392,7 @@ initSpotifyView({
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
-initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
+initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initStreamSourceView({
   playStation: (station, playback) => playStation({

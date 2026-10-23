@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying } from '../utils.js';
 import { t } from '../i18n/index.js';
 import {
   ProbeTrackDelivery,
@@ -46,6 +46,12 @@ let deps = {
   // Told about a speaker picked here so the music tab and the setup target
   // follow along, the same lock-step speaker settings already does.
   speakerPicked() {},
+  // The now-playing bar, repainted from the cached state the moment a track
+  // or folder is sent, and the status poll, asked again shortly after, so the
+  // bar does not keep the previous station's song until the next slow poll
+  // (#1394). Both live in views/music; main.js hands them in.
+  renderNowPlayingBar() {},
+  refreshStatus() {},
 };
 export function initLibraryView(d) {
   deps = { ...deps, ...d };
@@ -530,8 +536,18 @@ async function libraryPlay(item) {
       // A whole-library search hit names its own server (#1325).
       source: item.server || librarySourceName(),
       durationSec: item.durationSec || 0,
+      // Shown next to the title while this track plays, as a folder's queue
+      // line shows them; the speaker reports neither for a direct file (#1394).
+      artist: item.artist || '',
+      album: item.album || '',
       at: Date.now(),
     };
+    // Put the track on the now-playing line now, as a station play does, and
+    // ask the speaker again soon: left to the regular poll, the bar kept the
+    // previous radio station's song for 5 to 15 s after the click (#1394).
+    beginLibraryNowPlaying(state, state.lastLibraryPlay, Date.now());
+    deps.renderNowPlayingBar();
+    setTimeout(deps.refreshStatus, 1500);
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
     verifyLibraryPlayback(item, target);
@@ -676,6 +692,16 @@ async function libraryPlayFolder() {
     // A folder play supersedes any ad-hoc radio station the app started (#252).
     state.lastAppPlay = null;
     state.lastLibraryPlay = null;
+    // Same instant line change as a single track (#1394). A shuffled folder
+    // does not know its first track, so it names the folder without a URL and
+    // leaves the location to the speaker's next answer.
+    beginLibraryNowPlaying(state, {
+      url: payload.shuffle ? '' : items[0].url,
+      name: payload.shuffle ? card.name : (items[0].title || card.name),
+      art: card.art,
+    }, Date.now());
+    deps.renderNowPlayingBar();
+    setTimeout(deps.refreshStatus, 1500);
     showToast(t('library.folderQueued', { n: items.length }));
   } catch (e) {
     showError(`StartQueue: ${e}`);

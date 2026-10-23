@@ -13,6 +13,7 @@ import {
   $,
   balanceLabel,
   escapeHtml,
+  libraryTrackMeta,
   presetRevChanged,
   proxiedRadioPlaying,
   queueReplyMerge,
@@ -21,7 +22,7 @@ import {
   showError,
   spotifyURIFromContainer,
 } from '../../utils.js';
-import { refreshPresetsIfChanged } from './presets.js';
+import { decodeProxyUrl, refreshPresetsIfChanged } from './presets.js';
 import { applyTrackScroll, renderPresets } from './presettiles.js';
 import { sourceListCache } from './sources.js';
 import { mstate } from './state.js';
@@ -199,6 +200,12 @@ export function renderNowPlayingBar() {
     // one: fixing only the poll would fetch a title that this line then refused
     // to print (#922).
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
+  } else {
+    // A single library track: its artist and album, as the Library row named
+    // them, next to the title the speaker reports, the way the queue line
+    // names a folder's running song (#1394).
+    const libMeta = libraryTrackMeta(state.lastLibraryPlay, loc, decodeProxyUrl(loc));
+    if (libMeta) displayName = name ? `${name} · ${libMeta}` : libMeta;
   }
   // The per-station "artist and title are the wrong way round" switch, only
   // while a proxied station plays a two-part title (titleswap.js).
