@@ -6,14 +6,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxwrites"
@@ -1205,13 +1204,12 @@ type boxPresetEntry struct {
 // fetchBoxPresetsFull reads GET /presets and returns each set slot's
 // ContentItem fields.
 func fetchBoxPresetsFull(boxHost string) ([]boxPresetEntry, error) {
-	client := http.Client{Timeout: 4 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s:8090/presets", boxHost))
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	body, err := boxapi.New(boxHost).GetRaw(ctx, "/presets")
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 	var out []boxPresetEntry
 	// Bose format: <presets><preset id="1" ...><ContentItem location="..."/></preset></presets>
 	for _, blk := range presetBlockRegex.FindAllStringSubmatch(string(body), -1) {

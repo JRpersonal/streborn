@@ -12,11 +12,11 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -65,16 +65,7 @@ func (s *Server) withSpeakerAccount(ctx context.Context, item presets.NativeItem
 	}
 	c, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(c, http.MethodGet, "http://"+s.boxHost+":8090/sources", nil)
-	if err != nil {
-		return item
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return item
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	body, err := boxapi.New(s.boxHost).GetRaw(c, "/sources")
 	if err != nil {
 		return item
 	}
