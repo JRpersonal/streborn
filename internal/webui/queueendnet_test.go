@@ -18,11 +18,14 @@ import (
 )
 
 func TestTrackEndNet(t *testing.T) {
+	t.Parallel()
 	const (
 		sec   = time.Second
 		moved = 10 * time.Millisecond // the position climbed on this poll
 	)
-	oneTik := queuePollInterval // the position did not move on this poll
+	// A bare trackEndInput is judged by the production clock.
+	prod := productionQueueTiming
+	oneTik := prod.pollInterval // the position did not move on this poll
 	cases := []struct {
 		name string
 		in   trackEndInput
@@ -49,7 +52,7 @@ func TestTrackEndNet(t *testing.T) {
 		{
 			name: "#1065: wrong length, the box finally freezes at the real end",
 			in: trackEndInput{sawPlay: true, playing: true, elapsed: 250 * sec, dur: 30 * sec,
-				lastPos: 232 * sec, sinceLastPos: queueFrozenTimeout + sec},
+				lastPos: 232 * sec, sinceLastPos: prod.frozenTimeout + sec},
 			want: endNetFrozen,
 		},
 		{
@@ -79,35 +82,35 @@ func TestTrackEndNet(t *testing.T) {
 		{
 			name: "known length, frozen long past the end (wall-clock held earlier)",
 			in: trackEndInput{sawPlay: true, playing: true, elapsed: 170 * sec, dur: 150 * sec,
-				lastPos: 150 * sec, sinceLastPos: queueFrozenTimeout + sec},
+				lastPos: 150 * sec, sinceLastPos: prod.frozenTimeout + sec},
 			want: endNetWallClock,
 		},
 		{
 			name: "no position reports at all: wall clock as today, after the margin",
-			in:   trackEndInput{sawPlay: true, playing: true, elapsed: 30*sec + queueTimerMargin, dur: 30 * sec},
+			in:   trackEndInput{sawPlay: true, playing: true, elapsed: 30*sec + prod.timerMargin, dur: 30 * sec},
 			want: endNetWallClock,
 		},
 		{
 			name: "no position reports at all: not before the margin",
-			in:   trackEndInput{sawPlay: true, playing: true, elapsed: 30*sec + queueTimerMargin - sec, dur: 30 * sec},
+			in:   trackEndInput{sawPlay: true, playing: true, elapsed: 30*sec + prod.timerMargin - sec, dur: 30 * sec},
 			want: endNetNone,
 		},
 		{
 			name: "#380/#381: unknown length, position frozen",
 			in: trackEndInput{sawPlay: true, playing: true, elapsed: 200 * sec,
-				lastPos: 180 * sec, sinceLastPos: queueFrozenTimeout},
+				lastPos: 180 * sec, sinceLastPos: prod.frozenTimeout},
 			want: endNetFrozen,
 		},
 		{
 			name: "unknown length, frozen while buffering is a stall, not an end",
 			in: trackEndInput{sawPlay: true, playing: false, elapsed: 200 * sec,
-				lastPos: 180 * sec, sinceLastPos: queueFrozenTimeout},
+				lastPos: 180 * sec, sinceLastPos: prod.frozenTimeout},
 			want: endNetNone,
 		},
 		{
 			name: "known length, frozen mid-track before the length elapsed",
 			in: trackEndInput{sawPlay: true, playing: true, elapsed: 100 * sec, dur: 150 * sec,
-				lastPos: 80 * sec, sinceLastPos: queueFrozenTimeout + sec},
+				lastPos: 80 * sec, sinceLastPos: prod.frozenTimeout + sec},
 			want: endNetNone,
 		},
 		{
@@ -179,8 +182,8 @@ func (w *syncBuf) String() string {
 // (fastQueueTiming); scenarios are written in qsec.
 func queueWatchServer(t *testing.T, box *scriptedQueueBox, firstDur time.Duration, logTo io.Writer) *Server {
 	t.Helper()
-	fastQueueTiming(t)
 	s, _ := newPlayTestServer(t)
+	s.queueTiming = fastQueueTiming()
 	s.logger = slog.New(slog.NewTextHandler(logTo, nil))
 	s.nowPlayingFn = box.poll
 	s.queue.load([]queueItem{
@@ -195,6 +198,7 @@ func queueWatchServer(t *testing.T, box *scriptedQueueBox, firstDur time.Duratio
 }
 
 func TestAPlayingTrackIsNotCutAtAWrongServerLength(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
@@ -217,6 +221,7 @@ func TestAPlayingTrackIsNotCutAtAWrongServerLength(t *testing.T) {
 }
 
 func TestANaturalEndAdvancesOnceAndLogsTheEndingTrack(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}

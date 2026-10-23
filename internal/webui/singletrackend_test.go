@@ -34,8 +34,8 @@ func (f *fakeNowPlaying) set(status string, pos, total time.Duration) {
 // the scenarios below are written in qsec, one box second at that clock.
 func singleTrackServer(t *testing.T, np *fakeNowPlaying) (*Server, *soapRecorder) {
 	t.Helper()
-	fastQueueTiming(t)
 	s, rec := newPlayTestServer(t)
+	s.queueTiming = fastQueueTiming()
 	// The end watch runs under the server's base context; cancelling it at the
 	// end of the test sends a watch that nothing superseded away instead of
 	// leaving it ticking for the rest of the test binary.
@@ -65,6 +65,7 @@ func waitForTrackEnd(t *testing.T, why string, cond func() bool) {
 }
 
 func TestALoneTrackFrozenAtItsEndIsStopped(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	gen := s.setLastPlay("http://192.0.2.9/28082.flac", "Photographs And Memories", "", "audio/x-flac")
@@ -80,6 +81,7 @@ func TestALoneTrackFrozenAtItsEndIsStopped(t *testing.T) {
 }
 
 func TestANewerPlayCallsOffTheEndWatch(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	gen := s.setLastPlay("http://192.0.2.9/a.flac", "First", "", "audio/x-flac")
@@ -98,6 +100,7 @@ func TestANewerPlayCallsOffTheEndWatch(t *testing.T) {
 }
 
 func TestAPoweredOffBoxIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	gen := s.setLastPlay("http://192.0.2.9/a.flac", "First", "", "audio/x-flac")
@@ -140,6 +143,7 @@ func (rec *soapRecorder) countOf(action string) int {
 }
 
 func TestRepeatOnePlaysALoneTrackAgainInsteadOfStopping(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	withPlayMode(t, s, "shuffle=0 repeat=one\n")
@@ -164,6 +168,7 @@ func TestRepeatOnePlaysALoneTrackAgainInsteadOfStopping(t *testing.T) {
 }
 
 func TestRepeatOneAlsoCoversABoxThatStoppedByItself(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	withPlayMode(t, s, "shuffle=0 repeat=one\n")
@@ -184,6 +189,7 @@ func TestRepeatOneAlsoCoversABoxThatStoppedByItself(t *testing.T) {
 }
 
 func TestRepeatAllLeavesALoneTrackAlone(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	withPlayMode(t, s, "shuffle=0 repeat=all\n")
@@ -205,6 +211,7 @@ func TestRepeatAllLeavesALoneTrackAlone(t *testing.T) {
 // never armed the end watch the plain play has had since #844. A preset stores
 // no length, so the watch has to take the one the speaker reports.
 func TestALibraryTrackFromAPresetKeyIsStoppedAtItsEnd(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	seedLibraryTrackPreset(t, s, 3)
@@ -223,6 +230,7 @@ func TestALibraryTrackFromAPresetKeyIsStoppedAtItsEnd(t *testing.T) {
 // then dropped back to standby. The track is handed over once more, and only
 // once: a speaker that refuses twice is left alone.
 func TestATrackTheSpeakerNeverStartedIsHandedOverOnceMore(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	gen := s.setLastPlay("http://192.0.2.9/27025.flac", "Layla", "", "audio/x-flac")
@@ -231,7 +239,7 @@ func TestATrackTheSpeakerNeverStartedIsHandedOverOnceMore(t *testing.T) {
 
 	waitForTrackEnd(t, "the second start", func() bool { return rec.countOf("SetAVTransportURI") >= 1 })
 	// Still silent after the retry: no third push.
-	time.Sleep(queueStallTimeout + 2*queuePollInterval)
+	time.Sleep(s.queueTiming.stallTimeout + 2*s.queueTiming.pollInterval)
 	if n := rec.countOf("SetAVTransportURI"); n != 1 {
 		t.Fatalf("the track was handed over %d more times, want exactly one retry", n)
 	}
@@ -240,6 +248,7 @@ func TestATrackTheSpeakerNeverStartedIsHandedOverOnceMore(t *testing.T) {
 // A key pressed on the speaker after the play began is the listener choosing
 // something else, and the retry must not overrule it.
 func TestNoStartRetryAfterAKeyPress(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	pressed := time.Now().Add(time.Second)
@@ -248,7 +257,7 @@ func TestNoStartRetryAfterAKeyPress(t *testing.T) {
 	np.set("", 0, 0)
 	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/27025.flac", title: "Layla", mime: "audio/x-flac", dur: 4 * time.Minute}, gen)
 
-	time.Sleep(queueStallTimeout + 2*queuePollInterval)
+	time.Sleep(s.queueTiming.stallTimeout + 2*s.queueTiming.pollInterval)
 	if n := rec.countOf("SetAVTransportURI"); n != 0 {
 		t.Fatalf("the track was pushed again %d times after a key press", n)
 	}

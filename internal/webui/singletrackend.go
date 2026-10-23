@@ -156,7 +156,8 @@ func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
 func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint64) {
 	ctx, cancel := context.WithTimeout(s.queueCtx(), singleTrackMaxWatch)
 	defer cancel()
-	ticker := time.NewTicker(queuePollInterval)
+	qt := s.queueTimes()
+	ticker := time.NewTicker(qt.pollInterval)
 	defer ticker.Stop()
 
 	title := tr.title
@@ -169,7 +170,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// retried: the one start retry this play gets has been used.
 		retried bool
 		// resume: recognises a resume the firmware froze (resumefile.go).
-		resume fileResumeWatch
+		resume = fileResumeWatch{endEpsilon: qt.endEpsilon}
 	)
 	for {
 		select {
@@ -212,7 +213,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// anything to a sleeping box (#219).
 			return false, gen
 		}
-		if tornDown && !sawPlay && !retried && time.Since(start) < queueStallTimeout {
+		if tornDown && !sawPlay && !retried && time.Since(start) < qt.stallTimeout {
 			// Not started yet, and the source reads torn down: on a speaker
 			// that is still switching away from its own source on the way to
 			// the stream that is a transition, not a refusal (#1322). The
@@ -289,7 +290,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			s.NoteUserStop()
 			return false, gen
 		default:
-			if !sawPlay && time.Since(start) >= queueStallTimeout {
+			if !sawPlay && time.Since(start) >= qt.stallTimeout {
 				if !retried {
 					if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker never started the track"); ok {
 						gen, start, retried = next, time.Now(), true
