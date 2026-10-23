@@ -4199,8 +4199,11 @@ function renderAlarms() {
     sum.textContent = T.alarmNone;
   }
   list.innerHTML = alarmDoc.alarms.map(function(a, i) {
-    return '<div class="row" style="align-items:center;gap:10px;margin-top:8px">' +
-      '<button class="btn" type="button" data-alarm-edit="' + i + '" style="flex:1;text-align:left">' +
+    // .row is a grid and .btn a flex box: without the two columns the switch
+    // wrapped under its alarm, and the flex button swallowed the space
+    // between the time and the day names ("06:45Mo Tu").
+    return '<div class="row" style="grid-template-columns:1fr auto;align-items:center;gap:10px;margin-top:8px">' +
+      '<button class="btn" type="button" data-alarm-edit="' + i + '" style="flex:1;text-align:left;justify-content:flex-start;gap:.5em">' +
         '<strong>' + escapeHtml(alarmHHMM(a)) + '</strong> ' +
         escapeHtml(alarmDaysLabel(a)) + ' &middot; ' + escapeHtml(alarmPresetName(a.slot)) +
       '</button>' +
