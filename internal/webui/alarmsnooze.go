@@ -92,6 +92,11 @@ var (
 	alarmAuxKeyWindow = 2 * time.Second
 	// alarmAuxKeyPoll is how often that window is checked for the frame.
 	alarmAuxKeyPoll = 50 * time.Millisecond
+	// alarmAuxLeaveWindow is how long an AUX snooze watches for the speaker
+	// landing on Bluetooth (the source change can trail the key trace).
+	alarmAuxLeaveWindow = 4 * time.Second
+	// alarmAuxLeavePoll is how often the live source is read in that window.
+	alarmAuxLeavePoll = 250 * time.Millisecond
 	// alarmAuxRepeat: a second AUX signal this soon after an AUX snooze (the
 	// key trace and the source change of one press) is the same press.
 	alarmAuxRepeat = 4 * time.Second
@@ -530,17 +535,67 @@ func (s *Server) snoozePress(key, prevSource string) {
 
 // silenceForSnooze stops the alarm's playback, marked as the user's stop so
 // no recovery path pushes it back. The speaker stays on. After AUX the
-// firmware already left the stream, so only the bookkeeping runs.
+// firmware already left the stream, so only the bookkeeping runs, plus the
+// step off Bluetooth when the empty AUX input sent the speaker there.
 func (s *Server) silenceForSnooze(viaAux bool) {
 	s.NoteUserStop()
 	s.tellSpotifyUserStopped("snooze")
 	s.stopQueueIfActive("the alarm was snoozed")
 	if viaAux {
+		s.alarmBackground.Add(1)
+		go func() {
+			defer s.alarmBackground.Done()
+			s.leaveBluetoothForAux()
+		}()
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	alarmSilence(s, ctx)
+}
+
+// leaveBluetoothForAux moves a speaker that the AUX snooze left on Bluetooth
+// over to AUX. With nothing plugged into AUX the firmware skips the empty
+// input and lands on BLUETOOTH, which keeps the speaker open for pairing for
+// the whole snooze: anybody nearby could connect a phone. AUX with nothing
+// plugged in is just as silent and accepts no connection. The source change
+// can arrive a moment after the key, so the live source is watched for a
+// short while; the step runs only while this alarm is still snoozed.
+func (s *Server) leaveBluetoothForAux() {
+	deadline := time.Now().Add(alarmAuxLeaveWindow)
+	for {
+		s.ring.mu.Lock()
+		snoozed := s.ring.active && !s.ring.snoozeUntil.IsZero() && s.ring.snoozedViaAux
+		s.ring.mu.Unlock()
+		if !snoozed {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), alarmLiveTimeout)
+		src, playing := alarmLiveState(s, ctx)
+		cancel()
+		switch {
+		case src == "AUX":
+			return
+		case src == "BLUETOOTH" && playing:
+			// A phone already streams: that is the user's music, not the
+			// empty input the AUX key skipped to.
+			return
+		case src == "BLUETOOTH":
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := s.postSelect(ctx, `<ContentItem source="AUX" sourceAccount="AUX"></ContentItem>`)
+			cancel()
+			if err != nil {
+				s.logger.Warn("snooze: could not move the speaker from Bluetooth to AUX, it stays open for pairing until the alarm rings again", "err", err)
+				return
+			}
+			s.logger.Info("snooze: moved the speaker from Bluetooth to AUX, so no phone can pair during the snooze")
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(alarmAuxLeavePoll)
+	}
 }
 
 // silenceTransport is the Stop button's transport half: the box's own player
