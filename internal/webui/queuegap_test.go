@@ -7,7 +7,7 @@
 //
 // The chassis finishes a file and freezes in PLAY_STATE at EOF instead of
 // emitting STOP, so the STOP branch never runs and every track ends on the
-// wall-clock net at end + queueTimerMargin.
+// wall-clock net at end + timerMargin.
 //
 // Those six seconds are a grace for a box that reports NO position: with nothing
 // to corroborate the length against, cutting a buffering track short is the
@@ -22,6 +22,7 @@ import (
 )
 
 func TestTheGraceIsSkippedWhenTheBoxConfirmsTheEnd(t *testing.T) {
+	t.Parallel()
 	s := quietServer("192.0.2.10")
 	const end = 3 * time.Minute
 
@@ -30,30 +31,33 @@ func TestTheGraceIsSkippedWhenTheBoxConfirmsTheEnd(t *testing.T) {
 		t.Fatalf("margin %s with the position at the end; that is the gap users hear", m)
 	}
 	// Just inside the epsilon still counts as the end.
-	if m := s.advanceMargin(end-queueEndEpsilon+time.Second, end); m != 0 {
+	if m := s.advanceMargin(end-productionQueueTiming.endEpsilon+time.Second, end); m != 0 {
 		t.Fatalf("margin %s for a position inside the end epsilon", m)
 	}
 }
 
 func TestTheGraceStaysWhereThereIsNothingToCorroborateWith(t *testing.T) {
+	t.Parallel()
 	s := quietServer("192.0.2.10")
 	const end = 3 * time.Minute
 
+	margin := productionQueueTiming.timerMargin
 	// No position at all: the FRITZ!Box-class case the margin was written for.
-	if m := s.advanceMargin(0, end); m != queueTimerMargin {
-		t.Fatalf("margin %s with no position reported, want the full %s", m, queueTimerMargin)
+	if m := s.advanceMargin(0, end); m != margin {
+		t.Fatalf("margin %s with no position reported, want the full %s", m, margin)
 	}
 	// A position that is nowhere near the end: the track is still running, and
 	// cutting it off is the failure the grace exists to prevent.
-	if m := s.advanceMargin(30*time.Second, end); m != queueTimerMargin {
-		t.Fatalf("margin %s mid-track, want the full %s", m, queueTimerMargin)
+	if m := s.advanceMargin(30*time.Second, end); m != margin {
+		t.Fatalf("margin %s mid-track, want the full %s", m, margin)
 	}
 }
 
 // The floor is the poll interval, and it stays where it is: a faster poll would
 // run on every speaker all day for this one case.
 func TestThePollIntervalIsNotTightened(t *testing.T) {
-	if queuePollInterval < 4*time.Second {
-		t.Fatalf("queuePollInterval dropped to %s; that runs on every speaker all day", queuePollInterval)
+	t.Parallel()
+	if poll := productionQueueTiming.pollInterval; poll < 4*time.Second {
+		t.Fatalf("the poll interval dropped to %s; that runs on every speaker all day", poll)
 	}
 }

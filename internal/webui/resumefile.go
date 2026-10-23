@@ -270,6 +270,9 @@ type fileResumeWatch struct {
 	// repaired: this resume had its one repair. Cleared once the position
 	// moves again, so the next pause gets its own.
 	repaired bool
+	// endEpsilon is the end watch's "frozen at the end" slack (queueTiming);
+	// zero means the production value, so a bare literal needs none.
+	endEpsilon time.Duration
 }
 
 // fileResumeObs is one poll.
@@ -321,7 +324,11 @@ func (w *fileResumeWatch) observe(o fileResumeObs) fileResumeStep {
 		return fileResumeStep{}
 	}
 	// Frozen at the end is the track having ended: the end nets own that.
-	if o.end <= 0 || o.pos >= o.end-queueEndEpsilon {
+	eps := w.endEpsilon
+	if eps <= 0 {
+		eps = productionQueueTiming.endEpsilon
+	}
+	if o.end <= 0 || o.pos >= o.end-eps {
 		return fileResumeStep{}
 	}
 	if w.frozenSince.IsZero() {

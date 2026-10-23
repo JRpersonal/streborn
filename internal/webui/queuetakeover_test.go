@@ -121,8 +121,8 @@ func (b *sourceScriptedBox) src() string {
 // (fastQueueTiming); scenarios are written in qsec.
 func takeoverWatchServer(t *testing.T, box *sourceScriptedBox, firstDur time.Duration, logs *syncBuf) *Server {
 	t.Helper()
-	fastQueueTiming(t)
 	s, _ := newPlayTestServer(t)
+	s.queueTiming = fastQueueTiming()
 	s.logger = slog.New(slog.NewTextHandler(logs, nil))
 	s.nowPlayingFn = box.poll
 	s.nowPlayingSourceFn = box.src
@@ -140,6 +140,7 @@ func takeoverWatchServer(t *testing.T, box *sourceScriptedBox, firstDur time.Dur
 // keeps playing past the library track's length. The queue must end, not push
 // track 2 over Pandora.
 func TestQueueWatcherEndsTheQueueWhenAnotherSourceTakesOver(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
@@ -170,6 +171,7 @@ func TestQueueWatcherEndsTheQueueWhenAnotherSourceTakesOver(t *testing.T) {
 // A single poll on another source (a change caught in flight) is not a
 // takeover: the box returns to the queue and the queue plays on.
 func TestQueueWatcherIgnoresOneForeignPoll(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
@@ -180,7 +182,7 @@ func TestQueueWatcherIgnoresOneForeignPoll(t *testing.T) {
 
 	time.Sleep(betweenPolls(1))
 	box.set("PANDORA", "PLAY_STATE", 0, 0)
-	time.Sleep(queuePollInterval) // exactly one poll sees it
+	time.Sleep(s.queueTiming.pollInterval) // exactly one poll sees it
 	box.set("UPNP", "PLAY_STATE", 10*qsec, 0)
 	time.Sleep(9 * qsec) // two more polls
 	if !s.queue.isActive() {

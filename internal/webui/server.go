@@ -645,6 +645,7 @@ type Server struct {
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).
 	queueInZoneFn func() bool
+	queueTiming   *queueTiming // nil = productionQueueTiming; tests install a faster clock
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

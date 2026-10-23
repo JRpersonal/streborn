@@ -16,6 +16,7 @@ import (
 )
 
 func TestQueueInEndStretch(t *testing.T) {
+	t.Parallel()
 	const sec = time.Second
 	cases := []struct {
 		name              string
@@ -30,29 +31,31 @@ func TestQueueInEndStretch(t *testing.T) {
 		{"no position, wall clock near the end", 0, 256 * sec, 253 * sec, true},
 		{"no position, wall clock early", 0, 256 * sec, 100 * sec, false},
 		{"position ran far past a wrong length (#1065)", 60 * sec, 30 * sec, 62 * sec, false},
-		{"frozen on the end long after it", 256 * sec, 256 * sec, 256*sec + 4*queueZoneEndWindow + sec, false},
+		{"frozen on the end long after it", 256 * sec, 256 * sec, 256*sec + 4*productionQueueTiming.zoneEndWindow + sec, false},
 	}
 	for _, tc := range cases {
-		if got := queueInEndStretch(tc.pos, tc.end, tc.elapsed); got != tc.want {
-			t.Errorf("%s: queueInEndStretch(%v, %v, %v) = %v, want %v",
+		if got := productionQueueTiming.inEndStretch(tc.pos, tc.end, tc.elapsed); got != tc.want {
+			t.Errorf("%s: inEndStretch(%v, %v, %v) = %v, want %v",
 				tc.name, tc.pos, tc.end, tc.elapsed, got, tc.want)
 		}
 	}
 }
 
 func TestQueueWatchInterval(t *testing.T) {
-	if got := queueWatchInterval(false, false); got != queuePollInterval {
-		t.Errorf("single speaker mid-track polls every %v, want %v", got, queuePollInterval)
+	t.Parallel()
+	qt := &productionQueueTiming
+	if got := qt.watchInterval(false, false); got != qt.pollInterval {
+		t.Errorf("single speaker mid-track polls every %v, want %v", got, qt.pollInterval)
 	}
-	if got := queueWatchInterval(false, true); got != queuePollInterval {
-		t.Errorf("single speaker near the end polls every %v, want the normal %v", got, queuePollInterval)
+	if got := qt.watchInterval(false, true); got != qt.pollInterval {
+		t.Errorf("single speaker near the end polls every %v, want the normal %v", got, qt.pollInterval)
 	}
-	if got := queueWatchInterval(true, false); got != queuePollInterval {
-		t.Errorf("grouped speaker mid-track polls every %v, want the normal %v", got, queuePollInterval)
+	if got := qt.watchInterval(true, false); got != qt.pollInterval {
+		t.Errorf("grouped speaker mid-track polls every %v, want the normal %v", got, qt.pollInterval)
 	}
-	got := queueWatchInterval(true, true)
-	if got != queueZoneEndPoll {
-		t.Errorf("grouped speaker near the end polls every %v, want %v", got, queueZoneEndPoll)
+	got := qt.watchInterval(true, true)
+	if got != qt.zoneEndPoll {
+		t.Errorf("grouped speaker near the end polls every %v, want %v", got, qt.zoneEndPoll)
 	}
 	// The poll must be faster than the firmware's end-of-file standby (~1 s
 	// after the end) plus a margin, and the window must cover one normal poll,
@@ -60,8 +63,8 @@ func TestQueueWatchInterval(t *testing.T) {
 	if got > time.Second {
 		t.Errorf("end-of-track poll %v is slower than the zone master's standby", got)
 	}
-	if queueZoneEndWindow < queuePollInterval {
-		t.Errorf("window %v is shorter than one normal poll %v", queueZoneEndWindow, queuePollInterval)
+	if qt.zoneEndWindow < qt.pollInterval {
+		t.Errorf("window %v is shorter than one normal poll %v", qt.zoneEndWindow, qt.pollInterval)
 	}
 }
 
@@ -94,6 +97,7 @@ func (b *zoneMasterBox) poll() (string, time.Duration, time.Duration, bool) {
 }
 
 func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
@@ -102,7 +106,6 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 	// its slack would be a few tens of milliseconds.
 	const scale = 5
 	const sec = time.Second / scale
-	scaleQueueTiming(t, scale)
 	const trackLen = 10 * sec
 	logs := &syncBuf{}
 	// Audio starts half a second after the push, as on a real box. The file ends
@@ -110,6 +113,7 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 	// poll the watcher sees pos 7 at 8 s and then the standby at 12 s.
 	box := &zoneMasterBox{start: time.Now().Add(sec / 2), total: trackLen, tick: sec}
 	s, _ := newPlayTestServer(t)
+	s.queueTiming = scaleQueueTiming(scale)
 	s.queueInZoneFn = func() bool { return true }
 	s.nowPlayingFn = box.poll
 	s.logger = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))

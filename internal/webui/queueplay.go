@@ -268,33 +268,35 @@ const (
 	queueTakeoverPolls = 2
 )
 
-// The watcher's durations are variables, not constants, so the tests can run
-// the same state machine at a faster clock (fastQueueTiming in
-// queuetiming_test.go scales every one of them by the same factor). The
-// production values below are what runs on the speaker.
-var (
-	queuePollInterval = 4 * time.Second  // how often the watcher reads now_playing
-	queueEndEpsilon   = 12 * time.Second // progress within this of the end == "ended"
-	queueTimerMargin  = 6 * time.Second  // grace past the track length before the net trips
-	queueStallTimeout = 25 * time.Second // a track that never starts is skipped
-	// queueFrozenTimeout advances when the box sits in PLAY_STATE with its
+// queueTiming is the watcher's clock: every duration the queue watcher and the
+// lone-track end watch run on. It is a value on the server, not a set of
+// package variables, so the tests can run the very same state machine at a
+// faster clock (fastQueueTiming in queuetiming_test.go divides every field by
+// one factor) without touching anything another test's watcher still reads.
+// productionQueueTiming is what runs on the speaker.
+type queueTiming struct {
+	pollInterval time.Duration // how often the watcher reads now_playing
+	endEpsilon   time.Duration // progress within this of the end == "ended"
+	timerMargin  time.Duration // grace past the track length before the net trips
+	stallTimeout time.Duration // a track that never starts is skipped
+	// frozenTimeout advances when the box sits in PLAY_STATE with its
 	// position frozen and the track length is UNKNOWN. Some DLNA servers (a
 	// FRITZ!Box mediaserver) expose no duration AND the box reports no total, so
 	// end==0 and the wall-clock net cannot fire; the box also finishes the file
 	// but stays PLAY_STATE frozen at EOF instead of emitting STOP, so that path
 	// cannot fire either, and a folder hung on its first track forever (#380,
 	// #381). A position that has not moved for this long is a finished track.
-	queueFrozenTimeout = 15 * time.Second
-	// queueOverrunSlack is how far the box's position may sit past the track
+	frozenTimeout time.Duration
+	// overrunSlack is how far the box's position may sit past the track
 	// length before STR concludes the length is wrong. The box reports whole
 	// seconds and a server rounds its duration, so a second or so either side of
 	// the end is noise; more than that is a box still playing audio the length
 	// says does not exist (#1065).
-	queueOverrunSlack = 2 * time.Second
-	// queueOwnEndSlack is how close a still-climbing position must be to the
+	overrunSlack time.Duration
+	// ownEndSlack is how close a still-climbing position must be to the
 	// box's OWN reported total to count as "the box says this is the end".
-	queueOwnEndSlack = 1 * time.Second
-	// queueZoneEndWindow and queueZoneEndPoll are the last stretch of a track on
+	ownEndSlack time.Duration
+	// zoneEndWindow and zoneEndPoll are the last stretch of a track on
 	// a zone master or stereo pair (#1190). A single speaker freezes in
 	// PLAY_STATE at the end of a file and the next 4 s poll advances it. A zone
 	// master instead drops itself (and its slave) to STANDBY about 1 s after the
@@ -304,18 +306,40 @@ var (
 	// second for the last few seconds of a track lets the at-its-own-end rule
 	// advance before that standby. Bounded to this window on purpose: the box is
 	// never polled faster for a whole track.
-	queueZoneEndWindow = 5 * time.Second
-	queueZoneEndPoll   = 1 * time.Second
-)
+	zoneEndWindow time.Duration
+	zoneEndPoll   time.Duration
+}
 
-// queueInEndStretch reports whether the track is within queueZoneEndWindow of
+// productionQueueTiming is the clock the watcher runs on on the speaker.
+var productionQueueTiming = queueTiming{
+	pollInterval:  4 * time.Second,
+	endEpsilon:    12 * time.Second,
+	timerMargin:   6 * time.Second,
+	stallTimeout:  25 * time.Second,
+	frozenTimeout: 15 * time.Second,
+	overrunSlack:  2 * time.Second,
+	ownEndSlack:   1 * time.Second,
+	zoneEndWindow: 5 * time.Second,
+	zoneEndPoll:   1 * time.Second,
+}
+
+// queueTimes is the watcher's clock: the production values unless a test
+// installed a faster one.
+func (s *Server) queueTimes() *queueTiming {
+	if s.queueTiming != nil {
+		return s.queueTiming
+	}
+	return &productionQueueTiming
+}
+
+// inEndStretch reports whether the track is within zoneEndWindow of
 // its end, judged by the box's position when it reports one, else by the wall
 // clock since the push. A position that ran well past the end (a wrong length,
 // #1065) is no longer "near the end", so a misjudged length cannot keep the fast
 // poll running for the rest of the track, and a box frozen on its last second
 // falls back to the normal poll once the wall clock is well past the end.
-func queueInEndStretch(pos, end, elapsed time.Duration) bool {
-	if end <= 0 || elapsed > end+4*queueZoneEndWindow {
+func (qt *queueTiming) inEndStretch(pos, end, elapsed time.Duration) bool {
+	if end <= 0 || elapsed > end+4*qt.zoneEndWindow {
 		return false
 	}
 	at := pos
@@ -323,17 +347,17 @@ func queueInEndStretch(pos, end, elapsed time.Duration) bool {
 		at = elapsed
 	}
 	left := end - at
-	return left <= queueZoneEndWindow && left >= -queueZoneEndWindow
+	return left <= qt.zoneEndWindow && left >= -qt.zoneEndWindow
 }
 
-// queueWatchInterval is how long the watcher waits before its next poll: the
+// watchInterval is how long the watcher waits before its next poll: the
 // one-second end-of-track poll only for a box in a zone or stereo pair inside
 // the last stretch of a track, the normal four seconds everywhere else.
-func queueWatchInterval(inZone, inEndStretch bool) time.Duration {
+func (qt *queueTiming) watchInterval(inZone, inEndStretch bool) time.Duration {
 	if inZone && inEndStretch {
-		return queueZoneEndPoll
+		return qt.zoneEndPoll
 	}
-	return queuePollInterval
+	return qt.pollInterval
 }
 
 // queueBoxInZone is boxInZone behind the watcher's test seam.
@@ -701,7 +725,8 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 // the current track ends. It exits when the queue is no longer active or ctx is
 // cancelled.
 func (s *Server) runQueueWatcher(ctx context.Context) {
-	ticker := time.NewTicker(queuePollInterval)
+	qt := s.queueTimes()
+	ticker := time.NewTicker(qt.pollInterval)
 	defer ticker.Stop()
 	var (
 		gen       int
@@ -723,7 +748,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// interval is the ticker's current period. zoneChecked / inZone cache the
 		// zone check once per track: boxInZone may read /getZone over HTTP, so it
 		// runs only when a track first enters its last stretch, never per poll.
-		interval    = queuePollInterval
+		interval    = qt.pollInterval
 		zoneChecked bool
 		inZone      bool
 		// sawQueueSource: the box has reported the queue's UPNP source at
@@ -831,7 +856,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		if lastPos > posNow {
 			posNow = lastPos
 		}
-		stretch := ps == "PLAY_STATE" && queueInEndStretch(posNow, end, time.Since(start))
+		stretch := ps == "PLAY_STATE" && qt.inEndStretch(posNow, end, time.Since(start))
 		if stretch && !zoneChecked {
 			zoneChecked = true
 			inZone = s.queueBoxInZone()
@@ -840,7 +865,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 					"posSec", int(posNow.Seconds()), "trackSec", int(end.Seconds()))
 			}
 		}
-		if want := queueWatchInterval(inZone, stretch); want != interval {
+		if want := qt.watchInterval(inZone, stretch); want != interval {
 			interval = want
 			ticker.Reset(interval)
 		}
@@ -876,7 +901,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			if prog == 0 {
 				prog = time.Since(start) // box reported no position; use elapsed
 			}
-			if nearEnd(prog, end) {
+			if qt.nearEnd(prog, end) {
 				rep := s.trackEndSnapshot(sawPlay, ps, start, dur, obsTotal, lastPos, lastPosAt).report(endNetNone)
 				rep.net = "stop-frame"
 				s.advanceAndPlayEnded(true, curGen, "the box reported the track stopped at its end", rep)
@@ -890,7 +915,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			continue
 		default:
 			// No usable status this tick (poll error or an idle box).
-			if !sawPlay && time.Since(start) >= queueStallTimeout {
+			if !sawPlay && time.Since(start) >= qt.stallTimeout {
 				// The first silence of a run gets one more wake and the same
 				// track again before anything is skipped (#1322): the Wave
 				// that never took the first push started fine on the second.
@@ -916,7 +941,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			}
 		}
 
-		if !overrunWarned && dur > 0 && lastPos > dur+queueOverrunSlack {
+		if !overrunWarned && dur > 0 && lastPos > dur+qt.overrunSlack {
 			overrunWarned = true
 			s.logger.Warn("queue watcher: the server's track length is shorter than what the speaker plays",
 				"title", s.queueCurrentTitle(), "lengthSec", int(dur.Seconds()),
@@ -954,6 +979,7 @@ func (s *Server) trackEndSnapshot(sawPlay bool, ps string, start time.Time, dur,
 		dur:      dur,
 		obsTotal: obsTotal,
 		lastPos:  lastPos,
+		timing:   s.queueTimes(),
 	}
 	if !lastPosAt.IsZero() {
 		in.sinceLastPos = time.Since(lastPosAt)
@@ -1005,6 +1031,17 @@ type trackEndInput struct {
 	// sinceLastPos is how long ago lastPos last increased. Only meaningful when
 	// lastPos > 0.
 	sinceLastPos time.Duration
+	// timing is the clock the nets judge the readings by: nil means the
+	// production clock, so a bare literal (the table tests) needs none.
+	timing *queueTiming
+}
+
+// times resolves timing, falling back to the production clock.
+func (in trackEndInput) times() *queueTiming {
+	if in.timing != nil {
+		return in.timing
+	}
+	return &productionQueueTiming
 }
 
 // trackEndReport is the ending track's numbers, for the advance log line.
@@ -1051,7 +1088,7 @@ func (r trackEndReport) logAttrs(title string) []any {
 // there is nothing to corroborate the length against.
 //
 // Frozen-position: the box stays PLAY_STATE but its position has not advanced
-// for queueFrozenTimeout. For an unknown length (or one proven wrong) that is
+// for frozenTimeout. For an unknown length (or one proven wrong) that is
 // the only end signal (#380, #381 FRITZ!Box mediaserver); for a known length it
 // fires once the length has elapsed, so an EOF freeze still advances even if
 // the wall-clock net held. A genuine mid-track stall reports BUFFERING_STATE
@@ -1060,6 +1097,7 @@ func trackEndNet(in trackEndInput) endNet {
 	if !in.sawPlay {
 		return endNetNone
 	}
+	qt := in.times()
 	// Track length: the queue item's duration, or the box's reported total when
 	// the item carried none (a DLNA server, e.g. Synology, that did not expose
 	// duration in its metadata leaves dur==0). #219
@@ -1068,17 +1106,17 @@ func trackEndNet(in trackEndInput) endNet {
 		end = in.obsTotal
 	}
 	posKnown := in.lastPos > 0
-	if posKnown && end > 0 && in.lastPos > end+queueOverrunSlack {
+	if posKnown && end > 0 && in.lastPos > end+qt.overrunSlack {
 		// The box has played further than any length anyone claimed: the length
 		// is wrong and cannot time the end. Fall back to the freeze.
 		end = 0
 	}
 	climbing, atOwnEnd := in.endSignals()
 
-	if end > 0 && in.elapsed >= end+advanceMargin(in.lastPos, end) && (!climbing || atOwnEnd) {
+	if end > 0 && in.elapsed >= end+qt.advanceMargin(in.lastPos, end) && (!climbing || atOwnEnd) {
 		return endNetWallClock
 	}
-	if in.playing && posKnown && in.sinceLastPos >= queueFrozenTimeout &&
+	if in.playing && posKnown && in.sinceLastPos >= qt.frozenTimeout &&
 		(end == 0 || in.elapsed >= end) {
 		return endNetFrozen
 	}
@@ -1091,8 +1129,9 @@ func trackEndNet(in trackEndInput) endNet {
 // old and one that did not is at least a poll interval old), and whether it sits
 // on the box's own reported total.
 func (in trackEndInput) endSignals() (climbing, atOwnEnd bool) {
-	climbing = in.lastPos > 0 && in.sinceLastPos < queuePollInterval/2
-	atOwnEnd = in.obsTotal > 0 && in.lastPos >= in.obsTotal-queueOwnEndSlack
+	qt := in.times()
+	climbing = in.lastPos > 0 && in.sinceLastPos < qt.pollInterval/2
+	atOwnEnd = in.obsTotal > 0 && in.lastPos >= in.obsTotal-qt.ownEndSlack
 	return climbing, atOwnEnd
 }
 
@@ -1114,21 +1153,22 @@ func (in trackEndInput) endSignals() (climbing, atOwnEnd bool) {
 // poll would run on every speaker all day for one case (see the project rule on
 // sparing the box hardware).
 func (s *Server) advanceMargin(lastPos, end time.Duration) time.Duration {
-	return advanceMargin(lastPos, end)
+	return s.queueTimes().advanceMargin(lastPos, end)
 }
 
-func advanceMargin(lastPos, end time.Duration) time.Duration {
-	if lastPos > 0 && nearEnd(lastPos, end) {
+func (qt *queueTiming) advanceMargin(lastPos, end time.Duration) time.Duration {
+	if lastPos > 0 && qt.nearEnd(lastPos, end) {
 		return 0
 	}
-	return queueTimerMargin
+	return qt.timerMargin
 }
 
-func nearEnd(progress, end time.Duration) bool {
+// nearEnd reports whether progress is within endEpsilon of the track's end.
+func (qt *queueTiming) nearEnd(progress, end time.Duration) bool {
 	if end <= 0 {
 		return true // unknown length: a STOP after real playback counts as the end
 	}
-	return progress >= end-queueEndEpsilon
+	return progress >= end-qt.endEpsilon
 }
 
 // pollNowPlaying reads the box's now_playing once and returns the play status,

@@ -136,13 +136,14 @@ func TestTrackLengthsDropTheOldestPastTheCap(t *testing.T) {
 // total. With the length known the wall-clock net calls the end on the next
 // poll; without it only the frozen net could, 15 s after the freeze.
 func TestALibraryTrackWithAKnownLengthEndsOnItsLength(t *testing.T) {
+	t.Parallel()
 	in := trackEndInput{
 		sawPlay:      true,
 		playing:      true,
 		elapsed:      177 * time.Second,
 		dur:          175 * time.Second,
 		lastPos:      175 * time.Second,
-		sinceLastPos: queuePollInterval,
+		sinceLastPos: productionQueueTiming.pollInterval,
 	}
 	if got := trackEndNet(in); got != endNetWallClock {
 		t.Fatalf("with a known length: net = %v, want wall-clock", got)
@@ -156,13 +157,14 @@ func TestALibraryTrackWithAKnownLengthEndsOnItsLength(t *testing.T) {
 // End to end through the key: the stored length ends the song well before the
 // frozen-position net could have (which needs the position still for 15 s).
 func TestALibraryKeyWithAStoredLengthStopsWithoutWaitingForTheFreeze(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	// A stored length is whole seconds, so this scenario runs in real seconds
 	// on the fast poll. The frozen net keeps its production 15 s: that is the
 	// time the test must NOT see, and at the fast clock it would fire together
 	// with the stored length and prove nothing.
-	queueFrozenTimeout *= queueTestScale
+	s.queueTiming.frozenTimeout = productionQueueTiming.frozenTimeout
 	const storedLen = 2 * time.Second
 	if err := s.presets.SetSlot(presets.Preset{
 		Slot: 6, Name: "Song", Type: "radio", StreamURL: libraryTrackURL,
@@ -179,7 +181,7 @@ func TestALibraryKeyWithAStoredLengthStopsWithoutWaitingForTheFreeze(t *testing.
 	np.set("PLAY_STATE", storedLen, 0) // frozen at the end
 
 	waitForTrackEnd(t, "the box to be stopped at the end of the key's song", func() bool { return rec.has("Stop") })
-	if took := time.Since(start); took >= storedLen+queueFrozenTimeout {
+	if took := time.Since(start); took >= storedLen+productionQueueTiming.frozenTimeout {
 		t.Fatalf("the stop took %v, the frozen net's time: the stored length was not used", took)
 	}
 }
@@ -294,6 +296,7 @@ func TestALengthIsLearnedOnlyFromAPlausibleFrozenEnd(t *testing.T) {
 // End to end: a key without a length, played through to the freeze, comes out
 // of the frozen-position net with its length stored.
 func TestAnOldLibraryKeyLearnsItsLengthAfterOnePlay(t *testing.T) {
+	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	if err := s.presets.SetSlot(presets.Preset{
