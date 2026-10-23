@@ -60,7 +60,7 @@ func clockTolerantTLSConfigOpt(host string, logger *slog.Logger, acceptUnknownIs
 		NextProtos: []string{"h2", "http/1.1"},
 		// The default verifier is disabled so the time window can be relaxed in
 		// VerifyConnection; chain and host are still checked there manually.
-		InsecureSkipVerify: true, // VerifyConnection re-implements chain+host verification below.
+		InsecureSkipVerify: true, //nolint:gosec // VerifyConnection re-implements chain+host verification below.
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			roots, _ := x509.SystemCertPool()
 			err := verifyChainClockTolerant(cs.PeerCertificates, host, roots, time.Now(), clockUntrustworthy())
