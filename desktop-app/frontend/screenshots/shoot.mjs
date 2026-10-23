@@ -31,7 +31,7 @@ const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
 // app-logs is a cropped shot of the settings tail with the "Save diagnostic
 // logs" footer link highlighted; the website FAQ uses it to show where the
 // log lives. Override with SHOOT_VIEWS=app-logs to re-shoot a subset.
-const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-settings1', 'app-settings2', 'app-settings3', 'app-stick-step1', 'app-stick-step2', 'app-logs'];
+const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app-settings1', 'app-settings2', 'app-settings3', 'app-install', 'app-stick-step1', 'app-stick-step2', 'app-logs'];
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
   ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
   : ALL_VIEWS;
@@ -51,8 +51,8 @@ const BOX = {
   deviceID: 'A1B2C3D4E5F6',
   friendlyName: 'Living Room',
   model: 'SoundTouch 20',
-  version: 'v0.6.18',
-  build: '2026-06-03',
+  version: 'v1.0.19',
+  build: '2026-10-23',
   serialNumber: '',
   kind: 'STR',
   portVerified: true,
@@ -71,7 +71,7 @@ const SETTINGS = {
   info: { deviceID: 'A1B2C3D4E5F6', name: 'Living Room', type: 'SoundTouch 20' },
   volume: { actual: 32, muted: false },
   bass: { actual: 0, default: 0, min: -9, max: 9, available: true },
-  network: { interfaces: [{ type: 'WIFI', state: 'NETWORK_WIFI_CONNECTED', ssid: 'HomeWiFi', ipAddress: '192.0.2.50', signal: 'GOOD', frequencyKHz: 2412000 }] },
+  network: { interfaces: [{ type: 'WIFI_INTERFACE', state: 'NETWORK_WIFI_CONNECTED', ssid: 'HomeWiFi', ipAddress: '192.0.2.50', signal: 'GOOD', frequencyKHz: 2412000 }] },
   sources: [{ source: 'AUX', status: 'READY' }, { source: 'BLUETOOTH', status: 'READY' }],
 };
 
@@ -98,8 +98,8 @@ const WIFI = [
 ];
 
 const APPINFO = {
-  version: 'v0.6.18',
-  build: '2026-06-03',
+  version: 'v1.0.19',
+  build: '2026-10-23',
   author: 'Jens',
   githubUrl: 'https://github.com/JRpersonal/streborn',
   websiteUrl: 'https://st-reborn.de',
@@ -146,7 +146,33 @@ const LIBRARY_PAGE = {
   returned: 6,
 };
 
-const DEMO = { box: BOX, presets: PRESETS, settings: SETTINGS, statusPlaying: STATUS_PLAYING, statusIdle: STATUS_IDLE, drives: DRIVES, wifi: WIFI, appInfo: APPINFO, stations: STATIONS, languages: LANGUAGES, mediaServers: MEDIA_SERVERS, libraryPage: LIBRARY_PAGE };
+// A speaker still on Bose firmware: the setup views offer to install STR on it.
+const STOCK_BOX = {
+  name: 'Kitchen',
+  host: '192.0.2.51',
+  port: 8090,
+  deviceID: 'F6E5D4C3B2A1',
+  friendlyName: 'Kitchen',
+  model: 'SoundTouch 10',
+  version: '',
+  build: '',
+  serialNumber: '',
+  kind: 'stock',
+  portVerified: true,
+};
+
+// "Recently played" history (newest first). Fictional artists only.
+const RECENT = [
+  { ts: '2026-10-23T18:42:00Z', source: 'radio', cardKey: 'r:rock', cardName: 'Best Of Rock.FM', cardArt: cover('R', '#1b2636'), cardURL: 'http://example.com/rock', track: 'The Demo Band - Morning Light' },
+  { ts: '2026-10-23T18:38:00Z', source: 'radio', cardKey: 'r:rock', cardName: 'Best Of Rock.FM', cardArt: cover('R', '#1b2636'), cardURL: 'http://example.com/rock', track: 'Northern Lines - Paper Boats' },
+  { ts: '2026-10-23T18:34:00Z', source: 'radio', cardKey: 'r:rock', cardName: 'Best Of Rock.FM', cardArt: cover('R', '#1b2636'), cardURL: 'http://example.com/rock', track: 'Sample & The Placeholders - Long Way Home' },
+  { ts: '2026-10-23T17:55:00Z', source: 'radio', cardKey: 'r:jazz24', cardName: 'Jazz24', cardArt: cover('J', '#7b2cbf'), cardURL: 'http://example.com/jazz24', track: 'Quartet Example - Blue Hour' },
+  { ts: '2026-10-23T17:49:00Z', source: 'radio', cardKey: 'r:jazz24', cardName: 'Jazz24', cardArt: cover('J', '#7b2cbf'), cardURL: 'http://example.com/jazz24', track: 'Ada Demo Trio - Late Train' },
+  { ts: '2026-10-23T16:20:00Z', source: 'upnp', cardKey: 'u:album', cardName: 'Evening Sessions', cardArt: cover('E', '#2a9d8f'), cardURL: 'http://192.0.2.60:8200/MediaItems/1.flac', mime: 'audio/flac', track: 'Lorem Ipsum Ensemble - Opening' },
+  { ts: '2026-10-23T08:05:00Z', source: 'radio', cardKey: 'r:npr', cardName: 'NPR News', cardArt: cover('N', '#2a6f97'), cardURL: 'http://example.com/npr', track: '' },
+];
+
+const DEMO = { box: BOX, stockBox: STOCK_BOX, recent: RECENT, presets: PRESETS, settings: SETTINGS, statusPlaying: STATUS_PLAYING, statusIdle: STATUS_IDLE, drives: DRIVES, wifi: WIFI, appInfo: APPINFO, stations: STATIONS, languages: LANGUAGES, mediaServers: MEDIA_SERVERS, libraryPage: LIBRARY_PAGE };
 
 // ---- the in-page mock (runs before the app's own scripts) ------------------
 function installMocks({ locale, view, demo }) {
@@ -155,6 +181,11 @@ function installMocks({ locale, view, demo }) {
     localStorage.setItem('cachedBoxes', JSON.stringify([demo.box]));
     localStorage.setItem('lastBoxDeviceID', demo.box.deviceID);
     localStorage.setItem('searchCountry', '');
+    // One-time celebration popups (community world-map invite after the first
+    // radio play / install) would cover the lower part of every shot: mark them
+    // as already seen. GetAppFlag below answers true for the same reason.
+    localStorage.setItem('str.worldMapInvited', '1');
+    localStorage.setItem('str.worldMapInvitedAll', '1');
   } catch (e) {}
 
   const P = (v) => Promise.resolve(v);
@@ -166,13 +197,19 @@ function installMocks({ locale, view, demo }) {
     AppInfo: () => P(demo.appInfo),
     AppVersion: () => P(demo.appInfo.version),
     CheckAppUpdate: () => P({}),
-    DiscoverBoxes: () => P([demo.box]),
+    // The setup views also list a stock (not yet converted) speaker, so the
+    // network-install card has a target to show.
+    DiscoverBoxes: () => P(view.startsWith('app-install') || view.startsWith('app-stick') ? [demo.box, demo.stockBox] : [demo.box]),
+    // Durable "already seen" flags: true keeps the one-time invites away.
+    GetAppFlag: () => P(true),
+    SetAppFlag: () => P(undefined),
     BoxSettings: () => P(demo.settings),
     BoxAgentVersion: () => P({ version: demo.appInfo.version, build: demo.appInfo.build }),
     // Phone-control QR card: a real demo QR (encodes http://demobox.local:8888/)
     // so the "Control this speaker on your phone" card renders in screenshots.
     PhoneQR: () => P('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAADwAQMAAAAEm3vRAAAABlBMVEX///8AAABVwtN+AAABRklEQVR42uyXsbHDIBBEV0PgkBIoRaVJpakUSlBIwLB/7jCWma8ff3NmAw/ScwI6du8wNTX14XJUgRkPMgL1OY6Pk/xu+vYMcd0pz94C9uSxoegJyL4XMhnC+mlj4P5luLj8qN/bDK6FvDDL4q86HxA/refa960zjYebFvHUiHW/Dw1z2CUEOYeiq7gSS3ZdloyLtXwLJCR51JQ8YQD7iJXyMgFBce5C0ibWXkeORS6wYBb3foHHxfCM2Hh1PeXdcsfFehvFcNq+1YROGMCnWs+iGRk0VbqosYqT10JmbpYrK28BI9Q+td5Vyh87Rx4UN9VRkdz7Qh4XXzOwFqg24Pl3n2oPP/tzyZLXsXTt3LD4NSIn1M6O2RKu40Y4NkqqMH4Lloo+m+XSBK6FrFhWtILbiKzhL/uGu3Gm8fDU1NS/6ScAAP//khi29LPtOrwAAAAASUVORK5CYII='),
     GetPresets: () => P(demo.presets),
+    RecentPlayed: () => P(demo.recent),
     Status: () => P(status),
     StreamBitrate: () => P(256),
     ListDrives: () => P(demo.drives),
@@ -186,11 +223,16 @@ function installMocks({ locale, view, demo }) {
     GetClockDisplay: () => P('true'),
     GetClockFormat24: () => P(true),
     GetAirplayOpt: () => P({ enabled: true }),
+    // Readable display-track setting (a null answer paints "speaker did not
+    // answer"); onPanel hides the re-buffer warning.
+    GetDisplayTrack: () => P({ enabled: false, mode: 'both', onPanel: true, supported: true }),
     ListMediaServers: () => P(demo.mediaServers),
     BrowseLibrary: () => P(demo.libraryPage),
     // Radio search moved app-side (Wails bindings, no longer /api/radio), so the
     // search view drives these instead of the routed HTTP endpoints below.
     RadioSearch: () => P(demo.stations),
+    // The search view now prefers the detailed variant ({stations, relaxed}).
+    RadioSearchDetailed: () => P({ stations: demo.stations, relaxed: false }),
     RadioLanguages: () => P(demo.languages),
     RadioTags: () => P([]),
     RadioClick: () => P(undefined),
@@ -242,6 +284,10 @@ async function drive(page, view) {
     await click('#topBtn');
     await page.waitForSelector('#searchResults .result-row', { timeout: 9000 });
     await scrollIntoView('#searchQ');
+  } else if (view === 'app-recent') {
+    await click('.tab-btn[data-view="recent"]');
+    await page.waitForSelector('#view-recent:not(.hidden) .recent-card', { timeout: 9000 });
+    await scrollY(0);
   } else if (view === 'app-library') {
     await click('.tab-btn[data-view="library"]');
     await page.waitForSelector('#view-library:not(.hidden) .library-row-folder', { timeout: 9000 });
@@ -285,16 +331,27 @@ async function drive(page, view) {
       a.style.borderRadius = '4px';
       a.style.fontWeight = '700';
     });
-  } else if (view === 'app-stick-step1') {
+  } else if (view.startsWith('app-install') || view.startsWith('app-stick')) {
+    // "Set up speaker": the network install is the default path (a card for
+    // the stock speaker that was found), the USB stick is the collapsed
+    // fallback below it.
     await click('.tab-btn[data-view="setup"]');
-    await page.waitForSelector('#view-setup:not(.hidden) #drivesList .drive-row', { timeout: 9000 });
-    await scrollY(0);
-  } else if (view === 'app-stick-step2') {
-    await click('.tab-btn[data-view="setup"]');
-    await page.waitForSelector('#drivesList .drive-row', { timeout: 9000 });
-    await click('#drivesList .drive-row');
-    await page.waitForSelector('#nameSection:not(.hidden)', { timeout: 9000 });
-    await scrollIntoView('#nameSection');
+    await page.waitForSelector('#view-setup:not(.hidden) .setup-target-card[data-kind="stock"]', { timeout: 9000 });
+    await click('.setup-target-card[data-kind="stock"]');
+    await page.waitForSelector('#setupPrimaryAction .setup-hero[data-kind="stock"]', { timeout: 9000 });
+    if (view === 'app-install') {
+      await scrollY(0);
+    } else {
+      await page.evaluate(() => { const d = document.getElementById('setupStickDetails'); if (d) d.open = true; });
+      await page.waitForSelector('#drivesList .drive-row', { state: 'visible', timeout: 9000 });
+      if (view === 'app-stick-step1') {
+        await scrollIntoView('#setupStickDetails');
+      } else {
+        await click('#drivesList .drive-row');
+        await page.waitForSelector('#nameSection:not(.hidden)', { timeout: 9000 });
+        await scrollIntoView('#nameSection');
+      }
+    }
   }
   await page.waitForTimeout(450); // let transitions / art settle
 }
@@ -336,7 +393,7 @@ try {
   let ok = 0, fail = 0;
   for (const lang of LANGS) {
     await mkdir(path.join(OUT, lang), { recursive: true });
-    const ctx = await browser.newContext({ viewport: { width: 1100, height: 780 }, deviceScaleFactor: 2 });
+    const ctx = await browser.newContext({ viewport: { width: 1100, height: 780 }, deviceScaleFactor: 2, timezoneId: 'Europe/Berlin' });
     for (const view of VIEWS) {
       const page = await ctx.newPage();
       page.on('pageerror', (e) => console.warn(`  [${lang}/${view}] pageerror:`, e.message));
