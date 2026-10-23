@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // ---- Multi-account credential swap (#27) ----
@@ -419,11 +421,11 @@ func (m *Manager) captureLoop(ctx context.Context) {
 			}
 		}
 		if err := m.captureCredential(user); err != nil {
-			m.logger.Debug("spotify: capture credential failed", "user", user, "err", err)
+			m.logger.Debug("spotify: capture credential failed", "user", anonymise.MaskAccount(user), "err", err)
 			continue
 		}
 		last = user
-		m.logger.Info("spotify: captured account credential", "user", user)
+		m.logger.Info("spotify: captured account credential", "user", anonymise.MaskAccount(user))
 	}
 }
 
@@ -449,12 +451,12 @@ func (m *Manager) switchAccountFrom(ctx context.Context, cur, username string) (
 	}
 	data, err := os.ReadFile(filepath.Join(m.credStore, sanitizeUser(username)+".json"))
 	if err != nil {
-		m.logger.Info("spotify: no stored credential for account, playing with current", "want", username)
+		m.logger.Info("spotify: no stored credential for account, playing with current", "want", anonymise.MaskAccount(username))
 		return false, nil
 	}
 	var cred storedCredential
 	if err := json.Unmarshal(data, &cred); err != nil || len(cred.Data) == 0 {
-		m.logger.Info("spotify: stored credential unreadable, playing with current", "want", username, "err", err)
+		m.logger.Info("spotify: stored credential unreadable, playing with current", "want", anonymise.MaskAccount(username), "err", err)
 		return false, nil
 	}
 	if cred.Username == "" {
@@ -480,7 +482,7 @@ func (m *Manager) switchAccountFrom(ctx context.Context, cur, username string) (
 		}
 		cur := m.currentUsername(ctx)
 		if cur == username {
-			m.logger.Info("spotify: switched account", "user", username, "tookMs", time.Since(start).Milliseconds())
+			m.logger.Info("spotify: switched account", "user", anonymise.MaskAccount(username), "tookMs", time.Since(start).Milliseconds())
 			return true, nil
 		}
 		// If go-librespot re-authed as a DIFFERENT account after the restart,
@@ -488,12 +490,16 @@ func (m *Manager) switchAccountFrom(ctx context.Context, cur, username string) (
 		// swap. Give up fast; the recall then plays with the active account
 		// (public playlists still play). Spotify allows only one live session.
 		if cur != "" && cur != username && time.Since(start) > 4*time.Second {
-			m.logger.Warn("spotify: account switch overridden by a connected app", "want", username, "got", cur)
-			return true, fmt.Errorf("account switch to %q overridden by connected app %q", username, cur)
+			m.logger.Warn("spotify: account switch overridden by a connected app", "want", anonymise.MaskAccount(username), "got", anonymise.MaskAccount(cur))
+			return true, fmt.Errorf("account switch to %s overridden by connected app %s", anonymise.MaskAccount(username), anonymise.MaskAccount(cur))
 		}
 	}
-	m.logger.Warn("spotify: account switch timed out", "want", username)
-	return true, fmt.Errorf("account switch to %q timed out", username)
+	// Masked at the source, not only in the bundle scrubber: this line and
+	// the error it returns reached a public issue with a raw user name on
+	// 2026-10-23, because the scrubber knows the user= and account= keys but
+	// not want=. A hashed account id reads the same for support.
+	m.logger.Warn("spotify: account switch timed out", "want", anonymise.MaskAccount(username))
+	return true, fmt.Errorf("account switch to %s timed out", anonymise.MaskAccount(username))
 }
 
 // ExportCredential returns the active go-librespot credential (credentials.json)
