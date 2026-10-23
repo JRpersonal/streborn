@@ -92,6 +92,11 @@ var (
 	alarmAuxKeyWindow = 2 * time.Second
 	// alarmAuxKeyPoll is how often that window is checked for the frame.
 	alarmAuxKeyPoll = 50 * time.Millisecond
+	// alarmAuxLeaveWindow is how long an AUX snooze watches for the speaker
+	// landing on Bluetooth (the source change can trail the key trace).
+	alarmAuxLeaveWindow = 4 * time.Second
+	// alarmAuxLeavePoll is how often the live source is read in that window.
+	alarmAuxLeavePoll = 250 * time.Millisecond
 	// alarmAuxRepeat: a second AUX signal this soon after an AUX snooze (the
 	// key trace and the source change of one press) is the same press.
 	alarmAuxRepeat = 4 * time.Second
@@ -147,6 +152,11 @@ type alarmRing struct {
 	// gen is the recall generation the alarm's own play (or the snooze) left
 	// behind; a different one means somebody played something else.
 	gen uint64
+	// url is the station the alarm's own play recorded. A later generation
+	// for the same station is the speaker reporting that very play back (a
+	// native preset's start arrives once more as a key event, sometimes after
+	// the recall returned), not somebody playing something else.
+	url string
 	// sleepGen is the sleep-timer generation of the switch-off this ring
 	// armed, 0 when none.
 	sleepGen uint64
@@ -173,6 +183,8 @@ type ringFacts struct {
 	since        time.Time
 	ringGen      uint64
 	curGen       uint64
+	ringURL      string
+	curURL       string
 	explicitStop time.Time
 	standbyStop  time.Time
 	// standbySince, when later than since, is where standby stamps start to
@@ -192,7 +204,7 @@ func ringEndReason(f ringFacts) string {
 		standbyRef = f.standbySince
 	}
 	switch {
-	case f.curGen != f.ringGen:
+	case f.curGen != f.ringGen && (f.ringURL == "" || f.curURL != f.ringURL):
 		return "something else was played since"
 	case !f.standbyStop.IsZero() && f.standbyStop.After(standbyRef):
 		return "the speaker was switched off"
@@ -224,9 +236,12 @@ func ringMaxFor(a alarm.Alarm) time.Duration {
 }
 
 // stopStamps reads the server-wide signals the end conditions are made of.
-func (s *Server) stopStamps() (curGen uint64, explicit, standby time.Time) {
+func (s *Server) stopStamps() (curGen uint64, curURL string, explicit, standby time.Time) {
 	s.lastPlayMu.Lock()
 	curGen = s.recallGen
+	if s.lastPlay != nil {
+		curURL = s.lastPlay.boxURL
+	}
 	s.lastPlayMu.Unlock()
 	s.lastExplicitStopMu.Lock()
 	explicit = s.lastExplicitStop
@@ -234,7 +249,7 @@ func (s *Server) stopStamps() (curGen uint64, explicit, standby time.Time) {
 	s.standbyStopMu.Lock()
 	standby = s.lastStandbyStop
 	s.standbyStopMu.Unlock()
-	return curGen, explicit, standby
+	return curGen, curURL, explicit, standby
 }
 
 // ringStart records a (re)fire of a, starting now. A snooze still pending
@@ -253,7 +268,7 @@ func (s *Server) ringStart(a alarm.Alarm, due, started time.Time) uint64 {
 	}
 	s.ring.active, s.ring.armed = true, false
 	s.ring.alarm, s.ring.due, s.ring.since = a, due, started
-	s.ring.gen, s.ring.sleepGen = 0, 0
+	s.ring.gen, s.ring.sleepGen, s.ring.url = 0, 0, ""
 	s.ring.snoozeUntil, s.ring.snoozedViaAux, s.ring.standbyAfter = time.Time{}, false, time.Time{}
 	s.ring.seq++
 	seq := s.ring.seq
@@ -266,11 +281,13 @@ func (s *Server) ringStart(a alarm.Alarm, due, started time.Time) uint64 {
 
 // ringArmed marks the (re)fire seq as ringing: its recall returned with gen.
 func (s *Server) ringArmed(seq, gen uint64) {
+	_, url, _, _ := s.stopStamps()
 	s.ring.mu.Lock()
 	defer s.ring.mu.Unlock()
 	if s.ring.active && s.ring.seq == seq {
 		s.ring.armed = true
 		s.ring.gen = gen
+		s.ring.url = url
 	}
 }
 
@@ -429,7 +446,7 @@ func absDur(d time.Duration) time.Duration {
 func (s *Server) snoozePress(key, prevSource string) {
 	now := time.Now()
 	viaAux := key == keyactions.KeyAux
-	curGen, explicit, standby := s.stopStamps()
+	curGen, curURL, explicit, standby := s.stopStamps()
 
 	s.ring.mu.Lock()
 	if !s.ring.lastPress.IsZero() && now.Sub(s.ring.lastPress) < snoozeMinGap {
@@ -469,6 +486,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 	a, seq := s.ring.alarm, s.ring.seq
 	facts := ringFacts{
 		since: s.ring.since, ringGen: s.ring.gen, curGen: curGen,
+		ringURL: s.ring.url, curURL: curURL,
 		explicitStop: explicit, standbyStop: standby,
 		maxRing: ringMaxFor(a), now: now,
 	}
@@ -530,17 +548,67 @@ func (s *Server) snoozePress(key, prevSource string) {
 
 // silenceForSnooze stops the alarm's playback, marked as the user's stop so
 // no recovery path pushes it back. The speaker stays on. After AUX the
-// firmware already left the stream, so only the bookkeeping runs.
+// firmware already left the stream, so only the bookkeeping runs, plus the
+// step off Bluetooth when the empty AUX input sent the speaker there.
 func (s *Server) silenceForSnooze(viaAux bool) {
 	s.NoteUserStop()
 	s.tellSpotifyUserStopped("snooze")
 	s.stopQueueIfActive("the alarm was snoozed")
 	if viaAux {
+		s.alarmBackground.Add(1)
+		go func() {
+			defer s.alarmBackground.Done()
+			s.leaveBluetoothForAux()
+		}()
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	alarmSilence(s, ctx)
+}
+
+// leaveBluetoothForAux moves a speaker that the AUX snooze left on Bluetooth
+// over to AUX. With nothing plugged into AUX the firmware skips the empty
+// input and lands on BLUETOOTH, which keeps the speaker open for pairing for
+// the whole snooze: anybody nearby could connect a phone. AUX with nothing
+// plugged in is just as silent and accepts no connection. The source change
+// can arrive a moment after the key, so the live source is watched for a
+// short while; the step runs only while this alarm is still snoozed.
+func (s *Server) leaveBluetoothForAux() {
+	deadline := time.Now().Add(alarmAuxLeaveWindow)
+	for {
+		s.ring.mu.Lock()
+		snoozed := s.ring.active && !s.ring.snoozeUntil.IsZero() && s.ring.snoozedViaAux
+		s.ring.mu.Unlock()
+		if !snoozed {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), alarmLiveTimeout)
+		src, playing := alarmLiveState(s, ctx)
+		cancel()
+		switch {
+		case src == "AUX":
+			return
+		case src == "BLUETOOTH" && playing:
+			// A phone already streams: that is the user's music, not the
+			// empty input the AUX key skipped to.
+			return
+		case src == "BLUETOOTH":
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := s.postSelect(ctx, `<ContentItem source="AUX" sourceAccount="AUX"></ContentItem>`)
+			cancel()
+			if err != nil {
+				s.logger.Warn("snooze: could not move the speaker from Bluetooth to AUX, it stays open for pairing until the alarm rings again", "err", err)
+				return
+			}
+			s.logger.Info("snooze: moved the speaker from Bluetooth to AUX, so no phone can pair during the snooze")
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(alarmAuxLeavePoll)
+	}
 }
 
 // silenceTransport is the Stop button's transport half: the box's own player
@@ -560,7 +628,7 @@ func (s *Server) silenceTransport(ctx context.Context) {
 // snoozeOver is the snooze deadline: check once that nothing ended the alarm
 // meanwhile, then ring again through the normal fire path.
 func (s *Server) snoozeOver(seq uint64) {
-	curGen, explicit, standby := s.stopStamps()
+	curGen, curURL, explicit, standby := s.stopStamps()
 	s.ring.mu.Lock()
 	if !s.ring.active || s.ring.seq != seq {
 		s.ring.mu.Unlock()
@@ -570,6 +638,7 @@ func (s *Server) snoozeOver(seq uint64) {
 	a, due, viaAux := s.ring.alarm, s.ring.due, s.ring.snoozedViaAux
 	facts := ringFacts{
 		since: s.ring.since, ringGen: s.ring.gen, curGen: curGen,
+		ringURL: s.ring.url, curURL: curURL,
 		explicitStop: explicit, standbyStop: standby, standbySince: s.ring.standbyAfter,
 		now: time.Now(),
 	}

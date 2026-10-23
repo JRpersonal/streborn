@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,6 +25,14 @@ type snoozeProbe struct {
 	lastWake string
 	// keyAt is the last key frame the speaker reported (alarmKeyActivity).
 	keyAt time.Time
+	// selects are the ContentItems handed to the speaker's /select.
+	selects []string
+}
+
+func (p *snoozeProbe) selected() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.selects...)
 }
 
 func (p *snoozeProbe) keyFrame(at time.Time) {
@@ -49,11 +58,24 @@ func newSnoozeHarness(t *testing.T, doc alarm.Document) (*alarmHarness, *snoozeP
 	prevLive, prevSilence, prevNotice := alarmLiveState, alarmSilence, showSnoozeNotice
 	prevUnit, prevGap, prevSettle := alarmSnoozeUnit, snoozeMinGap, alarmSnoozeSettle
 	prevKey, prevWin := alarmKeyActivity, alarmAuxKeyWindow
+	prevLeave, prevLeavePoll := alarmAuxLeaveWindow, alarmAuxLeavePoll
 	t.Cleanup(func() {
 		alarmLiveState, alarmSilence, showSnoozeNotice = prevLive, prevSilence, prevNotice
 		alarmSnoozeUnit, snoozeMinGap, alarmSnoozeSettle = prevUnit, prevGap, prevSettle
 		alarmKeyActivity, alarmAuxKeyWindow = prevKey, prevWin
+		alarmAuxLeaveWindow, alarmAuxLeavePoll = prevLeave, prevLeavePoll
 	})
+	alarmAuxLeaveWindow, alarmAuxLeavePoll = 150*time.Millisecond, 10*time.Millisecond
+	// The speaker's /select: AUX takes the speaker to AUX.
+	h.s.selectFn = func(_ context.Context, body string) error {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.selects = append(p.selects, body)
+		if strings.Contains(body, `source="AUX"`) {
+			p.source = "AUX"
+		}
+		return nil
+	}
 	alarmKeyActivity = func(*Server) time.Time {
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -122,6 +144,10 @@ func TestRingEndReason(t *testing.T) {
 	}{
 		{"nothing happened", func(*ringFacts) {}, true},
 		{"another play", func(f *ringFacts) { f.curGen = 5 }, false},
+		{"another station", func(f *ringFacts) { f.curGen = 5; f.ringURL = "a"; f.curURL = "b" }, false},
+		// The speaker reports the alarm's own native station start once more,
+		// after the recall returned (SoundTouch 10, 2026-10-23).
+		{"the alarm's own station reported back", func(f *ringFacts) { f.curGen = 5; f.ringURL = "a"; f.curURL = "a" }, true},
 		{"power key after the fire", func(f *ringFacts) { f.standbyStop = since.Add(time.Second) }, false},
 		{"power-off before the fire", func(f *ringFacts) { f.standbyStop = since.Add(-time.Minute) }, true},
 		{"stop in the app after the fire", func(f *ringFacts) { f.explicitStop = since.Add(time.Second) }, false},
@@ -371,6 +397,51 @@ func TestAuxLandingOnBluetoothWithAKeyFrameSnoozes(t *testing.T) {
 	}
 	if !waitFor(func() bool { return h.firedCount() == 2 }) {
 		t.Fatal("the alarm did not come back from Bluetooth after the snooze")
+	}
+}
+
+// Left on Bluetooth for the whole snooze, the speaker would stay open for
+// pairing and anybody nearby could connect a phone. The snooze moves it on to
+// AUX, which is just as silent.
+func TestAuxSnoozeOnBluetoothMovesToAux(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	alarmSnoozeUnit = time.Minute // keep the re-fire out of this test
+	h.ring(t)
+	p.live("BLUETOOTH", false)
+	p.keyFrame(time.Now())
+	h.s.AlarmSourceChanged("LOCAL_INTERNET_RADIO", "BLUETOOTH")
+	if !waitFor(h.snoozed) {
+		t.Fatal("no snooze")
+	}
+	if !waitFor(func() bool { return len(p.selected()) == 1 }) {
+		t.Fatalf("the snooze left the speaker on Bluetooth: selects=%q", p.selected())
+	}
+	if got := p.selected()[0]; !strings.Contains(got, `source="AUX"`) {
+		t.Errorf("select after the snooze = %q, want AUX", got)
+	}
+	h.s.AlarmSourceChanged("BLUETOOTH", "AUX") // the firmware follows the select
+	time.Sleep(100 * time.Millisecond)
+	if v := h.s.ringView(); v == nil || v.Snoozes != 1 || v.SnoozedUntil == "" {
+		t.Errorf("the step to AUX counted as another press: %+v", v)
+	}
+}
+
+// A speaker that snoozed straight onto AUX (something plugged in, or a
+// firmware that does not skip the empty input) is left alone.
+func TestAuxSnoozeOnAuxSelectsNothing(t *testing.T) {
+	h, p := newSnoozeHarness(t, weekdayDoc())
+	withAuxSnooze(t, h.s)
+	alarmSnoozeUnit = time.Minute
+	h.ring(t)
+	p.live("AUX", true)
+	h.s.AlarmSourceChanged("UPNP", "AUX")
+	if !waitFor(h.snoozed) {
+		t.Fatal("no snooze")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := p.selected(); len(got) != 0 {
+		t.Errorf("a speaker already on AUX got a select: %q", got)
 	}
 }
 
