@@ -50,22 +50,22 @@ func (p *snoozeProbe) live(src string, playing bool) {
 // newSnoozeHarness is the alarm harness with the snooze seams replaced and a
 // snooze minute shrunk to a few milliseconds, so a 9-minute snooze runs out
 // in about 45 ms. The speaker reads as on UPNP and stopped unless a test says
-// otherwise.
+// otherwise. The seams and the clock live on the test's own server, so no
+// package-level knob is written and nothing has to be restored.
 func newSnoozeHarness(t *testing.T, doc alarm.Document) (*alarmHarness, *snoozeProbe) {
 	t.Helper()
 	h := newAlarmHarness(t, doc)
 	p := &snoozeProbe{source: "UPNP"}
-	prevLive, prevSilence, prevNotice := alarmLiveState, alarmSilence, showSnoozeNotice
-	prevUnit, prevGap, prevSettle := alarmSnoozeUnit, snoozeMinGap, alarmSnoozeSettle
-	prevKey, prevWin := alarmKeyActivity, alarmAuxKeyWindow
-	prevLeave, prevLeavePoll := alarmAuxLeaveWindow, alarmAuxLeavePoll
-	t.Cleanup(func() {
-		alarmLiveState, alarmSilence, showSnoozeNotice = prevLive, prevSilence, prevNotice
-		alarmSnoozeUnit, snoozeMinGap, alarmSnoozeSettle = prevUnit, prevGap, prevSettle
-		alarmKeyActivity, alarmAuxKeyWindow = prevKey, prevWin
-		alarmAuxLeaveWindow, alarmAuxLeavePoll = prevLeave, prevLeavePoll
-	})
-	alarmAuxLeaveWindow, alarmAuxLeavePoll = 150*time.Millisecond, 10*time.Millisecond
+	times := productionSnoozeTiming
+	times.unit = 5 * time.Millisecond
+	times.minGap = 0
+	// No settle window unless a test is about it: a STANDBY right after the
+	// snooze then reads as the power key.
+	times.settle = 0
+	// Short, so a "no key frame" case gives up quickly.
+	times.auxKeyWindow = 150 * time.Millisecond
+	times.auxLeaveWindow, times.auxLeavePoll = 150*time.Millisecond, 10*time.Millisecond
+	h.s.snoozeTiming = &times
 	// The speaker's /select: AUX takes the speaker to AUX.
 	h.s.selectFn = func(_ context.Context, body string) error {
 		p.mu.Lock()
@@ -76,33 +76,25 @@ func newSnoozeHarness(t *testing.T, doc alarm.Document) (*alarmHarness, *snoozeP
 		}
 		return nil
 	}
-	alarmKeyActivity = func(*Server) time.Time {
+	h.s.alarmKeyActivityFn = func() time.Time {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		return p.keyAt
 	}
-	// Short, so a "no key frame" case gives up quickly.
-	alarmAuxKeyWindow = 150 * time.Millisecond
-	// Runs before the seams are restored (cleanups run last-in first-out):
-	// no snooze deadline may outlive the test.
+	// No snooze deadline may outlive the test.
 	t.Cleanup(func() { h.s.endRing(0, "test over") })
-	alarmLiveState = func(*Server, context.Context) (string, bool) {
+	h.s.alarmLiveStateFn = func(context.Context) (string, bool) {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		return p.source, p.playing
 	}
-	alarmSilence = func(*Server, context.Context) { p.silenced.Add(1) }
-	showSnoozeNotice = func(until string) {
+	h.s.alarmSilenceFn = func(context.Context) { p.silenced.Add(1) }
+	h.s.showSnoozeNoticeFn = func(until string) {
 		p.mu.Lock()
 		p.lastWake = until
 		p.mu.Unlock()
 		p.notices.Add(1)
 	}
-	alarmSnoozeUnit = 5 * time.Millisecond
-	snoozeMinGap = 0
-	// No settle window unless a test is about it: a STANDBY right after the
-	// snooze then reads as the power key.
-	alarmSnoozeSettle = 0
 	return h, p
 }
 
@@ -206,7 +198,7 @@ func TestSnoozeUsesTheAlarmsLength(t *testing.T) {
 	doc := weekdayDoc()
 	doc.Alarms[0].Snooze = 15
 	h, _ := newSnoozeHarness(t, doc)
-	alarmSnoozeUnit = time.Minute // only the deadline is read, nothing runs out
+	h.s.snoozeTiming.unit = time.Minute // only the deadline is read, nothing runs out
 	h.ring(t)
 	before := time.Now()
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
@@ -293,7 +285,7 @@ func TestSnoozeCancelledByThePowerKey(t *testing.T) {
 // snooze stays, and the alarm wakes the speaker at the end of it.
 func TestSnoozeSurvivesItsOwnStopDroppingToStandby(t *testing.T) {
 	h, p := newSnoozeHarness(t, weekdayDoc())
-	alarmSnoozeSettle = time.Minute
+	h.s.snoozeTiming.settle = time.Minute
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
 	p.live("STANDBY", false)
@@ -406,7 +398,7 @@ func TestAuxLandingOnBluetoothWithAKeyFrameSnoozes(t *testing.T) {
 func TestAuxSnoozeOnBluetoothMovesToAux(t *testing.T) {
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
-	alarmSnoozeUnit = time.Minute // keep the re-fire out of this test
+	h.s.snoozeTiming.unit = time.Minute // keep the re-fire out of this test
 	h.ring(t)
 	p.live("BLUETOOTH", false)
 	p.keyFrame(time.Now())
@@ -432,7 +424,7 @@ func TestAuxSnoozeOnBluetoothMovesToAux(t *testing.T) {
 func TestAuxSnoozeOnAuxSelectsNothing(t *testing.T) {
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
-	alarmSnoozeUnit = time.Minute
+	h.s.snoozeTiming.unit = time.Minute
 	h.ring(t)
 	p.live("AUX", true)
 	h.s.AlarmSourceChanged("UPNP", "AUX")
@@ -519,7 +511,7 @@ func TestBluetoothSnoozeStandsDownWhenAPhoneStreams(t *testing.T) {
 func TestAuxKeyTraceAndSourceChangeAreOnePress(t *testing.T) {
 	h, p := newSnoozeHarness(t, weekdayDoc())
 	withAuxSnooze(t, h.s)
-	alarmSnoozeUnit = time.Minute // keep the re-fire out of this test
+	h.s.snoozeTiming.unit = time.Minute // keep the re-fire out of this test
 	h.ring(t)
 	h.s.AlarmAuxKeyPress()
 	if !h.snoozed() {
@@ -572,7 +564,7 @@ func TestSnoozeKeepsTheUsersOwnSleepTimer(t *testing.T) {
 		t.Fatal("the alarm armed no switch-off")
 	}
 	h.s.armSleep(50*time.Minute, false) // set on the phone's sleep card
-	alarmSnoozeUnit = time.Minute       // keep the re-fire out of this test
+	h.s.snoozeTiming.unit = time.Minute // keep the re-fire out of this test
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
 	if h.s.sleepStatus()["active"] != true {
 		t.Error("the snooze cancelled a sleep timer the user set")
@@ -586,7 +578,7 @@ func TestSnoozeStandsTheFiresRetryDown(t *testing.T) {
 	h, _ := newSnoozeHarness(t, weekdayDoc())
 	alarmPlayingCheck = func(*Server, int, time.Time) bool { return false } // would retry
 	alarmVerifyDelay = 150 * time.Millisecond
-	alarmSnoozeUnit = time.Minute // keep the snooze's own re-fire out of this test
+	h.s.snoozeTiming.unit = time.Minute // keep the snooze's own re-fire out of this test
 	h.ring(t)
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
 	time.Sleep(400 * time.Millisecond)
@@ -609,7 +601,7 @@ func TestAlarmStatusShowsTheRing(t *testing.T) {
 	if r := h.s.alarmView().Status.Ring; r == nil || !r.Ringing || r.SnoozedUntil != "" {
 		t.Errorf("ringing alarm reported as %+v", r)
 	}
-	alarmSnoozeUnit = time.Minute
+	h.s.snoozeTiming.unit = time.Minute
 	h.s.AlarmSnoozePress(keyactions.KeyThumbsUp)
 	if r := h.s.alarmView().Status.Ring; r == nil || r.Ringing || r.SnoozedUntil == "" {
 		t.Errorf("snoozed alarm reported as %+v", r)

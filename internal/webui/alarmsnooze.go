@@ -29,7 +29,7 @@ package webui
 // each of them cancels the pending snooze, with one allowance: a drop to
 // standby in the first seconds after the snooze's own stop is that stop
 // settling on firmware that powers STR's source off when its transport stops
-// (alarmSnoozeSettle), not the power key, and the re-fire wakes the speaker. A press while ringing stops
+// (snoozeTiming.settle), not the power key, and the re-fire wakes the speaker. A press while ringing stops
 // playback (the speaker stays on and silent), shows SNOOZE and the wake time
 // on a speaker with STR's panel, and arms ONE deadline: no polling loop, no
 // standing timer. When it runs out, the deadline re-checks the end conditions
@@ -44,7 +44,7 @@ package webui
 // With nothing plugged into AUX, the firmware skips the empty input and lands
 // on BLUETOOTH instead (SoundTouch 10, 27.0.6). A switch to BLUETOOTH
 // therefore counts as the AUX press too, but only with a key frame within
-// alarmAuxKeyWindow of it: a phone connecting by itself brings none. Where the
+// snoozeTiming.auxKeyWindow of it: a phone connecting by itself brings none. Where the
 // key trace names AUX_INPUT, that counts as well (AlarmAuxKeyPress).
 //
 // The alarm's switch-off counts from the latest (re)fire: a snooze cancels
@@ -67,74 +67,121 @@ import (
 	"github.com/JRpersonal/streborn/internal/oled"
 )
 
-var (
-	// alarmSnoozeUnit is one snooze minute. A var so the tests can shrink it.
-	alarmSnoozeUnit = time.Minute
+const (
 	// alarmRingMax is how long an alarm without a switch-off counts as
 	// ringing. Past that, the snooze key no longer reaches back to it: an
 	// alarm somebody has been listening to all morning is just music.
 	alarmRingMax = 2 * time.Hour
-	// snoozeMinGap drops a repeat of the same press (the key trace already
-	// folds one press into one event; this only guards a stray repeat).
-	snoozeMinGap = time.Second
 	// alarmLiveTimeout bounds the one now_playing read a press or a re-fire
 	// makes.
 	alarmLiveTimeout = 5 * time.Second
-	// alarmSnoozeSettle is how long after a snooze's own stop a drop to
-	// STANDBY is put down to that stop rather than to the power key. Some
-	// firmware drops STR's UPnP source to STANDBY when its transport stops
-	// (the resume_standby.go discriminator exists for exactly that), and a
-	// snooze cancelled by its own stop would never ring again.
-	alarmSnoozeSettle = 10 * time.Second
-	// alarmAuxKeyWindow is how close a key frame has to be to a switch to
-	// BLUETOOTH for the switch to count as the AUX key (either side: the
-	// frame may arrive before or after the source change).
-	alarmAuxKeyWindow = 2 * time.Second
-	// alarmAuxKeyPoll is how often that window is checked for the frame.
+	// alarmAuxKeyPoll is how often the AUX key window is checked for the
+	// key frame.
 	alarmAuxKeyPoll = 50 * time.Millisecond
-	// alarmAuxLeaveWindow is how long an AUX snooze watches for the speaker
-	// landing on Bluetooth (the source change can trail the key trace).
-	alarmAuxLeaveWindow = 4 * time.Second
-	// alarmAuxLeavePoll is how often the live source is read in that window.
-	alarmAuxLeavePoll = 250 * time.Millisecond
 	// alarmAuxRepeat: a second AUX signal this soon after an AUX snooze (the
 	// key trace and the source change of one press) is the same press.
 	alarmAuxRepeat = 4 * time.Second
 )
 
-// Seams for the tests, in the sleep timer's style: the real implementations
-// reach the firmware on fixed ports.
-var (
-	// alarmLiveState reads what the speaker is on right now.
-	alarmLiveState = func(s *Server, ctx context.Context) (source string, playing bool) {
-		if s.boxHost == "" {
-			return "", false
-		}
-		np := s.readBoxSnapshot(ctx)
-		return np.Source, np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE"
+// snoozeTiming is the snooze clock: the durations a test shrinks so a
+// nine-minute snooze runs out in milliseconds. Production reads
+// productionSnoozeTiming; a test installs its own copy on the server
+// (Server.snoozeTiming), so no test ever writes a package-level knob that a
+// snooze goroutine of another test still reads.
+type snoozeTiming struct {
+	// unit is one snooze minute.
+	unit time.Duration
+	// minGap drops a repeat of the same press (the key trace already
+	// folds one press into one event; this only guards a stray repeat).
+	minGap time.Duration
+	// settle is how long after a snooze's own stop a drop to STANDBY is put
+	// down to that stop rather than to the power key. Some firmware drops
+	// STR's UPnP source to STANDBY when its transport stops (the
+	// resume_standby.go discriminator exists for exactly that), and a
+	// snooze cancelled by its own stop would never ring again.
+	settle time.Duration
+	// auxKeyWindow is how close a key frame has to be to a switch to
+	// BLUETOOTH for the switch to count as the AUX key (either side: the
+	// frame may arrive before or after the source change).
+	auxKeyWindow time.Duration
+	// auxLeaveWindow is how long an AUX snooze watches for the speaker
+	// landing on Bluetooth (the source change can trail the key trace).
+	auxLeaveWindow time.Duration
+	// auxLeavePoll is how often the live source is read in that window.
+	auxLeavePoll time.Duration
+}
+
+// productionSnoozeTiming is the snooze clock on a real speaker.
+var productionSnoozeTiming = snoozeTiming{
+	unit:           time.Minute,
+	minGap:         time.Second,
+	settle:         10 * time.Second,
+	auxKeyWindow:   2 * time.Second,
+	auxLeaveWindow: 4 * time.Second,
+	auxLeavePoll:   250 * time.Millisecond,
+}
+
+// snoozeTimes is the snooze clock: the production values unless a test
+// installed a faster one.
+func (s *Server) snoozeTimes() *snoozeTiming {
+	if s.snoozeTiming != nil {
+		return s.snoozeTiming
 	}
-	// alarmSilence stops the alarm's playback for a snooze.
-	alarmSilence = func(s *Server, ctx context.Context) { s.silenceTransport(ctx) }
-	// alarmKeyActivity is when the speaker last reported a key press (the bare
-	// userActivityUpdate frame or the key trace, whichever is newer).
-	alarmKeyActivity = func(s *Server) time.Time {
-		if s.userActivityFn == nil {
-			return time.Time{}
-		}
-		return s.userActivityFn()
+	return &productionSnoozeTiming
+}
+
+// Seams for the tests, in the package's style (selectFn, userActivityFn): a
+// nil Server field means the real implementation, which reaches the firmware
+// on fixed ports.
+
+// alarmLiveState reads what the speaker is on right now.
+func (s *Server) alarmLiveState(ctx context.Context) (source string, playing bool) {
+	if s.alarmLiveStateFn != nil {
+		return s.alarmLiveStateFn(ctx)
 	}
-	// showSnoozeNotice puts SNOOZE and the wake time on this speaker's panel.
-	// It shows even with the notices switched off, like the sleep key: it is
-	// the only answer to a key the user just pressed.
-	showSnoozeNotice = func(until string) {
-		if !oled.Supported() {
-			return
-		}
-		n := oled.Snooze(until)
-		n.Bypass = true
-		oled.Show(n)
+	if s.boxHost == "" {
+		return "", false
 	}
-)
+	np := s.readBoxSnapshot(ctx)
+	return np.Source, np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE"
+}
+
+// alarmSilence stops the alarm's playback for a snooze.
+func (s *Server) alarmSilence(ctx context.Context) {
+	if s.alarmSilenceFn != nil {
+		s.alarmSilenceFn(ctx)
+		return
+	}
+	s.silenceTransport(ctx)
+}
+
+// alarmKeyActivity is when the speaker last reported a key press (the bare
+// userActivityUpdate frame or the key trace, whichever is newer).
+func (s *Server) alarmKeyActivity() time.Time {
+	if s.alarmKeyActivityFn != nil {
+		return s.alarmKeyActivityFn()
+	}
+	if s.userActivityFn == nil {
+		return time.Time{}
+	}
+	return s.userActivityFn()
+}
+
+// showSnoozeNotice puts SNOOZE and the wake time on this speaker's panel.
+// It shows even with the notices switched off, like the sleep key: it is
+// the only answer to a key the user just pressed.
+func (s *Server) showSnoozeNotice(until string) {
+	if s.showSnoozeNoticeFn != nil {
+		s.showSnoozeNoticeFn(until)
+		return
+	}
+	if !oled.Supported() {
+		return
+	}
+	n := oled.Snooze(until)
+	n.Bypass = true
+	oled.Show(n)
+}
 
 // alarmRing is the alarm that is ringing (or snoozed) on this speaker.
 type alarmRing struct {
@@ -167,7 +214,7 @@ type alarmRing struct {
 	// deadline is the snooze itself, not another input.
 	snoozedViaAux bool
 	// standbyAfter: a drop to standby before this instant is the snooze's own
-	// stop settling, not the power key (alarmSnoozeSettle). Zero outside a
+	// stop settling, not the power key (snoozeTiming.settle). Zero outside a
 	// snooze.
 	standbyAfter time.Time
 	timer        *time.Timer
@@ -188,7 +235,7 @@ type ringFacts struct {
 	explicitStop time.Time
 	standbyStop  time.Time
 	// standbySince, when later than since, is where standby stamps start to
-	// count (a snooze's own stop settling, see alarmSnoozeSettle).
+	// count (a snooze's own stop settling, see snoozeTiming.settle).
 	standbySince time.Time
 	// maxRing bounds how long the alarm counts as ringing; 0 skips the check
 	// (a snooze deadline, which the user asked for).
@@ -397,10 +444,10 @@ func (s *Server) AlarmAuxKeyPress() {
 // into AUX, the AUX key skips the empty input and lands on BLUETOOTH, and the
 // only sign of a key is the bare userActivityUpdate frame, 21 ms after the
 // source change. So a switch to Bluetooth counts as the AUX press only with a
-// key frame within alarmAuxKeyWindow either side of it; a phone that connects
+// key frame within snoozeTiming.auxKeyWindow either side of it; a phone that connects
 // by itself brings no key frame and never snoozes anything.
 //
-// The wait (at most alarmAuxKeyWindow, a few cheap reads) runs only while an
+// The wait (at most snoozeTiming.auxKeyWindow, a few cheap reads) runs only while an
 // alarm rings, so a speaker without a ringing alarm pays nothing.
 func (s *Server) bluetoothSnoozeCandidate(from string, at time.Time) {
 	s.ring.mu.Lock()
@@ -410,9 +457,10 @@ func (s *Server) bluetoothSnoozeCandidate(from string, at time.Time) {
 		s.logger.Debug("snooze: switch to Bluetooth with no alarm ringing, nothing to do", "from", from)
 		return
 	}
-	deadline := at.Add(alarmAuxKeyWindow)
+	window := s.snoozeTimes().auxKeyWindow
+	deadline := at.Add(window)
 	for {
-		if k := alarmKeyActivity(s); !k.IsZero() && absDur(k.Sub(at)) <= alarmAuxKeyWindow {
+		if k := s.alarmKeyActivity(); !k.IsZero() && absDur(k.Sub(at)) <= window {
 			s.logger.Info("snooze: switch to Bluetooth came with a key press, taking it as the AUX key (nothing plugged into AUX)",
 				"from", from, "keyOffsetMs", k.Sub(at).Milliseconds())
 			s.snoozePress(keyactions.KeyAux, from)
@@ -439,10 +487,11 @@ func absDur(d time.Duration) time.Duration {
 func (s *Server) snoozePress(key, prevSource string) {
 	now := time.Now()
 	viaAux := key == keyactions.KeyAux
+	times := s.snoozeTimes()
 	curGen, curURL, explicit, standby := s.stopStamps()
 
 	s.ring.mu.Lock()
-	if !s.ring.lastPress.IsZero() && now.Sub(s.ring.lastPress) < snoozeMinGap {
+	if !s.ring.lastPress.IsZero() && now.Sub(s.ring.lastPress) < times.minGap {
 		s.ring.mu.Unlock()
 		s.logger.Debug("snooze key: press ignored, same press reported twice", "key", key)
 		return
@@ -467,7 +516,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 		}
 		wake := s.alarmClockText(until)
 		s.logger.Info("snooze key pressed, the alarm is already snoozed", "key", key, "id", id, "until", wake)
-		showSnoozeNotice(wake)
+		s.showSnoozeNotice(wake)
 		return
 	}
 	if !s.ring.armed {
@@ -493,7 +542,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 	src := prevSource
 	if !viaAux {
 		ctx, cancel := context.WithTimeout(context.Background(), alarmLiveTimeout)
-		src, _ = alarmLiveState(s, ctx)
+		src, _ = s.alarmLiveState(ctx)
 		cancel()
 	}
 	if src == "STANDBY" {
@@ -507,7 +556,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 		return
 	}
 
-	length := time.Duration(a.SnoozeMinutes()) * alarmSnoozeUnit
+	length := time.Duration(a.SnoozeMinutes()) * times.unit
 	s.ring.mu.Lock()
 	if !s.ring.active || s.ring.seq != seq {
 		s.ring.mu.Unlock()
@@ -520,7 +569,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 	snoozeSeq := s.ring.seq
 	s.ring.snoozeUntil, s.ring.snoozedViaAux = until, viaAux
 	s.ring.since = start
-	s.ring.standbyAfter = start.Add(alarmSnoozeSettle)
+	s.ring.standbyAfter = start.Add(times.settle)
 	s.ring.gen = curGen
 	s.ring.snoozes++
 	n := s.ring.snoozes
@@ -536,7 +585,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 	wake := s.alarmClockText(until)
 	s.logger.Info("alarm snoozed (kept in memory only: an agent restart before then drops the snooze)",
 		"id", a.ID, "key", key, "minutes", a.SnoozeMinutes(), "until", wake, "snoozes", n, "source", src)
-	showSnoozeNotice(wake)
+	s.showSnoozeNotice(wake)
 }
 
 // silenceForSnooze stops the alarm's playback, marked as the user's stop so
@@ -557,7 +606,7 @@ func (s *Server) silenceForSnooze(viaAux bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	alarmSilence(s, ctx)
+	s.alarmSilence(ctx)
 }
 
 // leaveBluetoothForAux moves a speaker that the AUX snooze left on Bluetooth
@@ -568,7 +617,8 @@ func (s *Server) silenceForSnooze(viaAux bool) {
 // can arrive a moment after the key, so the live source is watched for a
 // short while; the step runs only while this alarm is still snoozed.
 func (s *Server) leaveBluetoothForAux() {
-	deadline := time.Now().Add(alarmAuxLeaveWindow)
+	times := s.snoozeTimes()
+	deadline := time.Now().Add(times.auxLeaveWindow)
 	for {
 		s.ring.mu.Lock()
 		snoozed := s.ring.active && !s.ring.snoozeUntil.IsZero() && s.ring.snoozedViaAux
@@ -577,7 +627,7 @@ func (s *Server) leaveBluetoothForAux() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), alarmLiveTimeout)
-		src, playing := alarmLiveState(s, ctx)
+		src, playing := s.alarmLiveState(ctx)
 		cancel()
 		switch {
 		case src == "AUX":
@@ -600,7 +650,7 @@ func (s *Server) leaveBluetoothForAux() {
 		if time.Now().After(deadline) {
 			return
 		}
-		time.Sleep(alarmAuxLeavePoll)
+		time.Sleep(times.auxLeavePoll)
 	}
 }
 
@@ -642,7 +692,7 @@ func (s *Server) snoozeOver(seq uint64) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), alarmLiveTimeout)
-	src, playing := alarmLiveState(s, ctx)
+	src, playing := s.alarmLiveState(ctx)
 	cancel()
 	// The input an AUX snooze landed on is the snooze itself: AUX, or
 	// BLUETOOTH on firmware that skips an empty AUX. AUX may report a play
