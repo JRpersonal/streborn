@@ -35,7 +35,6 @@ func TestNoStrayControlCharactersInSource(t *testing.T) {
 	// Named with their line content so moving them does not silently widen the
 	// exemption, and so a future reader can tell a decision from an accident.
 	allowed := map[string]string{
-		"desktop-app/frontend/src/main.js":         "preset signature joined on U+001F and U+001E",
 		"internal/webui/assets/index.html":         "preset signature joined on U+0000 and U+0001",
 		".claude/skills/str-gh-replies/partial.py": "scores on a separator byte",
 	}
