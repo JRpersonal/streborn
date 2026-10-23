@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/zones"
@@ -190,7 +191,14 @@ func withFakeVolumes(t *testing.T, f *fakeVolumes) {
 	t.Helper()
 	origRead, origSet := readMemberVolumeFn, setMemberVolumeFn
 	readMemberVolumeFn, setMemberVolumeFn = f.read, f.set
-	t.Cleanup(func() { readMemberVolumeFn, setMemberVolumeFn = origRead, origSet })
+	// The confirming read waits for the firmware's wake default to land; the
+	// fake answers at once, so the wait only has to be an observable pause.
+	origConfirm := joinVolumeConfirmAfter
+	joinVolumeConfirmAfter = 50 * time.Millisecond
+	t.Cleanup(func() {
+		readMemberVolumeFn, setMemberVolumeFn = origRead, origSet
+		joinVolumeConfirmAfter = origConfirm
+	})
 }
 
 func newJoinVolServer(host string) *Server {

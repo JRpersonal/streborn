@@ -240,6 +240,14 @@ func TestHandleZonePurge(t *testing.T) {
 // a native zone and a stereo pair are re-formed by the firmware, and kicking
 // those would fight it.
 func TestKickMirrorAfterPlay(t *testing.T) {
+	// The kick's delay is what every subtest waits on, positive or negative;
+	// shortened so the negative cases can wait several delays in a blink.
+	prevDelay := mirrorKickDelay
+	mirrorKickDelay = 50 * time.Millisecond
+	t.Cleanup(func() { mirrorKickDelay = prevDelay })
+	// noKick is how long a negative case waits before concluding the kick is
+	// not coming: several delays, with room for a slow scheduler.
+	noKick := 6 * mirrorKickDelay
 	newServer := func(t *testing.T, z *zones.Zone) *Server {
 		t.Helper()
 		store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
@@ -260,12 +268,12 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 	// The kick is deliberately delayed (the master's stream has to start before
 	// a reconcile can see it playing), so a positive case has to wait for it.
 	kicked := func(s *Server) bool {
-		deadline := time.Now().Add(15 * time.Second)
+		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			select {
 			case <-s.mirrorKick:
 				return true
-			case <-time.After(100 * time.Millisecond):
+			case <-time.After(5 * time.Millisecond):
 			}
 		}
 		return false
@@ -289,7 +297,7 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		select {
 		case <-s.mirrorKick:
 			t.Error("reconcile requested for a speaker that is not in a group")
-		case <-time.After(9 * time.Second):
+		case <-time.After(noKick):
 		}
 	})
 
@@ -303,7 +311,7 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		s.kickMirrorAfterPlay()
 		select {
 		case <-s.mirrorKick:
-		case <-time.After(9 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Error("no reconcile requested; the default group would never re-form on play")
 		}
 	})
@@ -316,7 +324,7 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		select {
 		case <-s.mirrorKick:
 			t.Error("reconcile requested for a stereo pair; the firmware persists that itself")
-		case <-time.After(9 * time.Second):
+		case <-time.After(noKick):
 		}
 	})
 
@@ -331,7 +339,7 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		select {
 		case <-s.mirrorKick:
 			t.Error("a second round queued; five quick plays must collapse into one")
-		case <-time.After(2 * time.Second):
+		case <-time.After(noKick):
 		}
 	})
 
@@ -352,7 +360,7 @@ func TestKickMirrorAfterPlay(t *testing.T) {
 		select {
 		case <-s.mirrorKick:
 			t.Error("the group was re-formed during a hush; an alarm would wake the whole house")
-		case <-time.After(9 * time.Second):
+		case <-time.After(noKick):
 		}
 	})
 

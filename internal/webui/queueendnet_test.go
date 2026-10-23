@@ -19,10 +19,10 @@ import (
 
 func TestTrackEndNet(t *testing.T) {
 	const (
-		sec    = time.Second
-		moved  = 10 * time.Millisecond // the position climbed on this poll
-		oneTik = queuePollInterval     // the position did not move on this poll
+		sec   = time.Second
+		moved = 10 * time.Millisecond // the position climbed on this poll
 	)
+	oneTik := queuePollInterval // the position did not move on this poll
 	cases := []struct {
 		name string
 		in   trackEndInput
@@ -126,7 +126,8 @@ func TestTrackEndNet(t *testing.T) {
 }
 
 // scriptedQueueBox scripts now_playing for the queue watcher. With climbing set, the
-// position advances one second per real second from posAt, like a box playing.
+// position advances one box second per box second from posAt, like a box
+// playing; tick is the box second (a real second when zero).
 type scriptedQueueBox struct {
 	mu       sync.Mutex
 	status   string
@@ -134,6 +135,7 @@ type scriptedQueueBox struct {
 	total    time.Duration
 	climbing bool
 	posAt    time.Time
+	tick     time.Duration
 }
 
 func (f *scriptedQueueBox) set(status string, pos, total time.Duration, climbing bool) {
@@ -147,7 +149,11 @@ func (f *scriptedQueueBox) poll() (string, time.Duration, time.Duration, bool) {
 	defer f.mu.Unlock()
 	pos := f.pos
 	if f.climbing {
-		pos += time.Since(f.posAt).Truncate(time.Second)
+		tick := f.tick
+		if tick == 0 {
+			tick = time.Second
+		}
+		pos += time.Since(f.posAt).Truncate(tick)
 	}
 	return f.status, pos, f.total, false
 }
@@ -169,8 +175,11 @@ func (w *syncBuf) String() string {
 	return w.b.String()
 }
 
+// queueWatchServer runs the queue watcher at the fast test clock
+// (fastQueueTiming); scenarios are written in qsec.
 func queueWatchServer(t *testing.T, box *scriptedQueueBox, firstDur time.Duration, logTo io.Writer) *Server {
 	t.Helper()
+	fastQueueTiming(t)
 	s, _ := newPlayTestServer(t)
 	s.logger = slog.New(slog.NewTextHandler(logTo, nil))
 	s.nowPlayingFn = box.poll
@@ -189,13 +198,13 @@ func TestAPlayingTrackIsNotCutAtAWrongServerLength(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
-	box := &scriptedQueueBox{}
+	box := &scriptedQueueBox{tick: qsec}
 	logs := &syncBuf{}
 	// The server claims 2 s; the box plays on and its position keeps climbing.
-	box.set("PLAY_STATE", time.Second, 0, true)
-	s := queueWatchServer(t, box, 2*time.Second, logs)
+	box.set("PLAY_STATE", qsec, 0, true)
+	s := queueWatchServer(t, box, 2*qsec, logs)
 
-	time.Sleep(13 * time.Second) // three polls, all well past 2 s + the margin
+	time.Sleep(13 * qsec) // three polls, all well past 2 s + the margin
 	if pos := s.queue.snapshot().Pos; pos != 0 {
 		t.Fatalf("the queue moved to track %d while the box was still playing track 1", pos)
 	}
@@ -211,22 +220,26 @@ func TestANaturalEndAdvancesOnceAndLogsTheEndingTrack(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
-	box := &scriptedQueueBox{}
+	box := &scriptedQueueBox{tick: qsec}
 	logs := &syncBuf{}
 	// Track 1 is 3 s long and the box sits frozen at its end (#219/#923 shape).
+	// Real seconds here, not qsec: the advance log line below is checked for
+	// the whole-second lengths it prints. The watcher still polls at the fast
+	// clock, and a track frozen on its own end advances the moment the wall
+	// clock passes its length.
 	box.set("PLAY_STATE", 3*time.Second, 3*time.Second, false)
 	s := queueWatchServer(t, box, 3*time.Second, logs)
 
 	deadline := time.Now().Add(15 * time.Second)
 	for s.queue.snapshot().Pos == 0 && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	if pos := s.queue.snapshot().Pos; pos != 1 {
 		t.Fatalf("queue pos = %d, want 1 after the first track ended", pos)
 	}
 	// Track 2 starts and plays normally: it must not be advanced past.
-	box.set("PLAY_STATE", time.Second, 5*time.Minute, true)
-	time.Sleep(9 * time.Second)
+	box.set("PLAY_STATE", qsec, 5*time.Minute, true)
+	time.Sleep(9 * qsec) // two polls
 	if pos := s.queue.snapshot().Pos; pos != 1 {
 		t.Fatalf("queue pos = %d, want it to stay on track 2", pos)
 	}

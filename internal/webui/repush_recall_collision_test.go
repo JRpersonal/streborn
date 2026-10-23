@@ -66,7 +66,11 @@ func TestMaybeRePushRearmsAfterRecallOwnsRetryWindow(t *testing.T) {
 	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
 	s.setLastPlay("http://127.0.0.1:8888/stream/6", "Antenne", "", "")
 	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-6 * time.Second) // drop 6s into the recall
+	// The drop lands inside the recall's window: after the re-push's own 2 s
+	// backoff there is still half a second of ownership to wait out. (The
+	// field case was 6 s into the recall; the shape is the same, the wait
+	// shorter.)
+	s.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow - 2500*time.Millisecond))
 	s.standbyStopMu.Unlock()
 
 	done := make(chan struct{})
@@ -90,9 +94,11 @@ func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
 	s.playStateFn = func() (bool, bool) { return false, false }
 	s.setLastPlay("http://127.0.0.1:8888/stream/2", "NDR", "", "")
 	s.standbyStopMu.Lock()
-	s.lastUserPlayStart = time.Now().Add(-6 * time.Second)
+	// As above: the ownership wait runs from ~2 s (after the backoff) to
+	// ~3.5 s, and the stop lands in the middle of it.
+	s.lastUserPlayStart = time.Now().Add(-(recallOwnsRetryWindow - 2500*time.Millisecond))
 	s.standbyStopMu.Unlock()
-	stopTimer := time.AfterFunc(3*time.Second, s.NoteUserStop)
+	stopTimer := time.AfterFunc(2700*time.Millisecond, s.NoteUserStop)
 	defer stopTimer.Stop()
 
 	done := make(chan struct{})

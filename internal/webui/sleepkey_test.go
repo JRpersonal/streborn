@@ -67,8 +67,10 @@ func TestSleepKeyCycles(t *testing.T) {
 	f := &fakeBox{source: "UPNP"}
 	f.install(t)
 	s := newSleepServer()
-	t.Cleanup(func() { s.cancelSleep("test") })
+	// noGroup before the cancel cleanup: cleanups run last-in first-out, and
+	// the cancel's group push must still find the stub, not the real speaker.
 	noGroup(t)
+	t.Cleanup(func() { s.cancelSleep("test") })
 
 	for i, want := range []int{15, 30, 60, 0, 15} {
 		pressSleep(s)
@@ -99,8 +101,8 @@ func TestSleepKeyDebouncesOnePress(t *testing.T) {
 	f := &fakeBox{source: "UPNP"}
 	f.install(t)
 	s := newSleepServer()
+	noGroup(t) // before the cancel cleanup, see TestSleepKeyCycles
 	t.Cleanup(func() { s.cancelSleep("test") })
-	noGroup(t)
 	s.SleepKeyPress()
 	s.SleepKeyPress()
 	if _, m := sleepMinutesArmed(s); m != 15 {

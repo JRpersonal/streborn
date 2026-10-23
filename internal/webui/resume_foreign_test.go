@@ -85,9 +85,14 @@ func TestForeignContentStandDownReadsEachReadingOnItsOwn(t *testing.T) {
 
 // resumeTestServer builds a Server that can run ResumeLastPlay end to end
 // without touching a box: no boxHost (so the wake and the zone probe are
-// no-ops), a seamed play state and a seamed now_playing body.
+// no-ops), a seamed play state and a seamed now_playing body. The resume's
+// settle sleep is shortened: these tests are about the decision after it, not
+// about its length (resume_wake_budget_test.go is, and puts it back).
 func resumeTestServer(t *testing.T, nowPlaying string) (*Server, *soapRecorder) {
 	t.Helper()
+	prevSettle := resumeWakeSettle
+	resumeWakeSettle = 100 * time.Millisecond
+	t.Cleanup(func() { resumeWakeSettle = prevSettle })
 	s, rec := newPlayTestServer(t)
 	s.resumeOnPowerOnPath = t.TempDir() + "/resume-on-power-on" // absent = default on
 	s.playStateFn = func() (standby, busy bool) { return false, false }
@@ -98,8 +103,12 @@ func resumeTestServer(t *testing.T, nowPlaying string) (*Server, *soapRecorder) 
 	return s, rec
 }
 
-// waitForSOAP waits for the resume goroutine (2 s settle) to either push or
-// give up.
+// noResume is how long a test waits before concluding the resume goroutine
+// declined: many times the (shortened) settle after which it would have pushed.
+func noResume() time.Duration { return 10 * resumeWakeSettle }
+
+// waitForSOAP waits for the resume goroutine (settle, then decide) to either
+// push or give up.
 func waitForSOAP(rec *soapRecorder, d time.Duration) bool {
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
@@ -119,7 +128,7 @@ func TestResumeLastPlayDeclinesOnForeignContent(t *testing.T) {
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>`+
 		`<playStatus>PLAY_STATE</playStatus></nowPlaying>`)
 	s.ResumeLastPlay()
-	if waitForSOAP(rec, 4*time.Second) {
+	if waitForSOAP(rec, noResume()) {
 		t.Fatalf("STR pushed its own station onto a speaker streaming from elsewhere: %v", rec.list())
 	}
 }
@@ -131,7 +140,7 @@ func TestResumeLastPlayDeclinesOnPausedForeignContent(t *testing.T) {
 		`<ContentItem source="UPNP" location="http://192.0.2.50:8095/stream/flow.mp3"/>`+
 		`<playStatus>PAUSE_STATE</playStatus></nowPlaying>`)
 	s.ResumeLastPlay()
-	if waitForSOAP(rec, 4*time.Second) {
+	if waitForSOAP(rec, noResume()) {
 		t.Fatalf("STR pushed its own station over a paused foreign stream: %v", rec.list())
 	}
 }

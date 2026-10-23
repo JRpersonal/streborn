@@ -23,6 +23,10 @@ import (
 // shape Svagerka reported as "off does not stick").
 func TestASlowBoxReadDoesNotSpendThePowerOffBounceWindow(t *testing.T) {
 	s, rec := resumeTestServer(t, `<nowPlaying source="UPNP"/>`)
+	// This test is about the settle's share of the 6 s bounce budget, so it
+	// runs with the production settle, not the short one resumeTestServer
+	// installs for the decision tests (its cleanup restores the value anyway).
+	resumeWakeSettle = 2 * time.Second
 	// As slow as the production read can be: readBox's own HTTP timeout.
 	s.nowPlayingBodyFn = func() string {
 		time.Sleep(4 * time.Second)
@@ -38,7 +42,10 @@ func TestASlowBoxReadDoesNotSpendThePowerOffBounceWindow(t *testing.T) {
 	s.lastUserStopMu.Unlock()
 
 	s.ResumeLastPlay()
-	if waitForSOAP(rec, 20*time.Second) {
+	// The regression this pins pushed at read (4 s) + settle (2 s) + a moment,
+	// so a push, if it comes, is here within 8 s; the correct resume has
+	// declined after the 2 s settle.
+	if waitForSOAP(rec, 8*time.Second) {
 		t.Fatalf("the bounce guard timed out and STR re-woke a box the user had just switched off: %v", rec.list())
 	}
 }

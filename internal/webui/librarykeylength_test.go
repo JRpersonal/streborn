@@ -158,22 +158,28 @@ func TestALibraryTrackWithAKnownLengthEndsOnItsLength(t *testing.T) {
 func TestALibraryKeyWithAStoredLengthStopsWithoutWaitingForTheFreeze(t *testing.T) {
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
+	// A stored length is whole seconds, so this scenario runs in real seconds
+	// on the fast poll. The frozen net keeps its production 15 s: that is the
+	// time the test must NOT see, and at the fast clock it would fire together
+	// with the stored length and prove nothing.
+	queueFrozenTimeout *= queueTestScale
+	const storedLen = 2 * time.Second
 	if err := s.presets.SetSlot(presets.Preset{
 		Slot: 6, Name: "Song", Type: "radio", StreamURL: libraryTrackURL,
-		Source: "MinimServer", DurationSec: 5,
+		Source: "MinimServer", DurationSec: int(storedLen / time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	np.set("PLAY_STATE", 2*time.Second, 0) // the speaker reports no total
+	np.set("PLAY_STATE", storedLen/2, 0) // the speaker reports no total
 	start := time.Now()
 	if !s.RecallSlot(context.Background(), 6) {
 		t.Fatal("RecallSlot did not claim the library track key")
 	}
-	time.Sleep(5 * time.Second)
-	np.set("PLAY_STATE", 5*time.Second, 0) // frozen at the end
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", storedLen, 0) // frozen at the end
 
 	waitForTrackEnd(t, "the box to be stopped at the end of the key's song", func() bool { return rec.has("Stop") })
-	if took := time.Since(start); took >= 5*time.Second+queueFrozenTimeout {
+	if took := time.Since(start); took >= storedLen+queueFrozenTimeout {
 		t.Fatalf("the stop took %v, the frozen net's time: the stored length was not used", took)
 	}
 }
@@ -295,11 +301,13 @@ func TestAnOldLibraryKeyLearnsItsLengthAfterOnePlay(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Real seconds for the positions: a learned length is whole seconds and
+	// must clear learnedLengthMin. The watch itself runs on the fast poll.
 	np.set("PLAY_STATE", 2*time.Second, 0) // the speaker reports no total
 	if !s.RecallSlot(context.Background(), 6) {
 		t.Fatal("RecallSlot did not claim the library track key")
 	}
-	time.Sleep(5 * time.Second)
+	time.Sleep(betweenPolls(1))
 	np.set("PLAY_STATE", 6*time.Second, 0) // frozen at the end
 
 	waitForTrackEnd(t, "the frozen net to end the key's song", func() bool { return rec.has("Stop") })

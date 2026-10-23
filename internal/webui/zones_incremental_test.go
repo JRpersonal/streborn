@@ -2,6 +2,7 @@ package webui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 )
@@ -98,7 +99,18 @@ func TestZoneDiffEmptyLiveZoneAddsEverything(t *testing.T) {
 // the surviving stream, so that push IS the audible gap); an idle box falls
 // through to the push, the historical safe behavior for the fresh-zone 1036
 // case.
+// shrinkZoneFormResumeSettle shortens the settle before the post-form push:
+// these tests are about the decision after it, and resumeAfterZoneForm runs
+// in line, so the value is back before the test returns.
+func shrinkZoneFormResumeSettle(t *testing.T) {
+	t.Helper()
+	prev := zoneFormResumeSettle
+	zoneFormResumeSettle = 20 * time.Millisecond
+	t.Cleanup(func() { zoneFormResumeSettle = prev })
+}
+
 func TestResumeAfterZoneFormSkipsWhenStreamSurvivedAnIncrementalJoin(t *testing.T) {
+	shrinkZoneFormResumeSettle(t)
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, true } // playing
 	s.resumeAfterZoneForm(zoneResume{
@@ -115,6 +127,7 @@ func TestResumeAfterZoneFormSkipsWhenStreamSurvivedAnIncrementalJoin(t *testing.
 // fired here too, and a user who grouped mid-stream got playing master plus
 // silent members until a manual play (Martin, 2026-08-24).
 func TestResumeAfterZoneFormPushesTheSurvivorOnAFreshForm(t *testing.T) {
+	shrinkZoneFormResumeSettle(t)
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, true } // still playing
 	lp := lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"}
@@ -129,6 +142,7 @@ func TestResumeAfterZoneFormPushesTheSurvivorOnAFreshForm(t *testing.T) {
 }
 
 func TestResumeAfterZoneFormPushesWhenBoxWentSilent(t *testing.T) {
+	shrinkZoneFormResumeSettle(t)
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, false } // idle
 	lp := lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"}

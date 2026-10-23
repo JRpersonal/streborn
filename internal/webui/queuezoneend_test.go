@@ -66,12 +66,14 @@ func TestQueueWatchInterval(t *testing.T) {
 }
 
 // zoneMasterBox plays one track like a zone master: the position climbs one
-// second per second from start, freezes at total, and one second after the end
-// of the file the box reports STANDBY (firmware EVT_STANDBY).
+// box second (tick) per box second from start, freezes at total, and one box
+// second after the end of the file the box reports STANDBY (firmware
+// EVT_STANDBY).
 type zoneMasterBox struct {
 	mu    sync.Mutex
 	start time.Time
 	total time.Duration
+	tick  time.Duration
 }
 
 func (b *zoneMasterBox) poll() (string, time.Duration, time.Duration, bool) {
@@ -81,10 +83,10 @@ func (b *zoneMasterBox) poll() (string, time.Duration, time.Duration, bool) {
 	if since < 0 {
 		return "BUFFERING_STATE", 0, b.total, false
 	}
-	if since >= b.total+time.Second {
+	if since >= b.total+b.tick {
 		return "", 0, 0, true
 	}
-	pos := since.Truncate(time.Second)
+	pos := since.Truncate(b.tick)
 	if pos > b.total {
 		pos = b.total
 	}
@@ -95,12 +97,18 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-time watcher test")
 	}
-	const trackLen = 10 * time.Second
+	// A gentler clock than fastQueueTiming's: this test is a race between the
+	// one-second end poll and the standby a second after the file, and at 20x
+	// its slack would be a few tens of milliseconds.
+	const scale = 5
+	const sec = time.Second / scale
+	scaleQueueTiming(t, scale)
+	const trackLen = 10 * sec
 	logs := &syncBuf{}
 	// Audio starts half a second after the push, as on a real box. The file ends
 	// at about 10.5 s and the standby lands at about 11.5 s: with the plain 4 s
 	// poll the watcher sees pos 7 at 8 s and then the standby at 12 s.
-	box := &zoneMasterBox{start: time.Now().Add(500 * time.Millisecond), total: trackLen}
+	box := &zoneMasterBox{start: time.Now().Add(sec / 2), total: trackLen, tick: sec}
 	s, _ := newPlayTestServer(t)
 	s.queueInZoneFn = func() bool { return true }
 	s.nowPlayingFn = box.poll
@@ -113,7 +121,7 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 	s.ensureWatcher()
 	t.Cleanup(s.cancelWatcher)
 
-	deadline := time.Now().Add(16 * time.Second)
+	deadline := time.Now().Add(16 * sec)
 	for time.Now().Before(deadline) {
 		if s.queue.snapshot().Pos == 1 {
 			break
@@ -121,7 +129,7 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 		if !s.queue.isActive() {
 			t.Fatalf("the queue ended before it advanced; log:\n%s", logs.String())
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	if pos := s.queue.snapshot().Pos; pos != 1 {
 		t.Fatalf("queue pos = %d, want 1; log:\n%s", pos, logs.String())
