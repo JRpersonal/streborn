@@ -7,27 +7,27 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const read = (...p) => readFileSync(join(here, ...p), 'utf8').replace(/\r\n/g, '\n');
-const main = read('main.js');
-const settings = read('views', 'settings.js');
+// The banner wiring sits in main.js and the form in the settings Network
+// group; both are read by name through the source helper.
+const src = allSource();
 
 describe('Save Wi-Fi banner', () => {
   it('marks the speaker before switching to Settings', () => {
-    expect(main).toMatch(/wb\.onclick = \(\) => \{ state\.wlanStoreFor = noWifi\[0\]\.host; selectBox\(noWifi\[0\]\); switchView\('settings'\); \}/);
+    expect(src).toMatch(/wb\.onclick = \(\) => \{ state\.wlanStoreFor = noWifi\[0\]\.host; selectBox\(noWifi\[0\]\); switchView\('settings'\); \}/);
   });
 
   it('opens the form for that speaker only, once, with the current network', () => {
-    const at = settings.indexOf('function wireWlanSwitch(box, currentSsid)');
-    expect(at).toBeGreaterThan(-1);
-    const fn = settings.slice(at, settings.indexOf('\n}\n', at));
+    const fn = srcOf('wireWlanSwitch');
+    expect(fn).toMatch(/^function wireWlanSwitch\(box, currentSsid\)/);
     expect(fn).toContain('state.wlanStoreFor === box.host');
     expect(fn).toContain('state.wlanStoreFor = null;');
     expect(fn).toContain("form.classList.remove('hidden')");
     expect(fn).toContain('await CurrentWiFi()');
-    expect(settings).toContain("wireWlanSwitch(box, nv.kind === 'wifi' ? nv.ssid : '')");
-    expect(settings).toContain('id="wlanStoreHint"');
+    expect(src).toContain("wireWlanSwitch(box, nv.kind === 'wifi' ? nv.ssid : '')");
+    expect(src).toContain('id="wlanStoreHint"');
   });
 
   it('has the hint in every language', () => {

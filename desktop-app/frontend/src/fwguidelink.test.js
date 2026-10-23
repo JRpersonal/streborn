@@ -38,10 +38,11 @@ describe('Bose firmware support links', () => {
   });
 
   // Read by file on purpose: this test is about which module imports which.
+  // The firmware row of Speaker settings lives in the Status & info group.
   it('lives outside the views, where both of them can import it', () => {
-    const settings = fileSource('views/settings.js');
+    const settings = fileSource('views/settings/info.js');
     const setup = fileSource('views/setup.js');
-    expect(settings).toContain("from '../firmware.js'");
+    expect(settings).toContain("from '../../firmware.js'");
     // setup.js reaches the firmware facts through the guide, which imports them.
     expect(setup).toContain("from '../fwguide.js'");
   });
