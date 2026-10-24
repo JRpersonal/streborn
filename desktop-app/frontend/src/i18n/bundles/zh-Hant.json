@@ -202,7 +202,7 @@
   "spotify.presetsTitle": "把播放清單存到預設鍵",
   "spotify.presetsIntro": "你可以把 Spotify 播放清單存在六個預設鍵其中一個上，之後直接在喇叭上按一下就開始播，不用拿手機。",
   "spotify.presetsNeedTitle": "先要滿足兩件事",
-  "spotify.presetsNeedPremium": "Spotify Premium。預設鍵會自行開始播放清單，免費帳號做不到，按了不會有聲音。",
+  "spotify.presetsNeedPremium": "喇叭上要有 Spotify Premium。預設鍵會用儲存當下喇叭登入的帳號播放，而這個帳號需要 Premium。沒有 Premium，按鍵就不會出聲。",
   "spotify.presetsNeedStr": "要先在 Spotify 裡選過一次結尾是「(STR)」的那個項目。只有喇叭名稱的那個是喇叭自己的 Spotify，無法儲存或叫出預設。每台喇叭各做一次，各自記住自己的登入。",
   "spotify.presetsStep1": "先把 Spotify 播放清單播到這台喇叭（照上面的步驟）。",
   "spotify.presetsStep2": "在「聽音樂」分頁按住一個預設鍵（1-6）直到它填滿，就會把正在播的播放清單存起來。",
