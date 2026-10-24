@@ -14,6 +14,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/JRpersonal/streborn/releases"><img src="https://img.shields.io/github/downloads/JRpersonal/streborn/total" alt="Downloads"></a>
+  <a href="#downloads-and-end-user-documentation"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D4" alt="Windows | macOS | Linux"></a>
+  <a href="#supported-models"><img src="https://img.shields.io/badge/speakers-ST10%20%7C%20ST20%20%7C%20ST30%20%7C%20Portable-555" alt="SoundTouch 10 | 20 | 30 | Portable"></a>
+  <a href="#verifying-release-artifacts"><img src="https://img.shields.io/badge/code%20signed-Certum%20%2B%20Apple%20notarized-2ea44f" alt="Code signed: Certum and Apple notarized"></a>
+  <a href="#verifying-release-artifacts"><img src="https://img.shields.io/badge/provenance-Sigstore-6f42c1?logo=sigstore" alt="Provenance: Sigstore"></a>
+  <a href="./go.mod"><img src="https://img.shields.io/github/go-mod/go-version/JRpersonal/streborn" alt="Go version"></a>
+  <a href="https://st-reborn.de"><img src="https://img.shields.io/badge/website-st--reborn.de-blue" alt="Website st-reborn.de"></a>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/en/app-listen.png" alt="ST Reborn desktop app" width="820">
 </p>
 
