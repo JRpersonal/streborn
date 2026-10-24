@@ -276,3 +276,43 @@ func TestTheDetectorStandsDownDuringARecall(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+// Living-room ST30, 2026-10-24: the engine logged each prefetched track's
+// "loaded track" line 0.3 to 0.9 s AFTER that track's BOS. The duration then
+// rode one boundary late, every song that was shorter than the one before it
+// looked cut short, and the re-point dropped the last seconds of it. A late
+// prefetched load must claim the boundary that started with no duration.
+func TestALatePrefetchedLoadClaimsItsOwnBoundary(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 4)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard
+	noFire := func(what string) {
+		t.Helper()
+		select {
+		case <-fired:
+			t.Fatalf("%s: a song that played to its end must not be read as an app skip", what)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	m.noteTrackBoundaryCut(0, 0) // Waiting For The Dawn starts
+	m.noteLibrespotLine(`level=info msg="loaded track \"Waiting For The Dawn\" (paused: false, position: 22ms, duration: 235555ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(235*vorbisRate, 4096) // Blood Running starts
+	noFire("Waiting For The Dawn")
+	m.noteLibrespotLine(`level=info msg="loaded track \"Blood Running\" (paused: false, position: 27ms, duration: 173146ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(173*vorbisRate, 4096) // Simple starts
+	noFire("Blood Running")
+	m.noteLibrespotLine(`level=info msg="loaded track \"Simple\" (paused: false, position: 23ms, duration: 121395ms, prefetched: true)"`)
+	m.noteTrackBoundaryCut(121*vorbisRate, 4096) // Guilty starts
+	noFire("Simple")
+	m.noteLibrespotLine(`level=info msg="loaded track \"Guilty\" (paused: false, position: 0ms, duration: 176424ms, prefetched: true)"`)
+
+	// A real app skip in the same late-logging rhythm still fires.
+	m.noteTrackBoundaryCut(60*vorbisRate, 4096)
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a genuine mid-track cut must still re-point the box")
+	}
+}

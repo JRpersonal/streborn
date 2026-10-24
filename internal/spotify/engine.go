@@ -527,6 +527,11 @@ func parseLoadedTrackDurMs(lc string) int64 {
 // far shorter than any real track, so the next track's load cannot fall in.
 const lateLoadWindow = 2 * time.Second
 
+// latePrefetchWindow bounds how long after a boundary that carried no
+// duration a prefetched track's own "loaded track" line may still claim it.
+// The field gap was 0.3 to 0.9 s; the next track's load comes minutes later.
+const latePrefetchWindow = 5 * time.Second
+
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
 	// Spotify refusing the saved login is handled by the supervisor once the
@@ -556,8 +561,14 @@ func (m *Manager) noteLibrespotLine(line string) {
 			// Paused loads never claim: a recall's resume load is logged
 			// paused right behind the preamble's boundary, and its duration
 			// belongs to the boundary that actually starts it (#1077, v1.0.9).
-			if strings.Contains(lc, "prefetched: false") && strings.Contains(lc, "paused: false") && !m.loadSinceBoundary &&
-				!m.boundaryAt.IsZero() && time.Since(m.boundaryAt) < lateLoadWindow {
+			// A prefetched load claims only a boundary that started with no
+			// duration at all: then no load preceded it, so this one is that
+			// track's own, logged late (living-room ST30, 2026-10-24).
+			sinceBoundary := time.Since(m.boundaryAt)
+			lateOwn := strings.Contains(lc, "paused: false") && !m.loadSinceBoundary && !m.boundaryAt.IsZero() &&
+				((strings.Contains(lc, "prefetched: false") && sinceBoundary < lateLoadWindow) ||
+					(m.streamTrackDurMs == 0 && sinceBoundary < latePrefetchWindow))
+			if lateOwn {
 				m.streamTrackDurMs = ms
 			} else {
 				m.loadedTrackDurMs = ms
