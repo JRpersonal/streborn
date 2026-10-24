@@ -24,6 +24,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -133,16 +134,67 @@ func splashMayStart(flipThreadUp, controllerUp bool, boseAppAge time.Duration) b
 	return flipThreadUp && (controllerUp || boseAppAge >= boseAppSettledAge)
 }
 
-// ShowAtStart waits for BoseApp's display to be up and plays the splash for
-// kind once. displayUp reports whether the firmware's display controller has
-// been seen past its boot state (nil means never). Blocking; run it in its
-// own goroutine.
-func ShowAtStart(kind Kind, logger *slog.Logger, displayUp func() bool) {
-	if kind == KindNone || !Enabled() || !panelSupported() {
+// displayUpFn is the agent's view of the firmware's display controller
+// (internal/boxlog, Reader.DisplayControllerUp), wired once at start through
+// SetDisplayUp. Unset means "not seen", so only a settled BoseApp passes.
+var displayUpFn atomic.Pointer[func() bool]
+
+// SetDisplayUp wires the check that the firmware's display controller has
+// been seen past its boot state. Every panel hold (splash, update screen,
+// notices, held-key screens, the track overlay, the games) waits for it, or
+// for a settled BoseApp, before it pauses the flip thread. nil unwires it.
+func SetDisplayUp(f func() bool) {
+	if f == nil {
+		displayUpFn.Store(nil)
 		return
 	}
-	if displayUp == nil {
-		displayUp = func() bool { return false }
+	displayUpFn.Store(&f)
+}
+
+// displayUp reports the wired controller check; false when none is wired.
+func displayUp() bool {
+	if f := displayUpFn.Load(); f != nil {
+		return (*f)()
+	}
+	return false
+}
+
+// panelMayHold is the gate every panel hold goes through: splashMayStart on
+// the live state. A hold the gate refuses is skipped or retried by its
+// caller, never waited for inside a caller's request.
+func panelMayHold() bool { return panelGate(boseAppDisplayReady, displayUp, boseAppAge) }
+
+// panelGate evaluates splashMayStart lazily, cheapest and most decisive
+// first: no flip thread ends it before /proc is walked for BoseApp's age, a
+// controller seen up ends it before the age is read.
+func panelGate(flipThreadUp, controllerUp func() bool, age func() time.Duration) bool {
+	if !flipThreadUp() {
+		return false
+	}
+	if controllerUp() {
+		return true
+	}
+	return splashMayStart(true, false, age())
+}
+
+// holdAttrs are the log fields every panel hold carries (one line per hold,
+// never per frame), so a display that stays dark can be matched against the
+// state the hold started in.
+func holdAttrs(kind string) []any {
+	return []any{"holdKind", kind, "controllerUp", displayUp(), "boseAppAge", boseAppAge().Round(time.Second)}
+}
+
+// ShowAtStart waits for BoseApp's display to be up and plays the splash for
+// kind once. up reports whether the firmware's display controller has been
+// seen past its boot state; when non-nil it is wired through SetDisplayUp
+// for every other panel hold too (nil keeps what is wired). Blocking; run it
+// in its own goroutine.
+func ShowAtStart(kind Kind, logger *slog.Logger, up func() bool) {
+	if up != nil {
+		SetDisplayUp(up)
+	}
+	if kind == KindNone || !Enabled() || !panelSupported() {
+		return
 	}
 	// At a box boot the agent is usually up before BoseApp has its display
 	// thread, and the thread is there before the display controller is done
@@ -150,7 +202,7 @@ func ShowAtStart(kind Kind, logger *slog.Logger, displayUp func() bool) {
 	// Past the bound the splash is skipped: a splash is cosmetic, a panel the
 	// firmware never paints again is not.
 	deadline := time.Now().Add(3 * time.Minute)
-	for !splashMayStart(boseAppDisplayReady(), displayUp(), boseAppAge()) {
+	for !panelMayHold() {
 		if time.Now().After(deadline) {
 			logger.Info("oled splash skipped: BoseApp display not up in time",
 				"flipThread", boseAppDisplayReady(), "controllerUp", displayUp(), "boseAppAge", boseAppAge().Round(time.Second))
@@ -170,7 +222,7 @@ func ShowAtStart(kind Kind, logger *slog.Logger, displayUp func() bool) {
 		logo.Frame(t, buf)
 		return !logo.Done(t)
 	}, nil, 15*time.Second, nil)
-	logger.Info("oled splash", "kind", kind.String(), "ms", time.Since(start).Milliseconds(), "err", err)
+	logger.Info("oled splash", append([]any{"kind", kind.String(), "ms", time.Since(start).Milliseconds(), "err", err}, holdAttrs("splash")...)...)
 }
 
 // StartUpdating shows the logo with a running bar while an agent update is
@@ -179,9 +231,19 @@ func ShowAtStart(kind Kind, logger *slog.Logger, displayUp func() bool) {
 // reboot takes the animation down with the process). Safe to call stop more
 // than once. A hard cap releases the panel even if stop is never called.
 func StartUpdating(logger *slog.Logger) (stop func()) {
-	if !Enabled() || !panelSupported() || !boseAppDisplayReady() || !acquirePanel(false) {
+	if !Enabled() || !panelSupported() {
 		return func() {}
 	}
+	// No wait: an update that arrives while the speaker's display is still
+	// starting goes ahead without its screen rather than hold a booting panel.
+	if !panelMayHold() {
+		logger.Info("oled update splash skipped: speaker display still starting", holdAttrs("update")...)
+		return func() {}
+	}
+	if !acquirePanel(false) {
+		return func() {}
+	}
+	logger.Info("oled panel hold", holdAttrs("update")...)
 	quit := make(chan struct{})
 	var once sync.Once
 	done := make(chan struct{})
