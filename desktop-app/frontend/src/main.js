@@ -278,7 +278,7 @@ import {
 // pulls state/utils/i18n/api from the shared modules; only the slot-picker modal
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
-import { renderRecent, initRecentView } from './views/recent.js';
+import { renderRecent, initRecentView, repaintRecentFavStars } from './views/recent.js';
 import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
@@ -348,9 +348,11 @@ import {
   localizeLanguageName,
   mergeFavStations,
   mountMusicView,
+  onFavRemovalsApplied,
   openPandoraPick,
   openPick,
   playStation,
+  pollFavRemovalsOnCurrentBox,
   pollTrackPosition,
   purgeMusicStateForSpeaker,
   refreshBalance,
@@ -372,7 +374,10 @@ import {
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
-initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav, openPandoraPick, renderNowPlayingBar, refreshStatus });
+initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav, openPandoraPick, renderNowPlayingBar, refreshStatus, pollFavRemovals: pollFavRemovalsOnCurrentBox });
+// A favourite removed on a phone takes its star off the Recently-played cards
+// the moment the app learns of it, not on that view's next 30 s repaint (#1339).
+onFavRemovalsApplied(() => { if (state.view === 'recent') repaintRecentFavStars(); });
 // openSpeakerSettings selects a speaker and shows its settings, which is where
 // its update lives. The Multi-Room tab needs it: a card that says a speaker
 // must be updated first has to be able to take the owner there.

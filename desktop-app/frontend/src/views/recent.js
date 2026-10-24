@@ -40,6 +40,9 @@ let deps = {
   // the next slow poll (#1394). Both live in views/music; main.js hands them in.
   renderNowPlayingBar() {},
   refreshStatus() {},
+  // The quick check for a favourite removed on a phone (#1339), from
+  // views/music/favorites.js. Resolves to whether it took a star away.
+  pollFavRemovals: null,
 };
 export function initRecentView(d) {
   deps = { ...deps, ...d };
@@ -531,8 +534,51 @@ function saveSpotifyCard(c) {
 // follows the speaker) without the user re-opening the tab. Cleared on
 // navigate-away and on re-entry so timers never stack.
 let recentTimer = null;
+// favTimer asks the selected speaker every few seconds whether a favourite was
+// removed on a phone, so the star here goes out within seconds instead of
+// after the minute-long full sync plus this view's 30 s repaint (#1339).
+let favTimer = null;
 function stopRecentAutoRefresh() {
   if (recentTimer) { clearInterval(recentTimer); recentTimer = null; }
+  if (favTimer) { clearInterval(favTimer); favTimer = null; }
+}
+
+// RECENT_FAV_POLL_MS is how often the open view checks for a phone removal.
+// One small read of one speaker, answered from the agent's memory, and only
+// while this tab is the one on screen and the window is visible.
+export const RECENT_FAV_POLL_MS = 5000;
+
+// recentFavPollDue says whether a fav-removal check may run right now.
+export function recentFavPollDue({ view, visibility }) {
+  return view === 'recent' && visibility === 'visible';
+}
+
+// The cards last painted, so a star can be repainted without fetching the
+// history from every speaker again.
+let paintedCards = [];
+
+// repaintRecentFavStars brings every radio card's star in line with the
+// favourites store. Called when a phone removal took a star off the list.
+// lookup is injectable for the tests (the suite runs without a DOM).
+export function repaintRecentFavStars(lookup = (id) => document.getElementById(id)) {
+  if (!deps.isFav) return 0;
+  let n = 0;
+  paintedCards.forEach((c, i) => {
+    const btn = lookup('recFav' + i);
+    if (!btn) return;
+    const fav = !!deps.isFav(cardStation(c));
+    if (btn.classList.contains('is-fav') === fav) return;
+    btn.classList.toggle('is-fav', fav);
+    btn.innerHTML = fav ? '&#9733;' : '&#9734;';
+    btn.title = fav ? t('search.removeFav') : t('search.addFav');
+    n++;
+  });
+  return n;
+}
+
+// setPaintedRecentCards is the tests' way to stand in for a painted list.
+export function setPaintedRecentCards(cards) {
+  paintedCards = Array.isArray(cards) ? cards : [];
 }
 
 // refreshRecentList re-fetches and repaints only the card list (not the header /
@@ -570,6 +616,7 @@ export async function refreshRecentList() {
   const listEl = $('recentList');
   if (!listEl || state.view !== 'recent') { stopRecentAutoRefresh(); return; } // navigated away mid-fetch
   if (!cards.length) {
+    paintedCards = [];
     listEl.innerHTML = `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
     return;
   }
@@ -579,6 +626,7 @@ export async function refreshRecentList() {
   // several times lit up every one of its cards (#761). Cards are newest-first,
   // so the first match is the running session.
   const playingIdx = cards.findIndex(cardIsPlaying);
+  paintedCards = cards;
   listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
   cards.forEach((c, i) => wireCard(c, i));
 }
@@ -643,4 +691,15 @@ export async function renderRecent() {
     if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
     refreshRecentList();
   }, 30000);
+  // A favourite removed on a phone: check once now (the tab was just opened)
+  // and then every few seconds while it stays on screen (#1339).
+  if (deps.pollFavRemovals) {
+    const pollFav = () => {
+      if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
+      if (!recentFavPollDue({ view: state.view, visibility: document.visibilityState })) return;
+      deps.pollFavRemovals().catch(() => {});
+    };
+    pollFav();
+    favTimer = setInterval(pollFav, RECENT_FAV_POLL_MS);
+  }
 }

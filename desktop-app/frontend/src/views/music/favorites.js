@@ -72,17 +72,62 @@ export async function syncFavRemovals() {
     const boxes = (state.boxes || []).filter((b) => b && !b.offline && b.kind !== 'stock');
     const answers = await Promise.all(boxes.map((b) =>
       FavoriteRemovals(b.host, b.port).then(parseFavRemovals).catch(() => [])));
-    const { kept, changed } = applyFavRemovals(loadFavStore(), answers.flat(), favId);
-    if (!changed) return;
-    saveFavStore(kept);
-    updateFavModeBtn();
-    if (state.searchLastMode === 'favorites') {
-      state.searchResults = kept;
-      renderSearchResults();
-    }
+    takeFavRemovals(answers.flat());
   } finally {
     favRemovalsRunning = false;
   }
+}
+
+// pollFavRemovalsOnCurrentBox is the quick half of syncFavRemovals, for while
+// a screen that shows stars is open (#1339). A favourite removed on the phone
+// kept its star in Recently played for over a minute: the full sync above runs
+// at most once a minute on the box-list refresh, and the view only repainted on
+// its own 30 s timer after that, so the star lagged by up to one and a half
+// minutes. This asks ONE speaker, the selected one: the speaker the phone
+// removed it on hands the removal on to every other STR speaker at once, so the
+// selected one knows within a second. One small read the agent answers from
+// memory, only while the window is on screen; the caller sets the cadence.
+let favQuickRunning = false;
+export async function pollFavRemovalsOnCurrentBox() {
+  const box = state.currentBox;
+  if (favQuickRunning || !box || box.offline || box.kind === 'stock') return false;
+  if (!loadFavStore().length) return false;
+  favQuickRunning = true;
+  try {
+    let removals;
+    try {
+      removals = parseFavRemovals(await FavoriteRemovals(box.host, box.port));
+    } catch {
+      return false; // busy or asleep: the next tick, or the minute sync, catches up
+    }
+    return takeFavRemovals(removals);
+  } finally {
+    favQuickRunning = false;
+  }
+}
+
+// favChangeListeners repaint the stars outside the search rows (Recently
+// played) when a phone removal took one off this list.
+const favChangeListeners = [];
+export function onFavRemovalsApplied(fn) {
+  if (typeof fn === 'function') favChangeListeners.push(fn);
+}
+
+// takeFavRemovals applies removal notes to the stored list and, when that took
+// a star away, saves, pushes and repaints everything that shows stars.
+function takeFavRemovals(removals) {
+  const { kept, changed } = applyFavRemovals(loadFavStore(), removals, favId);
+  if (!changed) return false;
+  saveFavStore(kept);
+  updateFavModeBtn();
+  if (state.searchLastMode === 'favorites') {
+    state.searchResults = kept;
+    renderSearchResults();
+  }
+  for (const fn of favChangeListeners) {
+    try { fn(); } catch { /* one repaint failing must not stop the others */ }
+  }
+  return true;
 }
 function favId(s) { return s && (s.stationuuid || (s.name + '|' + (s.url || ''))); }
 // favStationsJSON / mergeFavStations are the backup hooks (#778): export hands

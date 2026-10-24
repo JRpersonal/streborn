@@ -112,6 +112,41 @@ func loadFavorites() []Favorite {
 // loadFavoriteRemovals reads the removal notes; damaged or missing reads as
 // none, for the same reason as the list itself.
 func loadFavoriteRemovals() []favoriteRemoval {
+	removalsCache.Lock()
+	defer removalsCache.Unlock()
+	if removalsCache.ok && removalsCache.path == favoriteRemovalsPath {
+		return append([]favoriteRemoval{}, removalsCache.notes...)
+	}
+	out := readFavoriteRemovals()
+	removalsCache.path, removalsCache.notes, removalsCache.ok = favoriteRemovalsPath, out, true
+	return append([]favoriteRemoval{}, out...)
+}
+
+// removalsCache keeps the removal notes as last read or written. The desktop
+// app asks for them every few seconds while its Recently-played tab is open
+// (#1339), so a star removed on the phone goes out there within seconds; this
+// answers that from memory instead of the flash. The agent is the only writer
+// of the file, so the copy cannot go stale behind its back.
+var removalsCache struct {
+	sync.Mutex
+	path  string
+	notes []favoriteRemoval
+	ok    bool
+}
+
+// setRemovalsCache records what is now on the flash; nil forgets it, so the
+// next read goes back to the file.
+func setRemovalsCache(notes []favoriteRemoval) {
+	removalsCache.Lock()
+	defer removalsCache.Unlock()
+	if notes == nil {
+		removalsCache.ok = false
+		return
+	}
+	removalsCache.path, removalsCache.notes, removalsCache.ok = favoriteRemovalsPath, append([]favoriteRemoval{}, notes...), true
+}
+
+func readFavoriteRemovals() []favoriteRemoval {
 	b, err := os.ReadFile(favoriteRemovalsPath)
 	if err != nil {
 		return []favoriteRemoval{}
@@ -135,14 +170,21 @@ func storeFavoriteRemovals(in []favoriteRemoval) error {
 		return err
 	}
 	if old, err := os.ReadFile(favoriteRemovalsPath); err == nil && string(old) == string(b) {
+		setRemovalsCache(in)
 		return nil
 	}
 	if len(in) == 0 {
 		if _, err := os.Stat(favoriteRemovalsPath); os.IsNotExist(err) {
+			setRemovalsCache(in)
 			return nil // nothing noted and no file: leave the flash alone
 		}
 	}
-	return writeNANDFile(favoriteRemovalsPath, b)
+	if err := writeNANDFile(favoriteRemovalsPath, b); err != nil {
+		setRemovalsCache(nil)
+		return err
+	}
+	setRemovalsCache(in)
+	return nil
 }
 
 // applyFavoriteRemovals drops from an incoming list every favourite that was

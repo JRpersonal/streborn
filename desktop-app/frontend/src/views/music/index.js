@@ -41,6 +41,8 @@ export {
   favStationsJSON,
   isFav,
   mergeFavStations,
+  onFavRemovalsApplied,
+  pollFavRemovalsOnCurrentBox,
   syncFavRemovals,
   toggleFav,
   updateFavModeBtn,
