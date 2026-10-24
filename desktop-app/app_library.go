@@ -232,6 +232,9 @@ type LibraryContainer struct {
 	// AlbumArtURL is the folder's own cover (upnp:albumArtURI). A folder key
 	// falls back to it when none of its tracks carries a cover (#1301).
 	AlbumArtURL string `json:"albumArtURL"`
+	// Class is the folder's upnp:class (a playlist is
+	// object.container.playlistContainer).
+	Class string `json:"class,omitempty"`
 }
 
 // LibraryItem is a single playable track.
@@ -248,6 +251,11 @@ type LibraryItem struct {
 	// Server names the media server a whole-library search hit came from;
 	// empty for a browse, where the open server is plain to see.
 	Server string `json:"server,omitempty"`
+	// TrackNumber and DiscNumber come from upnp:originalTrackNumber and the
+	// server's disc field; 0 when the server sends none. The Library puts an
+	// album folder in track order by them (#1487).
+	TrackNumber int `json:"trackNumber,omitempty"`
+	DiscNumber  int `json:"discNumber,omitempty"`
 }
 
 // LibraryPage is one page of a browse call.
@@ -256,6 +264,13 @@ type LibraryPage struct {
 	Items        []LibraryItem      `json:"items"`
 	TotalMatches int                `json:"totalMatches"`
 	Returned     int                `json:"returned"`
+	// ContainerClass is the open folder's own upnp:class. It is only looked up
+	// on the first page of a folder that spans several pages: a single-page
+	// folder already comes back in album track order from here, while a longer
+	// one can only be ordered once the frontend holds every page, and the
+	// frontend must not re-order a playlist (#1487). Empty when not looked up
+	// or when the server did not say.
+	ContainerClass string `json:"containerClass,omitempty"`
 }
 
 // ListMediaServers finds the DLNA MediaServers the Library tab can
@@ -406,7 +421,16 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	if err != nil {
 		return LibraryPage{}, err
 	}
-	return libraryPageFrom(res), nil
+	// An album the server lists alphabetically comes back in track order
+	// (#1487); dlna.OrderBrowsePage has the rule and leaves playlists alone.
+	res = dlna.OrderBrowsePage(ctx, srv, objectID, start, res)
+	page := libraryPageFrom(res)
+	if start == 0 && !res.Complete(start) && len(page.Items) > 0 {
+		if class, err := dlna.ContainerClass(ctx, srv, objectID); err == nil {
+			page.ContainerClass = class
+		}
+	}
+	return page, nil
 }
 
 // LibrarySearchResult is one whole-library search across every media server
@@ -534,6 +558,7 @@ func libraryPageFrom(res dlna.BrowseResult) LibraryPage {
 		page.Containers = append(page.Containers, LibraryContainer{
 			ID: c.ID, ParentID: c.ParentID, Title: c.Title,
 			ChildCount: c.ChildCount, AlbumArtURL: c.AlbumArtURL,
+			Class: c.Class,
 		})
 	}
 	for _, it := range res.Items {
@@ -545,6 +570,7 @@ func libraryPageFrom(res dlna.BrowseResult) LibraryPage {
 			Artist: it.Artist, Album: it.Album, MimeType: it.MimeType,
 			StreamURL: it.StreamURL, AlbumArtURL: it.AlbumArtURL,
 			DurationSec: it.DurationSec,
+			TrackNumber: it.TrackNumber, DiscNumber: it.DiscNumber,
 		})
 	}
 	return page

@@ -514,7 +514,7 @@ func acceptServer(ctx context.Context, s Server) error {
 	}
 	vctx, cancel := context.WithTimeout(ctx, validateBrowseTimeout)
 	defer cancel()
-	raw, status, err := browseRaw(vctx, s, "0", 0, 1)
+	raw, status, err := browseRaw(vctx, s, "0", browseChildren, 0, 1)
 	if err == nil && status == http.StatusOK && isBrowseResponse(raw) {
 		Logger.Debug("dlna: non-MediaServer ContentDirectory accepted after validation browse",
 			"location", s.Location, "deviceType", s.CDSDeviceType)
@@ -873,6 +873,9 @@ type Container struct {
 	// AlbumArtURL is the container's own cover (upnp:albumArtURI), which
 	// servers set on album folders. Empty when the server sends none.
 	AlbumArtURL string
+	// Class is the container's upnp:class (object.container.album.musicAlbum,
+	// object.container.playlistContainer, ...). Empty when the server sends none.
+	Class string
 }
 
 // Item is a single playable object (track, photo, video). For the
@@ -888,13 +891,18 @@ type Item struct {
 	StreamURL   string
 	AlbumArtURL string
 	DurationSec int
+	// TrackNumber is upnp:originalTrackNumber, 0 when the server sends none.
+	TrackNumber int
+	// DiscNumber is the disc of a multi-disc album (upnp:originalDiscNumber
+	// and the like), 0 when the server sends none.
+	DiscNumber int
 }
 
 // Browse calls ContentDirectory:Browse on the server. objectID "0"
 // is the server root. start is the offset for paging, count the
 // page size (0 means server default).
 func Browse(ctx context.Context, srv Server, objectID string, start, count int) (BrowseResult, error) {
-	raw, status, err := browseRaw(ctx, srv, objectID, start, count)
+	raw, status, err := browseRaw(ctx, srv, objectID, browseChildren, start, count)
 	if err != nil {
 		return BrowseResult{}, err
 	}
@@ -907,20 +915,28 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 	return parseBrowseResponse(raw)
 }
 
+// The two ContentDirectory:Browse flags: the children of an object, or the
+// object's own metadata.
+const (
+	browseChildren = "BrowseDirectChildren"
+	browseMetadata = "BrowseMetadata"
+)
+
 // browseRaw posts one ContentDirectory:Browse and returns the raw answer with
 // its HTTP status, leaving the interpretation to the caller.
-func browseRaw(ctx context.Context, srv Server, objectID string, start, count int) ([]byte, int, error) {
+func browseRaw(ctx context.Context, srv Server, objectID, flag string, start, count int) ([]byte, int, error) {
 	if srv.CDSControlURL == "" {
 		return nil, 0, fmt.Errorf("server has no ContentDirectory control URL")
 	}
 	if objectID == "" {
 		objectID = "0"
 	}
-	if count <= 0 {
+	// BrowseMetadata answers the one object itself; the spec has its count at 0.
+	if count <= 0 && flag != browseMetadata {
 		count = 50
 	}
-	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>%s</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>%d</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>`,
-		xmlEscape(objectID), start, count)
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Browsexmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>%s</ObjectID><BrowseFlag>%s</BrowseFlag><Filter>*</Filter><StartingIndex>%d</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>`,
+		xmlEscape(objectID), flag, start, count)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.CDSControlURL, strings.NewReader(body))
 	if err != nil {
@@ -1109,6 +1125,12 @@ type didlItem struct {
 	Album    string  `xml:"album"`
 	AlbumArt string  `xml:"albumArtURI"`
 	Res      []didlR `xml:"res"`
+	// Track and disc numbers. upnp:originalTrackNumber is the UPnP field;
+	// there is no standard disc field, so the names servers are known to use
+	// are all read and the first usable one wins (see firstNumber).
+	TrackNumber  []string `xml:"originalTrackNumber"`
+	DiscNumbers  []string `xml:"originalDiscNumber"`
+	DiscNumbers2 []string `xml:"discNumber"`
 }
 
 type didlR struct {
@@ -1182,6 +1204,7 @@ func didlToResult(res string, total, returned int) (BrowseResult, error) {
 		out.Containers = append(out.Containers, Container{
 			ID: c.ID, ParentID: c.ParentID, Title: c.Title,
 			ChildCount: c.ChildCount, AlbumArtURL: strings.TrimSpace(c.AlbumArt),
+			Class: strings.TrimSpace(c.Class),
 		})
 	}
 	for _, it := range didl.Items {
@@ -1199,6 +1222,8 @@ func didlToResult(res string, total, returned int) (BrowseResult, error) {
 			Class: it.Class, Artist: it.Artist, Album: it.Album,
 			AlbumArtURL: it.AlbumArt, StreamURL: stream,
 			MimeType: mime, DurationSec: duration,
+			TrackNumber: firstNumber(it.TrackNumber),
+			DiscNumber:  firstNumber(it.DiscNumbers, it.DiscNumbers2),
 		})
 	}
 	return out, nil
