@@ -398,7 +398,10 @@ type Manager struct {
 	// late. Each song then ended "short" of the wrong length and lost its
 	// buffered tail (living-room ST30, 2026-10-08: 156 s played against 198 s
 	// expected). boundaryAt / loadSinceBoundary let such a late load claim the
-	// boundary it belongs to.
+	// boundary it belongs to. Prefetched loads can land late too (0.3 to 0.9 s
+	// behind their BOS, living-room ST30, 2026-10-24); one claims its boundary
+	// only when that boundary started with no duration, so a prefetch of the
+	// NEXT track right behind a boundary still goes to loadedTrackDurMs.
 	loadedTrackDurMs  int64
 	streamTrackDurMs  int64
 	boundaryAt        time.Time
