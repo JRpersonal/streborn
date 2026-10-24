@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// localIPv4Subnets returns sweep PREFIXES like "192.168.178.", not CIDR. A
+// localIPv4Subnets returns sweep PREFIXES like "192.168.1.", not CIDR. A
 // reader that expects a "/24" in them produces nothing on every machine, which
 // is how the first version of the zero-result logging came out as dead code.
 // Pin the shape so the next reader of this value does not repeat it.

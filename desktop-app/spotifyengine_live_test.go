@@ -15,7 +15,7 @@ package main
 // the engine's Web API proxy but from the engine's token plus the speaker's own
 // call to Spotify.
 //
-//	STR_LIVE_BOX=192.168.178.79 STR_LIVE_PORT=17008 STR_LIVE_SPOTIFY_SLOT=4 \
+//	STR_LIVE_BOX=192.0.2.79 STR_LIVE_PORT=17008 STR_LIVE_SPOTIFY_SLOT=4 \
 //	  go test ./... -run LiveSpotifyEngine -v -timeout 15m
 //
 // Audible, so: the Portable only, and volume 5.

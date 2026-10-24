@@ -281,17 +281,17 @@ func TestHandleMessage_ZoneUpdatedParsed(t *testing.T) {
 	c := newTestClient(h)
 	// A box-formed stereo pair / zone (Klaus #70): previously this fell through
 	// as an "unrecognized frame"; it must now parse into a typed ZoneState.
-	frame := `<updates><zoneUpdated><zone master="B0D5CCC4D6CB" senderIPAddress="192.0.2.38" senderIsMaster="true">` +
-		`<member ipaddress="192.0.2.39" role="right">B0D5CCC4D7AA</member></zone></zoneUpdated></updates>`
+	frame := `<updates><zoneUpdated><zone master="0000000001F6" senderIPAddress="192.0.2.38" senderIsMaster="true">` +
+		`<member ipaddress="192.0.2.39" role="right">0000000002A1</member></zone></zoneUpdated></updates>`
 	c.handleMessage(context.Background(), []byte(frame))
 	if len(h.zones) != 1 {
 		t.Fatalf("expected one zone event, got %d", len(h.zones))
 	}
 	z := h.zones[0]
-	if z.Master != "B0D5CCC4D6CB" || !z.SenderIsMaster || len(z.Members) != 1 {
+	if z.Master != "0000000001F6" || !z.SenderIsMaster || len(z.Members) != 1 {
 		t.Fatalf("zone parsed wrong: %+v", z)
 	}
-	if z.Members[0].DeviceID != "B0D5CCC4D7AA" || z.Members[0].IP != "192.0.2.39" || z.Members[0].Role != "right" {
+	if z.Members[0].DeviceID != "0000000002A1" || z.Members[0].IP != "192.0.2.39" || z.Members[0].Role != "right" {
 		t.Fatalf("member parsed wrong: %+v", z.Members[0])
 	}
 }

@@ -26,7 +26,7 @@ func startVolServer(t *testing.T) *Server {
 func postStartVol(t *testing.T, s *Server, body string) (int, map[string]any) {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/api/box/start-volume", strings.NewReader(body))
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	w := httptest.NewRecorder()
 	s.handleStartVolume(w, r)
 	var out map[string]any
@@ -42,7 +42,7 @@ func TestStartVolumeIsOffUntilItIsSet(t *testing.T) {
 		t.Error("no file must mean off")
 	}
 	r := httptest.NewRequest(http.MethodGet, "/api/box/start-volume", nil)
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	w := httptest.NewRecorder()
 	s.handleStartVolume(w, r)
 	var out map[string]any

@@ -91,7 +91,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// Wi-Fi dongle for the Bose setup AP), zeroconf-go finishes its
 	// browse as soon as ANY response arrives. Observed live 2026-05-24:
 	// the Portable on 192.168.1.1 (Setup-AP, Wi-Fi 2) answered first,
-	// browse closed, the ST10 on 192.168.178.66 (Wi-Fi 1) never made
+	// browse closed, the ST10 on 192.0.2.66 (Wi-Fi 1) never made
 	// it into the result channel even though both interfaces were
 	// joined for multicast. Running the TCP sweep unconditionally
 	// catches every speaker the user actually has: the upsert dedupe

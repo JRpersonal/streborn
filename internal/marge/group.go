@@ -24,7 +24,7 @@ type groupRole struct {
 // groupRecord mirrors the <group> descriptor the ST10 firmware POSTs to marge
 // to create the L/R stereo pair, and the shape the box's own /getGroup returns:
 // id as an attribute, name/masterDeviceId as child elements, and the members as
-// <roles><groupRole>. Live captured 2026-07-10 from EC24B8B790CC.
+// <roles><groupRole>. Live captured 2026-07-10 from 0000000000A1.
 type groupRecord struct {
 	XMLName        xml.Name    `xml:"group"`
 	ID             string      `xml:"id,attr"`

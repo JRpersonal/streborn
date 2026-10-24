@@ -22,7 +22,7 @@ func TestTheUSBGadgetAddressIsNotALANAddress(t *testing.T) {
 }
 
 func TestRealAddressesAreAccepted(t *testing.T) {
-	for _, s := range []string{"192.168.178.44", "10.0.0.247", "172.16.5.9"} {
+	for _, s := range []string{"192.168.1.44", "10.0.0.247", "172.16.5.9"} {
 		if !UsableLANIPv4(net.ParseIP(s)) {
 			t.Errorf("%s should be usable", s)
 		}

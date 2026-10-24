@@ -214,9 +214,9 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 		{"Port", m(BoxInfo{Port: 8888}), v(BoxInfo{Port: 0}), 8888, "a verified record without a port cannot win"},
 		{"PortVerified", m(BoxInfo{Port: 8888}), v(BoxInfo{Port: 0}), false, "and does not verify the announced one"},
 
-		{"DeviceID", m(BoxInfo{DeviceID: "74DAEA99C34C"}), v(BoxInfo{DeviceID: "68C90B85A0A9"}), "68C90B85A0A9", "the /info deviceID wins over the mDNS wlan0 MAC (#70)"},
-		{"DeviceID", v(BoxInfo{DeviceID: "68C90B85A0A9"}), m(BoxInfo{DeviceID: "74DAEA99C34C"}), "68C90B85A0A9", "regardless of order"},
-		{"DeviceID", m(BoxInfo{DeviceID: "74DAEA99C34C"}), v(BoxInfo{}), "74DAEA99C34C", "a blank verified deviceID falls back to the announced one"},
+		{"DeviceID", m(BoxInfo{DeviceID: "0000000001D4"}), v(BoxInfo{DeviceID: "0000000001C3"}), "0000000001C3", "the /info deviceID wins over the mDNS wlan0 MAC (#70)"},
+		{"DeviceID", v(BoxInfo{DeviceID: "0000000001C3"}), m(BoxInfo{DeviceID: "0000000001D4"}), "0000000001C3", "regardless of order"},
+		{"DeviceID", m(BoxInfo{DeviceID: "0000000001D4"}), v(BoxInfo{}), "0000000001D4", "a blank verified deviceID falls back to the announced one"},
 		{"DeviceID", m(BoxInfo{DeviceID: "A"}), m(BoxInfo{DeviceID: "B"}), "A", "two announcements: the first"},
 		{"DeviceID", m(BoxInfo{}), m(BoxInfo{DeviceID: "B"}), "B", "an empty first is filled"},
 		{"BoxDeviceID", m(BoxInfo{BoxDeviceID: "A"}), v(BoxInfo{BoxDeviceID: "B"}), "A", "no contest: both sides carry the same value when set"},

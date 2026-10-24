@@ -8,7 +8,7 @@
 //
 // Findings that drive this: live capture on rhino/sm2 ST10
 // 2026-05-29 — the iPhone briefly joined the speaker's setup-AP,
-// GET'd /info, saw <ipAddress>192.168.178.66</ipAddress> (already on
+// GET'd /info, saw <ipAddress>192.0.2.66</ipAddress> (already on
 // <home Wi-Fi> from a leftover NetworkProfiles.xml), and disconnected without
 // posting any credentials. Wiping NetworkProfiles.xml +
 // SystemConfigurationDB.xml + STR's NAND wlan-creds and rebooting

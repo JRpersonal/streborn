@@ -26,7 +26,7 @@ func favServer(t *testing.T) *Server {
 func putFavs(t *testing.T, s *Server, body string) (int, map[string]any) {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPut, "/api/favorites", strings.NewReader(body))
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	w := httptest.NewRecorder()
 	s.handleFavorites(w, r)
 	var out map[string]any

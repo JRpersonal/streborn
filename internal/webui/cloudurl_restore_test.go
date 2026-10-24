@@ -48,7 +48,7 @@ func cloudRestoreServer() *Server {
 func postRestore(t *testing.T, s *Server) (int, map[string]any) {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/api/box/restore-cloud-url", nil)
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	w := httptest.NewRecorder()
 	s.handleRestoreCloudURL(w, r)
 	var out map[string]any
@@ -113,7 +113,7 @@ func TestRestoreCloudURLIsLANOnly(t *testing.T) {
 func TestRestoreCloudURLRejectsGET(t *testing.T) {
 	withRuntimeHijack(t, "https://stremotepro.com/api/bose-cloud")
 	r := httptest.NewRequest(http.MethodGet, "/api/box/restore-cloud-url", nil)
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	w := httptest.NewRecorder()
 	cloudRestoreServer().handleRestoreCloudURL(w, r)
 	if w.Code == http.StatusOK {

@@ -23,7 +23,7 @@ func boxSettingsServer(t *testing.T) *Server {
 func postLAN(fn func(http.ResponseWriter, *http.Request), path, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	fn(w, r)
 	return w
 }

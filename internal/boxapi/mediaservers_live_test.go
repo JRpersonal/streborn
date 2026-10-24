@@ -10,7 +10,7 @@ import (
 // TestBrowseMediaServerLive drives BrowseMediaServer against a REAL speaker with
 // a registered media server. Opt-in, because it needs hardware:
 //
-//	STR_LIVE_BOX=192.168.178.79 STR_LIVE_ACCOUNT=<uuid>/0 go test ./internal/boxapi -run Live -v
+//	STR_LIVE_BOX=192.0.2.79 STR_LIVE_ACCOUNT=<uuid>/0 go test ./internal/boxapi -run Live -v
 //
 // It exists because the /navigate request shape is the part of this feature that
 // no unit test can protect: the firmware rejects every arrangement but one, and

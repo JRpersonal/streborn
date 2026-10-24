@@ -261,8 +261,8 @@ func TestMargeGroupCreateReadDelete(t *testing.T) {
 	}
 
 	const acct = "stick@local"
-	const master = "EC24B8B790CC"
-	const slave = "94E36DF9CE40"
+	const master = "0000000000A1"
+	const slave = "0000000001A1"
 	createBody := `<?xml version="1.0" encoding="UTF-8" ?><group><masterDeviceId>` + master +
 		`</masterDeviceId><name>Stereo TEST</name><roles>` +
 		`<groupRole><deviceId>` + master + `</deviceId><role>LEFT</role></groupRole>` +

@@ -11,9 +11,9 @@ import (
 // structured pass must hash every zone name and keep the rest intact.
 func TestAnonymizeZoneJSONHashesSpeakerNames(t *testing.T) {
 	in := `{"grouped":false,"stereo":{"name":"Praxis Paar","master":"AABBCCDDEEFF"},` +
-		`"remembered":[{"deviceID":"112233445566","ip":"192.168.178.56","name":"Bose Praxis Rechts"}]}`
+		`"remembered":[{"deviceID":"112233445566","ip":"192.168.1.56","name":"Bose Praxis Rechts"}]}`
 	out := anonymizeZoneJSON(in)
-	for _, leak := range []string{"Praxis Paar", "Bose Praxis Rechts", "192.168.178.56"} {
+	for _, leak := range []string{"Praxis Paar", "Bose Praxis Rechts", "192.168.1.56"} {
 		if strings.Contains(out, leak) {
 			t.Errorf("zone anonymizer leaked %q in %s", leak, out)
 		}

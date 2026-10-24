@@ -19,7 +19,7 @@ func TestPhoneUnstarLeavesRecentlyPlayedUntouched(t *testing.T) {
 	s.recent.Add(recent.Entry{Source: "radio", CardKey: "http://example/1live", CardName: "1LIVE", CardURL: "http://example/1live", TS: "t1"})
 	putFavs(t, s, twoFavs)
 
-	code, out := deleteFav(t, s, "id=u-1", "192.168.178.20:5555")
+	code, out := deleteFav(t, s, "id=u-1", "192.168.1.20:5555")
 	if code != http.StatusOK || out["removed"] != float64(1) {
 		t.Fatalf("unstar answered %d %v", code, out)
 	}

@@ -22,7 +22,7 @@ describe('the speaker cache', () => {
 
   it('does not carry a speaker condition across a restart', () => {
     localStorage.setItem('cachedBoxes', JSON.stringify([{
-      host: '192.168.178.44', deviceID: 'DEV#1', friendlyName: 'Wohnzimmer',
+      host: '192.0.2.44', deviceID: 'DEV#1', friendlyName: 'Wohnzimmer',
       model: 'SoundTouch 30', storm1036: true, recallRefusal: true,
       boxHealth: 'wedged', conflictingMod: 'AfterTouch',
     }]));
@@ -36,16 +36,16 @@ describe('the speaker cache', () => {
   });
 
   it('does not write a condition into the cache either', () => {
-    saveCachedBoxes([{ host: '192.168.178.44', friendlyName: 'Wohnzimmer', storm1036: true }]);
+    saveCachedBoxes([{ host: '192.0.2.44', friendlyName: 'Wohnzimmer', storm1036: true }]);
     const stored = JSON.parse(localStorage.getItem('cachedBoxes'));
     expect(stored[0].friendlyName).toBe('Wohnzimmer');
     expect(stored[0].storm1036).toBeUndefined();
   });
 
   it('still keeps what the list is for', () => {
-    saveCachedBoxes([{ host: '192.168.178.44', deviceID: 'DEV#1', friendlyName: 'Küche', model: 'SoundTouch 10', port: 8888 }]);
+    saveCachedBoxes([{ host: '192.0.2.44', deviceID: 'DEV#1', friendlyName: 'Küche', model: 'SoundTouch 10', port: 8888 }]);
     const [box] = loadCachedBoxes();
-    expect(box).toMatchObject({ host: '192.168.178.44', deviceID: 'DEV#1', friendlyName: 'Küche', model: 'SoundTouch 10', port: 8888 });
+    expect(box).toMatchObject({ host: '192.0.2.44', deviceID: 'DEV#1', friendlyName: 'Küche', model: 'SoundTouch 10', port: 8888 });
   });
 
   it('still drops the USB gadget address', () => {

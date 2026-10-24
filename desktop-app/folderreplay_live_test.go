@@ -16,7 +16,7 @@ package main
 //
 // Env-gated so CI never touches hardware:
 //
-//	STR_LIVE_BOX=192.168.178.79 STR_LIVE_PORT=17008 go test ./... -run LiveFolderReplay -v
+//	STR_LIVE_BOX=192.0.2.79 STR_LIVE_PORT=17008 go test ./... -run LiveFolderReplay -v
 
 import (
 	"encoding/json"

@@ -19,7 +19,7 @@ func TestBoxWLANRefusesEmptyPasswordWithoutOpenFlag(t *testing.T) {
 	put := func(body string) *httptest.ResponseRecorder {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest("PUT", "/api/box/wlan", strings.NewReader(body))
-		req.RemoteAddr = "192.168.178.20:40000"
+		req.RemoteAddr = "192.168.1.20:40000"
 		s.handleBoxWLAN(rr, req)
 		return rr
 	}

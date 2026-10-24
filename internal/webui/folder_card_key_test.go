@@ -47,8 +47,8 @@ func TestCanonicalFolderCardKey(t *testing.T) {
 	}{
 		{"queue:uuid:00113251-28ed-0011-ed28-ed2851321100:22$601", "queue:uuid:00113251-28ed-0011-ed28-ed2851321100:22$601", true},
 		{"folder:00113251-28ed-0011-ed28-ed2851321100/22$601", "queue:uuid:00113251-28ed-0011-ed28-ed2851321100:22$601", true},
-		{"folder:fa095ecc-e13e-40e7-8e6c-3C37129F8346/4:cont2:578:AVM GmbH0:3:Pop", "queue:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346:4:cont2:578:AVM GmbH0:3:Pop", true},
-		{"folder:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346/0", "queue:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346:0", true},
+		{"folder:fa095ecc-e13e-40e7-8e6c-0000000002C3/4:cont2:578:AVM GmbH0:3:Pop", "queue:uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3:4:cont2:578:AVM GmbH0:3:Pop", true},
+		{"folder:uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3/0", "queue:uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3:0", true},
 		// The no-server fallback: the first track's URL is not a folder.
 		{"folder:http://192.0.2.1:9000/a.mp3", "", false},
 		{"folder:", "", false},

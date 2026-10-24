@@ -24,7 +24,7 @@ import (
 // This test covers every route rather than that one path, because the defect is
 // a missing keyword that any future case can repeat.
 func TestEveryMargeRouteWritesOneDocument(t *testing.T) {
-	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("94E36DF9CE40"))
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("0000000001A1"))
 	s.SetAccount(&AccountInfo{AccountEmail: "stick@local"})
 
 	routes := []struct {
@@ -35,15 +35,15 @@ func TestEveryMargeRouteWritesOneDocument(t *testing.T) {
 		{http.MethodPost, "/streaming/account/stick@local/source"},
 		{http.MethodGet, "/streaming/account/stick@local/full"},
 		{http.MethodPost, "/streaming/account/stick@local/device/"},
-		{http.MethodGet, "/streaming/account/stick@local/device/94E36DF9CE40/group/"},
+		{http.MethodGet, "/streaming/account/stick@local/device/0000000001A1/group/"},
 		{http.MethodGet, "/streaming/sourceproviders"},
 		{http.MethodGet, "/streaming/account/stick@local/provider_settings"},
 		{http.MethodPost, "/streaming/support/power_on"},
 		{http.MethodGet, "/bmx/registry/v1/services"},
 		{http.MethodGet, "/bmx/registry/v1/servicesAvailability"},
-		{http.MethodPost, "/streaming/account/stick@local/device/94E36DF9CE40/recent"},
-		{http.MethodPut, "/streaming/account/stick@local/device/94E36DF9CE40/preset/3"},
-		{http.MethodDelete, "/streaming/account/stick@local/device/94E36DF9CE40/preset/3"},
+		{http.MethodPost, "/streaming/account/stick@local/device/0000000001A1/recent"},
+		{http.MethodPut, "/streaming/account/stick@local/device/0000000001A1/preset/3"},
+		{http.MethodDelete, "/streaming/account/stick@local/device/0000000001A1/preset/3"},
 	}
 
 	for _, rt := range routes {
@@ -74,7 +74,7 @@ func TestEveryMargeRouteWritesOneDocument(t *testing.T) {
 // but the ordering is a trap for the next person adding a /device route, so it
 // is pinned here.
 func TestRecentsPostIsAnsweredWithRecents(t *testing.T) {
-	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("000C8A96488D"))
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("0000000000C3"))
 	s.SetAccount(&AccountInfo{AccountEmail: "stick@local"})
 
 	const posted = `<?xml version="1.0" encoding="UTF-8" ?><recent>` +
@@ -84,7 +84,7 @@ func TestRecentsPostIsAnsweredWithRecents(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost,
-		"/streaming/account/stick@local/device/000C8A96488D/recent", strings.NewReader(posted)))
+		"/streaming/account/stick@local/device/0000000000C3/recent", strings.NewReader(posted)))
 
 	body := w.Body.String()
 	if strings.Contains(body, "adddeviceresponse") || strings.Contains(body, "margetoken") {

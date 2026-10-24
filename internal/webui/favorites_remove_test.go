@@ -48,7 +48,7 @@ const twoFavs = `[
 func TestFavoriteDeleteRemovesTheRowAndNotesIt(t *testing.T) {
 	s := favServer(t)
 	putFavs(t, s, twoFavs)
-	code, out := deleteFav(t, s, "id="+url.QueryEscape("NAS folder|http://192.0.2.5:8200/folder"), "192.168.178.20:5555")
+	code, out := deleteFav(t, s, "id="+url.QueryEscape("NAS folder|http://192.0.2.5:8200/folder"), "192.168.1.20:5555")
 	if code != http.StatusOK || out["removed"] != float64(1) {
 		t.Fatalf("delete answered %d %v", code, out)
 	}
@@ -68,7 +68,7 @@ func TestFavoriteDeleteRemovesTheRowAndNotesIt(t *testing.T) {
 func TestFavoriteRemovedOnThePhoneStaysRemovedAfterADesktopPush(t *testing.T) {
 	s := favServer(t)
 	putFavs(t, s, twoFavs)
-	deleteFav(t, s, "id=u-1", "192.168.178.20:5555")
+	deleteFav(t, s, "id=u-1", "192.168.1.20:5555")
 	// The PC's old list, plus a station starred there in the meantime.
 	putFavs(t, s, `[
 	  {"stationuuid":"u-1","name":"1LIVE","url_resolved":"http://example/1live","starredAt":1000},
@@ -93,7 +93,7 @@ func TestFavoriteRemovedOnThePhoneStaysRemovedAfterADesktopPush(t *testing.T) {
 func TestFavoriteStarredAgainAfterRemovalComesBack(t *testing.T) {
 	s := favServer(t)
 	putFavs(t, s, twoFavs)
-	deleteFav(t, s, "id=u-1", "192.168.178.20:5555")
+	deleteFav(t, s, "id=u-1", "192.168.1.20:5555")
 	later := time.Now().Add(time.Minute).UnixMilli()
 	body := `[{"stationuuid":"u-1","name":"1LIVE","url_resolved":"http://example/1live","starredAt":` +
 		jsonInt(later) + `}]`
@@ -114,7 +114,7 @@ func TestFavoriteDeleteIsLANOnlyAndNeedsAnID(t *testing.T) {
 	if code, _ := deleteFav(t, s, "id=u-1", "203.0.113.9:5555"); code != http.StatusForbidden {
 		t.Errorf("off-LAN delete: want 403, got %d", code)
 	}
-	if code, _ := deleteFav(t, s, "", "192.168.178.20:5555"); code != http.StatusBadRequest {
+	if code, _ := deleteFav(t, s, "", "192.168.1.20:5555"); code != http.StatusBadRequest {
 		t.Errorf("delete without id: want 400, got %d", code)
 	}
 	if got := getFavs(t, s); len(got) != 2 {
@@ -126,7 +126,7 @@ func TestFavoriteDeleteIsLANOnlyAndNeedsAnID(t *testing.T) {
 func TestFavoriteRemovalNotesAreCapped(t *testing.T) {
 	s := favServer(t)
 	for i := 0; i < maxFavoriteRemovals+20; i++ {
-		deleteFav(t, s, "id=gone-"+jsonInt(int64(i))+"&local=1", "192.168.178.20:5555")
+		deleteFav(t, s, "id=gone-"+jsonInt(int64(i))+"&local=1", "192.168.1.20:5555")
 	}
 	if got := favRemovals(t, s); len(got) != maxFavoriteRemovals {
 		t.Errorf("want %d notes, got %d", maxFavoriteRemovals, len(got))
@@ -203,7 +203,7 @@ func TestFavoriteRemovalFromAPeerIsNotForwarded(t *testing.T) {
 		return nil
 	}
 	putFavs(t, s, twoFavs)
-	if code, _ := deleteFav(t, s, "id=u-1&local=1", "192.168.178.20:5555"); code != http.StatusOK {
+	if code, _ := deleteFav(t, s, "id=u-1&local=1", "192.168.1.20:5555"); code != http.StatusOK {
 		t.Fatalf("delete answered %d", code)
 	}
 	select {

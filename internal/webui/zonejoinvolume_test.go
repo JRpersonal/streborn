@@ -322,7 +322,7 @@ func TestMatchNewMembersLeavesAHumanChangeAlone(t *testing.T) {
 // returns a re-serialised address or nothing.
 func TestLanPeerAddrRejectsEverythingButALANIP(t *testing.T) {
 	t.Parallel()
-	good := []string{"192.168.178.49", "10.0.0.1", "172.16.5.5", "169.254.1.2", " 192.168.1.7 "}
+	good := []string{"192.168.1.49", "10.0.0.1", "172.16.5.5", "169.254.1.2", " 192.168.1.7 "}
 	for _, in := range good {
 		if a, ok := lanPeerAddr(in); !ok || !a.IsValid() {
 			t.Errorf("lanPeerAddr(%q) should be accepted", in)
