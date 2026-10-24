@@ -21,7 +21,7 @@ var DefaultInterfaces = []string{"wlan0", "eth0", "wlan1"}
 // hex string without colons. If none of the interfaces yield a MAC, it
 // returns an error.
 //
-// Example: "a0:f6:fd:02:ff:d8" becomes "DEVICEID_PLACEHOLDER".
+// Example: "AA:BB:CC:DD:EE:FF" becomes "AABBCCDDEEFF".
 func DeviceID(prefer []string) (string, error) {
 	if prefer == nil {
 		prefer = DefaultInterfaces

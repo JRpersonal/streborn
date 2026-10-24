@@ -65,9 +65,9 @@ func TestHashShort(t *testing.T) {
 }
 
 func TestAnonymizeBoseInfoXML(t *testing.T) {
-	xml := `<info deviceID="C8DF84ABCDEF">` +
+	xml := `<info deviceID="0000000003C3">` +
 		`<name>Living Room</name>` +
-		`<macAddress>C8DF84ABCDEF</macAddress>` +
+		`<macAddress>0000000003C3</macAddress>` +
 		`<serialNumber>071234567890AE00123</serialNumber>` +
 		`<margeAccountUUID>abc-123-uuid</margeAccountUUID>` +
 		`<networkInfo><ipAddress>192.168.4.21</ipAddress></networkInfo></info>`
@@ -198,10 +198,10 @@ func TestAnonymizeDebugState_ScrubsSSIDValues(t *testing.T) {
 // debug state carried the raw device ID and the user-chosen friendly name
 // because anonymizeText only scrubbed IP/MAC/SSID. Both must now be hashed.
 func TestAnonymizeText_ScrubsDeviceIDAndFriendlyName(t *testing.T) {
-	raw := `<updates deviceID="0000000001E5"><nameUpdated>ST-10-Firma 7ADB</nameUpdated></updates>` +
+	raw := `<updates deviceID="0000000001E5"><nameUpdated>ST-10-Office</nameUpdated></updates>` +
 		` nowPlaying deviceID="0000000001C3"`
 	got := anonymizeText(raw)
-	for _, leaked := range []string{"0000000001E5", "0000000001C3", "ST-10-Firma 7ADB"} {
+	for _, leaked := range []string{"0000000001E5", "0000000001C3", "ST-10-Office"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("anonymizeText leaked %q:\n%s", leaked, got)
 		}

@@ -15,7 +15,7 @@ import (
 // The reason this is a matrix and not a one-liner is that a name which is merely
 // PLAUSIBLE is worse than the IP, and the reference network shows why looking at
 // a name is not enough to judge it. Its FRITZ!Box serves one name per speaker
-// and hands back "B--roPortable.fritz.box" for the Portable: the speaker's
+// and hands back "K--chePortable.fritz.box" for the Portable: the speaker's
 // umlaut, mangled on the way out of the router. It looks broken and it works,
 // because the router mangles it the same way in both directions. Tried on the
 // five-speaker network on 2026-09-27, all five names verified.
@@ -68,7 +68,7 @@ func TestTheQRCodeOnlyCarriesANameThatWasProven(t *testing.T) {
 		// Shaped like the Portable's mangled name, with the resolver saying no.
 		// On the reference network that same name does resolve and is used; what
 		// decides is the answer, not the spelling.
-		got := pickPhoneAddress(here, 17008, []string{"B--roPortable.fritz.box"}, probe(
+		got := pickPhoneAddress(here, 17008, []string{"K--chePortable.fritz.box"}, probe(
 			map[string][]string{},
 			map[string]string{here + ":17008": me},
 		))

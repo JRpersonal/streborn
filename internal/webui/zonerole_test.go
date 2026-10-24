@@ -38,7 +38,7 @@ func TestZoneRoleFromMaster(t *testing.T) {
 // why the role is derived from the deviceIDs instead, so nobody "simplifies"
 // it back to the attribute.
 func TestZoneRoleIgnoresTheFirmwareSenderFlag(t *testing.T) {
-	const master, follower = "852F08E8AAAA", "C4FC5074BBBB"
+	const master, follower = "0000000003A1", "0000000003B2"
 
 	if isFollower, known := zoneRoleFromMaster(master, master); !known || isFollower {
 		t.Error("the speaker whose id IS the master must not be treated as a follower, whatever senderIsMaster says")

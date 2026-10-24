@@ -9,7 +9,7 @@ package main
 // the peer roster then re-adopted that stale self-announcement as a peer and
 // dialed the dead address every sweep, and the per-IP REDIRECT rules from
 // run.sh piled up for both addresses. Only a cold boot healed all three
-// (field report on #697, ST20 moved 192.168.1.x -> 10.10.50.x live).
+// (field report on #697, ST20 moved 192.168.1.x -> 10.0.0.x live).
 //
 // The refresh is self-computing: everything stale is recognisable as "carries
 // our identity or our rule shape, but not one of our CURRENT addresses", so no
