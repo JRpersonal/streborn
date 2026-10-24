@@ -823,6 +823,13 @@ type Server struct {
 	presetsReadMu   sync.Mutex
 	presetsReadLast map[string]*presetsReadMark
 	presetsReadNow  func() time.Time
+	// libSweep* gate the background library-key sweep a preset read starts
+	// (librarykeysweep.go): at most one at a time, and not more often than
+	// libraryKeySweepEvery. libSweepDone is a test hook, nil in production.
+	libSweepMu      sync.Mutex
+	libSweepRunning bool
+	libSweepLast    time.Time
+	libSweepDone    func()
 
 	// The stereo /getGroup hang tracker (see handleZoneGet): consecutive
 	// timeouts and the pause window they earn. Guarded by groupReadMu.

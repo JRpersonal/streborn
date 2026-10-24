@@ -32,6 +32,7 @@ import (
 	"context"
 	"net"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -169,7 +170,7 @@ func realignQueuePresetArt(p *presets.Preset, host string, keep func(string) boo
 		}
 		return rewriteURLHost(raw, h, host)
 	}
-	moved := false
+	moved, copied := false, false
 	if u, ok := move(p.Art); ok {
 		p.Art, moved = u, true
 	}
@@ -178,10 +179,12 @@ func realignQueuePresetArt(p *presets.Preset, host string, keep func(string) boo
 		if !ok {
 			continue
 		}
-		if !moved {
+		if !copied {
 			// Same rule as the track rewrite: never write into the store's
-			// backing array.
+			// backing array. Tracked apart from moved: a key whose own cover
+			// moved first must still get its own copy of the tracks.
 			p.Items = append([]presets.PresetItem(nil), p.Items...)
+			copied = true
 		}
 		p.Items[i].Art, moved = u, true
 	}
@@ -536,6 +539,14 @@ func rewriteURLAddr(raw, oldHost, oldPort, newHost, newPort string) (string, boo
 // agent healed has its tracks on the live address and its covers on the dead
 // one (#1366), and the press is the moment that key is in hand.
 func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *presets.Preset) {
+	s.healQueuePreset(ctx, slot, p, nil)
+}
+
+// healQueuePreset is healQueuePresetIfMoved with the store guard of the
+// background sweep (librarykeysweep.go): when orig is not nil the heal is only
+// written while the store still holds exactly orig on that slot. It reports
+// whether the key changed in memory.
+func (s *Server) healQueuePreset(ctx context.Context, slot int, p *presets.Preset, orig *presets.Preset) bool {
 	changed, from, to := s.healQueuePresetHost(ctx, p)
 	artMoved := false
 	if p != nil && p.Type == "queue" && len(p.Items) > 0 && s.mediaServers != nil {
@@ -543,7 +554,7 @@ func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *preset
 		artMoved = realignQueuePresetArt(p, urlHost(p.Items[0].URL), s.artHostKeeper(reg.ID))
 	}
 	if !changed && !artMoved {
-		return
+		return false
 	}
 	if changed {
 		s.logger.Info("queue preset: the music server moved, pointing the key at its new address",
@@ -552,12 +563,29 @@ func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *preset
 		s.logger.Info("queue preset: the key's cover still named the music server's old address, moved it",
 			"slot", slot, "server", p.Source, "now", urlHost(p.Items[0].URL))
 	}
+	// The play still goes ahead with the healed items in memory when the write
+	// fails; only the next recall pays for the heal again.
+	s.storeHealedKey("queue preset", slot, *p, orig)
+	return true
+}
+
+// storeHealedKey persists a healed key. With orig set (the background sweep)
+// the write only happens while the slot still holds orig: the sweep spends
+// seconds on the network between reading the key and writing it back, and a
+// key the owner re-saved in that time must not be overwritten with the old
+// one.
+func (s *Server) storeHealedKey(what string, slot int, p presets.Preset, orig *presets.Preset) {
 	if s.presets == nil {
 		return
 	}
-	if err := s.presets.SetSlot(*p); err != nil {
-		// The play still goes ahead with the healed items in memory; only the
-		// next recall pays for the heal again.
-		s.logger.Info("queue preset: could not store the corrected address", "slot", slot, "err", err)
+	if orig != nil {
+		cur, ok := s.presets.Get(slot)
+		if !ok || !reflect.DeepEqual(cur, *orig) {
+			s.logger.Info(what+": the key changed while its address was being checked, left it as it is", "slot", slot)
+			return
+		}
+	}
+	if err := s.presets.SetSlot(p); err != nil {
+		s.logger.Info(what+": could not store the corrected address", "slot", slot, "err", err)
 	}
 }

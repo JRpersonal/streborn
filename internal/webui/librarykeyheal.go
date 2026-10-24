@@ -160,15 +160,22 @@ func (s *Server) healLibraryKeyHost(ctx context.Context, p *presets.Preset) (cha
 // the speaker's flash is not free. A key that is not a library track is left
 // exactly as it is, radio stations included.
 func (s *Server) healLibraryKeyIfMoved(ctx context.Context, slot int, p *presets.Preset) {
+	s.healLibraryKey(ctx, slot, p, nil)
+}
+
+// healLibraryKey is healLibraryKeyIfMoved with the background sweep's store
+// guard (storeHealedKey): with orig set the heal is only written while the
+// slot still holds orig. It reports whether the key changed in memory.
+func (s *Server) healLibraryKey(ctx context.Context, slot int, p *presets.Preset, orig *presets.Preset) bool {
 	if p == nil || !isLibraryTrackKey(*p) || s.mediaServers == nil {
-		return
+		return false
 	}
 	port := urlPort(p.StreamURL)
 	changed, from, to := s.healLibraryKeyHost(ctx, p)
 	reg, _ := libraryTrackKeyServer(s.mediaServers.List(), *p)
 	artMoved := realignQueuePresetArt(p, urlHost(p.StreamURL), s.artHostKeeper(reg.ID))
 	if !changed && !artMoved {
-		return
+		return false
 	}
 	if changed {
 		s.logger.Info("library key: the music server moved, pointing the key at its new address",
@@ -177,12 +184,8 @@ func (s *Server) healLibraryKeyIfMoved(ctx context.Context, slot int, p *presets
 		s.logger.Info("library key: the key's cover still named the music server's old address, moved it",
 			"slot", slot, "server", p.Source, "now", urlHost(p.StreamURL))
 	}
-	if s.presets == nil {
-		return
-	}
-	if err := s.presets.SetSlot(*p); err != nil {
-		// The play still goes ahead with the healed URL in memory; only the
-		// next press pays for the heal again.
-		s.logger.Info("library key: could not store the corrected address", "slot", slot, "err", err)
-	}
+	// The play still goes ahead with the healed URL in memory when the write
+	// fails; only the next press pays for the heal again.
+	s.storeHealedKey("library key", slot, *p, orig)
+	return true
 }

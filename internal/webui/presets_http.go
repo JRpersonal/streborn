@@ -30,6 +30,10 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 		// an empty store flooded the NAND log tail out of a bundle (#882).
 		s.notePresetsRead(r.RemoteAddr, len(all))
 		writeJSON(w, http.StatusOK, all)
+		// Somebody is looking at the keys: let the library keys follow a music
+		// server that moved, covers included, without waiting for a press
+		// (librarykeysweep.go, #1366). Background, gated, writes only what moved.
+		s.kickLibraryKeySweep()
 	case http.MethodPut:
 		s.handlePresetsBulkPut(w, r)
 	default:
