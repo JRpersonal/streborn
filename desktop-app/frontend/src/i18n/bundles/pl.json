@@ -192,7 +192,7 @@
   "spotify.presetsNeedPremium": "Spotify Premium. Preset sam uruchamia playlistę, a darmowe konto tego nie potrafi. Bez Premium przycisk milczy.",
   "spotify.presetsNeedStr": "Ten głośnik trzeba raz wybrać w Spotify przez pozycję kończącą się na \"(STR)\". Pozycja z samą nazwą to własne Spotify głośnika i nie zapisze ani nie odtworzy presetu. Raz na głośnik, każdy pamięta własne logowanie.",
   "spotify.presetsStep1": "Odtwórz playlistę Spotify na tym głośniku (kroki powyżej).",
-  "spotify.presetsStep2": "Na karcie Muzyka przytrzymaj przycisk presetu (1-6), aż się wypełni, aby zapisać odtwarzaną playlistę.",
+  "spotify.presetsStep2": "Na karcie „Słuchaj muzyki” przytrzymaj przycisk presetu (1-6), aż się wypełni, aby zapisać odtwarzaną playlistę.",
   "spotify.presetsStep3": "Od tej pory ten preset ponownie uruchamia playlistę, przyciskiem 1-6 na głośniku lub z aplikacji.",
   "spotify.worksTitle": "Co działa",
   "spotify.works1": "Wyślij dowolny utwór lub playlistę Spotify z aplikacji na głośnik (Spotify Premium).",

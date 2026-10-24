@@ -105,8 +105,8 @@ export function renderInfoSections(ctx) {
           return `<div class="source-pill ${cls}" title="${escapeAttr(sourceHint(src.source) || src.sourceAccount || '')}">${escapeHtml(shown)} <small>${escapeHtml(statusLabel)}</small></div>`;
         }).join('')}
       </div>
-      <small class="muted small">${escapeHtml(t('settingsView.spotifyHint'))}</small>
-      ${sources.some(x => x.source === 'AIRPLAY' && x.status !== 'READY') ? `<small class="muted small">${escapeHtml(t('settingsView.airplayHint'))}</small>` : ''}
+      <small class="muted small" style="display:block">${escapeHtml(t('settingsView.spotifyHint'))}</small>
+      ${sources.some(x => x.source === 'AIRPLAY' && x.status !== 'READY') ? `<small class="muted small" style="display:block;margin-top:4px">${escapeHtml(t('settingsView.airplayHint'))}</small>` : ''}
     </div>
 
     <div class="settings-section" id="musicLibSection">

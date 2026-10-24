@@ -192,7 +192,7 @@
   "spotify.presetsNeedPremium": "Spotify Premium. Un preset arranca una lista por su cuenta, y una cuenta gratuita no puede hacerlo. Sin Premium la tecla se queda muda.",
   "spotify.presetsNeedStr": "Este altavoz debe haberse elegido una vez en Spotify en la entrada que termina en \"(STR)\". La entrada con el nombre a secas es el Spotify del propio altavoz y no puede guardar ni recuperar presets. Una vez por altavoz, cada uno guarda su propia sesión.",
   "spotify.presetsStep1": "Reproduce una lista de Spotify en este altavoz (los pasos de arriba).",
-  "spotify.presetsStep2": "En la pestaña Música, mantén pulsado un botón de presintonía (1-6) hasta que se llene, para guardar la lista que está sonando.",
+  "spotify.presetsStep2": "En la pestaña \"Escuchar música\", mantén pulsado un botón de presintonía (1-6) hasta que se llene, para guardar la lista que está sonando.",
   "spotify.presetsStep3": "Desde entonces, esa presintonía vuelve a iniciar la lista, con el botón físico 1-6 del altavoz o desde la aplicación.",
   "spotify.worksTitle": "Qué funciona",
   "spotify.works1": "Envía cualquier canción o lista de Spotify desde la aplicación al altavoz (Spotify Premium).",
