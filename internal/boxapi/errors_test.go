@@ -39,7 +39,7 @@ func newRawBox(t *testing.T, fn http.HandlerFunc) *Client {
 // failure of a box with an unlucky MAC, and the typed Value is how that false
 // positive dies.
 func TestPostXMLTypedErrorEnvelope(t *testing.T) {
-	body := `<errors deviceID="AC5580123456"><error value="1019" name="CLIENT_XML_ERROR" severity="Unknown">1019</error></errors>`
+	body := `<errors deviceID="0000000004A1"><error value="1019" name="CLIENT_XML_ERROR" severity="Unknown">1019</error></errors>`
 	c := newRawBox(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(body))

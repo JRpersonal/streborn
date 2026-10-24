@@ -25,11 +25,11 @@ func envErr(value, name, mac string) error {
 func TestGroupErrHelpersUseTheTypedCodeNotTheMAC(t *testing.T) {
 	// A box whose MAC contains 5580, failing with a code that is NOT 5580:
 	// the old substring match fired here on every failure, forever.
-	otherErr := envErr("5005", "SOME_OTHER_ERROR", "AA5580BB0C11")
+	otherErr := envErr("5005", "SOME_OTHER_ERROR", "0000000004B2")
 	if isMargeGroupErr(otherErr) {
 		t.Error("a MAC containing 5580 must not read as the marge-group rejection")
 	}
-	if isGroupExistsErr(envErr("5005", "SOME_OTHER_ERROR", "AB5510CD0E22")) {
+	if isGroupExistsErr(envErr("5005", "SOME_OTHER_ERROR", "0000000004C3")) {
 		t.Error("a MAC containing 5510 must not read as GROUP_ALREADY_EXISTS")
 	}
 

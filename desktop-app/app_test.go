@@ -9,7 +9,7 @@ import "testing"
 // box, then trimmed: serial / device-id fields are kept since the
 // extractor's whole job is finding them, but they are anonymized
 // per the public-hygiene memory (no real serials in tree).
-const sampleBoseInfoXML = `<?xml version="1.0" encoding="UTF-8" ?><info deviceID="AABBCCDDEEFF"><name>Living Room</name><type>SoundTouch 10</type><margeAccountUUID>stick@local</margeAccountUUID><components><component><componentCategory>SCM</componentCategory><softwareVersion>27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29</softwareVersion><serialNumber>SCMSERIAL000000000000</serialNumber></component><component><componentCategory>PackagedProduct</componentCategory><softwareVersion>27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29</softwareVersion><serialNumber>069236P60560580AE</serialNumber></component></components><networkInfo type="SCM"><macAddress>AABBCCDDEEFF</macAddress><ipAddress>192.0.2.66</ipAddress></networkInfo><moduleType>sm2</moduleType><variant>rhino</variant></info>`
+const sampleBoseInfoXML = `<?xml version="1.0" encoding="UTF-8" ?><info deviceID="AABBCCDDEEFF"><name>Living Room</name><type>SoundTouch 10</type><margeAccountUUID>stick@local</margeAccountUUID><components><component><componentCategory>SCM</componentCategory><softwareVersion>27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29</softwareVersion><serialNumber>SCMSERIAL000000000000</serialNumber></component><component><componentCategory>PackagedProduct</componentCategory><softwareVersion>27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29</softwareVersion><serialNumber>000000P00000000AA</serialNumber></component></components><networkInfo type="SCM"><macAddress>AABBCCDDEEFF</macAddress><ipAddress>192.0.2.66</ipAddress></networkInfo><moduleType>sm2</moduleType><variant>rhino</variant></info>`
 
 // TestExtractPackagedProductSerialPicksTheRightComponent guards
 // against the most likely bug in the extractor: returning the SCM
@@ -20,8 +20,8 @@ const sampleBoseInfoXML = `<?xml version="1.0" encoding="UTF-8" ?><info deviceID
 // useless for differentiation.
 func TestExtractPackagedProductSerialPicksTheRightComponent(t *testing.T) {
 	got := extractPackagedProductSerial(sampleBoseInfoXML)
-	if got != "069236P60560580AE" {
-		t.Errorf("extractPackagedProductSerial returned %q, want the PackagedProduct serial 069236P60560580AE "+
+	if got != "000000P00000000AA" {
+		t.Errorf("extractPackagedProductSerial returned %q, want the PackagedProduct serial 000000P00000000AA "+
 			"(returning SCMSERIAL... means the parser is grabbing the wrong component)", got)
 	}
 }
