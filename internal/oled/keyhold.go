@@ -288,8 +288,8 @@ func (q *noticeQueue) runSession(s *heldSession) {
 	q.lastStart = now
 	outcome := s.outcome
 	q.mu.Unlock()
-	noticeLogger().Info("display held-key screen started", "key", s.key,
-		"sincePressMs", now.Sub(s.pressAt).Milliseconds(), "outcomeReady", outcome != nil)
+	noticeLogger().Info("display held-key screen started", append([]any{"key", s.key,
+		"sincePressMs", now.Sub(s.pressAt).Milliseconds(), "outcomeReady", outcome != nil}, holdAttrs("held-key")...)...)
 	err := q.showSession(s, quit)
 	q.release()
 	q.mu.Lock()

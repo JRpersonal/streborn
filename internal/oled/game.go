@@ -183,6 +183,10 @@ type Result struct {
 // ErrBusy means the panel or a round is already in use.
 var ErrBusy = errors.New("display busy")
 
+// ErrDisplayStarting means the speaker's own display has not finished
+// starting yet (splash.go, panelMayHold); try again in a minute.
+var ErrDisplayStarting = errors.New("speaker display still starting")
+
 // RoundHooks lets the caller run the music around a round. Every hook is
 // called from the render loop and must not block. All are optional.
 type RoundHooks struct {
@@ -216,6 +220,13 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 	if !panelSupported() || !boseAppDisplayReady() {
 		return Result{}, errors.New("no supported panel")
 	}
+	// Same gate as every other panel hold (splash.go): never pause the flip
+	// thread while the firmware's display controller is still booting. The
+	// round is refused, not waited for; once the display is up it runs.
+	if !panelMayHold() {
+		logger.Info("game: speaker display still starting, round refused", holdAttrs("game")...)
+		return Result{}, ErrDisplayStarting
+	}
 	if !gameActive.CompareAndSwap(false, true) {
 		return Result{}, ErrBusy
 	}
@@ -225,6 +236,7 @@ func PlayRound(id string, stop <-chan struct{}, hooks RoundHooks, logger *slog.L
 		return Result{}, ErrBusy
 	}
 	defer busy.Unlock()
+	logger.Info("oled panel hold", holdAttrs("game")...)
 
 	keys := make(chan KeyPress, 32)
 	keyQuit := make(chan struct{})

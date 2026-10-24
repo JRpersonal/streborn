@@ -585,10 +585,16 @@ func (a *agent) buildMarge() error {
 	// by webui.New further down; drawn in the background once BoseApp's
 	// display thread is up.
 	splashKind := oled.DecideKind(agentStamp(), webui.OTARebootPending(), strings.HasPrefix(bootReason, "box-boot"))
-	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"), func() bool {
+	// Every panel hold (splash, notices, track overlay, games) waits for the
+	// firmware's display controller to leave Bootup: a hold before that
+	// leaves the speaker's own screens dark until a reboot (#1456, #841).
+	// Wired before anything can post a notice.
+	displayControllerUp := func() bool {
 		r := a.boxLog.Load()
 		return r != nil && r.DisplayControllerUp()
-	})
+	}
+	oled.SetDisplayUp(displayControllerUp)
+	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"), displayControllerUp)
 	// The short display notices (saved keys, empty keys, find this speaker)
 	// log under the same component; a box boot arms the "keys restored
 	// after reboot" notice, shown once per speaker (displaynotices.go).

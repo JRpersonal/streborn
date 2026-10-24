@@ -155,7 +155,7 @@ func newTrackScreen() *trackScreen {
 		wake:       make(chan struct{}, 1),
 		now:        time.Now,
 		supported:  panelSupported,
-		ready:      boseAppDisplayReady,
+		ready:      panelMayHold, // flip thread and display controller up (splash.go)
 		gameActive: GameActive,
 		tryLock:    busy.TryLock,
 		unlock:     busy.Unlock,
@@ -487,9 +487,9 @@ func (s *trackScreen) draw(buf []byte) {
 	s.mu.Unlock()
 	switch {
 	case back:
-		s.log().Debug("display track overlay back", "station", t.Station, "title", t.Title)
+		s.log().Debug("display track overlay back", append([]any{"station", t.Station, "title", t.Title}, holdAttrs("track")...)...)
 	case first && wanted:
-		s.log().Info("display track overlay on", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock)
+		s.log().Info("display track overlay on", append([]any{"station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock}, holdAttrs("track")...)...)
 	}
 	dx, dy := trackShift(step)
 	t0 := time.Now()

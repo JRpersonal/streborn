@@ -368,7 +368,9 @@ func newNoticeQueue() *noticeQueue {
 		enabled:    NoticesEnabled,
 		supported:  panelSupported,
 		gameActive: GameActive,
-		ready:      boseAppDisplayReady,
+		// Not before the firmware's display controller is up (splash.go,
+		// panelMayHold): a notice in that window is retried, then dropped.
+		ready: panelMayHold,
 		// The track screen holds the panel for long stretches; a notice
 		// ends it first and it comes back afterwards (track.go).
 		acquire: func() bool {
@@ -535,8 +537,8 @@ func (q *noticeQueue) run(n Notice) {
 	q.curQuit, q.curDone, q.quitOnce, q.requeue = quit, done, &sync.Once{}, false
 	q.lastStart, q.lastKind = q.now(), n.Kind
 	q.mu.Unlock()
-	noticeLogger().Info("display notice shown", "kind", string(n.Kind), "key", n.Key,
-		"line1", n.Line1, "line2", n.Line2, "durationMs", n.Hold.Milliseconds())
+	noticeLogger().Info("display notice shown", append([]any{"kind", string(n.Kind), "key", n.Key,
+		"line1", n.Line1, "line2", n.Line2, "durationMs", n.Hold.Milliseconds()}, holdAttrs("notice")...)...)
 	err := q.show(n, quit)
 	q.release()
 	var left *Notice
