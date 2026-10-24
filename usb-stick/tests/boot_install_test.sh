@@ -233,6 +233,139 @@ check "the fallback name still recognises the agent" 0 $?
 PROC_ROOT="$FAKEPROC" pid_is_our_agent 222 ""
 check "the fallback name still rejects the boot script" 1 $?
 
+# ---- defined BEFORE the first call ---------------------------------------
+#
+# Everything above extracts the functions and tests them in isolation, which is
+# exactly why it missed the real defect: both files CALLED install_boot_script
+# at top level before the line that defines it. sh runs a file top to bottom,
+# so the call found no such command (rc 127), fell into the "did not validate"
+# branch, and redeploying the boot scripts from a stick never worked from
+# v0.9.94 on. run.sh had the same defect with pid_is_our_agent.
+
+# First line that defines $2 in $1, and first line that calls it (any line that
+# names it as a word, outside comments and outside its own definition line).
+def_line() {
+    awk -v fn="$2" '$0 == fn "() {" { print NR; exit }' "$1"
+}
+first_call_line() {
+    awk -v fn="$2" '
+        $0 == fn "() {"   { next }
+        /^[ \t]*#/        { next }
+        {
+            line = $0
+            sub(/[ \t]#.*$/, "", line)
+            if (match(line, "(^|[^A-Za-z0-9_])" fn "([^A-Za-z0-9_]|$)")) { print NR; exit }
+        }
+    ' "$1"
+}
+check_order() {
+    # $1 = file, $2 = function
+    _d=$(def_line "$1" "$2")
+    _c=$(first_call_line "$1" "$2")
+    if [ -z "$_d" ]; then fail "$2 is not defined in $1"; return; fi
+    if [ -z "$_c" ]; then fail "$2 is never called in $1 (anchor moved?)"; return; fi
+    if [ "$_d" -lt "$_c" ]; then
+        ok
+    else
+        fail "$1 calls $2 at line $_c but only defines it at line $_d: the call runs before the function exists"
+    fi
+}
+check_order "$RC" install_boot_script
+check_order "$RUN" install_boot_script
+check_order "$RUN" pid_is_our_agent
+
+# ---- the real files, run as they run on the speaker ------------------------
+#
+# The order check above is a proxy. These run the shipped code paths in a
+# sandbox, with the box paths rewritten into $WORK, and assert the outcome.
+
+SANDBOX="$WORK/box"
+sandbox_paths() {
+    sed -e "s#/media/sda1#$SANDBOX/stick#g" \
+        -e "s#/media/sd[b-d]1#$SANDBOX/nostick#g" \
+        -e "s#/mnt/nv#$SANDBOX/nv#g"
+}
+reset_sandbox() {
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX/stick" "$SANDBOX/nv/streborn"
+    cp "$RC" "$SANDBOX/stick/rc.local"
+    cp "$RUN" "$SANDBOX/stick/run.sh"
+}
+
+# rc.local: everything from the top up to the hand-off to the NAND override,
+# verbatim. That is the stick wait loop, then the redeploy.
+reset_sandbox
+awk '$0 ~ /^# The NAND override wins\./ { exit } { print }' "$RC" | sandbox_paths > "$WORK/rc_part.sh"
+if grep -q '^    install_boot_script ' "$WORK/rc_part.sh"; then ok; else fail "the rc.local redeploy section could not be cut out"; fi
+sh "$WORK/rc_part.sh" >/dev/null 2>&1
+check "the rc.local boot prefix runs cleanly" 0 $?
+if cmp -s "$RC" "$SANDBOX/nv/rc.local"; then ok; else fail "rc.local did not redeploy /mnt/nv/rc.local from the stick"; fi
+if cmp -s "$RUN" "$SANDBOX/nv/streborn/run-override.sh"; then ok; else fail "rc.local did not redeploy run-override.sh from the stick"; fi
+if grep -q "nv/rc.local redeployed from stick" "$SANDBOX/nv/streborn/boot.log" 2>/dev/null; then ok; else fail "rc.local did not log the rc.local redeploy as a success"; fi
+if grep -q "run-override.sh redeployed from stick" "$SANDBOX/nv/streborn/boot.log" 2>/dev/null; then ok; else fail "rc.local did not log the run-override.sh redeploy as a success"; fi
+
+# run.sh is far too box-bound to run from the top. Instead: every top-level
+# function run.sh has DEFINED by the time it reaches a section (which is what
+# the shell has at that point), then that section verbatim.
+run_section() {
+    # $1 = first line of the section, $2 = the line that ends it (excluded)
+    awk -v s="$1" -v e="$2" '
+        !started && $0 == s                       { started = 1 }
+        started && $0 == e                        { exit }
+        started                                   { print; next }
+        !infn && /^[A-Za-z_][A-Za-z0-9_]*\(\) \{$/ { infn = 1 }
+        infn                                      { print }
+        infn && $0 == "}"                         { infn = 0 }
+    ' "$RUN"
+}
+# run.sh's own log() appends to $LOG; point that into the sandbox.
+RUN_STUBS='LOG="'"$SANDBOX"'/run.log"'
+
+reset_sandbox
+{
+    printf '%s\n' "$RUN_STUBS"
+    echo "STICK=\"$SANDBOX/stick\""
+    run_section "# Defense in depth: redeploy rc.local + run-override.sh from stick" \
+        "# === Early low-power Wi-Fi one-shot (BEFORE the heavy stick->NAND copy) ==="
+} | sandbox_paths > "$WORK/run_redeploy.sh"
+if grep -q '^if \[ -f "\$STICK/rc.local" \]' "$WORK/run_redeploy.sh"; then ok; else fail "the run.sh redeploy section could not be cut out"; fi
+sh "$WORK/run_redeploy.sh" >/dev/null 2>&1
+check "the run.sh redeploy section runs cleanly" 0 $?
+if cmp -s "$RC" "$SANDBOX/nv/rc.local"; then ok; else fail "run.sh did not redeploy /mnt/nv/rc.local from the stick"; fi
+if cmp -s "$RUN" "$SANDBOX/nv/streborn/run-override.sh"; then ok; else fail "run.sh did not redeploy run-override.sh from the stick"; fi
+if grep -q "^.*: redeployed .*run-override.sh from stick" "$SANDBOX/run.log" 2>/dev/null; then ok; else fail "run.sh did not log the run-override.sh redeploy as a success"; fi
+
+# run.sh, "agent already running? then stop it": a live process that /proc
+# says is our agent must be stopped.
+reset_sandbox
+sleep 60 &
+VICTIM=$!
+FAKEPROC2="$SANDBOX/proc"
+mkdir -p "$FAKEPROC2/$VICTIM"
+printf '/mnt/nv/streborn/bin/streborn-armv7l\000' > "$FAKEPROC2/$VICTIM/cmdline"
+echo "$VICTIM" > "$SANDBOX/agent.pid"
+{
+    printf '%s\n' "$RUN_STUBS"
+    echo "PIDFILE=\"$SANDBOX/agent.pid\""
+    echo "BIN=/mnt/nv/streborn/bin/streborn-armv7l"
+    echo "PROC_ROOT=\"$FAKEPROC2\""
+    run_section "# === Agent already running? Then stop it. ===" \
+        "# The stick-side update.sh hook was removed in v0.9.28: it pulled a binary"
+} | sandbox_paths > "$WORK/run_stop.sh"
+if grep -q 'pid_is_our_agent "\$OLDPID"' "$WORK/run_stop.sh"; then ok; else fail "the run.sh agent-stop section could not be cut out"; fi
+# Its real sleep 2 is kept: this must behave as on the box.
+sh "$WORK/run_stop.sh" >/dev/null 2>&1
+check "the run.sh agent-stop section runs cleanly" 0 $?
+if kill -0 "$VICTIM" 2>/dev/null; then
+    fail "run.sh did not stop a running previous agent"
+    kill -KILL "$VICTIM" 2>/dev/null
+else
+    ok
+fi
+wait "$VICTIM" 2>/dev/null
+if grep -q "previous agent still running (PID $VICTIM), stopping it" "$SANDBOX/run.log" 2>/dev/null; then ok; else fail "run.sh did not recognise the running agent as its own"; fi
+if [ -e "$SANDBOX/agent.pid" ]; then fail "run.sh did not remove the pidfile"; else ok; fi
+
 cleanup
 
 if [ "$FAILED" -eq 0 ]; then

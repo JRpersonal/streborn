@@ -57,51 +57,11 @@ if [ -n "$STICK_PATH" ] && [ "$STICK_PATH" != "/media/sda1" ]; then
     fi
 fi
 
-# Unconditional self-update from stick. Brute force: if the stick
-# has the file, we copy it. No mtime comparison, no version check.
-#
-# Why unconditional: the previous `-nt` mtime guard was a reliability
-# tax. The box's RTC starts at 2015 on cold boot, NTP sync may or may
-# not have run when this copy fires, and FAT32 mtimes have 2s
-# resolution. The combination meant a freshly-prepared stick could
-# look "older" than the NAND copy and be silently skipped. Result:
-# the box stayed on a stale binary across multiple cold boots, the
-# user could not figure out why, the Setup Wizard looked broken.
-# Live-verified 2026-05-24 on ST10 .66.
-#
-# Risk vector: a broken stick now bricks the bootstrap. Mitigated
-# by the fact that the stick IS the repair channel — the user can
-# re-prepare it from any working Setup Wizard and the next boot
-# heals. The fail-closed "stick wins, every time" model matches the
-# user's mental model: "what I just put on the stick is what the
-# box will run".
-#
-# Each `cp` is followed by chmod so a stick that lost +x (sync via
-# Windows file-manager strips perms) still produces an executable
-# script on NAND.
-#
-#   * rc.local update takes effect on the NEXT boot (this run is
-#     already past the wait loop, but cannot safely re-exec itself
-#     without risking a loop).
-#   * run-override.sh update takes effect on THIS boot because we
-#     invoke it immediately below.
-if [ -f /media/sda1/rc.local ]; then
-    install_boot_script /media/sda1/rc.local /mnt/nv/rc.local
-    case $? in
-        0) echo "$(date): /mnt/nv/rc.local redeployed from stick (effective next boot)" >> "$LOGDIR/boot.log" ;;
-        2) echo "$(date): /mnt/nv/rc.local NOT redeployed: the stick copy is far shorter than the working one, keeping the working one" >> "$LOGDIR/boot.log" ;;
-        *) echo "$(date): /mnt/nv/rc.local NOT redeployed: the stick copy did not validate, keeping the working one" >> "$LOGDIR/boot.log" ;;
-    esac
-fi
-if [ -f /media/sda1/run.sh ]; then
-    install_boot_script /media/sda1/run.sh /mnt/nv/streborn/run-override.sh
-    case $? in
-        0) echo "$(date): /mnt/nv/streborn/run-override.sh redeployed from stick (effective this boot)" >> "$LOGDIR/boot.log" ;;
-        2) echo "$(date): run-override.sh NOT redeployed: the stick copy is far shorter than the working one, keeping the working one" >> "$LOGDIR/boot.log" ;;
-        *) echo "$(date): run-override.sh NOT redeployed: the stick copy did not validate, keeping the working one" >> "$LOGDIR/boot.log" ;;
-    esac
-fi
-
+# Defined HERE, above its first caller, on purpose: sh runs this file top to
+# bottom, so a call that precedes the definition is "not found" (rc 127) and
+# falls into the caller's failure branch. That is how the stick redeploy below
+# silently never worked from v0.9.94 until the definitions were moved up.
+# usb-stick/tests/boot_install_test.sh guards the order.
 install_boot_script() {
     # Stage, validate, then rename a boot script into place.
     #
@@ -151,6 +111,51 @@ install_boot_script() {
     sync 2>/dev/null
     return 0
 }
+
+# Unconditional self-update from stick. Brute force: if the stick
+# has the file, we copy it. No mtime comparison, no version check.
+#
+# Why unconditional: the previous `-nt` mtime guard was a reliability
+# tax. The box's RTC starts at 2015 on cold boot, NTP sync may or may
+# not have run when this copy fires, and FAT32 mtimes have 2s
+# resolution. The combination meant a freshly-prepared stick could
+# look "older" than the NAND copy and be silently skipped. Result:
+# the box stayed on a stale binary across multiple cold boots, the
+# user could not figure out why, the Setup Wizard looked broken.
+# Live-verified 2026-05-24 on ST10 .66.
+#
+# Risk vector: a broken stick now bricks the bootstrap. Mitigated
+# by the fact that the stick IS the repair channel — the user can
+# re-prepare it from any working Setup Wizard and the next boot
+# heals. The fail-closed "stick wins, every time" model matches the
+# user's mental model: "what I just put on the stick is what the
+# box will run".
+#
+# Each `cp` is followed by chmod so a stick that lost +x (sync via
+# Windows file-manager strips perms) still produces an executable
+# script on NAND.
+#
+#   * rc.local update takes effect on the NEXT boot (this run is
+#     already past the wait loop, but cannot safely re-exec itself
+#     without risking a loop).
+#   * run-override.sh update takes effect on THIS boot because we
+#     invoke it immediately below.
+if [ -f /media/sda1/rc.local ]; then
+    install_boot_script /media/sda1/rc.local /mnt/nv/rc.local
+    case $? in
+        0) echo "$(date): /mnt/nv/rc.local redeployed from stick (effective next boot)" >> "$LOGDIR/boot.log" ;;
+        2) echo "$(date): /mnt/nv/rc.local NOT redeployed: the stick copy is far shorter than the working one, keeping the working one" >> "$LOGDIR/boot.log" ;;
+        *) echo "$(date): /mnt/nv/rc.local NOT redeployed: the stick copy did not validate, keeping the working one" >> "$LOGDIR/boot.log" ;;
+    esac
+fi
+if [ -f /media/sda1/run.sh ]; then
+    install_boot_script /media/sda1/run.sh /mnt/nv/streborn/run-override.sh
+    case $? in
+        0) echo "$(date): /mnt/nv/streborn/run-override.sh redeployed from stick (effective this boot)" >> "$LOGDIR/boot.log" ;;
+        2) echo "$(date): run-override.sh NOT redeployed: the stick copy is far shorter than the working one, keeping the working one" >> "$LOGDIR/boot.log" ;;
+        *) echo "$(date): run-override.sh NOT redeployed: the stick copy did not validate, keeping the working one" >> "$LOGDIR/boot.log" ;;
+    esac
+fi
 
 # The NAND override wins. That is what lets an update survive an SD card
 # that is read only or still carries an old run.sh.

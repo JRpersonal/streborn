@@ -1027,6 +1027,94 @@ else
     setup_log "stick: no USB block device, stickless NAND-only boot (no wait)"
 fi
 
+# Defined HERE, above its first caller, on purpose: sh runs this file top to
+# bottom, so a call that precedes the definition is "not found" (rc 127) and
+# falls into the caller's failure branch. That is how the stick redeploy below
+# silently never worked from v0.9.94 until the definitions were moved up.
+# pid_is_our_agent had the same defect at the "agent already running?" check
+# further down, so a still-running previous agent was never stopped.
+# usb-stick/tests/boot_install_test.sh guards the order.
+install_boot_script() {
+    # Stage, validate, then rename a boot script into place.
+    #
+    # KEEP BYTE-IDENTICAL to its twin in the other file. usb-stick/rc.local
+    # and usb-stick/run.sh both need this, they cannot share one copy
+    # (rc.local runs before anything is sourceable, and a sourced helper
+    # would add a failure mode to the thing being hardened), and
+    # usb-stick/tests/boot_install_test.sh fails if the two drift.
+    #
+    # $1 = source, $2 = destination. Returns 0 only when $2 now holds the
+    # whole of $1, 2 when a suspiciously short replacement was refused, and
+    # 1 on any other failure. Logs nothing, so both callers log in their own
+    # style.
+    #
+    # Why rename instead of cp: cp opens the destination with O_TRUNC before
+    # reading a byte of the source, so an interrupted read leaves a truncated
+    # file that is still chmod +x and the boot execs it. rename is atomic, so
+    # the destination is either the old script or the whole new one. It also
+    # makes it safe to replace a script that is CURRENTLY EXECUTING: the
+    # running shell keeps reading the old inode through its open fd instead of
+    # having the bytes shift underneath it mid-statement.
+    [ -r "$1" ] || return 1
+    _ibs_new="$2.new"
+    rm -f "$_ibs_new" 2>/dev/null
+    cp "$1" "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    _ibs_ssz=$(wc -c < "$1" 2>/dev/null | tr -d " \t")
+    _ibs_nsz=$(wc -c < "$_ibs_new" 2>/dev/null | tr -d " \t")
+    # A short read is the failure this function exists for.
+    if [ -z "$_ibs_nsz" ] || [ "$_ibs_nsz" = "0" ] || [ "$_ibs_nsz" != "$_ibs_ssz" ]; then
+        rm -f "$_ibs_new" 2>/dev/null
+        return 1
+    fi
+    # A script the box's own shell cannot parse must never become the boot
+    # path. This is what catches a SOURCE that is itself half-written.
+    sh -n "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    # A stick truncated at a statement boundary still parses, so also refuse
+    # a replacement that is drastically shorter than the working script.
+    if [ -s "$2" ]; then
+        _ibs_osz=$(wc -c < "$2" 2>/dev/null | tr -d " \t")
+        if [ -n "$_ibs_osz" ] && [ "$_ibs_nsz" -lt $(( _ibs_osz / 2 )) ]; then
+            rm -f "$_ibs_new" 2>/dev/null
+            return 2
+        fi
+    fi
+    chmod +x "$_ibs_new" 2>/dev/null
+    mv -f "$_ibs_new" "$2" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
+    sync 2>/dev/null
+    return 0
+}
+
+pid_is_our_agent() {
+    # $1 = pid, $2 = the agent binary this boot intends to run.
+    #
+    # kill -0 proves only that SOMETHING owns that pid. The pidfile lives on
+    # NAND and survives the reboot, and nothing clears it at shutdown (the
+    # watchdogs use a failing kill -0 as their restart trigger), so every boot
+    # reads the previous boot's number while Linux hands the same numbers out
+    # again from 1. Confirm from /proc before signalling anything.
+    #
+    # Matched on the BINARY name, not on "streborn": the boot script itself
+    # lives at /mnt/nv/streborn/run-override.sh, so a looser match could send
+    # KILL to our own supervisor.
+    #
+    # PROC_ROOT is a test seam and nothing else; on the speaker it is /proc.
+    [ -n "${1:-}" ] || return 1
+    [ "$1" -gt 0 ] 2>/dev/null || return 1
+    _pioa_want="${2##*/}"
+    [ -n "$_pioa_want" ] || _pioa_want="streborn-armv7l"
+    # Guarded: a pid that is gone makes the redirect itself fail, and the
+    # shell reports that on stderr regardless of the 2>/dev/null on tr, which
+    # would put noise in the boot log for the commonest case of all.
+    _pioa_cf="${PROC_ROOT:-/proc}/$1/cmdline"
+    [ -r "$_pioa_cf" ] || return 1
+    _pioa_cmd=$(tr '\0' ' ' < "$_pioa_cf" 2>/dev/null)
+    [ -n "$_pioa_cmd" ] || return 1
+    case "$_pioa_cmd" in
+        *"/$_pioa_want"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # Defense in depth: redeploy rc.local + run-override.sh from stick
 # unconditionally. rc.local itself does the same; this duplicate path
 # heals a box whose NAND rc.local is an older release that skipped
@@ -2051,86 +2139,6 @@ current_sta_ssid() {
         if [ -n "$_css" ]; then printf '%s' "$_css"; return 0; fi
     fi
     return 1
-}
-install_boot_script() {
-    # Stage, validate, then rename a boot script into place.
-    #
-    # KEEP BYTE-IDENTICAL to its twin in the other file. usb-stick/rc.local
-    # and usb-stick/run.sh both need this, they cannot share one copy
-    # (rc.local runs before anything is sourceable, and a sourced helper
-    # would add a failure mode to the thing being hardened), and
-    # usb-stick/tests/boot_install_test.sh fails if the two drift.
-    #
-    # $1 = source, $2 = destination. Returns 0 only when $2 now holds the
-    # whole of $1, 2 when a suspiciously short replacement was refused, and
-    # 1 on any other failure. Logs nothing, so both callers log in their own
-    # style.
-    #
-    # Why rename instead of cp: cp opens the destination with O_TRUNC before
-    # reading a byte of the source, so an interrupted read leaves a truncated
-    # file that is still chmod +x and the boot execs it. rename is atomic, so
-    # the destination is either the old script or the whole new one. It also
-    # makes it safe to replace a script that is CURRENTLY EXECUTING: the
-    # running shell keeps reading the old inode through its open fd instead of
-    # having the bytes shift underneath it mid-statement.
-    [ -r "$1" ] || return 1
-    _ibs_new="$2.new"
-    rm -f "$_ibs_new" 2>/dev/null
-    cp "$1" "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
-    _ibs_ssz=$(wc -c < "$1" 2>/dev/null | tr -d " \t")
-    _ibs_nsz=$(wc -c < "$_ibs_new" 2>/dev/null | tr -d " \t")
-    # A short read is the failure this function exists for.
-    if [ -z "$_ibs_nsz" ] || [ "$_ibs_nsz" = "0" ] || [ "$_ibs_nsz" != "$_ibs_ssz" ]; then
-        rm -f "$_ibs_new" 2>/dev/null
-        return 1
-    fi
-    # A script the box's own shell cannot parse must never become the boot
-    # path. This is what catches a SOURCE that is itself half-written.
-    sh -n "$_ibs_new" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
-    # A stick truncated at a statement boundary still parses, so also refuse
-    # a replacement that is drastically shorter than the working script.
-    if [ -s "$2" ]; then
-        _ibs_osz=$(wc -c < "$2" 2>/dev/null | tr -d " \t")
-        if [ -n "$_ibs_osz" ] && [ "$_ibs_nsz" -lt $(( _ibs_osz / 2 )) ]; then
-            rm -f "$_ibs_new" 2>/dev/null
-            return 2
-        fi
-    fi
-    chmod +x "$_ibs_new" 2>/dev/null
-    mv -f "$_ibs_new" "$2" 2>/dev/null || { rm -f "$_ibs_new" 2>/dev/null; return 1; }
-    sync 2>/dev/null
-    return 0
-}
-
-pid_is_our_agent() {
-    # $1 = pid, $2 = the agent binary this boot intends to run.
-    #
-    # kill -0 proves only that SOMETHING owns that pid. The pidfile lives on
-    # NAND and survives the reboot, and nothing clears it at shutdown (the
-    # watchdogs use a failing kill -0 as their restart trigger), so every boot
-    # reads the previous boot's number while Linux hands the same numbers out
-    # again from 1. Confirm from /proc before signalling anything.
-    #
-    # Matched on the BINARY name, not on "streborn": the boot script itself
-    # lives at /mnt/nv/streborn/run-override.sh, so a looser match could send
-    # KILL to our own supervisor.
-    #
-    # PROC_ROOT is a test seam and nothing else; on the speaker it is /proc.
-    [ -n "${1:-}" ] || return 1
-    [ "$1" -gt 0 ] 2>/dev/null || return 1
-    _pioa_want="${2##*/}"
-    [ -n "$_pioa_want" ] || _pioa_want="streborn-armv7l"
-    # Guarded: a pid that is gone makes the redirect itself fail, and the
-    # shell reports that on stderr regardless of the 2>/dev/null on tr, which
-    # would put noise in the boot log for the commonest case of all.
-    _pioa_cf="${PROC_ROOT:-/proc}/$1/cmdline"
-    [ -r "$_pioa_cf" ] || return 1
-    _pioa_cmd=$(tr '\0' ' ' < "$_pioa_cf" 2>/dev/null)
-    [ -n "$_pioa_cmd" ] || return 1
-    case "$_pioa_cmd" in
-        *"/$_pioa_want"*) return 0 ;;
-        *) return 1 ;;
-    esac
 }
 box_in_setup() {
     # True while the speaker is in its out-of-box setup, which is a state the
