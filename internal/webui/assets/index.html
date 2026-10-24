@@ -2557,6 +2557,30 @@ async function playSlot(n, tile, name) {
   }
 }
 
+// proxiedRadioLoc reports whether the speaker's location is radio coming
+// through STR's stream proxy, the only case where the proxy's ICY title belongs
+// to what plays. The same rule as the desktop app's proxiedRadioPlaying:
+//   /stream/<n>          a preset recall through the proxy
+//   /stream/raw?u=<b64>  an ad-hoc station
+//   /station?data=<b64>  the ORION descriptor, when its streamUrl is one of those
+// A music library track plays over the same UPNP source but from the media
+// server's own address, so it is none of these. Asking the proxy for it showed
+// the previous radio station's song under the track for a few seconds after
+// the switch (#1394). Spotify has its own song lines.
+function proxiedRadioLoc(loc) {
+  if (!loc || /\/spotify\//.test(loc)) return false;
+  var viaProxy = function(u) { return /\/stream\/\d+(?:[/?#]|$)/.test(u) || /\/stream\/raw(?:[/?#]|$)/.test(u); };
+  if (viaProxy(loc)) return true;
+  var d = loc.match(/[?&]data=([A-Za-z0-9\-_=+/]+)/);
+  if (!d) return false;
+  try {
+    var b64 = d[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var su = (JSON.parse(atob(b64)) || {}).streamUrl;
+    return !!su && viaProxy(String(su));
+  } catch (e) { return false; }
+}
+
 // currentSong returns the live ICY title of the running stream, or ''.
 //
 // Best-effort by design: a station that sends no metadata, a source that is not
@@ -2798,7 +2822,10 @@ async function refreshStatus() {
   // The same read lights the key a folder was started from (#1029).
   markPlaying(nowLoc, queue, spKey);
   if (!song && playing && queue) song = queueSongMeta(queue);
-  if (!song && !queue) song = (playing && proxySrc) ? await currentSong() : '';
+  // And only while the location is a proxied radio stream: a single library
+  // track is UPNP too, and the proxy still held the station's song for a few
+  // seconds after the switch, so it sat under the track (#1394).
+  if (!song && !queue) song = (playing && proxySrc && proxiedRadioLoc(nowLoc)) ? await currentSong() : '';
   // No raw firmware enum on the screen, ever. The old fallback stripped
   // "_STATE" and lower-cased the rest, which turned INVALID_PLAY_STATUS into
   // "invalid_play_status" under the station name (#961). Anything the map does

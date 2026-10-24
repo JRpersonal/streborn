@@ -100,6 +100,26 @@ func (s *Server) clearTitleForNewURL(url string) {
 	s.titleMu.Unlock()
 }
 
+// ForgetTitle drops the live title at once, for a caller that knows the
+// speaker has moved on to something that is not this radio stream (a music
+// library file). The end-of-stream wipe waits titleEndGrace for a takeover,
+// and a station connection held for the box's return outlives the switch, so
+// for those seconds /api/stream/title still answered with the radio song and
+// the phone remote printed it under the library track (#1394). The station
+// URL is kept so the delayed end-of-stream wipe still recognises its stream
+// and tells the panel; the next metadata block of a station the box returns
+// to fills the title again.
+func (s *Server) ForgetTitle() {
+	s.titleMu.Lock()
+	had := s.curTitle != ""
+	s.curTitle = ""
+	s.curRawTitle = ""
+	s.titleMu.Unlock()
+	if had {
+		s.logger.Info("stream proxy ICY title dropped: the speaker plays something else now")
+	}
+}
+
 // titleEndGrace is how long after a handler ends the title survives while a
 // successor handler of the SAME stream may still take over. An immediate wipe
 // fed a self-sustaining stutter loop with the on-display track push enabled

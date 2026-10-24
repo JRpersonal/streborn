@@ -241,6 +241,13 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	playGen := s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	// A library file is no radio stream: the song the stream proxy parsed out
+	// of the station before must not be served for it. Left to the proxy's
+	// own end-of-stream wipe it survived a few seconds, and the phone remote
+	// printed it under the library track (#1394).
+	if req.Mime != "" && s.streamProxy != nil {
+		s.streamProxy.ForgetTitle()
+	}
 	if playDirect {
 		// a single library file: its name is the song
 		s.panelLibraryTrack("", "", req.Title)
