@@ -43,7 +43,7 @@ func TestPeerReadsRefuseLoopbackAndAllowTheLAN(t *testing.T) {
 // A LAN address is not blocked: the other speakers live there, and blocking
 // 192.168/10/172.16 would turn multiroom off in the name of security.
 func TestPeerReadsAllowPrivateAddresses(t *testing.T) {
-	for _, ip := range []string{"192.168.178.31", "10.0.0.5", "172.16.4.9"} {
+	for _, ip := range []string{"192.168.1.31", "10.0.0.5", "172.16.4.9"} {
 		if err := dialGuardFor(ip); err != nil {
 			t.Errorf("a private LAN speaker at %s was refused: %v", ip, err)
 		}
@@ -68,9 +68,9 @@ func dialGuardFor(ip string) error {
 // 2026-09-26, on :8090 endpoints that ACT on a plain GET.
 func TestAPeerAddressCannotCarryItsOwnPathOrPort(t *testing.T) {
 	escapes := []string{
-		"192.168.178.9:80/removeGroup?x=",
-		"192.168.178.9/removeGroup",
-		"192.168.178.9:22",
+		"192.168.1.9:80/removeGroup?x=",
+		"192.168.1.9/removeGroup",
+		"192.168.1.9:22",
 		"speaker.local", // a name: it can resolve elsewhere later
 		"127.0.0.1",     // our own services
 		"8.8.8.8",       // not on this LAN at all
@@ -85,7 +85,7 @@ func TestAPeerAddressCannotCarryItsOwnPathOrPort(t *testing.T) {
 		}
 	}
 
-	for _, host := range []string{"192.168.178.31", "10.0.0.5", "172.16.4.9"} {
+	for _, host := range []string{"192.168.1.31", "10.0.0.5", "172.16.4.9"} {
 		if got := peerBoxURL(host, "/now_playing"); got == "" {
 			t.Errorf("a real speaker at %s was refused", host)
 		}

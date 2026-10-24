@@ -34,7 +34,7 @@ func TestAHostCannotCarryItsOwnPathOrPort(t *testing.T) {
 	}
 
 	// And the ordinary cases still work, or the fix would just be an outage.
-	for _, host := range []string{"192.168.178.31", "10.0.0.5", "fe80::1", "speaker-lan"} {
+	for _, host := range []string{"192.168.1.31", "10.0.0.5", "fe80::1", "speaker-lan"} {
 		got := New(host).url("/now_playing")
 		if got == "" || !strings.HasSuffix(got, ":8090/now_playing") {
 			t.Errorf("host %q built %q, want a normal speaker URL", host, got)

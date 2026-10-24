@@ -197,7 +197,7 @@ func TestForeignInfluenceUndoAlwaysReportsWhatRemains(t *testing.T) {
 	s := &Server{logger: slog.New(slog.NewTextHandler(new(bytes.Buffer), nil))}
 	r := httptest.NewRequest(http.MethodPost, "/api/box/foreign-influence",
 		strings.NewReader(`{"id":"cloud-url-live"}`))
-	r.RemoteAddr = "192.168.178.20:5555"
+	r.RemoteAddr = "192.168.1.20:5555"
 	w := httptest.NewRecorder()
 	s.handleForeignInfluence(w, r)
 	if w.Code != http.StatusOK {

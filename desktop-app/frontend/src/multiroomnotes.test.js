@@ -86,7 +86,7 @@ describe('group master default', () => {
   });
 });
 
-// The group frame showed a raw hex id like "884AEAE811FF" where the main
+// The group frame showed a raw hex id like "0000000002B2" where the main
 // speaker's name belongs, and its x was then a silent no-op: the master key
 // comes from the speakers' own zone documents (the firmware SoundTouch id)
 // while the box record carries what mDNS announced (the chassis MAC), so the

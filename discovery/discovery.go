@@ -141,7 +141,7 @@ type Config struct {
 	// happen to share the same git-describe version string.
 	Build string
 	// HostName is the bare mDNS label this speaker answers for, e.g.
-	// "str-f9eca2". Empty means the library falls back to the box's Linux
+	// "str-0000b2". Empty means the library falls back to the box's Linux
 	// hostname, which on SoundTouch hardware is the Bose chassis codename and
 	// is neither unique nor answered by anybody: three SoundTouch 10s on one
 	// network all announce themselves as rhino.local. Set this ONLY once

@@ -10,7 +10,7 @@ func TestPickReachableIPSkipsEveryDocumentationRange(t *testing.T) {
 		if got := pickReachableIP([]string{ip}); got != "" {
 			t.Errorf("pickReachableIP([%s]) = %q, want none", ip, got)
 		}
-		if got := pickReachableIP([]string{ip, "192.168.178.29"}); got != "192.168.178.29" {
+		if got := pickReachableIP([]string{ip, "192.168.1.29"}); got != "192.168.1.29" {
 			t.Errorf("pickReachableIP([%s, LAN]) = %q, want the LAN address", ip, got)
 		}
 	}

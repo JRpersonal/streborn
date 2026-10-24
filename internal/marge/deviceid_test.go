@@ -24,14 +24,14 @@ func TestDeviceIDFromAddDeviceBody(t *testing.T) {
 	}{
 		{
 			name: "the shape the box actually posts",
-			body: `<device deviceid="94E36DF9CE40"><name>SoundTouch 10</name>` +
-				`<macaddress>94E36DF9CE40</macaddress></device>`,
-			want: "94E36DF9CE40",
+			body: `<device deviceid="0000000001A1"><name>SoundTouch 10</name>` +
+				`<macaddress>0000000001A1</macaddress></device>`,
+			want: "0000000001A1",
 		},
 		{
 			name: "lower case is normalised, since the account block must match",
-			body: `<device deviceid="94e36df9ce40"></device>`,
-			want: "94E36DF9CE40",
+			body: `<device deviceid="0000000001a1"></device>`,
+			want: "0000000001A1",
 		},
 		{
 			name: "no id attribute leaves the current value alone",
@@ -40,7 +40,7 @@ func TestDeviceIDFromAddDeviceBody(t *testing.T) {
 		},
 		{
 			name: "a separator-formatted MAC is rejected rather than stored wrong",
-			body: `<device deviceid="94:E3:6D:F9:CE:40"></device>`,
+			body: `<device deviceid="00:00:00:00:01:A1"></device>`,
 			want: "",
 		},
 		{
@@ -84,13 +84,13 @@ func TestDeviceIDPersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deviceid")
 
 	first := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
-		WithDeviceID("10CEA9E8CF31"), WithDeviceIDPath(path))
-	first.SetDeviceID("94E36DF9CE40")
+		WithDeviceID("0000000001B2"), WithDeviceIDPath(path))
+	first.SetDeviceID("0000000001A1")
 
 	// A fresh server with the same wrong guess must come up with the stored id.
 	second := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
-		WithDeviceID("10CEA9E8CF31"), WithDeviceIDPath(path))
-	if got := second.DeviceID(); got != "94E36DF9CE40" {
+		WithDeviceID("0000000001B2"), WithDeviceIDPath(path))
+	if got := second.DeviceID(); got != "0000000001A1" {
 		t.Fatalf("after restart DeviceID() = %q, want the confirmed id", got)
 	}
 
@@ -99,34 +99,34 @@ func TestDeviceIDPersistsAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	third := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
-		WithDeviceID("10CEA9E8CF31"), WithDeviceIDPath(path))
-	if got := third.DeviceID(); got != "10CEA9E8CF31" {
+		WithDeviceID("0000000001B2"), WithDeviceIDPath(path))
+	if got := third.DeviceID(); got != "0000000001B2" {
 		t.Fatalf("a corrupt stored id must fall back to the guess, got %q", got)
 	}
 
 	// No path configured must not panic or write anywhere.
-	plain := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("10CEA9E8CF31"))
-	if !plain.SetDeviceID("94E36DF9CE40") {
+	plain := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("0000000001B2"))
+	if !plain.SetDeviceID("0000000001A1") {
 		t.Fatal("SetDeviceID must still work without persistence")
 	}
 }
 
 func TestSetDeviceIDReportsChange(t *testing.T) {
-	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("10CEA9E8CF31"))
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("0000000001B2"))
 
 	if s.SetDeviceID("") {
 		t.Fatal("an empty id must not replace a known one")
 	}
-	if got := s.DeviceID(); got != "10CEA9E8CF31" {
+	if got := s.DeviceID(); got != "0000000001B2" {
 		t.Fatalf("id changed to %q after an empty set", got)
 	}
-	if !s.SetDeviceID("94E36DF9CE40") {
+	if !s.SetDeviceID("0000000001A1") {
 		t.Fatal("a different id must report a change, so the correction is logged")
 	}
-	if got := s.DeviceID(); got != "94E36DF9CE40" {
+	if got := s.DeviceID(); got != "0000000001A1" {
 		t.Fatalf("DeviceID() = %q, want the corrected value", got)
 	}
-	if s.SetDeviceID("94e36df9ce40") {
+	if s.SetDeviceID("0000000001a1") {
 		t.Fatal("the same id in another case must not report a change")
 	}
 }
@@ -134,18 +134,18 @@ func TestSetDeviceIDReportsChange(t *testing.T) {
 // The account payload must carry the CURRENT id, not the one captured at
 // construction: the correction arrives seconds before the box asks for it.
 func TestAccountPayloadUsesCorrectedDeviceID(t *testing.T) {
-	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("10CEA9E8CF31"))
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("0000000001B2"))
 	s.SetAccount(&AccountInfo{AccountEmail: "stick@local"})
-	s.SetDeviceID("94E36DF9CE40")
+	s.SetDeviceID("0000000001A1")
 
 	w := httptest.NewRecorder()
 	s.respondMargeAccountFull(w, httptest.NewRequest("GET", "/streaming/account/stick@local/full", nil))
 
 	body := w.Body.String()
-	if !strings.Contains(body, `deviceid="94E36DF9CE40"`) {
+	if !strings.Contains(body, `deviceid="0000000001A1"`) {
 		t.Fatalf("account payload does not carry the corrected deviceID:\n%s", body)
 	}
-	if strings.Contains(body, "10CEA9E8CF31") {
+	if strings.Contains(body, "0000000001B2") {
 		t.Fatalf("account payload still carries the stale guess:\n%s", body)
 	}
 	// The whole point of getting the id right is that the sources block is

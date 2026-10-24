@@ -35,11 +35,11 @@ func quietServer(host string) *Server {
 }
 
 const (
-	leaderID   = "08DF1F0C9870"
-	livingID   = "000C8A96488D"
-	bathID     = "EC24B8B790CC"
+	leaderID   = "0000000000F6"
+	livingID   = "0000000000C3"
+	bathID     = "0000000000A1"
 	strangerID = "A1B2C3D4E5F6" // a speaker in somebody else's group
-	leaderIP   = "192.168.178.79"
+	leaderIP   = "192.0.2.79"
 	livingHost = "127.0.0.1"
 )
 
@@ -54,8 +54,8 @@ func TestAFollowerReportsTheGroupItIsActuallyIn(t *testing.T) {
 		map[string]boxapi.Zone{
 			// What a follower's own firmware answers: the real master, itself
 			// as the only member, and the master's address to reach it at.
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
-			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}, {DeviceID: livingID, IP: "192.168.178.44"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}, {DeviceID: livingID, IP: "192.0.2.44"}}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: leaderID})
 
@@ -97,7 +97,7 @@ func TestTheLeaderIsDecidedByDeviceIDNotBySenderIsMaster(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}},
+			livingHost: {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}}},
 		},
 		map[string]string{livingHost: leaderID}) // this speaker IS the leader
 
@@ -140,7 +140,7 @@ func TestAnUnreachableLeaderStillLeavesAGroup(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
 			// the leader is absent from the map, so it does not answer
 		},
 		map[string]string{livingHost: livingID})
@@ -183,12 +183,12 @@ func TestTheZoneReadReportsTheWholeGroupFromAFollower(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
-			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}, {DeviceID: livingID, IP: "192.168.178.44"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}, {DeviceID: livingID, IP: "192.0.2.44"}}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: leaderID})
 
-	own := boxapi.Zone{Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}}
+	own := boxapi.Zone{Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}}
 	members, ok := s.leaderZone(context.Background(), own)
 	if !ok {
 		t.Fatal("a follower must be able to report the whole group")
@@ -208,7 +208,7 @@ func TestTheLeaderKeepsItsOwnMemberList(t *testing.T) {
 		map[string]string{livingHost: leaderID})
 
 	own := boxapi.Zone{Master: leaderID, SenderIP: leaderIP,
-		Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}}
+		Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}}}
 	if _, ok := s.leaderZone(context.Background(), own); ok {
 		t.Error("the leader already has the full list, it must not ask anybody")
 	}
@@ -234,8 +234,8 @@ func TestWhatTheGroupViewShowsIsWhatCanBeSet(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
-			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}, {DeviceID: livingID, IP: "192.168.178.44"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}, {DeviceID: livingID, IP: "192.0.2.44"}}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: leaderID})
 
@@ -279,7 +279,7 @@ func TestTheStoredGroupCheckReusesTheAnswerAlreadyRead(t *testing.T) {
 		t.Fatalf("zone store: %v", err)
 	}
 	if err := store.Set(zones.Zone{Master: leaderID, MasterIP: livingHost,
-		Slaves: []zones.Member{{DeviceID: bathID, IP: "192.168.178.48"}}}); err != nil {
+		Slaves: []zones.Member{{DeviceID: bathID, IP: "192.0.2.48"}}}); err != nil {
 		t.Fatalf("store the group: %v", err)
 	}
 	// This speaker leads the group, so liveGroupView reads its zone and hands
@@ -287,7 +287,7 @@ func TestTheStoredGroupCheckReusesTheAnswerAlreadyRead(t *testing.T) {
 	s := quietServer(livingHost)
 	s.zones = store
 	withSpeakers(s,
-		map[string]boxapi.Zone{livingHost: {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}}},
+		map[string]boxapi.Zone{livingHost: {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}}}},
 		map[string]string{livingHost: leaderID})
 	inner := s.fetchZoneFn
 	var reads int
@@ -330,7 +330,7 @@ func TestNoGroupIsReportedLostWhenNoneWasStored(t *testing.T) {
 		t.Fatalf("zone store: %v", err)
 	}
 	if err := store.Set(zones.Zone{Master: leaderID, MasterIP: livingHost,
-		Slaves: []zones.Member{{DeviceID: bathID, IP: "192.168.178.48"}}}); err != nil {
+		Slaves: []zones.Member{{DeviceID: bathID, IP: "192.0.2.48"}}}); err != nil {
 		t.Fatalf("store the group: %v", err)
 	}
 	s.zones = store
@@ -353,9 +353,9 @@ func TestALeaderThatNamesADifferentMasterIsNotAdopted(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
 			// That address has since joined a group led by a third speaker.
-			leaderIP: {Master: bathID, Members: []boxapi.ZoneMember{{DeviceID: leaderID, IP: leaderIP}, {DeviceID: strangerID, IP: "192.168.178.58"}}},
+			leaderIP: {Master: bathID, Members: []boxapi.ZoneMember{{DeviceID: leaderID, IP: leaderIP}, {DeviceID: strangerID, IP: "192.0.2.58"}}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: leaderID})
 
@@ -383,11 +383,11 @@ func TestASpeakerListedTwiceGetsOneRow(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
 			leaderIP: {Master: leaderID, Members: []boxapi.ZoneMember{
-				{DeviceID: bathID, IP: "192.168.178.48"},
-				{DeviceID: livingID, IP: "192.168.178.44"},
-				{DeviceID: bathID, IP: "192.168.178.48"},
+				{DeviceID: bathID, IP: "192.0.2.48"},
+				{DeviceID: livingID, IP: "192.0.2.44"},
+				{DeviceID: bathID, IP: "192.0.2.48"},
 				{DeviceID: leaderID, IP: leaderIP}, // the leader listing itself
 			}},
 		},
@@ -422,8 +422,8 @@ func TestASpeakerMissingFromTheLeadersListIsAddedNotDropped(t *testing.T) {
 	s := quietServer(livingHost)
 	withSpeakers(s,
 		map[string]boxapi.Zone{
-			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
-			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}},
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.0.2.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: leaderID})
 
@@ -461,7 +461,7 @@ func TestLeaderZoneRefusesAGroupThatNamesADifferentLeader(t *testing.T) {
 	withSpeakers(s,
 		map[string]boxapi.Zone{
 			livingHost: {Master: leaderID, SenderIP: leaderIP},
-			leaderIP:   {Master: strangerID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}},
+			leaderIP:   {Master: strangerID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.0.2.48"}}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: strangerID})
 
@@ -479,8 +479,8 @@ func TestLeaderZoneAddsThisSpeakerWhenTheLeaderOmitsIt(t *testing.T) {
 		map[string]boxapi.Zone{
 			livingHost: {Master: leaderID, SenderIP: leaderIP},
 			leaderIP: {Master: leaderID, Members: []boxapi.ZoneMember{
-				{DeviceID: bathID, IP: "192.168.178.48"},
-				{DeviceID: bathID, IP: "192.168.178.48"},
+				{DeviceID: bathID, IP: "192.0.2.48"},
+				{DeviceID: bathID, IP: "192.0.2.48"},
 			}},
 		},
 		map[string]string{livingHost: livingID, leaderIP: leaderID})

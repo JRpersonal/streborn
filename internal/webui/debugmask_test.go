@@ -33,14 +33,14 @@ var (
 // and a user's home path in a log tail.
 func leakyState() map[string]any {
 	return map[string]any{
-		"hosts_live": "192.168.178.1 fritz.box\n192.168.178.60 speaker",
-		"mdns_host":  map[string]any{"iface": "wlan0", "mac": "7C:EC:79:F9:EC:A2"},
+		"hosts_live": "192.168.1.1 fritz.box\n192.168.1.60 speaker",
+		"mdns_host":  map[string]any{"iface": "wlan0", "mac": "00:00:00:00:00:B2"},
 		"agent_log_tail": strings.Join([]string{
-			`time=2026-09-15T10:00:00Z level=INFO msg="peer seen" ip=192.168.178.79 deviceID=EC24B8B790CC`,
+			`time=2026-09-15T10:00:00Z level=INFO msg="peer seen" ip=192.168.1.79 deviceID=0000000000A1`,
 			`time=2026-09-15T10:00:01Z level=INFO msg="wifi" ssid="Familie Mustermann 5G"`,
 			`time=2026-09-15T10:00:02Z level=INFO msg="stick" path=C:\Users\alfred\Downloads\str`,
 		}, "\n"),
-		"zone": map[string]any{"master": "EC24B8B790CC", "name": "Wohnzimmer"},
+		"zone": map[string]any{"master": "0000000000A1", "name": "Wohnzimmer"},
 	}
 }
 
@@ -59,7 +59,7 @@ func TestTheDebugStateIsMaskedUnlessRawIsAskedFor(t *testing.T) {
 	if m := macAddr.FindString(body); m != "" {
 		t.Errorf("a hardware address survived: %s", m)
 	}
-	for _, leak := range []string{"EC24B8B790CC", "Familie Mustermann", "Wohnzimmer", "alfred"} {
+	for _, leak := range []string{"0000000000A1", "Familie Mustermann", "Wohnzimmer", "alfred"} {
 		if strings.Contains(body, leak) {
 			t.Errorf("%q survived the mask", leak)
 		}
@@ -85,7 +85,7 @@ func TestRawIsStillAvailableWhenAskedFor(t *testing.T) {
 	body := rec.Body.String()
 	// The desktop app needs this: its failure report shows the user their own
 	// addresses on purpose, and its bundle runs a wider scrub of its own.
-	if !strings.Contains(body, "192.168.178.1") {
+	if !strings.Contains(body, "192.168.1.1") {
 		t.Error("raw dropped the addresses the desktop report exists to show")
 	}
 }
@@ -199,9 +199,9 @@ func TestTheFirmwareSpotifyUsernameInTheSyslogTailIsMasked(t *testing.T) {
 
 func TestASectionThatReturnsAGoStructIsMaskedToo(t *testing.T) {
 	state := map[string]any{
-		"mdns_host":        []ifaceSection{{Name: "wlan0", MAC: "7C:EC:79:F9:EC:A2", IPv4: []string{"192.168.178.31"}}},
-		"net_reachability": reachSection{LanAddrs: []string{"192.168.178.31"}, GatewayIP: "192.168.178.1"},
-		"dns_status":       map[string]any{"nameservers": []string{"192.168.178.1 # wlan0"}},
+		"mdns_host":        []ifaceSection{{Name: "wlan0", MAC: "00:00:00:00:00:B2", IPv4: []string{"192.168.1.31"}}},
+		"net_reachability": reachSection{LanAddrs: []string{"192.168.1.31"}, GatewayIP: "192.168.1.1"},
+		"dns_status":       map[string]any{"nameservers": []string{"192.168.1.1 # wlan0"}},
 	}
 
 	rec := httptest.NewRecorder()

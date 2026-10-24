@@ -93,17 +93,17 @@ func TestMergeSameKindKeepsNameAndFreshVersion(t *testing.T) {
 // regardless of which record is the merge base.
 func TestMergeSameKindPrefersVerifiedDeviceID(t *testing.T) {
 	mdns := BoxInfo{ // mDNS: wlan0/SMSC MAC, not port-verified
-		Kind: "str", Host: "192.168.0.9", DeviceID: "74DAEA99C34C", PortVerified: false,
+		Kind: "str", Host: "192.168.0.9", DeviceID: "0000000001D4", PortVerified: false,
 	}
 	probe := BoxInfo{ // live /info probe: real SoundTouch (SCM) deviceID, verified
-		Kind: "str", Host: "192.168.0.9", DeviceID: "68C90B85A0A9", PortVerified: true, Port: 17008,
+		Kind: "str", Host: "192.168.0.9", DeviceID: "0000000001C3", PortVerified: true, Port: 17008,
 	}
 	// Order must not matter: the verified deviceID wins as base OR as the other arg.
-	if out := mergeSameKind(mdns, probe); out.DeviceID != "68C90B85A0A9" {
-		t.Errorf("DeviceID = %q, want 68C90B85A0A9 (verified /info wins, mdns base)", out.DeviceID)
+	if out := mergeSameKind(mdns, probe); out.DeviceID != "0000000001C3" {
+		t.Errorf("DeviceID = %q, want 0000000001C3 (verified /info wins, mdns base)", out.DeviceID)
 	}
-	if out := mergeSameKind(probe, mdns); out.DeviceID != "68C90B85A0A9" {
-		t.Errorf("DeviceID = %q, want 68C90B85A0A9 (verified /info wins, probe base)", out.DeviceID)
+	if out := mergeSameKind(probe, mdns); out.DeviceID != "0000000001C3" {
+		t.Errorf("DeviceID = %q, want 0000000001C3 (verified /info wins, probe base)", out.DeviceID)
 	}
 }
 

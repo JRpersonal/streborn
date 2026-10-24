@@ -87,7 +87,7 @@ func TestTheSaltNeverAppearsInScrubbedOutput(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(dir, saltFileName))
 	saltHex := strings.TrimSpace(string(b))
 
-	out := ScrubPII("deviceID=\"AABBCCDDEEFF\" macAddress=AA:BB:CC:DD:EE:FF at 192.168.178.31")
+	out := ScrubPII("deviceID=\"AABBCCDDEEFF\" macAddress=AA:BB:CC:DD:EE:FF at 192.168.1.31")
 	if strings.Contains(out, saltHex) {
 		t.Fatal("the scrubbed text carries the salt")
 	}

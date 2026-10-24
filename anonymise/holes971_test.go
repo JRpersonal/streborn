@@ -136,7 +136,7 @@ func TestTheAccountAndNamePassesAreIdempotent(t *testing.T) {
 func TestAnIdentityInsideAContainerKeyIsReached(t *testing.T) {
 	uri := "spotify:user:anna.schmidt:playlist:37i9dQZF1DX"
 	enc := base64.RawURLEncoding.EncodeToString([]byte(uri))
-	in := "preset 3 -> http://192.168.178.79:17008/playback/container/" + enc
+	in := "preset 3 -> http://192.168.1.79:17008/playback/container/" + enc
 
 	got := ScrubPII(in)
 	if strings.Contains(got, enc) {
@@ -185,7 +185,7 @@ func TestAUUIDIsNotCutInHalf(t *testing.T) {
 // it, or a reader can no longer see that the UDN and the device are one
 // speaker. This is the case a plain "leave anything dashed alone" rule breaks.
 func TestTheBoseUDNStillHashesItsMACToTheDeviceToken(t *testing.T) {
-	in := `location=http://192.168.178.21:8091/XD/BO5EBO5E-F00D-F00D-FEED-A1B2C3D4E5F6 deviceID=A1B2C3D4E5F6`
+	in := `location=http://192.168.1.21:8091/XD/BO5EBO5E-F00D-F00D-FEED-A1B2C3D4E5F6 deviceID=A1B2C3D4E5F6`
 	got := ScrubPII(in)
 	if strings.Contains(got, "A1B2C3D4E5F6") {
 		t.Fatalf("the MAC shipped in clear inside the UDN: %s", got)
@@ -228,7 +228,7 @@ func TestTheWholePassIsIdempotentOnABundleShapedLine(t *testing.T) {
 
 	in := strings.Join([]string{
 		`time=10:02 comp=marge deviceID=A1B2C3D4E5F6 friendlyName=Kueche`,
-		`ssid="Home Net 5G" mac=A1:B2:C3:D4:E5:F6 ip=192.168.178.21`,
+		`ssid="Home Net 5G" mac=A1:B2:C3:D4:E5:F6 ip=192.168.1.21`,
 		`server uuid:5435f503-c9e0-4ac0-ac67-58d3491f4b1a`,
 		`log=C:\Users\Anna Schmidt\AppData\app.log account="anna@example.com"`,
 		`stick=D:\Annemarie\str`,
@@ -239,7 +239,7 @@ func TestTheWholePassIsIdempotentOnABundleShapedLine(t *testing.T) {
 	if once != twice {
 		t.Errorf("not idempotent\n1st:\n%s\n2nd:\n%s", once, twice)
 	}
-	for _, leak := range []string{"A1B2C3D4E5F6", "A1:B2:C3:D4:E5:F6", "192.168.178", "Schmidt", "Annemarie", "anna@example.com", "58d3491f4b1a", "Home Net"} {
+	for _, leak := range []string{"A1B2C3D4E5F6", "A1:B2:C3:D4:E5:F6", "192.168.1", "Schmidt", "Annemarie", "anna@example.com", "58d3491f4b1a", "Home Net"} {
 		if strings.Contains(once, leak) {
 			t.Errorf("%q survived:\n%s", leak, once)
 		}

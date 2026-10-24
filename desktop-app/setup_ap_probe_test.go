@@ -35,7 +35,7 @@ func TestProbeSetupAPHits(t *testing.T) {
 	// the regexes the same way it does against a stock speaker.
 	infoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
-		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><info deviceID="08DF1F0C9870"><name>Jens Portable</name><type>SoundTouch Portable</type></info>`))
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><info deviceID="0000000000F6"><name>Jens Portable</name><type>SoundTouch Portable</type></info>`))
 	}))
 	defer infoSrv.Close()
 
@@ -58,7 +58,7 @@ func TestProbeSetupAPHits(t *testing.T) {
 	if got.Model != "SoundTouch Portable" {
 		t.Errorf("model not enriched from /info: got %q", got.Model)
 	}
-	if got.DeviceID != "08DF1F0C9870" {
+	if got.DeviceID != "0000000000F6" {
 		t.Errorf("deviceID not enriched from /info: got %q", got.DeviceID)
 	}
 }

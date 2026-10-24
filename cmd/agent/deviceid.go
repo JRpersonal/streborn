@@ -14,8 +14,8 @@ import (
 //
 // Why this exists: the agent's startup value comes from a network interface
 // MAC, and a speaker with two interfaces uses only one of them as its identity.
-// Measured on an ST10, /info carries deviceID="94E36DF9CE40" (its SCM
-// interface) while the agent had guessed "10CEA9E8CF31" (its SMSC interface).
+// Measured on an ST10, /info carries deviceID="0000000001A1" (its SCM
+// interface) while the agent had guessed "0000000001B2" (its SMSC interface).
 // The id lands in the <devices> block of the emulated account, and the firmware
 // throws away an account whose device list does not contain itself - together
 // with the <sources> block in it, which is what registers the radio source that

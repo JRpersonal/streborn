@@ -5,9 +5,9 @@ package main
 // SoundTouch 10s, with no GUI and no manual SSH/curl (which would test a
 // different path than users take). Env-gated so CI never touches hardware:
 //
-//	STR_LIVE_STEREO_LEFT=192.168.178.x STR_LIVE_STEREO_RIGHT=192.168.178.y \
+//	STR_LIVE_STEREO_LEFT=192.168.1.x STR_LIVE_STEREO_RIGHT=192.168.1.y \
 //	  go test -run LiveStereoPair -v -timeout 10m
-//	STR_LIVE_COPY_SRC=192.168.178.x:17008 STR_LIVE_COPY_DST=192.168.178.y:8888 \
+//	STR_LIVE_COPY_SRC=192.168.1.x:17008 STR_LIVE_COPY_DST=192.168.1.y:8888 \
 //	  go test -run LiveSpotifyCredentialCopy -v -timeout 5m
 //
 // The stereo test forms a REAL pair (audible relay clicks are normal), so set

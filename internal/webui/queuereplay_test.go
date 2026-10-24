@@ -28,7 +28,7 @@ func TestSplitQueueCardKey(t *testing.T) {
 	}
 	// Registered the way the store holds them: the UDN without its uuid: prefix.
 	for _, reg := range []mediaservers.Server{
-		{ID: "fa095ecc-e13e-40e7-8e6c-3C37129F8346", Name: "AVM FRITZ!Mediaserver"},
+		{ID: "fa095ecc-e13e-40e7-8e6c-0000000002C3", Name: "AVM FRITZ!Mediaserver"},
 		{ID: "00113251-28ed-0011-ed28-ed2851321100", Name: "Backupserver"},
 	} {
 		if err := store.Add(reg); err != nil {
@@ -43,8 +43,8 @@ func TestSplitQueueCardKey(t *testing.T) {
 	}{
 		{
 			name: "FRITZ!Box id full of colons",
-			key:  "queue:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346:4:cont2:578:AVM GmbH0:3:Pop",
-			udn:  "uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346", container: "4:cont2:578:AVM GmbH0:3:Pop", ok: true,
+			key:  "queue:uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3:4:cont2:578:AVM GmbH0:3:Pop",
+			udn:  "uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3", container: "4:cont2:578:AVM GmbH0:3:Pop", ok: true,
 		},
 		{
 			name: "Synology dollar id",
@@ -54,8 +54,8 @@ func TestSplitQueueCardKey(t *testing.T) {
 		{
 			// The folder played WAS the server root.
 			name: "empty container half",
-			key:  "queue:uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346:",
-			udn:  "uuid:fa095ecc-e13e-40e7-8e6c-3C37129F8346", container: "0", ok: true,
+			key:  "queue:uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3:",
+			udn:  "uuid:fa095ecc-e13e-40e7-8e6c-0000000002C3", container: "0", ok: true,
 		},
 		{
 			// Not registered here: the shape fallback still has to name the real

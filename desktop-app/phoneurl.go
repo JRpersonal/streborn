@@ -185,7 +185,7 @@ func pickPhoneAddress(host string, port int, candidates []string, p phoneNamePro
 }
 
 // containsHost reports whether ips holds host, comparing as addresses so
-// "192.168.178.21" and "192.168.178.021" are not treated as different hosts.
+// "192.0.2.21" and "192.0.2.021" are not treated as different hosts.
 func containsHost(ips []string, host string) bool {
 	want := net.ParseIP(host)
 	for _, ip := range ips {

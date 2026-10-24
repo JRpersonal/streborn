@@ -11,14 +11,14 @@ import (
 // first on Windows and used to eat the sweep budget); unknown or missing
 // primaries keep the original order.
 func TestOrderSubnetsPrimaryFirst(t *testing.T) {
-	subnets := []string{"172.28.16.", "172.17.0.", "192.168.178."}
-	got := orderSubnetsPrimaryFirst(subnets, net.IPv4(192, 168, 178, 42).To4())
-	want := []string{"192.168.178.", "172.28.16.", "172.17.0."}
+	subnets := []string{"172.28.16.", "172.17.0.", "192.168.1."}
+	got := orderSubnetsPrimaryFirst(subnets, net.IPv4(192, 168, 1, 42).To4())
+	want := []string{"192.168.1.", "172.28.16.", "172.17.0."}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("orderSubnetsPrimaryFirst = %v, want %v", got, want)
 	}
 	// Primary already first: unchanged.
-	got = orderSubnetsPrimaryFirst(want, net.IPv4(192, 168, 178, 42).To4())
+	got = orderSubnetsPrimaryFirst(want, net.IPv4(192, 168, 1, 42).To4())
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("already-first reordered to %v", got)
 	}
@@ -38,8 +38,8 @@ func TestKnownSpeakersRoundTrip(t *testing.T) {
 		t.Fatalf("missing file should load nil, got %v", got)
 	}
 	list := []knownSpeaker{
-		{Host: "192.168.178.79", DeviceID: "AABBCC", Kind: "str"},
-		{Host: "192.168.178.30", Kind: "stock"},
+		{Host: "192.168.1.79", DeviceID: "AABBCC", Kind: "str"},
+		{Host: "192.168.1.30", Kind: "stock"},
 	}
 	if err := saveKnownSpeakersTo(path, list); err != nil {
 		t.Fatal(err)

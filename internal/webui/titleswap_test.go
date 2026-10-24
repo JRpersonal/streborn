@@ -32,7 +32,7 @@ func postTitleSwap(s *Server, body, remote string) *httptest.ResponseRecorder {
 func TestHandleTitleSwap(t *testing.T) {
 	s := titleSwapServer(t)
 	const st = "http://192.0.2.1/ndr1mv"
-	const lan = "192.168.178.20:5555"
+	const lan = "192.168.1.20:5555"
 
 	// Nothing playing and no station named: nothing to act on.
 	if w := postTitleSwap(s, `{"swap":true}`, lan); w.Code != http.StatusConflict {

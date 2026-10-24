@@ -26,7 +26,7 @@ func TestFrameShape(t *testing.T) {
 // group together, or the dedupe achieves nothing on exactly the frames that
 // repeat forever.
 func TestFrameShapeIgnoresPayload(t *testing.T) {
-	a := frameShape([]byte(`<userInactivityUpdate deviceID="08DF1F0C9870" />`))
+	a := frameShape([]byte(`<userInactivityUpdate deviceID="0000000000F6" />`))
 	b := frameShape([]byte(`<userInactivityUpdate deviceID="FFEEDDCCBBAA" />`))
 	if a != b {
 		t.Errorf("same shape with different ids grouped apart: %q vs %q", a, b)
@@ -43,7 +43,7 @@ func TestUnrecognizedFrameLogsTheFirstOfEachShapeOnly(t *testing.T) {
 	// frame list is provably incomplete for 27.0.6 (balanceUpdated and
 	// userInactivityUpdate are field-only), which is why this path must survive
 	// the typed no-op handling of sourcesUpdated / swUpdateStatusUpdated.
-	inactivity := []byte(`<userInactivityUpdate deviceID="08DF1F0C9870" />`)
+	inactivity := []byte(`<userInactivityUpdate deviceID="0000000000F6" />`)
 	for i := 0; i < 40; i++ {
 		c.logUnrecognizedFrame(inactivity)
 	}

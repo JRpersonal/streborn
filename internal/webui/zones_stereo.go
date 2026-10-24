@@ -683,7 +683,7 @@ func (s *Server) zoneFormResolveMembers(run *zoneFormRun) {
 	// with the member "missing" while looking fine on the master.
 	//
 	// Measured 2026-08-09 on a SoundTouch 10, which reports deviceID
-	// EC24B8B790CC while announcing 7CEC79F9ECA2 over mDNS: a group formed from
+	// 0000000000A1 while announcing 0000000000B2 over mDNS: a group formed from
 	// the phone came back ok=false, verified=0, and the follower's own /getZone
 	// said {"members":[]}.
 	//

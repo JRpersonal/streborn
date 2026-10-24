@@ -88,8 +88,8 @@ func LabelFor(deviceID string) string {
 
 // Responder answers address questions for one name.
 type Responder struct {
-	label  string // "str-96488d"
-	fqdn   string // "str-96488d.local."
+	label  string // "str-0000c3"
+	fqdn   string // "str-0000c3.local."
 	logger *slog.Logger
 
 	conn *net.UDPConn

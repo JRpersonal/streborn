@@ -60,9 +60,9 @@ func TestAddressAppearingRegistersOnce(t *testing.T) {
 	a, _ := Announce(quietLogger(), Config{DeviceID: "AABBCCDDEEFF"})
 
 	f.ifaces = []net.Interface{{Name: "wlan0"}}
-	f.addrs = []string{"192.168.178.29"}
+	f.addrs = []string{"192.168.1.29"}
 	cur, changed := a.checkAddresses()
-	if !changed || len(cur) != 1 || cur[0] != "192.168.178.29" {
+	if !changed || len(cur) != 1 || cur[0] != "192.168.1.29" {
 		t.Fatalf("checkAddresses = %v, %v; want a re-announce with the new address", cur, changed)
 	}
 	if f.registers != 2 { // current and legacy service type
@@ -80,7 +80,7 @@ func TestAddressAppearingRegistersOnce(t *testing.T) {
 func TestAddressGoneKeepsRegistration(t *testing.T) {
 	f := withFakeNet(t)
 	f.ifaces = []net.Interface{{Name: "wlan0"}}
-	f.addrs = []string{"192.168.178.29"}
+	f.addrs = []string{"192.168.1.29"}
 	a, _ := Announce(quietLogger(), Config{DeviceID: "AABBCCDDEEFF"})
 	before := f.registers
 
@@ -98,11 +98,11 @@ func TestAddressGoneKeepsRegistration(t *testing.T) {
 func TestAddressChangeReannounces(t *testing.T) {
 	f := withFakeNet(t)
 	f.ifaces = []net.Interface{{Name: "wlan0"}}
-	f.addrs = []string{"192.168.178.29"}
+	f.addrs = []string{"192.168.1.29"}
 	a, _ := Announce(quietLogger(), Config{DeviceID: "AABBCCDDEEFF"})
 	before := f.registers
 
-	f.addrs = []string{"192.168.178.44"}
+	f.addrs = []string{"192.168.1.44"}
 	if _, changed := a.checkAddresses(); !changed || f.registers != before+2 {
 		t.Errorf("renumbering not re-announced (changed=%v, registers %d -> %d)", changed, before, f.registers)
 	}

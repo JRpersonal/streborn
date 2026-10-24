@@ -17,15 +17,15 @@ func TestStaleRedirectDeleteArgs(t *testing.T) {
 	rules := strings.Join([]string{
 		"-P PREROUTING ACCEPT",
 		// stale, commented (xt_comment kernels)
-		`-A PREROUTING -d 192.168.178.174/32 ! -i lo -p tcp -m tcp --dport 8888 -m comment --comment streborn-redirect -j REDIRECT --to-ports 8888`,
+		`-A PREROUTING -d 192.0.2.174/32 ! -i lo -p tcp -m tcp --dport 8888 -m comment --comment streborn-redirect -j REDIRECT --to-ports 8888`,
 		// stale, comment-less (taigan)
-		`-A PREROUTING -d 192.168.178.174/32 ! -i lo -p tcp -m tcp --dport 17008 -j REDIRECT --to-ports 8888`,
+		`-A PREROUTING -d 192.0.2.174/32 ! -i lo -p tcp -m tcp --dport 17008 -j REDIRECT --to-ports 8888`,
 		// current address: keep
 		`-A PREROUTING -d 10.10.50.101/32 ! -i lo -p tcp -m tcp --dport 8888 -m comment --comment streborn-redirect -j REDIRECT --to-ports 8888`,
 		// stale address but a port that is not ours: keep
-		`-A PREROUTING -d 192.168.178.174/32 ! -i lo -p tcp -m tcp --dport 5000 -j REDIRECT --to-ports 5000`,
+		`-A PREROUTING -d 192.0.2.174/32 ! -i lo -p tcp -m tcp --dport 5000 -j REDIRECT --to-ports 5000`,
 		// stale address but not a REDIRECT: keep
-		`-A PREROUTING -d 192.168.178.174/32 -p tcp -m tcp --dport 8888 -j DNAT --to-destination 127.0.0.1:9080`,
+		`-A PREROUTING -d 192.0.2.174/32 -p tcp -m tcp --dport 8888 -j DNAT --to-destination 127.0.0.1:9080`,
 		// no -d at all: keep
 		`-A PREROUTING -p tcp -m tcp --dport 17008 -j REDIRECT --to-ports 8888`,
 	}, "\n")
@@ -40,7 +40,7 @@ func TestStaleRedirectDeleteArgs(t *testing.T) {
 		if !strings.HasPrefix(joined, "-w -t nat -D PREROUTING ") {
 			t.Errorf("delete must replay the rule with -D: %q", joined)
 		}
-		if !strings.Contains(joined, "-d 192.168.178.174/32") {
+		if !strings.Contains(joined, "-d 192.0.2.174/32") {
 			t.Errorf("delete must target only the stale address: %q", joined)
 		}
 	}
@@ -66,9 +66,9 @@ func TestSeedPeersDropsSelf(t *testing.T) {
 	peersMu.Unlock()
 
 	seedPeers([]webui.PeerSeed{
-		{Name: "str-192.168.178.174", Host: "192.168.178.174", Port: 8888, DeviceID: "AABBCCDDEEFF"}, // self by deviceID
-		{Name: "Küche", Host: "192.168.178.175", Port: 8888},                                         // self by name, legacy app
-		{Name: "Wohnzimmer", Host: "10.10.50.100", Port: 17008, DeviceID: "112233445566"},            // a real peer
+		{Name: "str-192.0.2.174", Host: "192.0.2.174", Port: 8888, DeviceID: "AABBCCDDEEFF"}, // self by deviceID
+		{Name: "Küche", Host: "192.0.2.175", Port: 8888},                                     // self by name, legacy app
+		{Name: "Wohnzimmer", Host: "10.10.50.100", Port: 17008, DeviceID: "112233445566"},    // a real peer
 	}, slog.Default())
 
 	peersMu.Lock()
@@ -97,9 +97,9 @@ func TestPurgeSelfPeers(t *testing.T) {
 
 	peersMu.Lock()
 	peersByIP = map[string]*peerEntry{
-		"192.168.178.174": {name: "str-192.168.178.174", deviceID: "AABBCCDDEEFF", lastSeen: time.Now()}, // self, placeholder name
-		"192.168.178.175": {name: "Küche", lastSeen: time.Now()},                                         // self by name, no deviceID
-		"10.10.50.100":    {name: "Wohnzimmer", deviceID: "112233445566", lastSeen: time.Now()},          // a real peer
+		"192.0.2.174":  {name: "str-192.0.2.174", deviceID: "AABBCCDDEEFF", lastSeen: time.Now()}, // self, placeholder name
+		"192.0.2.175":  {name: "Küche", lastSeen: time.Now()},                                     // self by name, no deviceID
+		"10.10.50.100": {name: "Wohnzimmer", deviceID: "112233445566", lastSeen: time.Now()},      // a real peer
 	}
 	peersBrowseAt = time.Now()
 	peersMu.Unlock()

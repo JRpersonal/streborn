@@ -14,14 +14,14 @@ import (
 
 func TestSanitizeLog_ScrubsAndLeavesNoRawSecrets(t *testing.T) {
 	raw := strings.Join([]string{
-		"connecting to 192.168.178.79 on wlan0",
+		"connecting to 192.168.1.79 on wlan0",
 		"link/ether a0:b1:c2:d3:e4:f5 brd ff:ff:ff:ff:ff:ff",
 		"deviceID 0011223344AB selected",
 		"ssid=MyHomeWifi psk=s3cr3tpass",
 	}, "\n")
 	got := string(sanitizeLog([]byte(raw)))
 
-	for _, leaked := range []string{"192.168.178.79", "a0:b1:c2:d3:e4:f5", "0011223344AB", "MyHomeWifi", "s3cr3tpass"} {
+	for _, leaked := range []string{"192.168.1.79", "a0:b1:c2:d3:e4:f5", "0011223344AB", "MyHomeWifi", "s3cr3tpass"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("sanitized log still contains %q:\n%s", leaked, got)
 		}
@@ -95,7 +95,7 @@ func TestAnonymizeBoseInfoXML(t *testing.T) {
 func TestAnonymizeBoseSourcesXML(t *testing.T) {
 	// Verbatim shapes from a SoundTouch 30 and a SoundTouch 10, plus the linked
 	// Deezer and soundbar-socket entries we do not have hardware for.
-	xml := `<sources deviceID="000C8A96488D">` +
+	xml := `<sources deviceID="0000000000C3">` +
 		`<sourceItem source="AUX" sourceAccount="AUX" status="READY" isLocal="true" multiroomallowed="true">AUX IN</sourceItem>` +
 		`<sourceItem source="PRODUCT" sourceAccount="TV" status="READY" isLocal="true" multiroomallowed="false">CBL-Sat</sourceItem>` +
 		`<sourceItem source="BLUETOOTH" status="UNAVAILABLE" isLocal="true" multiroomallowed="true" />` +
@@ -108,7 +108,7 @@ func TestAnonymizeBoseSourcesXML(t *testing.T) {
 
 	// The account id, the nickname that belongs to it, the address, and the
 	// device id must all be gone.
-	for _, leaked := range []string{`1456373802`, `DeezerUser`, `listener@example.com`, `000C8A96488D`} {
+	for _, leaked := range []string{`1456373802`, `DeezerUser`, `listener@example.com`, `0000000000C3`} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("anonymized /sources still contains %q:\n%s", leaked, got)
 		}
@@ -198,10 +198,10 @@ func TestAnonymizeDebugState_ScrubsSSIDValues(t *testing.T) {
 // debug state carried the raw device ID and the user-chosen friendly name
 // because anonymizeText only scrubbed IP/MAC/SSID. Both must now be hashed.
 func TestAnonymizeText_ScrubsDeviceIDAndFriendlyName(t *testing.T) {
-	raw := `<updates deviceID="B0D5CC04E5BF"><nameUpdated>ST-10-Firma 7ADB</nameUpdated></updates>` +
-		` nowPlaying deviceID="68C90B85A0A9"`
+	raw := `<updates deviceID="0000000001E5"><nameUpdated>ST-10-Firma 7ADB</nameUpdated></updates>` +
+		` nowPlaying deviceID="0000000001C3"`
 	got := anonymizeText(raw)
-	for _, leaked := range []string{"B0D5CC04E5BF", "68C90B85A0A9", "ST-10-Firma 7ADB"} {
+	for _, leaked := range []string{"0000000001E5", "0000000001C3", "ST-10-Firma 7ADB"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("anonymizeText leaked %q:\n%s", leaked, got)
 		}
@@ -300,7 +300,7 @@ func TestDiagnosticDefaultName_FallbackWithoutBoxes(t *testing.T) {
 // also names the listener, and bundles get attached to public issues, so the
 // service and slot must survive while the account and its nickname do not.
 func TestAnonymizeBoxSnapshotJSON(t *testing.T) {
-	in := `{"capturedAt":1750000000,"deviceID":"000C8A96488D",
+	in := `{"capturedAt":1750000000,"deviceID":"0000000000C3",
 	  "presets":[{"slot":3,"source":"DEEZER","type":"tracklistRadio",
 	    "location":"https://api.deezer.com/user/me/flow",
 	    "sourceAccount":"1456373802","name":"Flux"}],

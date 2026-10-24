@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	adoptSelf    = "94E36DF9CE40"
+	adoptSelf    = "0000000001A1"
 	adoptPartner = "10CE00112233"
 	groupPoll    = "/streaming/account/stick@local/device/" + adoptSelf + "/group/"
 )
