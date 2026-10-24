@@ -219,7 +219,7 @@ type BoxInfo struct {
 	WLANCredsMissing bool `json:"wlanCredsMissing,omitempty"`
 	// SerialNumber is the human-readable Bose PackagedProduct serial
 	// (the sticker on the bottom of the speaker, e.g.
-	// "069236P60560580AE"). Pulled from /info on 8090; empty if the
+	// "000000P00000000AA"). Pulled from /info on 8090; empty if the
 	// box was not reachable on that port during discovery. Used by
 	// the Setup-target picker so users with two or three identical
 	// speakers on the same LAN can tell them apart by something other

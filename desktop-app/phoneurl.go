@@ -9,7 +9,7 @@ package main
 //
 // A name survives that, but only a name that is actually true. The FRITZ!Box in
 // the reference network serves one per speaker and one of them comes back as
-// "B--roPortable.fritz.box", which is the umlaut in the speaker's own name
+// "K--chePortable.fritz.box", which is the umlaut in the speaker's own name
 // mangled twice over: it is served, it looks plausible, and nothing says whether
 // it resolves. So no name goes on a QR code until it has been resolved back to
 // the speaker's address AND the speaker has answered through it.

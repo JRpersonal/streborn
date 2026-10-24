@@ -21,7 +21,7 @@ func TestStaleRedirectDeleteArgs(t *testing.T) {
 		// stale, comment-less (taigan)
 		`-A PREROUTING -d 192.0.2.174/32 ! -i lo -p tcp -m tcp --dport 17008 -j REDIRECT --to-ports 8888`,
 		// current address: keep
-		`-A PREROUTING -d 10.10.50.101/32 ! -i lo -p tcp -m tcp --dport 8888 -m comment --comment streborn-redirect -j REDIRECT --to-ports 8888`,
+		`-A PREROUTING -d 10.0.0.101/32 ! -i lo -p tcp -m tcp --dport 8888 -m comment --comment streborn-redirect -j REDIRECT --to-ports 8888`,
 		// stale address but a port that is not ours: keep
 		`-A PREROUTING -d 192.0.2.174/32 ! -i lo -p tcp -m tcp --dport 5000 -j REDIRECT --to-ports 5000`,
 		// stale address but not a REDIRECT: keep
@@ -29,7 +29,7 @@ func TestStaleRedirectDeleteArgs(t *testing.T) {
 		// no -d at all: keep
 		`-A PREROUTING -p tcp -m tcp --dport 17008 -j REDIRECT --to-ports 8888`,
 	}, "\n")
-	own := map[string]bool{"10.10.50.101": true, "127.0.0.1": true}
+	own := map[string]bool{"10.0.0.101": true, "127.0.0.1": true}
 
 	got := staleRedirectDeleteArgs(rules, own)
 	if len(got) != 2 {
@@ -68,7 +68,7 @@ func TestSeedPeersDropsSelf(t *testing.T) {
 	seedPeers([]webui.PeerSeed{
 		{Name: "str-192.0.2.174", Host: "192.0.2.174", Port: 8888, DeviceID: "AABBCCDDEEFF"}, // self by deviceID
 		{Name: "Küche", Host: "192.0.2.175", Port: 8888},                                     // self by name, legacy app
-		{Name: "Wohnzimmer", Host: "10.10.50.100", Port: 17008, DeviceID: "112233445566"},    // a real peer
+		{Name: "Wohnzimmer", Host: "10.0.0.100", Port: 17008, DeviceID: "112233445566"},      // a real peer
 	}, slog.Default())
 
 	peersMu.Lock()
@@ -76,7 +76,7 @@ func TestSeedPeersDropsSelf(t *testing.T) {
 	if len(peersByIP) != 1 {
 		t.Fatalf("want only the real peer adopted, got %d entries: %v", len(peersByIP), peersByIP)
 	}
-	e, ok := peersByIP["10.10.50.100"]
+	e, ok := peersByIP["10.0.0.100"]
 	if !ok {
 		t.Fatalf("the real peer was not adopted")
 	}
@@ -97,9 +97,9 @@ func TestPurgeSelfPeers(t *testing.T) {
 
 	peersMu.Lock()
 	peersByIP = map[string]*peerEntry{
-		"192.0.2.174":  {name: "str-192.0.2.174", deviceID: "AABBCCDDEEFF", lastSeen: time.Now()}, // self, placeholder name
-		"192.0.2.175":  {name: "Küche", lastSeen: time.Now()},                                     // self by name, no deviceID
-		"10.10.50.100": {name: "Wohnzimmer", deviceID: "112233445566", lastSeen: time.Now()},      // a real peer
+		"192.0.2.174": {name: "str-192.0.2.174", deviceID: "AABBCCDDEEFF", lastSeen: time.Now()}, // self, placeholder name
+		"192.0.2.175": {name: "Küche", lastSeen: time.Now()},                                     // self by name, no deviceID
+		"10.0.0.100":  {name: "Wohnzimmer", deviceID: "112233445566", lastSeen: time.Now()},      // a real peer
 	}
 	peersBrowseAt = time.Now()
 	peersMu.Unlock()
@@ -111,7 +111,7 @@ func TestPurgeSelfPeers(t *testing.T) {
 	if len(peersByIP) != 1 {
 		t.Fatalf("want only the real peer left, got %d entries: %v", len(peersByIP), peersByIP)
 	}
-	if _, ok := peersByIP["10.10.50.100"]; !ok {
+	if _, ok := peersByIP["10.0.0.100"]; !ok {
 		t.Fatalf("the real peer was purged")
 	}
 	if !peersBrowseAt.IsZero() {

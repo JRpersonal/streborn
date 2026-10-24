@@ -183,7 +183,7 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 		{"WLANCredsMissing", str(BoxInfo{WLANCredsMissing: true}), str(BoxInfo{}), false, "not carried (#270: a stale mid-boot snapshot must not stick)"},
 		{"WLANCredsMissing", str(BoxInfo{}), str(BoxInfo{WLANCredsMissing: true}), true, "a live warning stands"},
 
-		{"SerialNumber", str(BoxInfo{SerialNumber: "069236P60560580AE"}), str(BoxInfo{}), "069236P60560580AE", "an empty serial is filled"},
+		{"SerialNumber", str(BoxInfo{SerialNumber: "000000P00000000AA"}), str(BoxInfo{}), "000000P00000000AA", "an empty serial is filled"},
 		{"SerialNumber", str(BoxInfo{SerialNumber: "OLD"}), str(BoxInfo{SerialNumber: "NEW"}), "NEW", "a live serial wins"},
 
 		{"Kind", BoxInfo{Kind: "str"}, BoxInfo{Kind: "stock"}, "str", "an STR agent, once seen, outranks a stock-only sighting"},

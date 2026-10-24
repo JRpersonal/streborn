@@ -59,7 +59,7 @@ func TestNetRecoveryIsNotADegradation(t *testing.T) {
 }
 
 func TestIsRFC1918(t *testing.T) {
-	for _, ip := range []string{"192.168.1.21", "10.10.50.5", "172.16.0.1", "172.31.255.1"} {
+	for _, ip := range []string{"192.168.1.21", "10.0.0.5", "172.16.0.1", "172.31.255.1"} {
 		if !isRFC1918(ip) {
 			t.Errorf("%s should be RFC1918", ip)
 		}

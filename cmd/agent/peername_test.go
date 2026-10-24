@@ -68,7 +68,7 @@ func TestUnknownPeerGetsItsOwnEntry(t *testing.T) {
 		"192.0.2.10": {name: "Kitchen", deviceID: "AABBCC001122"},
 	}
 
-	e := adoptPeerEntryLocked("192.0.2.50", "DDEEFF334455", "")
+	e := adoptPeerEntryLocked("192.0.2.50", "0000000004E5", "")
 
 	if e.name != "" {
 		t.Fatalf("a speaker we have never seen must not inherit a name, got %q", e.name)

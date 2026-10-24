@@ -65,8 +65,8 @@ func ValidLabel(name string) bool { return labelRE.MatchString(name) }
 // LabelFor builds this speaker's label from its device ID. The device ID is
 // used rather than the friendly name on purpose: two speakers can share a
 // friendly name, a rename would move the label out from under the engine, and a
-// name like "BüroPortable" is not a legal label at all. The Bose firmware hits
-// that last one itself and publishes the Portable as "B-roPortable.local".
+// name like "KüchePortable" is not a legal label at all. The Bose firmware hits
+// that last one itself and publishes the Portable as "K-chePortable.local".
 func LabelFor(deviceID string) string {
 	clean := strings.Map(func(r rune) rune {
 		switch {
