@@ -387,7 +387,40 @@ var accountLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:account|sourceAccount)"
 // whole tree returns three lines, all three of them a Spotify identity, so
 // masking unconditionally costs no debug value. Keep this list and the
 // emitters in step; anonymise_spotify_test.go pins each name.
-var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|sessionUser|wantAccount|login|user)"?\s*[:=]\s*(?:\\*")?`)
+var userNameLogKeyRegex = regexp.MustCompile(`(?im)"?\b(?:username|userName|user_name|userId|user_id|canonicalUsername|canonical_username|canonical_user_name|sessionUser|wantAccount|login|user)"?\s*[:=]\s*(?:\\*")?`)
+
+// firmwareReturnedAccountRegex catches an account identity in the shape the
+// speaker FIRMWARE logs it, which is neither an attribute nor a URI: its
+// native Spotify library traces every API call with the call's result,
+//
+//	SpotifyLibrary ... SpGetCanonicalUsername [returned value: <username>]
+//
+// and that line reaches box_syslog_tail unchanged. Nothing above matched it,
+// so a bundle exported with anonymize on carried the owner's canonical Spotify
+// user id in clear while every attribute-shaped copy of the same id was masked.
+//
+// Keyed on the GETTER's name, not on "returned value" alone: the same trace
+// wraps every call (volumes, states, bitrates), and those values are what the
+// tail is read for. Any getter whose name says it returns a user, an account,
+// a login or a mail address is masked, whichever service logs it.
+// Group 1 is everything up to the value, group 2 an optional opening quote,
+// group 3 the value, which ends at the closing quote, bracket or line end.
+var firmwareReturnedAccountRegex = regexp.MustCompile(`(?i)(\b[A-Za-z_]*(?:user_?name|user_?id|account|login|e_?mail)[A-Za-z_]*\b[^\[\n]{0,80}\[\s*returned value\s*[:=]\s*)("?)([^"\]\n]*)`)
+
+// firmwareEmptyReturns are results that name nobody. They stay readable, since
+// "no account linked" is exactly what a reader wants to learn from the line.
+var firmwareEmptyReturns = map[string]bool{"": true, "(null)": true, "null": true, "nil": true, "none": true, "(none)": true}
+
+func scrubFirmwareReturnedAccounts(s string) string {
+	return firmwareReturnedAccountRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := firmwareReturnedAccountRegex.FindStringSubmatch(m)
+		val := strings.TrimSpace(sub[3])
+		if firmwareEmptyReturns[strings.ToLower(val)] {
+			return m
+		}
+		return sub[1] + sub[2] + maskAccountValue(val)
+	})
+}
 
 // attrBoundary is where a log attribute's value ends because the NEXT attribute
 // begins. Values may contain spaces, so whitespace alone cannot end one.
@@ -649,6 +682,7 @@ func scrubAccounts(s string) string {
 		return maskAccountValue(v)
 	})
 	s = maskAttrValues(s, userNameLogKeyRegex, maskAccountValue)
+	s = scrubFirmwareReturnedAccounts(s)
 	s = boseHostnameRegex.ReplaceAllStringFunc(s, func(m string) string {
 		sub := boseHostnameRegex.FindStringSubmatch(m)
 		return sub[1] + "NAME#" + hashShort(sub[2])
