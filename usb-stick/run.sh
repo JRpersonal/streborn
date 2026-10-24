@@ -3995,7 +3995,10 @@ fi
 # 60 s for the filter table to appear, installs, then re-asserts the
 # rules every 30 s for the lifetime of run.sh. iptables -C is the
 # idempotency guard: it returns 0 if the rule already exists, so a
-# re-assert is cheap and writes nothing when nothing changed.
+# re-assert is cheap and writes nothing when nothing changed. -C does not
+# see WHERE a rule sits, so each pass also parses `iptables -S INPUT` and
+# moves any of our rules that ended up below a DROP/REJECT back to the
+# top (fw_heal_shadowed), and logs the chain whenever it changes.
 INPUT_ACCEPT_PORTS="8888 9080 8081 8443"
 
 # STR_FW_COMMENT reports which form the last successful insert used, "yes" or
@@ -4046,9 +4049,154 @@ fw_insert() {
     return 1
 }
 
+# fw_str_spec classifies one `iptables -S INPUT` line. If the line is one of
+# STR's own ACCEPT rules (either form fw_insert writes), FW_SPEC is set to the
+# rule spec as -D / -I take it (the line minus "-A INPUT ", with the comment's
+# quotes removed so it splits into the right words); otherwise FW_SPEC is
+# empty. Only rules that are byte-for-byte what fw_insert installs match, so a
+# Bose rule (the RELATED,ESTABLISHED or the subnet ACCEPT) never does. No fork:
+# it runs on every line of every 30 s pass.
+fw_str_spec() {
+    FW_SPEC=""
+    fw_r=${1#-A INPUT }
+    [ "$fw_r" != "$1" ] || return 0
+    case "$fw_r" in
+        *'--comment "streborn-fw"'*)
+            fw_r="${fw_r%%--comment \"streborn-fw\"*}--comment streborn-fw${fw_r#*--comment \"streborn-fw\"}"
+            ;;
+    esac
+    case "$fw_r" in
+        *"-m comment --comment streborn-fw -j ACCEPT")
+            FW_SPEC=$fw_r
+            return 0
+            ;;
+        "-p icmp -j ACCEPT")
+            FW_SPEC=$fw_r
+            return 0
+            ;;
+        "-p tcp -m tcp --dport "*" -j ACCEPT") fw_p=${fw_r#-p tcp -m tcp --dport } ;;
+        "-p tcp --dport "*" -j ACCEPT") fw_p=${fw_r#-p tcp --dport } ;;
+        *) return 0 ;;
+    esac
+    fw_p=${fw_p% -j ACCEPT}
+    # A pattern match, not a for loop: the caller has IFS set to newline, so
+    # `for p in $INPUT_ACCEPT_PORTS` would not split the list.
+    case "$fw_p" in
+        "" | *" "*) return 0 ;;
+    esac
+    case " $INPUT_ACCEPT_PORTS " in
+        *" $fw_p "*) FW_SPEC=$fw_r ;;
+    esac
+    return 0
+}
+
+# fw_heal_shadowed moves STR's ACCEPT rules back above the first DROP/REJECT
+# in the INPUT chain. $1 is the `iptables -S INPUT` listing.
+#
+# Why: fw_have uses `iptables -C`, which only asks whether a rule exists
+# ANYWHERE in the chain. On rhino (ST10) Bose's own Firewall binary builds
+# an INPUT chain ending in `-i wlan0 -j DROP`; if it inserts that above our
+# ACCEPTs, -C still says "present", the watchdog believes all is fine, and the
+# speaker is unreachable from the LAN for good while outbound keeps working.
+#
+# Bose's rules are never touched: only rules fw_str_spec recognises as ours
+# are deleted (by spec, never by number, so a chain rebuilt between our -S
+# and our -D cannot make us delete someone else's rule) and re-inserted at
+# position 1. Bottom-most first, so the top-most ends on top and the relative
+# order is kept. A rule whose identical twin already sits above the DROP is
+# left alone (the twin does the job, and -D by spec would hit the twin).
+# A chain with no DROP/REJECT rule (policy ACCEPT, every non-rhino chassis)
+# is a no-op with no iptables call at all.
+fw_heal_shadowed() {
+    fw_drop=""
+    fw_above=""
+    fw_shadowed=""
+    fw_nl='
+'
+    fw_ifs=$IFS
+    IFS=$fw_nl
+    set -f
+    for fw_line in $1; do
+        fw_str_spec "$fw_line"
+        if [ -z "$fw_drop" ]; then
+            case "$fw_line " in
+                "-A INPUT "*" -j DROP "*|"-A INPUT "*" -j REJECT "*)
+                    fw_drop=$fw_line
+                    continue
+                    ;;
+            esac
+            [ -z "$FW_SPEC" ] || fw_above="$fw_above$FW_SPEC$fw_nl"
+            continue
+        fi
+        [ -n "$FW_SPEC" ] || continue
+        case "$fw_nl$fw_above" in
+            *"$fw_nl$FW_SPEC$fw_nl"*) continue ;;
+        esac
+        fw_above="$fw_above$FW_SPEC$fw_nl"
+        fw_shadowed="$FW_SPEC$fw_nl$fw_shadowed"
+    done
+    fw_moved=0
+    fw_failed=0
+    for fw_spec in $fw_shadowed; do
+        IFS=$fw_ifs
+        # Word splitting of the spec is the point: it is a list of arguments.
+        # shellcheck disable=SC2086
+        if iptables -w -D INPUT $fw_spec 2>/dev/null; then
+            # shellcheck disable=SC2086
+            if iptables -w -I INPUT 1 $fw_spec 2>/dev/null; then
+                fw_moved=$((fw_moved + 1))
+            else
+                # The rule is gone now; fw_have notices on this same pass and
+                # fw_insert puts it back at position 1.
+                fw_failed=$((fw_failed + 1))
+            fi
+        else
+            fw_failed=$((fw_failed + 1))
+        fi
+        IFS=$fw_nl
+    done
+    set +f
+    IFS=$fw_ifs
+    if [ -n "$fw_shadowed" ]; then
+        setup_log "firewall self-heal: STR rule was shadowed by '${fw_drop#-A INPUT }', moved to the top (moved=$fw_moved failed=$fw_failed) at uptime=$(uptime_s)s"
+    fi
+    return 0
+}
+
+# fw_chain_evidence writes the INPUT chain listing to setup.log, but only when
+# it differs from the last one written. It is the evidence that survives a
+# "box unreachable" outage: the setup log is on NAND and reaches the
+# diagnostic bundle once the box is reachable again. The listing has no packet
+# counters, so it only changes when a rule does; a quiet box writes it once.
+# $1 is the rc of `iptables -S INPUT`, $2 its output.
+fw_chain_evidence() {
+    fw_csig="$1:$2"
+    [ "$fw_csig" != "${STR_FW_CHAIN_SIG:-}" ] || return 0
+    STR_FW_CHAIN_SIG=$fw_csig
+    setup_log "iptables INPUT chain changed (-S rc=$1) at uptime=$(uptime_s)s:"
+    fw_ifs=$IFS
+    IFS='
+'
+    set -f
+    for fw_line in $2; do
+        setup_log "  $fw_line"
+    done
+    set +f
+    IFS=$fw_ifs
+    return 0
+}
+
 iptables_install_streborn_fw() {
     rc_total=0
     healed=0
+    # Position check first, so a rule the heal could not re-insert is put
+    # back by the presence loop below on this same pass.
+    fw_chain=$(iptables -w -S INPUT 2>&1)
+    fw_chain_rc=$?
+    fw_chain_evidence "$fw_chain_rc" "$fw_chain"
+    if [ "$fw_chain_rc" -eq 0 ]; then
+        fw_heal_shadowed "$fw_chain"
+    fi
     # ICMP first: a healthy STR box must always answer ping, even behind Bose's
     # port-whitelist firewall. This is also the diagnostic tell for the "plays
     # radio but is unreachable" failure (#... field reports on ST10 and ST30):
