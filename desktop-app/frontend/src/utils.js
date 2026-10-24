@@ -785,6 +785,31 @@ export function presetOwnArt(p) {
   return '';
 }
 
+// presetSignature reduces the preset list to what a tile actually draws, so a
+// re-read that returns the same thing costs one comparison and no redraw.
+//
+// The art in it is the art the tile DRAWS (presetOwnArt), plus the first track
+// a folder key plays. It used to be the preset-level art only, which a saved
+// album or playlist does not carry when its tracks have covers. When the
+// speaker moved such a key to its music server's new address (tracks and
+// covers, #1366), the signature did not change, nothing redrew, and the key
+// kept the letter placeholder of the dead cover address until the app was
+// restarted, although the speaker had fixed it a second after the press.
+//
+// The separators are the ASCII unit and record separators, bytes that cannot
+// occur inside a field. Spelled as escapes: a literal control byte in source
+// is what sourcehygiene_test.go hunts for, since one is usually an accident.
+export function presetSignature(list) {
+  return (list || [])
+    .map((p) => {
+      const first = p && Array.isArray(p.items) && p.items[0] && typeof p.items[0].url === 'string'
+        ? p.items[0].url
+        : '';
+      return [p.slot, p.type || '', p.name || '', p.stream_url || '', presetOwnArt(p), first].join('\u001f');
+    })
+    .join('\u001e');
+}
+
 // folderFallbackArt is the preset-level art a music-library album or folder
 // key is saved with: the folder's own cover (the container's upnp:albumArtURI),
 // but only when none of its tracks carries a cover. When a track has one the

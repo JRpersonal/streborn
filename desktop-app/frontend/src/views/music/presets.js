@@ -27,6 +27,7 @@ import {
   escapeHtml,
   getBoxLabel,
   isLostStrKey,
+  presetSignature,
   showError,
   showToast,
 } from '../../utils.js';
@@ -34,16 +35,6 @@ import { renderPresets } from './presettiles.js';
 import { mstate } from './state.js';
 
 let loadedPresetsBoxKey = null;
-// presetSignature reduces the preset list to what a tile actually draws, so a
-// re-read that returns the same thing costs one comparison and no redraw.
-// The separators are the ASCII unit and record separators, bytes that cannot
-// occur inside a field. Spelled as escapes: a literal control byte in source
-// is what sourcehygiene_test.go hunts for, since one is usually an accident.
-function presetSignature(list) {
-  return (list || [])
-    .map(p => [p.slot, p.type || '', p.name || '', p.stream_url || '', p.art || ''].join('\u001f'))
-    .join('\u001e');
-}
 
 // How often the preset list is re-read from the speaker. Deliberately slower
 // than the status poll: this only has to catch a change made somewhere else,
