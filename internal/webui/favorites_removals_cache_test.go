@@ -24,8 +24,14 @@ func TestFavoriteRemovalNotesAreServedFromMemory(t *testing.T) {
 		t.Fatalf("the quick check went back to the flash: %+v", notes)
 	}
 	deleteFav(t, s, "id="+url.QueryEscape("NAS folder|http://192.0.2.5:8200/folder"), "192.168.1.20:5555")
+	// Both removals can carry the same millisecond, so look the new one up
+	// instead of relying on its position.
 	notes := favRemovals(t, s)
-	if len(notes) != 2 || notes[0].ID != "NAS folder|http://192.0.2.5:8200/folder" {
+	fresh := false
+	for _, n := range notes {
+		fresh = fresh || n.ID == "NAS folder|http://192.0.2.5:8200/folder"
+	}
+	if len(notes) != 2 || !fresh {
 		t.Fatalf("a fresh removal is not in the next answer: %+v", notes)
 	}
 	if _, err := os.Stat(favoriteRemovalsPath); err != nil {

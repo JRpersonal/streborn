@@ -1551,6 +1551,11 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
    source buttons, so no separate status line is needed. */
 .toggle-btn.active { background: linear-gradient(135deg, #1f2f1f 0%, #2a3a2a 100%); border-color: var(--signal-green); color: #cfc; box-shadow: 0 0 8px rgba(102, 204, 102, 0.3); }
 .btn-secondary { background: var(--c-border); }
+/* High contrast sets --c-border to pure white, so the two rules that paint a
+   button with it put white text on white (#1486). Keep the text on a dark fill
+   there; #333 under white is 12.6:1. */
+html.a11y-contrast .btn-secondary { background: var(--c-surface-2); }
+html.a11y-contrast .btn:hover { background: #333333; }
 .btn-primary { background: linear-gradient(135deg, #58a 0%, #6bd 100%); color: white; border-color: #6bd; }
 .btn-primary:hover { background: linear-gradient(135deg, #6bd 0%, #8df 100%); }
 .btn-primary:disabled { background: var(--c-border); color: var(--c-faint); border-color: var(--c-border); cursor: not-allowed; }

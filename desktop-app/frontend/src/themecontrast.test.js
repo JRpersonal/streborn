@@ -127,3 +127,28 @@ describe('small text uses colour tokens, not opacity', () => {
     expect(css).toMatch(/\.preset\.error \{\s*background: linear-gradient\(135deg, var\(--c-tile-err-a\) 0%, var\(--c-tile-err-b\) 100%\)/);
   });
 });
+
+// #1486: .btn-secondary and .btn:hover paint the button with --c-border, which
+// high contrast sets to pure white, under white button text. Each theme must
+// leave the button label readable on both fills.
+describe('button fills keep their label readable', () => {
+  // The background a rule sets, read from the line that starts with it.
+  function bg(selector) {
+    const at = css.indexOf('\n' + selector + ' { background: ');
+    if (at < 0) return null;
+    const from = at + selector.length + 15;
+    return css.slice(from, css.indexOf(';', from)).trim();
+  }
+  function fill(rule, theme) {
+    const v = (theme === 'contrast' && bg('html.a11y-contrast ' + rule)) || bg(rule);
+    const tok = v.match(/^var\(--([a-z0-9-]+)\)$/);
+    return tok ? THEMES[theme][tok[1]] : v;
+  }
+  for (const theme of Object.keys(THEMES)) {
+    for (const rule of ['.btn-secondary', '.btn:hover']) {
+      it(`${theme}: ${rule}`, () => {
+        expect(ratio(THEMES[theme]['c-text'], fill(rule, theme))).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+});

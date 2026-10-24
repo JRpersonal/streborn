@@ -19,7 +19,7 @@ import { deps, withButtonPending, revealInSettings } from './shared.js';
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
 // switch UI can skip the System-keychain admin prompt on macOS (#88) without
 // expanding the injected-helper surface.
-const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
+const isMacOS = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent);
 
 export function renderNetworkSections(ctx) {
   const { nv } = ctx;

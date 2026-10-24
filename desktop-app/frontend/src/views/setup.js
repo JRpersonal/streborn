@@ -104,7 +104,7 @@ const BOSE_APP_IOS_URL = 'https://apps.apple.com/app/bose-soundtouch/id708379313
 // until the user clicks the explicit fill-from-keychain button.
 // Re-derived locally (the same pure check main.js uses) so the view does not
 // need an injected helper for it.
-const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
+const isMacOS = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent);
 
 // Timezone helpers for the OTA setup card. detectTimeZone returns the real IANA
 // zone of THIS computer (e.g. "Europe/Berlin", "America/New_York", "Asia/Tokyo")
