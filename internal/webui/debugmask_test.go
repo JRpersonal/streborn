@@ -175,6 +175,28 @@ type reachSection struct {
 	GatewayIP string   `json:"gatewayIP"`
 }
 
+// box_syslog_tail is registered as a live []string, the firmware's own lines.
+// Its native Spotify library logs the owner's canonical user id as a call
+// result, which no pass recognised until this was found in an anonymised
+// bundle. Held at the endpoint, with the section in its real Go type.
+func TestTheFirmwareSpotifyUsernameInTheSyslogTailIsMasked(t *testing.T) {
+	const id = "user-name-here"
+	state := map[string]any{
+		"box_syslog_tail": []string{
+			`BoseApp[812]: SpotifyLibrary 1234 INFO SpGetCanonicalUsername [returned value: ` + id + `]`,
+		},
+	}
+	rec := httptest.NewRecorder()
+	maskTestServer().writeDebugState(rec, state, false)
+	body := rec.Body.String()
+	if strings.Contains(body, id) {
+		t.Errorf("the Spotify user name survived: %s", body)
+	}
+	if !strings.Contains(body, "SpGetCanonicalUsername") || !strings.Contains(body, "ACCT#") {
+		t.Errorf("the line was not masked in place: %s", body)
+	}
+}
+
 func TestASectionThatReturnsAGoStructIsMaskedToo(t *testing.T) {
 	state := map[string]any{
 		"mdns_host":        []ifaceSection{{Name: "wlan0", MAC: "7C:EC:79:F9:EC:A2", IPv4: []string{"192.168.178.31"}}},
