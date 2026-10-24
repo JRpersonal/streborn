@@ -39,6 +39,8 @@ func TestPhoneRemoteLocalesCarryNoPresets(t *testing.T) {
 // The phone remote's keys show their cover (#1312): lazily loaded, healed of
 // box-form art the phone cannot reach, never DuckDuckGo's grey "no icon"
 // chevron, and a key whose image fails is the plain text tile again.
+// DuckDuckGo entries go through the agent's /art proxy, which fails a miss
+// instead of passing the chevron on (#1467: dropping them left keys bare).
 func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 	for _, want := range []string{
 		// The tile builds the image from the key's art and marks itself.
@@ -47,10 +49,11 @@ func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 		// Library album or folder keys fall back to the first track's cover.
 		"p.type === 'queue' && Array.isArray(p.items)",
 		// The agent's /art?u= wrapper is unwrapped; loopback and the
-		// /icon.png stand-in are dropped; DuckDuckGo entries are dropped.
+		// /icon.png stand-in are dropped; DuckDuckGo entries are proxied.
 		"u.pathname === '/art' && u.searchParams.get('u')",
 		"u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.pathname === '/icon.png'",
 		"u.hostname === 'icons.duckduckgo.com'",
+		"c = '/art?u=' + btoa(c)",
 		// Lazy, and the failure path restores the text-only tile.
 		"img.loading = 'lazy';",
 		"tile.classList.remove('has-art'); tile.removeChild(img);",
