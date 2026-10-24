@@ -501,6 +501,7 @@ export namespace main {
 	    title: string;
 	    childCount: number;
 	    albumArtURL: string;
+	    class?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryContainer(source);
@@ -513,6 +514,7 @@ export namespace main {
 	        this.title = source["title"];
 	        this.childCount = source["childCount"];
 	        this.albumArtURL = source["albumArtURL"];
+	        this.class = source["class"];
 	    }
 	}
 	export class LibraryItem {
@@ -526,6 +528,8 @@ export namespace main {
 	    albumArtURL: string;
 	    durationSec: number;
 	    server?: string;
+	    trackNumber?: number;
+	    discNumber?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryItem(source);
@@ -543,6 +547,8 @@ export namespace main {
 	        this.albumArtURL = source["albumArtURL"];
 	        this.durationSec = source["durationSec"];
 	        this.server = source["server"];
+	        this.trackNumber = source["trackNumber"];
+	        this.discNumber = source["discNumber"];
 	    }
 	}
 	export class LibraryPage {
@@ -550,6 +556,7 @@ export namespace main {
 	    items: LibraryItem[];
 	    totalMatches: number;
 	    returned: number;
+	    containerClass?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryPage(source);
@@ -561,6 +568,7 @@ export namespace main {
 	        this.items = this.convertValues(source["items"], LibraryItem);
 	        this.totalMatches = source["totalMatches"];
 	        this.returned = source["returned"];
+	        this.containerClass = source["containerClass"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

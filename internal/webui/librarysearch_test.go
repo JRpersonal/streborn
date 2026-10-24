@@ -42,6 +42,9 @@ type fakeCDS struct {
 	// maxPerPage models a server that silently caps RequestedCount, which many
 	// ContentDirectory implementations do. Zero means it honours what is asked.
 	maxPerPage int
+	// classes answers a BrowseMetadata for a container id with that upnp:class
+	// (object.container when unset).
+	classes map[string]string
 
 	searches int
 	browses  int
@@ -58,6 +61,8 @@ type fakeFolder struct {
 
 type fakeTrack struct {
 	id, title, artist, album, url string
+	// trackNo is sent as upnp:originalTrackNumber when above 0.
+	trackNo int
 }
 
 func (f *fakeCDS) counts() (searches, browses int) {
@@ -90,6 +95,15 @@ func (f *fakeCDS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	f.browses++
 	id := soapValue(string(body), "ObjectID")
+	if soapValue(string(body), "BrowseFlag") == "BrowseMetadata" {
+		class := f.classes[id]
+		if class == "" {
+			class = "object.container"
+		}
+		writeSOAP(w, "Browse", `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><container id="`+
+			id+`" parentID="0"><upnp:class>`+class+`</upnp:class></container></DIDL-Lite>`, 1, 1)
+		return
+	}
 	start, _ := strconv.Atoi(soapValue(string(body), "StartingIndex"))
 	count, _ := strconv.Atoi(soapValue(string(body), "RequestedCount"))
 	if f.ignoreStart {
@@ -154,8 +168,12 @@ func didl(folders []fakeFolder, tracks []fakeTrack) string {
 		fmt.Fprintf(&b, `<container id="%s" parentID="0" childCount="1"><dc:title>%s</dc:title><upnp:class>object.container</upnp:class></container>`, f.id, f.title)
 	}
 	for _, t := range tracks {
-		fmt.Fprintf(&b, `<item id="%s" parentID="0"><dc:title>%s</dc:title><upnp:artist>%s</upnp:artist><upnp:album>%s</upnp:album><upnp:class>object.item.audioItem.musicTrack</upnp:class><res protocolInfo="http-get:*:audio/mpeg:*">%s</res></item>`,
-			t.id, t.title, t.artist, t.album, t.url)
+		no := ""
+		if t.trackNo > 0 {
+			no = fmt.Sprintf(`<upnp:originalTrackNumber>%d</upnp:originalTrackNumber>`, t.trackNo)
+		}
+		fmt.Fprintf(&b, `<item id="%s" parentID="0"><dc:title>%s</dc:title><upnp:artist>%s</upnp:artist><upnp:album>%s</upnp:album><upnp:class>object.item.audioItem.musicTrack</upnp:class>%s<res protocolInfo="http-get:*:audio/mpeg:*">%s</res></item>`,
+			t.id, t.title, t.artist, t.album, no, t.url)
 	}
 	b.WriteString(`</DIDL-Lite>`)
 	return b.String()

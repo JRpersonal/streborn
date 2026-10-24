@@ -185,3 +185,36 @@ func TestBrowseQueueItemsStopsOnAServerThatIgnoresPaging(t *testing.T) {
 		t.Fatal("browseQueueItems never finished against a server that ignores StartingIndex")
 	}
 }
+
+// An album the server lists alphabetically replays in track order (#1487); a
+// playlist with the very same numbers keeps the order its owner gave it.
+func TestBrowseQueueItemsPlaysAnAlbumInTrackOrder(t *testing.T) {
+	album := fakeContainer{tracks: []fakeTrack{
+		{id: "a", title: "Angel", url: "http://192.0.2.9/a.mp3", trackNo: 3},
+		{id: "b", title: "Black", url: "http://192.0.2.9/b.mp3", trackNo: 1},
+		{id: "c", title: "Come", url: "http://192.0.2.9/c.mp3", trackNo: 2},
+	}}
+	f := &fakeCDS{
+		children: map[string]fakeContainer{"album": album, "list": album},
+		classes:  map[string]string{"list": "object.container.playlistContainer"},
+	}
+	s, srv := testSearchServer(t, f)
+
+	got := func(container string) string {
+		items, err := s.browseQueueItems(context.Background(), srv, container)
+		if err != nil {
+			t.Fatalf("browse %s: %v", container, err)
+		}
+		var names []string
+		for _, it := range items {
+			names = append(names, it.Title)
+		}
+		return strings.Join(names, ",")
+	}
+	if g := got("album"); g != "Black,Come,Angel" {
+		t.Errorf("album queue = %s, want Black,Come,Angel", g)
+	}
+	if g := got("list"); g != "Angel,Black,Come" {
+		t.Errorf("playlist queue = %s, want the server order Angel,Black,Come", g)
+	}
+}

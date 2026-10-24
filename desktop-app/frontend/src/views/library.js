@@ -33,6 +33,7 @@ import {
   EnableBoxMediaServer,
   boxFetch,
 } from '../api.js';
+import { orderLongFolder } from '../trackorder.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -433,6 +434,7 @@ async function libraryBrowseCurrent() {
   try {
     let start = 0;
     let first = true;
+    let containerClass = '';
     for (;;) {
       const page = await BrowseLibrary(libState.currentUDN, top.id, start, LIB_PAGE);
       if (token !== libState.browseToken) return; // navigated away mid-fetch: drop it
@@ -453,8 +455,15 @@ async function libraryBrowseCurrent() {
         first = false;
         nudgeBoxLibrary(libState.currentUDN);
       }
+      if (first) containerClass = page.containerClass || '';
       if (done || capped) {
         libState.capped = capped && !done;
+        // A folder longer than one page is put in album track order here,
+        // once all of it is in (#1487); a one-page folder already arrived in
+        // that order. Play folder and the folder key take this order.
+        if (done && !capped && start > LIB_PAGE) {
+          acc.items = orderLongFolder(acc.items, containerClass);
+        }
         break;
       }
     }
