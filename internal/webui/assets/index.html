@@ -2642,10 +2642,27 @@ async function engineSong() {
 // packed inside, so that one is matched by URL against the known presets.
 // Returns 0 when nothing matches, which clears the highlight rather than
 // leaving a stale one.
+//
+// A key holding ONE music-library track stores the media server's own track
+// URL, and the speaker plays exactly that URL over UPNP, so its location is
+// neither a proxy path nor a descriptor. It is matched by URL against what each
+// key holds, the desktop app's p.stream_url === nowLocation rule. Without it the
+// key only stayed lit for the tap's pending window and then went dark while the
+// track played on, and a start from the app never lit it at all (#1339). The
+// location is read out of the XML with a regex, so it still carries the XML
+// escapes (&amp;) the stored URL does not; they are undone exactly as the
+// desktop app's decodeXmlEntities does before its compare.
 function playingSlot(loc, list) {
   if (!loc) return 0;
   var m = loc.match(/\/spotify\/stream-(\d+)\.ogg/) || loc.match(/\/stream\/(\d+)(?:[/?#]|$)/);
   if (m) return parseInt(m[1], 10);
+  var plain = loc.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); });
+  for (var j = 0; j < (list || []).length; j++) {
+    if (list[j] && list[j].stream_url && list[j].stream_url === plain) return list[j].slot;
+  }
   var d = loc.match(/[?&]data=([A-Za-z0-9\-_=+/]+)/);
   if (!d) return 0;
   var url = '';
