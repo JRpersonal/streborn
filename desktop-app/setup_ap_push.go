@@ -72,6 +72,12 @@ func (a *App) PushWLANToBox(host, ssid, password, name string) (SetupAPPushResul
 		return res, fmt.Errorf("ssid required")
 	}
 	a.logger.Info("push wlan: starting", "host", host, "ssid", ssid, "hasPassword", password != "", "name", name)
+	// The UI only shows the result, so a diagnostic bundle needs the outcome
+	// in the log too: without it a failed gate after the language step left
+	// no trace at all (support bundle 2026-10-25).
+	defer func() {
+		a.logger.Info("push wlan: finished", "host", host, "ok", res.OK, "step", res.Step, "message", res.Message, "trace", strings.Join(res.LogTail, " | "))
+	}()
 
 	// Primary path: the SMSC wifi chipset's GoAhead goform handler on port 80.
 	// On BCO/taigan the :8090 addWirelessProfile is accepted but never applied
@@ -402,6 +408,14 @@ func isExpectedRSTOnSetupAP(err error) bool {
 		"connection reset",
 		"reset by peer",
 		"forcibly closed",
+		// Windows WSAECONNABORTED: "An established connection was aborted
+		// by the software in your host machine". The PC's Wi-Fi adapter
+		// drops the call when the setup-AP it is joined to disappears,
+		// which is exactly the teardown this function looks for. Missing
+		// it sent a successful goform push into the :8090 fallback against
+		// a speaker that was already leaving (support bundle 2026-10-25).
+		"connection was aborted",
+		"connection abort",
 		"eof",
 		"context deadline exceeded",
 		"i/o timeout",
