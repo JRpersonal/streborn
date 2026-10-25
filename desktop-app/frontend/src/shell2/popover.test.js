@@ -71,4 +71,19 @@ describe('popover focus', () => {
     panel.fire('focusout', { target: row, relatedTarget: null });
     expect(pop.isOpen()).toBe(true);
   });
+
+  it('closes on Tab from the last control, even with nothing after it in the page', () => {
+    const first = fakeEl('first slider');
+    const last = fakeEl('last slider');
+    const panel = fakeEl('panel', [first, last]);
+    panel.querySelectorAll = () => [first, last];
+    panel.hidden = true;
+    const pop = wirePopover(fakeEl('trigger'), panel);
+    pop.open();
+    panel.fire('keydown', { key: 'Tab', target: first });
+    panel.fire('keydown', { key: 'Tab', shiftKey: true, target: last });
+    expect(pop.isOpen()).toBe(true);
+    panel.fire('keydown', { key: 'Tab', target: last });
+    expect(pop.isOpen()).toBe(false);
+  });
 });

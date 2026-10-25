@@ -32,8 +32,10 @@ export function wirePopover(trigger, panel, opts = {}) {
 
   const isOpen = () => !panel.hidden;
 
+  const focusables = () => [...panel.querySelectorAll(FOCUSABLE)].filter(visible);
+
   const focusInitial = () => {
-    const first = [...panel.querySelectorAll(FOCUSABLE)].filter(visible).find((el) => !el.classList.contains('u-pop-close'))
+    const first = focusables().find((el) => !el.classList.contains('u-pop-close'))
       || panel.querySelector('.u-pop-close');
     if (first) first.focus();
   };
@@ -65,6 +67,15 @@ export function wirePopover(trigger, panel, opts = {}) {
       e.preventDefault();
       e.stopPropagation();
       close(true);
+      return;
+    }
+    // Tab past the last control closes it here, before focus moves: when the
+    // panel is the last thing in the page (Levels is) focus leaves the
+    // document, the focusout below sees no relatedTarget and keeps it open.
+    // The Tab itself goes on as usual, so focus lands where it would anyway.
+    if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+      const all = focusables();
+      if (all.length && all[all.length - 1] === e.target) close(false);
     }
   });
   trigger.addEventListener('keydown', (e) => {
@@ -75,7 +86,8 @@ export function wirePopover(trigger, panel, opts = {}) {
   // control never lands on something the still-open panel covers (WCAG 2.4.11,
   // Focus Not Obscured). Only a move to a known element outside both counts: no
   // relatedTarget means the window lost focus or the focused node was replaced
-  // by a repaint of the list, and neither is the user leaving.
+  // by a repaint of the list, and neither is the user leaving. Tab out of the
+  // page, the one leave without a relatedTarget, is caught on keydown above.
   const onFocusOut = (e) => {
     if (!isOpen()) return;
     const to = e.relatedTarget;

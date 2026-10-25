@@ -106,15 +106,10 @@ test.describe('UI 2.0 popovers', () => {
   }
 
   // Levels is the last thing in the document: Tab past its last slider leaves
-  // the page (focusout with no relatedTarget), which popover.js deliberately
-  // ignores, so the panel stays open while the next Tab walks through the
-  // skip link and the sidebar behind it.
-  const LEVELS_TAB_BUG = 'Levels stays open after Tab past its last slider: it is the last focusable element of the page, '
-    + 'focus leaves the document (focusout relatedTarget null, ignored by popover.js onFocusOut) and comes back on #ui2Skip '
-    + 'and the sidebar with the panel still open and aria-expanded=true';
+  // the page (focusout with no relatedTarget, which popover.js ignores), so
+  // the Tab keydown on the last control is what closes it.
   for (const which of ['More', 'Levels']) {
     test(`${which}: Tab past the last control closes it`, async ({ app }) => {
-      test.fixme(which === 'Levels', LEVELS_TAB_BUG);
       const { page } = app;
       await settle(page, 20_000);
       const btn = page.locator(`#ui2${which}Btn`);
