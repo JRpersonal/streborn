@@ -4716,6 +4716,11 @@ async function saveDisplay(kind, enabled) {
     var w = wakers; wakers = [];
     w.forEach(function(f){ f(); });
     render();
+    /* The status poll gives up after fifteen silent minutes, and a phone
+       in a pocket lets them pass without a word. Back on the page with a
+       speaker that went quiet mid-update: ask again, so the card does not
+       keep "not reachable" once the speaker is back (#1339). */
+    if (!polling && lostSince && st && ['downloading','installing','rebooting','engine','checking'].indexOf(st.state) >= 0) poll();
   });
   function gate() { if (!hidden) return Promise.resolve(); return new Promise(function(res){ wakers.push(res); }); }
 
@@ -4933,7 +4938,7 @@ async function saveDisplay(kind, enabled) {
     planning = true; render();
     var r = await api(SU, 'POST', { action: 'plan' });
     planning = false; planFresh = true;
-    if (r && typeof r === 'object') st = r;
+    if (r && typeof r === 'object') { st = r; lostSince = 0; }
     render();
     await probePeers();
     replanIfUnreachable();
@@ -4967,7 +4972,7 @@ async function saveDisplay(kind, enabled) {
     replans = 0;
     show(T.suChecking, false, true);
     var r = await api(SU, 'POST', { action: 'check' });
-    if (r && typeof r === 'object') st = r; else show(T.suCheckFail, true);
+    if (r && typeof r === 'object') { st = r; lostSince = 0; } else show(T.suCheckFail, true);
     checked = true;
     render();
     if (r && typeof r === 'object' && st.latest) await plan();

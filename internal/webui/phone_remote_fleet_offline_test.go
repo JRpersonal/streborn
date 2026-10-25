@@ -77,6 +77,12 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 		`suEngineByUpd:"Auf diesem Lautsprecher fehlt die Spotify-Engine. Das Update auf {v} bringt sie zurück."`,
 		// A row nobody reached is asked about again.
 		"replanIfUnreachable();",
+		// Back on the page after the poll gave up on a silent speaker: ask
+		// again instead of keeping "not reachable" for good.
+		"if (!polling && lostSince && st && ['downloading','installing','rebooting','engine','checking'].indexOf(st.state) >= 0) poll();",
+		// A plan or check that got an answer clears the silence too.
+		"if (r && typeof r === 'object') { st = r; lostSince = 0; }\n    render();\n    await probePeers();",
+		"if (r && typeof r === 'object') { st = r; lostSince = 0; } else show(T.suCheckFail, true);",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("update card lost: %s", want)
