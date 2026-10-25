@@ -1073,11 +1073,19 @@ func quietWakeNeeded(np nowPlayingSnapshot) bool {
 // a fixed port, so a test server on a random port cannot be reached through
 // it (same pattern as hushforupload.go and dissolvestragglers.go). Production
 // never sets the field and always uses the real implementation.
+//
+// The real read is the speaker's OWN firmware (s.boxHost, 127.0.0.1 on the
+// box), never a peer. It went through the guarded peer read in v0.9.89, which
+// refuses loopback by design, so on every speaker this returned an empty
+// snapshot: the first-life mute of a quiet wake never fired (only the write
+// after the wake muted the speaker) and its STOP of the firmware's resume never
+// went out, so the resumed station ran on until the late check after pairing
+// (#1495).
 func (s *Server) quietWakeNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
 	if s.quietWakeNowPlayingFn != nil {
 		return s.quietWakeNowPlayingFn(ctx, host)
 	}
-	return fetchNowPlayingPeer(ctx, host)
+	return ownNowPlaying(ctx, s.boxHost)
 }
 
 // quietWake wakes the speaker for a group operation, not for listening to
@@ -1183,12 +1191,29 @@ const (
 	quietWakeResumePoll  = 400 * time.Millisecond
 )
 
+// quietWakeRestopGap is how long a STOP is given to take before the watch
+// sends another one, and quietWakeMaxStops caps the keys one quiet wake sends.
+// A STOP that lands while the resumed station is still connecting is accepted
+// and then ignored: on #1495 the zone form's STOP went out at 08:31:54.2, the
+// station's first bytes only arrived at 54.6, and it played on (muted) until
+// the late check stopped it eight seconds later, by which time the stereo
+// partner had joined and was playing it too.
+const (
+	quietWakeRestopGap = 1200 * time.Millisecond
+	quietWakeMaxStops  = 3
+)
+
 // stopQuietWakeResume sends STOP once the speaker produces (or is about to
 // produce) sound after a quiet wake. It watches for up to quietWakeResumeWatch
 // and stops early when there is nothing that could resume: no readable state,
-// standby, or no source at all. Every read and the key run on fresh deadlines.
+// standby, or no source at all. After a STOP it keeps watching until the
+// speaker reports it stopped, and sends the STOP again when the speaker still
+// plays quietWakeRestopGap later (at most quietWakeMaxStops keys in all). Every
+// read and every key run on fresh deadlines.
 func (s *Server) stopQuietWakeResume() {
 	deadline := time.Now().Add(quietWakeResumeWatch)
+	stops := 0
+	var lastStop time.Time
 	for {
 		ctx, cancel := quietWakeStepCtx()
 		np := s.quietWakeNowPlaying(ctx, s.boxHost)
@@ -1197,14 +1222,29 @@ func (s *Server) stopQuietWakeResume() {
 		case np.Source == "" || np.Source == "STANDBY" || np.Source == "INVALID_SOURCE":
 			return
 		case np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE":
+			if stops >= quietWakeMaxStops {
+				s.logger.Warn("wake: the speaker kept playing what it resumed after the quiet wake", "stops", stops, "source", np.Source, "playStatus", np.PlayStatus)
+				return
+			}
+			if stops > 0 && time.Since(lastStop) < quietWakeRestopGap {
+				break // the last STOP is still taking effect
+			}
 			ctx, cancel = quietWakeStepCtx()
 			err := s.quietWakeStop(ctx, s.boxHost)
 			cancel()
 			if err != nil {
-				s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err)
+				s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err, "stops", stops)
 				return
 			}
-			s.logger.Info("wake: stopped what the speaker resumed after the quiet wake", "source", np.Source, "playStatus", np.PlayStatus)
+			stops++
+			lastStop = time.Now()
+			if stops == 1 {
+				s.logger.Info("wake: stopped what the speaker resumed after the quiet wake", "source", np.Source, "playStatus", np.PlayStatus)
+			} else {
+				s.logger.Info("wake: the speaker ignored the STOP and played on, stopped it again", "stops", stops, "source", np.Source, "playStatus", np.PlayStatus)
+			}
+		case stops > 0:
+			// A STOP went out and the speaker no longer plays: done.
 			return
 		}
 		if !time.Now().Before(deadline) {

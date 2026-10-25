@@ -16,14 +16,17 @@ import (
 func TestQuietWakeStopGetsItsOwnDeadline(t *testing.T) {
 	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	stops := 0
 	s.quietWakeNowPlayingFn = func(ctx context.Context, _ string) nowPlayingSnapshot {
 		if ctx.Err() != nil {
 			return nowPlayingSnapshot{}
 		}
+		if stops > 0 {
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
+		}
 		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 	}
 	var stopLeft time.Duration
-	stops := 0
 	s.quietWakeStopFn = func(ctx context.Context, _ string) error {
 		stops++
 		if dl, ok := ctx.Deadline(); ok {
@@ -91,18 +94,71 @@ func TestQuietWakeStopCatchesALateResume(t *testing.T) {
 	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	reads := 0
+	stops := 0
 	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
 		reads++
-		if reads < 3 {
+		if reads < 3 || stops > 0 {
 			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
 		}
 		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 	}
-	stops := 0
 	s.quietWakeStopFn = func(context.Context, string) error { stops++; return nil }
 	s.stopQuietWakeResume()
 	if stops != 1 {
 		t.Fatalf("STOP sent %d times after a late resume, want once", stops)
+	}
+}
+
+// #1495: the first STOP landed while the resumed station was still connecting
+// (BUFFERING), the firmware accepted it and played on. The watch sends it again
+// once the speaker still plays after the gap, and is done when it stops.
+func TestQuietWakeStopIsSentAgainWhenTheSpeakerIgnoresIt(t *testing.T) {
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	stops := 0
+	var firstStop time.Time
+	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
+		switch {
+		case stops == 0:
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "BUFFERING_STATE"}
+		case stops == 1:
+			// The first STOP was swallowed: the station starts anyway.
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
+		}
+		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "STOP_STATE"}
+	}
+	s.quietWakeStopFn = func(context.Context, string) error {
+		stops++
+		if stops == 1 {
+			firstStop = time.Now()
+		} else if gap := time.Since(firstStop); gap < quietWakeRestopGap {
+			t.Errorf("second STOP %s after the first, want at least %s", gap, quietWakeRestopGap)
+		}
+		return nil
+	}
+	s.stopQuietWakeResume()
+	if stops != 2 {
+		t.Fatalf("STOP sent %d times for a speaker that ignored the first, want 2", stops)
+	}
+}
+
+// A speaker that ignores every STOP gets a bounded number of keys, not one
+// every poll.
+func TestQuietWakeStopsAreCapped(t *testing.T) {
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
+		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
+	}
+	stops := 0
+	s.quietWakeStopFn = func(context.Context, string) error { stops++; return nil }
+	start := time.Now()
+	s.stopQuietWakeResume()
+	if stops < 2 || stops > quietWakeMaxStops {
+		t.Fatalf("STOP sent %d times to a speaker that never stops, want 2..%d", stops, quietWakeMaxStops)
+	}
+	if el := time.Since(start); el > quietWakeResumeWatch+2*quietWakeResumePoll {
+		t.Fatalf("watched for %s, longer than the bound", el)
 	}
 }
 
