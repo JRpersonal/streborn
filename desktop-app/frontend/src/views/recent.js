@@ -15,14 +15,18 @@
 // app (App-First, keep the box light).
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying } from '../utils.js';
-import { t } from '../i18n/index.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
+import { t, getLocale } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
 import { splitStreamTitle } from '../titleswap.js';
+import { shell2Mounted } from '../shell2/mount.js';
+import { groupCardsByDay } from './recentdays.js';
+// The preview's look of this view; every rule sits under html.ui2.
+import '../shell2/recent.css';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -264,7 +268,10 @@ function logoImg(c) {
   // validates the favicon and rejects DuckDuckGo's grey "no icon" chevron. The
   // previous raw data-fallbacks cascade could not reject that chevron and showed
   // the wrong favicon derived from the stream CDN host (the SWR3 case).
-  return logoImgTag(cardStation(c), 'rc-logo');
+  const tag = logoImgTag(cardStation(c), 'rc-logo');
+  // UI 2.0: the station's name sits next to its logo, so the logo is
+  // decoration and says so (an empty alt), instead of an unnamed image.
+  return shell2Mounted() ? tag.replace('<img ', '<img alt="" ') : tag;
 }
 
 // cardWebURL returns the card's website, shown as a "website" link like the radio
@@ -348,7 +355,9 @@ function recentCardHTML(c, i, nowPlaying) {
   // the token for this playlist (a Spotify preset with the same URI exists), a
   // play button that recalls that slot.
   let actions;
-  if (isRadio) {
+  if (shell2Mounted()) {
+    actions = ui2CardActions(c, i, isRadio);
+  } else if (isRadio) {
     const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
     actions = `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>`
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`
@@ -361,7 +370,7 @@ function recentCardHTML(c, i, nowPlaying) {
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
   // Remove-this-card button: drops the card from the box's history.
-  actions += `<button class="btn btn-mini rc-del" id="recDel${i}" title="${escapeAttr(t('recent.removeCard'))}">&times;</button>`;
+  if (!shell2Mounted()) actions += `<button class="btn btn-mini rc-del" id="recDel${i}" title="${escapeAttr(t('recent.removeCard'))}">&times;</button>`;
   // nowPlaying is decided by the caller (the newest matching card only, #761),
   // not per-card, so a station in history several times lights up once.
   // "Now playing" badge, reusing the preset tile's own state label so the wording
@@ -373,7 +382,88 @@ function recentCardHTML(c, i, nowPlaying) {
     + `<div class="rc-head">${logoImg(c)}`
     + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}${nowBadge}</div>`
     + `<div class="rc-sub">${sub}</div></div>`
-    + `<div class="rc-actions">${actions}</div></div>${tracks}</div>`;
+    + `<div class="rc-actions">${actions}</div></div>${tracks}`
+    // UI 2.0: a failed action reports in its own card (rule 3), not in a modal.
+    + (shell2Mounted() ? cardErrorLine(c, i) : '')
+    + `</div>`;
+}
+
+// cardPlayBox is the speaker a card's play button acts on: a radio card plays
+// through the radio search's path, on the speaker you control; every other
+// card replays on the speaker that played it, which holds its Spotify key, its
+// Pandora login or its library track.
+export function cardPlayBox(c) {
+  const isRadio = c.source !== 'spotify' && c.source !== 'pandora' && c.source !== 'upnp';
+  return isRadio ? state.currentBox : (c.box || state.currentBox);
+}
+
+// cardKeyBox is the speaker whose keys the "put on a key" picker writes:
+// Spotify saves on the card's own speaker (saveSpotifyCard), radio and Pandora
+// on the speaker you control (openPick, openPandoraPick).
+export function cardKeyBox(c) {
+  return c.source === 'spotify' ? (c.box || state.currentBox) : state.currentBox;
+}
+
+// ui2CardActions draws a card's buttons in the UI 2.0 preview: the same
+// actions as the current layout, as 40px icon buttons whose names say the
+// station and the speaker they act on (rule 1). The favourite star is
+// app-wide, so it names no speaker; the remove button names every speaker
+// whose history loses the card.
+function ui2CardActions(c, i, isRadio) {
+  const name = c.name || recentSourceLabel(c.source);
+  const label = (b) => (b ? recentBoxDisplayLabel(b) : '');
+  const btn = (cls, id, text, glyph, extra = '') =>
+    `<button type="button" class="u-btn u-btn--icon ${cls}" id="${id}" aria-label="${escapeAttr(text)}" title="${escapeAttr(text)}"${extra}>${glyph}</button>`;
+  const canPlay = isRadio || (c.source === 'pandora' ? !!c.url : c.playSlot != null);
+  let html = '';
+  if (canPlay) html += btn('rc-play', 'recPlay' + i, t('ui2.recent.playOn', { name, speaker: label(cardPlayBox(c)) }), '&#9205;');
+  html += btn('rc-pick', 'recPick' + i, t('ui2.recent.keyOn', { name, speaker: label(cardKeyBox(c)) }), '+');
+  if (isRadio) {
+    const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
+    html += btn('rc-fav' + (fav ? ' is-fav' : ''), 'recFav' + i, favLabel(name, fav), fav ? '&#9733;' : '&#9734;', ` aria-pressed="${fav}"`);
+  }
+  const speakers = [...new Set((c.members && c.members.length ? c.members.map((m) => m.boxName) : [c.boxName]).filter(Boolean))];
+  html += btn('rc-del', 'recDel' + i, t('ui2.recent.removeFrom', { name, speakers: speakers.join(', ') }), '&times;');
+  return html;
+}
+
+// favLabel is the favourite star's name. The current layout keeps its short
+// tooltip; the preview names the station, since the star is an icon only.
+function favLabel(name, fav) {
+  if (!shell2Mounted()) return fav ? t('search.removeFav') : t('search.addFav');
+  return t(fav ? 'ui2.recent.favRemove' : 'ui2.recent.favAdd', { name });
+}
+
+// cardErrors keeps the last failed action of each card (by cardKey) in the
+// preview, so the 30 s repaint does not wipe the message before it was read.
+// The card's next action clears it.
+const cardErrors = new Map();
+
+// showCardError reports a failed card action. The preview writes it into the
+// card's own error line (rule 3, errors where they happen); the current layout
+// keeps its error dialog.
+function showCardError(c, i, err) {
+  const line = shell2Mounted() ? document.getElementById('recErr' + i) : null;
+  if (!line) { showError(err); return; }
+  const msg = friendlyErrorText(String(err && err.message ? err.message : err || t('modal.unknownError')));
+  cardErrors.set(c.cardKey, msg);
+  line.textContent = msg;
+}
+
+// clearCardError empties the card's error line as its next action starts, and
+// makes the line an alert again for that action's answer.
+function clearCardError(c, i) {
+  cardErrors.delete(c.cardKey);
+  const line = shell2Mounted() ? document.getElementById('recErr' + i) : null;
+  if (line) { line.textContent = ''; line.setAttribute('role', 'alert'); }
+}
+
+// cardErrorLine is the card's error line. Empty, it is an alert that speaks
+// the next failure; repainted with a kept message, it is plain text, so a
+// screen reader does not hear the same error again on every refresh.
+function cardErrorLine(c, i) {
+  const msg = cardErrors.get(c.cardKey) || '';
+  return `<div class="rc-err" id="recErr${i}"${msg ? '' : ' role="alert"'}>${escapeHtml(msg)}</div>`;
 }
 
 // replayFolderCard starts a folder card as a whole queue again. Returns true when
@@ -435,6 +525,11 @@ function wireCard(c, i) {
   }
   if (playBtn) {
     playBtn.onclick = async () => {
+      // UI 2.0: the button is busy until the speaker answered, so a second
+      // click cannot start the same station twice and nothing claims "playing"
+      // before the speaker took it (rule 2). The current layout is unchanged.
+      const busy = shell2Mounted();
+      if (busy) { clearCardError(c, i); playBtn.disabled = true; playBtn.setAttribute('aria-busy', 'true'); }
       try {
         if (c.source === 'spotify') {
           // Token present (matched a preset slot): recall it, same as a preset.
@@ -462,7 +557,9 @@ function wireCard(c, i) {
         } else {
           await deps.playStation(cardStation(c));
         }
-      } catch (err) { showError(err); }
+      } catch (err) { showCardError(c, i, err); } finally {
+        if (busy) { playBtn.disabled = false; playBtn.removeAttribute('aria-busy'); }
+      }
     };
   }
   if (pickBtn) {
@@ -480,17 +577,19 @@ function wireCard(c, i) {
       const nowFav = deps.toggleFav(cardStation(c));
       favBtn.classList.toggle('is-fav', nowFav);
       favBtn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
-      favBtn.title = nowFav ? t('search.removeFav') : t('search.addFav');
+      favBtn.title = favLabel(c.name || recentSourceLabel(c.source), nowFav);
+      if (shell2Mounted()) { favBtn.setAttribute('aria-label', favBtn.title); favBtn.setAttribute('aria-pressed', String(nowFav)); }
     };
   }
   const delBtn = document.getElementById('recDel' + i);
   if (delBtn) {
     delBtn.onclick = async () => {
       delBtn.disabled = true;
+      clearCardError(c, i);
       try {
         await deleteRecentStation(c, DeleteRecentCard, state.currentBox);
         await refreshRecentList();
-      } catch (err) { showError(err); delBtn.disabled = false; }
+      } catch (err) { showCardError(c, i, err); delBtn.disabled = false; }
     };
   }
 }
@@ -570,7 +669,8 @@ export function repaintRecentFavStars(lookup = (id) => document.getElementById(i
     if (btn.classList.contains('is-fav') === fav) return;
     btn.classList.toggle('is-fav', fav);
     btn.innerHTML = fav ? '&#9733;' : '&#9734;';
-    btn.title = fav ? t('search.removeFav') : t('search.addFav');
+    btn.title = favLabel(c.name || recentSourceLabel(c.source), fav);
+    if (shell2Mounted()) { btn.setAttribute('aria-label', btn.title); btn.setAttribute('aria-pressed', String(fav)); }
     n++;
   });
   return n;
@@ -617,7 +717,9 @@ export async function refreshRecentList() {
   if (!listEl || state.view !== 'recent') { stopRecentAutoRefresh(); return; } // navigated away mid-fetch
   if (!cards.length) {
     paintedCards = [];
-    listEl.innerHTML = `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
+    listEl.innerHTML = shell2Mounted()
+      ? ui2EmptyHTML()
+      : `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
     return;
   }
   // Only ONE card wears the now-playing badge: the NEWEST card of the current
@@ -627,8 +729,44 @@ export async function refreshRecentList() {
   // so the first match is the running session.
   const playingIdx = cards.findIndex(cardIsPlaying);
   paintedCards = cards;
-  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
+  listEl.innerHTML = shell2Mounted()
+    ? ui2DaysHTML(cards, playingIdx)
+    : cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
   cards.forEach((c, i) => wireCard(c, i));
+}
+
+// ui2DaysHTML paints the cards of the UI 2.0 preview under one heading per
+// day ("Today", "Yesterday", then the date in the app's language), each card
+// under the day of its newest listening (views/recentdays.js). The cards keep
+// their index, so wireCard and the star repaint find their buttons.
+function ui2DaysHTML(cards, playingIdx) {
+  const labels = { today: t('ui2.recent.today'), yesterday: t('ui2.recent.yesterday'), earlier: t('ui2.recent.earlier') };
+  return groupCardsByDay(cards, { locale: getLocale(), labels }).map((g, n) =>
+    `<section class="rc-day" aria-labelledby="recDay${n}">`
+    + `<h3 class="rc-day-head" id="recDay${n}">${escapeHtml(g.label)}</h3>`
+    + `<div class="rc-day-list">${g.items.map(({ card, index }) => recentCardHTML(card, index, index === playingIdx)).join('')}</div>`
+    + `</section>`).join('');
+}
+
+// ui2EmptyHTML explains an empty history in the preview: what fills it, for
+// the speaker (or all of them) the view shows.
+function ui2EmptyHTML() {
+  const boxes = recentSelectedBoxes();
+  const body = (state.recentAllBoxes || boxes.length !== 1)
+    ? t('ui2.recent.emptyAll')
+    : t('ui2.recent.emptyOne', { speaker: recentBoxDisplayLabel(boxes[0]) });
+  return `<div class="recent-empty rc-empty2"><p class="rc-empty-title">${escapeHtml(t('ui2.recent.emptyTitle'))}</p>`
+    + `<p class="rc-empty-body">${escapeHtml(body)}</p></div>`;
+}
+
+// recentFollowsShellPick is called when a speaker is chosen in the UI 2.0
+// sidebar while this view is open: the history follows it, the same as it
+// follows the speaker you control before a speaker was picked here, and the
+// buttons name the new speaker. "All speakers" stays as chosen.
+export function recentFollowsShellPick() {
+  if (!shell2Mounted() || state.view !== 'recent') return;
+  if (!state.recentAllBoxes) state.recentBoxKey = null;
+  renderRecent();
 }
 
 // renderRecent paints the view into #view-recent. Called from main.js's
@@ -657,8 +795,13 @@ export async function renderRecent() {
       + `title="${escapeAttr(t('recent.thisBox'))}">${opts}</select></div>`;
   }
   // Clear the whole list. Clears every box in the current scope.
-  html += `<button class="btn btn-mini recent-clear" id="recentClear" title="${escapeAttr(t('recent.clearAll'))}">${escapeHtml(t('recent.clearAll'))}</button>`;
+  const ui2 = shell2Mounted();
+  html += ui2
+    ? `<button type="button" class="u-btn u-btn--secondary recent-clear" id="recentClear">${escapeHtml(t('recent.clearAll'))}</button>`
+    : `<button class="btn btn-mini recent-clear" id="recentClear" title="${escapeAttr(t('recent.clearAll'))}">${escapeHtml(t('recent.clearAll'))}</button>`;
   html += `</div><div class="recent-sub muted">${escapeHtml(t('recent.subtitle'))}</div>`
+    // UI 2.0: what clearing could not do is said under the header (rule 3).
+    + (ui2 ? `<div class="rc-clear-err" id="recentClearErr" role="alert"></div>` : '')
     + `<div class="recent-list" id="recentList"><div class="muted recent-loading">${escapeHtml(t('recent.loading'))}</div></div>`;
   root.innerHTML = html;
 
@@ -679,9 +822,14 @@ export async function renderRecent() {
     if (!ok) return;
     const boxes = recentSelectedBoxes();
     clr.disabled = true;
-    for (const b of boxes) { try { await ClearRecent(b.host, b.port); } catch { /* skip unreachable box */ } }
+    const failed = [];
+    for (const b of boxes) { try { await ClearRecent(b.host, b.port); } catch { failed.push(recentBoxDisplayLabel(b)); /* skip unreachable box */ } }
     await refreshRecentList();
     clr.disabled = false;
+    // The preview names the speakers whose list stayed, instead of a list that
+    // silently comes back on the next refresh (rule 2).
+    const errLine = $('recentClearErr');
+    if (errLine) errLine.textContent = failed.length ? t('ui2.recent.clearFailed', { speakers: failed.join(', ') }) : '';
   };
 
   await refreshRecentList();

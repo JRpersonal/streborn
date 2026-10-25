@@ -283,7 +283,7 @@ import {
 // pulls state/utils/i18n/api from the shared modules; only the slot-picker modal
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
-import { renderRecent, initRecentView, repaintRecentFavStars } from './views/recent.js';
+import { renderRecent, initRecentView, repaintRecentFavStars, recentFollowsShellPick } from './views/recent.js';
 import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
@@ -3139,6 +3139,8 @@ async function pickBoxFromShell(box) {
     loadBoxSettings();
   } else if (view === 'setup' && state.setupTarget !== prevTarget) {
     renderSetupTargetPicker();
+  } else if (view === 'recent') {
+    recentFollowsShellPick();
   }
 }
 
