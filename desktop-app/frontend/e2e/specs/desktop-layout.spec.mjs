@@ -89,14 +89,6 @@ async function playerGeometry(page) {
   expect(disjoint([pBox, mBox]), `#ui2Player ${JSON.stringify(pBox)} overlaps #ui2Main ${JSON.stringify(mBox)}`).toEqual([]);
 }
 
-// The classic tab bar (.tabs in style.css: display flex, no wrap, no
-// overflow handling) is wider than the smallest window once the text size is
-// raised (body zoom 1.15 / 1.30): at 1000 px the Wishes tab ends at x=1004 on
-// Large and Spotify at 1023 / Wishes at 1135 on Extra large, so the window
-// scrolls sideways and the last tab is cut off or off screen.
-const CLASSIC_TABS_BUG = 'classic layout: the tab bar overflows the 1000 px minimum window at text size Large and Extra large '
-  + '(.tabs does not wrap; Wishes tab ends at x=1004 on Large, x=1135 on Extra large), the window scrolls sideways';
-
 // sidebarNavReachable: every navigation entry, scrolled into its own box,
 // is the element a click at its centre lands on. At Extra large text in the
 // smallest window, a group playing, the speaker list once squeezed the
@@ -132,8 +124,7 @@ for (const scale of SCALES) {
     test.use({ ui2: false, scale, fakeClock: true, scenario: SCENARIOS.solo });
 
     for (const view of ['box', 'settings']) {
-      test(`${view}: no horizontal overflow`, async ({ app }, testInfo) => {
-        test.fixme(testInfo.project.name === 'desktop-min' && scale !== '1', CLASSIC_TABS_BUG);
+      test(`${view}: no horizontal overflow`, async ({ app }) => {
         const { page } = app;
         await prepare(page);
         await openView(page, false, view);

@@ -33,15 +33,17 @@ async function visit(page, view, marker) {
   const v = page.locator(`#view-${view}`);
   await expect(v).toBeVisible();
   await expect(v.locator(marker).first()).toBeAttached();
-  for (const [other] of TABS) {
-    if (other === view) continue;
-    // toBeHidden alone passes for a view that is still an empty, zero-size
-    // div (Wishes until first opened), so also check the class the app
-    // actually toggles.
-    const o = page.locator(`#view-${other}`);
-    await expect(o).toBeHidden();
-    await expect(o).toHaveClass(/\bhidden\b/);
-  }
+  // Every other view is hidden. "Not visible" alone passes for a view that is
+  // still an empty, zero-size div (Wishes until first opened), so the class
+  // the app actually toggles is checked too. All seven views are read in one
+  // page round trip: fourteen separate assertions per visit made each of the
+  // two tab tours ~11 s long, and on a busy machine they ran into the 30 s
+  // test timeout.
+  const others = TABS.map(([v]) => v).filter((v) => v !== view);
+  await expect.poll(() => page.evaluate((ids) => ids.filter((id) => {
+    const el = document.getElementById(`view-${id}`);
+    return !el || !el.classList.contains('hidden') || el.checkVisibility();
+  }), others), { message: `views not hidden while ${view} is open` }).toEqual([]);
 }
 
 test.describe('classic layout, default scenario', () => {

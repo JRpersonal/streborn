@@ -31,7 +31,7 @@
 // method turns that test red instead of silently answering null.
 export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
-  'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeWingetUpgradeFailure',
+  'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
@@ -41,7 +41,7 @@ export const MODELLED_BINDINGS = [
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
   'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SaveQueuePreset', 'SaveSpotifyPreset',
   'SetAppFlag', 'SetAppLocale', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
-  'SpotifyNowPlaying', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate',
+  'SpotifyNowPlaying', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
 ];
 
@@ -210,7 +210,16 @@ export function installDesktopMock({ scenario, demo }) {
     SaveQueuePreset: () => '',
     RecentPlayed: () => clone(demo.recent),
     Status: ([h]) => statusFor(h),
+    // Asked once, 2.5 s after boot (main.js), so a short test may or may not
+    // meet it. Modelled as "no notice due", what an unmocked null meant.
+    ConsumeStableNameNotice: () => false,
     StreamBitrate: () => 256,
+    // The live ICY title poll (views/music/live.js) first reads 1.2 s after a
+    // proxied station starts, so whether a test meets it depends on how long
+    // it runs. Modelled as "no title yet", which is what the null of an
+    // unmocked call meant before, so the strict drift guard no longer flips
+    // with the machine's speed.
+    StreamTitleInfo: () => ({ title: '', swapped: false }),
     PlaySlot: ([h, , slot]) => {
       const p = presetsFor(h).find((x) => x.slot === slot);
       state.playing[h] = 'PLAY_STATE';

@@ -37,12 +37,6 @@ const GROUPED = {
   zones: { livingRoom: GROUP, bedroom: GROUP },
 };
 
-// The classic tab bar has no wrap and no scroller: at the smallest window
-// (1000 px) the Lithuanian and Ukrainian tab labels push the last tab past the
-// window edge and the whole page scrolls sideways (lt 1018 px, uk 1082 px,
-// the overflowing element is the last .tab-btn).
-const CLASSIC_TABS_OVERFLOW = ['lt', 'uk'];
-
 const UI2_KEY = /\bui2\.[a-z][\w.]*\b/;
 // Anything shaped like a dotted key; checked against EN_KEYS in Node.
 const DOTTED = /[A-Za-z][\w-]*(?:\.[\w-]+)+/g;
@@ -107,9 +101,7 @@ for (const layout of LAYOUTS) {
     test.describe(`${layout.name}, ${code}`, () => {
       test.use({ ui2: layout.ui2, appLocale: code });
 
-      test('boots clean and nothing clips sideways', async ({ app, mock }, testInfo) => {
-        test.fixme(!layout.ui2 && testInfo.project.name === 'desktop-min' && CLASSIC_TABS_OVERFLOW.includes(code),
-          'classic layout at the 1000 px minimum window: the tab bar overflows in lt and uk, the last .tab-btn ends at 1018 / 1082 px and the page scrolls sideways');
+      test('boots clean and nothing clips sideways', async ({ app, mock }) => {
         const { page } = app;
         await expect(page.locator('html')).toHaveAttribute('lang', code);
         expect(await mock.pageErrors()).toEqual([]);
