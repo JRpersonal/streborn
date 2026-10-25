@@ -163,7 +163,7 @@ describe('the save leaves a trace', () => {
   it('records what the gate decided and what it decided it from', () => {
     // "I saw two different notices for one long press" was unanswerable from a
     // diagnostic bundle: the app logged nothing for a save at all.
-    expect(main).toContain('LogSpotifySaveGate(state.currentBox.host, slot,');
+    expect(main).toContain('LogSpotifySaveGate(box.host, slot,');
     expect(main).toContain("canRecall === undefined ? 'unknown' :");
     expect(main).toContain("premiumRequired === undefined ? 'unknown' :");
   });

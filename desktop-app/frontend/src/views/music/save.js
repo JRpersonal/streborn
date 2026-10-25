@@ -15,6 +15,7 @@ import {
 import { t } from '../../i18n/index.js';
 import { nativeServiceLabel, nativeServiceSaveable } from '../../nativeservice.js';
 import { offerPresetMove, parsePresetConflict, presetConflictNote } from '../../presetmove.js';
+import { sameBoxIdentity } from '../../groups.js';
 import { state } from '../../state.js';
 import {
   activeSlotFromLocation,
@@ -327,7 +328,15 @@ function toastSpotifyReport(slot) {
 // report says how the outcome reaches the user (toastSpotifyReport by default;
 // the UI 2.0 Spotify view reports in its own card). Resolves true once the
 // speaker has stored the key, false otherwise.
-export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot)) {
+//
+// onBox is the speaker the save is for (the selected one by default). Both
+// requests go to it, and a different speaker selected while its Spotify read
+// was out ends the save: the playing state read after that read belongs to
+// the new speaker, so saving would mix the two. report.switched, when given,
+// says so; the toasts stay quiet, as a play does on a switch.
+export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot), onBox = state.currentBox) {
+  const box = onBox;
+  if (!box) return false;
   // We can only save a real, recallable Spotify preset when we know the
   // playlist/album/track context URI. The state.spotifyNow context is only
   // refreshed by a throttled (>3s) background poll, so at save time it can
@@ -355,7 +364,7 @@ export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot))
   let planKnown;
   let gateRead = 'unknown';
   try {
-    const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
+    const np = await SpotifyNowPlaying(box.host, box.port);
     if (np) {
       gateRead = 'yes';
       if (np.context) engineCtx = np.context;
@@ -365,6 +374,10 @@ export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot))
       planKnown = !!np.product;
     }
   } catch { gateRead = 'no'; }
+  if (!sameBoxIdentity(state.currentBox, box)) {
+    if (report.switched) report.switched();
+    return false;
+  }
   // Fallback: go-librespot's /spotify/info can report an empty context even
   // while a real playlist is playing (it depends on how playback was started).
   // The box's own now-playing still carries the URI STR wrote into its
@@ -396,7 +409,7 @@ export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot))
   const sname = state.nowName || 'Spotify';
   try {
     await SaveSpotifyPreset(
-      state.currentBox.host, state.currentBox.port,
+      box.host, box.port,
       slot, sname, ctxUri, acct
     );
     report.saved(sname);
@@ -430,7 +443,7 @@ export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot))
     // An older build has no such binding, and logging must never be the reason
     // a save reports a failure, so the rejection is swallowed.
     try {
-      LogSpotifySaveGate(state.currentBox.host, slot,
+      LogSpotifySaveGate(box.host, slot,
         canRecall === undefined ? 'unknown' : (canRecall ? 'yes' : 'no'),
         premiumRequired === undefined ? 'unknown' : (premiumRequired ? 'yes' : 'no'),
         gateRead === 'yes' ? notice : notice + ' (speaker not readable)')?.catch(() => {});
