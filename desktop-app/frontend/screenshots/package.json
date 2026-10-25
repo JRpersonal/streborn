@@ -10,6 +10,6 @@
     "ui2-check": "node ui2-check.mjs"
   },
   "devDependencies": {
-    "playwright": "1.60.0"
+    "playwright": "1.64.1"
   }
 }
