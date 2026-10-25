@@ -186,4 +186,25 @@ describe('the classic layout is untouched', () => {
     // The Music view's long press goes the same way, with its toasts.
     expect(srcOf('saveCurrentToSlot')).toContain('await saveSpotifyToSlot(slot);');
   });
+
+  it('tells a changed speaker from a refreshed record of the same one', () => {
+    const save = srcOf('saveToChosenKey');
+    // The discovery refresh swaps state.currentBox for a fresh object.
+    expect(save).toContain('!sameBoxIdentity(state.currentBox, box)');
+    expect(save).not.toContain('state.currentBox !== box');
+    // The save goes to the card's speaker and stops if another was chosen.
+    expect(save).toMatch(/\}, box\);/);
+    expect(save).toContain('switched: () =>');
+    const inner = srcOf('saveSpotifyToSlot');
+    expect(inner).toContain('SpotifyNowPlaying(box.host, box.port)');
+    expect(inner.indexOf('if (!sameBoxIdentity(state.currentBox, box))')).toBeLessThan(inner.indexOf('spotifySaveContextURI('));
+    expect(inner).not.toContain('state.currentBox.host, state.currentBox.port');
+  });
+
+  it('replaces the already-on-a-key note once the speaker moved the playlist', () => {
+    const save = srcOf('saveToChosenKey');
+    expect(save).toContain('presetMoveOffer(conflict, slot, box)');
+    expect(save).toContain("t('ui2.spotify.moved'");
+    expect(save).toContain('results.get(key) !== result');
+  });
 });

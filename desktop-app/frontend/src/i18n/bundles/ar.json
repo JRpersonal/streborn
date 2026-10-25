@@ -1781,6 +1781,7 @@
   "ui2.spotify.saveBtnNoKey": "ضعه على زر",
   "ui2.spotify.saving": "جارٍ الحفظ على {{name}}…",
   "ui2.spotify.saved": "تم: الزر {{n}} في {{name}} يشغّل الآن {{title}}.",
+  "ui2.spotify.moved": "تم النقل: الزر {{n}} في {{name}} يحمل الآن قائمة التشغيل، والزر {{from}} أصبح فارغًا.",
   "ui2.spotify.speakerChanged": "اختيرت سمّاعة أخرى في هذه الأثناء، لذلك لم يُحفظ شيء على {{name}}.",
   "ui2.spotify.stoppedBeforeSave": "توقفت {{name}} عن تشغيل Spotify، لذلك لم يُحفظ شيء. شغّل قائمة التشغيل مجددًا وحاول مرة أخرى.",
   "ui2.spotify.saveFailed": "لم تحفظ {{name}} الزر: {{err}}",

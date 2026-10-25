@@ -20,6 +20,7 @@ import { $, escapeHtml, escapeAttr } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { state } from '../state.js';
 import { SpotifyNowPlaying } from '../api.js';
+import { sameBoxIdentity } from '../groups.js';
 import { parsePresetConflict, presetConflictNote } from '../presetmove.js';
 import { saveSpotifyToSlot, presetMoveOffer } from './music/save.js';
 import { loadPresets } from './music/presets.js';
@@ -204,12 +205,15 @@ export async function saveToChosenKey() {
   let tone = 'ok';
   const fail = (text) => { tone = 'error'; lines.push({ tone: 'error', text }); };
   let ok = false;
+  let moveOffer = null;
   try {
     // The same refresh the Music view's save starts with: what plays now, not
     // what the last poll saw.
     try { await refreshStatus(); } catch { /* the save reads the speaker itself */ }
     const now = spotifyPlaying(state);
-    if (state.currentBox !== box) {
+    // By identity, not by object: the discovery refresh swaps in a fresh
+    // record of the same speaker while this read is out.
+    if (!sameBoxIdentity(state.currentBox, box)) {
       fail(t('ui2.spotify.speakerChanged', { name }));
     } else if (!now.playing) {
       fail(t('ui2.spotify.stoppedBeforeSave', { name }));
@@ -219,19 +223,22 @@ export async function saveToChosenKey() {
         saved: (savedName) => lines.push({ tone: 'ok', text: t('ui2.spotify.saved', { n: slot, name, title: savedName || title }) }),
         notice: (k) => { if (tone !== 'error') tone = 'warn'; lines.push({ tone: 'warn', text: t(k) }); },
         error: (k) => fail(t(k)),
+        switched: () => fail(t('ui2.spotify.speakerChanged', { name })),
         failed: (err) => {
           const conflict = parsePresetConflict(err);
           if (conflict) {
             tone = 'warn';
             lines.push({ tone: 'warn', text: presetConflictNote(conflict, t) });
             // The Music view's offer to move it onto the chosen key, on this
-            // speaker.
-            presetMoveOffer(conflict, slot, box);
+            // speaker. Once the speaker moved it, the note above is out of
+            // date, so the card says where the playlist is now.
+            moveOffer = presetMoveOffer(conflict, slot, box)
+              .then((moved) => (moved ? { from: conflict.slot } : null), () => null);
           } else {
             fail(t('ui2.spotify.saveFailed', { name, err: String(err) }));
           }
         },
-      });
+      }, box);
     }
   } catch (err) {
     fail(t('ui2.spotify.saveFailed', { name, err: String(err) }));
@@ -239,8 +246,18 @@ export async function saveToChosenKey() {
     busyHost = '';
   }
   if (!ok && !lines.length) fail(t('ui2.spotify.notConfirmed', { name }));
-  results.set(key, { tone, lines, uri: startUri });
+  const result = { tone, lines, uri: startUri };
+  results.set(key, result);
   paintKeys(true);
+  if (moveOffer) {
+    moveOffer.then((moved) => {
+      // Only while this is still the card's last result: a newer save or a
+      // change of what plays has its own line by then.
+      if (!moved || results.get(key) !== result) return;
+      results.set(key, { tone: 'ok', lines: [{ tone: 'ok', text: t('ui2.spotify.moved', { from: moved.from, n: slot, name }) }], uri: startUri });
+      paintKeys(true);
+    });
+  }
   // The button the user pressed is gone after a repaint when the key now holds
   // it; the result is where the answer is, so the keyboard lands there.
   const res = $('sp2Result');

@@ -1781,6 +1781,7 @@
   "ui2.spotify.saveBtnNoKey": "キーに登録",
   "ui2.spotify.saving": "{{name}}に保存中…",
   "ui2.spotify.saved": "完了: {{name}}のキー {{n}}で{{title}}が再生されるようになりました。",
+  "ui2.spotify.moved": "移動しました: {{name}}のキー {{n}}にプレイリストが入り、キー {{from}}は空きになりました。",
   "ui2.spotify.speakerChanged": "その間に別のスピーカーが選ばれたため、{{name}}には何も保存されていません。",
   "ui2.spotify.stoppedBeforeSave": "{{name}}がSpotifyの再生を止めたため、何も保存されていません。プレイリストをもう一度再生して、やり直してください。",
   "ui2.spotify.saveFailed": "{{name}}はキーを保存しませんでした: {{err}}",

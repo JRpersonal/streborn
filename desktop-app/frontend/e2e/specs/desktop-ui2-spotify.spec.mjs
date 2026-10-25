@@ -218,6 +218,69 @@ test.describe('UI 2.0 Spotify', () => {
     await Promise.all([run, ticking]);
   });
 
+  test('10. a box-list refresh during the save is not a change of speaker', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await playSpotify(page, LR.host);
+    await tick(page);
+    await openSpotify(page);
+    await tick(page, 2_000);
+    await key(page, 4).click();
+    // The speaker's status read before the save and its Spotify read during
+    // it both outlast the minute-long box-list refresh, which swaps in a fresh
+    // record of the same speaker.
+    await mock.set('Status', { delayMs: 65_000 });
+    await mock.set('SpotifyNowPlaying', { value: { context: PLAYLIST, account: '', canRecall: true, product: 'premium' }, delayMs: 65_000 });
+    await mock.resetCalls();
+    await keysCard(page).locator('#sp2Save').click();
+    await tick(page, 70_000);
+    await expect.poll(() => mock.count('RefreshKnownBoxes')).toBeGreaterThan(0);
+    await tick(page, 70_000);
+    await mock.expectCalled('SaveSpotifyPreset', { pred: (c) => c.args[0] === LR.host && c.args[2] === 4, times: 1 });
+    await expect(keysCard(page).locator('#sp2Result')).toContainText(en('ui2.spotify.saved', { n: 4, name: LR.friendlyName, title: 'Discover Weekly' }));
+    await expect(keysCard(page).locator('#sp2Result')).not.toContainText(en('ui2.spotify.speakerChanged', { name: LR.friendlyName }));
+  });
+
+  test('11. another speaker chosen during the save: nothing is saved on either', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await playSpotify(page, LR.host);
+    await tick(page);
+    await openSpotify(page);
+    await tick(page, 2_000);
+    await key(page, 4).click();
+    await mock.set('SpotifyNowPlaying', { value: { context: PLAYLIST, account: '', canRecall: true, product: 'premium' }, delayMs: 5_000 });
+    await mock.resetCalls();
+    await keysCard(page).locator('#sp2Save').click();
+    await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR.host}"]`).click();
+    await tick(page, 12_000);
+    expect(await mock.count('SaveSpotifyPreset')).toBe(0);
+    // Back on the first speaker, its card says why nothing was saved.
+    await mock.set('SpotifyNowPlaying', { value: { context: PLAYLIST, account: '', canRecall: true, product: 'premium' } });
+    await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${LR.host}"]`).click();
+    await tick(page, 2_000);
+    await expect(keysCard(page).locator('#sp2Result')).toContainText(en('ui2.spotify.speakerChanged', { name: LR.friendlyName }));
+    expect(await mock.count('SaveSpotifyPreset')).toBe(0);
+  });
+
+  test('12. after a refusal the move onto the chosen key replaces the note in the card', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await playSpotify(page, LR.host);
+    await tick(page);
+    await openSpotify(page);
+    await tick(page, 2_000);
+    await mock.set('SaveSpotifyPreset', { error: 'status 409: {"error":"already-on-slot","slot":2,"name":"Discover Weekly"}' });
+    await key(page, 5).click();
+    await keysCard(page).locator('#sp2Save').click();
+    const result = keysCard(page).locator('#sp2Result');
+    await expect(result).toContainText(en('preset.alreadyOnKeyNamed', { name: 'Discover Weekly', n: 2 }));
+    await page.locator('#warnModal #warnConfirm').click();
+    await mock.expectCalled('MovePreset', { pred: (c) => c.args[0] === LR.host && c.args[2] === 2 && c.args[3] === 5, times: 1 });
+    await expect(result).toContainText(en('ui2.spotify.moved', { from: 2, n: 5, name: LR.friendlyName }));
+    await expect(result).not.toContainText(en('preset.alreadyOnKeyNamed', { name: 'Discover Weekly', n: 2 }));
+  });
+
   test('8. the keys work from the keyboard', async ({ app }) => {
     const { page } = app;
     await settle(page, 9_000);

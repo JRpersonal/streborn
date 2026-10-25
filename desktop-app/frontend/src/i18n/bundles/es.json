@@ -1781,6 +1781,7 @@
   "ui2.spotify.saveBtnNoKey": "Poner en una tecla",
   "ui2.spotify.saving": "Guardando en {{name}}…",
   "ui2.spotify.saved": "Listo: la tecla {{n}} de {{name}} ahora reproduce {{title}}.",
+  "ui2.spotify.moved": "Movida: la tecla {{n}} de {{name}} tiene ahora la lista, la tecla {{from}} vuelve a estar libre.",
   "ui2.spotify.speakerChanged": "Mientras tanto se eligió otro altavoz, así que no se guardó nada en {{name}}.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} dejó de reproducir Spotify, así que no se guardó nada. Vuelve a empezar la playlist e inténtalo otra vez.",
   "ui2.spotify.saveFailed": "{{name}} no guardó la tecla: {{err}}",

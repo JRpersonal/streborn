@@ -1781,6 +1781,7 @@
   "ui2.spotify.saveBtnNoKey": "Put on a key",
   "ui2.spotify.saving": "Saving on {{name}}…",
   "ui2.spotify.saved": "Done: key {{n}} of {{name}} now plays {{title}}.",
+  "ui2.spotify.moved": "Moved: key {{n}} of {{name}} now holds the playlist, key {{from}} is free again.",
   "ui2.spotify.speakerChanged": "Another speaker was chosen in the meantime, so nothing was saved on {{name}}.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} stopped playing Spotify, so nothing was saved. Start the playlist again and try once more.",
   "ui2.spotify.saveFailed": "{{name}} did not save the key: {{err}}",
