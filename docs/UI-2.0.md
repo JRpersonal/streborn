@@ -38,7 +38,7 @@ releases later.
 | Library | Library |
 | Recently played | Recently played |
 | Spotify | Spotify |
-| Multi-room | Player > Output (who plays along), Speakers > Groups (stereo pairs, fixed groups) |
+| Multi-room | Sidebar speaker list (who plays along: `+` on a speaker, `−` to take it out), Speakers > Groups (stereo pairs, fixed groups) |
 | Speaker settings | Speakers > one speaker |
 | Set up speaker | Speakers > Add speaker (wizard) |
 | Wishes | Sidebar, bottom; Help and info |
@@ -50,7 +50,8 @@ releases later.
   a hardware button.
 - Technical details (codec, bitrate, stream address) live in the station
   details, not in the list.
-- One volume in the player, the individual levels in the output popover.
+- Group volume in the player, the individual levels in a compact panel
+  opened from it (Levels).
 - Restart, remove and reset sit in a separate maintenance context, confirmed,
   and the confirmation names the speaker.
 - Help and info is one fixed place. Support links appear only there, never as
@@ -60,12 +61,23 @@ releases later.
 
 ## What we change, and why
 
-- **The speaker choice moves to the top of the sidebar.** In the concept the
-  speaker only appears in the player. Keys, now playing and most settings
-  belong to one speaker, so the room switcher with its live state is the
-  anchor of the whole window.
-- **"Which speaker am I controlling" and "who plays along" are separate.**
-  The room switcher answers the first, the output popover the second.
+- **Every speaker in the sidebar** (DrDBanner's proposal in the #1284
+  discussion, adopted on 14 October). In the concept the speaker only
+  appears in the player; keys, now playing and most settings belong to one
+  speaker, so the speakers are the anchor of the whole window. One list
+  answers both questions: which speaker you control (one click on its row)
+  and who plays along (`+` on an idle speaker adds it to what you control,
+  `−` takes a member out again). Choosing a row and its `+` are two
+  different clicks. A stereo pair is one row, "Living room (stereo)",
+  because it only plays as a whole. The group you control stays pinned on
+  top; with many speakers the rest of the list scrolls on its own, so the
+  music entries below it never scroll away. Offline speakers are greyed and
+  say "Offline"; Bose originals say "Ready for STR" and open the setup. This
+  replaces the room switcher and the separate output popover of the first
+  draft.
+- **Volume in the player.** While a group plays, the group volume takes the
+  place of the speaker volume, and Levels opens the per-speaker sliders.
+  Levels only sets levels; choosing speakers stays in the sidebar.
 - **Favorites are app-wide**, not per speaker (open point P1 in the concept).
 - **Stereo pairs and fixed groups are set up under Speakers**, not in the
   playback popover. Taking a speaker in or out of the current playback stays
@@ -80,28 +92,43 @@ releases later.
 - **Firmware check in the setup wizard.** A speaker below firmware 27.0.6 is
   updated in place before STR is installed (docs/FIRMWARE-UPDATE.md).
 - **STR's real speaker states** in one status pill used everywhere: playing,
-  update ready, standby, starting up, not reachable, stereo pair, Bose
-  original (set up STR).
+  update ready, standby, starting up, offline, stereo pair, Bose original
+  (set up STR).
 - **One place for updates**, for the app and every speaker, matching the
   speaker self-update from the phone (docs/SELF-UPDATE.md).
 - **Spotify with keys:** put the playlist that is playing on a key directly.
 - **Wishes stay visible**, small at the bottom of the sidebar. The Ideas vote
   is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.
-- **The phone remote follows the same structure:** room switcher on top,
+- **The phone remote follows the same structure:** the speaker list on top,
   then Listen, Find, Speakers, More.
 
 ## Color tokens
 
+As defined in `desktop-app/frontend/src/shell2/shell2.css`; the contrast of
+every pairing is checked by `shell2/tokens.test.js`.
+
 | Token | Dark | Light | High contrast |
 |---|---|---|---|
-| `--bg` | `#17181B` | `#FFFFFF` | `#000000` |
-| `--sidebar` | `#1E1F23` | `#F3F3F5` | `#000000` |
-| `--surface` | `#1F2024` | `#F7F7F8` | `#0A0A0A` |
-| `--selected` | `#203955` | `#DCEAF6` | `#003A70` |
-| `--action` | `#1F6FB2` | `#1769AA` | `#4FC3FF` |
-| `--accent` | `#66BBDD` | `#1769AA` | `#7FD8FF` |
-| `--text` | `#E9EAEE` | `#16181D` | `#FFFFFF` |
+| `--u-bg` | `#17181B` | `#FFFFFF` | `#000000` |
+| `--u-sidebar` | `#1E1F23` | `#F3F3F5` | `#000000` |
+| `--u-surface` | `#1F2024` | `#F7F7F8` | `#0A0A0A` |
+| `--u-selected` | `#203955` | `#DCEAF6` | `#003A70` |
+| `--u-action` | `#1F6FB2` | `#1769AA` | `#4FC3FF` |
+| `--u-accent` | `#66BBDD` | `#1769AA` | `#7FD8FF` |
+| `--u-text` | `#E9EAEE` | `#16181D` | `#FFFFFF` |
+| `--u-muted` | `#A9ADB6` | `#565B66` | `#E0E0E0` |
+| `--u-border` | `#6E727C` | `#767B85` | `#FFFFFF` |
+| `--u-ok` | `#5CC98A` | `#1A6B3C` | `#7CFFB2` |
+| `--u-warn` | `#E8B84A` | `#8A5A00` | `#FFD54A` |
+| `--u-danger` | `#FF7A6E` | `#B3261E` | `#FF8A80` |
+| `--u-focus` | `#66BBDD` | `#1769AA` | `#FFFFFF` |
+
+The sidebar speaker list adds no colour token, only two sizes:
+`--u-spk-row` (one row) and `--u-spk-visible` / `--u-spk-pinned` (how many
+rows show before the other speakers, or a large pinned group, scroll).
+An offline speaker is greyed with `--u-muted`, never with opacity, so its
+name keeps 4.5:1.
 
 Spacing on an 8 px grid, targets at least 40 px high, the system UI font.
 Contrast, keyboard focus, screen reader names and enlarged text are
@@ -109,7 +136,9 @@ acceptance criteria for every phase.
 
 ## Phases
 
-1. Tokens and components; the shell with sidebar and persistent player.
+1. Tokens and components; the shell with the speaker sidebar (every
+   speaker, `+` to play along, the group you control pinned) and the
+   persistent player with group volume and per-speaker levels.
 2. Radio, Library, Recently played, Spotify.
 3. Speakers: list, one speaker, groups and stereo pairs.
 4. Setup wizard with the firmware check.
@@ -117,9 +146,14 @@ acceptance criteria for every phase.
 6. Default for everyone; the old layout is removed.
 
 Each phase ships with screenshots, the vitest suite green and every string in
-all bundles.
+all bundles. The preview is also checked in a browser against simulated
+speakers in CI (`desktop-app/frontend/screenshots/ui2-check.mjs`).
 
 ## Mockups
+
+The Radio and Output mockups predate the sidebar decision on #1284: the
+room switcher and the output popover they show are replaced by the sidebar
+speaker list and Levels in the player.
 
 Radio with the room switcher, keys and player:
 
