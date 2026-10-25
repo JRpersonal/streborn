@@ -110,6 +110,14 @@ func fetchNowPlaying(ctx context.Context, host string) nowPlayingSnapshot {
 	return fetchNowPlayingWith(ctx, boxapi.New(host))
 }
 
+// ownNowPlaying reads the now-playing state of the speaker this agent runs on
+// (s.boxHost, 127.0.0.1 on the box). It is fetchNowPlaying under a name that
+// says whose firmware it reads, so an own-box read is never swapped for the
+// peer read below: that one refuses loopback and would read nothing at all.
+func ownNowPlaying(ctx context.Context, boxHost string) nowPlayingSnapshot {
+	return fetchNowPlaying(ctx, boxHost)
+}
+
 // fetchNowPlayingPeer is the same read aimed at ANOTHER speaker, whose address
 // came from outside this agent (a zone member, a group the app formed). Two
 // separate things guard it, because they answer different questions: the host

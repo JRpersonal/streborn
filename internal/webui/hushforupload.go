@@ -48,7 +48,8 @@ func (s *Server) hushReadNowPlaying(ctx context.Context, host string) nowPlaying
 	if s.hushReadNowPlayingFn != nil {
 		return s.hushReadNowPlayingFn(ctx, host)
 	}
-	return fetchNowPlayingPeer(ctx, host)
+	// The speaker's own firmware, not a peer: see quietWakeNowPlaying.
+	return ownNowPlaying(ctx, s.boxHost)
 }
 
 // hushStop stops STR's own transport on the speaker.
