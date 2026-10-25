@@ -303,9 +303,9 @@ import { getUi2Preview, setUi2Preview } from './uipreview.js';
 import {
   mountShell2,
   shell2Mounted,
-  shellRoomPopOpen,
+  shellListsSpeakers,
   syncShellNav,
-  renderShellRooms,
+  renderShellSpeakers,
   syncShellPlayer,
   mirrorShellBadges,
 } from './shell2/mount.js';
@@ -354,6 +354,7 @@ import { onSpeakerPurge } from './speakerPurge.js';
 import {
   dissolveIncompleteMessage,
   effectivePlayTarget,
+  groupEditPendingHosts,
   favStationsJSON,
   initMusicView,
   isFav,
@@ -382,6 +383,7 @@ import {
   syncFavRemovals,
   syncVolumeScopeOnZoneLive,
   toggleFav,
+  toggleGroupMember,
   trackPos,
   updateFavModeBtn,
   updateFilterIndicators,
@@ -1677,7 +1679,8 @@ function safeMountShell2() {
       discoverBoxes,
       offlineTitle,
       pairName: (pair) => pairDisplayName(pair, renderBoxSelect),
-      onRoomsOpen: refreshEverySpeaker,
+      toggleGroupMember,
+      groupEditPendingHosts,
     });
     if (!ok) return;
     // The Aa menu's Layout switch was drawn before a late mount (storage not
@@ -1897,15 +1900,17 @@ setInterval(async () => {
 // were already playing while the group volume only appeared after a manual
 // refresh (Jens, 2026-09-06). Same cadence as the phone page, only while the
 // window is visible, and the zone poll keeps its own 8 s debounce.
-// The UI 2.0 room switcher shows the same live state from any view: while its
-// list is open the poll runs there too, and stops again when it closes.
+// The UI 2.0 preview lists every speaker in its sidebar on every view, so with
+// the preview on the poll also runs off the Music tab, but only where the
+// persistent player is on screen (not in Setup, not during a speaker update):
+// the same cost as sitting on the Music tab, which is where the app opens.
 setInterval(() => {
-  if ((state.view !== 'box' && !shellRoomPopOpen()) || document.visibilityState !== 'visible') return;
+  if ((state.view !== 'box' && !shellListsSpeakers()) || document.visibilityState !== 'visible') return;
   refreshEverySpeaker();
 }, 15000);
 
 // refreshEverySpeaker is one round of the every-speaker poll (zones and who is
-// playing), for the interval above and the room switcher opening. Never while
+// playing), for the interval above. Never while
 // a speaker update or an install runs: nothing should poll a speaker that is
 // about to restart.
 function refreshEverySpeaker() {
@@ -2283,7 +2288,7 @@ async function refreshBoxPlaying() {
     state.boxPlayingBusy = false;
   }
   renderBoxSelect();
-  renderShellRooms();
+  renderShellSpeakers();
 }
 
 // checkWedgeBanner shows the pull-the-plug hint when any STR speaker reports
@@ -2797,7 +2802,7 @@ function renderBoxSelect() {
     return !!resolved && resolved.host === b.host;
   };
   // The live flags of a tile (playing, offline, update, no internet) come from
-  // speakertile.js, the same reading the UI 2.0 room switcher draws from, so
+  // speakertile.js, the same reading the UI 2.0 sidebar speaker list draws from, so
   // the two never disagree about a speaker.
   const tileCtx = {
     currentBox: state.currentBox,
@@ -2987,7 +2992,7 @@ function renderBoxSelect() {
     // since it carries no host the handler found nothing and returned in
     // silence: the tile simply did not react to a click (live 2026-07-29).
     if (btn.classList.contains('box-add-ip')) return;
-    // A click takes the same path as the UI 2.0 room switcher (pickBox).
+    // A click takes the same path as the UI 2.0 sidebar speaker list (pickBox).
     btn.onclick = (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
@@ -3052,7 +3057,7 @@ function renderBoxSelect() {
 }
 
 // pickBox is what choosing a speaker does, wherever it is chosen: the Music
-// tab's picker (click or keyboard) and the UI 2.0 room switcher.
+// tab's picker (click or keyboard) and the UI 2.0 sidebar speaker list.
 //
 // An offline speaker cannot be selected (every call would fail); choosing it
 // explains itself and kicks off a fresh discovery, which is also the fastest
@@ -3086,8 +3091,8 @@ async function pickBox(box, titleHint) {
   selectBox(box);
 }
 
-// pickBoxFromShell is pickBox for the UI 2.0 room switcher. Unlike the Music
-// tab's picker, the switcher stays reachable while Speaker settings or Setup is
+// pickBoxFromShell is pickBox for the UI 2.0 sidebar speaker list. Unlike the Music
+// tab's picker, the sidebar stays reachable while Speaker settings or Setup is
 // open, so a pick there must bring the open view along: otherwise Settings
 // would keep showing speaker A's form while its buttons act on B (they read
 // state.settingsBox on click), and Setup would lose a chosen factory-reset
@@ -3284,8 +3289,8 @@ function updateMultiroomTabBadge() {
   mirrorShellBadges({ groups: { n, stored: n > 0 && split.live === 0, tip } });
 }
 onZoneLive(updateMultiroomTabBadge);
-// The UI 2.0 room switcher and the Output button read the same zone poll.
-onZoneLive(() => renderShellRooms());
+// The UI 2.0 sidebar speaker list and the player read the same zone poll.
+onZoneLive(() => renderShellSpeakers());
 // A pair whose speakers lost the name STR stored for it (formed again with the
 // field empty) gets it written back, so the Spotify picker and the phone remote
 // match this app again (#1077, issue 5). Rides the same poll, no timer.
@@ -4420,12 +4425,12 @@ function updateBoxUiVisibility() {
   const hasSTR = state.boxes.some(b => b.kind !== 'stock');
   const stockOnly = !hasSTR && (state.boxes || []).some(b => b && b.kind === 'stock');
   $('boxControls').classList.toggle('hidden', !hasBox);
-  // UI 2.0 preview: the persistent player and the room switcher follow the
+  // UI 2.0 preview: the persistent player and the sidebar speaker list follow the
   // same selection (no-ops with the preview off). Here, not at the end of
   // renderBoxSelect, because both of its paths, the empty list included,
   // come through this function.
   syncShellPlayer(hasBox);
-  renderShellRooms();
+  renderShellSpeakers();
   const hint = $('boxHint');
   if (!hint) return;
   // Three states, not two. The third is somebody's FIRST time: their speaker is

@@ -23,18 +23,25 @@
 
 import { state } from '../state.js';
 import { t } from '../i18n/index.js';
-import { groupMembersOf, masterBoxForKey, masterOf as zoneMasterOf, stereoPairsOf } from '../groups.js';
+import { stereoPairsOf } from '../groups.js';
 import { shellMarkup } from './markup.js';
 import { wirePopover } from './popover.js';
-import { roomButtonHTML, roomButtonLabel, roomItems, roomSwitcherHTML } from './rooms.js';
+import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
 let deps = {};
 const pops = {};
-let lastRoomsSig = '';
-let roomsSettled = false;
+let lastSpeakersSig = '';
+let speakersSettled = false;
+// The sidebar row that takes Tab, kept across repaints (roving tabindex).
+let rovingHost = '';
+// The player's group state: on screen (live) and grouped (group.js decides,
+// through syncShellGroupPanel). One function applies both (applyPlayerGroup),
+// so the two never fight over the same flag.
+let playerLive = false;
+let groupShown = false;
 
 const byId = (id) => document.getElementById(id);
 const label = (b) => (typeof deps.getBoxLabel === 'function' ? deps.getBoxLabel(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
@@ -43,11 +50,14 @@ export function shell2Mounted() {
   return !!state.ui2Shell;
 }
 
-// shellRoomPopOpen reports whether the room switcher's list is open. While it
-// is, the every-speaker poll runs off the Music tab too, so the list it shows
-// is live and not a snapshot from the last visit to that tab.
-export function shellRoomPopOpen() {
-  return !!(state.ui2Shell && pops.rooms && pops.rooms.isOpen());
+// shellListsSpeakers reports whether the sidebar's speaker list needs the
+// every-speaker poll off the Music tab: always while the shell is mounted,
+// limited to where the persistent player is on screen (statusrefreshscope.js:
+// not in Setup, not during a speaker update), so the list is live without
+// polling speakers that are about to restart.
+export function shellListsSpeakers() {
+  return !!state.ui2Shell
+    && playerOnScreen({ view: state.view, persistentPlayer: true, otaInProgress: !!state.otaInProgress });
 }
 
 // collect finds every node the shell will take, before anything moves.
@@ -80,7 +90,10 @@ function collect(frame) {
     fTransport: q('.ui2-player-transport'),
     fVolume: q('.ui2-player-volume'),
     fMoreBody: q('#ui2MoreBody'),
-    fOutputBody: q('#ui2OutputBody'),
+    fLevelsBody: q('#ui2LevelsBody'),
+    fSpeakers: q('#ui2SpkLists'),
+    fVersion: q('#ui2Version'),
+    fGroupVolSlot: q('#ui2GroupVolSlot'),
   };
   const views = VIEW_IDS.map(byId);
   const missing = Object.keys(required).filter((k) => !required[k]);
@@ -107,6 +120,7 @@ function collect(frame) {
     sourceButtons: byId('sourceButtons'),
     tagline: byId('appTagline'),
     supported: byId('appSupported'),
+    appUpdateBanner: byId('appUpdateBanner'),
   };
 }
 
@@ -147,7 +161,7 @@ export function mountShell2(d) {
     move(n.volume, n.fVolume);
     move(n.queueControls, n.fMoreBody);
     move(n.sourceButtons, n.fMoreBody);
-    move(n.groupControl, n.fOutputBody);
+    move(n.groupControl, n.fLevelsBody);
     move(n.a11y, n.fAppSettings);
     move(n.locale, n.fAppSettings);
     move(n.logo, n.fBrand);
@@ -172,9 +186,10 @@ export function mountShell2(d) {
   wire(frame, skip);
   state.ui2Shell = true;
   document.documentElement.classList.add('ui2');
+  watchAppUpdateBanner(n.appUpdateBanner, n.fVersion, n.fBanners);
   syncShellNav(state.view);
   syncShellPlayer(!!state.currentBox);
-  paintRooms(true);
+  paintSpeakers(true);
   return true;
 }
 
@@ -213,39 +228,120 @@ function wire(frame, skip) {
     });
   });
 
-  pops.rooms = wirePopover(frame.querySelector('#ui2RoomBtn'), frame.querySelector('#ui2RoomPop'), {
-    roving: true,
-    onOpen: () => {
-      paintRooms(true);
-      // One immediate round of the every-speaker poll, so the list is live the
-      // moment it opens; main.js keeps it going while it stays open.
-      if (typeof deps.onRoomsOpen === 'function') deps.onRoomsOpen();
-    },
-  });
-  pops.more = wirePopover(frame.querySelector('#ui2MoreBtn'), frame.querySelector('#ui2MorePop'), { roving: false });
-  pops.output = wirePopover(frame.querySelector('#ui2OutputBtn'), frame.querySelector('#ui2OutputPop'), { roving: false });
+  pops.more = wirePopover(frame.querySelector('#ui2MoreBtn'), frame.querySelector('#ui2MorePop'));
+  // Levels: the per-speaker sliders of the group, opened from the player. Only
+  // sliders: the chips that choose speakers are hidden there (shell2.css), the
+  // sidebar is the one place that chooses.
+  pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
+  wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+}
 
-  // The way to add a speaker sits outside the repainted list (markup.js), so
-  // it keeps focus across a live repaint and has its own handler.
-  const add = frame.querySelector('#ui2RoomAdd');
-  if (add) {
-    add.addEventListener('click', () => {
-      if (pops.rooms) pops.rooms.close(true);
-      if (typeof deps.switchView === 'function') deps.switchView('setup');
-    });
-  }
-  const list = frame.querySelector('#ui2RoomList');
-  if (list) {
-    list.addEventListener('click', (e) => {
-      const row = e.target.closest('.ui2-room-row');
-      if (!row) return;
-      const host = row.dataset.host;
-      const port = parseInt(row.dataset.port, 10);
-      const box = (state.boxes || []).find((b) => b && b.host === host && b.port === port);
-      if (pops.rooms) pops.rooms.close(true);
-      if (box && typeof deps.pickBox === 'function') deps.pickBox(box);
-    });
-  }
+// wireSpeakerList handles the sidebar list, delegated, so a repaint never
+// loses a handler. A row's pick button chooses the speaker you control
+// (pickBox: an offline speaker explains itself and rediscovers, a Bose
+// original opens the setup); its "+" or "-" is the group edit
+// (toggleGroupMember, the Music view's own path).
+function wireSpeakerList(root) {
+  if (!root) return;
+  const boxFor = (btn) => {
+    const host = btn.dataset.host;
+    const port = parseInt(btn.dataset.port, 10);
+    return (state.boxes || []).find((b) => b && b.host === host && b.port === port) || null;
+  };
+  root.addEventListener('click', (e) => {
+    const act = e.target.closest('.ui2-spk-act');
+    if (act) {
+      rovingHost = act.dataset.host;
+      if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10));
+      return;
+    }
+    const pick = e.target.closest('.ui2-spk-pick');
+    if (!pick) return;
+    rovingHost = pick.dataset.host;
+    const box = boxFor(pick);
+    if (!box || typeof deps.pickBox !== 'function') return;
+    Promise.resolve(deps.pickBox(box)).then(() => {
+      // Wishes has nothing about a speaker to show: choosing one there opens
+      // Radio, so the main area shows the speaker you just chose. Every other
+      // view stays open and follows the speaker.
+      if (state.view === 'wishes' && state.currentBox && state.currentBox.host === box.host
+        && typeof deps.switchView === 'function') deps.switchView('box');
+    }).catch(() => {});
+  });
+  root.addEventListener('focusin', (e) => {
+    const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
+    if (btn) setRoving(root, btn.dataset.host);
+  });
+  root.addEventListener('keydown', (e) => {
+    const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
+    if (!btn) return;
+    const li = btn.closest('li');
+    const isAct = btn.classList.contains('ui2-spk-act');
+    const rtl = getComputedStyle(root).direction === 'rtl';
+    const toAct = rtl ? 'ArrowLeft' : 'ArrowRight';
+    const toPick = rtl ? 'ArrowRight' : 'ArrowLeft';
+    if (!isAct && e.key === toAct) {
+      const a = li && li.querySelector('.ui2-spk-act');
+      if (a) { e.preventDefault(); a.focus(); }
+      return;
+    }
+    if (isAct && e.key === toPick) {
+      const p = li && li.querySelector('.ui2-spk-pick');
+      if (p) { e.preventDefault(); p.focus(); }
+      return;
+    }
+    // Up, Down, Home and End move through every row, the pinned group and the
+    // others as one sequence.
+    const picks = [...root.querySelectorAll('.ui2-spk-pick')];
+    const at = picks.indexOf(li ? li.querySelector('.ui2-spk-pick') : null);
+    const next = rovingIndex(e.key, at, picks.length);
+    if (next < 0) return;
+    e.preventDefault();
+    const target = picks[next];
+    setRoving(root, target.dataset.host);
+    target.focus();
+    try { target.scrollIntoView({ block: 'nearest' }); } catch (_) { /* old engine */ }
+  });
+}
+
+// setRoving gives Tab to one row: its pick button and its action, and takes it
+// from every other row.
+function setRoving(root, host) {
+  rovingHost = host || '';
+  root.querySelectorAll('.ui2-spk-pick, .ui2-spk-act').forEach((b) => {
+    b.tabIndex = b.dataset.host === rovingHost ? 0 : -1;
+  });
+}
+
+// watchAppUpdateBanner keeps the app's version line inside the frame. Quiet
+// ("Version ... Check for app updates") it is a footnote, and sits at the
+// bottom of the sidebar; a real notice (an update, a download hand-off) is a
+// window-wide banner and goes to the banner region on top. main.js renders
+// the banner as it always did; this only follows its quiet class, so every
+// path that draws it (the quiet link, the full notice, the mac, deb and
+// winget hand-offs) lands in the right place without touching them.
+function watchAppUpdateBanner(banner, versionSlot, bannersSlot) {
+  if (!banner || !versionSlot || !bannersSlot || typeof MutationObserver === 'undefined') return;
+  // A manual check is a press inside the banner; the notice it brings back
+  // replaces the link that had focus, so focus follows the moved banner.
+  let pressedAt = 0;
+  banner.addEventListener('click', () => { pressedAt = Date.now(); });
+  const place = () => {
+    const quiet = banner.classList.contains('app-update-quiet');
+    const target = quiet ? versionSlot : bannersSlot;
+    if (banner.parentNode === target) return;
+    const active = document.activeElement;
+    const hadFocus = banner.contains(active)
+      || ((!active || active === document.body) && Date.now() - pressedAt < 20000);
+    if (quiet) target.appendChild(banner);
+    else target.insertBefore(banner, target.firstChild);
+    if (hadFocus) {
+      const f = banner.querySelector('button, a[href]');
+      if (f) f.focus();
+    }
+  };
+  new MutationObserver(place).observe(banner, { attributes: true, attributeFilter: ['class'] });
+  place();
 }
 
 // syncShellNav marks the open view in the sidebar and starts it at the top,
@@ -267,11 +363,11 @@ export function syncShellNav(view) {
 // can reach a transport that has nothing to act on, and the player says what
 // to do instead.
 //
-// The volume, the transport and More (the queue) also follow the polling
-// scope (statusrefreshscope.js): in Setup and while a speaker update runs
-// nothing keeps them in sync, so they are not on screen there either, and a
-// slider never shows a level the speaker left long ago. What is playing and
-// the Output stay, they are kept current there too.
+// The volume, the group volume, the transport, More (the queue) and Levels
+// also follow the polling scope (statusrefreshscope.js): in Setup and while a
+// speaker update runs nothing keeps them in sync, so they are not on screen
+// there either, and a slider never shows a level the speaker left long ago.
+// What is playing stays, it is kept current there too.
 export function syncShellPlayer(hasBox = !!state.currentBox) {
   if (!state.ui2Shell) return;
   const player = byId('ui2Player');
@@ -281,42 +377,70 @@ export function syncShellPlayer(hasBox = !!state.currentBox) {
     el.hidden = !on;
     el.inert = !on;
   });
-  show('.ui2-player-now, .ui2-player-output', !!hasBox);
-  show('.ui2-player-transport, .ui2-player-more, .ui2-player-volume', live);
+  show('.ui2-player-now', !!hasBox);
+  show('.ui2-player-transport, .ui2-player-more, .ui2-player-volume, .ui2-player-groupvol', live);
   const empty = player.querySelector('.ui2-player-empty');
   if (empty) empty.hidden = !!hasBox;
   if (!live && pops.more) pops.more.close(false);
-  if (!hasBox && pops.output) pops.output.close(false);
+  playerLive = live;
+  applyPlayerGroup();
 }
 
-// outputState names who plays along with the controlled speaker: alone, or
-// with how many others in its live group. Read from the shared zone poll, the
-// same membership the group chips in the Output popover act on.
-function outputState() {
+// syncShellGroupPanel is how group.js tells the player whether the selected
+// speaker leads a group with a group volume (renderGroupControl decides it,
+// from the same followers its sliders act on). A no-op without the shell.
+export function syncShellGroupPanel(shown) {
+  if (!state.ui2Shell) return;
+  groupShown = !!shown;
+  applyPlayerGroup();
+}
+
+// applyPlayerGroup is the one place that shows or hides the grouped player:
+// Levels and the group look only when the player is live AND grouped. While
+// grouped, the group slider takes the place of the speaker's own volume (its
+// level is the first row in Levels); mute stays.
+function applyPlayerGroup() {
+  const player = byId('ui2Player');
+  if (!player) return;
+  const on = playerLive && groupShown;
+  player.classList.toggle('is-grouped', on);
+  player.querySelectorAll('.ui2-player-levels').forEach((el) => {
+    el.hidden = !on;
+    el.inert = !on;
+  });
+  if (!on && pops.levels && pops.levels.isOpen()) {
+    const panel = byId('ui2LevelsPop');
+    pops.levels.close(false);
+    // Focus inside a panel that just closed would be lost: it goes back to the
+    // player's own volume, which is on screen again.
+    if (panel && panel.contains(document.activeElement)) {
+      const vol = byId('musicVolume');
+      if (vol) vol.focus();
+    }
+  }
+}
+
+// levelsText names who plays along with the controlled speaker, from the same
+// group the sidebar pins (sidebarModel), so the two never disagree.
+function levelsText(model) {
   const cur = state.currentBox;
   if (!cur) return '';
   const name = label(cur);
-  const zl = state.zoneLive || {};
-  const mk = zoneMasterOf(cur.deviceID, zl);
-  let others = 0;
-  if (mk) {
-    const master = masterBoxForKey(mk, zl, state.boxes) || cur;
-    others = groupMembersOf(master, zl, state.boxes).length;
-  }
-  return others > 0 ? t('ui2.player.outputGroup', { name, n: others }) : t('ui2.player.outputSolo', { name });
+  const n = model.memberCount || 0;
+  return n > 0 ? t('ui2.player.outputGroup', { name, n }) : t('ui2.player.outputSolo', { name });
 }
 
-// renderShellRooms repaints the room switcher and the Output button from the
-// shared state. Called from every place the speaker list or a speaker's live
-// state changes; a signature of what it would draw skips the repaint when
-// nothing did, so the poll paths can call it freely.
-export function renderShellRooms(force) {
+// renderShellSpeakers repaints the sidebar's speaker list from the shared
+// state. Called from every place the speaker list, a speaker's live state, the
+// zones or a pending group edit change; a signature of what it would draw
+// skips the repaint when nothing did, so the poll paths can call it freely.
+export function renderShellSpeakers(force) {
   if (!state.ui2Shell) return;
-  roomsSettled = true;
-  paintRooms(!!force);
+  speakersSettled = true;
+  paintSpeakers(!!force);
 }
 
-function paintRooms(force) {
+function paintSpeakers(force) {
   if (!state.ui2Shell) return;
   const ctx = {
     currentBox: state.currentBox,
@@ -326,41 +450,69 @@ function paintRooms(force) {
     needsUpdate: deps.boxNeedsUpdate,
     cannotReachInternet: deps.boxCannotReachInternet,
     stereoPairs: stereoPairsOf(state.zoneLive || {}),
+    zoneLive: state.zoneLive || {},
+    pending: typeof deps.groupEditPendingHosts === 'function' ? deps.groupEditPendingHosts() : new Set(),
+    searching: !speakersSettled && !(state.boxes || []).length,
     label,
     offlineTitle: deps.offlineTitle,
     pairName: deps.pairName,
   };
-  const items = roomItems(state.boxes, ctx);
-  const searching = !roomsSettled && !(state.boxes || []).length;
-  let current = items.find((i) => i.isCurrent) || null;
-  if (!current && state.currentBox) current = { host: state.currentBox.host, name: label(state.currentBox), pill: '', chips: [] };
-  const output = outputState();
-  const sig = JSON.stringify({ items, current, searching, output });
-  if (!force && sig === lastRoomsSig) return;
-  lastRoomsSig = sig;
+  const model = sidebarModel(state.boxes, ctx);
+  const levels = levelsText(model);
+  const sig = JSON.stringify({
+    pinned: model.pinned, others: model.others, head: model.headingKey,
+    alone: model.pairAlone, searching: model.searching, levels,
+  });
+  if (!force && sig === lastSpeakersSig) return;
+  lastSpeakersSig = sig;
 
-  const btn = byId('ui2RoomBtn');
-  const body = byId('ui2RoomBtnBody');
-  if (btn && body) {
-    body.innerHTML = roomButtonHTML(current);
-    btn.setAttribute('aria-label', roomButtonLabel(current));
-  }
-  const list = byId('ui2RoomList');
-  if (list) {
-    const pop = byId('ui2RoomPop');
+  const lists = byId('ui2SpkLists');
+  if (lists) {
+    // A repaint keeps the keyboard where it was (same speaker, same button)
+    // and both lists where they were scrolled to.
     const active = document.activeElement;
-    const keepHost = pop && active && pop.contains(active) && active.classList.contains('ui2-room-row')
-      ? active.dataset.host : '';
-    list.innerHTML = roomSwitcherHTML({ items, searching });
+    const inList = !!active && lists.contains(active) && !!active.dataset && !!active.dataset.host;
+    const keepHost = inList ? active.dataset.host : '';
+    const keepAct = inList && active.classList.contains('ui2-spk-act');
+    const scrolls = [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].map((el) => el.scrollTop);
+    lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
+    [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].forEach((el, i) => {
+      if (typeof scrolls[i] === 'number') el.scrollTop = scrolls[i];
+    });
+    holdSpeakerFloor(lists);
     if (keepHost) {
-      const again = [...list.querySelectorAll('.ui2-room-row')].find((r) => r.dataset.host === keepHost);
+      const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
+      const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
       if (again) again.focus();
     }
   }
-  const outText = byId('ui2OutputText');
-  if (outText) outText.textContent = output;
-  const summary = byId('ui2OutputSummary');
-  if (summary) summary.textContent = output;
+  const text = byId('ui2LevelsText');
+  if (text) text.textContent = levels;
+}
+
+// holdSpeakerFloor sets how far the speaker section may shrink when the
+// sidebar is short: the pinned group plus a row and a quarter of the others (or
+// all of them when there are fewer). Measured,
+// because a row is one line or two depending on its name and pill, and the
+// text size zooms all of it. The entries below give up their room only after
+// that (shell2.css).
+function holdSpeakerFloor(lists) {
+  const section = lists.closest('.ui2-spk');
+  if (!section) return;
+  const pinned = lists.querySelector('.ui2-spk-pinned');
+  const pinnedList = pinned && pinned.querySelector('.ui2-spk-list');
+  const scroll = lists.querySelector('.ui2-spk-scroll');
+  const row = lists.querySelector('.ui2-spk-row');
+  const rowH = row ? row.offsetHeight + 2 : 0;
+  const capped = (h, n) => (rowH ? Math.min(h, rowH * n) : h);
+  // The pinned group down to two and a half rows (its list scrolls below
+  // that), the others down to a row and a quarter: the cut row says there is
+// more.
+  const pinnedH = pinned ? pinned.offsetHeight - (pinnedList ? pinnedList.offsetHeight - capped(pinnedList.scrollHeight, 2.5) : 0) : 0;
+  const others = scroll ? capped(scroll.scrollHeight, 1.25) : 0;
+  const pad = section.offsetHeight - lists.offsetHeight;
+  const floor = pinnedH + others + Math.max(0, pad);
+  section.style.minHeight = floor > 0 ? `${Math.ceil(floor)}px` : '';
 }
 
 // mirrorShellBadges copies the counts the tab bar shows onto the sidebar:

@@ -41,25 +41,18 @@ export function shellMarkup() {
   <div class="ui2-sidebar" id="ui2Sidebar">
     <div class="ui2-side-top">
       <div class="ui2-brand"></div>
-      <div class="ui2-rooms u-pop-anchor" id="ui2Rooms" role="group" aria-labelledby="ui2RoomsLabel">
-        <div class="ui2-rooms-label" id="ui2RoomsLabel">${escapeHtml(t('ui2.rooms.label'))}</div>
-        <button type="button" class="ui2-room-btn" id="ui2RoomBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="ui2RoomPop" aria-label="${escapeAttr(t('ui2.rooms.none'))}">
-          <span class="ui2-room-btn-body" id="ui2RoomBtnBody"></span>
-          <span class="ui2-caret" aria-hidden="true">&#9662;</span>
-        </button>
-        <div class="u-popover ui2-room-pop" id="ui2RoomPop" role="dialog" aria-labelledby="ui2RoomPopTitle" hidden>
-          ${popHead('ui2RoomPopTitle', 'ui2.rooms.listLabel')}
-          <div class="ui2-room-list" id="ui2RoomList"></div>
-          <button type="button" class="u-btn u-btn--secondary ui2-room-add" id="ui2RoomAdd">${escapeHtml(t('nav.setupStick'))}</button>
-        </div>
-      </div>
     </div>
+    <section class="ui2-spk" id="ui2Speakers" aria-labelledby="ui2SpkHead">
+      <h2 class="u-sr-only" id="ui2SpkHead">${escapeHtml(t('ui2.side.speakers'))}</h2>
+      <div class="ui2-spk-lists" id="ui2SpkLists"></div>
+    </section>
     <nav class="ui2-side-nav" aria-label="${escapeAttr(t('ui2.nav.label'))}">
       <div class="ui2-side-scroll">${groups}</div>
       <div class="ui2-side-small">${NAV.bottom.map(navItemHTML).join('')}</div>
     </nav>
     <div class="ui2-side-bottom">
       <div class="ui2-app-settings" id="ui2AppSettings" role="group" aria-label="${escapeAttr(t('ui2.nav.appSettings'))}"></div>
+      <div class="ui2-side-version" id="ui2Version"></div>
     </div>
   </div>
   <main class="ui2-main" id="ui2Main" tabindex="-1">
@@ -75,18 +68,20 @@ export function shellMarkup() {
         <div class="ui2-more-body" id="ui2MoreBody"></div>
       </div>
     </div>
-    <div class="ui2-player-output u-pop-anchor">
-      <button type="button" class="u-btn u-btn--secondary ui2-output-btn" id="ui2OutputBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="ui2OutputPop">
-        <span class="ui2-output-kicker">${escapeHtml(t('ui2.player.output'))}</span>
-        <span class="ui2-output-text" id="ui2OutputText"></span>
+    <div class="ui2-player-sound">
+    <div class="ui2-player-volume"></div>
+    <div class="ui2-player-groupvol" id="ui2GroupVolSlot"></div>
+    <div class="ui2-player-levels u-pop-anchor">
+      <button type="button" class="u-btn u-btn--secondary ui2-levels-btn" id="ui2LevelsBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="ui2LevelsPop">
+        <span class="ui2-output-kicker">${escapeHtml(t('ui2.player.levels'))}</span>
+        <span class="ui2-output-text" id="ui2LevelsText"></span>
       </button>
-      <div class="u-popover ui2-player-pop" id="ui2OutputPop" role="dialog" aria-labelledby="ui2OutputTitle" hidden>
-        ${popHead('ui2OutputTitle', 'ui2.player.outputTitle')}
-        <p class="ui2-output-summary" id="ui2OutputSummary"></p>
-        <div class="ui2-output-body" id="ui2OutputBody"></div>
+      <div class="u-popover ui2-player-pop" id="ui2LevelsPop" role="dialog" aria-labelledby="ui2LevelsTitle" hidden>
+        ${popHead('ui2LevelsTitle', 'ui2.player.levelsTitle')}
+        <div class="ui2-levels-body" id="ui2LevelsBody"></div>
       </div>
     </div>
-    <div class="ui2-player-volume"></div>
+    </div>
     <p class="ui2-player-empty" hidden>${escapeHtml(t('ui2.player.empty'))}</p>
   </section>
 </div>`;

@@ -29,8 +29,13 @@ html.ui2 {
   --u-space: 8px;
   --u-target: 40px;
   --u-radius: 8px;
-  --u-sidebar-w: 248px;
+  --u-sidebar-w: 264px;
   --u-player-min: 80px;
+  /* The sidebar speaker list: one row's height and how many rows show before
+     a list scrolls. Half a row shows, which says that the list goes on. */
+  --u-spk-row: 44px;
+  --u-spk-visible: 6.5;
+  --u-spk-pinned: 4.5;
   --u-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
@@ -356,16 +361,19 @@ html.ui2 .ui2-side-top {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px 8px 8px;
+  padding: 8px 8px 2px;
 }
 
-/* The navigation landmark holds only the entries: the room switcher above it
-   and the app settings below it are not navigation. Only the list of entries
-   scrolls; the switcher and the bottom area stay outside it, so their popovers
-   are never clipped by the scroll box. */
+/* The navigation landmark holds only the entries: the speaker list above it
+   and the app settings below it are not navigation. When the sidebar is short
+   the speaker list gives up its room first (it scrolls on its own); the
+   entries scroll only as the last resort, in a window too short for both. The
+   bottom area stays outside every scroll box, so its menus are never clipped. */
 html.ui2 .ui2-side-nav {
   display: flex;
-  flex: 1 1 auto;
+  /* Shrinks only once the speaker section is at its floor (a minimal factor,
+     not 0, so a window too short for both still keeps the entries in it). */
+  flex: 1 0.001 auto;
   flex-direction: column;
   min-height: 0;
 }
@@ -373,17 +381,17 @@ html.ui2 .ui2-side-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 8px;
+  padding: 6px 8px 2px;
 }
 html.ui2 .ui2-side-small {
-  padding: 8px 8px 0;
+  padding: 4px 8px 0;
   border-top: 1px solid var(--u-border);
 }
 html.ui2 .ui2-side-bottom {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  gap: 4px;
+  padding: 4px 8px 6px;
 }
 
 html.ui2 .ui2-brand {
@@ -394,95 +402,161 @@ html.ui2 .ui2-brand {
   padding-inline: 8px;
 }
 html.ui2 .ui2-brand .app-logo { color: var(--u-text); }
-html.ui2 .ui2-brand .app-brand { color: var(--u-text); font-family: var(--u-font); font-size: 20px; }
+html.ui2 .ui2-brand .app-brand { color: var(--u-text); font-family: var(--u-font); font-size: 18px; }
 html.ui2 .ui2-brand .app-brand-accent { color: var(--u-accent); }
+/* The tagline lines stay in the page (the current layout shows them) but not
+   in the frame: the sidebar's height belongs to the speakers and the entries. */
 html.ui2 .ui2-brand .app-tagline,
-html.ui2 .ui2-brand .app-supported {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--u-muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-html.ui2 .ui2-brand .app-tagline { margin-top: 8px; }
+html.ui2 .ui2-brand .app-supported { display: none; }
 
-/* Room switcher. */
-html.ui2 .ui2-rooms-label {
-  padding: 0 8px 8px;
+html.ui2 .ui2-room-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The speaker list (#1284, speakers.js): every speaker on the network, the
+   group you control pinned on top, the others scrolling on their own. Both
+   lists are capped, so with eight or more speakers (or a big group) the
+   navigation below never scrolls away. */
+/* How the height is shared: the speaker section gives up its room first
+   (flex-shrink 100 against the entries' 0.001), down to a floor of the pinned
+   group plus a row and a quarter of the others (mount.js measures it and sets it as
+   the section's min-height), which is where the others scroll on their own.
+   Only in a window too short even for that floor do the entries scroll, as
+   the last resort; the speaker list scrolling never moves them. */
+html.ui2 .ui2-spk {
+  display: flex;
+  flex: 0 100 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--u-border);
+}
+html.ui2 .ui2-spk-lists {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+html.ui2 .ui2-spk-pinned {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--u-border);
+}
+html.ui2 .ui2-spk-subhead {
+  padding: 0 8px 4px;
   color: var(--u-muted);
   font-size: 12px;
   font-weight: 600;
 }
-html.ui2 .ui2-room-btn {
+html.ui2 .ui2-spk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 .ui2-spk-pinned .ui2-spk-list {
+  min-height: 0;
+  max-height: calc(var(--u-spk-row) * var(--u-spk-pinned));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html.ui2 .ui2-spk-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: calc(var(--u-spk-row) * var(--u-spk-visible));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Named for screen readers (the section's heading); on screen the sub
+   headings and the rows say it, and the height goes to the rows. */
+html.ui2 .u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+html.ui2 .ui2-spk-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 56px;
-  padding: 8px 8px 8px 16px;
-  border: 1px solid var(--u-border);
+  gap: 4px;
+}
+html.ui2 .ui2-spk-pick {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+  min-height: var(--u-target);
+  padding: 2px 8px 2px 16px;
+  border: 0;
   border-radius: var(--u-radius);
-  background: var(--u-surface);
+  background: transparent;
   color: var(--u-text);
   font-family: var(--u-font);
   font-size: 14px;
   text-align: start;
   cursor: pointer;
 }
-html.ui2 .ui2-room-btn-body { flex: 1 1 auto; min-width: 0; }
-html.ui2 .ui2-room-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-html.ui2 .ui2-room-name {
-  overflow: hidden;
-  font-weight: 700;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-html.ui2 .ui2-room-name--none { color: var(--u-muted); font-weight: 600; }
-html.ui2 .ui2-room-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-html.ui2 .ui2-caret { color: var(--u-muted); font-size: 12px; }
-html.ui2 .ui2-room-pop {
-  top: calc(100% + 8px);
+html.ui2 .ui2-spk-pick:hover { background: var(--u-surface); }
+html.ui2 .ui2-spk-row.is-current .ui2-spk-pick { background: var(--u-selected); }
+html.ui2 .ui2-spk-row.is-current .ui2-spk-pick::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
   inset-inline-start: 0;
-  width: calc(var(--u-sidebar-w) - 16px);
+  width: 4px;
+  border-radius: 2px;
+  background: var(--u-accent);
+}
+/* One line when the name and the pill fit, the pill drops below the name when
+   they do not: a name is never cut to a few letters for a pill. */
+html.ui2 .ui2-spk-name {
+  flex: 1 1 6em;
   min-width: 0;
-}
-html.ui2 .ui2-room-list-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-html.ui2 .ui2-room-row { flex-wrap: wrap; padding-block: 8px; }
-html.ui2 .ui2-room-row-text {
-  display: flex;
-  flex: 1 1 120px;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-html.ui2 .ui2-room-row-name {
   overflow: hidden;
   font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-html.ui2 .ui2-room-row-meta { color: var(--u-muted); font-size: 12px; }
-html.ui2 .ui2-room-empty { margin: 0 8px 8px; color: var(--u-muted); font-size: 14px; }
-html.ui2 .ui2-room-add { width: 100%; }
+html.ui2 .ui2-spk-pick .ui2-room-badges { flex: 0 1 auto; }
+/* Offline: greyed by colour, never by opacity, so the words keep their 4.5:1;
+   the pill says "Offline" in words. */
+html.ui2 .ui2-spk-row.is-offline .ui2-spk-name { color: var(--u-muted); font-weight: 400; }
+html.ui2 .ui2-spk-act {
+  flex: 0 0 auto;
+  border: 1px solid var(--u-border);
+  font-size: 18px;
+  font-weight: 700;
+}
+html.ui2 .ui2-spk-act:hover { background: var(--u-surface); }
+html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: var(--u-muted); }
+html.ui2 .ui2-spk-note,
+html.ui2 .ui2-spk-empty { margin: 4px 8px; color: var(--u-muted); font-size: 12px; }
+
+/* A short window or a larger text size: fewer rows before the lists scroll. */
+@media (height <= 700px) {
+  html.ui2 { --u-spk-visible: 3.5; --u-spk-pinned: 2.5; }
+}
+html.ui2.a11y-scale-l,
+html.ui2.a11y-scale-xl { --u-spk-visible: 3.5; --u-spk-pinned: 2.5; }
 
 /* Navigation. Groups are labelled groups of buttons, not a tablist. */
-html.ui2 .ui2-nav-group + .ui2-nav-group { margin-top: 16px; }
+html.ui2 .ui2-nav-group + .ui2-nav-group { margin-top: 8px; }
 html.ui2 .ui2-nav-heading {
-  padding: 0 16px 8px;
+  padding: 0 16px 4px;
   color: var(--u-muted);
   font-size: 12px;
   font-weight: 700;
@@ -575,7 +649,7 @@ html.ui2 .ui2-main-inner > .view { flex: 1 0 auto; }
 html.ui2 .ui2-player {
   grid-area: player;
   display: grid;
-  grid-template-columns: minmax(0, 2fr) auto auto auto minmax(240px, 1fr);
+  grid-template-columns: minmax(0, 2fr) auto auto minmax(240px, 1fr);
   align-items: center;
   gap: 8px;
   min-height: var(--u-player-min);
@@ -584,6 +658,9 @@ html.ui2 .ui2-player {
   background: var(--u-sidebar);
   color: var(--u-text);
   font-family: var(--u-font);
+}
+html.ui2 .ui2-player.is-grouped {
+  grid-template-columns: minmax(0, 2fr) auto auto minmax(360px, 1.4fr);
 }
 html.ui2 .ui2-player > * { min-width: 0; }
 html.ui2 .ui2-player-now {
@@ -635,11 +712,13 @@ html.ui2 .ui2-player .volume-control button.vol-mute {
   min-width: var(--u-target);
   min-height: var(--u-target);
 }
-html.ui2 .ui2-output-btn {
+html.ui2 .ui2-levels-btn {
+  flex: 0 1 auto;
   flex-direction: column;
   align-items: flex-start;
   gap: 0;
-  max-width: 240px;
+  min-width: 0;
+  max-width: 180px;
   padding-block: 4px;
   text-align: start;
 }
@@ -655,7 +734,40 @@ html.ui2 .ui2-player-pop {
   inset-inline-end: 0;
   width: min(400px, calc(100vw - 32px));
 }
-html.ui2 .ui2-output-summary { margin: 0 8px 8px; color: var(--u-muted); font-size: 14px; }
+/* The sound area: the speaker volume and, while grouped, the group volume
+   and the Levels button. Grouped, the group slider takes the place of the
+   speaker's own (its level is the first row in Levels); mute stays. */
+html.ui2 .ui2-player-sound {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+html.ui2 .ui2-player-volume { display: flex; flex: 1 1 auto; min-width: 0; }
+html.ui2 .ui2-player.is-grouped .ui2-player-volume { flex: 0 0 auto; }
+html.ui2 .ui2-player.is-grouped .volume-control :is(#volDown, #musicVolume, #volUp, #musicVolumeVal) { display: none; }
+html.ui2 .ui2-player-groupvol:empty { display: none; }
+html.ui2 .ui2-player-groupvol { flex: 1 1 auto; min-width: 0; }
+html.ui2 .ui2-player-groupvol .group-vol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: none;
+  margin: 0;
+}
+html.ui2 .ui2-player-groupvol .group-vol-row input[type=range] { flex: 1 1 auto; width: 100%; min-width: 0; }
+html.ui2 .ui2-player-groupvol .group-vol-row input[type=range] { min-width: 96px; }
+/* The slider carries its name (aria-label "Group volume") and the Levels
+   button next to it says the group; the visible caption gives its room to the
+   slider. */
+html.ui2 .ui2-player-groupvol .vol-icon,
+html.ui2 .ui2-player-groupvol .group-vol-row > .muted { display: none; }
+/* Levels is sliders only: the chips that choose speakers stay hidden, the
+   sidebar is the one place that chooses. */
+html.ui2 .ui2-player-pop .group-label,
+html.ui2 .ui2-player-pop .group-chips,
+html.ui2 .ui2-player-pop .group-member-note { display: none; }
+html.ui2 .ui2-player-pop .group-member-vols { margin: 0; }
 html.ui2 .ui2-player-pop .group-control,
 html.ui2 .ui2-player-pop .queue-controls,
 html.ui2 .ui2-player-pop .source-buttons { margin: 0 0 8px; }
@@ -679,17 +791,27 @@ html.ui2 .worldmap-invite { bottom: calc(var(--u-player-min) + 24px); }
    the player puts the volume on a row of its own. A container query, not a
    media query, because the zoom on the body is invisible to the latter. */
 @container (width < 1000px) {
-  html.ui2 .ui2-player { grid-template-columns: minmax(0, 1fr) auto auto auto; }
-  html.ui2 .ui2-player-volume { grid-column: 1 / -1; }
+  html.ui2 .ui2-player,
+  html.ui2 .ui2-player.is-grouped { grid-template-columns: minmax(0, 1fr) auto auto; }
+  html.ui2 .ui2-player-sound { grid-column: 1 / -1; }
 }
 
-/* A short window or a larger text size: the tagline lines give their room to
-   the navigation, which is the part of the sidebar that has to stay usable. */
-@media (height <= 700px) {
-  html.ui2 .ui2-brand .app-tagline,
-  html.ui2 .ui2-brand .app-supported { display: none; }
+
+/* The app's version line ("Version ... Check for app updates") at the bottom
+   of the sidebar, a footnote in the frame. A real update notice is a banner
+   and moves to the banner region (mount.js, watchAppUpdateBanner). */
+html.ui2 .ui2-side-version .app-update-banner.app-update-quiet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  max-width: none;
+  margin: 0;
+  padding: 0 8px;
+  color: var(--u-muted);
+  font-family: var(--u-font);
+  font-size: 12px;
+  line-height: 1.4;
 }
-html.ui2.a11y-scale-l .ui2-brand .app-tagline,
-html.ui2.a11y-scale-l .ui2-brand .app-supported,
-html.ui2.a11y-scale-xl .ui2-brand .app-tagline,
-html.ui2.a11y-scale-xl .ui2-brand .app-supported { display: none; }
+html.ui2 .ui2-side-version .app-update-banner.app-update-quiet.hidden { display: none; }
+html.ui2 .ui2-side-version .app-update-quiet .footer-link { color: var(--u-accent); font-size: 12px; }
+html.ui2 .ui2-side-version .app-update-quiet-note { color: var(--u-muted); }

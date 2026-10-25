@@ -14,6 +14,9 @@ import {
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, escapeAttr, escapeHtml, getBoxLabel, showError, showToast } from '../../utils.js';
+// The UI 2.0 sidebar shows the same pending marks and the player the same
+// group volume; both are no-ops while the preview shell is not mounted.
+import { renderShellSpeakers, syncShellGroupPanel } from '../../shell2/mount.js';
 import { deps } from './deps.js';
 
 // ---- Group control (below the presets, next to Transfer) ----
@@ -214,8 +217,9 @@ let groupEditTimer = null;
 let pendingGroupMaster = '';
 
 // toggleGroupMember is the one way a speaker is taken in or out of the group
-// led by the selected speaker.
-function toggleGroupMember(host, port) {
+// led by the selected speaker: the Music view's chips and the UI 2.0 sidebar's
+// "+" and "-" both call it, so there is a single group edit path.
+export function toggleGroupMember(host, port) {
   if (groupOpPending.has(host)) return groupOpChain;
   const lead = groupControlBox();
   const leadHost = (lead && lead.host) || '';
@@ -237,6 +241,12 @@ function toggleGroupMember(host, port) {
   return groupOpChain;
 }
 
+// groupEditPendingHosts lists the speakers whose group edit is waiting or
+// running, for the UI 2.0 sidebar's pending marks.
+export function groupEditPendingHosts() {
+  return new Set([...pendingGroupEdits.keys(), ...groupOpPending]);
+}
+
 // markGroupChipPending gives the click its feedback straight away: the chip
 // shows the state it is about to have, so a second click is never made because
 // the first looked ignored.
@@ -250,6 +260,10 @@ function markGroupChipPending() {
     const h = chip.dataset.host;
     chip.classList.toggle('pending', pendingGroupEdits.has(h) || groupOpPending.has(h));
   });
+  // The sidebar repaints from groupEditPendingHosts. This runs on every change
+  // of the pending set, including the batch's end on a path that repaints
+  // nothing else (a refusal, a stock master, a batch that was dropped).
+  renderShellSpeakers(true);
 }
 
 function runPendingGroupEdits() {
@@ -507,11 +521,18 @@ function noteGroupPanelWrite() { groupPanelState.wroteAt = Date.now(); }
 
 // renderGroupControl paints the group chips + (when a group is active) the group
 // volume slider into #groupControl, based on the selected box.
+//
+// In the UI 2.0 preview the player has a slot for the group volume
+// (#ui2GroupVolSlot): the group slider goes there, next to the speaker volume,
+// and the chips and per-speaker levels stay in #groupControl, which the shell
+// shows as the Levels panel. Without the slot (the preview off) the markup is
+// exactly what it always was.
 export function renderGroupControl() {
   const cont = $('groupControl');
   if (!cont) return;
+  const slot = $('ui2GroupVolSlot');
   const sel = state.currentBox;
-  if (!sel || sel.kind === 'stock') { cont.innerHTML = ''; return; }
+  if (!sel || sel.kind === 'stock') { clearGroupControl(cont, slot); return; }
   // Manage the group through its master: when the selected speaker is a zone
   // follower, box is its master (so chips + volume act on the real group and the
   // member can be removed from any selection); otherwise box is the selection.
@@ -523,10 +544,11 @@ export function renderGroupControl() {
   // as a unit yet, so offering its halves only produced a "not groupable" error on
   // click and left them cluttering the +N row (reported on the music tab,
   // 2026-08-31). This is the same exclusion the Multi-room grid applies, via the
-  // shared groupCandidates helper; the click-time guard in runGroupMemberToggle
-  // stays as a defensive fallback for a pair that forms while the row is stale.
+  // shared groupCandidates helper (the UI 2.0 sidebar reads it too); the
+  // click-time guard in runGroupMemberToggle stays as a defensive fallback for a
+  // pair that forms while the row is stale.
   const others = groupCandidates(box, state.zoneLive, state.boxes);
-  if (others.length === 0) { cont.innerHTML = ''; return; }
+  if (others.length === 0) { clearGroupControl(cont, slot); return; }
   const slaves = currentGroupSlaves();
   // The tick must come from the SAME list the click acts on. It used to be
   // painted from each speaker's own zone self-report while toggleGroupMember
@@ -556,12 +578,13 @@ export function renderGroupControl() {
       + `<input type="range" id="memberVol-${id}" data-host="${b.host}" data-port="${b.port}" min="0" max="100" step="1" value="${v}" aria-label="${escapeAttr(t('group.memberVolumeLabel', { name: getBoxLabel(b) }))}" />`
       + `<span class="vol-val" id="memberVolVal-${id}">${v}</span></div>`;
   }).join('');
-  const volRow = slaves.length > 0
+  const groupVolRow = slaves.length > 0
     ? `<div class="group-vol-row"><span class="vol-icon" aria-hidden="true">&#128266;</span>`
       + `<input type="range" id="groupVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('group.volumeLabel'))}" />`
       + `<span class="muted small">${escapeHtml(t('group.volumeLabel'))}</span></div>`
-      + `<div class="group-member-vols">${memberRows}</div>`
     : '';
+  const memberVols = slaves.length > 0 ? `<div class="group-member-vols">${memberRows}</div>` : '';
+  const volRow = groupVolRow + memberVols;
   // When a member is selected, name the group it belongs to so it is clear the
   // panel below now manages that group (not the empty state it used to show).
   const memberNote = isMember
@@ -571,17 +594,29 @@ export function renderGroupControl() {
   // the user is touching it. Everything below re-binds handlers to elements the
   // rebuild creates, so skipping here keeps the live ones and their state.
   const signature = JSON.stringify([box.host, isMember, others.map(b => b.host), slaves.map(b => b.host)]);
-  if (signature === groupPanelState.signature && cont.querySelector('.group-chips')) {
+  // The panel is whole when its chips are drawn and, with the player's slot,
+  // the group slider sits in the slot whenever there is a group.
+  const drawn = !!cont.querySelector('.group-chips')
+    && (!slot || slaves.length === 0 || !!slot.querySelector('#groupVolume'));
+  syncShellGroupPanel(slaves.length > 0);
+  if (signature === groupPanelState.signature && drawn) {
     // Same speakers as last time: only write the values into the rows that
     // already exist, and not even that while a finger is on a slider.
     if (!groupPanelBusy() && members.length) loadGroupMemberVolumes(members);
     return;
   }
-  if (groupPanelBusy() && cont.querySelector('.group-chips')) return;
+  if (groupPanelBusy() && drawn) return;
   groupPanelState.signature = signature;
-  cont.innerHTML = `<span class="group-label muted small">${escapeHtml(t('group.label'))}</span>`
-    + memberNote
-    + `<div class="group-chips">${chips}</div>${volRow}`;
+  if (slot) {
+    slot.innerHTML = groupVolRow;
+    cont.innerHTML = `<span class="group-label muted small">${escapeHtml(t('group.label'))}</span>`
+      + memberNote
+      + `<div class="group-chips">${chips}</div>${memberVols}`;
+  } else {
+    cont.innerHTML = `<span class="group-label muted small">${escapeHtml(t('group.label'))}</span>`
+      + memberNote
+      + `<div class="group-chips">${chips}</div>${volRow}`;
+  }
   cont.querySelectorAll('.group-chip').forEach(chip => {
     chip.onclick = () => toggleGroupMember(chip.dataset.host, parseInt(chip.dataset.port, 10));
   });
@@ -613,6 +648,14 @@ export function renderGroupControl() {
     };
   });
   if (members.length) loadGroupMemberVolumes(members);
+}
+
+// clearGroupControl empties the panel, and the player's group volume slot
+// with it, when there is no group to manage.
+function clearGroupControl(cont, slot) {
+  cont.innerHTML = '';
+  if (slot) slot.innerHTML = '';
+  syncShellGroupPanel(false);
 }
 
 // purgeGroupStateForSpeaker drops the pending group edits of a speaker STR was

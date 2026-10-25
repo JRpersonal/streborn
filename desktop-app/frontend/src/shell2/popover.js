@@ -1,13 +1,10 @@
-// shell2/popover.js: the one popover behaviour of UI 2.0 (room switcher,
-// More, Output).
+// shell2/popover.js: the one popover behaviour of UI 2.0 (More, Levels).
 //
 // Keyboard first: Enter or Space on the trigger opens it and puts focus on the
-// current row (or the first control); Escape closes it and gives focus back to
-// the trigger; a click anywhere outside, or focus moving outside, closes it.
-// Arrow keys move between rows only where the popover is a LIST (the room
-// switcher). In More and
-// Output the arrows belong to the controls inside, a volume slider above all,
-// and a text field or a select never loses its own arrow keys anywhere.
+// first control; Escape closes it and gives focus back to the trigger; a click
+// anywhere outside, or focus moving outside, closes it. The arrow keys belong
+// to the controls inside, a volume slider above all: no popover is a list (the
+// speakers live in the sidebar, speakers.js).
 //
 // Runtime only: it touches the DOM when called, never at import.
 
@@ -19,17 +16,13 @@ function visible(el) {
 
 export function wirePopover(trigger, panel, opts = {}) {
   if (!trigger || !panel) return null;
-  const roving = !!opts.roving;
   trigger.setAttribute('aria-expanded', 'false');
   if (panel.id) trigger.setAttribute('aria-controls', panel.id);
 
-  const rows = () => [...panel.querySelectorAll('.u-row')].filter(visible);
   const isOpen = () => !panel.hidden;
 
   const focusInitial = () => {
-    const current = rows().find((r) => r.getAttribute('aria-pressed') === 'true' || r.hasAttribute('aria-current'));
-    const first = current || rows()[0]
-      || [...panel.querySelectorAll(FOCUSABLE)].filter(visible).find((el) => !el.classList.contains('u-pop-close'))
+    const first = [...panel.querySelectorAll(FOCUSABLE)].filter(visible).find((el) => !el.classList.contains('u-pop-close'))
       || panel.querySelector('.u-pop-close');
     if (first) first.focus();
   };
@@ -61,21 +54,7 @@ export function wirePopover(trigger, panel, opts = {}) {
       e.preventDefault();
       e.stopPropagation();
       close(true);
-      return;
     }
-    if (!roving) return;
-    const tag = (e.target && e.target.tagName) || '';
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
-    const list = rows();
-    if (!list.length) return;
-    e.preventDefault();
-    const at = list.indexOf(document.activeElement);
-    let next = 0;
-    if (e.key === 'End') next = list.length - 1;
-    else if (e.key === 'ArrowDown') next = at < 0 ? 0 : Math.min(list.length - 1, at + 1);
-    else if (e.key === 'ArrowUp') next = at < 0 ? list.length - 1 : Math.max(0, at - 1);
-    list[next].focus();
   });
   trigger.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isOpen()) { e.preventDefault(); close(true); }

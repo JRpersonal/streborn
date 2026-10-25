@@ -1,7 +1,7 @@
 // speakertile.js: what one speaker's tile says about it, as plain flags.
 //
 // Two places draw a speaker with its live state: the speaker picker on the
-// Music tab (renderBoxSelect in main.js) and the room switcher of the UI 2.0
+// Music tab (renderBoxSelect in main.js) and the sidebar speaker list of the UI 2.0
 // preview (shell2/rooms.js). They must never disagree about whether a speaker
 // is playing, offline or due an update, so both read the flags from here and
 // only the markup differs.

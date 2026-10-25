@@ -52,7 +52,9 @@ describe('UI 2.0 tokens', () => {
         }
       });
       it('text, accent and the pill colours stay readable on a selected row', () => {
-        for (const fg of ['u-text', 'u-accent', 'u-ok', 'u-muted']) {
+        // The danger and warn pills too: the speaker you control can be the
+        // offline one, and its row is the selected one.
+        for (const fg of ['u-text', 'u-accent', 'u-ok', 'u-muted', 'u-danger', 'u-warn']) {
           expect(ratio(col(fg), col('u-selected')), `${fg} on u-selected`).toBeGreaterThanOrEqual(4.5);
         }
       });
@@ -76,6 +78,20 @@ describe('UI 2.0 tokens', () => {
       });
     });
   }
+
+  it('greys an offline speaker by colour, never by opacity', () => {
+    const offline = [...css.matchAll(/([^{}]*is-offline[^{}]*)\{([^}]*)\}/g)];
+    expect(offline.length).toBeGreaterThan(0);
+    for (const m of offline) {
+      expect(m[2], m[1]).not.toMatch(/opacity/);
+      expect(m[2], m[1]).toContain('var(--u-muted)');
+    }
+  });
+
+  it('sizes the sidebar speaker lists with tokens', () => {
+    expect(base['u-spk-row']).toBe('44px');
+    expect(Number(base['u-spk-visible'])).toBeGreaterThan(Number(base['u-spk-pinned']));
+  });
 
   it('draws the danger button edge in the danger colour', () => {
     expect(css).toMatch(/html\.ui2 \.u-btn--danger \{[^}]*border-color: var\(--u-danger\)/);

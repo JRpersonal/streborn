@@ -43,7 +43,7 @@ describe('popover focus', () => {
     panel.hidden = true;
     const trigger = fakeEl('trigger');
     const outside = fakeEl('nav item');
-    const pop = wirePopover(trigger, panel, { roving: true });
+    const pop = wirePopover(trigger, panel);
     pop.open();
     return { pop, panel, trigger, row, outside };
   };

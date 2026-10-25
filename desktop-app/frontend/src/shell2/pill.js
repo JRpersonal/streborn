@@ -23,11 +23,11 @@ export const PILL_KINDS = Object.freeze([
 // The words on each pill. Existing keys are reused where the app already says
 // the same thing, so the two layouts name a state identically.
 export const PILL_LABEL_KEYS = Object.freeze({
-  playing: 'speaker.playingNow',
+  playing: 'ui2.pill.playing',
   standby: 'ui2.pill.standby',
   strNotRunning: 'speaker.strNotRunningBadge',
   boseOriginal: 'speaker.needsInstallBadge',
-  notReachable: 'ui2.pill.notReachable',
+  notReachable: 'ui2.pill.offline',
   stereoPair: 'ui2.pill.stereoPair',
   startingUp: 'ui2.pill.startingUp',
   installFailed: 'ui2.pill.installFailed',
@@ -74,7 +74,7 @@ export function speakerChipKinds(tile) {
 }
 
 // pillLabel is the pill's words as plain text, for an accessible name that
-// has to say the state too (the room switcher button).
+// has to say the state too (a sidebar row).
 export function pillLabel(kind) {
   const key = PILL_LABEL_KEYS[kind];
   return key ? t(key) : '';

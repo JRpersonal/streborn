@@ -8,7 +8,7 @@ import { sourceAccountFrom } from '../../nowsourceaccount.js';
 import { acceptSpotifyReply, recallSettled, snapshotFromReply } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
 import { statusTickScope } from '../../statusrefreshscope.js';
-import { renderShellRooms } from '../../shell2/mount.js';
+import { renderShellSpeakers } from '../../shell2/mount.js';
 import { nextStuckBuffering } from '../../stuckbuffering.js';
 import {
   activeSlotFromLocation,
@@ -444,9 +444,9 @@ export async function refreshStatus() {
     // poller can refresh it the instant a track arrives, not only on the next
     // status poll. It is the only place the running title is shown.
     renderNowPlayingBar();
-    // The UI 2.0 room switcher marks the controlled speaker playing or in
+    // The UI 2.0 sidebar marks the controlled speaker playing or in
     // standby from this same reading (a no-op with the preview off).
-    renderShellRooms();
+    renderShellSpeakers();
 
     highlightActiveSource();
   } catch {
