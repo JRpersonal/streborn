@@ -66,12 +66,14 @@ releases later.
   appears in the player; keys, now playing and most settings belong to one
   speaker, so the speakers are the anchor of the whole window. One list
   answers both questions: which speaker you control (one click on its row)
-  and who plays along (`+` on an idle speaker adds it to what you control,
+  and who plays along (`+` on an idle speaker adds it to what's playing,
   `−` takes a member out again). Choosing a row and its `+` are two
   different clicks. A stereo pair is one row, "Living room (stereo)",
-  because it only plays as a whole. The group you control stays pinned on
-  top; with many speakers the rest of the list scrolls on its own, so the
-  music entries below it never scroll away. Offline speakers are greyed and
+  because it only plays as a whole. The playing group stays pinned on
+  top (the one you control first when several play; with nothing playing,
+  the speaker you control, so a group can be put together before Play);
+  with many speakers the rest of the list scrolls on its own, so the music
+  entries below it never scroll away. Offline speakers are greyed and
   say "Offline"; Bose originals say "Ready for STR" and open the setup. This
   replaces the room switcher and the separate output popover of the first
   draft.
@@ -137,7 +139,7 @@ acceptance criteria for every phase.
 ## Phases
 
 1. Tokens and components; the shell with the speaker sidebar (every
-   speaker, `+` to play along, the group you control pinned) and the
+   speaker, `+` to play along, the playing group pinned) and the
    persistent player with group volume and per-speaker levels.
 2. Radio, Library, Recently played, Spotify.
 3. Speakers: list, one speaker, groups and stereo pairs.

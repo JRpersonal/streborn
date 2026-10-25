@@ -5,10 +5,11 @@
 // questions of the window:
 //
 //   - which speaker you control: one click on its row;
-//   - who plays along: "+" on an idle speaker adds it to the group of the
-//     speaker you control, "-" on a member takes it out again.
+//   - who plays along: "+" on an idle speaker adds it to what's playing (or,
+//     with nothing playing, to the speaker you control), "-" on a member
+//     takes it out again.
 //
-// The group you control is pinned on top, the rest scrolls on its own, so with
+// The playing group is pinned on top, the rest scrolls on its own, so with
 // eight or more speakers the navigation below never scrolls away. A stereo pair
 // is one row ("Living room (stereo)"), because it only plays as a whole.
 //
@@ -34,31 +35,59 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //        pending     Set of hosts whose group edit waits or runs
 //        searching   discovery has not answered yet
 //
-// The pinned group is the group of the speaker you control: its master (the
-// speaker itself, or the master it follows) and the master's members. That is
-// the group a "+" or "-" edits, and it is pinned whether or not it plays yet,
-// so a group can be put together before pressing Play.
+// The pinned group is the group that plays (#1284: "the playing group stays
+// pinned on top", "`+` on the idle ones ... adding it to what's playing"):
+//
+//   - the group of the speaker you control, when it plays;
+//   - else the first group that plays, in the list's order (you control an
+//     idle speaker while music plays elsewhere: "+" adds to that music);
+//   - else, with nothing playing, the group of the speaker you control, so a
+//     group can be put together before pressing Play.
+//
+// The group is its master (the speaker itself, or the master it follows) and
+// the master's members. "+" and "-" edit exactly that group: the markup hands
+// its master to the click (data-master), so the edit never lands on another.
 export function sidebarModel(boxes, ctx = {}) {
   const list = (boxes || []).filter(Boolean);
   const zl = ctx.zoneLive || {};
   const rows = roomItems(list, ctx);
-  const sel = ctx.currentBox ? (list.find((b) => b.host === ctx.currentBox.host) || ctx.currentBox) : null;
+  const boxOf = (host) => list.find((b) => b.host === host);
+  const sel = ctx.currentBox ? (boxOf(ctx.currentBox.host) || ctx.currentBox) : null;
   const strSel = sel && sel.kind !== 'stock' ? sel : null;
-  const master = strSel ? (resolvePlayTarget(strSel, zl, list) || strSel) : null;
-  const members = master ? groupMembersOf(master, zl, list) : [];
-  const memberHosts = new Set(members.map((m) => m.ip).filter(Boolean));
-  // The members the player shows (group volume, Levels): the same list, so
-  // the heading and "+ n more" never count a speaker the player leaves out.
-  const memberBoxes = master ? groupMemberBoxes(master, zl, list) : [];
-  const groupHosts = new Set(master ? [master.host, ...memberHosts] : []);
-  // A stereo pair plays on its own (#792): while you control one, nothing can
+  const playingHosts = new Set(rows.filter((r) => r.playing && !r.offline).flatMap((r) => r.hosts));
+  const groupOf = (m) => {
+    const members = groupMembersOf(m, zl, list);
+    const memberHosts = new Set(members.map((x) => x.ip).filter(Boolean));
+    return { master: m, memberHosts, hosts: new Set([m.host, ...memberHosts]) };
+  };
+  const plays = (g) => !!g && [...g.hosts].some((h) => playingHosts.has(h));
+  const controlled = strSel ? groupOf(resolvePlayTarget(strSel, zl, list) || strSel) : null;
+  let anchor = plays(controlled) ? controlled : null;
+  if (!anchor) {
+    for (const r of rows) {
+      if (r.kind === 'stock' || !r.playing || r.offline) continue;
+      const b = boxOf(r.host);
+      const m = b ? (resolvePlayTarget(b, zl, list) || b) : null;
+      if (m && m.kind !== 'stock') { anchor = groupOf(m); break; }
+    }
+  }
+  if (!anchor) anchor = controlled;
+  const master = anchor ? anchor.master : null;
+  const memberHosts = anchor ? anchor.memberHosts : new Set();
+  const groupHosts = anchor ? anchor.hosts : new Set();
+  const isControlled = !!anchor && anchor === controlled;
+  // The members the player shows (group volume, Levels) belong to the speaker
+  // you control, which is not always the pinned group: the same list as the
+  // player, so "+ n more" never counts a speaker the player leaves out.
+  const memberCount = controlled ? groupMemberBoxes(controlled.master, zl, list).length : 0;
+  const anchorCount = master ? groupMemberBoxes(master, zl, list).length : 0;
+  // A stereo pair plays on its own (#792): while it is pinned, nothing can
   // be added to it.
   const pairAlone = !!master && inAnyStereoPair(master, zl);
   const groupable = !!master && !pairAlone;
   const candidates = new Set(groupable ? groupCandidates(master, zl, list).map((b) => b.host) : []);
   const playing = ctx.boxPlaying || {};
   const pending = ctx.pending || new Set();
-  const boxOf = (host) => list.find((b) => b.host === host);
 
   const decorate = (r) => {
     const pinned = r.hosts.some((h) => groupHosts.has(h));
@@ -83,6 +112,7 @@ export function sidebarModel(boxes, ctx = {}) {
       isMaster,
       action,
       pending: r.hosts.some((h) => pending.has(h)),
+      master: action && master ? master.host : '',
     };
     if (r.kind === 'pair') {
       // The name already says it is a pair, so the pill does not repeat it.
@@ -97,10 +127,13 @@ export function sidebarModel(boxes, ctx = {}) {
   const masterRow = pinnedRows.find((r) => r.isMaster);
   const pinned = masterRow ? [masterRow, ...pinnedRows.filter((r) => r !== masterRow)] : pinnedRows;
   // "Playing together" only while the group plays: a group is pinned whether
-  // or not it plays, and a stopped one is just a group.
-  const grouped = memberBoxes.length > 0;
-  const headingKey = !grouped ? 'ui2.side.controlling'
-    : (pinned.some((r) => r.playing) ? 'ui2.side.together' : 'ui2.side.group');
+  // or not it plays, and a stopped one is just a group. Music that plays on a
+  // speaker you do not control is headed by what it does, not "You control".
+  const grouped = anchorCount > 0;
+  const nowPlays = pinned.some((r) => r.playing);
+  let headingKey = 'ui2.side.controlling';
+  if (grouped) headingKey = nowPlays ? 'ui2.side.together' : 'ui2.side.group';
+  else if (!isControlled && nowPlays) headingKey = 'ui2.pill.playing';
   return {
     pinned,
     // In the list's own order, never re-sorted: rows do not jump under the
@@ -111,7 +144,7 @@ export function sidebarModel(boxes, ctx = {}) {
     pairAlone,
     searching: !!ctx.searching,
     master,
-    memberCount: memberBoxes.length,
+    memberCount,
   };
 }
 
@@ -169,7 +202,7 @@ function rowHTML(row, tabHost) {
   if (row.action) {
     const name = actionLabel(row);
     act = `<button type="button" class="u-btn u-btn--icon ui2-spk-act${row.pending ? ' pending' : ''}" data-group-toggle data-act="${row.action}"`
-      + ` data-host="${escapeAttr(row.host)}" data-port="${escapeAttr(row.port)}" tabindex="${tab}"`
+      + ` data-host="${escapeAttr(row.host)}" data-port="${escapeAttr(row.port)}" data-master="${escapeAttr(row.master || '')}" tabindex="${tab}"`
       + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.pending ? ' aria-busy="true"' : ''}>`
       + `<span aria-hidden="true">${row.action === 'add' ? '+' : '&minus;'}</span></button>`;
   }

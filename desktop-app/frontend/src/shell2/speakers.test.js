@@ -1,5 +1,5 @@
-// The UI 2.0 sidebar speaker list (#1284): one row per speaker, the group you
-// control pinned, "+" and "-" exactly where the group edit would act.
+// The UI 2.0 sidebar speaker list (#1284): one row per speaker, the playing
+// group pinned, "+" and "-" exactly where the group edit would act.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { actionLabel, rovingIndex, sidebarHTML, sidebarModel, speakerRowLabel } from './speakers.js';
@@ -69,11 +69,45 @@ describe('sidebar speaker model', () => {
     // A selected follower pins its master's group, master first.
     const f = model({ currentBox: F });
     expect(f.pinned.map((r) => r.host)).toEqual([M.host, F.host]);
-    // Alone, the speaker you control is pinned by itself.
-    const solo = model({ currentBox: I1 });
+    // Alone and with nothing playing, the speaker you control is pinned by itself.
+    const solo = model({ currentBox: I1, boxPlaying: { ...PLAYING, MMM: false, FFF: false } });
     expect(solo.pinned.map((r) => r.host)).toEqual([I1.host]);
     expect(solo.headingKey).toBe('ui2.side.controlling');
     expect(solo.memberCount).toBe(0);
+  });
+
+  it('pins the group that plays while you control an idle speaker, and "+" adds to it (#1284)', () => {
+    // You control the idle Office while Living room + Kitchen play.
+    const m = model({ currentBox: I1 });
+    expect(m.pinned.map((r) => r.host)).toEqual([M.host, F.host]);
+    expect(m.headingKey).toBe('ui2.side.together');
+    const office = byHost(m, I1);
+    expect(office.pinned).toBe(false);
+    expect(office.isCurrent).toBe(true);
+    // "+" on Hall (and on the Office you control) goes to the playing group's master.
+    expect(byHost(m, I2)).toMatchObject({ action: 'add', master: M.host });
+    expect(byHost(m, I1)).toMatchObject({ action: 'add', master: M.host });
+    expect(byHost(m, F)).toMatchObject({ action: 'remove', master: M.host });
+    expect(sidebarHTML(m)).toMatch(/data-host="192\.0\.2\.27"[^>]*data-master="192\.0\.2\.20"/);
+    // The player still counts the speaker you control, which plays alone.
+    expect(m.memberCount).toBe(0);
+    // A single speaker playing that you do not control is headed "Playing".
+    const one = model({ currentBox: I1, boxPlaying: { ...PLAYING, MMM: false, FFF: false, II2: true } });
+    expect(one.pinned.map((r) => r.host)).toEqual([I2.host]);
+    expect(one.headingKey).toBe('ui2.pill.playing');
+    expect(byHost(one, I1)).toMatchObject({ action: 'add', master: I2.host });
+    // Nothing plays: the speaker you control is pinned, to build a group before Play.
+    const quiet = model({ currentBox: I1, boxPlaying: { ...PLAYING, MMM: false, FFF: false } });
+    expect(quiet.pinned.map((r) => r.host)).toEqual([I1.host]);
+    expect(quiet.headingKey).toBe('ui2.side.controlling');
+    expect(byHost(quiet, I2)).toMatchObject({ action: 'add', master: I1.host });
+    // Your own group plays too: yours comes first, the other one stays below.
+    const both = model({
+      currentBox: I1,
+      boxPlaying: { ...PLAYING, II1: true },
+    });
+    expect(both.pinned.map((r) => r.host)).toEqual([I1.host]);
+    expect(byHost(both, M).pinned).toBe(false);
   });
 
   it('offers "+" only on idle, online, known STR speakers outside the group', () => {
@@ -91,10 +125,15 @@ describe('sidebar speaker model', () => {
     expect(byHost(model({ zoneLive: noZoneI3 }), I3).action).toBe('');
   });
 
-  it('offers nothing while you control a stock speaker or a stereo pair', () => {
-    const stock = model({ currentBox: S });
+  it('offers nothing while you control a stock speaker and nothing plays, or a stereo pair', () => {
+    const stock = model({ currentBox: S, boxPlaying: { ...PLAYING, MMM: false, FFF: false } });
+    expect(stock.pinned).toEqual([]);
     expect([...stock.pinned, ...stock.others].some((r) => r.action)).toBe(false);
-    const pair = model({ currentBox: P2 });
+    // With music playing, a Bose original selected still lets you add to it.
+    const busy = model({ currentBox: S });
+    expect(busy.pinned.map((r) => r.host)).toEqual([M.host, F.host]);
+    expect(byHost(busy, I1)).toMatchObject({ action: 'add', master: M.host });
+    const pair = model({ currentBox: P2, boxPlaying: { ...PLAYING, MMM: false, FFF: false } });
     expect(pair.pairAlone).toBe(true);
     expect(pair.groupable).toBe(false);
     expect(pair.pinned.map((r) => r.kind)).toEqual(['pair']);

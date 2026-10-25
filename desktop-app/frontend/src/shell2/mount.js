@@ -240,7 +240,8 @@ function wire(frame, skip) {
 // loses a handler. A row's pick button chooses the speaker you control
 // (pickBox: an offline speaker explains itself and rediscovers, a Bose
 // original opens the setup); its "+" or "-" is the group edit
-// (toggleGroupMember, the Music view's own path).
+// (toggleGroupMember, the Music view's own path), aimed at the pinned
+// group's master, which the row carries in data-master.
 function wireSpeakerList(root) {
   if (!root) return;
   const boxFor = (btn) => {
@@ -252,7 +253,7 @@ function wireSpeakerList(root) {
     const act = e.target.closest('.ui2-spk-act');
     if (act) {
       rovingHost = act.dataset.host;
-      if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10));
+      if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10), act.dataset.master || '');
       return;
     }
     const pick = e.target.closest('.ui2-spk-pick');

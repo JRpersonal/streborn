@@ -220,10 +220,15 @@ let pendingGroupMaster = '';
 // toggleGroupMember is the one way a speaker is taken in or out of the group
 // led by the selected speaker: the Music view's chips and the UI 2.0 sidebar's
 // "+" and "-" both call it, so there is a single group edit path.
-export function toggleGroupMember(host, port) {
+//
+// masterHost names the group explicitly. The UI 2.0 sidebar pins the group
+// that PLAYS, which is not the selected speaker's while you control an idle
+// one, and its "+" must add to that music (#1284), so it passes the pinned
+// group's master. Without it the group is the selected speaker's.
+export function toggleGroupMember(host, port, masterHost) {
   if (groupOpPending.has(host)) return groupOpChain;
-  const lead = groupControlBox();
-  const leadHost = (lead && lead.host) || '';
+  const lead = masterHost ? null : groupControlBox();
+  const leadHost = masterHost || (lead && lead.host) || '';
   // A click for a different group than the waiting batch's: that batch was
   // meant for the group it was clicked in, so it goes now, and this click
   // starts a batch of its own.
