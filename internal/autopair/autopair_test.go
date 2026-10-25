@@ -531,3 +531,88 @@ func TestStartupReassertDefersWhilePlaying(t *testing.T) {
 		t.Fatalf("a deferred re-assert must keep the flag pending")
 	}
 }
+
+func stoppedNowPlaying(source, status string) string {
+	return `<nowPlaying source="` + source + `"><ContentItem source="` + source + `" location="http://127.0.0.1:8888/stream/1"><itemName>Station</itemName></ContentItem><playStatus>` + status + `</playStatus></nowPlaying>`
+}
+
+// TestStartupReassertRunsOnStoppedSource: a box that powers on parked on its
+// last source without playing it (CineMate field bundle 2026-10-25: UPnP held
+// in STOP_STATE, every radio start answered 1036) has no audio to lose, so the
+// start-up re-assert must land instead of deferring tick after tick. It lands
+// on the second consecutive stopped read: the first one only arms it.
+func TestStartupReassertRunsOnStoppedSource(t *testing.T) {
+	for _, status := range []string{"STOP_STATE", "INVALID_PLAY_STATUS"} {
+		t.Run(status, func(t *testing.T) {
+			box := &fakeBox{infoBody: pairedInfo, nowPlaying: stoppedNowPlaying("UPNP", status)}
+			m := newTestManager(t, box)
+			for tick := 1; tick <= 2; tick++ {
+				if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err != nil {
+					t.Fatalf("ensure tick %d: %v", tick, err)
+				}
+			}
+			if got := box.pairPosts.Load(); got != 1 {
+				t.Fatalf("a stopped source must not hold off the start-up re-assert, got %d POSTs", got)
+			}
+			if !m.firstAssertDone.Load() {
+				t.Fatalf("a landed re-assert must clear the pending flag")
+			}
+		})
+	}
+}
+
+// TestStartupReassertDefersOnSingleStoppedRead: a fresh user recall can read
+// STOP_STATE for a moment between the stream push and buffering. One stopped
+// read alone must not re-assert, or a tick landing in that window would knock
+// the start back; a read that then sees it playing disarms the stopped streak.
+func TestStartupReassertDefersOnSingleStoppedRead(t *testing.T) {
+	box := &fakeBox{infoBody: pairedInfo, nowPlaying: stoppedNowPlaying("UPNP", "STOP_STATE")}
+	m := newTestManager(t, box)
+	if err := m.ensure(context.Background(), true); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if got := box.pairPosts.Load(); got != 0 {
+		t.Fatalf("a single stopped read must defer the re-assert, got %d POSTs", got)
+	}
+	if m.firstAssertDone.Load() {
+		t.Fatalf("a deferred re-assert must keep the flag pending")
+	}
+
+	// The recall buffers, then reads stopped again: the streak restarted, so
+	// this stopped read is again a first one and must still defer.
+	for _, np := range []string{stoppedNowPlaying("UPNP", "BUFFERING_STATE"), stoppedNowPlaying("UPNP", "STOP_STATE")} {
+		box.mu.Lock()
+		box.nowPlaying = np
+		box.mu.Unlock()
+		if err := m.ensure(context.Background(), true); err != nil {
+			t.Fatalf("ensure: %v", err)
+		}
+	}
+	// A stopped read of a DIFFERENT source does not continue the streak.
+	box.mu.Lock()
+	box.nowPlaying = stoppedNowPlaying("LOCAL_INTERNET_RADIO", "STOP_STATE")
+	box.mu.Unlock()
+	if err := m.ensure(context.Background(), true); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if got := box.pairPosts.Load(); got != 0 {
+		t.Fatalf("a broken stopped streak must keep deferring, got %d POSTs", got)
+	}
+}
+
+// TestStartupReassertDefersOnActiveStatus: playing, buffering and paused
+// sources keep deferring; the paused listener can still resume.
+func TestStartupReassertDefersOnActiveStatus(t *testing.T) {
+	for _, status := range []string{"PLAY_STATE", "BUFFERING_STATE", "PAUSE_STATE"} {
+		t.Run(status, func(t *testing.T) {
+			box := &fakeBox{infoBody: pairedInfo, nowPlaying: `<nowPlaying source="SPOTIFY"><playStatus>` + status + `</playStatus></nowPlaying>`}
+			m := newTestManager(t, box)
+			if err := m.ensure(context.Background(), true); err != nil {
+				t.Fatalf("ensure: %v", err)
+			}
+			if got := box.pairPosts.Load(); got != 0 {
+				t.Fatalf("re-assert must defer on %s, got %d POSTs", status, got)
+			}
+		})
+	}
+}
