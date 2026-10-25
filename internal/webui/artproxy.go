@@ -101,18 +101,25 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 	// may equally mean "requested and served fine" (field report 2026-08-05,
 	// the logo above the station name gone). Rate-limited per URL so a speaker
 	// that re-fetches on every track change cannot fill the NAND log.
+	// Keyed per consumer as well: the phone remote fetches the same icon with
+	// to=browser, and if that took the one log slot the speaker's own fetch,
+	// and with it the "substituted" line below, would never be logged.
+	toBrowser := r.URL.Query().Get("to") == "browser"
+	logKey, logMsg := target, "art proxy: the speaker fetched a station logo"
+	if toBrowser {
+		logKey, logMsg = "browser|"+target, "art proxy: the phone remote fetched a station logo"
+	}
 	artLogMu.Lock()
-	first := !artLogged[target]
+	first := !artLogged[logKey]
 	if first {
 		if len(artLogged) > 64 {
 			artLogged = map[string]bool{}
 		}
-		artLogged[target] = true
+		artLogged[logKey] = true
 	}
 	artLogMu.Unlock()
 	if first {
-		s.logger.Info("art proxy: the speaker fetched a station logo",
-			"url", target, "contentType", ct, "status", resp.StatusCode)
+		s.logger.Info(logMsg, "url", target, "contentType", ct, "status", resp.StatusCode)
 	}
 
 	// Bounded: a station logo is small, and an unbounded copy onto a speaker
@@ -131,7 +138,7 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 	// display and wrong on the phone: the key wore the STR symbol while the
 	// desktop app, which loads the same icon directly, showed the station's
 	// own (#1467, Exclusively Rush).
-	if r.URL.Query().Get("to") == "browser" {
+	if toBrowser {
 		out, outCT, ok := browserImage(body)
 		if !ok {
 			s.logger.Info("art proxy: not an image a browser key can show", "url", target)

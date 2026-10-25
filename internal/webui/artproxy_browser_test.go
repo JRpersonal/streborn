@@ -99,3 +99,29 @@ func TestArtProxyBrowserModeEndToEnd(t *testing.T) {
 		t.Error("phone: nosniff missing")
 	}
 }
+
+// The phone's fetch must not take the speaker's one log slot for a URL:
+// otherwise a key the phone loaded first never logs the display's
+// substitution, and the log reads as if the speaker got the icon untouched.
+func TestArtProxyBrowserFetchKeepsSpeakerLogSlot(t *testing.T) {
+	ico := buildICO(pad([]byte("\x28\x00\x00\x00"), 40))
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/x-icon")
+		_, _ = w.Write(ico)
+	}))
+	defer up.Close()
+	saved := artFetchClient
+	artFetchClient = up.Client()
+	defer func() { artFetchClient = saved }()
+
+	var logBuf bytes.Buffer
+	s := &Server{logger: slog.New(slog.NewTextHandler(&logBuf, nil))}
+	enc := base64.RawURLEncoding.EncodeToString([]byte(up.URL + "/ip3/log-slot.example.ico"))
+	for _, q := range []string{"&to=browser", ""} {
+		rec := httptest.NewRecorder()
+		s.handleArt(rec, httptest.NewRequest(http.MethodGet, "/art?u="+enc+q, nil))
+	}
+	if !bytes.Contains(logBuf.Bytes(), []byte("substituted the station logo")) {
+		t.Errorf("speaker substitution not logged after a phone fetch:\n%s", logBuf.String())
+	}
+}
