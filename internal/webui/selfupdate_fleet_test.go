@@ -578,7 +578,7 @@ func TestPhoneCardFleetStringsInEveryLocale(t *testing.T) {
 		t.Fatalf("%d locale bundles carry the update card, want 12", bundles)
 	}
 	for _, key := range []string{"sfAll", "sfOnly", "sfAllLink", "sfThis", "sfNeeds", "sfWaiting", "sfCurrent",
-		"sfOld", "sfUnreach", "sfChecking", "sfReboot", "sfConfirm", "sfRunning", "sfSummary", "sfLoading",
+		"sfOld", "sfUnreach", "suEngineByUpd", "sfChecking", "sfReboot", "sfConfirm", "sfRunning", "sfSummary", "sfLoading",
 		"sfVia", "sfOther"} {
 		if got := len(regexp.MustCompile(`[{,]`+key+`:"`).FindAllString(indexHTML, -1)); got != bundles {
 			t.Errorf("%s: in %d of %d locales", key, got, bundles)
@@ -600,12 +600,12 @@ func TestPhoneCardFleetStringsInEveryLocale(t *testing.T) {
 	if !strings.Contains(indexHTML, `sfRunning:"Die Lautsprecher werden nacheinander aktualisiert. Lass diese Seite offen, bis alles fertig ist."`) {
 		t.Error("German running line changed or lost its du-form")
 	}
-	if !strings.Contains(indexHTML, `sfUnreach:"Nicht erreichbar. Aktualisiere ihn mit der Desktop-App oder öffne seine eigene Seite."`) {
+	if !strings.Contains(indexHTML, `sfUnreach:"Gerade nicht erreichbar. Sobald er wieder im Netzwerk ist, taucht er hier wieder auf."`) {
 		t.Error("German unreachable line changed")
 	}
 	// Every locale tells the owner to keep the page open, and none of the
 	// new lines uses a dash as punctuation.
-	for _, key := range []string{"sfRunning", "sfConfirm", "sfUnreach", "sfVia", "sfOther"} {
+	for _, key := range []string{"sfRunning", "sfConfirm", "sfUnreach", "sfOld", "suEngineByUpd", "sfVia", "sfOther"} {
 		for _, m := range regexp.MustCompile(key+`:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1) {
 			if strings.ContainsAny(m[1], "–—") || strings.Contains(m[1], " - ") {
 				t.Errorf("%s uses a dash: %q", key, m[1])
