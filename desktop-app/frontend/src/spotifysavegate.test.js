@@ -25,24 +25,24 @@ const KEY = 'preset.spotifyKeyNeedsLogin';
 const PREMIUM = 'preset.spotifyKeyNeedsPremium';
 const PLAN = 'preset.spotifyKeyPlanUnknown';
 
-const save = srcOf('saveCurrentToSlot');
+const save = srcOf('saveSpotifyToSlot');
 const bundle = (lang) => JSON.parse(readFileSync(join(bundleDir, `${lang}.json`), 'utf8'));
 
 // The gate as the save path applies it, lifted out of the save function so the
 // order of the two questions is asserted as behaviour and not as spelling.
-const gate = srcBetween('      // Same order the speaker applies when the key is pressed',
-  '      // Which notice was shown');
+const gate = srcBetween('    // Same order the speaker applies when the key is pressed',
+  '    // Which notice was shown');
 
 // One app run: the once-per-run flag lives as long as the returned function,
 // the way the module-level flag in the app lives as long as the app.
 function appRun() {
   let shown = null;
   // eslint-disable-next-line no-new-func
-  const run = new Function('showToast', 't', `let spotifyPlanHintShown = false;
+  const run = new Function('report', `let spotifyPlanHintShown = false;
 return (canRecall, premiumRequired, planKnown) => {
 ${gate}
 return notice;
-};`)((msg) => { shown = msg; }, (k) => k);
+};`)({ notice: (key) => { shown = key; } });
   return (canRecall, premiumRequired, planKnown) => {
     shown = null;
     run(canRecall, premiumRequired, planKnown);
@@ -98,7 +98,7 @@ describe('saving a Spotify key that cannot play', () => {
   });
 
   it('keeps the once-per-run flag outside the save function', () => {
-    // Declared inside saveCurrentToSlot it would reset on every save.
+    // Declared inside saveSpotifyToSlot it would reset on every save.
     expect(main).toContain('let spotifyPlanHintShown = false;');
     expect(save).not.toContain('let spotifyPlanHintShown');
   });
@@ -120,11 +120,11 @@ describe('saving a Spotify key that cannot play', () => {
   it('warns AFTER saving, and does not refuse the save', () => {
     // The key becomes good the moment the speaker is picked in Spotify once,
     // so refusing to store it would throw away work the user will want.
-    const saved = save.indexOf('preset.savedToKey');
+    const saved = save.indexOf('report.saved(');
     const warned = save.indexOf(KEY);
     expect(saved).toBeGreaterThan(-1);
     expect(warned).toBeGreaterThan(saved);
-    expect(save.slice(saved, warned)).not.toContain('return;');
+    expect(save.slice(saved, warned)).not.toMatch(/\breturn\b/);
   });
 });
 

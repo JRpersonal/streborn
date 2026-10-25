@@ -858,3 +858,140 @@ html.ui2 .ui2-side-version .app-update-quiet :is(.footer-link, button) {
   min-height: var(--u-target);
 }
 html.ui2 .ui2-side-version .app-update-quiet-note { color: var(--u-muted); }
+
+/* ---------- Spotify (phase 2) ----------
+
+   The cards on top of the Spotify view (views/spotifyui2.js): the playing
+   playlist onto a key, and the Spotify login of every speaker. Their markup
+   only exists while the shell is mounted. */
+
+html.ui2 #view-spotify .sp2 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 0 16px;
+  font-family: var(--u-font);
+}
+html.ui2 #view-spotify .sp2-card { display: flex; flex-direction: column; gap: 8px; }
+html.ui2 #view-spotify .sp2-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+html.ui2 #view-spotify .sp2-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--u-text); }
+html.ui2 #view-spotify .sp2-text { margin: 0; line-height: 1.5; color: var(--u-text); }
+html.ui2 #view-spotify .sp2-strong { font-weight: 600; }
+html.ui2 #view-spotify .sp2-muted { color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--u-muted); }
+
+html.ui2 #view-spotify .sp2-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--u-text);
+}
+html.ui2 #view-spotify .sp2-now-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* The six keys, as many per row as fit: three in the default window, fewer
+   with a larger text size. */
+html.ui2 #view-spotify .sp2-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+html.ui2 #view-spotify .sp2-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 #view-spotify .sp2-key:hover { background: var(--u-surface); }
+html.ui2 #view-spotify .sp2-key.is-chosen {
+  background: var(--u-selected);
+  border-color: var(--u-accent);
+  box-shadow: inset 0 0 0 1px var(--u-accent);
+}
+html.ui2 #view-spotify .sp2-key:disabled { cursor: progress; }
+html.ui2 #view-spotify .sp2-key-n {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--u-border);
+  border-radius: 6px;
+  font-weight: 700;
+}
+html.ui2 #view-spotify .sp2-key-text { display: flex; flex-direction: column; min-width: 0; }
+html.ui2 #view-spotify .sp2-key-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.ui2 #view-spotify .sp2-key-sub { font-size: 12px; color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-key.is-chosen .sp2-key-sub { color: var(--u-text); }
+
+html.ui2 #view-spotify .sp2-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+html.ui2 #view-spotify .sp2-hint { font-size: 13px; }
+
+/* The outcome of the last save, in the card. Words carry the meaning; the
+   colour and the edge only repeat it. */
+html.ui2 #view-spotify .sp2-result { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+html.ui2 #view-spotify .sp2-result:empty { display: none; }
+html.ui2 #view-spotify .sp2-result-line {
+  padding-inline-start: 8px;
+  border-inline-start: 4px solid currentcolor;
+  line-height: 1.5;
+}
+html.ui2 #view-spotify .sp2-result-line--ok { color: var(--u-ok); }
+html.ui2 #view-spotify .sp2-result-line--warn { color: var(--u-warn); }
+html.ui2 #view-spotify .sp2-result-line--error { color: var(--u-danger); }
+
+html.ui2 #view-spotify .sp2-acct-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-spotify .sp2-acct { padding: 8px 0; border-top: 1px solid var(--u-border); }
+html.ui2 #view-spotify .sp2-acct-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+html.ui2 #view-spotify .sp2-acct-name { font-weight: 700; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-acct.is-offline .sp2-acct-name { color: var(--u-muted); font-weight: 400; }
+html.ui2 #view-spotify .sp2-acct-line { margin: 4px 0 0; line-height: 1.5; color: var(--u-text); }
+html.ui2 #view-spotify .sp2-acct-line.sp2-muted { color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-acct-plan.is-free { color: var(--u-warn); }
+
+html.ui2 #view-spotify .sp2 :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+html.ui2 #view-spotify .sp2-result:focus { outline: none; }
+html.ui2 #view-spotify .sp2-result:focus-visible { outline: 2px solid var(--u-focus); }
