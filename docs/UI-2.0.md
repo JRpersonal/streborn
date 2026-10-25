@@ -81,7 +81,7 @@ releases later.
 - **Favorites are app-wide**, not per speaker (open point P1 in the concept).
 - **Stereo pairs and fixed groups are set up under Speakers**, not in the
   playback popover. Taking a speaker in or out of the current playback stays
-  in the player.
+  in the sidebar speaker list (`+` / `−`).
 - **Action color with enough contrast.** White on the concept's `#0A84FF`
   reaches 3.6:1. Primary actions use `#1F6FB2` (5.3:1); STR blue `#6BD` stays
   the accent.
