@@ -3,6 +3,10 @@ body:
   - type: markdown
     attributes:
       value: |
+        **Looking for Amazon Music, Apple Music, Spotify lossless or the old Bose Alexa skill?** I can't add those. The reasons and what works instead are in [docs/NOT-POSSIBLE.md](https://github.com/JRpersonal/streborn/blob/main/docs/NOT-POSSIBLE.md).
+  - type: markdown
+    attributes:
+      value: |
         Ask away. If your question is about a speaker that misbehaves, one thing
         helps most.
 

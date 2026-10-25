@@ -5,6 +5,10 @@ body:
   - type: markdown
     attributes:
       value: |
+        **Missing Amazon Music, Apple Music, Spotify lossless or the old Bose Alexa skill?** That is not a bug, and I can't add them. The reasons and what works instead are in [docs/NOT-POSSIBLE.md](https://github.com/JRpersonal/streborn/blob/main/docs/NOT-POSSIBLE.md).
+  - type: markdown
+    attributes:
+      value: |
         Thanks for reporting. **Please attach a diagnostic file — almost every report can only be solved with one.** It contains **no passwords and no account data**, and a report with a diagnostic gets answered far faster than one without.
 
         *Danke für deine Meldung. **Bitte häng eine Diagnosedatei an — fast jede Meldung lässt sich nur damit lösen.** Sie enthält **keine Passwörter und keine Kontodaten**, und eine Meldung mit Diagnose wird deutlich schneller beantwortet.*
