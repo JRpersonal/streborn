@@ -2,11 +2,12 @@
   "name": "streborn-screenshots",
   "private": true,
   "version": "0.0.0",
-  "description": "Dev-only Playwright harness that renders the STR frontend with mocked backend bindings and captures one screenshot per view per language. Isolated from the app's package.json so playwright (and its browser download) never touches the CI / wails build.",
+  "description": "Dev-only Playwright harness that renders the STR frontend with mocked backend bindings and captures one screenshot per view per language; ui2-check.mjs checks the UI 2.0 preview against simulated speakers (run in CI). Isolated from the app's package.json so playwright (and its browser download) never enters the app, its frontend job or the wails build.",
   "type": "module",
   "scripts": {
     "shoot": "node shoot.mjs",
-    "shoot-phone": "node shoot-phone.mjs"
+    "shoot-phone": "node shoot-phone.mjs",
+    "ui2-check": "node ui2-check.mjs"
   },
   "devDependencies": {
     "playwright": "^1.60.0"

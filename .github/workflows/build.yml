@@ -409,6 +409,44 @@ jobs:
         working-directory: desktop-app/frontend
         run: node scripts/i18n-coverage.mjs
 
+  # The UI 2.0 preview (#1285) checked in a real browser against simulated
+  # speakers (desktop-app/frontend/screenshots/demo.mjs): eleven speakers with a
+  # playing group, a stereo pair, an offline speaker and a Bose original, so the
+  # sidebar list (#1284) is exercised in states one test speaker cannot show.
+  # A job of its own: playwright and its browser live in the screenshots
+  # package, never in the app's package.json, so the frontend job above and the
+  # wails build never download them.
+  ui2-check:
+    name: UI 2.0 preview (simulated speakers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            desktop-app/frontend/package-lock.json
+            desktop-app/frontend/screenshots/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: desktop-app/frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Install the check harness and Chromium
+        working-directory: desktop-app/frontend/screenshots
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Check the UI 2.0 preview
+        working-directory: desktop-app/frontend/screenshots
+        run: node ui2-check.mjs
+
   build:
     name: Cross Compile
     needs: test
