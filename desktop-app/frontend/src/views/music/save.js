@@ -151,134 +151,10 @@ export async function saveCurrentToSlot(slot) {
     }
   }
 
-  // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
-  // Spotify preset (type=spotify with the playlist URI), not a radio link to
-  // the raw stream. The latter showed the album cover instead of the Spotify
-  // logo and could not recall/shuffle the playlist. Needs the current context
-  // (playlist URI) from /spotify/info.
+  // Case Spotify: the speaker is playing a Spotify playlist (saveSpotifyToSlot).
   if (saveCase === 'spotify') {
-    // We can only save a real, recallable Spotify preset when we know the
-    // playlist/album/track context URI. The state.spotifyNow context is only
-    // refreshed by a throttled (>3s) background poll, so at save time it can
-    // lag or be momentarily empty even while a real playlist is playing. That
-    // made a legitimate save fail with a false "no replayable playlist" (Pierre,
-    // #45, was on Premium playing a playlist). Re-read the live context from the
-    // speaker now instead of trusting the cache.
-    // The URI itself is decided after the engine read below
-    // (spotifySaveContextURI): the engine's context only counts while the
-    // speaker is playing STR's engine stream.
-    let engineCtx = state.spotifyNow ? state.spotifyNow.context : '';
-    let acct = (state.spotifyNow && state.spotifyNow.account) || '';
-    // Whether a key on THIS speaker could play at all. The same read already
-    // happens here, so asking costs nothing. undefined means the speaker's
-    // agent predates the field, and "cannot tell" must never become a warning.
-    let canRecall;
-    // And whether the account behind it can do an on-demand recall at all. A free
-    // Spotify account cannot, so the key stores fine and then never plays: that is
-    // the entitlement half of #976, which the login check alone never covered.
-    let premiumRequired;
-    // Whether the speaker could find out the plan at all. premiumRequired false
-    // means EITHER Premium OR an unanswered question (Spotify answering 429 is
-    // the common one, #1314), and only np.product tells them apart. undefined =
-    // the speaker was not readable, which stays silent like every other gate.
-    let planKnown;
-    let gateRead = 'unknown';
-    try {
-      const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
-      if (np) {
-        gateRead = 'yes';
-        if (np.context) engineCtx = np.context;
-        if (np.account) acct = np.account;
-        if (np.canRecall !== null && np.canRecall !== undefined) canRecall = !!np.canRecall;
-        if (np.premiumRequired !== null && np.premiumRequired !== undefined) premiumRequired = !!np.premiumRequired;
-        planKnown = !!np.product;
-      }
-    } catch { gateRead = 'no'; }
-    // Fallback: go-librespot's /spotify/info can report an empty context even
-    // while a real playlist is playing (it depends on how playback was started).
-    // The box's own now-playing still carries the URI STR wrote into its
-    // /playback/container/<base64 spotify:...> location, so decode that before
-    // giving up (Pierre, #45: Premium, a playlist was playing, the box location
-    // held spotify:playlist:..., but np.context came back empty so the save
-    // wrongly failed).
-    //
-    // And the reverse (#1077 issue 15): on the speaker's OWN Spotify entry
-    // (source SPOTIFY, same /playback/container location form) STR's engine is
-    // not what plays, yet it can still hold an older, paused context. Taking
-    // that saved the wrong album under the playing song's name, the duplicate
-    // guard refused it as "already on key 6", and "Move" would have taken it
-    // off key 6. So the speaker's own location decides there, and the engine
-    // answer is used only for the account and the recall gates.
-    const ctxUri = spotifySaveContextURI(state.nowSource, state.nowLocation, engineCtx);
-    if (!ctxUri) {
-      // Spotify is playing but the speaker reported no playlist/album/track
-      // context. This is NOT the same as a non-replayable station: a real
-      // station carries a (non-replayable) context that the agent rejects on
-      // save below. An empty context almost always means an out-of-date speaker
-      // agent that cannot capture the context yet (the app updates separately
-      // from the on-box agent) or a will_play event the agent missed. Guide the
-      // user to update the speaker and replay the playlist rather than falsely
-      // claiming there is no playlist.
-      showError(t('preset.spotifyContextUnknown'));
-      return;
-    }
-    const sname = state.nowName || 'Spotify';
-    try {
-      await SaveSpotifyPreset(
-        state.currentBox.host, state.currentBox.port,
-        slot, sname, ctxUri, acct
-      );
-      showToast(t('preset.savedToKey', { n: slot, name: sname }));
-      // The speaker already knows this key will be refused when it is pressed:
-      // both recall paths gate on the same question, and only the SAVE side had
-      // no gate, so the app reported success for a key that cannot play (#976).
-      // Said after the save, not instead of it: the key becomes good the moment
-      // the speaker is picked in Spotify once, so refusing to store it would
-      // throw away work the user will want.
-      // Same order the speaker applies when the key is pressed (recallgate.go):
-      // picked-once first, then the plan. Both stay silent when the speaker could
-      // not be asked, because "cannot tell" must never become a warning.
-      let notice = 'none';
-      if (canRecall === false) {
-        notice = 'needs-login';
-        showToast(t('preset.spotifyKeyNeedsLogin'), 12000);
-      } else if (premiumRequired === true) {
-        notice = 'needs-premium';
-        showToast(t('preset.spotifyKeyNeedsPremium'), 12000);
-      } else if (canRecall === true && premiumRequired === false && planKnown === false && !spotifyPlanHintShown) {
-        spotifyPlanHintShown = true;
-        // The speaker answered but could not read the plan. Not a warning, a
-        // hint: the key may well be fine, but a free account would make it
-        // silent and nothing else would say so.
-        notice = 'plan-unknown';
-        showToast(t('preset.spotifyKeyPlanUnknown'), 10000);
-      }
-      // Which notice was shown, and what it was decided from. Without this a
-      // report of "two different notices for one long press" cannot be read out
-      // of a bundle at all (#976).
-      // An older build has no such binding, and logging must never be the reason
-      // a save reports a failure, so the rejection is swallowed.
-      try {
-        LogSpotifySaveGate(state.currentBox.host, slot,
-          canRecall === undefined ? 'unknown' : (canRecall ? 'yes' : 'no'),
-          premiumRequired === undefined ? 'unknown' : (premiumRequired ? 'yes' : 'no'),
-          gateRead === 'yes' ? notice : notice + ' (speaker not readable)')?.catch(() => {});
-      } catch {}
-      await loadPresets();
-      return;
-    } catch (err) {
-      // The agent validates the context and returns 422 spotify-uri-unplayable
-      // for a genuinely non-replayable selection (a Spotify radio/station). Show
-      // the precise "no replayable playlist" message for that; a generic failure
-      // otherwise.
-      const msg = String(err);
-      if (/spotify-uri-unplayable|replayable playlist/i.test(msg)) {
-        showError(t('preset.spotifyNotSaveable'));
-      } else {
-        showPresetSaveError(err, slot);
-      }
-      return;
-    }
+    await saveSpotifyToSlot(slot);
+    return;
   }
 
   // Case library track: the speaker plays the single music-library track the
@@ -428,5 +304,150 @@ export async function saveCurrentToSlot(slot) {
     }
   } catch (err) {
     showPresetSaveError(err, slot);
+  }
+}
+
+// toastSpotifyReport is how a Spotify save speaks in the Music view: toasts,
+// and the move offer for a selection that already sits on another key.
+function toastSpotifyReport(slot) {
+  return {
+    saved: (name) => showToast(t('preset.savedToKey', { n: slot, name })),
+    notice: (key, ms) => showToast(t(key), ms),
+    error: (key) => showError(t(key)),
+    failed: (err) => showPresetSaveError(err, slot),
+  };
+}
+
+// saveSpotifyToSlot is the Spotify case of saveCurrentToSlot: the speaker is
+// playing a Spotify playlist. Save a REAL Spotify preset (type=spotify with the
+// playlist URI), not a radio link to the raw stream. The latter showed the album
+// cover instead of the Spotify logo and could not recall/shuffle the playlist.
+// Needs the current context (playlist URI) from /spotify/info.
+//
+// report says how the outcome reaches the user (toastSpotifyReport by default;
+// the UI 2.0 Spotify view reports in its own card). Resolves true once the
+// speaker has stored the key, false otherwise.
+export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot)) {
+  // We can only save a real, recallable Spotify preset when we know the
+  // playlist/album/track context URI. The state.spotifyNow context is only
+  // refreshed by a throttled (>3s) background poll, so at save time it can
+  // lag or be momentarily empty even while a real playlist is playing. That
+  // made a legitimate save fail with a false "no replayable playlist" (Pierre,
+  // #45, was on Premium playing a playlist). Re-read the live context from the
+  // speaker now instead of trusting the cache.
+  // The URI itself is decided after the engine read below
+  // (spotifySaveContextURI): the engine's context only counts while the
+  // speaker is playing STR's engine stream.
+  let engineCtx = state.spotifyNow ? state.spotifyNow.context : '';
+  let acct = (state.spotifyNow && state.spotifyNow.account) || '';
+  // Whether a key on THIS speaker could play at all. The same read already
+  // happens here, so asking costs nothing. undefined means the speaker's
+  // agent predates the field, and "cannot tell" must never become a warning.
+  let canRecall;
+  // And whether the account behind it can do an on-demand recall at all. A free
+  // Spotify account cannot, so the key stores fine and then never plays: that is
+  // the entitlement half of #976, which the login check alone never covered.
+  let premiumRequired;
+  // Whether the speaker could find out the plan at all. premiumRequired false
+  // means EITHER Premium OR an unanswered question (Spotify answering 429 is
+  // the common one, #1314), and only np.product tells them apart. undefined =
+  // the speaker was not readable, which stays silent like every other gate.
+  let planKnown;
+  let gateRead = 'unknown';
+  try {
+    const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
+    if (np) {
+      gateRead = 'yes';
+      if (np.context) engineCtx = np.context;
+      if (np.account) acct = np.account;
+      if (np.canRecall !== null && np.canRecall !== undefined) canRecall = !!np.canRecall;
+      if (np.premiumRequired !== null && np.premiumRequired !== undefined) premiumRequired = !!np.premiumRequired;
+      planKnown = !!np.product;
+    }
+  } catch { gateRead = 'no'; }
+  // Fallback: go-librespot's /spotify/info can report an empty context even
+  // while a real playlist is playing (it depends on how playback was started).
+  // The box's own now-playing still carries the URI STR wrote into its
+  // /playback/container/<base64 spotify:...> location, so decode that before
+  // giving up (Pierre, #45: Premium, a playlist was playing, the box location
+  // held spotify:playlist:..., but np.context came back empty so the save
+  // wrongly failed).
+  //
+  // And the reverse (#1077 issue 15): on the speaker's OWN Spotify entry
+  // (source SPOTIFY, same /playback/container location form) STR's engine is
+  // not what plays, yet it can still hold an older, paused context. Taking
+  // that saved the wrong album under the playing song's name, the duplicate
+  // guard refused it as "already on key 6", and "Move" would have taken it
+  // off key 6. So the speaker's own location decides there, and the engine
+  // answer is used only for the account and the recall gates.
+  const ctxUri = spotifySaveContextURI(state.nowSource, state.nowLocation, engineCtx);
+  if (!ctxUri) {
+    // Spotify is playing but the speaker reported no playlist/album/track
+    // context. This is NOT the same as a non-replayable station: a real
+    // station carries a (non-replayable) context that the agent rejects on
+    // save below. An empty context almost always means an out-of-date speaker
+    // agent that cannot capture the context yet (the app updates separately
+    // from the on-box agent) or a will_play event the agent missed. Guide the
+    // user to update the speaker and replay the playlist rather than falsely
+    // claiming there is no playlist.
+    report.error('preset.spotifyContextUnknown');
+    return false;
+  }
+  const sname = state.nowName || 'Spotify';
+  try {
+    await SaveSpotifyPreset(
+      state.currentBox.host, state.currentBox.port,
+      slot, sname, ctxUri, acct
+    );
+    report.saved(sname);
+    // The speaker already knows this key will be refused when it is pressed:
+    // both recall paths gate on the same question, and only the SAVE side had
+    // no gate, so the app reported success for a key that cannot play (#976).
+    // Said after the save, not instead of it: the key becomes good the moment
+    // the speaker is picked in Spotify once, so refusing to store it would
+    // throw away work the user will want.
+    // Same order the speaker applies when the key is pressed (recallgate.go):
+    // picked-once first, then the plan. Both stay silent when the speaker could
+    // not be asked, because "cannot tell" must never become a warning.
+    let notice = 'none';
+    if (canRecall === false) {
+      notice = 'needs-login';
+      report.notice('preset.spotifyKeyNeedsLogin', 12000);
+    } else if (premiumRequired === true) {
+      notice = 'needs-premium';
+      report.notice('preset.spotifyKeyNeedsPremium', 12000);
+    } else if (canRecall === true && premiumRequired === false && planKnown === false && !spotifyPlanHintShown) {
+      spotifyPlanHintShown = true;
+      // The speaker answered but could not read the plan. Not a warning, a
+      // hint: the key may well be fine, but a free account would make it
+      // silent and nothing else would say so.
+      notice = 'plan-unknown';
+      report.notice('preset.spotifyKeyPlanUnknown', 10000);
+    }
+    // Which notice was shown, and what it was decided from. Without this a
+    // report of "two different notices for one long press" cannot be read out
+    // of a bundle at all (#976).
+    // An older build has no such binding, and logging must never be the reason
+    // a save reports a failure, so the rejection is swallowed.
+    try {
+      LogSpotifySaveGate(state.currentBox.host, slot,
+        canRecall === undefined ? 'unknown' : (canRecall ? 'yes' : 'no'),
+        premiumRequired === undefined ? 'unknown' : (premiumRequired ? 'yes' : 'no'),
+        gateRead === 'yes' ? notice : notice + ' (speaker not readable)')?.catch(() => {});
+    } catch {}
+    await loadPresets();
+    return true;
+  } catch (err) {
+    // The agent validates the context and returns 422 spotify-uri-unplayable
+    // for a genuinely non-replayable selection (a Spotify radio/station). Show
+    // the precise "no replayable playlist" message for that; a generic failure
+    // otherwise.
+    const msg = String(err);
+    if (/spotify-uri-unplayable|replayable playlist/i.test(msg)) {
+      report.error('preset.spotifyNotSaveable');
+    } else {
+      report.failed(err);
+    }
+    return false;
   }
 }
