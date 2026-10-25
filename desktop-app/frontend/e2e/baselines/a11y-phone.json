@@ -1,1 +1,20 @@
-{}
+{
+  "phone|play": {
+    "label": {
+      "count": 2,
+      "note": "The alarm on/off checkboxes in #alarmList (renderAlarms, input[data-alarm-on]) have no label or aria-label, so a screen reader announces only 'checkbox, checked'. A real defect, accepted until fixed; no issue filed yet (found by phone-smoke 2026-10-25)."
+    },
+    "label-content-name-mismatch": {
+      "count": 1,
+      "note": "#dev shows the speaker name but its aria-label is T.swSpk ('Switch to another speaker'), set in applyStaticI18n. Voice control users cannot say the visible name. Accepted for now; no issue filed yet (found by phone-smoke 2026-10-25)."
+    },
+    "meta-viewport": {
+      "count": 1,
+      "note": "Deliberate: the page disables pinch zoom (maximum-scale=1, user-scalable=no, comment at the top of index.html) so it behaves like an installed app, and offers its own text size menu (Aa) instead. Revisit if that menu is ever dropped."
+    },
+    "nested-interactive": {
+      "count": 6,
+      "note": "Each preset tile is role=button (tap plays) and holds the rename pencil button (discussion #812). Accepted: the pencil is reachable on its own and stops every gesture; flattening it needs a tile redesign. No issue filed yet."
+    }
+  }
+}

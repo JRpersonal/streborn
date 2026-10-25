@@ -1,1 +1,13 @@
-[]
+[
+  "GET /api/agent/self-update",
+  "GET /api/box/display-clock",
+  "GET /api/box/display-messages",
+  "GET /api/box/display-notices",
+  "GET /api/box/display-splash",
+  "GET /api/box/display-track",
+  "GET /api/box/language",
+  "GET /api/library/search",
+  "GET /api/pandora/stations",
+  "GET /api/queue/mode",
+  "POST /api/agent/self-update"
+]

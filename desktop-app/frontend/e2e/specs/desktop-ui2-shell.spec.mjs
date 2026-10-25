@@ -1,0 +1,647 @@
+// The UI 2.0 shell (#1284, #1285, docs/UI-2.0.md): the sidebar navigation,
+// the sidebar speaker list (which replaced the room switcher), the views that
+// must follow a speaker chosen there (regression e92872f7), the persistent
+// player with its group volume and Levels (which replaced the Output
+// popover), More, the nav badges and the Layout switch in the Aa menu.
+//
+// What screenshots/ui2-check.mjs already covers on its eleven-speaker network
+// (the stereo pair as one row, the pinned group, the list scrolling on its
+// own, the focus ring room) is not repeated here.
+//
+//   E2E_PORT=4181 npx playwright test specs/desktop-ui2-shell.spec.mjs
+
+import { test, expect } from '../fixtures.mjs';
+import { onHost } from '../helpers/mockclient.mjs';
+import { settle, runFor } from '../helpers/clock.mjs';
+import { en } from '../helpers/i18n.mjs';
+import { ROSTER, SETTINGS } from '../../testkit/demo-data.mjs';
+
+const LR = ROSTER.livingRoom;
+const BR = ROSTER.bedroom;
+const OFFICE = ROSTER.office;
+const KITCHEN = ROSTER.kitchen;
+
+// Sidebar order (src/shell2/nav.js), Wishes last at the bottom.
+const NAV_VIEWS = ['box', 'library', 'recent', 'spotify', 'settings', 'multiroom', 'setup', 'wishes'];
+
+// The group document GetZoneState answers on both halves of a Living Room +
+// Bedroom group (the same shape as demo-data.mjs UI2_GROUP).
+const LR_BR_GROUP = {
+  master: LR.deviceID,
+  senderIP: LR.host,
+  members: [{ deviceID: LR.deviceID, ip: LR.host }, { deviceID: BR.deviceID, ip: BR.host }],
+};
+
+const pick = (page, host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);
+const row = (page, host) => page.locator('#ui2SpkLists .ui2-spk-row')
+  .filter({ has: page.locator(`.ui2-spk-pick[data-host="${host}"]`) });
+const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+
+async function openView(page, view) {
+  await nav(page, view).click();
+  await expect(page.locator(`#ui2MainInner > #view-${view}`)).toBeVisible();
+}
+
+// A stock speaker asks first (pickBox, confirmWarn); confirming opens Setup.
+async function pickStockAndConfirm(page, host) {
+  await pick(page, host).click();
+  const modal = page.locator('#warnModal');
+  await expect(modal).toBeVisible();
+  await expect(modal.locator('#warnBody')).toContainText(KITCHEN.friendlyName);
+  await modal.locator('#warnConfirm').click();
+  await expect(modal).toBeHidden();
+  await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
+}
+
+async function expectStockHero(page, box) {
+  const hero = page.locator('#setupPrimaryAction .setup-hero');
+  await expect(hero).toHaveAttribute('data-kind', 'stock');
+  await expect(hero).toHaveAttribute('data-host', box.host);
+  await expect(hero.locator('#netBoxName')).toHaveValue(box.friendlyName);
+  await expect(page.locator(`.setup-target-card[data-kind="stock"][data-host="${box.host}"]`)).toHaveAttribute('aria-checked', 'true');
+}
+
+test.describe('UI 2.0 shell', () => {
+  test.use({ ui2: true });
+
+  test.describe('navigation', () => {
+    test('1. the sidebar has one entry per view, Wishes at the bottom', async ({ app }) => {
+      const { page } = app;
+      const items = page.locator('#ui2Sidebar .ui2-nav-item[data-view]');
+      await expect(items).toHaveCount(NAV_VIEWS.length);
+      expect(await items.evaluateAll((els) => els.map((e) => e.dataset.view))).toEqual(NAV_VIEWS);
+      await expect(page.locator('#ui2NavWishes')).toHaveAttribute('data-view', 'wishes');
+      await expect(page.locator('#ui2Sidebar .ui2-side-small #ui2NavWishes')).toHaveCount(1);
+    });
+
+    test('2. every entry opens its view at the top and is the only one marked current', async ({ app }) => {
+      const { page } = app;
+      for (const view of NAV_VIEWS) {
+        // Scroll the main pane first, so "starts at the top" is a real check.
+        await page.evaluate(() => {
+          const m = document.getElementById('ui2Main');
+          m.scrollTop = m.scrollHeight;
+        });
+        await openView(page, view);
+        const item = nav(page, view);
+        await expect(item).toHaveAttribute('aria-current', 'page');
+        await expect(item).toHaveClass(/\bis-active\b/);
+        await expect(page.locator('#ui2Sidebar .ui2-nav-item[aria-current]')).toHaveCount(1);
+        await expect(page.locator('#ui2Sidebar .ui2-nav-item.is-active')).toHaveCount(1);
+        // Polled: a scroll reset done in a frame callback or smoothly would
+        // otherwise race this read.
+        await expect.poll(() => page.locator('#ui2Main').evaluate((m) => m.scrollTop), { message: `#ui2Main scrollTop on ${view}` }).toBe(0);
+        // Exactly one view is on screen.
+        const shown = await page.locator('#ui2MainInner > [id^="view-"]').evaluateAll((els) => els
+          .filter((e) => !e.classList.contains('hidden')).map((e) => e.id));
+        expect(shown).toEqual([`view-${view}`]);
+      }
+    });
+
+    test('3. Tab from the top reaches the skip link, Enter moves focus to the main area', async ({ app }) => {
+      const { page } = app;
+      await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
+      await page.keyboard.press('Tab');
+      await expect(page.locator('#ui2Skip')).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#ui2Main')).toBeFocused();
+    });
+
+    test('4. ArrowDown and ArrowUp move between entries and stop at both ends', async ({ app }) => {
+      const { page } = app;
+      await nav(page, 'box').focus();
+      await page.keyboard.press('ArrowUp');
+      await expect(nav(page, 'box')).toBeFocused();
+      for (let i = 1; i < NAV_VIEWS.length; i++) {
+        await page.keyboard.press('ArrowDown');
+        await expect(nav(page, NAV_VIEWS[i])).toBeFocused();
+      }
+      await page.keyboard.press('ArrowDown');
+      await expect(nav(page, 'wishes')).toBeFocused();
+      await page.keyboard.press('ArrowUp');
+      await expect(nav(page, 'setup')).toBeFocused();
+    });
+  });
+
+  test.describe('speaker list', () => {
+    test('5. one row per speaker; the current one is marked and is the only tab stop', async ({ app }) => {
+      const { page } = app;
+      const rows = page.locator('#ui2SpkLists .ui2-spk-row');
+      await expect(rows).toHaveCount(4);
+      const hosts = await page.locator('#ui2SpkLists .ui2-spk-pick').evaluateAll((els) => els.map((e) => e.dataset.host));
+      expect([...hosts].sort()).toEqual([LR.host, BR.host, OFFICE.host, KITCHEN.host].sort());
+      await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+      await expect(page.locator('#ui2SpkLists .ui2-spk-pick[aria-current]')).toHaveCount(1);
+      const tabStops = page.locator('#ui2SpkLists .ui2-spk-pick[tabindex="0"]');
+      await expect(tabStops).toHaveCount(1);
+      await expect(tabStops).toHaveAttribute('data-host', LR.host);
+    });
+
+    test('6. the offline speaker says Offline, the Bose original says Ready for STR', async ({ app }) => {
+      const { page } = app;
+      const office = row(page, OFFICE.host);
+      await expect(office).toHaveClass(/\bis-offline\b/);
+      await expect(office).toContainText(en('ui2.pill.offline'));
+      await expect(row(page, KITCHEN.host)).toContainText(en('speaker.needsInstallBadge'));
+      await expect(row(page, KITCHEN.host)).toHaveClass(/\bis-stock\b/);
+    });
+
+    test.describe('with the page clock', () => {
+      test.use({ fakeClock: true });
+
+      test('7. clicking Bedroom makes it the controlled speaker; the next Status goes to it', async ({ app, mock }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        await mock.resetCalls();
+        await pick(page, BR.host).click();
+        await expect(pick(page, BR.host)).toHaveAttribute('aria-current', 'true');
+        await expect(pick(page, LR.host)).not.toHaveAttribute('aria-current', /.*/);
+        // The clock is paused: the only Status calls are the ones the click made.
+        await mock.expectCalled('Status');
+        const first = (await mock.calls('Status'))[0];
+        expect(first.args[0]).toBe(BR.host);
+        // And the regular poll keeps asking the new current speaker.
+        await mock.resetCalls();
+        await runFor(page, 30_000);
+        expect(await mock.count('Status', onHost(BR.host))).toBeGreaterThan(0);
+      });
+
+      test('8. clicking the offline Office explains itself, searches again once, keeps Living Room', async ({ app, mock }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        await mock.resetCalls();
+        await pick(page, OFFICE.host).click();
+        const toast = page.locator('#toast');
+        await expect(toast).toHaveClass(/\bshow\b/);
+        await expect(toast).toContainText('Offline');
+        await mock.expectCalled('DiscoverBoxes', { times: 1 });
+        await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+        await expect(pick(page, OFFICE.host)).not.toHaveAttribute('aria-current', /.*/);
+      });
+
+      test('10. "+" on an idle speaker adds it to the playing group', async ({ app, mock }) => {
+        const { page } = app;
+        // "+" needs the first every-speaker poll (play state and zones known).
+        await settle(page, 30_000);
+        const add = row(page, BR.host).locator('.ui2-spk-act[data-act="add"]');
+        await expect(add).toBeVisible();
+        await expect(add).toHaveAttribute('data-master', LR.host);
+        await expect(row(page, OFFICE.host).locator('.ui2-spk-act')).toHaveCount(0);
+        await expect(row(page, KITCHEN.host).locator('.ui2-spk-act')).toHaveCount(0);
+        await mock.resetCalls();
+        await add.click();
+        // Group edits coalesce for 600 ms (views/music/group.js).
+        await runFor(page, 1_000);
+        await mock.expectCalled('FormZone', { times: 1 });
+        const call = await mock.last('FormZone');
+        expect(call.args[0]).toBe(LR.host);
+        expect(JSON.stringify(call.args)).toContain(BR.host);
+        // The group edit never moves the controlled speaker.
+        await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+      });
+    });
+
+    test('9. clicking the Bose original asks, and confirming opens Setup on it', async ({ app }) => {
+      const { page } = app;
+      await pickStockAndConfirm(page, KITCHEN.host);
+      await expect(nav(page, 'setup')).toHaveAttribute('aria-current', 'page');
+      await expectStockHero(page, KITCHEN);
+      // A stock speaker is never the controlled one.
+      await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+    });
+  });
+
+  // Regression e92872f7: the sidebar stays reachable while Settings or Setup
+  // is open, so a speaker chosen there must bring the open view along.
+  test.describe('views follow the speaker picked in the sidebar', () => {
+    test.describe('settings', () => {
+      // The roster's Bedroom is a SoundTouch 10, which has no display and so
+      // no clock section (#299); here it is a SoundTouch 20.
+      test.use({ scenario: { boxPatches: { bedroom: { model: 'SoundTouch 20' } } } });
+
+      test('12. Settings reloads for the new speaker and its buttons act on it', async ({ app, mock }) => {
+        const { page } = app;
+        await openView(page, 'settings');
+        // GetClockDisplay is read by the Settings form only (views/settings/sound.js).
+        await mock.expectCalled('GetClockDisplay', { pred: onHost(LR.host) });
+        await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(LR.friendlyName);
+        await mock.resetCalls();
+        await pick(page, BR.host).click();
+        await mock.expectCalled('GetClockDisplay', { pred: onHost(BR.host) });
+        await expect(page.locator('#settingsBoxSelect')).toHaveValue(BR.deviceID);
+        await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(BR.friendlyName);
+        await expect(nav(page, 'settings')).toHaveAttribute('aria-current', 'page');
+        // The clock lives in a folded "Display & playback" group.
+        const group = page.locator('#settingsBody details.settings-group').filter({ has: page.locator('#boxClockOn') });
+        if (!(await group.evaluate((d) => d.open))) await group.locator('summary').click();
+        const on = page.locator('#boxClockOn');
+        await expect(on).toBeVisible();
+        await mock.resetCalls();
+        await on.click();
+        await mock.expectCalled('SetClockDisplay', { times: 1 });
+        const set = await mock.last('SetClockDisplay');
+        expect(set.args[0]).toBe(BR.host);
+        expect(await mock.count('SetClockDisplay', onHost(LR.host))).toBe(0);
+      });
+    });
+
+    test.describe('settings reconnect', () => {
+      test.use({ fakeClock: true, scenario: { bindings: { BoxSettings: { byHost: { [LR.host]: { error: 'down' } } } } } });
+
+      test('13. the reconnect timer of the previous speaker stops', async ({ app, mock }) => {
+        const { page } = app;
+        await openView(page, 'settings');
+        await settle(page, 30_000);
+        await expect(page.locator('#settingsBody .reconnect-banner')).toBeVisible();
+        expect(await mock.count('BoxSettings', onHost(LR.host)), 'the reconnect timer runs').toBeGreaterThan(0);
+        await pick(page, BR.host).click();
+        await expect(page.locator('#settingsBoxSelect')).toHaveValue(BR.deviceID);
+        await mock.resetCalls();
+        await runFor(page, 120_000);
+        expect(await mock.count('BoxSettings', onHost(LR.host))).toBe(0);
+        await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(BR.friendlyName);
+      });
+    });
+
+    // The roster's STR speakers say kind 'STR'; discovery (discovery.go KindSTR)
+    // sends 'str', and the Setup picker lists only that, so these tests use the
+    // backend's spelling.
+    test.describe('setup', () => {
+      const STR_KIND = { livingRoom: { kind: 'str' }, bedroom: { kind: 'str' }, office: { kind: 'str' } };
+      test.use({ scenario: { boxPatches: STR_KIND } });
+
+      // Setup draws its target picker on entry; clicking the open entry again
+      // (switchView('setup')) draws it from state.setupTarget, which shows what
+      // a later repaint would show, not just what is still on screen.
+      const redrawSetup = (page) => nav(page, 'setup').click();
+      const strHero = (page, host) => page.locator(`#setupPrimaryAction .setup-hero[data-kind="str"][data-host="${host}"]`);
+
+      test('14. Setup redraws for the speaker picked, keeps a chosen factory reset, follows a stock pick', async ({ app }) => {
+        const { page } = app;
+        await openView(page, 'setup');
+        await expect(strHero(page, LR.host)).toBeVisible();
+        // An STR speaker picked in the sidebar redraws the picker for it.
+        await pick(page, BR.host).click();
+        await expect(pick(page, BR.host)).toHaveAttribute('aria-current', 'true');
+        await expect(strHero(page, BR.host)).toBeVisible();
+        await expect(page.locator(`.setup-target-card[data-kind="str"][data-host="${BR.host}"]`)).toHaveAttribute('aria-checked', 'true');
+        // A chosen factory reset survives a pick in the sidebar, and a repaint.
+        const factory = page.locator('.setup-target-card[data-kind="factory-reset"]');
+        await factory.click();
+        await expect(factory).toHaveAttribute('aria-checked', 'true');
+        await expect(page.locator('.setup-target-factory-help').first()).toBeVisible();
+        await pick(page, LR.host).click();
+        await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+        await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
+        await expect(factory).toHaveAttribute('aria-checked', 'true');
+        await redrawSetup(page);
+        await expect(factory).toHaveAttribute('aria-checked', 'true');
+        await expect(page.locator('.setup-target-factory-help').first()).toBeVisible();
+        await expect(page.locator('#setupPrimaryAction .setup-hero')).toHaveCount(0);
+        // A stock speaker replaces it (pickBox asks first).
+        await pickStockAndConfirm(page, KITCHEN.host);
+        await expect(factory).toHaveAttribute('aria-checked', 'false');
+        await expectStockHero(page, KITCHEN);
+      });
+
+      test.describe('running install', () => {
+        test.use({ scenario: { boxPatches: STR_KIND, bindings: { InstallSTROnBox: { never: true } } } });
+
+        test('15. a running install keeps its target', async ({ app, mock }) => {
+          const { page } = app;
+          await pickStockAndConfirm(page, KITCHEN.host);
+          await expectStockHero(page, KITCHEN);
+          await page.locator('#setupHeroInstall').click();
+          await mock.expectCalled('InstallSTROnBox', { pred: onHost(KITCHEN.host), times: 1 });
+          const running = en('setup.netInstallOn', { name: KITCHEN.friendlyName });
+          await expect(page.locator('#setupResult')).toContainText(running);
+          await pick(page, BR.host).click();
+          await expect(pick(page, BR.host)).toHaveAttribute('aria-current', 'true');
+          await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
+          await expectStockHero(page, KITCHEN);
+          await expect(page.locator('#setupHeroInstall')).toBeDisabled();
+          await expect(page.locator('#setupResult')).toContainText(running);
+          // And after a repaint of the picker, too.
+          await redrawSetup(page);
+          await expectStockHero(page, KITCHEN);
+          await expect(page.locator('#setupHeroInstall')).toBeDisabled();
+          await expect(page.locator('#setupResult')).toContainText(running);
+          expect(await mock.count('InstallSTROnBox')).toBe(1);
+        });
+      });
+    });
+  });
+
+  test.describe('player', () => {
+    test('16. the player is on every view; in Setup only what plays stays', async ({ app }) => {
+      const { page } = app;
+      const player = page.locator('#ui2Player');
+      for (const view of NAV_VIEWS.filter((v) => v !== 'setup')) {
+        await openView(page, view);
+        await expect(player).toBeVisible();
+        await expect(player.locator('.ui2-player-transport')).toBeVisible();
+        await expect(player.locator('.ui2-player-volume')).toBeVisible();
+      }
+      await openView(page, 'setup');
+      await expect(player).toBeVisible();
+      await expect(player.locator('.ui2-player-now')).toBeVisible();
+      for (const sel of ['.ui2-player-transport', '.ui2-player-volume', '.ui2-player-groupvol', '.ui2-player-more']) {
+        const el = player.locator(sel);
+        await expect(el, sel).toBeHidden();
+        await expect(el, sel).toHaveAttribute('hidden', '');
+        await expect(el, sel).toHaveAttribute('inert', '');
+      }
+      await expect(player.locator('.ui2-player-levels')).toBeHidden();
+      await expect(player.locator('.ui2-player-empty')).toBeHidden();
+    });
+
+    test.describe('without speakers', () => {
+      test.use({ fakeClock: true, scenario: { boxes: [], current: null, seed: { cachedBoxes: false } } });
+
+      test('17. no speaker: the player says so and shows no control', async ({ app }) => {
+        const { page } = app;
+        const player = page.locator('#ui2Player');
+        await expect(player.locator('.ui2-player-empty')).toBeVisible();
+        // The 6 s recovery sweep and the first polls run without a page error
+        // (the fixture fails the test on one).
+        await settle(page, 9_000);
+        await expect(player.locator('.ui2-player-empty')).toBeVisible();
+        for (const sel of ['.ui2-player-now', '.ui2-player-transport', '.ui2-player-volume', '.ui2-player-groupvol', '.ui2-player-more', '.ui2-player-levels']) {
+          await expect(player.locator(sel), sel).toBeHidden();
+        }
+        await expect(page.locator('#ui2SpkLists .ui2-spk-row')).toHaveCount(0);
+      });
+    });
+
+    test.describe('speaker update', () => {
+      test.use({
+        fakeClock: true,
+        scenario: {
+          current: 'oldAgent',
+          banners: { speakerUpdate: true },
+          bindings: { RunSpeakerUpdate: { never: true } },
+          routes: { '/api/stick/status': { status: 200, body: { mounted: false } } },
+        },
+      });
+
+      test('18. while a speaker update runs, transport and volume leave the player and More closes', async ({ app }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        const card = page.locator('#speakerUpdateCard');
+        await expect(card).toBeVisible();
+        await page.locator('#ui2MoreBtn').click();
+        await expect(page.locator('#ui2MorePop')).toBeVisible();
+        await card.locator('#sucUpdate').click();
+        const player = page.locator('#ui2Player');
+        await expect(player.locator('.ui2-player-transport')).toBeHidden();
+        await expect(player.locator('.ui2-player-volume')).toBeHidden();
+        await expect(page.locator('#ui2MorePop')).toBeHidden();
+        await expect(page.locator('#ui2MoreBtn')).toHaveAttribute('aria-expanded', 'false');
+        await expect(player.locator('.ui2-player-now')).toBeVisible();
+      });
+    });
+
+    test('19. only the track line is a live region; the clock is not announced', async ({ app }) => {
+      const { page } = app;
+      const live = page.locator('#ui2Player [aria-live="polite"]');
+      await expect(live).toHaveCount(1);
+      await expect(live).toHaveId('statusMain');
+      const bar = page.locator('#ui2Player #statusBar');
+      await expect(bar).toHaveCount(1);
+      await expect(bar).not.toHaveAttribute('role', /.*/);
+      await expect(bar).not.toHaveAttribute('aria-live', /.*/);
+    });
+  });
+
+  // The group volume and the per-speaker Levels, in the player.
+  test.describe('group volume and Levels', () => {
+    test.describe('grouped', () => {
+      test.use({
+        fakeClock: true,
+        scenario: { zones: { livingRoom: LR_BR_GROUP, bedroom: LR_BR_GROUP }, playing: { livingRoom: 'PLAY_STATE', bedroom: 'PLAY_STATE' } },
+      });
+
+      test('20. a group puts the group volume in the player and Levels lists every member', async ({ app }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        const player = page.locator('#ui2Player');
+        await expect(player).toHaveClass(/\bis-grouped\b/);
+        await expect(page.locator('#ui2GroupVolSlot #groupVolume')).toHaveCount(1);
+        await expect(page.locator('#ui2GroupVolSlot #groupVolume')).toBeVisible();
+        const levels = page.locator('#ui2LevelsBtn');
+        await expect(levels).toBeVisible();
+        await expect(page.locator('#ui2LevelsText')).toHaveText(en('ui2.player.outputGroup', { name: LR.friendlyName, n: 1 }));
+        await levels.click();
+        await expect(levels).toHaveAttribute('aria-expanded', 'true');
+        const pop = page.locator('#ui2LevelsPop');
+        await expect(pop).toBeVisible();
+        const members = pop.locator('.group-member-vol');
+        await expect(members).toHaveCount(2);
+        await expect(members.locator('input[type="range"]')).toHaveCount(2);
+        await expect(members.nth(0)).toContainText(LR.friendlyName);
+        await expect(members.nth(1)).toContainText(BR.friendlyName);
+        await expect(pop.locator(`input[data-host="${BR.host}"]`)).toBeVisible();
+        // The group slider lives in the player, not twice.
+        await expect(pop.locator('#groupVolume')).toHaveCount(0);
+      });
+    });
+
+    test.describe('solo', () => {
+      test.use({ fakeClock: true });
+
+      test('21. a speaker on its own has no Levels and no group volume', async ({ app }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        const player = page.locator('#ui2Player');
+        await expect(player.locator('.ui2-player-sound')).toBeVisible();
+        await expect(player.locator('.ui2-player-volume #musicVolume')).toBeVisible();
+        await expect(player).not.toHaveClass(/\bis-grouped\b/);
+        await expect(page.locator('#ui2LevelsBtn')).toBeHidden();
+        await expect(player.locator('.ui2-player-levels')).toHaveAttribute('inert', '');
+        await expect(page.locator('#ui2GroupVolSlot #groupVolume')).toHaveCount(0);
+        await expect(page.locator('#ui2LevelsText')).toHaveText(en('ui2.player.outputSolo', { name: LR.friendlyName }));
+      });
+    });
+  });
+
+  test.describe('More', () => {
+    test('24. More opens with the queue and the inputs', async ({ app }) => {
+      const { page } = app;
+      await page.locator('#ui2MoreBtn').click();
+      await expect(page.locator('#ui2MoreBtn')).toHaveAttribute('aria-expanded', 'true');
+      const pop = page.locator('#ui2MorePop');
+      await expect(pop).toBeVisible();
+      await expect(pop.locator('#ui2MoreBody #sourceButtons')).toBeVisible();
+      await expect(pop.locator('#ui2MoreBody #queueControls')).toHaveCount(1);
+    });
+
+    // The demo settings list AUX and Bluetooth without isLocal, which the Music
+    // view's input row (sourceinputs.js) reads as "no physical input"; here
+    // the speaker reports them as its own sockets.
+    test.describe('with inputs', () => {
+      test.use({
+        scenario: {
+          bindings: {
+            BoxSettings: {
+              byHost: {
+                [LR.host]: {
+                  value: {
+                    ...SETTINGS,
+                    sources: [
+                      { source: 'AUX', sourceAccount: 'AUX', status: 'READY', isLocal: true },
+                      { source: 'BLUETOOTH', sourceAccount: '', status: 'READY', isLocal: true },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+    test('25. the first input button switches the current speaker to it', async ({ app, mock }) => {
+      const { page } = app;
+      await page.locator('#ui2MoreBtn').click();
+      const first = page.locator('#ui2MorePop #sourceInputs .btn-source').first();
+      await expect(first).toBeVisible();
+      const source = await first.getAttribute('data-source');
+      await mock.resetCalls();
+      await first.click();
+      await mock.expectCalled('SelectBoxSource', { times: 1 });
+      const call = await mock.last('SelectBoxSource');
+      expect(call.args.slice(0, 3)).toEqual([LR.host, LR.port, source]);
+    });
+    });
+  });
+
+  test.describe('badges', () => {
+    test.describe('a speaker due an update', () => {
+      test.use({ fakeClock: true, scenario: { banners: { speakerUpdate: true } } });
+
+      test('26. Speaker settings shows the count with a spoken name', async ({ app }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        const badge = page.locator('#ui2SpeakersBadge');
+        await expect(badge).toBeVisible();
+        await expect(badge).toHaveText('1');
+        await expect(badge).toHaveAttribute('aria-label', en('ui2.nav.updatesCount', { n: 1 }));
+      });
+    });
+
+    test.describe('everything current', () => {
+      test.use({ fakeClock: true });
+
+      test('27. no badge and no name', async ({ app }) => {
+        const { page } = app;
+        await settle(page, 9_000);
+        const badge = page.locator('#ui2SpeakersBadge');
+        await expect(badge).toBeHidden();
+        await expect(badge).not.toHaveAttribute('aria-label', /.*/);
+      });
+    });
+  });
+});
+
+// The Layout switch in the Aa menu, starting from the current layout.
+test.describe('Layout switch', () => {
+  test.use({ ui2: false });
+
+  const stored = (page) => page.evaluate(() => {
+    const ls = window.localStorage;
+    return { ui2: ls.getItem('str.ui2Preview'), theme: ls.getItem('a11yTheme'), scale: ls.getItem('a11yScale') };
+  });
+
+  test('28. switches to the preview and back, and both survive a reload', async ({ app }) => {
+    const { page } = app;
+    const before = await stored(page);
+    expect(before.ui2).toBe('0');
+    await page.locator('#a11yTrigger').click();
+    await expect(page.locator('#a11yMenu')).toBeVisible();
+    await expect(page.locator('#a11yMenu [data-ui2="0"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#a11yMenu [data-ui2="1"]')).toHaveAttribute('aria-pressed', 'false');
+
+    let loaded = page.waitForEvent('load');
+    await page.locator('#a11yMenu [data-ui2="1"]').click();
+    await loaded;
+    await expect(page.locator('html')).toHaveClass(/\bui2\b/);
+    await expect(page.locator('#ui2Shell')).toBeVisible();
+    expect((await stored(page)).ui2).toBe('1');
+
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(/\bui2\b/);
+    await expect(page.locator('#ui2Shell')).toBeVisible();
+
+    // In the shell the Aa menu lives in the sidebar's app settings.
+    await page.locator('#ui2AppSettings #a11yTrigger').click();
+    await expect(page.locator('#ui2AppSettings #a11yMenu [data-ui2="1"]')).toHaveAttribute('aria-pressed', 'true');
+    loaded = page.waitForEvent('load');
+    await page.locator('#ui2AppSettings #a11yMenu [data-ui2="0"]').click();
+    await loaded;
+    await expect(page.locator('#presets .preset-body').first()).toBeVisible();
+    await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
+    expect((await stored(page)).ui2).toBe('0');
+
+    await page.reload();
+    await expect(page.locator('#presets .preset-body').first()).toBeVisible();
+    await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
+    await expect(page.locator('#ui2Shell')).toHaveCount(0);
+
+    const after = await stored(page);
+    expect({ theme: after.theme, scale: after.scale }).toEqual({ theme: before.theme, scale: before.scale });
+  });
+
+  test.describe('on the fake clock', () => {
+    test.use({ fakeClock: true });
+
+    test('29. the layout already on screen does not reload', async ({ app }) => {
+      const { page } = app;
+      await page.evaluate(() => { window.__mark = 1; });
+      let navigations = 0;
+      page.on('framenavigated', (f) => { if (f === page.mainFrame()) navigations++; });
+      await page.locator('#a11yTrigger').click();
+      const current = page.locator('#a11yMenu [data-ui2="0"]');
+      await current.click();
+      // A reload need not start at once (a deferred timer), so run a second
+      // of timers before asserting nothing happened: a reload would have
+      // counted a navigation and dropped the mark.
+      await settle(page, 1000);
+      expect(navigations).toBe(0);
+      expect(await page.evaluate(() => window.__mark)).toBe(1);
+      await expect(current).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('#a11yMenu [data-ui2="1"]')).toHaveAttribute('aria-pressed', 'false');
+      expect((await stored(page)).ui2).toBe('0');
+    });
+  });
+
+  test.describe('storage that throws', () => {
+    // A WebView that refuses site data: every localStorage access throws.
+    // A string, not a function: test.use reads a function as a fixture.
+    test.use({
+      preInit: `Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        get() { throw new DOMException('The operation is insecure.', 'SecurityError'); },
+      });`,
+      // No storage, no remembered speaker: with several on the network none is
+      // chosen, so there are no presets to wait for. The header is enough.
+      ready: '#a11yTrigger',
+    });
+
+    // Fix 5.1 of the e2e design ("Layout toggle when storage is unavailable")
+    // is not in the app yet.
+    const NO_STORAGE_BUG = 'Layout switch without storage: both [data-ui2] buttons stay enabled, and "UI 2.0 preview" '
+      + 'reloads the window straight back into the current layout (uipreview.js keeps the choice in memory only, '
+      + 'wireA11yPicker in main.js then reloads), so the button does nothing. Fix 5.1: render both disabled, '
+      + 'with ui2.preview.noStorage in all 13 bundles (src/main.js, the a11y menu near line 562)';
+
+    test('30. boots the current layout and offers no switch it cannot keep', async ({ app }) => {
+      const { page } = app;
+      await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
+      await expect(page.locator('#a11yMenu [data-ui2]')).toHaveCount(2);
+      test.fixme(true, NO_STORAGE_BUG);
+      await page.locator('#a11yTrigger').click();
+      await expect(page.locator('#a11yMenu')).toBeVisible();
+      await expect(page.locator('#a11yMenu [data-ui2="0"]')).toBeDisabled();
+      await expect(page.locator('#a11yMenu [data-ui2="1"]')).toBeDisabled();
+    });
+  });
+});
