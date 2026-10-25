@@ -47,6 +47,16 @@ category, where you can vote for them.
   still use the Bose app and other apps?" on
   [st-reborn.de](https://st-reborn.de/en/#faq).
 
+## Speakers that are not SoundTouch
+
+- **Bose Music speakers** (Smart Soundbar, Soundbar 500, 700 and 900,
+  Home Speaker 300 and 500, Portable Smart Speaker). They belong to the
+  newer Bose Music line, run on the Bose Music app and were not affected
+  by the SoundTouch shutdown, so there is nothing for STR to bring back.
+  STR is for SoundTouch speakers only, see
+  [docs/MODELS.md](MODELS.md). A SoundTouch 300 soundbar is a
+  SoundTouch and is supported.
+
 ## Adding an entry
 
 Add a line only after the decision is written down in a public thread
