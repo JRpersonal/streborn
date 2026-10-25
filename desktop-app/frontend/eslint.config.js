@@ -15,7 +15,9 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**', 'wailsjs/**', 'node_modules/**'],
+    // The e2e output (desktop-app/.e2e-out) sits outside this directory and is
+    // never linted; the two Playwright packages bring their own node_modules.
+    ignores: ['dist/**', 'wailsjs/**', 'node_modules/**', 'e2e/node_modules/**', 'screenshots/node_modules/**'],
   },
   js.configs.recommended,
   {
@@ -79,5 +81,32 @@ export default [
     // Build scripts run in Node.
     files: ['scripts/**/*.mjs', '*.config.js'],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    // The shared mock backend (testkit/): its data and route handlers run in
+    // Node, its installDesktopMock runs inside the page.
+    files: ['testkit/**/*.mjs'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
+  {
+    // The Playwright suite runs in Node; the callbacks it hands to
+    // page.evaluate run in the page, so both sets of globals are real here.
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
+    // Flake policy (e2e/README.md): a spec waits for a condition, never for
+    // time. Real time is what makes a test pass on one machine and not on CI.
+    files: ['e2e/specs/**/*.mjs'],
+    rules: {
+      'no-restricted-properties': ['error', {
+        property: 'waitForTimeout',
+        message: 'Wait for a condition (web-first assertion, expect.poll) or advance the fake clock (helpers/clock.mjs), never for a fixed time.',
+      }],
+      'no-restricted-syntax': ['error', {
+        selector: 'CallExpression[callee.name="setTimeout"]',
+        message: 'No real timers in specs: use the fake clock (fakeClock option, helpers/clock.mjs) or expect.poll.',
+      }],
+    },
   },
 ];

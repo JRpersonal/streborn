@@ -27,6 +27,10 @@
 !/desktop-app/build/windows/wails.exe.manifest
 /desktop-app/frontend/dist/
 /desktop-app/frontend/node_modules/
+# The Playwright suite (desktop-app/frontend/e2e): its packages, and every
+# build, result, trace and report a run writes, kept outside the Vite root.
+/desktop-app/frontend/e2e/node_modules/
+/desktop-app/.e2e-out/
 /desktop-app/desktop-app/
 /desktop-app/agentbin/streborn-*
 /desktop-app/agentbin/*.bin

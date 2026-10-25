@@ -8,7 +8,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint:css": "stylelint \"src/**/*.css\"",
-    "lint:js": "eslint src scripts",
+    "lint:js": "eslint src scripts testkit e2e",
     "lint": "npm run lint:js && npm run lint:css"
   },
   "devDependencies": {

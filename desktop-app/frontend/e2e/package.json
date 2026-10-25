@@ -1,0 +1,17 @@
+{
+  "name": "streborn-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Dev and CI only: the Playwright UI test suite for the STR desktop frontend and the phone remote, run against the shared mock backend in ../testkit. A package of its own so Playwright and its browser download never enter the app's package.json, its frontend job or the wails build.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:desktop": "playwright test --project=desktop",
+    "test:phone": "playwright test --project=phone",
+    "report": "playwright show-report ../../.e2e-out/report-4179"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.60.0"
+  }
+}
