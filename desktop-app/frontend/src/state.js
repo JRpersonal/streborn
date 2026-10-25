@@ -104,6 +104,9 @@ export const state = {
   // exactly during the OTA reboot window, tempting users into the
   // exactly wrong action.
   otaInProgress: false,
+  // ui2Shell is true once the UI 2.0 preview shell is mounted (shell2/mount.js).
+  // False with the preview off, and then nothing reads it differently.
+  ui2Shell: false,
   // setupTarget is the speaker the USB-stick prep flow is currently
   // bound to. Set by the user via the target picker at the top of
   // the Setup view; cleared on view-switch only when discoverBoxes

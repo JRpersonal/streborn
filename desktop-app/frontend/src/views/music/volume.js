@@ -14,6 +14,7 @@ import {
   pairVolumeTarget,
 } from '../../pairVolume.js';
 import { state } from '../../state.js';
+import { playerOnScreen } from '../../statusrefreshscope.js';
 import { pairDisplayName } from '../../stereoNames.js';
 import { $ } from '../../utils.js';
 import { throttledSetVolume } from '../settings.js';
@@ -179,7 +180,9 @@ state.musicVolUntil = 0;
 export async function syncMusicTabVolumeFromBox() {
   const box = state.currentBox;
   if (!box || !musicVolEl) return;
-  if (state.view !== 'box') return;
+  // Only while the slider is on screen: the Music tab, or the UI 2.0
+  // persistent player in another view.
+  if (!playerOnScreen({ view: state.view, persistentPlayer: !!state.ui2Shell, otaInProgress: !!state.otaInProgress })) return;
   if (state.musicVolBusy) return;
   if (Date.now() < (state.musicVolUntil || 0)) return;
   try {

@@ -19,7 +19,8 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(__dirname, '..');                       // desktop-app/frontend
 const OUT = path.resolve(FRONTEND, '../../docs/screenshots');         // repo/docs/screenshots
-const PORT = 4178;
+// SHOOT_PORT moves the preview server, for a second checkout shooting at the same time.
+const PORT = Number(process.env.SHOOT_PORT) || 4178;
 const BASE = `http://127.0.0.1:${PORT}/`;
 
 // All shipped UI locales. Override with SHOOT_LANGS=ar,de (comma-separated) to
@@ -32,8 +33,12 @@ const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
 // logs" footer link highlighted; the website FAQ uses it to show where the
 // log lives. Override with SHOOT_VIEWS=app-logs to re-shoot a subset.
 const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app-settings1', 'app-settings2', 'app-settings3', 'app-install', 'app-stick-step1', 'app-stick-step2', 'app-logs', 'app-snooze'];
+// The UI 2.0 preview (#1285), switched on through its localStorage key: one
+// shot per theme and one at the largest text size. Not part of a full run,
+// since the preview is opt-in; SHOOT_VIEWS=ui2 shoots all four.
+const UI2_VIEWS = ['app-ui2-dark', 'app-ui2-light', 'app-ui2-contrast', 'app-ui2-xl'];
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
-  ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
+  ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean).flatMap((v) => (v === 'ui2' ? UI2_VIEWS : [v]))
   : ALL_VIEWS;
 
 // ---- demo data -------------------------------------------------------------
@@ -186,12 +191,17 @@ function installMocks({ locale, view, demo }) {
     // as already seen. GetAppFlag below answers true for the same reason.
     localStorage.setItem('str.worldMapInvited', '1');
     localStorage.setItem('str.worldMapInvitedAll', '1');
+    if (view.startsWith('app-ui2')) {
+      localStorage.setItem('str.ui2Preview', '1');
+      localStorage.setItem('a11yTheme', view === 'app-ui2-light' ? 'light' : view === 'app-ui2-contrast' ? 'contrast' : 'dark');
+      localStorage.setItem('a11yScale', view === 'app-ui2-xl' ? '3' : '1');
+    }
   } catch (e) {}
 
   const P = (v) => Promise.resolve(v);
   // app-listen shows the lively now-playing state (matches the README hero);
   // every other view boots idle/standby.
-  const status = view === 'app-listen' ? demo.statusPlaying : demo.statusIdle;
+  const status = view === 'app-listen' || view.startsWith('app-ui2') ? demo.statusPlaying : demo.statusIdle;
 
   const App = {
     AppInfo: () => P(demo.appInfo),
@@ -199,7 +209,7 @@ function installMocks({ locale, view, demo }) {
     CheckAppUpdate: () => P({}),
     // The setup views also list a stock (not yet converted) speaker, so the
     // network-install card has a target to show.
-    DiscoverBoxes: () => P(view.startsWith('app-install') || view.startsWith('app-stick') ? [demo.box, demo.stockBox] : [demo.box]),
+    DiscoverBoxes: () => P(view.startsWith('app-install') || view.startsWith('app-stick') || view.startsWith('app-ui2') ? [demo.box, demo.stockBox] : [demo.box]),
     // Durable "already seen" flags: true keeps the one-time invites away.
     GetAppFlag: () => P(true),
     SetAppFlag: () => P(undefined),
@@ -284,6 +294,26 @@ async function drive(page, view) {
   if (view === 'app-listen') {
     await page.waitForSelector('#presets .preset-body, #presets .preset-hint', { timeout: 9000 });
     await scrollY(0);
+  } else if (view.startsWith('app-ui2')) {
+    // The preview shell: navigate through its sidebar, then open one of its
+    // popovers per shot (room switcher, Output, More).
+    await page.waitForSelector('html.ui2 .ui2-shell', { timeout: 9000 });
+    await page.waitForSelector('#presets .preset-body, #presets .preset-hint', { timeout: 9000 });
+    await page.waitForSelector('#ui2RoomList .ui2-room-row', { state: 'attached', timeout: 9000 });
+    if (view === 'app-ui2-dark') {
+      await click('#ui2RoomBtn');
+      await page.waitForSelector('#ui2RoomPop:not([hidden])', { timeout: 9000 });
+    } else if (view === 'app-ui2-light') {
+      await click('.ui2-nav-item[data-view="library"]');
+      await page.waitForSelector('#view-library:not(.hidden) .library-row-folder', { timeout: 9000 });
+      await click('#ui2OutputBtn');
+      await page.waitForSelector('#ui2OutputPop:not([hidden])', { timeout: 9000 });
+    } else if (view === 'app-ui2-contrast') {
+      await click('.ui2-nav-item[data-view="recent"]');
+      await page.waitForSelector('#view-recent:not(.hidden) .recent-card', { timeout: 9000 });
+      await click('#ui2MoreBtn');
+      await page.waitForSelector('#ui2MorePop:not([hidden])', { timeout: 9000 });
+    }
   } else if (view === 'app-search') {
     await page.waitForSelector('#topBtn', { timeout: 9000 });
     await click('#topBtn');
@@ -416,6 +446,8 @@ try {
     for (const view of VIEWS) {
       const page = await ctx.newPage();
       page.on('pageerror', (e) => console.warn(`  [${lang}/${view}] pageerror:`, e.message));
+      // SHOOT_DEBUG=1 forwards the page's console, for a shot that will not come up.
+      if (process.env.SHOOT_DEBUG) page.on('console', (m) => console.log(`  [${lang}/${view}] console.${m.type()}:`, m.text()));
       await page.addInitScript(installMocks, { locale: lang, view, demo: DEMO });
       await page.route('**/api/**', routeAgent);
       try {
@@ -440,5 +472,9 @@ try {
   if (fail) process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  server.kill();
+  // On Windows the server runs under a shell (see startServer), and killing
+  // the shell leaves vite listening on the port, where the next run then finds
+  // a stale build. Take the whole process tree down instead.
+  if (process.platform === 'win32') spawn('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' });
+  else server.kill();
 }

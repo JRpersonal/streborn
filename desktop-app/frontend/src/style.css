@@ -3223,6 +3223,10 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   background: var(--brand-bg); border-color: var(--brand);
   color: var(--brand-text); font-weight: 600;
 }
+.a11y-hint {
+  margin: 6px 0 0; max-width: 220px;
+  font-size: 11px; line-height: 1.35; color: var(--c-muted);
+}
 
 /* Sticky offline speaker tiles (2026-07-26): a speaker once sighted stays
    listed when scans miss it, clearly greyed out with a disconnect mark and a

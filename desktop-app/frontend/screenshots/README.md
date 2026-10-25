@@ -26,6 +26,8 @@ npm run shoot          # builds the frontend, serves it, captures all views
 app source; the mocks live only in this script.
 
 Narrow a run with `SHOOT_LANGS=en,de` and/or `SHOOT_VIEWS=app-listen,app-recent`.
+The UI 2.0 preview shots (`app-ui2-dark`, `app-ui2-light`, `app-ui2-contrast`,
+`app-ui2-xl`) are not part of a full run; `SHOOT_VIEWS=ui2` takes all four.
 The setup views (`app-install`, `app-stick-step1`, `app-stick-step2`) add a
 stock speaker to the demo network so the network-install card has a target;
 the stick shots open the "Prepare a USB stick instead" fallback below it.

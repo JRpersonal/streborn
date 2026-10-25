@@ -1,0 +1,663 @@
+/* UI 2.0 preview (#1285, docs/UI-2.0.md): tokens, components and the shell.
+
+   Every rule here sits under html.ui2, the class mount.js sets once the shell
+   is built, so with the preview off this file changes nothing at all. The
+   shell chrome reads only the --u-* tokens below. The views inside it keep
+   their own --c-* tokens and styles from style.css, untouched: phase 1 frames
+   them, it does not restyle them.
+
+   Three themes, and only the colour tokens change between them. The contrast
+   of every pairing is checked by shell2/tokens.test.js. */
+
+html.ui2 {
+  --u-bg: #17181B;
+  --u-sidebar: #1E1F23;
+  --u-surface: #1F2024;
+  --u-selected: #203955;
+  --u-action: #1F6FB2;
+  --u-on-action: #FFFFFF;
+  --u-accent: #66BBDD;
+  --u-text: #E9EAEE;
+  --u-muted: #A9ADB6;
+  --u-border: #6E727C;
+  --u-ok: #5CC98A;
+  --u-warn: #E8B84A;
+  --u-danger: #FF7A6E;
+  --u-danger-fill: #B3261E;
+  --u-on-danger: #FFFFFF;
+  --u-focus: #66BBDD;
+  --u-space: 8px;
+  --u-target: 40px;
+  --u-radius: 8px;
+  --u-sidebar-w: 248px;
+  --u-player-min: 80px;
+  --u-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html.ui2.a11y-light {
+  --u-bg: #FFFFFF;
+  --u-sidebar: #F3F3F5;
+  --u-surface: #F7F7F8;
+  --u-selected: #DCEAF6;
+  --u-action: #1769AA;
+  --u-on-action: #FFFFFF;
+  --u-accent: #1769AA;
+  --u-text: #16181D;
+  --u-muted: #565B66;
+  --u-border: #767B85;
+  --u-ok: #1A6B3C;
+  --u-warn: #8A5A00;
+  --u-danger: #B3261E;
+  --u-danger-fill: #B3261E;
+  --u-on-danger: #FFFFFF;
+  --u-focus: #1769AA;
+}
+
+html.ui2.a11y-contrast {
+  --u-bg: #000000;
+  --u-sidebar: #000000;
+  --u-surface: #0A0A0A;
+  --u-selected: #003A70;
+  --u-action: #4FC3FF;
+  --u-on-action: #000000;
+  --u-accent: #7FD8FF;
+  --u-text: #FFFFFF;
+  --u-muted: #E0E0E0;
+  --u-border: #FFFFFF;
+  --u-ok: #7CFFB2;
+  --u-warn: #FFD54A;
+  --u-danger: #FF8A80;
+  --u-danger-fill: #FF8A80;
+  --u-on-danger: #000000;
+  --u-focus: #FFFFFF;
+}
+
+/* ---------- Components ---------- */
+
+/* Buttons: 40px targets, the system UI font. An icon button has no words, so
+   it must carry an aria-label. */
+html.ui2 .u-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--u-radius);
+  font-family: var(--u-font);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+html.ui2 .u-btn--primary { background: var(--u-action); color: var(--u-on-action); }
+html.ui2 .u-btn--secondary { background: var(--u-surface); color: var(--u-text); border-color: var(--u-border); }
+html.ui2 .u-btn--danger { background: var(--u-danger-fill); color: var(--u-on-danger); }
+html.ui2 .u-btn--icon {
+  width: var(--u-target);
+  min-width: var(--u-target);
+  height: var(--u-target);
+  padding: 0;
+  background: transparent;
+  color: var(--u-text);
+  font-size: 20px;
+}
+html.ui2 .u-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Keyboard focus in the new chrome: a real double ring (the page colour, then
+   the focus colour) that stays visible on every surface. Scoped to the chrome:
+   the views inside keep the focus style they have today. */
+html.ui2 :is(.ui2-sidebar, .ui2-player, .u-popover, .u-skip) :focus-visible,
+html.ui2 .u-skip:focus-visible {
+  outline: 2px solid var(--u-focus) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}
+
+/* The status pill: always words, the dot only repeats them. */
+html.ui2 .u-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid currentcolor;
+  border-radius: 12px;
+  font-family: var(--u-font);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+html.ui2 .u-pill-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+html.ui2 .u-pill--ok { color: var(--u-ok); }
+html.ui2 .u-pill--warn { color: var(--u-warn); }
+html.ui2 .u-pill--danger { color: var(--u-danger); }
+html.ui2 .u-pill--muted { color: var(--u-muted); }
+html.ui2 .u-pill--accent { color: var(--u-accent); }
+
+/* Chips for facts that hold next to the state: "Update", "No internet". */
+html.ui2 .u-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--u-font);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+html.ui2 .u-chip--action { background: var(--u-action); color: var(--u-on-action); }
+html.ui2 .u-chip--warn { color: var(--u-warn); border-color: currentcolor; }
+
+/* Count badge on a navigation entry. */
+html.ui2 .u-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  margin-inline-start: auto;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: var(--u-action);
+  color: var(--u-on-action);
+  font-size: 12px;
+  font-weight: 700;
+}
+html.ui2 .u-badge--muted { background: transparent; color: var(--u-muted); border: 1px solid var(--u-border); }
+
+/* List rows: 48px, and a selected row says so three ways (background, the
+   accent bar on the leading edge, aria-pressed or aria-current). */
+html.ui2 .u-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 4px 16px;
+  border: 0;
+  border-radius: var(--u-radius);
+  background: transparent;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 .u-row:hover { background: var(--u-bg); }
+html.ui2 .u-row.is-selected { background: var(--u-selected); }
+html.ui2 .u-row.is-selected::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--u-accent);
+}
+
+/* Cards. The empty / offline / error variants are components only in phase 1. */
+html.ui2 .u-card {
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 .u-card--empty { border-style: dashed; color: var(--u-muted); }
+html.ui2 .u-card--offline { border-color: var(--u-muted); }
+html.ui2 .u-card--error { border-color: var(--u-danger); }
+
+/* Popover: a dialog next to its trigger, scrolling when it is taller than the
+   room it has. */
+html.ui2 .u-pop-anchor { position: relative; }
+html.ui2 .u-popover {
+  position: absolute;
+  z-index: 60;
+  min-width: 240px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+html.ui2 .u-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-inline-start: 8px;
+  margin-bottom: 8px;
+}
+html.ui2 .u-pop-title { font-size: 14px; font-weight: 700; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html.ui2 .u-popover { transition: opacity 120ms ease; }
+  html.ui2 .u-row,
+  html.ui2 .ui2-nav-item { transition: background-color 120ms ease; }
+}
+
+/* The hidden attribute wins over the display of every component here. */
+html.ui2 :is(.ui2-sidebar, .ui2-player, .u-popover) [hidden],
+html.ui2 .u-popover[hidden],
+html.ui2 .ui2-player-empty[hidden] { display: none !important; }
+
+/* ---------- The page chain: the window is the shell ---------- */
+
+html.ui2 body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--u-bg);
+}
+html.ui2 .layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+}
+html.ui2 #app {
+  flex: 1 1 auto;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* The old chrome stays in the page (its tabs still carry the badges and the
+   lookups the app does), it is just not drawn. The donate rail is hidden; the
+   footer link stays at the end of every view. */
+html.ui2 .app-header,
+html.ui2 #app > .tabs,
+html.ui2 .donate-side { display: none !important; }
+
+/* Text size: style.css zooms the body. A percentage height is resolved before
+   the zoom, so the shell still fills exactly the window at every size and the
+   player stays in sight (measured in Chromium, the engine of WebView2: a
+   height divided by the zoom left a gap under the player instead). The
+   widths are what grows, so the player and the sidebar react to the width
+   they really have through the container queries at the end of this file. */
+
+html.ui2 .u-skip {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: -200px;
+  z-index: 1000;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 2px solid var(--u-focus);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html.ui2 .u-skip:focus { top: 8px; }
+
+html.ui2 .ui2-shell {
+  container-type: inline-size;
+  display: grid;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: var(--u-sidebar-w) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "banners banners"
+    "side main"
+    "player player";
+  background: var(--u-bg);
+}
+html.ui2 .ui2-shell > * { min-width: 0; min-height: 0; }
+
+/* Window-wide banners: on top, and never more than a third of the window, so
+   two or three of them at once still leave the view and the player usable. */
+html.ui2 .ui2-banners {
+  grid-area: banners;
+  max-height: 30vh;
+  overflow: auto;
+}
+
+/* ---------- Sidebar ---------- */
+
+html.ui2 .ui2-sidebar {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  background: var(--u-sidebar);
+  color: var(--u-text);
+  border-inline-end: 1px solid var(--u-border);
+  font-family: var(--u-font);
+}
+html.ui2 .ui2-side-top {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 8px 8px;
+}
+
+/* Only the navigation list scrolls; the switcher and the bottom area stay
+   outside it, so their popovers are never clipped by the scroll box. */
+html.ui2 .ui2-side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+html.ui2 .ui2-side-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--u-border);
+}
+
+html.ui2 .ui2-brand {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  padding-inline: 8px;
+}
+html.ui2 .ui2-brand .app-logo { color: var(--u-text); }
+html.ui2 .ui2-brand .app-brand { color: var(--u-text); font-family: var(--u-font); font-size: 20px; }
+html.ui2 .ui2-brand .app-brand-accent { color: var(--u-accent); }
+html.ui2 .ui2-brand .app-tagline,
+html.ui2 .ui2-brand .app-supported {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+html.ui2 .ui2-brand .app-tagline { margin-top: 8px; }
+
+/* Room switcher. */
+html.ui2 .ui2-rooms-label {
+  padding: 0 8px 8px;
+  color: var(--u-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+html.ui2 .ui2-room-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 .ui2-room-btn-body { flex: 1 1 auto; min-width: 0; }
+html.ui2 .ui2-room-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+html.ui2 .ui2-room-name {
+  overflow: hidden;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-room-name--none { color: var(--u-muted); font-weight: 600; }
+html.ui2 .ui2-room-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+html.ui2 .ui2-caret { color: var(--u-muted); font-size: 12px; }
+html.ui2 .ui2-room-pop {
+  top: calc(100% + 8px);
+  inset-inline-start: 0;
+  width: calc(var(--u-sidebar-w) - 16px);
+  min-width: 0;
+}
+html.ui2 .ui2-room-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+html.ui2 .ui2-room-row { flex-wrap: wrap; padding-block: 8px; }
+html.ui2 .ui2-room-row-text {
+  display: flex;
+  flex: 1 1 120px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+html.ui2 .ui2-room-row-name {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-room-row-meta { color: var(--u-muted); font-size: 12px; }
+html.ui2 .ui2-room-empty { margin: 0 8px 8px; color: var(--u-muted); font-size: 14px; }
+html.ui2 .ui2-room-add { width: 100%; }
+
+/* Navigation. Groups are labelled groups of buttons, not a tablist. */
+html.ui2 .ui2-nav-group + .ui2-nav-group { margin-top: 16px; }
+html.ui2 .ui2-nav-heading {
+  padding: 0 16px 8px;
+  color: var(--u-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+html.ui2 .ui2-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--u-radius);
+  background: transparent;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 .ui2-nav-item:hover { background: var(--u-surface); }
+html.ui2 .ui2-nav-item.is-active { background: var(--u-selected); font-weight: 700; }
+html.ui2 .ui2-nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--u-accent);
+}
+html.ui2 .ui2-nav-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-nav-item--small { color: var(--u-muted); font-size: 13px; }
+html.ui2 .ui2-nav-item .nav-newdot { flex: 0 0 auto; margin: 0; }
+
+/* App settings ("Aa" and the language) at the bottom: their menus open
+   upward, from the leading edge, and scroll when the window is short. */
+html.ui2 .ui2-app-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html.ui2 .ui2-app-settings .app-a11y,
+html.ui2 .ui2-app-settings .app-locale { margin: 0; }
+html.ui2 .ui2-app-settings .a11y-dd-trigger,
+html.ui2 .ui2-app-settings .locale-dd-trigger { min-height: var(--u-target); padding-inline: 12px; }
+html.ui2 .ui2-app-settings .a11y-dd-menu,
+html.ui2 .ui2-app-settings .locale-dd-menu {
+  inset: auto auto 100% auto;
+  inset-inline-start: 0;
+  max-height: min(60vh, 480px);
+  margin-bottom: 8px;
+  overflow: auto;
+}
+
+/* ---------- Main pane ---------- */
+
+html.ui2 .ui2-main {
+  grid-area: main;
+  overflow: auto;
+  background: var(--u-bg);
+  scroll-padding-block: 16px;
+}
+html.ui2 .ui2-main:focus { outline: none; }
+html.ui2 .ui2-main-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+  padding: 16px;
+}
+html.ui2 .ui2-main-inner > .view { flex: 1 0 auto; }
+
+/* ---------- Persistent player ---------- */
+
+html.ui2 .ui2-player {
+  grid-area: player;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) auto auto auto minmax(240px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: var(--u-player-min);
+  padding: 8px 16px;
+  border-top: 1px solid var(--u-border);
+  background: var(--u-sidebar);
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 .ui2-player > * { min-width: 0; }
+html.ui2 .ui2-player-now {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+html.ui2 .ui2-player .status-bar {
+  margin-bottom: 0;
+  min-height: var(--u-target);
+  padding: 0;
+  background: transparent;
+}
+html.ui2 .ui2-player .status-bar .now {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-player .title-swap-row { margin: 0; font-size: 12px; }
+html.ui2 .ui2-player .controls {
+  flex-wrap: nowrap;
+  margin-bottom: 0;
+}
+html.ui2 .ui2-player .btn { min-width: var(--u-target); min-height: var(--u-target); }
+html.ui2 .ui2-player #pauseBtn {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 24px;
+}
+html.ui2 .ui2-player .volume-control {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+}
+html.ui2 .ui2-player .volume-control input[type=range] { width: 100%; min-width: 0; }
+html.ui2 .ui2-output-btn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  max-width: 240px;
+  padding-block: 4px;
+  text-align: start;
+}
+html.ui2 .ui2-output-kicker { color: var(--u-muted); font-size: 12px; font-weight: 600; }
+html.ui2 .ui2-output-text {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-player-pop {
+  bottom: calc(100% + 8px);
+  inset-inline-end: 0;
+  width: min(400px, calc(100vw - 32px));
+}
+html.ui2 .ui2-output-summary { margin: 0 8px 8px; color: var(--u-muted); font-size: 14px; }
+html.ui2 .ui2-player-pop .group-control,
+html.ui2 .ui2-player-pop .queue-controls,
+html.ui2 .ui2-player-pop .source-buttons { margin: 0 0 8px; }
+html.ui2 .ui2-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+html.ui2 .ui2-player-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+
+/* Toasts and the world-map invite float above the player, not over it. */
+html.ui2 .toast,
+html.ui2 .worldmap-invite { bottom: calc(var(--u-player-min) + 24px); }
+
+/* Narrow, or a larger text size (the zoom leaves fewer CSS pixels across):
+   the player puts the volume on a row of its own. A container query, not a
+   media query, because the zoom on the body is invisible to the latter. */
+@container (width < 1000px) {
+  html.ui2 .ui2-player { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+  html.ui2 .ui2-player-volume { grid-column: 1 / -1; }
+}
+
+/* A short window or a larger text size: the tagline lines give their room to
+   the navigation, which is the part of the sidebar that has to stay usable. */
+@media (height <= 700px) {
+  html.ui2 .ui2-brand .app-tagline,
+  html.ui2 .ui2-brand .app-supported { display: none; }
+}
+html.ui2.a11y-scale-l .ui2-brand .app-tagline,
+html.ui2.a11y-scale-l .ui2-brand .app-supported,
+html.ui2.a11y-scale-xl .ui2-brand .app-tagline,
+html.ui2.a11y-scale-xl .ui2-brand .app-supported { display: none; }
