@@ -88,6 +88,11 @@ describe('UI 2.0 tokens', () => {
     }
   });
 
+  it('names the Levels sliders in a checked text colour', () => {
+    expect(css).toMatch(/html\.ui2 \.ui2-player-pop \.group-member-name \{[^}]*color: var\(--u-text\)/);
+    expect(css).toMatch(/html\.ui2 \.ui2-player-pop \.group-member-vol \.vol-val \{[^}]*color: var\(--u-muted\)/);
+  });
+
   it('sizes the sidebar speaker lists with tokens', () => {
     expect(base['u-spk-row']).toBe('44px');
     expect(Number(base['u-spk-visible'])).toBeGreaterThan(Number(base['u-spk-pinned']));

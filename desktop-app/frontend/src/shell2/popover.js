@@ -10,8 +10,19 @@
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// visible tells whether el can take focus: not inside [hidden] or .hidden, and
+// with a layout box. A control hidden by CSS alone (the group chips in Levels,
+// shell2.css) ignores focus(), and picking it left focus on the trigger.
 function visible(el) {
-  return !!el && !el.closest('[hidden]') && !el.closest('.hidden');
+  if (!el || el.closest('[hidden]') || el.closest('.hidden')) return false;
+  if (typeof el.checkVisibility === 'function') return el.checkVisibility();
+  const win = typeof window !== 'undefined' ? window : null;
+  if (!win || typeof win.getComputedStyle !== 'function') return true;
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+    const cs = win.getComputedStyle(n);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+  }
+  return true;
 }
 
 export function wirePopover(trigger, panel, opts = {}) {

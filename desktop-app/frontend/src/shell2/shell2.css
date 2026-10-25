@@ -785,6 +785,11 @@ html.ui2 .ui2-player-pop .group-label,
 html.ui2 .ui2-player-pop .group-chips,
 html.ui2 .ui2-player-pop .group-member-note { display: none; }
 html.ui2 .ui2-player-pop .group-member-vols { margin: 0; }
+/* The speaker names are the only visible names of the Levels sliders: in the
+   shell's text colour, not the old layout's undefined --c-text-dim (#888,
+   3.3:1 on the light popover). */
+html.ui2 .ui2-player-pop .group-member-name { color: var(--u-text); }
+html.ui2 .ui2-player-pop .group-member-vol .vol-val { color: var(--u-muted); }
 html.ui2 .ui2-player-pop .group-control,
 html.ui2 .ui2-player-pop .queue-controls,
 html.ui2 .ui2-player-pop .source-buttons { margin: 0 0 8px; }

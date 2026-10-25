@@ -167,12 +167,30 @@ async function run(page) {
   const chipsShown = await page.$$eval('#ui2LevelsPop .group-chip', (els) => els.some((e) => e.offsetParent !== null));
   check(levels === 2 && !chipsShown, 'Levels holds one slider per member and no speaker chooser');
   await page.keyboard.press('Escape');
+  // From the keyboard, Levels takes focus to its first slider, not to a hidden chip.
+  await page.focus('#ui2LevelsBtn');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#ui2LevelsPop:not([hidden])', { timeout: 5000 });
+  const levelsFocus = await page.evaluate(() => (document.activeElement && document.activeElement.id) || '');
+  check(/^memberVol-/.test(levelsFocus), `Enter on Levels puts focus on the first slider (${levelsFocus || 'none'})`);
+  await page.keyboard.press('Escape');
+
+  // Choosing an idle speaker keeps the playing group pinned, and its "+"
+  // still adds to that music (#1284).
+  await page.click(`#ui2SpkLists .ui2-spk-pick[data-host="${host('Hall')}"]`);
+  await page.waitForSelector(`#ui2SpkLists .ui2-spk-pick[data-host="${host('Hall')}"][aria-current="true"]`, { timeout: 5000 });
+  const idleSel = await page.$$eval('#ui2SpkLists .ui2-spk-row', (els) => ({
+    pinned: els.filter((li) => li.closest('.ui2-spk-pinned')).map((li) => li.querySelector('.ui2-spk-pick').dataset.host),
+    masters: els.map((li) => li.querySelector('.ui2-spk-act[data-act="add"]')).filter(Boolean).map((a) => a.dataset.master),
+  }));
+  check(idleSel.pinned.join() === [host('Living Room'), host('Dining room')].join(), 'with an idle speaker chosen, the playing group stays pinned');
+  check(idleSel.masters.length > 0 && idleSel.masters.every((m) => m === host('Living Room')), 'every "+" adds to the playing group');
 
   // The version line sits in the frame.
   check(!!(await page.$('#ui2Version #appUpdateBanner.app-update-quiet')), 'the version line is at the bottom of the sidebar');
 
-  // "+" edits the group of the speaker you control, even when the row is
-  // chosen right after (the batch keeps the group it was clicked in).
+  // "+" edits the playing group, even when the row is chosen right after
+  // (the batch keeps the group it was clicked in).
   await page.click(`#ui2SpkLists .ui2-spk-act[data-host="${host('Office')}"]`);
   const pending = await page.$eval(`#ui2SpkLists .ui2-spk-act[data-host="${host('Office')}"]`, (b) => b.getAttribute('aria-busy') === 'true' && /Adding Office/.test(b.getAttribute('aria-label')));
   check(pending, 'the "+" says the edit is running');
