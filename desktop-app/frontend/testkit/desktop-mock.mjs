@@ -39,9 +39,9 @@ export const MODELLED_BINDINGS = [
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
-  'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SaveQueuePreset', 'SaveSpotifyPreset',
+  'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SaveQueuePreset', 'SaveSpotifyPreset', 'SearchLibrary',
   'SetAppFlag', 'SetAppLocale', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
-  'SpotifyNowPlaying', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
+  'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
 ];
 
@@ -267,7 +267,19 @@ export function installDesktopMock({ scenario, demo }) {
     // Readable display-track setting; onPanel hides the re-buffer warning.
     GetDisplayTrack: () => ({ enabled: false, mode: 'both', onPanel: true, supported: true }),
     ListMediaServers: () => clone(demo.mediaServers),
-    BrowseLibrary: () => clone(demo.libraryPage),
+    // A known container id answers its folder (demo-data LIBRARY_TREE), any
+    // other the root page.
+    BrowseLibrary: ([, id]) => clone((demo.libraryTree && demo.libraryTree[id]) || demo.libraryPage),
+    SearchLibrary: () => clone(demo.librarySearch),
+    // A folder play: the speaker plays its first track.
+    StartQueue: ([h, , payloadJSON]) => {
+      let p = {};
+      try { p = JSON.parse(payloadJSON) || {}; } catch (e) { p = {}; }
+      const first = (p.items || [])[0] || {};
+      state.playing[h] = 'PLAY_STATE';
+      state.item[h] = { name: first.title || '', location: first.url || '', art: first.art || '', source: 'UPNP' };
+      return undefined;
+    },
     // Radio search runs app-side (Wails bindings, not /api/radio).
     RadioSearch: () => clone(demo.stations),
     RadioSearchDetailed: () => ({ stations: clone(demo.stations), relaxed: false }),

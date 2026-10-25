@@ -149,6 +149,33 @@ export const LIBRARY_PAGE = {
   totalMatches: 6,
   returned: 6,
 };
+// The folders below the root, by container id (BrowseLibrary's second
+// argument): Music > Evening Sessions holds three tracks, so the Library can
+// be walked down level by level. Any other id answers the root page.
+const LIB_TRACK = (n, title, artist, sec) => ({
+  id: `t${n}`, title, artist, album: 'Evening Sessions', durationSec: sec, mimeType: 'audio/flac',
+  albumArtURL: '', streamURL: `http://192.0.2.60:8200/MediaItems/${n}.flac`,
+});
+export const LIBRARY_TREE = {
+  c1: { containers: [{ id: 'c1a', title: 'Evening Sessions', childCount: 3 }, { id: 'c1b', title: 'Empty Shelf', childCount: 0 }], items: [], totalMatches: 2, returned: 2 },
+  c1a: {
+    containers: [],
+    items: [
+      LIB_TRACK(1, 'Opening', 'Lorem Ipsum Ensemble', 245),
+      LIB_TRACK(2, 'Blue Hour', 'Quartet Example', 312),
+      LIB_TRACK(3, 'Late Train', 'Ada Demo Trio', 198),
+    ],
+    totalMatches: 3,
+    returned: 3,
+  },
+  c1b: { containers: [], items: [], totalMatches: 0, returned: 0 },
+};
+// SearchLibrary's answer: every hit names the server it is on.
+export const LIBRARY_SEARCH = {
+  items: LIBRARY_TREE.c1a.items.slice(1, 3).map((it) => ({ ...it, server: 'Living Room NAS' })),
+  unanswered: [],
+  partial: false,
+};
 
 // A speaker still on Bose firmware: the setup views offer to install STR on it.
 export const STOCK_BOX = {
@@ -343,4 +370,5 @@ export const DEMO = {
   drives: DRIVES, wifi: WIFI, appInfo: APPINFO, stations: STATIONS, languages: LANGUAGES,
   mediaServers: MEDIA_SERVERS, libraryPage: LIBRARY_PAGE, phoneQR: PHONE_QR,
   ui2Net: UI2_NET, ui2Zones: UI2_ZONES, ui2Playing: UI2_PLAYING,
+  libraryTree: LIBRARY_TREE, librarySearch: LIBRARY_SEARCH,
 };

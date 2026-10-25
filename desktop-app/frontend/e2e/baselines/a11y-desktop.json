@@ -57,10 +57,6 @@
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
-    },
-    "select-name": {
-      "count": 2,
-      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
     }
   },
   "contrast|ui2|pop-levels": {
@@ -157,10 +153,6 @@
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
-    },
-    "select-name": {
-      "count": 2,
-      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
     }
   },
   "dark|ui2|pop-levels": {
@@ -265,10 +257,6 @@
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
-    },
-    "select-name": {
-      "count": 2,
-      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
     }
   },
   "light|ui2|pop-levels": {
