@@ -1670,7 +1670,7 @@ function safeMountShell2() {
   try {
     const ok = mountShell2({
       switchView,
-      pickBox,
+      pickBox: pickBoxFromShell,
       boxNeedsUpdate,
       boxCannotReachInternet,
       getBoxLabel,
@@ -3084,6 +3084,35 @@ async function pickBox(box, titleHint) {
     return;
   }
   selectBox(box);
+}
+
+// pickBoxFromShell is pickBox for the UI 2.0 room switcher. Unlike the Music
+// tab's picker, the switcher stays reachable while Speaker settings or Setup is
+// open, so a pick there must bring the open view along: otherwise Settings
+// would keep showing speaker A's form while its buttons act on B (they read
+// state.settingsBox on click), and Setup would lose a chosen factory-reset
+// target or the target of a running install without showing it.
+async function pickBoxFromShell(box) {
+  if (!box) return;
+  const view = state.view;
+  const prevSettings = state.settingsBox;
+  const prevTarget = state.setupTarget;
+  // A running install and a deliberately chosen factory reset keep their
+  // target. Picking a stock speaker is itself a Setup choice (pickBox asks
+  // first), so it may replace a factory reset, never a running install.
+  const keepTarget = installRunActive()
+    || (!!prevTarget && prevTarget.kind === 'factory-reset' && box.kind !== 'stock');
+  await pickBox(box);
+  if (keepTarget && state.setupTarget !== prevTarget) state.setupTarget = prevTarget;
+  if (state.view !== view) return; // pickBox moved on (stock speaker into Setup)
+  if (view === 'settings' && state.settingsBox !== prevSettings) {
+    // The same reset the Settings picker's own change does.
+    if (state.settingsReconnect && state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
+    state.settingsReconnect = null;
+    loadBoxSettings();
+  } else if (view === 'setup' && state.setupTarget !== prevTarget) {
+    renderSetupTargetPicker();
+  }
 }
 
 // speakerPickedInTab keeps the tabs in lock-step in the other direction: a

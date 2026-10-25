@@ -168,6 +168,7 @@ export function mountShell2(d) {
   }
 
   // Phase 3: wire and activate.
+  quietPlayerClock();
   wire(frame, skip);
   state.ui2Shell = true;
   document.documentElement.classList.add('ui2');
@@ -175,6 +176,23 @@ export function mountShell2(d) {
   syncShellPlayer(!!state.currentBox);
   paintRooms(true);
   return true;
+}
+
+// quietPlayerClock keeps the persistent player's live region to real news.
+// The status bar was one polite live region, track line AND elapsed clock;
+// that was fine while it lived on the Music tab only, but in the shell it is on
+// screen on every view, and the clock ticks once a second, so a screen reader
+// would hear the time on every page. Only the track line (#statusMain, which
+// changes on a new station, track or play state) stays announced; the clock is
+// still in the page to read, just no longer pushed.
+function quietPlayerClock() {
+  const bar = byId('statusBar');
+  const main = byId('statusMain');
+  if (!bar || !main) return;
+  bar.removeAttribute('role');
+  bar.removeAttribute('aria-live');
+  main.setAttribute('role', 'status');
+  main.setAttribute('aria-live', 'polite');
 }
 
 function wire(frame, skip) {

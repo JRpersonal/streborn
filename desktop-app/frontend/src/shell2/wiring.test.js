@@ -56,8 +56,28 @@ describe('UI 2.0 hooks in the app', () => {
     expect(pick).toContain("state.setupTarget = { kind: 'stock', box }; switchView('setup');");
     const sel = srcOf('renderBoxSelect');
     expect(sel.match(/pickBox\(/g).length).toBeGreaterThanOrEqual(2);
-    expect(main).toMatch(/mountShell2\(\{[\s\S]*?pickBox,/);
+    expect(main).toMatch(/mountShell2\(\{[\s\S]*?pickBox: pickBoxFromShell,/);
     expect(mount).toContain('deps.pickBox(box)');
+  });
+
+  it('brings an open Settings or Setup view along when the room switcher picks a speaker', () => {
+    const shellPick = srcOf('pickBoxFromShell');
+    expect(shellPick).toContain('await pickBox(box);');
+    // Settings: the reconnect timer of the old speaker stops, the form reloads.
+    expect(shellPick).toContain('clearTimeout(state.settingsReconnect.timer)');
+    expect(shellPick).toContain('loadBoxSettings();');
+    // Setup: a running install or a chosen factory reset keeps its target.
+    expect(shellPick).toContain('installRunActive()');
+    expect(shellPick).toContain("prevTarget.kind === 'factory-reset'");
+    expect(shellPick).toContain('state.setupTarget = prevTarget');
+    expect(shellPick).toContain('renderSetupTargetPicker();');
+  });
+
+  it('keeps the ticking clock out of the persistent player live region', () => {
+    const quiet = srcOf('quietPlayerClock');
+    expect(quiet).toContain("bar.removeAttribute('aria-live')");
+    expect(quiet).toContain("main.setAttribute('aria-live', 'polite')");
+    expect(srcOf('mountShell2')).toContain('quietPlayerClock();');
   });
 
   it('leaves the current picker as it was: click only, the drawn tile decides offline', () => {
