@@ -23,9 +23,30 @@ npm run shoot          # builds the frontend, serves it, captures all views
 
 `shoot.mjs` builds the frontend with the parent's own vite, serves it with
 `vite preview`, and screenshots every view in every language. It touches no
-app source; the mocks live only in this script.
+app source; the mocks live in `../testkit/`.
 
 Narrow a run with `SHOOT_LANGS=en,de` and/or `SHOOT_VIEWS=app-listen,app-recent`.
+The UI 2.0 preview shots (`app-ui2-dark`, `app-ui2-light`, `app-ui2-contrast`,
+`app-ui2-xl`) are not part of a full run; `SHOOT_VIEWS=ui2` takes all four.
+The UI 2.0 shots use the app's default window (1240 x 740) and a simulated
+network of eleven speakers (a group of two playing, a stereo pair, an offline
+speaker, a Bose original, idle speakers), so the sidebar speaker list has to
+scroll. The demo data and the mocks live in `../testkit/`, shared with the
+Playwright suite in `../e2e/`; `demo.mjs` holds the scenario each shot runs.
+
+## UI 2.0 check (CI)
+
+```bash
+npm run ui2-check      # builds, serves and checks the UI 2.0 preview
+```
+
+`ui2-check.mjs` drives the preview against the same simulated speakers and
+asserts what the sidebar promises (one row per speaker, the pair as one row,
+Offline in words, `+` and `-` where the group edit acts, arrow keys, the
+pinned group and the navigation staying put while the list scrolls, Levels in
+the player, and that `+` edits the group it was clicked in). CI runs it in the
+`UI 2.0 preview (simulated speakers)` job of `build.yml`.
+
 The setup views (`app-install`, `app-stick-step1`, `app-stick-step2`) add a
 stock speaker to the demo network so the network-install card has a target;
 the stick shots open the "Prepare a USB stick instead" fallback below it.

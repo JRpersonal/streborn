@@ -3227,9 +3227,16 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   font-size: 12px; line-height: 1.15;
 }
 .a11y-seg button:hover { border-color: var(--c-border-2); }
+/* The Layout switch without storage (#1285): visible, so the hint below it
+   has something to explain, but plainly out of reach. */
+.a11y-seg button:disabled { cursor: not-allowed; opacity: .5; border-color: var(--c-border); }
 .a11y-seg button[aria-pressed="true"] {
   background: var(--brand-bg); border-color: var(--brand);
   color: var(--brand-text); font-weight: 600;
+}
+.a11y-hint {
+  margin: 6px 0 0; max-width: 220px;
+  font-size: 11px; line-height: 1.35; color: var(--c-muted);
 }
 
 /* Sticky offline speaker tiles (2026-07-26): a speaker once sighted stays

@@ -1,0 +1,362 @@
+{
+  "contrast|old|box": {
+    "color-contrast": {
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
+    },
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 1,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3)."
+    }
+  },
+  "contrast|old|library": {
+    "color-contrast": {
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
+    },
+    "select-name": {
+      "count": 2,
+      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "contrast|old|settings": {
+    "color-contrast": {
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; the orange reboot button #boxRebootBtn (white on #d97a1d, 3.11:1), in the contrast theme too."
+    },
+    "label": {
+      "count": 2,
+      "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
+    },
+    "select-name": {
+      "count": 4,
+      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
+    },
+    "target-size": {
+      "count": 1,
+      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "contrast|old|setup": {
+    "color-contrast": {
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
+    }
+  },
+  "contrast|ui2|box": {
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 4,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "contrast|ui2|library": {
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    },
+    "select-name": {
+      "count": 2,
+      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "contrast|ui2|pop-levels": {
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 5,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen, and the grouped Bedroom."
+    }
+  },
+  "contrast|ui2|pop-more": {
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 4,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "contrast|ui2|settings": {
+    "label": {
+      "count": 2,
+      "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    },
+    "select-name": {
+      "count": 4,
+      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
+    },
+    "target-size": {
+      "count": 1,
+      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "contrast|ui2|setup": {
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "dark|old|box": {
+    "color-contrast": {
+      "count": 4,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer; the elapsed time #trackElapsed is #888 on #222 (4.48:1, just under 4.5)."
+    },
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 1,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3)."
+    }
+  },
+  "dark|old|library": {
+    "color-contrast": {
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer."
+    },
+    "select-name": {
+      "count": 2,
+      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "dark|old|settings": {
+    "color-contrast": {
+      "count": 4,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer; the orange reboot button #boxRebootBtn (white on #d97a1d, 3.11:1), in the contrast theme too."
+    },
+    "label": {
+      "count": 2,
+      "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
+    },
+    "select-name": {
+      "count": 4,
+      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
+    },
+    "target-size": {
+      "count": 1,
+      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "dark|old|setup": {
+    "color-contrast": {
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer."
+    }
+  },
+  "dark|ui2|box": {
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 4,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "dark|ui2|library": {
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    },
+    "select-name": {
+      "count": 2,
+      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "dark|ui2|pop-levels": {
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 5,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen, and the grouped Bedroom."
+    }
+  },
+  "dark|ui2|pop-more": {
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 4,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "dark|ui2|settings": {
+    "label": {
+      "count": 2,
+      "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    },
+    "select-name": {
+      "count": 4,
+      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
+    },
+    "target-size": {
+      "count": 1,
+      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "dark|ui2|setup": {
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "light|old|box": {
+    "color-contrast": {
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; the elapsed time #trackElapsed is #888 on the light card (about 3.2:1)."
+    },
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 1,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3)."
+    }
+  },
+  "light|old|library": {
+    "color-contrast": {
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
+    },
+    "select-name": {
+      "count": 2,
+      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "light|old|settings": {
+    "color-contrast": {
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; the orange reboot button #boxRebootBtn (white on #d97a1d, 3.11:1), in the contrast theme too."
+    },
+    "label": {
+      "count": 2,
+      "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
+    },
+    "select-name": {
+      "count": 4,
+      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
+    },
+    "target-size": {
+      "count": 1,
+      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "light|old|setup": {
+    "color-contrast": {
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
+    }
+  },
+  "light|ui2|box": {
+    "color-contrast": {
+      "count": 1,
+      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
+    },
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 4,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "light|ui2|library": {
+    "color-contrast": {
+      "count": 1,
+      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
+    },
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    },
+    "select-name": {
+      "count": 2,
+      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "light|ui2|pop-levels": {
+    "color-contrast": {
+      "count": 1,
+      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
+    },
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 5,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen, and the grouped Bedroom."
+    }
+  },
+  "light|ui2|pop-more": {
+    "color-contrast": {
+      "count": 1,
+      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
+    },
+    "image-alt": {
+      "count": 6,
+      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 4,
+      "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  },
+  "light|ui2|settings": {
+    "color-contrast": {
+      "count": 1,
+      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
+    },
+    "label": {
+      "count": 2,
+      "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
+    },
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    },
+    "select-name": {
+      "count": 4,
+      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
+    },
+    "target-size": {
+      "count": 1,
+      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+    }
+  },
+  "light|ui2|setup": {
+    "color-contrast": {
+      "count": 1,
+      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
+    },
+    "label-content-name-mismatch": {
+      "count": 3,
+      "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
+    }
+  }
+}

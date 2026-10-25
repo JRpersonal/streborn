@@ -409,6 +409,116 @@ jobs:
         working-directory: desktop-app/frontend
         run: node scripts/i18n-coverage.mjs
 
+  # The UI 2.0 preview (#1285) checked in a real browser against simulated
+  # speakers (desktop-app/frontend/screenshots/demo.mjs): eleven speakers with a
+  # playing group, a stereo pair, an offline speaker and a Bose original, so the
+  # sidebar list (#1284) is exercised in states one test speaker cannot show.
+  # A job of its own: playwright and its browser live in the screenshots
+  # package, never in the app's package.json, so the frontend job above and the
+  # wails build never download them.
+  ui2-check:
+    name: UI 2.0 preview (simulated speakers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            desktop-app/frontend/package-lock.json
+            desktop-app/frontend/screenshots/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: desktop-app/frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Install the check harness and Chromium
+        working-directory: desktop-app/frontend/screenshots
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Check the UI 2.0 preview
+        working-directory: desktop-app/frontend/screenshots
+        run: node ui2-check.mjs
+
+  # The Playwright UI suite (desktop-app/frontend/e2e, README there): the built
+  # frontend and the phone remote in a real Chromium, every Go binding and
+  # agent endpoint answered by the shared mock backend (frontend/testkit), so
+  # clicks, keyboard paths, polling cadence, banners, i18n and accessibility
+  # are checked without a speaker or Wails. The vitest job above cannot see
+  # any of that: it runs the logic modules in Node, without a DOM.
+  #
+  # Its own job, and its own package: Playwright and its browser download live
+  # in e2e/package.json and NEVER in the app's package.json, so the frontend
+  # job above and the wails build never install them. No browser cache step:
+  # Playwright advises against caching browsers, and it would be one more
+  # action to pin. Not a required check until it has been green on main for a
+  # week. Measured locally with the CI settings before sharding: about 18
+  # minutes of summed test time (desktop-a11y about 5, layout 3, banners and
+  # i18n between 2 and 3), so the suite runs fullyParallel in two shards. The
+  # timeout stays generous until the first green runs show the real duration.
+  frontend-e2e:
+    name: Frontend UI tests (Playwright, shard ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            desktop-app/frontend/package-lock.json
+            desktop-app/frontend/e2e/package-lock.json
+
+      # vite builds and serves the frontend from the app's own devDependencies.
+      - name: Install frontend deps
+        working-directory: desktop-app/frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Install the suite and Chromium
+        working-directory: desktop-app/frontend/e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run the UI suite
+        working-directory: desktop-app/frontend/e2e
+        env:
+          CI: "1"
+        run: npx playwright test --shard=${{ matrix.shard }}/2
+
+      # Results, traces and the HTML report are under desktop-app/.e2e-out
+      # (results-<PORT>, report-<PORT>); open a trace with
+      # `npx playwright show-trace`. The directory is dot-named, and
+      # upload-artifact skips hidden paths unless include-hidden-files is set.
+      # Uploaded on success too: with retries a flaky test leaves the job
+      # green, and its first-attempt trace (results-*/...-retry1 next to it)
+      # is the evidence the flake policy in e2e/README.md needs.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: frontend-e2e-report-${{ matrix.shard }}
+          path: |
+            desktop-app/.e2e-out/results-*/
+            desktop-app/.e2e-out/report-*/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
   build:
     name: Cross Compile
     needs: test

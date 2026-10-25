@@ -49,7 +49,7 @@ export {
 } from './favorites.js';
 export { openPandoraPick, updatePandoraModeBtn } from './pandora.js';
 export { openPick, showSlotPicker } from './picker.js';
-export { dissolveIncompleteMessage, effectivePlayTarget, renderGroupControl } from './group.js';
+export { dissolveIncompleteMessage, effectivePlayTarget, groupEditPendingHosts, renderGroupControl, toggleGroupMember } from './group.js';
 
 // mountMusicView builds #view-box and attaches the static handlers, in the
 // order the statements had in main.js: markup first, then each module's

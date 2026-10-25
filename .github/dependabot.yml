@@ -72,6 +72,54 @@ updates:
       frontend-tooling:
         update-types: ["minor", "patch"]
 
+  # The two Playwright packages next to the app: the UI test suite
+  # (frontend/e2e) and the screenshot harness with the UI 2.0 check
+  # (frontend/screenshots). Both pin their versions exactly, so without these
+  # entries nothing would ever move them. One group per directory for
+  # playwright, @playwright/test and @axe-core/playwright: they share the
+  # browser build and move together. An @axe-core bump can change what the
+  # accessibility scans report; e2e/README.md says how to refresh the
+  # baselines inside the Dependabot PR.
+  - package-ecosystem: "npm"
+    directory: "/desktop-app/frontend/e2e"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      playwright:
+        patterns:
+          - "playwright"
+          - "@playwright/test"
+          - "@axe-core/playwright"
+
+  - package-ecosystem: "npm"
+    directory: "/desktop-app/frontend/screenshots"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      playwright:
+        patterns:
+          - "playwright"
+          - "@playwright/test"
+          - "@axe-core/playwright"
+
   # The CI helper scripts (.github/scripts: mermaid + jsdom for the diagram
   # check). Pinned through their own lockfile since 2026-10-04 so CI can use
   # npm ci; this keeps those pins from going stale.

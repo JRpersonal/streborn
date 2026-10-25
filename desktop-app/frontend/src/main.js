@@ -1,4 +1,8 @@
 import './style.css';
+// UI 2.0 preview (#1285). Every rule in it is scoped under html.ui2, which is
+// only set once the preview shell is mounted, so with the preview off it
+// changes nothing.
+import './shell2/shell2.css';
 import { pinPromptKey } from './worldmapinvite.js';
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import { sshBannerShow } from './sshbanner.js';
@@ -9,6 +13,7 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { speakerTileState } from './speakertile.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
@@ -294,6 +299,17 @@ import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // the skeleton renders so the first paint already reflects the chosen size and
 // theme. The matching CSS lives in style.css (html.a11y-*).
 import { applyA11y, getScale, setScale, getTheme, setTheme } from './a11y.js';
+import { canKeepUi2Preview, getUi2Preview, setUi2Preview } from './uipreview.js';
+import {
+  mountShell2,
+  shell2Mounted,
+  shellListsSpeakers,
+  syncShellNav,
+  renderShellSpeakers,
+  syncShellPlayer,
+  mirrorShellBadges,
+} from './shell2/mount.js';
+import { playerOnScreen } from './statusrefreshscope.js';
 import { watchTabs } from './tabfit.js';
 applyA11y();
 // Speaker Settings view (extracted from this monolith, same pattern as the views
@@ -339,6 +355,7 @@ import { onSpeakerPurge } from './speakerPurge.js';
 import {
   dissolveIncompleteMessage,
   effectivePlayTarget,
+  groupEditPendingHosts,
   favStationsJSON,
   initMusicView,
   isFav,
@@ -367,6 +384,7 @@ import {
   syncFavRemovals,
   syncVolumeScopeOnZoneLive,
   toggleFav,
+  toggleGroupMember,
   trackPos,
   updateFavModeBtn,
   updateFilterIndicators,
@@ -541,6 +559,14 @@ document.querySelector('#app').innerHTML = `
               <button type="button" data-theme="contrast" aria-pressed="${getTheme() === 'contrast'}">${escapeHtml(t('a11y.theme.contrast'))}</button>
             </div>
           </div>
+          <div class="a11y-group">
+            <div class="a11y-group-label" id="a11yLayoutLabel">${escapeHtml(t('ui2.preview.label'))}</div>
+            <div class="a11y-seg" role="group" aria-labelledby="a11yLayoutLabel" aria-describedby="a11yLayoutHint">
+              <button type="button" data-ui2="0" aria-pressed="${!getUi2Preview()}"${canKeepUi2Preview() ? '' : ' disabled'}>${escapeHtml(t('ui2.preview.current'))}</button>
+              <button type="button" data-ui2="1" aria-pressed="${getUi2Preview()}"${canKeepUi2Preview() ? '' : ' disabled'}>${escapeHtml(t('ui2.preview.new'))}</button>
+            </div>
+            <p class="a11y-hint" id="a11yLayoutHint">${escapeHtml(t(canKeepUi2Preview() ? 'ui2.preview.hint' : 'ui2.preview.noStorage'))}</p>
+          </div>
         </div>
       </div>
       <div class="app-locale locale-dd" role="group" aria-label="${escapeAttr(t('settings.language'))}">
@@ -707,7 +733,7 @@ watchTabs(document.querySelector('.tabs'));
   const menu = document.getElementById('a11yMenu');
   if (!trigger || !menu) return;
   const close = () => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); };
-  const open = () => { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); };
+  const open = () => { syncLayoutAvailable(); menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); };
   trigger.onclick = (e) => { e.stopPropagation(); if (menu.hidden) open(); else close(); };
   const syncPressed = (attr, val) => {
     menu.querySelectorAll(`button[${attr}]`).forEach(b => {
@@ -719,6 +745,25 @@ watchTabs(document.querySelector('.tabs'));
   });
   menu.querySelectorAll('button[data-theme]').forEach(b => {
     b.onclick = () => { setTheme(b.dataset.theme); syncPressed('data-theme', b.dataset.theme); };
+  });
+  // Layout: the current one or the UI 2.0 preview (#1285). The shell is built
+  // once at boot, so a change reloads the window, the same as the language
+  // switch; text size, theme and everything else stay as they are. Without
+  // storage the reload would come back without the choice, so the switch is
+  // drawn disabled with a hint, and a write that fails anyway never reloads.
+  menu.querySelectorAll('button[data-ui2]').forEach(b => {
+    b.onclick = () => {
+      const on = b.dataset.ui2 === '1';
+      if (on === getUi2Preview()) { syncPressed('data-ui2', b.dataset.ui2); return; }
+      if (!setUi2Preview(on)) {
+        setUi2Preview(!on);
+        layoutWriteFailed = true;
+        syncLayoutAvailable();
+        return;
+      }
+      syncPressed('data-ui2', b.dataset.ui2);
+      location.reload();
+    };
   });
   document.addEventListener('click', (e) => { if (!e.target.closest('.a11y-dd')) close(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
@@ -806,11 +851,12 @@ function markViewFeaturesSeen(view) {
   }
   if (changed) { try { localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify([...seen])); } catch {} }
 }
-// renderNavDots paints/removes the blue dot on each nav tab from the seen set.
+// renderNavDots paints/removes the blue dot on each nav tab from the seen set,
+// and on the matching entry of the UI 2.0 sidebar when the preview is on.
 // Idempotent, so it is safe to call on every box refresh and every view switch.
 function renderNavDots() {
   const seen = seenFeatureSet();
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  document.querySelectorAll('.tab-btn, .ui2-nav-item').forEach(btn => {
     const want = NEW_FEATURES.some(f => f.view === btn.dataset.view && !seen.has(f.id));
     const dot = btn.querySelector('.nav-newdot');
     if (want && !dot) {
@@ -826,10 +872,18 @@ function renderNavDots() {
 }
 
 function switchView(view) {
+  const prevView = state.view;
   state.view = view;
   document.querySelectorAll('.tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
+  syncShellNav(view);
+  // The UI 2.0 player's volume and transport follow the polling scope (hidden
+  // in Setup). Coming back out of Setup into a view other than Music, the
+  // slider reads the speaker once, so its first drag starts from the real
+  // level and not from the one it showed before Setup.
+  syncShellPlayer();
+  if (state.ui2Shell && prevView === 'setup' && view !== 'box' && view !== 'setup' && state.currentBox) loadMusicTabVolume();
   // Opening a tab counts as finding its new exclusive features: clear their dots.
   markViewFeaturesSeen(view);
   renderNavDots();
@@ -1608,6 +1662,59 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
 // order (after the skeleton above, before the global security banner handlers
 // below, which read elements the skeleton owns).
 mountMusicView();
+// UI 2.0 preview: the new shell is built around the views just mounted, only
+// when the preview is switched on (Aa menu > Layout). Off, nothing here runs.
+if (getUi2Preview()) safeMountShell2();
+
+// safeMountShell2 builds the UI 2.0 preview shell (shell2/mount.js) and hands
+// it what it needs from this file. A failure leaves the current layout as it
+// was: the mount rolls itself back and never throws into the boot.
+// syncLayoutPressed marks the Layout button of the Aa menu that matches the
+// stored preview setting.
+function syncLayoutPressed() {
+  const on = getUi2Preview();
+  document.querySelectorAll('#a11yMenu button[data-ui2]').forEach((b) => {
+    b.setAttribute('aria-pressed', String((b.dataset.ui2 === '1') === on));
+  });
+}
+
+// syncLayoutAvailable enables the Layout switch of the Aa menu only while the
+// choice can be stored, and swaps its hint to say why when it cannot. Asked
+// again on every menu open: a store the WebView restores late comes back. A
+// store that reads but refused a write stays off for the session.
+let layoutWriteFailed = false;
+function syncLayoutAvailable() {
+  const ok = !layoutWriteFailed && canKeepUi2Preview();
+  document.querySelectorAll('#a11yMenu button[data-ui2]').forEach((b) => { b.disabled = !ok; });
+  const hint = document.getElementById('a11yLayoutHint');
+  if (hint) hint.textContent = t(ok ? 'ui2.preview.hint' : 'ui2.preview.noStorage');
+}
+
+function safeMountShell2() {
+  try {
+    const ok = mountShell2({
+      switchView,
+      pickBox: pickBoxFromShell,
+      boxNeedsUpdate,
+      boxCannotReachInternet,
+      getBoxLabel,
+      discoverBoxes,
+      offlineTitle,
+      pairName: (pair) => pairDisplayName(pair, renderBoxSelect),
+      toggleGroupMember,
+      groupEditPendingHosts,
+    });
+    if (!ok) return;
+    // The Aa menu's Layout switch was drawn before a late mount (storage not
+    // yet restored at boot): make it say what is on screen now.
+    syncLayoutPressed();
+    updateSettingsTabBadge();
+    updateMultiroomTabBadge();
+    renderNavDots();
+  } catch (err) {
+    try { console.warn('UI 2.0 preview: mount failed', err); } catch {}
+  }
+}
 
 // Globaler Security Reboot Knopf (im Top Banner)
 const gsb = $('globalSecurityRebootBtn');
@@ -1815,12 +1922,24 @@ setInterval(async () => {
 // were already playing while the group volume only appeared after a manual
 // refresh (Jens, 2026-09-06). Same cadence as the phone page, only while the
 // window is visible, and the zone poll keeps its own 8 s debounce.
+// The UI 2.0 preview lists every speaker in its sidebar on every view, so with
+// the preview on the poll also runs off the Music tab, but only where the
+// persistent player is on screen (not in Setup, not during a speaker update):
+// the same cost as sitting on the Music tab, which is where the app opens.
 setInterval(() => {
-  if (state.view !== 'box' || document.visibilityState !== 'visible') return;
+  if ((state.view !== 'box' && !shellListsSpeakers()) || document.visibilityState !== 'visible') return;
+  refreshEverySpeaker();
+}, 15000);
+
+// refreshEverySpeaker is one round of the every-speaker poll (zones and who is
+// playing), for the interval above. Never while
+// a speaker update or an install runs: nothing should poll a speaker that is
+// about to restart.
+function refreshEverySpeaker() {
   if (state.otaInProgress || installRunActive() || !state.boxes.length) return;
   refreshMusicZones();
   refreshBoxPlaying();
-}, 15000);
+}
 
 // applyBoxList folds a freshly probed box list into state + the UI. Shared by
 // the known-first quick refresh and the full discovery so both render
@@ -1904,6 +2023,9 @@ function applyBoxList(list) {
   updateMultiroomTabBadge();
   // localStorage is reliably restored by this first box refresh (see below), so
   // paint the new-feature discovery dots here; a module-load call runs too early.
+  // The UI 2.0 preview switch is read again for the same reason: a boot-time
+  // read that found the storage not yet restored gets its second chance here.
+  if (getUi2Preview() && !shell2Mounted()) safeMountShell2();
   renderNavDots();
   // Re-evaluate the Favorites entry on every box-list refresh. This is the first
   // point after boot where localStorage is reliably restored in the WebView, so
@@ -2188,6 +2310,7 @@ async function refreshBoxPlaying() {
     state.boxPlayingBusy = false;
   }
   renderBoxSelect();
+  renderShellSpeakers();
 }
 
 // checkWedgeBanner shows the pull-the-plug hint when any STR speaker reports
@@ -2700,12 +2823,25 @@ function renderBoxSelect() {
     const resolved = masterBoxOfKey(m);
     return !!resolved && resolved.host === b.host;
   };
+  // The live flags of a tile (playing, offline, update, no internet) come from
+  // speakertile.js, the same reading the UI 2.0 sidebar speaker list draws from, so
+  // the two never disagree about a speaker.
+  const tileCtx = {
+    currentBox: state.currentBox,
+    nowPlayState: state.nowPlayState,
+    nowSource: state.nowSource,
+    boxPlaying: state.boxPlaying,
+    needsUpdate: boxNeedsUpdate,
+    cannotReachInternet: boxCannotReachInternet,
+    stereoPairs: livePairs,
+  };
   const pill = (b) => {
-    const isStock = b.kind === 'stock';
+    const tile = speakerTileState(b, tileCtx);
+    const isStock = tile.stock;
     // Sticky offline tiles (2026-07-26): a speaker once sighted stays listed
     // when scans miss it (reboot, plug pulled), clearly greyed out with a
     // disconnect mark and a "last seen ..." tooltip, until it answers again.
-    const off = !!b.offline;
+    const off = tile.offline;
     const offCls = off ? ' offline' : '';
     const offTitle = off ? offlineTitle(b) : '';
     const offAttr = off ? ` data-offline="1" title="${escapeAttr(offTitle)}"` : '';
@@ -2717,7 +2853,7 @@ function renderBoxSelect() {
     const groupMark = isFramedMaster(b)
       ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>`
       : '';
-    const active = state.currentBox && state.currentBox.host === b.host && !isStock ? ' active' : '';
+    const active = tile.isCurrent && !isStock ? ' active' : '';
     const stockCls = isStock ? ' stock' : '';
     const label = getBoxLabel(b);
     // Model (e.g. "SoundTouch 10") right next to the name so users
@@ -2739,7 +2875,7 @@ function renderBoxSelect() {
       // first-time "Ready for STR", so the owner knows this is a repair, not
       // a speaker that never had STR (2026-09-06 report: the card kept the
       // old version badge on a speaker STR had just been removed from).
-      const gone = !!b.strNotRunning;
+      const gone = tile.strNotRunning;
       const badge = `<span class="box-stock-badge${gone ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge'))}</span>`;
       const stockTitle = off ? offTitle : t(gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
       return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
@@ -2752,7 +2888,7 @@ function renderBoxSelect() {
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
     // banner (#108).
-    const showUpd = boxNeedsUpdate(b);
+    const showUpd = tile.needsUpdate;
     const updCls = showUpd ? ' needs-update' : '';
     // A WORD, not a dot: the blue dot that used to sit here reads as decoration
     // to non-technical users. A screenshot from a user whose speaker had been
@@ -2765,15 +2901,13 @@ function renderBoxSelect() {
     // Small speaker icon on a tile whose speaker is currently playing, so the
     // playing speaker is obvious among several. The selected box is marked live
     // from nowPlayState (no poll lag); the others from the refreshBoxPlaying poll.
-    const isCurrent = state.currentBox && state.currentBox.host === b.host;
-    const playingNow = (state.boxPlaying && state.boxPlaying[b.deviceID])
-      || (isCurrent && (state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE'));
+    const playingNow = tile.playing;
     const playMark = playingNow
       ? `<span class="box-playing" title="${escapeAttr(t('speaker.playingNow'))}" aria-label="${escapeAttr(t('speaker.playingNow'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a7 7 0 0 1 0 14.14"></path></svg></span>`
       : '';
     // "No internet" right on the speaker's own tile, the router hint in its
     // tooltip: the tile is where an owner looks when a station will not play.
-    const noNetChip = boxCannotReachInternet(b)
+    const noNetChip = tile.noInternet
       ? `<span class="box-nointernet-chip" title="${escapeAttr(noInternetText(t))}">${escapeHtml(t('speaker.noInternetChip'))}</span>`
       : '';
     return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
@@ -2880,40 +3014,20 @@ function renderBoxSelect() {
     // since it carries no host the handler found nothing and returned in
     // silence: the tile simply did not react to a click (live 2026-07-29).
     if (btn.classList.contains('box-add-ip')) return;
-    btn.onclick = async (e) => {
+    // A click takes the same path as the UI 2.0 sidebar speaker list (pickBox).
+    btn.onclick = (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
       if (e.target.closest('.box-edit') || e.target.closest('.box-update-chip')) return;
-      // An offline tile cannot be selected (every call would fail); clicking
-      // it explains itself and kicks off a fresh discovery, which is also the
-      // fastest way to bring a returned speaker back to life in the list.
-      if (btn.dataset.offline) {
-        showToast(btn.title || t('speaker.offlineTooltip', { ago: '' }));
-        discoverBoxes();
-        return;
-      }
       const host = btn.dataset.host;
       const port = parseInt(btn.dataset.port, 10);
       const box = state.boxes.find(b => b.host === host && b.port === port);
+      // The tile as it was drawn decides, not the live list: a greyed tile
+      // whose speaker has just come back (list replaced, picker not yet
+      // redrawn) still explains itself and rediscovers, as it always did.
+      if (btn.dataset.offline) { pickBox({ ...(box || {}), offline: true }, btn.title); return; }
       if (!box) return;
-      if (box.kind === 'stock') {
-        // Any stock Bose speaker is the happy path now: reachable boxes install
-        // over the network (stick-free), so we invite every model into Setup with
-        // a positive CTA instead of blocking soundbars / adapters. Setup notes the
-        // hardware-preset-button caveat for 'limited' models.
-        const label = getBoxLabel(box);
-        const ok = await confirmWarn(
-          t('speaker.stockConfirmTitle'),
-          t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),
-          { icon: null, confirmLabel: t('speaker.stockConfirmCta'), confirmClass: 'btn btn-primary' },
-        );
-        // Pin the clicked box as the setup target so Setup opens on the
-        // network-install hero for THIS speaker (not an arbitrary one on a
-        // multi-box LAN, #44). The install starts from the hero button, not here.
-        if (ok) { state.setupTarget = { kind: 'stock', box }; switchView('setup'); }
-        return;
-      }
-      selectBox(box);
+      pickBox(box);
     };
   });
   // Gear click: set settingsBox and switch the tab.
@@ -2962,6 +3076,70 @@ function renderBoxSelect() {
   checkWedgeBanner();
   checkBoxIssueBanner();
   renderFirewallBanner();
+}
+
+// pickBox is what choosing a speaker does, wherever it is chosen: the Music
+// tab's picker (click or keyboard) and the UI 2.0 sidebar speaker list.
+//
+// An offline speaker cannot be selected (every call would fail); choosing it
+// explains itself and kicks off a fresh discovery, which is also the fastest
+// way to bring a returned speaker back to life in the list. A stock speaker is
+// an invitation into Setup. Anything else becomes the controlled speaker.
+async function pickBox(box, titleHint) {
+  if (!box) return;
+  if (box.offline) {
+    const title = titleHint || (box.host ? offlineTitle(box) : '');
+    showToast(title || t('speaker.offlineTooltip', { ago: '' }));
+    discoverBoxes();
+    return;
+  }
+  if (box.kind === 'stock') {
+    // Any stock Bose speaker is the happy path now: reachable boxes install
+    // over the network (stick-free), so we invite every model into Setup with
+    // a positive CTA instead of blocking soundbars / adapters. Setup notes the
+    // hardware-preset-button caveat for 'limited' models.
+    const label = getBoxLabel(box);
+    const ok = await confirmWarn(
+      t('speaker.stockConfirmTitle'),
+      t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),
+      { icon: null, confirmLabel: t('speaker.stockConfirmCta'), confirmClass: 'btn btn-primary' },
+    );
+    // Pin the clicked box as the setup target so Setup opens on the
+    // network-install hero for THIS speaker (not an arbitrary one on a
+    // multi-box LAN, #44). The install starts from the hero button, not here.
+    if (ok) { state.setupTarget = { kind: 'stock', box }; switchView('setup'); }
+    return;
+  }
+  selectBox(box);
+}
+
+// pickBoxFromShell is pickBox for the UI 2.0 sidebar speaker list. Unlike the Music
+// tab's picker, the sidebar stays reachable while Speaker settings or Setup is
+// open, so a pick there must bring the open view along: otherwise Settings
+// would keep showing speaker A's form while its buttons act on B (they read
+// state.settingsBox on click), and Setup would lose a chosen factory-reset
+// target or the target of a running install without showing it.
+async function pickBoxFromShell(box) {
+  if (!box) return;
+  const view = state.view;
+  const prevSettings = state.settingsBox;
+  const prevTarget = state.setupTarget;
+  // A running install and a deliberately chosen factory reset keep their
+  // target. Picking a stock speaker is itself a Setup choice (pickBox asks
+  // first), so it may replace a factory reset, never a running install.
+  const keepTarget = installRunActive()
+    || (!!prevTarget && prevTarget.kind === 'factory-reset' && box.kind !== 'stock');
+  await pickBox(box);
+  if (keepTarget && state.setupTarget !== prevTarget) state.setupTarget = prevTarget;
+  if (state.view !== view) return; // pickBox moved on (stock speaker into Setup)
+  if (view === 'settings' && state.settingsBox !== prevSettings) {
+    // The same reset the Settings picker's own change does.
+    if (state.settingsReconnect && state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
+    state.settingsReconnect = null;
+    loadBoxSettings();
+  } else if (view === 'setup' && state.setupTarget !== prevTarget) {
+    renderSetupTargetPicker();
+  }
 }
 
 // speakerPickedInTab keeps the tabs in lock-step in the other direction: a
@@ -3100,8 +3278,10 @@ function boxNeedsUpdate(b) {
 function updateSettingsTabBadge() {
   const btn = document.querySelector('.tab-btn[data-view="settings"]');
   if (!btn) return;
-  const needsUpdate = state.boxes.some(boxNeedsUpdate);
-  btn.classList.toggle('has-update', needsUpdate);
+  const n = state.boxes.filter(boxNeedsUpdate).length;
+  btn.classList.toggle('has-update', n > 0);
+  // The UI 2.0 sidebar shows how many (a no-op with the preview off).
+  mirrorShellBadges({ settingsUpdates: n });
 }
 
 // updateMultiroomTabBadge shows how many groups exist right now (live zones
@@ -3128,8 +3308,11 @@ function updateMultiroomTabBadge() {
   const tip = n ? t('nav.multiroomBadgeTitle', { n }) : '';
   el.title = tip;
   el.setAttribute('aria-label', tip);
+  mirrorShellBadges({ groups: { n, stored: n > 0 && split.live === 0, tip } });
 }
 onZoneLive(updateMultiroomTabBadge);
+// The UI 2.0 sidebar speaker list and the player read the same zone poll.
+onZoneLive(() => renderShellSpeakers());
 // A pair whose speakers lost the name STR stored for it (formed again with the
 // field empty) gets it written back, so the Spotify picker and the phone remote
 // match this app again (#1077, issue 5). Rides the same poll, no timer.
@@ -3605,6 +3788,7 @@ async function runSingleBoxUpdate(targetBox) {
   // during that restart; the banner's "Reboot now" button would
   // interrupt the agent exec and may leave the box half-flashed.
   state.otaInProgress = true;
+  syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
   setStatus(t('update.uploading'));
   // The post-reboot Spotify engine delivery streams its ~16 MB through this
   // same channel. It does NOT restart the speaker (a current agent swaps the
@@ -3812,6 +3996,7 @@ async function runSingleBoxUpdate(targetBox) {
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.
     state.otaInProgress = false;
+    syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
     state.otaTargetHost = null;
     state.otaTargetName = null;
     checkSshBanner();
@@ -3987,6 +4172,7 @@ async function runUpdateAllBoxes(onStart) {
   // buttons then render "update running" and the SSH "remove stick" banner stays
   // suppressed. The sentinel host makes every real box's button show that state.
   state.otaInProgress = true;
+  syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
   state.otaTargetHost = '__batch__';
   state.otaTargetName = t('updateAll.batchLabel');
   checkSshBanner();
@@ -4228,6 +4414,7 @@ async function runUpdateAllBoxes(onStart) {
   offPhase();
   if (mini) mini.classList.add('hidden');
   state.otaInProgress = false;
+  syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
   state.otaTargetHost = null;
   state.otaTargetName = null;
   renderSummary();
@@ -4260,6 +4447,12 @@ function updateBoxUiVisibility() {
   const hasSTR = state.boxes.some(b => b.kind !== 'stock');
   const stockOnly = !hasSTR && (state.boxes || []).some(b => b && b.kind === 'stock');
   $('boxControls').classList.toggle('hidden', !hasBox);
+  // UI 2.0 preview: the persistent player and the sidebar speaker list follow the
+  // same selection (no-ops with the preview off). Here, not at the end of
+  // renderBoxSelect, because both of its paths, the empty list included,
+  // come through this function.
+  syncShellPlayer(hasBox);
+  renderShellSpeakers();
   const hint = $('boxHint');
   if (!hint) return;
   // Three states, not two. The third is somebody's FIRST time: their speaker is
@@ -4703,11 +4896,24 @@ try { discoverBoxes(); } catch (e) { try { console.warn('discoverBoxes failed', 
 // actually playing (metadata/volume move) and slowly when idle or in
 // standby (nothing changes). Every user action still fires its own
 // immediate refreshStatus, so feedback stays snappy regardless of cadence.
+//
+// The 5 s cadence is the Music tab's alone. The UI 2.0 preview keeps the player
+// on screen in every view, and the player off that tab polls at the slow
+// cadence even while playing: the bar interpolates the track position between
+// readings, and a second fast poller is exactly what the watchdog note above
+// warns about.
+const STATUS_FAST_MS = 5000;    // Music tab, playing
+const STATUS_PLAYER_MS = 15000; // UI 2.0 player off the Music tab, playing
+const STATUS_IDLE_MS = 15000;   // idle, standby, or nothing on screen
 function nextStatusDelayMs() {
-  if (state.view !== 'box' || !state.currentBox) return 15000;
+  if (!state.currentBox) return STATUS_IDLE_MS;
   const ps = state.nowPlayState;
-  if (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') return 5000;
-  return 15000;
+  const playing = ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE';
+  if (state.view === 'box') return playing ? STATUS_FAST_MS : STATUS_IDLE_MS;
+  if (playing && playerOnScreen({ view: state.view, persistentPlayer: !!state.ui2Shell, otaInProgress: !!state.otaInProgress })) {
+    return STATUS_PLAYER_MS;
+  }
+  return STATUS_IDLE_MS;
 }
 (function statusPollLoop() {
   setTimeout(async () => {

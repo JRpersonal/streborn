@@ -104,6 +104,20 @@ export function groupMembersOf(masterBox, zoneLive, boxes) {
   return out;
 }
 
+// groupMemberBoxes is groupMembersOf narrowed to the members the app can
+// address: the discovered box of each, the master never included. Everything
+// that shows a group reads it, so the UI 2.0 sidebar (its pinned rows, its
+// heading, the "+ n more" of Levels) and the player (the group volume, one
+// Levels slider per member) agree on who is in the group. The player used to
+// count followersOf alone, so a member the master listed but that did not
+// report itself was in the sidebar's group and missing from the player's.
+export function groupMemberBoxes(masterBox, zoneLive, boxes) {
+  const masterHost = (masterBox && masterBox.host) || '';
+  return groupMembersOf(masterBox, zoneLive, boxes)
+    .map(m => m.box)
+    .filter(b => b && b.host !== masterHost);
+}
+
 // resolvePlayTarget is the pure decision behind effectivePlayTarget: a zone
 // FOLLOWER rejects direct UPnP control (the firmware answers 501 "Can't
 // control member of group", #70), so a play aimed at a follower belongs on
@@ -427,6 +441,22 @@ export function pairMemberBoxes(pair, boxes) {
   });
 }
 
+// pairMasterBox resolves a live pair's MASTER to its discovered box, or null.
+// pair.master is the firmware's deviceID, and on a two-chip chassis that is
+// not the id discovery knows, so the master is matched the way pairMemberBoxes
+// matches every half: by deviceID, or by the IP the pair's own member entry
+// for that id carries. The one rule for "which half is the master": the
+// sidebar's pair row, the balance source and the undo order all read it, so
+// they never pick different halves.
+export function pairMasterBox(pair, boxes) {
+  const masterUp = String((pair && pair.master) || '').toUpperCase();
+  if (!masterUp) return null;
+  const entry = (pair.members || []).find(m => String((m && m.deviceID) || '').toUpperCase() === masterUp);
+  const ip = (entry && entry.ip) || '';
+  return pairMemberBoxes(pair, boxes).map(x => x.box)
+    .find(b => b && (String(b.deviceID || '').toUpperCase() === masterUp || (ip && b.host === ip))) || null;
+}
+
 // inStereoPair reports whether a discovered box is a member of the live pair.
 export function inStereoPair(box, pair) {
   if (!box || !pair) return false;
@@ -434,6 +464,28 @@ export function inStereoPair(box, pair) {
   return (pair.members || []).some(m =>
     (idUp && String((m && m.deviceID) || '').toUpperCase() === idUp) ||
     (box.host && (m && m.ip) === box.host));
+}
+
+// inAnyStereoPair reports whether a box is half of any live stereo pair, by
+// deviceID or by IP (inStereoPair). Every "is this speaker groupable" decision
+// reads this one rule: the group chips, the click-time guard of a group edit
+// and the UI 2.0 sidebar. Matching by deviceID alone missed a two-chip chassis
+// whose firmware id differs from the one discovery knows, so the chips offered
+// a half the edit then refused.
+export function inAnyStereoPair(box, zoneLive) {
+  if (!box) return false;
+  return stereoPairsOf(zoneLive || {}).some((p) => inStereoPair(box, p));
+}
+
+// groupCandidates lists the speakers a group led by masterBox can offer to
+// take in or out: every STR speaker other than the master that is not half of
+// a live stereo pair (#792, a pair cannot join a group as a unit). In the
+// list's own order. The Music view's group chips and the UI 2.0 sidebar both
+// start from it, so the two never offer a different set.
+export function groupCandidates(masterBox, zoneLive, boxes) {
+  if (!masterBox) return [];
+  return (boxes || []).filter((b) => b && b.kind !== 'stock' && b.host && b.host !== masterBox.host
+    && !inAnyStereoPair(b, zoneLive));
 }
 
 // stereoUndoTargets lists the speakers an "undo pair" has to be sent to, master
@@ -455,8 +507,8 @@ export function inStereoPair(box, pair) {
 export function stereoUndoTargets(pair, boxes) {
   const live = pairMemberBoxes(pair, boxes).map(x => x.box)
     .filter(b => b && b.kind !== 'stock');
-  const masterUp = String((pair && pair.master) || '').toUpperCase();
-  const isMaster = (b) => masterUp && String(b.deviceID || '').toUpperCase() === masterUp;
+  const master = pairMasterBox(pair, boxes);
+  const isMaster = (b) => !!master && b.host === master.host;
   return [...live.filter(isMaster), ...live.filter(b => !isMaster(b))];
 }
 
@@ -476,10 +528,7 @@ export function stereoUndoTargets(pair, boxes) {
 export function balanceSourceBox(selected, pair, boxes) {
   if (!selected) return null;
   if (!pair || !inStereoPair(selected, pair)) return selected;
-  const master = pairMemberBoxes(pair, boxes)
-    .map(x => x.box)
-    .find(b => b && String(b.deviceID || '').toUpperCase() === String(pair.master || '').toUpperCase());
-  return master || selected;
+  return pairMasterBox(pair, boxes) || selected;
 }
 
 // stereoSelectionPick decides which two speakers the stereo dropdowns show.
@@ -524,7 +573,7 @@ export function zoneOrPairMaster(box, zoneLive, boxes) {
   for (const p of stereoPairsOf(zoneLive)) {
     const bxs = pairMemberBoxes(p, boxes).map((x) => x.box).filter(Boolean);
     if (!bxs.some((b) => b.host === box.host)) continue;
-    const mb = bxs.find((b) => up(b.deviceID) === up(p.master)) || bxs[0] || null;
+    const mb = pairMasterBox(p, boxes) || bxs[0] || null;
     return mb ? up(mb.deviceID) : '';
   }
   return '';

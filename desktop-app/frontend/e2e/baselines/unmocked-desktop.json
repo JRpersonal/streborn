@@ -1,0 +1,23 @@
+[
+  "AnnounceExample",
+  "BoxForeignInfluence",
+  "BoxPresets",
+  "BoxSSHStatus",
+  "BoxSnapshot",
+  "BoxSpeakerLevels",
+  "CheckStick",
+  "FeatureWishes",
+  "GetArcade",
+  "GetDisplayClock",
+  "GetDisplayMessages",
+  "GetDisplayNotices",
+  "GetDisplaySplash",
+  "GetResumeOnPowerOn",
+  "GetStartVolume",
+  "LibraryRefusedServers",
+  "ListBoxMediaServers",
+  "PendingUpdateIntent",
+  "PhoneAddressFor",
+  "SpotifyQuality",
+  "USServicesStatus"
+]
