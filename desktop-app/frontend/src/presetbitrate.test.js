@@ -14,6 +14,11 @@ describe('presetBitrateLine', () => {
     expect(presetBitrateLine({ type: 'queue' }, 0)).toBe('');
   });
 
+  it('leaves the line out for a Spotify playlist or album key', () => {
+    expect(presetBitrateLine({ type: 'spotify', uri: 'spotify:album:abc' }, 0)).toBe('');
+    expect(presetBitrateLine({ type: 'spotify', uri: 'spotify:playlist:abc' }, 0)).toBe('');
+  });
+
   it('still shows a rate a library key does carry', () => {
     expect(presetBitrateLine({ source: 'Synology' }, 320)).toBe('320 kbit/s');
   });
