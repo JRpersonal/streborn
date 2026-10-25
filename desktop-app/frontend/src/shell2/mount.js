@@ -476,11 +476,13 @@ function paintSpeakers(force) {
     const keepHost = inList ? active.dataset.host : '';
     const keepAct = inList && active.classList.contains('ui2-spk-act');
     const scrolls = [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].map((el) => el.scrollTop);
+    const listsTop = lists.scrollTop;
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
+    holdSpeakerFloor(lists);
     [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].forEach((el, i) => {
       if (typeof scrolls[i] === 'number') el.scrollTop = scrolls[i];
     });
-    holdSpeakerFloor(lists);
+    lists.scrollTop = listsTop;
     if (keepHost) {
       const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
       const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
@@ -503,11 +505,17 @@ function paintSpeakers(force) {
 //
 // In a window too short for that (a large text size, a low window) the floor
 // is held back so two and a half navigation entries and everything below them
-// stay on screen; the others then keep at least one row and a half. The
-// sidebar's own size is watched, so a resize or a text size change sets the
-// floor again.
+// stay on screen; the others then keep at least one row and a half, as long as
+// that leaves the entries one and a half. When even that is too much (Extra
+// large in the smallest window), the entries keep one and a half and the
+// speakers get the rest, at least their first row whole. Below the floor of the
+// two lists the section turns into one scroll box (is-squeezed): the pinned
+// group and the others scroll together inside it, and nothing in the sidebar
+// is ever drawn over anything else. The sidebar's own size is watched, so a
+// resize or a text size change sets the floor again.
 const OTHERS_FLOOR_ROWS = 3;
 const NAV_RESERVE_ENTRIES = 2.5;
+const NAV_LEAST_ENTRIES = 1.5;
 let floorWatch = null;
 let floorWatched = null;
 function holdSpeakerFloor(lists) {
@@ -523,6 +531,8 @@ function holdSpeakerFloor(lists) {
     floorWatch.observe(side);
     floorWatched = side;
   }
+  // Measured as the two capped lists, never as the one squeezed scroll box.
+  section.classList.remove('is-squeezed');
   const pinned = lists.querySelector('.ui2-spk-pinned');
   const pinnedList = pinned && pinned.querySelector('.ui2-spk-list');
   const scroll = lists.querySelector('.ui2-spk-scroll');
@@ -532,28 +542,68 @@ function holdSpeakerFloor(lists) {
   const others = scroll ? rowsHeight(scroll, OTHERS_FLOOR_ROWS) : 0;
   const pad = Math.max(0, section.offsetHeight - lists.offsetHeight);
   let floor = pinnedH + others + pad;
+  // squeezed: the floor leaves less than the pinned group at its least and a
+  // row and a half of the others, so the two lists share one scroll instead.
+  let squeezed = false;
   if (side) {
     const nav = side.querySelector('.ui2-side-nav');
     const entry = side.querySelector('.ui2-side-scroll .ui2-nav-item');
     const small = side.querySelector('.ui2-side-small');
-    let rest = (entry ? entry.offsetHeight * NAV_RESERVE_ENTRIES : 0) + (small ? small.offsetHeight : 0);
-    for (const el of side.children) if (el !== section && el !== nav) rest += el.offsetHeight;
-    const least = pinnedH + (scroll ? rowsHeight(scroll, 1) : 0) + pad;
-    floor = Math.min(floor, Math.max(least, side.clientHeight - rest));
+    const entryH = entry ? entry.offsetHeight : 0;
+    let fixed = small ? small.offsetHeight : 0;
+    for (const el of side.children) if (el !== section && el !== nav) fixed += el.offsetHeight;
+    const room = Math.max(0, side.clientHeight - fixed);
+    // At the least the first row whole, its sub heading above it included.
+    const row = lists.querySelector('.ui2-spk-row');
+    const spkLeast = Math.min(floor, (row ? layoutTop(row) - layoutTop(lists) + row.offsetHeight + 4 : 0) + pad);
+    const navLeast = Math.max(0, room - entryH * NAV_LEAST_ENTRIES);
+    const listsLeast = pinnedH + (scroll ? rowsHeight(scroll, 1) : 0) + pad;
+    const spkRoom = Math.min(Math.max(room - entryH * NAV_RESERVE_ENTRIES, spkLeast), navLeast);
+    floor = Math.min(floor, Math.max(spkRoom, Math.min(listsLeast, navLeast)));
+    squeezed = floor < listsLeast - 1;
   }
+  section.classList.toggle('is-squeezed', squeezed);
+  // The one scroll box is cut at a row too, measured as it now stands.
+  if (squeezed) floor = halfRowCut(lists, floor - pad) + pad;
   section.style.minHeight = floor > 0 ? `${Math.ceil(floor)}px` : '';
+}
+
+// halfRowCut is the largest height up to room that ends halfway down a row of
+// the squeezed lists or just below a whole one (up to the 4px its focus ring
+// would like), or room itself when not even the first row's half fits.
+function halfRowCut(lists, room) {
+  let best = 0;
+  const top = layoutTop(lists);
+  for (const row of lists.querySelectorAll('.ui2-spk-row')) {
+    const at = layoutTop(row) - top;
+    const half = at + row.offsetHeight / 2;
+    const whole = at + row.offsetHeight;
+    if (half <= room) best = Math.max(best, half);
+    if (whole <= room) best = Math.max(best, Math.min(room, whole + 4));
+  }
+  return best || Math.max(0, room);
+}
+
+// layoutTop is el's distance from the top of the page in layout units: the
+// offset chain, which ignores scrolling and, unlike getBoundingClientRect,
+// is not scaled by the text-size zoom, so it compares with offsetHeight.
+function layoutTop(el) {
+  let y = 0;
+  for (let n = el; n; n = n.offsetParent) y += n.offsetTop;
+  return y;
 }
 
 // rowsHeight is the height a scrolling list needs to show its first n rows
 // whole and half of the next, its own padding included; the full height when
-// it holds no more than that.
+// it holds no more than that. Layout units throughout (layoutTop): a client
+// rect is zoomed by the text size and came out a third too tall at Extra
+// large.
 function rowsHeight(list, n) {
   const rows = [...list.querySelectorAll('.ui2-spk-row')];
   const full = list.scrollHeight + (list.offsetHeight - list.clientHeight);
   if (rows.length <= n) return full;
-  const top = list.getBoundingClientRect().top - list.scrollTop;
-  const next = rows[n].getBoundingClientRect();
-  return Math.min(full, next.top - top + next.height / 2);
+  const next = rows[n];
+  return Math.min(full, layoutTop(next) - layoutTop(list) + next.offsetHeight / 2);
 }
 
 // mirrorShellBadges copies the counts the tab bar shows onto the sidebar:

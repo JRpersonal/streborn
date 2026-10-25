@@ -11,7 +11,9 @@
 //     the navigation entries, More, Levels (grouped scenario only: it exists
 //     only while the controlled speaker leads a group), every visible sidebar
 //     row's pick button and "+"/"-" action, the mute button and the
-//     title-swap label the shell moved into the player.
+//     title-swap label the shell moved into the player;
+//   - in the shell every sidebar navigation entry takes a click: neither the
+//     speaker list nor the Aa / language buttons are ever drawn over it.
 //
 // The sidebar lists every speaker (no room switcher, no Output popover any
 // more); group volume and Levels live in the player.
@@ -95,13 +97,24 @@ async function playerGeometry(page) {
 const CLASSIC_TABS_BUG = 'classic layout: the tab bar overflows the 1000 px minimum window at text size Large and Extra large '
   + '(.tabs does not wrap; Wishes tab ends at x=1004 on Large, x=1135 on Extra large), the window scrolls sideways';
 
-// At Extra large text in the smallest window, with a group playing and the
-// title-swap row on screen (the player at its tallest), the UI 2.0 sidebar has
-// no room left for its navigation: the speaker list, the "Speaker settings"
-// entry and the Aa / language buttons are drawn on top of each other, and a
-// click on the Settings entry lands on the Office row or the language button.
-const UI2_SIDEBAR_BUG = 'UI 2.0: at text size Extra large in the 1000 x 600 window, grouped, the sidebar navigation is squeezed '
-  + 'to nothing; the Settings entry is covered by the speaker list (Office row) and the language button, so it cannot be clicked';
+// sidebarNavReachable: every navigation entry, scrolled into its own box,
+// is the element a click at its centre lands on. At Extra large text in the
+// smallest window, a group playing, the speaker list once squeezed the
+// entries to nothing and the Aa / language buttons and the Office row were
+// drawn over "Speaker settings" (mount.js holdSpeakerFloor).
+async function sidebarNavReachable(page) {
+  const bad = await page.locator('#ui2Sidebar').evaluate((side) => {
+    const out = [];
+    for (const it of side.querySelectorAll('.ui2-nav-item')) {
+      it.scrollIntoView({ block: 'nearest' });
+      const b = it.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      if (!hit || !it.contains(hit)) out.push(`${it.dataset.view}: ${hit ? hit.className || hit.tagName : 'nothing'}`);
+    }
+    return out;
+  });
+  expect(bad, 'sidebar entries covered by something else').toEqual([]);
+}
 
 // waitForTitleSwap runs the page clock until the live-title poll
 // (live.js scheduleLiveTitle, first read 1.2 s after a status poll sees a
@@ -134,8 +147,7 @@ for (const scale of SCALES) {
       test.use({ ui2: true, scale, fakeClock: true, scenario: sc });
 
       for (const view of ['box', 'settings']) {
-        test(`${view}: no horizontal overflow, the player inside the viewport and clear of the main pane`, async ({ app }, testInfo) => {
-          test.fixme(testInfo.project.name === 'desktop-min' && scale === '3' && scName === 'grouped' && view === 'settings', UI2_SIDEBAR_BUG);
+        test(`${view}: no horizontal overflow, the player inside the viewport and clear of the main pane`, async ({ app }) => {
           const { page } = app;
           await prepare(page);
           // The player at its tallest: the title-swap row is on screen too.
@@ -145,6 +157,7 @@ for (const scale of SCALES) {
           await noHorizontalOverflow(page);
           await mainFitsX(page);
           await playerGeometry(page);
+          await sidebarNavReachable(page);
         });
       }
 

@@ -489,6 +489,19 @@ html.ui2 .ui2-spk-scroll {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Squeezed (mount.js holdSpeakerFloor): a sidebar too short for both capped
+   lists and the navigation entries. The lists give up their own scroll and
+   caps and scroll together in .ui2-spk-lists, so the section never paints
+   over the entries below it. */
+html.ui2 .ui2-spk.is-squeezed .ui2-spk-lists {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html.ui2 .ui2-spk.is-squeezed :is(.ui2-spk-pinned .ui2-spk-list, .ui2-spk-scroll) {
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
+}
 /* Named for screen readers (the section's heading); on screen the sub
    headings and the rows say it, and the height goes to the rows. */
 html.ui2 .u-sr-only {
