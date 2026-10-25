@@ -272,6 +272,56 @@ test.describe('UI 2.0 Library', () => {
     await expect(folder(page, 'Empty Shelf')).toBeFocused();
   });
 
+  test('16. Search again on the server list refreshes it and stays there', async ({ app, mock }) => {
+    const { page } = app;
+    // Deep in a folder, so the server and the path are remembered.
+    await walkToTracks(page);
+    await lib(page).locator('.lib2-crumb', { hasText: en('ui2.library.servers') }).click();
+    await expect(heading(page)).toHaveText(en('ui2.library.serversTitle'));
+    await mock.resetCalls();
+    await lib(page).locator('#libRefreshBtn').click();
+    await mock.expectCalled('ListMediaServers', { times: 1 });
+    await expect(heading(page)).toHaveText(en('ui2.library.serversTitle'));
+    await expect(lib(page).locator('.lib2-server')).toHaveCount(1);
+    expect(await mock.count('BrowseLibrary')).toBe(0);
+  });
+
+  test('17. a folder that fails to open says so in its own place, with the way back to its parent', async ({ app, mock }) => {
+    const { page } = app;
+    await openLibrary(page);
+    await folder(page, 'Music').click();
+    await expect(heading(page)).toHaveText('Music');
+    await mock.set('BrowseLibrary', { error: 'UPnP error 701: no such object', times: 1 });
+    await folder(page, 'Evening Sessions').click();
+    const state = lib(page).locator('.lib2-state--error');
+    await expect(state.locator('.lib2-state-title')).toHaveText(en('ui2.library.folderErrorTitle'));
+    await expect(state).toContainText('no such object');
+    // The trail stays on the folder that was asked for, not the server root.
+    await expect(crumbs(page)).toHaveText([en('ui2.library.servers'), NAS, 'Music', 'Evening Sessions']);
+    await expect(lib(page).locator('#lib2Up')).toHaveText(en('ui2.library.backTo', { name: 'Music' }));
+    await expect(page.locator('#errorModal')).toBeHidden();
+    await lib(page).locator('#lib2Retry').click();
+    await expect(lib(page).locator('.lib2-track')).toHaveCount(3);
+  });
+
+  test('18. a folder play\'s answer is not written under another folder', async ({ app, mock }) => {
+    const { page } = app;
+    await walkToTracks(page);
+    await lib(page).locator('.lib2-play-folder').click();
+    const status = lib(page).locator('.lib2-folder-acts .lib2-status');
+    await expect(status).toHaveText(en('ui2.library.folderStarting', { name: LR.friendlyName }));
+    // Before the speaker answers, open another folder with tracks.
+    await lib(page).locator('.lib2-back').click();
+    await expect(heading(page)).toHaveText('Music');
+    await mock.set('BrowseLibrary', { value: LIBRARY_TREE.c1a, times: 1 });
+    await folder(page, 'Empty Shelf').click();
+    await expect(heading(page)).toHaveText('Empty Shelf');
+    await expect(lib(page).locator('.lib2-track')).toHaveCount(3);
+    // The speaker reports PLAY_STATE two seconds after the start.
+    await runFor(page, 2_500);
+    await expect(status).toHaveText('');
+  });
+
   for (const theme of ['dark', 'light', 'contrast']) {
     test.describe(`axe, ${theme}`, () => {
       test.use({ theme });

@@ -219,3 +219,26 @@ describe('the view keeps one copy and both layouts', () => {
     expect(srcOf('libraryFollowSpeaker')).toContain("if (!ui2() || state.view !== 'library') return;");
   });
 });
+
+describe('answers and failures stay where they were asked', () => {
+  it('refreshes the server list without opening a server again', () => {
+    expect(srcOf('wireLibraryUi2')).toContain('loadMediaServers({ autoOpen: false })');
+    expect(srcOf('loadMediaServers')).toContain('const auto = !autoOpen ? null');
+    // The classic refresh keeps opening the remembered server, as before.
+    expect(srcOf('renderLibrary')).toContain('ref.onclick = () => loadMediaServers();');
+  });
+
+  it('drops to the root only for the remembered folder in the preview', () => {
+    const browse = srcOf('libraryBrowseCurrent');
+    expect(browse).toContain('(restoring || !ui2())');
+    expect(browse.indexOf('libState.restoredPath = false;')).toBeLessThan(browse.indexOf('await BrowseLibrary('));
+    expect(srcOf('loadMediaServers')).toContain('libState.restoredPath = !!restored;');
+    expect(srcOf('libraryPickServer')).toContain('libState.restoredPath = !!restored;');
+  });
+
+  it('writes a folder play\'s verdict only into the folder it was for', () => {
+    const play = srcOf('libraryPlayFolder');
+    expect(play).toContain('const folder = openFolderId();');
+    expect(play.indexOf('if (openFolderId() !== folder) return;')).toBeLessThan(play.indexOf("if (v === 'gone')"));
+  });
+});

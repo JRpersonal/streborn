@@ -79,6 +79,7 @@ const libState = {
   capped: false,      // true when a folder exceeds LIB_MAX and was truncated
   filter: '',         // folder search text (client-side filter over the loaded items)
   browseToken: 0,     // bumped on each browse so a stale background page-loop abandons
+  restoredPath: false, // the stack about to be browsed is the remembered one (#642), not a step the user took
   nudged: new Set(),  // "box|udn|address" the speaker was told to look up (nudgeBoxLibrary)
   shuffle: false,     // "Play folder" shuffle toggle (UI state, default off)
   repeat: 'off',      // "Play folder" repeat mode: "off" | "all" | "one" (default off)
@@ -201,7 +202,11 @@ async function syncPlayModeFromBox() {
   } catch { /* box asleep or older agent: keep the local defaults */ }
 }
 
-async function loadMediaServers() {
+// opts.autoOpen (default true) opens the remembered server, or the only one,
+// straight away. The preview's "Search again" on the server list passes false:
+// it asks for a fresh list and stays on it.
+async function loadMediaServers(opts = {}) {
+  const autoOpen = opts.autoOpen !== false;
   libState.loading = true;
   libState.ui2.serversError = '';
   renderLibrary();
@@ -226,13 +231,14 @@ async function loadMediaServers() {
     // disappears simply falls back to the list instead of leaving a stale
     // exclusion behind that nobody remembers making.
     const preferred = rememberedServerUDN();
-    const auto = libState.servers.length === 1
+    const auto = !autoOpen ? null : libState.servers.length === 1
       ? libState.servers[0]
       : libState.servers.find(s => s.udn === preferred);
     if (auto) {
       libState.currentUDN = auto.udn;
-      libState.stack = rememberedPathFor(auto.udn) ||
-        [{ id: '0', title: auto.friendlyName || '' }];
+      const restored = rememberedPathFor(auto.udn);
+      libState.restoredPath = !!restored;
+      libState.stack = restored || [{ id: '0', title: auto.friendlyName || '' }];
       await libraryBrowseCurrent();
       return;
     }
@@ -403,8 +409,9 @@ async function libraryPickServer(udn, atRoot = false) {
   if (!srv) return;
   libState.currentUDN = udn;
   rememberServerUDN(udn);
-  libState.stack = (!atRoot && rememberedPathFor(udn)) ||
-    [{ id: '0', title: srv.friendlyName || '' }];
+  const restored = !atRoot && rememberedPathFor(udn);
+  libState.restoredPath = !!restored;
+  libState.stack = restored || [{ id: '0', title: srv.friendlyName || '' }];
   await libraryBrowseCurrent();
 }
 
@@ -463,6 +470,8 @@ function nudgeBoxLibrary(udn) {
 async function libraryBrowseCurrent() {
   if (!libState.currentUDN) return;
   const top = libState.stack[libState.stack.length - 1];
+  const restoring = libState.restoredPath;
+  libState.restoredPath = false;
   const token = ++libState.browseToken; // any older background loop sees a mismatch and abandons
   libState.loading = true;
   libState.loadingMore = false;
@@ -515,7 +524,10 @@ async function libraryBrowseCurrent() {
     // guaranteed stable across a server restart. Fall back to the server
     // root once instead of showing an error for a folder the user never
     // asked for this session (#642).
-    if (libState.stack.length > 1 && top !== libState.stack[0]) {
+    // The preview keeps that to the remembered folder: a folder the user just
+    // opened that fails says so in its own place, with Try again and the step
+    // back up, instead of the trail silently dropping to the root.
+    if (libState.stack.length > 1 && top !== libState.stack[0] && (restoring || !ui2())) {
       libState.stack = libState.stack.slice(0, 1);
       await libraryBrowseCurrent();
       return;
@@ -605,6 +617,14 @@ function setLibStatus(key, st) {
     el.className = `lib2-status${st && st.tone ? ` lib2-status--${st.tone}` : ''}`;
     el.textContent = (st && st.text) || '';
   });
+}
+
+// openFolderId names the folder open in the Library: its server and its
+// container. A folder action's answer that arrives after the user moved on
+// belongs to the folder it was asked for, not to the action bar on screen.
+function openFolderId() {
+  const top = libState.stack[libState.stack.length - 1];
+  return `${libState.currentUDN || ''}|${(top && top.id) || ''}`;
 }
 
 // speakerName is the name of the speaker a play from here goes to, as the
@@ -835,6 +855,7 @@ async function libraryPlayFolder() {
   // of group" (that raw SOAP fault is exactly what users saw).
   const target = deps.effectivePlayTarget() || state.currentBox;
   const spk = speakerName();
+  const folder = openFolderId();
   if (ui2()) setLibStatus('folder', { tone: 'busy', text: t('ui2.library.folderStarting', { name: spk }) });
   try {
     await StartQueue(target.host, target.port, JSON.stringify(payload));
@@ -855,6 +876,7 @@ async function libraryPlayFolder() {
       // Done only once the speaker plays; a folder whose first file the
       // speaker cannot start says so next to the button that started it.
       waitForPlayState(target, Date.now() + 26000).then((v) => {
+        if (openFolderId() !== folder) return; // another folder is open by now
         if (v === 'gone') setLibStatus('folder', null);
         else if (v === 'playing') setLibStatus('folder', { tone: 'ok', text: t('ui2.library.folderPlaying', { name: spk }) });
         else setLibStatus('folder', { tone: 'warn', text: t('ui2.library.folderNotStarted', { name: spk }) });
@@ -863,8 +885,9 @@ async function libraryPlayFolder() {
     }
     showToast(t('library.folderQueued', { n: items.length }));
   } catch (e) {
-    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });
-    else showError(`StartQueue: ${e}`);
+    if (ui2()) {
+      if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });
+    } else showError(`StartQueue: ${e}`);
   }
 }
 
@@ -932,9 +955,11 @@ function librarySaveFolderAsPreset() {
       // No track carries a cover: the key shows the folder's own (#1301).
       const art = folderFallbackArt(queueItems, last && last.art);
       if (art) payload.art = art;
+      const folder = openFolderId();
       try {
         await SaveFolderPreset(state.currentBox.host, state.currentBox.port, i, JSON.stringify(payload));
         if (ui2()) {
+          if (openFolderId() !== folder) return; // another folder is open by now
           // The speaker answered the save: say so next to the folder button.
           const spk = speakerName();
           setLibStatus('folder', {
@@ -949,8 +974,9 @@ function librarySaveFolderAsPreset() {
           showToast(t('library.folderPresetSaved', { n: i, name }));
         }
       } catch (e) {
-        if (ui2()) setLibStatus('folder', { tone: 'error', text: t('ui2.library.keyFailed', { name: speakerName(), detail: String(e) }) });
-        else showError(`SaveFolderPreset: ${e}`);
+        if (ui2()) {
+          if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.keyFailed', { name: speakerName(), detail: String(e) }) });
+        } else showError(`SaveFolderPreset: ${e}`);
       }
     },
   });
@@ -1552,7 +1578,7 @@ function wireLibraryUi2(el) {
     }
     if (hit('#lib2Retry')) { libState.ui2.focus = 'heading'; libraryBrowseCurrent(); return; }
     if (hit('#lib2Up')) { const up = trailParent(ui2Crumbs()); if (up) ui2GoTo(up.depth); return; }
-    if (hit('#libRefreshBtn')) { libState.ui2.focus = 'heading'; loadMediaServers(); return; }
+    if (hit('#libRefreshBtn')) { libState.ui2.focus = 'heading'; loadMediaServers({ autoOpen: false }); return; }
     if ((b = hit('#libOnSpeakersBtn'))) { libraryPutServerOnSpeakers(b); return; }
     if ((b = hit('#libManualAddBtn'))) { const i = $('libManualUrl'); libraryAddManualServer(i ? i.value : '', b); return; }
     if (hit('#libManualRemoveBtn')) { libraryRemoveManualServer(libState.currentUDN); }
