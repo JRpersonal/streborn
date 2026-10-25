@@ -459,12 +459,18 @@ jobs:
   # job above and the wails build never install them. No browser cache step:
   # Playwright advises against caching browsers, and it would be one more
   # action to pin. Not a required check until it has been green on main for a
-  # week. Target: the test run under 3 minutes, the job under 6; past that,
-  # shard desktop-i18n first.
+  # week. Measured locally with the CI settings before sharding: about 18
+  # minutes of summed test time (desktop-a11y about 5, layout 3, banners and
+  # i18n between 2 and 3), so the suite runs fullyParallel in two shards. The
+  # timeout stays generous until the first green runs show the real duration.
   frontend-e2e:
-    name: Frontend UI tests (Playwright)
+    name: Frontend UI tests (Playwright, shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -493,16 +499,21 @@ jobs:
         working-directory: desktop-app/frontend/e2e
         env:
           CI: "1"
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/2
 
-      # Everything a run writes (build, results, traces, HTML report) is under
-      # desktop-app/.e2e-out; open a trace with `npx playwright show-trace`.
+      # Results, traces and the HTML report are under desktop-app/.e2e-out
+      # (results-<PORT>, report-<PORT>); open a trace with
+      # `npx playwright show-trace`. The directory is dot-named, and
+      # upload-artifact skips hidden paths unless include-hidden-files is set.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: frontend-e2e-report
-          path: desktop-app/.e2e-out/
-          if-no-files-found: ignore
+          name: frontend-e2e-report-${{ matrix.shard }}
+          path: |
+            desktop-app/.e2e-out/results-*/
+            desktop-app/.e2e-out/report-*/
+          include-hidden-files: true
+          if-no-files-found: warn
           retention-days: 7
 
   build:

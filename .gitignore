@@ -31,6 +31,12 @@
 # build, result, trace and report a run writes, kept outside the Vite root.
 /desktop-app/frontend/e2e/node_modules/
 /desktop-app/.e2e-out/
+# What a CLI override (--reporter=html, --output, a blob or merge run) writes
+# next to the config instead.
+/desktop-app/frontend/e2e/playwright-report/
+/desktop-app/frontend/e2e/test-results/
+/desktop-app/frontend/e2e/blob-report/
+/desktop-app/frontend/e2e/playwright/.cache/
 /desktop-app/desktop-app/
 /desktop-app/agentbin/streborn-*
 /desktop-app/agentbin/*.bin
