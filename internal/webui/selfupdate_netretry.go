@@ -32,6 +32,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/updatesig"
 )
 
 var (
@@ -186,5 +188,86 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 		return false
 	case <-t.C:
 		return true
+	}
+}
+
+var (
+	// engineRestoreProbeEvery and engineRestoreWaitFor bound the wait for the
+	// network after an update that failed on it and had already dropped the
+	// Spotify engine. Only that rare case starts the wait, and it writes
+	// nothing while it waits.
+	engineRestoreProbeEvery = 30 * time.Second
+	engineRestoreWaitFor    = time.Hour
+	// errEngineRestoreBusy: another check or install holds the updater, so
+	// the restore asks again on the next round instead of racing it.
+	errEngineRestoreBusy = errors.New("another update is running on this speaker")
+)
+
+// retryWhenOnline calls try each time the release host is reachable again,
+// until try succeeds, fails for a reason other than the network, or
+// engineRestoreWaitFor is over. It returns try's last error.
+//
+// #1339 (ST10, 2026-10-25): the router was off for about eighteen minutes.
+// The update gave up after its own retries, tried once to put the Spotify
+// engine back, still inside the outage, and failed. Seven minutes later the
+// network was back, but nothing asked again, so the speaker stayed without
+// Spotify until the owner started another update.
+func retryWhenOnline(ctx context.Context, try func() error) error {
+	until := time.Now().Add(engineRestoreWaitFor)
+	err := errors.New("the network did not come back")
+	for {
+		if !sleepCtx(ctx, engineRestoreProbeEvery) {
+			return err
+		}
+		if fleetReleaseReachable(ctx) {
+			err = try()
+			if err == nil || (!errors.Is(err, errEngineRestoreBusy) && !isNetworkError(err)) {
+				return err
+			}
+		}
+		if time.Now().After(until) {
+			return err
+		}
+	}
+}
+
+// restoreEngineWhenOnline puts back the engine a failed update dropped, once
+// the network is back. agentErr is what the update itself failed on: the
+// card keeps saying that, without the engine part once the engine is back.
+func (s *Server) restoreEngineWhenOnline(base, version string, want updatesig.File, agentErr error) {
+	err := retryWhenOnline(context.Background(), func() error {
+		if present, _ := goLibrespotStamp(); present {
+			return nil
+		}
+		if !s.selfUpd.claim() {
+			return errEngineRestoreBusy
+		}
+		defer s.selfUpd.release()
+		// ensureEngine shows "engine" on the card while it runs. Afterwards
+		// the card goes back to what it said: the failed update, or, when
+		// the owner has moved on since (a new check), nothing.
+		s.selfUpd.mu.Lock()
+		wasFailed := s.selfUpd.state == "failed"
+		s.selfUpd.mu.Unlock()
+		back := func(engineErr error) {
+			switch {
+			case !wasFailed:
+				s.selfUpd.set("idle", "")
+			case engineErr != nil:
+				s.selfUpd.fail(fmt.Errorf("%w (and the Spotify engine could not be restored: %w)", agentErr, engineErr))
+			default:
+				s.selfUpd.fail(agentErr)
+			}
+		}
+		if err := s.ensureEngine(base, version, want); err != nil {
+			back(err)
+			return err
+		}
+		back(nil)
+		s.logger.Info("self-update: Spotify engine restored once the network was back")
+		return nil
+	})
+	if err != nil {
+		s.logger.Warn("self-update: gave up restoring the Spotify engine after the failed update", "err", err)
 	}
 }

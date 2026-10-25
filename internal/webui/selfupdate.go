@@ -576,9 +576,15 @@ func (s *Server) runSelfUpdate() {
 		// 2026-10-14. Put the engine back from the release just verified:
 		// the desktop app pushes its engine to any agent version as well.
 		if now, _ := goLibrespotStamp(); enginePresent && !now && p.Engine != nil {
+			agentErr := err
 			if eerr := s.ensureEngine(base, ix.Version, *p.Engine); eerr != nil {
 				s.logger.Warn("self-update: could not restore the Spotify engine after the failed update", "err", eerr)
 				err = fmt.Errorf("%w (and the Spotify engine could not be restored: %w)", err, eerr)
+				// Still offline: ask again once the network is back, not
+				// only when the owner starts another update (#1339).
+				if isNetworkError(eerr) {
+					go s.restoreEngineWhenOnline(base, ix.Version, *p.Engine, agentErr)
+				}
 			} else {
 				s.logger.Info("self-update: Spotify engine restored after the failed update")
 			}

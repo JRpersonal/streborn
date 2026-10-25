@@ -159,14 +159,67 @@ tested on 27.0.6 only, so updating first saves an install that fails.
 
 ## 4. When 27.0.6 will not take
 
-Speakers on a much older firmware have been reported to refuse the jump
-straight to 27.0.6. The route that worked in the field was to go **down**
-first and then up: install `6.02.01` from the same catalogue path shape,
-then `27.0.6`. That is what got a SoundTouch 20 on firmware 7.0.37 from
-"STR will not install" to a working speaker (discussion #447 and #476,
-July 2026).
+Speakers on very old firmware sometimes refuse the jump straight to
+27.0.6. After the hand symbol the display shows an empty bar that never
+fills, even with a stick that is known to be good. Going up in smaller
+steps has helped.
 
-Two things reported alongside it, worth knowing before you start:
+**Where the older images come from.** Bose still serves 26.0.1, 27.0.1,
+27.0.2, 27.0.3 and 27.0.6. The paths for 14.0.33 up to 25.0.0 answer 403
+(checked 2026-10-25). For everything older the only source I know is a
+community collection on the Internet Archive. Those files do not come
+from Bose. I can check their size and nothing else. STR links them and
+never mirrors them. You use them at your own risk.
+
+For the first generation SoundTouch 20, 30 and Portable (no Bluetooth,
+chassis `older` in the table in section 2) the folder is:
+
+    https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2013-2015_No_Bluetooth/Airplay-1_ST20-30-Portable/
+
+Do not take files from the Bluetooth folders for these speakers. Those
+are for the newer chassis.
+
+| Version | Source | `Update.stu` bytes | Status |
+|---|---|---|---|
+| 6.02.01 | archive, `Airplay-1_ST20-30-Portable_06.02.01.zip` | 80 559 847 | Reported: installed on two SoundTouch 20 |
+| 7.00.37 | archive, `Airplay-1_ST20-30-Portable_07.00.37.zip` | 93 032 539 | Reported: the firmware the July speaker came from |
+| 14.00.33 | archive, `Airplay-1_ST20-30-Portable_14.00.33.zip` | 93 114 711 | Untested idea |
+| 26.0.1 | Bose, `/ced/soundtouch/st3_2020_a3b99494/stu/s/Update.stu` | 105 627 340 | Untested idea |
+| 27.0.6 | Bose, catalogue path in section 2 | 105 879 988 | Target |
+
+The zips contain a folder with the `Update.stu` inside. Copy only that
+file to the root of the stick. The archived Bose catalogues for 14.0.33
+and 26.0.1 list the same lengths and the same device ID as these files.
+
+**Order to try.** Reset the speaker before every step (see below).
+
+1. 27.0.6 again from a different, smaller stick (2 to 8 GB, FAT32, only
+   `Update.stu` on it). Give it up to 45 minutes.
+2. 6.02.01, then 27.0.6.
+3. 7.00.37, then 27.0.6. To copy the July route exactly, go 7.00.37,
+   6.02.01, 27.0.6.
+4. 14.00.33, then 26.0.1, then 27.0.6.
+
+A step that worked can be repeated. 6.02.01 has re-flashed fine from a
+stick on a speaker where 27.0.6 had just failed.
+
+**Field reports so far.**
+
+- July 2026 ([discussion #447](https://github.com/JRpersonal/streborn/discussions/447),
+  [issue #476](https://github.com/JRpersonal/streborn/issues/476)): a
+  SoundTouch 20 on 7.0.37. 27.0.6 from the first stick did not install.
+  With a different stick, 6.02.01 and then 27.0.6 worked. The stick and
+  the route changed at the same time, so either may have been the fix.
+- October 2026 (mail): a first generation SoundTouch 20 on 5.x. 27.0.6
+  hung on an empty bar for over 20 minutes with a checked 16 GB FAT32
+  stick (8 KB clusters). 6.02.01 installed fine and the speaker worked
+  again. 27.0.6 after that hung again. Still open.
+- [Issue #854](https://github.com/JRpersonal/streborn/issues/854): a
+  SoundTouch 20 on 14.0.15 filled the bar to 100 % with 27.0.6 and then
+  restarted in a loop. So a jump from 14.x straight to 27.0.6 is not safe
+  either.
+
+Two more things reported alongside, worth knowing before you start:
 
 - On firmware **7.2.21 and older** the setup access point is opened with
   **2** and **volume down**, not the combination the current manuals
@@ -187,7 +240,7 @@ models use the same page; the app's own upload is being tested across the
 maintainer's speakers (SoundTouch 10, 30 and Portable).
 
 Reported by users and not reproduced by this project: the button
-combinations, the downgrade route, and the behaviour of the speaker's
+combinations, the step routes in section 4, and the behaviour of the speaker's
 own update check now that the cloud is gone. They are written down here
 because they worked for somebody, not because we tested them.
 
@@ -226,7 +279,10 @@ document is built from.
 - The field case behind section 4, a SoundTouch 20 on firmware 7.0.37
   that could not install STR until it was taken down and then up again:
   [discussion #447](https://github.com/JRpersonal/streborn/discussions/447)
-  and [#476](https://github.com/JRpersonal/streborn/discussions/476).
+  and [issue #476](https://github.com/JRpersonal/streborn/issues/476).
+- The community collection of older images used in section 4:
+  <https://archive.org/details/bose-soundtouch-software-and-firmware>.
+  Not from Bose, checked by size only.
 - Which chassis your speaker is, and why two generations of the same
   model take different images:
   [`docs/MODEL-VARIANTS.md`](MODEL-VARIANTS.md).

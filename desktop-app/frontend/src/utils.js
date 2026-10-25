@@ -318,10 +318,13 @@ export function beginLibraryNowPlaying(st, play, now) {
 // folder, the speaker's queue) carries no measured rate: since v1.0.6 such a
 // track goes straight from the server to the speaker, nothing is measured, and
 // the placeholder read as a broken key (#1065). A rate that IS stored on such a
-// key (saved before that change) is still shown.
+// key (saved before that change) is still shown. A Spotify key has no stored
+// rate either (only radio saves record one), so a playlist or album key read
+// "- kbit/s" under its cover like a station whose rate is still unknown
+// (discussion #1077).
 export function presetBitrateLine(p, tileBitrate) {
   if (tileBitrate > 0) return `${tileBitrate} kbit/s`;
-  if (p && (p.source || p.type === 'queue' || (p.items && p.items.length))) return '';
+  if (p && (p.type === 'spotify' || p.source || p.type === 'queue' || (p.items && p.items.length))) return '';
   return '- kbit/s';
 }
 
