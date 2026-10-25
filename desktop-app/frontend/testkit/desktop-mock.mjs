@@ -138,10 +138,13 @@ export function installDesktopMock({ scenario, demo }) {
     if (typeof state.volume[h] === 'number') s.volume.actual = state.volume[h];
     return s;
   };
-  const setPresetName = (args) => {
-    const [h, , slot, name] = args;
-    const p = presetsFor(h).find((x) => x.slot === slot);
-    if (p && typeof name === 'string' && name) p.name = name;
+  // putPreset stores one slot the way the agent's PUT /api/presets/<slot>
+  // does: the new preset replaces the old one whole, it is not merged.
+  const putPreset = (h, slot, next) => {
+    const list = presetsFor(h);
+    const i = list.findIndex((x) => x.slot === slot);
+    const p = { ...next, slot };
+    if (i >= 0) list[i] = p; else { list.push(p); list.sort((x, y) => x.slot - y.slot); }
   };
 
   // ---- the model: one answer per binding (names in MODELLED_BINDINGS) ------
@@ -169,11 +172,9 @@ export function installDesktopMock({ scenario, demo }) {
     },
     PhoneQR: () => demo.phoneQR,
     GetPresets: ([h]) => clone(presetsFor(h)),
-    SetPreset: ([h, , slot, name, url, art, bitrate]) => {
-      const list = presetsFor(h);
-      const p = list.find((x) => x.slot === slot);
-      const next = { slot, name, stream_url: url, type: 'radio', art, bitrate };
-      if (p) Object.assign(p, next); else list.push(next);
+    // The argument orders are those of app_presets.go.
+    SetPreset: ([h, , slot, name, url, art, bitrate, homepage, codec]) => {
+      putPreset(h, slot, { name, stream_url: url, type: 'radio', art, bitrate, homepage, codec });
       return undefined;
     },
     MovePreset: ([h, , from, to]) => {
@@ -185,10 +186,27 @@ export function installDesktopMock({ scenario, demo }) {
       list.sort((x, y) => x.slot - y.slot);
       return undefined;
     },
-    SaveLibraryPreset: (args) => { setPresetName(args); return undefined; },
-    SaveNativePreset: (args) => { setPresetName(args); return undefined; },
-    SaveSpotifyPreset: (args) => { setPresetName(args); return undefined; },
-    SaveFolderPreset: (args) => { setPresetName(args); return undefined; },
+    SaveLibraryPreset: ([h, , slot, name, url, art, bitrate, source, durationSec]) => {
+      putPreset(h, slot, { name, stream_url: url, type: 'radio', art, bitrate, source, duration_sec: Math.max(0, durationSec || 0) });
+      return undefined;
+    },
+    // The agent takes the station from the speaker's own now-playing.
+    SaveNativePreset: ([h, , slot, name]) => {
+      const it = state.item[h] || {};
+      putPreset(h, slot, { name: name || it.name || '', stream_url: '', type: 'native', art: it.art });
+      return undefined;
+    },
+    SaveSpotifyPreset: ([h, , slot, name, uri, account]) => {
+      putPreset(h, slot, { name, stream_url: '', type: 'spotify', uri, account });
+      return undefined;
+    },
+    // payloadJSON is the preset object the Library tab built, stored verbatim.
+    SaveFolderPreset: ([h, , slot, payloadJSON]) => {
+      let p = {};
+      try { p = JSON.parse(payloadJSON) || {}; } catch (e) { p = {}; }
+      putPreset(h, slot, { stream_url: '', ...p, type: p.type || 'queue' });
+      return undefined;
+    },
     SaveQueuePreset: () => '',
     RecentPlayed: () => clone(demo.recent),
     Status: ([h]) => statusFor(h),

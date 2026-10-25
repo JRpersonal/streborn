@@ -68,6 +68,23 @@ describe('testkit desktop mock', () => {
     expect(await App.NoSuchBinding()).toBe(null);
   });
 
+  it('preset saves store what the backend would (argument orders of app_presets.go)', async () => {
+    fakePage();
+    installDesktopMock({ scenario: resolveScenario({}), demo: DEMO });
+    const App = globalThis.window.go.main.App;
+    const slot = async (n) => (await App.GetPresets('demobox.local', 8888)).find((p) => p.slot === n);
+    await App.SaveFolderPreset('demobox.local', 8888, 2, JSON.stringify({ name: 'Jazz folder', type: 'queue', items: [] }));
+    expect(await slot(2)).toMatchObject({ slot: 2, name: 'Jazz folder', type: 'queue', items: [] });
+    await App.SaveSpotifyPreset('demobox.local', 8888, 3, 'Mix', 'spotify:playlist:abc', 'acct');
+    expect(await slot(3)).toMatchObject({ name: 'Mix', type: 'spotify', uri: 'spotify:playlist:abc', account: 'acct' });
+    await App.SaveLibraryPreset('demobox.local', 8888, 4, 'Song', 'http://192.0.2.9/s.mp3', 'http://192.0.2.9/a.jpg', 320, 'NAS', 215);
+    expect(await slot(4)).toMatchObject({ name: 'Song', type: 'radio', stream_url: 'http://192.0.2.9/s.mp3', bitrate: 320, source: 'NAS', duration_sec: 215 });
+    await App.SetPreset('demobox.local', 8888, 5, 'FM', 'http://192.0.2.9/fm', '', 128, 'https://example.com', 'AAC+');
+    expect(await slot(5)).toMatchObject({ name: 'FM', type: 'radio', homepage: 'https://example.com', codec: 'AAC+' });
+    expect((await slot(5)).uri).toBeUndefined();
+    expect((await App.GetPresets('demobox.local', 8888)).length).toBe(6);
+  });
+
   it('delivers emitted events to EventsOn listeners until they are removed', () => {
     const { win } = fakePage();
     installDesktopMock({ scenario: resolveScenario({}), demo: DEMO });
