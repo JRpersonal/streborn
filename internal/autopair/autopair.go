@@ -74,6 +74,15 @@ type Manager struct {
 	// tickCount is only touched by RunBackground's own goroutine.
 	tickCount int
 
+	// stoppedSource is the source the previous boxIdleForReassert read saw
+	// held stopped (STOP_STATE / INVALID_PLAY_STATUS), or "" when that read
+	// saw anything else. A stopped source only counts as idle on the second
+	// consecutive stopped read of the same source: a fresh recall can read
+	// STOP_STATE for a moment between the stream push and buffering, and a
+	// re-assert landing right then would knock that start back. Only touched
+	// inside ensure(), which the inFlight guard keeps single-flight.
+	stoppedSource string
+
 	// firstAssertDone records that the start-up account re-assert actually
 	// RAN (the setMargeAccount POST went through), as opposed to having been
 	// attempted. Forcing only on tick 1 was not enough: on a freshly booted
@@ -314,7 +323,7 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 		// already-paired box while it is idle; a playing box keeps its music
 		// and the pending flag keeps the retry alive for a quieter tick.
 		if src, idle := m.boxIdleForReassert(ctx); !idle {
-			m.logger.Info("autopair phase: start-up re-assert deferred, the box is playing; retrying on a later tick", "source", src)
+			m.logger.Info("autopair phase: start-up re-assert deferred, the box is playing (or its source has read stopped on only one check); retrying on a later tick", "source", src)
 			return nil
 		}
 		m.logger.Warn("autopair phase: re-asserting the account (clears a stale paired state, the dead-cloud amber icon, and a boot-window re-assert that never landed)", "accountID", m.cfg.AccountID)
@@ -359,7 +368,17 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 // happened to be in standby on a tick (field bundle 2026-10-25). A paused
 // source still counts as busy, since the listener can resume it. A failed
 // read counts as NOT idle: the retry is free, a bounced source is not.
+//
+// A stopped source only counts as idle when the previous check (one tick
+// earlier) saw the same source stopped too: a fresh recall can read STOP_STATE
+// for a moment between the stream push and buffering, and a re-assert landing
+// then would knock that start back. A box parked stopped stays stopped across
+// ticks, so the re-assert still lands one tick later.
 func (m *Manager) boxIdleForReassert(ctx context.Context) (string, bool) {
+	// Any read that does not see a stopped source, a failed one included,
+	// breaks the stopped streak.
+	prevStopped := m.stoppedSource
+	m.stoppedSource = ""
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.base+"/now_playing", nil)
 	if err != nil {
 		return "", false
@@ -388,6 +407,10 @@ func (m *Manager) boxIdleForReassert(ctx context.Context) (string, bool) {
 	seen := src + " (" + status + ")"
 	switch status {
 	case "STOP_STATE", "INVALID_PLAY_STATUS":
+		m.stoppedSource = src
+		if prevStopped != src {
+			return seen + ", stopped on this check only", false
+		}
 		return seen, true
 	}
 	return seen, false
