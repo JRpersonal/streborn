@@ -378,7 +378,10 @@ function recentCardHTML(c, i, nowPlaying) {
   const nowBadge = nowPlaying
     ? ` <span class="rc-now-badge">&#9205; ${escapeHtml(t('preset.statePlay'))}</span>`
     : '';
-  return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}">`
+  // The preview finds a card by its identity (data-ck), not by its place in the
+  // list: a repaint can shift every index while an action is out.
+  const ck = shell2Mounted() ? ` data-ck="${escapeAttr(c.cardKey || '')}"` : '';
+  return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}"${ck}>`
     + `<div class="rc-head">${logoImg(c)}`
     + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}${nowBadge}</div>`
     + `<div class="rc-sub">${sub}</div></div>`
@@ -416,7 +419,8 @@ function ui2CardActions(c, i, isRadio) {
     `<button type="button" class="u-btn u-btn--icon ${cls}" id="${id}" aria-label="${escapeAttr(text)}" title="${escapeAttr(text)}"${extra}>${glyph}</button>`;
   const canPlay = isRadio || (c.source === 'pandora' ? !!c.url : c.playSlot != null);
   let html = '';
-  if (canPlay) html += btn('rc-play', 'recPlay' + i, t('ui2.recent.playOn', { name, speaker: label(cardPlayBox(c)) }), '&#9205;');
+  const busy = playsInFlight.has(c.cardKey) ? ' aria-disabled="true" aria-busy="true"' : '';
+  if (canPlay) html += btn('rc-play', 'recPlay' + i, t('ui2.recent.playOn', { name, speaker: label(cardPlayBox(c)) }), '&#9205;', busy);
   html += btn('rc-pick', 'recPick' + i, t('ui2.recent.keyOn', { name, speaker: label(cardKeyBox(c)) }), '+');
   if (isRadio) {
     const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
@@ -439,11 +443,27 @@ function favLabel(name, fav) {
 // The card's next action clears it.
 const cardErrors = new Map();
 
+// playsInFlight holds the cards (by cardKey) whose play the speaker has not
+// answered yet in the preview, so a repainted card keeps its busy button.
+const playsInFlight = new Set();
+
+// cardEl finds a card of the preview on screen by its identity.
+function cardEl(c) {
+  if (typeof document === 'undefined') return null;
+  return [...document.querySelectorAll('#recentList .recent-card')].find((el) => el.dataset.ck === (c.cardKey || '')) || null;
+}
+
+// cardErrLine is the card's error line as it is on screen now.
+function cardErrLine(c) {
+  const card = shell2Mounted() ? cardEl(c) : null;
+  return card ? card.querySelector('.rc-err') : null;
+}
+
 // showCardError reports a failed card action. The preview writes it into the
 // card's own error line (rule 3, errors where they happen); the current layout
 // keeps its error dialog.
-function showCardError(c, i, err) {
-  const line = shell2Mounted() ? document.getElementById('recErr' + i) : null;
+function showCardError(c, err) {
+  const line = cardErrLine(c);
   if (!line) { showError(err); return; }
   const msg = friendlyErrorText(String(err && err.message ? err.message : err || t('modal.unknownError')));
   cardErrors.set(c.cardKey, msg);
@@ -452,9 +472,9 @@ function showCardError(c, i, err) {
 
 // clearCardError empties the card's error line as its next action starts, and
 // makes the line an alert again for that action's answer.
-function clearCardError(c, i) {
+function clearCardError(c) {
   cardErrors.delete(c.cardKey);
-  const line = shell2Mounted() ? document.getElementById('recErr' + i) : null;
+  const line = cardErrLine(c);
   if (line) { line.textContent = ''; line.setAttribute('role', 'alert'); }
 }
 
@@ -528,8 +548,15 @@ function wireCard(c, i) {
       // UI 2.0: the button is busy until the speaker answered, so a second
       // click cannot start the same station twice and nothing claims "playing"
       // before the speaker took it (rule 2). The current layout is unchanged.
+      // aria-disabled rather than disabled: a disabled button drops the
+      // keyboard focus to the page.
       const busy = shell2Mounted();
-      if (busy) { clearCardError(c, i); playBtn.disabled = true; playBtn.setAttribute('aria-busy', 'true'); }
+      if (busy) {
+        if (playsInFlight.has(c.cardKey)) return;
+        playsInFlight.add(c.cardKey);
+        clearCardError(c);
+        setPlayBusy(c, playBtn, true);
+      }
       try {
         if (c.source === 'spotify') {
           // Token present (matched a preset slot): recall it, same as a preset.
@@ -557,8 +584,8 @@ function wireCard(c, i) {
         } else {
           await deps.playStation(cardStation(c));
         }
-      } catch (err) { showCardError(c, i, err); } finally {
-        if (busy) { playBtn.disabled = false; playBtn.removeAttribute('aria-busy'); }
+      } catch (err) { showCardError(c, err); } finally {
+        if (busy) { playsInFlight.delete(c.cardKey); setPlayBusy(c, playBtn, false); }
       }
     };
   }
@@ -584,13 +611,31 @@ function wireCard(c, i) {
   const delBtn = document.getElementById('recDel' + i);
   if (delBtn) {
     delBtn.onclick = async () => {
-      delBtn.disabled = true;
-      clearCardError(c, i);
+      // The preview keeps the button focusable while it works (aria-disabled),
+      // so the repaint after the removal can put the keyboard on the card that
+      // took its place.
+      const ui2 = shell2Mounted();
+      if (ui2 && delBtn.getAttribute('aria-disabled') === 'true') return;
+      if (ui2) delBtn.setAttribute('aria-disabled', 'true'); else delBtn.disabled = true;
+      clearCardError(c);
       try {
         await deleteRecentStation(c, DeleteRecentCard, state.currentBox);
         await refreshRecentList();
-      } catch (err) { showCardError(c, i, err); delBtn.disabled = false; }
+      } catch (err) {
+        showCardError(c, err);
+        if (ui2) delBtn.removeAttribute('aria-disabled'); else delBtn.disabled = false;
+      }
     };
+  }
+}
+
+// setPlayBusy marks a card's play button busy or free: the button the click
+// came from and, after a repaint, the one now on screen for the same card.
+function setPlayBusy(c, btn, on) {
+  const card = cardEl(c);
+  const cur = card ? card.querySelector('.rc-play') : null;
+  for (const b of new Set([btn, cur].filter(Boolean))) {
+    if (on) { b.setAttribute('aria-disabled', 'true'); b.setAttribute('aria-busy', 'true'); } else { b.removeAttribute('aria-disabled'); b.removeAttribute('aria-busy'); }
   }
 }
 
@@ -715,11 +760,13 @@ export async function refreshRecentList() {
   const cards = await loadRecentCards();
   const listEl = $('recentList');
   if (!listEl || state.view !== 'recent') { stopRecentAutoRefresh(); return; } // navigated away mid-fetch
+  const keep = shell2Mounted() ? recentFocusMark(listEl) : null;
   if (!cards.length) {
     paintedCards = [];
     listEl.innerHTML = shell2Mounted()
       ? ui2EmptyHTML()
       : `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
+    restoreRecentFocus(listEl, keep);
     return;
   }
   // Only ONE card wears the now-playing badge: the NEWEST card of the current
@@ -733,6 +780,44 @@ export async function refreshRecentList() {
     ? ui2DaysHTML(cards, playingIdx)
     : cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
   cards.forEach((c, i) => wireCard(c, i));
+  restoreRecentFocus(listEl, keep);
+}
+
+// RECENT_CONTROLS are a card's controls, in their order on the card.
+const RECENT_CONTROLS = ['rc-play', 'rc-pick', 'rc-fav', 'rc-del', 'rc-site'];
+
+// recentFocusMark notes which control of which card has the keyboard before
+// the preview repaints the list: the card's identity, the control and the
+// card's place, for when the card itself is gone (removed from the history).
+export function recentFocusMark(listEl, active = typeof document !== 'undefined' ? document.activeElement : null) {
+  if (!listEl || !active || !listEl.contains(active)) return null;
+  const card = active.closest('.recent-card');
+  if (!card) return null;
+  const cls = RECENT_CONTROLS.find((x) => active.classList.contains(x)) || '';
+  const pos = [...listEl.querySelectorAll('.recent-card')].indexOf(card);
+  return { ck: card.dataset.ck || '', cls, pos };
+}
+
+// recentFocusTarget is where the keyboard goes after the repaint: the same
+// control on the same card; for a card that left, the card now in its place
+// (or the last one); for a list that went empty, fallback (the Clear button).
+export function recentFocusTarget(listEl, mark, fallback = null) {
+  if (!listEl || !mark) return null;
+  const cards = [...listEl.querySelectorAll('.recent-card')];
+  let card = cards.find((el) => el.dataset.ck === mark.ck) || null;
+  const same = !!card;
+  if (!card && cards.length) card = cards[Math.min(Math.max(mark.pos, 0), cards.length - 1)];
+  if (!card) return fallback;
+  const ctl = (same && mark.cls && card.querySelector('.' + mark.cls))
+    || card.querySelector(RECENT_CONTROLS.map((x) => '.' + x).join(', '));
+  return ctl || fallback;
+}
+
+function restoreRecentFocus(listEl, mark) {
+  if (!mark) return;
+  const target = recentFocusTarget(listEl, mark, $('recentClear'));
+  if (!target) return;
+  try { target.focus({ preventScroll: true }); } catch { target.focus(); }
 }
 
 // ui2DaysHTML paints the cards of the UI 2.0 preview under one heading per
@@ -818,14 +903,16 @@ export async function renderRecent() {
 
   const clr = $('recentClear');
   if (clr) clr.onclick = async () => {
+    if (clr.getAttribute('aria-disabled') === 'true') return;
     const ok = await confirmWarn(t('recent.clearConfirmTitle'), t('recent.clearConfirmBody'));
     if (!ok) return;
     const boxes = recentSelectedBoxes();
-    clr.disabled = true;
+    // The preview keeps the button focusable while it works (aria-disabled).
+    if (ui2) clr.setAttribute('aria-disabled', 'true'); else clr.disabled = true;
     const failed = [];
     for (const b of boxes) { try { await ClearRecent(b.host, b.port); } catch { failed.push(recentBoxDisplayLabel(b)); /* skip unreachable box */ } }
     await refreshRecentList();
-    clr.disabled = false;
+    if (ui2) clr.removeAttribute('aria-disabled'); else clr.disabled = false;
     // The preview names the speakers whose list stayed, instead of a list that
     // silently comes back on the next refresh (rule 2).
     const errLine = $('recentClearErr');

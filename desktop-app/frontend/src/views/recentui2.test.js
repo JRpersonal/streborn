@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { state } from '../state.js';
-import { cardPlayBox, cardKeyBox } from './recent.js';
+import { cardPlayBox, cardKeyBox, recentFocusMark, recentFocusTarget } from './recent.js';
 
 const dir = new URL('../i18n/bundles/', import.meta.url);
 const bundles = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.json'))
@@ -79,5 +79,69 @@ describe('the speaker a card button acts on', () => {
     expect(cardKeyBox({ source: 'radio', box: other })).toBe(current);
     expect(cardKeyBox({ source: 'upnp', box: other })).toBe(current);
     expect(cardKeyBox({ source: 'pandora', box: other })).toBe(current);
+  });
+});
+
+// A stand-in for the painted list: cards with their controls in card order,
+// enough of the DOM for the focus bookkeeping (the suite runs without one).
+function fakeList(cards) {
+  const els = cards.map(([ck, controls]) => {
+    const card = { dataset: { ck }, controls: [] };
+    card.controls = controls.map((cls) => ({ card, cls, classList: { contains: (x) => x === cls } }));
+    card.querySelector = (sel) => {
+      const names = sel.split(',').map((s) => s.trim().replace(/^\./, ''));
+      return card.controls.find((c) => names.includes(c.cls)) || null;
+    };
+    return card;
+  });
+  for (const card of els) for (const c of card.controls) c.closest = () => card;
+  return {
+    cards: els,
+    contains: (n) => els.some((c) => c === n || c.controls.includes(n)),
+    querySelectorAll: () => els,
+  };
+}
+
+describe('the keyboard across a repaint of the list', () => {
+  const before = fakeList([['a', ['rc-play', 'rc-pick', 'rc-del']], ['b', ['rc-play', 'rc-pick', 'rc-fav', 'rc-del']], ['c', ['rc-pick', 'rc-del']]]);
+
+  it('notes the card by identity, the control and the place', () => {
+    expect(recentFocusMark(before, before.cards[1].controls[3])).toEqual({ ck: 'b', cls: 'rc-del', pos: 1 });
+    expect(recentFocusMark(before, { classList: { contains: () => false } })).toBeNull();
+  });
+
+  it('goes back to the same control of the same card when every index moved', () => {
+    // A new card was put on top by the 30 s refresh: card b is third now.
+    const after = fakeList([['n', ['rc-play', 'rc-del']], ['a', ['rc-play', 'rc-del']], ['b', ['rc-play', 'rc-pick', 'rc-fav', 'rc-del']]]);
+    const hit = recentFocusTarget(after, { ck: 'b', cls: 'rc-fav', pos: 1 });
+    expect(hit.card.dataset.ck).toBe('b');
+    expect(hit.cls).toBe('rc-fav');
+  });
+
+  it('lands on the card that took the place of a removed one, or the last card', () => {
+    const after = fakeList([['a', ['rc-play', 'rc-del']], ['c', ['rc-pick', 'rc-del']]]);
+    const hit = recentFocusTarget(after, { ck: 'b', cls: 'rc-del', pos: 1 });
+    expect(hit.card.dataset.ck).toBe('c');
+    expect(hit.cls).toBe('rc-pick');
+    expect(recentFocusTarget(after, { ck: 'z', cls: 'rc-del', pos: 9 }).card.dataset.ck).toBe('c');
+  });
+
+  it('falls back to the Clear button when the list went empty', () => {
+    const clear = { id: 'recentClear' };
+    expect(recentFocusTarget(fakeList([]), { ck: 'b', cls: 'rc-del', pos: 0 }, clear)).toBe(clear);
+    expect(recentFocusTarget(fakeList([]), null, clear)).toBeNull();
+  });
+});
+
+describe('a card action in the preview', () => {
+  it('finds its card by identity, not by the index it was painted at', () => {
+    expect(src).not.toMatch(/getElementById\('recErr' \+ i\)/);
+    expect(src).toContain('data-ck=');
+  });
+
+  it('keeps the focused button focusable while it works', () => {
+    // disabled on the focused button sends the keyboard to the page.
+    expect(src).not.toContain('playBtn.disabled = true');
+    expect(src).toContain('playsInFlight');
   });
 });

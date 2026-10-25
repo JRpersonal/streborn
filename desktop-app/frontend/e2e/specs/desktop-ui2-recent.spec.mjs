@@ -175,6 +175,52 @@ test.describe('UI 2.0 Recently played', () => {
       .toHaveAccessibleName(en('ui2.recent.removeFrom', { name: 'Best Of Rock.FM', speakers: BR.friendlyName }));
   });
 
+  test('14. removing a card by keyboard puts the focus on the card that took its place', async ({ app, mock }) => {
+    const { page } = app;
+    await openRecent(page);
+    const del = card(page, 'Jazz24').locator('.rc-del');
+    await del.focus();
+    // The speaker's history without the card, as the next read returns it.
+    await mock.set('RecentPlayed', { value: RING.filter((e) => e.cardKey !== 'jazz') });
+    await page.keyboard.press('Enter');
+    await mock.expectCalled('DeleteRecentCard', { times: 1 });
+    await expect(card(page, 'Jazz24')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => {
+      const c = document.activeElement && document.activeElement.closest('.recent-card');
+      return c ? c.querySelector('.rc-name').textContent : (document.activeElement && document.activeElement.tagName);
+    })).toBe('Evening Sessions');
+  });
+
+  test.describe('a slow play that fails', () => {
+    test.use({ scenario: { bindings: { RecentPlayed: { value: RING }, PlayURL: { error: 'server gone', delayMs: 35_000 } } } });
+
+    test('15. stays busy across a refresh that shifts every card, and reports in its own card', async ({ app, mock }) => {
+      const { page } = app;
+      await openRecent(page);
+      const evening = () => card(page, 'Evening Sessions');
+      await evening().locator('.rc-play').focus();
+      await mock.resetCalls();
+      await page.keyboard.press('Enter');
+      await expect(evening().locator('.rc-play')).toHaveAttribute('aria-disabled', 'true');
+      await expect(evening().locator('.rc-play')).toBeFocused();
+      // Another speaker played something meanwhile: a new card on top.
+      await mock.set('RecentPlayed', { value: [...RING, radio('2026-10-23T17:55:00Z', 'fresh', 'Fresh FM', '')] });
+      await page.clock.runFor(31_000);
+      await expect(card(page, 'Fresh FM')).toHaveCount(1);
+      // The repainted button is still busy, still has the keyboard, and a
+      // second press does not start it again.
+      await expect(evening().locator('.rc-play')).toHaveAttribute('aria-disabled', 'true');
+      await expect(evening().locator('.rc-play')).toBeFocused();
+      await page.keyboard.press('Enter');
+      expect(await mock.count('PlayURL')).toBe(1);
+      await page.clock.runFor(5_000);
+      await expect(evening().locator('.rc-err')).toContainText('server gone');
+      await expect(card(page, 'Jazz24').locator('.rc-err')).toBeEmpty();
+      await expect(evening().locator('.rc-play')).not.toHaveAttribute('aria-disabled', /.*/);
+      await expect(page.locator('#errorModal')).toBeHidden();
+    });
+  });
+
   test.describe('in German', () => {
     test.use({ appLocale: 'de' });
 

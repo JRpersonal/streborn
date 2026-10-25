@@ -87,7 +87,7 @@ html.ui2 #view-recent .rc-actions .u-btn--icon {
   border-color: var(--u-border);
   font-size: 16px;
 }
-html.ui2 #view-recent .rc-actions .u-btn--icon:hover:not(:disabled) { background: var(--u-bg); }
+html.ui2 #view-recent .rc-actions .u-btn--icon:hover:not(:disabled, [aria-disabled="true"]) { background: var(--u-bg); }
 html.ui2 #view-recent .rc-actions .rc-pick { font-size: 22px; font-weight: 400; }
 html.ui2 #view-recent .rc-actions .rc-fav.is-fav { color: var(--u-warn); border-color: currentcolor; }
 html.ui2 #view-recent .rc-tracks {

@@ -110,7 +110,8 @@ html.ui2 .u-btn--icon {
   color: var(--u-text);
   font-size: 20px;
 }
-html.ui2 .u-btn:disabled { opacity: .5; cursor: not-allowed; }
+html.ui2 .u-btn:disabled,
+html.ui2 .u-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 
 /* Keyboard focus in the new chrome: a real double ring (the page colour, then
    the focus colour) that stays visible on every surface. Scoped to the chrome:
