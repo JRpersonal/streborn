@@ -63,7 +63,7 @@ export default defineConfig({
   // "desktop-app/" directory and would pull in every spec, phone ones included.
   projects: [
     // The app's default window (main.go) and the smallest one it allows.
-    { name: 'desktop', use: { viewport: { width: 1240, height: 740 } }, testMatch: /[\\/](desktop-[^\\/]*|_canary)\.spec\.mjs$/ },
+    { name: 'desktop', use: { viewport: { width: 1240, height: 740 } }, testMatch: /[\\/]desktop-[^\\/]*\.spec\.mjs$/ },
     { name: 'desktop-min', use: { viewport: { width: 1000, height: 600 } }, testMatch: /[\\/]desktop-(layout|i18n|banners)\.spec\.mjs$/ },
     {
       name: 'phone',
