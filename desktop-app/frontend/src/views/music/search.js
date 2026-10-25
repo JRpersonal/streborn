@@ -54,6 +54,7 @@ import { openPick } from './picker.js';
 import { renderPresets } from './presettiles.js';
 import { refreshStatus } from './status.js';
 import { loadLanguagesForCountry, renderGenreChips } from './taxonomy.js';
+import { renderUi2Stations, syncUi2RadioTabs } from './ui2radio.js';
 
 // updateFilterIndicators setzt die has-filter CSS Klasse auf jene Filter
 // Dropdowns die einen anderen Wert als "alle" haben. Damit erkennt der
@@ -394,8 +395,13 @@ export function preferMp3SiblingForBox(s, list) {
 // retries with another radio-browser entry of the SAME station before giving
 // up. This turns the most common "every station errors" frustration into a
 // usually-silent recovery. Used by every radio play-now button.
+//
+// options.report(msg, kind) takes the failure and retry messages instead of a
+// toast ('error' or 'info'): the UI 2.0 preview shows them in the station's
+// own row (ui2radio.js).
 export async function playStation(s, options = {}) {
   const isStreamSource = options.streamSource === true;
+  const say = typeof options.report === 'function' ? options.report : (msg) => showToast(msg);
   // A play aimed at a zone follower must go to its master instead (#70).
   let box = effectivePlayTarget();
   if (!box) return false;
@@ -514,6 +520,7 @@ export async function playStation(s, options = {}) {
       state.nowLocation = '';
       state.lastAppPlay = null;
       renderPresets();
+      if (options.report) say(t('speaker.noInternetTitle'), 'error');
       const fix = await confirmWarn(
         t('speaker.noInternetTitle'),
         `<b>${escapeHtml(getBoxLabel(box))}</b>: ${escapeHtml(t('speaker.noInternetHint'))}`,
@@ -530,10 +537,10 @@ export async function playStation(s, options = {}) {
       state.nowLocation = '';
       state.lastAppPlay = null; // never long-press-save a station that failed to play
       renderPresets();
-      showToast(streamErrorMessage(fail.reason) + ' ' + t('search.allSourcesFailed'));
+      say(streamErrorMessage(fail.reason) + ' ' + t('search.allSourcesFailed'), 'error');
       return false;
     }
-    showToast(t('search.tryingAlternative', { name: s.name || '' }));
+    say(t('search.tryingAlternative', { name: s.name || '' }), 'info');
     cur = alt;
   }
   // Exhausted the retry budget without a working source.
@@ -541,11 +548,12 @@ export async function playStation(s, options = {}) {
   state.nowLocation = '';
   state.lastAppPlay = null; // never long-press-save a station that failed to play
   renderPresets();
-  showToast(t('search.allSourcesFailed'));
+  say(t('search.allSourcesFailed'), 'error');
   return false;
 }
 
 export function renderSearchResults() {
+  syncUi2RadioTabs();
   // The Pandora list lives in the same panel but is not a directory result:
   // a filter change while it shows must not repaint radio stations over it.
   if (state.searchLastMode === 'pandora') { renderPandoraStations(); return; }
@@ -617,6 +625,13 @@ export function renderSearchResults() {
         : t('search.noStationsFound');
     const html = '<div class="muted">' + escapeHtml(msg) + '</div>';
     res.innerHTML = hintHtml + html;
+    wireRelaxedDismiss();
+    return;
+  }
+  // The UI 2.0 preview draws its own rows (ui2radio.js): the technical data in
+  // a details panel, every action named with the station and the speaker.
+  if (state.ui2Shell) {
+    renderUi2Stations(res, list, hintHtml);
     wireRelaxedDismiss();
     return;
   }

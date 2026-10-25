@@ -1,0 +1,217 @@
+/* The Radio view of the UI 2.0 preview (#1286 phase 2, docs/UI-2.0.md):
+   the keys of the selected speaker, Discover and Favorites as tabs, and the
+   station rows with their details panel (ui2radio.js, ui2stations.js).
+
+   Same contract as shell2.css: every rule sits under html.ui2, so with the
+   preview off this file changes nothing, and it reads only the --u-* tokens,
+   so the three themes come for free. Checked by ui2radio.test.js. */
+
+/* ---------- Head ---------- */
+
+/* The sidebar is where a speaker is chosen; the speaker cards and the old
+   title of this tab stay in the page for the current layout only. The
+   refresh button stays, next to the view's title. */
+html.ui2 #view-box .topbar-title,
+html.ui2 #view-box #boxSelect,
+html.ui2 #view-box .search > h3,
+html.ui2 #view-box #favModeBtn { display: none; }
+html.ui2 #view-box .topbar { margin-bottom: 16px; }
+html.ui2 #view-box .topbar-head { gap: 16px; }
+html.ui2 .ui2-radio-title {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 24px;
+  font-weight: 700;
+}
+html.ui2 #view-box #refreshBtn {
+  width: var(--u-target);
+  height: var(--u-target);
+  border-color: var(--u-border);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+
+/* ---------- Keys ---------- */
+
+html.ui2 .ui2-keys-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+}
+html.ui2 .ui2-keys-title {
+  margin: 0;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 16px;
+  font-weight: 700;
+}
+html.ui2 .ui2-keys-hint { color: var(--u-muted); font-size: 13px; }
+
+html.ui2 #view-box #presets { gap: 8px; margin-bottom: 8px; }
+html.ui2 #view-box .preset {
+  background: var(--u-surface);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  color: var(--u-text);
+  box-shadow: none;
+}
+html.ui2 #view-box .preset:hover { background: var(--u-bg); }
+html.ui2 #view-box .preset.empty { color: var(--u-muted); border-style: dashed; }
+html.ui2 #view-box .preset.playing {
+  background: var(--u-selected);
+  border-color: var(--u-accent);
+  box-shadow: none;
+}
+html.ui2 #view-box .preset.error { background: var(--u-surface); border-color: var(--u-danger); box-shadow: none; }
+html.ui2 #view-box .preset :is(.name, .preset-text .name) { color: var(--u-text); }
+html.ui2 #view-box .preset :is(.num, .preset-bitrate, .preset-source, .preset-box-hint, .preset-hint, .url) { color: var(--u-muted); }
+html.ui2 #view-box .preset.lost .preset-box-hint { color: var(--u-warn); }
+html.ui2 #view-box .preset .preset-state.state-play { color: var(--u-ok); }
+html.ui2 #view-box .preset .preset-state.state-buf { color: var(--u-warn); }
+html.ui2 #view-box .preset .preset-state.state-pause { color: var(--u-muted); }
+html.ui2 #view-box .preset .preset-state.state-err { color: var(--u-danger); }
+/* Rename and clear are real targets in the preview; they reach into the
+   tile's padding instead of making the tile taller. */
+html.ui2 #view-box .preset-head { align-items: center; margin: -8px -8px 0 0; }
+html.ui2 #view-box .preset :is(.ren, .del) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--u-target);
+  min-height: var(--u-target);
+  padding: 0;
+  border-radius: var(--u-radius);
+  color: var(--u-muted);
+}
+html.ui2 #view-box .preset :is(.ren, .del):hover { color: var(--u-text); background: var(--u-bg); }
+html.ui2 #view-box .preset-copy-row { margin: 0 0 24px; }
+
+/* ---------- Tabs ---------- */
+
+html.ui2 .ui2-radio-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--u-border);
+  margin: 0 0 12px;
+}
+html.ui2 .ui2-radio-tab {
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--u-muted);
+  font-family: var(--u-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html.ui2 .ui2-radio-tab:hover { color: var(--u-text); }
+html.ui2 .ui2-radio-tab.is-active { color: var(--u-text); border-bottom-color: var(--u-accent); }
+
+html.ui2 #view-box .search { background: transparent; padding: 0; margin-top: 0; }
+/* Favorites shows the stored stations: no search field, filters or genres. */
+html.ui2 #ui2RadioPanel[data-ui2-tab="favorites"] :is(#streamSourceDetails, .search-input-row, .search-filters, #genreChips, #addStationBox, #loadMoreRow) { display: none; }
+html.ui2 #view-box .search-input-row input { min-height: var(--u-target); }
+html.ui2 #view-box .search-input-row .btn { min-height: var(--u-target); }
+html.ui2 #view-box .search-results { max-height: none; overflow: visible; }
+
+/* ---------- Station rows ---------- */
+
+html.ui2 .ui2-st-list { list-style: none; margin: 0; padding: 0; }
+html.ui2 .ui2-st { border-bottom: 1px solid var(--u-border); }
+html.ui2 .ui2-st-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 4px;
+}
+html.ui2 .ui2-st-main:hover { background: var(--u-surface); }
+html.ui2 .ui2-st-logo { flex: 0 0 auto; }
+html.ui2 .ui2-st-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+html.ui2 .ui2-st-name {
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+html.ui2 .ui2-st-genre { color: var(--u-muted); font-size: 13px; }
+html.ui2 .ui2-st-broken { color: var(--u-warn); font-size: 13px; }
+html.ui2 .ui2-st-broken::before { content: '\26A0\FE0E  '; }
+html.ui2 .ui2-st-status { font-size: 13px; color: var(--u-muted); }
+html.ui2 .ui2-st-status:empty { display: none; }
+html.ui2 .ui2-st-status.is-ok { color: var(--u-ok); }
+html.ui2 .ui2-st-status.is-warn { color: var(--u-warn); }
+html.ui2 .ui2-st-status.is-error { color: var(--u-danger); }
+html.ui2 .ui2-st-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+html.ui2 .ui2-st-btn { border: 1px solid var(--u-border); font-size: 16px; }
+html.ui2 .ui2-st-btn:hover { background: var(--u-surface); }
+html.ui2 .ui2-st-fav.is-fav { color: var(--u-warn); }
+html.ui2 .ui2-st.is-open .ui2-st-more { background: var(--u-selected); }
+html.ui2 .ui2-st-details {
+  margin: 0 4px 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+}
+html.ui2 .ui2-st-details[hidden] { display: none; }
+html.ui2 .ui2-st-details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+html.ui2 .ui2-st-details dt { color: var(--u-muted); }
+html.ui2 .ui2-st-details dd { margin: 0; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 .ui2-st-url { font-size: 12px; user-select: all; }
+html.ui2 .ui2-st-site { color: var(--u-accent); }
+
+/* A narrow main pane, or a large text size: the actions go under the name. */
+@media (max-width: 1100px) {
+  html.ui2.a11y-scale-l .ui2-st-main,
+  html.ui2.a11y-scale-xl .ui2-st-main { flex-wrap: wrap; }
+  html.ui2.a11y-scale-l .ui2-st-text,
+  html.ui2.a11y-scale-xl .ui2-st-text { flex-basis: calc(100% - 64px); }
+  html.ui2.a11y-scale-l .ui2-st-actions,
+  html.ui2.a11y-scale-xl .ui2-st-actions { flex-basis: 100%; }
+}
+
+/* ---------- Focus ---------- */
+
+/* The same double ring as the shell chrome, for what the preview made
+   reachable by keyboard here. !important like the shell's: style.css forces
+   its own ring on every focused element that way. */
+html.ui2 #view-box :is(.ui2-radio-tab, .ui2-st button, .ui2-st a, #refreshBtn):focus-visible,
+html.ui2 #view-box .preset:has(.preset-body[role="button"]:focus-visible),
+html.ui2 #pickModal .pick-slot:focus-visible {
+  outline: 2px solid var(--u-focus) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}
+/* A key tile clips what sticks out of it: a focused tile body rings the whole
+   tile (above), and rename and clear draw their ring inward. */
+html.ui2 #view-box .preset-body[role="button"]:focus-visible { outline: none !important; }
+html.ui2 #view-box .preset :is(.ren, .del):focus-visible {
+  outline: 2px solid var(--u-focus) !important;
+  outline-offset: -2px !important;
+}

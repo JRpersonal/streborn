@@ -40,6 +40,7 @@ import {
   wirePresetTransferRow,
 } from './presets.js';
 import { saveCurrentToSlot } from './save.js';
+import { syncUi2Keys } from './ui2radio.js';
 
 export function renderPresets() {
   const grid = $('presets');
@@ -375,6 +376,7 @@ export function renderPresets() {
   // No marquee pass here: nothing in a tile scrolls any more (see the tile
   // template above). The saved name wraps and the badge lines clip, so a
   // rebuilt grid needs no measuring frame.
+  syncUi2Keys();
 }
 
 // PRESET_NAME_MAX mirrors maxPresetNameRunes in the agent, so the field stops
