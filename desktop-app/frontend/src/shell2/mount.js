@@ -511,8 +511,11 @@ function paintSpeakers(force) {
 // speakers get the rest, at least their first row whole. Below the floor of the
 // two lists the section turns into one scroll box (is-squeezed): the pinned
 // group and the others scroll together inside it, and nothing in the sidebar
-// is ever drawn over anything else. The sidebar's own size is watched, so a
-// resize or a text size change sets the floor again.
+// is ever drawn over anything else. The entries are counted in entry heights
+// of the navigation's scroll box, its first group heading included: at Extra
+// large in the 1000 x 600 window the one and a half show the heading and most
+// of the first entry, and the rest scrolls. The sidebar's own size is watched,
+// so a resize or a text size change sets the floor again.
 const OTHERS_FLOOR_ROWS = 3;
 const NAV_RESERVE_ENTRIES = 2.5;
 const NAV_LEAST_ENTRIES = 1.5;
