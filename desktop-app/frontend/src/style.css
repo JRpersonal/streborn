@@ -711,6 +711,14 @@ body {
   border-bottom: 2px solid transparent;
   position: relative;
 }
+/* When the labels overflow the column (a long language, Large or Extra large
+   text, the 1000px minimum window), tabfit.js steps the bar down: first tighter
+   padding on the same row, then a wrapping bar. A wrapping bar breaks on the
+   labels' single-line widths, so the tabs spread over two rows instead of a
+   first row squeezed into two-line labels with one tab left over below. */
+.tabs.tabs-compact .tab-btn { padding-left: 10px; padding-right: 10px; }
+.tabs.tabs-compact .tab-btn.has-update::after { right: 2px; }
+.tabs.tabs-wrap { flex-wrap: wrap; }
 .tab-btn:hover { color: var(--c-text-2); }
 .tab-btn.active { color: var(--brand); border-bottom-color: var(--brand); }
 /* Blue dot indicator: a tab carries pending work (e.g. one of the

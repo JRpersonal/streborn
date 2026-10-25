@@ -294,6 +294,7 @@ import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // the skeleton renders so the first paint already reflects the chosen size and
 // theme. The matching CSS lives in style.css (html.a11y-*).
 import { applyA11y, getScale, setScale, getTheme, setTheme } from './a11y.js';
+import { watchTabs } from './tabfit.js';
 applyA11y();
 // Speaker Settings view (extracted from this monolith, same pattern as the views
 // above). loadBoxSettings is the entry point switchView calls; langOptionsHtml /
@@ -669,6 +670,8 @@ document.querySelector('#app').innerHTML = `
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.onclick = () => switchView(btn.dataset.view);
 });
+// Keep every tab inside the column at any window width, language and text size.
+watchTabs(document.querySelector('.tabs'));
 
 // Language picker in the header. Switching locale reloads the page so
 // the full UI re-renders against the new bundle. Reload is heavy but
