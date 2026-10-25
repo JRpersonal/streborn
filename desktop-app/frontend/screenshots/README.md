@@ -23,7 +23,7 @@ npm run shoot          # builds the frontend, serves it, captures all views
 
 `shoot.mjs` builds the frontend with the parent's own vite, serves it with
 `vite preview`, and screenshots every view in every language. It touches no
-app source; the mocks live only in this script.
+app source; the mocks live in `../testkit/`.
 
 Narrow a run with `SHOOT_LANGS=en,de` and/or `SHOOT_VIEWS=app-listen,app-recent`.
 The UI 2.0 preview shots (`app-ui2-dark`, `app-ui2-light`, `app-ui2-contrast`,
@@ -31,7 +31,8 @@ The UI 2.0 preview shots (`app-ui2-dark`, `app-ui2-light`, `app-ui2-contrast`,
 The UI 2.0 shots use the app's default window (1240 x 740) and a simulated
 network of eleven speakers (a group of two playing, a stereo pair, an offline
 speaker, a Bose original, idle speakers), so the sidebar speaker list has to
-scroll. The demo data and the mocks live in `demo.mjs`.
+scroll. The demo data and the mocks live in `../testkit/`, shared with the
+Playwright suite in `../e2e/`; `demo.mjs` holds the scenario each shot runs.
 
 ## UI 2.0 check (CI)
 

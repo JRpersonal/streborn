@@ -1,7 +1,7 @@
 // UI 2.0 preview check against simulated speakers (#1284, #1285).
 //
 // Renders the built frontend in headless Chromium with the backend mocked
-// (demo.mjs: eleven speakers, a group of two playing, a stereo pair, an
+// (../testkit via demo.mjs: eleven speakers, a group of two playing, a stereo pair, an
 // offline speaker, a Bose original), switches the preview on and checks what
 // the sidebar promises: every speaker listed once, the pair as one row,
 // Offline in words, "+" and "-" where the group edit acts, the keyboard, the
@@ -14,7 +14,7 @@
 //   node ui2-check.mjs            (UI2_CHECK_PORT moves the preview server)
 
 import { chromium } from 'playwright';
-import { DEMO, buildFrontend, installMocks, routeAgent, startServer, stopServer, waitForServer } from './demo.mjs';
+import { DEMO, assertPortFree, agentRoutes, buildFrontend, installDesktopMock, shotScenario, startServer, stopServer, waitForServer } from './demo.mjs';
 
 const PORT = Number(process.env.UI2_CHECK_PORT) || 4179;
 const BASE = `http://127.0.0.1:${PORT}/`;
@@ -195,24 +195,26 @@ async function run(page) {
   const pending = await page.$eval(`#ui2SpkLists .ui2-spk-act[data-host="${host('Office')}"]`, (b) => b.getAttribute('aria-busy') === 'true' && /Adding Office/.test(b.getAttribute('aria-label')));
   check(pending, 'the "+" says the edit is running');
   await page.click(`#ui2SpkLists .ui2-spk-pick[data-host="${host('Office')}"]`);
-  await page.waitForFunction(() => (window.__ui2Calls || []).some((c) => c[0] === 'FormZone'), null, { timeout: 15000 });
-  const form = await page.evaluate(() => window.__ui2Calls.find((c) => c[0] === 'FormZone'));
+  await page.waitForFunction(() => window.__strMock.calls.some((c) => c.name === 'FormZone'), null, { timeout: 15000 });
+  const form = await page.evaluate(() => { const c = window.__strMock.calls.find((x) => x.name === 'FormZone'); return [c.name, ...c.args]; });
   const slaves = ((form[3] || {}).slaves || []).map((s) => s.ip).sort();
   check(form[1] === host('Living Room'), 'the edit goes to the master of the group it was clicked in');
   check(slaves.join() === [host('Dining room'), host('Office')].sort().join(), 'the edit keeps the member and adds Office, never the master itself');
 }
 
+await assertPortFree(BASE);
 await buildFrontend();
 const server = startServer(PORT);
 let browser;
 try {
-  await waitForServer(BASE);
+  await waitForServer(BASE, server);
   browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext({ viewport: { width: 1240, height: 740 }, timezoneId: 'Europe/Berlin' });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => { console.warn('pageerror:', e.message); failures.push('page error: ' + e.message); });
-  await page.addInitScript(installMocks, { locale: 'en', view: VIEW, demo: DEMO });
-  await page.route('**/api/**', routeAgent);
+  const scenario = shotScenario(VIEW, 'en');
+  await page.addInitScript(installDesktopMock, { scenario, demo: DEMO });
+  await page.route('**/api/**', agentRoutes(scenario));
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await run(page);
 } catch (e) {

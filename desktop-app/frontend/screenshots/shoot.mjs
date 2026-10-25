@@ -6,7 +6,8 @@
 // demo data, set the UI language via the localStorage "locale" key, drive each
 // screen, and capture it. No speaker, no Wails, no network needed.
 //
-// The demo data and the mocks live in demo.mjs, shared with ui2-check.mjs.
+// Each view's mocked world is a scenario (demo.mjs shotScenario) on the shared
+// testkit (../testkit/), the same mock backend the Playwright suite uses.
 //
 // Output: docs/screenshots/<lang>/<view>.png for every language x view.
 //
@@ -15,7 +16,7 @@
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { DEMO, FRONTEND, buildFrontend, installMocks, routeAgent, startServer, stopServer, waitForServer } from './demo.mjs';
+import { DEMO, assertPortFree, FRONTEND, agentRoutes, buildFrontend, installDesktopMock, shotScenario, startServer, stopServer, waitForServer } from './demo.mjs';
 
 const OUT = path.resolve(FRONTEND, '../../docs/screenshots');         // repo/docs/screenshots
 // SHOOT_PORT moves the preview server, for a second checkout shooting at the same time.
@@ -170,11 +171,12 @@ async function drive(page, view) {
 }
 
 // ---- main ------------------------------------------------------------------
+await assertPortFree(BASE);
 await buildFrontend();
 const server = startServer(PORT);
 let browser;
 try {
-  await waitForServer(BASE);
+  await waitForServer(BASE, server);
   browser = await chromium.launch({ headless: true });
   let ok = 0, fail = 0;
   for (const lang of LANGS) {
@@ -188,8 +190,9 @@ try {
       // The UI 2.0 shots use the app's own default window (main.go, 1240 x 740),
       // the size the sidebar has to fit.
       if (view.startsWith('app-ui2')) await page.setViewportSize({ width: 1240, height: 740 });
-      await page.addInitScript(installMocks, { locale: lang, view, demo: DEMO });
-      await page.route('**/api/**', routeAgent);
+      const scenario = shotScenario(view, lang);
+      await page.addInitScript(installDesktopMock, { scenario, demo: DEMO });
+      await page.route('**/api/**', agentRoutes(scenario));
       try {
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
         await drive(page, view);
