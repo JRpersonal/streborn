@@ -1635,6 +1635,7 @@
   "group.addTitle": "Add {{name}} to the group",
   "group.removeTitle": "Remove {{name}} from the group",
   "group.volumeLabel": "Group volume",
+  "group.editStale": "The group changed before your change could run. Try again.",
   "group.memberVolumeLabel": "Volume of {{name}}",
   "group.dissolvedToast": "Group dissolved",
   "group.addedToast": "{{name}} added to the group",

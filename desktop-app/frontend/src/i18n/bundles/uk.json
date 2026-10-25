@@ -1635,6 +1635,7 @@
   "group.addTitle": "Додати {{name}} до групи",
   "group.removeTitle": "Вилучити {{name}} з групи",
   "group.volumeLabel": "Гучність групи",
+  "group.editStale": "Група змінилася, перш ніж зміну було застосовано. Спробуйте ще раз.",
   "group.memberVolumeLabel": "Гучність {{name}}",
   "group.dissolvedToast": "Групу розпущено",
   "group.addedToast": "{{name}} додано до групи",

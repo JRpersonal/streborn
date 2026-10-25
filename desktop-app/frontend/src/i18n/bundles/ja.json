@@ -1635,6 +1635,7 @@
   "group.addTitle": "{{name}} をグループに追加",
   "group.removeTitle": "{{name}} をグループから外す",
   "group.volumeLabel": "グループの音量",
+  "group.editStale": "変更を実行する前にグループが変わりました。もう一度お試しください。",
   "group.memberVolumeLabel": "{{name}} の音量",
   "group.dissolvedToast": "グループを解除しました",
   "group.addedToast": "{{name}} をグループに追加しました",

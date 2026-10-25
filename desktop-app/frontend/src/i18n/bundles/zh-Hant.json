@@ -1635,6 +1635,7 @@
   "group.addTitle": "把 {{name}} 加入群組",
   "group.removeTitle": "把 {{name}} 移出群組",
   "group.volumeLabel": "群組音量",
+  "group.editStale": "在你的變更執行前群組已改變。請再試一次。",
   "group.memberVolumeLabel": "{{name}} 的音量",
   "group.dissolvedToast": "群組已解散",
   "group.addedToast": "{{name}} 已加入群組",

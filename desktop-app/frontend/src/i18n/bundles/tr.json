@@ -1635,6 +1635,7 @@
   "group.addTitle": "{{name}} grubu ekle",
   "group.removeTitle": "{{name}} gruptan çıkar",
   "group.volumeLabel": "Grup ses düzeyi",
+  "group.editStale": "Değişikliğiniz uygulanmadan önce grup değişti. Tekrar deneyin.",
   "group.memberVolumeLabel": "{{name}} ses seviyesi",
   "group.dissolvedToast": "Grup dağıtıldı",
   "group.addedToast": "{{name}} gruba eklendi",

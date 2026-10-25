@@ -3,6 +3,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from './state.js';
 import {
+  groupCandidates,
+  inAnyStereoPair,
   zoneBoxes,
   storedPermanentGroupsOf,
   defaultZoneMasterID,
@@ -916,5 +918,26 @@ describe('masterBoxForKey on the field bundle shape', () => {
     // box the app cannot see and each of them lists itself, so there is no
     // leader to nominate and a guess would send a dissolve to a follower.
     expect(masterBoxForKey(fwID, bundleMap(true), [boxA, boxB])).toBeNull();
+  });
+});
+
+describe('groupCandidates / inAnyStereoPair', () => {
+  const M = { host: '192.0.2.70', port: 8888, deviceID: 'M70', kind: 'STR' };
+  const A = { host: '192.0.2.71', port: 8888, deviceID: 'A71', kind: 'STR' };
+  const L = { host: '192.0.2.72', port: 8888, deviceID: 'MDNS72', kind: 'STR' };
+  const S = { host: '192.0.2.73', port: 8090, deviceID: 'S73', kind: 'stock' };
+  // The pair names the left half by its firmware id, not the one discovery
+  // knows (two-chip chassis), and by its address.
+  const zl = { P: { stereo: { masterDeviceID: 'FW72', members: [{ deviceID: 'FW72', ip: L.host }, { deviceID: 'R74', ip: '192.0.2.74' }] } } };
+
+  it('matches a pair half by address when the ids differ', () => {
+    expect(inAnyStereoPair(L, zl)).toBe(true);
+    expect(inAnyStereoPair(A, zl)).toBe(false);
+    expect(inAnyStereoPair(null, zl)).toBe(false);
+  });
+
+  it('offers every STR speaker but the master, the stock ones and the pair halves', () => {
+    expect(groupCandidates(M, zl, [M, A, L, S]).map((b) => b.host)).toEqual([A.host]);
+    expect(groupCandidates(null, zl, [M, A])).toEqual([]);
   });
 });

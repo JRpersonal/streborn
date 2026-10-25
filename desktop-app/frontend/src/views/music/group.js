@@ -5,10 +5,11 @@ import { BoxSettings, DissolveZone, FormZone, SetBoxVolume, Stop, WakeBox } from
 import {
   applyOptimisticZone,
   followersOf,
+  groupCandidates,
   groupMembersOf,
+  inAnyStereoPair,
   notifyZoneLive,
   resolvePlayTarget,
-  stereoPairsOf,
 } from '../../groups.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
@@ -201,9 +202,31 @@ const GROUP_EDIT_COALESCE_MS = 600;
 const pendingGroupEdits = new Map();
  // host -> port
 let groupEditTimer = null;
+// The master the waiting batch belongs to: the group that was on screen when
+// its first click landed.
+//
+// The edit used to look the group up when the batch RAN, after the coalesce
+// window and after any edit queued in front of it. By then the selection can
+// have moved on, and in the UI 2.0 sidebar a speaker's "+" and its row sit
+// side by side: "+" on Kitchen, then Kitchen's row inside the window, made
+// Kitchen the group's master AND its own follower in one FormZone. Choosing
+// any other speaker in that window sent the edit to that speaker's group.
+let pendingGroupMaster = '';
 
+// toggleGroupMember is the one way a speaker is taken in or out of the group
+// led by the selected speaker.
 function toggleGroupMember(host, port) {
   if (groupOpPending.has(host)) return groupOpChain;
+  const lead = groupControlBox();
+  const leadHost = (lead && lead.host) || '';
+  // A click for a different group than the waiting batch's: that batch was
+  // meant for the group it was clicked in, so it goes now, and this click
+  // starts a batch of its own.
+  if (pendingGroupEdits.size && pendingGroupMaster !== leadHost) {
+    if (groupEditTimer) clearTimeout(groupEditTimer);
+    runPendingGroupEdits();
+  }
+  if (!pendingGroupEdits.size) pendingGroupMaster = leadHost;
   // Toggling the same speaker twice before the edit runs is a change of mind,
   // and the two cancel out rather than queueing.
   if (pendingGroupEdits.has(host)) pendingGroupEdits.delete(host);
@@ -232,12 +255,14 @@ function markGroupChipPending() {
 function runPendingGroupEdits() {
   groupEditTimer = null;
   const edits = [...pendingGroupEdits.entries()];
+  const masterHost = pendingGroupMaster;
   pendingGroupEdits.clear();
+  pendingGroupMaster = '';
   if (edits.length === 0) return;
   edits.forEach(([h]) => groupOpPending.add(h));
   markGroupChipPending();
   groupOpChain = groupOpChain
-    .then(() => runGroupMemberToggle(edits))
+    .then(() => runGroupMemberToggle(edits, masterHost))
     .catch(() => {})
     .finally(() => {
       edits.forEach(([h]) => groupOpPending.delete(h));
@@ -259,23 +284,31 @@ export function dissolveIncompleteMessage(res) {
 
 // runGroupMemberToggle applies a whole batch of toggles as ONE zone edit.
 // edits is [[host, port], ...]; a single click is simply a batch of one.
-async function runGroupMemberToggle(edits) {
-  // Edit the group the selection belongs to: when a follower is selected, its
+// masterHost is the master the batch was clicked for (toggleGroupMember).
+async function runGroupMemberToggle(edits, masterHost) {
+  // Edit the group the clicks were made in. When a follower was selected, its
   // master is the box that must receive the FormZone/DissolveZone (a follower
-  // rejects zone control), so resolve to it first.
-  const box = groupControlBox();
-  if (!box || box.kind === 'stock') return;
+  // rejects zone control); groupControlBox resolved that at click time. A
+  // master that has left the list, or that follows another speaker by now, is
+  // no longer the group the clicks were about: the batch is dropped and says
+  // so, rather than landing on a group nobody chose.
+  const lead = masterHost ? (state.boxes || []).find(b => b && b.host === masterHost) : null;
+  const box = lead && resolvePlayTarget(lead, state.zoneLive, state.boxes) === lead ? lead : null;
+  if (!box) {
+    if (masterHost) showToast(t('group.editStale'));
+    return;
+  }
+  if (box.kind === 'stock') return;
+  // A speaker is never its own follower, whatever the clicks were.
   const targets = edits
     .map(([h]) => (state.boxes || []).find(b => b.host === h))
-    .filter(Boolean);
+    .filter(b => b && b.host !== box.host);
   if (targets.length === 0) return;
   // A live stereo pair's halves are not groupable (#792): the picker-side
   // exclusion lives in the multiroom grid, this is the same rule for the
   // player's group chips. Say it instead of failing later with a generic
   // error after the zone budget.
-  const pairIDs = new Set(
-    stereoPairsOf(state.zoneLive || {}).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
-  const inPair = targets.filter(tgt => pairIDs.has(String(tgt.deviceID || '').toUpperCase()));
+  const inPair = targets.filter(tgt => inAnyStereoPair(tgt, state.zoneLive));
   if (inPair.length) {
     showError(t('multiroom.pairNotGroupable'));
     if (inPair.length === targets.length) return;
@@ -490,13 +523,9 @@ export function renderGroupControl() {
   // as a unit yet, so offering its halves only produced a "not groupable" error on
   // click and left them cluttering the +N row (reported on the music tab,
   // 2026-08-31). This is the same exclusion the Multi-room grid applies, via the
-  // shared stereoPairsOf helper; the click-time guard in runGroupMemberToggle stays
-  // as a defensive fallback for a pair that forms while the row is stale.
-  const pairMemberIDs = new Set(
-    stereoPairsOf(state.zoneLive || {}).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
-  const others = (state.boxes || []).filter(b =>
-    b && b.kind !== 'stock' && b.host && b.host !== box.host
-    && !pairMemberIDs.has(String(b.deviceID || '').toUpperCase()));
+  // shared groupCandidates helper; the click-time guard in runGroupMemberToggle
+  // stays as a defensive fallback for a pair that forms while the row is stale.
+  const others = groupCandidates(box, state.zoneLive, state.boxes);
   if (others.length === 0) { cont.innerHTML = ''; return; }
   const slaves = currentGroupSlaves();
   // The tick must come from the SAME list the click acts on. It used to be

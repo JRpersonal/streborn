@@ -1635,6 +1635,7 @@
   "group.addTitle": "Pridėti {{name}} į grupę",
   "group.removeTitle": "Pašalinti {{name}} iš grupės",
   "group.volumeLabel": "Grupės garsumas",
+  "group.editStale": "Grupė pasikeitė, kol pakeitimas dar nebuvo pritaikytas. Bandykite dar kartą.",
   "group.memberVolumeLabel": "{{name}} garsumas",
   "group.dissolvedToast": "Grupė išformuota",
   "group.addedToast": "{{name}} pridėta į grupę",

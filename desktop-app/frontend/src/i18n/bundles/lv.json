@@ -1635,6 +1635,7 @@
   "group.addTitle": "Pievienot {{name}} grupai",
   "group.removeTitle": "Noņemt {{name}} no grupas",
   "group.volumeLabel": "Grupas skaļums",
+  "group.editStale": "Grupa mainījās, pirms jūsu izmaiņas tika piemērotas. Mēģiniet vēlreiz.",
   "group.memberVolumeLabel": "{{name}} skaļums",
   "group.dissolvedToast": "Grupa izformēta",
   "group.addedToast": "{{name}} pievienots grupai",

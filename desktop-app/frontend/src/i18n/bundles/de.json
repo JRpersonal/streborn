@@ -1635,6 +1635,7 @@
   "group.addTitle": "{{name}} zur Gruppe hinzufügen",
   "group.removeTitle": "{{name}} aus der Gruppe entfernen",
   "group.volumeLabel": "Gruppen-Lautstärke",
+  "group.editStale": "Die Gruppe hat sich geändert, bevor deine Änderung lief. Versuch es noch einmal.",
   "group.memberVolumeLabel": "Lautstärke von {{name}}",
   "group.dissolvedToast": "Gruppe aufgelöst",
   "group.addedToast": "{{name}} zur Gruppe hinzugefügt",

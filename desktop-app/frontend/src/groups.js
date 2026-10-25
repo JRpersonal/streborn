@@ -436,6 +436,28 @@ export function inStereoPair(box, pair) {
     (box.host && (m && m.ip) === box.host));
 }
 
+// inAnyStereoPair reports whether a box is half of any live stereo pair, by
+// deviceID or by IP (inStereoPair). Every "is this speaker groupable" decision
+// reads this one rule: the group chips, the click-time guard of a group edit
+// and the UI 2.0 sidebar. Matching by deviceID alone missed a two-chip chassis
+// whose firmware id differs from the one discovery knows, so the chips offered
+// a half the edit then refused.
+export function inAnyStereoPair(box, zoneLive) {
+  if (!box) return false;
+  return stereoPairsOf(zoneLive || {}).some((p) => inStereoPair(box, p));
+}
+
+// groupCandidates lists the speakers a group led by masterBox can offer to
+// take in or out: every STR speaker other than the master that is not half of
+// a live stereo pair (#792, a pair cannot join a group as a unit). In the
+// list's own order. The Music view's group chips and the UI 2.0 sidebar both
+// start from it, so the two never offer a different set.
+export function groupCandidates(masterBox, zoneLive, boxes) {
+  if (!masterBox) return [];
+  return (boxes || []).filter((b) => b && b.kind !== 'stock' && b.host && b.host !== masterBox.host
+    && !inAnyStereoPair(b, zoneLive));
+}
+
 // stereoUndoTargets lists the speakers an "undo pair" has to be sent to, master
 // first.
 //
