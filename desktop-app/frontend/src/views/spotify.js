@@ -8,6 +8,8 @@
 import { $, escapeHtml, escapeAttr, showToast, showError } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { BrowserOpenURL, SyncSpotifyLogin, SpotifyQuality, SetSpotifyQuality } from '../api.js';
+import { shell2Mounted } from '../shell2/mount.js';
+import { refreshAccounts, renderSpotifyUi2, spotifyUi2Markup } from './spotifyui2.js';
 
 let deps = { switchView: () => {}, strBoxes: () => [] };
 export function initSpotifyView(d) {
@@ -22,6 +24,7 @@ export function renderSpotifyAlpha() {
     // The static info is painted once, but the per-speaker quality rows read
     // live state, so they refresh on every visit.
     refreshQualityList();
+    if (shell2Mounted()) renderSpotifyUi2(deps);
     return;
   }
   root.dataset.rendered = '1';
@@ -32,6 +35,7 @@ export function renderSpotifyAlpha() {
         <h2>${escapeHtml(t('spotify.heading'))}</h2>
         <p class="spotify-lead">${escapeHtml(t('spotify.nativeIntro'))}</p>
       </header>
+${shell2Mounted() ? spotifyUi2Markup() : ''}
 
       <section class="sp-card">
         <h3 class="sp-card-title">${escapeHtml(t('spotify.playTitle'))}</h3>
@@ -116,6 +120,8 @@ export function renderSpotifyAlpha() {
       if (n > 0 && failed === 0) showToast(src ? t('spotify.syncDoneFrom', { n, source: src }) : t('spotify.syncDone', { n }));
       else if (n > 0) showToast(src ? t('spotify.syncPartialFrom', { n, failed, source: src }) : t('spotify.syncPartial', { n, failed }));
       else showToast(t('spotify.syncNone'));
+      // The UI 2.0 accounts list shows the copied login right away.
+      if (shell2Mounted()) refreshAccounts();
     } catch (e) {
       const s = String(e);
       // The backend rejects with a plain-English "no speaker is logged into
@@ -139,6 +145,7 @@ export function renderSpotifyAlpha() {
     try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/78'); } catch {}
   };
   refreshQualityList();
+  if (shell2Mounted()) renderSpotifyUi2(deps);
 }
 
 // refreshQualityList paints one row per STR speaker with its configured
