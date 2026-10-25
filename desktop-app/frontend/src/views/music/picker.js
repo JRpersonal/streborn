@@ -60,14 +60,20 @@ export function openPick(station) {
     title: t('preset.assignStationTitle'),
     subtitle: station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : ''),
     onPick: async (i) => {
-      const logo = stationLogoChain(station);
-      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '', station.codec || '');
-      if (station.stationuuid) {
-        RadioVote(station.stationuuid).catch(() => {});
-      }
+      await putStationOnKey(state.currentBox, i, station);
       showToast(t('preset.savedToKey', { n: i, name: station.name }));
     },
   });
+}
+
+// putStationOnKey writes a station from a list onto key i of box, and gives it
+// a vote on radio-browser. Shared with the UI 2.0 preview's Radio (ui2radio.js).
+export async function putStationOnKey(box, i, station) {
+  const logo = stationLogoChain(station);
+  await SetPreset(box.host, box.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '', station.codec || '');
+  if (station.stationuuid) {
+    RadioVote(station.stationuuid).catch(() => {});
+  }
 }
 function closePick() { $('pickModal').classList.add('hidden'); }
 
