@@ -345,9 +345,20 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 }
 
 // boxIdleForReassert reports whether the box is idle enough to survive an
-// account re-assert without losing audio, plus the source it saw. Idle means
-// no active source (standby, nothing selected, or setup). A failed read
-// counts as NOT idle: the retry is free, a bounced source is not.
+// account re-assert without losing audio, plus what it saw (the source, with
+// the play status in brackets when the box reported one). Idle means no active
+// source (standby, nothing selected, or setup), or a source the box holds
+// without playing it (STOP_STATE): there is no audio to lose.
+//
+// The stopped case matters on a box that powers on into its last source. A
+// CineMate came up parked on STR's UPnP stream after a reboot, never playing
+// it: its boot-time login had gone to the real cloud before STR's redirect was
+// in place, so every radio start answered 1036 NOT_LOGGED_IN and stopped. The
+// start-up re-assert that clears exactly that state deferred itself every tick
+// because the source read as busy, and radio stayed dead until the box
+// happened to be in standby on a tick (field bundle 2026-10-25). A paused
+// source still counts as busy, since the listener can resume it. A failed
+// read counts as NOT idle: the retry is free, a bounced source is not.
 func (m *Manager) boxIdleForReassert(ctx context.Context) (string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.base+"/now_playing", nil)
 	if err != nil {
@@ -367,10 +378,24 @@ func (m *Manager) boxIdleForReassert(ctx context.Context) (string, bool) {
 	case "", "STANDBY", "INVALID_SOURCE", "SETUP":
 		return src, true
 	}
-	return src, false
+	status := ""
+	if mm := nowPlayingStatusRe.FindSubmatch(body); mm != nil {
+		status = strings.TrimSpace(string(mm[1]))
+	}
+	if status == "" {
+		return src, false
+	}
+	seen := src + " (" + status + ")"
+	switch status {
+	case "STOP_STATE", "INVALID_PLAY_STATUS":
+		return seen, true
+	}
+	return seen, false
 }
 
 var nowPlayingSourceRe = regexp.MustCompile(`source="([^"]*)"`)
+
+var nowPlayingStatusRe = regexp.MustCompile(`<playStatus>([^<]*)</playStatus>`)
 
 // recordPairedState emits a phase marker on every transition (paired
 // <-> not paired). The first observation also counts as a transition,

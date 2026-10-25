@@ -531,3 +531,42 @@ func TestStartupReassertDefersWhilePlaying(t *testing.T) {
 		t.Fatalf("a deferred re-assert must keep the flag pending")
 	}
 }
+
+// TestStartupReassertRunsOnStoppedSource: a box that powers on parked on its
+// last source without playing it (CineMate field bundle 2026-10-25: UPnP held
+// in STOP_STATE, every radio start answered 1036) has no audio to lose, so the
+// start-up re-assert must land instead of deferring tick after tick.
+func TestStartupReassertRunsOnStoppedSource(t *testing.T) {
+	for _, status := range []string{"STOP_STATE", "INVALID_PLAY_STATUS"} {
+		t.Run(status, func(t *testing.T) {
+			box := &fakeBox{infoBody: pairedInfo, nowPlaying: `<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/1"><itemName>Station</itemName></ContentItem><playStatus>` + status + `</playStatus></nowPlaying>`}
+			m := newTestManager(t, box)
+			if err := m.ensure(context.Background(), true); err != nil {
+				t.Fatalf("ensure: %v", err)
+			}
+			if got := box.pairPosts.Load(); got != 1 {
+				t.Fatalf("a stopped source must not hold off the start-up re-assert, got %d POSTs", got)
+			}
+			if !m.firstAssertDone.Load() {
+				t.Fatalf("a landed re-assert must clear the pending flag")
+			}
+		})
+	}
+}
+
+// TestStartupReassertDefersOnActiveStatus: playing, buffering and paused
+// sources keep deferring; the paused listener can still resume.
+func TestStartupReassertDefersOnActiveStatus(t *testing.T) {
+	for _, status := range []string{"PLAY_STATE", "BUFFERING_STATE", "PAUSE_STATE"} {
+		t.Run(status, func(t *testing.T) {
+			box := &fakeBox{infoBody: pairedInfo, nowPlaying: `<nowPlaying source="SPOTIFY"><playStatus>` + status + `</playStatus></nowPlaying>`}
+			m := newTestManager(t, box)
+			if err := m.ensure(context.Background(), true); err != nil {
+				t.Fatalf("ensure: %v", err)
+			}
+			if got := box.pairPosts.Load(); got != 0 {
+				t.Fatalf("re-assert must defer on %s, got %d POSTs", status, got)
+			}
+		})
+	}
+}
