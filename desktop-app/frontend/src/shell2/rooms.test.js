@@ -37,6 +37,17 @@ describe('speaker rows', () => {
     expect(named[0].name).toBe('Living pair');
   });
 
+  it('selects the master half on a two-chip chassis whose firmware id differs', () => {
+    // The master is the RIGHT half and is known to discovery only by its IP.
+    const fwPair = {
+      id: 'p2', master: 'FW-B',
+      members: [{ deviceID: 'FW-A', ip: A.host, role: 'LEFT' }, { deviceID: 'FW-B', ip: B.host, role: 'RIGHT' }],
+    };
+    const items = roomItems([A, B], { stereoPairs: [fwPair] });
+    expect(items).toHaveLength(1);
+    expect(items[0].host).toBe(B.host);
+  });
+
   it('selects the half that answers when the pair master is offline', () => {
     const items = roomItems([A, { ...B, offline: true }], { stereoPairs: [pair] });
     expect(items).toHaveLength(1);

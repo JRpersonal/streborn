@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Hoparlörler",
   "ui2.side.controlling": "Kontrol ettiğiniz",
   "ui2.side.together": "Birlikte çalıyor",
+  "ui2.side.group": "Grupta",
   "ui2.side.others": "Diğer hoparlörler",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Kurulumu açar",

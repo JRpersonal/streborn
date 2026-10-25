@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Głośniki",
   "ui2.side.controlling": "Sterujesz",
   "ui2.side.together": "Grają razem",
+  "ui2.side.group": "W grupie",
   "ui2.side.others": "Inne głośniki",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Otwiera konfigurację",

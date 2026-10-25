@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Garsiakalbiai",
   "ui2.side.controlling": "Valdote",
   "ui2.side.together": "Groja kartu",
+  "ui2.side.group": "Grupėje",
   "ui2.side.others": "Kiti garsiakalbiai",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Atveria sąranką",

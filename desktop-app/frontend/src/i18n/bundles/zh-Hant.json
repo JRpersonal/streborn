@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "喇叭",
   "ui2.side.controlling": "你正在控制",
   "ui2.side.together": "一起播放",
+  "ui2.side.group": "已分組",
   "ui2.side.others": "其他喇叭",
   "ui2.side.rowLabel": "{{name}}，{{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}，{{state}}。開啟設定",

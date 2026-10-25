@@ -167,14 +167,9 @@ describe('UI 2.0 sidebar speaker list', () => {
     expect(srcOf('markGroupChipPending')).toContain('renderShellSpeakers(true)');
   });
 
-  it('runs a group edit on the group it was clicked in', () => {
-    const toggle = srcOf('toggleGroupMember');
-    expect(toggle).toContain('pendingGroupMaster');
-    expect(srcOf('runPendingGroupEdits')).toContain('runGroupMemberToggle(edits, masterHost)');
-    const run = srcOf('runGroupMemberToggle');
-    expect(run).toContain('resolvePlayTarget(lead, state.zoneLive, state.boxes) === lead');
-    expect(run).toContain('.filter(b => b && b.host !== box.host)');
-    expect(run).toContain('inAnyStereoPair(tgt, state.zoneLive)');
+  // Which group a batch edits is run for real in views/music/group.test.js.
+  it('refuses a stereo half at click time', () => {
+    expect(srcOf('runGroupMemberToggle')).toContain('inAnyStereoPair(tgt, state.zoneLive)');
   });
 
   it('keeps the Music view markup as it was without the player slot', () => {

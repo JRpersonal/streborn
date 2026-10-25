@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Altavoces",
   "ui2.side.controlling": "Controlas",
   "ui2.side.together": "Suenan juntos",
+  "ui2.side.group": "En grupo",
   "ui2.side.others": "Otros altavoces",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Abre la configuración",

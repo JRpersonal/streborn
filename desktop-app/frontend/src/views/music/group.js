@@ -4,8 +4,8 @@
 import { BoxSettings, DissolveZone, FormZone, SetBoxVolume, Stop, WakeBox } from '../../api.js';
 import {
   applyOptimisticZone,
-  followersOf,
   groupCandidates,
+  groupMemberBoxes,
   groupMembersOf,
   inAnyStereoPair,
   notifyZoneLive,
@@ -24,13 +24,14 @@ import { deps } from './deps.js';
 // selected speaker, plus one volume slider for the whole group. Bose forms the
 // zone natively; the group's name comes from the master (see the Multi-Room tab).
 
-// currentGroupSlaves returns the speakers currently following the selected box
-// in a live zone (the shared groups.js view of the same state.zoneLive the
-// group frames use).
+// currentGroupSlaves returns the speakers in the group of the selected box,
+// master excluded: groups.js's groupMemberBoxes, the same list the UI 2.0
+// sidebar pins, so the group volume and the Levels sliders cover exactly the
+// speakers the sidebar shows in the group.
 function currentGroupSlaves() {
   const box = groupControlBox();
   if (!box || !box.deviceID) return [];
-  return followersOf(box.deviceID, state.zoneLive, state.boxes).filter(b => b.host !== box.host);
+  return groupMemberBoxes(box, state.zoneLive, state.boxes);
 }
 
 // effectivePlayTarget returns the box a play command must actually go to: a
@@ -663,4 +664,14 @@ function clearGroupControl(cont, slot) {
 export function purgeGroupStateForSpeaker(host) {
   groupOpPending.delete(host);
   pendingGroupEdits.delete(host);
+  // The waiting batch was clicked for this speaker's group: with the master
+  // gone there is no group left to edit, so the batch goes quietly instead of
+  // ending in the "group changed" toast.
+  if (host && pendingGroupMaster === host) {
+    if (groupEditTimer) clearTimeout(groupEditTimer);
+    groupEditTimer = null;
+    pendingGroupEdits.clear();
+    pendingGroupMaster = '';
+    markGroupChipPending();
+  }
 }

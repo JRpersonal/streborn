@@ -18,6 +18,7 @@ import {
   resolvePlayTarget,
   mergeZoneLive,
   balanceSourceBox,
+  pairMasterBox,
   applyOptimisticZone,
   sameBoxIdentity,
   parsePlayRejection,
@@ -506,6 +507,36 @@ describe('balanceSourceBox', () => {
 
   it('falls back to the selected speaker when the master is not discovered', () => {
     expect(balanceSourceBox(right, pair, [right])).toBe(right);
+  });
+});
+
+describe('pairMasterBox', () => {
+  // A two-chip chassis: the firmware's ids are not the ones discovery knows,
+  // and the master is the RIGHT half, so only the IP of its member entry finds it.
+  const left = { deviceID: 'MDNS-L', host: '192.0.2.20', kind: 'str' };
+  const right = { deviceID: 'MDNS-R', host: '192.0.2.21', kind: 'str' };
+  const pair = {
+    id: 'pair-2',
+    master: 'FWR',
+    members: [
+      { deviceID: 'FWL', ip: '192.0.2.20', role: 'LEFT' },
+      { deviceID: 'FWR', ip: '192.0.2.21', role: 'RIGHT' },
+    ],
+  };
+
+  it('finds the master by the IP of its member entry when the deviceID differs', () => {
+    expect(pairMasterBox(pair, [left, right])).toBe(right);
+  });
+
+  it('routes the balance and the undo order through the same master', () => {
+    expect(balanceSourceBox(left, pair, [left, right])).toBe(right);
+    expect(stereoUndoTargets(pair, [left, right])).toEqual([right, left]);
+  });
+
+  it('returns null when the master is unknown or not discovered', () => {
+    expect(pairMasterBox({ ...pair, master: '' }, [left, right])).toBe(null);
+    expect(pairMasterBox(pair, [left])).toBe(null);
+    expect(pairMasterBox(null, [left])).toBe(null);
   });
 });
 

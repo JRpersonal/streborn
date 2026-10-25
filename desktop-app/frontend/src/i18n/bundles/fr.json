@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Enceintes",
   "ui2.side.controlling": "Tu contrôles",
   "ui2.side.together": "Jouent ensemble",
+  "ui2.side.group": "En groupe",
   "ui2.side.others": "Autres enceintes",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Ouvre la configuration",

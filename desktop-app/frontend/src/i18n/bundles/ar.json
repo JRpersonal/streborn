@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "السمّاعات",
   "ui2.side.controlling": "تتحكم بـ",
   "ui2.side.together": "تعمل معًا",
+  "ui2.side.group": "مجموعة",
   "ui2.side.others": "سمّاعات أخرى",
   "ui2.side.rowLabel": "{{name}}، {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}، {{state}}. يفتح الإعداد",

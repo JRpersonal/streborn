@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Speakers",
   "ui2.side.controlling": "You control",
   "ui2.side.together": "Playing together",
+  "ui2.side.group": "Grouped",
   "ui2.side.others": "Other speakers",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Opens the setup",

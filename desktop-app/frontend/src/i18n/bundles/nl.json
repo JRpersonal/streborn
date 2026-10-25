@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Speakers",
   "ui2.side.controlling": "Je bedient",
   "ui2.side.together": "Spelen samen",
+  "ui2.side.group": "Gegroepeerd",
   "ui2.side.others": "Andere speakers",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Opent de installatie",

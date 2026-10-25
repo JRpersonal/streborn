@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "Skaļruņi",
   "ui2.side.controlling": "Jūs vadāt",
   "ui2.side.together": "Atskaņo kopā",
+  "ui2.side.group": "Grupā",
   "ui2.side.others": "Citi skaļruņi",
   "ui2.side.rowLabel": "{{name}}, {{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}, {{state}}. Atver iestatīšanu",

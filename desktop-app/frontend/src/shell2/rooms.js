@@ -10,7 +10,7 @@
 // A live stereo pair collapses into ONE row: the two halves play as one, and
 // choosing it selects the pair's master, as the picker's frame does.
 
-import { pairMemberBoxes } from '../groups.js';
+import { pairMasterBox, pairMemberBoxes } from '../groups.js';
 import { speakerTileState } from '../speakertile.js';
 import { speakerChipKinds, speakerPillKind } from './pill.js';
 
@@ -28,8 +28,11 @@ export function roomItems(boxes, ctx = {}) {
   for (const pair of ctx.stereoPairs || []) {
     const members = pairMemberBoxes(pair, list).map((x) => x.box).filter(Boolean);
     if (members.length < 2) continue;
-    const masterUp = String(pair.master || '').toUpperCase();
-    const master = members.find((b) => String(b.deviceID || '').toUpperCase() === masterUp) || members[0];
+    // The master by deviceID or IP (pairMasterBox): on a two-chip chassis the
+    // firmware id is not the one discovery knows, and a deviceID-only match fell
+    // back to the LEFT half, which is not always the master.
+    const found = pairMasterBox(pair, list);
+    const master = (found && members.find((b) => b.host === found.host)) || members[0];
     // The row selects the master. With the master offline, choosing it would
     // only say "offline" while the other half answers: the row then selects
     // the half that is there.

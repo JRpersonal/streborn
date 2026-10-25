@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { actionLabel, rovingIndex, sidebarHTML, sidebarModel, speakerRowLabel } from './speakers.js';
-import { stereoPairsOf } from '../groups.js';
+import { groupMemberBoxes, stereoPairsOf } from '../groups.js';
 import en from '../i18n/bundles/en.json';
 import { setLocale } from '../i18n/index.js';
 
@@ -111,6 +111,27 @@ describe('sidebar speaker model', () => {
     const k = model({ zoneLive: masterOnly });
     expect(k.pinned.map((r) => r.host)).toEqual([M.host, F.host]);
     expect(byHost(k, F).action).toBe('remove');
+  });
+
+  it('says "Playing together" only while the group plays', () => {
+    const idle = model({ boxPlaying: { ...PLAYING, MMM: false, FFF: false } });
+    expect(idle.pinned.map((r) => r.host)).toEqual([M.host, F.host]);
+    expect(idle.headingKey).toBe('ui2.side.group');
+    expect(sidebarHTML(idle)).toContain(en['ui2.side.group']);
+    expect(model().headingKey).toBe('ui2.side.together');
+  });
+
+  it('counts the same members the player shows, a master-listed one included', () => {
+    // Kitchen has no self-report; only the master's member list names it.
+    const { FFF: _self, ...masterOnly } = ZONES;
+    const k = model({ zoneLive: masterOnly });
+    expect(k.memberCount).toBe(1);
+    expect(groupMemberBoxes(M, masterOnly, NET)).toEqual([F]);
+    // A member the master lists that discovery does not know has no row and no
+    // slider, so it is not counted either.
+    const ghost = { ...masterOnly, MMM: { master: 'MMM', members: [...masterOnly.MMM.members, { deviceID: 'GGG', ip: '192.0.2.99' }] } };
+    expect(model({ zoneLive: ghost }).memberCount).toBe(1);
+    expect(groupMemberBoxes(M, ghost, NET)).toEqual([F]);
   });
 
   it('never offers a lone pair half for a group', () => {

@@ -1590,6 +1590,7 @@
   "ui2.side.speakers": "スピーカー",
   "ui2.side.controlling": "操作中",
   "ui2.side.together": "一緒に再生中",
+  "ui2.side.group": "グループ",
   "ui2.side.others": "その他のスピーカー",
   "ui2.side.rowLabel": "{{name}}、{{state}}",
   "ui2.side.rowLabelSetUp": "{{name}}、{{state}}。セットアップを開きます",

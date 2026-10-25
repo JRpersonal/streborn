@@ -21,7 +21,7 @@
 
 import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../utils.js';
-import { groupCandidates, groupMembersOf, inAnyStereoPair, masterOf, resolvePlayTarget } from '../groups.js';
+import { groupCandidates, groupMemberBoxes, groupMembersOf, inAnyStereoPair, masterOf, resolvePlayTarget } from '../groups.js';
 import { roomItems } from './rooms.js';
 import { CHIP_LABEL_KEYS, chipHTML, pillLabel, statusPillHTML } from './pill.js';
 
@@ -47,6 +47,9 @@ export function sidebarModel(boxes, ctx = {}) {
   const master = strSel ? (resolvePlayTarget(strSel, zl, list) || strSel) : null;
   const members = master ? groupMembersOf(master, zl, list) : [];
   const memberHosts = new Set(members.map((m) => m.ip).filter(Boolean));
+  // The members the player shows (group volume, Levels): the same list, so
+  // the heading and "+ n more" never count a speaker the player leaves out.
+  const memberBoxes = master ? groupMemberBoxes(master, zl, list) : [];
   const groupHosts = new Set(master ? [master.host, ...memberHosts] : []);
   // A stereo pair plays on its own (#792): while you control one, nothing can
   // be added to it.
@@ -93,17 +96,22 @@ export function sidebarModel(boxes, ctx = {}) {
   const pinnedRows = all.filter((r) => r.pinned);
   const masterRow = pinnedRows.find((r) => r.isMaster);
   const pinned = masterRow ? [masterRow, ...pinnedRows.filter((r) => r !== masterRow)] : pinnedRows;
+  // "Playing together" only while the group plays: a group is pinned whether
+  // or not it plays, and a stopped one is just a group.
+  const grouped = memberBoxes.length > 0;
+  const headingKey = !grouped ? 'ui2.side.controlling'
+    : (pinned.some((r) => r.playing) ? 'ui2.side.together' : 'ui2.side.group');
   return {
     pinned,
     // In the list's own order, never re-sorted: rows do not jump under the
     // pointer when a speaker starts or stops playing.
     others: all.filter((r) => !r.pinned),
-    headingKey: members.length > 0 ? 'ui2.side.together' : 'ui2.side.controlling',
+    headingKey,
     groupable,
     pairAlone,
     searching: !!ctx.searching,
     master,
-    memberCount: members.length,
+    memberCount: memberBoxes.length,
   };
 }
 
