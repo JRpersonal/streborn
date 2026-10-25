@@ -579,7 +579,7 @@ func TestPhoneCardFleetStringsInEveryLocale(t *testing.T) {
 	}
 	for _, key := range []string{"sfAll", "sfOnly", "sfAllLink", "sfThis", "sfNeeds", "sfWaiting", "sfCurrent",
 		"sfOld", "sfUnreach", "suEngineByUpd", "sfChecking", "sfReboot", "sfConfirm", "sfRunning", "sfSummary", "sfLoading",
-		"sfVia", "sfOther"} {
+		"sfVia", "sfOther", "sfOneBtn", "sfOneNote"} {
 		if got := len(regexp.MustCompile(`[{,]`+key+`:"`).FindAllString(indexHTML, -1)); got != bundles {
 			t.Errorf("%s: in %d of %d locales", key, got, bundles)
 		}
@@ -611,5 +611,41 @@ func TestPhoneCardFleetStringsInEveryLocale(t *testing.T) {
 				t.Errorf("%s uses a dash: %q", key, m[1])
 			}
 		}
+	}
+}
+
+// #1339: after "Only this speaker" the card still listed every peer as
+// "Update available" above a plain "Update to vX" button, so the owner read
+// it as an update for all of them. The single-speaker mode now lists only
+// this speaker, says so, and names it on the button.
+func TestPhoneCardOnlyThisSpeakerIsUnambiguous(t *testing.T) {
+	page := readIndexHTML(t)
+	js := page[strings.Index(page, "(function wireSelfUpdate(){"):strings.Index(page, "(function wireDiag(){")]
+	for _, want := range []string{
+		"if (onlyThis && mode === 'plan') rows = rows.filter(function(sp){ return sp.self; });",
+		"fill(onlyThis && fleet() ? T.sfOneBtn : T.suInstall, st.latest)",
+		"else if (onlyThis && fleet() && st.available) show(T.sfOneNote);",
+		// Once this speaker is through, the card offers the rest again.
+		// A speaker that went quiet mid-update keeps the choice (#1502).
+		"if (onlyThis && st && !lostSince && st.state !== 'failed' &&",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("single-speaker mode lost %q", want)
+		}
+	}
+	for _, m := range regexp.MustCompile(`sfOneBtn:"([^"]*)"`).FindAllStringSubmatch(page, -1) {
+		if !strings.Contains(m[1], "{v}") {
+			t.Errorf("sfOneBtn must name the version: %q", m[1])
+		}
+	}
+	for _, key := range []string{"sfOneBtn", "sfOneNote"} {
+		for _, m := range regexp.MustCompile(key+`:"([^"]*)"`).FindAllStringSubmatch(page, -1) {
+			if strings.ContainsAny(m[1], "–—") || strings.Contains(m[1], " - ") {
+				t.Errorf("%s uses a dash: %q", key, m[1])
+			}
+		}
+	}
+	if !strings.Contains(page, `sfOneBtn:"Nur diesen Lautsprecher auf {v} aktualisieren"`) {
+		t.Error("German single-speaker button changed")
 	}
 }
