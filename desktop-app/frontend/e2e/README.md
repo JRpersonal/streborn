@@ -27,6 +27,19 @@ npx playwright test --project=desktop                 # one project
 E2E_WEBKIT=1 npx playwright test specs/desktop-smoke.spec.mjs    # adds webkit-smoke (npx playwright install webkit)
 ```
 
+The `VAR=value npx ...` lines are bash (Git Bash on Windows). In PowerShell
+set the variable first; it stays set for the rest of that shell:
+
+```powershell
+$env:E2E_PORT=4180; npx playwright test specs/desktop-smoke.spec.mjs
+$env:E2E_SKIP_BUILD=1; npx playwright test specs/desktop-smoke.spec.mjs
+Remove-Item Env:E2E_SKIP_BUILD          # back to building
+```
+
+Tests run `fullyParallel`: every test boots its own page on its own mock, so
+one file spreads over all workers. A spec must not rely on the order of its
+tests or on state another test left behind.
+
 The web server builds the frontend into `desktop-app/.e2e-out/dist-<PORT>` and
 serves it with `vite preview`. Results, traces and the HTML report (CI only)
 land in `desktop-app/.e2e-out/results-<PORT>` and `report-<PORT>`. Nothing
@@ -47,6 +60,12 @@ A failed test keeps its trace: `npx playwright show-trace <results dir>/.../trac
 | `desktop-min` | 1000 x 600, the smallest window | `desktop-layout`, `desktop-i18n`, `desktop-banners` |
 | `phone` | 390 x 844, iPhone UA, touch | `phone-*.spec.mjs` |
 | `webkit-smoke` | Desktop Safari, only with `E2E_WEBKIT=1` | `desktop-smoke.spec.mjs` |
+
+Playwright matches `testMatch` against the absolute path, so every pattern in
+`playwright.config.mjs` starts at a path separator (`[\\/]desktop-...`, `/` or `\`).
+Without that, `desktop-` also matches the `desktop-app/` directory and the
+desktop project would pull in every spec. Check with
+`npx playwright test --list --project=desktop`.
 
 ## Writing a spec
 
@@ -107,7 +126,11 @@ switcher and no Output popover any more.
 file it owns. The shared files (`../testkit/*`, `playwright.config.mjs`,
 `fixtures.mjs`, `helpers/*`, `package*.json`, this README, `build.yml`,
 `eslint.config.js`, `.gitignore`, `dependabot.yml`) change in their own
-commit. A real bug a spec finds becomes `test.fixme('<reason>, see issue #N')`.
+commit. A real bug a spec finds becomes `test.fixme(<reason>)`, where the
+reason says what breaks and where (the `*_BUG` constants at the top of a
+spec). Add `see #N` once an issue exists; that is recommended, not enforced.
+Only the cause of an app bug is a reason for `test.fixme`; a test that cannot
+be made stable is a bug in the test.
 
 ## Flake policy
 
@@ -136,7 +159,9 @@ commit. A real bug a spec finds becomes `test.fixme('<reason>, see issue #N')`.
 
 - `a11y-desktop.json`, `a11y-phone.json`: axe findings per scan key, each with
   a node count and a note (`helpers/a11y.mjs`). More than the baseline fails,
-  less fails too ("stale, lower it"), and an entry without a real note fails.
+  less fails too ("stale, lower it"), and an entry without a real note fails
+  (empty, or still starting with `TODO`). A note says why the finding is
+  accepted; an issue number is recommended, many notes say "no issue filed".
   Refresh with `E2E_UPDATE_A11Y=1 npx playwright test --workers=1 <spec>`,
   review the diff, write the notes.
 - `unmocked-desktop.json`, `unmocked-phone.json`: the binding names (desktop)

@@ -8,6 +8,7 @@
 // ports never overwrite each other's build.
 //
 //   E2E_PORT=4180 npx playwright test specs/desktop-smoke.spec.mjs
+//   ($env:E2E_PORT=4180; npx playwright test ...   in PowerShell)
 //   E2E_SKIP_BUILD=1 ...   reuses dist-<PORT> from an earlier run
 //   E2E_WEBKIT=1 ...       adds the webkit-smoke project
 
@@ -25,6 +26,10 @@ export default defineConfig({
   outputDir: `${OUT}results-${PORT}`,
   timeout: 30_000,
   expect: { timeout: 5_000 },
+  // Every test boots its own page on its own mock, so tests of one file run
+  // on several workers. Without this desktop-a11y alone held one worker for
+  // about five minutes and set the floor for the whole run.
+  fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 3 : undefined,
   forbidOnly: !!process.env.CI,
@@ -53,17 +58,20 @@ export default defineConfig({
     stdout: 'ignore',
     stderr: 'pipe',
   },
+  // Playwright tests testMatch against the ABSOLUTE path, so every pattern is
+  // anchored on a path separator: an unanchored /desktop-.*/ also matches the
+  // "desktop-app/" directory and would pull in every spec, phone ones included.
   projects: [
     // The app's default window (main.go) and the smallest one it allows.
-    { name: 'desktop', use: { viewport: { width: 1240, height: 740 } }, testMatch: /(desktop-.*|_canary)\.spec\.mjs$/ },
-    { name: 'desktop-min', use: { viewport: { width: 1000, height: 600 } }, testMatch: /desktop-(layout|i18n|banners)\.spec\.mjs$/ },
+    { name: 'desktop', use: { viewport: { width: 1240, height: 740 } }, testMatch: /[\\/](desktop-[^\\/]*|_canary)\.spec\.mjs$/ },
+    { name: 'desktop-min', use: { viewport: { width: 1000, height: 600 } }, testMatch: /[\\/]desktop-(layout|i18n|banners)\.spec\.mjs$/ },
     {
       name: 'phone',
       use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: PHONE.USER_AGENT },
-      testMatch: /phone-.*\.spec\.mjs$/,
+      testMatch: /[\\/]phone-[^\\/]*\.spec\.mjs$/,
     },
     ...(process.env.E2E_WEBKIT
-      ? [{ name: 'webkit-smoke', use: { ...devices['Desktop Safari'], viewport: { width: 1240, height: 740 } }, testMatch: /desktop-smoke\.spec\.mjs$/ }]
+      ? [{ name: 'webkit-smoke', use: { ...devices['Desktop Safari'], viewport: { width: 1240, height: 740 } }, testMatch: /[\\/]desktop-smoke\.spec\.mjs$/ }]
       : []),
   ],
 });

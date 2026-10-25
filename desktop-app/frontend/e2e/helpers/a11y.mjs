@@ -3,7 +3,7 @@
 // A baseline file (baselines/a11y-*.json) maps a scan key to the WCAG rules
 // that scan is known to break, with a node count and a hand-written note:
 //
-//   { "dark|old|box": { "color-contrast": { "count": 3, "note": "why, and the issue" } } }
+//   { "dark|old|box": { "color-contrast": { "count": 3, "note": "why (and the issue, if filed)" } } }
 //
 // A new rule, or more nodes than the baseline allows, fails. So does a
 // baseline that is higher than reality or lists a rule that no longer fires:
@@ -23,7 +23,7 @@ export const KILL_ANIM = '*,*::before,*::after{transition:none!important;animati
 
 export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
-const TODO = 'TODO: say why this is accepted, with an issue number';
+const TODO = 'TODO: say why this is accepted (and the issue number, if there is one)';
 
 function load(file) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return {}; }
