@@ -87,6 +87,7 @@ STR is at 1.0: every criterion I set myself for it is met (see [1.0](#10) below)
 - Wishes tab: every open feature wish with its votes, in the app's language and searchable, with links to vote and to suggest a new one.
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
 - And one thing that was never in the manual: a game hidden on the display of the SoundTouch 20, 30 and Portable. How to start it is a riddle in the [Arcade](https://github.com/JRpersonal/streborn/discussions/1173), and that is also where the highscores go.
+- And yes, it runs DOOM. That one lives in its own repo, [streborn-doom](https://github.com/JRpersonal/streborn-doom), and STR never installs it.
 
 ### In the works, and what comes next
 
