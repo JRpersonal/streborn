@@ -118,10 +118,10 @@ func TestQuietWakeStopIsSentAgainWhenTheSpeakerIgnoresIt(t *testing.T) {
 	stops := 0
 	var firstStop time.Time
 	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
-		switch {
-		case stops == 0:
+		switch stops {
+		case 0:
 			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "BUFFERING_STATE"}
-		case stops == 1:
+		case 1:
 			// The first STOP was swallowed: the station starts anyway.
 			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
 		}
