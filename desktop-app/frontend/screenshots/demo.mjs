@@ -53,10 +53,20 @@ export function shotScenario(view, locale) {
 // cwd=FRONTEND), so this harness's only dependency is playwright. That keeps
 // playwright out of the app's package.json and therefore out of every CI /
 // wails build (it would otherwise download ~130 MB of browsers on install).
-export function buildFrontend() {
+//
+// The build goes to desktop-app/.e2e-out/shots-<port> (git-ignored, outside
+// the Vite root), never to frontend/dist: a bare `vite build` empties dist and
+// deletes the tracked go:embed anchor dist/.gitkeep. The port in the name
+// keeps two harness runs on two ports from sharing a build.
+export const outDirFor = (port) => path.resolve(FRONTEND, '..', '.e2e-out', `shots-${port}`);
+// The win32 spawns go through a shell (npx.cmd), which splits an unquoted
+// path with spaces; elsewhere there is no shell, and quotes would stay literal.
+const outDirArg = (port) => (process.platform === 'win32' ? `"${outDirFor(port)}"` : outDirFor(port));
+
+export function buildFrontend(port) {
   const bin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
   return new Promise((resolve, reject) => {
-    const p = spawn(bin, ['vite', 'build'], { cwd: FRONTEND, stdio: 'ignore', shell: process.platform === 'win32' });
+    const p = spawn(bin, ['vite', 'build', '--outDir', outDirArg(port), '--emptyOutDir'], { cwd: FRONTEND, stdio: 'ignore', shell: process.platform === 'win32' });
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error('vite build exited ' + code))));
     p.on('error', reject);
   });
@@ -64,7 +74,7 @@ export function buildFrontend() {
 
 export function startServer(port) {
   const bin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  const srv = spawn(bin, ['vite', 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: FRONTEND, stdio: 'ignore', shell: process.platform === 'win32' });
+  const srv = spawn(bin, ['vite', 'preview', '--outDir', outDirArg(port), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: FRONTEND, stdio: 'ignore', shell: process.platform === 'win32' });
   return srv;
 }
 // assertPortFree fails when something already answers on base: vite would

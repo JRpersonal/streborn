@@ -11,7 +11,7 @@
 //
 // Output: docs/screenshots/<lang>/<view>.png for every language x view.
 //
-// Run: npm run screenshots   (builds the frontend, then shoots)
+// Run: npm run shoot   (builds the frontend, then shoots)
 
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
@@ -172,7 +172,7 @@ async function drive(page, view) {
 
 // ---- main ------------------------------------------------------------------
 await assertPortFree(BASE);
-await buildFrontend();
+await buildFrontend(PORT);
 const server = startServer(PORT);
 let browser;
 try {

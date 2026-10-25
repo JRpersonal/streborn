@@ -203,7 +203,7 @@ async function run(page) {
 }
 
 await assertPortFree(BASE);
-await buildFrontend();
+await buildFrontend(PORT);
 const server = startServer(PORT);
 let browser;
 try {
