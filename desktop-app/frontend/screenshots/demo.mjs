@@ -32,7 +32,7 @@ export function shotScenario(view, locale) {
   sc.seed = { locale, ui2: false, theme: null, scale: null, cachedBoxes: ['livingRoom'], extraStorage: { searchCountry: '' } };
   if (view.startsWith('app-ui2')) {
     sc.seed.ui2 = true;
-    sc.seed.theme = view === 'app-ui2-light' ? 'light' : view === 'app-ui2-contrast' ? 'contrast' : 'dark';
+    sc.seed.theme = view.endsWith('-light') ? 'light' : view.endsWith('-contrast') ? 'contrast' : 'dark';
     sc.seed.scale = view === 'app-ui2-xl' ? '3' : '1';
     sc.seed.cachedBoxes = true;
     sc.boxes = DEMO.ui2Net;

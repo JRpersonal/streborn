@@ -18,7 +18,8 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { DEMO, assertPortFree, FRONTEND, agentRoutes, buildFrontend, installDesktopMock, shotScenario, startServer, stopServer, waitForServer } from './demo.mjs';
 
-const OUT = path.resolve(FRONTEND, '../../docs/screenshots');         // repo/docs/screenshots
+// SHOOT_OUT sends a run elsewhere, e.g. review shots that are not published.
+const OUT = process.env.SHOOT_OUT ? path.resolve(process.env.SHOOT_OUT) : path.resolve(FRONTEND, '../../docs/screenshots');
 // SHOOT_PORT moves the preview server, for a second checkout shooting at the same time.
 const PORT = Number(process.env.SHOOT_PORT) || 4178;
 const BASE = `http://127.0.0.1:${PORT}/`;
@@ -37,8 +38,12 @@ const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app
 // shot per theme and one at the largest text size. Not part of a full run,
 // since the preview is opt-in; SHOOT_VIEWS=ui2 shoots all four.
 const UI2_VIEWS = ['app-ui2-dark', 'app-ui2-light', 'app-ui2-contrast', 'app-ui2-xl'];
+// The phase 2 views of the preview (#1286), each in the dark and the light
+// theme: SHOOT_VIEWS=ui2p2 shoots all ten.
+const UI2P2_VIEWS = ['radio', 'radiorows', 'library', 'recent', 'spotify'].flatMap((v) => [`app-ui2p2-${v}-dark`, `app-ui2p2-${v}-light`]);
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
-  ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean).flatMap((v) => (v === 'ui2' ? UI2_VIEWS : [v]))
+  ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
+    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : [v]))
   : ALL_VIEWS;
 
 // ---- per-view driving ------------------------------------------------------
@@ -59,7 +64,9 @@ async function drive(page, view) {
     await page.waitForSelector('#presets .preset-body, #presets .preset-hint', { timeout: 9000 });
     await page.waitForSelector('#ui2SpkLists .ui2-spk-pinned .ui2-spk-pick', { timeout: 9000 });
     await page.waitForSelector('#ui2SpkLists .ui2-spk-act[data-act="add"]', { timeout: 20000 });
-    if (view === 'app-ui2-dark') {
+    if (view.startsWith('app-ui2p2-')) {
+      await driveUi2Phase2(page, view.split('-')[2]);
+    } else if (view === 'app-ui2-dark') {
       // Scrolled to the offline speaker, so the shot shows it greyed with
       // "Offline" and the Bose original's "Ready for STR" below it.
       await page.evaluate(() => {
@@ -168,6 +175,47 @@ async function drive(page, view) {
     }
   }
   await page.waitForTimeout(450); // let transitions / art settle
+}
+
+// driveUi2Phase2 opens one phase 2 view of the preview in its telling state:
+// Radio on Discover with the top list, Library one folder down, Recently
+// played under its day headings, Spotify with a playlist playing on the
+// speaker you control.
+async function driveUi2Phase2(page, which) {
+  const open = (v) => page.click(`#ui2Sidebar .ui2-nav-item[data-view="${v}"]`);
+  if (which === 'radio' || which === 'radiorows') {
+    await open('box');
+    await page.waitForSelector('#ui2KeysTitle', { timeout: 9000 });
+    await page.waitForSelector('#searchResults .ui2-st', { timeout: 15000 });
+    if (which === 'radio') return page.evaluate(() => { document.getElementById('ui2Main').scrollTop = 0; });
+    // The station rows, the first one with its details open.
+    await page.click('#searchResults .ui2-st [data-act="details"]');
+    await page.waitForTimeout(300);
+    return page.evaluate(() => document.getElementById('searchResults').scrollIntoView({ block: 'start' }));
+  } else if (which === 'library') {
+    await open('library');
+    // The context keeps localStorage between shots, so the second theme's
+    // Library comes back where the first one left it (the last place opens).
+    await page.waitForSelector('#view-library .lib2-folder, #view-library .lib2-track', { timeout: 9000 });
+    if (await page.$('#view-library .lib2-track')) return;
+    await page.locator('#view-library .lib2-folder', { hasText: 'Music' }).first().click();
+    await page.waitForSelector('#view-library .lib2-folder >> text=Evening Sessions', { timeout: 9000 });
+    await page.locator('#view-library .lib2-folder', { hasText: 'Evening Sessions' }).first().click();
+    await page.waitForSelector('#view-library .lib2-track', { timeout: 9000 });
+  } else if (which === 'recent') {
+    await open('recent');
+    await page.waitForSelector('#recentList .rc-day-head', { timeout: 9000 });
+  } else if (which === 'spotify') {
+    const host = DEMO.ui2Net.find((b) => b.friendlyName === 'Living Room').host;
+    const uri = 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M';
+    await page.evaluate(([h, it]) => {
+      window.__strMock.state.playing[h] = 'PLAY_STATE';
+      window.__strMock.state.item[h] = it;
+    }, [host, { source: 'SPOTIFY', location: `/playback/container/${Buffer.from(uri).toString('base64')}`, name: 'Discover Weekly', art: '' }]);
+    await open('spotify');
+    await page.waitForSelector('#sp2Keys .sp2-key', { timeout: 20000 });
+  }
+  await page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
 }
 
 // ---- main ------------------------------------------------------------------
