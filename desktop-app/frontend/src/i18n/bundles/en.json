@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Updates: {{n}}",
   "ui2.rooms.label": "Speaker you control",
   "ui2.rooms.switcherLabel": "Controlling {{name}}, {{state}}. Change speaker",
+  "ui2.rooms.switcherLabelNoState": "Controlling {{name}}. Change speaker",
   "ui2.rooms.listLabel": "Speakers on this network",
   "ui2.rooms.none": "No speaker chosen",
   "ui2.pill.standby": "Standby",

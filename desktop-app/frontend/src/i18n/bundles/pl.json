@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Aktualizacje: {{n}}",
   "ui2.rooms.label": "Sterowany głośnik",
   "ui2.rooms.switcherLabel": "Sterujesz: {{name}}, {{state}}. Zmień głośnik",
+  "ui2.rooms.switcherLabelNoState": "Sterujesz: {{name}}. Zmień głośnik",
   "ui2.rooms.listLabel": "Głośniki w tej sieci",
   "ui2.rooms.none": "Nie wybrano głośnika",
   "ui2.pill.standby": "Czuwanie",

@@ -60,6 +60,13 @@ describe('UI 2.0 tokens', () => {
         expect(ratio(col('u-on-action'), col('u-action'))).toBeGreaterThanOrEqual(4.5);
         expect(ratio(col('u-on-danger'), col('u-danger-fill'))).toBeGreaterThanOrEqual(4.5);
       });
+      it('filled buttons (action, danger) keep 3:1 against every surface they sit on', () => {
+        for (const fill of ['u-action', 'u-danger-fill', 'u-danger']) {
+          for (const bg of ['u-bg', 'u-sidebar', 'u-surface']) {
+            expect(ratio(col(fill), col(bg)), `${fill} on ${bg}`).toBeGreaterThanOrEqual(3);
+          }
+        }
+      });
       it('borders, the action colour and the focus ring reach 3:1 against the page', () => {
         for (const fg of ['u-border', 'u-action', 'u-focus']) {
           for (const bg of ['u-bg', 'u-sidebar']) {
@@ -69,6 +76,10 @@ describe('UI 2.0 tokens', () => {
       });
     });
   }
+
+  it('draws the danger button edge in the danger colour', () => {
+    expect(css).toMatch(/html\.ui2 \.u-btn--danger \{[^}]*border-color: var\(--u-danger\)/);
+  });
 
   it('keeps the 8px grid, 40px targets and the system UI font', () => {
     expect(base['u-space']).toBe('8px');

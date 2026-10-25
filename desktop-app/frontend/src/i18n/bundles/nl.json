@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Updates: {{n}}",
   "ui2.rooms.label": "Speaker die je bedient",
   "ui2.rooms.switcherLabel": "Bedient {{name}}, {{state}}. Andere speaker kiezen",
+  "ui2.rooms.switcherLabelNoState": "Bedient {{name}}. Andere speaker kiezen",
   "ui2.rooms.listLabel": "Speakers in dit netwerk",
   "ui2.rooms.none": "Geen speaker gekozen",
   "ui2.pill.standby": "Stand-by",

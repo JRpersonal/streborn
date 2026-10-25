@@ -860,11 +860,18 @@ function renderNavDots() {
 }
 
 function switchView(view) {
+  const prevView = state.view;
   state.view = view;
   document.querySelectorAll('.tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
   syncShellNav(view);
+  // The UI 2.0 player's volume and transport follow the polling scope (hidden
+  // in Setup). Coming back out of Setup into a view other than Music, the
+  // slider reads the speaker once, so its first drag starts from the real
+  // level and not from the one it showed before Setup.
+  syncShellPlayer();
+  if (state.ui2Shell && prevView === 'setup' && view !== 'box' && view !== 'setup' && state.currentBox) loadMusicTabVolume();
   // Opening a tab counts as finding its new exclusive features: clear their dots.
   markViewFeaturesSeen(view);
   renderNavDots();
@@ -1650,6 +1657,15 @@ if (getUi2Preview()) safeMountShell2();
 // safeMountShell2 builds the UI 2.0 preview shell (shell2/mount.js) and hands
 // it what it needs from this file. A failure leaves the current layout as it
 // was: the mount rolls itself back and never throws into the boot.
+// syncLayoutPressed marks the Layout button of the Aa menu that matches the
+// stored preview setting.
+function syncLayoutPressed() {
+  const on = getUi2Preview();
+  document.querySelectorAll('#a11yMenu button[data-ui2]').forEach((b) => {
+    b.setAttribute('aria-pressed', String((b.dataset.ui2 === '1') === on));
+  });
+}
+
 function safeMountShell2() {
   try {
     const ok = mountShell2({
@@ -1661,9 +1677,12 @@ function safeMountShell2() {
       discoverBoxes,
       offlineTitle,
       pairName: (pair) => pairDisplayName(pair, renderBoxSelect),
-      onRoomsOpen: () => { refreshMusicZones(); refreshBoxPlaying(); },
+      onRoomsOpen: refreshEverySpeaker,
     });
     if (!ok) return;
+    // The Aa menu's Layout switch was drawn before a late mount (storage not
+    // yet restored at boot): make it say what is on screen now.
+    syncLayoutPressed();
     updateSettingsTabBadge();
     updateMultiroomTabBadge();
     renderNavDots();
@@ -1882,10 +1901,18 @@ setInterval(async () => {
 // list is open the poll runs there too, and stops again when it closes.
 setInterval(() => {
   if ((state.view !== 'box' && !shellRoomPopOpen()) || document.visibilityState !== 'visible') return;
+  refreshEverySpeaker();
+}, 15000);
+
+// refreshEverySpeaker is one round of the every-speaker poll (zones and who is
+// playing), for the interval above and the room switcher opening. Never while
+// a speaker update or an install runs: nothing should poll a speaker that is
+// about to restart.
+function refreshEverySpeaker() {
   if (state.otaInProgress || installRunActive() || !state.boxes.length) return;
   refreshMusicZones();
   refreshBoxPlaying();
-}, 15000);
+}
 
 // applyBoxList folds a freshly probed box list into state + the UI. Shared by
 // the known-first quick refresh and the full discovery so both render
@@ -2960,24 +2987,20 @@ function renderBoxSelect() {
     // since it carries no host the handler found nothing and returned in
     // silence: the tile simply did not react to a click (live 2026-07-29).
     if (btn.classList.contains('box-add-ip')) return;
-    // Click and keyboard take the same path (pickBox): the tile is a
-    // role=button span, so Enter and Space have to be wired by hand.
-    const pick = (e) => {
+    // A click takes the same path as the UI 2.0 room switcher (pickBox).
+    btn.onclick = (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
       if (e.target.closest('.box-edit') || e.target.closest('.box-update-chip')) return;
       const host = btn.dataset.host;
       const port = parseInt(btn.dataset.port, 10);
       const box = state.boxes.find(b => b.host === host && b.port === port);
-      if (btn.dataset.offline) { pickBox(box || { offline: true }, btn.title); return; }
+      // The tile as it was drawn decides, not the live list: a greyed tile
+      // whose speaker has just come back (list replaced, picker not yet
+      // redrawn) still explains itself and rediscovers, as it always did.
+      if (btn.dataset.offline) { pickBox({ ...(box || {}), offline: true }, btn.title); return; }
       if (!box) return;
       pickBox(box);
-    };
-    btn.onclick = pick;
-    btn.onkeydown = (e) => {
-      if (e.target !== btn || (e.key !== 'Enter' && e.key !== ' ')) return;
-      e.preventDefault();
-      pick(e);
     };
   });
   // Gear click: set settingsBox and switch the tab.
@@ -3709,6 +3732,7 @@ async function runSingleBoxUpdate(targetBox) {
   // during that restart; the banner's "Reboot now" button would
   // interrupt the agent exec and may leave the box half-flashed.
   state.otaInProgress = true;
+  syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
   setStatus(t('update.uploading'));
   // The post-reboot Spotify engine delivery streams its ~16 MB through this
   // same channel. It does NOT restart the speaker (a current agent swaps the
@@ -3916,6 +3940,7 @@ async function runSingleBoxUpdate(targetBox) {
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.
     state.otaInProgress = false;
+    syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
     state.otaTargetHost = null;
     state.otaTargetName = null;
     checkSshBanner();
@@ -4091,6 +4116,7 @@ async function runUpdateAllBoxes(onStart) {
   // buttons then render "update running" and the SSH "remove stick" banner stays
   // suppressed. The sentinel host makes every real box's button show that state.
   state.otaInProgress = true;
+  syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
   state.otaTargetHost = '__batch__';
   state.otaTargetName = t('updateAll.batchLabel');
   checkSshBanner();
@@ -4332,6 +4358,7 @@ async function runUpdateAllBoxes(onStart) {
   offPhase();
   if (mini) mini.classList.add('hidden');
   state.otaInProgress = false;
+  syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
   state.otaTargetHost = null;
   state.otaTargetName = null;
   renderSummary();

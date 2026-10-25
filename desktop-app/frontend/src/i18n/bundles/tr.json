@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Güncellemeler: {{n}}",
   "ui2.rooms.label": "Kontrol ettiğiniz hoparlör",
   "ui2.rooms.switcherLabel": "{{name}} kontrol ediliyor, {{state}}. Hoparlörü değiştir",
+  "ui2.rooms.switcherLabelNoState": "{{name}} kontrol ediliyor. Hoparlörü değiştir",
   "ui2.rooms.listLabel": "Bu ağdaki hoparlörler",
   "ui2.rooms.none": "Hoparlör seçilmedi",
   "ui2.pill.standby": "Bekleme",

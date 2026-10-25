@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Atjauninājumi: {{n}}",
   "ui2.rooms.label": "Vadāmais skaļrunis",
   "ui2.rooms.switcherLabel": "Tiek vadīts {{name}}, {{state}}. Mainīt skaļruni",
+  "ui2.rooms.switcherLabelNoState": "Tiek vadīts {{name}}. Mainīt skaļruni",
   "ui2.rooms.listLabel": "Skaļruņi šajā tīklā",
   "ui2.rooms.none": "Skaļrunis nav izvēlēts",
   "ui2.pill.standby": "Gaidstāve",

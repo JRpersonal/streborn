@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Atnaujinimai: {{n}}",
   "ui2.rooms.label": "Valdomas garsiakalbis",
   "ui2.rooms.switcherLabel": "Valdomas {{name}}, {{state}}. Keisti garsiakalbį",
+  "ui2.rooms.switcherLabelNoState": "Valdomas {{name}}. Keisti garsiakalbį",
   "ui2.rooms.listLabel": "Garsiakalbiai šiame tinkle",
   "ui2.rooms.none": "Garsiakalbis nepasirinktas",
   "ui2.pill.standby": "Budėjimo režimas",

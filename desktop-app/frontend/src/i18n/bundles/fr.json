@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Mises à jour : {{n}}",
   "ui2.rooms.label": "Enceinte contrôlée",
   "ui2.rooms.switcherLabel": "Contrôle {{name}}, {{state}}. Changer d'enceinte",
+  "ui2.rooms.switcherLabelNoState": "Contrôle {{name}}. Changer d'enceinte",
   "ui2.rooms.listLabel": "Enceintes sur ce réseau",
   "ui2.rooms.none": "Aucune enceinte choisie",
   "ui2.pill.standby": "En veille",

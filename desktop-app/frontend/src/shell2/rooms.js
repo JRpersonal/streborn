@@ -14,7 +14,7 @@ import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../utils.js';
 import { pairMemberBoxes } from '../groups.js';
 import { speakerTileState } from '../speakertile.js';
-import { chipHTML, pillLabel, speakerChipKinds, speakerPillKind, statusPillHTML } from './pill.js';
+import { CHIP_LABEL_KEYS, chipHTML, pillLabel, speakerChipKinds, speakerPillKind, statusPillHTML } from './pill.js';
 
 const label = (ctx, b) => (typeof ctx.label === 'function' ? ctx.label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
 
@@ -78,11 +78,15 @@ function rowOf(box, tile, name, ctx, hosts) {
 }
 
 // roomButtonLabel is the switcher button's accessible name: which speaker it
-// controls, in which state, and that pressing it changes the speaker.
+// controls, in which state, and that pressing it changes the speaker. The
+// state is everything the button shows: the pill AND every chip next to it.
+// An idle speaker with neither gets the wording without a state.
 export function roomButtonLabel(item) {
   if (!item) return t('ui2.rooms.none');
-  const state = pillLabel(item.pill) || (item.chips || []).map((c) => t(c === 'update' ? 'speaker.updateChip' : 'speaker.noInternetChip')).join(', ');
-  return t('ui2.rooms.switcherLabel', { name: item.name, state: state || '-' });
+  const state = [pillLabel(item.pill), ...(item.chips || []).map((c) => (CHIP_LABEL_KEYS[c] ? t(CHIP_LABEL_KEYS[c]) : ''))]
+    .filter(Boolean).join(', ');
+  if (!state) return t('ui2.rooms.switcherLabelNoState', { name: item.name });
+  return t('ui2.rooms.switcherLabel', { name: item.name, state });
 }
 
 // roomButtonHTML is what the switcher button shows: the name and the pill.
@@ -98,7 +102,9 @@ export function roomButtonHTML(item) {
 }
 
 // roomSwitcherHTML renders the popover list: one row per speaker (a pair is
-// one row), the current one pressed, and always the way to add a speaker.
+// one row), the current one pressed. The way to add a speaker sits below it in
+// the popover's fixed markup (markup.js), so a repaint of the list while the
+// popover is open never replaces the button that has keyboard focus.
 export function roomSwitcherHTML({ items, searching } = {}) {
   const rows = (items || []).map((it) => {
     const pill = statusPillHTML(it.pill);
@@ -112,6 +118,5 @@ export function roomSwitcherHTML({ items, searching } = {}) {
       + '</button>';
   }).join('');
   const empty = rows ? '' : `<p class="ui2-room-empty">${escapeHtml(t(searching ? 'speaker.searching' : 'ui2.rooms.none'))}</p>`;
-  return `<div class="ui2-room-list-rows">${rows}${empty}</div>`
-    + `<button type="button" class="u-btn u-btn--secondary ui2-room-add" id="ui2RoomAdd">${escapeHtml(t('nav.setupStick'))}</button>`;
+  return `<div class="ui2-room-list-rows">${rows}${empty}</div>`;
 }

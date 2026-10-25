@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Actualizaciones: {{n}}",
   "ui2.rooms.label": "Altavoz que controlas",
   "ui2.rooms.switcherLabel": "Controlas {{name}}, {{state}}. Cambiar de altavoz",
+  "ui2.rooms.switcherLabelNoState": "Controlas {{name}}. Cambiar de altavoz",
   "ui2.rooms.listLabel": "Altavoces en esta red",
   "ui2.rooms.none": "Ningún altavoz elegido",
   "ui2.pill.standby": "En espera",

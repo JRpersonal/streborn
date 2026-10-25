@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "更新：{{n}}",
   "ui2.rooms.label": "正在控制的喇叭",
   "ui2.rooms.switcherLabel": "正在控制 {{name}}，{{state}}。切換喇叭",
+  "ui2.rooms.switcherLabelNoState": "正在控制 {{name}}。切換喇叭",
   "ui2.rooms.listLabel": "此網路上的喇叭",
   "ui2.rooms.none": "尚未選擇喇叭",
   "ui2.pill.standby": "待機",

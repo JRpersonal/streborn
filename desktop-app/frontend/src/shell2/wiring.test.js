@@ -51,23 +51,47 @@ describe('UI 2.0 hooks in the app', () => {
     expect(vis).toContain('renderShellRooms()');
   });
 
-  it('chooses a speaker through pickBox from the picker (click and keys) and the room switcher', () => {
+  it('chooses a speaker through pickBox from the picker and the room switcher', () => {
     const pick = srcOf('pickBox');
     expect(pick).toContain("state.setupTarget = { kind: 'stock', box }; switchView('setup');");
     const sel = srcOf('renderBoxSelect');
-    expect(sel).toContain('btn.onclick = pick;');
-    expect(sel).toMatch(/btn\.onkeydown = \(e\) => \{[\s\S]*?pick\(e\);/);
     expect(sel.match(/pickBox\(/g).length).toBeGreaterThanOrEqual(2);
     expect(main).toMatch(/mountShell2\(\{[\s\S]*?pickBox,/);
     expect(mount).toContain('deps.pickBox(box)');
+  });
+
+  it('leaves the current picker as it was: click only, the drawn tile decides offline', () => {
+    const sel = srcOf('renderBoxSelect');
+    // No new keyboard wiring on the speaker tiles with the preview off.
+    expect(sel).not.toMatch(/btn\.onkeydown/);
+    // A tile drawn offline stays offline for its click, whatever the live list
+    // says by now: toast and rediscovery, as before.
+    expect(sel).toContain('if (btn.dataset.offline) { pickBox({ ...(box || {}), offline: true }, btn.title); return; }');
+  });
+
+  it('marks the Layout switch after a late mount', () => {
+    expect(srcOf('safeMountShell2')).toContain('syncLayoutPressed();');
+    expect(srcOf('syncLayoutPressed')).toContain('#a11yMenu button[data-ui2]');
   });
 
   it('polls the player off the Music tab only as the scope allows', () => {
     expect(srcOf('nextStatusDelayMs')).toContain('playerOnScreen(');
     expect(srcOf('syncMusicTabVolumeFromBox')).toContain('playerOnScreen(');
     expect(srcOf('refreshStatus')).toContain('persistentPlayer: !!state.ui2Shell');
-    const interval = srcContaining('refreshMusicZones();\n  refreshBoxPlaying();\n}, 15000)');
+    const interval = srcContaining('refreshEverySpeaker();\n}, 15000)');
     expect(interval).toContain("(state.view !== 'box' && !shellRoomPopOpen())");
+  });
+
+  it('runs the every-speaker poll from the room switcher only under the interval guards', () => {
+    expect(srcOf('refreshEverySpeaker')).toContain('if (state.otaInProgress || installRunActive() || !state.boxes.length) return;');
+    expect(main).toContain('onRoomsOpen: refreshEverySpeaker,');
+  });
+
+  it('hides the player volume and transport where nothing keeps them in sync', () => {
+    const sync = srcOf('syncShellPlayer');
+    expect(sync).toContain('playerOnScreen(');
+    expect(sync).toContain("'.ui2-player-transport, .ui2-player-more, .ui2-player-volume', live");
+    expect(srcOf('switchView')).toContain('syncShellPlayer();');
   });
 
   it('switches the preview from the Aa menu with a reload', () => {

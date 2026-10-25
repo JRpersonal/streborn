@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "アップデート: {{n}}",
   "ui2.rooms.label": "操作中のスピーカー",
   "ui2.rooms.switcherLabel": "{{name}} を操作中、{{state}}。スピーカーを切り替え",
+  "ui2.rooms.switcherLabelNoState": "{{name}} を操作中。スピーカーを切り替え",
   "ui2.rooms.listLabel": "このネットワーク上のスピーカー",
   "ui2.rooms.none": "スピーカーが選択されていません",
   "ui2.pill.standby": "スタンバイ",

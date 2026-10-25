@@ -38,10 +38,10 @@ export function shellMarkup() {
 <button type="button" class="u-skip" id="ui2Skip">${escapeHtml(t('ui2.skip'))}</button>
 <div class="ui2-shell" id="ui2Shell">
   <div class="ui2-banners" id="ui2Banners"></div>
-  <nav class="ui2-sidebar" id="ui2Sidebar" aria-label="${escapeAttr(t('ui2.nav.label'))}">
+  <div class="ui2-sidebar" id="ui2Sidebar">
     <div class="ui2-side-top">
       <div class="ui2-brand"></div>
-      <div class="ui2-rooms u-pop-anchor" id="ui2Rooms">
+      <div class="ui2-rooms u-pop-anchor" id="ui2Rooms" role="group" aria-labelledby="ui2RoomsLabel">
         <div class="ui2-rooms-label" id="ui2RoomsLabel">${escapeHtml(t('ui2.rooms.label'))}</div>
         <button type="button" class="ui2-room-btn" id="ui2RoomBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="ui2RoomPop" aria-label="${escapeAttr(t('ui2.rooms.none'))}">
           <span class="ui2-room-btn-body" id="ui2RoomBtnBody"></span>
@@ -50,15 +50,18 @@ export function shellMarkup() {
         <div class="u-popover ui2-room-pop" id="ui2RoomPop" role="dialog" aria-labelledby="ui2RoomPopTitle" hidden>
           ${popHead('ui2RoomPopTitle', 'ui2.rooms.listLabel')}
           <div class="ui2-room-list" id="ui2RoomList"></div>
+          <button type="button" class="u-btn u-btn--secondary ui2-room-add" id="ui2RoomAdd">${escapeHtml(t('nav.setupStick'))}</button>
         </div>
       </div>
     </div>
-    <div class="ui2-side-scroll">${groups}</div>
+    <nav class="ui2-side-nav" aria-label="${escapeAttr(t('ui2.nav.label'))}">
+      <div class="ui2-side-scroll">${groups}</div>
+      <div class="ui2-side-small">${NAV.bottom.map(navItemHTML).join('')}</div>
+    </nav>
     <div class="ui2-side-bottom">
-      ${NAV.bottom.map(navItemHTML).join('')}
       <div class="ui2-app-settings" id="ui2AppSettings" role="group" aria-label="${escapeAttr(t('ui2.nav.appSettings'))}"></div>
     </div>
-  </nav>
+  </div>
   <main class="ui2-main" id="ui2Main" tabindex="-1">
     <div class="ui2-main-inner" id="ui2MainInner"></div>
   </main>

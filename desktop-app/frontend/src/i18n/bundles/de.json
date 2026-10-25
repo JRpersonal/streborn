@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "Updates: {{n}}",
   "ui2.rooms.label": "Gesteuerter Lautsprecher",
   "ui2.rooms.switcherLabel": "Steuert {{name}}, {{state}}. Lautsprecher wechseln",
+  "ui2.rooms.switcherLabelNoState": "Steuert {{name}}. Lautsprecher wechseln",
   "ui2.rooms.listLabel": "Lautsprecher in diesem Netzwerk",
   "ui2.rooms.none": "Kein Lautsprecher gewählt",
   "ui2.pill.standby": "Standby",

@@ -1589,6 +1589,7 @@
   "ui2.nav.updatesCount": "التحديثات: {{n}}",
   "ui2.rooms.label": "السمّاعة التي تتحكم بها",
   "ui2.rooms.switcherLabel": "تتحكم في {{name}}، {{state}}. تغيير السمّاعة",
+  "ui2.rooms.switcherLabelNoState": "تتحكم في {{name}}. تغيير السمّاعة",
   "ui2.rooms.listLabel": "السمّاعات على هذه الشبكة",
   "ui2.rooms.none": "لم يتم اختيار سمّاعة",
   "ui2.pill.standby": "وضع الاستعداد",

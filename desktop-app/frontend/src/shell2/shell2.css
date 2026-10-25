@@ -23,7 +23,7 @@ html.ui2 {
   --u-ok: #5CC98A;
   --u-warn: #E8B84A;
   --u-danger: #FF7A6E;
-  --u-danger-fill: #B3261E;
+  --u-danger-fill: #CC3328;
   --u-on-danger: #FFFFFF;
   --u-focus: #66BBDD;
   --u-space: 8px;
@@ -93,7 +93,9 @@ html.ui2 .u-btn {
 }
 html.ui2 .u-btn--primary { background: var(--u-action); color: var(--u-on-action); }
 html.ui2 .u-btn--secondary { background: var(--u-surface); color: var(--u-text); border-color: var(--u-border); }
-html.ui2 .u-btn--danger { background: var(--u-danger-fill); color: var(--u-on-danger); }
+/* A filled button's shape reaches 3:1 against the surface it sits on; the
+   danger button also draws its edge in the danger text colour (4.5:1 there). */
+html.ui2 .u-btn--danger { background: var(--u-danger-fill); color: var(--u-on-danger); border-color: var(--u-danger); }
 html.ui2 .u-btn--icon {
   width: var(--u-target);
   min-width: var(--u-target);
@@ -357,20 +359,31 @@ html.ui2 .ui2-side-top {
   padding: 16px 8px 8px;
 }
 
-/* Only the navigation list scrolls; the switcher and the bottom area stay
-   outside it, so their popovers are never clipped by the scroll box. */
+/* The navigation landmark holds only the entries: the room switcher above it
+   and the app settings below it are not navigation. Only the list of entries
+   scrolls; the switcher and the bottom area stay outside it, so their popovers
+   are never clipped by the scroll box. */
+html.ui2 .ui2-side-nav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
 html.ui2 .ui2-side-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 8px;
 }
+html.ui2 .ui2-side-small {
+  padding: 8px 8px 0;
+  border-top: 1px solid var(--u-border);
+}
 html.ui2 .ui2-side-bottom {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 8px;
-  border-top: 1px solid var(--u-border);
 }
 
 html.ui2 .ui2-brand {
@@ -504,12 +517,16 @@ html.ui2 .ui2-nav-item.is-active::before {
   border-radius: 2px;
   background: var(--u-accent);
 }
+/* Labels wrap rather than truncate: a long entry in some languages
+   ("Lautsprecher-Einstellungen" with a badge) keeps its whole name, and the
+   item grows from its 40px minimum. */
 html.ui2 .ui2-nav-text {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  padding-block: 8px;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 html.ui2 .ui2-nav-item--small { color: var(--u-muted); font-size: 13px; }
 html.ui2 .ui2-nav-item .nav-newdot { flex: 0 0 auto; margin: 0; }
@@ -585,7 +602,13 @@ html.ui2 .ui2-player .status-bar .now {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-html.ui2 .ui2-player .title-swap-row { margin: 0; font-size: 12px; }
+/* The label is the target of the title-swap checkbox: 40px tall, like every
+   other control in the player. */
+html.ui2 .ui2-player .title-swap-row {
+  min-height: var(--u-target);
+  margin: 0;
+  font-size: 12px;
+}
 html.ui2 .ui2-player .controls {
   flex-wrap: nowrap;
   margin-bottom: 0;
@@ -603,6 +626,15 @@ html.ui2 .ui2-player .volume-control {
   margin: 0;
 }
 html.ui2 .ui2-player .volume-control input[type=range] { width: 100%; min-width: 0; }
+/* The mute glyph keeps its look; only its hit area grows to the 40px target. */
+html.ui2 .ui2-player .volume-control button.vol-mute {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--u-target);
+  min-height: var(--u-target);
+}
 html.ui2 .ui2-output-btn {
   flex-direction: column;
   align-items: flex-start;

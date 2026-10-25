@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { roomButtonLabel, roomItems, roomSwitcherHTML } from './rooms.js';
 import en from '../i18n/bundles/en.json';
 import { setLocale } from '../i18n/index.js';
+import { shellMarkup } from './markup.js';
 
 // The assertions compare with the English bundle, whatever the machine's language.
 setLocale('en');
@@ -40,13 +41,20 @@ describe('room switcher', () => {
     expect(out).toContain('&lt;img');
   });
 
-  it('explains an empty list and still offers to add a speaker', () => {
+  it('explains an empty list, and offers to add a speaker outside the repainted list', () => {
     const searching = roomSwitcherHTML({ items: [], searching: true });
     expect(searching).toContain(en['speaker.searching']);
-    expect(searching).toContain('id="ui2RoomAdd"');
     const none = roomSwitcherHTML({ items: [] });
     expect(none).toContain(en['ui2.rooms.none']);
-    expect(none).toContain(en['nav.setupStick']);
+    // The Add button is fixed markup below #ui2RoomList, so a live repaint of
+    // the list never replaces it while it has keyboard focus.
+    expect(none).not.toContain('ui2RoomAdd');
+    const shell = shellMarkup();
+    const list = shell.indexOf('id="ui2RoomList"');
+    const add = shell.indexOf('id="ui2RoomAdd"');
+    expect(list).toBeGreaterThan(0);
+    expect(add).toBeGreaterThan(list);
+    expect(shell.slice(add)).toContain(en['nav.setupStick']);
   });
 
   it('collapses a live stereo pair into one row led by its master', () => {
@@ -66,5 +74,27 @@ describe('room switcher', () => {
     const [item] = roomItems([A], { currentBox: A, nowPlayState: 'PLAY_STATE' });
     expect(roomButtonLabel(item)).toBe(`Controlling Kitchen, ${en['speaker.playingNow']}. Change speaker`);
     expect(roomButtonLabel(null)).toBe(en['ui2.rooms.none']);
+  });
+
+  it('names every chip the button shows, not only the pill', () => {
+    const [item] = roomItems([A], {
+      currentBox: A,
+      nowPlayState: 'PLAY_STATE',
+      needsUpdate: () => true,
+      cannotReachInternet: () => true,
+    });
+    expect(item.chips).toEqual(['update', 'noInternet']);
+    expect(roomButtonLabel(item)).toBe(
+      `Controlling Kitchen, ${en['speaker.playingNow']}, ${en['speaker.updateChip']}, ${en['speaker.noInternetChip']}. Change speaker`,
+    );
+  });
+
+  it('reads an idle speaker without a state slot (no stray dash)', () => {
+    const [item] = roomItems([A], { currentBox: A });
+    expect(item.pill).toBe('');
+    expect(item.chips).toEqual([]);
+    const name = roomButtonLabel(item);
+    expect(name).toBe('Controlling Kitchen. Change speaker');
+    expect(name).not.toContain('-');
   });
 });

@@ -3,8 +3,9 @@
 //
 // Keyboard first: Enter or Space on the trigger opens it and puts focus on the
 // current row (or the first control); Escape closes it and gives focus back to
-// the trigger; a click anywhere outside closes it. Arrow keys move between
-// rows only where the popover is a LIST (the room switcher). In More and
+// the trigger; a click anywhere outside, or focus moving outside, closes it.
+// Arrow keys move between rows only where the popover is a LIST (the room
+// switcher). In More and
 // Output the arrows belong to the controls inside, a volume slider above all,
 // and a text field or a select never loses its own arrow keys anywhere.
 //
@@ -79,6 +80,21 @@ export function wirePopover(trigger, panel, opts = {}) {
   trigger.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isOpen()) { e.preventDefault(); close(true); }
   });
+
+  // Focus leaving closes it too, so a keyboard user who tabs past the last
+  // control never lands on something the still-open panel covers (WCAG 2.4.11,
+  // Focus Not Obscured). Only a move to a known element outside both counts: no
+  // relatedTarget means the window lost focus or the focused node was replaced
+  // by a repaint of the list, and neither is the user leaving.
+  const onFocusOut = (e) => {
+    if (!isOpen()) return;
+    const to = e.relatedTarget;
+    if (!to) return;
+    if (panel.contains(to) || trigger.contains(to)) return;
+    close(false);
+  };
+  panel.addEventListener('focusout', onFocusOut);
+  trigger.addEventListener('focusout', onFocusOut);
 
   // A click outside closes it. A click whose target is no longer in the page
   // does not count as outside: a control inside the popover that re-renders

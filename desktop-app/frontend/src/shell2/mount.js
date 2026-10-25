@@ -27,6 +27,7 @@ import { groupMembersOf, masterBoxForKey, masterOf as zoneMasterOf, stereoPairsO
 import { shellMarkup } from './markup.js';
 import { wirePopover } from './popover.js';
 import { roomButtonHTML, roomButtonLabel, roomItems, roomSwitcherHTML } from './rooms.js';
+import { playerOnScreen } from '../statusrefreshscope.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -206,14 +207,18 @@ function wire(frame, skip) {
   pops.more = wirePopover(frame.querySelector('#ui2MoreBtn'), frame.querySelector('#ui2MorePop'), { roving: false });
   pops.output = wirePopover(frame.querySelector('#ui2OutputBtn'), frame.querySelector('#ui2OutputPop'), { roving: false });
 
+  // The way to add a speaker sits outside the repainted list (markup.js), so
+  // it keeps focus across a live repaint and has its own handler.
+  const add = frame.querySelector('#ui2RoomAdd');
+  if (add) {
+    add.addEventListener('click', () => {
+      if (pops.rooms) pops.rooms.close(true);
+      if (typeof deps.switchView === 'function') deps.switchView('setup');
+    });
+  }
   const list = frame.querySelector('#ui2RoomList');
   if (list) {
     list.addEventListener('click', (e) => {
-      if (e.target.closest('#ui2RoomAdd')) {
-        if (pops.rooms) pops.rooms.close(true);
-        if (typeof deps.switchView === 'function') deps.switchView('setup');
-        return;
-      }
       const row = e.target.closest('.ui2-room-row');
       if (!row) return;
       const host = row.dataset.host;
@@ -243,20 +248,27 @@ export function syncShellNav(view) {
 // one its controls are hidden AND inert, so neither a click nor the keyboard
 // can reach a transport that has nothing to act on, and the player says what
 // to do instead.
-export function syncShellPlayer(hasBox) {
+//
+// The volume, the transport and More (the queue) also follow the polling
+// scope (statusrefreshscope.js): in Setup and while a speaker update runs
+// nothing keeps them in sync, so they are not on screen there either, and a
+// slider never shows a level the speaker left long ago. What is playing and
+// the Output stay, they are kept current there too.
+export function syncShellPlayer(hasBox = !!state.currentBox) {
   if (!state.ui2Shell) return;
   const player = byId('ui2Player');
   if (!player) return;
-  player.querySelectorAll('.ui2-player-now, .ui2-player-transport, .ui2-player-more, .ui2-player-output, .ui2-player-volume').forEach((el) => {
-    el.hidden = !hasBox;
-    el.inert = !hasBox;
+  const live = !!hasBox && playerOnScreen({ view: state.view, persistentPlayer: true, otaInProgress: !!state.otaInProgress });
+  const show = (sel, on) => player.querySelectorAll(sel).forEach((el) => {
+    el.hidden = !on;
+    el.inert = !on;
   });
+  show('.ui2-player-now, .ui2-player-output', !!hasBox);
+  show('.ui2-player-transport, .ui2-player-more, .ui2-player-volume', live);
   const empty = player.querySelector('.ui2-player-empty');
   if (empty) empty.hidden = !!hasBox;
-  if (!hasBox) {
-    if (pops.more) pops.more.close(false);
-    if (pops.output) pops.output.close(false);
-  }
+  if (!live && pops.more) pops.more.close(false);
+  if (!hasBox && pops.output) pops.output.close(false);
 }
 
 // outputState names who plays along with the controlled speaker: alone, or

@@ -71,7 +71,7 @@ releases later.
   playback popover. Taking a speaker in or out of the current playback stays
   in the player.
 - **Action color with enough contrast.** White on the concept's `#0A84FF`
-  reaches 3.6:1. Primary actions use `#1F6FB2` (5.4:1); STR blue `#6BD` stays
+  reaches 3.6:1. Primary actions use `#1F6FB2` (5.3:1); STR blue `#6BD` stays
   the accent.
 - **Platform-neutral shortcuts.** Most users are on Windows: Ctrl, not Cmd.
 
