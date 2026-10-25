@@ -505,8 +505,11 @@ jobs:
       # (results-<PORT>, report-<PORT>); open a trace with
       # `npx playwright show-trace`. The directory is dot-named, and
       # upload-artifact skips hidden paths unless include-hidden-files is set.
+      # Uploaded on success too: with retries a flaky test leaves the job
+      # green, and its first-attempt trace (results-*/...-retry1 next to it)
+      # is the evidence the flake policy in e2e/README.md needs.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+        if: ${{ !cancelled() }}
         with:
           name: frontend-e2e-report-${{ matrix.shard }}
           path: |
