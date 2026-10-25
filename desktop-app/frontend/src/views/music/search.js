@@ -55,6 +55,7 @@ import { renderPresets } from './presettiles.js';
 import { refreshStatus } from './status.js';
 import { loadLanguagesForCountry, renderGenreChips } from './taxonomy.js';
 import { renderUi2Stations, syncUi2RadioTabs } from './ui2radio.js';
+import { discoverFiltersApply } from './ui2stations.js';
 
 // updateFilterIndicators setzt die has-filter CSS Klasse auf jene Filter
 // Dropdowns die einen anderen Wert als "alle" haben. Damit erkennt der
@@ -563,14 +564,15 @@ export function renderSearchResults() {
   // on play.
   const totalRaw = (state.searchResults || []).length;
   let list = state.searchResults || [];
-  if (state.searchOnlyBose) {
+  const filtersApply = discoverFiltersApply(!!state.ui2Shell, state.searchLastMode);
+  if (filtersApply && state.searchOnlyBose) {
     list = list.filter(isBoseCompatible);
   }
   // Minimum-bitrate filter. Stations with no reported bitrate (very
   // common on radio-browser) are kept, not hidden, so a quality filter
   // does not wipe out most results; only stations with a known bitrate
   // below the threshold are dropped.
-  const minBr = state.searchMinBitrate || 0;
+  const minBr = filtersApply ? (state.searchMinBitrate || 0) : 0;
   if (minBr) {
     list = list.filter(s => !s.bitrate || s.bitrate >= minBr);
   }
@@ -583,7 +585,7 @@ export function renderSearchResults() {
       cnt.classList.add('hidden');
     } else {
       const moreHint = totalRaw >= PAGE_SIZE ? ' ' + t('search.moreHint') : '';
-      const filterHint = state.searchOnlyBose && list.length < totalRaw
+      const filterHint = filtersApply && state.searchOnlyBose && list.length < totalRaw
         ? ' ' + t('search.filterHiddenCount', { n: totalRaw - list.length })
         : '';
       cnt.innerHTML = t('search.shownCount', { n: `<b>${list.length}</b>` }) + filterHint + moreHint;

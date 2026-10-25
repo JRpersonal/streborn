@@ -208,6 +208,9 @@ html.ui2 #pickModal .pick-slot:focus-visible {
   outline-offset: 2px !important;
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
 }
+/* A key on its way to the speaker keeps the focus (aria-disabled, not
+   disabled) and looks taken. */
+html.ui2 #pickModal .pick-slot[aria-disabled="true"] { opacity: .6; cursor: progress; }
 /* A key tile clips what sticks out of it: a focused tile body rings the whole
    tile (above), and rename and clear draw their ring inward. */
 html.ui2 #view-box .preset-body[role="button"]:focus-visible { outline: none !important; }

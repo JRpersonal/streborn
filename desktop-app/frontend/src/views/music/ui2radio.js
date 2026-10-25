@@ -26,7 +26,7 @@ import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { isFav, loadFavorites, loadFavStore, toggleFav } from './favorites.js';
 import { putStationOnKey, showSlotPicker } from './picker.js';
 import { doRefilter, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
-import { keyHoldsStation, rowStatusHTML, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
+import { keyHoldsStation, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
 import './ui2radio.css';
 
 let built = false;
@@ -163,6 +163,35 @@ export function syncUi2Keys() {
   }
 }
 
+// keyFocusMark notes which control of the key tiles has the keyboard before
+// renderPresets rebuilds them (the grid starts with innerHTML = ''): the slot
+// and whether it was the tile body, its rename or its clear icon.
+export function keyFocusMark() {
+  if (!on() || typeof document === 'undefined') return null;
+  const grid = $('presets');
+  const a = document.activeElement;
+  if (!grid || !a || !grid.contains(a)) return null;
+  const tile = a.closest('.preset');
+  if (!tile) return null;
+  const part = a.classList.contains('ren') ? 'ren' : a.classList.contains('del') ? 'del' : 'body';
+  return { slot: tile.dataset.slot, part };
+}
+
+// restoreKeyFocus puts the keyboard back on the same control of the rebuilt
+// tile, after syncUi2Keys made it focusable. A tile that lost the control (a
+// key cleared meanwhile) takes the focus itself.
+export function restoreKeyFocus(mark) {
+  if (!mark || !on()) return;
+  const grid = $('presets');
+  if (!grid) return;
+  const tile = [...grid.querySelectorAll('.preset')].find((el) => el.dataset.slot === mark.slot);
+  if (!tile) return;
+  const sel = mark.part === 'ren' ? '.ren' : mark.part === 'del' ? '.del' : '.preset-body[role="button"]';
+  let el = tile.querySelector(sel) || tile.querySelector('.preset-body[role="button"]');
+  if (!el) { tile.tabIndex = -1; el = tile; }
+  try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+}
+
 // syncUi2RadioTabs marks the tab that matches what the search box shows
 // (tabFor) and lets the panel hide what only Discover has (the search field,
 // the filters, the genres). Called from renderSearchResults.
@@ -239,7 +268,11 @@ function setStatus(key, st) {
   else status.delete(key);
   const li = [...document.querySelectorAll('#searchResults .ui2-st')].find((el) => el.dataset.key === key);
   const line = li && li.querySelector('.ui2-st-status');
-  if (line) line.outerHTML = rowStatusHTML(st);
+  if (!line) return;
+  // The same element, only its class and text: a live region that is
+  // replaced arrives already holding its words, and is not read out.
+  line.className = `ui2-st-status${st && st.kind ? ` is-${st.kind}` : ''}`;
+  line.textContent = (st && st.text) || '';
 }
 
 // wireRows handles the row buttons, delegated, so a repaint never loses one.
@@ -378,5 +411,9 @@ function lockPicker(lock) {
   const grid = $('pickGrid');
   if (!grid) return;
   grid.setAttribute('aria-busy', lock ? 'true' : 'false');
-  grid.querySelectorAll('.pick-slot').forEach((b) => { b.disabled = lock; });
+  // aria-disabled, not disabled: a disabled key would drop the focus to the
+  // page. The picker ignores a press on a key marked so.
+  grid.querySelectorAll('.pick-slot').forEach((b) => {
+    if (lock) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
+  });
 }

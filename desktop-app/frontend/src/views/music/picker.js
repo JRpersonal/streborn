@@ -18,7 +18,16 @@ import { preferMp3SiblingForBox } from './search.js';
 // caller that can assign onto ANOTHER speaker (a Recently-played card from a
 // different box) has to pass it, so a move offered after a refusal happens on
 // the speaker the station is actually on.
+//
+// In the UI 2.0 preview the picker is a real dialog for the keyboard: named by
+// its title, focus moves to the first key, Tab stays inside, Escape closes it,
+// and closing puts focus back on the control that opened it (or, when a repaint
+// replaced that control, on the same control of the same row or card). A key
+// that is pressed while another is saving does nothing (ui2radio.js lockPicker
+// marks the keys aria-disabled, which keeps the focus on the pressed one).
 export function showSlotPicker({ title, subtitle, onPick, box }) {
+  const ui2 = !!state.ui2Shell;
+  if (ui2) opener = openerMark(document.activeElement);
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
   const grid = $('pickGrid');
@@ -29,6 +38,7 @@ export function showSlotPicker({ title, subtitle, onPick, box }) {
     b.className = 'pick-slot' + (p ? ' has' : '');
     b.innerHTML = '<div class="ps-num">' + escapeHtml(t('preset.key', { n: i })) + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
     b.onclick = async () => {
+      if (b.getAttribute('aria-disabled') === 'true') return;
       try {
         await onPick(i);
         closePick();
@@ -49,7 +59,70 @@ export function showSlotPicker({ title, subtitle, onPick, box }) {
     };
     grid.appendChild(b);
   }
-  $('pickModal').classList.remove('hidden');
+  const modal = $('pickModal');
+  modal.classList.remove('hidden');
+  if (ui2) {
+    dialogSemantics(modal);
+    const first = grid.querySelector('.pick-slot');
+    if (first) first.focus();
+  }
+}
+
+// opener is the control the open picker returns focus to (preview only).
+let opener = null;
+
+// openerMark remembers the control that opened the picker, and how to find it
+// again if a repaint replaces it meanwhile: the row or card it sits in (a
+// Radio row's data-key, a Recently played card's data-ck) and the control's
+// own data-act or first class of its own.
+export function openerMark(el) {
+  if (!el || typeof el.closest !== 'function') return null;
+  const host = el.closest('[data-ck], [data-key]');
+  if (!host) return { el, host: null };
+  const attr = host.hasAttribute('data-ck') ? 'ck' : 'key';
+  const cls = [...el.classList].find((c) => !c.startsWith('u-') && !c.startsWith('is-')) || '';
+  return { el, host: { attr, val: host.dataset[attr], act: el.dataset.act || '', cls } };
+}
+
+// openerTarget finds the control openerMark noted: itself while it is still
+// on the page, else the same control in the row or card that now stands for it.
+export function openerTarget(mark, doc = typeof document !== 'undefined' ? document : null) {
+  if (!mark) return null;
+  if (mark.el && mark.el.isConnected) return mark.el;
+  const h = mark.host;
+  if (!doc || !h || (!h.act && !h.cls)) return null;
+  const hosts = [...doc.querySelectorAll(`[data-${h.attr}]`)].filter((n) => n.dataset[h.attr] === h.val);
+  for (const n of hosts) {
+    const hit = h.act ? n.querySelector(`[data-act="${h.act}"]`) : n.querySelector(`.${h.cls}`);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// dialogSemantics makes #pickModal a named modal dialog for the preview and
+// keeps the keyboard inside it. Set on the first open; the current layout
+// never gets here.
+function dialogSemantics(modal) {
+  const content = modal.querySelector('.modal-content');
+  if (content && !content.hasAttribute('role')) {
+    content.setAttribute('role', 'dialog');
+    content.setAttribute('aria-modal', 'true');
+    content.setAttribute('aria-labelledby', 'pickTitle');
+    content.setAttribute('aria-describedby', 'pickSub');
+  }
+  if (modal.dataset.ui2Keys) return;
+  modal.dataset.ui2Keys = '1';
+  modal.addEventListener('keydown', (e) => {
+    if (!state.ui2Shell || modal.classList.contains('hidden')) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePick(); return; }
+    if (e.key !== 'Tab') return;
+    const focusables = [...modal.querySelectorAll('button')].filter((el) => !el.disabled && el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const at = focusables.indexOf(document.activeElement);
+    if (e.shiftKey && (at <= 0)) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (at < 0 || at === focusables.length - 1)) { e.preventDefault(); first.focus(); }
+  });
 }
 
 export function openPick(station) {
@@ -75,7 +148,18 @@ export async function putStationOnKey(box, i, station) {
     RadioVote(station.stationuuid).catch(() => {});
   }
 }
-function closePick() { $('pickModal').classList.add('hidden'); }
+function closePick() {
+  const modal = $('pickModal');
+  const wasOpen = !modal.classList.contains('hidden');
+  modal.classList.add('hidden');
+  const back = opener;
+  opener = null;
+  if (!wasOpen || !back || !state.ui2Shell) return;
+  const el = openerTarget(back);
+  if (el && typeof el.focus === 'function') {
+    try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+  }
+}
 
 // mountPicker attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).

@@ -127,6 +127,15 @@ export function tabFor(mode) {
   return mode === 'favorites' ? 'favorites' : 'discover';
 }
 
+// discoverFiltersApply reports whether the Discover filters (only
+// Bose-compatible streams, a minimum bitrate) narrow the list. The preview's
+// Favorites tab hides those controls, so there they must not hide a starred
+// station either: a filter the user cannot see is one they cannot undo. The
+// current layout keeps the filters visible above favourites and applies them.
+export function discoverFiltersApply(ui2, mode) {
+  return !(ui2 && tabFor(mode) === 'favorites');
+}
+
 // keyHoldsStation reports whether a preset list read back from the speaker
 // shows the station on the slot: "done" only when the speaker says so.
 export function keyHoldsStation(presets, slot, station, url) {

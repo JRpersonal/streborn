@@ -14,6 +14,7 @@ import {
   stationKey,
   stationRowHTML,
   tabFor,
+  discoverFiltersApply,
 } from './ui2stations.js';
 
 setLocale('en');
@@ -122,6 +123,14 @@ describe('helpers', () => {
   it('maps the search mode to a tab', () => {
     expect(tabFor('favorites')).toBe('favorites');
     for (const m of ['top', 'search', 'pandora', '', undefined]) expect(tabFor(m)).toBe('discover');
+  });
+
+  it('keeps the hidden Discover filters off the preview Favorites tab only', () => {
+    expect(discoverFiltersApply(true, 'favorites')).toBe(false);
+    expect(discoverFiltersApply(true, 'search')).toBe(true);
+    expect(discoverFiltersApply(true, 'top')).toBe(true);
+    // The current layout shows the filters above favourites and applies them.
+    expect(discoverFiltersApply(false, 'favorites')).toBe(true);
   });
 
   it('calls a key done only when the speaker read back holds the station there', () => {

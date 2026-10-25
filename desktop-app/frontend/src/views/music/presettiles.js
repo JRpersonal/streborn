@@ -40,10 +40,12 @@ import {
   wirePresetTransferRow,
 } from './presets.js';
 import { saveCurrentToSlot } from './save.js';
-import { syncUi2Keys } from './ui2radio.js';
+import { keyFocusMark, restoreKeyFocus, syncUi2Keys } from './ui2radio.js';
 
 export function renderPresets() {
   const grid = $('presets');
+  // The preview keeps the keyboard on the key it was on across the rebuild.
+  const keyFocus = keyFocusMark();
   grid.innerHTML = '';
   // The transfer row lives right under the grid and follows the selection.
   wirePresetTransferRow();
@@ -377,6 +379,7 @@ export function renderPresets() {
   // template above). The saved name wraps and the badge lines clip, so a
   // rebuilt grid needs no measuring frame.
   syncUi2Keys();
+  restoreKeyFocus(keyFocus);
 }
 
 // PRESET_NAME_MAX mirrors maxPresetNameRunes in the agent, so the field stops

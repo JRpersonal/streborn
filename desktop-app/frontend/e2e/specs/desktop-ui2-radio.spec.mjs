@@ -69,8 +69,15 @@ test.describe('UI 2.0 Radio', () => {
       await expect(key4).toHaveAttribute('role', 'button');
       await key4.focus();
       await expect(key4).toBeFocused();
+      await key4.evaluate((el) => { el.dataset.probe = 'pressed'; });
       await page.keyboard.press('Enter');
       await mock.expectCalled('PlaySlot', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 4, times: 1 });
+      // The play rebuilds the grid (a new tile, not the one pressed); the
+      // keyboard stays on key 4.
+      await expect.poll(() => page.evaluate(() => {
+        const a = document.activeElement;
+        return a && a.matches('.preset-body') ? `${a.closest('.preset').dataset.slot}:${a.dataset.probe || 'rebuilt'}` : (a && a.tagName);
+      })).toBe('4:rebuilt');
     });
   });
 
@@ -133,12 +140,17 @@ test.describe('UI 2.0 Radio', () => {
       await settle(page, 9_000);
       await mock.resetCalls();
       const r = row(page, JAZZ.name);
+      // The live region stays the same element: a replaced one arrives
+      // holding its words and is not read out.
+      await r.locator('.ui2-st-status').evaluate((el) => { el.dataset.probe = 'live'; });
       await r.locator('[data-act="play"]').click();
       await expect(r.locator('.ui2-st-status')).toHaveText(`Starting on ${LR.friendlyName}...`);
       await mock.expectCalled('PlayURL', { pred: (c) => onHost(LR.host)(c) && c.args[2] === JAZZ.url, times: 1 });
       await waitForRowStatus(page, r, /^Playing on /);
       await expect(r.locator('.ui2-st-status')).toHaveText(`Playing on ${LR.friendlyName}`);
       await expect(r.locator('.ui2-st-status')).toHaveClass(/is-ok/);
+      await expect(r.locator('.ui2-st-status')).toHaveAttribute('data-probe', 'live');
+      await expect(r.locator('.ui2-st-status')).toHaveAttribute('role', 'status');
     });
   });
 
@@ -179,6 +191,42 @@ test.describe('UI 2.0 Radio', () => {
       await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 3 && c.args[3] === JAZZ.name, times: 1 });
       await expect(r.locator('.ui2-st-status')).toHaveText(`On key 3 of ${LR.friendlyName}. The speaker confirmed it.`);
       await expect(page.locator('#presets .preset[data-slot="3"] .name')).toHaveText(JAZZ.name);
+    });
+
+    test('18. the picker is a dialog for the keyboard and gives the focus back', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      const r = row(page, JAZZ.name);
+      const open = r.locator('[data-act="key"]');
+      await open.focus();
+      await page.keyboard.press('Enter');
+      const dialog = page.locator('#pickModal .modal-content');
+      await expect(dialog).toHaveAttribute('role', 'dialog');
+      await expect(dialog).toHaveAttribute('aria-modal', 'true');
+      await expect(page.getByRole('dialog', { name: `Put ${JAZZ.name} on a key of ${LR.friendlyName}` })).toBeVisible();
+      const slots = page.locator('#pickGrid .pick-slot');
+      await expect(slots.first()).toBeFocused();
+      // Tab stays inside: six keys and Cancel, then back to key 1.
+      for (let i = 0; i < 7; i++) await page.keyboard.press('Tab');
+      await expect(slots.first()).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(page.locator('#pickCancel')).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#pickModal')).toBeHidden();
+      await expect(open).toBeFocused();
+
+      // A key chosen by keyboard keeps the focus while it saves, and the
+      // keyboard is back on the row's button afterwards.
+      await page.keyboard.press('Enter');
+      await expect(slots.first()).toBeFocused();
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await expect(slots.nth(2)).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#pickModal')).toBeHidden();
+      await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 3, times: 1 });
+      await expect(r.locator('.ui2-st-status')).toHaveText(`On key 3 of ${LR.friendlyName}. The speaker confirmed it.`);
+      await expect(row(page, JAZZ.name).locator('[data-act="key"]')).toBeFocused();
     });
 
     test.describe('when the speaker does not keep it', () => {
@@ -237,6 +285,22 @@ test.describe('UI 2.0 Radio', () => {
       await tab(page, 'discover').click();
       await expect(rows(page)).toHaveCount(STATIONS.length);
       await expect(page.locator('#searchQ')).toBeVisible();
+    });
+
+    test('19. the Discover filters, hidden on Favorites, do not hide a favorite', async ({ app }) => {
+      const { page } = app;
+      const bbc = STATIONS.find((s) => s.bitrate < 192);
+      await row(page, bbc.name).locator('[data-act="fav"]').click();
+      await page.locator('#searchBitrate').selectOption('192');
+      await expect(row(page, bbc.name)).toHaveCount(0);
+      await tab(page, 'favorites').click();
+      await expect(page.locator('#searchBitrate')).toBeHidden();
+      await expect(rows(page)).toHaveCount(1);
+      await expect(row(page, bbc.name)).toBeVisible();
+      await expect(page.locator('#searchResults')).not.toContainText('No favorites yet');
+      // Back on Discover the filter still applies.
+      await tab(page, 'discover').click();
+      await expect(row(page, bbc.name)).toHaveCount(0);
     });
 
     test('13. the tabs work with the arrow keys', async ({ app }) => {
