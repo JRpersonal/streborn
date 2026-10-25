@@ -1580,6 +1580,7 @@
   "ui2.preview.current": "Dabartinis",
   "ui2.preview.new": "UI 2.0 peržiūra",
   "ui2.preview.hint": "Išbandykite naują išdėstymą. Langas bus įkeltas iš naujo, nustatymai išliks.",
+  "ui2.preview.noStorage": "Šis kompiuteris neleidžia programai įsiminti pasirinkimo, todėl išdėstymo pakeisti negalima.",
   "ui2.skip": "Pereiti prie turinio",
   "ui2.nav.label": "Pagrindinė navigacija",
   "ui2.nav.listen": "Klausytis",

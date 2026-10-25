@@ -1580,6 +1580,7 @@
   "ui2.preview.current": "Aktuell",
   "ui2.preview.new": "Vorschau UI 2.0",
   "ui2.preview.hint": "Probier das neue Layout aus. Das Fenster lädt neu, deine Einstellungen bleiben.",
+  "ui2.preview.noStorage": "Dieser Computer lässt die App die Auswahl nicht speichern, deshalb kannst du das Layout nicht wechseln.",
   "ui2.skip": "Zum Inhalt springen",
   "ui2.nav.label": "Hauptnavigation",
   "ui2.nav.listen": "Hören",

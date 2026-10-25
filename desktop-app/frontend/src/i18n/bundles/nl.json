@@ -1580,6 +1580,7 @@
   "ui2.preview.current": "Huidig",
   "ui2.preview.new": "UI 2.0-voorvertoning",
   "ui2.preview.hint": "Probeer de nieuwe indeling. Het venster laadt opnieuw, je instellingen blijven.",
+  "ui2.preview.noStorage": "Deze computer laat de app de keuze niet onthouden, dus de indeling kan niet worden gewisseld.",
   "ui2.skip": "Naar inhoud springen",
   "ui2.nav.label": "Hoofdnavigatie",
   "ui2.nav.listen": "Luisteren",

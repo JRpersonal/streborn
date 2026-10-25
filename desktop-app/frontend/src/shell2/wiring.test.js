@@ -126,7 +126,7 @@ describe('UI 2.0 hooks in the app', () => {
   it('switches the preview from the Aa menu with a reload', () => {
     expect(main).toContain('data-ui2="0"');
     expect(main).toContain('data-ui2="1"');
-    expect(main).toMatch(/setUi2Preview\(on\);[\s\S]{0,80}location\.reload\(\)/);
+    expect(main).toMatch(/if \(!setUi2Preview\(on\)\) \{[\s\S]{0,200}location\.reload\(\)/);
   });
 });
 

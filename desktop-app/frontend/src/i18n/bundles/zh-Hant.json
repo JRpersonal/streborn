@@ -1580,6 +1580,7 @@
   "ui2.preview.current": "目前",
   "ui2.preview.new": "UI 2.0 預覽",
   "ui2.preview.hint": "試試新版面。視窗會重新載入，設定會保留。",
+  "ui2.preview.noStorage": "這台電腦不允許應用程式記住這個選擇，因此無法切換版面。",
   "ui2.skip": "跳至內容",
   "ui2.nav.label": "主要導覽",
   "ui2.nav.listen": "收聽",

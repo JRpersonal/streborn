@@ -1580,6 +1580,7 @@
   "ui2.preview.current": "Obecny",
   "ui2.preview.new": "Podgląd UI 2.0",
   "ui2.preview.hint": "Wypróbuj nowy układ. Okno zostanie przeładowane, ustawienia pozostaną.",
+  "ui2.preview.noStorage": "Ten komputer nie pozwala aplikacji zapamiętać wyboru, dlatego nie można zmienić układu.",
   "ui2.skip": "Przejdź do treści",
   "ui2.nav.label": "Nawigacja główna",
   "ui2.nav.listen": "Słuchaj",

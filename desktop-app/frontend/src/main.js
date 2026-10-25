@@ -299,7 +299,7 @@ import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // the skeleton renders so the first paint already reflects the chosen size and
 // theme. The matching CSS lives in style.css (html.a11y-*).
 import { applyA11y, getScale, setScale, getTheme, setTheme } from './a11y.js';
-import { getUi2Preview, setUi2Preview } from './uipreview.js';
+import { canKeepUi2Preview, getUi2Preview, setUi2Preview } from './uipreview.js';
 import {
   mountShell2,
   shell2Mounted,
@@ -561,10 +561,10 @@ document.querySelector('#app').innerHTML = `
           <div class="a11y-group">
             <div class="a11y-group-label" id="a11yLayoutLabel">${escapeHtml(t('ui2.preview.label'))}</div>
             <div class="a11y-seg" role="group" aria-labelledby="a11yLayoutLabel" aria-describedby="a11yLayoutHint">
-              <button type="button" data-ui2="0" aria-pressed="${!getUi2Preview()}">${escapeHtml(t('ui2.preview.current'))}</button>
-              <button type="button" data-ui2="1" aria-pressed="${getUi2Preview()}">${escapeHtml(t('ui2.preview.new'))}</button>
+              <button type="button" data-ui2="0" aria-pressed="${!getUi2Preview()}"${canKeepUi2Preview() ? '' : ' disabled'}>${escapeHtml(t('ui2.preview.current'))}</button>
+              <button type="button" data-ui2="1" aria-pressed="${getUi2Preview()}"${canKeepUi2Preview() ? '' : ' disabled'}>${escapeHtml(t('ui2.preview.new'))}</button>
             </div>
-            <p class="a11y-hint" id="a11yLayoutHint">${escapeHtml(t('ui2.preview.hint'))}</p>
+            <p class="a11y-hint" id="a11yLayoutHint">${escapeHtml(t(canKeepUi2Preview() ? 'ui2.preview.hint' : 'ui2.preview.noStorage'))}</p>
           </div>
         </div>
       </div>
@@ -730,7 +730,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   const menu = document.getElementById('a11yMenu');
   if (!trigger || !menu) return;
   const close = () => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); };
-  const open = () => { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); };
+  const open = () => { syncLayoutAvailable(); menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); };
   trigger.onclick = (e) => { e.stopPropagation(); if (menu.hidden) open(); else close(); };
   const syncPressed = (attr, val) => {
     menu.querySelectorAll(`button[${attr}]`).forEach(b => {
@@ -745,12 +745,19 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
   // Layout: the current one or the UI 2.0 preview (#1285). The shell is built
   // once at boot, so a change reloads the window, the same as the language
-  // switch; text size, theme and everything else stay as they are.
+  // switch; text size, theme and everything else stay as they are. Without
+  // storage the reload would come back without the choice, so the switch is
+  // drawn disabled with a hint, and a write that fails anyway never reloads.
   menu.querySelectorAll('button[data-ui2]').forEach(b => {
     b.onclick = () => {
       const on = b.dataset.ui2 === '1';
       if (on === getUi2Preview()) { syncPressed('data-ui2', b.dataset.ui2); return; }
-      setUi2Preview(on);
+      if (!setUi2Preview(on)) {
+        setUi2Preview(!on);
+        layoutWriteFailed = true;
+        syncLayoutAvailable();
+        return;
+      }
       syncPressed('data-ui2', b.dataset.ui2);
       location.reload();
     };
@@ -1666,6 +1673,18 @@ function syncLayoutPressed() {
   document.querySelectorAll('#a11yMenu button[data-ui2]').forEach((b) => {
     b.setAttribute('aria-pressed', String((b.dataset.ui2 === '1') === on));
   });
+}
+
+// syncLayoutAvailable enables the Layout switch of the Aa menu only while the
+// choice can be stored, and swaps its hint to say why when it cannot. Asked
+// again on every menu open: a store the WebView restores late comes back. A
+// store that reads but refused a write stays off for the session.
+let layoutWriteFailed = false;
+function syncLayoutAvailable() {
+  const ok = !layoutWriteFailed && canKeepUi2Preview();
+  document.querySelectorAll('#a11yMenu button[data-ui2]').forEach((b) => { b.disabled = !ok; });
+  const hint = document.getElementById('a11yLayoutHint');
+  if (hint) hint.textContent = t(ok ? 'ui2.preview.hint' : 'ui2.preview.noStorage');
 }
 
 function safeMountShell2() {

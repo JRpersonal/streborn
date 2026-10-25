@@ -626,22 +626,19 @@ test.describe('Layout switch', () => {
       ready: '#a11yTrigger',
     });
 
-    // Fix 5.1 of the e2e design ("Layout toggle when storage is unavailable")
-    // is not in the app yet.
-    const NO_STORAGE_BUG = 'Layout switch without storage: both [data-ui2] buttons stay enabled, and "UI 2.0 preview" '
-      + 'reloads the window straight back into the current layout (uipreview.js keeps the choice in memory only, '
-      + 'wireA11yPicker in main.js then reloads), so the button does nothing. Fix 5.1: render both disabled, '
-      + 'with ui2.preview.noStorage in all 13 bundles (src/main.js, the a11y menu near line 562)';
-
     test('30. boots the current layout and offers no switch it cannot keep', async ({ app }) => {
       const { page } = app;
       await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
       await expect(page.locator('#a11yMenu [data-ui2]')).toHaveCount(2);
-      test.fixme(true, NO_STORAGE_BUG);
+      // Fix 5.1 of the e2e design: a switch whose reload would come back
+      // without the choice is drawn disabled, and the hint says why.
       await page.locator('#a11yTrigger').click();
       await expect(page.locator('#a11yMenu')).toBeVisible();
       await expect(page.locator('#a11yMenu [data-ui2="0"]')).toBeDisabled();
       await expect(page.locator('#a11yMenu [data-ui2="1"]')).toBeDisabled();
+      await expect(page.locator('#a11yLayoutHint')).not.toBeEmpty();
+      await page.locator('#a11yMenu [data-ui2="1"]').click({ force: true });
+      await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
     });
   });
 });

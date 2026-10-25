@@ -9,7 +9,9 @@
 // No top-level access to localStorage, document or navigator: vitest imports
 // this module in a plain Node environment, and a WebView that refuses storage
 // (a private window, blocked site data) must not stop the app from booting.
-// When storage throws, the choice is kept in memory for this session only.
+// When storage throws, the choice is kept in memory for this session only, and
+// the Aa menu offers no switch (canKeepUi2Preview): the reload a switch needs
+// would come back without it.
 
 const KEY = 'str.ui2Preview';
 let memory = null;
@@ -33,12 +35,33 @@ export function getUi2Preview() {
   return memory === '1';
 }
 
-// setUi2Preview stores the choice. The caller reloads the window afterwards,
-// the same as the language switch: the shell is built once at boot.
+// canKeepUi2Preview reports whether a choice survives the reload the switch
+// does. Read-only on purpose: the menu asks at boot, possibly before the
+// WebView has restored the store, and a probe write then could clobber it.
+export function canKeepUi2Preview() {
+  const s = store();
+  if (!s) return false;
+  try {
+    s.getItem(KEY);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// setUi2Preview stores the choice and reports whether it reached the store.
+// The caller reloads the window afterwards, the same as the language switch:
+// the shell is built once at boot. On false it must not reload, the choice
+// would be gone again.
 export function setUi2Preview(on) {
   const v = on ? '1' : '0';
   memory = v;
   const s = store();
-  if (!s) return;
-  try { s.setItem(KEY, v); } catch (_) { /* kept in memory only */ }
+  if (!s) return false;
+  try {
+    s.setItem(KEY, v);
+    return true;
+  } catch (_) {
+    return false; // kept in memory only
+  }
 }
