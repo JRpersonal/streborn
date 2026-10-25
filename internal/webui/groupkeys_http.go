@@ -38,13 +38,17 @@ func (s *Server) handleGroupKeys(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// A thumbs key carries a group OR a key action (the sleep timer or
-		// snooze), never both; the key-actions PUT checks the other direction.
+		// A thumbs key carries a group OR a key action (the sleep timer,
+		// snooze or a bass step), never both; the key-actions PUT checks the
+		// other direction.
 		for key := range d.Bindings {
 			if s.keyActions.Bound(key) {
 				what := "the sleep timer"
-				if s.keyActions.Action(key) == keyactions.ActionSnooze {
+				switch a := s.keyActions.Action(key); {
+				case a == keyactions.ActionSnooze:
 					what = "snooze"
+				case keyactions.IsBass(a):
+					what = "a bass step"
 				}
 				http.Error(w, fmt.Sprintf("key %q already carries %s; a key carries either a group or a key action, take %s off that key first", key, what, what), http.StatusConflict)
 				return

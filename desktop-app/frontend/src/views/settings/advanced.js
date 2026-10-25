@@ -13,7 +13,7 @@ import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } f
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../../groupkeys.js';
-import { normalizeKeyActions, sleepOn, snoozeOn, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../../keyactions.js';
+import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../../keyactions.js';
 import {
   SetPreset,
   RestoreBoxSnapshot,
@@ -79,9 +79,13 @@ function remoteSvg() {
   // corner with the G or the moon.
   const zmark = (id, x, y) =>
     `<text class="rc-zmark" data-zmark="${id}" x="${x}" y="${y}" style="display:none">Z</text>`;
+  // A "B" in the same corner for a thumbs key that moves the bass (#1494).
+  const bmark = (id, x, y) =>
+    `<text class="rc-bmark" data-bmark="${id}" x="${x}" y="${y}" style="display:none">B</text>`;
   const marks = gmark('thumbsDown', 84, 372) + gmark('thumbsUp', 172, 372)
     + smark('thumbsDown', 85, 369) + smark('thumbsUp', 173, 369)
-    + zmark('thumbsDown', 84, 372) + zmark('thumbsUp', 172, 372) + zmark('aux', 172, 36);
+    + zmark('thumbsDown', 84, 372) + zmark('thumbsUp', 172, 372) + zmark('aux', 172, 36)
+    + bmark('thumbsDown', 84, 372) + bmark('thumbsUp', 172, 372);
   return `<svg class="rc-svg" viewBox="0 0 200 428" role="img" aria-label="remote">`
     + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
 }
@@ -150,7 +154,7 @@ export function renderAdvancedSections() {
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
-          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}<br><span class="rc-legend-snooze"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSnooze'))}</small>
+          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}<br><span class="rc-legend-snooze"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSnooze'))}<br><span class="rc-legend-bass"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendBass'))}</small>
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteNoVol'))}</small>
         </div>
       </div>
@@ -182,6 +186,8 @@ export function renderAdvancedSections() {
           <option value="">${escapeHtml(t('settingsView.keyActionNone'))}</option>
           <option value="sleep" id="keyActionSleepOpt">${escapeHtml(t('settingsView.sleepKeyLabel'))}</option>
           <option value="snooze">${escapeHtml(t('settingsView.snoozeKeyLabel'))}</option>
+          <option value="bassUp" class="key-action-bass">${escapeHtml(t('settingsView.bassKeyUpLabel'))}</option>
+          <option value="bassDown" class="key-action-bass">${escapeHtml(t('settingsView.bassKeyDownLabel'))}</option>
         </select>
       </div>
       <small class="muted small hidden" id="sleepKeyNote"></small>
@@ -490,6 +496,11 @@ export function wireAdvancedSections(ctx) {
     // for an agent that predates /api/keyactions.
     let kaDoc = { keys: {} };
     let kaSupported = true;
+    // Whether this speaker reports adjustable bass (the settings read, the
+    // bass slider's source). A speaker that says no is not offered the bass
+    // steps; one already bound keeps its choice visible so it can be removed.
+    const bassAvail = !(ctx.bass && ctx.bass.available === false);
+    const bassOpts = Array.from(document.querySelectorAll('#keyActionSelect option.key-action-bass'));
     const sleepRow = $('sleepKeyRow');
     const actionSelect = $('keyActionSelect');
     const sleepOpt = $('keyActionSleepOpt');
@@ -542,20 +553,25 @@ export function wireAdvancedSections(ctx) {
       whModeNote.textContent = gkBindings[tg]
         ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote
         : (sleepOn(kaDoc, tg) ? t('settingsView.webhookSleepKeyNote') + ' ' + modeNote
-          : (snoozeOn(kaDoc, tg) ? t('settingsView.webhookSnoozeKeyNote') + ' ' + modeNote : modeNote));
+          : (snoozeOn(kaDoc, tg) ? t('settingsView.webhookSnoozeKeyNote') + ' ' + modeNote
+            : (bassOn(kaDoc, tg) ? t('settingsView.webhookBassKeyNote') + ' ' + modeNote : modeNote)));
       syncSleepRow(tg);
       syncType();
       paintRemote(tg);
     };
     // The built-in action picker shows for the keys that can carry one: the
-    // thumbs keys (sleep timer or snooze) and AUX (snooze only). A key that
-    // forms a group cannot take one: the picker is disabled and says which
-    // group to take off the key first.
+    // thumbs keys (sleep timer, snooze or a bass step) and AUX (snooze only).
+    // A key that forms a group cannot take one: the picker is disabled and
+    // says which group to take off the key first.
     const keyActionHelp = (tg, action) => {
+      if (isBassAction(action)) {
+        return t('settingsView.bassKeyHelp') + (bassAvail ? '' : ' ' + t('settingsView.bassKeyUnavailable'));
+      }
       if (action === 'sleep') return t('settingsView.sleepKeyHelp');
       if (tg === 'aux') return t('settingsView.snoozeKeyAuxHelp');
       if (action === 'snooze') return t('settingsView.snoozeKeyHelp');
-      return t('settingsView.sleepKeyHelp') + ' ' + t('settingsView.snoozeKeyHelp');
+      return t('settingsView.sleepKeyHelp') + ' ' + t('settingsView.snoozeKeyHelp')
+        + (bassAvail ? '' : ' ' + t('settingsView.bassKeyUnavailable'));
     };
     const syncSleepRow = (tg) => {
       if (!sleepRow || !actionSelect || !sleepNote) return;
@@ -570,6 +586,13 @@ export function wireAdvancedSections(ctx) {
       }
       const group = sleepBlockedBy(gkBindings, tg);
       const cur = actionOn(kaDoc, tg);
+      // The bass steps go on the thumbs keys only, and only on a speaker
+      // with adjustable bass (the bound one stays selectable to remove it).
+      for (const o of bassOpts) {
+        const fits = SLEEP_KEY_IDS.includes(tg);
+        o.hidden = !fits;
+        o.disabled = !fits || (!bassAvail && o.value !== cur);
+      }
       actionSelect.value = cur;
       actionSelect.disabled = !kaSupported || (!!group && !cur);
       sleepNote.textContent = !kaSupported
@@ -588,10 +611,15 @@ export function wireAdvancedSections(ctx) {
         kaDoc = normalizeKeyActions(next);
         const toast = action === 'sleep' ? 'settingsView.sleepKeyOnToast'
           : action === 'snooze' ? 'settingsView.snoozeKeyOnToast'
-            : (before === 'snooze' ? 'settingsView.snoozeKeyOffToast' : 'settingsView.sleepKeyOffToast');
+            : isBassAction(action) ? 'settingsView.bassKeyOnToast'
+              : (before === 'snooze' ? 'settingsView.snoozeKeyOffToast'
+                : (isBassAction(before) ? 'settingsView.bassKeyOffToast' : 'settingsView.sleepKeyOffToast'));
         showToast(t(toast));
       } catch (e) {
-        showError(e);
+        // An agent from before the bass steps refuses them as an unknown
+        // action; say what to do instead of showing the raw refusal.
+        showError(isBassAction(action) && /unknown key action/i.test(String((e && e.message) || e))
+          ? t('settingsView.bassKeyNeedsUpdate') : e);
       }
       // repaint from what the speaker holds now (a refusal leaves it as it was)
       loadInto(tg);
@@ -612,6 +640,11 @@ export function wireAdvancedSections(ctx) {
         el.classList.toggle('rc-group', !!gkBindings[k]);
         el.classList.toggle('rc-sleep', !gkBindings[k] && sleepOn(kaDoc, k));
         el.classList.toggle('rc-snooze', !gkBindings[k] && snoozeOn(kaDoc, k));
+        el.classList.toggle('rc-bass', !gkBindings[k] && bassOn(kaDoc, k));
+      });
+      document.querySelectorAll('.rc-bmark[data-bmark]').forEach((m) => {
+        const k = m.getAttribute('data-bmark');
+        m.style.display = !gkBindings[k] && bassOn(kaDoc, k) ? '' : 'none';
       });
       document.querySelectorAll('.rc-zmark[data-zmark]').forEach((m) => {
         const k = m.getAttribute('data-zmark');

@@ -245,3 +245,33 @@ func TestBassDefaultMapping(t *testing.T) {
 		t.Errorf("classic default = %d, want -3", s.Bass.Default)
 	}
 }
+
+// GetBass is the bass block of LoadSettings on its own (the remote's bass
+// key reads it fresh on each press): the classic routes as they are, a box
+// without adjustable bass as Avail=false with no error, and an error only
+// when nothing at all could be read.
+func TestGetBass(t *testing.T) {
+	c, _ := newRecordingBox(t, "getbass-classic-box", map[string]string{
+		"/bass":             bassClassicOK,
+		"/bassCapabilities": bassCapsOK,
+	})
+	b, err := c.GetBass(context.Background())
+	if want := (Bass{Target: -4, Actual: -4, Min: -9, Max: 0, Avail: true}); err != nil || b != want {
+		t.Errorf("classic box: %+v, %v; want %+v, nil", b, err, want)
+	}
+
+	c, _ = newRecordingBox(t, "getbass-none-box", map[string]string{
+		"/bass":             `<bass deviceID="AABBCCDDEEFF"><targetbass>0</targetbass><actualbass>0</actualbass></bass>`,
+		"/bassCapabilities": bassCapsNone,
+		"/capabilities":     capsNoTone,
+	})
+	b, err = c.GetBass(context.Background())
+	if err != nil || b.Avail {
+		t.Errorf("box without bass: %+v, %v; want Avail=false, nil", b, err)
+	}
+
+	c, _ = newRecordingBox(t, "getbass-dead-box", map[string]string{})
+	if _, err := c.GetBass(context.Background()); err == nil {
+		t.Error("a box that answers nothing gave no error")
+	}
+}

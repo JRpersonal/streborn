@@ -68,9 +68,10 @@ const groupKeyToggleBudget = 75 * time.Second
 // fires twice; volume and the rest are logged only.
 //
 // A thumbs key that carries a saved group (#863) toggles that group instead,
-// one that carries the sleep timer steps it, and one that carries snooze
-// snoozes a ringing alarm: a key carries one action, and any binding wins
-// over a webhook on the same key. Group and sleep
+// one that carries the sleep timer steps it, one that carries a bass step
+// moves the bass, and one that carries snooze snoozes a ringing alarm: a key
+// carries one action, and any binding wins over a webhook on the same key.
+// Group and sleep
 // timer exclude each other at save time; should a hand-edited file carry
 // both, the group wins, as it was there first.
 func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
@@ -119,6 +120,13 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		// reset, and keeping it on the reader's goroutine keeps quick presses
 		// in order. The group push runs on its own goroutine.
 		h.onSleepKey()
+		return
+	}
+	if a := h.keyActions.Action(id); keyactions.IsBass(a) && h.onBassKey != nil {
+		// Off the reader's goroutine: a step reads the speaker's bass and
+		// writes the new level. The handler runs presses one at a time.
+		h.logger.Info("bass key pressed", "key", ev.Name, "action", a, "producer", ev.Producer.String())
+		go h.onBassKey(a)
 		return
 	}
 	if h.keyActions.Action(id) == keyactions.ActionSnooze && h.onSnoozeKey != nil {

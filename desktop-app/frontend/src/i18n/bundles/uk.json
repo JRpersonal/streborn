@@ -1823,5 +1823,16 @@
   "settingsView.webhookRemoteLegendSnooze": "відкладення",
   "settingsView.keyActionGroupConflict": "Ця кнопка створює групу \"{{name}}\". Кнопка має або групу, або вбудовану дію: спершу зніми групу з цієї кнопки на вкладці Мультирум.",
   "multiroom.groupKeysKeySnooze": "(відкладення)",
-  "multiroom.groupKeysSnoozeHint": "Кнопка великого пальця, що відкладає будильники, не може ще й створювати групу. Зміни це на карті кнопок пульта в Налаштуваннях."
+  "multiroom.groupKeysSnoozeHint": "Кнопка великого пальця, що відкладає будильники, не може ще й створювати групу. Зміни це на карті кнопок пульта в Налаштуваннях.",
+  "settingsView.bassKeyUpLabel": "Більше басів (один крок за натискання)",
+  "settingsView.bassKeyDownLabel": "Менше басів (один крок за натискання)",
+  "settingsView.bassKeyHelp": "Кожне натискання змінює баси колонки на один крок, наскільки дозволяє колонка. Колонки з дисплеєм показують новий рівень. Признач «Більше басів» на одну кнопку з пальцем, а «Менше басів» на іншу, щоб керувати басами з пульта.",
+  "settingsView.bassKeyOnToast": "Ця кнопка тепер змінює баси.",
+  "settingsView.bassKeyOffToast": "Ця кнопка більше не змінює баси.",
+  "settingsView.bassKeyUnavailable": "У цієї колонки баси не регулюються, тож дія для басів тут нічого не робить.",
+  "settingsView.webhookBassKeyNote": "Ця кнопка змінює баси. Баси мають пріоритет: вебхук не спрацьовує.",
+  "settingsView.webhookRemoteLegendBass": "баси",
+  "multiroom.groupKeysKeyBass": "(баси)",
+  "multiroom.groupKeysBassHint": "Кнопка з пальцем, яка змінює баси, не може також формувати групу. Зміни це на карті кнопок пульта в Налаштуваннях.",
+  "settingsView.bassKeyNeedsUpdate": "Онови цей динамік, щоб призначити крок басів на кнопку."
 }

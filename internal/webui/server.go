@@ -131,7 +131,9 @@ type Server struct {
 	renderer           *upnp.Renderer
 	blockfall          blockfallMusic
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
-	sleep       sleepState
+	sleep sleepState
+	// bassKey runs the presses of a key bound to a bass step. See basskey.go.
+	bassKey     bassKeyState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -143,8 +145,8 @@ type Server struct {
 	// groupKeys holds the saved groups bound to the remote's thumbs keys
 	// (#863). nil when not wired; the endpoint then reports unavailable.
 	groupKeys *groupkeys.Store
-	// keyActions holds the built-in actions bound to the thumbs keys (the
-	// sleep timer). nil when not wired; the endpoint then reports
+	// keyActions holds the built-in actions bound to the thumbs keys and AUX
+	// (the sleep timer, snooze, the bass steps). nil when not wired; the endpoint then reports
 	// unavailable. See keyactions_http.go.
 	keyActions *keyactions.Store
 	// alarms holds the alarm clock document, and alarmState what has already
@@ -728,6 +730,12 @@ type Server struct {
 	sleepStandbyFn    func(ctx context.Context, host string) error
 	goSleepPushFn     func(f func())
 	sleepPushPeerFn   func(ctx context.Context, ip string, msg sleepPeerMsg) error
+	// The bass key seams (basskey.go): the speaker's bass read and write, and
+	// the panel notice. Same reason as above, the real calls reach the
+	// firmware on its fixed port. nil means production.
+	bassReadFn       func(ctx context.Context) (boxapi.Bass, error)
+	bassWriteFn      func(ctx context.Context, v int) error
+	showBassNoticeFn func(level, lo, hi int)
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

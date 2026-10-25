@@ -1823,5 +1823,16 @@
   "settingsView.webhookRemoteLegendSnooze": "Schlummern",
   "settingsView.keyActionGroupConflict": "Diese Taste bildet die Gruppe \"{{name}}\". Eine Taste trägt entweder eine Gruppe oder eine eingebaute Aktion: Nimm die Gruppe zuerst im Tab Multiroom von dieser Taste.",
   "multiroom.groupKeysKeySnooze": "(Schlummern)",
-  "multiroom.groupKeysSnoozeHint": "Eine Daumentaste, die Wecker schlummern lässt, kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung."
+  "multiroom.groupKeysSnoozeHint": "Eine Daumentaste, die Wecker schlummern lässt, kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung.",
+  "settingsView.bassKeyUpLabel": "Mehr Bass (eine Stufe je Druck)",
+  "settingsView.bassKeyDownLabel": "Weniger Bass (eine Stufe je Druck)",
+  "settingsView.bassKeyHelp": "Jeder Druck verstellt den Bass des Lautsprechers um eine Stufe, so weit der Lautsprecher es zulässt. Lautsprecher mit Display zeigen den neuen Wert. Leg „Mehr Bass“ auf die eine Daumentaste und „Weniger Bass“ auf die andere, dann steuerst du den Bass mit der Fernbedienung.",
+  "settingsView.bassKeyOnToast": "Diese Taste ändert jetzt den Bass.",
+  "settingsView.bassKeyOffToast": "Diese Taste ändert den Bass nicht mehr.",
+  "settingsView.bassKeyUnavailable": "Bei diesem Lautsprecher lässt sich der Bass nicht einstellen, eine Bass-Aktion bewirkt hier nichts.",
+  "settingsView.webhookBassKeyNote": "Diese Taste ändert den Bass. Der Bass hat Vorrang: Der Webhook wird nicht ausgelöst.",
+  "settingsView.webhookRemoteLegendBass": "Bass",
+  "multiroom.groupKeysKeyBass": "(Bass)",
+  "multiroom.groupKeysBassHint": "Eine Daumentaste, die den Bass ändert, kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung.",
+  "settingsView.bassKeyNeedsUpdate": "Aktualisiere diesen Lautsprecher, um eine Bass-Stufe auf eine Taste zu legen."
 }

@@ -1823,5 +1823,16 @@
   "settingsView.webhookRemoteLegendSnooze": "atidėjimas",
   "settingsView.keyActionGroupConflict": "Šis mygtukas sudaro grupę \"{{name}}\". Mygtukas turi arba grupę, arba įtaisytą veiksmą: pirmiausia nuimk grupę nuo šio mygtuko skirtuke Multiroom.",
   "multiroom.groupKeysKeySnooze": "(atidėjimas)",
-  "multiroom.groupKeysSnoozeHint": "Nykščio mygtukas, kuris atideda žadintuvus, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose."
+  "multiroom.groupKeysSnoozeHint": "Nykščio mygtukas, kuris atideda žadintuvus, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose.",
+  "settingsView.bassKeyUpLabel": "Daugiau žemų dažnių (vienas žingsnis paspaudimui)",
+  "settingsView.bassKeyDownLabel": "Mažiau žemų dažnių (vienas žingsnis paspaudimui)",
+  "settingsView.bassKeyHelp": "Kiekvienas paspaudimas pakeičia garsiakalbio žemus dažnius vienu žingsniu, kiek leidžia garsiakalbis. Garsiakalbiai su ekranu rodo naują lygį. Priskirk „Daugiau žemų dažnių“ vienam nykščio mygtukui, o „Mažiau žemų dažnių“ kitam, ir valdyk žemus dažnius pultu.",
+  "settingsView.bassKeyOnToast": "Šis mygtukas dabar keičia žemus dažnius.",
+  "settingsView.bassKeyOffToast": "Šis mygtukas nebekeičia žemų dažnių.",
+  "settingsView.bassKeyUnavailable": "Šio garsiakalbio žemų dažnių reguliuoti negalima, todėl žemų dažnių veiksmas čia nieko nedaro.",
+  "settingsView.webhookBassKeyNote": "Šis mygtukas keičia žemus dažnius. Žemi dažniai turi pirmenybę: webhook nesuveikia.",
+  "settingsView.webhookRemoteLegendBass": "žemi dažniai",
+  "multiroom.groupKeysKeyBass": "(žemi dažniai)",
+  "multiroom.groupKeysBassHint": "Nykščio mygtukas, kuris keičia žemus dažnius, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose.",
+  "settingsView.bassKeyNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti boso žingsnį mygtukui."
 }

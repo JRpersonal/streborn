@@ -1823,5 +1823,16 @@
   "settingsView.webhookRemoteLegendSnooze": "drzemka",
   "settingsView.keyActionGroupConflict": "Ten przycisk tworzy grupę \"{{name}}\". Przycisk ma albo grupę, albo wbudowaną akcję: najpierw zdejmij grupę z tego przycisku na karcie Multiroom.",
   "multiroom.groupKeysKeySnooze": "(drzemka)",
-  "multiroom.groupKeysSnoozeHint": "Przycisk kciuka, który włącza drzemkę budzika, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach."
+  "multiroom.groupKeysSnoozeHint": "Przycisk kciuka, który włącza drzemkę budzika, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach.",
+  "settingsView.bassKeyUpLabel": "Więcej basu (jeden krok na naciśnięcie)",
+  "settingsView.bassKeyDownLabel": "Mniej basu (jeden krok na naciśnięcie)",
+  "settingsView.bassKeyHelp": "Każde naciśnięcie zmienia bas głośnika o jeden krok, na ile głośnik pozwala. Głośniki z wyświetlaczem pokazują nowy poziom. Ustaw „Więcej basu” na jednym przycisku kciuka, a „Mniej basu” na drugim, aby sterować basem z pilota.",
+  "settingsView.bassKeyOnToast": "Ten przycisk zmienia teraz bas.",
+  "settingsView.bassKeyOffToast": "Ten przycisk nie zmienia już basu.",
+  "settingsView.bassKeyUnavailable": "Ten głośnik nie ma regulowanego basu, więc akcja basu nic tu nie robi.",
+  "settingsView.webhookBassKeyNote": "Ten przycisk zmienia bas. Bas ma pierwszeństwo: webhook nie zostaje wywołany.",
+  "settingsView.webhookRemoteLegendBass": "bas",
+  "multiroom.groupKeysKeyBass": "(bas)",
+  "multiroom.groupKeysBassHint": "Przycisk kciuka, który zmienia bas, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach.",
+  "settingsView.bassKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać zmianę basu do przycisku."
 }

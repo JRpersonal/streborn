@@ -78,6 +78,7 @@ const (
 	iconKeyHold
 	iconKey
 	iconMoon
+	iconBass
 )
 
 // Notice is one message for the panel. Build it with the constructors below.
@@ -399,8 +400,8 @@ func (q *noticeQueue) post(n Notice) {
 		return
 	}
 	if q.showing && q.curSwap != nil && n.supersedes(q.cur.Kind) && !q.cur.same(n) && q.curSwap.offer(n) {
-		// A newer sleep step takes over the showing one inside the same
-		// panel hold: no hand-back, no gap (sleep.go).
+		// A newer sleep or bass step takes over the showing one inside the
+		// same panel hold: no hand-back, no gap (sleep.go, bass.go).
 		q.cur = n
 		q.mu.Unlock()
 		noticeLogger().Info("display notice shown", "kind", string(n.Kind), "key", n.Key,
@@ -528,7 +529,7 @@ func (q *noticeQueue) run(n Notice) {
 	quit := make(chan struct{})
 	done := make(chan struct{})
 	var swap *noticeSwap
-	if n.Kind == NoticeSleep {
+	if swapsInPlace(n.Kind) {
 		swap = &noticeSwap{}
 	}
 	n.swap = swap
@@ -720,6 +721,8 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 		c.presetKey(n.Key, true)
 	case iconMoon:
 		c.bigMoon()
+	case iconBass:
+		c.bassIcon()
 	case iconKey:
 		c.presetKey(n.Key, false)
 		for i, l := range []string{n.Line1, n.Line2, n.Line3} {

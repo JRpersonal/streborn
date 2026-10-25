@@ -94,11 +94,14 @@ type presetWsHandler struct {
 	// key's webhook. nil-safe.
 	groupKeys *groupkeys.Store
 	// keyActions holds the built-in actions bound to the thumbs keys and AUX
-	// (the sleep timer, snooze). A physical press of a bound key runs its
+	// (the sleep timer, snooze, the bass steps). A physical press of a bound key runs its
 	// action instead of firing the key's webhook. nil-safe.
 	keyActions *keyactions.Store
 	// onSleepKey steps the sleep timer (webui.SleepKeyPress). nil-safe.
 	onSleepKey func()
+	// onBassKey moves the bass one step (webui.BassKeyPress), for a thumbs
+	// key bound to bassUp or bassDown. nil-safe.
+	onBassKey func(action string)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.
@@ -1036,7 +1039,7 @@ func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 		h.logger.Info("a thumbs key carries a saved group, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so no group was formed or dissolved")
 	}
 	if h.keyActions.Bound(keyactions.KeyThumbsUp) || h.keyActions.Bound(keyactions.KeyThumbsDown) {
-		h.logger.Info("a thumbs key carries a key action (sleep timer or snooze), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
+		h.logger.Info("a thumbs key carries a key action (sleep timer, snooze or a bass step), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
 	}
 	go func() {
 		src, _, status := h.nowPlayingSummary()

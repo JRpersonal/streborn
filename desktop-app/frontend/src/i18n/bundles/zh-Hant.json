@@ -1823,5 +1823,16 @@
   "settingsView.webhookRemoteLegendSnooze": "貪睡",
   "settingsView.keyActionGroupConflict": "此按鍵會組成群組「{{name}}」。一個按鍵只能設定群組或內建動作其中之一:請先在多房間分頁中移除此按鍵的群組。",
   "multiroom.groupKeysKeySnooze": "(貪睡)",
-  "multiroom.groupKeysSnoozeHint": "設定為鬧鐘貪睡的拇指鍵無法同時組成群組。請在設定中的遙控器按鍵配置變更。"
+  "multiroom.groupKeysSnoozeHint": "設定為鬧鐘貪睡的拇指鍵無法同時組成群組。請在設定中的遙控器按鍵配置變更。",
+  "settingsView.bassKeyUpLabel": "提高低音(每按一次一級)",
+  "settingsView.bassKeyDownLabel": "降低低音(每按一次一級)",
+  "settingsView.bassKeyHelp": "每按一次,喇叭的低音就會在喇叭允許的範圍內調整一級。有顯示器的喇叭會顯示新的等級。把「提高低音」設在一個拇指鍵上、「降低低音」設在另一個,就能用遙控器調整低音。",
+  "settingsView.bassKeyOnToast": "這個按鍵現在會調整低音。",
+  "settingsView.bassKeyOffToast": "這個按鍵不再調整低音。",
+  "settingsView.bassKeyUnavailable": "這個喇叭的低音無法調整,因此低音動作在這裡不會有任何作用。",
+  "settingsView.webhookBassKeyNote": "這個按鍵會調整低音。低音優先:不會觸發 Webhook。",
+  "settingsView.webhookRemoteLegendBass": "低音",
+  "multiroom.groupKeysKeyBass": "(低音)",
+  "multiroom.groupKeysBassHint": "設定為調整低音的拇指鍵無法同時組成群組。請在設定中的遙控器按鍵配置變更。",
+  "settingsView.bassKeyNeedsUpdate": "請更新這台喇叭，才能將低音調整指派給按鍵。"
 }
