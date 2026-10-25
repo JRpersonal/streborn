@@ -86,6 +86,29 @@ async function run(page) {
   check(focused === rows[rows.length - 1].host, 'End moves to the last row');
   const ring = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
   check(ring !== 'none', 'the focused row shows a focus ring');
+  // The ring (2px outline at a 2px offset) is drawn in full: every pick and
+  // every "+"/"-" keeps 4px of room inside the list that scrolls it, the top
+  // and bottom rows included.
+  const clipped = await page.evaluate(() => {
+    const out = [];
+    for (const list of document.querySelectorAll('#ui2SpkLists .ui2-spk-scroll, #ui2SpkLists .ui2-spk-pinned .ui2-spk-list')) {
+      const box = list.getBoundingClientRect();
+      const inner = { left: box.left + list.clientLeft, top: box.top + list.clientTop };
+      inner.right = inner.left + list.clientWidth;
+      inner.bottom = inner.top + list.clientHeight;
+      for (const el of list.querySelectorAll('.ui2-spk-pick, .ui2-spk-act')) {
+        el.scrollIntoView({ block: 'nearest' });
+        const r = el.getBoundingClientRect();
+        if (r.left - 4 < inner.left - 0.5 || r.right + 4 > inner.right + 0.5
+          || r.top - 4 < inner.top - 0.5 || r.bottom + 4 > inner.bottom + 0.5) {
+          out.push(el.dataset.host + (el.classList.contains('ui2-spk-act') ? ' +/-' : ''));
+        }
+      }
+      list.scrollTop = 0;
+    }
+    return out;
+  });
+  check(clipped.length === 0, `the focus ring has room on every side of every row (${clipped.join(', ') || 'none clipped'})`);
 
   // The others scroll on their own; the pinned group and the entries stay.
   const before = await page.evaluate(() => ({
@@ -105,13 +128,34 @@ async function run(page) {
   }));
   check(scrolled, 'with eleven speakers the list scrolls on its own');
   check(before.pinned === after.pinned && before.radio === after.radio, 'the pinned group and the navigation stay put while it scrolls');
-  const navFits = await page.evaluate(() => {
-    const s = document.querySelector('.ui2-side-scroll');
+  // In the default window the others show at least three whole rows; the
+  // navigation entries give up room for that in their own scroll box, and the
+  // small entries and the bottom area stay on screen.
+  const room = await page.evaluate(() => {
+    const s = document.querySelector('.ui2-spk-scroll');
+    const box = s.getBoundingClientRect();
+    s.scrollTop = 0;
+    const whole = [...s.querySelectorAll('.ui2-spk-row')].filter((li) => {
+      const r = li.getBoundingClientRect();
+      return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+    }).length;
     const side = document.querySelector('#ui2Sidebar').getBoundingClientRect();
-    const last = [...document.querySelectorAll('.ui2-side-scroll .ui2-nav-item')].pop().getBoundingClientRect();
-    return s.scrollHeight <= s.clientHeight + 1 && last.bottom <= side.bottom;
+    const fixed = ['.ui2-side-small', '.ui2-side-bottom'].every((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect();
+      return r.height > 0 && r.bottom <= side.bottom + 0.5;
+    });
+    const nav = document.querySelector('.ui2-side-scroll');
+    const last = [...nav.querySelectorAll('.ui2-nav-item')].pop();
+    nav.scrollTop = nav.scrollHeight;
+    const lr = last.getBoundingClientRect();
+    const nr = nav.getBoundingClientRect();
+    const reachable = lr.bottom <= nr.bottom + 0.5 && lr.top >= nr.top - 0.5;
+    nav.scrollTop = 0;
+    return { whole, fixed, reachable };
   });
-  check(navFits, 'every navigation entry is on screen in the default window');
+  check(room.whole >= 3, `the other speakers show at least three whole rows in the default window (${room.whole})`);
+  check(room.fixed, 'the small entries and the bottom area stay on screen');
+  check(room.reachable, 'every navigation entry can be reached in its own scroll box');
 
   // The player: group volume and Levels, no Output popover.
   check(!(await page.$('#ui2OutputBtn')) && !(await page.$('#ui2RoomBtn')), 'no room switcher and no Output popover');

@@ -371,9 +371,11 @@ html.ui2 .ui2-side-top {
    bottom area stays outside every scroll box, so its menus are never clipped. */
 html.ui2 .ui2-side-nav {
   display: flex;
-  /* Shrinks only once the speaker section is at its floor (a minimal factor,
-     not 0, so a window too short for both still keeps the entries in it). */
-  flex: 1 0.001 auto;
+  /* Gives up room after the speaker section (flex-shrink 1 against its 100),
+     which in practice means once that section is at its floor. A factor of 1,
+     not a token one: below a total of 1 the browser hands out only that
+     fraction of the shortfall, and the sidebar overflowed the player. */
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
 }
@@ -420,18 +422,19 @@ html.ui2 .ui2-room-badges {
    lists are capped, so with eight or more speakers (or a big group) the
    navigation below never scrolls away. */
 /* How the height is shared: the speaker section gives up its room first
-   (flex-shrink 100 against the entries' 0.001), down to a floor of the pinned
-   group plus a row and a quarter of the others (mount.js measures it and sets it as
-   the section's min-height), which is where the others scroll on their own.
-   Only in a window too short even for that floor do the entries scroll, as
-   the last resort; the speaker list scrolling never moves them. */
+   (flex-shrink 100 against the entries' 1), down to a floor of the pinned
+   group plus three and a half rows of the others (mount.js measures it and
+   sets it as the section's min-height), which is where the others scroll on
+   their own. Below that the navigation entries scroll in their own box
+   (.ui2-side-scroll); the small entries at the bottom never move, and the
+   speaker list scrolling never moves anything. */
 html.ui2 .ui2-spk {
   display: flex;
   flex: 0 100 auto;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  padding: 2px 8px;
+  padding: 2px 4px;
   border-bottom: 1px solid var(--u-border);
 }
 html.ui2 .ui2-spk-lists {
@@ -450,7 +453,7 @@ html.ui2 .ui2-spk-pinned {
   border-bottom: 1px solid var(--u-border);
 }
 html.ui2 .ui2-spk-subhead {
-  padding: 0 8px 4px;
+  padding: 0 12px 4px;
   color: var(--u-muted);
   font-size: 12px;
   font-weight: 600;
@@ -462,6 +465,16 @@ html.ui2 .ui2-spk-list {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/* Both lists scroll, and a scroll box clips what it holds: the 4px of padding
+   inside them is the room the focus ring (outline plus its 2px offset) needs
+   on every side of a row, the top and bottom rows included. content-box keeps
+   the max-height a number of rows. */
+html.ui2 .ui2-spk-pinned .ui2-spk-list,
+html.ui2 .ui2-spk-scroll {
+  box-sizing: content-box;
+  padding: 4px;
+  scroll-padding-block: 4px;
 }
 html.ui2 .ui2-spk-pinned .ui2-spk-list {
   min-height: 0;
@@ -544,7 +557,7 @@ html.ui2 .ui2-spk-act {
 html.ui2 .ui2-spk-act:hover { background: var(--u-surface); }
 html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: var(--u-muted); }
 html.ui2 .ui2-spk-note,
-html.ui2 .ui2-spk-empty { margin: 4px 8px; color: var(--u-muted); font-size: 12px; }
+html.ui2 .ui2-spk-empty { margin: 4px 12px; color: var(--u-muted); font-size: 12px; }
 
 /* A short window or a larger text size: fewer rows before the lists scroll. */
 @media (height <= 700px) {
@@ -757,6 +770,10 @@ html.ui2 .ui2-player-groupvol .group-vol-row {
 }
 html.ui2 .ui2-player-groupvol .group-vol-row input[type=range] { flex: 1 1 auto; width: 100%; min-width: 0; }
 html.ui2 .ui2-player-groupvol .group-vol-row input[type=range] { min-width: 96px; }
+/* The sliders take the shell's 40px target as their hit area, like every other
+   control in the player; the track keeps its look. */
+html.ui2 .ui2-player-groupvol .group-vol-row input[type=range],
+html.ui2 .ui2-player .volume-control input[type=range] { min-height: var(--u-target); }
 /* The slider carries its name (aria-label "Group volume") and the Levels
    button next to it says the group; the visible caption gives its room to the
    slider. */
@@ -803,6 +820,7 @@ html.ui2 .worldmap-invite { bottom: calc(var(--u-player-min) + 24px); }
 html.ui2 .ui2-side-version .app-update-banner.app-update-quiet {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 8px;
   max-width: none;
   margin: 0;
@@ -814,4 +832,11 @@ html.ui2 .ui2-side-version .app-update-banner.app-update-quiet {
 }
 html.ui2 .ui2-side-version .app-update-banner.app-update-quiet.hidden { display: none; }
 html.ui2 .ui2-side-version .app-update-quiet .footer-link { color: var(--u-accent); font-size: 12px; }
+/* Small text, full-size target: the link and any button in the line take the
+   40px the rest of the sidebar uses. */
+html.ui2 .ui2-side-version .app-update-quiet :is(.footer-link, button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--u-target);
+}
 html.ui2 .ui2-side-version .app-update-quiet-note { color: var(--u-muted); }

@@ -59,7 +59,13 @@ async function drive(page, view) {
     await page.waitForSelector('#ui2SpkLists .ui2-spk-pinned .ui2-spk-pick', { timeout: 9000 });
     await page.waitForSelector('#ui2SpkLists .ui2-spk-act[data-act="add"]', { timeout: 20000 });
     if (view === 'app-ui2-dark') {
-      await page.evaluate(() => { const s = document.querySelector('.ui2-spk-scroll'); if (s) s.scrollTop = s.scrollHeight; });
+      // Scrolled to the offline speaker, so the shot shows it greyed with
+      // "Offline" and the Bose original's "Ready for STR" below it.
+      await page.evaluate(() => {
+        const s = document.querySelector('.ui2-spk-scroll');
+        const off = s && s.querySelector('.ui2-spk-row.is-offline');
+        if (off) s.scrollTop += off.getBoundingClientRect().top - s.getBoundingClientRect().top;
+      });
     } else if (view === 'app-ui2-light') {
       await click('.ui2-nav-item[data-view="library"]');
       await page.waitForSelector('#view-library:not(.hidden) .library-row-folder', { timeout: 9000 });

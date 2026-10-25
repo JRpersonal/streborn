@@ -491,28 +491,68 @@ function paintSpeakers(force) {
 }
 
 // holdSpeakerFloor sets how far the speaker section may shrink when the
-// sidebar is short: the pinned group plus a row and a quarter of the others (or
-// all of them when there are fewer). Measured,
-// because a row is one line or two depending on its name and pill, and the
-// text size zooms all of it. The entries below give up their room only after
-// that (shell2.css).
+// sidebar is short: the pinned group down to two and a half rows (its list
+// scrolls below that) and the others down to three rows and half of the
+// fourth, or all of them when there are fewer. Measured, because a row is one
+// line or two depending on its name and pill, and the text size zooms all of
+// it. The floor is cut at whole rows plus half the next one, so the cut row
+// shows a piece of its name next to a piece of its "+", never a bare button
+// edge. The navigation entries give up their room only after that
+// (shell2.css).
+//
+// In a window too short for that (a large text size, a low window) the floor
+// is held back so two and a half navigation entries and everything below them
+// stay on screen; the others then keep at least one row and a half. The
+// sidebar's own size is watched, so a resize or a text size change sets the
+// floor again.
+const OTHERS_FLOOR_ROWS = 3;
+const NAV_RESERVE_ENTRIES = 2.5;
+let floorWatch = null;
+let floorWatched = null;
 function holdSpeakerFloor(lists) {
   const section = lists.closest('.ui2-spk');
   if (!section) return;
+  const side = section.parentElement;
+  if (side && side !== floorWatched && typeof ResizeObserver === 'function') {
+    if (floorWatch) floorWatch.disconnect();
+    floorWatch = new ResizeObserver(() => {
+      const l = byId('ui2SpkLists');
+      if (l) holdSpeakerFloor(l);
+    });
+    floorWatch.observe(side);
+    floorWatched = side;
+  }
   const pinned = lists.querySelector('.ui2-spk-pinned');
   const pinnedList = pinned && pinned.querySelector('.ui2-spk-list');
   const scroll = lists.querySelector('.ui2-spk-scroll');
-  const row = lists.querySelector('.ui2-spk-row');
-  const rowH = row ? row.offsetHeight + 2 : 0;
-  const capped = (h, n) => (rowH ? Math.min(h, rowH * n) : h);
-  // The pinned group down to two and a half rows (its list scrolls below
-  // that), the others down to a row and a quarter: the cut row says there is
-// more.
-  const pinnedH = pinned ? pinned.offsetHeight - (pinnedList ? pinnedList.offsetHeight - capped(pinnedList.scrollHeight, 2.5) : 0) : 0;
-  const others = scroll ? capped(scroll.scrollHeight, 1.25) : 0;
-  const pad = section.offsetHeight - lists.offsetHeight;
-  const floor = pinnedH + others + Math.max(0, pad);
+  const pinnedH = pinned
+    ? pinned.offsetHeight - (pinnedList ? pinnedList.offsetHeight - rowsHeight(pinnedList, 2) : 0)
+    : 0;
+  const others = scroll ? rowsHeight(scroll, OTHERS_FLOOR_ROWS) : 0;
+  const pad = Math.max(0, section.offsetHeight - lists.offsetHeight);
+  let floor = pinnedH + others + pad;
+  if (side) {
+    const nav = side.querySelector('.ui2-side-nav');
+    const entry = side.querySelector('.ui2-side-scroll .ui2-nav-item');
+    const small = side.querySelector('.ui2-side-small');
+    let rest = (entry ? entry.offsetHeight * NAV_RESERVE_ENTRIES : 0) + (small ? small.offsetHeight : 0);
+    for (const el of side.children) if (el !== section && el !== nav) rest += el.offsetHeight;
+    const least = pinnedH + (scroll ? rowsHeight(scroll, 1) : 0) + pad;
+    floor = Math.min(floor, Math.max(least, side.clientHeight - rest));
+  }
   section.style.minHeight = floor > 0 ? `${Math.ceil(floor)}px` : '';
+}
+
+// rowsHeight is the height a scrolling list needs to show its first n rows
+// whole and half of the next, its own padding included; the full height when
+// it holds no more than that.
+function rowsHeight(list, n) {
+  const rows = [...list.querySelectorAll('.ui2-spk-row')];
+  const full = list.scrollHeight + (list.offsetHeight - list.clientHeight);
+  if (rows.length <= n) return full;
+  const top = list.getBoundingClientRect().top - list.scrollTop;
+  const next = rows[n].getBoundingClientRect();
+  return Math.min(full, next.top - top + next.height / 2);
 }
 
 // mirrorShellBadges copies the counts the tab bar shows onto the sidebar:
