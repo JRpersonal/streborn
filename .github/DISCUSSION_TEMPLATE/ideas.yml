@@ -1,0 +1,33 @@
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. I read every one.
+
+        ### Asked often, not possible
+
+        - **Amazon Music and Apple Music.** Both encrypt their streams with DRM that only their own apps can unlock. Play them from the app on your phone over Bluetooth. ([#1104](https://github.com/JRpersonal/streborn/discussions/1104), [#1354](https://github.com/JRpersonal/streborn/discussions/1354))
+        - **Spotify in lossless quality.** Spotify keeps lossless inside its own apps. ([#839](https://github.com/JRpersonal/streborn/discussions/839))
+        - **The old Bose Alexa skill.** It ran through the Bose cloud, which is gone. Home Assistant can bridge your speakers to Alexa. ([guide](https://github.com/JRpersonal/streborn/blob/main/docs/ALEXA.md))
+
+        The full list with the reasons is in [docs/NOT-POSSIBLE.md](https://github.com/JRpersonal/streborn/blob/main/docs/NOT-POSSIBLE.md).
+
+        ### Maybe it is already here
+
+        Please look through the [existing ideas](https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop) first. If yours is there, sign in and click the ▲ upvote arrow next to its title. One vote per idea, and a click again takes it back. The votes help me decide what I build next. The curated overview is the [backlog in #390](https://github.com/JRpersonal/streborn/issues/390).
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe what STR should do. In your own language is fine.
+      placeholder: e.g. Hold preset key 1 to start my morning group at volume 20.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?
+      description: The situation behind the wish. It helps me find the right shape for it.
+    validations:
+      required: false

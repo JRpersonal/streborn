@@ -6,6 +6,9 @@ contact_links:
   - name: Feature idea or request
     url: https://github.com/JRpersonal/streborn/discussions/new?category=ideas
     about: Suggest a feature or vote on one. Ideas are collected and prioritised on the backlog.
+  - name: Asked often, not possible
+    url: https://github.com/JRpersonal/streborn/blob/main/docs/NOT-POSSIBLE.md
+    about: Amazon Music, Apple Music, Spotify lossless, the old Bose Alexa skill. Why I can't add them, and what works instead.
   - name: Which speaker models work
     url: https://github.com/JRpersonal/streborn/blob/main/docs/MODELS.md
     about: Current hardware support state per SoundTouch model.
