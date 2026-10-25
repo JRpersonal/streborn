@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Missing Amazon Music, Apple Music, Spotify lossless or the old Bose Alexa skill?** That is no bug, and I can't add them. The reasons and what works instead are in [docs/NOT-POSSIBLE.md](https://github.com/JRpersonal/streborn/blob/main/docs/NOT-POSSIBLE.md).
+        **Missing Amazon Music, Apple Music, Spotify lossless or the old Bose Alexa skill?** That is not a bug, and I can't add them. The reasons and what works instead are in [docs/NOT-POSSIBLE.md](https://github.com/JRpersonal/streborn/blob/main/docs/NOT-POSSIBLE.md).
   - type: markdown
     attributes:
       value: |
