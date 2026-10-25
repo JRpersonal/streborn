@@ -4,11 +4,8 @@
    tokens of shell2.css, so the three themes need nothing of their own here.
 
    A file of its own so the phase 2 views do not all append to shell2.css at
-   once. The token check below cannot see shell2.css from here (it only reads
-   the file it lints and what that file imports, and importing shell2.css
-   would bundle it twice), so it is off for this file; the tokens themselves
-   stay checked where they are defined. */
-/* stylelint-disable csstools/value-no-unknown-custom-properties */
+   once. Stylelint reads the token definitions from shell2.css
+   (.stylelintrc.json), so an unknown --u-* token still fails the lint. */
 
 html.ui2 #view-library {
   color: var(--u-text);

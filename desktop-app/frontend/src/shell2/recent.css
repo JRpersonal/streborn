@@ -5,10 +5,8 @@
    as u-btn icon buttons. Everything here sits under html.ui2 #view-recent and
    reads only the --u-* tokens, so the current layout is untouched.
 
-   The tokens are defined in shell2.css, which stylelint does not read along
-   with this file; views/recentui2.test.js checks every one used here exists
-   there instead. */
-/* stylelint-disable csstools/value-no-unknown-custom-properties */
+   The tokens are defined in shell2.css; stylelint reads them from there
+   (.stylelintrc.json) and views/recentui2.test.js checks them too. */
 
 html.ui2 #view-recent {
   color: var(--u-text);
