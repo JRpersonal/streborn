@@ -54,6 +54,9 @@ func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 		"u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.pathname === '/icon.png'",
 		"u.hostname === 'icons.duckduckgo.com'",
 		"c = '/art?u=' + btoa(c)",
+		// ...asking for the browser form, so a bitmap .ico is not swapped for
+		// STR's logo the way it is for the display (#1467).
+		"'&to=browser'",
 		// Lazy, and the failure path restores the text-only tile.
 		"img.loading = 'lazy';",
 		"tile.classList.remove('has-art'); tile.removeChild(img);",

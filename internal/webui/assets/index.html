@@ -1873,7 +1873,10 @@ async function refreshWedge() {
    onerror, so a key with no real logo would wear the chevron. They go through
    the agent's own /art proxy instead, which turns that 404 into a real error,
    so a miss is the plain text tile and a hit shows the logo the desktop app
-   shows (#1467: dropping them outright left those keys bare on the phone). */
+   shows (#1467: dropping them outright left those keys bare on the phone).
+   to=browser keeps the proxy from swapping a bitmap .ico, which a browser
+   draws fine, for STR's own logo the way it must for the speaker's display
+   (#1467 again: Exclusively Rush wore the STR symbol on the phone). */
 function presetArtCands(p) {
   var art = (p && p.art) || '';
   if (!art && p && p.type === 'queue' && Array.isArray(p.items)) {
@@ -1900,7 +1903,7 @@ function presetArtCands(p) {
     }
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
     if (u.hostname === 'icons.duckduckgo.com') {
-      c = '/art?u=' + btoa(c).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      c = '/art?u=' + btoa(c).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') + '&to=browser';
     }
     if (out.indexOf(c) < 0) out.push(c);
   });

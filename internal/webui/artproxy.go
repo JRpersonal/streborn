@@ -101,18 +101,25 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 	// may equally mean "requested and served fine" (field report 2026-08-05,
 	// the logo above the station name gone). Rate-limited per URL so a speaker
 	// that re-fetches on every track change cannot fill the NAND log.
+	// Keyed per consumer as well: the phone remote fetches the same icon with
+	// to=browser, and if that took the one log slot the speaker's own fetch,
+	// and with it the "substituted" line below, would never be logged.
+	toBrowser := r.URL.Query().Get("to") == "browser"
+	logKey, logMsg := target, "art proxy: the speaker fetched a station logo"
+	if toBrowser {
+		logKey, logMsg = "browser|"+target, "art proxy: the phone remote fetched a station logo"
+	}
 	artLogMu.Lock()
-	first := !artLogged[target]
+	first := !artLogged[logKey]
 	if first {
 		if len(artLogged) > 64 {
 			artLogged = map[string]bool{}
 		}
-		artLogged[target] = true
+		artLogged[logKey] = true
 	}
 	artLogMu.Unlock()
 	if first {
-		s.logger.Info("art proxy: the speaker fetched a station logo",
-			"url", target, "contentType", ct, "status", resp.StatusCode)
+		s.logger.Info(logMsg, "url", target, "contentType", ct, "status", resp.StatusCode)
 	}
 
 	// Bounded: a station logo is small, and an unbounded copy onto a speaker
@@ -121,6 +128,27 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(body) == 0 {
 		s.logger.Info("art proxy: image body could not be read", "url", target, "err", err)
 		http.Error(w, "image unreadable", http.StatusBadGateway)
+		return
+	}
+
+	// The phone remote asks for a key's logo with to=browser. A browser draws
+	// far more than the speaker's display does, above all an .ico holding only
+	// old-style bitmaps, which is what the icon service hands out for many
+	// station homepages. Swapping that for STR's own logo is right for the
+	// display and wrong on the phone: the key wore the STR symbol while the
+	// desktop app, which loads the same icon directly, showed the station's
+	// own (#1467, Exclusively Rush).
+	if toBrowser {
+		out, outCT, ok := browserImage(body)
+		if !ok {
+			s.logger.Info("art proxy: not an image a browser key can show", "url", target)
+			http.Error(w, "not an image", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", outCT)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(out)
 		return
 	}
 
@@ -173,6 +201,26 @@ func drawableImage(body []byte) (out []byte, contentType, note string) {
 	// STR's logo stands in, because an empty tile next to a station name reads
 	// as a fault rather than as a station having no picture.
 	return iconPNG, "image/png", "not a format the display can draw"
+}
+
+// browserImage returns the bytes to serve to a browser (the phone remote's
+// preset keys), their content type, and false when there is nothing to show.
+//
+// Unlike drawableImage it never substitutes STR's logo: a browser that gets
+// an error moves on to the key's next candidate or shows the plain text tile,
+// which is honest, while STR's symbol on a station key reads as the station's
+// artwork. An ICO is passed through whole, since every browser draws one.
+// SVG and anything unrecognised are refused rather than served from the
+// agent's own origin, where an SVG opened on its own could run script.
+func browserImage(body []byte) (out []byte, contentType string, ok bool) {
+	if out, ct, note := drawableImage(body); note == "" {
+		return out, ct, true
+	}
+	if len(body) >= 6 && body[0] == 0 && body[1] == 0 && body[2] == 1 && body[3] == 0 &&
+		(body[4] != 0 || body[5] != 0) {
+		return body, "image/x-icon", true
+	}
+	return nil, "", false
 }
 
 // pngInsideICO returns the largest PNG embedded in an ICO container, or nil.
