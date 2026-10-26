@@ -1367,6 +1367,7 @@
   "setup.help.netLogs": "Yine de başarısız olursa pencerenin altındaki Günlükleri kaydet seçeneğini kullanın ve dosyayı raporunuza ekleyin.",
   "setup.help.firmwareFirst": "Önce yukarıdaki kılavuzla hoparlörün donanım yazılımını güncelleyin, ardından tekrar Yükle'ye basın. O zamana kadar kurulum çalışamaz ve yalnızca hoparlörü yeniden başlatır.",
   "setup.help.waitRefresh": "Birkaç dakika bekleyin, ardından hoparlör listesinde Yenile'ye basın. Hoparlör bir ST Reborn sürümüyle görünürse kurulum başarılı olmuştur ve yapılacak başka bir şey yoktur.",
+  "setup.help.repairRestarted": "Hoparlör kurulumun ortasında kendiliğinden yeniden başladı ve birkaç dakika içinde kendiliğinden geri gelir. Şimdilik Yükle düğmesine tekrar basmayın: aynı kurulum aynı noktada yine durur. Yaklaşık beş dakika bekleyin, ardından hoparlör listesinde Yenile'ye basın.",
   "setup.awaitBoxReadyTitle": "Şimdi hoparlörle şunu yapın:",
   "setup.awaitSearching": "Hoparlörünüz aranıyor. Belleği taktıktan ve hoparlörü kapatıp tekrar açtıktan sonra görünmesi yaklaşık bir dakika sürer. Bu pencereyi açık tutun: durum burada kendiliğinden güncellenir. (kalan {{remaining}})",
   "setup.awaitSearchingStalled": "Hoparlörünüz hâlâ aranıyor. Kontrol edilecek üç hızlı şey: bellek sonuna kadar itilmiş, hoparlör açık ve hoparlör bu bilgisayarla aynı Wi-Fi'yi kullanıyor. Aramaya devam ediyorum, bu yüzden şimdi düzeltirseniz durum kendiliğinden güncellenir. (kalan {{remaining}})",

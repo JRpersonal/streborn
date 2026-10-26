@@ -1367,6 +1367,7 @@
   "setup.help.netLogs": "Si sigue fallando, usa Guardar registros en la parte inferior de la ventana y adjunta el archivo a tu informe.",
   "setup.help.firmwareFirst": "Primero actualiza el firmware del altavoz con la guía de arriba y después pulsa Instalar de nuevo. Hasta entonces la instalación no puede funcionar y solo reinicia el altavoz.",
   "setup.help.waitRefresh": "Espera unos minutos y pulsa Actualizar en la lista de altavoces. Si el altavoz aparece con una versión de ST Reborn, la instalación ha funcionado y no hay nada más que hacer.",
+  "setup.help.repairRestarted": "El altavoz se reinició por sí solo en mitad de la instalación y vuelve por sí mismo en unos minutos. No pulses Instalar otra vez por ahora: la misma instalación se detendría en el mismo punto. Espera unos cinco minutos y luego pulsa Actualizar en la lista de altavoces.",
   "setup.awaitBoxReadyTitle": "Ahora haz esto en el altavoz:",
   "setup.awaitSearching": "Estamos buscando tu altavoz. Después de conectar la memoria y apagar y volver a encender el altavoz, tarda alrededor de un minuto en aparecer. Mantén esta ventana abierta: el estado se actualiza aquí solo. (quedan {{remaining}})",
   "setup.awaitSearchingStalled": "Seguimos buscando tu altavoz. Tres cosas rápidas que comprobar: que la memoria esté metida hasta el fondo, que el altavoz esté encendido y que el altavoz use la misma Wi-Fi que este ordenador. Voy a seguir buscando, así que si lo arreglas ahora el estado se actualiza solo. (quedan {{remaining}})",

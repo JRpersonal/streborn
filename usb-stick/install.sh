@@ -120,17 +120,33 @@ phase1_install() {
             rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null
         fi
     fi
+    # Both boot scripts go to a .new file first and are then renamed into
+    # place, like install_boot_script in rc.local/run.sh. cp opens its
+    # destination with O_TRUNC before reading a byte, so a copy cut short (the
+    # speaker restarting mid-install, a stick read error) left a truncated,
+    # still-executable boot script; and on the SSH install the box is usually
+    # RUNNING rc.local and run-override.sh at this moment, which a rename
+    # leaves untouched while the running shell keeps its old inode.
     echo "Copying $RC_SRC to $RC_DST"
-    cp "$RC_SRC" "$RC_DST" || { echo "ERROR while copying" >&2; exit 1; }
-    chmod +x "$RC_DST"
+    rm -f "$RC_DST.new" 2>/dev/null
+    if ! { cp "$RC_SRC" "$RC_DST.new" && chmod +x "$RC_DST.new" && mv -f "$RC_DST.new" "$RC_DST"; }; then
+        rm -f "$RC_DST.new" 2>/dev/null
+        echo "ERROR while copying" >&2
+        exit 1
+    fi
 
     # Deploy run.sh into NAND as run-override.sh. This makes NAND the
     # source of truth for the boot - SD card I/O problems or a stale
     # run.sh on the SD card are no longer a problem.
     if [ -f "$RUN_SRC" ]; then
         echo "Copying $RUN_SRC to $RUN_OVERRIDE"
-        cp "$RUN_SRC" "$RUN_OVERRIDE"
-        chmod +x "$RUN_OVERRIDE"
+        rm -f "$RUN_OVERRIDE.new" 2>/dev/null
+        if ! { cp "$RUN_SRC" "$RUN_OVERRIDE.new" && chmod +x "$RUN_OVERRIDE.new" && mv -f "$RUN_OVERRIDE.new" "$RUN_OVERRIDE"; }; then
+            # Same outcome as the plain cp this replaces, whose failure was
+            # ignored: the previous run-override.sh stays in place intact.
+            rm -f "$RUN_OVERRIDE.new" 2>/dev/null
+            echo "WARNING: could not update $RUN_OVERRIDE, keeping the previous one"
+        fi
     fi
 
     # Seed the NAND binary cache (CACHED_BIN) that run.sh boots from, NOW, over
