@@ -225,7 +225,23 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	// old binary. The bytes are no longer held in memory for a local rewrite,
 	// so a mismatch answers 500 and the app's retry (it repeats every 5xx)
 	// sends the update again.
-	if verr := verifyBinaryOnFlash(dst, got.sum); verr != nil {
+	//
+	// The exception is a RAM-first receive (ota_ramfirst.go), which kept its
+	// stage for this verify: a mismatch is copied onto the NAND once more from
+	// RAM instead of making the app send the whole binary again over the link
+	// that was too weak for the deferred route. The stage goes either way.
+	defer releaseRAMFirstStage(got.ramFirstStage)
+	verifyStart := time.Now()
+	verr := verifyBinaryOnFlash(dst, got.sum)
+	if verr != nil && got.ramFirstStage != "" {
+		s.logger.Warn("agent update: flash verify failed, copying the RAM-first stage onto the NAND again", "err", verr)
+		if rerr := reinstallFromRAMFirstStage(got.ramFirstStage, dst); rerr != nil {
+			s.logger.Warn("agent update: re-copy from the RAM-first stage failed", "err", rerr)
+		} else {
+			verr = verifyBinaryOnFlash(dst, got.sum)
+		}
+	}
+	if verr != nil {
 		s.logger.Error("agent update: flash verify failed, refusing to reboot; the app will send it again", "err", verr)
 		updateInFlight.Store(false)
 		return agentInstalled{}, textUploadRefusal(http.StatusInternalServerError, "update did not persist to flash: "+verr.Error())
@@ -233,7 +249,8 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 
 	// A verified write supersedes any earlier tier-3 swap failure.
 	_ = os.Remove(swapFailMarker)
-	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state", "size", got.size)
+	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state",
+		"size", got.size, "verifyMs", time.Since(verifyStart).Milliseconds())
 	rebooting = true
 	// Always reboot after an OTA rather than just self-restarting the
 	// process. Jens 2026-06-01: a self-restart left the freshly-updated

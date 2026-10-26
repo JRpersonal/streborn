@@ -74,7 +74,9 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			// Not "never installed": this speaker HAD the engine and it was
 			// deleted to fit an agent update. Reported so the app can SAY so
 			// where the user is already looking, and so a diagnostic tells the
-			// two cases apart. Nothing acts on it: a binary reaches a speaker
+			// two cases apart. The desktop app's update run acts on it when the
+			// agent update did not complete (the engine goes back onto the old
+			// agent); outside a run nothing does: a binary reaches a speaker
 			// only while an install or update is running (standing rule,
 			// 2026-07-29), never from a background task.
 			out["goLibrespotDroppedForUpdate"] = "true"
@@ -438,8 +440,20 @@ const engineDroppedMarkerPath = "/mnt/nv/streborn/engine-dropped-for-update"
 
 // noteEngineDroppedForUpdate / clearEngineDroppedMarker maintain that marker.
 // Both are best effort: the marker is a hint, never a gate.
+// The note is synced (file and directory): reclaimSpotifyEngine writes it
+// just before the engine is removed, and the pair must survive a power loss.
 func noteEngineDroppedForUpdate() {
-	_ = os.WriteFile(engineDroppedMarkerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+	f, err := os.OpenFile(engineDroppedMarkerPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return
+	}
+	_, _ = f.WriteString(time.Now().UTC().Format(time.RFC3339) + "\n")
+	_ = f.Sync()
+	_ = f.Close()
+	if d, derr := os.Open(filepath.Dir(engineDroppedMarkerPath)); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 }
 
 func clearEngineDroppedMarker() {
@@ -715,10 +729,16 @@ var engineStopHook func() bool
 // nandWriteState carries what the reclaim preamble learned into the error
 // classification, so a failure can still say whether the engine was dropped
 // and whether statfs had predicted the shortage.
+//
+// enginePending is set only by the deferred variant (prepareBinaryWriteDeferred):
+// statfs predicted a shortage, but the engine is still on the NAND and is
+// dropped only once the incoming body has actually filled the volume to the
+// margin (engineReclaimGate).
 type nandWriteState struct {
 	engineStopped bool
 	engineReclaim string
 	predictedFull bool
+	enginePending bool
 }
 
 // prepareBinaryWrite is everything a binary write does BEFORE the bytes
@@ -726,9 +746,58 @@ type nandWriteState struct {
 // makes room. Shared with the streaming variant so the two cannot drift on the
 // space handling, which is the part that took the longest to get right.
 func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+	tmp, dir, err = prepareBinaryWriteBase(dst)
+	if err != nil {
+		return "", "", st, err
+	}
+	if !nandHasRoom(dir, need) {
+		st = reclaimEngineForWrite(dir, need)
+	}
+	return tmp, dir, st, nil
+}
+
+// prepareBinaryWriteDeferred is prepareBinaryWrite for the agent update: when
+// statfs predicts a shortage it does NOT drop the Spotify engine up front but
+// marks the drop as pending, and the receive loop runs it through
+// engineReclaimGate once the body has actually used the free space up to the
+// margin.
+//
+// Dropping the engine before a single byte had arrived is what left a speaker
+// with its old agent and no Spotify (a Portable on a poor Wi-Fi link,
+// 2026-10-25): the upload died twice after 2.3 to 2.5 MB of 18.3 MB, the agent
+// correctly kept the old binary, but the first attempt had already deleted the
+// engine to make room for bytes that never came. Deferring costs the box
+// nothing: the body still streams through the same 32 KB window, so RAM use is
+// unchanged, and the engine keeps running during the transfer exactly as it
+// does on a roomy speaker. What it buys is that a transfer that dies before
+// reaching the margin leaves the engine where it was. A transfer that dies
+// AFTER the drop is still possible; the desktop app puts the engine back for
+// that case (the goLibrespotDroppedForUpdate marker).
+//
+// It never withholds the room the update needs: the drop still runs before
+// the volume gets closer to full than nandWriteMargin (plus one check window),
+// so the write stays off the sub-megabyte cliff that margin exists for, and a
+// real ENOSPC while the drop is pending runs it at once and retries the bytes.
+func prepareBinaryWriteDeferred(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+	tmp, dir, err = prepareBinaryWriteBase(dst)
+	if err != nil {
+		return "", "", st, err
+	}
+	if !nandHasRoom(dir, need) {
+		_, avail, _ := nandAvailFn(dir)
+		st.enginePending = true
+		slog.Info("OTA write: statfs predicts a shortage; the Spotify engine is dropped only once the body actually needs its room",
+			"needKB", need/1024, "availKB", avail/1024, "marginKB", nandWriteMargin/1024)
+	}
+	return tmp, dir, st, nil
+}
+
+// prepareBinaryWriteBase is the preamble both variants share: the parent
+// directory, this target's stale temp and the cheap reclaim of regenerable junk.
+func prepareBinaryWriteBase(dst string) (tmp, dir string, err error) {
 	dir = filepath.Dir(dst)
 	if err = os.MkdirAll(dir, 0o755); err != nil {
-		return "", "", st, fmt.Errorf("mkdir parent: %w", err)
+		return "", "", fmt.Errorf("mkdir parent: %w", err)
 	}
 	tmp = dst + ".new"
 	// Drop this target's stale temp, then proactively reclaim regenerable junk on
@@ -738,55 +807,117 @@ func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteSt
 	// files or the live binaries.
 	_ = os.Remove(tmp)
 	reclaimNAND()
-	engineStopped := false
-	engineReclaim := ""
-	predictedFull := false
-	if !nandHasRoom(dir, need) {
-		// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
-		// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
-		// cheap reclaim above never touches it. Drop it so the agent .new fits
-		// rather than failing the whole update (#119); the desktop app re-delivers
-		// it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
-		// "present"). Only runs when statfs predicts a shortage, so a roomy box
-		// keeps its engine.
-		//
-		// Stop the engine FIRST: it is normally running during an OTA, and a plain
-		// os.Remove of a running binary only unlinks the path while the kernel keeps
-		// its blocks pinned until the process exits, so dropping it freed nothing and
-		// the update still failed with "no space left" (#119). StopEngine kills it and
-		// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
-		// the (now-unused) binary.
-		if engineStopHook != nil {
-			engineStopped = engineStopHook()
-		}
-		engineReclaim = reclaimSpotifyEngine()
-		// Re-check with patience: UBIFS updates its free-space accounting lazily
-		// after a delete, and the engine's blocks release on process reap, so an
-		// immediate statfs can still show the old figure. A field report (#270)
-		// showed a 507 whose inventory still carried the engine with no way to
-		// tell which step failed; the outcome of each step is now logged and
-		// embedded in the error.
-		fits := false
-		for i := 0; i < 10; i++ {
-			if nandHasRoom(dir, need) {
-				fits = true
-				break
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-		predictedFull = !fits
-		slog.Info("OTA write: space-pressed reclaim ran",
-			"engineStopped", engineStopped, "engineReclaim", engineReclaim, "fits", fits)
-		if !fits {
-			// Do NOT refuse: agent+engine measurably fit the tightest (ST20,
-			// ~26.7 MB) NAND once compression is accounted for, and refusing on
-			// the pessimistic figure is what kept those boxes un-updatable.
-			_, avail, _ := diskFree(dir)
-			slog.Info("OTA write: statfs still predicts no room after reclaim; attempting the write anyway (UBIFS under-reports free space for compressible data)",
-				"needKB", need/1024, "availKB", avail/1024)
-		}
+	return tmp, dir, nil
+}
+
+// engineReclaimCheckEvery is how often (in bytes written) the deferred reclaim
+// asks statfs whether the volume has reached the margin. One statfs per 256 KB
+// is about 70 syscalls for an 18 MB agent, nothing next to the write itself,
+// and the volume can never get more than one window closer to full than the
+// margin before the drop runs.
+const engineReclaimCheckEvery = 256 * 1024
+
+// nandAvailFn is diskFree behind a seam, so the deferred reclaim can be driven
+// by a scripted volume in tests.
+var nandAvailFn = func(dir string) (total, avail int64, ok bool) { return diskFree(dir) }
+
+// engineReclaimGate drives the pending engine drop of a deferred write. The
+// receive loop calls due before every write; it asks statfs at most once per
+// engineReclaimCheckEvery bytes. The first call always asks, so a volume that
+// is already at the margin drops the engine before the first byte, exactly as
+// the up-front reclaim did.
+type engineReclaimGate struct {
+	dir        string
+	need       int64
+	sinceCheck int64
+	asked      bool
+}
+
+// due reports whether the pending drop must run before the next write of
+// next bytes.
+func (g *engineReclaimGate) due(st *nandWriteState, next int) bool {
+	if !st.enginePending {
+		return false
 	}
-	return tmp, dir, nandWriteState{engineStopped, engineReclaim, predictedFull}, nil
+	g.sinceCheck += int64(next)
+	if g.asked && g.sinceCheck < engineReclaimCheckEvery {
+		return false
+	}
+	g.asked = true
+	g.sinceCheck = 0
+	_, avail, ok := nandAvailFn(g.dir)
+	if !ok {
+		// No free figure: nandHasRoom would have predicted room, so there is
+		// nothing to steer by. Keep the engine; a real ENOSPC still drops it.
+		return false
+	}
+	return avail < nandWriteMargin+int64(next)
+}
+
+// run drops the engine now. written is what has reached the temp file so far;
+// forced marks a drop the filesystem itself asked for (ENOSPC while pending).
+func (g *engineReclaimGate) run(st *nandWriteState, written int64, forced bool) {
+	if !st.enginePending {
+		return
+	}
+	slog.Info("OTA write: the incoming body reached the NAND margin, dropping the Spotify engine now",
+		"writtenKB", written/1024, "needKB", g.need/1024, "forcedByENOSPC", forced)
+	remaining := g.need - written
+	if remaining < 0 {
+		remaining = 0
+	}
+	*st = reclaimEngineForWrite(g.dir, remaining)
+}
+
+// reclaimEngineForWrite is the second reclaim tier: stop and drop the Spotify
+// engine so a write that statfs says cannot fit gets the room. need is what is
+// still to be written.
+func reclaimEngineForWrite(dir string, need int64) nandWriteState {
+	// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
+	// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
+	// cheap reclaim never touches it. Drop it so the agent .new fits rather
+	// than failing the whole update (#119); the desktop app re-delivers it
+	// after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
+	// "present"), and after an update that did not complete when the speaker
+	// reports the engine dropped for it. Only runs when statfs predicts a
+	// shortage, so a roomy box keeps its engine.
+	//
+	// Stop the engine FIRST: it is normally running during an OTA, and a plain
+	// os.Remove of a running binary only unlinks the path while the kernel keeps
+	// its blocks pinned until the process exits, so dropping it freed nothing and
+	// the update still failed with "no space left" (#119). StopEngine kills it and
+	// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
+	// the (now-unused) binary.
+	engineStopped := false
+	if engineStopHook != nil {
+		engineStopped = engineStopHook()
+	}
+	engineReclaim := reclaimSpotifyEngine()
+	// Re-check with patience: UBIFS updates its free-space accounting lazily
+	// after a delete, and the engine's blocks release on process reap, so an
+	// immediate statfs can still show the old figure. A field report (#270)
+	// showed a 507 whose inventory still carried the engine with no way to
+	// tell which step failed; the outcome of each step is now logged and
+	// embedded in the error.
+	fits := false
+	for i := 0; i < 10; i++ {
+		if nandHasRoom(dir, need) {
+			fits = true
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	slog.Info("OTA write: space-pressed reclaim ran",
+		"engineStopped", engineStopped, "engineReclaim", engineReclaim, "fits", fits)
+	if !fits {
+		// Do NOT refuse: agent+engine measurably fit the tightest (ST20,
+		// ~26.7 MB) NAND once compression is accounted for, and refusing on
+		// the pessimistic figure is what kept those boxes un-updatable.
+		_, avail, _ := diskFree(dir)
+		slog.Info("OTA write: statfs still predicts no room after reclaim; attempting the write anyway (UBIFS under-reports free space for compressible data)",
+			"needKB", need/1024, "availKB", avail/1024)
+	}
+	return nandWriteState{engineStopped: engineStopped, engineReclaim: engineReclaim, predictedFull: !fits}
 }
 
 // finishBinaryWrite renames the completed temp into place and journals it.
@@ -1658,10 +1789,19 @@ func ReclaimNAND() { reclaimNAND() }
 // happened.
 func reclaimSpotifyEngine() string {
 	_ = os.Remove(goLibrespotBinPath + ".sha256")
+	// The marker goes down, synced, BEFORE the engine goes. The desktop puts a
+	// dropped engine back only on the marker's word, so a power loss right
+	// after the remove must not keep the deletion and lose the marker. A
+	// marker that turns out to be wrong (nothing was removed) is taken back,
+	// unless one from an earlier drop was already there.
+	had := engineDroppedForUpdate()
+	noteEngineDroppedForUpdate()
 	err := os.Remove(goLibrespotBinPath)
+	if err != nil && !had {
+		clearEngineDroppedMarker()
+	}
 	switch {
 	case err == nil:
-		noteEngineDroppedForUpdate()
 		return "engine dropped"
 	case os.IsNotExist(err):
 		return "engine absent"
@@ -1731,11 +1871,35 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 // The returned restore func is never nil and safe to defer.
 func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 	restore = func() {}
-	iface := wirelessIface()
+	// Every branch says what it saw, at Info. Before, both "leave it alone"
+	// checks returned without a word, and six uploads from standby on both
+	// chassis families (2026-10-25 fleet roll) produced logs that could not say
+	// which of the two had stopped the boost.
+	iface, how := wirelessIface()
 	if iface == "" {
-		return restore // wired or no readable wireless interface
+		s.logger.Info("upload: wireless power-save left as is, no Linux wireless interface on this speaker (wired, or a Wi-Fi module the kernel sees as Ethernet)",
+			"endpoint", endpoint, "lookup", how)
+		return restore
 	}
-	if src := s.boxSourceNow(); src != "STANDBY" {
+	// Read the source directly rather than through boxSourceNow, so a failed
+	// read is logged with its error instead of reading as an empty source.
+	// A read is all this is: nothing here may wake the speaker, because
+	// power-on resume would start the music.
+	src := ""
+	var srcErr error
+	if np, err := s.readBoxNowWithin(4 * time.Second); err != nil {
+		srcErr = err
+	} else {
+		src = strings.TrimSpace(np.Source)
+	}
+	if !strings.EqualFold(src, "STANDBY") {
+		if srcErr != nil {
+			s.logger.Info("upload: wireless power-save left as is, could not read the speaker's source",
+				"endpoint", endpoint, "iface", iface, "lookup", how, "err", srcErr)
+		} else {
+			s.logger.Info("upload: wireless power-save left as is, the speaker is not in standby",
+				"endpoint", endpoint, "iface", iface, "lookup", how, "source", src)
+		}
 		return restore
 	}
 	type tool struct {
@@ -1747,12 +1911,12 @@ func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 		{"iw", []string{"dev", iface, "set", "power_save", "off"}, []string{"dev", iface, "set", "power_save", "on"}},
 	}
 	for _, t := range tools {
-		if out, err := exec.Command(t.name, t.off...).CombinedOutput(); err == nil {
+		if out, err := powerSaveCmd(t.name, t.off...); err == nil {
 			s.logger.Info("upload: wireless power-save off for the transfer (idle throttles it ~17x)",
-				"endpoint", endpoint, "tool", t.name)
+				"endpoint", endpoint, "tool", t.name, "iface", iface, "source", src)
 			tt := t
 			return func() {
-				if out, err := exec.Command(tt.name, tt.on...).CombinedOutput(); err != nil {
+				if out, err := powerSaveCmd(tt.name, tt.on...); err != nil {
 					s.logger.Warn("upload: could not re-enable wireless power-save (a reboot resets it)",
 						"endpoint", endpoint, "tool", tt.name, "err", err, "out", strings.TrimSpace(string(out)))
 					return
@@ -1760,27 +1924,109 @@ func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 				s.logger.Info("upload: wireless power-save restored", "endpoint", endpoint)
 			}
 		} else {
-			s.logger.Debug("upload: power-save toggle unavailable", "tool", t.name, "err", err,
-				"out", strings.TrimSpace(string(out)))
+			s.logger.Info("upload: power-save toggle unavailable", "endpoint", endpoint, "tool", t.name,
+				"iface", iface, "err", err, "out", strings.TrimSpace(string(out)))
 		}
 	}
 	s.logger.Info("upload: no wireless power-save toggle in this firmware, transferring at the throttled rate",
-		"endpoint", endpoint)
+		"endpoint", endpoint, "iface", iface, "source", src)
 	return restore
 }
 
-// wirelessIface names the box's wireless interface, or "" when there is none.
-// The name is NOT uniform across chassis - the sm2 boxes expose wlan0 while
-// the BCO/taigan chipset surfaces its WLAN as eth0 - so read the kernel's
-// own list (/proc/net/wireless) instead of guessing.
-func wirelessIface() string {
-	b, err := os.ReadFile("/proc/net/wireless")
-	if err != nil {
-		return ""
+// powerSaveCmd runs one power-save tool. A seam so the boost's branches can
+// be tested without the tools on the host.
+var powerSaveCmd = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// procNetWirelessPath and sysClassNetDir are the kernel views wirelessIface
+// reads, as variables so tests can point them at fixtures.
+var (
+	procNetWirelessPath = "/proc/net/wireless"
+	sysClassNetDir      = "/sys/class/net"
+)
+
+// wirelessIface names the box's wireless interface, or "" when there is none,
+// and says how it got there (or why it found nothing) for the boost's log line.
+//
+// The name is NOT uniform across chassis, so it is never assumed. The kernel's
+// wireless-extensions list (/proc/net/wireless) comes first. It only lists
+// drivers that implement wireless extensions, though, so a cfg80211 driver
+// built without the WEXT compat layer leaves it with nothing but its two
+// header lines while wlan0 is up and associated. /sys/class/net is the second
+// look: an interface with a "wireless" or "phy80211" entry is a WLAN whatever
+// it is called. A Wi-Fi module that does its own networking and is handed to
+// Linux as plain Ethernet (the eth0 boxes) has neither, and there is then no
+// Linux-side radio whose power-save could be lifted at all.
+func wirelessIface() (iface, how string) {
+	procNote := ""
+	b, err := os.ReadFile(procNetWirelessPath)
+	switch {
+	case err != nil:
+		procNote = "proc unreadable: " + err.Error()
+	default:
+		if name := parseProcNetWirelessIface(string(b)); name != "" {
+			return name, "proc"
+		}
+		procNote = "proc lists no interface"
 	}
-	for _, line := range strings.Split(string(b), "\n") {
+	ents, err := os.ReadDir(sysClassNetDir)
+	if err != nil {
+		return "", procNote + "; sysfs unreadable: " + err.Error()
+	}
+	// Several entries can carry the markers: a driver that adds a P2P or AP
+	// interface (p2p0, ap0, uap0) next to its station interface. Directory
+	// order puts p2p0 before wlan0, and lifting power-save on p2p0 "succeeds"
+	// while wlan0 stays throttled, so the log would point the diagnosis the
+	// wrong way. The station interface is the one that is up, and failing
+	// that, the one with a station name; directory order breaks ties.
+	best, bestMarker, bestScore := "", "", -1
+	var found []string
+	for _, e := range ents {
+		name := e.Name()
+		for _, marker := range []string{"wireless", "phy80211"} {
+			if _, serr := os.Stat(filepath.Join(sysClassNetDir, name, marker)); serr != nil {
+				continue
+			}
+			found = append(found, name)
+			if sc := wirelessIfaceScore(name); sc > bestScore {
+				best, bestMarker, bestScore = name, marker, sc
+			}
+			break
+		}
+	}
+	if best == "" {
+		return "", procNote + "; sysfs has no wireless interface"
+	}
+	how = procNote + "; sysfs " + bestMarker
+	if len(found) > 1 {
+		how += " (picked from " + strings.Join(found, ",") + ")"
+	}
+	return best, how
+}
+
+// wirelessIfaceScore ranks a sysfs wireless candidate: operstate "up" counts
+// most, a station-style name (wlan*, mlan*) next.
+func wirelessIfaceScore(name string) int {
+	sc := 0
+	if b, err := os.ReadFile(filepath.Join(sysClassNetDir, name, "operstate")); err == nil && strings.TrimSpace(string(b)) == "up" {
+		sc += 2
+	}
+	if strings.HasPrefix(name, "wlan") || strings.HasPrefix(name, "mlan") {
+		sc++
+	}
+	return sc
+}
+
+// parseProcNetWirelessIface returns the first interface listed in
+// /proc/net/wireless content. The two header lines carry no colon; every data
+// line is "<iface>: <status> <link> ...".
+func parseProcNetWirelessIface(content string) string {
+	for _, line := range strings.Split(content, "\n") {
 		if i := strings.IndexByte(line, ':'); i > 0 {
-			return strings.TrimSpace(line[:i])
+			if name := strings.TrimSpace(line[:i]); name != "" && !strings.ContainsAny(name, " |") {
+				return name
+			}
 		}
 	}
 	return ""

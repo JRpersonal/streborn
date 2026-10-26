@@ -271,6 +271,45 @@ func (t *progressTaps) notify(host string, pct int) {
 // restarts happening in parallel behind them.
 type uploadGate struct {
 	slots chan struct{}
+	// pending counts the batch's agent pushes that have not happened yet. An
+	// engine restore after a failed update waits for it to reach zero before
+	// it queues its ~16 MB: the other speakers' agent updates go first, and
+	// the restore does not hold them up over the link that just failed.
+	mu      sync.Mutex
+	pending int
+}
+
+// expectPushes announces n agent pushes the batch is still going to make.
+func (g *uploadGate) expectPushes(n int) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	g.pending += n
+	g.mu.Unlock()
+}
+
+// pushSettled marks one announced agent push as done (sent, failed, or never
+// needed).
+func (g *uploadGate) pushSettled() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	if g.pending > 0 {
+		g.pending--
+	}
+	g.mu.Unlock()
+}
+
+// pendingPushes is how many announced agent pushes are still to come.
+func (g *uploadGate) pendingPushes() int {
+	if g == nil {
+		return 0
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.pending
 }
 
 func newUploadGate(limit int) *uploadGate {
@@ -445,6 +484,16 @@ type speakerUpdater struct {
 	// remaining time, or nil when no countdown is running.
 	countdown *updatePhase
 	deadline  time.Time
+	// settlePush, when set (a batch row), tells the gate this row's agent
+	// push is behind it. Idempotent.
+	settlePush func()
+}
+
+// agentPushSettled reports this row's agent push as done to the batch gate.
+func (u *speakerUpdater) agentPushSettled() {
+	if u.settlePush != nil {
+		u.settlePush()
+	}
 }
 
 func (u *speakerUpdater) log() *slog.Logger {
@@ -612,10 +661,13 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		return u.deliverEngine(base, pv, preVersion)
 	}
 	u.phase(updatePhase{Phase: phaseUploading, Attempt: attempt})
-	if err := u.gatedPush(); err != nil {
+	err := u.gatedPush()
+	u.agentPushSettled()
+	if err != nil {
 		if !lostReplyErr.MatchString(err.Error()) {
 			base.Outcome = outcomeFailed
 			base.Err = err.Error()
+			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: outcomeFailed, Attempt: attempt, Outcome: outcomeFailed, Err: base.Err})
 			return base
 		}
@@ -730,6 +782,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 			default:
 				base.Outcome = outcomeTimeout
 			}
+			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome})
 			return base
 		}
@@ -750,6 +803,115 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		u.seams.spawn(func() { u.seams.restoreGroup(host, port) })
 	}
 	return u.deliverEngine(base, confirmed, preVersion)
+}
+
+// engineRestoreAttempts bounds the engine re-delivery after an update that did
+// not complete. Two: one retry covers a stream the poor link that just killed
+// the agent upload also cuts once, more would only keep a weak speaker busy.
+const engineRestoreAttempts = 2
+
+// restoreEngineAfterIncompleteUpdate puts the Spotify engine back on a speaker
+// whose agent update did not complete but whose engine was already dropped to
+// make room for it.
+//
+// The agent drops the engine on a NAND-tight speaker so the new binary fits,
+// and the re-delivery used to live only behind a confirmed update
+// (deliverEngine). An upload that died halfway therefore left the speaker on
+// its old agent with no Spotify, and nothing ever put it back: a Portable on a
+// poor Wi-Fi link timed out twice at about 2.5 of 18.3 MB in the 2026-10-25
+// fleet roll and ended exactly so. The old agent is running and accepts the
+// engine again once it clears its update-in-flight latch (every give-up path
+// does, but only after its read of the dead upload fails: see the latch wait),
+// so it goes back now, while the update run is still the one writing to this
+// speaker.
+//
+// It acts only on the speaker's own word: goLibrespot "missing" together with
+// goLibrespotDroppedForUpdate "true". An engine that was never installed, a
+// speaker that does not answer, and the two outcomes where the speaker cannot
+// take a delivery (STR's agent is not running, or Bose's setup is) are left
+// as they are. The outcome of the update itself is not changed: it did not
+// complete, and the frontend is told so as before.
+func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) UpdateOutcome {
+	if base.Outcome == outcomeAgentGone || base.Outcome == outcomeBoxInSetup {
+		return base
+	}
+	live, err := u.seams.readVersion(u.host, u.port)
+	if err != nil || live == nil || live["goLibrespot"] != "missing" || live["goLibrespotDroppedForUpdate"] != "true" {
+		return base
+	}
+	u.record("update did not complete and the speaker reports its Spotify engine dropped for it: delivering the engine again to the running agent " + live["version"])
+	u.log().Info("speaker update: update incomplete, the engine was dropped for it; putting it back",
+		"host", u.host, "outcome", base.Outcome, "agent", live["version"])
+	// In a batch, the other speakers' agent pushes go first. The restore is
+	// ~16 MB over the link that just failed; queued in the shared gate ahead
+	// of them it held every remaining speaker's update behind it. Bounded, so
+	// a batch that never drains (it always does: every push ends) cannot park
+	// the restore for good.
+	if n := u.gate.pendingPushes(); n > 0 {
+		u.record(fmt.Sprintf("engine re-delivery waits for the other speakers' updates to be sent first (%d still to go)", n))
+		drainBy := u.seams.now().Add(u.policy.engineWindow)
+		for u.gate.pendingPushes() > 0 && u.seams.now().Before(drainBy) {
+			u.sleep(u.policy.settleProbe)
+		}
+	}
+	// The speaker may still hold its update latch: on a link that went dead
+	// rather than closed, the old agent sits in its read until TCP gives up
+	// (minutes), and refuses the engine with 409 update-in-flight the whole
+	// time. Those refusals send nothing, so they do not use up an attempt;
+	// they are retried with backoff until the latch clears or latchBy passes.
+	var latchBy time.Time
+	latchWaits := 0
+	for attempt := 1; attempt <= engineRestoreAttempts; {
+		if attempt > 1 && latchWaits == 0 {
+			u.sleep(u.policy.engineBackoff(attempt - 1))
+		}
+		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
+		var res string
+		var engErr error
+		u.gate.run(func() {
+			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
+			res, engErr = u.seams.ensureEngine(u.host, u.port)
+		})
+		if engErr == nil && res == EngineDeferredUpdateInFlight {
+			if latchBy.IsZero() {
+				latchBy = u.seams.now().Add(u.policy.engineWindow)
+				u.record("engine re-delivery: the speaker still reports its update in flight; waiting for it to give up")
+				u.log().Info("speaker update: engine restore deferred, the speaker still holds its update latch", "host", u.host)
+			}
+			if !u.seams.now().Before(latchBy) {
+				u.record("engine re-delivery after the incomplete update did not succeed: the speaker kept reporting its update in flight; the next update run delivers it")
+				return base
+			}
+			latchWaits++
+			u.sleep(u.policy.engineBackoff(latchWaits))
+			continue
+		}
+		latchWaits = 0
+		attempt++
+		if engErr != nil {
+			m := engErr.Error()
+			u.log().Warn("speaker update: engine re-delivery after the incomplete update failed",
+				"host", u.host, "attempt", attempt-1, "err", engErr)
+			if spaceRefusal.MatchString(m) {
+				base.EngineTooFull = true
+				u.record("engine re-delivery after the incomplete update refused for lack of room: " + m)
+				return base
+			}
+			continue
+		}
+		if noEmbeddedEngine.MatchString(res) || engineSkipped.MatchString(res) {
+			u.record("engine re-delivery after the incomplete update skipped: " + res)
+			return base
+		}
+		check, cerr := u.seams.readVersion(u.host, u.port)
+		if cerr == nil && check["goLibrespot"] == "present" {
+			base.EngineDelivered = engineSent(res)
+			u.record("engine back on the speaker after the incomplete update (" + res + ")")
+			return base
+		}
+	}
+	u.record("engine re-delivery after the incomplete update did not succeed; the next update run delivers it")
+	return base
 }
 
 // deliverEngine is the second half of an update: the agent is on the target
@@ -858,7 +1020,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			}
 			// "current" means nothing was sent: the engine was already the right
 			// one.
-			if engRes != "current" {
+			if engineSent(engRes) {
 				engineDelivered = true
 			}
 			// Do not take the delivery's word for it. The update may only be
@@ -1102,6 +1264,13 @@ func orchestrateFleet(seams *otaSeams, policy otaPolicy, targets []FleetTarget, 
 	otaRunning.Store(true)
 	defer otaRunning.Store(false)
 	gate := newUploadGate(1)
+	agentRows := 0
+	for _, t := range targets {
+		if !t.EngineOnly {
+			agentRows++
+		}
+	}
+	gate.expectPushes(agentRows)
 	rows := make([]UpdateOutcome, len(targets))
 	var wg sync.WaitGroup
 	for i, t := range targets {
@@ -1113,6 +1282,11 @@ func orchestrateFleet(seams *otaSeams, policy otaPolicy, targets []FleetTarget, 
 			if t.EngineOnly {
 				rows[i] = u.runEngineOnly()
 			} else {
+				// A row that ends before its push (already current, only the
+				// engine missing, unreachable) still counts down, here.
+				var once sync.Once
+				u.settlePush = func() { once.Do(gate.pushSettled) }
+				defer u.agentPushSettled()
 				rows[i] = u.runFleetRow()
 			}
 		}(i, t)
@@ -1188,7 +1362,7 @@ func (u *speakerUpdater) runEngineOnly() UpdateOutcome {
 		out.Unmet = unmetNoEmbeddedEngine
 		return finish()
 	}
-	if res != "current" {
+	if engineSent(res) {
 		out.EngineDelivered = true
 	}
 	// The same honesty check the update path does: a speaker can lose the

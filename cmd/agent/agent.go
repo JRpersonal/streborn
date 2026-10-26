@@ -986,6 +986,10 @@ func (a *agent) buildWebui() error {
 	alarmStore, alarmState, zonesStore, mediaServerStore := a.alarmStore, a.alarmState, a.zonesStore, a.mediaServerStore
 	recentStore, regionRes, bootReason := a.recentStore, a.regionRes, a.bootReason
 
+	// An agent killed mid-update leaves its RAM stage in tmpfs, where it
+	// would hold ~18 MB of unswappable memory until the next update.
+	webui.CleanStaleRAMStages(logger.With("comp", "webui"))
+
 	webuiSrv := webui.New(a.flags.webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(a.flags.boxHost),

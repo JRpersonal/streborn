@@ -187,6 +187,7 @@ func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) error {
 		return fmt.Errorf("start swap helper: %w", err)
 	}
 	// Deliberately not Wait()ed: the helper outlives us by design.
+	swapArmed.Store(true)
 	s.logger.Warn("OTA: NAND cannot hold two agent copies; RAM-staged swap armed, agent will exit and the helper reboots the box",
 		"stage", ramStageTarget, "bytes", size, "helperPID", cmd.Process.Pid)
 	return nil

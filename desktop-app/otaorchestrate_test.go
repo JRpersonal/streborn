@@ -462,8 +462,13 @@ func TestSpeakerUpdateCleanRejectFails(t *testing.T) {
 	if len(fb.clears) != 0 {
 		t.Error("a failed push keeps the intent so the next run can finish the job")
 	}
-	if fb.reads != 1 {
+	// One read before the push, one to ask whether the engine was dropped for
+	// it (restoreEngineAfterIncompleteUpdate); no verify poll.
+	if fb.reads != 2 {
 		t.Errorf("after a clean reject nothing is polled, read %d times", fb.reads)
+	}
+	if len(fb.engineCalls) != 0 {
+		t.Error("a speaker that still has its engine gets no engine delivery")
 	}
 	if got := fb.phaseIDs(); got[len(got)-1] != outcomeFailed {
 		t.Errorf("the terminal phase must be failed, phases %v", got)

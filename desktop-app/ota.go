@@ -769,6 +769,25 @@ func (a *App) boxAnswersBoseAPI(host string) bool {
 // content hash so a steady state (sidecar already current) costs just one cheap
 // version GET and sends zero sidecar bytes.
 func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err error) {
+	delivered, err = a.pushSidecar(host, port)
+	if errors.Is(err, errSidecarUpdateInFlight) {
+		// Not a failure for these callers: the update that holds the latch
+		// re-delivers the engine once the new version reports itself.
+		return false, nil
+	}
+	return delivered, err
+}
+
+// errSidecarUpdateInFlight is pushSidecar's answer when the speaker refused the
+// engine with its 409 update-in-flight: nothing landed, and nothing can until
+// the agent update that holds the latch has either restarted the speaker or
+// given up. Only EnsureSpotifyEngine passes it on (as
+// EngineDeferredUpdateInFlight); pushSidecarIfNeeded's callers keep reading it
+// as "nothing to do now".
+var errSidecarUpdateInFlight = errors.New("sidecar: the speaker reports an agent update in flight")
+
+// pushSidecar is pushSidecarIfNeeded without the update-in-flight mapping.
+func (a *App) pushSidecar(host string, port int) (delivered bool, err error) {
 	if !agentbin.GoLibrespotAvailable() {
 		// Dev build (empty stub): nothing real to deliver. Never write 0 bytes.
 		a.recordOTA(host, "sidecar: skipped, no embedded go-librespot in this build")
@@ -837,7 +856,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 		if strings.Contains(err.Error(), "update-in-flight") {
 			a.recordOTA(host, "sidecar: the speaker is mid-update and would discard the engine; delivering it after the restart")
 			a.logger.Info("sidecar push deferred: the speaker reports an update in flight", "host", host)
-			return false, nil
+			return false, errSidecarUpdateInFlight
 		}
 		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
 		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
@@ -979,6 +998,18 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // removed from the speaker: nothing was sent, nothing must be announced.
 const EngineSkippedUninstalling = "skipped: STR is being removed from this speaker"
 
+// EngineDeferredUpdateInFlight is EnsureSpotifyEngine's answer when the
+// speaker refused the engine because an agent update is still writing (its
+// 409 update-in-flight). Nothing was sent; ask again once that update has
+// restarted the speaker or given up.
+const EngineDeferredUpdateInFlight = "deferred: an agent update is in flight on the speaker"
+
+// engineSent reports whether an EnsureSpotifyEngine result means bytes went
+// out: "current" and the update-in-flight deferral both sent nothing.
+func engineSent(res string) bool {
+	return res != "current" && res != EngineDeferredUpdateInFlight
+}
+
 // isUninstalling reports whether UninstallSTR has started (or finished) for
 // host in this session.
 func (a *App) isUninstalling(host string) bool {
@@ -1023,7 +1054,14 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	if !agentbin.GoLibrespotAvailable() {
 		return "no embedded engine in this build", nil
 	}
-	delivered, err := a.pushSidecarIfNeeded(host, port)
+	delivered, err := a.pushSidecar(host, port)
+	if errors.Is(err, errSidecarUpdateInFlight) {
+		// Nothing was sent and the engine is NOT current. Answering "current"
+		// here, as this used to, told the restore after a failed update that
+		// the delivery had gone through when the speaker had only said "not
+		// yet".
+		return EngineDeferredUpdateInFlight, nil
+	}
 	if err != nil {
 		return "", err
 	}
