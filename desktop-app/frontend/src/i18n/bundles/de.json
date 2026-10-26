@@ -432,6 +432,8 @@
   "preset.confirmClearBody": "Belegung der Taste {{n}} (<b>{{name}}</b>) wirklich löschen?",
   "preset.placeholderSender": "Sender",
   "preset.noCurrentStation": "Kein Sender läuft gerade, daher hat Long Press keinen Effekt.",
+  "preset.nothingSaveable": "Was der Lautsprecher gerade spielt, lässt sich nicht auf einer Taste speichern.",
+  "preset.sourceKeyEmpty": "Die Taste, die gerade spielt, ist leer. Es gibt nichts zu kopieren.",
   "preset.copiedToKey": "Auf Taste {{n}} kopiert: {{name}}",
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Gespeichert. Die Taste spielt noch nicht: dieser Lautsprecher wurde in Spotify noch nicht einmal ausgewählt. Öffne Spotify, wähl den Eintrag für diesen Lautsprecher mit (STR) am Ende und spiel einen Titel. Mit einem kostenlosen Spotify-Konto lässt sich dieser Eintrag nicht auswählen.",

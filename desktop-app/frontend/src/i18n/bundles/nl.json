@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "Toets {{n}} (<b>{{name}}</b>) echt wissen?",
   "preset.placeholderSender": "Zender",
   "preset.noCurrentStation": "Er speelt nu geen zender, dus ingedrukt houden heeft geen effect.",
+  "preset.nothingSaveable": "Wat de speaker nu speelt, kan niet op een toets worden opgeslagen.",
+  "preset.sourceKeyEmpty": "De toets die speelt is leeg, dus er is niets om te kopiëren.",
   "preset.copiedToKey": "Gekopieerd naar toets {{n}}: {{name}}",
   "preset.savedToKey": "Opgeslagen op toets {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Opgeslagen. De toets speelt nog niet: deze speaker is nog niet één keer in Spotify gekozen. Open Spotify, kies het item voor deze speaker dat eindigt op (STR) en speel een nummer. Met een gratis Spotify-account is dat item niet te kiezen.",

@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "本当にキー {{n}} (<b>{{name}}</b>) を消去しますか?",
   "preset.placeholderSender": "放送局",
   "preset.noCurrentStation": "現在再生中の放送局がないため、長押しは無効です。",
+  "preset.nothingSaveable": "スピーカーで再生中のものはキーに保存できません。",
+  "preset.sourceKeyEmpty": "再生中のキーは空のため、コピーするものがありません。",
   "preset.copiedToKey": "キー {{n}} にコピーしました: {{name}}",
   "preset.savedToKey": "キー {{n}} に保存しました: {{name}}",
   "preset.spotifyKeyNeedsLogin": "保存しました。このキーはまだ再生できません。このスピーカーが Spotify で一度も選ばれていません。Spotify を開き、末尾が (STR) のこのスピーカーの項目を選んで曲を再生してください。無料の Spotify アカウントではその項目を選べません。",

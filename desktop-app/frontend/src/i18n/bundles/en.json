@@ -432,6 +432,8 @@
   "preset.confirmClearBody": "Really clear key {{n}} (<b>{{name}}</b>)?",
   "preset.placeholderSender": "Station",
   "preset.noCurrentStation": "No station is playing right now, so long press has no effect.",
+  "preset.nothingSaveable": "What the speaker is playing cannot be saved on a key.",
+  "preset.sourceKeyEmpty": "The key that is playing is empty, so there is nothing to copy.",
   "preset.copiedToKey": "Copied to key {{n}}: {{name}}",
   "preset.savedToKey": "Saved to key {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Saved. The key will not play yet: this speaker has not been picked once in Spotify. Open Spotify, choose the entry for this speaker ending in (STR), and play any track. A free Spotify account cannot pick that entry.",

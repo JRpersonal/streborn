@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "Справді очистити кнопку {{n}} (<b>{{name}}</b>)?",
   "preset.placeholderSender": "Станція",
   "preset.noCurrentStation": "Зараз жодна станція не грає, тому утримання не діє.",
+  "preset.nothingSaveable": "Те, що грає динамік, не можна зберегти на кнопці.",
+  "preset.sourceKeyEmpty": "Кнопка, що грає, порожня, тож копіювати нічого.",
   "preset.copiedToKey": "Скопійовано на кнопку {{n}}: {{name}}",
   "preset.savedToKey": "Збережено на кнопку {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Збережено. Кнопка ще не грає: цю колонку ні разу не вибрали в Spotify. Відкрий Spotify, вибери запис цієї колонки, що закінчується на (STR), і запусти будь-який трек. З безкоштовним акаунтом Spotify цей запис вибрати не можна.",

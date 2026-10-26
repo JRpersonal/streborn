@@ -574,6 +574,10 @@ export function SaveNativePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveNativePreset'](arg1, arg2, arg3, arg4);
 }
 
+export function SavePlayingPreset(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SavePlayingPreset'](arg1, arg2, arg3);
+}
+
 export function SaveQueuePreset(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveQueuePreset'](arg1, arg2, arg3);
 }

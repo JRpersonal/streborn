@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "¿Borrar de verdad la tecla {{n}} (<b>{{name}}</b>)?",
   "preset.placeholderSender": "Emisora",
   "preset.noCurrentStation": "No hay ninguna emisora sonando ahora, así que mantener pulsado no tiene efecto.",
+  "preset.nothingSaveable": "Lo que suena en el altavoz no se puede guardar en una tecla.",
+  "preset.sourceKeyEmpty": "La tecla que está sonando está vacía, así que no hay nada que copiar.",
   "preset.copiedToKey": "Copiado a la tecla {{n}}: {{name}}",
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Guardado. La tecla aún no suena: este altavoz no se ha elegido ni una vez en Spotify. Abre Spotify, elige la entrada de este altavoz que termina en (STR) y reproduce una canción. Una cuenta de Spotify gratuita no puede elegir esa entrada.",

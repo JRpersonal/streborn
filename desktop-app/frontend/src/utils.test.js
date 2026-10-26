@@ -1,7 +1,7 @@
 // Tests for the pure decision helpers in utils.js.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { savePresetCase, spotifySaveContextURI, spotifyURIFromContainer, libraryPlayMatches, queueSaveFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
+import { savePresetCase, spotifySaveContextURI, spotifyURIFromContainer, libraryPlayMatches, queueSaveFallsThrough, savePlayingFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
 import { allSource, srcOf } from './test/source.js';
 
 const FRESH_MS = 2 * 60 * 1000;
@@ -108,6 +108,31 @@ describe('queueSaveFallsThrough', () => {
   it('reports every other failure', () => {
     expect(queueSaveFallsThrough('status 500: preset store write failed')).toBe(false);
     expect(queueSaveFallsThrough(new Error('dial tcp 192.0.2.1:8888: connection refused'))).toBe(false);
+  });
+});
+
+describe('savePlayingFallsThrough', () => {
+  it('falls back only when the agent or this build does not know the call', () => {
+    expect(savePlayingFallsThrough(new Error('status 404: 404 page not found'))).toBe(true);
+    expect(savePlayingFallsThrough('status 405: method not allowed')).toBe(true);
+    const missing = new Error('STR_MISSING_BINDING: SavePlayingPreset is not available in this build');
+    missing.code = 'STR_MISSING_BINDING';
+    expect(savePlayingFallsThrough(missing)).toBe(true);
+    // An agent without the call serves its phone page; the binding turns that into this.
+    expect(savePlayingFallsThrough(new Error('status 404: save-playing not available on this agent'))).toBe(true);
+  });
+
+  it('falls back when the agent could not read the now-playing for a moment', () => {
+    expect(savePlayingFallsThrough(new Error('status 502: {"code":"nowplaying-unreadable","error":"The speaker could not be asked what it is playing. Try again in a moment."}'))).toBe(true);
+    expect(savePlayingFallsThrough('status 502: bad gateway')).toBe(true);
+    expect(savePlayingFallsThrough('status 5020: odd')).toBe(false);
+  });
+
+  it('reports a refusal of the agent as the answer (#1467)', () => {
+    expect(savePlayingFallsThrough('status 409: {"code":"already-on-slot","slot":2,"name":"Jazz"}')).toBe(false);
+    expect(savePlayingFallsThrough('status 422: {"code":"nothing-saveable"}')).toBe(false);
+    expect(savePlayingFallsThrough('status 4040: odd')).toBe(false);
+    expect(savePlayingFallsThrough(new Error('dial tcp 192.0.2.1:8888: connection refused'))).toBe(false);
   });
 });
 

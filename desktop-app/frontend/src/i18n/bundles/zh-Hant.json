@@ -432,6 +432,8 @@
   "preset.confirmClearBody": "確定要清空預設鍵 {{n}}（<b>{{name}}</b>）？",
   "preset.placeholderSender": "電台",
   "preset.noCurrentStation": "現在沒有電台在播放，所以長按沒有作用。",
+  "preset.nothingSaveable": "喇叭目前播放的內容無法儲存到按鍵上。",
+  "preset.sourceKeyEmpty": "正在播放的按鍵是空的，沒有可複製的內容。",
   "preset.copiedToKey": "已複製到預設鍵 {{n}}：{{name}}",
   "preset.savedToKey": "已存到預設鍵 {{n}}：{{name}}",
   "preset.spotifyKeyNeedsLogin": "已儲存。這個按鍵還不能播放：這台喇叭還沒有在 Spotify 裡被選過一次。開啟 Spotify，選擇結尾是 (STR) 的這台喇叭項目，播放任一首歌。免費的 Spotify 帳號無法選取該項目。",

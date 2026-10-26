@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "Na pewno wyczyścić przycisk {{n}} (<b>{{name}}</b>)?",
   "preset.placeholderSender": "Stacja",
   "preset.noCurrentStation": "Żadna stacja teraz nie gra, więc przytrzymanie nie ma efektu.",
+  "preset.nothingSaveable": "Tego, co gra głośnik, nie da się zapisać pod przyciskiem.",
+  "preset.sourceKeyEmpty": "Przycisk, który gra, jest pusty, więc nie ma czego kopiować.",
   "preset.copiedToKey": "Skopiowano do przycisku {{n}}: {{name}}",
   "preset.savedToKey": "Zapisano na przycisku {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Zapisano. Przycisk jeszcze nie zagra: tego głośnika nie wybrano ani raz w Spotify. Otwórz Spotify, wybierz pozycję tego głośnika zakończoną (STR) i odtwórz utwór. Na darmowym koncie Spotify tej pozycji nie da się wybrać.",
