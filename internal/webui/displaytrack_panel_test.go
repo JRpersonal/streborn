@@ -22,6 +22,13 @@ type fakeTrackPanel struct {
 	supported bool
 	shown     []oled.TrackText
 	cleared   []string
+	inputs    []inputClock
+}
+
+// inputClock is one ShowSourceClock call.
+type inputClock struct {
+	source string
+	t      oled.TrackText
 }
 
 func (f *fakeTrackPanel) Supported() bool { return f.supported }
@@ -29,6 +36,16 @@ func (f *fakeTrackPanel) Show(t oled.TrackText) {
 	f.mu.Lock()
 	f.shown = append(f.shown, t)
 	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
+	f.mu.Lock()
+	f.inputs = append(f.inputs, inputClock{source, t})
+	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) inputSnapshot() []inputClock {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]inputClock(nil), f.inputs...)
 }
 func (f *fakeTrackPanel) Clear(reason string) {
 	f.mu.Lock()
@@ -477,5 +494,93 @@ func waitUntil(t *testing.T, cond func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// The clock setting on Bluetooth and AUX: the clock with the input's name on
+// top instead of the firmware's picture; a firmware service or standby is
+// left alone; back on STR's source the normal screen returns.
+func TestPanelClockOnSpeakerInputs(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	s.hour12Read = func() (bool, bool) { return false, true }
+	setFlag(t, clockPathFor(s.displayTrackPath), true)
+	s.panelRadioTitle("Queen - Under Pressure")
+	shownBefore, _ := fp.snapshot()
+
+	s.PanelSourceChanged("BLUETOOTH")
+	waitUntil(t, func() bool { return len(fp.inputSnapshot()) == 1 })
+	want := inputClock{"BLUETOOTH", oled.TrackText{Station: "Bluetooth", Clock: true}}
+	if got := fp.inputSnapshot()[0]; got != want {
+		t.Fatalf("bluetooth: %+v, want %+v", got, want)
+	}
+	s.PanelSourceChanged("AUX")
+	waitUntil(t, func() bool { return len(fp.inputSnapshot()) == 2 })
+	if got := fp.inputSnapshot()[1]; got.source != "AUX" || got.t.Station != "AUX" || !got.t.Clock {
+		t.Fatalf("aux: %+v", got)
+	}
+	// a title from the radio stream still running behind AUX redraws the
+	// input clock, never the track
+	s.panelRadioTitle("Queen - Bohemian Rhapsody")
+	if shown, _ := fp.snapshot(); len(shown) != len(shownBefore) {
+		t.Fatalf("a radio title reached the panel on AUX: %+v", shown)
+	}
+	// the radio stream ending behind AUX does not take the clock away
+	s.HandleStreamEnded()
+	if _, cleared := fp.snapshot(); len(cleared) != 0 {
+		t.Fatalf("stream end cleared the input clock: %v", cleared)
+	}
+
+	// firmware services and standby: nothing put up by the source change
+	n := len(fp.inputSnapshot())
+	for _, src := range []string{"TUNEIN", "SPOTIFY", "AMAZON", "AIRPLAY", "PRODUCT", "LOCAL", "STANDBY"} {
+		s.PanelSourceChanged(src)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := fp.inputSnapshot(); len(got) != n {
+		t.Fatalf("input clock on a firmware source: %+v", got[n:])
+	}
+
+	// back on STR's source: the normal track screen
+	s.PanelSourceChanged("UPNP")
+	s.panelRadioTitle("Queen - Somebody to Love")
+	shown, _ := fp.snapshot()
+	if last := shown[len(shown)-1]; last.Title != "Somebody to Love" || last.Station != "Radio Bob" {
+		t.Fatalf("back on STR: %+v", last)
+	}
+	if got := fp.inputSnapshot(); len(got) != n {
+		t.Fatalf("input clock after the return: %+v", got[n:])
+	}
+}
+
+// With the clock off, Bluetooth and AUX keep the firmware's picture: the
+// panel is let go, the track setting alone does not reach them. The clock
+// switched on there shows at once, switched off lets the panel go again.
+func TestPanelInputsWithClockOff(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	setFlag(t, clockPathFor(s.displayTrackPath), false)
+	s.panelRadioTitle("Queen - Under Pressure")
+	_, clearedBefore := fp.snapshot()
+	s.PanelSourceChanged("BLUETOOTH")
+	waitUntil(t, func() bool { _, c := fp.snapshot(); return len(c) > len(clearedBefore) })
+	if got := fp.inputSnapshot(); len(got) != 0 {
+		t.Fatalf("input clock with the clock off: %+v", got)
+	}
+	setFlag(t, clockPathFor(s.displayTrackPath), true)
+	s.applyPanelSetting()
+	waitUntil(t, func() bool { return len(fp.inputSnapshot()) == 1 })
+	setFlag(t, clockPathFor(s.displayTrackPath), false)
+	_, c0 := fp.snapshot()
+	s.applyPanelSetting()
+	waitUntil(t, func() bool { _, c := fp.snapshot(); return len(c) > len(c0) })
+}
+
+// A speaker without a panel STR draws on is not touched.
+func TestPanelInputsWithoutPanel(t *testing.T) {
+	s, fp, _ := newTrackServer(t, false)
+	setFlag(t, clockPathFor(s.displayTrackPath), true)
+	s.PanelSourceChanged("AUX")
+	time.Sleep(30 * time.Millisecond)
+	if shown, cleared := fp.snapshot(); len(shown)+len(cleared)+len(fp.inputSnapshot()) != 0 {
+		t.Fatalf("panel touched without a panel: %+v %v", shown, cleared)
 	}
 }

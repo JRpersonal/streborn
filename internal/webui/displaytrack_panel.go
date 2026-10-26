@@ -11,6 +11,12 @@ package webui
 //	track off, clock on   station on top, the time large below
 //	track off, clock off  STR leaves the panel to the speaker
 //
+// The clock setting reaches beyond STR's own sources: on the speaker's
+// Bluetooth and AUX inputs, where the firmware shows only a connection
+// picture, STR draws the time large with the input's name on top instead
+// (oled.ShowSourceClock). With the clock off those inputs keep the
+// firmware's picture, as before.
+//
 // The old way of showing the track, re-sending the stream with the new title
 // as metadata, makes the speaker re-buffer: about a second of silence at every
 // song change. Where the panel is STR's to draw on, the setting takes this
@@ -45,6 +51,7 @@ import (
 type trackPanelSink interface {
 	Supported() bool
 	Show(oled.TrackText)
+	ShowSourceClock(source string, t oled.TrackText)
 	Clear(reason string)
 }
 
@@ -53,6 +60,9 @@ type oledTrackPanel struct{}
 func (oledTrackPanel) Supported() bool       { return oled.TrackSupported() }
 func (oledTrackPanel) Show(t oled.TrackText) { oled.ShowTrack(t) }
 func (oledTrackPanel) Clear(reason string)   { oled.ClearTrack(reason) }
+func (oledTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
+	oled.ShowSourceClock(source, t)
+}
 
 func (s *Server) panelSink() trackPanelSink {
 	if s.trackPanel != nil {
@@ -95,6 +105,9 @@ type panelState struct {
 	// spotifyNow is the Spotify engine's current song (track, artist), kept
 	// even while something else plays.
 	spotifyNow [2]string
+	// boxSource is the source the speaker last switched to (the agent's
+	// gabbo hook, PanelSourceChanged); empty until the first switch.
+	boxSource string
 
 	hour12Mu    sync.Mutex
 	hour12      bool
@@ -235,11 +248,46 @@ func (s *Server) refreshTrackPanel() {
 	if !p.Supported() {
 		return
 	}
+	if src, label, ok := s.panelInput(); ok {
+		// one of the speaker's own inputs: the clock or the firmware's picture
+		if s.displayClockEnabled() {
+			p.ShowSourceClock(src, oled.TrackText{Station: label, Clock: true, Hour12: s.speakerHour12()})
+			return
+		}
+		p.Clear("nothing to show")
+		return
+	}
 	if t, ok := s.panelText(); ok {
 		p.Show(t)
 		return
 	}
 	p.Clear("nothing to show")
+}
+
+// panelInput reports whether the speaker is on one of its own inputs where
+// the clock may stand in for the firmware's picture (oled.SourceClockLabel),
+// with the firmware's source name and the label shown on top.
+func (s *Server) panelInput() (src, label string, ok bool) {
+	s.panelMu.Lock()
+	src = s.boxSource
+	s.panelMu.Unlock()
+	label, ok = oled.SourceClockLabel(src)
+	return src, label, ok
+}
+
+// PanelSourceChanged is for the agent's gabbo hook: the speaker switched to
+// src. Switching to Bluetooth or AUX puts the clock up there when the setting
+// asks for it; leaving them is the hook's own business (the panel side drops
+// the input clock on any switch, and a return to STR's source redraws via
+// RefreshTrackPanel). Does not block: it runs on the gabbo read loop, and
+// the redraw may ask the speaker for its time format.
+func (s *Server) PanelSourceChanged(src string) {
+	s.panelMu.Lock()
+	s.boxSource = src
+	s.panelMu.Unlock()
+	if _, ok := oled.SourceClockLabel(src); ok && s.trackOnPanel() {
+		go s.refreshTrackPanel()
+	}
 }
 
 // RefreshTrackPanel is for the agent's gabbo hook: the speaker is back on one
@@ -293,6 +341,11 @@ func (s *Server) HandleStreamEnded() {
 		s.panel.ended = true
 	}
 	s.panelMu.Unlock()
+	if _, _, onInput := s.panelInput(); onInput {
+		// the speaker left the stream for Bluetooth or AUX: whatever the
+		// panel shows there is not the radio's to end
+		return
+	}
 	if radio {
 		s.clearTrackPanel("stream ended")
 	}
