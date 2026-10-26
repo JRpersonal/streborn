@@ -41,6 +41,24 @@ describe('optimistic library key recall', () => {
     expect(queueReplyMerge(cur, oldQueue, null)).toBe(oldQueue);
     expect(queueReplyMerge(cur, null, null)).toBe(null);
   });
+
+  // #1525: key 6 clicked while the old folder of key 6 still plays. The agent's
+  // reply still carries the stale card, but its checked keys do not name key 6:
+  // taking it darkened the clicked key until the new queue started.
+  it('keeps the optimistic state against a stale checked card naming the clicked key', () => {
+    const playing = { active: true, card: 'queue:slot:6', slot_checked: true, card_slot: 0, slot: 0, items: [], pos: 0 };
+    const cur = optimisticQueue(playing, 6);
+    const stale = { card: 'queue:slot:6', slot_checked: true, slot: 0 };
+    expect(queueReplyMerge(cur, stale, 6)).toBe(cur);
+    expect(queueReplyMerge(cur, { ...stale, card_slot: 0 }, 6)).toBe(cur);
+    // the new queue started: the agent names key 6 again
+    const started = { ...playing, card_slot: 6 };
+    expect(queueReplyMerge(cur, started, 6)).toBe(started);
+    const saved = { ...playing, slot: 6 };
+    expect(queueReplyMerge(cur, saved, 6)).toBe(saved);
+    // nothing pending: the reply always wins
+    expect(queueReplyMerge(cur, stale, null)).toBe(stale);
+  });
 });
 
 // #1525: the card of a queue key 6 started kept naming key 6 after the key was

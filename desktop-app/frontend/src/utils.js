@@ -863,9 +863,17 @@ export function queueRecallConfirmed(pendingSlot, queue, loc, prevLoc) {
 // While a click on library key pendingSlot is still unconfirmed, a reply that
 // does not name that key yet (it left before the agent started the queue)
 // keeps the current, optimistic state instead of wiping its card (#978).
+//
+// The card alone is not enough from an agent that checks it (slot_checked):
+// a click on key N while the old folder of key N still plays gets a reply with
+// the stale card "queue:slot:N" but neither card_slot nor slot naming N, and
+// taking it darkened the clicked key until the new queue started (#1525).
 export function queueReplyMerge(cur, reply, pendingSlot) {
-  if (pendingSlot != null && queueSlotCard(reply) !== 'queue:slot:' + pendingSlot) {
-    return cur || null;
+  if (pendingSlot != null) {
+    if (queueSlotCard(reply) !== 'queue:slot:' + pendingSlot) return cur || null;
+    if (reply.slot_checked === true && reply.card_slot !== pendingSlot && reply.slot !== pendingSlot) {
+      return cur || null;
+    }
   }
   return reply || null;
 }
