@@ -62,12 +62,12 @@ func spotifyAnswering(t *testing.T, product *atomic.Value, limited *atomic.Bool,
 	return srv
 }
 
-// engineRestart is what runOnce does to the plan state on every engine start.
+// engineRestart is what runOnce does to the plan state on every engine start:
+// the same helper, so the two cannot drift apart. It leaves a running cooldown
+// alone, exactly like the real start does.
 func engineRestart(m *Manager) {
 	m.mu.Lock()
-	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
-	m.productUser, m.productFreshLogged, m.productRememberedLogged = "", false, false
-	m.productQuietUntil = time.Time{}
+	m.resetProductStateLocked()
 	m.mu.Unlock()
 }
 
@@ -125,15 +125,214 @@ func TestRememberedPlanIsUsedAfterAnEngineRestart(t *testing.T) {
 		t.Fatalf("after a reboot product = %q, want the remembered premium", got)
 	}
 
-	// A remembered "free" is a positive answer about this account and gates
-	// like one (accountplans.go says why).
+	// A remembered "free" is shown, but it never blocks recall: only a fresh
+	// signal does (accountplans.go says why). The account may have upgraded.
 	m3 := productTestManager(t, eng.serve(t).URL)
 	m3.credStore = t.TempDir()
 	m3.rememberAccountPlan("accountalpha0001", "free")
 	m3.noteEngineAccount("accountalpha0001")
+	if got := infoProduct(t, m3); got != "free" {
+		t.Fatalf("/spotify/info product = %q, want the remembered free", got)
+	}
 	noBackgroundRead(m3)
-	if !m3.PremiumRequired() {
-		t.Error("a remembered free plan for the logged-in account did not gate")
+	if m3.PremiumRequired() {
+		t.Error("a remembered free plan blocked recall; only a fresh signal may")
+	}
+}
+
+// The real restart path: the cooldown from an earlier 429 is still running when
+// the engine comes back, so the plan comes from the store without Spotify being
+// asked at all.
+func TestARestartDuringTheCooldownUsesTheRememberedPlan(t *testing.T) {
+	eng := &planEngine{user: "accountalpha0001"}
+	var product atomic.Value
+	product.Store("premium")
+	var limited atomic.Bool
+	var calls atomic.Int32
+	spot := spotifyAnswering(t, &product, &limited, &calls)
+	m := productTestManager(t, eng.serve(t).URL)
+
+	if got := m.accountProductAt(context.Background(), spot.URL); got != "premium" {
+		t.Fatalf("first read = %q, want premium", got)
+	}
+	// Spotify throttles the next read: the cooldown starts.
+	m.mu.Lock()
+	m.productType = ""
+	m.mu.Unlock()
+	limited.Store(true)
+	_ = m.accountProductAt(context.Background(), spot.URL)
+
+	engineRestart(m)
+	before := calls.Load()
+	if got := m.accountProductAt(context.Background(), spot.URL); got != "premium" {
+		t.Fatalf("read during the cooldown after a restart = %q, want the remembered premium", got)
+	}
+	if calls.Load() != before {
+		t.Error("Spotify was asked although the cooldown was still running")
+	}
+	m.mu.Lock()
+	quiet := m.productQuietUntil
+	m.mu.Unlock()
+	if !time.Now().Before(quiet) {
+		t.Error("the engine restart cleared the cooldown")
+	}
+}
+
+// A remembered "premium" for an account that has since been downgraded, while
+// Spotify answers 429: recall is not blocked on the stale value, and not on
+// "unknown" either.
+func TestARememberedPremiumDoesNotGateWhileThrottled(t *testing.T) {
+	eng := &planEngine{user: "accountalpha0001"}
+	var product atomic.Value
+	product.Store("premium")
+	var limited atomic.Bool
+	var calls atomic.Int32
+	spot := spotifyAnswering(t, &product, &limited, &calls)
+	m := productTestManager(t, eng.serve(t).URL)
+
+	_ = m.accountProductAt(context.Background(), spot.URL)
+	engineRestart(m)
+	product.Store("free") // downgraded, but Spotify will not say so yet
+	limited.Store(true)
+	if got := m.accountProductAt(context.Background(), spot.URL); got != "premium" {
+		t.Fatalf("throttled read = %q, want the remembered premium", got)
+	}
+	noBackgroundRead(m)
+	if m.PremiumRequired() {
+		t.Error("PremiumRequired true without a fresh non-Premium signal")
+	}
+}
+
+// The account switches between the two /status reads around the /v1/me call.
+// Whose token answered is not known for sure, so the answer is used for
+// neither account: not in the file and not in memory.
+func TestAnAccountSwitchDuringTheReadIsNotFiledUnderEitherAccount(t *testing.T) {
+	eng := &planEngine{user: "accountalpha0001"}
+	spot := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		eng.setUser("accountbravo0002") // a Connect tap while the call is out
+		_ = json.NewEncoder(w).Encode(map[string]string{"product": "free"})
+	}))
+	t.Cleanup(spot.Close)
+	m := productTestManager(t, eng.serve(t).URL)
+
+	if got := m.accountProductAt(context.Background(), spot.URL); got != "" {
+		t.Fatalf("read across a switch = %q, want unknown", got)
+	}
+	m.mu.Lock()
+	fresh, user := m.productType, m.productUser
+	m.mu.Unlock()
+	if fresh != "" {
+		t.Errorf("the other account's answer became the fresh plan: %q", fresh)
+	}
+	if user != "accountbravo0002" {
+		t.Errorf("productUser = %q, want the account the engine reports now", user)
+	}
+	m.noteEngineAccount("accountalpha0001")
+	if got := m.productPlan(); got != "" {
+		t.Errorf("the answer was remembered for the first account: %q", got)
+	}
+	m.noteEngineAccount("accountbravo0002")
+	if got := m.productPlan(); got != "" {
+		t.Errorf("the answer was remembered for the second account: %q", got)
+	}
+	noBackgroundRead(m)
+	if m.PremiumRequired() {
+		t.Error("the second account was gated by an answer about the first")
+	}
+}
+
+// A read that started before the engine restarted finishes afterwards. Same
+// account on both sides, so the store may learn from it, but the new process's
+// fresh plan is not written by a read the old process started.
+func TestAReadFromBeforeAnEngineRestartIsNotTheFreshPlan(t *testing.T) {
+	eng := &planEngine{user: "accountalpha0001"}
+	var m *Manager
+	spot := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		engineRestart(m)
+		_ = json.NewEncoder(w).Encode(map[string]string{"product": "free"})
+	}))
+	t.Cleanup(spot.Close)
+	m = productTestManager(t, eng.serve(t).URL)
+
+	_ = m.accountProductAt(context.Background(), spot.URL)
+	m.mu.Lock()
+	fresh := m.productType
+	m.mu.Unlock()
+	if fresh != "" {
+		t.Errorf("a read from the previous engine process set the fresh plan: %q", fresh)
+	}
+	if got := m.productPlan(); got != "free" {
+		t.Errorf("remembered plan = %q, want free (same account on both sides)", got)
+	}
+	noBackgroundRead(m)
+	if m.PremiumRequired() {
+		t.Error("a stale read gated recall")
+	}
+}
+
+// An engine that stays up but reports nobody logged in: the previous account's
+// plan, remembered or fresh, no longer applies.
+func TestALoggedOutEngineDropsThePreviousAccountsPlan(t *testing.T) {
+	eng := &planEngine{user: "accountalpha0001"}
+	var product atomic.Value
+	product.Store("free")
+	var limited atomic.Bool
+	var calls atomic.Int32
+	spot := spotifyAnswering(t, &product, &limited, &calls)
+	m := productTestManager(t, eng.serve(t).URL)
+
+	if got := m.accountProductAt(context.Background(), spot.URL); got != "free" {
+		t.Fatalf("first read = %q, want free", got)
+	}
+	eng.setUser("")
+	if got := infoProduct(t, m); got != "" {
+		t.Fatalf("/spotify/info product = %q with nobody logged in, want absent", got)
+	}
+	if m.PremiumRequired() {
+		t.Error("a speaker nobody is logged into was gated by the previous account")
+	}
+
+	// An engine that cannot be asked at all says nothing about the login, and
+	// does not clear it.
+	m2 := productTestManager(t, "http://127.0.0.1:1")
+	m2.credStore = m.credStore
+	m2.noteEngineAccount("accountalpha0001")
+	if got := infoProduct(t, m2); got != "free" {
+		t.Fatalf("unreachable engine: product = %q, want the remembered free", got)
+	}
+}
+
+// Overlapping writers (two background reads) leave every account in the file,
+// the newest value last, and no temp file behind.
+func TestConcurrentPlanWritesKeepEveryAccount(t *testing.T) {
+	m := namesManager(t)
+	ids := []string{"accountalpha0001", "accountbravo0002", "accountcharl0003", "accountdelta0004"}
+	var wg sync.WaitGroup
+	for round := 0; round < 10; round++ {
+		plan := "premium"
+		if round%2 == 1 {
+			plan = "free"
+		}
+		for _, id := range ids {
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				m.rememberAccountPlan(id, plan)
+			}(id)
+		}
+		wg.Wait()
+	}
+	m2 := namesManager(t)
+	m2.credStore = m.credStore
+	for _, id := range ids {
+		m2.noteEngineAccount(id)
+		// The last round wrote "free" for everyone.
+		if got := m2.productPlan(); got != "free" {
+			t.Errorf("%s: plan on disk = %q, want free", id, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(m.credStore, accountPlansFile+".tmp")); !os.IsNotExist(err) {
+		t.Errorf("the temporary file was left behind: %v", err)
 	}
 }
 

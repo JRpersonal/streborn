@@ -95,6 +95,11 @@ type Manager struct {
 	// confirmed for it, so an engine restart does not forget a plan the
 	// speaker already knew; see accountplans.go. nil until first use.
 	accountPlans map[string]rememberedPlan
+	// storeWriteMu serialises the names.json / plans.json writers, which share
+	// a fixed temp-file name per file and run from concurrent background plan
+	// reads. Held across snapshot and write, so the last file renamed into
+	// place is always the newest snapshot. Never taken while holding mu.
+	storeWriteMu sync.Mutex
 	// credReject tracks Spotify refusing the saved login (BadCredentials) and
 	// what the supervisor did about it; see credreject.go. Guarded by mu.
 	credReject credRejectState
@@ -187,6 +192,10 @@ type Manager struct {
 	productUser             string
 	productFreshLogged      bool
 	productRememberedLogged bool
+	// productGen counts engine starts (resetProductStateLocked). A plan read
+	// that began under an older engine process must not write its answer into
+	// the state of the new one.
+	productGen uint64
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).

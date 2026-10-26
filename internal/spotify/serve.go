@@ -227,8 +227,10 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	// plan in this engine process, the plan remembered for THIS account is
 	// reported (accountplans.go), never another account's. The plan itself is
 	// whatever is cached or remembered, never a fetch: this handler is polled.
-	account := m.currentUsername(r.Context())
-	m.noteEngineAccount(account)
+	account, accountOK := m.engineUsername(r.Context())
+	if accountOK {
+		m.noteEngineAccount(account)
+	}
 	product := m.productPlan()
 	// Prefer the live track from /status over the laggy cached metadata events.
 	lt, la, lc, state := m.liveNowPlayingState(r.Context())

@@ -29,16 +29,18 @@ import (
 // the same reason: the household's other account must never be judged by this
 // one's plan. A fresh read always wins and refreshes the stored value.
 //
-// Semantics, chosen deliberately: a remembered plan counts exactly like a fresh
-// one, for the "product" the apps are told AND for PremiumRequired. It was a
-// positive answer from Spotify about this very account, not a guess, so a
-// remembered "free" is the same positive non-Premium signal a fresh "free" is.
-// What keeps that safe for somebody who has since upgraded: while only the
-// remembered plan is in hand, PremiumRequired keeps asking Spotify in the
-// background (productType stays empty), and the first fresh answer overrides
-// it. Treating a remembered "free" as unknown instead would hide the Premium
-// warning from a free account for exactly as long as Spotify is throttling,
-// which is the situation this file exists for.
+// Semantics, chosen deliberately: a remembered plan feeds the "product" the
+// apps are told, and nothing else. PremiumRequired, which blocks preset recall,
+// keeps its conservative contract: true only on a FRESH positive non-Premium
+// signal (a /v1/me answer from this engine process, or the engine's own
+// free-account log line), never on a value carried over from an earlier
+// process. A remembered "free" can be months old; an account upgraded since
+// would otherwise have its presets blocked for as long as Spotify throttles the
+// re-read, which is up to productRateLimitMax per window and survives reboots.
+// Showing a stale plan in the UI costs a wrong label; blocking a Premium user's
+// presets costs the feature. The background re-read keeps running while only
+// the remembered plan is known, so a fresh answer replaces it as soon as
+// Spotify gives one.
 
 // accountPlansFile sits beside names.json in the per-account store, not in the
 // engine's config dir: it is a fact about the same accounts, and the store is
@@ -108,6 +110,11 @@ func (m *Manager) rememberAccountPlan(id, product string) {
 	if id == "" || product == "" {
 		return
 	}
+	// Held across the snapshot AND the write, so two overlapping background
+	// reads can neither rename each other's temp file away nor let an older
+	// snapshot be the last one renamed into place.
+	m.storeWriteMu.Lock()
+	defer m.storeWriteMu.Unlock()
 	m.mu.Lock()
 	m.loadAccountPlansLocked()
 	if m.accountPlans[id].Product == product {
@@ -128,15 +135,10 @@ func (m *Manager) rememberAccountPlan(id, product string) {
 	if err != nil {
 		return
 	}
-	// Through a temporary file, so a power cut mid-write leaves the previous
-	// store rather than a torn one that loadAccountPlansLocked would discard
-	// whole.
-	tmp := m.accountPlansPath() + ".tmp"
-	if os.WriteFile(tmp, blob, 0o644) != nil {
-		return
-	}
-	if os.Rename(tmp, m.accountPlansPath()) != nil {
-		_ = os.Remove(tmp)
+	// Through a synced temporary file, so a power cut mid-write leaves the
+	// previous store rather than a torn one that loadAccountPlansLocked would
+	// discard whole.
+	if writeFileAtomic(m.accountPlansPath(), blob, 0o644) != nil {
 		return
 	}
 	m.logger.Info("spotify: remembered the account plan", "plan", product, "user", anonymise.MaskAccount(id))
@@ -145,20 +147,38 @@ func (m *Manager) rememberAccountPlan(id, product string) {
 // noteEngineAccount records which account the engine is logged in as, so the
 // non-blocking readers (PremiumRequired, ServeInfo) can pick that account's
 // remembered plan without asking the engine themselves. Callers already have
-// the answer in hand from a /status read they make anyway.
+// the answer in hand from a /status read they make anyway, and call this only
+// when the engine actually ANSWERED (engineUsername's ok): an unreachable engine
+// says nothing about who is logged in. An empty user is a real answer (logged
+// out, credential refused) and clears the account, so no remembered plan
+// applies to a speaker nobody is logged into. Leaving an account also drops the
+// fresh plan read for it: that answer was about the previous login.
 func (m *Manager) noteEngineAccount(user string) {
 	user = strings.TrimSpace(user)
-	if user == "" {
-		return
-	}
 	m.mu.Lock()
 	if m.productUser != user {
+		if m.productUser != "" {
+			m.productType, m.productCheckedAt = "", time.Time{}
+		}
 		m.productUser = user
 		// A different account is a different question: the line saying a
 		// remembered plan was used has to be able to appear for it too.
 		m.productRememberedLogged = false
 	}
 	m.mu.Unlock()
+}
+
+// resetProductStateLocked is what every engine start does to the plan state:
+// a fresh process re-detects the account plan (an account switch relaunches
+// go-librespot), and forgets the account until the new process says who it is
+// logged in as, so a switch can never hand one account's plan to the next.
+// productQuietUntil is deliberately kept: Spotify's throttle is on the shared
+// client, not on the engine process. Bumping productGen makes a read that
+// started under the old process drop its answer. Caller holds m.mu.
+func (m *Manager) resetProductStateLocked() {
+	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
+	m.productUser, m.productFreshLogged, m.productRememberedLogged = "", false, false
+	m.productGen++
 }
 
 // productPlan returns the plan to act on: the fresh read when there is one,

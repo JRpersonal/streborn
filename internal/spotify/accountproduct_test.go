@@ -41,6 +41,12 @@ func TestAccountProductReadsTheProductThroughTheToken(t *testing.T) {
 			_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
 			return
 		}
+		if r.URL.Path == "/status" {
+			// Who the token belongs to: an answer is only taken as this
+			// process's plan when the same account is logged in on both sides.
+			_, _ = w.Write([]byte(`{"username":"accountalpha0001"}`))
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer engine.Close()

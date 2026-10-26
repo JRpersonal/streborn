@@ -267,11 +267,27 @@ func (m *Manager) isRejectedCredential(cred storedCredential) bool {
 
 // writeFileAtomic writes data to a sibling temp file and renames it over path,
 // so a power cut mid-write never leaves the engine a truncated state.json.
+// The temp file is synced before the rename: on the speaker's JFFS2/UBIFS a
+// rename can reach the flash before the data it points at, and a power cut in
+// that window would otherwise leave an empty file under the real name. The
+// temp name is fixed, so callers that can race serialise their writes (see
+// Manager.storeWriteMu).
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
-		_ = os.Remove(tmp)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
 		return err
+	}
+	_, werr := f.Write(data)
+	if werr == nil {
+		werr = f.Sync()
+	}
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = os.Remove(tmp)
+		return werr
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
