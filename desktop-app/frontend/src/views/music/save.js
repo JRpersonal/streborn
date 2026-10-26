@@ -58,7 +58,26 @@ function showPresetSaveError(err, slot) {
     }
     return;
   }
+  const refusal = savePlayingRefusalKey(err);
+  if (refusal) {
+    showError(t(refusal));
+    return;
+  }
   showError(t('preset.saveFailed', { err: String(err) }));
+}
+
+// SAVE_PLAYING_REFUSALS names the speaker agent's "nothing to save" answers of
+// a save of what plays (422 with a code). Their text is the agent's own English,
+// so the app shows its translated note instead (#1467).
+const SAVE_PLAYING_REFUSALS = {
+  'nothing-playing': 'preset.noCurrentStation',
+  'nothing-saveable': 'preset.nothingSaveable',
+  'source-preset-empty': 'preset.sourceKeyEmpty',
+};
+
+function savePlayingRefusalKey(err) {
+  const m = /^status 422: .*"code"\s*:\s*"([a-z-]+)"/.exec(String(err && err.message ? err.message : err || ''));
+  return m && Object.hasOwn(SAVE_PLAYING_REFUSALS, m[1]) ? SAVE_PLAYING_REFUSALS[m[1]] : '';
 }
 
 // presetMoveOffer hands offerPresetMove the app's own modal, agent call and grid

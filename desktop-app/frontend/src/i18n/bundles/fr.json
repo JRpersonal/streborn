@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "Vraiment effacer la touche {{n}} (<b>{{name}}</b>) ?",
   "preset.placeholderSender": "Station",
   "preset.noCurrentStation": "Aucune station ne joue actuellement, l'appui long n'a donc aucun effet.",
+  "preset.nothingSaveable": "Ce que joue l'enceinte ne peut pas être enregistré sur une touche.",
+  "preset.sourceKeyEmpty": "La touche en cours de lecture est vide, il n'y a donc rien à copier.",
   "preset.copiedToKey": "Copié sur la touche {{n}} : {{name}}",
   "preset.savedToKey": "Enregistré sur la touche {{n}} : {{name}}",
   "preset.spotifyKeyNeedsLogin": "Enregistré. La touche ne joue pas encore : cette enceinte n'a pas encore été choisie une fois dans Spotify. Ouvre Spotify, choisis l'entrée de cette enceinte qui se termine par (STR) et lis un titre. Un compte Spotify gratuit ne peut pas choisir cette entrée.",

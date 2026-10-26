@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "{{n}} tuşunu (<b>{{name}}</b>) gerçekten temizlemek istiyor musunuz?",
   "preset.placeholderSender": "İstasyon",
   "preset.noCurrentStation": "Şu anda çalan bir istasyon yok, bu yüzden basılı tutmanın etkisi yok.",
+  "preset.nothingSaveable": "Hoparlörün çaldığı şey bir tuşa kaydedilemiyor.",
+  "preset.sourceKeyEmpty": "Çalan tuş boş, bu yüzden kopyalanacak bir şey yok.",
   "preset.copiedToKey": "{{n}} tuşuna kopyalandı: {{name}}",
   "preset.savedToKey": "{{n}} tuşuna kaydedildi: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Kaydedildi. Tuş henüz çalmaz: bu hoparlör Spotify'da bir kez bile seçilmemiş. Spotify'ı aç, sonu (STR) ile biten bu hoparlörün kaydını seç ve bir parça çal. Ücretsiz bir Spotify hesabıyla bu kayıt seçilemez.",

@@ -112,6 +112,23 @@ describe('long-press save of a playing station', () => {
     expect(api.SetPreset).not.toHaveBeenCalled();
   });
 
+  it('shows a known refusal of the agent in the app language, not its English', async () => {
+    state.nowLocation = orion;
+    state.lastAppPlay = null;
+    (await import('../../i18n/index.js')).setLocale('de');
+    api.SavePlayingPreset.mockRejectedValue(new Error('status 422: {"code":"nothing-saveable","error":"What the speaker plays has no stream that can be kept on a key."}'));
+    await save.saveCurrentToSlot(1);
+    expect(ui.showError).toHaveBeenCalledWith('Was der Lautsprecher gerade spielt, lässt sich nicht auf einer Taste speichern.');
+  });
+
+  it('shows an unknown refusal of the agent as a failed save', async () => {
+    state.nowLocation = orion;
+    state.lastAppPlay = null;
+    api.SavePlayingPreset.mockRejectedValue(new Error('status 422: {"code":"constructor"}'));
+    await save.saveCurrentToSlot(1);
+    expect(ui.showError.mock.calls[0][0]).toMatch(/^Save failed: /);
+  });
+
   it('falls back to its own save on an agent without the call', async () => {
     state.nowLocation = orion;
     state.lastAppPlay = null;

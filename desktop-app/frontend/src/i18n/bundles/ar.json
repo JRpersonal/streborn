@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "هل تريد فعلًا مسح الزر {{n}} (<b>{{name}}</b>)؟",
   "preset.placeholderSender": "المحطة",
   "preset.noCurrentStation": "لا توجد محطة قيد التشغيل الآن، لذا لا أثر للضغط المطوّل.",
+  "preset.nothingSaveable": "لا يمكن حفظ ما يشغّله مكبر الصوت على زر.",
+  "preset.sourceKeyEmpty": "الزر الذي يعمل الآن فارغ، فلا يوجد ما يُنسخ.",
   "preset.copiedToKey": "نُسخ إلى الزر {{n}}: {{name}}",
   "preset.savedToKey": "حُفظ في الزر {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "تم الحفظ. المفتاح لن يعمل بعد: لم يتم اختيار هذا السماعة في Spotify ولا مرة. افتح Spotify، اختر مدخل هذه السماعة المنتهي بـ (STR) وشغّل أي أغنية. حساب Spotify المجاني لا يمكنه اختيار هذا المدخل.",

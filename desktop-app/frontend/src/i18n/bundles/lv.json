@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "Vai tiešām notīrīt pogu {{n}} (<b>{{name}}</b>)?",
   "preset.placeholderSender": "Stacija",
   "preset.noCurrentStation": "Pašlaik neatskaņo neviena stacija, tāpēc turēšanai nav efekta.",
+  "preset.nothingSaveable": "To, ko atskaņo skaļrunis, nevar saglabāt pogā.",
+  "preset.sourceKeyEmpty": "Poga, kas tiek atskaņota, ir tukša, tāpēc nav ko kopēt.",
   "preset.copiedToKey": "Nokopēts pogā {{n}}: {{name}}",
   "preset.savedToKey": "Saglabāts pogā {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Saglabāts. Poga vēl neatskaņo: šis skaļrunis Spotify nav ne reizi izvēlēts. Atver Spotify, izvēlies šā skaļruņa ierakstu, kas beidzas ar (STR), un atskaņo kādu dziesmu. Ar bezmaksas Spotify kontu šo ierakstu izvēlēties nevar.",

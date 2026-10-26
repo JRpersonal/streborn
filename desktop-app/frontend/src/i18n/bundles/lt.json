@@ -403,6 +403,8 @@
   "preset.confirmClearBody": "Tikrai išvalyti mygtuką {{n}} (<b>{{name}}</b>)?",
   "preset.placeholderSender": "Stotis",
   "preset.noCurrentStation": "Šiuo metu negroja jokia stotis, todėl palaikymas neturi poveikio.",
+  "preset.nothingSaveable": "To, ką groja garsiakalbis, negalima išsaugoti mygtuke.",
+  "preset.sourceKeyEmpty": "Grojantis mygtukas tuščias, todėl nėra ką kopijuoti.",
   "preset.copiedToKey": "Nukopijuota į mygtuką {{n}}: {{name}}",
   "preset.savedToKey": "Išsaugota mygtuke {{n}}: {{name}}",
   "preset.spotifyKeyNeedsLogin": "Išsaugota. Klavišas dar negros: ši kolonėlė nė karto nebuvo pasirinkta Spotify. Atidaryk Spotify, pasirink šios kolonėlės įrašą, kuris baigiasi (STR), ir paleisk kokį nors kūrinį. Su nemokama Spotify paskyra to įrašo pasirinkti negalima.",
