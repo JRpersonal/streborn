@@ -120,4 +120,16 @@ describe('long-press save of a playing station', () => {
     expect(api.SetPreset).toHaveBeenCalledTimes(1);
     expect(api.SetPreset.mock.calls[0][4]).toBe(station);
   });
+
+  it('falls back to its own save on an agent that answers with its phone page', async () => {
+    // An agent older than the call serves its phone page with 200 text/html;
+    // the binding reports that as this 404.
+    state.nowLocation = orion;
+    state.lastAppPlay = null;
+    api.SavePlayingPreset.mockRejectedValue(new Error('status 404: save-playing not available on this agent'));
+    await save.saveCurrentToSlot(1);
+    expect(api.SetPreset).toHaveBeenCalledTimes(1);
+    expect(api.SetPreset.mock.calls[0][4]).toBe(station);
+    expect(ui.showError).not.toHaveBeenCalled();
+  });
 });

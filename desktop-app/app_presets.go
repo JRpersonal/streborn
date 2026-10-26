@@ -208,6 +208,11 @@ func (a *App) SaveQueuePreset(host string, port int, slot int) (string, error) {
 	return p.Name, nil
 }
 
+// errSavePlayingUnknown is the answer of an agent without the save-playing
+// call. It reads as a 404 on purpose: the frontend falls back to the app's own
+// save on that status (savePlayingFallsThrough).
+var errSavePlayingUnknown = errors.New("status 404: save-playing not available on this agent")
+
 // SavePlayingPreset stores the station the speaker plays right now on a key,
 // decided by the speaker agent (POST /api/box/save-playing, the phone page's
 // hold). The agent holds its own record of the play, with the whole logo chain,
@@ -215,8 +220,10 @@ func (a *App) SaveQueuePreset(host string, port int, slot int) (string, error) {
 // logo guess: a long-press that rebuilt the station from the now-playing saved
 // a directory's site icon instead of the station's logo (#1467). Returns the
 // saved key's name. A refusal comes back as "status <code>: <body>", so a 409
-// already-on-slot reaches the move offer; an older agent 404s and the caller
-// falls back to its own save.
+// already-on-slot reaches the move offer. An agent older than the call does not
+// 404 it: its catch-all serves the phone page with 200 text/html for any path
+// and method. So anything but a JSON answer is errSavePlayingUnknown, and the
+// caller falls back to its own save.
 func (a *App) SavePlayingPreset(host string, port int, slot int) (string, error) {
 	body, _ := json.Marshal(map[string]int{"slot": slot})
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/save-playing", "application/json", string(body))
@@ -236,8 +243,20 @@ func (a *App) SavePlayingPreset(host string, port int, slot int) (string, error)
 		Name      string `json:"name"`
 		Unchanged bool   `json:"unchanged"`
 	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+		if a.logger != nil {
+			a.logger.Info("save what plays: the agent has no such call, the app saves itself",
+				"host", host, "slot", slot, "status", resp.StatusCode, "contentType", ct)
+		}
+		return "", errSavePlayingUnknown
+	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
-		return "", fmt.Errorf("decode saved preset: %w", err)
+		if a.logger != nil {
+			a.logger.Info("save what plays: unreadable answer, the app saves itself",
+				"host", host, "slot", slot, "err", err)
+		}
+		return "", errSavePlayingUnknown
 	}
 	if a.logger != nil {
 		a.logger.Info("save what plays: stored", "host", host, "slot", slot, "kind", out.Kind,
