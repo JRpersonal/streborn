@@ -68,6 +68,13 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
 		return
 	}
+	// A resume can fall back to re-pushing the last play, which the following
+	// half of a pair (or half of a broken one) takes and ignores. Same check,
+	// same answer as every other play path, before anything reaches the box.
+	if ref := s.pairPlayRefusal(); ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
 	status, err := s.resumePlayback(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)

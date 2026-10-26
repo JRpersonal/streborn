@@ -3,11 +3,16 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/zones"
 )
 
 // The following half of a healthy stereo pair takes a UPnP push and plays
@@ -53,6 +58,10 @@ func TestStereoFollowerPlayIsRefusedBeforeAnyPush(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.stereoFollowerFn = followerOf("AABBCCDDEEFF", "192.0.2.10")
 	s.peersFn = func(context.Context) []PeerLink {
+		t.Error("the refusal started a peer browse under the play lock")
+		return nil
+	}
+	s.cachedPeersFn = func() []PeerLink {
 		return []PeerLink{
 			{Name: "Kitchen", URL: "http://192.0.2.30:8080/", IP: "192.0.2.30", DeviceID: "998877665544"},
 			{Name: "Lounge left", URL: "http://192.0.2.10:8080/", IP: "192.0.2.10", DeviceID: "aabbccddeeff"},
@@ -151,5 +160,106 @@ func TestStereoFollowerRefusalWithoutPeerList(t *testing.T) {
 	body := ref.JSON.(map[string]any)
 	if body["masterIP"] != "192.0.2.10" || body["masterName"] != "" {
 		t.Errorf("body = %v, want the address and no invented name", body)
+	}
+}
+
+// A pair follower that leads a multiroom zone is that zone's master: the
+// permanent group only re-forms from a play started there, so refusing it would
+// take the group away for good (mail, 2026-10-26: the following ST10 leads the
+// household's permanent group).
+func TestStereoFollowerLeadingAStoredGroupStillPlays(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(zones.Zone{Master: "112233445566", Permanent: true, Name: "Downstairs",
+		Slaves: []zones.Member{{DeviceID: "998877665544", IP: "192.0.2.30"}}}); err != nil {
+		t.Fatal(err)
+	}
+	s.zones = store
+	s.fetchZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		t.Error("the stored group already answered; the live zone was read anyway")
+		return boxapi.Zone{}, nil
+	}
+	s.stereoFollowerFn = func() StereoFollower {
+		return StereoFollower{Follower: true, MasterID: "AABBCCDDEEFF", MasterIP: "192.0.2.10", SelfID: "112233445566"}
+	}
+	w := httptest.NewRecorder()
+	s.handlePlay(w, httptest.NewRequest(http.MethodPost, "/api/play",
+		strings.NewReader(`{"url":"http://stream.example/relax","title":"Test Station"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+	if !rec.has("SetAVTransportURI") {
+		t.Errorf("play did not reach the box: %v", rec.list())
+	}
+}
+
+func TestStereoFollowerLeadingTheLiveZoneIsNotRefused(t *testing.T) {
+	s := newStereoTestServer()
+	s.stereoFollowerFn = func() StereoFollower {
+		return StereoFollower{Follower: true, MasterID: "AABBCCDDEEFF", SelfID: "112233445566"}
+	}
+	s.fetchZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		return boxapi.Zone{Master: "112233445566", Members: []boxapi.ZoneMember{{DeviceID: "998877665544"}}}, nil
+	}
+	if ref := s.stereoFollowerRefusal(); ref != nil {
+		t.Fatalf("the live zone's master was refused: %+v", ref)
+	}
+	// A zone some other speaker leads changes nothing, nor does an unreadable
+	// zone.
+	s.fetchZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		return boxapi.Zone{Master: "AABBCCDDEEFF"}, nil
+	}
+	if s.stereoFollowerRefusal() == nil {
+		t.Error("a follower of someone else's zone was let through")
+	}
+	s.fetchZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		return boxapi.Zone{}, errors.New("connection refused")
+	}
+	if s.stereoFollowerRefusal() == nil {
+		t.Error("an unreadable zone let the follower through")
+	}
+}
+
+// The stereo document is the pair itself, not a zone the follower leads.
+func TestStereoFollowerStereoDocumentIsNotAZoneItLeads(t *testing.T) {
+	s := newStereoTestServer()
+	store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(zones.Zone{Master: "112233445566", Stereo: true,
+		Slaves: []zones.Member{{DeviceID: "AABBCCDDEEFF", IP: "192.0.2.10"}}}); err != nil {
+		t.Fatal(err)
+	}
+	s.zones = store
+	s.stereoFollowerFn = func() StereoFollower {
+		return StereoFollower{Follower: true, MasterID: "AABBCCDDEEFF", SelfID: "112233445566"}
+	}
+	if s.stereoFollowerRefusal() == nil {
+		t.Error("a stereo document was taken for a zone the follower leads")
+	}
+}
+
+func TestStereoFollowerResumeIsRefusedBeforeAnyPush(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.stereoFollowerFn = followerOf("AABBCCDDEEFF", "192.0.2.10")
+	w := httptest.NewRecorder()
+	s.handleResume(w, httptest.NewRequest(http.MethodPost, "/api/resume", nil))
+	assertFollowerRefusal(t, decodeRefusal(t, w))
+	assertNothingPushed(t, rec)
+}
+
+func TestStereoFollowerPandoraIsRefusedBeforeTheSelect(t *testing.T) {
+	s, _, box := nativeTestServer(true)
+	pandoraLinked(box)
+	s.stereoFollowerFn = followerOf("AABBCCDDEEFF", "192.0.2.10")
+	w := httptest.NewRecorder()
+	s.handlePandoraPlay(w, nativeReq(http.MethodPost, "/api/pandora/play", `{"location":"111"}`, "192.168.1.5:5000", "application/json"))
+	assertFollowerRefusal(t, decodeRefusal(t, w))
+	if len(box.selected) != 0 {
+		t.Errorf("the follower selected a station anyway: %v", box.selected)
 	}
 }

@@ -295,6 +295,13 @@ func TestForeignFileLocation(t *testing.T) {
 		{"http://192.0.2.9/b.flac", "http://192.0.2.9/a.flac", true},
 		{"http://192.0.2.9/a.flac?x=2", "http://192.0.2.9/a.flac?x=1", true},
 		{"http://127.0.0.1:8085/stream/3", "http://192.0.2.9/a.flac", true},
+		// The same query escaped differently, or in another key order, is
+		// still our file: a false "foreign" would re-push it mid-play.
+		{"http://192.0.2.9/a.flac?t=a%20b&x=1", "http://192.0.2.9/a.flac?x=1&t=a+b", false},
+		{"http://192.0.2.9/a%2Eflac?x=1", "http://192.0.2.9/a.flac?x=1", false},
+		// Unparsable is unknown, never foreign.
+		{"http://[::1", "http://192.0.2.9/a.flac", false},
+		{"http://192.0.2.9/a.flac?x=%zz", "http://192.0.2.9/a.flac?x=1", false},
 	}
 	for _, c := range cases {
 		if got := foreignFileLocation(c.loc, c.want); got != c.foreign {

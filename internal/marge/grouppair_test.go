@@ -111,6 +111,28 @@ func TestGroupPairMasterIPReadsTheMastersRole(t *testing.T) {
 	}
 }
 
+// The follower check only trusts an own id the pair actually lists: a guessed
+// id that matches neither role must not make the master its own follower.
+func TestGroupPairHasMemberOnlyForListedIDs(t *testing.T) {
+	s := quietServer(t)
+	if s.GroupPairHasMember("AABBCCDDEEFF") {
+		t.Fatal("no pair stored, but an id was reported as a member")
+	}
+	if err := s.SetCanonicalGroup(realPairDoc); err != nil {
+		t.Fatalf("SetCanonicalGroup: %v", err)
+	}
+	for _, id := range []string{"AABBCCDDEEFF", "112233445566", " aabbccddeeff "} {
+		if !s.GroupPairHasMember(id) {
+			t.Errorf("GroupPairHasMember(%q) = false, want true", id)
+		}
+	}
+	for _, id := range []string{"", "A0B1C2D3E4F5"} {
+		if s.GroupPairHasMember(id) {
+			t.Errorf("GroupPairHasMember(%q) = true for an id the pair does not list", id)
+		}
+	}
+}
+
 // unmarshalGroup parses a group document the way the server does, so the tests
 // exercise the real shape rather than a hand-built struct.
 func unmarshalGroup(t *testing.T, doc string, into *groupRecord) error {

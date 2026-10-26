@@ -38,14 +38,24 @@ func presetWriteGroupFollower() (bool, string) {
 }
 
 // stereoFollowerFrom builds the play paths' pair-role answer from the pair
-// record (master, name, ok), this speaker's own deviceID, and the master's
-// address from the record. Only a decided follower is reported; an undecided
-// role (no record, own id not known yet) plays as before.
-func stereoFollowerFrom(master, name string, pairOK bool, self, masterIP string) webui.StereoFollower {
+// record (master, name, ok), this speaker's own deviceID, whether the record
+// lists that id in one of its roles, and the master's address from the record.
+// Only a decided follower is reported; an undecided role (no record, own id not
+// known yet, or an own id the pair does not list) plays as before.
+//
+// selfInPair is the guard against a wrong own id. The agent's id starts as a
+// guess from a network card's MAC and is only corrected once the speaker's
+// /info answers; on an ST10 the guess is known to differ from the real id. A
+// master holding that guess would otherwise read "master != self" and refuse
+// every play as its own follower, with a link back to itself.
+func stereoFollowerFrom(master, name string, pairOK bool, self string, selfInPair bool, masterIP string) webui.StereoFollower {
+	if !selfInPair {
+		return webui.StereoFollower{}
+	}
 	if decided, follower := pairRole(master, self, pairOK); !decided || !follower {
 		return webui.StereoFollower{}
 	}
-	return webui.StereoFollower{Follower: true, MasterID: master, MasterIP: masterIP, PairName: name}
+	return webui.StereoFollower{Follower: true, MasterID: master, MasterIP: masterIP, PairName: name, SelfID: strings.TrimSpace(self)}
 }
 
 // pairRole reads the stereo-pair record: decided is false when it says

@@ -42,12 +42,15 @@ type StereoFollower struct {
 	MasterIP string
 	// PairName is the pair's display name.
 	PairName string
+	// SelfID is this speaker's own deviceID as the pair record lists it, so
+	// the zone check can tell whether this follower leads a multiroom zone.
+	SelfID string
 }
 
-// stereoFollowerPeerBudget caps the peer-list lookup that puts a name and a
-// link on the refusal. The list is cached and normally answers at once; a cold
-// one must not hold the refusal (and the box command lock) for a whole browse.
-const stereoFollowerPeerBudget = time.Second
+// stereoFollowerZoneBudget caps the live /getZone read that asks whether the
+// follower leads a multiroom zone right now. It runs only on a speaker already
+// known to follow a pair, never on the standalone majority, and over loopback.
+const stereoFollowerZoneBudget = 2 * time.Second
 
 // stereoFollower asks the wired role check. Zero value when none is wired.
 func (s *Server) stereoFollower() StereoFollower {
@@ -64,6 +67,9 @@ func (s *Server) stereoFollower() StereoFollower {
 func (s *Server) stereoFollowerRefusal() *playRefusal {
 	f := s.stereoFollower()
 	if !f.Follower {
+		return nil
+	}
+	if s.followerLeadsZone(f.SelfID) {
 		return nil
 	}
 	name, link := s.stereoMasterPeer(f)
@@ -100,16 +106,59 @@ func (s *Server) pairPlayRefusal() *playRefusal {
 	return s.stereoFollowerRefusal()
 }
 
+// followerLeadsZone reports whether this pair follower is the master of a
+// multiroom zone, in which case its plays are not refused. That is a working
+// setup in the field: a permanent group whose master is the following half of
+// a pair. The permanent group only re-forms when its master starts a play
+// (formDefaultGroupOnPlay, through the play kick), so refusing that play would
+// leave the group unable to ever form again.
+//
+// The persisted zone document answers first and costs nothing; it is the only
+// record a permanent group has while it rests dissolved. A live zone this
+// speaker leads without a document is read off /getZone. A stereo document is
+// the pair itself, not a zone it leads, and never counts.
+func (s *Server) followerLeadsZone(selfID string) bool {
+	selfID = strings.TrimSpace(selfID)
+	if selfID == "" {
+		return false
+	}
+	if s.zones != nil {
+		if doc, ok := s.zones.Get(); ok && !doc.Stereo && strings.EqualFold(strings.TrimSpace(doc.Master), selfID) {
+			s.logger.Info("play allowed on the following half of a stereo pair: it leads a stored group",
+				"group", doc.Name, "permanent", doc.Permanent)
+			return true
+		}
+	}
+	if s.boxHost == "" && s.fetchZoneFn == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), stereoFollowerZoneBudget)
+	defer cancel()
+	z, err := s.fetchZone(ctx, s.boxHost)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(z.Master), selfID) {
+		s.logger.Info("play allowed on the following half of a stereo pair: it leads the live zone",
+			"members", len(z.Members))
+		return true
+	}
+	return false
+}
+
 // stereoMasterPeer finds the master in the STR peer list, for its display name
 // and the address of its phone page. Matched on deviceID first, then on the
 // address the pair record names. Empty when the master is not listed.
+//
+// It reads the agent's cached peer map only and never starts an mDNS browse:
+// the play path holds boxCmdMu here, a browse's per-speaker probes do not stop
+// at any deadline, and a browse cut short would still stamp the browse time
+// and hold off a full one. The phone page falls back to the pair's address.
 func (s *Server) stereoMasterPeer(f StereoFollower) (name, link string) {
-	if s.peersFn == nil {
+	if s.cachedPeersFn == nil {
 		return "", ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), stereoFollowerPeerBudget)
-	defer cancel()
-	for _, p := range s.peersFn(ctx) {
+	for _, p := range s.cachedPeersFn() {
 		host := p.IP
 		if host == "" {
 			if u, err := url.Parse(p.URL); err == nil {

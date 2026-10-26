@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -349,6 +350,10 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 // foreign, so a speaker that does not echo the location keeps the end watch it
 // had. The host is ignored, because one file can be spelled with different
 // hosts on the way (loopback vs the LAN address); the path and query name it.
+// Both are compared decoded, so an echo that escapes the query differently is
+// still our file, and a location that does not parse is unknown, not foreign:
+// a false "foreign" here would re-push our own track mid-play at the stall
+// timeout and then drop the end watch.
 func foreignFileLocation(loc, want string) bool {
 	loc = strings.TrimSpace(loc)
 	if loc == "" || want == "" || loc == want {
@@ -357,9 +362,32 @@ func foreignFileLocation(loc, want string) bool {
 	lu, err1 := url.Parse(loc)
 	wu, err2 := url.Parse(want)
 	if err1 != nil || err2 != nil {
+		return false
+	}
+	if lu.Path != wu.Path {
 		return true
 	}
-	return lu.Path != wu.Path || lu.RawQuery != wu.RawQuery
+	lq, err1 := url.ParseQuery(lu.RawQuery)
+	wq, err2 := url.ParseQuery(wu.RawQuery)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return !sameQuery(lq, wq)
+}
+
+// sameQuery compares two decoded queries: the same keys with the same values
+// in the same order per key. The order of the keys themselves does not matter.
+func sameQuery(a, b url.Values) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, av := range a {
+		bv, ok := b[k]
+		if !ok || !slices.Equal(av, bv) {
+			return false
+		}
+	}
+	return true
 }
 
 // finishSingleTrack handles a natural end the watch detected itself. With

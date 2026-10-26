@@ -21,19 +21,26 @@ function lift(signature) {
 
 const src = [
   lift('function isPairFollowerRefusal('),
+  lift('function isPairIncompleteRefusal('),
   lift('function pairMasterLink('),
   lift('async function postPlay('),
+  lift('function playRefusal('),
 ].join('\n');
+
+const T = { pairBroken: 'PAIR BROKEN', spNeedPick: 'pick', spNeedPremium: 'premium' };
 
 function load({ answer, origin = { protocol: 'http:', port: '8080' } }) {
   const shown = [];
-  const fns = new Function('apiDetail', 'showPairFollowerNotice', 'location',
-    `${src}; return { isPairFollowerRefusal, pairMasterLink, postPlay };`)(
+  const notices = [];
+  const fns = new Function('apiDetail', 'showPairFollowerNotice', 'showPlayNotice', 'location', 'T',
+    `${src}; return { isPairFollowerRefusal, pairMasterLink, postPlay, playRefusal };`)(
     async () => answer,
     (d) => shown.push(d),
+    (m) => notices.push(m),
     origin,
+    T,
   );
-  return { ...fns, shown };
+  return { ...fns, shown, notices };
 }
 
 const refusal = {
@@ -55,6 +62,14 @@ describe('phone page on a stereo pair follower', () => {
     expect(zone.shown).toEqual([]);
     const bad = load({ answer: { ok: false, status: 502, data: { error: 'Station could not be played' } } });
     expect(await bad.postPlay('/api/play', {})).toMatchObject({ ok: false, handled: false });
+  });
+
+  it('says in words that the pair is incomplete instead of showing the code', async () => {
+    const p = load({ answer: { ok: false, status: 409, data: { error: 'stereo-incomplete', reason: 'partner-gone' } } });
+    expect(await p.postPlay('/api/queue', {})).toMatchObject({ ok: false, handled: true });
+    expect(p.notices).toEqual(['PAIR BROKEN']);
+    expect(p.shown).toEqual([]);
+    expect(p.playRefusal({ error: 'stereo-incomplete' })).toBe('PAIR BROKEN');
   });
 
   it('reports a started play as ok', async () => {

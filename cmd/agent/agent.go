@@ -1011,11 +1011,13 @@ func (a *agent) buildWebui() error {
 		// Same pair record and self id as the preset reconcile and Spotify.
 		webui.WithStereoFollower(func() webui.StereoFollower {
 			master, name, ok := margeSrv.GroupPair()
-			return stereoFollowerFrom(master, name, ok, margeSrv.DeviceID(), margeSrv.GroupPairMasterIP())
+			self := margeSrv.DeviceID()
+			return stereoFollowerFrom(master, name, ok, self, margeSrv.GroupPairHasMember(self), margeSrv.GroupPairMasterIP())
 		}),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
 		}),
+		webui.WithCachedPeers(cachedPeerLinks),
 		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
 			seedPeers(seeds, logger.With("comp", "peers"))
 		}),

@@ -169,6 +169,12 @@ func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "location is required", http.StatusBadRequest)
 		return
 	}
+	// The following half of a pair, or half of a broken one, cannot start a
+	// station either: refused like every other play path, before the select.
+	if ref := s.pairPlayRefusal(); ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	// The account is read even when the listed item is replayed, so a speaker

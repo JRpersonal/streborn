@@ -252,6 +252,9 @@ type Server struct {
 	// stereoFollowerFn reports whether this speaker follows a stereo pair and
 	// who leads it (see WithStereoFollower). nil: never a follower.
 	stereoFollowerFn func() StereoFollower
+	// cachedPeersFn lists the agent's known peers from its cache, without an
+	// mDNS browse (see WithCachedPeers). nil: no peer names on refusals.
+	cachedPeersFn func() []PeerLink
 	// stereoSeen is the pair document from the last /getGroup read that got an
 	// answer (nil when the speaker answered with no pair), and when it was read.
 	// The play path checks it instead of asking the firmware again: that read

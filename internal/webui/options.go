@@ -261,6 +261,14 @@ type PeerSeed struct {
 	DeviceID string `json:"deviceID,omitempty"`
 }
 
+// WithCachedPeers registers a reader of the peer list as the agent already
+// holds it, with no mDNS browse and no probes. Paths that run under the box
+// command lock (the stereo follower refusal) use it instead of WithPeers'
+// resolver, which may browse for seconds. nil leaves those paths without names.
+func WithCachedPeers(fn func() []PeerLink) Option {
+	return func(s *Server) { s.cachedPeersFn = fn }
+}
+
 // WithPeerSeed registers the sink for externally pushed peers (POST
 // /api/peers/seed). nil returns 404 on the endpoint.
 func WithPeerSeed(fn func([]PeerSeed)) Option {
