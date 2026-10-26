@@ -21,7 +21,6 @@ func outcomeHandler() (*presetWsHandler, *string, *bool) {
 		store:            presets.New(),
 		standbyStopAfter: func(time.Time) bool { return false },
 		slotPulled:       func(int, time.Time) bool { return false },
-		recentAddedAt:    func() time.Time { return time.Time{} },
 		sourceAndPlaying: func(context.Context) (string, bool, bool) {
 			return src, playing, true
 		},
@@ -68,9 +67,6 @@ func TestPresetOutcomeNoNoticeAfterPowerOff(t *testing.T) {
 		{"stream pulled for this press", func(h *presetWsHandler, _ *string, pressAt time.Time) {
 			h.slotPulled = func(slot int, t time.Time) bool { return slot == 5 && t.Equal(pressAt) }
 		}},
-		{"firmware reported the station started", func(h *presetWsHandler, _ *string, pressAt time.Time) {
-			h.recentAddedAt = func() time.Time { return pressAt.Add(2 * time.Second) }
-		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -94,6 +90,16 @@ func TestPresetOutcomeOtherStandDowns(t *testing.T) {
 		runOutcome(h, time.Now())
 		notices.none(t)
 	})
+	// The press switched the source (the firmware posts a recents record on
+	// every source change) but the stream is dead: still a failure.
+	t.Run("source changed, nothing playing", func(t *testing.T) {
+		shortOutcomeWait(t)
+		notices := swapShowNotice(t)
+		h, src, _ := outcomeHandler()
+		*src = "UPNP"
+		runOutcome(h, time.Now())
+		notices.only(t, oled.NoticePresetFailed, 5)
+	})
 	t.Run("speaker did not answer", func(t *testing.T) {
 		shortOutcomeWait(t)
 		notices := swapShowNotice(t)
@@ -101,15 +107,6 @@ func TestPresetOutcomeOtherStandDowns(t *testing.T) {
 		h.sourceAndPlaying = func(context.Context) (string, bool, bool) { return "", false, false }
 		runOutcome(h, time.Now())
 		notices.none(t)
-	})
-	t.Run("a recents record from before the press", func(t *testing.T) {
-		shortOutcomeWait(t)
-		notices := swapShowNotice(t)
-		h, _, _ := outcomeHandler()
-		pressAt := time.Now()
-		h.recentAddedAt = func() time.Time { return pressAt.Add(-time.Second) }
-		runOutcome(h, pressAt)
-		notices.only(t, oled.NoticePresetFailed, 5)
 	})
 	t.Run("newer press", func(t *testing.T) {
 		shortOutcomeWait(t)

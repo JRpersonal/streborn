@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 // Every marge route must write exactly ONE document.
@@ -83,17 +82,9 @@ func TestRecentsPostIsAnsweredWithRecents(t *testing.T) {
 		`<name>WDR2</name><location>/station?data=abc</location>` +
 		`<contentItemType>stationurl</contentItemType></recent>`
 
-	if !s.LastRecentAdded().IsZero() {
-		t.Fatal("LastRecentAdded set before any recents POST")
-	}
-	before := time.Now()
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost,
 		"/streaming/account/stick@local/device/0000000000C3/recent", strings.NewReader(posted)))
-	// The stamp the preset-outcome check reads as "the press brought sound".
-	if got := s.LastRecentAdded(); got.Before(before) {
-		t.Fatalf("LastRecentAdded = %v, want at or after %v", got, before)
-	}
 
 	body := w.Body.String()
 	if strings.Contains(body, "adddeviceresponse") || strings.Contains(body, "margetoken") {

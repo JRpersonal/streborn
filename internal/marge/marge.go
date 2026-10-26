@@ -74,9 +74,6 @@ type Server struct {
 	// recentSeq numbers the recents records the firmware POSTs, so each answer
 	// can carry the id the real cloud assigned (see respondRecentAdded).
 	recentSeq int64
-	// lastRecentAdded is when the firmware last reported a station it started
-	// (a recents POST STR answered with a record). See LastRecentAdded.
-	lastRecentAdded time.Time
 
 	// reflectPath points at the reflect-sources file (internal/boxsnapshot).
 	// Account-linked cloud sources listed there (e.g. Deezer) are re-advertised

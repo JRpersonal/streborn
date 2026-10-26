@@ -54,12 +54,7 @@ type presetWsHandler struct {
 	// first-press rescue can tell a press the firmware never acted on. nil
 	// means "never seen".
 	stationActivity func() time.Time
-	// recentAddedAt reports when the firmware last posted a recents record to
-	// marge, which it does once a station it was told to play starts (marge
-	// LastRecentAdded). The preset-outcome notice reads a stamp after the
-	// press as "this press brought sound". nil means "never seen".
-	recentAddedAt func() time.Time
-	spotify       *spotify.Manager
+	spotify         *spotify.Manager
 	// onUserStop is invoked when the box reports a deliberate playback stop
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
@@ -661,9 +656,9 @@ var presetOutcomeAfter = 15 * time.Second
 // (2026-10-26) had a station play for ten seconds, the remote switch the
 // speaker off, and FAILED drawn on the panel of the speaker in standby. So
 // the notice stands down when the user switched the speaker off after the
-// press, when the speaker is in standby, and when the speaker already showed
-// it played this press: the box pulled the slot's stream for real, or the
-// firmware reported the station to marge as started.
+// press, when the speaker is in standby, and when the box pulled the slot's
+// stream for real. A firmware recents POST is NOT used: the firmware sends one
+// on every source change, before any audio, so it would hide a dead stream.
 func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, pressAt time.Time, slot int, title string) {
 	if h.playingNow == nil && h.sourceAndPlaying == nil {
 		return
@@ -698,9 +693,6 @@ func (h *presetWsHandler) presetOutcomeStandDown(ctx context.Context, pressAt ti
 	}
 	if h.slotPulledSince(slot, pressAt) {
 		return "the speaker played the station's stream"
-	}
-	if h.recentAddedAt != nil && h.recentAddedAt().After(pressAt) {
-		return "the speaker reported the station as started"
 	}
 	if h.sourceAndPlaying != nil {
 		src, playing, ok := h.sourceAndPlaying(ctx)
