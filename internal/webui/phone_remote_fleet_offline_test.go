@@ -18,7 +18,7 @@ import (
 func TestPhoneRemoteOfflineStateStandsDownDuringFleetUpdate(t *testing.T) {
 	// The self-update card tells the status poll whether a run is in flight,
 	// this phone's own run or one the serving speaker drives.
-	if !strings.Contains(indexHTML, "window.suUpdateInFlight = function() { return runActive() || fleetRunning(); };") {
+	if !strings.Contains(indexHTML, "window.suUpdateInFlight = function() { return runActive() || fleetRunning() || (polling && suBusyState()); };") {
 		t.Error("the self-update card no longer tells the status poll that a fleet update is in flight")
 	}
 	// The poll's failure path asks before it paints "not reachable".
@@ -79,7 +79,8 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 		"replanIfUnreachable();",
 		// Back on the page after the poll gave up on a silent speaker: ask
 		// again instead of keeping "not reachable" for good.
-		"if (!polling && lostSince && st && ['downloading','installing','rebooting','engine','checking'].indexOf(st.state) >= 0) poll();",
+		"function suResume() { if (!polling && lostSince && suBusyState()) poll(); }",
+		"    suResume();\n  });",
 		// A plan or check that got an answer clears the silence too.
 		"if (r && typeof r === 'object') { st = r; lostSince = 0; }\n    render();\n    await probePeers();",
 		"if (r && typeof r === 'object') { st = r; lostSince = 0; } else show(T.suCheckFail, true);",
@@ -103,6 +104,15 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 		if strings.Contains(strings.ToLower(m[1]), "desktop") {
 			t.Errorf("sfUnreach still points at the desktop app: %q", m[1])
 		}
+	}
+	// Alone, the speaker retries a lost download for about eight minutes and
+	// then fails; nothing starts it over. So the single card must not promise
+	// "it carries on by itself", which only a fleet run keeps, in any language.
+	if !strings.Contains(indexHTML, "show((runActive() || fleetRunning()) ? T.sfNetWait : T.sfNetWaitOne, false, true);") {
+		t.Error("the single-speaker card promises a resume after an outage that only a fleet run makes")
+	}
+	if a, b := len(regexp.MustCompile(`sfNetWait:"`).FindAllString(indexHTML, -1)), len(regexp.MustCompile(`sfNetWaitOne:"`).FindAllString(indexHTML, -1)); a != b {
+		t.Errorf("sfNetWaitOne is in %d languages, sfNetWait in %d", b, a)
 	}
 	for _, m := range regexp.MustCompile(`suEngineByUpd:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1) {
 		if !strings.Contains(m[1], "{v}") {
