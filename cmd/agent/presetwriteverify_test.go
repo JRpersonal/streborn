@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"log/slog"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -298,5 +301,170 @@ func TestSlotsMissingOnBox(t *testing.T) {
 	}
 	if got := slotsMissingOnBox(stick, nil, nil); !reflect.DeepEqual(got, []int{1, 2, 3, 4, 6}) {
 		t.Fatalf("an empty list misses every key, got %v", got)
+	}
+}
+
+// TestJudgeSweepRefusalsCountsCLIRejectedWrites: a UPnP-form write the CLI
+// answered with an error still logs its account-copy refusal pair, so the count
+// runs over every spec the sweep sent (sweptSpecs), not only the accepted ones.
+// Counted over the accepted ones, that refusal read as an excess one and was
+// blamed on the native kept slots.
+func TestJudgeSweepRefusalsCountsCLIRejectedWrites(t *testing.T) {
+	specs := sweepSpecs(4)
+	var accepted []boxcli.PresetSpec
+	for _, s := range specs {
+		if s.Slot != 4 { // the CLI rejected slot 4's UPnP-form write
+			accepted = append(accepted, s)
+		}
+	}
+	kept := []int{1, 2, 3, 5, 6}
+	if j := judgeSweepRefusals(accepted, kept, sourceIDRefusals(1)); j.Genuine != 1 {
+		t.Fatalf("precondition: counted over the accepted specs the refusal reads as genuine, got %+v", j)
+	}
+	j := judgeSweepRefusals(sweptSpecs(specs), kept, sourceIDRefusals(1))
+	if j.Genuine != 0 || len(j.Suspects) != 0 || j.Expected != 1 {
+		t.Fatalf("the rejected UPnP-form write explains its own refusal: %+v", j)
+	}
+}
+
+// TestSweptSpecs: the specs SyncAllPresets skips are not part of the sweep.
+func TestSweptSpecs(t *testing.T) {
+	specs := []boxcli.PresetSpec{
+		{Slot: 1, StreamURL: "http://127.0.0.1:8888/stream/a"},
+		{Slot: 2}, // no stream URL: never sent
+		{Slot: 7, StreamURL: "http://127.0.0.1:8888/stream/b"},
+		{Slot: 6, StreamURL: "http://127.0.0.1:8888/stream/c", NativeLocation: "/station?data=x"},
+	}
+	got := sweptSpecs(specs)
+	if len(got) != 2 || got[0].Slot != 1 || got[1].Slot != 6 {
+		t.Fatalf("want slots 1 and 6 in order, got %+v", got)
+	}
+}
+
+// TestRefusalSettleWait: a sweep that ended on a UPnP-form write waits for
+// that write's refusal before judging, so it is not carried into the next
+// sweep's window; a sweep that ended natively does not wait at all, and the
+// time the readback already took counts towards the settle.
+func TestRefusalSettleWait(t *testing.T) {
+	done := time.Date(2026, 10, 26, 11, 3, 50, 0, time.UTC)
+
+	lastUPnP := sweepSpecs(6) // the store order ends on slot 6
+	if got := refusalSettleWait(lastUPnP, done, done.Add(500*time.Millisecond)); got != presetRefusalSettle-500*time.Millisecond {
+		t.Fatalf("readback after 0.5 s: want the rest of the settle, got %v", got)
+	}
+	if got := refusalSettleWait(lastUPnP, done, done.Add(presetRefusalSettle+time.Second)); got != 0 {
+		t.Fatalf("a slow readback already covered the settle, got %v", got)
+	}
+	if got := refusalSettleWait(sweepSpecs(4), done, done); got != 0 {
+		t.Fatalf("a sweep ending on a native write has no refusal to wait for, got %v", got)
+	}
+	if got := refusalSettleWait(nil, done, done); got != 0 {
+		t.Fatalf("an empty sweep waits for nothing, got %v", got)
+	}
+}
+
+// TestCeilingRunsPassPerAsker drives the hold-ceiling decision for every asker
+// class the way the reconcile loop does: the ask arms, the loop consumes its
+// dead-key evidence, and the ceiling decides. A dead-key press or a re-login
+// wipe kills keys the list still shows, so those passes run at the ceiling
+// even when every key is listed (#342); every other asker waits for the music
+// to stop unless a key is actually missing.
+func TestCeilingRunsPassPerAsker(t *testing.T) {
+	reset := func() {
+		presetResyncAsk.Store(false)
+		presetResyncLast.Store(0)
+		presetResyncUrgentLast.Store(0)
+		presetResyncKeysDead.Store(false)
+	}
+	reset()
+	t.Cleanup(reset)
+
+	listsAll := func() ([]int, error) { return nil, nil }
+	lacksTwo := func() ([]int, error) { return []int{2}, nil }
+	unreadable := func() ([]int, error) { return nil, errUnreadableList }
+
+	cases := []struct {
+		asker  string
+		urgent bool
+		run    bool // with every key listed
+	}{
+		{"thumb", false, true},
+		{"thumb-repeat", false, true},
+		{"1036", true, true},
+		{"paired", true, true},
+		{"refused-rewrite", false, false},
+		{"missing-slots-held", false, false},
+		{"reconnect", false, false},
+		{"standby-exit", false, false},
+		{"power-wake", false, false},
+		{"", false, false}, // the insurance pass and the retry force have no asker
+	}
+	for _, tc := range cases {
+		reset()
+		if tc.asker != "" {
+			if tc.urgent {
+				requestPresetKeyResyncUrgent(nil, tc.asker)
+			} else {
+				requestPresetKeyResync(nil, tc.asker)
+			}
+			if !presetResyncAsk.CompareAndSwap(true, false) {
+				t.Fatalf("%s: the ask did not arm", tc.asker)
+			}
+		}
+		keysDead := presetResyncKeysDead.Swap(false)
+		run, _, _ := ceilingRunsPass(keysDead, listsAll)
+		if run != tc.run {
+			t.Errorf("asker %q, every key listed: run=%v, want %v", tc.asker, run, tc.run)
+		}
+		if run, missing, _ := ceilingRunsPass(keysDead, lacksTwo); !run || (!keysDead && !reflect.DeepEqual(missing, []int{2})) {
+			t.Errorf("asker %q, a key missing: must run (missing %v)", tc.asker, missing)
+		}
+		if run, _, err := ceilingRunsPass(keysDead, unreadable); run != keysDead || (!keysDead && err == nil) {
+			t.Errorf("asker %q, list unreadable: run=%v err=%v, want run=%v", tc.asker, run, err, keysDead)
+		}
+	}
+}
+
+// TestStandbyDeferralDropsDeadKeyEvidence: the evidence travels with its ask.
+// A dead-key ask dropped for standby must not leave a flag that would make a
+// later, ordinary ask run into the music at the ceiling.
+func TestStandbyDeferralDropsDeadKeyEvidence(t *testing.T) {
+	reset := func() {
+		presetResyncAsk.Store(false)
+		presetResyncLast.Store(0)
+		presetResyncUrgentLast.Store(0)
+		presetResyncKeysDead.Store(false)
+	}
+	reset()
+	t.Cleanup(reset)
+
+	requestPresetKeyResync(nil, "thumb")
+	presetResyncAsk.Store(false) // consumed by the reconcile, which found STANDBY
+	deferPresetResyncForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "STANDBY")
+	requestPresetKeyResync(nil, "standby-exit")
+	if presetResyncKeysDead.Load() {
+		t.Fatal("the wake re-ask must not inherit the dropped dead-key evidence")
+	}
+}
+
+var errUnreadableList = errors.New("presets unreadable")
+
+// The loop wiring a helper test cannot see: the ceiling decides with the
+// consumed ask's dead-key evidence, every consume point captures it, and the
+// pass that runs clears it.
+func TestTheReconcileLoopCarriesDeadKeyEvidenceToTheCeiling(t *testing.T) {
+	b, err := os.ReadFile("reconcile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if !strings.Contains(src, "ceilingRunsPass(forceKeysDead, ") {
+		t.Error("the hold ceiling no longer decides with the ask's dead-key evidence")
+	}
+	if n := strings.Count(src, "forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead"); n < 4 {
+		t.Errorf("want the evidence captured at all four consume points (retry run, standby-ok, awake, held-pass ask), found %d", n)
+	}
+	if !strings.Contains(src, "ceilingListedLogged = false\n\t\t\tforceKeysDead = false") {
+		t.Error("a pass that ran must clear its dead-key evidence")
 	}
 }

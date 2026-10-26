@@ -133,9 +133,12 @@ type sweepRefusals struct {
 }
 
 // judgeSweepRefusals matches the refusals logged during a sweep to its writes.
-// written are the specs the CLI accepted, kept the ones the box already listed
-// before the sweep (only those can hide a refusal: a slot that was missing and
-// is listed now demonstrably landed).
+// written are every spec the sweep sent (sweptSpecs), including the ones the
+// CLI answered with an error: a rejected UPnP-form write still logs its
+// account-copy refusal pair, and leaving it out of the count would blame that
+// line on a native slot. kept are the slots the box already listed before the
+// sweep (only those can hide a refusal: a slot that was missing and is listed
+// now demonstrably landed).
 func judgeSweepRefusals(written []boxcli.PresetSpec, kept []int, refusals []boxlog.PresetRefusal) sweepRefusals {
 	var j sweepRefusals
 	upnp := map[int]bool{}
@@ -184,6 +187,41 @@ func judgeSweepRefusals(written []boxcli.PresetSpec, kept []int, refusals []boxl
 		j.Suspects = append(j.Suspects, slot)
 	}
 	return j
+}
+
+// sweptSpecs returns the specs boxcli.SyncAllPresets actually sends, in its
+// order: it skips a spec without a stream URL or with a slot outside 1 to 6.
+func sweptSpecs(specs []boxcli.PresetSpec) []boxcli.PresetSpec {
+	out := make([]boxcli.PresetSpec, 0, len(specs))
+	for _, spec := range specs {
+		if spec.StreamURL == "" || spec.Slot < 1 || spec.Slot > 6 {
+			continue
+		}
+		out = append(out, spec)
+	}
+	return out
+}
+
+// presetRefusalSettle is how long after its last write a sweep waits before it
+// reads the firmware's refusals. The reader stamps a refusal when it sees the
+// syslog line, 1 to 2 s after the AddPreset, while the readback is done about
+// half a second after the last write (2026-10-26 bundles). Without the wait the
+// account-copy refusal of a UPnP-form key written LAST (a webhook placeholder,
+// a Spotify key on slot 6) is missed by its own sweep and lands inside the next
+// one's window, where it reads as an extra refusal of a native slot. A var so
+// tests need not sleep.
+var presetRefusalSettle = 2500 * time.Millisecond
+
+// refusalSettleWait is how much longer a sweep that finished writing at
+// writesDone must wait at now before its refusals are complete: only a sweep
+// whose last write was in the UPnP form waits (a native write logs no
+// account-copy refusal to wait for), and only the part of the settle the
+// readback has not already spent.
+func refusalSettleWait(swept []boxcli.PresetSpec, writesDone, now time.Time) time.Duration {
+	if len(swept) == 0 || swept[len(swept)-1].NativeLocation != "" {
+		return 0
+	}
+	return max(presetRefusalSettle-now.Sub(writesDone), 0)
 }
 
 // reportRewrittenSlots logs the forced rewrite of slots the box already listed

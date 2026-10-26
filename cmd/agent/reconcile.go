@@ -89,7 +89,36 @@ var (
 	fullPresetWriteAt     atomic.Int64
 	standbyThumbLast      atomic.Int64
 	presetResyncStandbyOK atomic.Bool
+	// presetResyncKeysDead marks the pending ask as one that came with
+	// evidence that keys are dead although /presets still lists them
+	// (askerExpectsDeadKeys). It travels with the ask: consumed with it,
+	// dropped with it by the standby deferral.
+	presetResyncKeysDead atomic.Bool
 )
+
+// askerExpectsDeadKeys reports whether a re-sync asker comes with evidence that
+// the hardware keys are dead while the speaker still LISTS them: a press that
+// produced no selection frame (thumb, thumb-repeat, #342), or the re-login and
+// pairing moments that wipe the key registrations (1036, paired). For those
+// the forced pass runs at its hold ceiling even into STR's own music, because
+// the list cannot show what is wrong. Every other asker (refused-rewrite,
+// missing-slots-held, the wake and reconnect re-asks, the insurance pass) only
+// runs at the ceiling when a key is actually missing from the list.
+func askerExpectsDeadKeys(asker string) bool {
+	switch asker {
+	case "thumb", "thumb-repeat", "1036", "paired":
+		return true
+	}
+	return false
+}
+
+// notePresetResyncAsker records the asker of an ask that has just armed.
+func notePresetResyncAsker(asker string) {
+	presetResyncAsker.Store(asker)
+	if askerExpectsDeadKeys(asker) {
+		presetResyncKeysDead.Store(true)
+	}
+}
 
 func requestPresetKeyResync(logger *slog.Logger, asker string) {
 	const minGapSec = 2 * 60
@@ -104,7 +133,7 @@ func requestPresetKeyResync(logger *slog.Logger, asker string) {
 	// non-arming concurrent writer, and losing to IT dropped a wake re-ask.
 	// Two concurrent askers both storing is harmless (one pending ask).
 	presetResyncLast.Store(now)
-	presetResyncAsker.Store(asker)
+	notePresetResyncAsker(asker)
 	presetResyncAsk.Store(true)
 	if logger != nil {
 		logger.Info("preset self-heal: scheduling a full box preset re-sync (#342)", "asker", asker)
@@ -123,7 +152,7 @@ func requestPresetKeyResyncUrgent(logger *slog.Logger, asker string) {
 		return
 	}
 	presetResyncUrgentLast.Store(now)
-	presetResyncAsker.Store(asker)
+	notePresetResyncAsker(asker)
 	presetResyncAsk.Store(true)
 	if logger != nil {
 		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)", "asker", asker)
@@ -147,6 +176,9 @@ func deferPresetResyncForStandby(logger *slog.Logger, src string) {
 	// triggers are external events that never fire autonomously on a sleeping
 	// box, so this cannot create a standby write loop.
 	presetResyncUrgentLast.Store(0)
+	// The dropped ask takes its dead-key evidence with it; the wake re-ask
+	// brings its own.
+	presetResyncKeysDead.Store(false)
 	reason := "box idles in STANDBY"
 	if src == "" {
 		reason = "box state unreadable, holding writes"
@@ -343,6 +375,10 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// ceiling to the first hold, not to the latest retry.
 	forceHeld := false
 	var forceHeldSince time.Time
+	// forceKeysDead is set when the forced pass was asked for by an asker that
+	// saw dead keys the list still shows (askerExpectsDeadKeys). Such a pass
+	// runs at the hold ceiling without consulting the list.
+	forceKeysDead := false
 	// userHeldSrc is the listener's source the forced pass is currently held
 	// on (#1035), "" when it is not. It keeps the hold line to one per source
 	// and lets the release say what was protected.
@@ -381,6 +417,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 					// the routine path below grants it.
 					presetResyncStandbyOK.Store(false)
 					presetResyncAsk.Store(false)
+					forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
 				default:
 					retryDeferred = true
 					retryHeldSrc = src
@@ -418,11 +455,13 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				// User-present evidence (repeated dead-key presses): this ask
 				// runs even when the box still reads STANDBY.
 				presetResyncLast.CompareAndSwap(0, lastConsumed)
+				forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
 				force = true
 			} else if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
 				deferPresetResyncForStandby(logger, src)
 			} else {
 				presetResyncLast.CompareAndSwap(0, lastConsumed)
+				forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
 				force = true
 			}
 		}
@@ -606,8 +645,19 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				// that listed all six keys throughout). The list is read once
 				// per ceiling, not per retry, so the wait costs no extra
 				// polling beyond the hold's own now_playing read.
-				missing, listErr := keysMissingOnBox(store, boxHost, wh)
-				if listErr != nil || len(missing) == 0 {
+				//
+				// The list only speaks for keys that are gone. A press on a
+				// dead key (#342) or a re-login wipe kills keys the list still
+				// shows, so a pass asked for by one of those runs at the
+				// ceiling as it always did. Such an ask may also have arrived
+				// while this pass was held; the pass about to run answers it.
+				if presetResyncKeysDead.Load() && presetResyncAsk.CompareAndSwap(true, false) {
+					forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
+				}
+				run, missing, listErr := ceilingRunsPass(forceKeysDead, func() ([]int, error) {
+					return keysMissingOnBox(store, boxHost, wh)
+				})
+				if !run {
 					if !ceilingListedLogged {
 						ceilingListedLogged = true
 						why := "the speaker lists every key"
@@ -623,12 +673,19 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 					time.Sleep(forcedPlayHoldRetry)
 					continue
 				}
-				logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the speaker is missing hardware keys",
-					"reason", forcedHoldReason(src, playing, playKnown),
-					"source", src, "missing", missing,
-					"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
+				if forceKeysDead {
+					logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and a dead key or a re-login asked for it",
+						"reason", forcedHoldReason(src, playing, playKnown), "source", src,
+						"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
+				} else {
+					logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the speaker is missing hardware keys",
+						"reason", forcedHoldReason(src, playing, playKnown),
+						"source", src, "missing", missing,
+						"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
+				}
 			}
 			ceilingListedLogged = false
+			forceKeysDead = false
 			if userHeldSrc != "" {
 				logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
 					"heldOn", userHeldSrc, "source", src)
@@ -768,8 +825,9 @@ const userPlayStartHoldRetry = 5 * time.Second
 //
 // A hold, never a skip: the keys still have to end up registered, so the wait
 // on STR's OWN playback is bounded and the pass runs anyway once the ceiling
-// passes, provided the speaker is actually missing a key (keysMissingOnBox,
-// checked by the caller). A speaker that lists every key keeps holding until
+// passes, provided the speaker is actually missing a key or the ask came from a
+// dead-key press or a re-login wipe (ceilingRunsPass, checked by the caller).
+// Otherwise a speaker that lists every key keeps holding until
 // the music stops: a rewrite of listed keys is not worth an interruption, and
 // writing them into a playing speaker every five minutes is what the
 // 2026-10-26 bundles caught.
@@ -875,6 +933,20 @@ func forcedHoldReason(src string, playing, playKnown bool) string {
 		return "free"
 	}
 	return "user-chosen source"
+}
+
+// ceilingRunsPass decides whether a forced pass held on STR's own playback
+// runs once the hold ceiling has passed. A pass whose ask saw dead keys the
+// list still shows (keysDead, askerExpectsDeadKeys) runs without reading the
+// list. Any other pass runs only when the list readably lacks a key; a list
+// that lists every key, or cannot be read, keeps the pass waiting for the music
+// to stop.
+func ceilingRunsPass(keysDead bool, readMissing func() ([]int, error)) (run bool, missing []int, err error) {
+	if keysDead {
+		return true, nil, nil
+	}
+	missing, err = readMissing()
+	return err == nil && len(missing) > 0, missing, err
 }
 
 // keysMissingOnBox reads the speaker's preset list and returns the keys STR
@@ -1160,6 +1232,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		sweepStart := time.Now()
 		boxwrites.NoteN("addpreset", srcBefore, len(missing))
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
+		writesDone := time.Now()
 		if srcAfter := boxNowPlayingSource(boxHost); srcAfter != srcBefore {
 			logger.Warn("preset forensics: the box changed source across a preset write",
 				"before", srcBefore, "after", srcAfter, "slots", len(missing),
@@ -1200,7 +1273,19 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			// to the slots they can belong to: the expected account-copy refusal
 			// of a UPnP-form key is not one, and re-asking for it looped a
 			// forced pass every five minutes on a playing speaker (2026-10-26).
-			verdict := judgeSweepRefusals(accepted, kept, firmwarePresetRefusalsSince(sweepStart))
+			//
+			// Every spec the sweep sent counts for the UPnP-form refusals, the
+			// ones the CLI rejected too, and the refusals are read only once
+			// the last write's own refusal has had time to arrive (no timer: an
+			// inline wait of at most a few seconds, only when the sweep ended
+			// on a UPnP-form write and only when there is anything to judge).
+			swept := sweptSpecs(missing)
+			if len(kept) > 0 {
+				if wait := refusalSettleWait(swept, writesDone, time.Now()); wait > 0 {
+					time.Sleep(wait)
+				}
+			}
+			verdict := judgeSweepRefusals(swept, kept, firmwarePresetRefusalsSince(sweepStart))
 			refused := reportRewrittenSlots(logger, kept, verdict)
 			if len(kept) > 0 {
 				if ask, streak, wait := noteRewriteOutcome(refused, time.Now()); ask {
