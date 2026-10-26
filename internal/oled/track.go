@@ -218,6 +218,13 @@ func SourceClockLabel(source string) (label string, ok bool) {
 // leaves nothing held. reason goes to the log.
 func ClearTrack(reason string) { tracks.clear(reason) }
 
+// ClearSourceClock ends the input clock (ShowSourceClock) put up for source,
+// and nothing else: when the speaker has moved on since (another input, or
+// STR's own source with its track screen already back), the call is a no-op.
+// For a caller that decided on the panel from a source read a moment ago.
+// Blocks (bounded) like ClearTrack.
+func ClearSourceClock(source, reason string) { tracks.clearSourceClock(source, reason) }
+
 // PauseTrack hands the panel back to BoseApp for d (a volume change: its own
 // volume bar shows), then the track screen returns by itself.
 func PauseTrack(d time.Duration, reason string) { tracks.pause(d, reason) }
@@ -355,6 +362,22 @@ func (s *trackScreen) clear(reason string) {
 	s.returning = false
 	s.mu.Unlock()
 	if !s.stop(reason) && had {
+		s.log().Info("display track overlay off", "reason", reason, "held", false)
+	}
+}
+
+func (s *trackScreen) clearSourceClock(source, reason string) {
+	s.mu.Lock()
+	if s.want == nil || !s.want.still || s.source != source {
+		now := s.source
+		s.mu.Unlock()
+		s.log().Debug("display input clock clear ignored", "reason", reason, "input", source, "source", now)
+		return
+	}
+	s.want = nil
+	s.returning = false
+	s.mu.Unlock()
+	if !s.stop(reason) {
 		s.log().Info("display track overlay off", "reason", reason, "held", false)
 	}
 }

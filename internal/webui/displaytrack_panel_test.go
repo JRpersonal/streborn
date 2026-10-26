@@ -23,6 +23,8 @@ type fakeTrackPanel struct {
 	shown     []oled.TrackText
 	cleared   []string
 	inputs    []inputClock
+	// inputClears are the ClearSourceClock calls, by source
+	inputClears []string
 }
 
 // inputClock is one ShowSourceClock call.
@@ -41,6 +43,16 @@ func (f *fakeTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
 	f.mu.Lock()
 	f.inputs = append(f.inputs, inputClock{source, t})
 	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) ClearSourceClock(source, _ string) {
+	f.mu.Lock()
+	f.inputClears = append(f.inputClears, source)
+	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) inputClearSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.inputClears...)
 }
 func (f *fakeTrackPanel) inputSnapshot() []inputClock {
 	f.mu.Lock()
@@ -553,25 +565,55 @@ func TestPanelClockOnSpeakerInputs(t *testing.T) {
 }
 
 // With the clock off, Bluetooth and AUX keep the firmware's picture: the
-// panel is let go, the track setting alone does not reach them. The clock
-// switched on there shows at once, switched off lets the panel go again.
+// source change itself does nothing here (the panel side already let go on
+// the switch), the track setting alone does not reach them. The clock
+// switched on there shows at once; switched off it ends the input clock for
+// that input only, never with a plain Clear.
 func TestPanelInputsWithClockOff(t *testing.T) {
 	s, fp, _ := newTrackServer(t, true)
 	setFlag(t, clockPathFor(s.displayTrackPath), false)
 	s.panelRadioTitle("Queen - Under Pressure")
-	_, clearedBefore := fp.snapshot()
+	shownBefore, clearedBefore := fp.snapshot()
 	s.PanelSourceChanged("BLUETOOTH")
-	waitUntil(t, func() bool { _, c := fp.snapshot(); return len(c) > len(clearedBefore) })
-	if got := fp.inputSnapshot(); len(got) != 0 {
-		t.Fatalf("input clock with the clock off: %+v", got)
+	time.Sleep(50 * time.Millisecond)
+	shown, cleared := fp.snapshot()
+	if len(fp.inputSnapshot())+len(fp.inputClearSnapshot()) != 0 || len(shown) != len(shownBefore) || len(cleared) != len(clearedBefore) {
+		t.Fatalf("clock off, a switch to Bluetooth touched the panel: inputs %+v input clears %v shown %+v cleared %v",
+			fp.inputSnapshot(), fp.inputClearSnapshot(), shown, cleared)
 	}
 	setFlag(t, clockPathFor(s.displayTrackPath), true)
 	s.applyPanelSetting()
 	waitUntil(t, func() bool { return len(fp.inputSnapshot()) == 1 })
 	setFlag(t, clockPathFor(s.displayTrackPath), false)
-	_, c0 := fp.snapshot()
 	s.applyPanelSetting()
-	waitUntil(t, func() bool { _, c := fp.snapshot(); return len(c) > len(c0) })
+	waitUntil(t, func() bool { return len(fp.inputClearSnapshot()) == 1 })
+	if got := fp.inputClearSnapshot()[0]; got != "BLUETOOTH" {
+		t.Fatalf("input clock cleared for %q, want BLUETOOTH", got)
+	}
+	if _, c := fp.snapshot(); len(c) != len(clearedBefore) {
+		t.Fatalf("the input branch cleared the whole panel: %v", c)
+	}
+}
+
+// Clock off, a quick Bluetooth and back (a preset recalled right after
+// picking Bluetooth, or a flap): the radio screen that came back must stay.
+// It used to be wiped by the Bluetooth refresh still running behind it.
+func TestPanelQuickInputFlapKeepsTheRadioScreen(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	setFlag(t, clockPathFor(s.displayTrackPath), false)
+	s.panelRadioTitle("Queen - Under Pressure")
+	_, clearedBefore := fp.snapshot()
+	s.PanelSourceChanged("BLUETOOTH")
+	s.PanelSourceChanged("UPNP")
+	s.RefreshTrackPanel()
+	time.Sleep(50 * time.Millisecond)
+	shown, cleared := fp.snapshot()
+	if len(cleared) != len(clearedBefore) || len(fp.inputClearSnapshot()) != 0 {
+		t.Fatalf("the radio screen was cleared after the flap: cleared %v input clears %v", cleared, fp.inputClearSnapshot())
+	}
+	if last := shown[len(shown)-1]; last.Title != "Under Pressure" || last.Station != "Radio Bob" {
+		t.Fatalf("last screen %+v, want the radio track", last)
+	}
 }
 
 // A speaker without a panel STR draws on is not touched.

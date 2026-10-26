@@ -52,6 +52,7 @@ type trackPanelSink interface {
 	Supported() bool
 	Show(oled.TrackText)
 	ShowSourceClock(source string, t oled.TrackText)
+	ClearSourceClock(source, reason string)
 	Clear(reason string)
 }
 
@@ -62,6 +63,9 @@ func (oledTrackPanel) Show(t oled.TrackText) { oled.ShowTrack(t) }
 func (oledTrackPanel) Clear(reason string)   { oled.ClearTrack(reason) }
 func (oledTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
 	oled.ShowSourceClock(source, t)
+}
+func (oledTrackPanel) ClearSourceClock(source, reason string) {
+	oled.ClearSourceClock(source, reason)
 }
 
 func (s *Server) panelSink() trackPanelSink {
@@ -254,7 +258,10 @@ func (s *Server) refreshTrackPanel() {
 			p.ShowSourceClock(src, oled.TrackText{Station: label, Clock: true, Hour12: s.speakerHour12()})
 			return
 		}
-		p.Clear("nothing to show")
+		// the clock was switched off here: end the input clock, but only that.
+		// src was read a moment ago; when the speaker has left the input since,
+		// the screen now up belongs to the new source and stays.
+		p.ClearSourceClock(src, "nothing to show")
 		return
 	}
 	if t, ok := s.panelText(); ok {
@@ -285,7 +292,9 @@ func (s *Server) PanelSourceChanged(src string) {
 	s.panelMu.Lock()
 	s.boxSource = src
 	s.panelMu.Unlock()
-	if _, ok := oled.SourceClockLabel(src); ok && s.trackOnPanel() {
+	// With the clock off there is nothing to do: the panel side has already
+	// let go on the switch, and the firmware's picture stays as before.
+	if _, ok := oled.SourceClockLabel(src); ok && s.trackOnPanel() && s.displayClockEnabled() {
 		go s.refreshTrackPanel()
 	}
 }

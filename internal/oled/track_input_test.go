@@ -227,3 +227,54 @@ func TestRenderInputClockPNG(t *testing.T) {
 		writePNG(t, filepath.Join(dir, "input-clock-"+c.name+"@3x.png"), buf, 3)
 	}
 }
+
+// A clear of the input clock decided from a source read a moment ago must not
+// take down the screen of the source the speaker moved on to: the radio screen
+// after a quick Bluetooth and back stays, with the clock off (nothing was up
+// on Bluetooth) and with the clock on (the input clock was up, then left).
+func TestClearSourceClockOnlyEndsItsOwnInput(t *testing.T) {
+	for _, clockOn := range []bool{false, true} {
+		s, p := newFakeTrack()
+		s.setSource("UPNP", true)
+		s.show(TrackText{Station: "WDR 2", Title: "Song"})
+		waitFor(t, "the track screen", p.held.Load)
+		s.setSource("BLUETOOTH", false)
+		if clockOn {
+			s.showSourceClock("BLUETOOTH", TrackText{Station: "Bluetooth"})
+			waitFor(t, "the input clock", func() bool { return heldStill(s) })
+		}
+		s.setSource("UPNP", true)
+		s.show(TrackText{Station: "WDR 2", Title: "Song"})
+		waitFor(t, "the track screen back", func() bool {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.holding && s.want != nil && !s.want.still
+		})
+		// the late clear from the Bluetooth refresh
+		s.clearSourceClock("BLUETOOTH", "nothing to show")
+		time.Sleep(30 * time.Millisecond)
+		s.mu.Lock()
+		kept := s.holding && s.want != nil && s.want.Title == "Song"
+		s.mu.Unlock()
+		if !kept {
+			t.Fatalf("clock %v: a late input clear took the radio screen down", clockOn)
+		}
+		// on the input itself it does end the input clock
+		s.setSource("AUX", false)
+		s.showSourceClock("AUX", TrackText{Station: "AUX"})
+		waitFor(t, "the input clock on AUX", func() bool { return heldStill(s) })
+		s.clearSourceClock("BLUETOOTH", "stale")
+		time.Sleep(30 * time.Millisecond)
+		if !heldStill(s) {
+			t.Fatalf("clock %v: a clear for another input ended the AUX clock", clockOn)
+		}
+		s.clearSourceClock("AUX", "setting off")
+		waitFor(t, "the release", func() bool { return !p.held.Load() })
+		s.mu.Lock()
+		gone := s.want == nil
+		s.mu.Unlock()
+		if !gone {
+			t.Fatalf("clock %v: input clock still wanted after its clear", clockOn)
+		}
+	}
+}
