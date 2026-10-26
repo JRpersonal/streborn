@@ -1723,7 +1723,7 @@ export namespace sticksetup {
 	    clusterTooBig: boolean;
 	    existingFirmwareBytes: number;
 	    otherFiles: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new StickCheck(source);
 	    }
