@@ -432,6 +432,27 @@ moved, consecutive refusals back off 1, 2, 4 ... minutes up to 30.
 `ImportCredential` refuses to stage the refused blob again. The
 `spotify_auth` debug section shows the state (no account names).
 
+### Where the account plan comes from (`accounts.go`, `accountplans.go`)
+
+The Premium/free plan gates preset saves and recall (`PremiumRequired`).
+It is taken from the engine first: Spotify's access point sends a
+ProductInfo packet at login, and the fork's `GET /status` reports it as
+`product_type` (JRpersonal/go-librespot PR #7) in the same answer as
+`username`, so the plan is tied to the account that is logged in. That
+answer is fresh: it gates exactly like a `/v1/me` answer and is stored in
+`plans.json`. Only an engine without the field (or before the packet has
+arrived) falls back to the Web API `GET /v1/me`, which on some households
+answers 429/503 for hours (#1077). The log says once per engine process
+which source was used: `read the account plan from the engine` or
+`read the account plan from Spotify`.
+
+`/v1/me` is still the only source of the account's display name
+(`accountnames.go`). So when the engine reports the plan but no name is
+remembered for that account, the check makes one `/v1/me` call per
+engine process for the name alone (honouring the 429 quiet window). The
+`product` in that answer is ignored: the engine's report gates. Once the
+name is known, the engine path makes no Web API call at all.
+
 ## Goal
 
 A SoundTouch speaker running STR should be linkable to one or more

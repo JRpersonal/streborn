@@ -13,8 +13,9 @@ import (
 // Remembering what plan a Spotify account is ON, so a speaker that already knew
 // does not forget it every time the engine restarts.
 //
-// The plan is read from Spotify's /v1/me with a token the engine hands out, and
-// it used to live only in memory: every engine start (an account switch, a
+// The plan comes from the engine's /status (product_type, see engineAccount)
+// or, on an engine without that field, from Spotify's /v1/me with a token the
+// engine hands out. It used to live only in memory: every engine start (an account switch, a
 // device-name change, a crash restart) wiped it, and the speaker had to ask
 // again. Spotify rate-limits that shared client hard. A field bundle from
 // 2026-10-26 (three ST10s, a Premium account) shows "spotify answered 429 ...
@@ -32,8 +33,8 @@ import (
 // Semantics, chosen deliberately: a remembered plan feeds the "product" the
 // apps are told, and nothing else. PremiumRequired, which blocks preset recall,
 // keeps its conservative contract: true only on a FRESH positive non-Premium
-// signal (a /v1/me answer from this engine process, or the engine's own
-// free-account log line), never on a value carried over from an earlier
+// signal (a /v1/me answer or an engine-reported product_type from this engine
+// process, or the engine's own free-account log line), never on a value carried over from an earlier
 // process. A remembered "free" can be months old; an account upgraded since
 // would otherwise have its presets blocked for as long as Spotify throttles the
 // re-read, which is up to productRateLimitMax per window and survives reboots.
@@ -178,6 +179,7 @@ func (m *Manager) noteEngineAccount(user string) {
 func (m *Manager) resetProductStateLocked() {
 	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
 	m.productUser, m.productFreshLogged, m.productRememberedLogged = "", false, false
+	m.productNameAsked = ""
 	m.productGen++
 }
 

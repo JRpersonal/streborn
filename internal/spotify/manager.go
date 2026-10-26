@@ -196,6 +196,10 @@ type Manager struct {
 	// that began under an older engine process must not write its answer into
 	// the state of the new one.
 	productGen uint64
+	// productNameAsked is the account whose display name this engine process
+	// has already asked /v1/me for, on an engine that reports the plan itself,
+	// so a name Spotify does not send is not asked for every five minutes.
+	productNameAsked string
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).
