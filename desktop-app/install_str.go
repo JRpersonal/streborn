@@ -941,6 +941,20 @@ type repairPlan struct {
 // (boxInstallDiag), so a saved log holds the evidence in one shot.
 func (a *App) repairAndAwaitAgent(res InstallResult, host, model, fwNote string, p repairPlan) (out InstallResult, done bool, err error) {
 	rr, rerr := a.RepairInstallViaSSH(host, model)
+	if rr.Code == "repair-box-restarted" {
+		// The speaker went down under install.sh. RepairInstallViaSSH has
+		// already worded the wait-and-send-logs advice (and restarted the
+		// speaker itself when it had stopped the old agent), so that is the
+		// final answer on every site: falling through to the stick sites'
+		// own classification would bury it under stick or network advice and
+		// probe a speaker that is restarting right now. The stick sites' own
+		// Log goes in front, it holds the failed stick attempt.
+		if !p.keepRepairResult {
+			rr.Log = res.Log + "\n\n--- SSH NAND install (speaker restarted) ---\n" + rr.Log
+		}
+		rr.Message += fwNote
+		return rr, true, rerr
+	}
 	diagOf := func() string {
 		if p.diag != "" {
 			return p.diag
@@ -1053,12 +1067,20 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	// restartIfStopped brings the old agent back when this repair stopped it
 	// to free RAM and then ends before its own reboot. The NAND still carries
 	// the old agent (install.sh's mv is the last step of its copy), and boot
-	// cleans any half-written .new files.
+	// cleans any half-written .new files. The SDK cloud URLs are healed first,
+	// exactly as before the success reboot: a :17000-unlocked speaker whose
+	// install did not get as far as run.sh would otherwise boot into
+	// str-setup.invalid and sweep its light bar forever (ST300, 2026-07-07).
+	// Both calls are best-effort, so a speaker that is already down costs
+	// nothing.
 	restartIfStopped := func() {
 		if !stoppedSTR {
 			return
 		}
 		a.logger.Info("repair_ssh: restarting the speaker so the STR agent stopped for the install comes back", "host", host)
+		if herr := a.healSDKCloudURLs(host); herr != nil {
+			a.logger.Warn("repair_ssh: could not heal SDK cloud URLs before the restart", "host", host, "err", herr)
+		}
 		_ = boxReboot(host)
 	}
 	if serr != nil {
@@ -1101,16 +1123,24 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 		// The SSH channel closed without an exit status: the speaker went down
 		// under the running install.sh (a reboot or an OOM-driven restart, the
 		// ST20 of 2026-10-26 twice in a row), not a script that failed. It
-		// comes back by itself within minutes, and the old agent on NAND is
-		// untouched (install.sh's mv never ran), so the advice is wait, do not
-		// retry the same install, send the logs. Never the post-install
-		// "did not come back after the install rebooted it" text, and no stick
-		// advice, which is model-specific and does not help here.
+		// comes back by itself within minutes with whatever agent its NAND
+		// holds (the old one, or the new one when install.sh's mv already
+		// ran), so the advice is wait, do not retry the same install, send the
+		// logs. Never the post-install "did not come back after the install
+		// rebooted it" text, and no stick advice, which is model-specific and
+		// does not help here.
+		//
+		// The same missing exit status also appears when only the speaker's
+		// sshd child was OOM-killed and the speaker itself stayed up. If this
+		// repair stopped the old agent, it would then stay down for good (the
+		// pidfile is gone, so both run.sh watchdogs have ended), so the
+		// speaker is restarted here as on every other failure.
 		res.Code = "repair-box-restarted"
-		res.Message = "The speaker restarted in the middle of the network install, before ST Reborn was copied onto it." +
+		res.Message = "The speaker restarted in the middle of the network install, while ST Reborn was being copied onto it." +
 			"\n\n" + repairBoxRestartedAdvice
 		a.logger.Warn("repair_ssh: speaker restarted during the install", "host", host, "model", model, "err", err,
 			"installOutput", truncForLog(out, 4000), "boxDiag", truncForLog(boxInstallDiag(host), 8000))
+		restartIfStopped()
 		return res, nil
 	}
 	if err != nil {
@@ -1434,27 +1464,81 @@ func parseMemAvailable(out string) (int64, bool) {
 // the run.sh watchdogs, so their RAM is free for the install. Removing the
 // pidfile first is what ends the watchdog loops (both break when it is gone),
 // so they do not respawn the agent; the second pass catches a respawn that a
-// watchdog had already decided on in the instant before. The install replaces
-// this agent anyway and the reboot after it starts everything again. Prints
-// STR_STOPPED so the caller can tell the script ran.
-const stopSTRScript = `rm -f /mnt/nv/streborn/agent.pid
+// watchdog had already decided on in the instant before.
+//
+// A watchdog that read the pidfile just before the rm, while the agent was
+// already dead (likely on exactly the speakers this runs on, whose agent is
+// not staying up), still respawns after wait_ports_clear, and the new agent
+// writes a new pidfile that keeps both loops going. The sweep after the
+// second pass catches that: it keeps removing the pidfile and killing for up
+// to 30 s, and ends early once nothing has run for 8 s in a row (the respawn
+// follows the kill within a few seconds, as soon as the ports are free). The
+// install replaces this agent anyway and the reboot after it starts
+// everything again.
+//
+// Prints STR_FOUND when STR was running before the stop (a stock speaker on
+// its first install runs none and must not be restarted for it),
+// STR_RESPAWN_KILLED when the sweep caught a respawn, STR_STILL_RUNNING when
+// one survived it, and STR_STOPPED last so the caller can tell the script ran.
+const stopSTRScript = `found=0
+pidof streborn-armv7l go-librespot >/dev/null 2>&1 && found=1
+rm -f /mnt/nv/streborn/agent.pid
 killall streborn-armv7l go-librespot 2>/dev/null
 sleep 6
 rm -f /mnt/nv/streborn/agent.pid
 killall -9 streborn-armv7l go-librespot 2>/dev/null
 sleep 1
+i=0
+quiet=0
+while [ $i -lt 30 ] && [ $quiet -lt 8 ]; do
+if pidof streborn-armv7l go-librespot >/dev/null 2>&1; then
+echo STR_RESPAWN_KILLED
+rm -f /mnt/nv/streborn/agent.pid
+killall -9 streborn-armv7l go-librespot 2>/dev/null
+quiet=0
+else
+quiet=$((quiet+1))
+fi
+sleep 1
+i=$((i+1))
+done
+pidof streborn-armv7l go-librespot >/dev/null 2>&1 && echo STR_STILL_RUNNING
+[ $found = 1 ] && echo STR_FOUND
 echo STR_STOPPED`
 
-// stopSTROnBox runs stopSTRScript over SSH.
-func stopSTROnBox(host string) error {
-	out, err := boxSSHOutput(host, stopSTRScript, 30*time.Second)
+// strStopResult is what stopSTRScript reported.
+type strStopResult struct {
+	// found: STR was running on the speaker before the stop.
+	found bool
+	// respawned: the sweep caught a watchdog respawn and killed it.
+	respawned bool
+	// stillRunning: a process survived the sweep, so the memory re-read
+	// after the stop may not see all the RAM the stop was meant to free.
+	stillRunning bool
+}
+
+// parseSTRStop reads stopSTRScript's markers.
+func parseSTRStop(out string) strStopResult {
+	return strStopResult{
+		found:        strings.Contains(out, "STR_FOUND"),
+		respawned:    strings.Contains(out, "STR_RESPAWN_KILLED"),
+		stillRunning: strings.Contains(out, "STR_STILL_RUNNING"),
+	}
+}
+
+// stopSTROnBox runs stopSTRScript over SSH. The budget covers the script's
+// worst case (7 s of passes plus the 30 s sweep) with room for a slow SSH
+// connect.
+func stopSTROnBox(host string) (strStopResult, error) {
+	out, err := boxSSHOutput(host, stopSTRScript, 75*time.Second)
+	r := parseSTRStop(out)
 	if err != nil {
-		return fmt.Errorf("stop STR on speaker: %s", classifySSHError(out, err))
+		return r, fmt.Errorf("stop STR on speaker: %s", classifySSHError(out, err))
 	}
 	if !strings.Contains(out, "STR_STOPPED") {
-		return fmt.Errorf("stop STR on speaker: script did not complete")
+		return r, fmt.Errorf("stop STR on speaker: script did not complete")
 	}
-	return nil
+	return r, nil
 }
 
 // repairMemForStage reads the speaker's MemAvailable and, when it is too low to
@@ -1466,7 +1550,11 @@ func stopSTROnBox(host string) error {
 //
 // stopped reports that the agent was stopped, so a caller whose install then
 // does not run to its reboot restarts the speaker itself: otherwise the old
-// agent would stay down until somebody pulls the plug.
+// agent would stay down until somebody pulls the plug. It stays false on a
+// speaker that ran no STR at all (a first install on a stock speaker), which
+// has nothing to bring back and must not be restarted for it. A stop whose
+// outcome is unknown (the SSH call failed) counts as stopped: a needless
+// restart is cheap, a stranded speaker is not.
 func (a *App) repairMemForStage(host string, rawNeed int64) (mem int64, known, stopped bool) {
 	mem, known = repairMemAvailable(host)
 	if repairRAMRoomFor(mem, known, rawNeed) {
@@ -1474,10 +1562,13 @@ func (a *App) repairMemForStage(host string, rawNeed int64) (mem int64, known, s
 	}
 	a.logger.Warn("repair_ssh: speaker RAM too short to stage the install, stopping STR's own agent and engine first",
 		"host", host, "memAvailableBytes", mem, "rawNeed", rawNeed, "floorBytes", boxmem.RAMStageFloor)
-	stopped = true
-	if err := repairStopSTR(host); err != nil {
+	sr, err := repairStopSTR(host)
+	stopped = sr.found || err != nil
+	if err != nil {
 		a.logger.Warn("repair_ssh: could not stop STR on the speaker", "host", host, "err", err)
 	}
+	a.logger.Info("repair_ssh: STR stop on the speaker", "host", host,
+		"strWasRunning", sr.found, "respawnKilled", sr.respawned, "stillRunning", sr.stillRunning)
 	mem2, known2 := repairMemAvailable(host)
 	a.logger.Info("repair_ssh: speaker RAM after stopping STR", "host", host,
 		"memAvailableBytes", mem2, "known", known2, "before", mem)

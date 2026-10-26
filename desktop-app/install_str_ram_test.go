@@ -57,6 +57,8 @@ type repairSeams struct {
 	events   []string
 	free     map[string]int64
 	stageErr map[string]error
+	noSTR    bool  // the speaker runs no STR (a stock speaker's first install)
+	stopErr  error // the stop's SSH call failed
 }
 
 func (s *repairSeams) install(t *testing.T) {
@@ -75,10 +77,10 @@ func (s *repairSeams) install(t *testing.T) {
 		s.events = append(s.events, "mem")
 		return s.mem[i], true
 	}
-	repairStopSTR = func(string) error {
+	repairStopSTR = func(string) (strStopResult, error) {
 		s.stopped++
 		s.events = append(s.events, "stop")
-		return nil
+		return strStopResult{found: !s.noSTR && s.stopErr == nil}, s.stopErr
 	}
 	repairStageUpload = func(_ *App, _, dir string, _ map[string][]byte) error {
 		s.events = append(s.events, "stage "+dir)
@@ -154,6 +156,45 @@ func TestRepairStageStillShortRejectsRAM(t *testing.T) {
 	}
 }
 
+// A stock speaker on its first install runs no STR: the stop finds nothing,
+// so nothing was stopped and a later failure must not restart the speaker
+// (that restart would skip the SDK URL heal on a :17000-unlocked speaker).
+func TestRepairStageStockSpeakerIsNotMarkedStopped(t *testing.T) {
+	s := &repairSeams{mem: []int64{30 * mb, 60 * mb}, free: roomyTmpfs(), noSTR: true}
+	s.install(t)
+	_, stopped, err := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.stopped != 1 {
+		t.Fatalf("the stop must still run, ran %d times", s.stopped)
+	}
+	if stopped {
+		t.Fatal("a speaker that ran no STR must not be reported as stopped")
+	}
+}
+
+// A stop whose SSH call failed may have killed the agent anyway: it counts as
+// stopped, so a failed install restarts the speaker rather than strand it.
+func TestRepairStageUnknownStopCountsAsStopped(t *testing.T) {
+	s := &repairSeams{mem: []int64{30 * mb, 60 * mb}, free: roomyTmpfs(), stopErr: errors.New("ssh: handshake failed")}
+	s.install(t)
+	_, stopped, _ := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	if !stopped {
+		t.Fatal("an unknown stop outcome must count as stopped")
+	}
+}
+
+func TestParseSTRStop(t *testing.T) {
+	if r := parseSTRStop("STR_STOPPED\n"); r.found || r.respawned || r.stillRunning {
+		t.Errorf("bare STR_STOPPED = %+v, want nothing found", r)
+	}
+	r := parseSTRStop("STR_RESPAWN_KILLED\nSTR_RESPAWN_KILLED\nSTR_STILL_RUNNING\nSTR_FOUND\nSTR_STOPPED\n")
+	if !r.found || !r.respawned || !r.stillRunning {
+		t.Errorf("all markers = %+v, want all set", r)
+	}
+}
+
 func TestRepairRAMRoomForUsesSharedFloor(t *testing.T) {
 	need := 20 * mb
 	if !repairRAMRoomFor(need+boxmem.RAMStageFloor, true, need) {
@@ -173,10 +214,54 @@ func TestStopSTRScriptEndsWatchdogsFirst(t *testing.T) {
 	if rm < 0 || kill < 0 || rm > kill {
 		t.Fatal("the pidfile must go before the kill, or a run.sh watchdog respawns the agent")
 	}
-	for _, p := range []string{"streborn-armv7l", "go-librespot", "STR_STOPPED"} {
+	for _, p := range []string{"streborn-armv7l", "go-librespot", "STR_STOPPED", "STR_FOUND", "STR_RESPAWN_KILLED", "STR_STILL_RUNNING"} {
 		if !strings.Contains(stopSTRScript, p) {
 			t.Errorf("stop script lost %q", p)
 		}
+	}
+	// STR_FOUND must come from a check taken BEFORE the first kill, or a
+	// speaker that ran STR would read as stock.
+	if found, firstKill := strings.Index(stopSTRScript, "found=1"), strings.Index(stopSTRScript, "killall"); found < 0 || found > firstKill {
+		t.Error("the STR_FOUND check must run before the first kill")
+	}
+	// The sweep that catches a watchdog respawn has to remove the pidfile
+	// again and kill inside a loop after the second pass.
+	loop := strings.Index(stopSTRScript, "while [")
+	if loop < 0 {
+		t.Fatal("stop script lost its respawn sweep")
+	}
+	sweep := stopSTRScript[loop:]
+	if !strings.Contains(sweep, "rm -f /mnt/nv/streborn/agent.pid") || !strings.Contains(sweep, "killall -9") {
+		t.Error("the respawn sweep must remove the pidfile and kill again")
+	}
+}
+
+// Source checks for the paths a unit test cannot reach without a speaker.
+func TestRepairRestartPathsBringTheAgentBack(t *testing.T) {
+	src := readInstallSrc(t)
+	repair := funcBody(t, src, "func (a *App) RepairInstallViaSSH(")
+	i := strings.Index(repair, `res.Code = "repair-box-restarted"`)
+	if i < 0 {
+		t.Fatal("repair-box-restarted branch is gone; if it moved, move this test with it")
+	}
+	branch := repair[i:]
+	if j := strings.Index(branch, "return res, nil"); j > 0 {
+		branch = branch[:j]
+	}
+	if !strings.Contains(branch, "restartIfStopped()") {
+		t.Error("the restart branch must restart a speaker whose agent this repair stopped (an sshd-only OOM kill leaves the speaker up)")
+	}
+	restart := repair[strings.Index(repair, "restartIfStopped := func()"):]
+	heal, reboot := strings.Index(restart, "healSDKCloudURLs"), strings.Index(restart, "boxReboot")
+	if heal < 0 || reboot < 0 || heal > reboot {
+		t.Error("restartIfStopped must heal the SDK cloud URLs before its reboot")
+	}
+
+	helper := funcBody(t, src, "func (a *App) repairAndAwaitAgent(")
+	short := strings.Index(helper, `rr.Code == "repair-box-restarted"`)
+	diag := strings.Index(helper, "diagOf := func()")
+	if short < 0 || diag < 0 || short > diag {
+		t.Error("repairAndAwaitAgent must end the install on a speaker restart before any further probing, on every site")
 	}
 }
 
@@ -201,7 +286,7 @@ func TestReportForRepairRestartDropsPostInstallAndStickAdvice(t *testing.T) {
 	r := failureReport{
 		Phase:   "install:repair-box-restarted",
 		History: "repair_ssh: staged install files",
-		ErrMsg:  "The speaker restarted in the middle of the network install, before ST Reborn was copied onto it.\n\n" + repairBoxRestartedAdvice,
+		ErrMsg:  "The speaker restarted in the middle of the network install, while ST Reborn was being copied onto it.\n\n" + repairBoxRestartedAdvice,
 		Facts:   installFacts{PingRan: true, PingAlive: true},
 	}
 	out := formatFailureReport(r)
