@@ -224,8 +224,21 @@ func (s *Server) queueSavedSlotHolds() int {
 
 // presetHoldsQueueTracks reports whether a folder key holds exactly the tracks
 // of a queue, in order (capped the way the key itself is capped).
+//
+// Items without a URL are skipped on both sides: presetItemsToQueue drops them
+// when the key starts its queue, so a key holding one never matched its own
+// queue and stayed dark next to it (#1525).
 func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
-	if cur.Type != "queue" || len(cur.Items) == 0 {
+	if cur.Type != "queue" {
+		return false
+	}
+	want := make([]string, 0, len(cur.Items))
+	for _, it := range cur.Items {
+		if it.URL != "" {
+			want = append(want, it.URL)
+		}
+	}
+	if len(want) == 0 {
 		return false
 	}
 	n := 0
@@ -233,7 +246,7 @@ func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
 		if it.URL == "" {
 			continue
 		}
-		if n >= len(cur.Items) || cur.Items[n].URL != it.URL {
+		if n >= len(want) || want[n] != it.URL {
 			return false
 		}
 		n++
@@ -241,7 +254,7 @@ func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
 			break
 		}
 	}
-	return n == len(cur.Items)
+	return n == len(want)
 }
 
 // queueKeySlot is the key the running folder belongs to, 0 when none: the key

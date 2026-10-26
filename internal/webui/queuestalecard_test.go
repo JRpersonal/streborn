@@ -126,3 +126,31 @@ func TestHardwareKeyOnOverwrittenFolderKeyStartsTheNewFolder(t *testing.T) {
 		t.Fatalf("queue after the press: active=%v items=%+v, want the new folder", active, items)
 	}
 }
+
+// A folder key holding an item without a URL still matches its own queue:
+// presetItemsToQueue drops that item when the key starts, so counting it on
+// the key's side left the key dark and a press restarted the folder (#1525).
+func TestFolderKeyWithAnEmptyItemStillHoldsItsQueue(t *testing.T) {
+	s := queueSaveTestServer(t)
+	key := folderKeyOn(6, "Old", staleCardOldTracks[0].URL, "", staleCardOldTracks[1].URL)
+	if err := s.presets.SetSlot(key); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := s.presets.Get(6)
+	if !ok || len(stored.Items) != 3 {
+		t.Fatalf("store kept %d items, want 3 (the empty one included)", len(stored.Items))
+	}
+	s.queue.load(presetItemsToQueue(stored.Items), 0, false, repeatOff)
+	s.recentQueueCard = recentCardCtx{key: "queue:slot:6", name: "Old"}
+	s.queueFolder = s.recentQueueCard
+
+	if snap := s.queueSnapshotWithCard(); snap.CardSlot != 6 || !snap.SlotChecked {
+		t.Fatalf("card_slot %d checked %v, want 6 true", snap.CardSlot, snap.SlotChecked)
+	}
+	if !s.queuePlaysSlot(6) {
+		t.Fatal("key 6 holds the playing folder")
+	}
+	if presetHoldsQueueTracks(folderKeyOn(6, "Empty", "", ""), nil) {
+		t.Fatal("a key with no real track holds no queue")
+	}
+}
