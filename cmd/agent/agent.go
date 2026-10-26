@@ -1327,6 +1327,9 @@ func (a *agent) buildBoxLink() error {
 		// loginErrorSinceFn tells whether a 1036 landed for this recall.
 		slotFetchLive:     streamProxySrv.SlotFetchLive,
 		loginErrorSinceFn: webuiSrv.LoginErrorSince,
+		// A folder key found stale for this press already showed its own
+		// "save the folder again" notice; no generic FAILED after it.
+		staleFolderKeySince: webuiSrv.StaleFolderKeySince,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
