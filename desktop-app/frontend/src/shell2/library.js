@@ -24,6 +24,7 @@
 import './library.css';
 import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../utils.js';
+import { KEYS_ICON, keyButtonHTML } from './keybtn.js';
 
 // The depth the first crumb stands for: the list of media servers, one step
 // above a server's own root (depth 0 of libState.stack).
@@ -34,8 +35,6 @@ const ICONS = {
   folder: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   track: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 17V5l10-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.5" cy="17.5" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16.5" cy="15.5" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
   play: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>',
-  // The six keys on top of a speaker, two rows of three.
-  keys: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="6" width="5" height="5" rx="1"/><rect x="9.5" y="6" width="5" height="5" rx="1"/><rect x="16.5" y="6" width="5" height="5" rx="1"/><rect x="2.5" y="13" width="5" height="5" rx="1"/><rect x="9.5" y="13" width="5" height="5" rx="1"/><rect x="16.5" y="13" width="5" height="5" rx="1"/></g></svg>',
   back: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 const chevron = '<span class="lib2-chev" aria-hidden="true">&rsaquo;</span>';
@@ -227,9 +226,6 @@ export function trackRowHTML(it, { key, attr, value, speaker = '', meta = '', du
   const playName = speaker
     ? t('ui2.library.playTrackOn', { title, name: speaker })
     : t('ui2.library.playTrack', { title });
-  const keyName = speaker
-    ? t('ui2.library.keyTrackOn', { title, name: speaker })
-    : t('ui2.library.keyTrack', { title });
   const data = `data-${attr}="${escapeAttr(String(value))}"`;
   return `
       <li class="lib2-item lib2-track library-row-track">
@@ -242,7 +238,7 @@ export function trackRowHTML(it, { key, attr, value, speaker = '', meta = '', du
         ${duration ? `<span class="lib2-dur">${escapeHtml(duration)}</span>` : ''}
         <span class="lib2-acts">
           <button type="button" class="u-btn u-btn--icon lib2-play" ${data} aria-label="${escapeAttr(playName)}" title="${escapeAttr(playName)}">${ICONS.play}</button>
-          <button type="button" class="u-btn u-btn--icon lib2-key" ${data} aria-label="${escapeAttr(keyName)}" title="${escapeAttr(keyName)}">${ICONS.keys}</button>
+          ${keyButtonHTML({ cls: 'lib2-key', attrs: data, name: title, speaker })}
         </span>
       </li>`;
 }
@@ -256,10 +252,14 @@ export function folderActionsHTML({ speaker = '', shuffle = false, repeat = 'off
   return `
       <div class="lib2-folder-acts">
         <div class="lib2-folder-btns">
-          <button type="button" class="u-btn u-btn--primary lib2-play-folder">${ICONS.play}<span>${escapeHtml(play)}</span></button>
-          <button type="button" class="u-btn u-btn--secondary lib2-key-folder">${ICONS.keys}<span>${escapeHtml(key)}</span></button>
-          <button type="button" class="u-btn u-btn--secondary lib2-shuffle" aria-pressed="${shuffle ? 'true' : 'false'}">${escapeHtml(t('controls.shuffle'))}</button>
-          <button type="button" class="u-btn u-btn--secondary lib2-repeat" data-mode="${escapeAttr(repeat)}">${escapeHtml(t(repeatLabelKey(repeat)))}</button>
+          <div class="lib2-folder-main">
+            <button type="button" class="u-btn u-btn--primary lib2-play-folder">${ICONS.play}<span>${escapeHtml(play)}</span></button>
+            <button type="button" class="u-btn u-btn--secondary lib2-key-folder">${KEYS_ICON}<span>${escapeHtml(key)}</span></button>
+          </div>
+          <div class="lib2-folder-modes">
+            <button type="button" class="u-btn u-btn--secondary lib2-shuffle" aria-pressed="${shuffle ? 'true' : 'false'}">${escapeHtml(t('controls.shuffle'))}</button>
+            <button type="button" class="u-btn u-btn--secondary lib2-repeat" data-mode="${escapeAttr(repeat)}">${escapeHtml(t(repeatLabelKey(repeat)))}</button>
+          </div>
         </div>
         ${statusHTML('folder', status)}
       </div>`;
@@ -272,8 +272,15 @@ export function filterRowHTML(filter, count) {
       <div class="lib2-filter">
         <label class="lib2-filter-label" for="libSearch">${escapeHtml(t('ui2.library.filterLabel'))}</label>
         <input type="search" class="lib2-input" id="libSearch" placeholder="${escapeAttr(t('library.searchPlaceholder'))}" value="${escapeAttr(filter || '')}">
-        <span class="lib2-count" id="libCount">${escapeHtml(count)}</span>
+        <span class="lib2-count" id="libCount" role="status">${escapeHtml(countText(count))}</span>
       </div>`;
+}
+
+// countText is the count after the folder filter with its word in front
+// ("Entries: 3", "Entries: 1 / 3" while a filter narrows it), so the number
+// says what it counts on screen and for a screen reader.
+export function countText(count) {
+  return `${t('ui2.library.entries')} ${count}`;
 }
 
 // manualAddHTML is adding a server by its address, for the servers the

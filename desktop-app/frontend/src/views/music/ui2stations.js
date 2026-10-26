@@ -15,6 +15,7 @@ import { t } from '../../i18n/index.js';
 import { translateCountry, translateTags } from '../../localization.js';
 import { logoImgTag } from '../../logos.js';
 import { escapeAttr, escapeHtml, formatNumber } from '../../utils.js';
+import { keyButtonHTML } from '../../shell2/keybtn.js';
 
 // stationKey is a station's identity across renders: the directory's uuid, or
 // name and address for a station without one (the same identity the
@@ -111,7 +112,7 @@ export function stationRowHTML(s, i, ctx = {}) {
     + '<div class="ui2-st-actions">'
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn" data-act="play" data-i="${i}" aria-label="${escapeAttr(t('ui2.radio.play', { name, speaker }))}" title="${escapeAttr(t('ui2.radio.play', { name, speaker }))}"><span aria-hidden="true">&#9654;</span></button>`
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-fav${fav ? ' is-fav' : ''}" data-act="fav" data-i="${i}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${escapeAttr(favLabel)}" title="${escapeAttr(favLabel)}"><span aria-hidden="true">${fav ? '&#9733;' : '&#9734;'}</span></button>`
-    + `<button type="button" class="u-btn u-btn--secondary ui2-st-key" data-act="key" data-i="${i}" aria-label="${escapeAttr(t('ui2.radio.putOnKeyName', { name, speaker }))}">${escapeHtml(t('ui2.radio.putOnKey'))}</button>`
+    + keyButtonHTML({ cls: 'ui2-st-key', attrs: `data-act="key" data-i="${i}"`, name, speaker })
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-more" data-act="details" data-i="${i}" aria-expanded="${ctx.open ? 'true' : 'false'}" aria-controls="${did}" aria-label="${escapeAttr(t('ui2.radio.detailsLabel', { name }))}" title="${escapeAttr(t('ui2.radio.details'))}"><span aria-hidden="true">&#9432;</span></button>`
     + '</div>'
     + '</div>'

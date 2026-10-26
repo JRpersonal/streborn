@@ -29,18 +29,9 @@ html.ui2 #view-library .lib2-head {
   gap: 8px;
   margin-bottom: 8px;
 }
-html.ui2 #view-library .lib2-title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-html.ui2 #view-library .lib2-target {
-  margin: 0;
-  color: var(--u-muted);
-  font-size: 14px;
-}
-html.ui2 #view-library .lib2-target--none { color: var(--u-warn); }
+/* The title and the speaker line are the shared view header (shell2.css). */
+html.ui2 #view-library .lib2-head .lib2-target { margin-top: 0; }
+html.ui2 #view-library .lib2-head .lib2-target--none { color: var(--u-warn); }
 html.ui2 #view-library .lib2-search,
 html.ui2 #view-library .lib2-filter,
 html.ui2 #view-library .lib2-manual-row,
@@ -240,6 +231,29 @@ html.ui2 #view-library .lib2-folder-acts {
   margin: 8px 0;
 }
 html.ui2 #view-library .lib2-folder-acts .u-btn svg { flex: 0 0 auto; }
+/* Two groups that wrap as wholes: the two folder actions, then shuffle and
+   repeat joined into one compact control, so "Repeat: off" never ends up on
+   a line of its own. */
+html.ui2 #view-library .lib2-folder-btns { gap: 8px 16px; }
+html.ui2 #view-library .lib2-folder-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 #view-library .lib2-folder-modes {
+  display: inline-flex;
+  flex-wrap: nowrap;
+}
+html.ui2 #view-library .lib2-folder-modes .u-btn { border-radius: 0; white-space: nowrap; }
+html.ui2 #view-library .lib2-folder-modes .u-btn:first-child {
+  border-start-start-radius: var(--u-radius);
+  border-end-start-radius: var(--u-radius);
+}
+html.ui2 #view-library .lib2-folder-modes .u-btn:last-child {
+  border-inline-start: 0;
+  border-start-end-radius: var(--u-radius);
+  border-end-end-radius: var(--u-radius);
+}
 html.ui2 #view-library .lib2-shuffle[aria-pressed="true"] {
   border-color: var(--u-accent);
   background: var(--u-selected);

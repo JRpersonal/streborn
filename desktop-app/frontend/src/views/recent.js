@@ -24,6 +24,7 @@ import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
 import { splitStreamTitle } from '../titleswap.js';
 import { shell2Mounted } from '../shell2/mount.js';
+import { keyButtonHTML } from '../shell2/keybtn.js';
 import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
 import '../shell2/recent.css';
@@ -421,7 +422,8 @@ function ui2CardActions(c, i, isRadio) {
   let html = '';
   const busy = playsInFlight.has(c.cardKey) ? ' aria-disabled="true" aria-busy="true"' : '';
   if (canPlay) html += btn('rc-play', 'recPlay' + i, t('ui2.recent.playOn', { name, speaker: label(cardPlayBox(c)) }), '&#9205;', busy);
-  html += btn('rc-pick', 'recPick' + i, t('ui2.recent.keyOn', { name, speaker: label(cardKeyBox(c)) }), '+');
+  // The same "Put on key" control as Radio and Library (shell2/keybtn.js).
+  html += keyButtonHTML({ cls: 'rc-pick', attrs: `id="recPick${i}"`, name, speaker: label(cardKeyBox(c)) });
   if (isRadio) {
     const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
     html += btn('rc-fav' + (fav ? ' is-fav' : ''), 'recFav' + i, favLabel(name, fav), fav ? '&#9733;' : '&#9734;', ` aria-pressed="${fav}"`);
@@ -868,8 +870,21 @@ export async function renderRecent() {
   const selectedBoxes = recentSelectedBoxes();
   const selectedKey = (!state.recentAllBoxes && selectedBoxes.length === 1)
     ? recentBoxKey(selectedBoxes[0]) : '';
+  const ui2 = shell2Mounted();
   let html = `<div class="recent-head"><h2 class="recent-title">${escapeHtml(t('recent.title'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h2>`;
-  if (multi) {
+  if (multi && ui2) {
+    // The preview chooses the speaker in the sidebar; here is only the scope:
+    // that speaker's history, or every speaker's. Two pressed / not pressed
+    // buttons under a visible label, not a second speaker picker.
+    const one = recentSelectedBoxes()[0] || state.currentBox;
+    const oneName = one ? recentBoxDisplayLabel(one) : t('recent.thisBox');
+    const all = !!state.recentAllBoxes;
+    html += `<div class="recent-scope rc-scope2" role="group" aria-labelledby="recentScopeLabel">`
+      + `<span class="rc-scope-label" id="recentScopeLabel">${escapeHtml(t('ui2.recent.scopeLabel'))}</span>`
+      + `<button type="button" class="rc-scope-btn" id="recentScopeOne" aria-pressed="${all ? 'false' : 'true'}">${escapeHtml(oneName)}</button>`
+      + `<button type="button" class="rc-scope-btn" id="recentScopeAll" aria-pressed="${all ? 'true' : 'false'}">${escapeHtml(t('recent.allBoxes'))}</button>`
+      + '</div>';
+  } else if (multi) {
     const opts = `<option value="__all__"${state.recentAllBoxes ? ' selected' : ''}>${escapeHtml(t('recent.allBoxes'))}</option>`
       + boxesList.map((b) => {
         const k = recentBoxKey(b);
@@ -880,7 +895,6 @@ export async function renderRecent() {
       + `title="${escapeAttr(t('recent.thisBox'))}">${opts}</select></div>`;
   }
   // Clear the whole list. Clears every box in the current scope.
-  const ui2 = shell2Mounted();
   html += ui2
     ? `<button type="button" class="u-btn u-btn--secondary recent-clear" id="recentClear">${escapeHtml(t('recent.clearAll'))}</button>`
     : `<button class="btn btn-mini recent-clear" id="recentClear" title="${escapeAttr(t('recent.clearAll'))}">${escapeHtml(t('recent.clearAll'))}</button>`;
@@ -900,6 +914,24 @@ export async function renderRecent() {
     }
     renderRecent();
   };
+  // The preview's scope: one speaker follows the sidebar (no key of its own).
+  const scope = (all, id) => {
+    const btn = $(id);
+    if (!btn) return;
+    btn.onclick = async () => {
+      if (!!state.recentAllBoxes === all) return;
+      state.recentAllBoxes = all;
+      state.recentBoxKey = null;
+      // renderRecent draws the header before it waits for the list, so the
+      // keyboard lands on the new button at once.
+      const done = renderRecent();
+      const again = $(id);
+      if (again) again.focus();
+      await done;
+    };
+  };
+  scope(false, 'recentScopeOne');
+  scope(true, 'recentScopeAll');
 
   const clr = $('recentClear');
   if (clr) clr.onclick = async () => {

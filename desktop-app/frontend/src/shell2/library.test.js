@@ -59,7 +59,10 @@ describe('the speaker is named', () => {
   it('on a track row, with the track, in both actions', () => {
     const html = trackRowHTML(item, { key: 'u:x', attr: 'iid', value: 't1', speaker: 'Kitchen', meta: 'A · B', duration: '3:05' });
     expect(html).toContain('aria-label="Play “Blue &quot;Hour&quot;” on Kitchen"');
-    expect(html).toContain('aria-label="Put “Blue &quot;Hour&quot;” on a key of Kitchen"');
+    // The one "Put on key" control of the preview (keybtn.js): its words
+    // first in its name, then the track and the speaker.
+    expect(html).toContain('aria-label="Put on key: Blue &quot;Hour&quot; on Kitchen"');
+    expect(html).toContain('<span class="u-keybtn-text">Put on key</span>');
     expect(html).toContain('data-iid="t1"');
     expect(html).toContain('class="lib2-status" role="status" data-skey="u:x"');
     expect(html).toContain('library-row-track');

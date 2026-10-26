@@ -37,7 +37,7 @@ import { orderLongFolder } from '../trackorder.js';
 import {
   SERVERS_DEPTH, libraryTrail, headerHTML, trailHTML, stateHTML, loadingHTML, levelHeadHTML,
   serverRowsHTML, folderRowHTML, trackRowHTML, folderActionsHTML, filterRowHTML, manualAddHTML,
-  countLine, repeatLabelKey, trailParent,
+  countLine, countText, repeatLabelKey, trailParent,
 } from '../shell2/library.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
@@ -1128,7 +1128,7 @@ function libRefilter() {
     const l2 = document.querySelector('#view-library .lib2-list[data-list="folder"]');
     if (l2) l2.innerHTML = ui2FolderRowsHTML();
     const c2 = $('libCount');
-    if (c2) c2.textContent = libraryCountText();
+    if (c2) c2.textContent = countText(libraryCountText());
     return;
   }
   const list = document.querySelector('#view-library .library-list');

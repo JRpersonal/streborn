@@ -33,7 +33,7 @@ describe('station rows', () => {
     expect(html).toContain('aria-label="Add Best Of Rock.FM to favorites"');
     expect(html).toContain('aria-label="Put on key: Best Of Rock.FM on Living Room"');
     expect(html).toContain('aria-label="Details of Best Of Rock.FM"');
-    expect(html).toContain('>Put on key</button>');
+    expect(html).toContain('<span class="u-keybtn-text">Put on key</span></button>');
   });
 
   it('keeps favorite and key as two separate buttons', () => {
