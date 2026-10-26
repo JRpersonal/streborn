@@ -7,6 +7,7 @@ import {
   RadioVote,
   SaveLibraryPreset,
   SaveNativePreset,
+  SavePlayingPreset,
   SaveQueuePreset,
   SaveSpotifyPreset,
   SetPreset,
@@ -24,6 +25,7 @@ import {
   libraryPlayMatches,
   orionStationPayload,
   queueSaveFallsThrough,
+  savePlayingFallsThrough,
   savePresetCase,
   showError,
   showToast,
@@ -75,6 +77,14 @@ export function presetMoveOffer(conflict, slot, onBox) {
     fail: showError,
     done: loadPresets,
   });
+}
+
+// voteForWhatPlays counts a save of what plays as a vote for the station on
+// radio-browser, when the station came from there.
+function voteForWhatPlays() {
+  if (state.nowUUID) {
+    RadioVote(state.nowUUID).catch(() => {});
+  }
 }
 
 // saveNativeToSlot keeps the Pandora or iHeartRadio station the speaker is
@@ -361,6 +371,29 @@ export async function saveCurrentToSlot(slot) {
     return;
   }
 
+  // Case station: a stream the app did not just start, or started longer ago
+  // than APP_PLAY_FRESH_MS. The speaker agent keeps its own record of every
+  // play with the whole logo chain, the homepage and the codec, and knows
+  // which form of the stream the speaker reports; the now-playing below holds
+  // one logo guess and neither of the others. Rebuilding the station from it
+  // stored a directory's site icon in place of the station's logo, and the
+  // phone page saved the same station differently (#1467). So the agent saves
+  // it, through the same call as the phone page's hold. Only an agent or an
+  // app build without that call falls back to the app's own save below.
+  try {
+    const sname = await SavePlayingPreset(state.currentBox.host, state.currentBox.port, slot);
+    const shown = sname || state.nowName || t('preset.placeholderSender');
+    showToast(t('preset.savedToKey', { n: slot, name: shown }));
+    await loadPresets();
+    voteForWhatPlays();
+    return;
+  } catch (err) {
+    if (!savePlayingFallsThrough(err)) {
+      showPresetSaveError(err, slot);
+      return;
+    }
+  }
+
   // Case B: speaker is playing a stream that does NOT go through
   // our proxy (for example a station started directly via the radio
   // search). Use state.nowLocation / nowName / nowIcon as before.
@@ -423,9 +456,7 @@ export async function saveCurrentToSlot(slot) {
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
-    if (state.nowUUID) {
-      RadioVote(state.nowUUID).catch(() => {});
-    }
+    voteForWhatPlays();
   } catch (err) {
     showPresetSaveError(err, slot);
   }

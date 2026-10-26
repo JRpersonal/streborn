@@ -208,6 +208,44 @@ func (a *App) SaveQueuePreset(host string, port int, slot int) (string, error) {
 	return p.Name, nil
 }
 
+// SavePlayingPreset stores the station the speaker plays right now on a key,
+// decided by the speaker agent (POST /api/box/save-playing, the phone page's
+// hold). The agent holds its own record of the play, with the whole logo chain,
+// the homepage and the codec, while the speaker's now-playing only carries one
+// logo guess: a long-press that rebuilt the station from the now-playing saved
+// a directory's site icon instead of the station's logo (#1467). Returns the
+// saved key's name. A refusal comes back as "status <code>: <body>", so a 409
+// already-on-slot reaches the move offer; an older agent 404s and the caller
+// falls back to its own save.
+func (a *App) SavePlayingPreset(host string, port int, slot int) (string, error) {
+	body, _ := json.Marshal(map[string]int{"slot": slot})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/save-playing", "application/json", string(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		err := readHTTPError(resp)
+		if a.logger != nil {
+			a.logger.Info("save what plays: refused", "host", host, "slot", slot, "err", err)
+		}
+		return "", err
+	}
+	var out struct {
+		Kind      string `json:"kind"`
+		Name      string `json:"name"`
+		Unchanged bool   `json:"unchanged"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode saved preset: %w", err)
+	}
+	if a.logger != nil {
+		a.logger.Info("save what plays: stored", "host", host, "slot", slot, "kind", out.Kind,
+			"name", out.Name, "unchanged", out.Unchanged)
+	}
+	return out.Name, nil
+}
+
 // SaveSpotifyPreset stores a real Spotify preset (type=spotify with the
 // playlist/album URI) on a slot. A long-press while a Spotify playlist plays
 // uses this so the saved preset is recallable, shuffled and account-aware,

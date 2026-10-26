@@ -321,6 +321,14 @@ export function SaveQueuePreset(host, port, slot) {
   return callOptionalBinding('SaveQueuePreset', [host, port, slot]);
 }
 
+// SavePlayingPreset stores the station the speaker plays right now on a key;
+// the speaker agent decides it from its own record of the play, the same call
+// as the phone page's hold, and the promise resolves with the key's name
+// (#1467). Optional binding, per the note above.
+export function SavePlayingPreset(host, port, slot) {
+  return callOptionalBinding('SavePlayingPreset', [host, port, slot]);
+}
+
 // PushFavorites stores the starred stations on one speaker, so the phone page
 // shows the same list. Optional binding, per the note above.
 export function PushFavorites(host, port, favoritesJSON) {

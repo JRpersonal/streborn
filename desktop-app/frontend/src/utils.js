@@ -338,6 +338,17 @@ export function queueSaveFallsThrough(err) {
   return /no-queue|status 404|not available in this build/i.test(String(err || ''));
 }
 
+// savePlayingFallsThrough reports whether a failed save through the speaker
+// agent (SavePlayingPreset) should fall back to the app's own save from the
+// now-playing instead of reporting an error: the agent is too old to know the
+// call (404, or 405 from a route it does not have), or this app build has no
+// such binding. A real refusal (409 already-on-slot, 422 nothing to save)
+// is the answer and is shown as such.
+export function savePlayingFallsThrough(err) {
+  if (err && err.code === 'STR_MISSING_BINDING') return true;
+  return /status 40[45]\b|not available in this build/i.test(String(err || ''));
+}
+
 // formatRemaining turns a remaining-ms value into a "m:ss" string for
 // countdown UI. Negative or zero inputs return "0:00". Used by the
 // stick-install and OTA-wait flows where the previous implementation
