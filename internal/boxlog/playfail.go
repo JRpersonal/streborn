@@ -59,3 +59,33 @@ func (r *Reader) LastPresetRefusal() time.Time {
 	}
 	return r.forensics.presetRefusalAt()
 }
+
+// presetRefusalKeep bounds how many refusals the reader remembers. One sweep
+// writes at most six slots, so this covers two full sweeps with room to spare.
+const presetRefusalKeep = 16
+
+// PresetRefusal is one preset write the firmware refused in its syslog
+// (UpdatePresetFailureCB).
+type PresetRefusal struct {
+	At time.Time
+	// Reason is the firmware's line, redacted and truncated.
+	Reason string
+	// InvalidSourceID is set for "AddPreset - failed due to invalid
+	// SourceID": the firmware's account copy of the key refusing an item
+	// whose source has no account SourceID. It logs that for EVERY UPnP-form
+	// write (Spotify keys, any slot without the native radio form), while the
+	// key itself is stored and stays listed. Any other reason ("MargeHSM is
+	// in the wrong state") is a real refusal of the write.
+	InvalidSourceID bool
+}
+
+// PresetRefusalsSince returns the firmware's preset refusals stamped at or
+// after since, oldest first, so a caller can count the refusals of one write
+// sweep and read why each happened. Safe for concurrent use; nil on a nil
+// reader.
+func (r *Reader) PresetRefusalsSince(since time.Time) []PresetRefusal {
+	if r == nil || r.forensics == nil {
+		return nil
+	}
+	return r.forensics.presetRefusalsSince(since)
+}

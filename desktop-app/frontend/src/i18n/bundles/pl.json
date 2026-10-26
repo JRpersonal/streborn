@@ -1580,7 +1580,7 @@
   "settingsView.displayTrackHelp": "Domyślnie wyłączone. Gdy włączone, aktualny utwór stacji radiowej jest pokazywany na własnym wyświetlaczu głośnika, jak dawniej w radiu internetowym. Aby zaktualizować tekst, głośnik musi ponownie buforować, więc dźwięk urywa się na chwilę przy każdej zmianie. Utwór jest zawsze pokazywany w tej aplikacji bez żadnych przerw, więc zostaw to wyłączone, jeśli wolisz dźwięk bez przerw. W głośniku z wyświetlaczem zastępuje to również jego zwykły widok, numer presetu i nazwę stacji.",
   "settingsView.displayTrackHelpPanel": "Domyślnie wyłączone. Gdy włączone, STR sam wyświetla na ekranie głośnika to, co gra (utwór stacji radiowej, Spotify przez STR, plik z twojej biblioteki muzyki), więc muzyka gra dalej bez żadnej przerwy. Dopóki to jest pokazywane, zastępuje zwykły ekran głośnika; gdy zmieniasz głośność, na kilka sekund pojawia się pasek głośności głośnika.",
   "settingsView.displayClockLabel": "Pokazuj zegar podczas odtwarzania:",
-  "settingsView.displayClockHelp": "Pokazuje godzinę na ekranie głośnika, gdy STR coś odtwarza: obok stacji, gdy widać utwór, a w przeciwnym razie dużą i samą.",
+  "settingsView.displayClockHelp": "Pokazuje godzinę na ekranie głośnika, gdy STR coś odtwarza: obok stacji, gdy widać utwór, a w przeciwnym razie dużą i samą. Przy Bluetooth i AUX pojawia się duża zamiast obrazka połączenia.",
   "settingsView.displayTrackUnknown": "Głośnik przed chwilą nie odpowiedział, więc to ustawienie jest nieznane (może się właśnie restartować). Otwórz ustawienia ponownie za minutę.",
   "settingsView.displayTrackModeArtist": "Wykonawca",
   "settingsView.displayTrackModeBoth": "Oba",

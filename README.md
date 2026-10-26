@@ -82,7 +82,7 @@ STR is at 1.0: every criterion I set myself for it is met (see [1.0](#10) below)
 - Backup and restore: save your favourites and every speaker's preset keys to one file, and restore them, for example before you rebuild.
 - Sleep timer: switch a speaker, or a whole group, off by itself after a set time, from the phone remote.
 - Home Assistant and other automation: STR keeps the speaker's local control API (`:8090`) and UPnP media renderer (`:8091`) alive, so a hub you run at home can control the speakers, send audio or TTS to them, and, via Alexa or Google, do voice control. STR adds its own local REST API on top. No cloud skill of my own. See [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md).
-- Help when a speaker's firmware is too old: a step-by-step guide with Bose's own download link. If the Windows firewall blocks STR, the app says so and can allow it with one click.
+- Help when a speaker's firmware is too old: a step-by-step guide with Bose's own download link, and a one-click update to Bose's last firmware. Very old speakers that need several updates in a row are covered in [`docs/FIRMWARE-UPDATE.md`](./docs/FIRMWARE-UPDATE.md). If the Windows firewall blocks STR, the app says so and can allow it with one click.
 - Speakers with a display show a short message when a key cannot play, and an STR logo animation after an install or update.
 - Wishes tab: every open feature wish with its votes, in the app's language and searchable, with links to vote and to suggest a new one.
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
@@ -219,7 +219,7 @@ Every change is checked automatically and the results are public, so you do not 
 - **Secret Scanning with Push Protection** blocks commits that contain a leaked credential.
 - **Releases** are built only by the release workflow, from the main branch, with SHA256 sums and Sigstore build-provenance attestations (above). All shipped binaries, including the small speaker shim, are compiled from source by the workflow, and every release carries the Sigstore bundle and the SLSA provenance as files (`STR-<version>.sigstore.json`, `STR-<version>.intoto.jsonl`). One prebuilt binary is still in the repository: `usb-stick/str-shim.so`, which only local developer builds use. Release builds replace it with the workflow-built, attested copy (since v1.0.1), and removing it from the repository is planned.
 
-Findings from Dependabot, CodeQL, and Scorecard surface in the repository's [Security tab](https://github.com/JRpersonal/streborn/security). The full policy is in [SECURITY.md](./SECURITY.md), and hard-won notes about the stock firmware STR runs on top of are in [docs/FIRMWARE-NOTES.md](./docs/FIRMWARE-NOTES.md).
+Findings from Dependabot, CodeQL, and Scorecard surface in the repository's [Security tab](https://github.com/JRpersonal/streborn/security). The full policy is in [SECURITY.md](./SECURITY.md), and hard-won notes about the stock firmware STR runs on top of are in [docs/FIRMWARE-NOTES.md](./docs/FIRMWARE-NOTES.md). How to bring a speaker to Bose's last firmware, including very old ones, is in [docs/FIRMWARE-UPDATE.md](./docs/FIRMWARE-UPDATE.md).
 
 ## Privacy
 

@@ -79,7 +79,9 @@ func parseRetryAfter(v string) time.Duration {
 }
 
 // accountProduct returns the Spotify account product type ("premium"/"free"/
-// "open"), cached for a few minutes. When Spotify cannot be asked or does not
+// "open"), cached for a few minutes. The engine's own report (status
+// product_type, see engineAccount) is used first; /v1/me is the fallback for
+// an engine build that does not report it. When Spotify cannot be asked or does not
 // answer, it returns the plan remembered for the logged-in account
 // (accountplans.go), and "" only when that is unknown too (the zeroconf token
 // may lack the user-read-private scope, in which case /v1/me omits product), so
@@ -120,12 +122,39 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	// is a call to the engine next door, not to Spotify, and it is what lets a
 	// rate-limited or unreachable Spotify fall back to the plan remembered for
 	// THIS account instead of to "unknown".
-	user, userOK := m.engineUsername(ctx)
+	user, enginePlan, userOK := m.engineAccount(ctx)
 	if userOK {
 		m.noteEngineAccount(user)
 	}
-	if time.Now().Before(quiet) {
+	// The engine already knows the plan: Spotify's access point tells it at
+	// login, no Web API call involved. That answer comes in the same /status
+	// as the account, so it is this account's plan, and it is immune to the
+	// 429/503 the Web API answers with for hours on some households (#1077).
+	// An older engine has no such field and falls through to /v1/me below.
+	//
+	// The plan is settled then, but /v1/me is still the only place the
+	// account's display name comes from (accountnames.go). So an account whose
+	// name is not known yet still gets ONE /v1/me call per engine process, for
+	// the name alone: its product field does not override the engine's plan.
+	// Once the name is known, or that call has been answered, Spotify is not
+	// asked again.
+	nameOnly := false
+	if userOK && m.takeEnginePlan(user, enginePlan, gen) {
+		if !m.wantsAccountName(user) {
+			return enginePlan
+		}
+		nameOnly = true
+	}
+	// What to return when /v1/me cannot be used: the engine's plan when that
+	// is what decided, otherwise the fresh or remembered plan.
+	fallback := func() string {
+		if nameOnly {
+			return enginePlan
+		}
 		return m.productPlan()
+	}
+	if time.Now().Before(quiet) {
+		return fallback()
 	}
 	data, err := m.spotifyWebGet(ctx, meURL)
 	if err != nil {
@@ -157,8 +186,12 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 			m.mu.Unlock()
 			m.logger.Info("spotify: leaving the account plan alone for a while", "wait", wait)
 		}
-		m.logger.Info("spotify: could not read the account plan from Spotify", "err", err)
-		return m.productPlan()
+		if nameOnly {
+			m.logger.Info("spotify: could not read the account name from Spotify", "err", err)
+		} else {
+			m.logger.Info("spotify: could not read the account plan from Spotify", "err", err)
+		}
+		return fallback()
 	}
 	var me struct {
 		Product string `json:"product"`
@@ -187,6 +220,21 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	}
 	if json.Unmarshal(data, &me) == nil && me.DisplayName != "" && owner != "" {
 		m.rememberAccountName(owner, me.DisplayName)
+	}
+	if nameOnly {
+		// Spotify answered, so its throttle is over. The plan in this answer
+		// is ignored: the engine's report from login is authoritative and was
+		// already taken. The question is not asked again in this engine
+		// process for this account, whether or not a name came back (a token
+		// without the scope never carries one), unless the answer could not be
+		// tied to the account; then the next check asks again.
+		m.mu.Lock()
+		m.productQuietFor = 0
+		if m.productGen == gen && owner != "" {
+			m.productNameAsked = owner
+		}
+		m.mu.Unlock()
+		return enginePlan
 	}
 	if err := json.Unmarshal(data, &me); err != nil || me.Product == "" {
 		// The silent third way to fail, and the one that cost an evening: the
@@ -290,17 +338,78 @@ func (m *Manager) currentUsername(ctx context.Context) string {
 // answered: ok with "" is an engine logged into nobody, !ok is an engine that
 // could not be asked and says nothing about the login.
 func (m *Manager) engineUsername(ctx context.Context) (string, bool) {
+	user, _, ok := m.engineAccount(ctx)
+	return user, ok
+}
+
+// engineAccount is engineUsername plus the plan the engine reports for that
+// same account (status "product_type", from the ProductInfo packet Spotify's
+// access point sends at login). Both come out of ONE /status answer, which is
+// what ties the plan to the user: the engine keeps it on the per-session
+// player, so it cannot belong to an earlier login. product is "" when the
+// engine has not received the packet yet, or is a build without the field.
+func (m *Manager) engineAccount(ctx context.Context) (user, product string, ok bool) {
 	data, err := m.apiGet(ctx, "/status")
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	var st struct {
-		Username string `json:"username"`
+		Username    string `json:"username"`
+		ProductType string `json:"product_type"`
 	}
 	if json.Unmarshal(data, &st) != nil {
-		return "", false
+		return "", "", false
 	}
-	return st.Username, true
+	if st.Username == "" {
+		// A plan without an account to file it under is no plan.
+		return "", "", true
+	}
+	return st.Username, cleanPlan(st.ProductType), true
+}
+
+// takeEnginePlan makes the plan the engine reported for user the fresh plan,
+// exactly as a fresh /v1/me answer would be: it may gate PremiumRequired and it
+// is remembered for later engine processes. It is only taken when the engine
+// process (gen) and the account are still the ones the read began with.
+// Returns false when the answer could not be used, so the caller falls back.
+func (m *Manager) takeEnginePlan(user, product string, gen uint64) bool {
+	if user == "" || product == "" {
+		return false
+	}
+	m.mu.Lock()
+	current := m.productGen == gen && m.productUser == user
+	firstFresh := false
+	if current {
+		m.productType, m.productCheckedAt = product, time.Now()
+		firstFresh = !m.productFreshLogged
+		m.productFreshLogged = true
+	}
+	m.mu.Unlock()
+	if !current {
+		return false
+	}
+	if firstFresh {
+		// Once per engine process, beside "read the account plan from Spotify",
+		// so a bundle shows which source the plan came from.
+		m.logger.Info("spotify: read the account plan from the engine",
+			"plan", product, "user", anonymise.MaskAccount(user))
+	}
+	m.rememberAccountPlan(user, product)
+	return true
+}
+
+// wantsAccountName reports whether the plan check should still make its one
+// /v1/me call for user's display name although the engine already reported the
+// plan: true while no name is remembered for user and this engine process has
+// not had that call answered yet.
+func (m *Manager) wantsAccountName(user string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.productNameAsked == user {
+		return false
+	}
+	m.loadAccountNames()
+	return m.accountNames[user] == ""
 }
 
 // CurrentUsername is the exported form; the preset-save path stamps it onto a

@@ -1448,6 +1448,7 @@ func (a *agent) buildBoxLink() error {
 		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist)
 	})
 	refreshTrackPanel = webuiSrv.RefreshTrackPanel
+	notePanelSource = webuiSrv.PanelSourceChanged
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", a.flags.boxHost),
@@ -1469,7 +1470,7 @@ func (a *agent) buildBoxLink() error {
 	a.boxLog.Store(keyTrace)
 	// The firmware refuses a preset write in its syslog only; the reconcile
 	// reads this to tell a refused rewrite from a landed one.
-	setPresetRefusalSource(keyTrace.LastPresetRefusal)
+	setPresetRefusalSource(keyTrace.PresetRefusalsSince)
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
 	// The ring is also the wake signal: the firmware logs every standby and
 	// wake transition there, so a speaker switched on at the box or by its
