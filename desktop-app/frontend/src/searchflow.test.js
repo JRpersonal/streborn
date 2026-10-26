@@ -6,6 +6,7 @@ import {
   syntheticStationForURL,
   normalizeDetailedSearch,
   relaxedHintVisible,
+  stationBitrateCell,
 } from './searchflow.js';
 
 describe('isStreamURL', () => {
@@ -88,5 +89,19 @@ describe('relaxedHintVisible', () => {
     expect(relaxedHintVisible(false, false, 'search')).toBe(false);
     expect(relaxedHintVisible(true, true, 'search')).toBe(false);
     expect(relaxedHintVisible(true, false, 'favorites')).toBe(false);
+  });
+});
+
+describe('stationBitrateCell (#1521)', () => {
+  it('shows a known bitrate', () => {
+    expect(stationBitrateCell({ bitrate: 128 })).toBe('128 kbit/s');
+    expect(stationBitrateCell({ bitrate: '320' })).toBe('320 kbit/s');
+  });
+  it('leaves the cell out when the bitrate is unknown', () => {
+    expect(stationBitrateCell({ bitrate: 0 })).toBe('');
+    expect(stationBitrateCell({})).toBe('');
+    expect(stationBitrateCell({ bitrate: null })).toBe('');
+    expect(stationBitrateCell({ bitrate: 'x' })).toBe('');
+    expect(stationBitrateCell(null)).toBe('');
   });
 });

@@ -30,6 +30,7 @@ import {
   isStreamURL,
   normalizeDetailedSearch,
   relaxedHintVisible,
+  stationBitrateCell,
   syntheticStationForURL,
 } from '../../searchflow.js';
 import { saveSearchCountry, state } from '../../state.js';
@@ -639,10 +640,10 @@ export function renderSearchResults() {
       metaBits.push(escapeHtml(t('search.playUrlCard')));
     } else {
       if (countryDe) metaBits.push(escapeHtml(countryDe));
-      // Always show a bitrate cell. Many radio-browser stations report no
-      // bitrate (e.g. "Sunshine Live - Die 90er"); show "- kbit/s" rather
-      // than hiding the field so the column stays consistent.
-      metaBits.push(s.bitrate ? `${s.bitrate} kbit/s` : '- kbit/s');
+      // No known bitrate, no cell: a "- kbit/s" placeholder on every such row
+      // read as a broken stream (discussion #1521).
+      const br = stationBitrateCell(s);
+      if (br) metaBits.push(br);
       if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
     }
 

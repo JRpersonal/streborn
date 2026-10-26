@@ -92,3 +92,13 @@ export function addStationGuideFold(autoOpened, mode, fetchedCount) {
 export function relaxedHintVisible(relaxed, dismissed, mode) {
   return !!relaxed && !dismissed && (mode === 'search' || mode === 'top');
 }
+
+// stationBitrateCell is the bitrate cell of a station row's meta line, or ''
+// for no cell at all. Most radio-browser stations, and every library item or
+// own station in Favorites, report no bitrate; the "- kbit/s" placeholder that
+// used to stand in for it read as a broken stream on every such row
+// (discussion #1521), so an unknown rate now simply leaves the cell out.
+export function stationBitrateCell(s) {
+  const br = Number(s && s.bitrate);
+  return br > 0 ? `${br} kbit/s` : '';
+}
