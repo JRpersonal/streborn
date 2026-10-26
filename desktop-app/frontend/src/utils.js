@@ -341,12 +341,15 @@ export function queueSaveFallsThrough(err) {
 // savePlayingFallsThrough reports whether a failed save through the speaker
 // agent (SavePlayingPreset) should fall back to the app's own save from the
 // now-playing instead of reporting an error: the agent is too old to know the
-// call (404, or 405 from a route it does not have), or this app build has no
-// such binding. A real refusal (409 already-on-slot, 422 nothing to save)
-// is the answer and is shown as such.
+// call (404, or 405 from a route it does not have; the binding also reports an
+// agent that answers with its phone page as a 404), this app build has no such
+// binding, or the agent could not read the speaker's now-playing for a moment
+// (502 nowplaying-unreadable), where the app saves from the now-playing it has
+// just refreshed, as it did before the agent decided. A real refusal (409
+// already-on-slot, 422 nothing to save) is the answer and is shown as such.
 export function savePlayingFallsThrough(err) {
   if (err && err.code === 'STR_MISSING_BINDING') return true;
-  return /status 40[45]\b|not available in this build/i.test(String(err || ''));
+  return /status 40[45]\b|status 502\b|nowplaying-unreadable|not available in this build/i.test(String(err || ''));
 }
 
 // formatRemaining turns a remaining-ms value into a "m:ss" string for

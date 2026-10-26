@@ -132,4 +132,13 @@ describe('long-press save of a playing station', () => {
     expect(api.SetPreset.mock.calls[0][4]).toBe(station);
     expect(ui.showError).not.toHaveBeenCalled();
   });
+
+  it('falls back to its own save when the agent could not read the now-playing', async () => {
+    state.nowLocation = orion;
+    state.lastAppPlay = null;
+    api.SavePlayingPreset.mockRejectedValue(new Error('status 502: {"code":"nowplaying-unreadable"}'));
+    await save.saveCurrentToSlot(1);
+    expect(api.SetPreset).toHaveBeenCalledTimes(1);
+    expect(ui.showError).not.toHaveBeenCalled();
+  });
 });

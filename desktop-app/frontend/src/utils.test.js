@@ -118,6 +118,14 @@ describe('savePlayingFallsThrough', () => {
     const missing = new Error('STR_MISSING_BINDING: SavePlayingPreset is not available in this build');
     missing.code = 'STR_MISSING_BINDING';
     expect(savePlayingFallsThrough(missing)).toBe(true);
+    // An agent without the call serves its phone page; the binding turns that into this.
+    expect(savePlayingFallsThrough(new Error('status 404: save-playing not available on this agent'))).toBe(true);
+  });
+
+  it('falls back when the agent could not read the now-playing for a moment', () => {
+    expect(savePlayingFallsThrough(new Error('status 502: {"code":"nowplaying-unreadable","error":"The speaker could not be asked what it is playing. Try again in a moment."}'))).toBe(true);
+    expect(savePlayingFallsThrough('status 502: bad gateway')).toBe(true);
+    expect(savePlayingFallsThrough('status 5020: odd')).toBe(false);
   });
 
   it('reports a refusal of the agent as the answer (#1467)', () => {
