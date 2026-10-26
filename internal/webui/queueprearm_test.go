@@ -252,3 +252,52 @@ func TestMP3LengthKindTellsAFrameCountFromABitrateGuess(t *testing.T) {
 		t.Fatalf("Xing: %v exact=%v, want an exact length", d, exact)
 	}
 }
+
+// A truncated MP3 keeps the Xing header of the whole file. When the header
+// states the stream size and the file holds clearly less, the frame count is
+// not the length: it is scaled to what is there and kept only as a guess.
+func TestMP3LengthOfATruncatedFileIsNotExact(t *testing.T) {
+	t.Parallel()
+	const frames, stated = 5000, 2_000_000
+	full := time.Duration(frames * 1152 * int64(time.Second) / 44100)
+	near := func(a, b time.Duration) bool { return a-b > -time.Millisecond && a-b < time.Millisecond }
+	xing := func() []byte {
+		buf := cbrMP3(0, 3)
+		off := 4 + 32 // MPEG-1 stereo side information
+		copy(buf[off:], "Xing")
+		binary.BigEndian.PutUint32(buf[off+4:], 0x03) // frames and bytes
+		binary.BigEndian.PutUint32(buf[off+8:], frames)
+		binary.BigEndian.PutUint32(buf[off+12:], stated)
+		return buf
+	}
+
+	// Whole file (an ID3v1 tag at the end makes it a little larger): exact.
+	if d, exact := mp3LengthFromFramesKind(xing(), stated+128); !exact || !near(d, full) {
+		t.Fatalf("whole file: %v exact=%v, want %v exact", d, exact, full)
+	}
+	// Within the 2 % margin: still exact.
+	if d, exact := mp3LengthFromFramesKind(xing(), stated*99/100); !exact || !near(d, full) {
+		t.Fatalf("1 %% short: %v exact=%v, want %v exact", d, exact, full)
+	}
+	// Half the file: half the length, not exact.
+	d, exact := mp3LengthFromFramesKind(xing(), stated/2)
+	if exact {
+		t.Fatalf("half file: exact=true, want a guess")
+	}
+	if diff := d - full/2; diff < -time.Second || diff > time.Second {
+		t.Fatalf("half file: %v, want about %v", d, full/2)
+	}
+
+	// VBRI states the size too.
+	buf := cbrMP3(0, 3)
+	off := 4 + 32
+	copy(buf[off:], "VBRI")
+	binary.BigEndian.PutUint32(buf[off+10:], stated)
+	binary.BigEndian.PutUint32(buf[off+14:], frames)
+	if _, exact := mp3LengthFromFramesKind(buf, stated/2); exact {
+		t.Fatalf("truncated VBRI file: exact=true, want a guess")
+	}
+	if d, exact := mp3LengthFromFramesKind(buf, stated); !exact || !near(d, full) {
+		t.Fatalf("whole VBRI file: %v exact=%v, want %v exact", d, exact, full)
+	}
+}

@@ -82,7 +82,7 @@ func (s *Server) lookupQueueLength(ctx context.Context, it queueItem) (time.Dura
 	}
 	probe := s.prearmProbeFn
 	if probe == nil {
-		probe = probeMP3Length
+		probe = defaultPrearmProbe
 	}
 	d, exact := probe(ctx, it.URL)
 	switch {
@@ -93,6 +93,11 @@ func (s *Server) lookupQueueLength(ctx context.Context, it queueItem) (time.Dura
 	}
 	return d, prearmHint
 }
+
+// defaultPrearmProbe is the MP3 length read used when a Server sets no
+// prearmProbeFn. The package tests replace it (TestMain) so a test that only
+// advances a queue never reaches for the network.
+var defaultPrearmProbe = probeMP3Length
 
 // probeMP3Length reads the size of the MP3 at url and estimates its length
 // from its first frame. exact is true only for a Xing/Info or VBRI frame count.

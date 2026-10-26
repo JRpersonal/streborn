@@ -849,6 +849,10 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// aligned: the one end-of-track re-timing (alignToEnd) was used for
 		// this track.
 		aligned bool
+		// retimed: the ticker runs on the one-off alignToEnd period. The tick
+		// after it puts the normal period back first thing, so a branch that
+		// continues before the interval check below cannot keep it.
+		retimed bool
 		// hint is the current track's estimated length when it has no real
 		// one (prearmNextLength), 0 when none.
 		hint time.Duration
@@ -859,6 +863,11 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			s.logger.Debug("queue watcher: stopped")
 			return
 		case <-ticker.C:
+		}
+		if retimed {
+			retimed = false
+			interval = qt.pollInterval
+			ticker.Reset(interval)
 		}
 		if !s.queue.isActive() {
 			s.logger.Debug("queue watcher: the queue is no longer active, stopping")
@@ -1086,7 +1095,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 				target = hint
 			}
 			if d, ok := qt.alignToEnd(lastPos, target, interval); ok {
-				aligned = true
+				aligned, retimed = true, true
 				interval = d
 				ticker.Reset(interval)
 				s.logger.Debug("queue watcher: timing the next poll to the end of the track",

@@ -114,11 +114,20 @@ func mp3LengthFromFramesKind(buf []byte, audioBytes int64) (time.Duration, bool)
 				continue
 			}
 		}
-		if frames := mp3VBRFrames(buf[i:], f); frames > 0 {
-			sec := float64(frames) * float64(f.samples()) / float64(f.sampleRate)
-			return time.Duration(sec * float64(time.Second)), true
-		}
 		bytes := audioBytes - int64(i)
+		if frames, stated := mp3VBRFrames(buf[i:], f); frames > 0 {
+			sec := float64(frames) * float64(f.samples()) / float64(f.sampleRate)
+			d := time.Duration(sec * float64(time.Second))
+			// A truncated file (an aborted copy or download) keeps the header of
+			// the whole one, so its frame count claims audio that is not there.
+			// When the header also states the stream's size and the file holds
+			// clearly less, the count is scaled down to what is there and kept
+			// only as a guess, so the missing tail is never waited out in silence.
+			if stated > 0 && bytes > 0 && bytes*50 < int64(stated)*49 {
+				return time.Duration(float64(d) * float64(bytes) / float64(stated)), false
+			}
+			return d, true
+		}
 		if bytes <= 0 || f.kbps <= 0 {
 			return 0, false
 		}
@@ -128,22 +137,28 @@ func mp3LengthFromFramesKind(buf []byte, audioBytes int64) (time.Duration, bool)
 }
 
 // mp3VBRFrames returns the frame count of a Xing/Info or VBRI header in the
-// first frame, or 0 when it carries none.
-func mp3VBRFrames(frame []byte, f mp3Frame) uint32 {
+// first frame, or 0 when it carries none, and the byte size of the audio
+// stream the header states, or 0 when it states none.
+func mp3VBRFrames(frame []byte, f mp3Frame) (frames, bytes uint32) {
 	// The Xing/Info tag sits after the side information, whose size depends
 	// on the version and the channel mode.
 	if off := 4 + f.sideInfoLen(); off+12 <= len(frame) {
 		if tag := string(frame[off : off+4]); tag == "Xing" || tag == "Info" {
 			flags := binary.BigEndian.Uint32(frame[off+4:])
-			if flags&0x01 != 0 {
-				return binary.BigEndian.Uint32(frame[off+8:])
+			if flags&0x01 == 0 {
+				return 0, 0
 			}
-			return 0
+			frames = binary.BigEndian.Uint32(frame[off+8:])
+			if flags&0x02 != 0 && off+16 <= len(frame) {
+				bytes = binary.BigEndian.Uint32(frame[off+12:])
+			}
+			return frames, bytes
 		}
 	}
-	// VBRI (Fraunhofer) always sits 32 bytes after the header.
+	// VBRI (Fraunhofer) always sits 32 bytes after the header: version,
+	// delay and quality (2 bytes each), then the stream size and frame count.
 	if off := 4 + 32; off+18 <= len(frame) && string(frame[off:off+4]) == "VBRI" {
-		return binary.BigEndian.Uint32(frame[off+14:])
+		return binary.BigEndian.Uint32(frame[off+14:]), binary.BigEndian.Uint32(frame[off+10:])
 	}
-	return 0
+	return 0, 0
 }
