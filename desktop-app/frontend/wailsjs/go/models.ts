@@ -22,6 +22,96 @@ export namespace bosefw {
 	        this.crc = source["crc"];
 	    }
 	}
+	export class Step {
+	    id: string;
+	    version: string;
+	    family: string;
+	    source: string;
+	    url: string;
+	    fileName: string;
+	    zipSize: number;
+	    zipSha1: string;
+	    innerSize: number;
+	    innerCrc32: number;
+	    innerSha1: string;
+	    confidence: string;
+	    liveVerified: boolean;
+	    networkOk: boolean;
+	    fallback: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Step(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.version = source["version"];
+	        this.family = source["family"];
+	        this.source = source["source"];
+	        this.url = source["url"];
+	        this.fileName = source["fileName"];
+	        this.zipSize = source["zipSize"];
+	        this.zipSha1 = source["zipSha1"];
+	        this.innerSize = source["innerSize"];
+	        this.innerCrc32 = source["innerCrc32"];
+	        this.innerSha1 = source["innerSha1"];
+	        this.confidence = source["confidence"];
+	        this.liveVerified = source["liveVerified"];
+	        this.networkOk = source["networkOk"];
+	        this.fallback = source["fallback"];
+	    }
+	}
+	export class LadderPlan {
+	    status: string;
+	    family: string;
+	    model: string;
+	    moduleType: string;
+	    current: string;
+	    deviceId: string;
+	    versionFrom: string;
+	    steps: Step[];
+	    oldStart: boolean;
+	    reason?: string;
+	    fallbacks: Record<string, Array<Step>>;
+	
+	    static createFrom(source: any = {}) {
+	        return new LadderPlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.family = source["family"];
+	        this.model = source["model"];
+	        this.moduleType = source["moduleType"];
+	        this.current = source["current"];
+	        this.deviceId = source["deviceId"];
+	        this.versionFrom = source["versionFrom"];
+	        this.steps = this.convertValues(source["steps"], Step);
+	        this.oldStart = source["oldStart"];
+	        this.reason = source["reason"];
+	        this.fallbacks = this.convertValues(source["fallbacks"], Array<Step>, true);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
@@ -364,6 +454,7 @@ export namespace main {
 	    variant: string;
 	    latest: string;
 	    outdated: boolean;
+	    deviceId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new FirmwareInfo(source);
@@ -379,6 +470,47 @@ export namespace main {
 	        this.variant = source["variant"];
 	        this.latest = source["latest"];
 	        this.outdated = source["outdated"];
+	        this.deviceId = source["deviceId"];
+	    }
+	}
+	export class FirmwareRecheck {
+	    found: boolean;
+	    version: string;
+	    via: string;
+	    model: string;
+	    moduleType: string;
+	    deviceId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FirmwareRecheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.found = source["found"];
+	        this.version = source["version"];
+	        this.via = source["via"];
+	        this.model = source["model"];
+	        this.moduleType = source["moduleType"];
+	        this.deviceId = source["deviceId"];
+	    }
+	}
+	export class FirmwareStickResult {
+	    ok: boolean;
+	    code?: string;
+	    detail?: string;
+	    ejected: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FirmwareStickResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.code = source["code"];
+	        this.detail = source["detail"];
+	        this.ejected = source["ejected"];
 	    }
 	}
 	export class UpdateOutcome {
@@ -1585,6 +1717,10 @@ export namespace sticksetup {
 	    writable: boolean;
 	    reason: string;
 	    detail?: string;
+	    freeBytes: number;
+	    clusterBytes: number;
+	    tooLarge: boolean;
+	    clusterTooBig: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new StickCheck(source);
@@ -1601,6 +1737,10 @@ export namespace sticksetup {
 	        this.writable = source["writable"];
 	        this.reason = source["reason"];
 	        this.detail = source["detail"];
+	        this.freeBytes = source["freeBytes"];
+	        this.clusterBytes = source["clusterBytes"];
+	        this.tooLarge = source["tooLarge"];
+	        this.clusterTooBig = source["clusterTooBig"];
 	    }
 	}
 	export class StickConfigs {

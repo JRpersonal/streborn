@@ -333,7 +333,7 @@ func (a *App) installPreflight(r *installRun) bool {
 		if fwTooOldForUnlock {
 			res.Code = "firmware-too-old"
 			res.Message = withFW("The speaker at "+host+" runs Bose firmware "+res.Firmware+
-				", which is too old for the install over the network.") + "\n\n" + firmwareFirstAdvice
+				", which is too old for the install over the network.") + "\n\n" + firmwareFirstAdvice + firmwareLadderNote(res.Model, res.ModuleType, res.Variant, res.Firmware)
 			a.logger.Warn("install_str: preflight, firmware too old for the stick-free :17000 unlock; not touching the speaker",
 				"host", host, "firmware", res.Firmware, "model", res.Model)
 			return true

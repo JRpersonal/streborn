@@ -164,12 +164,64 @@ Speakers on very old firmware sometimes refuse the jump straight to
 fills, even with a stick that is known to be good. Going up in smaller
 steps has helped.
 
+### The step-by-step guide in the app
+
+For the first generation SoundTouch 20, 30 and Portable (the older
+chassis, `scm`), the app does the stepping for you. When such a speaker
+reports a firmware older than 15, the firmware notice turns into a
+numbered list of updates instead of the single one. For each step the
+app:
+
+1. downloads the step's zip from the Internet Archive, on your computer,
+   only when you click **Prepare stick** (or takes a zip or `Update.stu`
+   you downloaded yourself in the browser);
+2. checks the zip's size and sha1 against the Internet Archive's own
+   metadata, then the `Update.stu` inside against its size, CRC-32 and,
+   where known, sha1 (a file that does not match is never written);
+3. copies only `Update.stu` to the root of the stick you picked, flushes
+   it, reads it back and checks the CRC again, and ejects the stick;
+4. shows the button steps for the speaker (4 and volume down while
+   plugging the power back in) and, after **Done, check again**, reads
+   the version and moves on.
+
+The last step is Bose's own 27.0.6 file, with the normal **Update now**
+over the network, or by stick if the update page does not answer. The
+app remembers the step per speaker, so it picks up again after a restart.
+
+| Step | Source | `Update.stu` bytes / CRC-32 | Confidence | Seen working on a speaker |
+|---|---|---|---|---|
+| 06.02.01 | archive, `Airplay-1_ST20-30-Portable_06.02.01.zip` | 80 559 847 / `a70e1564` | high | yes, 5.x to 6.02.01 by stick |
+| 07.00.37 | archive, `Airplay-1_ST20-30-Portable_07.00.37.zip` | 93 032 539 / `a46e94d0` | high | yes, 6.02.01 to 7.00.37 by stick |
+| 14.00.33 | archive, `Airplay-1_ST20-30-Portable_14.00.33.zip` | 93 114 711 / `d4dc260b` (same as Bose's catalogue) | medium | no |
+| 15.00.20 | archive, `..._Update_ti_15.00.20.37272.2363762.scm.stu.zip` | 101 642 152 / `f8648557` | medium-high | no |
+| 27.0.6 | Bose, catalogue path in section 2 | 105 879 988 / `2d5a971e` | high | over the network from 27.0.3 only |
+| 09.00.41 (only if 14.00.33 stalls) | archive, `..._09.00.41.zip` | 92 333 191 / `c4fd3a70` | low | no |
+| 12.00.09 (only if 14.00.33 stalls) | archive, `..._12.00.09.zip` | 93 083 567 / `c4d62d01` | low | no |
+
+A speaker on 6.x skips 06.02.01, one on 7.x to 14.0.15 starts at
+14.00.33, one on 14.0.33 at 15.00.20, and from 15.00.20 on it is Bose's
+27.0.6 alone. A speaker on 2.x is untested: if it refuses 06.02.01 the
+app offers 05.00.23 first.
+
+Other models (Wave, SA-4, CineMate, every Bluetooth chassis) have no
+step-by-step path in the app yet. They keep the single-step guide.
+
+**Maintaining the ladder.** The table lives in
+`desktop-app/bosefw/ladder_data.go`. Every zip size and sha1 comes from
+the Internet Archive item's metadata JSON, every inner size and CRC-32
+from the zip's own central directory, and 14.00.33 and 27.0.6 also match
+Bose's catalogue. Never type a value from memory and never commit an
+image. `LiveVerified` is set only after a field report with a diagnostic
+bundle shows the step installed.
+
 **Where the older images come from.** Bose still serves 26.0.1, 27.0.1,
 27.0.2, 27.0.3 and 27.0.6. The paths for 14.0.33 up to 25.0.0 answer 403
 (checked 2026-10-25). For everything older the only source I know is a
 community collection on the Internet Archive. Those files do not come
-from Bose. I can check their size and nothing else. STR links them and
-never mirrors them. You use them at your own risk.
+from Bose. The app checks them against the sizes and checksums the
+Internet Archive publishes and the CRC-32 inside each zip, which shows
+the file is the one that was uploaded, not that Bose made it. STR links
+them and never mirrors them. You use them at your own risk.
 
 For the first generation SoundTouch 20, 30 and Portable (no Bluetooth,
 chassis `older` in the table in section 2) the folder is:
@@ -213,7 +265,8 @@ stick on a speaker where 27.0.6 had just failed.
 - October 2026 (mail): a first generation SoundTouch 20 on 5.x. 27.0.6
   hung on an empty bar for over 20 minutes with a checked 16 GB FAT32
   stick (8 KB clusters). 6.02.01 installed fine and the speaker worked
-  again. 27.0.6 after that hung again. Still open.
+  again. 27.0.6 after that hung again. 7.00.37 from 6.02.01 then
+  installed by stick too. The next step from 7.00.37 is not tried yet.
 - [Issue #854](https://github.com/JRpersonal/streborn/issues/854): a
   SoundTouch 20 on 14.0.15 filled the bar to 100 % with 27.0.6 and then
   restarted in a loop. So a jump from 14.x straight to 27.0.6 is not safe
@@ -221,9 +274,9 @@ stick on a speaker where 27.0.6 had just failed.
 
 Two more things reported alongside, worth knowing before you start:
 
-- On firmware **7.2.21 and older** the setup access point is opened with
-  **2** and **volume down**, not the combination the current manuals
-  name.
+- On firmware **7.2.21 and older** the setup access point also opens
+  with **2** and **volume down**, the same combination Bose's current
+  articles name (community-reported).
 - A factory reset with **1** and **volume down** held for ten seconds
   before the update clears a half-configured state that can otherwise
   make the speaker refuse the image.

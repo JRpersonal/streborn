@@ -40,6 +40,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // reuse them rather than duplicating.
 import { langOptionsHtml, wireCombobox } from './settings.js';
 import { firmwareGuideMount, firmwareGuideNeeded, wireFirmwareGuides } from '../fwguide.js';
+import { firmwareLadderDeps } from '../fwladderdeps.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
@@ -2035,6 +2036,7 @@ function wireOutdatedFirmwareLinks() {
     flash: FlashBoseFirmware,
     onProgress: (cb) => EventsOn('firmware:progress', cb),
     confirm: confirmWarn,
+    ladder: firmwareLadderDeps(),
   });
 }
 
