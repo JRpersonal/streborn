@@ -137,17 +137,6 @@ func (p *progressWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// RemoveFirmwareFile deletes Update.stu (and a leftover .part) from a stick,
-// so a stick that served a step does not reinstall it later.
-func RemoveFirmwareFile(stickPath string) error {
-	final := filepath.Join(stickPath, FirmwareFileName)
-	_ = os.Remove(final + ".part")
-	if err := os.Remove(final); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
 // FirmwareStickProblem is the firmware ladder's verdict on a checked stick:
 // "" when an Update.stu of need bytes can go on it, otherwise a code the app
 // maps to a message. It adds to CheckStick's own Reason ("gone", "read-only",

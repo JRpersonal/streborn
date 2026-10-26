@@ -8,6 +8,7 @@ import { setLocale } from './i18n/index.js';
 import {
   activeSteps,
   currentStep,
+  fallbacksFor,
   firmwareLadderMount,
   formatBytes,
   ladderApplies,
@@ -15,16 +16,20 @@ import {
   ladderErrorText,
   ladderHtml,
   ladderKey,
+  ladderKeys,
   ladderMinutes,
   ladderProgressText,
   ladderView,
   loadLadderState,
+  loadLadderStateAny,
   noLadderYet,
   persistable,
+  powerOffKey,
   resumeState,
   saveLadderState,
   stickVerdict,
   usbUpdateKey,
+  usbUpdateUnconfirmed,
   versionReached,
   MANUAL_VERSIONS,
 } from './fwladder.js';
@@ -153,6 +158,9 @@ describe('screen B: the stick', () => {
   it('blocks a 64 KB cluster, a full stick, and passes on CheckStick reasons', () => {
     expect(stickVerdict({ ...ok, clusterTooBig: true }, 93e6).problem).toBe('cluster-too-big');
     expect(stickVerdict({ ...ok, freeBytes: 95e6 }, 93e6).problem).toBe('no-space');
+    // An Update.stu already on the stick is replaced, so its space counts, as
+    // in the backend's FirmwareStickProblem.
+    expect(stickVerdict({ ...ok, freeBytes: 95e6, existingFirmwareBytes: 93e6 }, 93e6).ok).toBe(true);
     expect(stickVerdict({ ok: false, reason: 'not-fat32' }, 93e6).problem).toBe('not-fat32');
     expect(stickVerdict(null, 1).problem).toBe('not-writable');
   });
@@ -209,6 +217,21 @@ describe('screen C: on the speaker', () => {
     const html = ladderHtml(ident, { ...plan1433, model: 'SoundTouch Portable' }, { started: true, screen: 'C' });
     expect(html).toContain(esc(en['fwLadder.w2Battery']));
   });
+  it('never tells a Portable to unplug: power button, adapter stays in, combination marked unconfirmed', () => {
+    expect(powerOffKey('SoundTouch Portable')).toBe('fwLadder.c1Battery');
+    expect(usbUpdateKey('SoundTouch Portable')).toBe('fwLadder.c3Battery');
+    expect(usbUpdateUnconfirmed('SoundTouch Portable')).toBe(true);
+    const html = ladderHtml(ident, { ...plan1433, model: 'SoundTouch Portable' }, { started: true, screen: 'C' });
+    expect(html).toContain(esc(en['fwLadder.c1Battery']));
+    expect(html).toContain(esc(en['fwLadder.c3Battery']));
+    expect(html).toContain(esc(en['fwLadder.c3Unconfirmed']));
+    expect(html).not.toContain(esc(en['fwLadder.c1']));
+    expect(html).not.toContain(esc(en['fwLadder.c3FourVol']));
+    const st20 = ladderHtml(ident, plan5x, { started: true, screen: 'C' });
+    expect(st20).toContain(esc(en['fwLadder.c1']));
+    expect(st20).not.toContain(esc(en['fwLadder.c3Unconfirmed']));
+    expect(powerOffKey('SoundTouch 30')).toBe('fwLadder.c1');
+  });
   it('after an unchanged version shows W6 and offers the smaller steps once', () => {
     const st = { started: true, screen: 'C', recheck: { state: 'same', version: '7.0.37' } };
     const html = ladderHtml(ident, plan7x, st);
@@ -239,6 +262,16 @@ describe('the fallback sub-ladder', () => {
     expect(activeSteps(plan7x, {}).map(s => s.version)).toEqual(['14.00.33', '15.00.20', '27.0.6']);
     expect(currentStep(plan7x, st).version).toBe('09.00.41');
   });
+  it('never offers a smaller step at or below the version the speaker is on', () => {
+    // A plan built for "7 to 13" while the speaker is really on 12.x.
+    const on12 = { ...plan7x, current: '12.0.9' };
+    expect(fallbacksFor(on12, s1400.id)).toEqual([]);
+    expect(activeSteps(on12, { fallbackFor: s1400.id }).map(s => s.version)).toEqual(['14.00.33', '15.00.20', '27.0.6']);
+    const on10 = { ...plan7x, current: '10.0.0' };
+    expect(fallbacksFor(on10, s1400.id).map(s => s.version)).toEqual(['12.00.09', '14.00.33']);
+    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '12.0.9' } };
+    expect(ladderHtml(ident, on12, st)).not.toContain('data-ladder="smaller"');
+  });
 });
 
 describe('screen D', () => {
@@ -255,6 +288,16 @@ describe('resume per speaker', () => {
     expect(ladderKey(plan5x, ident)).toBe('device-id-here');
     expect(ladderKey({}, ident)).toBe('192.0.2.10');
     expect(ladderKey(null, { model: 'SoundTouch 20' })).toBe('SoundTouch 20');
+  });
+  it('saves under the ID and the address, so a restart without the ID still resumes', () => {
+    expect(ladderKeys(plan5x, ident)).toEqual(['device-id-here', '192.0.2.10']);
+    expect(ladderKeys({}, ident)).toEqual(['192.0.2.10']);
+    const store = memStore();
+    for (const k of ladderKeys(plan5x, ident)) saveLadderState(k, { started: true, stepId: s0700.id, screen: 'C' }, store);
+    // Next start: the speaker cannot be read, so the plan has no ID.
+    const back = loadLadderStateAny(ladderKeys({ status: 'needs-version' }, ident), store);
+    expect(back && back.stepId).toBe(s0700.id);
+    expect(loadLadderStateAny(ladderKeys(plan5x, ident), store).stepId).toBe(s0700.id);
   });
   it('saves only what matters and survives a restart', () => {
     const store = memStore();

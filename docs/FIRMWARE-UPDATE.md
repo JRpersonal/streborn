@@ -147,7 +147,11 @@ server and no app.
 4. **Start the update.** With the speaker unplugged, hold **4** and
    **volume down** while reconnecting power, and keep holding until the
    speaker shows it is updating. It takes a few minutes and the speaker
-   restarts on its own.
+   restarts on its own. The Portable's battery cannot be removed, so
+   unplugging does not switch it off: leave it on its power adapter,
+   switch it off with the power button, then hold **4** and **volume
+   down** while switching it on. That combination is not confirmed on
+   the Portable yet.
 5. **Leave the power alone until it is finished.** This is the only
    genuinely dangerous moment in the whole procedure.
 
@@ -181,8 +185,9 @@ app:
 3. copies only `Update.stu` to the root of the stick you picked, flushes
    it, reads it back and checks the CRC again, and ejects the stick;
 4. shows the button steps for the speaker (4 and volume down while
-   plugging the power back in) and, after **Done, check again**, reads
-   the version and moves on.
+   plugging the power back in; on the Portable, which cannot be unplugged,
+   while switching it on with the power button, marked as not confirmed)
+   and, after **Done, check again**, reads the version and moves on.
 
 The last step is Bose's own 27.0.6 file, with the normal **Update now**
 over the network, or by stick if the update page does not answer. The

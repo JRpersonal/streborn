@@ -275,7 +275,8 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 	if drivePath == "" {
 		return FirmwareStickResult{Code: "stick", Detail: "gone"}
 	}
-	if p := sticksetup.FirmwareStickProblem(fwStickCheck(drivePath), step.InnerSize, sticksetup.ExistingFirmwareBytes(drivePath)); p != "" {
+	first := fwStickCheck(drivePath)
+	if p := sticksetup.FirmwareStickProblem(first, step.InnerSize, sticksetup.ExistingFirmwareBytes(drivePath)); p != "" {
 		return FirmwareStickResult{Code: "stick", Detail: p}
 	}
 
@@ -302,9 +303,10 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 		}
 	case step.Source == bosefw.SourceBose:
 		a.emitLadder(step.ID, fwPhaseDownload, 0, step.InnerSize)
-		p, err := a.fetchBoseFile(ctx, "", bosefw.File{Name: step.FileName, URL: step.URL, Length: step.InnerSize, CRC: step.InnerCRC32})
+		prog := a.ladderProgress(step.ID, fwPhaseDownload, step.InnerSize)
+		p, err := a.fetchBoseFileWith(ctx, "", bosefw.File{Name: step.FileName, URL: step.URL, Length: step.InnerSize, CRC: step.InnerCRC32}, prog)
 		if err != nil {
-			if strings.Contains(err.Error(), "does not match") {
+			if errors.Is(err, errBoseFileMismatch) {
 				return FirmwareStickResult{Code: "fingerprint", Detail: err.Error()}
 			}
 			return fail("download", err)
@@ -326,6 +328,19 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 	}
 	if ctx.Err() != nil {
 		return FirmwareStickResult{Code: "cancelled"}
+	}
+	// The download and the extract can take minutes. Check the stick again
+	// right before writing, so a stick pulled or swapped in the meantime is
+	// never written to (the write replaces any Update.stu on it). A stick of
+	// another size or file system under the same drive path counts as gone.
+	again := fwStickCheck(drivePath)
+	if p := sticksetup.FirmwareStickProblem(again, step.InnerSize, sticksetup.ExistingFirmwareBytes(drivePath)); p != "" {
+		return FirmwareStickResult{Code: "stick", Detail: p}
+	}
+	if again.TotalBytes != first.TotalBytes || !strings.EqualFold(again.Filesystem, first.Filesystem) {
+		a.fwLog().Warn("firmware ladder: the stick changed during the download, not writing",
+			"drive", drivePath, "before", first.TotalBytes, "now", again.TotalBytes)
+		return FirmwareStickResult{Code: "stick", Detail: "gone"}
 	}
 
 	a.emitLadder(step.ID, fwPhaseWrite, 0, step.InnerSize)

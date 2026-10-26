@@ -54,9 +54,6 @@ func TestWriteFirmwareFileWritesAndChecks(t *testing.T) {
 	if ExistingFirmwareBytes(stick) != int64(len(data)) {
 		t.Error("ExistingFirmwareBytes")
 	}
-	if err := RemoveFirmwareFile(stick); err != nil || ExistingFirmwareBytes(stick) != 0 {
-		t.Errorf("RemoveFirmwareFile: %v", err)
-	}
 }
 
 type failAfter struct {

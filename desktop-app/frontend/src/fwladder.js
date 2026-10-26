@@ -78,6 +78,11 @@ export function versionReached(have, target) {
   return true;
 }
 
+// sameVersion: both name the same major.minor.patch.
+function sameVersion(a, b) {
+  return versionReached(a, b) && versionReached(b, a);
+}
+
 function inFamily(model) {
   return LADDER_MODELS.includes(String(model || '').trim().toLowerCase());
 }
@@ -101,21 +106,51 @@ export function noLadderYet(ident) {
   return mj !== null && mj < LADDER_BELOW_MAJOR && !ladderApplies(id);
 }
 
-// isBatteryModel: the Portable runs on a battery and must stay on its adapter.
+// isBatteryModel: the Portable runs on a battery that cannot be removed.
+// Unplugging it does not switch it off, so it stays on its adapter and the
+// power button does the switching.
 export function isBatteryModel(model) {
   return String(model || '').trim().toLowerCase() === 'soundtouch portable';
 }
 
+// powerOffKey is the first instruction on screen C: unplug a mains speaker,
+// switch a battery speaker off with its button while it stays plugged in.
+export function powerOffKey(model) {
+  return isBatteryModel(model) ? 'fwLadder.c1Battery' : 'fwLadder.c1';
+}
+
 // usbUpdateKey is the instruction that starts the USB stick update. 4 and
 // Volume minus while plugging the power back in is confirmed on Series I and
-// II SoundTouch 20s and reported by the community for the 10, 30 and Portable.
-// Every other model gets the generic sentence rather than invented buttons.
+// II SoundTouch 20s and reported by the community for the 10 and 30. The
+// Portable cannot be started by plugging in, and the combination is not
+// confirmed on it (design risk 4): it gets its own sentence with the power
+// button, and usbUpdateUnconfirmed adds the "not confirmed" line. Every other
+// model gets the generic sentence rather than invented buttons.
 export function usbUpdateKey(model) {
   const m = String(model || '').trim().toLowerCase();
-  if (['soundtouch 10', 'soundtouch 20', 'soundtouch 30', 'soundtouch portable'].includes(m)) {
+  if (isBatteryModel(m)) return 'fwLadder.c3Battery';
+  if (['soundtouch 10', 'soundtouch 20', 'soundtouch 30'].includes(m)) {
     return 'fwLadder.c3FourVol';
   }
   return 'fwLadder.c3Generic';
+}
+
+// usbUpdateUnconfirmed: the button combination is not confirmed on this model,
+// and screen C says so.
+export function usbUpdateUnconfirmed(model) {
+  return isBatteryModel(model);
+}
+
+// fallbacksFor is the list of smaller steps the plan offers after stepId
+// stalled. A step at or below the speaker's version would be a downgrade, so
+// it never shows, whatever the plan was built from. A list left with nothing
+// but the stalled step itself is no smaller route: empty.
+export function fallbacksFor(plan, stepId) {
+  const raw = plan && plan.fallbacks && plan.fallbacks[stepId];
+  if (!Array.isArray(raw)) return [];
+  const cur = plan.current;
+  const fb = raw.filter(s => !(cur && versionReached(cur, s.version)));
+  return fb.some(s => s.id !== stepId) ? fb : [];
 }
 
 // activeSteps is the list the user works through: the plan's steps, or, after
@@ -124,8 +159,8 @@ export function usbUpdateKey(model) {
 export function activeSteps(plan, st) {
   const steps = (plan && Array.isArray(plan.steps)) ? plan.steps : [];
   const fbFor = st && st.fallbackFor;
-  const fb = fbFor && plan && plan.fallbacks && plan.fallbacks[fbFor];
-  if (!fb || !fb.length) return steps;
+  const fb = fbFor ? fallbacksFor(plan, fbFor) : [];
+  if (!fb.length) return steps;
   const at = steps.findIndex(s => s.id === fbFor);
   if (at < 0) return steps;
   return [...fb, ...steps.slice(at + 1)];
@@ -176,14 +211,16 @@ export function ladderMinutes(plan) {
 }
 
 // stickVerdict mirrors sticksetup.FirmwareStickProblem for the screen: the
-// backend checks again before it writes anything.
+// backend checks again before it writes anything. An Update.stu already on the
+// stick is replaced by the write, so its space counts as free, as there.
 //   check: the CheckStick answer; need: the file size in bytes
 export function stickVerdict(check, need) {
   const c = check || {};
   const warnLarge = !!c.tooLarge;
   if (!c.ok) return { ok: false, problem: c.reason || 'not-writable', warnLarge };
   if (c.clusterTooBig) return { ok: false, problem: 'cluster-too-big', warnLarge };
-  if ((c.freeBytes || 0) < (need || 0) + 10 * 1000 * 1000) return { ok: false, problem: 'no-space', warnLarge };
+  const free = (c.freeBytes || 0) + (c.existingFirmwareBytes || 0);
+  if (free < (need || 0) + 10 * 1000 * 1000) return { ok: false, problem: 'no-space', warnLarge };
   return { ok: true, problem: '', warnLarge };
 }
 
@@ -242,6 +279,24 @@ export function ladderKey(plan, ident) {
   return String((plan && plan.deviceId) || id.host || id.model || 'speaker').trim();
 }
 
+// ladderKeys: every key the state is saved under, the speaker's ID first. The
+// state also goes under the address, so it is found again after a restart
+// even when the speaker cannot be read then (no ID in the plan).
+export function ladderKeys(plan, ident) {
+  const id = ident || {};
+  const keys = [ladderKey(plan, id), String(id.host || id.model || 'speaker').trim()];
+  return keys.filter((k, i) => k && keys.indexOf(k) === i);
+}
+
+// loadLadderStateAny returns the first saved state among keys.
+export function loadLadderStateAny(keys, storage) {
+  for (const k of keys || []) {
+    const v = loadLadderState(k, storage);
+    if (v) return v;
+  }
+  return null;
+}
+
 // The part of the state worth keeping across an app restart or a speaker
 // reboot. Progress, drives and results are always fresh.
 export function persistable(st) {
@@ -290,7 +345,7 @@ export function resumeState(plan, saved) {
     st.stepId = '';
     st.screen = 'B';
   }
-  if (st.fallbackFor && !(plan && plan.fallbacks && plan.fallbacks[st.fallbackFor])) st.fallbackFor = '';
+  if (st.fallbackFor && !fallbacksFor(plan, st.fallbackFor).length) st.fallbackFor = '';
   return st;
 }
 
@@ -393,7 +448,7 @@ function screenC(plan, st, step, ident) {
   let check = '';
   if (st.rechecking) check = `<div class="small">${esc(t('fwLadder.checking'))}</div>`;
   else if (st.recheck && st.recheck.state === 'same') {
-    const fb = plan.fallbacks && plan.fallbacks[step.id] && !st.fallbackFor;
+    const fb = !st.fallbackFor && fallbacksFor(plan, step.id).length > 0;
     check = `<div class="small setup-err">${esc(t('fwLadder.stalled', { version: st.recheck.version || '?' }))}</div>`
       + `<div class="fw-ladder-warn">${esc(t('fwLadder.w6'))}</div>`
       + '<div class="fw-guide-dl">'
@@ -407,9 +462,11 @@ function screenC(plan, st, step, ident) {
     + `<div><b>${esc(t('fwLadder.installTitle'))}</b></div>`
     + (st.ejectedByHand ? `<div class="small fw-ladder-note">${esc(t('fwLadder.ejectByHand'))}</div>` : '')
     + '<ol class="fw-guide-steps">'
-    + `<li>${esc(t('fwLadder.c1'))}</li>`
+    + `<li>${esc(t(powerOffKey(model)))}</li>`
     + `<li>${esc(t('fwLadder.c2'))}<div class="muted small">${esc(t('fwLadder.w4'))}</div></li>`
-    + `<li>${esc(t(usbUpdateKey(model)))}</li>`
+    + `<li>${esc(t(usbUpdateKey(model)))}`
+    + (usbUpdateUnconfirmed(model) ? `<div class="muted small">${esc(t('fwLadder.c3Unconfirmed'))}</div>` : '')
+    + '</li>'
     + `<li>${esc(t('fwLadder.c4'))}</li>`
     + `<li>${esc(t('fwLadder.c5'))}</li>`
     + '</ol>'
@@ -561,7 +618,9 @@ class LadderController {
 
   set(patch) {
     Object.assign(this.sess.st, patch);
-    if (this.sess.plan) saveLadderState(ladderKey(this.sess.plan, this.id), this.sess.st);
+    if (this.sess.plan) {
+      for (const k of ladderKeys(this.sess.plan, this.id)) saveLadderState(k, this.sess.st);
+    }
     this.render();
   }
 
@@ -600,7 +659,7 @@ class LadderController {
     if (prevDevice && !plan.deviceId) plan.deviceId = prevDevice;
     this.sess.plan = plan;
     if (!planner) {
-      this.sess.st = { ...resumeState(plan, loadLadderState(ladderKey(plan, this.id))) };
+      this.sess.st = { ...resumeState(plan, loadLadderStateAny(ladderKeys(plan, this.id))) };
     } else {
       this.sess.st = { ...this.st, ...resumeState(plan, persistable(this.st)), manual: false };
     }
@@ -634,9 +693,12 @@ class LadderController {
       }
       case 'manual': this.set({ manual: true }); break;
       case 'manual-go': {
+        // "Another model" sends no model: the backend then plans the
+        // unsupported case (or, from 15 on, the normal guide), never the
+        // detected model's ladder.
         const m = this.field('model');
         const v = MANUAL_BY_ID[this.field('version')] || '';
-        this.load(() => this.L.getLadderManual(m || model, '', v, ''));
+        this.load(() => this.L.getLadderManual(m, '', v, ''));
         break;
       }
       case 'bt-yes':
@@ -658,8 +720,8 @@ class LadderController {
       case 'retry': this.set({ screen: 'B', recheck: null, result: null, check: null, drives: null }); break;
       case 'smaller': {
         const s = currentStep(plan, this.st);
-        const fb = s && plan.fallbacks && plan.fallbacks[s.id];
-        if (fb && fb.length) {
+        const fb = s ? fallbacksFor(plan, s.id) : [];
+        if (fb.length) {
           this.set({ fallbackFor: s.id, stepId: fb[0].id, screen: 'B', recheck: null, result: null, check: null, drives: null });
         }
         break;
@@ -770,12 +832,25 @@ class LadderController {
     const plan = this.sess.plan;
     const step = currentStep(plan, this.st);
     if (!step || !version) return;
+    const model = plan.model || this.id.model;
+    const moduleType = plan.moduleType || this.id.moduleType;
     if (!versionReached(version, step.version)) {
+      // The plan may come from a version the user picked ("7 to 13"). Its
+      // smaller steps would then start below where the speaker really is, so
+      // the plan is built again from the version the speaker reports before
+      // any smaller steps are offered.
+      if (!sameVersion(version, plan.current)) {
+        await this.load(() => this.L.getLadderManual(model, moduleType, version, ''));
+        const now = currentStep(this.sess.plan, this.st);
+        if (!now || now.id !== step.id) {
+          // The new plan has no such step: go on with its own next one.
+          this.set({ stepId: now ? now.id : '', screen: 'B', recheck: null, result: null, drives: null, check: null });
+          return;
+        }
+      }
       this.set({ recheck: { state: 'same', version, from } });
       return;
     }
-    const model = plan.model || this.id.model;
-    const moduleType = plan.moduleType || this.id.moduleType;
     await this.load(() => this.L.getLadderManual(model, moduleType, version, ''));
     const next = currentStep(this.sess.plan, { ...this.st, stepId: '' });
     this.set({ stepId: next ? next.id : '', screen: 'B', recheck: null, result: null, justDone: version, drives: null, check: null });

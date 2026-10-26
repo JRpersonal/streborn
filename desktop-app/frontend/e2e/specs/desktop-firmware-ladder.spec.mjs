@@ -8,10 +8,14 @@
 //      screen C follows, and "Done, check again" with the new version moves on
 //      to the next step.
 //   3. An unchanged version shows the "bar stayed empty" help and, on 7.x, the
-//      smaller in-between steps.
+//      smaller in-between steps. 3b: on a plan from a picked version, the plan
+//      is built again from what the speaker reports, so no downgrade is offered.
 //   4. A file that fails its fingerprint says so and stays on the stick screen.
 //   5. The guide resumes on the same step after a reload.
 //   6. "Can't find the speaker?" asks for the version and plans from it.
+//   7. "Another model" plans without the detected model.
+// The screen walk also checks the Portable's own screen C (power button, no
+// unplugging).
 //
 // Nothing here downloads anything: every backend call is answered by the mock.
 // With FWLADDER_SHOTS=<folder> the screens are also saved there, light and
@@ -155,6 +159,43 @@ test.describe('the firmware ladder', () => {
     await mock.expectCalled('GetFirmwareLadderManual', { pred: (c) => c.args[0] === 'SoundTouch 20' && c.args[2] === '7.0.37', times: 1 });
     await expect(lad).toContainText(en('fwLadder.title', { n: 4 }));
   });
+
+  test('7. "Another model" never plans with the detected model\'s ladder', async ({ app, mock }) => {
+    await mock.set('GetFirmwareLadderManual', { value: { status: 'unsupported', reason: 'model', family: '', model: '', moduleType: '', current: '7.0.37', steps: [], fallbacks: {} } });
+    const lad = await openLadder(app.page);
+    await lad.locator('[data-ladder="manual"]').click();
+    await lad.locator('[data-ladder-field="model"]').selectOption('');
+    await lad.locator('[data-ladder-field="version"]').selectOption('7-13');
+    await lad.locator('[data-ladder="manual-go"]').click();
+    await mock.expectCalled('GetFirmwareLadderManual', { pred: (c) => c.args[0] === '' && c.args[2] === '7.0.37', times: 1 });
+    await expect(lad).toContainText(en('fwLadder.unsupported'));
+    await expect(lad.locator('.fw-ladder-steps')).toHaveCount(0);
+  });
+});
+
+test.describe('a stall on a plan built from a picked version', () => {
+  // The user picked "7 to 13"; the speaker really is on 12.x and stays there.
+  // Smaller steps from 9.x would be a downgrade, so none are offered.
+  test.use({
+    ui2: false,
+    scenario: scenario({
+      RecheckFirmware: { value: { found: true, version: '12.0.9', via: 'lan', model: 'SoundTouch 20', moduleType: '', deviceId: 'device-id-here' } },
+      GetFirmwareLadderManual: { value: plan('12.0.9', [S1400, S1500, BOSE]) },
+    }, { ...PLAN_7X, versionFrom: 'manual' }),
+  });
+
+  test('3b. builds the plan again from the reported version and offers no downgrade', async ({ app, mock }) => {
+    const lad = await openLadder(app.page);
+    await startLadder(lad);
+    await expect(lad).toContainText(en('fwLadder.stickOk'));
+    await lad.locator('[data-ladder="prepare"]').click();
+    await expect(lad).toContainText(en('fwLadder.installTitle'));
+    await lad.locator('[data-ladder="recheck"]').click();
+    await mock.expectCalled('GetFirmwareLadderManual', { pred: (c) => c.args[2] === '12.0.9', times: 1 });
+    await expect(lad).toContainText(en('fwLadder.stalled', { version: '12.0.9' }));
+    await expect(lad.locator('[data-ladder="retry"]')).toBeVisible();
+    await expect(lad.locator('[data-ladder="smaller"]')).toHaveCount(0);
+  });
 });
 
 test.describe('a step that leaves the version unchanged', () => {
@@ -223,6 +264,24 @@ for (const theme of ['light', 'dark']) {
       await lad.locator('[data-ladder="recheck"]').click();
       await expect(lad).toContainText(en('fwLadder.w6'));
       await shot(lad, `${theme}-C-stalled`);
+    });
+
+    test(`C on the battery Portable (${theme})`, async ({ app, mock }) => {
+      await mock.set('GetFirmwareLadder', { value: { ...PLAN_7X, model: 'SoundTouch Portable' } });
+      await mock.set('PrepareFirmwareStick', { value: { ok: true, ejected: true } });
+      const lad = await openLadder(app.page);
+      await startLadder(lad);
+      await expect(lad).toContainText(en('fwLadder.stickOk'));
+      await lad.locator('[data-ladder="prepare"]').click();
+      await expect(lad).toContainText(en('fwLadder.installTitle'));
+      // The Portable's battery cannot be removed: no "unplug", the power
+      // button instead, and the button combination marked as unconfirmed.
+      await expect(lad).toContainText(en('fwLadder.c1Battery'));
+      await expect(lad).toContainText(en('fwLadder.c3Battery'));
+      await expect(lad).toContainText(en('fwLadder.c3Unconfirmed'));
+      await expect(lad).toContainText(en('fwLadder.w2Battery'));
+      await expect(lad).not.toContainText(en('fwLadder.c1'));
+      await shot(lad, `${theme}-C-install-portable`);
     });
 
     test(`the version picker and the last step D (${theme})`, async ({ app, mock }) => {

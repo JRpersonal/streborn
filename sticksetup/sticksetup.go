@@ -115,6 +115,10 @@ type StickCheck struct {
 	// change OK or Reason, so the install wizard behaves as before; the
 	// firmware ladder blocks on ClusterTooBig.
 	ClusterTooBig bool `json:"clusterTooBig"`
+	// ExistingFirmwareBytes is the size of an Update.stu already on the stick
+	// (0 when none). Writing the next one replaces it, so the firmware ladder
+	// counts this space as free, on the screen and in FirmwareStickProblem.
+	ExistingFirmwareBytes int64 `json:"existingFirmwareBytes"`
 }
 
 // CheckStick evaluates the volume at path against the install requirements:
@@ -141,6 +145,7 @@ func CheckStick(path string) StickCheck {
 	c.BigEnough = found.TotalBytes >= MinStickBytes
 	c.FreeBytes = found.FreeBytes
 	c.TooLarge = found.TotalBytes > MaxRecommendedStickBytes
+	c.ExistingFirmwareBytes = ExistingFirmwareBytes(path)
 	if c.IsFAT32 {
 		c.ClusterBytes = clusterBytes(path)
 		c.ClusterTooBig = c.ClusterBytes > MaxClusterBytes

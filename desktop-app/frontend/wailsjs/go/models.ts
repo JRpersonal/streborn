@@ -1721,7 +1721,8 @@ export namespace sticksetup {
 	    clusterBytes: number;
 	    tooLarge: boolean;
 	    clusterTooBig: boolean;
-	
+	    existingFirmwareBytes: number;
+
 	    static createFrom(source: any = {}) {
 	        return new StickCheck(source);
 	    }
@@ -1741,6 +1742,7 @@ export namespace sticksetup {
 	        this.clusterBytes = source["clusterBytes"];
 	        this.tooLarge = source["tooLarge"];
 	        this.clusterTooBig = source["clusterTooBig"];
+	        this.existingFirmwareBytes = source["existingFirmwareBytes"];
 	    }
 	}
 	export class StickConfigs {

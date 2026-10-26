@@ -308,7 +308,7 @@ func TestPrepareStickFromLocalFile(t *testing.T) {
 	_ = os.WriteFile(badPath, append([]byte{1}, inner[1:]...), 0o644)
 	a := &App{}
 	for _, p := range []string{zipPath, stuPath} {
-		_ = sticksetup.RemoveFirmwareFile(stick)
+		_ = os.Remove(filepath.Join(stick, sticksetup.FirmwareFileName))
 		if res := a.runPrepareStick(context.Background(), step, stick, p); !res.OK {
 			t.Fatalf("%s: %+v", p, res)
 		}
@@ -316,7 +316,7 @@ func TestPrepareStickFromLocalFile(t *testing.T) {
 			t.Fatalf("%s: stick content differs", p)
 		}
 	}
-	_ = sticksetup.RemoveFirmwareFile(stick)
+	_ = os.Remove(filepath.Join(stick, sticksetup.FirmwareFileName))
 	res := a.runPrepareStick(context.Background(), step, stick, badPath)
 	if res.OK || res.Code != "fingerprint" {
 		t.Fatalf("a wrong file must fail the fingerprint check: %+v", res)
@@ -391,5 +391,62 @@ func TestGetFirmwareLadderManual(t *testing.T) {
 	}
 	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "yes"); p.Status != bosefw.StatusUnsupported {
 		t.Fatalf("%+v", p)
+	}
+}
+
+// A stick pulled or swapped while the file downloads must not be written to,
+// and an Update.stu on the new stick stays as it was.
+func TestPrepareStickRechecksStickBeforeWrite(t *testing.T) {
+	inner := fakeStu(5000)
+	z := fakeZip(t, map[string][]byte{"Update.stu": inner}, "Update.stu")
+	step, _, _ := ladderEnv(t, z, inner)
+	stick := stickEnv(t)
+	old := []byte("an older Update.stu")
+	for name, second := range map[string]sticksetup.StickCheck{
+		"swapped": {OK: true, IsFAT32: true, Filesystem: "FAT32", TotalBytes: 16 << 30, FreeBytes: 1 << 30},
+		"pulled":  {Reason: "gone"},
+	} {
+		if err := os.WriteFile(filepath.Join(stick, sticksetup.FirmwareFileName), old, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		fwStickCheck = func(p string) sticksetup.StickCheck {
+			calls++
+			if calls == 1 {
+				return sticksetup.StickCheck{OK: true, Path: p, IsFAT32: true, Filesystem: "FAT32", TotalBytes: 8 << 30, FreeBytes: 1 << 30}
+			}
+			return second
+		}
+		res := (&App{}).runPrepareStick(context.Background(), step, stick, "")
+		if res.OK || res.Code != "stick" || res.Detail != "gone" {
+			t.Errorf("%s: result %+v", name, res)
+		}
+		if calls != 2 {
+			t.Errorf("%s: the stick must be checked again before the write, checked %d times", name, calls)
+		}
+		if got, _ := os.ReadFile(filepath.Join(stick, sticksetup.FirmwareFileName)); !bytes.Equal(got, old) {
+			t.Errorf("%s: the stick was written to", name)
+		}
+	}
+}
+
+// The last step by stick takes Bose's own file; a wrong file is a fingerprint
+// failure by its error type, not by matching the error text.
+func TestPrepareStickBoseRoute(t *testing.T) {
+	payload := bytes.Repeat([]byte("bose"), 20000)
+	f, _ := fwTestFile(t, payload)
+	stick := stickEnv(t)
+	step := bosefw.Step{ID: "test-27.0.6", Version: "27.0.6", Source: bosefw.SourceBose, URL: f.URL, FileName: f.Name, InnerSize: f.Length, InnerCRC32: f.CRC}
+	if res := (&App{}).runPrepareStick(context.Background(), step, stick, ""); !res.OK {
+		t.Fatalf("result %+v", res)
+	}
+	if got, _ := os.ReadFile(filepath.Join(stick, sticksetup.FirmwareFileName)); !bytes.Equal(got, payload) {
+		t.Fatal("the stick does not hold Bose's file")
+	}
+	dir, _ := fwCacheDir()
+	_ = os.RemoveAll(dir)
+	step.InnerCRC32 ^= 1
+	if res := (&App{}).runPrepareStick(context.Background(), step, stick, ""); res.OK || res.Code != "fingerprint" {
+		t.Fatalf("a wrong file from Bose: %+v", res)
 	}
 }
