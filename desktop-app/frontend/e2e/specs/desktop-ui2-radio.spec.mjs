@@ -423,4 +423,23 @@ test.describe('current layout', () => {
     await expect(page.locator('#searchResults .ui2-st')).toHaveCount(0);
     await expect(page.locator('#searchResults .result-row').first()).toContainText(`${ROCK.bitrate} kbit/s`);
   });
+
+  test('22. the key picker is a dialog for the keyboard here too', async ({ app, mock }) => {
+    const { page } = app;
+    await mock.resetCalls();
+    await page.locator('#topBtn').click();
+    const open = page.locator('#searchResults .result-row').first().locator('.pick');
+    await open.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Assign station to a key' })).toBeVisible();
+    const slots = page.locator('#pickGrid .pick-slot');
+    await expect(slots.first()).toBeFocused();
+    // Tab stays inside: six keys and Cancel, then back to key 1.
+    for (let i = 0; i < 7; i++) await page.keyboard.press('Tab');
+    await expect(slots.first()).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#pickModal')).toBeHidden();
+    await expect(open).toBeFocused();
+    await mock.expectCalled('SetPreset', { times: 0 });
+  });
 });
