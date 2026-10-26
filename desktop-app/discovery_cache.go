@@ -66,7 +66,7 @@ func differentDevices(a, b BoxInfo) bool {
 	if a.DeviceID == "" || b.DeviceID == "" {
 		return false
 	}
-	return !boxIsDevice(b, a.DeviceID) && !(a.BoxDeviceID != "" && boxIsDevice(b, a.BoxDeviceID))
+	return !boxIsDevice(b, a.DeviceID) && (a.BoxDeviceID == "" || !boxIsDevice(b, a.BoxDeviceID))
 }
 
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
