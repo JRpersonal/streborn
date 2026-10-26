@@ -154,3 +154,39 @@ func TestBoostUploadThroughputLogsEveryBranch(t *testing.T) {
 		}
 	})
 }
+
+// A driver that adds a P2P or AP interface next to its station interface puts
+// p2p0 first in directory order. The station interface is the one that is up,
+// and failing that, the one with a station name.
+func TestWirelessIfacePrefersTheStationInterface(t *testing.T) {
+	setOper := func(t *testing.T, name, state string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(sysClassNetDir, name, "operstate"), []byte(state+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("by name", func(t *testing.T) {
+		wirelessFixture(t, procWirelessHeadersOnly, map[string]string{"ap0": "phy80211", "p2p0": "phy80211", "wlan0": "phy80211"})
+		iface, how := wirelessIface()
+		if iface != "wlan0" || !strings.Contains(how, "picked from ap0,p2p0,wlan0") {
+			t.Errorf("wirelessIface() = %q, %q; want wlan0 and the candidates named", iface, how)
+		}
+	})
+	t.Run("by operstate", func(t *testing.T) {
+		wirelessFixture(t, procWirelessHeadersOnly, map[string]string{"p2p0": "phy80211", "uap0": "phy80211", "wlan0": "phy80211"})
+		setOper(t, "p2p0", "down")
+		setOper(t, "uap0", "up")
+		setOper(t, "wlan0", "down")
+		if iface, how := wirelessIface(); iface != "uap0" {
+			t.Errorf("wirelessIface() = %q, %q; want the interface that is up", iface, how)
+		}
+	})
+	t.Run("up station wins", func(t *testing.T) {
+		wirelessFixture(t, procWirelessHeadersOnly, map[string]string{"p2p0": "phy80211", "wlan0": "phy80211"})
+		setOper(t, "p2p0", "up")
+		setOper(t, "wlan0", "up")
+		if iface, _ := wirelessIface(); iface != "wlan0" {
+			t.Errorf("wirelessIface() = %q, want wlan0", iface)
+		}
+	})
+}

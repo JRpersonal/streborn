@@ -440,8 +440,20 @@ const engineDroppedMarkerPath = "/mnt/nv/streborn/engine-dropped-for-update"
 
 // noteEngineDroppedForUpdate / clearEngineDroppedMarker maintain that marker.
 // Both are best effort: the marker is a hint, never a gate.
+// The note is synced (file and directory): reclaimSpotifyEngine writes it
+// just before the engine is removed, and the pair must survive a power loss.
 func noteEngineDroppedForUpdate() {
-	_ = os.WriteFile(engineDroppedMarkerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+	f, err := os.OpenFile(engineDroppedMarkerPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return
+	}
+	_, _ = f.WriteString(time.Now().UTC().Format(time.RFC3339) + "\n")
+	_ = f.Sync()
+	_ = f.Close()
+	if d, derr := os.Open(filepath.Dir(engineDroppedMarkerPath)); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 }
 
 func clearEngineDroppedMarker() {
@@ -1777,10 +1789,19 @@ func ReclaimNAND() { reclaimNAND() }
 // happened.
 func reclaimSpotifyEngine() string {
 	_ = os.Remove(goLibrespotBinPath + ".sha256")
+	// The marker goes down, synced, BEFORE the engine goes. The desktop puts a
+	// dropped engine back only on the marker's word, so a power loss right
+	// after the remove must not keep the deletion and lose the marker. A
+	// marker that turns out to be wrong (nothing was removed) is taken back,
+	// unless one from an earlier drop was already there.
+	had := engineDroppedForUpdate()
+	noteEngineDroppedForUpdate()
 	err := os.Remove(goLibrespotBinPath)
+	if err != nil && !had {
+		clearEngineDroppedMarker()
+	}
 	switch {
 	case err == nil:
-		noteEngineDroppedForUpdate()
 		return "engine dropped"
 	case os.IsNotExist(err):
 		return "engine absent"
@@ -1953,15 +1974,48 @@ func wirelessIface() (iface, how string) {
 	if err != nil {
 		return "", procNote + "; sysfs unreadable: " + err.Error()
 	}
+	// Several entries can carry the markers: a driver that adds a P2P or AP
+	// interface (p2p0, ap0, uap0) next to its station interface. Directory
+	// order puts p2p0 before wlan0, and lifting power-save on p2p0 "succeeds"
+	// while wlan0 stays throttled, so the log would point the diagnosis the
+	// wrong way. The station interface is the one that is up, and failing
+	// that, the one with a station name; directory order breaks ties.
+	best, bestMarker, bestScore := "", "", -1
+	var found []string
 	for _, e := range ents {
 		name := e.Name()
 		for _, marker := range []string{"wireless", "phy80211"} {
-			if _, serr := os.Stat(filepath.Join(sysClassNetDir, name, marker)); serr == nil {
-				return name, procNote + "; sysfs " + marker
+			if _, serr := os.Stat(filepath.Join(sysClassNetDir, name, marker)); serr != nil {
+				continue
 			}
+			found = append(found, name)
+			if sc := wirelessIfaceScore(name); sc > bestScore {
+				best, bestMarker, bestScore = name, marker, sc
+			}
+			break
 		}
 	}
-	return "", procNote + "; sysfs has no wireless interface"
+	if best == "" {
+		return "", procNote + "; sysfs has no wireless interface"
+	}
+	how = procNote + "; sysfs " + bestMarker
+	if len(found) > 1 {
+		how += " (picked from " + strings.Join(found, ",") + ")"
+	}
+	return best, how
+}
+
+// wirelessIfaceScore ranks a sysfs wireless candidate: operstate "up" counts
+// most, a station-style name (wlan*, mlan*) next.
+func wirelessIfaceScore(name string) int {
+	sc := 0
+	if b, err := os.ReadFile(filepath.Join(sysClassNetDir, name, "operstate")); err == nil && strings.TrimSpace(string(b)) == "up" {
+		sc += 2
+	}
+	if strings.HasPrefix(name, "wlan") || strings.HasPrefix(name, "mlan") {
+		sc++
+	}
+	return sc
 }
 
 // parseProcNetWirelessIface returns the first interface listed in
