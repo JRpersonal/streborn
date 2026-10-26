@@ -31,6 +31,7 @@ import {
   normalizeDetailedSearch,
   relaxedHintVisible,
   stationBitrateCell,
+  stationCheckDot,
   syntheticStationForURL,
 } from '../../searchflow.js';
 import { saveSearchCountry, state } from '../../state.js';
@@ -623,9 +624,8 @@ export function renderSearchResults() {
   }
   res.innerHTML = hintHtml + list.map((s, i) => {
     const flag = flagFromCC(s.countrycode);
-    const okClass = s.lastcheckok ? 'ok' : 'bad';
+    const dot = stationCheckDot(s);
     const webUrl = (typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) ? s.homepage : '';
-    const okTitle = s.lastcheckok ? t('search.checkOk') : t('search.checkBad');
     let trend = '';
     if (s.clicktrend > 0) trend = `<span class="result-trend" title="${escapeAttr(t('search.trendUp', { n: s.clicktrend }))}">&#9650;</span>`;
     else if (s.clicktrend < 0) trend = `<span class="result-trend up-down" title="${escapeAttr(t('search.trendDown', { n: s.clicktrend }))}">&#9660;</span>`;
@@ -647,9 +647,11 @@ export function renderSearchResults() {
       if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
     }
 
-    // The online dot reflects radio-browser's last check; a synthetic card
-    // was never checked, so it gets no dot rather than a false "broken" red.
-    const okDot = s.synthetic ? '' : `<span class="result-online-dot ${okClass}" title="${escapeAttr(okTitle)}"></span>`;
+    // The online dot reflects radio-browser's last check. Anything it never
+    // checked (the synthetic card, a library item or own station in Favorites)
+    // gets no dot rather than a false "not reachable" red (#1521).
+    const okTitle = dot === 'ok' ? t('search.checkOk') : t('search.checkBad');
+    const okDot = dot ? `<span class="result-online-dot ${dot}" title="${escapeAttr(okTitle)}"></span>` : '';
 
     const logo = `
       <div class="result-logo">

@@ -102,3 +102,21 @@ export function stationBitrateCell(s) {
   const br = Number(s && s.bitrate);
   return br > 0 ? `${br} kbit/s` : '';
 }
+
+// stationCheckDot is the reachability dot of a station row: 'ok' (green),
+// 'bad' (red) or '' for no dot. Only a radio-browser station carries a check
+// result (lastcheckok 0/1); a library playlist or album starred from Recently
+// played, an own station and the synthetic play-this-URL card were never
+// checked by anyone, and a red "not reachable" dot on them was a false alarm
+// (discussion #1521). A directory entry radio-browser has not checked yet
+// (lastchecktime empty or all zeros) has no result either.
+export function stationCheckDot(s) {
+  if (!s || s.synthetic || !s.stationuuid) return '';
+  const ok = s.lastcheckok;
+  if (typeof ok !== 'boolean' && ok !== 0 && ok !== 1) return '';
+  if (typeof s.lastchecktime === 'string') {
+    const t = s.lastchecktime.trim();
+    if (t === '' || t.startsWith('0000-00-00')) return '';
+  }
+  return ok ? 'ok' : 'bad';
+}

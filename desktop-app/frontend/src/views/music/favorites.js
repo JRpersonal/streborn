@@ -49,6 +49,9 @@ function favMinimal(s) {
     bitrate: s.bitrate || 0, country: s.country, countrycode: s.countrycode,
     codec: s.codec, hls: s.hls || 0, tags: s.tags, votes: s.votes || 0, homepage: s.homepage,
     favicon: s.favicon, lastcheckok: s.lastcheckok,
+    // Kept so a starred station radio-browser has not checked yet stays
+    // without a reachability dot (#1521); undefined (library items) is dropped.
+    lastchecktime: s.lastchecktime,
     // When it was starred (#1389). A removal on a phone page only takes a star
     // set BEFORE it, so starring a removed station again here sticks.
     starredAt: s.starredAt || 0,

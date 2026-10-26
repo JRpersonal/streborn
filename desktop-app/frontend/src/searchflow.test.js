@@ -7,6 +7,7 @@ import {
   normalizeDetailedSearch,
   relaxedHintVisible,
   stationBitrateCell,
+  stationCheckDot,
 } from './searchflow.js';
 
 describe('isStreamURL', () => {
@@ -103,5 +104,38 @@ describe('stationBitrateCell (#1521)', () => {
     expect(stationBitrateCell({ bitrate: null })).toBe('');
     expect(stationBitrateCell({ bitrate: 'x' })).toBe('');
     expect(stationBitrateCell(null)).toBe('');
+  });
+});
+
+describe('stationCheckDot (#1521)', () => {
+  const rb = (extra) => ({ stationuuid: '9617a958-0601-11e8-ae97-52543be04c81', ...extra });
+  it('green for a radio-browser station that passed its last check', () => {
+    expect(stationCheckDot(rb({ lastcheckok: 1 }))).toBe('ok');
+    expect(stationCheckDot(rb({ lastcheckok: true }))).toBe('ok');
+    expect(stationCheckDot(rb({ lastcheckok: 1, lastchecktime: '2026-10-25 09:44:00' }))).toBe('ok');
+  });
+  it('still red for a radio-browser station that failed its last check', () => {
+    expect(stationCheckDot(rb({ lastcheckok: 0 }))).toBe('bad');
+    expect(stationCheckDot(rb({ lastcheckok: false }))).toBe('bad');
+    expect(stationCheckDot(rb({ lastcheckok: 0, lastchecktime: '2026-10-25 09:44:00' }))).toBe('bad');
+  });
+  it('no dot for a library item or own station that was never checked', () => {
+    // The shape a Recently played card is starred with: no lastcheckok at all.
+    expect(stationCheckDot({ stationuuid: 'lib:playlist-1', name: 'Road trip', bitrate: 0 })).toBe('');
+    expect(stationCheckDot(rb({ lastcheckok: undefined }))).toBe('');
+    expect(stationCheckDot(rb({ lastcheckok: null }))).toBe('');
+    expect(stationCheckDot({ name: 'My stream', url: 'http://radio.example.com/live', lastcheckok: 0 })).toBe('');
+  });
+  it('no dot for the synthetic play-this-URL card', () => {
+    expect(stationCheckDot(syntheticStationForURL('http://radio.example.com/live'))).toBe('');
+    expect(stationCheckDot({ ...rb({ lastcheckok: 0 }), synthetic: true })).toBe('');
+  });
+  it('no dot for a directory entry radio-browser has not checked yet', () => {
+    expect(stationCheckDot(rb({ lastcheckok: 0, lastchecktime: '' }))).toBe('');
+    expect(stationCheckDot(rb({ lastcheckok: 0, lastchecktime: '0000-00-00 00:00:00' }))).toBe('');
+  });
+  it('no dot for nothing', () => {
+    expect(stationCheckDot(null)).toBe('');
+    expect(stationCheckDot(undefined)).toBe('');
   });
 });
