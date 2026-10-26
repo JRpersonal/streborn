@@ -656,7 +656,7 @@ func maskAccountValue(v string) string {
 	// reports its UUID as its username, and masking that a second time left
 	// id=UUID#... and username=ACCT#... looking like two different things
 	// (seen in a real bundle while this was being written).
-	for _, p := range []string{"ACCT#", "NAME#", "UUID#", "DEV#", "MAC#"} {
+	for _, p := range []string{"ACCT#", "NAME#", "UUID#", "DEV#", "MAC#", "HOST#"} {
 		if strings.HasPrefix(trimmed, p) {
 			return v
 		}
@@ -804,6 +804,11 @@ func scrubIdentities(s string) string {
 	s = scrubFriendlyNameChanges(s)
 	s = scrubSpotifyPeerDevices(s)
 	s = scrubAccounts(s)
+	// After scrubAccounts, so the firmware's own SoundTouch-<name> host and any
+	// user@host.local address are already tokens and are not hashed twice.
+	s = scrubMediaServerAttrs(s)
+	s = scrubMediaServerNames(s)
+	s = scrubLocalHosts(s)
 	s = scrubURLCredentials(s)
 	s = redactSSIDs(s)
 	// Spaced first: the narrower pattern below would otherwise cut the name at
