@@ -46,6 +46,10 @@ type Preset struct {
 	// (Type=="native"). Raw JSON for the reason Items is: the agent owns the
 	// schema and a box-to-box copy must carry it verbatim.
 	Native json.RawMessage `json:"native,omitempty"`
+	// Folder is a folder key's media server and container id (agent
+	// presets.FolderRef). Raw JSON for the reason Items is: a box-to-box copy
+	// carries it verbatim.
+	Folder json.RawMessage `json:"folder,omitempty"`
 }
 
 // presetAPIPath is the agent's preset REST route; the slot is appended for
