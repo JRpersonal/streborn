@@ -22,6 +22,7 @@ type deferredReclaimRig struct {
 func newDeferredReclaimRig(t *testing.T, free int64, availOK bool) *deferredReclaimRig {
 	t.Helper()
 	rig := &deferredReclaimRig{dst: filepath.Join(t.TempDir(), "streborn-armv7l"), writtenAtDrop: -1}
+	pinDeferredRoute(t)
 	origRoom, origAvail, origHook := nandHasRoom, nandAvailFn, engineStopHook
 	t.Cleanup(func() { nandHasRoom, nandAvailFn, engineStopHook = origRoom, origAvail, origHook })
 	tmpSize := func() int64 {

@@ -87,6 +87,11 @@ func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receive
 		}
 		return receivedAgent{}, err
 	}
+	// RAM first: when the speaker has the memory, the whole body lands in the
+	// RAM stage before the engine is touched at all (ota_ramfirst.go).
+	if st.enginePending && ramFirstRoute(need) {
+		return receiveRAMFirst(tmp, dst, dir, src, h, buf, need, maxSize)
+	}
 	gate := &engineReclaimGate{dir: dir, need: need}
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil && isNoSpaceErr(err) && st.enginePending {
