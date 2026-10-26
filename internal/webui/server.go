@@ -249,6 +249,12 @@ type Server struct {
 	// verdict afterwards (rate-limited, free when nothing is recorded). nil
 	// falls back to pairPartnerGone.
 	pairPartnerRecheck func() (ip, deviceID string)
+	// stereoFollowerFn reports whether this speaker follows a stereo pair and
+	// who leads it (see WithStereoFollower). nil: never a follower.
+	stereoFollowerFn func() StereoFollower
+	// cachedPeersFn lists the agent's known peers from its cache, without an
+	// mDNS browse (see WithCachedPeers). nil: no peer names on refusals.
+	cachedPeersFn func() []PeerLink
 	// stereoSeen is the pair document from the last /getGroup read that got an
 	// answer (nil when the speaker answered with no pair), and when it was read.
 	// The play path checks it instead of asking the firmware again: that read
@@ -711,6 +717,10 @@ type Server struct {
 	// nowPlayingFn. nil means "", which the queue watcher reads as unknown,
 	// never as another source.
 	nowPlayingSourceFn func() string
+	// nowPlayingLocationFn scripts the now_playing ContentItem location next
+	// to nowPlayingFn. nil means "", which the single-track end watch reads as
+	// unknown, never as another file.
+	nowPlayingLocationFn func() string
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).

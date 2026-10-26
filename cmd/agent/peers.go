@@ -682,7 +682,13 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		// TCP so a speaker with lost announcements stays in the picker (async).
 		probeStalePeers(logger)
 	}
+	return cachedPeerLinks()
+}
 
+// cachedPeerLinks renders the peer map as it stands, without a browse or a
+// probe. browsePeers ends with it; the stereo follower refusal calls it alone,
+// because it runs under the play lock and must not start a sweep.
+func cachedPeerLinks() []webui.PeerLink {
 	selfName := peerSelfName()
 	mineNow := ownIPv4s()
 	peersMu.Lock()
