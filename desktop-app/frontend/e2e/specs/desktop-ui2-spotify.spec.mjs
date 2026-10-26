@@ -277,7 +277,7 @@ test.describe('UI 2.0 Spotify', () => {
     await expect(result).toContainText(en('preset.alreadyOnKeyNamed', { name: 'Discover Weekly', n: 2 }));
     await page.locator('#warnModal #warnConfirm').click();
     await mock.expectCalled('MovePreset', { pred: (c) => c.args[0] === LR.host && c.args[2] === 2 && c.args[3] === 5, times: 1 });
-    await expect(result).toContainText(en('ui2.spotify.moved', { from: 2, n: 5, name: LR.friendlyName }));
+    await expect(result).toContainText(en('ui2.spotify.moved', { from: 2, n: 5, name: LR.friendlyName, title: 'Discover Weekly' }));
     await expect(result).not.toContainText(en('preset.alreadyOnKeyNamed', { name: 'Discover Weekly', n: 2 }));
   });
 
