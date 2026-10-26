@@ -106,10 +106,12 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 		}
 	}
 	// Alone, the speaker retries a lost download for about eight minutes and
-	// then fails; nothing starts it over. So the single card must not promise
-	// "it carries on by itself", which only a fleet run keeps, in any language.
-	if !strings.Contains(indexHTML, "show((runActive() || fleetRunning()) ? T.sfNetWait : T.sfNetWaitOne, false, true);") {
-		t.Error("the single-speaker card promises a resume after an outage that only a fleet run makes")
+	// then fails; nothing starts it over, and a speaker-driven run updates the
+	// serving speaker last without a restart either. So the single card must
+	// not promise "it carries on by itself", which only a run this phone
+	// drives keeps, in any language.
+	if !strings.Contains(indexHTML, "show(runActive() ? T.sfNetWait : T.sfNetWaitOne, false, true);") {
+		t.Error("the single-speaker card promises a resume after an outage that only a phone-driven run makes")
 	}
 	if a, b := len(regexp.MustCompile(`sfNetWait:"`).FindAllString(indexHTML, -1)), len(regexp.MustCompile(`sfNetWaitOne:"`).FindAllString(indexHTML, -1)); a != b {
 		t.Errorf("sfNetWaitOne is in %d languages, sfNetWait in %d", b, a)

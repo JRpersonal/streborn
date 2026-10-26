@@ -4901,10 +4901,13 @@ async function saveDisplay(kind, enabled) {
       else show(T.offline, true);
     }
     else if (st.state === 'checking') show(T.suChecking, false, true);
-    /* "It carries on by itself" holds in a fleet run, which starts a speaker
-       over once the network is back. Alone, the speaker retries for about
-       eight minutes and then fails, so the card says that (#1339). */
-    else if ((st.state === 'downloading' || st.state === 'installing') && st.phase === 'network') show((runActive() || fleetRunning()) ? T.sfNetWait : T.sfNetWaitOne, false, true);
+    /* "It carries on by itself" holds only in a run this phone drives, which
+       starts the speaker over once the network is back. A speaker-driven run
+       updates this speaker last with no restart, and alone it retries for
+       about eight minutes and then fails, so the card says that (#1339).
+       While a run's list is shown, renderFleet replaces this line with
+       sfRunning anyway. */
+    else if ((st.state === 'downloading' || st.state === 'installing') && st.phase === 'network') show(runActive() ? T.sfNetWait : T.sfNetWaitOne, false, true);
     else if (st.state === 'downloading' || st.state === 'installing') {
       var pct = st.total ? Math.floor(100 * (st.done || 0) / st.total) : 0;
       show(fill(T.suDl, String(pct)), false, true);

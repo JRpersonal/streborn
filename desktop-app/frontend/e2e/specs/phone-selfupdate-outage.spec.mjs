@@ -4,7 +4,7 @@
 // page's general "not reachable" state stands down meanwhile, the card asks
 // again on its own once the speaker answers after the card gave up, and the
 // speaker's own "no internet" phase does not promise a resume the speaker
-// alone does not make.
+// alone does not make, also when a speaker-driven run updates it last.
 
 import { test, expect } from '../fixtures.mjs';
 
@@ -22,7 +22,7 @@ async function bootDone(page) {
 function strings(page) {
   return page.evaluate(() => ({
     noAnswer: window.T.sfNoAnswer, offline: window.T.offline, dl: window.T.suDl,
-    netWait: window.T.sfNetWait, netWaitOne: window.T.sfNetWaitOne,
+    netWait: window.T.sfNetWait, netWaitOne: window.T.sfNetWaitOne, running: window.T.sfRunning,
   }));
 }
 
@@ -47,6 +47,32 @@ test.describe('single-speaker update, speaker without internet', () => {
     expect(T.netWaitOne).not.toEqual(T.netWait);
     await page.locator('#tabMore').click();
     await expect(page.locator('#suMsg')).toHaveText(T.netWaitOne);
+  });
+});
+
+// A speaker-driven fleet run updates the serving speaker last, without a
+// restart: its own "no internet" phase must never read "it carries on by
+// itself". The run's list is on screen, so the card says the run is going.
+test.describe('speaker-driven fleet run, serving speaker without internet', () => {
+  test.use({ phoneOverrides: { [SU]: suStatus({
+    phase: 'network',
+    fleet: {
+      mode: 'running', target: '1.1.1', at: '2026-10-26T12:00:00Z',
+      speakers: [
+        { name: 'Kitchen', ip: '192.0.2.10', version: '1.1.1', target: '1.1.1', needs: false, state: 'done' },
+        { name: 'Living room', self: true, version: '1.0.21', target: '1.1.1', needs: true, state: 'updating', phase: 'rebooting' },
+      ],
+    },
+  }) } });
+
+  test('does not promise that it carries on by itself', async ({ phone }) => {
+    const { page } = phone;
+    await bootDone(page);
+    const T = await strings(page);
+    await page.locator('#tabMore').click();
+    await expect(page.locator('#suFleet')).toBeVisible();
+    await expect(page.locator('#suMsg')).toHaveText(T.running);
+    await expect(page.locator('#suMsg')).not.toHaveText(T.netWait);
   });
 });
 
