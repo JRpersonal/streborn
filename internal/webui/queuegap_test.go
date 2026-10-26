@@ -192,6 +192,11 @@ func TestANormalEOFFreezeStillEndsAQueueTrack(t *testing.T) {
 	if s.queue.snapshot().Pos != 1 {
 		t.Fatalf("a frozen track without a length never advanced; log:\n%s", logs.String())
 	}
+	// The advance and its log line are not one atomic step: under -race the
+	// queue position can flip before the watcher has written its line.
+	for !strings.Contains(logs.String(), "net=frozen-position") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	out := logs.String()
 	if !strings.Contains(out, "net=frozen-position") {
 		t.Fatalf("advance not decided by the frozen-position net; log:\n%s", out)
