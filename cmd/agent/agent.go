@@ -1448,6 +1448,7 @@ func (a *agent) buildBoxLink() error {
 		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist)
 	})
 	refreshTrackPanel = webuiSrv.RefreshTrackPanel
+	notePanelSource = webuiSrv.PanelSourceChanged
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", a.flags.boxHost),

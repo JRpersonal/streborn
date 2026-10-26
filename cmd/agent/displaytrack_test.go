@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,6 +56,23 @@ func TestTrackReturnsWithSTRsSource(t *testing.T) {
 	case <-refreshed:
 		t.Fatal("redraw without a return to STR's source")
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// Every switch reaches the panel model, after the track screen heard of it,
+// so the clock can stand in on Bluetooth and AUX and never outlives them.
+func TestEverySourceSwitchReachesThePanelModel(t *testing.T) {
+	oldSet, oldNote, oldRefresh := setTrackSource, notePanelSource, refreshTrackPanel
+	t.Cleanup(func() { setTrackSource, notePanelSource, refreshTrackPanel = oldSet, oldNote, oldRefresh })
+	var order []string
+	setTrackSource = func(name string, _ bool) { order = append(order, "track:"+name) }
+	notePanelSource = func(name string) { order = append(order, "model:"+name) }
+	refreshTrackPanel = nil
+	trackOnSourceChanged("UPNP", "BLUETOOTH")
+	trackOnSourceChanged("BLUETOOTH", "STANDBY")
+	want := []string{"track:BLUETOOTH", "model:BLUETOOTH", "track:STANDBY", "model:STANDBY"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Fatalf("order %v, want %v", order, want)
 	}
 }
 

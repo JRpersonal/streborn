@@ -17,6 +17,10 @@ var (
 	// refreshTrackPanel redraws the playback screen from what STR knows plays
 	// (webui.RefreshTrackPanel); wired in main, nil until then.
 	refreshTrackPanel func()
+	// notePanelSource tells the panel model which source the speaker is on,
+	// so the clock can stand in for the firmware's picture on Bluetooth and
+	// AUX (webui.PanelSourceChanged); wired in main, nil until then.
+	notePanelSource func(source string)
 )
 
 // trackSourceKeeps reports whether a source switch to to can still be STR's
@@ -32,11 +36,15 @@ func trackSourceKeeps(to string) bool {
 // it until STR's source is back. Coming back (out of standby, from AUX or
 // Bluetooth) brings the screen back at once rather than at the next song,
 // which for a long Spotify track or a station without titles would never
-// come. Runs on the gabbo read loop; the call does not block and keeps the
-// order of the switches.
+// come. Switching to Bluetooth or AUX puts the clock there when the display
+// setting asks for it (notePanelSource). Runs on the gabbo read loop; the
+// call does not block and keeps the order of the switches.
 func trackOnSourceChanged(from, to string) {
 	ours := trackSourceKeeps(to)
 	setTrackSource(to, ours)
+	if notePanelSource != nil {
+		notePanelSource(to)
+	}
 	if ours && !trackSourceKeeps(from) && refreshTrackPanel != nil {
 		go refreshTrackPanel()
 	}

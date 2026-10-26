@@ -1481,7 +1481,7 @@
   "settingsView.displayTrackHelp": "Pagal numatytuosius nustatymus išjungta. Kai įjungta, radijo stoties grojama daina rodoma paties garsiakalbio ekrane, kaip anksčiau su interneto radiju. Kad atnaujintų tekstą, garsiakalbis turi iš naujo buferizuoti, todėl garsas trumpam nutrūksta kaskart pasikeitus. Šioje programoje takelis visada rodomas be jokių pertrūkių, tad palik tai išjungta, jei nori garso be pertrūkių. Kolonėlėje su ekranu tai taip pat pakeičia įprastą vaizdą, nustatymo numerį ir stotį.",
   "settingsView.displayTrackHelpPanel": "Pagal numatytuosius nustatymus išjungta. Kai įjungta, STR pats rodo garsiakalbio ekrane, kas groja (radijo stoties dainą, Spotify per STR, failą iš tavo muzikos bibliotekos), todėl muzika groja toliau be jokių pertrūkių. Kol tai rodoma, tai pakeičia įprastą garsiakalbio ekraną; kai keiti garsumą, kelioms sekundėms pasirodo garsiakalbio garsumo juosta.",
   "settingsView.displayClockLabel": "Rodyti laikrodį grojant:",
-  "settingsView.displayClockHelp": "Rodo laiką garsiakalbio ekrane, kol STR groja: šalia stoties, kai rodoma daina, o kitu atveju didelį ir vieną.",
+  "settingsView.displayClockHelp": "Rodo laiką garsiakalbio ekrane, kol STR groja: šalia stoties, kai rodoma daina, o kitu atveju didelį ir vieną. Per Bluetooth ir AUX jis rodomas didelis vietoj ryšio paveikslėlio.",
   "settingsView.displayTrackUnknown": "Garsiakalbis ką tik neatsakė, todėl šis nustatymas nežinomas (galbūt jis paleidžiamas iš naujo). Atidarykite nustatymus dar kartą po minutės.",
   "settingsView.displayTrackModeArtist": "Atlikėjas",
   "settingsView.displayTrackModeBoth": "Abu",
