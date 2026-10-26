@@ -137,6 +137,12 @@ func TestAccountProductStaysUnknownWhenAnythingGoesWrong(t *testing.T) {
 			}
 			// And "unknown" must never read as "not Premium": a Premium user
 			// must not be told their key cannot play because a call failed.
+			// Mark the plan as just asked for, so PremiumRequired does not start
+			// its background read: that read would still be writing to the
+			// test's temp dir while the test removes it.
+			m.mu.Lock()
+			m.productTriedAt = time.Now()
+			m.mu.Unlock()
 			if m.PremiumRequired() {
 				t.Error("an unknown product type was treated as a free account")
 			}
