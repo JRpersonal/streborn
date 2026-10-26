@@ -1850,11 +1850,35 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 // The returned restore func is never nil and safe to defer.
 func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 	restore = func() {}
-	iface := wirelessIface()
+	// Every branch says what it saw, at Info. Before, both "leave it alone"
+	// checks returned without a word, and six uploads from standby on both
+	// chassis families (2026-10-25 fleet roll) produced logs that could not say
+	// which of the two had stopped the boost.
+	iface, how := wirelessIface()
 	if iface == "" {
-		return restore // wired or no readable wireless interface
+		s.logger.Info("upload: wireless power-save left as is, no Linux wireless interface on this speaker (wired, or a Wi-Fi module the kernel sees as Ethernet)",
+			"endpoint", endpoint, "lookup", how)
+		return restore
 	}
-	if src := s.boxSourceNow(); src != "STANDBY" {
+	// Read the source directly rather than through boxSourceNow, so a failed
+	// read is logged with its error instead of reading as an empty source.
+	// A read is all this is: nothing here may wake the speaker, because
+	// power-on resume would start the music.
+	src := ""
+	var srcErr error
+	if np, err := s.readBoxNowWithin(4 * time.Second); err != nil {
+		srcErr = err
+	} else {
+		src = strings.TrimSpace(np.Source)
+	}
+	if !strings.EqualFold(src, "STANDBY") {
+		if srcErr != nil {
+			s.logger.Info("upload: wireless power-save left as is, could not read the speaker's source",
+				"endpoint", endpoint, "iface", iface, "lookup", how, "err", srcErr)
+		} else {
+			s.logger.Info("upload: wireless power-save left as is, the speaker is not in standby",
+				"endpoint", endpoint, "iface", iface, "lookup", how, "source", src)
+		}
 		return restore
 	}
 	type tool struct {
@@ -1866,12 +1890,12 @@ func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 		{"iw", []string{"dev", iface, "set", "power_save", "off"}, []string{"dev", iface, "set", "power_save", "on"}},
 	}
 	for _, t := range tools {
-		if out, err := exec.Command(t.name, t.off...).CombinedOutput(); err == nil {
+		if out, err := powerSaveCmd(t.name, t.off...); err == nil {
 			s.logger.Info("upload: wireless power-save off for the transfer (idle throttles it ~17x)",
-				"endpoint", endpoint, "tool", t.name)
+				"endpoint", endpoint, "tool", t.name, "iface", iface, "source", src)
 			tt := t
 			return func() {
-				if out, err := exec.Command(tt.name, tt.on...).CombinedOutput(); err != nil {
+				if out, err := powerSaveCmd(tt.name, tt.on...); err != nil {
 					s.logger.Warn("upload: could not re-enable wireless power-save (a reboot resets it)",
 						"endpoint", endpoint, "tool", tt.name, "err", err, "out", strings.TrimSpace(string(out)))
 					return
@@ -1879,27 +1903,76 @@ func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 				s.logger.Info("upload: wireless power-save restored", "endpoint", endpoint)
 			}
 		} else {
-			s.logger.Debug("upload: power-save toggle unavailable", "tool", t.name, "err", err,
-				"out", strings.TrimSpace(string(out)))
+			s.logger.Info("upload: power-save toggle unavailable", "endpoint", endpoint, "tool", t.name,
+				"iface", iface, "err", err, "out", strings.TrimSpace(string(out)))
 		}
 	}
 	s.logger.Info("upload: no wireless power-save toggle in this firmware, transferring at the throttled rate",
-		"endpoint", endpoint)
+		"endpoint", endpoint, "iface", iface, "source", src)
 	return restore
 }
 
-// wirelessIface names the box's wireless interface, or "" when there is none.
-// The name is NOT uniform across chassis - the sm2 boxes expose wlan0 while
-// the BCO/taigan chipset surfaces its WLAN as eth0 - so read the kernel's
-// own list (/proc/net/wireless) instead of guessing.
-func wirelessIface() string {
-	b, err := os.ReadFile("/proc/net/wireless")
-	if err != nil {
-		return ""
+// powerSaveCmd runs one power-save tool. A seam so the boost's branches can
+// be tested without the tools on the host.
+var powerSaveCmd = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// procNetWirelessPath and sysClassNetDir are the kernel views wirelessIface
+// reads, as variables so tests can point them at fixtures.
+var (
+	procNetWirelessPath = "/proc/net/wireless"
+	sysClassNetDir      = "/sys/class/net"
+)
+
+// wirelessIface names the box's wireless interface, or "" when there is none,
+// and says how it got there (or why it found nothing) for the boost's log line.
+//
+// The name is NOT uniform across chassis, so it is never assumed. The kernel's
+// wireless-extensions list (/proc/net/wireless) comes first. It only lists
+// drivers that implement wireless extensions, though, so a cfg80211 driver
+// built without the WEXT compat layer leaves it with nothing but its two
+// header lines while wlan0 is up and associated. /sys/class/net is the second
+// look: an interface with a "wireless" or "phy80211" entry is a WLAN whatever
+// it is called. A Wi-Fi module that does its own networking and is handed to
+// Linux as plain Ethernet (the eth0 boxes) has neither, and there is then no
+// Linux-side radio whose power-save could be lifted at all.
+func wirelessIface() (iface, how string) {
+	procNote := ""
+	b, err := os.ReadFile(procNetWirelessPath)
+	switch {
+	case err != nil:
+		procNote = "proc unreadable: " + err.Error()
+	default:
+		if name := parseProcNetWirelessIface(string(b)); name != "" {
+			return name, "proc"
+		}
+		procNote = "proc lists no interface"
 	}
-	for _, line := range strings.Split(string(b), "\n") {
+	ents, err := os.ReadDir(sysClassNetDir)
+	if err != nil {
+		return "", procNote + "; sysfs unreadable: " + err.Error()
+	}
+	for _, e := range ents {
+		name := e.Name()
+		for _, marker := range []string{"wireless", "phy80211"} {
+			if _, serr := os.Stat(filepath.Join(sysClassNetDir, name, marker)); serr == nil {
+				return name, procNote + "; sysfs " + marker
+			}
+		}
+	}
+	return "", procNote + "; sysfs has no wireless interface"
+}
+
+// parseProcNetWirelessIface returns the first interface listed in
+// /proc/net/wireless content. The two header lines carry no colon; every data
+// line is "<iface>: <status> <link> ...".
+func parseProcNetWirelessIface(content string) string {
+	for _, line := range strings.Split(content, "\n") {
 		if i := strings.IndexByte(line, ':'); i > 0 {
-			return strings.TrimSpace(line[:i])
+			if name := strings.TrimSpace(line[:i]); name != "" && !strings.ContainsAny(name, " |") {
+				return name
+			}
 		}
 	}
 	return ""
