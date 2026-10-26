@@ -44,6 +44,11 @@ numbers, for example `7.0.37` or `27.0.3`.
 - **The speaker's info page.** In a browser on the same network, open
   `http://<speaker address>:8090/info`. Look for `softwareVersion`
   next to `SCM`. Your router's device list shows the speaker's address.
+  If the speaker is not on your network, put it into setup mode
+  ([section 4](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi),
+  steps 2 and 3), join its own Wi-Fi and open
+  `http://192.0.2.1:8090/info` (or `http://192.168.1.1:8090/info`).
+  Unverified on very old firmware.
 - **On the speaker itself.** Hold **5** and **Volume minus** together
   until the display shows the version. Reported by owners, not tested
   by this project.
@@ -56,13 +61,14 @@ end of the line. There is nothing newer.
 | Your version | Route |
 |---|---|
 | 27.0.6 | Nothing to do. |
-| 15.x or newer | **Route A**, one click in ST Reborn. If that fails, Route B or C with Bose's file from [section 9](#9-boses-files-for-2706-per-model). |
+| 15.x or newer | **Route A**, one click in ST Reborn. Untested on 15.x so far. If it fails, Route B or C with Bose's file from [section 9](#9-boses-files-for-2706-per-model). |
 | 14.x or older | **The ladder in [section 7](#7-very-old-firmware-the-step-by-step-ladder)**, one USB stick step at a time. Do not jump straight to 27.0.6. |
-| Unknown | Try to find it first ([section 1](#1-find-the-version-your-speaker-runs-now)). If you cannot, start with Route C and Bose's 27.0.6 file. If the bar stays empty, go to [section 7](#7-very-old-firmware-the-step-by-step-ladder). |
+| Unknown | Find it first. Hold **5** and **Volume minus**, or open the info page in setup mode ([section 1](#1-find-the-version-your-speaker-runs-now)). If you still cannot see it, ask us ([section 10](#10-if-you-are-stuck-send-us-this)). Do not put 27.0.6 on a stick blindly: on a 14.x speaker that jump can end in a restart loop. |
 
-Why not jump from 14.x or older to 27.0.6 in one go? Several readers
-tried. On a 5.x and a 6.02.01 speaker the progress bar stayed empty. On
-a 14.0.15 speaker the bar filled, then the speaker restarted in a loop
+Why not jump from 14.x or older to 27.0.6 in one go? Readers tried. On
+one speaker, both from 5.x and again from 06.02.01, the progress bar
+stayed empty. On a 14.0.15 speaker the bar filled, then the speaker
+restarted in a loop
 ([issue #854](https://github.com/JRpersonal/streborn/issues/854)).
 
 **Update the firmware before you install STR.** STR is tested on 27.0.6
@@ -139,14 +145,21 @@ no network.
 - **Small: 2 to 8 GB is best.** Larger sticks often fail. Over 32 GB
   almost always fails, because the speaker cannot read the large
   clusters such sticks get.
-- **Formatted as FAT32.** Not exFAT, not NTFS.
+- **Formatted as FAT32.** Not exFAT, not NTFS. Windows offers FAT32
+  only for sticks up to 32 GB, one more reason to use a 2 to 8 GB stick.
 - **Only one file on it: `Update.stu`, at the top level** (the root),
   not in a folder.
 - **Keep the exact name `Update.stu`.** Do not rename it. A browser that
   saves it as `Update(1).stu` or `Update.stu.zip` breaks it. Check
   that file extensions are visible on your computer.
 - **No other files.** Delete everything else, including hidden folders.
-  If you can, format the stick fresh before you copy the file.
+  If you can, format the stick fresh before you copy the file. On
+  Windows: right-click the stick in File Explorer, choose **Format**,
+  pick **FAT32**. On a Mac: Disk Utility, **Erase**, format **MS-DOS
+  (FAT)**.
+- **Formatting erases everything on the drive.** Before you click,
+  check that the drive letter, name and size are the USB stick's, not
+  another disk.
 - **Eject the stick properly** before you pull it from the computer.
 
 For the ladder steps from the Internet Archive, the download is a zip.
@@ -167,11 +180,22 @@ Open the zip and copy only the `Update.stu` inside it to the stick.
 1. **Battery models (Portable): plug into the power supply first** and
    keep it plugged in until the end.
 2. **Reset the speaker first.** Hold **1** and **Volume minus** together
-   for about 10 seconds, until the speaker restarts. This clears a
-   half-finished setup that can make the speaker refuse the file.
-3. **Unplug the speaker from power.** Insert the stick.
+   for about 10 seconds, until the speaker restarts. **This is Bose's
+   factory reset.** It erases the presets, the speaker's name and its
+   Wi-Fi, and you have to set the speaker up again afterwards. STR, if
+   it is already installed, survives it. The reset clears a
+   half-finished setup that can make the speaker refuse the file. If
+   you want to keep your presets, try steps 3 to 8 without it first.
+3. **Switch the speaker off.** SoundTouch 10, 20, 30: unplug it from
+   power. Insert the stick.
 4. **Hold 4 and Volume minus**, and while you hold them, plug the power
    back in.
+
+   **Portable:** its battery cannot be removed, so unplugging does not
+   switch it off. Keep the power supply plugged in. Switch it off with
+   its power button (or hold **AUX** for about 10 seconds). Insert the
+   stick. Then hold **4** and **Volume minus** and, while you hold
+   them, press the power button. Unverified.
 5. **Let go when the display shows a hand or a progress bar** (or the
    lights change on models without a display).
 6. **Wait.** Up to **45 minutes**. The bar can stand still for a long
@@ -182,7 +206,8 @@ Open the zip and copy only the `Update.stu` inside it to the stick.
    again ([section 1](#1-find-the-version-your-speaker-runs-now)).
 
 The button combinations in steps 2 and 4 come from owners and community
-guides. They worked on SoundTouch 20 Series I and II. On other models
+guides. They worked on SoundTouch 20 Series I and II. The Portable
+variant of step 4 is untested. On other models
 they are not confirmed. If yours does not react, look at Bose's update
 article for your model ([section 12](#12-every-source)).
 
@@ -192,7 +217,7 @@ article for your model ([section 12](#12-every-source)).
 |---|---|---|
 | A hand symbol, then a bar that fills | The update runs. | Wait. Do not touch the power. |
 | The bar stands still for a few minutes | Normal. | Keep waiting, up to 45 minutes in total. |
-| The bar stays **empty** for 30 minutes or more | The speaker did not accept this file. Seen on 5.x and 6.02.01 speakers given 27.0.6 directly. | Unplug power, wait 10 seconds, pull the stick, plug power back in. Check the version. If it did not change, use a smaller step from [section 7](#7-very-old-firmware-the-step-by-step-ladder), or try another, smaller stick. |
+| The bar stays **empty** for 30 minutes or more | The speaker did not accept this file. Seen on one speaker given 27.0.6 directly, from 5.x and again from 06.02.01. | Unplug power, wait 10 seconds, pull the stick, plug power back in. Check the version. If it did not change, use a smaller step from [section 7](#7-very-old-firmware-the-step-by-step-ladder), or try another, smaller stick. |
 | The bar fills, then the speaker restarts again and again | Seen once when 14.0.15 got 27.0.6 directly. | Pull the stick, unplug power, then try the ladder step for your version. Send us the details ([section 10](#10-if-you-are-stuck-send-us-this)). |
 | After the update: an **orange Wi-Fi symbol and a book icon** | **The update worked.** The speaker has forgotten its Wi-Fi and waits for setup. | Pull the stick. Set up Wi-Fi again with the Bose SoundTouch app (or ST Reborn's setup). Then check the version. |
 | Nothing at all after plugging power in | The speaker did not see the stick or the combination. | Check the stick rules above, the name `Update.stu`, the OTG adapter, and try the combination again. |
@@ -242,18 +267,19 @@ Archive folder:
 
 | You are on | Steps, in this order |
 |---|---|
-| 5.x or older | 06.02.01, 07.00.37, 14.00.33, 15.00.20, 27.0.6 |
+| 5.x | 06.02.01, 07.00.37, 14.00.33, 15.00.20, 27.0.6 |
+| 2.x or older | Unverified. See the note on 2.x below the tables. |
 | 6.x | 07.00.37, 14.00.33, 15.00.20, 27.0.6 |
 | 7.x up to 14.0.15 | 14.00.33, 15.00.20, 27.0.6 |
 | 14.0.33 | 15.00.20, 27.0.6 |
-| 15.x or newer | 27.0.6 (Route A works here) |
+| 15.x or newer | 27.0.6 (Route A, untested on 15.x; Route C if it fails) |
 
 **The files.** "Zip" is what you download. "Inside" is the `Update.stu`
 in the zip, the one file that goes onto the stick.
 
 | Step | File to download | Zip bytes | Zip sha1 | Inside: bytes / CRC32 | Status |
 |---|---|---|---|---|---|
-| 06.02.01 | `Airplay-1_ST20-30-Portable_06.02.01.zip` | 56 867 812 | `70c0cb5b436c1b33fb9e52371f53f7b2b32b9fdb` | 80 559 847 / `a70e1564` | **Live-verified**: 5.x to 06.02.01 on SoundTouch 20 Series I. Also installed from 7.0.37 on a second SoundTouch 20. |
+| 06.02.01 | `Airplay-1_ST20-30-Portable_06.02.01.zip` | 56 867 812 | `70c0cb5b436c1b33fb9e52371f53f7b2b32b9fdb` | 80 559 847 / `a70e1564` | **Live-verified**: 5.x to 06.02.01 on SoundTouch 20 Series I. A field report (not reproduced) says it also installed from 7.0.37 on a second SoundTouch 20. |
 | 07.00.37 | `Airplay-1_ST20-30-Portable_07.00.37.zip` | 65 800 764 | `e2b2e7e0e23c7820e42f08e214c56a61c7ea20b4` | 93 032 539 / `a46e94d0` | **Live-verified**: 06.02.01 to 07.00.37 on SoundTouch 20 Series I |
 | 14.00.33 | `Airplay-1_ST20-30-Portable_14.00.33.zip` | 67 614 484 | `2d9898399328fab3bb79612a20bfdd42cac6dd60` | 93 114 711 / `d4dc260b` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
 | 15.00.20 | `Airplay-1_ST20-30-Portable_Update_ti_15.00.20.37272.2363762.scm.stu.zip` | 75 030 888 | `da0adbc64ef2b3362d9f49e778c52a68c75a3d5b` | 101 642 152 / `f8648557` | Unverified |
@@ -339,8 +365,12 @@ go on the stick.
 
 Bose's own files come without a sha1. For those, Bose's catalogue gives
 the size and the CRC32, listed in [section 9](#9-boses-files-for-2706-per-model).
-Plain `http://` instead of `https://` also works on Bose's host if your
-network breaks the secure connection.
+Always download them over `https://`. Size and CRC32 catch a damaged
+download, but not a file somebody swapped on purpose; the secure
+connection is what protects you there. For the SoundTouch 20, 30 and
+Portable file (`stu/s/Update.stu`) a sha1 is also known, taken from
+the identical archive copy:
+`e8694f872e8631118564b2354dd7e2e3047977bc`.
 
 ## 9. Bose's files for 27.0.6, per model
 
@@ -431,7 +461,8 @@ address in a public discussion.
   and 27.0.6 were downloaded in full. Their sha1 matched what the
   archive publishes, and the files inside were consistent.
 
-**Live-verified by readers, on a first generation SoundTouch 20:**
+**Live-verified by one reader, on one first generation SoundTouch 20**
+(one speaker unless a line says otherwise):
 
 - 5.x to 06.02.01 by USB stick.
 - 06.02.01 to 07.00.37 by USB stick.
