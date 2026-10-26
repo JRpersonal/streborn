@@ -148,6 +148,9 @@ html.ui2 #view-box .search {
 }
 html.ui2 #view-box .search > * { margin-block: 0; }
 html.ui2 #view-box #addStationBox { order: 1; }
+/* The count ("8 shown") lines up with the rows, not with style.css's .muted
+   padding. */
+html.ui2 #view-box #searchCount { padding: 0; color: var(--u-muted); }
 /* Favorites shows the stored stations: no search field, filters or genres. */
 html.ui2 #ui2RadioPanel[data-ui2-tab="favorites"] :is(#streamSourceDetails, .search-input-row, #ui2Filters, #genreChips, #addStationBox, #loadMoreRow) { display: none; }
 html.ui2 #view-box .search-input-row input { min-height: var(--u-target); }
