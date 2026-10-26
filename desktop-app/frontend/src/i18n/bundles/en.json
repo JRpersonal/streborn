@@ -1739,6 +1739,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: the last press of a group key on the remote was refused by the speaker. Reason: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: a long press on key {{slot}} could not be kept, so the key still holds what it held before. STR can only keep a radio station this way. To put a Spotify playlist or album on a key, hold the key in the app while it is playing.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: a long press on key {{slot}} could not be kept, so the key still holds what it held before.",
+  "speaker.staleFolderKeyBanner": "{{name}}: key {{slot}} can't find its music any more. The media server has new file addresses (for example after a USB stick swap). Save the folder on this key again.",
   "speaker.stormRestartBtn": "Restart speaker",
   "speaker.stormRestarting": "Restarting {{name}}, this takes about a minute.",
   "speaker.wifiSaveBtn": "Save Wi-Fi",

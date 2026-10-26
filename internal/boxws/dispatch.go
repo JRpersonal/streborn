@@ -555,6 +555,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					// Also keep it with what the box was acting on, so a bundle
 					// does not need the reader to find these by eye (#600).
 					c.noteBoxError(v, name, detail)
+					c.fireBoxError(v, name, detail)
 					if v == "1036" {
 						c.note1036()
 					}

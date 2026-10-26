@@ -1130,6 +1130,9 @@ func (a *agent) buildWebui() error {
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
 	// last-failure timestamps tell a wedged box apart from a failing station.
 	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)
+	// A queue track the media server answers 404/410 for ends at once, and
+	// the idle re-push leaves that address alone (webui queuebadurl.go).
+	streamProxySrv.SetOnUpstreamFailure(webuiSrv.NoteStreamUpstreamFailure)
 	webuiSrv.SetOnlineFn(streamProxySrv.BoxHasOutbound)
 	// The last message the speaker display showed, and the last decision
 	// taken, so a "my speaker said X" report can be matched.
@@ -1674,6 +1677,9 @@ func (a *agent) buildBoxLink() error {
 	// STR self-heals instead of thrashing the box into a wedge (rate-limited in
 	// boxws).
 	wsClient.SetOnLoginError(webuiSrv.NoteBoxLoginError)
+	// AUDIO_ERROR_BAD_URL ends the queue track the box could not fetch at
+	// once instead of after the watcher's stall timeout (queuebadurl.go).
+	wsClient.SetOnBoxError(webuiSrv.NoteBoxError)
 	// The box registering a source is what decides whether presets can be stored
 	// natively, so re-probe the moment it says the list changed instead of waiting
 	// for the cached verdict to expire.

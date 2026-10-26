@@ -360,6 +360,11 @@ type queueTiming struct {
 	// alignEpsilon is how far past the computed end of a track the one
 	// re-timed poll lands (see alignToEnd).
 	alignEpsilon time.Duration
+	// badURLSettle is how long a 404 the stream proxy got for the current
+	// track waits for the box's own AUDIO_ERROR_BAD_URL before it ends the
+	// track by itself (queuebadurl.go). The box's error follows the proxy's
+	// 502 within a second; acting sooner would let it land on the next track.
+	badURLSettle time.Duration
 }
 
 // productionQueueTiming is the clock the watcher runs on on the speaker.
@@ -376,6 +381,7 @@ var productionQueueTiming = queueTiming{
 	aheadSlack:    3 * time.Second,
 	hintSlack:     3 * time.Second,
 	alignEpsilon:  300 * time.Millisecond,
+	badURLSettle:  1500 * time.Millisecond,
 }
 
 // queueTimes is the watcher's clock: the production values unless a test
@@ -463,6 +469,10 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	// A folder started while the speaker plays a native station must stop
 	// that station first, or the firmware swallows the push (#1065).
 	err := s.pushOverNativeStation(ctx, title, func() error {
+		// What the box is handed now is what its next 404 or BAD_URL is
+		// about (queuebadurl.go); after the native stop, so a failing
+		// native station's own error cannot land on this track.
+		s.noteQueuePush(url)
 		if mime != "" {
 			// Tell the speaker what it is being handed. A direct library file has a
 			// length and a server that serves byte ranges, and saying so is what
@@ -522,6 +532,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	s.queueFolder = card
 	s.queueSavedSlot = 0 // a new folder is on no key until it is saved on one
 	s.queueMu.Unlock()
+	s.resetBadURLRun(card)
 	it, ok := s.queue.current()
 	if !ok {
 		return errors.New("empty queue")
@@ -856,15 +867,24 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// hint is the current track's estimated length when it has no real
 		// one (prearmNextLength), 0 when none.
 		hint time.Duration
+		// wake carries the stream proxy's and the box's reports that the
+		// track just pushed cannot be fetched (queuebadurl.go). woke: this
+		// round was such a report, not a tick, so it looks at the evidence
+		// and never polls the box.
+		wake = s.queueBadURLWake()
+		woke bool
 	)
 	for {
+		woke = false
 		select {
 		case <-ctx.Done():
 			s.logger.Debug("queue watcher: stopped")
 			return
 		case <-ticker.C:
+		case <-wake:
+			woke = true
 		}
-		if retimed {
+		if retimed && !woke {
 			retimed = false
 			interval = qt.pollInterval
 			ticker.Reset(interval)
@@ -882,6 +902,21 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			gen, lastPos, lastPosAt, obsTotal, sawPlay, overrunWarned = curGen, 0, time.Time{}, 0, false, false
 			zoneChecked, inZone = false, false
 			ranAhead, aligned, hint = false, false, 0
+		}
+		// A track the media server no longer has, or the box could not
+		// fetch, ends now instead of after the stall timeout. Only before it
+		// was heard: a track that played and then failed is the teardown
+		// path's, below.
+		if lastPos == 0 {
+			if ev, ok := s.takeQueueBadURL(qt.badURLSettle); ok {
+				if s.queueFailFast(curGen, start, dur, ev, &deadInARow) {
+					return
+				}
+				continue
+			}
+		}
+		if woke {
+			continue
 		}
 		if dur == 0 && hint == 0 {
 			if it, ok := s.queue.current(); ok {
@@ -988,6 +1023,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			if pos > 0 {
 				deadInARow = 0
 				startRetried = false
+				s.noteQueueHeard()
 			}
 			// Track the MAX position and when it last advanced: the box's position
 			// climbs each second while playing and then freezes at EOF, so a

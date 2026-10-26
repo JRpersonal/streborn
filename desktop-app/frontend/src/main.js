@@ -2441,6 +2441,11 @@ function checkBoxIssueBanner() {
   // key error: it happened, it was refused, and nothing visible said so, so
   // the key appeared to snap back to the old station on its own.
   const holdErr = boxes.filter(b => b && b.holdRefusedSource);
+  // A folder key whose saved file addresses the media server no longer has
+  // (a USB stick swapped on a router's media server: the server answers,
+  // every old path is 404). The agent names the key until it is saved again,
+  // which is the only cure, so the banner says exactly that.
+  const staleKey = boxes.filter(b => b && b.staleFolderKeySlot);
   // A speaker that cannot reach the internet while the LAN works (the agent's
   // passive verdict, nointernet.js). Not dismissible: every station fails on
   // it, and the fix is on the router, which only a sentence can point at.
@@ -2478,6 +2483,12 @@ function checkBoxIssueBanner() {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t(holdRefusedBannerKey(holdErr[0].holdRefusedSource), {
       name: names, slot: holdErr[0].holdRefusedSlot || '?',
+    })));
+  }
+  if (staleKey.length) {
+    const names = staleKey.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.staleFolderKeyBanner', {
+      name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }

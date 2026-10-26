@@ -1739,6 +1739,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: リモコンのグループキーの最後の操作がスピーカーに拒否されました。理由: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: キー {{slot}} の長押しを保存できなかったため、キーには以前の内容が残っています。この方法で STR が保存できるのはラジオ局だけです。Spotify のプレイリストやアルバムをキーに入れるには、再生中にアプリ側でそのキーを長押ししてください。",
   "speaker.holdRefusedBannerGeneric": "{{name}}: キー {{slot}} の長押しを保存できなかったため、キーには以前の内容が残っています。",
+  "speaker.staleFolderKeyBanner": "{{name}}: キー {{slot}} の音楽が見つからなくなりました。メディアサーバーのファイルのアドレスが変わりました（USB メモリを差し替えた後など）。このキーにフォルダーをもう一度保存してください。",
   "speaker.stormRestartBtn": "スピーカーを再起動",
   "speaker.stormRestarting": "{{name}} を再起動しています。約1分かかります。",
   "speaker.wifiSaveBtn": "Wi-Fi を保存",

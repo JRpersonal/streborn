@@ -1739,6 +1739,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: głośnik odrzucił ostatnie naciśnięcie przycisku grupy na pilocie. Powód: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: długiego naciśnięcia przycisku {{slot}} nie udało się zapisać, więc na przycisku zostało to, co było wcześniej. W ten sposób STR może zapisać tylko stację radiową. Aby umieścić playlistę lub album Spotify na przycisku, przytrzymaj przycisk w aplikacji podczas odtwarzania.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: długiego naciśnięcia przycisku {{slot}} nie udało się zapisać, więc na przycisku zostało to, co było wcześniej.",
+  "speaker.staleFolderKeyBanner": "{{name}}: przycisk {{slot}} nie może już znaleźć swojej muzyki. Serwer multimediów ma nowe adresy plików (na przykład po wymianie pendrive'a). Zapisz folder na tym przycisku jeszcze raz.",
   "speaker.stormRestartBtn": "Uruchom głośnik ponownie",
   "speaker.stormRestarting": "Ponowne uruchamianie {{name}}, to potrwa około minuty.",
   "speaker.wifiSaveBtn": "Zapisz Wi-Fi",

@@ -191,6 +191,15 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 	}
+	// A folder key whose saved file addresses the media server no longer has
+	// (queuebadurl.go): the server answers, every path is gone, typically a
+	// USB stick swapped on a router's media server. Only re-saving the folder
+	// cures it, so the app and the phone page say exactly that. Emitted until
+	// the key is saved again, at most an hour.
+	if slot, age, ok := s.StaleFolderKey(); ok {
+		out["staleFolderKeySlot"] = strconv.Itoa(slot)
+		out["staleFolderKeyAgeSec"] = strconv.FormatInt(int64(age.Seconds()), 10)
+	}
 	if s.groupKeys != nil {
 		if a, ok := s.groupKeys.LastError(); ok && time.Since(a.At) < groupKeyErrorWindow {
 			out["groupKeyError"] = a.Error

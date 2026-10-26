@@ -113,7 +113,15 @@ func (s *Server) recordFailure(url string, err error) {
 	s.errMu.Lock()
 	s.lastErr = streamFailure{when: time.Now(), code: code, reason: reason, url: url}
 	s.errMu.Unlock()
+	if s.onUpstreamFailure != nil {
+		s.onUpstreamFailure(url, code)
+	}
 }
+
+// SetOnUpstreamFailure registers the callback recordFailure reports every
+// terminal upstream failure to. Set once at wiring time; it runs on the
+// proxy's request goroutine and must be quick.
+func (s *Server) SetOnUpstreamFailure(fn func(url string, code int)) { s.onUpstreamFailure = fn }
 
 // boxHasOutbound reports whether the speaker itself can reach the public
 // internet, cached for a few seconds. It lets handleStreamStatus tell a single

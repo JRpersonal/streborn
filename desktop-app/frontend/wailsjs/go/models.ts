@@ -173,6 +173,7 @@ export namespace main {
 	    groupKeyError?: string;
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
+	    staleFolderKeySlot?: string;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
@@ -213,6 +214,7 @@ export namespace main {
 	        this.groupKeyError = source["groupKeyError"];
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
+	        this.staleFolderKeySlot = source["staleFolderKeySlot"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];

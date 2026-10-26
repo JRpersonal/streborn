@@ -891,6 +891,18 @@ type Server struct {
 	// queueFolder.key, which Library and Recently-played match on (#1217).
 	// Guarded by queueMu.
 	queueSavedSlot int
+	// badURL is the evidence that the queue track pushed last cannot be
+	// fetched (the stream proxy's 404/410, the box's AUDIO_ERROR_BAD_URL), the
+	// addresses a media server just answered 404/410 for, and the last folder
+	// key found pointing at files the server no longer has (queuebadurl.go).
+	// It has its own lock, taken alone.
+	badURL queueBadURLState
+	// trackProbeFn replaces the one-shot HTTP probe of a track address in
+	// tests (queuebadurl.go). nil = a real GET.
+	trackProbeFn func(ctx context.Context, url string) (code int, err error)
+	// staleKeyNoticeFn replaces the speaker-display notice of a stale folder
+	// key in tests. nil = oled.Show.
+	staleKeyNoticeFn func(slot int)
 	// queueEp is the play-queue episode running right now and queueEpPast the
 	// last few that ended, with the reason each one ended (#960). queueLogMu
 	// guards both; it is taken alone, never while boxCmdMu or queueMu is held,
