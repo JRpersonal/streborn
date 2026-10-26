@@ -1740,6 +1740,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: el altavoz rechazó la última pulsación de una tecla de grupo del mando. Motivo: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: la pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes. Por esta vía STR solo puede guardar una emisora de radio. Para poner una lista o un álbum de Spotify en una tecla, mantén pulsada la tecla en la aplicación mientras suena.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: la pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes.",
+  "speaker.staleFolderKeyBanner": "{{name}}: la tecla {{slot}} ya no encuentra su música. El servidor multimedia tiene nuevas direcciones de archivo (por ejemplo, tras cambiar la memoria USB). Vuelve a guardar la carpeta en esta tecla.",
   "speaker.stormRestartBtn": "Reiniciar altavoz",
   "speaker.stormRestarting": "Reiniciando {{name}}, tarda alrededor de un minuto.",
   "speaker.wifiSaveBtn": "Guardar Wi-Fi",

@@ -127,3 +127,25 @@ func TestPresetOutcomeOtherStandDowns(t *testing.T) {
 		notices.only(t, oled.NoticePresetFailed, 5)
 	})
 }
+
+// A folder key found stale for this press already showed "music not found,
+// save folder again"; a generic FAILED must not follow it.
+func TestPresetOutcomeNoNoticeAfterStaleFolderKey(t *testing.T) {
+	t.Run("this key found stale after the press", func(t *testing.T) {
+		shortOutcomeWait(t)
+		notices := swapShowNotice(t)
+		h, _, _ := outcomeHandler()
+		pressAt := time.Now()
+		h.staleFolderKeySince = func(slot int, at time.Time) bool { return slot == 5 && at.Equal(pressAt) }
+		runOutcome(h, pressAt)
+		notices.none(t)
+	})
+	t.Run("another key found stale", func(t *testing.T) {
+		shortOutcomeWait(t)
+		notices := swapShowNotice(t)
+		h, _, _ := outcomeHandler()
+		h.staleFolderKeySince = func(slot int, _ time.Time) bool { return slot == 3 }
+		runOutcome(h, time.Now())
+		notices.only(t, oled.NoticePresetFailed, 5)
+	})
+}

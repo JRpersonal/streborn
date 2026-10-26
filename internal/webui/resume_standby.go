@@ -2009,6 +2009,19 @@ func (s *Server) maybeRePush() {
 	}
 	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
 
+	// The media server answered 404/410 for this very address a moment ago
+	// (queuebadurl.go). Pushing it again only buys another BAD_URL: a folder
+	// key whose files moved had its dead first track re-pushed 12 s after the
+	// 404, in the middle of the queue's own handling (field bundle
+	// 2026-10-26). Declared dead like a stream that kept dropping; a fresh
+	// play clears it.
+	if code, gone := s.urlRecentlyGone(boxURL); gone {
+		s.play.markFailed()
+		s.logger.Info("re-push: not resuming, the media server answered this address with an error a moment ago",
+			"url", boxURL, "status", code)
+		return
+	}
+
 	// A Spotify preset goes back through the clean slot recall, not through the
 	// bare re-point below. Re-pointing the box at a live Ogg mid-stream hands
 	// it a stream with no headers where it expects a track boundary, which is

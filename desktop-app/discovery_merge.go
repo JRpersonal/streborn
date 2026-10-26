@@ -266,6 +266,7 @@ var boxFieldPolicy = []fieldPolicy{
 	{"GroupKeyError", keepBase, verifiedReading},
 	{"HoldRefusedSource", keepBase, verifiedReading},
 	{"HoldRefusedSlot", keepBase, follows("HoldRefusedSource")},
+	{"StaleFolderKeySlot", keepBase, verifiedReading},
 	{"Storm1036", keepBase, verifiedReading},
 	{"Storm1036SinceSec", keepBase, follows("Storm1036")},
 	{"RecallRefusal", keepBase, verifiedReading},

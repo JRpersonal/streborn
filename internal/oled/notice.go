@@ -64,6 +64,7 @@ const (
 	NoticeIdentify     NoticeKind = "identify"
 	NoticePreset       NoticeKind = "preset"
 	NoticePresetFailed NoticeKind = "preset-failed"
+	NoticeFolderMoved  NoticeKind = "folder-moved"
 )
 
 type noticeIcon int
@@ -203,6 +204,16 @@ func PresetPlaying(key int, name string) Notice {
 func PresetFailed(key int, name string) Notice {
 	n := keyNotice(NoticePresetFailed, iconKeyX, key, "FAILED", name, 4*time.Second, 2)
 	n.Line3 = "DID NOT START PLAYING"
+	return n
+}
+
+// FolderMoved: a folder key whose saved file addresses the media server no
+// longer has (a USB stick swapped on a router's media server: the server
+// answers, every old path is gone). Saving the folder on the key again is the
+// only cure, so the notice says that instead of a bare "failed".
+func FolderMoved(key int) Notice {
+	n := keyNotice(NoticeFolderMoved, iconKeyX, key, "KEY "+strconv.Itoa(key), "MUSIC NOT FOUND", 5*time.Second, 2)
+	n.Line3 = "SAVE FOLDER AGAIN"
 	return n
 }
 

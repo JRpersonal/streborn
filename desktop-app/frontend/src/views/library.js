@@ -805,6 +805,12 @@ function librarySaveFolderAsPreset() {
       // No track carries a cover: the key shows the folder's own (#1301).
       const art = folderFallbackArt(queueItems, last && last.art);
       if (art) payload.art = art;
+      // The folder's identity apart from its file paths: a server that
+      // changes every path (a swapped USB stick) can then be browsed again by
+      // id. An agent that does not know the field ignores it.
+      if (libState.currentUDN && last && last.id) {
+        payload.folder = { server_udn: libState.currentUDN, container_id: String(last.id) };
+      }
       try {
         await SaveFolderPreset(state.currentBox.host, state.currentBox.port, i, JSON.stringify(payload));
         if (queueItems.length < totalItems) {

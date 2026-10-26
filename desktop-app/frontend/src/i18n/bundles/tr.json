@@ -1740,6 +1740,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: uzaktan kumandadaki grup tuşuna son basış hoparlör tarafından reddedildi. Sebep: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: {{slot}} numaralı tuşa yapılan uzun basış kaydedilemedi, tuş önceki içeriğini koruyor. Bu yolla STR yalnızca bir radyo istasyonu kaydedebilir. Bir Spotify listesini veya albümünü tuşa koymak için, o çalarken uygulamadaki tuşu basılı tut.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: {{slot}} numaralı tuşa yapılan uzun basış kaydedilemedi, tuş önceki içeriğini koruyor.",
+  "speaker.staleFolderKeyBanner": "{{name}}: {{slot}} numaralı tuş müziğini artık bulamıyor. Medya sunucusundaki dosya adresleri değişti (örneğin USB bellek değiştirildikten sonra). Klasörü bu tuşa yeniden kaydedin.",
   "speaker.stormRestartBtn": "Hoparlörü yeniden başlat",
   "speaker.stormRestarting": "{{name}} yeniden başlatılıyor, bu yaklaşık bir dakika sürer.",
   "speaker.wifiSaveBtn": "Wi-Fi'yi kaydet",

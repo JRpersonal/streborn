@@ -173,6 +173,7 @@ export namespace main {
 	    groupKeyError?: string;
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
+	    staleFolderKeySlot?: string;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
@@ -213,6 +214,7 @@ export namespace main {
 	        this.groupKeyError = source["groupKeyError"];
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
+	        this.staleFolderKeySlot = source["staleFolderKeySlot"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];
@@ -934,6 +936,7 @@ export namespace main {
 	    items?: number[];
 	    repeat?: boolean;
 	    native?: number[];
+	    folder?: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -957,6 +960,7 @@ export namespace main {
 	        this.items = source["items"];
 	        this.repeat = source["repeat"];
 	        this.native = source["native"];
+	        this.folder = source["folder"];
 	    }
 	}
 	export class RadioSearchOpts {

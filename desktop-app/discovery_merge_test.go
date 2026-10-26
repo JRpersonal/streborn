@@ -97,7 +97,7 @@ func TestMergeWithSelfIsIdentity(t *testing.T) {
 		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2",
 		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
 		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
-		GroupKeyError: "g", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", Storm1036: true, Storm1036SinceSec: 2,
+		GroupKeyError: "g", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
 		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, SerialNumber: "sn", Kind: "str", PortVerified: true}
 	if got := mergeBoxInfo(full, full); !reflect.DeepEqual(got, full) {
 		t.Errorf("mergeBoxInfo(x, x) != x:\n got %+v\nwant %+v", got, full)
@@ -176,6 +176,8 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 		{"GroupKeyError", str(BoxInfo{}), str(BoxInfo{GroupKeyError: "no partner"}), "no partner", "a live reason stands"},
 		{"HoldRefusedSource", str(BoxInfo{HoldRefusedSource: "SPOTIFY"}), str(BoxInfo{}), "", "not carried"},
 		{"HoldRefusedSlot", str(BoxInfo{HoldRefusedSlot: "3"}), str(BoxInfo{}), "", "not carried"},
+		{"StaleFolderKeySlot", str(BoxInfo{StaleFolderKeySlot: "1"}), str(BoxInfo{}), "", "not carried"},
+		{"StaleFolderKeySlot", str(BoxInfo{}), str(BoxInfo{StaleFolderKeySlot: "1"}), "1", "a live reading stands"},
 		{"Storm1036", str(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), str(BoxInfo{}), false, "not carried"},
 		{"Storm1036SinceSec", str(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), str(BoxInfo{}), 0, "not carried"},
 		{"RecallRefusal", str(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), str(BoxInfo{}), false, "not carried"},
@@ -273,6 +275,9 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 		{"HoldRefusedSource", m(BoxInfo{HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3"}), v(BoxInfo{}), "", "the live reading clears it"},
 		{"HoldRefusedSlot", m(BoxInfo{HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3"}), v(BoxInfo{}), "", "slot too"},
 		{"HoldRefusedSlot", m(BoxInfo{}), m(BoxInfo{HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3"}), "3", "no probe: the slot follows the source"},
+		{"StaleFolderKeySlot", m(BoxInfo{}), v(BoxInfo{StaleFolderKeySlot: "1"}), "1", "the probe's reading"},
+		{"StaleFolderKeySlot", m(BoxInfo{StaleFolderKeySlot: "1"}), v(BoxInfo{}), "", "the key saved again clears it"},
+		{"StaleFolderKeySlot", m(BoxInfo{}), m(BoxInfo{StaleFolderKeySlot: "1"}), "1", "no probe: whichever has one"},
 		{"Storm1036", m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), v(BoxInfo{}), false, "the live reading"},
 		{"Storm1036SinceSec", m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), v(BoxInfo{}), 0, "with its age"},
 		{"Storm1036", m(BoxInfo{}), m(BoxInfo{Storm1036: true, Storm1036SinceSec: 30}), true, "no probe: a storm on either side"},

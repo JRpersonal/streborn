@@ -256,7 +256,10 @@ type Client struct {
 	onSourcesChanged func()
 	// onNativeDropped fires when the box abandons a native radio station it had
 	// just accepted. Guarded by loginErrMu.
-	onNativeDropped  func()
+	onNativeDropped func()
+	// onBoxError fires for every playback/source error the box reports
+	// (<errorUpdate>), with its code, name and detail. Guarded by loginErrMu.
+	onBoxError       func(value, name, detail string)
 	lastLoginErrFire time.Time
 }
 
@@ -271,6 +274,27 @@ func (c *Client) SetOnLoginError(fn func()) {
 	c.loginErrMu.Lock()
 	c.onLoginError = fn
 	c.loginErrMu.Unlock()
+}
+
+// SetOnBoxError registers a callback fired for every error the box reports
+// over gabbo (<errorUpdate>): the code ("3101"), its name
+// (AUDIO_ERROR_BAD_URL) and the detail. The play queue uses 3101 to end a
+// track the box could not fetch at once instead of after its stall timeout.
+// Not rate-limited; the callback runs synchronously and must be quick.
+func (c *Client) SetOnBoxError(fn func(value, name, detail string)) {
+	c.loginErrMu.Lock()
+	c.onBoxError = fn
+	c.loginErrMu.Unlock()
+}
+
+// fireBoxError invokes the box-error callback, if one is registered.
+func (c *Client) fireBoxError(value, name, detail string) {
+	c.loginErrMu.Lock()
+	fn := c.onBoxError
+	c.loginErrMu.Unlock()
+	if fn != nil {
+		fn(value, name, detail)
+	}
 }
 
 // SetOnSourcesChanged registers a callback fired when the box announces that its

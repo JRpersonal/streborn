@@ -1740,6 +1740,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: skaļrunis noraidīja pēdējo grupas pogas nospiešanu tālvadības pultī. Iemesls: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: pogas {{slot}} ilgo nospiešanu neizdevās saglabāt, tāpēc pogā joprojām ir iepriekšējais saturs. Šādi STR var saglabāt tikai radiostaciju. Lai ieliktu Spotify sarakstu vai albumu pogā, turi pogu lietotnē, kamēr tas skan.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: pogas {{slot}} ilgo nospiešanu neizdevās saglabāt, tāpēc pogā joprojām ir iepriekšējais saturs.",
+  "speaker.staleFolderKeyBanner": "{{name}}: poga {{slot}} vairs neatrod savu mūziku. Multivides serverim ir jaunas failu adreses (piemēram, pēc USB zibatmiņas nomaiņas). Saglabājiet mapi šajā pogā vēlreiz.",
   "speaker.stormRestartBtn": "Pārstartēt skaļruni",
   "speaker.stormRestarting": "{{name}} tiek pārstartēts, tas aizņem apmēram minūti.",
   "speaker.wifiSaveBtn": "Saglabāt Wi-Fi",

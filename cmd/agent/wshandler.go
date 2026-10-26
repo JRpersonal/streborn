@@ -288,6 +288,11 @@ type presetWsHandler struct {
 	// recall verify does not trust a now-closed short slot pull as success while
 	// a login error is in flight for this recall. nil-safe.
 	loginErrorSinceFn func(t time.Time) bool
+	// staleFolderKeySince reports whether the folder key on slot was found
+	// pointing at files the media server no longer has at or after t
+	// (webui.Server.StaleFolderKeySince). That press already put its own,
+	// specific notice on the display. nil-safe.
+	staleFolderKeySince func(slot int, t time.Time) bool
 }
 
 // slotPulledSince reports whether the box is credibly playing THIS slot's
@@ -693,6 +698,9 @@ func (h *presetWsHandler) presetOutcomeStandDown(ctx context.Context, pressAt ti
 	}
 	if h.slotPulledSince(slot, pressAt) {
 		return "the speaker played the station's stream"
+	}
+	if h.staleFolderKeySince != nil && h.staleFolderKeySince(slot, pressAt) {
+		return "the folder key's files are gone, the display already said so"
 	}
 	if h.sourceAndPlaying != nil {
 		src, playing, ok := h.sourceAndPlaying(ctx)

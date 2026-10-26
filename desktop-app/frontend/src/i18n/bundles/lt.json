@@ -1740,6 +1740,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}: garsiakalbis atmetė paskutinį grupės klavišo paspaudimą pulte. Priežastis: {{reason}}",
   "speaker.holdRefusedBanner": "{{name}}: ilgo klavišo {{slot}} paspaudimo nepavyko išsaugoti, todėl klavišas išlaikė ankstesnį turinį. Tokiu būdu STR gali išsaugoti tik radijo stotį. Kad įdėtum Spotify grojaraštį ar albumą į klavišą, palaikyk klavišą programėlėje, kol jis groja.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: ilgo klavišo {{slot}} paspaudimo nepavyko išsaugoti, todėl klavišas išlaikė ankstesnį turinį.",
+  "speaker.staleFolderKeyBanner": "{{name}}: klavišas {{slot}} nebegali rasti savo muzikos. Medijos serveris turi naujus failų adresus (pavyzdžiui, pakeitus USB atmintinę). Dar kartą išsaugokite aplanką šiame klaviše.",
   "speaker.stormRestartBtn": "Paleisti kolonėlę iš naujo",
   "speaker.stormRestarting": "{{name}} paleidžiama iš naujo, tai užtruks apie minutę.",
   "speaker.wifiSaveBtn": "Išsaugoti Wi-Fi",

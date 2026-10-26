@@ -1740,6 +1740,7 @@
   "speaker.groupKeyErrorBanner": "{{name}}：喇叭拒絕了遙控器上群組鍵的最後一次按壓。原因：{{reason}}",
   "speaker.holdRefusedBanner": "{{name}}：按鍵 {{slot}} 的長按設定無法儲存，該鍵仍保留先前的內容。用這種方式 STR 只能儲存電台。要把 Spotify 播放清單或專輯放到按鍵上，請在播放時於 App 中長按該鍵。",
   "speaker.holdRefusedBannerGeneric": "{{name}}：按鍵 {{slot}} 的長按設定無法儲存，該鍵仍保留先前的內容。",
+  "speaker.staleFolderKeyBanner": "{{name}}：按鍵 {{slot}} 找不到它的音樂了。媒體伺服器的檔案位址已變更（例如更換 USB 隨身碟後）。請將資料夾再次儲存到這個按鍵。",
   "speaker.stormRestartBtn": "重新啟動喇叭",
   "speaker.stormRestarting": "正在重新啟動 {{name}}，大約要一分鐘。",
   "speaker.wifiSaveBtn": "儲存 Wi-Fi",

@@ -109,7 +109,26 @@ func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	if folder.source == "" {
 		folder.source = s.queueFolderServerName(folder.key)
 	}
-	return queuePresetFromLive(slot, items, shuffle, folder)
+	p, ok := queuePresetFromLive(slot, items, shuffle, folder)
+	if ok {
+		p.Folder = s.queueFolderRef(folder.key)
+	}
+	return p, ok
+}
+
+// queueFolderRef is the server and container a folder card key
+// ("queue:<udn>:<container>") names, stored with a folder key so a later heal
+// can browse the folder again by id (presets.FolderRef). nil for any other
+// card, a key's own "queue:slot:N" included.
+func (s *Server) queueFolderRef(key string) *presets.FolderRef {
+	if !strings.HasPrefix(key, queueCardKeyPrefix) || queueSlotCardRe.MatchString(key) {
+		return nil
+	}
+	udn, container, ok := s.splitQueueCardKey(key)
+	if !ok || udn == "" || container == "" {
+		return nil
+	}
+	return &presets.FolderRef{ServerUDN: udn, ContainerID: container}
 }
 
 // queueFolderServerName resolves the media-server name for a folder card key
