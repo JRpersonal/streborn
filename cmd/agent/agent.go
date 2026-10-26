@@ -1006,9 +1006,18 @@ func (a *agent) buildWebui() error {
 		webui.WithSpotify(&spotifyEngine{m: spotifyMgr}),
 		webui.WithPairPartnerGone(margeSrv.PartnerUnreachable),
 		webui.WithPairPartnerRecheck(margeSrv.RecheckPartner),
+		// The following half of a healthy pair accepts a UPnP push and plays
+		// nothing, so the play paths ask the role before they wake the box.
+		// Same pair record and self id as the preset reconcile and Spotify.
+		webui.WithStereoFollower(func() webui.StereoFollower {
+			master, name, ok := margeSrv.GroupPair()
+			self := margeSrv.DeviceID()
+			return stereoFollowerFrom(master, name, ok, self, margeSrv.GroupPairHasMember(self), margeSrv.GroupPairMasterIP())
+		}),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
 		}),
+		webui.WithCachedPeers(cachedPeerLinks),
 		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
 			seedPeers(seeds, logger.With("comp", "peers"))
 		}),

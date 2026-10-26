@@ -143,6 +143,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if s.refuseIfIncompletePair(w) {
 		return
 	}
+	// The following half of a healthy pair takes the push and ignores it, so
+	// it is refused here, before the wake (stereofollower.go).
+	if s.refuseIfStereoFollower(w) {
+		return
+	}
 	s.ensureBoxReady(r.Context())
 	// Detach the play from the request context (#252, same pattern as the
 	// preset recall): the standby wake above can outlast the app's HTTP
@@ -358,6 +363,11 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// Half of an incomplete stereo pair cannot start anything; waking it and
 	// waiting is what used to run every recall into the app's timeout.
 	if ref := s.incompletePairRefusal(); ref != nil {
+		return playResult{}, ref
+	}
+	// Nor can the following half of a healthy one: its firmware accepts the
+	// push and plays nothing (stereofollower.go).
+	if ref := s.stereoFollowerRefusal(); ref != nil {
 		return playResult{}, ref
 	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the

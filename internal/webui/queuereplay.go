@@ -166,6 +166,12 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a folder card", http.StatusBadRequest)
 		return
 	}
+	// Asked before the folder is browsed: a speaker that cannot start the
+	// queue anyway should not read a whole folder off the media server first.
+	if ref := s.pairPlayRefusal(); ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
 	if s.mediaServers == nil || !s.mediaServerRegistered(udn) {
 		// Same rule as browse and search: only servers the user registered as
 		// music sources, so this endpoint cannot be used to make the speaker

@@ -261,6 +261,14 @@ type PeerSeed struct {
 	DeviceID string `json:"deviceID,omitempty"`
 }
 
+// WithCachedPeers registers a reader of the peer list as the agent already
+// holds it, with no mDNS browse and no probes. Paths that run under the box
+// command lock (the stereo follower refusal) use it instead of WithPeers'
+// resolver, which may browse for seconds. nil leaves those paths without names.
+func WithCachedPeers(fn func() []PeerLink) Option {
+	return func(s *Server) { s.cachedPeersFn = fn }
+}
+
 // WithPeerSeed registers the sink for externally pushed peers (POST
 // /api/peers/seed). nil returns 404 on the endpoint.
 func WithPeerSeed(fn func([]PeerSeed)) Option {
@@ -290,6 +298,16 @@ func WithPairPartnerGone(fn func() (ip, deviceID string)) Option {
 // blocking the pair the moment it answers.
 func WithPairPartnerRecheck(fn func() (ip, deviceID string)) Option {
 	return func(s *Server) { s.pairPartnerRecheck = fn }
+}
+
+// WithStereoFollower registers the stereo-pair role check the play paths ask
+// before they wake or push: whether this speaker is the FOLLOWING half of a
+// pair, and which speaker leads it. The agent answers it from the pair record
+// in marge and the speaker's own deviceID (the webui cannot: it reaches its
+// speaker over loopback and does not know which half it is). nil means "not a
+// follower", which keeps every play path exactly as it was.
+func WithStereoFollower(fn func() StereoFollower) Option {
+	return func(s *Server) { s.stereoFollowerFn = fn }
 }
 
 // WithNativeServices wires the firmware's own US services (Pandora,
