@@ -65,13 +65,21 @@ export function ensureUi2Radio() {
   title.textContent = t('ui2.nav.radio');
   head.insertBefore(title, head.firstChild);
 
+  // The hold hint is said once here, not on every tile (ui2radio.css hides
+  // the tiles' own line), and Transfer sits at the end of the same row, so
+  // the keys take two rows of tiles and one line.
   const keys = document.createElement('div');
   keys.className = 'ui2-keys-head';
   keys.innerHTML = '<h2 class="ui2-keys-title" id="ui2KeysTitle"></h2>'
-    + `<span class="ui2-keys-hint">${escapeHtml(t('ui2.radio.keysHint'))}</span>`;
+    + `<span class="ui2-keys-hint" id="ui2KeysHint">${escapeHtml(t('ui2.radio.keysHint'))}<span class="ui2-keys-sep"> · </span>${escapeHtml(t('ui2.radio.keysHoldHint'))}</span>`;
   presets.parentNode.insertBefore(keys, presets);
   presets.setAttribute('role', 'group');
   presets.setAttribute('aria-labelledby', 'ui2KeysTitle');
+  presets.setAttribute('aria-describedby', 'ui2KeysHint');
+  const copyRow = view.querySelector('.preset-copy-row');
+  if (copyRow) keys.appendChild(copyRow);
+
+  wrapFilters(search);
 
   const tabs = document.createElement('div');
   tabs.className = 'ui2-radio-tabs';
@@ -87,6 +95,66 @@ export function ensureUi2Radio() {
 
   syncUi2Keys();
   syncUi2RadioTabs();
+}
+
+// wrapFilters folds the Discover filters (country, language, sort, bitrate,
+// the two checkboxes) into one "Filters" disclosure, closed by default, whose
+// summary line names what is set. The selects and checkboxes are the Music
+// view's own, moved, so every handler and saved choice keeps working. Each
+// select's words go into a span above it (the classic colon dropped), so the
+// pairs line up as columns.
+function wrapFilters(search) {
+  const filters = search.querySelector('.search-filters');
+  if (!filters || $('ui2Filters')) return;
+  const box = document.createElement('details');
+  box.className = 'ui2-filters';
+  box.id = 'ui2Filters';
+  box.innerHTML = '<summary class="ui2-filters-head">'
+    + `<span class="ui2-filters-title">${escapeHtml(t('ui2.radio.filters'))}</span>`
+    + '<span class="ui2-filters-sum" id="ui2FiltersSum"></span></summary>';
+  filters.parentNode.insertBefore(box, filters);
+  box.appendChild(filters);
+  filters.querySelectorAll('label').forEach((lab) => {
+    if (!lab.querySelector('select')) {
+      lab.classList.add('ui2-filter-check');
+      return;
+    }
+    lab.classList.add('ui2-filter-field');
+    for (const node of [...lab.childNodes]) {
+      if (node.nodeType !== 3) continue;
+      const words = node.textContent.replace(/[:：]\s*$/, '').trim();
+      if (!words) { node.remove(); continue; }
+      const span = document.createElement('span');
+      span.className = 'ui2-filter-name';
+      span.textContent = words;
+      lab.replaceChild(span, node);
+    }
+  });
+  filters.addEventListener('change', syncFilterSummary);
+  syncFilterSummary();
+}
+
+// syncFilterSummary writes the active filters into the closed disclosure's
+// line: a select that is not on its first choice ("all countries", "any")
+// and each ticked checkbox, in the words the controls show.
+export function syncFilterSummary() {
+  if (!on()) return;
+  const sum = $('ui2FiltersSum');
+  if (!sum) return;
+  const parts = [];
+  for (const id of ['searchCountry', 'searchLang', 'searchOrder', 'searchBitrate']) {
+    const el = $(id);
+    if (!el || el.selectedIndex <= 0 || !el.options[el.selectedIndex]) continue;
+    // "English (12000)": the station count is for choosing, not for the line.
+    const words = el.options[el.selectedIndex].textContent.replace(/\s*\([\d.,\s]+\)\s*$/, '').trim();
+    if (words) parts.push(words);
+  }
+  for (const id of ['searchOnlyOK', 'searchOnlyBose']) {
+    const el = $(id);
+    const lab = el && el.closest('label');
+    if (el && el.checked && lab) parts.push(lab.textContent.trim());
+  }
+  sum.textContent = parts.join(' · ');
 }
 
 // syncUi2Keys names the speaker over the key tiles and makes the tiles work
@@ -210,6 +278,8 @@ export function syncUi2RadioTabs() {
   });
   panel.dataset.ui2Tab = cur;
   panel.setAttribute('aria-labelledby', `ui2RadioTab-${cur}`);
+  // A saved country or language arrives with the first list.
+  syncFilterSummary();
 }
 
 function openTab(id) {
