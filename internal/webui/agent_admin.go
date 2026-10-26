@@ -280,6 +280,18 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if n := mdnsHostName; n != "" {
 		out["mdnsName"] = n
 	}
+	// Which speaker this is, so the app can tell it from another one that got
+	// this address while both restarted (see SetAgentIdentityFn).
+	if agentIdentityFn != nil {
+		if id, boxID := agentIdentityFn(); id != "" || boxID != "" {
+			if id != "" {
+				out["deviceID"] = id
+			}
+			if boxID != "" && !strings.EqualFold(boxID, id) {
+				out["boxDeviceID"] = boxID
+			}
+		}
+	}
 	// A failed tier-3 RAM-staged swap leaves a marker instead of rebooting
 	// into a silently-old binary; surface it so the failure is visible on a
 	// stickless box where nothing else is.

@@ -146,6 +146,22 @@ var mdnsHostName string
 // codebase has paid for elsewhere. So the speaker says it.
 func SetMDNSHostName(n string) { mdnsHostName = n }
 
+// agentIdentityFn reports the ids this speaker answers under: the deviceID its
+// own announcement carries, and the firmware's SoundTouch id once the box has
+// answered /info. Nil until main.go wires it.
+var agentIdentityFn func() (deviceID, boxDeviceID string)
+
+// SetAgentIdentityFn wires the speaker's identity into /api/agent/version.
+//
+// The desktop app needs it to tell this speaker from another one at the same
+// address. A router that hands out fresh leases on every reboot can give this
+// speaker's address to another speaker while both restart after an update; an
+// address-only check then confirmed the update on the wrong speaker and sent
+// the Spotify engine there (field case 2026-10-26, six speakers on one mesh
+// Wi-Fi). mdnsName already carries a per-speaker name, but only once the name
+// responder runs; the id is known from the first answer after a boot.
+func SetAgentIdentityFn(fn func() (deviceID, boxDeviceID string)) { agentIdentityFn = fn }
+
 // debugSections holds extra named providers merged into the /api/debug/state
 // JSON. main.go registers agent-side forensics here (the marge request trail,
 // the boot clock verdict) without webui needing to know their types; each fn is

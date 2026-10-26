@@ -161,6 +161,10 @@ type otaPolicy struct {
 	// sequence sleeps, so the frontend's remaining-time text moves every
 	// second without a timer of its own.
 	phaseTick time.Duration
+	// followEvery is how often a speaker that does not answer, or whose
+	// address another speaker answers on, is looked for at another address
+	// (otafollow.go). Zero looks on every pass.
+	followEvery time.Duration
 }
 
 // otaProductionPolicy is the sequence as it runs against real speakers.
@@ -176,6 +180,7 @@ var otaProductionPolicy = otaPolicy{
 	backoffCap:      30 * time.Second,
 	maxAttempts:     2,
 	phaseTick:       time.Second,
+	followEvery:     15 * time.Second,
 }
 
 // otaSeams is everything the sequence reaches out to, so it can run against a
@@ -187,8 +192,13 @@ type otaSeams struct {
 	classify      func(host string, port int) string
 	recordOutcome func(host, verdict string)
 	restoreGroup  func(host string, port int)
-	recordIntent  func(host string, port int, deviceID, name string)
-	clearIntent   func(host string, port int)
+	// locate finds the address a speaker is on now (otafollow.go); nil
+	// disables following. noteUnconfirmed hands an address-change verdict to
+	// the late-confirmation memo, which ClassifyOTAResult does for the others.
+	locate          func(id speakerIdentity, exclude string, sweep bool) (host string, port int, ok bool)
+	noteUnconfirmed func(host, verdict string)
+	recordIntent    func(host string, port int, deviceID, name string)
+	clearIntent     func(host string, port int)
 	// spawn runs fn without waiting for it (the group restore is fire and
 	// forget). Tests run it inline.
 	spawn func(fn func())
@@ -487,6 +497,34 @@ type speakerUpdater struct {
 	// settlePush, when set (a batch row), tells the gate this row's agent
 	// push is behind it. Idempotent.
 	settlePush func()
+
+	// live and livePort are the address the speaker is on NOW. host stays the
+	// address the update started on: the window's row, the journal thread and
+	// the update record are keyed by it. They differ only after the speaker
+	// got a new address mid-update and was followed there (otafollow.go).
+	live     string
+	livePort int
+	// ident is who the speaker said it was before the push.
+	ident speakerIdentity
+	// foreign is true while the last answer at live came from another
+	// speaker; sawForeign stays true until the speaker is followed.
+	foreign, sawForeign bool
+	foreignNoted        map[string]bool
+	lastLocate          time.Time
+	// intentHost/intentPort are where the update record is kept once it was
+	// moved with the speaker (empty: at host). intentCleared is set once the
+	// record was cleared, so a later move does not write it again.
+	intentHost    string
+	intentPort    int
+	intentCleared bool
+}
+
+// addr is the address the speaker is on now.
+func (u *speakerUpdater) addr() (string, int) {
+	if u.live == "" {
+		u.live, u.livePort = u.host, u.port
+	}
+	return u.live, u.livePort
 }
 
 // agentPushSettled reports this row's agent push as done to the batch gate.
@@ -574,9 +612,42 @@ func (u *speakerUpdater) record(verdict string) {
 }
 
 func (u *speakerUpdater) clearIntent() {
+	u.intentCleared = true
 	if u.seams.clearIntent != nil {
-		u.seams.clearIntent(u.host, u.port)
+		h, p := u.intentAt()
+		u.seams.clearIntent(h, p)
 	}
+}
+
+// intentAt is the address the update record is kept under: where the update
+// started, or where the speaker was followed to.
+func (u *speakerUpdater) intentAt() (string, int) {
+	if u.intentHost == "" {
+		return u.host, u.port
+	}
+	return u.intentHost, u.intentPort
+}
+
+// moveIntent keeps the update record with the speaker when it was followed to
+// a new address. Left at the old one, the record would be checked against the
+// speaker that now holds that address: either cleared because THAT speaker is
+// current (and this one's missing engine never flagged), or flagged under this
+// speaker's name for the other one.
+func (u *speakerUpdater) moveIntent(host string, port int) {
+	if u.intentCleared || u.seams.recordIntent == nil || u.seams.clearIntent == nil {
+		return
+	}
+	oh, op := u.intentAt()
+	if oh == host {
+		return
+	}
+	id := u.deviceID
+	if id == "" && len(u.ident.ids) > 0 {
+		id = u.ident.ids[0]
+	}
+	u.seams.clearIntent(oh, op)
+	u.seams.recordIntent(host, port, id, u.name)
+	u.intentHost, u.intentPort = host, port
 }
 
 // gatedPush serialises only the BYTE push, not the box's whole reboot.
@@ -595,10 +666,21 @@ func (u *speakerUpdater) clearIntent() {
 // behavior, never worse. The single-speaker path (no gate) has nothing to queue
 // behind, so it runs the call directly.
 func (u *speakerUpdater) gatedPush() error {
+	host, port := u.addr()
 	if u.gate == nil {
-		return u.seams.push(u.host, u.port)
+		return u.seams.push(host, port)
 	}
 	u.gate.acquire()
+	// A retry can wait here behind the other speakers' pushes while this one
+	// is already back from its restart; its address may have gone to another
+	// speaker meanwhile. Ask again right before sending.
+	if u.attempts > 1 {
+		if _, err := u.read(); errors.Is(err, errOtherSpeaker) || u.foreign {
+			u.gate.release()
+			return errOtherSpeaker
+		}
+		host, port = u.addr()
+	}
 	released := make(chan struct{})
 	var once sync.Once
 	free := func() {
@@ -609,14 +691,14 @@ func (u *speakerUpdater) gatedPush() error {
 	}
 	untap := func() {}
 	if u.seams.taps != nil {
-		untap = u.seams.taps.add(u.host, func(pct int) {
+		untap = u.seams.taps.add(host, func(pct int) {
 			if pct >= 100 {
 				free()
 			}
 		})
 	}
 	errc := make(chan error, 1)
-	go func() { errc <- u.seams.push(u.host, u.port) }()
+	go func() { errc <- u.seams.push(host, port) }()
 	select {
 	case err := <-errc:
 		untap()
@@ -639,7 +721,29 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// build-stamp drift. A failed read leaves both empty and the hash and the
 	// app build decide.
 	preBuild, preVersion := "", ""
-	pv, perr := u.seams.readVersion(u.host, u.port)
+	// The first reading is also who the speaker is: every later answer is held
+	// against it, so a speaker that took this one's address while both
+	// restarted is never taken for it (otafollow.go). A retry reads through
+	// the same guard, at the address the speaker was followed to.
+	var pv map[string]string
+	var perr error
+	if attempt == 1 && !u.ident.reported() {
+		host, port := u.addr()
+		pv, perr = u.seams.readVersion(host, port)
+		if perr == nil && pv != nil {
+			hints := u.ident.hints
+			u.ident = identityFrom(pv)
+			u.ident.hints = hints
+		}
+	} else {
+		pv, perr = u.read()
+		// The retry runs after the speaker restarted, so another speaker may
+		// hold its address by now. Pushing there would put this update on
+		// that speaker and restart it.
+		if errors.Is(perr, errOtherSpeaker) || u.foreign {
+			return u.addressChanged(base, attempt, "agent upload of the retry not sent")
+		}
+	}
 	if perr == nil && pv != nil {
 		preBuild, preVersion = pv["build"], pv["version"]
 	} else {
@@ -663,6 +767,9 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	u.phase(updatePhase{Phase: phaseUploading, Attempt: attempt})
 	err := u.gatedPush()
 	u.agentPushSettled()
+	if errors.Is(err, errOtherSpeaker) {
+		return u.addressChanged(base, attempt, "agent upload of the retry not sent")
+	}
 	if err != nil {
 		if !lostReplyErr.MatchString(err.Error()) {
 			base.Outcome = outcomeFailed
@@ -696,7 +803,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 			u.phase(updatePhase{Phase: phaseVerifying, Attempt: attempt, RemainingMs: deadline.Sub(u.seams.now()).Milliseconds()})
 		}
 		u.sleep(u.policy.verifyPoll)
-		v, err := u.seams.readVersion(u.host, u.port)
+		v, err := u.read()
 		switch {
 		case err == nil && updateConfirms(v, appSha, appBuild, preBuild, preVersion):
 			now := u.seams.now()
@@ -729,17 +836,27 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		}
 	}
 	if confirmed == nil {
+		// Another speaker answers at this one's address and this one was not
+		// found at a new one in time. Classifying the address would judge the
+		// OTHER speaker (it may well be on the new build, which reads as
+		// "confirmed"), and the unreachable advice blames a firewall for what
+		// is a router handing out new addresses. Say what happened; a later
+		// discovery sighting of this speaker corrects the journal.
+		if u.sawForeign {
+			return u.addressChanged(base, attempt, "")
+		}
 		// Journal the real verdict and classify why (unreachable / not landed /
 		// landed-but-not-running), feeding the loop breaker so an update that
 		// cannot stick is not re-offered as a fresh one-click push forever.
-		cls := u.seams.classify(u.host, u.port)
+		live, livePort := u.addr()
+		cls := u.seams.classify(live, livePort)
 		// "confirmed" = the box IS on the new build, it just crossed the verify
 		// window late (slow boot / late reachability). Treating that as a timeout
 		// made update-all report a perfectly updated ST10 as stuck (live
 		// 2026-07-25, "confirmed late" at +6 min). Count it as updated and fall
 		// through to the engine step like any confirmed box.
 		if cls == "confirmed" {
-			if v, err := u.seams.readVersion(u.host, u.port); err == nil {
+			if v, err := u.read(); err == nil {
 				confirmed = v
 			}
 		}
@@ -798,7 +915,14 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// lives here and not next to the late-only ClassifyOTAResult call above.
 	// Fire and forget: a speaker whose group cannot be rebuilt must not hold up
 	// the rest of the update.
-	if u.seams.restoreGroup != nil {
+	//
+	// Not for a speaker that changed its address: the remembered group names
+	// the members by the addresses they had BEFORE the update, and one of them
+	// now belongs to another speaker, so rebuilding it could pull the wrong
+	// speaker into the group. The owner regroups by hand.
+	if live, _ := u.addr(); live != u.host {
+		u.record("group not rebuilt automatically: the speaker changed its address during the update, and the remembered group names it by the old one")
+	} else if u.seams.restoreGroup != nil {
 		host, port := u.host, u.port
 		u.seams.spawn(func() { u.seams.restoreGroup(host, port) })
 	}
@@ -835,7 +959,9 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 	if base.Outcome == outcomeAgentGone || base.Outcome == outcomeBoxInSetup {
 		return base
 	}
-	live, err := u.seams.readVersion(u.host, u.port)
+	// Through the identity guard: the engine goes to the speaker whose update
+	// this is, never to another one that answers at its old address.
+	live, err := u.read()
 	if err != nil || live == nil || live["goLibrespot"] != "missing" || live["goLibrespotDroppedForUpdate"] != "true" {
 		return base
 	}
@@ -865,13 +991,35 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 		if attempt > 1 && latchWaits == 0 {
 			u.sleep(u.policy.engineBackoff(attempt - 1))
 		}
+		if u.foreign {
+			// The last answer at the address came from another speaker.
+			u.record("engine re-delivery after the incomplete update stopped: another speaker answers at this speaker's address; the next update run delivers it")
+			return base
+		}
 		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
 		var res string
 		var engErr error
+		sent := false
 		u.gate.run(func() {
+			eh, ep, ok := u.engineTarget()
+			if !ok {
+				return
+			}
+			sent = true
 			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
-			res, engErr = u.seams.ensureEngine(u.host, u.port)
+			res, engErr = u.seams.ensureEngine(eh, ep)
 		})
+		if !sent {
+			if u.foreign {
+				u.record("engine re-delivery after the incomplete update stopped: another speaker answers at this speaker's address; the next update run delivers it")
+				return base
+			}
+			// Not answering at the moment the push was due: nothing was sent,
+			// counted as a failed attempt.
+			latchWaits = 0
+			attempt++
+			continue
+		}
 		if engErr == nil && res == EngineDeferredUpdateInFlight {
 			if latchBy.IsZero() {
 				latchBy = u.seams.now().Add(u.policy.engineWindow)
@@ -903,7 +1051,7 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 			u.record("engine re-delivery after the incomplete update skipped: " + res)
 			return base
 		}
-		check, cerr := u.seams.readVersion(u.host, u.port)
+		check, cerr := u.read()
 		if cerr == nil && check["goLibrespot"] == "present" {
 			base.EngineDelivered = engineSent(res)
 			u.record("engine back on the speaker after the incomplete update (" + res + ")")
@@ -960,7 +1108,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 		// being asked to wait, so they get to see WHAT is being waited for,
 		// whether the speaker is answering at all, which build it runs and
 		// whether the engine is there yet.
-		live, lerr := u.seams.readVersion(u.host, u.port)
+		live, lerr := u.read()
 		if lerr != nil {
 			live = nil
 		}
@@ -981,6 +1129,14 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			return done(base)
 		}
 		u.waitForStableAgent(engDeadline)
+		// Never push at an address another speaker answers on: the engine
+		// would land on that speaker, and this one would stay without it
+		// (field case 2026-10-26). read() has already looked for this speaker
+		// elsewhere; until it is found, wait.
+		if u.foreign {
+			u.sleep(u.policy.engineBackoff(attempt))
+			continue
+		}
 		// "Spotify engine: missing, waiting for the target state" described the
 		// speaker, not what the app was doing, so the ~16 MB delivery that
 		// follows looked like nothing was happening (Jens, watching a live run).
@@ -989,10 +1145,23 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
 		var engRes string
 		var engErr error
+		sent := false
 		u.gate.run(func() {
+			eh, ep, ok := u.engineTarget()
+			if !ok {
+				return
+			}
+			sent = true
 			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
-			engRes, engErr = u.seams.ensureEngine(u.host, u.port)
+			engRes, engErr = u.seams.ensureEngine(eh, ep)
 		})
+		if !sent {
+			// Not answering, or another speaker answers at the address, at
+			// the moment the push was due: nothing was sent. Wait and look
+			// again.
+			u.sleep(u.policy.engineBackoff(attempt))
+			continue
+		}
 		if engErr == nil {
 			fallback := live
 			if fallback == nil {
@@ -1026,7 +1195,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			// Do not take the delivery's word for it. The update may only be
 			// called finished when the speaker itself reports the state it was
 			// supposed to end up in.
-			if check, cerr := u.seams.readVersion(u.host, u.port); cerr == nil && check["goLibrespot"] == "present" {
+			if check, cerr := u.read(); cerr == nil && check["goLibrespot"] == "present" {
 				u.clearIntent()
 				base.Outcome = outcomeDone
 				base.Version = check
@@ -1085,7 +1254,7 @@ func (u *speakerUpdater) waitForStableAgent(deadline time.Time) bool {
 	lastUptime := -1
 	for u.seams.now().Before(deadline) {
 		u.sleep(u.policy.settleProbe)
-		v, err := u.seams.readVersion(u.host, u.port)
+		v, err := u.read()
 		if err != nil {
 			up = time.Time{}
 			lastUptime = -1
@@ -1163,6 +1332,10 @@ func (a *App) otaSeams() *otaSeams {
 		classify:      a.ClassifyOTAResult,
 		recordOutcome: a.RecordOTAOutcome,
 		restoreGroup:  a.RestoreGroupAfterUpdate,
+		locate: func(id speakerIdentity, exclude string, sweep bool) (string, int, bool) {
+			return a.locateSpeaker(id, exclude, sweep, a.BoxAgentVersion)
+		},
+		noteUnconfirmed: a.noteOTAUnconfirmed,
 		recordIntent: func(host string, port int, deviceID, name string) {
 			a.RecordUpdateIntent(host, port, appVersion, deviceID, name, true)
 		},
@@ -1230,7 +1403,8 @@ func orchestrateSpeaker(seams *otaSeams, policy otaPolicy, host string, port int
 	if seams.recordIntent != nil {
 		seams.recordIntent(host, port, deviceID, name)
 	}
-	u := &speakerUpdater{host: host, port: port, deviceID: deviceID, name: name, seams: seams, policy: policy, onPhase: onPhase}
+	u := &speakerUpdater{host: host, port: port, deviceID: deviceID, name: name, seams: seams, policy: policy, onPhase: onPhase,
+		ident: speakerIdentity{hints: appendIDs(nil, deviceID)}}
 	out := u.run(1)
 	if out.Outcome == outcomeFailed {
 		return out, errors.New(out.Err)
@@ -1278,7 +1452,8 @@ func orchestrateFleet(seams *otaSeams, policy otaPolicy, targets []FleetTarget, 
 		go func(i int, t FleetTarget) {
 			defer wg.Done()
 			u := &speakerUpdater{host: t.Host, port: t.Port, deviceID: t.DeviceID, name: t.Name,
-				seams: seams, policy: policy, gate: gate, onPhase: onPhase}
+				seams: seams, policy: policy, gate: gate, onPhase: onPhase,
+				ident: speakerIdentity{hints: appendIDs(nil, t.DeviceID)}}
 			if t.EngineOnly {
 				rows[i] = u.runEngineOnly()
 			} else {
@@ -1310,7 +1485,7 @@ func (u *speakerUpdater) runFleetRow() UpdateOutcome {
 	// more, so the record of what this speaker should be running stays, and the
 	// user is told once the next time they open it.
 	if out.Outcome == outcomeDone {
-		if fv, err := u.seams.readVersion(u.host, u.port); err == nil && fv["goLibrespot"] == "missing" {
+		if fv, err := u.read(); err == nil && fv["goLibrespot"] == "missing" {
 			out.Outcome = outcomePartial
 			out.Unmet = unmetSpotifyEngine
 			u.phase(updatePhase{Phase: outcomePartial, Attempt: out.Attempts, Outcome: outcomePartial,

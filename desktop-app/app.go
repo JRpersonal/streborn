@@ -125,6 +125,12 @@ type App struct {
 	// the box to stay classified as STR regardless of what the half-booted box
 	// reports. Guarded by discMu (same lock as discCache, always held together).
 	otaPinned map[string]time.Time
+	// otaPinnedID is the deviceID of the speaker each otaPinned address was
+	// pinned for, when discovery knew it. It lets the pin step aside when
+	// that speaker turns up at a new address, or another speaker answers at
+	// the pinned one, instead of holding a record for a speaker that is gone
+	// from it (field case 2026-10-26).
+	otaPinnedID map[string]string
 
 	// otaVerify remembers, per speaker IP, which agent port the last update
 	// went through and whether its verify window ended without a verdict, so

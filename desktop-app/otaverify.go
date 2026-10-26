@@ -19,6 +19,8 @@ package main
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -35,6 +37,13 @@ type otaVerifyMemo struct {
 	// verdict is the classification the window ended on ("unreachable",
 	// "agent-gone"), for the corrective line.
 	verdict string
+	// deviceID is the speaker the update was for, taken from discovery when
+	// the update started. A router that hands out new addresses on every
+	// reboot can move the speaker while it restarts, and give its address to
+	// another speaker: the late sighting is then matched by this id, at
+	// whatever address the speaker turned up on, and never on the other
+	// speaker's record at the old address.
+	deviceID string
 }
 
 // otaVerifyMemoTTL bounds how long the memo steers the version poll and how
@@ -51,12 +60,37 @@ func (a *App) rememberOTAPort(host string, port int) {
 	if host == "" || port == 0 {
 		return
 	}
+	id := a.cachedDeviceID(host)
 	a.otaVerifyMu.Lock()
 	defer a.otaVerifyMu.Unlock()
 	if a.otaVerify == nil {
 		a.otaVerify = map[string]otaVerifyMemo{}
 	}
-	a.otaVerify[host] = otaVerifyMemo{port: port, at: time.Now()}
+	a.otaVerify[host] = otaVerifyMemo{port: port, at: time.Now(), deviceID: id}
+}
+
+// cachedDeviceID is the deviceID discovery holds for host, or "".
+func (a *App) cachedDeviceID(host string) string {
+	a.discMu.Lock()
+	defer a.discMu.Unlock()
+	if e, ok := a.discCache[host]; ok {
+		return e.box.DeviceID
+	}
+	return ""
+}
+
+// boxIsDevice reports whether a discovery record names the speaker id.
+func boxIsDevice(b BoxInfo, id string) bool {
+	if id == "" {
+		return false
+	}
+	return strings.EqualFold(b.DeviceID, id) || (b.BoxDeviceID != "" && strings.EqualFold(b.BoxDeviceID, id))
+}
+
+// boxIsOtherDevice reports whether a discovery record provably names a
+// different speaker than id: both sides carry an id and they differ.
+func boxIsOtherDevice(b BoxInfo, id string) bool {
+	return id != "" && b.DeviceID != "" && !boxIsDevice(b, id)
 }
 
 // agentPortInUse is the port the app is talking to host's agent on right now:
@@ -135,6 +169,7 @@ func (a *App) confirmLateOTA(seen map[string]BoxInfo, presenceOnly map[string]bo
 	}
 	type hit struct {
 		host string
+		at   string // where the speaker was seen; differs from host after a move
 		box  BoxInfo
 		memo otaVerifyMemo
 	}
@@ -148,20 +183,48 @@ func (a *App) confirmLateOTA(seen map[string]BoxInfo, presenceOnly map[string]bo
 			delete(a.otaVerify, host)
 			continue
 		}
-		if presenceOnly[host] {
+		// At the address the update ran on, unless discovery shows another
+		// speaker there now; then at whatever address this speaker's id turned
+		// up on.
+		var b BoxInfo
+		at, found := host, false
+		if sb, ok := seen[host]; ok && !presenceOnly[host] && !boxIsOtherDevice(sb, m.deviceID) {
+			b, found = sb, true
+		}
+		if !found && m.deviceID != "" {
+			keys := make([]string, 0, len(seen))
+			for k := range seen {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				if k == host || presenceOnly[k] || !boxIsDevice(seen[k], m.deviceID) {
+					continue
+				}
+				b, at, found = seen[k], k, true
+				break
+			}
+		}
+		if !found || b.Kind != "str" || b.Build == "" {
 			continue
 		}
-		b, ok := seen[host]
-		if !ok || b.Kind != "str" || b.Build == "" {
-			continue
-		}
-		hits = append(hits, hit{host: host, box: b, memo: m})
+		hits = append(hits, hit{host: host, at: at, box: b, memo: m})
 		delete(a.otaVerify, host)
 	}
 	a.otaVerifyMu.Unlock()
 
 	for _, h := range hits {
 		late := now.Sub(h.memo.unconfirmedAt).Round(time.Second)
+		if h.at != h.host {
+			if appBuild != "" && h.box.Build == appBuild {
+				a.recordOTA(h.host, fmt.Sprintf("outcome: confirmed late by discovery - the speaker got a new address while it restarted and is on build %s (version %s) at %s:%d, found %s after the verify window ended %s; the earlier NOT CONFIRMED line is superseded",
+					h.box.Build, h.box.Version, h.at, h.box.Port, late, h.memo.verdict))
+				continue
+			}
+			a.recordOTA(h.host, fmt.Sprintf("outcome: seen again by discovery at its new address %s, %s after the verify window ended %s - box runs version %s build %s on :%d, not this app's build %s",
+				h.at, late, h.memo.verdict, h.box.Version, h.box.Build, h.box.Port, appBuild))
+			continue
+		}
 		if appBuild != "" && h.box.Build == appBuild {
 			a.recordOTA(h.host, fmt.Sprintf("outcome: confirmed late by discovery - box is on build %s (version %s), found on :%d %s after the verify window ended %s; the earlier NOT CONFIRMED line is superseded",
 				h.box.Build, h.box.Version, h.box.Port, late, h.memo.verdict))

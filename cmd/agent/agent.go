@@ -1928,6 +1928,20 @@ func (a *agent) wireLate() error {
 			},
 		}, logger)
 	})
+	// Let the version endpoint say which speaker answers, so the desktop app
+	// can tell this speaker from another that got its address while both
+	// restarted. The startup id stands in until the announcer is up, so the
+	// very first answer after a boot already carries it.
+	webui.SetAgentIdentityFn(func() (string, string) {
+		a.mdnsMu.Lock()
+		ann := a.mdnsAnnouncer
+		a.mdnsMu.Unlock()
+		id := ann.DeviceID()
+		if id == "" {
+			id = deviceID
+		}
+		return id, ann.BoxDeviceID()
+	})
 	webuiSrv.SetBoxNameFn(func() (string, string) {
 		a.mdnsMu.Lock()
 		ann := a.mdnsAnnouncer
