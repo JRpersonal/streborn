@@ -85,7 +85,8 @@ func queuePresetFromLive(slot int, items []queueItem, shuffle bool, folder recen
 // A queue that was itself recalled from a folder key ("queue:slot:N") is that
 // key's preset, so it is copied whole onto slot: a re-save of a recalled
 // folder then recalls exactly like the original, whatever the original was
-// saved with.
+// saved with. Only while that key still holds the tracks that play, though: a
+// key given another folder meanwhile handed that folder on instead (#1525).
 func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	if s.queue == nil {
 		return presets.Preset{}, false
@@ -99,7 +100,7 @@ func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	s.queueMu.Unlock()
 	if rest, ok := strings.CutPrefix(folder.key, "queue:slot:"); ok && s.presets != nil {
 		if n, err := strconv.Atoi(rest); err == nil {
-			if src, have := s.presets.Get(n); have && src.Type == "queue" && len(src.Items) > 0 {
+			if src, have := s.presets.Get(n); have && presetHoldsQueueTracks(src, items) {
 				src.Slot = slot
 				return src, true
 			}

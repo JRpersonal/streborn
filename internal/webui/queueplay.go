@@ -146,27 +146,51 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 
 // queuePlaysSlot reports whether the active queue is the folder saved on slot:
 // the queue was started from that key, or saved onto it while it played.
+//
+// The card of a queue a key started names that key for the queue's whole life,
+// also after the key was given another folder (the Library's "Save folder as
+// preset" while the old one plays). The card alone made a press on the key skip
+// a track of the old folder instead of starting the new one (#1525), so it
+// counts only while the key still holds the tracks that play. A stale card
+// falls back to the keys that do hold them.
 func (s *Server) queuePlaysSlot(slot int) bool {
-	if !s.queue.isActive() {
+	if !s.queue.isActive() || slot <= 0 {
 		return false
 	}
 	s.queueMu.Lock()
 	folderKey := s.queueFolder.key
 	s.queueMu.Unlock()
-	if folderKey == fmt.Sprintf("queue:slot:%d", slot) {
-		return true
-	}
-	if slot <= 0 {
-		return false
-	}
-	if queueSlotCardRe.MatchString(folderKey) {
-		return s.queueSavedSlotHolds() == slot
+	if n, ok := queueSlotCardNum(folderKey); ok && s.cardSlotHolds(n) {
+		return slot == n || s.queueSavedSlotHolds() == slot
 	}
 	return s.queueKeySlot() == slot
 }
 
 // queueSlotCardRe matches the folder card of a queue that a key started.
 var queueSlotCardRe = regexp.MustCompile(`^queue:slot:\d+$`)
+
+// queueSlotCardNum returns the key a "queue:slot:<n>" card names.
+func queueSlotCardNum(card string) (int, bool) {
+	if !queueSlotCardRe.MatchString(card) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(card, "queue:slot:"))
+	return n, err == nil
+}
+
+// cardSlotHolds reports whether key n still holds the folder that plays: a
+// folder key with exactly the queue's tracks (#1525).
+func (s *Server) cardSlotHolds(n int) bool {
+	if n <= 0 || s.presets == nil || s.queue == nil {
+		return false
+	}
+	cur, ok := s.presets.Get(n)
+	if !ok || cur.Type != "queue" {
+		return false
+	}
+	items, _, active := s.queue.contents()
+	return active && presetHoldsQueueTracks(cur, items)
+}
 
 // NoteQueueSavedSlot records that the running queue was just saved on slot
 // (#1217). The queue keeps its folder card; the saved slot is extra.
@@ -200,8 +224,21 @@ func (s *Server) queueSavedSlotHolds() int {
 
 // presetHoldsQueueTracks reports whether a folder key holds exactly the tracks
 // of a queue, in order (capped the way the key itself is capped).
+//
+// Items without a URL are skipped on both sides: presetItemsToQueue drops them
+// when the key starts its queue, so a key holding one never matched its own
+// queue and stayed dark next to it (#1525).
 func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
-	if cur.Type != "queue" || len(cur.Items) == 0 {
+	if cur.Type != "queue" {
+		return false
+	}
+	want := make([]string, 0, len(cur.Items))
+	for _, it := range cur.Items {
+		if it.URL != "" {
+			want = append(want, it.URL)
+		}
+	}
+	if len(want) == 0 {
 		return false
 	}
 	n := 0
@@ -209,7 +246,7 @@ func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
 		if it.URL == "" {
 			continue
 		}
-		if n >= len(cur.Items) || cur.Items[n].URL != it.URL {
+		if n >= len(want) || want[n] != it.URL {
 			return false
 		}
 		n++
@@ -217,7 +254,7 @@ func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
 			break
 		}
 	}
-	return n == len(cur.Items)
+	return n == len(want)
 }
 
 // queueKeySlot is the key the running folder belongs to, 0 when none: the key
@@ -1874,11 +1911,16 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 		s.recentMu.Unlock()
 		// A queue started from a key already names it in its card; matching the
 		// tracks as well would light a second key that holds the same folder.
-		if queueSlotCardRe.MatchString(snap.Card) {
+		// The card counts only while its key still holds the tracks that play:
+		// a key given another folder stayed lit for the old one (#1525). The
+		// queue is then a folder like any other, lit on the key that holds it.
+		if n, ok := queueSlotCardNum(snap.Card); ok && s.cardSlotHolds(n) {
+			snap.CardSlot = n
 			snap.Slot = s.queueSavedSlotHolds()
 		} else {
 			snap.Slot = s.queueKeySlot()
 		}
+		snap.SlotChecked = true
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

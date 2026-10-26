@@ -51,6 +51,12 @@ export async function queueAction(fn) {
   setTimeout(refreshStatus, 600);
 }
 
+// queueKeyFields joins the queue fields that pick the lit key besides the card,
+// so refreshQueue can tell when they changed.
+function queueKeyFields(q) {
+  return q ? [q.slot, q.card_slot, q.slot_checked].join('|') : '';
+}
+
 // refreshQueue pulls the box's current queue state and folds it into state.queue,
 // then repaints the transport controls. Called from the status poll so it shares
 // the existing cadence. Best-effort: a failed read just leaves the controls as is.
@@ -61,7 +67,7 @@ export async function refreshQueue() {
     const q = await GetQueue(box.host, box.port);
     if (state.currentBox !== box) return; // box switched mid-fetch
     const before = queueSlotCard(state.queue);
-    const beforeSlot = state.queue ? state.queue.slot : undefined;
+    const beforeKeys = queueKeyFields(state.queue);
     // A reply that does not name the key just clicked yet (sent before the
     // agent started the queue) must not wipe the optimistic card (#978).
     const pending = Date.now() < (state.optimisticUntil || 0) ? state.optimisticQueueSlot : null;
@@ -69,9 +75,11 @@ export async function refreshQueue() {
     // A library-album key lights up from the queue card, which arrives here and
     // not with the status poll: repaint the keys when it changes, or the
     // highlight waited for an unrelated status change (#1190). Same for the
-    // key a playing folder was just saved on (#1217).
-    const slotNow = state.queue ? state.queue.slot : undefined;
-    if ((queueSlotCard(state.queue) !== before || slotNow !== beforeSlot) && state.presets.length > 0) renderPresets();
+    // key a playing folder was just saved on (#1217), and for the agent's
+    // checked card key: when a key was given another folder only card_slot
+    // changes, card and slot stay as they were (#1525).
+    const keysChanged = queueKeyFields(state.queue) !== beforeKeys;
+    if ((queueSlotCard(state.queue) !== before || keysChanged) && state.presets.length > 0) renderPresets();
     // The agent's preset store was written (a save on this app, the phone, or
     // a hold on the speaker's own key): re-read the presets now instead of on
     // the slow recheck timer, which kept a held key unshown for up to 15 s

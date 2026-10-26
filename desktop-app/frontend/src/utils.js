@@ -743,10 +743,19 @@ export function queueTrackMeta(queue) {
 // keeps it when it is then saved on a key, because Library and Recently-played
 // match on that card. The agent names the key it was saved on as queue.slot,
 // and only while the key still holds the tracks that play (#1217).
+//
+// The card of a queue a key started keeps naming that key after the key was
+// given another folder, so a key lit on the card alone stayed lit for the old
+// one (#1525). An agent that checks the key sends slot_checked, and names the
+// card's key as card_slot only while it still holds the tracks that play; the
+// card string is then not consulted. An older agent sends neither.
 export function queueSlotActive(p, queue, nowLocation) {
   if (!p || p.type !== 'queue') return false;
   if (nowLocation && /\/spotify\/stream/.test(nowLocation)) return false;
   if (queue && queue.active && typeof queue.slot === 'number' && queue.slot === p.slot) return true;
+  if (queue && queue.slot_checked === true) {
+    return !!queue.active && typeof queue.card_slot === 'number' && queue.card_slot === p.slot;
+  }
   const card = queueSlotCard(queue);
   return card !== '' && card === 'queue:slot:' + p.slot;
 }
@@ -831,8 +840,14 @@ export function folderFallbackArt(items, folderArt) {
 // that key's card, and no track yet (so no old song's artist/album shows). The
 // key stores no stream URL, so without it nothing named the key and it lit
 // about ten seconds after the click (#978).
+//
+// The keys the previous agent reply named (slot, card_slot) belong to the
+// folder that played before the click: they name the clicked key instead, or
+// the old key stayed lit next to it until the agent's next reply (#1525).
 export function optimisticQueue(queue, slot) {
-  return { ...(queue || {}), active: true, card: 'queue:slot:' + slot, items: [], pos: -1 };
+  return {
+    ...(queue || {}), active: true, card: 'queue:slot:' + slot, slot, card_slot: slot, items: [], pos: -1,
+  };
 }
 
 // queueRecallConfirmed reports whether the speaker confirmed a click on library
@@ -848,9 +863,17 @@ export function queueRecallConfirmed(pendingSlot, queue, loc, prevLoc) {
 // While a click on library key pendingSlot is still unconfirmed, a reply that
 // does not name that key yet (it left before the agent started the queue)
 // keeps the current, optimistic state instead of wiping its card (#978).
+//
+// The card alone is not enough from an agent that checks it (slot_checked):
+// a click on key N while the old folder of key N still plays gets a reply with
+// the stale card "queue:slot:N" but neither card_slot nor slot naming N, and
+// taking it darkened the clicked key until the new queue started (#1525).
 export function queueReplyMerge(cur, reply, pendingSlot) {
-  if (pendingSlot != null && queueSlotCard(reply) !== 'queue:slot:' + pendingSlot) {
-    return cur || null;
+  if (pendingSlot != null) {
+    if (queueSlotCard(reply) !== 'queue:slot:' + pendingSlot) return cur || null;
+    if (reply.slot_checked === true && reply.card_slot !== pendingSlot && reply.slot !== pendingSlot) {
+      return cur || null;
+    }
   }
   return reply || null;
 }
