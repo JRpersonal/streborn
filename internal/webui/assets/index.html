@@ -2697,11 +2697,19 @@ function playingSlot(loc, list) {
 // The agent's queue does, with the card "queue:slot:<n>"; same rule as the
 // desktop app's queueSlotActive (#1190, #1029). A folder started from the
 // Library and then saved on a key keeps its folder card; the agent names that
-// key as q.slot instead (#1217).
+// key as q.slot instead (#1217). The card keeps naming its key after the key
+// was given another folder, so an agent that checks the key sends slot_checked
+// and names the card's key as card_slot only while it still holds the tracks
+// that play; the card string is then not consulted (#1525).
 function queueSlot(q, list) {
   if (!q || !q.active) return 0;
-  var m = typeof q.card === 'string' ? q.card.match(/^queue:slot:(\d+)$/) : null;
-  var n = m ? parseInt(m[1], 10) : (typeof q.slot === 'number' ? q.slot : 0);
+  var n;
+  if (q.slot_checked === true) {
+    n = (typeof q.card_slot === 'number' && q.card_slot) || (typeof q.slot === 'number' ? q.slot : 0);
+  } else {
+    var m = typeof q.card === 'string' ? q.card.match(/^queue:slot:(\d+)$/) : null;
+    n = m ? parseInt(m[1], 10) : (typeof q.slot === 'number' ? q.slot : 0);
+  }
   if (!n) return 0;
   for (var i = 0; i < (list || []).length; i++) {
     if (list[i] && list[i].slot === n && list[i].type === 'queue') return n;

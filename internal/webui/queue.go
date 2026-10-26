@@ -283,6 +283,15 @@ type queueSnapshot struct {
 	// Recently-played match on it, so a folder started with "Play folder" and
 	// then saved never lit its new key (#1217).
 	Slot int `json:"slot,omitempty"`
+	// CardSlot is the key a "queue:slot:N" card names, set only while that key
+	// still holds the tracks that play. The card keeps naming the key after it
+	// was given another folder, and a key lit on the card alone stayed lit for
+	// the old one (#1525).
+	CardSlot int `json:"card_slot,omitempty"`
+	// SlotChecked tells the app that Slot and CardSlot are the whole answer to
+	// which key plays, so it must not light a key on the card string alone. An
+	// older agent omits it, and the app then matches the card as before.
+	SlotChecked bool `json:"slot_checked,omitempty"`
 	// PresetRev is the preset store's write counter (presets.Store.Revision).
 	// The app reads this every status tick anyway, so a change makes it
 	// re-read the presets at once instead of on its slow timer (#1217).

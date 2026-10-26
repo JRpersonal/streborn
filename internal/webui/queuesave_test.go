@@ -108,13 +108,13 @@ func TestLiveQueuePreset(t *testing.T) {
 
 	// A queue recalled from folder key 5 is that key's preset, copied whole.
 	saved := presets.Preset{Slot: 5, Name: "Saved", Type: "queue", Source: "Other NAS", Art: "http://192.0.2.10/c.jpg",
-		Items: []presets.PresetItem{{URL: "http://192.0.2.10:9000/disk/01.mp3"}}}
+		Items: []presets.PresetItem{{URL: "http://192.0.2.10:9000/disk/01.mp3"}, {URL: "http://192.0.2.10:9000/disk/02.mp3"}}}
 	if err := s.presets.SetSlot(saved); err != nil {
 		t.Fatal(err)
 	}
 	s.queueFolder = recentCardCtx{key: "queue:slot:5", name: "Saved"}
 	p, ok = s.LiveQueuePreset(2)
-	if !ok || p.Slot != 2 || p.Name != "Saved" || p.Source != "Other NAS" || p.Art != saved.Art || len(p.Items) != 1 {
+	if !ok || p.Slot != 2 || p.Name != "Saved" || p.Source != "Other NAS" || p.Art != saved.Art || len(p.Items) != 2 {
 		t.Fatalf("copied preset %+v ok=%v", p, ok)
 	}
 }

@@ -42,3 +42,44 @@ describe('optimistic library key recall', () => {
     expect(queueReplyMerge(cur, null, null)).toBe(null);
   });
 });
+
+// #1525: the card of a queue key 6 started kept naming key 6 after the key was
+// given another folder, and the tile stayed lit for the old one. An agent that
+// checks the key sends slot_checked and names the key as card_slot only while
+// it still holds the tracks that play.
+describe('queueSlotActive with a checked card', () => {
+  const key = (slot) => ({ slot, type: 'queue', stream_url: '' });
+
+  it('does not light a key on a stale card', () => {
+    const q = { active: true, card: 'queue:slot:6', slot_checked: true, items: [], pos: 0 };
+    expect(queueSlotActive(key(6), q)).toBe(false);
+  });
+
+  it('lights the card key while it holds the folder, and the saved key next to it', () => {
+    const q = { active: true, card: 'queue:slot:6', card_slot: 6, slot: 2, slot_checked: true };
+    expect(queueSlotActive(key(6), q)).toBe(true);
+    expect(queueSlotActive(key(2), q)).toBe(true);
+    expect(queueSlotActive(key(3), q)).toBe(false);
+    expect(queueSlotActive(key(6), { ...q, active: false })).toBe(false);
+  });
+
+  it('lights the key that holds the old folder when the card went stale', () => {
+    const q = { active: true, card: 'queue:slot:6', slot: 2, slot_checked: true };
+    expect(queueSlotActive(key(2), q)).toBe(true);
+    expect(queueSlotActive(key(6), q)).toBe(false);
+  });
+
+  it('keeps the card match for an older agent', () => {
+    expect(queueSlotActive(key(6), { active: true, card: 'queue:slot:6' })).toBe(true);
+  });
+
+  it('lights a clicked key at once, and only that key, while another folder plays', () => {
+    const prev = { active: true, card: 'queue:slot:6', card_slot: 6, slot: 2, slot_checked: true };
+    const q = optimisticQueue(prev, 4);
+    expect(queueSlotActive(key(4), q)).toBe(true);
+    expect(queueSlotActive(key(6), q)).toBe(false);
+    expect(queueSlotActive(key(2), q)).toBe(false);
+    const stale = optimisticQueue({ active: true, card: 'queue:slot:6', slot_checked: true }, 4);
+    expect(queueSlotActive(key(4), stale)).toBe(true);
+  });
+});
