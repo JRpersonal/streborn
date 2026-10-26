@@ -347,10 +347,6 @@ func (s *Server) recallMediaServer(ctx context.Context, key string) (dlna.Server
 	if !s.serverMatchesKey(srv, key) {
 		return dlna.Server{}, false
 	}
-	// The friendly name can carry the owner's machine name (MinimServer[<host>]).
-	// It is logged in full and masked on the way out by the anonymise package,
-	// not here: a token written now would use the box's salt and no longer
-	// match the same server in the desktop's own log within one bundle.
 	s.logger.Info("library search: discovery missed a registered server, re-probed its last known address",
 		"server", srv.FriendlyName)
 	return srv, true

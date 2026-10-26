@@ -150,9 +150,10 @@ Privacy:
     LAN addresses      masked to 192.0.2.x
     MAC / device id    MAC#<hash> / DEV#<hash>
     speaker names      NAME#<hash>
-    machine names      HOST#<hash>, for .local names and the host in a
-                       media server name; MinimServer[HOST#...] keeps
-                       the product
+    machine names      HOST#<hash>, for .local names, service instance
+                       names and the host in a media server name; the
+                       product stays (MinimServer[HOST#...]), and a
+                       Windows Media Player account becomes ACCT#<hash>
     UPnP UUIDs         UUID#<hash>, whole, so two reports can still be
                        compared on them
     streaming accounts ACCT#<hash>, including mail addresses and a
