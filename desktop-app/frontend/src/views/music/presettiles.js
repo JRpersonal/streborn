@@ -8,6 +8,7 @@ import { isNativeServicePreset, nativeServiceActive, nativeServiceBadge } from '
 import { spotifyAccountName } from '../../spotifyaccountlabel.js';
 import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
+import { presetMayLight } from '../../stoppedstate.js';
 import {
   $,
   activeSlotFromLocation,
@@ -116,9 +117,13 @@ export function renderPresets() {
     // empty (the key stores no stream URL) and only the optimistic queue card
     // names the key (#978). Outside that window it still needs a location, so
     // a queue left active on a speaker that went quiet lights nothing.
-    const queueLit = (!!state.nowLocation || Date.now() < (state.optimisticUntil || 0))
+    // A stopped speaker still reports the selected station's location, but its
+    // key is not playing and must not read as lit (#1526). A key click's
+    // optimistic window lights it before the speaker has left STOP_STATE.
+    const mayLight = presetMayLight(state.nowPlayState, state.optimisticUntil, Date.now());
+    const queueLit = mayLight && (!!state.nowLocation || Date.now() < (state.optimisticUntil || 0))
       && queueSlotActive(p, state.queue, state.nowLocation);
-    const baseActive = p && (queueLit || (state.nowLocation && (
+    const baseActive = p && (queueLit || (mayLight && state.nowLocation && (
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
       (activeStreamURL && p.stream_url === activeStreamURL) ||

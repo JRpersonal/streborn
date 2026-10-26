@@ -83,6 +83,32 @@ test.describe('classic layout, default scenario', () => {
   });
 });
 
+// #1526: a speaker woken for a pair or group is on, on its last station, and
+// stopped. It read as "paused on that key": pause bars, green text, no word,
+// the key lit. It reads "stopped" now, and no key is lit.
+test.describe('a stopped speaker on a selected station', () => {
+  test.use({ scenario: { playing: { livingRoom: 'STOP_STATE' } } });
+
+  test('says stopped with a stop glyph and lights no key', async ({ app }) => {
+    const { page } = app;
+    await expect(page.locator('#presets .preset-body')).toHaveCount(6);
+    const line = page.locator('#statusMain');
+    await expect(line).toContainText('Best Of Rock.FM');
+    await expect(line.locator('small').first()).toHaveText('stopped');
+    await expect(line.locator('.now')).toContainText('⏹');
+    await expect(line.locator('.now')).not.toContainText('⏸');
+    await expect(page.locator('#presets .preset.playing')).toHaveCount(0);
+  });
+});
+
+test.describe('a playing speaker on the same station', () => {
+  test('still lights its key', async ({ app }) => {
+    const { page } = app;
+    await expect(page.locator('#presets .preset.playing')).toHaveCount(1);
+    await expect(page.locator('#statusMain small').first()).toHaveText('playing');
+  });
+});
+
 test.describe('volume, fake clock', () => {
   test.use({ fakeClock: true, scenario: { bindings: { SetBoxVolume: { value: null, delayMs: 50 } } } });
 
