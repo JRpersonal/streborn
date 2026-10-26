@@ -189,9 +189,13 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 		}
 	}
 	lp := s.play.current()
-	if lp != nil && !lp.fromBox && (lp.boxURL == loc || lp.boxURL == stream) {
-		// The agent's own record of the play knows the name and the art the
-		// app or the page started it with.
+	recorded := lp != nil && !lp.fromBox && lastPlayMatches(lp.boxURL, loc, st.StreamURL, stream)
+	if recorded {
+		// The agent's own record of the play knows the name, the whole logo
+		// chain and the station facts the app or the page started it with.
+		// The speaker's descriptor holds one logo guess and no homepage or
+		// codec, which saved a directory's site icon in place of the
+		// station's logo (#1467).
 		if t := strings.TrimSpace(lp.title); t != "" {
 			name = t
 		}
@@ -205,6 +209,14 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 			Message: "What the speaker plays has no stream that can be kept on a key."}
 	}
 	p := presets.Preset{Slot: slot, Type: "radio", StreamURL: stream, Name: name, Art: art}
+	if recorded {
+		p.Homepage, p.Codec, p.Bitrate = lp.homepage, lp.codec, lp.bitrate
+		// No bitrate came with the play: the one the stream proxy measured
+		// for the stream playing right now, as the app's own save used.
+		if p.Bitrate == 0 && s.streamProxy != nil {
+			p.Bitrate = s.streamProxy.CurrentBitrate()
+		}
+	}
 	// A song file on a registered media server is a library key: the server's
 	// name makes a press hand the file to the speaker directly instead of
 	// through the radio proxy, which cannot play a finite file (#139).
@@ -215,6 +227,29 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 		p.Name = savePlayingFallbackName(stream)
 	}
 	return s.saveThroughPut(ctx, p, "stream", false, ua, remote)
+}
+
+// lastPlayMatches reports whether the agent's record of the play (recorded,
+// the box-facing URL handlePlay pushed) is what the speaker plays. The speaker
+// reports it as loc in one of three forms: the URL itself (a UPnP push or a
+// direct library play), or a native station descriptor whose stream is that
+// URL (stationStream) and whose origin (origin) is the stream inside it. The
+// raw proxy is unwrapped on both sides, so a record and a report that wrap the
+// same station differently still match.
+func lastPlayMatches(recorded, loc, stationStream, origin string) bool {
+	if recorded == "" {
+		return false
+	}
+	if recorded == loc || (stationStream != "" && recorded == stationStream) {
+		return true
+	}
+	inner := unwrapRawStreamProxy(recorded)
+	for _, c := range []string{loc, stationStream, origin} {
+		if c != "" && unwrapRawStreamProxy(c) == inner {
+			return true
+		}
+	}
+	return false
 }
 
 // isOwnProxyURL reports whether stream is still one of this agent's own

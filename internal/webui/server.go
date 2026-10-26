@@ -955,6 +955,12 @@ type lastPlayInfo struct {
 	// preset, which includes its power-on resume), not one STR started. See
 	// NoteNativeLastPlay and userPlayedSince.
 	fromBox bool
+	// homepage, codec and bitrate are what the app or the phone page knew of
+	// a radio station when it started it (setLastPlayMeta). A hold that saves
+	// what plays stores them with the station, so the key matches what the
+	// "+" button would have stored (#1467). Empty for every other play.
+	homepage, codec string
+	bitrate         int
 }
 
 // resumeMaxAge bounds how stale the last station may be and still come back on a

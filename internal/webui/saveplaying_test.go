@@ -299,3 +299,103 @@ func TestPhoneRemoteHoldSavesWhatPlays(t *testing.T) {
 		t.Errorf("forgetStationPlay() is called %d times, want one per other play path (6)", n)
 	}
 }
+
+// #1467: the app started the station natively (the speaker fetches the raw
+// proxy named in a descriptor), and the hold came minutes later. The
+// descriptor holds one logo guess and no homepage or codec; the agent's own
+// record of the play holds the whole logo chain and the station facts, and the
+// hold must store those, the same as the "+" button would.
+func TestSavePlayingUsesTheRecordOfANativePlay(t *testing.T) {
+	raw := boxurl.RawStream(savePlayingStation)
+	loc := OrionStationLocation(raw, "Jazz Lounge", "https://directory.example/favicon.ico")
+	s := newSavePlayingServer(t, nowPlayingDoc("LOCAL_INTERNET_RADIO", loc, "Jazz Lounge", ""))
+	chain := "https://img.example/jazz.png|https://jazz.example/favicon.ico"
+	s.setLastPlayMeta(raw, "Jazz Lounge", chain, "audio/mpeg", "https://jazz.example/", "MP3", 128)
+	if rec, _ := postSavePlaying(t, s, 1); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	p, _ := s.presets.Get(1)
+	if p.StreamURL != savePlayingStation || p.Art != chain || p.Homepage != "https://jazz.example/" ||
+		p.Codec != "MP3" || p.Bitrate != 128 {
+		t.Fatalf("stored %+v", p)
+	}
+}
+
+// The same record for a play the speaker took as a UPnP push: the speaker
+// reports the raw proxy itself.
+func TestSavePlayingUsesTheRecordOfAUPnPPlay(t *testing.T) {
+	raw := boxurl.RawStream(savePlayingStation)
+	s := newSavePlayingServer(t, nowPlayingDoc("UPNP", raw, "radio-one.mp3", ""))
+	s.setLastPlayMeta(raw, "Radio One", "https://img.example/r1.png", "audio/aac", "https://radio-one.example/", "AAC", 0)
+	if rec, _ := postSavePlaying(t, s, 4); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	p, _ := s.presets.Get(4)
+	if p.Name != "Radio One" || p.Art != "https://img.example/r1.png" ||
+		p.Homepage != "https://radio-one.example/" || p.Codec != "AAC" {
+		t.Fatalf("stored %+v", p)
+	}
+}
+
+// A record of another station, or one the speaker started by itself, is not
+// what plays: the descriptor's own facts are saved and nothing of the record.
+func TestSavePlayingIgnoresARecordThatDoesNotMatch(t *testing.T) {
+	raw := boxurl.RawStream(savePlayingStation)
+	loc := OrionStationLocation(raw, "Jazz Lounge", "")
+	for name, lp := range map[string]*lastPlayInfo{
+		"other station": {boxURL: boxurl.RawStream("http://127.0.0.1:1/other.mp3"), title: "Other",
+			art: "https://img.example/o.png", homepage: "https://other.example/", codec: "AAC"},
+		"from the box": {boxURL: raw, title: "Other", art: "https://img.example/o.png",
+			homepage: "https://other.example/", codec: "AAC", fromBox: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSavePlayingServer(t, nowPlayingDoc("LOCAL_INTERNET_RADIO", loc, "", ""))
+			lp.ts = time.Now()
+			s.play.last = lp
+			if rec, _ := postSavePlaying(t, s, 2); rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+			}
+			p, _ := s.presets.Get(2)
+			if p.Name != "Jazz Lounge" || p.Art != "" || p.Homepage != "" || p.Codec != "" {
+				t.Fatalf("stored %+v", p)
+			}
+		})
+	}
+}
+
+func TestLastPlayMatches(t *testing.T) {
+	raw := boxurl.RawStream(savePlayingStation)
+	otherHost := strings.Replace(raw, boxurl.Authority, "192.0.2.1:8888", 1)
+	for _, c := range []struct {
+		name                         string
+		recorded, loc, station, orig string
+		want                         bool
+	}{
+		{"upnp raw proxy", raw, raw, "", raw, true},
+		{"native descriptor", raw, "/station?data=x", raw, savePlayingStation, true},
+		{"proxy on another host", raw, "/station?data=x", otherHost, savePlayingStation, true},
+		{"direct library play", savePlayingStation, savePlayingStation, "", savePlayingStation, true},
+		{"other station", boxurl.RawStream("http://127.0.0.1:1/other.mp3"), raw, "", raw, false},
+		{"no record", "", raw, "", raw, false},
+	} {
+		if got := lastPlayMatches(c.recorded, c.loc, c.station, c.orig); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// The station facts outlive an agent restart with the rest of the record.
+func TestLastPlayMetaSurvivesARestart(t *testing.T) {
+	s := &Server{
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		lastPlayPath: filepath.Join(t.TempDir(), "last-play.json"),
+	}
+	s.setLastPlayMeta(boxurl.RawStream(savePlayingStation), "Jazz Lounge", "https://img.example/jazz.png", "audio/mpeg",
+		"https://jazz.example/", "MP3", 128)
+	s2 := &Server{logger: s.logger, lastPlayPath: s.lastPlayPath}
+	s2.loadLastPlay()
+	lp := s2.play.current()
+	if lp == nil || lp.homepage != "https://jazz.example/" || lp.codec != "MP3" || lp.bitrate != 128 {
+		t.Fatalf("restored %+v", lp)
+	}
+}

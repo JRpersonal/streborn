@@ -3976,6 +3976,7 @@ async function playFavorite(idx, btn) {
     uuid: st.stationuuid || '',
     homepage: st.homepage || '',
     codec: st.codec || '',
+    bitrate: st.bitrate || 0,
   });
   if (ok) {
     noteStationPlay(st);
@@ -3998,7 +3999,8 @@ async function playStation(idx, btn) {
     icon: st.favicon || '',
     uuid: st.stationuuid || '',
     homepage: st.homepage || '',
-    codec: st.codec || ''
+    codec: st.codec || '',
+    bitrate: st.bitrate || 0
   });
   if (ok) {
     // Remembered so a hold on a key can save it: see stationStillPlaying.
