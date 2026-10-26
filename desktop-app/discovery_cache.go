@@ -21,6 +21,16 @@ func (a *App) notePostOTA(host string) {
 		a.otaPinned = map[string]time.Time{}
 	}
 	a.otaPinned[host] = time.Now()
+	// Which speaker the pin is for, so it can step aside when that speaker
+	// turns up at a new address or another one answers at this address.
+	if e, ok := a.discCache[host]; ok && e.box.DeviceID != "" {
+		if a.otaPinnedID == nil {
+			a.otaPinnedID = map[string]string{}
+		}
+		a.otaPinnedID[host] = e.box.DeviceID
+	} else {
+		delete(a.otaPinnedID, host)
+	}
 	// An install or update the app itself runs on the host outranks a stock
 	// pin from an earlier uninstall: STR is going back on, so the box must
 	// not be corrected to stock while its agent restarts.
@@ -38,8 +48,25 @@ func (a *App) clearPostOTA(host string) {
 		return
 	}
 	a.discMu.Lock()
-	delete(a.otaPinned, host)
+	a.dropOTAPinLocked(host)
 	a.discMu.Unlock()
+}
+
+// dropOTAPinLocked removes the post-OTA pin for host. Caller holds discMu.
+func (a *App) dropOTAPinLocked(host string) {
+	delete(a.otaPinned, host)
+	delete(a.otaPinnedID, host)
+}
+
+// differentDevices reports whether two records provably describe two
+// different speakers: both carry a DeviceID, and neither of one's ids names
+// the other. Records without an id are never called different, because stock
+// Bose mDNS sometimes omits it.
+func differentDevices(a, b BoxInfo) bool {
+	if a.DeviceID == "" || b.DeviceID == "" {
+		return false
+	}
+	return !boxIsDevice(b, a.DeviceID) && !(a.BoxDeviceID != "" && boxIsDevice(b, a.BoxDeviceID))
 }
 
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
@@ -79,6 +106,19 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	// <id>" name between good cycles.
 	for key, b := range seen {
 		prev, cached := a.discCache[key]
+		if cached && differentDevices(prev.box, b) {
+			// Another speaker answers at this address now: a router that hands
+			// out new leases on every reboot gave it this one's address. Its
+			// record must not inherit the old speaker's name, model or agent
+			// state, and the old speaker turns up at its own new address
+			// (field case 2026-10-26: one speaker's record was merged into
+			// another's at the address it took).
+			if a.logger != nil {
+				a.logger.Info("discovery: another speaker answers at this address now; not merging it into the old speaker's record",
+					"host", key, "oldDeviceID", prev.box.DeviceID, "deviceID", b.DeviceID)
+			}
+			cached = false
+		}
 		if cached {
 			b = mergeBoxInfo(prev.box, b)
 		}
@@ -133,6 +173,9 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			freshDevices[b.DeviceID] = b.Host
 		}
 	}
+	// Addresses evicted below because their speaker turned up at a new one.
+	// The post-OTA pin must not bring them back (see the pin loop).
+	movedAway := map[string]bool{}
 	// Re-add boxes the current cycle missed; evict after a full grace window
 	// of consecutive misses.
 	for key, e := range a.discCache {
@@ -158,6 +201,7 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 					}
 				}
 				delete(a.discCache, key)
+				movedAway[key] = true
 				continue
 			}
 		}
@@ -199,10 +243,43 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	// knows that IP runs STR. Expired pins are dropped.
 	for host, t := range a.otaPinned {
 		if now.Sub(t) > otaRebootGrace {
-			delete(a.otaPinned, host)
+			a.dropOTAPinLocked(host)
+			continue
+		}
+		pinID := a.otaPinnedID[host]
+		// The speaker this pin was for came back at a NEW address this cycle,
+		// and the eviction above already removed its old one. Re-creating a
+		// record there left a nameless entry that nothing could evict again,
+		// because it carried no deviceID, and it stayed in the list for up to
+		// a day as a speaker "with an address but no data" (field case
+		// 2026-10-26, a fleet update on a router that re-leases on every
+		// reboot). The pin's job is done: the speaker is visible, as STR, at
+		// its new address.
+		if movedAway[host] {
+			a.dropOTAPinLocked(host)
+			if a.logger != nil {
+				a.logger.Info("post-OTA: the speaker came back at a new address; dropping the pin on its old one", "host", host)
+			}
+			continue
+		}
+		if live, ok := freshDevices[pinID]; pinID != "" && ok && live != host {
+			a.dropOTAPinLocked(host)
+			if a.logger != nil {
+				a.logger.Info("post-OTA: the speaker came back at a new address; dropping the pin on its old one", "host", host, "newHost", live)
+			}
 			continue
 		}
 		b, ok := seen[host]
+		if ok && pinID != "" && b.DeviceID != "" && !boxIsDevice(b, pinID) {
+			// Another speaker answers at the pinned address now. Its own record
+			// stands; the pin was for a speaker that is no longer here.
+			a.dropOTAPinLocked(host)
+			if a.logger != nil {
+				a.logger.Info("post-OTA: another speaker answers at the pinned address; dropping the pin", "host", host, "deviceID", b.DeviceID)
+			}
+			continue
+		}
+		synthesized := false
 		if !ok {
 			// Not visible this cycle (mid-reboot): keep the last-known record, or
 			// synthesise a minimal STR one so the box neither vanishes nor gets
@@ -210,7 +287,16 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			if e, cached := a.discCache[host]; cached {
 				b = e.box
 			} else {
-				b = BoxInfo{Host: host, Port: 8888}
+				synthesized = true
+				b = BoxInfo{Host: host, Port: 8888, DeviceID: pinID}
+				if memo, known := a.strKnown[pinID]; pinID != "" && known {
+					// The speaker's last confirmed record keeps its name and
+					// model on the tile while it restarts.
+					b = memo.box
+					b.Host = host
+					b.Offline = false
+					b.OfflineSinceSec = 0
+				}
 			}
 		}
 		b.Kind = "str"
@@ -226,7 +312,13 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		// transient OTAPending flag, which the frontend's boxNeedsUpdate
 		// honours; the version shown stays the box's last confirmed
 		// self-report. Same annotate-only pattern as Offline below.
-		a.discCache[host] = discEntry{box: b, seen: now}
+		//
+		// A record made up here without a deviceID is served, never cached:
+		// once cached, it could not be tied to its speaker again, so nothing
+		// evicted it when the speaker turned up at another address.
+		if !synthesized || b.DeviceID != "" {
+			a.discCache[host] = discEntry{box: b, seen: now}
+		}
 		b.OTAPending = true
 		seen[host] = b
 	}
@@ -522,7 +614,7 @@ func (a *App) markHostStock(host string) {
 			delete(a.strKnown, id)
 		}
 	}
-	delete(a.otaPinned, host)
+	a.dropOTAPinLocked(host)
 	if a.discCache == nil {
 		a.discCache = map[string]discEntry{}
 	}

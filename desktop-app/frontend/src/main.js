@@ -3489,6 +3489,9 @@ function otaStuck(box) {
 function noteOTAResult(box, result) {
   if (!result) return;
   if (result.confirmed) { clearOTAStuck(box); return; }
+  // The speaker changed its address mid-update: the update most likely
+  // worked, so this is no evidence of an update that cannot stick.
+  if (result.unmet === 'address-changed') return;
   if (result.outcome === 'timeout' || result.outcome === 'agentGone' || result.outcome === 'boxInSetup') {
     noteOTAFailure(box, result.verdict || '');
   }
@@ -3914,6 +3917,11 @@ async function runSingleBoxUpdate(targetBox) {
       // running on it. That has one exact fix and the user can do it in ten
       // seconds, so say it plainly instead of "took longer than expected".
       showToast(t('update.agentGoneToast', { name: getBoxLabel(targetBox) }));
+    } else if (result && result.unmet === 'address-changed') {
+      // Another speaker answers at this one's old address: the router gave
+      // this speaker a new one while it restarted. "Check power / network"
+      // would send the owner looking for a fault that is not there.
+      showToast(t('update.addressChangedToast', { name: getBoxLabel(targetBox) }));
     } else {
       // Timed out. The Go sequence has already journaled the verdict,
       // classified why, retried the one class of failure a retry actually
@@ -4347,6 +4355,7 @@ async function runUpdateAllBoxes(onStart) {
     else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
     else if (outcome === 'agentGone') setRow(b.host, { phaseText: t('updateAll.phase.agentGone'), barClass: 'ua-failed' });
     else if (outcome === 'boxInSetup') setRow(b.host, { phaseText: t('updateAll.phase.boxInSetup'), pct: 100, barClass: 'ua-defer' });
+    else if (d.unmet === 'address-changed') setRow(b.host, { phaseText: t('updateAll.phase.addressChanged'), pct: 100, barClass: 'ua-defer' });
     else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     const r = rowState.get(b.host); if (r) r.outcome = outcome;
     renderSummary();
