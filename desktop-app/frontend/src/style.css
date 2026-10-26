@@ -1445,6 +1445,8 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .status-bar.status-buf { border-left: 3px solid var(--signal-yellow); padding-left: 10px; }
 .status-bar.status-err { border-left: 3px solid var(--signal-red); padding-left: 10px; color: var(--signal-red); }
 .status-bar.status-idle { border-left: 3px solid var(--c-border); padding-left: 10px; }
+/* Stopped or paused is not "now playing": the line drops the green (#1526). */
+.status-bar.status-idle .now { color: var(--c-muted); }
 /* Per-station "artist and title are the wrong way round" switch, right under
    the now-playing line it corrects. Only shown while a radio title plays. */
 .title-swap-row { display: flex; align-items: center; gap: 6px; margin: -4px 0 10px 13px; font-size: 12px; color: var(--c-muted); cursor: pointer; }

@@ -7,6 +7,7 @@ import { t } from '../../i18n/index.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
+import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
 import { titleSwapOffered } from '../../titleswap.js';
 import { applyPositionReading, resetProgress } from '../../trackprogress.js';
 import {
@@ -221,12 +222,11 @@ export function renderNowPlayingBar() {
   // AirPlay2, etc. depending on the speaker (#122).
   const srcU = src.toUpperCase();
   const isAirplay = srcU.includes('AIRPLAY');
-  let stateLabel, stateClass;
-  if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
-  else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
-  else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
-  else if (srcU === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
-  else { stateLabel = ''; stateClass = 'idle'; }
+  // An awake speaker on a selected station in STOP_STATE is "stopped", not a
+  // label-less line that read as paused (#1526, stoppedstate.js).
+  const label = nowStateLabel(ps, srcU);
+  let stateLabel = label.key ? t(label.key) : '';
+  let stateClass = label.cls;
   // LOCAL is what a Cinemate calls the very same analogue input, so it gets
   // the same line rather than falling through to the generic "some source is
   // active" case, which is why a speaker playing through it showed nothing
@@ -266,8 +266,9 @@ export function renderNowPlayingBar() {
   const brLabel = (isStreamSrc && measuredStream && state.nowBitrate > 0) ? ` <small class="now-bitrate">${state.nowBitrate} kbit/s</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
-  // by colour alone (accessibility): play arrow normally, pause bars when paused.
-  const stateGlyph = stoppedOrPaused(ps) ? '&#9208;' : '&#9205;';
+  // by colour alone (accessibility): play arrow normally, pause bars when
+  // paused, a stop square when stopped (#1526).
+  const stateGlyph = nowStateGlyph(ps);
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
