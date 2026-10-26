@@ -103,6 +103,8 @@ func (m *Manager) rememberAccountName(id, name string) {
 	if id == "" || name == "" {
 		return
 	}
+	m.storeWriteMu.Lock()
+	defer m.storeWriteMu.Unlock()
 	m.mu.Lock()
 	m.loadAccountNames()
 	if m.accountNames[id] == name {
@@ -126,12 +128,7 @@ func (m *Manager) rememberAccountName(id, name string) {
 	// Written through a temporary file: a half-written names.json would be
 	// discarded by loadAccountNames on the next boot, and with it every name
 	// ever learned, for a label that was only ever an improvement.
-	tmp := m.accountNamesPath() + ".tmp"
-	if os.WriteFile(tmp, blob, 0o644) != nil {
-		return
-	}
-	if os.Rename(tmp, m.accountNamesPath()) != nil {
-		_ = os.Remove(tmp)
+	if writeFileAtomic(m.accountNamesPath(), blob, 0o644) != nil {
 		return
 	}
 	// The NAME is not logged. It is the personal part, and this file exists so

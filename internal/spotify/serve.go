@@ -222,9 +222,16 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	track, artist, cover, context := m.curName, m.curArtist, m.curCover, m.lastContext
 	lowDisk, lowDiskFreeKB := m.lowDisk, m.lowDiskFreeKB
-	// Whatever is cached, never a fetch: this handler is polled.
-	product := m.productType
 	m.mu.Unlock()
+	// The account is read first because the plan depends on it: with no fresh
+	// plan in this engine process, the plan remembered for THIS account is
+	// reported (accountplans.go), never another account's. The plan itself is
+	// whatever is cached or remembered, never a fetch: this handler is polled.
+	account, accountOK := m.engineUsername(r.Context())
+	if accountOK {
+		m.noteEngineAccount(account)
+	}
+	product := m.productPlan()
 	// Prefer the live track from /status over the laggy cached metadata events.
 	lt, la, lc, state := m.liveNowPlayingState(r.Context())
 	switch state {
@@ -325,7 +332,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Artist:          artist,
 		Cover:           cover,
 		Context:         context,
-		Account:         m.currentUsername(r.Context()),
+		Account:         account,
 		AccountNames:    m.AccountNames(),
 		PremiumRequired: m.PremiumRequired(),
 		CanRecall:       m.CanRecall(r.Context()),
