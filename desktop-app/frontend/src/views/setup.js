@@ -733,6 +733,21 @@ async function renderSetupAPPushPanel() {
       const pass = ($('apPushPass') || {}).value || '';
       const name = ($('apPushName') || {}).value || '';
       if (!ssid) { showError(t('setupAPPush.ssidEmpty')); return; }
+      // An empty password is right only for an open network. Anywhere else the
+      // speaker cannot join, stays in setup mode and never shows up, which is
+      // what a field report did on its first try. Ask, do not refuse.
+      if (!pass) {
+        const sendAnyway = await confirmWarn(
+          t('setupAPPush.emptyPassTitle'),
+          `<p>${escapeHtml(t('setupAPPush.emptyPassBody', { ssid }))}</p>`,
+          { confirmLabel: t('setupAPPush.emptyPassSend'), confirmClass: 'btn btn-secondary' },
+        );
+        if (!sendAnyway) {
+          const inp = $('apPushPass');
+          if (inp) inp.focus();
+          return;
+        }
+      }
       goBtn.disabled = true;
       const out = $('apPushOutput');
       if (out) out.innerHTML = `<div class="muted small">${escapeHtml(t('setupAPPush.pushing'))}</div>`;
