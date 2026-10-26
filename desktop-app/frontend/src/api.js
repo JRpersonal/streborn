@@ -323,8 +323,8 @@ export function SaveQueuePreset(host, port, slot) {
 
 // SavePlayingPreset stores the station the speaker plays right now on a key;
 // the speaker agent decides it from its own record of the play, the same call
-// as the phone page's hold, and the promise resolves with the key's name
-// (#1467). Optional binding, per the note above.
+// as the phone page's hold, and the promise resolves with {kind, name} of the
+// save (#1467). Optional binding, per the note above.
 export function SavePlayingPreset(host, port, slot) {
   return callOptionalBinding('SavePlayingPreset', [host, port, slot]);
 }

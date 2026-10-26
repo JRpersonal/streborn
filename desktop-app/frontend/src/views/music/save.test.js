@@ -66,18 +66,26 @@ describe('long-press save of a playing station', () => {
   it('lets the agent save a station the app started minutes ago', async () => {
     state.nowLocation = orion;
     state.lastAppPlay = { url: station, name: 'Jazz Lounge', icon: 'https://img.example/jazz.png', at: Date.now() - 3 * 60 * 1000 };
-    api.SavePlayingPreset.mockResolvedValue('Jazz Lounge');
+    api.SavePlayingPreset.mockResolvedValue({ kind: 'stream', name: 'Jazz Lounge' });
     await save.saveCurrentToSlot(1);
     expect(api.SavePlayingPreset).toHaveBeenCalledWith('192.0.2.1', 8888, 1);
     expect(api.SetPreset).not.toHaveBeenCalled();
-    expect(ui.showToast).toHaveBeenCalled();
+    expect(ui.showToast).toHaveBeenCalledWith('Saved to key 1: Jazz Lounge');
+  });
+
+  it('announces a copy of the key that plays as a copy', async () => {
+    state.nowLocation = orion;
+    state.lastAppPlay = null;
+    api.SavePlayingPreset.mockResolvedValue({ kind: 'copy', name: 'Jazz Lounge' });
+    await save.saveCurrentToSlot(4);
+    expect(ui.showToast).toHaveBeenCalledWith('Copied to key 4: Jazz Lounge');
   });
 
   it('lets the agent save a station another client started', async () => {
     state.nowSource = 'UPNP';
     state.nowLocation = raw;
     state.lastAppPlay = null;
-    api.SavePlayingPreset.mockResolvedValue('Jazz Lounge');
+    api.SavePlayingPreset.mockResolvedValue({ kind: 'stream', name: 'Jazz Lounge' });
     await save.saveCurrentToSlot(2);
     expect(api.SavePlayingPreset).toHaveBeenCalledWith('192.0.2.1', 8888, 2);
     expect(api.SetPreset).not.toHaveBeenCalled();

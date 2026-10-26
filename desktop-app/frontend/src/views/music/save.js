@@ -400,9 +400,11 @@ export async function saveCurrentToSlot(slot) {
   // it, through the same call as the phone page's hold. Only an agent or an
   // app build without that call falls back to the app's own save below.
   try {
-    const sname = await SavePlayingPreset(state.currentBox.host, state.currentBox.port, slot);
-    const shown = sname || state.nowName || t('preset.placeholderSender');
-    showToast(t('preset.savedToKey', { n: slot, name: shown }));
+    const saved = (await SavePlayingPreset(state.currentBox.host, state.currentBox.port, slot)) || {};
+    const shown = saved.name || state.nowName || t('preset.placeholderSender');
+    // A key's own stream is a copy of that key, and is announced as one.
+    const toast = saved.kind === 'copy' ? 'preset.copiedToKey' : 'preset.savedToKey';
+    showToast(t(toast, { n: slot, name: shown }));
     await loadPresets();
     voteForWhatPlays();
     return;

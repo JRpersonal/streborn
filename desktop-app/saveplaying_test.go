@@ -27,14 +27,14 @@ func TestSavePlayingPresetReadsTheAgentsAnswer(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write([]byte(`{"slot":2,"kind":"stream","name":"Jazz Lounge","unchanged":false}`))
+		_, _ = w.Write([]byte(`{"slot":2,"kind":"copy","name":"Jazz Lounge","unchanged":false}`))
 	})
-	name, err := moveApp(t).SavePlayingPreset("127.0.0.1", port, 2)
+	got, err := moveApp(t).SavePlayingPreset("127.0.0.1", port, 2)
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if name != "Jazz Lounge" {
-		t.Errorf("name = %q, want Jazz Lounge", name)
+	if got.Name != "Jazz Lounge" || got.Kind != "copy" {
+		t.Errorf("saved = %+v, want a copy named Jazz Lounge", got)
 	}
 }
 
