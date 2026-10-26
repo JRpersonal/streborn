@@ -5,7 +5,7 @@
 // the two-second resume and a lit preset key. It is "stopped".
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { keepsLiveTitle, nowStateGlyph, nowStateLabel, presetMayLight } from './stoppedstate.js';
+import { isAnalogueInput, keepsLiveTitle, nowStateGlyph, nowStateLabel, presetMayLight } from './stoppedstate.js';
 import { titleSwapOffered } from './titleswap.js';
 import { srcOf } from './test/source.js';
 
@@ -13,6 +13,25 @@ describe('nowStateLabel', () => {
   it('says stopped for a stopped speaker on a real source', () => {
     expect(nowStateLabel('STOP_STATE', 'LOCAL_INTERNET_RADIO')).toEqual({ key: 'status.stopped', cls: 'idle' });
     expect(nowStateLabel('STOP_STATE', 'TUNEIN')).toEqual({ key: 'status.stopped', cls: 'idle' });
+  });
+
+  it('says stopped for a stopped Bluetooth or AirPlay stream', () => {
+    // Digital streams the firmware sees end: a selected BLUETOOTH source in
+    // STOP_STATE is a real case (internal/webui/stereo_backtostandby_test.go).
+    expect(nowStateLabel('STOP_STATE', 'BLUETOOTH')).toEqual({ key: 'status.stopped', cls: 'idle' });
+    expect(nowStateLabel('STOP_STATE', 'AIRPLAY')).toEqual({ key: 'status.stopped', cls: 'idle' });
+  });
+
+  it('leaves an analogue input in STOP_STATE to the bar\'s "active" line', () => {
+    // AUX and LOCAL (a Wave's CD, radio or Aux) cannot report whether sound
+    // flows, so STOP_STATE there must not read "stopped". No word here; the
+    // bar's AUX/LOCAL branch fills in "active" as it always did.
+    expect(nowStateLabel('STOP_STATE', 'AUX')).toEqual({ key: '', cls: 'idle' });
+    expect(nowStateLabel('STOP_STATE', 'LOCAL')).toEqual({ key: '', cls: 'idle' });
+    expect(isAnalogueInput('AUX')).toBe(true);
+    expect(isAnalogueInput('LOCAL')).toBe(true);
+    expect(isAnalogueInput('BLUETOOTH')).toBe(false);
+    expect(isAnalogueInput('LOCAL_INTERNET_RADIO')).toBe(false);
   });
 
   it('never says standby for an awake master', () => {
@@ -38,6 +57,12 @@ describe('nowStateGlyph', () => {
     expect(nowStateGlyph('PAUSE_STATE')).toBe('&#9208;');
     expect(nowStateGlyph('PLAY_STATE')).toBe('&#9205;');
     expect(nowStateGlyph('BUFFERING_STATE')).toBe('&#9205;');
+    expect(nowStateGlyph('STOP_STATE', 'BLUETOOTH')).toBe('&#9209;');
+  });
+
+  it('keeps the play arrow for an analogue input that reads "active"', () => {
+    expect(nowStateGlyph('STOP_STATE', 'AUX')).toBe('&#9205;');
+    expect(nowStateGlyph('STOP_STATE', 'LOCAL')).toBe('&#9205;');
   });
 });
 
@@ -80,9 +105,14 @@ describe('wiring', () => {
   it('the now-playing bar takes its word and glyph from these helpers', () => {
     const bar = srcOf('renderNowPlayingBar');
     expect(bar).toContain('nowStateLabel(ps, srcU)');
-    expect(bar).toContain('nowStateGlyph(ps)');
+    expect(bar).toContain('nowStateGlyph(ps, srcU)');
     // The Play/Pause button still treats stopped like paused: Play resumes.
     expect(bar).toContain('stoppedOrPaused(ps)');
+  });
+
+  it('the AUX/LOCAL branch still fills in "active" when no word was picked', () => {
+    const bar = srcOf('renderNowPlayingBar');
+    expect(bar).toMatch(/if \(srcU === 'AUX' \|\| srcU === 'LOCAL'\) \{[^\n]*if \(!stateLabel\) \{ stateLabel = t\('status\.active'\); stateClass = 'play'; \}/);
   });
 
   it('refreshStatus drops the title on a stop', () => {

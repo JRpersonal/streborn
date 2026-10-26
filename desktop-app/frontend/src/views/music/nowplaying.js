@@ -268,7 +268,7 @@ export function renderNowPlayingBar() {
   // Glyph reflects the actual transport state so play vs pause is not conveyed
   // by colour alone (accessibility): play arrow normally, pause bars when
   // paused, a stop square when stopped (#1526).
-  const stateGlyph = nowStateGlyph(ps);
+  const stateGlyph = nowStateGlyph(ps, srcU);
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"

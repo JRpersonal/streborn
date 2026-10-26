@@ -13,23 +13,36 @@
 // nowStateLabel picks the state word (an i18n key, '' for none) and the bar's
 // class for a play state and an upper-cased source. An explicit STOP_STATE on a
 // real source is "stopped"; with no source (standby, nothing selected) the
-// older branches stand.
+// older branches stand. Bluetooth and AirPlay are digital streams the firmware
+// does see end, so their STOP_STATE is "stopped" too.
 export function nowStateLabel(ps, srcU) {
   if (ps === 'PLAY_STATE') return { key: 'status.playing', cls: 'play' };
   if (ps === 'BUFFERING_STATE') return { key: 'status.buffering', cls: 'buf' };
   if (ps === 'PAUSE_STATE') return { key: 'status.paused', cls: 'idle' };
-  if (ps === 'STOP_STATE' && srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE') {
+  if (ps === 'STOP_STATE' && srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && !isAnalogueInput(srcU)) {
     return { key: 'status.stopped', cls: 'idle' };
   }
   if (srcU === 'STANDBY') return { key: 'status.standby', cls: 'idle' };
   return { key: '', cls: 'idle' };
 }
 
+// isAnalogueInput says whether an upper-cased source is an analogue input:
+// AUX, or LOCAL (a Cinemate's AUX socket, a Wave's own CD, radio or Aux). The
+// firmware cannot tell whether sound flows through one, so its STOP_STATE says
+// nothing about the audio. The bar keeps the "active" line it always drew for
+// them rather than calling a playing record player "stopped".
+const ANALOGUE_INPUTS = new Set(['AUX', 'LOCAL']);
+
+export function isAnalogueInput(srcU) {
+  return ANALOGUE_INPUTS.has(srcU);
+}
+
 // nowStateGlyph is the transport glyph in front of the now-playing line, so the
 // state is not told by colour alone: a stop square for STOP_STATE, pause bars
-// for PAUSE_STATE only, the play arrow otherwise.
-export function nowStateGlyph(ps) {
-  if (ps === 'STOP_STATE') return '&#9209;';
+// for PAUSE_STATE only, the play arrow otherwise. An analogue input in
+// STOP_STATE keeps the play arrow that matches its "active" word.
+export function nowStateGlyph(ps, srcU) {
+  if (ps === 'STOP_STATE') return isAnalogueInput(srcU) ? '&#9205;' : '&#9209;';
   if (ps === 'PAUSE_STATE') return '&#9208;';
   return '&#9205;';
 }
