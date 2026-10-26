@@ -926,3 +926,6 @@ agent's own PATH differs again, so a probe shell can never tell you what
   firmware STR runs on top of.
 - [`MODEL-VARIANTS.md`](./MODEL-VARIANTS.md) for the per-variant
   fingerprint table.
+- [`FIRMWARE-UPDATE.md`](./FIRMWARE-UPDATE.md) for bringing a speaker
+  to firmware 27.0.6, including the step-by-step route for very old
+  firmware.
