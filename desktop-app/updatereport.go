@@ -172,6 +172,7 @@ func adviceParagraphs() []string {
 		restartingAfterUnlockNoStickAdvice,
 		alreadyInstalledNoStickAdvice,
 		firmwareFirstAdvice,
+		repairBoxRestartedAdvice,
 	}
 }
 
@@ -402,14 +403,37 @@ func applyReachedThisSession(advice []string, r failureReport) []string {
 	if !reachedThisSession(r) {
 		return advice
 	}
-	out := []string{agentNotUpAdvice}
+	// A speaker that restarted mid-install already carries the paragraph that
+	// says so. agentNotUpAdvice would contradict it ("after the install rebooted
+	// it", when the install never got that far) and hand an ST20 owner stick
+	// advice meant for an ST30 or Portable, so it is not added, and dropped if
+	// something else brought it in.
+	lead := agentNotUpAdvice
+	if hasAdvice(advice, repairBoxRestartedAdvice) {
+		lead = repairBoxRestartedAdvice
+	}
+	out := []string{lead}
 	for _, p := range advice {
+		if strings.HasPrefix(p, lead) || strings.HasPrefix(p, agentNotUpAdvice) {
+			continue
+		}
 		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
 			continue
 		}
 		out = append(out, p)
 	}
 	return out
+}
+
+// hasAdvice reports whether one of the collected paragraphs is (or starts
+// with) the given advice constant.
+func hasAdvice(advice []string, known string) bool {
+	for _, p := range advice {
+		if strings.HasPrefix(p, known) {
+			return true
+		}
+	}
+	return false
 }
 
 // boxSetupSignature reports whether the speaker's own log tail carries the

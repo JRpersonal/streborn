@@ -46,24 +46,17 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/JRpersonal/streborn/boxmem"
 )
 
 // ramFirstMemFloor is the MemAvailable that must remain AFTER the whole body
-// sits in the RAM stage, or the route is not taken.
-//
-// tmpfs pages cannot be reclaimed and the speakers have no swap, so every
-// staged byte comes straight out of MemAvailable until the stage is removed.
-// What is left has to carry the rest of the install: the dirty page cache of
-// the RAM->NAND copy, the 512 KB flash-verify window, Go heap growth (GOGC lets
-// the heap double before a collection) and whatever BoseApp does meanwhile.
-// The field marks where that runs out: #1083 sat at 7.5 MB MemAvailable on the
-// cliff, and the 2026-08-22 ST20 that was OOM-killed during the flash verify
-// had about 19 MB left and then asked for another 14.6 MB, i.e. under 5 MB of
-// real room. 16 MB is twice the lowest figure a speaker came back from, and
-// still lets the measured speakers in (45-51 MB MemAvailable, a 17.5 MB agent
-// leaves 27-33 MB after the stage). The engine is stopped right after the stage
-// completes, which hands back its RSS on top of that.
-const ramFirstMemFloor = 16 << 20
+// sits in the RAM stage, or the route is not taken. The value and the field
+// history behind it live in boxmem.RAMStageFloor, which the desktop app's SSH
+// repair install shares, so the two RAM stages cannot drift apart. The engine
+// is stopped right after the stage completes, which hands back its RSS on top
+// of that.
+const ramFirstMemFloor = boxmem.RAMStageFloor
 
 // ramFirstStageSlack is the room the RAM stage directory must report beyond
 // the binary itself, the same slack spillToRAMStage asks for.

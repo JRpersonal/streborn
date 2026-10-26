@@ -20,8 +20,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/boxmem"
 	"github.com/JRpersonal/streborn/sticksetup"
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/crypto/ssh"
 	"streborn-app/agentbin"
 )
 
@@ -1020,7 +1022,7 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	if appBuild != "" && appBuild != "dev" {
 		v = appVersion + "+" + appBuild
 	}
-	files, err := sticksetup.StickFileSet(agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
+	files, err := repairFileSet(agentbin.Bytes(), v)
 	if err != nil {
 		res.Message = "could not assemble install files: " + err.Error()
 		return res, err
@@ -1047,8 +1049,20 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	for _, data := range files {
 		rawNeed += int64(len(data))
 	}
-	stage, serr := a.stageRepairFilesBestEffort(host, rawNeed, files)
+	stage, stoppedSTR, serr := a.stageRepairFilesBestEffort(host, rawNeed, files)
+	// restartIfStopped brings the old agent back when this repair stopped it
+	// to free RAM and then ends before its own reboot. The NAND still carries
+	// the old agent (install.sh's mv is the last step of its copy), and boot
+	// cleans any half-written .new files.
+	restartIfStopped := func() {
+		if !stoppedSTR {
+			return
+		}
+		a.logger.Info("repair_ssh: restarting the speaker so the STR agent stopped for the install comes back", "host", host)
+		_ = boxReboot(host)
+	}
 	if serr != nil {
+		restartIfStopped()
 		res.Code = "repair-upload-failed"
 		res.Message = "could not copy STR to the speaker: " + serr.Error()
 		// When EVERY target failed with a short upload, the network path itself
@@ -1063,6 +1077,19 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 				"The most reliable alternative is the USB-stick install: prepare a stick in the app, " +
 				"plug it into the speaker, and reboot it."
 		}
+		// The speaker was too short on memory to hold the install files in RAM
+		// even with STR's own programs on it stopped, and its storage could not
+		// take them either. The USB-stick install copies straight from the stick
+		// and never holds the files in RAM, so it is the way through, on the
+		// models that read a stick at all.
+		var ramShort *repairRAMShortError
+		if errors.As(serr, &ramShort) {
+			res.Message += ". The speaker does not have enough free memory for the network install right now."
+			if !neverReadsStickAtBoot(model, "") {
+				res.Message += " The USB-stick install does not need that memory: prepare a stick in the app, " +
+					"plug it into the speaker, and reboot it."
+			}
+		}
 		a.logger.Warn("repair_ssh: staging failed on all targets", "host", host, "err", serr)
 		return res, nil
 	}
@@ -1070,21 +1097,39 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	res.Step = "repair-run"
 	out, err := boxSSHOutput(host, "STR_STICK="+stage+" sh "+stage+"/install.sh install 2>&1", installRunBudget(model))
 	res.Log = out
+	if err != nil && boxRestartedMidCommand(err) {
+		// The SSH channel closed without an exit status: the speaker went down
+		// under the running install.sh (a reboot or an OOM-driven restart, the
+		// ST20 of 2026-10-26 twice in a row), not a script that failed. It
+		// comes back by itself within minutes, and the old agent on NAND is
+		// untouched (install.sh's mv never ran), so the advice is wait, do not
+		// retry the same install, send the logs. Never the post-install
+		// "did not come back after the install rebooted it" text, and no stick
+		// advice, which is model-specific and does not help here.
+		res.Code = "repair-box-restarted"
+		res.Message = "The speaker restarted in the middle of the network install, before ST Reborn was copied onto it." +
+			"\n\n" + repairBoxRestartedAdvice
+		a.logger.Warn("repair_ssh: speaker restarted during the install", "host", host, "model", model, "err", err,
+			"installOutput", truncForLog(out, 4000), "boxDiag", truncForLog(boxInstallDiag(host), 8000))
+		return res, nil
+	}
 	if err != nil {
 		res.Code = "repair-install-error"
 		hint := classifySSHError(out, err)
 		res.Message = "SSH repair install failed: " + hint
 		a.logger.Warn("repair_ssh: install failed", "host", host, "model", model, "err", err,
 			"hint", hint, "installOutput", truncForLog(out, 4000), "boxDiag", truncForLog(boxInstallDiag(host), 8000))
+		restartIfStopped()
 		return res, nil
 	}
 	if strings.Contains(out, "FEHLER") || strings.Contains(out, "ERROR") {
 		res.Code = "repair-install-script-error"
 		res.Message = "install.sh reported an error during SSH repair. See log."
+		restartIfStopped()
 		return res, nil
 	}
 
-	// install.sh copied everything into /mnt/nv/streborn, so the ~28 MB staging
+	// install.sh copied everything into /mnt/nv/streborn, so the ~20 MB staging
 	// dir is now pure leftover. Remove it before the reboot, otherwise it sits on
 	// the NAND forever and starves later OTA updates of the room they need for the
 	// atomic .new write: a stranded streborn-install filled a ST30 to 80% and
@@ -1120,6 +1165,39 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	a.emitPhase("restart")
 	_ = boxReboot(host)
 	return res, nil
+}
+
+// repairFileSet is the file set the SSH repair stages on the speaker: the stick
+// template, the agent binary and the version stamp, WITHOUT the go-librespot
+// Spotify engine. install.sh never uses a staged engine (it only ever deletes
+// the NAND one to make room), and installEnsureEngine pushes the engine once
+// the agent is up. Staging it anyway put ~16 MB of unreclaimable tmpfs into a
+// 122 MB, swapless ST20's RAM on top of BoseApp's boot and the old agent, and
+// the speaker restarted under install.sh's agent copy twice (2026-10-26).
+func repairFileSet(agent []byte, version string) (map[string][]byte, error) {
+	files, err := sticksetup.StickFileSet(agent, nil, version)
+	if err != nil {
+		return nil, err
+	}
+	delete(files, "go-librespot")
+	return files, nil
+}
+
+// boxRestartedMidCommand reports whether an SSH command ended because the
+// speaker went away under it rather than because the command failed: the
+// channel closed with no exit status and no exit signal, which is what a box
+// that reboots (or is restarted by its supervisor after an OOM kill) leaves
+// behind. A normal failure carries an exit status (*ssh.ExitError) and a
+// timeout is our own error, so neither matches.
+func boxRestartedMidCommand(err error) bool {
+	if err == nil {
+		return false
+	}
+	var missing *ssh.ExitMissingError
+	if errors.As(err, &missing) {
+		return true
+	}
+	return strings.Contains(err.Error(), "exited without exit status or exit signal")
 }
 
 // healSDKCloudURLsScript rewrites the bmx/stats/marge URL tags in the box's
@@ -1266,9 +1344,14 @@ func lastIntField(out string) (int64, bool) {
 // compress comfortably, so 0.6 is a safe discount that stops us needlessly
 // rejecting NAND when it really has room. The post-write byte-verify in
 // stageRepairFiles is the backstop if the estimate is too optimistic.
+//
+// ram marks the tmpfs candidates: their df figure is the tmpfs SIZE CAP (about
+// half the RAM), not memory that is actually free, so they are also held to the
+// MemAvailable guard in stageRepairFilesBestEffort.
 var repairStageCandidates = []struct {
 	base     string
 	compress float64
+	ram      bool
 }{
 	// Prefer large RAM tmpfs so staging never lands on the tiny NAND we are about
 	// to install INTO. Staging into /mnt/nv and then copying within the same volume
@@ -1281,10 +1364,128 @@ var repairStageCandidates = []struct {
 	// ~16 MB; /mnt/nv stays the last resort for a RAM-starved box, where
 	// install.sh's drop-the-engine reclaim is the backstop. A candidate that does
 	// not exist reads as 0 free and falls to the back, so this never blocks.
-	{"/dev/shm", 1.0},
-	{"/run", 1.0},
-	{"/tmp", 1.0},
-	{"/mnt/nv", 0.6},
+	{"/dev/shm", 1.0, true},
+	{"/run", 1.0, true},
+	{"/tmp", 1.0, true},
+	{"/mnt/nv", 0.6, false},
+}
+
+// The SSH seams of the staging chooser, so tests can script a speaker's free
+// space, its memory and the agent stop without one.
+var (
+	repairFreeBytes    = freeBytesAtPath
+	repairMemAvailable = boxMemAvailable
+	repairStopSTR      = stopSTROnBox
+	repairStageUpload  = func(a *App, host, dir string, files map[string][]byte) error {
+		return a.stageRepairFiles(host, dir, files)
+	}
+)
+
+// repairRAMShortError is the staging failure on a speaker whose RAM could not
+// hold the install files even after STR's own programs on it were stopped, and
+// whose NAND (the only other target) could not take them either.
+type repairRAMShortError struct {
+	memAvailable int64
+	err          error
+}
+
+func (e *repairRAMShortError) Error() string {
+	return fmt.Sprintf("the speaker has only %d MB of free memory, too little to hold the install files in RAM, and its storage could not take them: %v",
+		e.memAvailable>>20, e.err)
+}
+func (e *repairRAMShortError) Unwrap() error { return e.err }
+
+// repairRAMRoomFor reports whether staging rawNeed bytes in RAM still leaves
+// boxmem.RAMStageFloor of MemAvailable, the same floor the agent's own RAM-first
+// OTA keeps. An unknown MemAvailable (an old kernel without the field, or a
+// read that failed) does not block: the df checks and the post-write verify
+// still apply, as they always did.
+func repairRAMRoomFor(memAvailable int64, known bool, rawNeed int64) bool {
+	return !known || memAvailable-rawNeed >= boxmem.RAMStageFloor
+}
+
+// boxMemAvailable reads MemAvailable from the speaker's /proc/meminfo over SSH,
+// in bytes. ok is false when it cannot be read or parsed.
+func boxMemAvailable(host string) (int64, bool) {
+	out, err := boxSSHOutput(host, "grep MemAvailable: /proc/meminfo 2>/dev/null", 30*time.Second)
+	if err != nil {
+		return 0, false
+	}
+	return parseMemAvailable(out)
+}
+
+// parseMemAvailable pulls the MemAvailable figure (kB in /proc/meminfo) out of
+// command output, in bytes. Tolerates SSH noise lines around it.
+func parseMemAvailable(out string) (int64, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == "MemAvailable:" {
+			kb, err := strconv.ParseInt(f[1], 10, 64)
+			if err != nil || kb < 0 {
+				return 0, false
+			}
+			return kb * 1024, true
+		}
+	}
+	return 0, false
+}
+
+// stopSTRScript stops the speaker's running STR agent, its Spotify engine and
+// the run.sh watchdogs, so their RAM is free for the install. Removing the
+// pidfile first is what ends the watchdog loops (both break when it is gone),
+// so they do not respawn the agent; the second pass catches a respawn that a
+// watchdog had already decided on in the instant before. The install replaces
+// this agent anyway and the reboot after it starts everything again. Prints
+// STR_STOPPED so the caller can tell the script ran.
+const stopSTRScript = `rm -f /mnt/nv/streborn/agent.pid
+killall streborn-armv7l go-librespot 2>/dev/null
+sleep 6
+rm -f /mnt/nv/streborn/agent.pid
+killall -9 streborn-armv7l go-librespot 2>/dev/null
+sleep 1
+echo STR_STOPPED`
+
+// stopSTROnBox runs stopSTRScript over SSH.
+func stopSTROnBox(host string) error {
+	out, err := boxSSHOutput(host, stopSTRScript, 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("stop STR on speaker: %s", classifySSHError(out, err))
+	}
+	if !strings.Contains(out, "STR_STOPPED") {
+		return fmt.Errorf("stop STR on speaker: script did not complete")
+	}
+	return nil
+}
+
+// repairMemForStage reads the speaker's MemAvailable and, when it is too low to
+// stage rawNeed bytes in RAM, stops the speaker's own STR agent, engine and
+// watchdogs (the install replaces them anyway, and that frees 20-40 MB) and
+// reads it again. It does NOT fall back to the NAND for room: on a 122 MB ST20
+// the staged agent plus install.sh's own .new copy of it do not fit next to the
+// old binary, so /mnt/nv stays the last resort it always was.
+//
+// stopped reports that the agent was stopped, so a caller whose install then
+// does not run to its reboot restarts the speaker itself: otherwise the old
+// agent would stay down until somebody pulls the plug.
+func (a *App) repairMemForStage(host string, rawNeed int64) (mem int64, known, stopped bool) {
+	mem, known = repairMemAvailable(host)
+	if repairRAMRoomFor(mem, known, rawNeed) {
+		return mem, known, false
+	}
+	a.logger.Warn("repair_ssh: speaker RAM too short to stage the install, stopping STR's own agent and engine first",
+		"host", host, "memAvailableBytes", mem, "rawNeed", rawNeed, "floorBytes", boxmem.RAMStageFloor)
+	stopped = true
+	if err := repairStopSTR(host); err != nil {
+		a.logger.Warn("repair_ssh: could not stop STR on the speaker", "host", host, "err", err)
+	}
+	mem2, known2 := repairMemAvailable(host)
+	a.logger.Info("repair_ssh: speaker RAM after stopping STR", "host", host,
+		"memAvailableBytes", mem2, "known", known2, "before", mem)
+	if !known2 {
+		// The first read worked, so keep it rather than lose the guard.
+		return mem, known, stopped
+	}
+	return mem2, known2, stopped
 }
 
 // stageRepairFilesBestEffort stages files into the first usable on-box directory,
@@ -1293,13 +1494,31 @@ var repairStageCandidates = []struct {
 // candidates with enough room are tried first, the rest last (fallback-first, so
 // an unreadable df never blocks an attempt). The first directory that stages and
 // byte-verifies wins and is returned. Errors only if every candidate failed.
-func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[string][]byte) (string, error) {
+//
+// The RAM (tmpfs) candidates are also held to the speaker's real free memory:
+// their df reports the tmpfs size cap, not what is free, and staging past
+// MemAvailable restarted a 122 MB ST20 under install.sh twice (2026-10-26).
+// When MemAvailable is short, STR's own agent on the speaker is stopped first
+// (repairMemForStage); when it is still short, the RAM candidates are not
+// tried at all and only the NAND is. stoppedSTR reports that the agent was
+// stopped on the way (see repairMemForStage).
+func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[string][]byte) (stage string, stoppedSTR bool, err error) {
+	mem, memKnown, stoppedSTR := a.repairMemForStage(host, rawNeed)
+	ramOK := repairRAMRoomFor(mem, memKnown, rawNeed)
 	var fits, tooSmall []string
+	ramRejected := false
 	for _, c := range repairStageCandidates {
 		need := int64(float64(rawNeed)*c.compress) + (2 << 20) // ~2 MB headroom for the dir + fs overhead
-		free := freeBytesAtPath(host, c.base)
+		free := repairFreeBytes(host, c.base)
 		a.logger.Info("repair_ssh: staging candidate space",
-			"host", host, "dir", c.base, "freeBytes", free, "needBytes", need, "rawNeed", rawNeed)
+			"host", host, "dir", c.base, "freeBytes", free, "needBytes", need, "rawNeed", rawNeed,
+			"memAvailableBytes", mem, "memKnown", memKnown)
+		if c.ram && !ramOK {
+			ramRejected = true
+			a.logger.Warn("repair_ssh: skipping RAM staging candidate, speaker memory too short",
+				"host", host, "dir", c.base, "memAvailableBytes", mem, "rawNeed", rawNeed, "floorBytes", boxmem.RAMStageFloor)
+			continue
+		}
 		if free >= need {
 			fits = append(fits, c.base)
 		} else {
@@ -1311,7 +1530,7 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 	attempts := 0
 	for _, base := range append(fits, tooSmall...) {
 		stage := base + "/streborn-install"
-		if err := a.stageRepairFiles(host, stage, files); err != nil {
+		if err := repairStageUpload(a, host, stage, files); err != nil {
 			lastErr = err
 			attempts++
 			var trunc *uploadTruncatedError
@@ -1322,10 +1541,15 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 			continue
 		}
 		a.logger.Info("repair_ssh: staged install files", "host", host, "dir", stage)
-		return stage, nil
+		return stage, stoppedSTR, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no staging directory available on the speaker")
+	}
+	// The RAM targets were ruled out by memory, not tried, so this is not a
+	// network path that truncates everything: say what it really was.
+	if ramRejected {
+		return "", stoppedSTR, &repairRAMShortError{memAvailable: mem, err: lastErr}
 	}
 	// Every target failed the SAME way — the upload arrived short on all of them.
 	// That is not a per-directory space problem (each is a different filesystem);
@@ -1333,9 +1557,9 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 	// the reverse-DNS-stall LAN this fix targets. Flag it so the caller steers the
 	// user to the USB-stick install, which does not depend on the network at all.
 	if allTruncated && attempts > 0 {
-		return "", &allTargetsTruncatedError{err: lastErr}
+		return "", stoppedSTR, &allTargetsTruncatedError{err: lastErr}
 	}
-	return "", lastErr
+	return "", stoppedSTR, lastErr
 }
 
 // allTargetsTruncatedError wraps the last staging error when EVERY on-box target

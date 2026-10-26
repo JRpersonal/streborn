@@ -1367,6 +1367,7 @@
   "setup.help.netLogs": "Als het nog steeds mislukt, gebruik onderaan het venster Logs opslaan en voeg het bestand toe aan je melding.",
   "setup.help.firmwareFirst": "Werk eerst de firmware van de speaker bij met de handleiding hierboven en druk daarna opnieuw op Installeren. Tot die tijd kan de installatie niet lukken en start de speaker alleen opnieuw op.",
   "setup.help.waitRefresh": "Wacht een paar minuten en druk dan op Vernieuwen in de speakerlijst. Verschijnt de speaker met een ST Reborn-versie, dan is de installatie gelukt en hoef je verder niets te doen.",
+  "setup.help.repairRestarted": "De speaker is midden in de installatie vanzelf opnieuw opgestart en komt binnen een paar minuten vanzelf terug. Druk voorlopig niet opnieuw op Installeren: dezelfde installatie zou op hetzelfde punt stoppen. Wacht ongeveer vijf minuten en druk dan op Vernieuwen in de speakerlijst.",
   "setup.awaitBoxReadyTitle": "Doe nu dit op de speaker:",
   "setup.awaitSearching": "Ik zoek je speaker. Nadat je de stick erin steekt en de speaker uit- en weer aanzet, duurt het ongeveer een minuut voordat hij verschijnt. Houd dit venster open: de status wordt hier vanzelf bijgewerkt. (nog {{remaining}})",
   "setup.awaitSearchingStalled": "Ik zoek nog steeds je speaker. Drie dingen om snel te controleren: de stick zit helemaal erin, de speaker staat aan, en de speaker gebruikt dezelfde Wi-Fi als deze computer. Ik blijf zoeken, dus als je het nu oplost, wordt de status vanzelf bijgewerkt. (nog {{remaining}})",

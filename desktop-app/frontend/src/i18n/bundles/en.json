@@ -1494,6 +1494,7 @@
   "setup.help.netLogs": "If it still fails, use Save logs at the bottom of the window and attach the file to your report.",
   "setup.help.firmwareFirst": "Update the speaker firmware first with the guide above, then press Install again. Until then, pressing Install cannot work and only restarts the speaker.",
   "setup.help.waitRefresh": "Wait a few minutes, then press Refresh in the speaker list. If the speaker appears with an ST Reborn version, the install succeeded and there is nothing more to do.",
+  "setup.help.repairRestarted": "The speaker restarted by itself in the middle of the install and comes back on its own within a few minutes. Do not press Install again for now: the same install would stop at the same point. Wait about five minutes, then refresh the speaker list.",
   "setup.awaitBoxReadyTitle": "Now do this on the speaker:",
   "setup.awaitSearching": "Looking for your speaker. After you plug the stick in and switch the speaker off and back on, it takes about a minute to appear. The speaker starts up as usual and copies ST Reborn from the stick into itself, then restarts once; it does not boot from the stick. Keep this window open: the status updates here on its own. ({{remaining}} left)",
   "setup.awaitSearchingStalled": "Still looking for your speaker. Three quick things to check: the stick is pushed all the way in, the speaker is switched on, and the speaker uses the same Wi-Fi as this computer. I'll keep looking, so if you fix it now the status updates by itself. ({{remaining}} left)",

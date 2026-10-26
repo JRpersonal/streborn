@@ -1967,6 +1967,11 @@ const INSTALL_HELP_STEPS = {
   // the install stopped before touching it. The firmware guide renders above
   // this list; the one step is "update first, retrying only restarts it".
   'firmware-too-old': ['firmwareFirst', 'logs'],
+  // The speaker restarted under the running network install (the SSH session
+  // ended without an exit status). It comes back by itself, and pressing
+  // Install again repeats the same restart (an ST20, twice, 2026-10-26), so
+  // the steps say wait and send the logs, never retry, and name no stick.
+  'repair-box-restarted': ['repairRestarted', 'netLogs'],
 };
 
 // INSTALL_HELP_STEPS_NET is the OTA/network-install counterpart of the map
@@ -1989,6 +1994,7 @@ const INSTALL_HELP_STEPS_NET = {
   'control-unresponsive': ['netRetry', 'netLogs'],
   'stick-copy-failed': ['netRetry', 'netLogs'],
   'firmware-too-old': ['firmwareFirst', 'netLogs'],
+  'repair-box-restarted': ['repairRestarted', 'netLogs'],
 };
 const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'];
 

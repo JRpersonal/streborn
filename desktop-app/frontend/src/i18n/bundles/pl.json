@@ -1367,6 +1367,7 @@
   "setup.help.netLogs": "Jeśli nadal się nie udaje, użyj Zapisz dzienniki na dole okna i dołącz plik do zgłoszenia.",
   "setup.help.firmwareFirst": "Najpierw zaktualizuj oprogramowanie głośnika według instrukcji powyżej, a potem ponownie naciśnij Zainstaluj. Do tego czasu instalacja nie może się udać i tylko uruchamia głośnik ponownie.",
   "setup.help.waitRefresh": "Poczekaj kilka minut, a potem naciśnij Odśwież na liście głośników. Jeśli głośnik pojawi się z wersją ST Reborn, instalacja się powiodła i nic więcej nie trzeba robić.",
+  "setup.help.repairRestarted": "Głośnik sam uruchomił się ponownie w trakcie instalacji i w ciągu kilku minut wróci sam. Na razie nie naciskaj ponownie Zainstaluj: ta sama instalacja zatrzymałaby się w tym samym miejscu. Poczekaj około pięciu minut, a potem naciśnij Odśwież na liście głośników.",
   "setup.awaitBoxReadyTitle": "Zrób teraz to na głośniku:",
   "setup.awaitSearching": "Szukam Twojego głośnika. Po włożeniu pamięci USB oraz wyłączeniu i ponownym włączeniu głośnika pojawia się on po około minucie. Nie zamykaj tego okna: status aktualizuje się tutaj samoczynnie. (pozostało {{remaining}})",
   "setup.awaitSearchingStalled": "Wciąż szukam Twojego głośnika. Trzy szybkie rzeczy do sprawdzenia: pamięć USB jest włożona do końca, głośnik jest włączony, a głośnik korzysta z tej samej sieci Wi-Fi co ten komputer. Będę szukać dalej, więc jeśli teraz to poprawisz, status zaktualizuje się sam. (pozostało {{remaining}})",

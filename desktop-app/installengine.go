@@ -8,9 +8,9 @@ import (
 
 // A network install never puts the Spotify engine on the speaker by itself.
 // install.sh copies rc.local, run.sh, the agent and the presets to NAND; the
-// staged engine sits in the staging directory, which RepairInstallViaSSH
-// removes before the reboot, and run.sh's engine sync reads only a real USB
-// stick. So after a network install the engine arrives only if something
+// engine is not even staged any more (repairFileSet leaves it out, because the
+// ~16 MB it cost in the speaker's RAM was dead weight there), and run.sh's
+// engine sync reads only a real USB stick. So after a network install the engine arrives only if something
 // pushes it, and until now that was the setup wizard's verify loop alone: it
 // takes the first "present" it sees, swallows push errors, and is skipped by
 // every path that does not run it (the repair button, a window closed early).

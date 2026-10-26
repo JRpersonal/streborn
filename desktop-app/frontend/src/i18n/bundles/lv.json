@@ -1367,6 +1367,7 @@
   "setup.help.netLogs": "Ja joprojām neizdodas, izmantojiet Saglabāt žurnālus loga apakšā un pievienojiet failu savam ziņojumam.",
   "setup.help.firmwareFirst": "Vispirms atjauniniet skaļruņa programmaparatūru pēc iepriekš dotās pamācības, tad vēlreiz nospiediet Instalēt. Līdz tam instalēšana nevar izdoties un tikai restartē skaļruni.",
   "setup.help.waitRefresh": "Pagaidiet dažas minūtes un pēc tam skaļruņu sarakstā nospiediet Atjaunināt. Ja skaļrunis parādās ar ST Reborn versiju, instalēšana ir izdevusies un vairāk nekas nav jādara.",
+  "setup.help.repairRestarted": "Skaļrunis instalēšanas vidū pats pārstartējās un pēc dažām minūtēm atgriezīsies pats. Pagaidām vēlreiz nespiediet Instalēt: tā pati instalēšana apstātos tajā pašā vietā. Pagaidiet apmēram piecas minūtes un pēc tam skaļruņu sarakstā nospiediet Atjaunināt.",
   "setup.awaitBoxReadyTitle": "Tagad veiciet šo ar skaļruni:",
   "setup.awaitSearching": "Tiek meklēts jūsu skaļrunis. Kad esat ievietojuši zibatmiņu un izslēguši un atkal ieslēguši skaļruni, tas parādās aptuveni minūtes laikā. Atstājiet šo logu atvērtu: statuss šeit atjauninās pats. (atlikušas {{remaining}})",
   "setup.awaitSearchingStalled": "Joprojām tiek meklēts jūsu skaļrunis. Trīs ātri pārbaudāmas lietas: zibatmiņa ir ievietota līdz galam, skaļrunis ir ieslēgts un skaļrunis izmanto to pašu Wi-Fi kā šis dators. Es turpināšu meklēt, tāpēc, ja to tagad sakārtosiet, statuss atjauninās pats. (atlikušas {{remaining}})",
