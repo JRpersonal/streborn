@@ -36,7 +36,7 @@ export {
   trackPos,
 } from './nowplaying.js';
 export { loadPresets } from './presets.js';
-export { playStation, updateFilterIndicators } from './search.js';
+export { playStation, syncSearchModeButtons, updateFilterIndicators } from './search.js';
 export {
   favStationsJSON,
   isFav,

@@ -6,6 +6,7 @@ import { state } from '../../state.js';
 import { agentErrorCode, agentErrorText, pandoraFindVisible, pandoraStationRows } from '../../usservices.js';
 import { $, escapeAttr, escapeHtml, showError, showToast, sleep } from '../../utils.js';
 import { showSlotPicker } from './picker.js';
+import { syncSearchModeButtons } from './search.js';
 import { refreshStatus } from './status.js';
 
 // ---------- Pandora stations ----------
@@ -52,6 +53,8 @@ export async function updatePandoraModeBtn(force) {
   b.classList.toggle('hidden', !visible);
   if (!visible && state.searchLastMode === 'pandora') {
     state.searchLastMode = 'top';
+    state.searchListOpen = false;
+    syncSearchModeButtons();
     $('searchResults').innerHTML = '';
   }
 }
@@ -60,6 +63,8 @@ async function loadPandora() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   const box = state.currentBox;
   state.searchLastMode = 'pandora';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   pandoraRows = [];
   const lm = $('loadMoreRow');
   if (lm) lm.classList.add('hidden');

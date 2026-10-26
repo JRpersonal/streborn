@@ -68,6 +68,10 @@ export const state = {
   searchOnlyBose: true,
   searchOffset: 0,
   searchLastMode: 'top', // "top" or "search" — for "load more"
+  // searchListOpen: a list was opened into the result panel (and not blanked
+  // since), so the Top / Favorites / Pandora button of searchLastMode looks
+  // pressed. The mode alone defaults to 'top' before anything is shown (#1521).
+  searchListOpen: false,
   searchLastQuery: '',
   // searchRelaxed: the last fetch only found results after the backend
   // relaxed the quality filters (entries may be unverified). Drives the

@@ -1895,6 +1895,10 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }
+/* The Top list / Favorites / Pandora button of the list on screen looks pressed
+   (#1521), in the same brand tint as an active chip so it reads in every theme. */
+.btn.mode-pressed,
+.btn.mode-pressed:hover { background: var(--brand-bg); color: var(--brand-text); border-color: var(--brand); }
 /* "Add a missing station" (discussion #619): the guide used to be a whole
    paragraph at 0.7 opacity below the load-more button, and the users who needed
    it never saw it. Now one quiet line sits above the result list and unfolds
