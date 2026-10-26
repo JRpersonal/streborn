@@ -118,6 +118,72 @@ func TestTrackEndNet(t *testing.T) {
 			in:   trackEndInput{elapsed: 500 * sec, dur: 30 * sec},
 			want: endNetNone,
 		},
+		{
+			name: "FRITZ!Box MP3: box reports 120 s after 16 s wall clock, frozen since, no length",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 32 * sec,
+				lastPos: 120 * sec, sinceLastPos: 16 * sec, ranAhead: true},
+			want: endNetNone,
+		},
+		{
+			name: "position ahead of the wall clock holds the freeze even when the watcher did not flag it",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 32 * sec,
+				lastPos: 120 * sec, sinceLastPos: 16 * sec},
+			want: endNetNone,
+		},
+		{
+			name: "position that ran ahead: the freeze counts once the wall clock caught up with it",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 120*sec + prod.frozenTimeout,
+				lastPos: 120 * sec, sinceLastPos: 120 * sec, ranAhead: true},
+			want: endNetFrozen,
+		},
+		{
+			name: "a normal EOF freeze still ends: 180 s track, position still since 15 s",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 181*sec + prod.frozenTimeout,
+				lastPos: 180 * sec, sinceLastPos: prod.frozenTimeout},
+			want: endNetFrozen,
+		},
+		{
+			name: "position that ran ahead to the box's own total does not skip the margin",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 121 * sec, dur: 120 * sec,
+				obsTotal: 120 * sec, lastPos: 120 * sec, sinceLastPos: moved, ranAhead: true},
+			want: endNetNone,
+		},
+		{
+			name: "position that ran ahead: the length still ends it after the margin",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 120*sec + prod.timerMargin, dur: 120 * sec,
+				obsTotal: 120 * sec, lastPos: 120 * sec, sinceLastPos: oneTik, ranAhead: true},
+			want: endNetWallClock,
+		},
+		{
+			name: "estimated length: frozen on the estimate for one poll, wall clock past it",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 202 * sec, hint: 200 * sec,
+				lastPos: 199 * sec, sinceLastPos: oneTik},
+			want: endNetFrozen,
+		},
+		{
+			name: "estimated length: still climbing at the estimate is not an end",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 202 * sec, hint: 200 * sec,
+				lastPos: 200 * sec, sinceLastPos: moved},
+			want: endNetNone,
+		},
+		{
+			name: "estimated length: a stall far from the estimate is not an end",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 202 * sec, hint: 200 * sec,
+				lastPos: 150 * sec, sinceLastPos: oneTik},
+			want: endNetNone,
+		},
+		{
+			name: "estimated length: the wall clock has not reached it",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 195 * sec, hint: 200 * sec,
+				lastPos: 199 * sec, sinceLastPos: oneTik},
+			want: endNetNone,
+		},
+		{
+			name: "estimated length: a position that ran ahead does not confirm it",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 202 * sec, hint: 200 * sec,
+				lastPos: 199 * sec, sinceLastPos: oneTik, ranAhead: true},
+			want: endNetNone,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

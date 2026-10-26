@@ -226,7 +226,7 @@ func TestAFrozenEndTeachesOldLibraryKeysTheirLength(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s.learnSingleTrackLength(singleTrack{boxURL: libraryTrackURL, title: "Song"}, endNetFrozen, 175*time.Second)
+	s.learnSingleTrackLength(singleTrack{boxURL: libraryTrackURL, title: "Song"}, endNetFrozen, 175*time.Second, false)
 
 	if got := s.trackLens.get(libraryTrackURL); got != 175*time.Second {
 		t.Fatalf("learned length = %v, want 175s", got)
@@ -275,7 +275,7 @@ func TestALengthIsLearnedOnlyFromAPlausibleFrozenEnd(t *testing.T) {
 		{"too long", singleTrack{boxURL: libraryTrackURL}, endNetFrozen, 5 * time.Hour},
 	}
 	for _, c := range cases {
-		s.learnSingleTrackLength(c.tr, c.net, c.pos)
+		s.learnSingleTrackLength(c.tr, c.net, c.pos, false)
 		if got := s.trackLens.get(libraryTrackURL); got != 0 {
 			t.Fatalf("%s: learned %v", c.name, got)
 		}
@@ -284,7 +284,7 @@ func TestALengthIsLearnedOnlyFromAPlausibleFrozenEnd(t *testing.T) {
 		}
 	}
 	// A file no key holds: learned for this run, the store untouched.
-	s.learnSingleTrackLength(singleTrack{boxURL: "http://192.0.2.32:9790/x.flac"}, endNetFrozen, 60*time.Second)
+	s.learnSingleTrackLength(singleTrack{boxURL: "http://192.0.2.32:9790/x.flac"}, endNetFrozen, 60*time.Second, false)
 	if got := s.trackLens.get("http://192.0.2.32:9790/x.flac"); got != 60*time.Second {
 		t.Fatalf("unsaved file: learned %v, want 60s", got)
 	}
@@ -305,7 +305,11 @@ func TestAnOldLibraryKeyLearnsItsLengthAfterOnePlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Real seconds for the positions: a learned length is whole seconds and
-	// must clear learnedLengthMin. The watch itself runs on the fast poll.
+	// must clear learnedLengthMin. The watch itself runs on the fast poll, so
+	// these positions run ahead of the test's wall clock; lift the real-time
+	// guard, which TestALoneTrackWhosePositionRunsAheadIsNotStoppedOrLearned
+	// covers on its own.
+	s.queueTiming.aheadSlack = time.Hour
 	np.set("PLAY_STATE", 2*time.Second, 0) // the speaker reports no total
 	if !s.RecallSlot(context.Background(), 6) {
 		t.Fatal("RecallSlot did not claim the library track key")

@@ -262,3 +262,38 @@ func TestNoStartRetryAfterAKeyPress(t *testing.T) {
 		t.Fatalf("the track was pushed again %d times after a key press", n)
 	}
 }
+
+// The FRITZ!Box MP3 in the evidence: the box reported 120 s at most 16 s
+// after the push and froze there. The frozen-position net then stopped the box
+// while the track was playing, and 120 s was learned as the file's length.
+func TestALoneTrackWhosePositionRunsAheadIsNotStoppedOrLearned(t *testing.T) {
+	t.Parallel()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	const url = "http://192.0.2.9:49200/AUDIO/song.mp3"
+	gen := s.setLastPlay(url, "Song", "", "audio/mpeg")
+	np.set("PLAY_STATE", 120*qsec, 0)
+	s.armSingleTrackEnd(singleTrack{boxURL: url, title: "Song", mime: "audio/mpeg"}, gen)
+
+	time.Sleep(40 * qsec) // more than twice the freeze timeout
+	if rec.has("Stop") {
+		t.Fatal("the box was stopped on a position it cannot have played")
+	}
+	if got := s.trackLens.get(url); got != 0 {
+		t.Fatalf("learned %v from a position that ran ahead of real time", got)
+	}
+}
+
+func TestALengthIsNotLearnedFromAPositionThatRanAhead(t *testing.T) {
+	t.Parallel()
+	s, _ := newPlayTestServer(t)
+	const url = "http://192.0.2.9:49200/AUDIO/song.mp3"
+	s.learnSingleTrackLength(singleTrack{boxURL: url, title: "Song"}, endNetFrozen, 120*time.Second, true)
+	if got := s.trackLens.get(url); got != 0 {
+		t.Fatalf("learned %v from a position that ran ahead of real time", got)
+	}
+	s.learnSingleTrackLength(singleTrack{boxURL: url, title: "Song"}, endNetFrozen, 120*time.Second, false)
+	if got := s.trackLens.get(url); got != 120*time.Second {
+		t.Fatalf("a plausible freeze taught %v, want 120 s", got)
+	}
+}
