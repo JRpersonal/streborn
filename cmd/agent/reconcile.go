@@ -352,6 +352,9 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	groupWakeHeld := false
 	// startHoldLogged does the same for the hold on a play that is starting.
 	startHoldLogged := false
+	// ceilingListedLogged keeps the "ceiling passed, every key listed" line
+	// to one per hold episode.
+	ceilingListedLogged := false
 	// retryHoldLogged keeps the "retry pass held" line to ONE per hold
 	// episode: the hold is re-evaluated every maintenance tick for as long as
 	// the box sleeps, and a line per tick is noise in the NAND log.
@@ -594,10 +597,38 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				time.Sleep(forcedPlayHoldRetry)
 				continue
 			case ceilingHit:
-				logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the hardware keys have to be registered",
+				// The ceiling exists for keys that are NOT registered. When the
+				// speaker still lists every key, nothing is missing that a
+				// write into the music would give back, and the pass waits
+				// for the next idle or standby moment instead (2026-10-26:
+				// a forced pass every five minutes, each one flipping a
+				// playing speaker to LOCAL_INTERNET_RADIO and back, on a box
+				// that listed all six keys throughout). The list is read once
+				// per ceiling, not per retry, so the wait costs no extra
+				// polling beyond the hold's own now_playing read.
+				missing, listErr := keysMissingOnBox(store, boxHost, wh)
+				if listErr != nil || len(missing) == 0 {
+					if !ceilingListedLogged {
+						ceilingListedLogged = true
+						why := "the speaker lists every key"
+						if listErr != nil {
+							why = "the speaker's key list is unreadable"
+						}
+						logger.Info("preset reconcile: hold ceiling passed, but "+why+"; the forced pass waits for the music to stop instead of interrupting it",
+							"reason", forcedHoldReason(src, playing, playKnown), "source", src,
+							"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
+					}
+					forceHeld = true
+					forceHeldSince = time.Now()
+					time.Sleep(forcedPlayHoldRetry)
+					continue
+				}
+				logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the speaker is missing hardware keys",
 					"reason", forcedHoldReason(src, playing, playKnown),
-					"source", src, "heldFor", time.Since(forceHeldSince).Round(time.Second).String())
+					"source", src, "missing", missing,
+					"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
 			}
+			ceilingListedLogged = false
 			if userHeldSrc != "" {
 				logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
 					"heldOn", userHeldSrc, "source", src)
@@ -737,7 +768,11 @@ const userPlayStartHoldRetry = 5 * time.Second
 //
 // A hold, never a skip: the keys still have to end up registered, so the wait
 // on STR's OWN playback is bounded and the pass runs anyway once the ceiling
-// passes.
+// passes, provided the speaker is actually missing a key (keysMissingOnBox,
+// checked by the caller). A speaker that lists every key keeps holding until
+// the music stops: a rewrite of listed keys is not worth an interruption, and
+// writing them into a playing speaker every five minutes is what the
+// 2026-10-26 bundles caught.
 //
 // The FIRST full registration after the agent starts is not held for STR's own
 // playback. A just-started agent may find the box already playing, and holding
@@ -840,6 +875,46 @@ func forcedHoldReason(src string, playing, playKnown bool) string {
 		return "free"
 	}
 	return "user-chosen source"
+}
+
+// keysMissingOnBox reads the speaker's preset list and returns the keys STR
+// wants on it that it does not list. The forced pass reads it when its hold
+// ceiling passes, to tell keys that are gone from keys that are merely
+// rewritten.
+func keysMissingOnBox(store *presets.Store, boxHost string, wh *webhooks.Store) ([]int, error) {
+	entries, err := fetchBoxPresetsFullFn(boxHost)
+	if err != nil {
+		return nil, err
+	}
+	stick := store.All()
+	return slotsMissingOnBox(stick, webhookOnlySlots(wh, stick), entries), nil
+}
+
+// slotsMissingOnBox lists, sorted, the store's slots and webhook-only keys the
+// box's list lacks. A native service key (Pandora, iHeartRadio) is left out:
+// it is the speaker's own item, written back only while the speaker offers
+// the service (nativeslots.go), so a forced pass could not restore it anyway.
+func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPresetEntry) []int {
+	listed := make(map[int]bool, len(entries))
+	for _, e := range entries {
+		listed[e.Slot] = true
+	}
+	want := map[int]bool{}
+	for _, p := range stick {
+		if !p.IsNative() {
+			want[p.Slot] = true
+		}
+	}
+	for _, slot := range hookSlots {
+		want[slot] = true
+	}
+	var missing []int
+	for slot := 1; slot <= 6; slot++ {
+		if want[slot] && !listed[slot] {
+			missing = append(missing, slot)
+		}
+	}
+	return missing
 }
 
 func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
@@ -1121,9 +1196,19 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			}
 			// kept were on the box before the write, so finding them after it
 			// proves nothing: a refused rewrite reads exactly the same. The
-			// firmware's own refusal line decides (presetwriteverify.go).
-			if reportRewrittenSlots(logger, kept, firmwareRefusedPresetWriteSince(sweepStart)) {
-				requestPresetKeyResync(logger, "refused-rewrite")
+			// firmware's own refusal lines decide (presetwriteverify.go), matched
+			// to the slots they can belong to: the expected account-copy refusal
+			// of a UPnP-form key is not one, and re-asking for it looped a
+			// forced pass every five minutes on a playing speaker (2026-10-26).
+			verdict := judgeSweepRefusals(accepted, kept, firmwarePresetRefusalsSince(sweepStart))
+			refused := reportRewrittenSlots(logger, kept, verdict)
+			if len(kept) > 0 {
+				if ask, streak, wait := noteRewriteOutcome(refused, time.Now()); ask {
+					requestPresetKeyResync(logger, "refused-rewrite")
+				} else if refused {
+					logger.Info("preset reconcile: the speaker refused the rewrite again, backing off before asking for another re-sync",
+						"streak", streak, "backoffLeft", wait.Round(time.Second).String())
+				}
 			}
 			if len(lost) > 0 {
 				syncFailed = true
