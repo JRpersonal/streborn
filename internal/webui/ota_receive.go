@@ -77,14 +77,22 @@ func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receive
 	h := sha256.New()
 	buf := make([]byte, 32*1024)
 
-	tmp, dir, st, err := prepareBinaryWrite(dst, need)
+	// Deferred: a tight speaker keeps its Spotify engine until the body has
+	// actually filled the volume to the margin (prepareBinaryWriteDeferred), so
+	// a transfer that dies early does not cost the speaker Spotify.
+	tmp, dir, st, err := prepareBinaryWriteDeferred(dst, need)
 	if err != nil {
 		if errors.Is(err, errInsufficientNAND) {
 			return spillToRAMStage("", 0, nil, src, h, buf, need, maxSize, err)
 		}
 		return receivedAgent{}, err
 	}
+	gate := &engineReclaimGate{dir: dir, need: need}
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil && isNoSpaceErr(err) && st.enginePending {
+		gate.run(&st, 0, true)
+		f, err = os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	}
 	if err != nil {
 		cerr := classifyNANDWriteErr("open tmp", err, dir, need, st.engineStopped, st.engineReclaim, st.predictedFull)
 		if errors.Is(cerr, errInsufficientNAND) {
@@ -103,8 +111,21 @@ func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receive
 				return receivedAgent{size: n + int64(nr)}, errUploadTooBig
 			}
 			h.Write(buf[:nr])
+			if gate.due(&st, nr) {
+				gate.run(&st, n, false)
+			}
 			nw, werr := f.Write(buf[:nr])
 			n += int64(nw)
+			if werr != nil && isNoSpaceErr(werr) && st.enginePending {
+				// The filesystem ran out before statfs reached the margin (it
+				// can, it is only an estimate). Make the room the up-front
+				// reclaim would have made and finish this chunk.
+				gate.run(&st, n, true)
+				var nw2 int
+				nw2, werr = f.Write(buf[nw:nr])
+				nw += nw2
+				n += int64(nw2)
+			}
 			if werr != nil {
 				_ = f.Close()
 				if isNoSpaceErr(werr) {

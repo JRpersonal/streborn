@@ -616,6 +616,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		if !lostReplyErr.MatchString(err.Error()) {
 			base.Outcome = outcomeFailed
 			base.Err = err.Error()
+			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: outcomeFailed, Attempt: attempt, Outcome: outcomeFailed, Err: base.Err})
 			return base
 		}
@@ -730,6 +731,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 			default:
 				base.Outcome = outcomeTimeout
 			}
+			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome})
 			return base
 		}
@@ -750,6 +752,79 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		u.seams.spawn(func() { u.seams.restoreGroup(host, port) })
 	}
 	return u.deliverEngine(base, confirmed, preVersion)
+}
+
+// engineRestoreAttempts bounds the engine re-delivery after an update that did
+// not complete. Two: one retry covers a stream the poor link that just killed
+// the agent upload also cuts once, more would only keep a weak speaker busy.
+const engineRestoreAttempts = 2
+
+// restoreEngineAfterIncompleteUpdate puts the Spotify engine back on a speaker
+// whose agent update did not complete but whose engine was already dropped to
+// make room for it.
+//
+// The agent drops the engine on a NAND-tight speaker so the new binary fits,
+// and the re-delivery used to live only behind a confirmed update
+// (deliverEngine). An upload that died halfway therefore left the speaker on
+// its old agent with no Spotify, and nothing ever put it back: a Portable on a
+// poor Wi-Fi link timed out twice at about 2.5 of 18.3 MB in the 2026-10-25
+// fleet roll and ended exactly so. The old agent is running and accepts the
+// engine again (it clears its update-in-flight latch on every give-up path),
+// so it goes back now, while the update run is still the one writing to this
+// speaker.
+//
+// It acts only on the speaker's own word: goLibrespot "missing" together with
+// goLibrespotDroppedForUpdate "true". An engine that was never installed, a
+// speaker that does not answer, and the two outcomes where the speaker cannot
+// take a delivery (STR's agent is not running, or Bose's setup is) are left
+// as they are. The outcome of the update itself is not changed: it did not
+// complete, and the frontend is told so as before.
+func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) UpdateOutcome {
+	if base.Outcome == outcomeAgentGone || base.Outcome == outcomeBoxInSetup {
+		return base
+	}
+	live, err := u.seams.readVersion(u.host, u.port)
+	if err != nil || live == nil || live["goLibrespot"] != "missing" || live["goLibrespotDroppedForUpdate"] != "true" {
+		return base
+	}
+	u.record("update did not complete and the speaker reports its Spotify engine dropped for it: delivering the engine again to the running agent " + live["version"])
+	u.log().Info("speaker update: update incomplete, the engine was dropped for it; putting it back",
+		"host", u.host, "outcome", base.Outcome, "agent", live["version"])
+	for attempt := 1; attempt <= engineRestoreAttempts; attempt++ {
+		if attempt > 1 {
+			u.sleep(u.policy.engineBackoff(attempt - 1))
+		}
+		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
+		var res string
+		var engErr error
+		u.gate.run(func() {
+			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
+			res, engErr = u.seams.ensureEngine(u.host, u.port)
+		})
+		if engErr != nil {
+			m := engErr.Error()
+			u.log().Warn("speaker update: engine re-delivery after the incomplete update failed",
+				"host", u.host, "attempt", attempt, "err", engErr)
+			if spaceRefusal.MatchString(m) {
+				base.EngineTooFull = true
+				u.record("engine re-delivery after the incomplete update refused for lack of room: " + m)
+				return base
+			}
+			continue
+		}
+		if noEmbeddedEngine.MatchString(res) || engineSkipped.MatchString(res) {
+			u.record("engine re-delivery after the incomplete update skipped: " + res)
+			return base
+		}
+		check, cerr := u.seams.readVersion(u.host, u.port)
+		if cerr == nil && check["goLibrespot"] == "present" {
+			base.EngineDelivered = res != "current"
+			u.record("engine back on the speaker after the incomplete update (" + res + ")")
+			return base
+		}
+	}
+	u.record("engine re-delivery after the incomplete update did not succeed; the next update run delivers it")
+	return base
 }
 
 // deliverEngine is the second half of an update: the agent is on the target

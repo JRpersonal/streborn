@@ -74,7 +74,9 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			// Not "never installed": this speaker HAD the engine and it was
 			// deleted to fit an agent update. Reported so the app can SAY so
 			// where the user is already looking, and so a diagnostic tells the
-			// two cases apart. Nothing acts on it: a binary reaches a speaker
+			// two cases apart. The desktop app's update run acts on it when the
+			// agent update did not complete (the engine goes back onto the old
+			// agent); outside a run nothing does: a binary reaches a speaker
 			// only while an install or update is running (standing rule,
 			// 2026-07-29), never from a background task.
 			out["goLibrespotDroppedForUpdate"] = "true"
@@ -715,10 +717,16 @@ var engineStopHook func() bool
 // nandWriteState carries what the reclaim preamble learned into the error
 // classification, so a failure can still say whether the engine was dropped
 // and whether statfs had predicted the shortage.
+//
+// enginePending is set only by the deferred variant (prepareBinaryWriteDeferred):
+// statfs predicted a shortage, but the engine is still on the NAND and is
+// dropped only once the incoming body has actually filled the volume to the
+// margin (engineReclaimGate).
 type nandWriteState struct {
 	engineStopped bool
 	engineReclaim string
 	predictedFull bool
+	enginePending bool
 }
 
 // prepareBinaryWrite is everything a binary write does BEFORE the bytes
@@ -726,9 +734,58 @@ type nandWriteState struct {
 // makes room. Shared with the streaming variant so the two cannot drift on the
 // space handling, which is the part that took the longest to get right.
 func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+	tmp, dir, err = prepareBinaryWriteBase(dst)
+	if err != nil {
+		return "", "", st, err
+	}
+	if !nandHasRoom(dir, need) {
+		st = reclaimEngineForWrite(dir, need)
+	}
+	return tmp, dir, st, nil
+}
+
+// prepareBinaryWriteDeferred is prepareBinaryWrite for the agent update: when
+// statfs predicts a shortage it does NOT drop the Spotify engine up front but
+// marks the drop as pending, and the receive loop runs it through
+// engineReclaimGate once the body has actually used the free space up to the
+// margin.
+//
+// Dropping the engine before a single byte had arrived is what left a speaker
+// with its old agent and no Spotify (a Portable on a poor Wi-Fi link,
+// 2026-10-25): the upload died twice after 2.3 to 2.5 MB of 18.3 MB, the agent
+// correctly kept the old binary, but the first attempt had already deleted the
+// engine to make room for bytes that never came. Deferring costs the box
+// nothing: the body still streams through the same 32 KB window, so RAM use is
+// unchanged, and the engine keeps running during the transfer exactly as it
+// does on a roomy speaker. What it buys is that a transfer that dies before
+// reaching the margin leaves the engine where it was. A transfer that dies
+// AFTER the drop is still possible; the desktop app puts the engine back for
+// that case (the goLibrespotDroppedForUpdate marker).
+//
+// It never withholds the room the update needs: the drop still runs before
+// the volume gets closer to full than nandWriteMargin (plus one check window),
+// so the write stays off the sub-megabyte cliff that margin exists for, and a
+// real ENOSPC while the drop is pending runs it at once and retries the bytes.
+func prepareBinaryWriteDeferred(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+	tmp, dir, err = prepareBinaryWriteBase(dst)
+	if err != nil {
+		return "", "", st, err
+	}
+	if !nandHasRoom(dir, need) {
+		_, avail, _ := nandAvailFn(dir)
+		st.enginePending = true
+		slog.Info("OTA write: statfs predicts a shortage; the Spotify engine is dropped only once the body actually needs its room",
+			"needKB", need/1024, "availKB", avail/1024, "marginKB", nandWriteMargin/1024)
+	}
+	return tmp, dir, st, nil
+}
+
+// prepareBinaryWriteBase is the preamble both variants share: the parent
+// directory, this target's stale temp and the cheap reclaim of regenerable junk.
+func prepareBinaryWriteBase(dst string) (tmp, dir string, err error) {
 	dir = filepath.Dir(dst)
 	if err = os.MkdirAll(dir, 0o755); err != nil {
-		return "", "", st, fmt.Errorf("mkdir parent: %w", err)
+		return "", "", fmt.Errorf("mkdir parent: %w", err)
 	}
 	tmp = dst + ".new"
 	// Drop this target's stale temp, then proactively reclaim regenerable junk on
@@ -738,55 +795,117 @@ func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteSt
 	// files or the live binaries.
 	_ = os.Remove(tmp)
 	reclaimNAND()
-	engineStopped := false
-	engineReclaim := ""
-	predictedFull := false
-	if !nandHasRoom(dir, need) {
-		// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
-		// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
-		// cheap reclaim above never touches it. Drop it so the agent .new fits
-		// rather than failing the whole update (#119); the desktop app re-delivers
-		// it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
-		// "present"). Only runs when statfs predicts a shortage, so a roomy box
-		// keeps its engine.
-		//
-		// Stop the engine FIRST: it is normally running during an OTA, and a plain
-		// os.Remove of a running binary only unlinks the path while the kernel keeps
-		// its blocks pinned until the process exits, so dropping it freed nothing and
-		// the update still failed with "no space left" (#119). StopEngine kills it and
-		// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
-		// the (now-unused) binary.
-		if engineStopHook != nil {
-			engineStopped = engineStopHook()
-		}
-		engineReclaim = reclaimSpotifyEngine()
-		// Re-check with patience: UBIFS updates its free-space accounting lazily
-		// after a delete, and the engine's blocks release on process reap, so an
-		// immediate statfs can still show the old figure. A field report (#270)
-		// showed a 507 whose inventory still carried the engine with no way to
-		// tell which step failed; the outcome of each step is now logged and
-		// embedded in the error.
-		fits := false
-		for i := 0; i < 10; i++ {
-			if nandHasRoom(dir, need) {
-				fits = true
-				break
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-		predictedFull = !fits
-		slog.Info("OTA write: space-pressed reclaim ran",
-			"engineStopped", engineStopped, "engineReclaim", engineReclaim, "fits", fits)
-		if !fits {
-			// Do NOT refuse: agent+engine measurably fit the tightest (ST20,
-			// ~26.7 MB) NAND once compression is accounted for, and refusing on
-			// the pessimistic figure is what kept those boxes un-updatable.
-			_, avail, _ := diskFree(dir)
-			slog.Info("OTA write: statfs still predicts no room after reclaim; attempting the write anyway (UBIFS under-reports free space for compressible data)",
-				"needKB", need/1024, "availKB", avail/1024)
-		}
+	return tmp, dir, nil
+}
+
+// engineReclaimCheckEvery is how often (in bytes written) the deferred reclaim
+// asks statfs whether the volume has reached the margin. One statfs per 256 KB
+// is about 70 syscalls for an 18 MB agent, nothing next to the write itself,
+// and the volume can never get more than one window closer to full than the
+// margin before the drop runs.
+const engineReclaimCheckEvery = 256 * 1024
+
+// nandAvailFn is diskFree behind a seam, so the deferred reclaim can be driven
+// by a scripted volume in tests.
+var nandAvailFn = func(dir string) (total, avail int64, ok bool) { return diskFree(dir) }
+
+// engineReclaimGate drives the pending engine drop of a deferred write. The
+// receive loop calls due before every write; it asks statfs at most once per
+// engineReclaimCheckEvery bytes. The first call always asks, so a volume that
+// is already at the margin drops the engine before the first byte, exactly as
+// the up-front reclaim did.
+type engineReclaimGate struct {
+	dir        string
+	need       int64
+	sinceCheck int64
+	asked      bool
+}
+
+// due reports whether the pending drop must run before the next write of
+// next bytes.
+func (g *engineReclaimGate) due(st *nandWriteState, next int) bool {
+	if !st.enginePending {
+		return false
 	}
-	return tmp, dir, nandWriteState{engineStopped, engineReclaim, predictedFull}, nil
+	g.sinceCheck += int64(next)
+	if g.asked && g.sinceCheck < engineReclaimCheckEvery {
+		return false
+	}
+	g.asked = true
+	g.sinceCheck = 0
+	_, avail, ok := nandAvailFn(g.dir)
+	if !ok {
+		// No free figure: nandHasRoom would have predicted room, so there is
+		// nothing to steer by. Keep the engine; a real ENOSPC still drops it.
+		return false
+	}
+	return avail < nandWriteMargin+int64(next)
+}
+
+// run drops the engine now. written is what has reached the temp file so far;
+// forced marks a drop the filesystem itself asked for (ENOSPC while pending).
+func (g *engineReclaimGate) run(st *nandWriteState, written int64, forced bool) {
+	if !st.enginePending {
+		return
+	}
+	slog.Info("OTA write: the incoming body reached the NAND margin, dropping the Spotify engine now",
+		"writtenKB", written/1024, "needKB", g.need/1024, "forcedByENOSPC", forced)
+	remaining := g.need - written
+	if remaining < 0 {
+		remaining = 0
+	}
+	*st = reclaimEngineForWrite(g.dir, remaining)
+}
+
+// reclaimEngineForWrite is the second reclaim tier: stop and drop the Spotify
+// engine so a write that statfs says cannot fit gets the room. need is what is
+// still to be written.
+func reclaimEngineForWrite(dir string, need int64) nandWriteState {
+	// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
+	// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
+	// cheap reclaim never touches it. Drop it so the agent .new fits rather
+	// than failing the whole update (#119); the desktop app re-delivers it
+	// after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
+	// "present"), and after an update that did not complete when the speaker
+	// reports the engine dropped for it. Only runs when statfs predicts a
+	// shortage, so a roomy box keeps its engine.
+	//
+	// Stop the engine FIRST: it is normally running during an OTA, and a plain
+	// os.Remove of a running binary only unlinks the path while the kernel keeps
+	// its blocks pinned until the process exits, so dropping it freed nothing and
+	// the update still failed with "no space left" (#119). StopEngine kills it and
+	// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
+	// the (now-unused) binary.
+	engineStopped := false
+	if engineStopHook != nil {
+		engineStopped = engineStopHook()
+	}
+	engineReclaim := reclaimSpotifyEngine()
+	// Re-check with patience: UBIFS updates its free-space accounting lazily
+	// after a delete, and the engine's blocks release on process reap, so an
+	// immediate statfs can still show the old figure. A field report (#270)
+	// showed a 507 whose inventory still carried the engine with no way to
+	// tell which step failed; the outcome of each step is now logged and
+	// embedded in the error.
+	fits := false
+	for i := 0; i < 10; i++ {
+		if nandHasRoom(dir, need) {
+			fits = true
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	slog.Info("OTA write: space-pressed reclaim ran",
+		"engineStopped", engineStopped, "engineReclaim", engineReclaim, "fits", fits)
+	if !fits {
+		// Do NOT refuse: agent+engine measurably fit the tightest (ST20,
+		// ~26.7 MB) NAND once compression is accounted for, and refusing on
+		// the pessimistic figure is what kept those boxes un-updatable.
+		_, avail, _ := diskFree(dir)
+		slog.Info("OTA write: statfs still predicts no room after reclaim; attempting the write anyway (UBIFS under-reports free space for compressible data)",
+			"needKB", need/1024, "availKB", avail/1024)
+	}
+	return nandWriteState{engineStopped: engineStopped, engineReclaim: engineReclaim, predictedFull: !fits}
 }
 
 // finishBinaryWrite renames the completed temp into place and journals it.
