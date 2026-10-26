@@ -66,6 +66,9 @@ type receivedAgent struct {
 	sum       string // hex SHA256 of the complete upload
 	size      int64
 	ramStaged bool // NAND filled up mid-stream; the binary is complete at ramStageTarget
+	// ramFirstStage is the RAM-first stage dst was copied from, kept for the
+	// flash verify; the caller releases it (releaseRAMFirstStage).
+	ramFirstStage string
 }
 
 // receiveAgentBinary streams src into dst (atomically, via the temp file and
@@ -74,6 +77,8 @@ type receivedAgent struct {
 // is moved to the RAM stage instead and receivedAgent.ramStaged is set; dst is
 // then untouched and the caller arms the tier-3 swap.
 func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receivedAgent, error) {
+	agentReceivesActive.Add(1)
+	defer agentReceivesActive.Add(-1)
 	h := sha256.New()
 	buf := make([]byte, 32*1024)
 
