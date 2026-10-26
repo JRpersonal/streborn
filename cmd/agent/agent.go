@@ -1529,6 +1529,9 @@ func (a *agent) buildBoxLink() error {
 		}
 		return fetched
 	}
+	// The firmware's recents POST: its own word that a station started, so a
+	// preset press it confirmed is never called failed on the display.
+	wsHandler.recentAddedAt = margeSrv.LastRecentAdded
 	keyTrace.SetPlayFailureHandler(wsHandler.OnPlayFailure)
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it

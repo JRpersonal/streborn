@@ -54,7 +54,12 @@ type presetWsHandler struct {
 	// first-press rescue can tell a press the firmware never acted on. nil
 	// means "never seen".
 	stationActivity func() time.Time
-	spotify         *spotify.Manager
+	// recentAddedAt reports when the firmware last posted a recents record to
+	// marge, which it does once a station it was told to play starts (marge
+	// LastRecentAdded). The preset-outcome notice reads a stamp after the
+	// press as "this press brought sound". nil means "never seen".
+	recentAddedAt func() time.Time
+	spotify       *spotify.Manager
 	// onUserStop is invoked when the box reports a deliberate playback stop
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
@@ -573,7 +578,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// before the screen comes back with the new station.
 	if oled.TrackShowing() {
 		showNotice(oled.PresetPlaying(slot, title))
-		go h.notePresetOutcome(ctx, seq, slot, title)
+		go h.notePresetOutcome(ctx, seq, pressAt, slot, title)
 	}
 	// The press is the user explicitly asking for playback: clear any stale
 	// deliberate-stop latch BEFORE the recall so a preceding (or spontaneous,
@@ -644,15 +649,23 @@ func (h *presetWsHandler) noteNativeRecentOnStart(ctx context.Context, seq uint6
 
 // presetOutcomeAfter is how long a preset press gets to bring sound before the
 // panel says it failed: past the recall's own verify and a slow station's
-// first buffer.
-const presetOutcomeAfter = 15 * time.Second
+// first buffer. A var so the tests can shorten it.
+var presetOutcomeAfter = 15 * time.Second
 
 // notePresetOutcome looks once, presetOutcomeAfter after a press that showed
-// its preset notice, whether the speaker plays. If a newer press came since,
-// that one answers for itself. If it does not play, the panel says so, so a
+// its preset notice, whether the press brought sound. If a newer press came
+// since, that one answers for itself. If it did not, the panel says so, so a
 // station that never started is not shown as if it had.
-func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slot int, title string) {
-	if h.playingNow == nil {
+//
+// "Not playing now" alone is not "the press failed": a Portable bundle
+// (2026-10-26) had a station play for ten seconds, the remote switch the
+// speaker off, and FAILED drawn on the panel of the speaker in standby. So
+// the notice stands down when the user switched the speaker off after the
+// press, when the speaker is in standby, and when the speaker already showed
+// it played this press: the box pulled the slot's stream for real, or the
+// firmware reported the station to marge as started.
+func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, pressAt time.Time, slot int, title string) {
+	if h.playingNow == nil && h.sourceAndPlaying == nil {
 		return
 	}
 	select {
@@ -660,7 +673,13 @@ func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slo
 		return
 	case <-time.After(presetOutcomeAfter):
 	}
-	if h.pressSeq.Load() != seq || h.playingNow(ctx) {
+	if h.pressSeq.Load() != seq {
+		return
+	}
+	if reason := h.presetOutcomeStandDown(ctx, pressAt, slot); reason != "" {
+		if reason != "playing" {
+			h.logger.Info("preset press outcome: no failure notice", "slot", slot, "reason", reason)
+		}
 		return
 	}
 	if p, ok := h.store.Get(slot); ok && p.Name != "" {
@@ -668,6 +687,40 @@ func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slo
 	}
 	h.logger.Info("preset press did not start playing, saying so on the display", "slot", slot, "name", title)
 	showNotice(oled.PresetFailed(slot, title))
+}
+
+// presetOutcomeStandDown answers why a preset press must not be called failed,
+// or "" when it did fail. The checks that cost nothing come first; the one
+// now_playing read comes last.
+func (h *presetWsHandler) presetOutcomeStandDown(ctx context.Context, pressAt time.Time, slot int) string {
+	if h.poweredOffSince(pressAt) {
+		return "switched off after the press"
+	}
+	if h.slotPulledSince(slot, pressAt) {
+		return "the speaker played the station's stream"
+	}
+	if h.recentAddedAt != nil && h.recentAddedAt().After(pressAt) {
+		return "the speaker reported the station as started"
+	}
+	if h.sourceAndPlaying != nil {
+		src, playing, ok := h.sourceAndPlaying(ctx)
+		switch {
+		case !ok:
+			// No answer is no evidence of a failure: say nothing rather than
+			// draw FAILED over a station that may well be playing.
+			return "speaker state unknown"
+		case src == "STANDBY":
+			// Never draw on the panel of a speaker in standby.
+			return "speaker in standby"
+		case playing:
+			return "playing"
+		}
+		return ""
+	}
+	if h.playingNow(ctx) {
+		return "playing"
+	}
+	return ""
 }
 
 // recallPreset is the slow half of a hardware preset press: the queue-preset

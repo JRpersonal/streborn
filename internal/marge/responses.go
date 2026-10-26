@@ -521,8 +521,27 @@ func (s *Server) respondRecentAdded(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(EmptyRecentsXML))
 		return
 	}
+	s.noteRecentAdded()
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(recentElementXML(rec, s.sourceNameForID(rec.sourceID), s.nextRecentID(), time.Now())))
+}
+
+// noteRecentAdded stamps a recents POST the firmware sent for a station it
+// started.
+func (s *Server) noteRecentAdded() {
+	s.mu.Lock()
+	s.lastRecentAdded = time.Now()
+	s.mu.Unlock()
+}
+
+// LastRecentAdded reports when the firmware last told marge it started a
+// station (zero = never since the agent started). The firmware posts a recent
+// only once a station actually plays, so a stamp after a preset press is the
+// speaker's own word that the press brought sound.
+func (s *Server) LastRecentAdded() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastRecentAdded
 }
 
 // recentElementXML renders one confirmed recent record in the list dialect
