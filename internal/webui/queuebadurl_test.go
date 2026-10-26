@@ -486,13 +486,117 @@ func TestUrlRecentlyGoneForgetsAndIsBounded(t *testing.T) {
 }
 
 // The watcher must never read the reports on a timer of its own: the wake
-// channel is the only addition to its select (no new periodic timer, SCHONE
-// die Box-Hardware).
+// channel is the only addition to its select (no new periodic timer, spare
+// the speaker's hardware).
 func TestBadURLWakeAddsNoTimer(t *testing.T) {
 	src := readRepoFile(t, "queuebadurl.go")
 	for _, timer := range []string{"time.NewTicker", "time.Tick(", "time.AfterFunc", "time.NewTimer"} {
 		if strings.Contains(src, timer) {
 			t.Errorf("queuebadurl.go uses %s; the reports must wake the watcher, not a timer", timer)
 		}
+	}
+}
+
+// A single 3101 for a track the media server serves (the probe answers 206)
+// is a hiccup, not a dead track: the track is not skipped at once, and the
+// stall timeout with its one start retry decides it as before.
+func TestBoxBadURLForATrackTheServerServesIsNotSkipped(t *testing.T) {
+	t.Parallel()
+	logs := &syncBuf{}
+	s, _ := badURLWatchServer(t, logs)
+	var probes atomic.Int32
+	s.trackProbeFn = func(context.Context, string) (int, error) {
+		probes.Add(1)
+		return http.StatusPartialContent, nil
+	}
+	items := badURLTracks("http://192.0.2.10:49200", 5)
+	seedFolderKey(t, s, 2, "Morning", items)
+	boxRefusesEveryPush(t, s, func(url string) bool { return url == items[0].URL })
+	if err := s.startQueue(context.Background(), items, 0, false, repeatOff,
+		recentCardCtx{key: "queue:slot:2", name: "Morning"}); err != nil {
+		t.Fatalf("startQueue: %v", err)
+	}
+	t.Cleanup(func() { s.stopQueue("test done") })
+	const handed = "leaving it to the start retry"
+	stall := s.queueTiming.stallTimeout
+	deadline := time.Now().Add(stall)
+	for time.Now().Before(deadline) && !strings.Contains(logs.String(), handed) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !strings.Contains(logs.String(), handed) {
+		t.Fatalf("the 3101 for a served track was not handed to the start retry; log:\n%s", logs.String())
+	}
+	if probes.Load() == 0 {
+		t.Error("the track's address was never probed")
+	}
+	if it, _ := s.queue.current(); it.URL != items[0].URL {
+		t.Fatalf("a track the server serves was skipped on one 3101; log:\n%s", logs.String())
+	}
+	if strings.Contains(logs.String(), "skipping to the next") {
+		t.Errorf("a track the server serves counted as dead at once; log:\n%s", logs.String())
+	}
+	// The stall path still gets its one start retry.
+	const retry = "never started the track, waking it and handing it over once more"
+	deadline = time.Now().Add(3 * stall)
+	for time.Now().Before(deadline) && !strings.Contains(logs.String(), retry) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !strings.Contains(logs.String(), retry) {
+		t.Errorf("the start retry never ran; log:\n%s", logs.String())
+	}
+	if _, _, ok := s.StaleFolderKey(); ok {
+		t.Error("a key whose server serves its tracks was called stale")
+	}
+}
+
+// A stale verdict ends as soon as the same key plays again: a router media
+// server answers 404 until its USB stick is mounted after a reboot, and a
+// key that plays a minute later must not keep "save the folder again" up.
+func TestAStaleKeyThatPlaysAgainIsNoLongerStale(t *testing.T) {
+	t.Parallel()
+	logs := &syncBuf{}
+	s, _ := badURLWatchServer(t, logs)
+	items := badURLTracks("http://192.0.2.10:49200", 5)
+	seedFolderKey(t, s, 2, "Morning", items)
+	seedFolderKey(t, s, 3, "Evening", items)
+	s.queue.load(items, 0, false, repeatOff)
+
+	s.resetBadURLRun(recentCardCtx{key: "queue:slot:2", name: "Morning"})
+	var rec staleFolderKey
+	var stale bool
+	for i := 0; i < staleFolderKeyTracks; i++ {
+		rec, stale = s.noteBadURLRunTrack(http.StatusNotFound, true)
+	}
+	if !stale {
+		t.Fatal("setup: the key was not called stale")
+	}
+	pressAt := time.Now().Add(-time.Second)
+	s.reportStaleFolderKey(rec, items[2].URL)
+	if slot, _, ok := s.StaleFolderKey(); !ok || slot != 2 {
+		t.Fatalf("StaleFolderKey = %d, %v; want key 2", slot, ok)
+	}
+	if !s.StaleFolderKeySince(2, pressAt) || s.StaleFolderKeySince(3, pressAt) ||
+		s.StaleFolderKeySince(2, time.Now().Add(time.Second)) {
+		t.Error("StaleFolderKeySince does not name only the key found stale after the press")
+	}
+
+	// Another key playing says nothing about key 2.
+	s.resetBadURLRun(recentCardCtx{key: "queue:slot:3", name: "Evening"})
+	s.noteQueueHeard()
+	if _, _, ok := s.StaleFolderKey(); !ok {
+		t.Fatal("a different key playing ended key 2's verdict")
+	}
+
+	// Key 2 pressed again, and a track plays.
+	s.resetBadURLRun(recentCardCtx{key: "queue:slot:2", name: "Morning"})
+	s.noteQueueHeard()
+	if slot, _, ok := s.StaleFolderKey(); ok {
+		t.Errorf("key %d still called stale after one of its tracks played", slot)
+	}
+	if s.StaleFolderKeySince(2, pressAt) {
+		t.Error("StaleFolderKeySince still names a key that played since")
+	}
+	if !strings.Contains(logs.String(), "no longer holds") {
+		t.Errorf("no line saying the verdict ended; log:\n%s", logs.String())
 	}
 }

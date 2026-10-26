@@ -166,11 +166,24 @@ func (s *Server) resetBadURLRun(card recentCardCtx) {
 }
 
 // noteQueueHeard records that a track of the current queue played audibly:
-// the server delivers, so whatever fails later is not a moved folder.
+// the server delivers, so whatever fails later is not a moved folder. When
+// the queue came from the key found stale earlier, that verdict ends too: a
+// media server that answered 404 for a while (a router whose USB stick was
+// not mounted yet after a reboot) and now delivers the key's files must not
+// leave "save the folder again" standing for the rest of the hour.
 func (s *Server) noteQueueHeard() {
 	s.badURL.mu.Lock()
 	s.badURL.run.spoil = true
+	cleared := 0
+	if slot := s.badURL.run.slot; slot > 0 && s.badURL.stale.Slot == slot && !s.badURL.stale.at.IsZero() {
+		cleared = slot
+		s.badURL.stale.at = time.Time{}
+	}
 	s.badURL.mu.Unlock()
+	if cleared > 0 && s.logger != nil {
+		s.logger.Info("folder key: a track of the key played, the earlier \"save the folder again\" verdict no longer holds",
+			"slot", cleared)
+	}
 }
 
 func goneStatus(code int) bool {
@@ -322,6 +335,17 @@ func (s *Server) queueFailFast(gen int, start time.Time, dur time.Duration, ev b
 			code, answers = c, true
 		}
 	}
+	if answers && !goneStatus(code) {
+		// The box said BAD_URL but the server serves the file: a one-off
+		// (a box just woken, a Wi-Fi hiccup), not a dead track. It spoils
+		// the stale verdict, and the stall timeout with its one start
+		// retry (#1322) decides the track, so a healthy queue loses
+		// nothing to a single 3101.
+		s.noteBadURLRunTrack(code, answers)
+		s.logger.Info("queue watcher: the speaker could not fetch the track, but the media server serves it; leaving it to the start retry",
+			"title", it.Title, "status", code, "waitedMs", time.Since(start).Milliseconds())
+		return false
+	}
 	if goneStatus(code) {
 		s.badURL.mu.Lock()
 		s.noteGoneLocked(it.URL, code)
@@ -424,6 +448,16 @@ func (s *Server) StaleFolderKey() (slot int, age time.Duration, ok bool) {
 		}
 	}
 	return rec.Slot, age, true
+}
+
+// StaleFolderKeySince reports whether slot was found stale at or after t:
+// the press at t ended in the stale notice, so a generic "did not start
+// playing" must not follow it on the speaker display.
+func (s *Server) StaleFolderKeySince(slot int, t time.Time) bool {
+	s.badURL.mu.Lock()
+	rec := s.badURL.stale
+	s.badURL.mu.Unlock()
+	return slot > 0 && rec.Slot == slot && !rec.at.IsZero() && !rec.at.Before(t)
 }
 
 // staleFolderKeyForensics is the last stale folder key for the debug state,
