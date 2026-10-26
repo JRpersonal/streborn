@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Bir tuşa koy",
   "ui2.spotify.saving": "{{name}} üzerine kaydediliyor…",
   "ui2.spotify.saved": "Tamam: {{name}} hoparlörünün {{n}} tuşu artık {{title}} çalıyor.",
-  "ui2.spotify.moved": "Taşındı: {{name}} hoparlörünün {{n}} tuşunda artık çalma listesi var, {{from}} tuşu yeniden boş.",
+  "ui2.spotify.moved": "Taşındı: {{name}} hoparlörünün {{n}} tuşu artık {{title}} çalıyor, {{from}} tuşu yeniden boş.",
   "ui2.spotify.speakerChanged": "Bu arada başka bir hoparlör seçildi, bu yüzden {{name}} üzerine hiçbir şey kaydedilmedi.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} Spotify çalmayı bıraktı, bu yüzden hiçbir şey kaydedilmedi. Çalma listesini yeniden başlat ve tekrar dene.",
   "ui2.spotify.saveFailed": "{{name}} tuşu kaydetmedi: {{err}}",

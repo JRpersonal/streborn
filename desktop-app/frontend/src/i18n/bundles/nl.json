@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Op een toets zetten",
   "ui2.spotify.saving": "Opslaan op {{name}}…",
   "ui2.spotify.saved": "Klaar: toets {{n}} van {{name}} speelt nu {{title}}.",
-  "ui2.spotify.moved": "Verplaatst: toets {{n}} van {{name}} heeft nu de afspeellijst, toets {{from}} is weer vrij.",
+  "ui2.spotify.moved": "Verplaatst: toets {{n}} van {{name}} speelt nu {{title}}, toets {{from}} is weer vrij.",
   "ui2.spotify.speakerChanged": "Intussen is een andere speaker gekozen, dus er is niets opgeslagen op {{name}}.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} speelt geen Spotify meer, dus er is niets opgeslagen. Start de playlist opnieuw en probeer het nog eens.",
   "ui2.spotify.saveFailed": "{{name}} heeft de toets niet opgeslagen: {{err}}",

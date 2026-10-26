@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Priskirti mygtukui",
   "ui2.spotify.saving": "Išsaugoma {{name}}…",
   "ui2.spotify.saved": "Atlikta: {{name}} mygtukas {{n}} dabar groja {{title}}.",
-  "ui2.spotify.moved": "Perkelta: {{name}} mygtukas {{n}} dabar turi grojaraštį, mygtukas {{from}} vėl laisvas.",
+  "ui2.spotify.moved": "Perkelta: {{name}} mygtukas {{n}} dabar groja {{title}}, mygtukas {{from}} vėl laisvas.",
   "ui2.spotify.speakerChanged": "Tuo metu buvo pasirinktas kitas garsiakalbis, todėl {{name}} nieko neišsaugota.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} nebegroja Spotify, todėl nieko neišsaugota. Paleisk grojaraštį iš naujo ir bandyk dar kartą.",
   "ui2.spotify.saveFailed": "{{name}} neišsaugojo mygtuko: {{err}}",

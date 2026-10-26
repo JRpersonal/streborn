@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "放到按鍵",
   "ui2.spotify.saving": "正在存到{{name}}…",
   "ui2.spotify.saved": "完成：{{name}}的按鍵 {{n}}現在播放{{title}}。",
-  "ui2.spotify.moved": "已移動：{{name}}的按鍵 {{n}}現在存有這個播放清單，按鍵 {{from}}已空出。",
+  "ui2.spotify.moved": "已移動：{{name}}的按鍵 {{n}}現在播放{{title}}，按鍵 {{from}}已空出。",
   "ui2.spotify.speakerChanged": "這段時間選了另一個喇叭，所以{{name}}上沒有儲存任何東西。",
   "ui2.spotify.stoppedBeforeSave": "{{name}}已停止播放 Spotify，所以沒有儲存任何東西。請重新播放播放清單後再試一次。",
   "ui2.spotify.saveFailed": "{{name}}沒有儲存這個按鍵：{{err}}",

@@ -231,9 +231,10 @@ export async function saveToChosenKey() {
             lines.push({ tone: 'warn', text: presetConflictNote(conflict, t) });
             // The Music view's offer to move it onto the chosen key, on this
             // speaker. Once the speaker moved it, the note above is out of
-            // date, so the card says where the playlist is now.
+            // date, so the card says where it is now, by its name: it may be
+            // an album or an artist as well as a playlist.
             moveOffer = presetMoveOffer(conflict, slot, box)
-              .then((moved) => (moved ? { from: conflict.slot } : null), () => null);
+              .then((moved) => (moved ? { from: conflict.slot, title } : null), () => null);
           } else {
             fail(t('ui2.spotify.saveFailed', { name, err: String(err) }));
           }
@@ -254,7 +255,7 @@ export async function saveToChosenKey() {
       // Only while this is still the card's last result: a newer save or a
       // change of what plays has its own line by then.
       if (!moved || results.get(key) !== result) return;
-      results.set(key, { tone: 'ok', lines: [{ tone: 'ok', text: t('ui2.spotify.moved', { from: moved.from, n: slot, name }) }], uri: startUri });
+      results.set(key, { tone: 'ok', lines: [{ tone: 'ok', text: t('ui2.spotify.moved', { from: moved.from, n: slot, name, title: moved.title }) }], uri: startUri });
       paintKeys(true);
     });
   }

@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Likt uz pogas",
   "ui2.spotify.saving": "Saglabā uz {{name}}…",
   "ui2.spotify.saved": "Gatavs: {{name}} poga {{n}} tagad atskaņo {{title}}.",
-  "ui2.spotify.moved": "Pārvietots: {{name}} pogā {{n}} tagad ir atskaņošanas saraksts, poga {{from}} atkal ir brīva.",
+  "ui2.spotify.moved": "Pārvietots: {{name}} poga {{n}} tagad atskaņo {{title}}, poga {{from}} atkal ir brīva.",
   "ui2.spotify.speakerChanged": "Pa to laiku tika izvēlēts cits skaļrunis, tāpēc uz {{name}} nekas netika saglabāts.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} vairs neatskaņo Spotify, tāpēc nekas netika saglabāts. Sāc atskaņošanas sarakstu vēlreiz un mēģini atkal.",
   "ui2.spotify.saveFailed": "{{name}} nesaglabāja pogu: {{err}}",

@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Mettre sur une touche",
   "ui2.spotify.saving": "Enregistrement sur {{name}}…",
   "ui2.spotify.saved": "C'est fait : la touche {{n}} de {{name}} joue maintenant {{title}}.",
-  "ui2.spotify.moved": "Déplacée : la touche {{n}} de {{name}} contient maintenant la playlist, la touche {{from}} est de nouveau libre.",
+  "ui2.spotify.moved": "Déplacée : la touche {{n}} de {{name}} joue maintenant {{title}}, la touche {{from}} est de nouveau libre.",
   "ui2.spotify.speakerChanged": "Une autre enceinte a été choisie entre-temps, rien n'a donc été enregistré sur {{name}}.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} ne joue plus Spotify, rien n'a donc été enregistré. Relance la playlist et réessaie.",
   "ui2.spotify.saveFailed": "{{name}} n'a pas enregistré la touche : {{err}}",

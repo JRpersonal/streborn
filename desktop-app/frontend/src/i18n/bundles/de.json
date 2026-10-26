@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Auf eine Taste legen",
   "ui2.spotify.saving": "Wird auf {{name}} gespeichert…",
   "ui2.spotify.saved": "Fertig: Taste {{n}} von {{name}} spielt jetzt {{title}}.",
-  "ui2.spotify.moved": "Verschoben: Taste {{n}} von {{name}} hat jetzt die Playlist, Taste {{from}} ist wieder frei.",
+  "ui2.spotify.moved": "Verschoben: Taste {{n}} von {{name}} spielt jetzt {{title}}, Taste {{from}} ist wieder frei.",
   "ui2.spotify.speakerChanged": "Inzwischen ist ein anderer Lautsprecher gewählt, deshalb wurde auf {{name}} nichts gespeichert.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} spielt kein Spotify mehr, deshalb wurde nichts gespeichert. Starte die Playlist noch einmal und versuch es erneut.",
   "ui2.spotify.saveFailed": "{{name}} hat die Taste nicht gespeichert: {{err}}",

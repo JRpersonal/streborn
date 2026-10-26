@@ -201,10 +201,13 @@ describe('the classic layout is untouched', () => {
     expect(inner).not.toContain('state.currentBox.host, state.currentBox.port');
   });
 
-  it('replaces the already-on-a-key note once the speaker moved the playlist', () => {
+  it('replaces the already-on-a-key note once the speaker moved it, naming what moved', () => {
     const save = srcOf('saveToChosenKey');
     expect(save).toContain('presetMoveOffer(conflict, slot, box)');
     expect(save).toContain("t('ui2.spotify.moved'");
+    // By name, not as "the playlist": an album or an artist moves the same way.
+    expect(save).toContain('{ from: conflict.slot, title }');
+    expect(save).toContain('title: moved.title');
     expect(save).toContain('results.get(key) !== result');
   });
 });

@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Поставити на кнопку",
   "ui2.spotify.saving": "Збереження на {{name}}…",
   "ui2.spotify.saved": "Готово: кнопка {{n}} колонки {{name}} тепер грає {{title}}.",
-  "ui2.spotify.moved": "Перенесено: кнопка {{n}} колонки {{name}} тепер має плейлист, кнопка {{from}} знову вільна.",
+  "ui2.spotify.moved": "Перенесено: кнопка {{n}} колонки {{name}} тепер грає {{title}}, кнопка {{from}} знову вільна.",
   "ui2.spotify.speakerChanged": "Тим часом вибрано іншу колонку, тому на {{name}} нічого не збережено.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} більше не грає Spotify, тому нічого не збережено. Запусти плейлист ще раз і спробуй знову.",
   "ui2.spotify.saveFailed": "{{name}} не зберегла кнопку: {{err}}",

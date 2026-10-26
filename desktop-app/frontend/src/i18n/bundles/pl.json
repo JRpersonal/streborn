@@ -1784,7 +1784,7 @@
   "ui2.spotify.saveBtnNoKey": "Ustaw na przycisku",
   "ui2.spotify.saving": "Zapisywanie na {{name}}…",
   "ui2.spotify.saved": "Gotowe: przycisk {{n}} głośnika {{name}} odtwarza teraz {{title}}.",
-  "ui2.spotify.moved": "Przeniesiono: przycisk {{n}} głośnika {{name}} ma teraz playlistę, przycisk {{from}} jest znowu wolny.",
+  "ui2.spotify.moved": "Przeniesiono: przycisk {{n}} głośnika {{name}} odtwarza teraz {{title}}, przycisk {{from}} jest znowu wolny.",
   "ui2.spotify.speakerChanged": "W międzyczasie wybrano inny głośnik, więc na {{name}} nic nie zapisano.",
   "ui2.spotify.stoppedBeforeSave": "{{name}} przestał odtwarzać Spotify, więc nic nie zapisano. Włącz playlistę jeszcze raz i spróbuj ponownie.",
   "ui2.spotify.saveFailed": "{{name}} nie zapisał przycisku: {{err}}",
