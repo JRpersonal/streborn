@@ -1015,7 +1015,7 @@ export namespace main {
 	    cover: string;
 	    context: string;
 	    account: string;
-    accountNames?: Record<string, string>;
+	    accountNames?: Record<string, string>;
 	    premiumRequired: boolean;
 	    audioKeyRefused: boolean;
 	    canRecall?: boolean;
@@ -1033,7 +1033,7 @@ export namespace main {
 	        this.cover = source["cover"];
 	        this.context = source["context"];
 	        this.account = source["account"];
-        this.accountNames = source["accountNames"];
+	        this.accountNames = source["accountNames"];
 	        this.premiumRequired = source["premiumRequired"];
 	        this.audioKeyRefused = source["audioKeyRefused"];
 	        this.canRecall = source["canRecall"];
