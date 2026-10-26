@@ -501,6 +501,14 @@ type Server struct {
 	// a key saved or recalled without a stored length can still end on time
 	// (#978). See librarykey.go.
 	trackLens trackLengths
+	// lengthHints holds estimated lengths of upcoming queue tracks that were
+	// too uncertain to hand to the box as a length (an MP3 bitrate x size
+	// guess). The queue watcher only uses them to confirm an end sooner. See
+	// queueprearm.go.
+	lengthHints trackLengths
+	// prearmProbeFn overrides the MP3 length read of prearmNextLength for
+	// tests. nil means the real range reads against the media server.
+	prearmProbeFn func(ctx context.Context, url string) (d time.Duration, exact bool)
 	// fileProbes caches, per URL, whether a custom URL preset is a finite
 	// file the speaker can be handed directly (#830). See customfile.go.
 	fileProbes fileProbes
