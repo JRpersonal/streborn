@@ -30,6 +30,7 @@ import {
   isStreamURL,
   normalizeDetailedSearch,
   relaxedHintVisible,
+  searchModePressed,
   stationBitrateCell,
   stationCheckDot,
   syntheticStationForURL,
@@ -67,6 +68,18 @@ export function updateFilterIndicators() {
   if (lang) lang.classList.toggle('has-filter', !!lang.value);
 }
 
+// syncSearchModeButtons marks the Top / Favorites / Pandora button of the list
+// on screen as pressed (class plus aria-pressed, #1521) and releases the others.
+export function syncSearchModeButtons() {
+  const pressed = searchModePressed(state.searchLastMode, state.searchListOpen);
+  for (const [id, on] of Object.entries(pressed)) {
+    const b = $(id);
+    if (!b) continue;
+    b.classList.toggle('mode-pressed', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+
 // doRefilter re-runs the last action (Top or Search) with the new
 // filters but keeps the existing query string.
 export function doRefilter() {
@@ -87,6 +100,8 @@ async function doSearch() {
   const q = $('searchQ').value.trim();
   state.searchLastQuery = q;
   state.searchLastMode = q ? 'search' : 'top';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   state.searchOffset = 0;
   if (!q) { return doTop(); }
   // A pasted stream URL is not a name query: look it up in the directory
@@ -136,6 +151,8 @@ async function searchByStreamURL(url) {
 async function doTop() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   state.searchLastMode = 'top';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   state.searchOffset = 0;
   await fetchSearchPage(false);
 }
@@ -550,6 +567,7 @@ export async function playStation(s, options = {}) {
 export function renderSearchResults() {
   // The Pandora list lives in the same panel but is not a directory result:
   // a filter change while it shows must not repaint radio stations over it.
+  syncSearchModeButtons();
   if (state.searchLastMode === 'pandora') { renderPandoraStations(); return; }
   const res = $('searchResults');
   // Optional client-side Bose compatibility filter: drop HTTPS
@@ -736,6 +754,7 @@ export function mountSearch() {
 
   $('searchBtn').onclick = () => doSearch();
   $('topBtn').onclick = () => doTop();
+  syncSearchModeButtons();
 
   // Pointer for the users who want a station that radio-browser.info does not
   // list yet: they can add it there and it shows up here after a while. The

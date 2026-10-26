@@ -7,6 +7,7 @@ import {
   normalizeDetailedSearch,
   relaxedHintVisible,
   stationBitrateCell,
+  searchModePressed,
   stationCheckDot,
 } from './searchflow.js';
 
@@ -137,5 +138,22 @@ describe('stationCheckDot (#1521)', () => {
   it('no dot for nothing', () => {
     expect(stationCheckDot(null)).toBe('');
     expect(stationCheckDot(undefined)).toBe('');
+  });
+});
+
+describe('searchModePressed (#1521)', () => {
+  const none = { topBtn: false, favModeBtn: false, pandoraModeBtn: false };
+  it('presses the button of the list on screen, only that one', () => {
+    expect(searchModePressed('top', true)).toEqual({ ...none, topBtn: true });
+    expect(searchModePressed('favorites', true)).toEqual({ ...none, favModeBtn: true });
+    expect(searchModePressed('pandora', true)).toEqual({ ...none, pandoraModeBtn: true });
+  });
+  it('presses nothing for a search result list', () => {
+    expect(searchModePressed('search', true)).toEqual(none);
+  });
+  it('presses nothing while no list is open yet', () => {
+    expect(searchModePressed('top', false)).toEqual(none);
+    expect(searchModePressed('favorites', undefined)).toEqual(none);
+    expect(searchModePressed('', true)).toEqual(none);
   });
 });

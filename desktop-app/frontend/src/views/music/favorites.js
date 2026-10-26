@@ -6,7 +6,7 @@ import { applyFavRemovals, parseFavRemovals } from '../../favremovals.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
-import { renderSearchResults } from './search.js';
+import { renderSearchResults, syncSearchModeButtons } from './search.js';
 
 // Radio favorites: a per-machine list of starred stations kept in
 // localStorage (no agent change, no preset-schema change). It stores only
@@ -188,6 +188,8 @@ export function updateFavModeBtn() {
 function loadFavorites() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   state.searchLastMode = 'favorites';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   state.searchResults = loadFavStore();
   const lm = $('loadMoreRow');
   if (lm) lm.classList.add('hidden');

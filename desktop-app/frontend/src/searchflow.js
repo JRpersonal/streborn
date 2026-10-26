@@ -120,3 +120,12 @@ export function stationCheckDot(s) {
   }
   return ok ? 'ok' : 'bad';
 }
+
+// searchModePressed says which of the list buttons above the results looks
+// pressed: the one whose list is on screen, none while the panel is empty or
+// shows a search (discussion #1521: nothing said which list was open). The
+// plain Search button has no pressed state; the query box shows that one.
+export function searchModePressed(mode, listOpen) {
+  const on = (m) => !!listOpen && mode === m;
+  return { topBtn: on('top'), favModeBtn: on('favorites'), pandoraModeBtn: on('pandora') };
+}

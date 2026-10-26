@@ -382,6 +382,7 @@ import {
   resetNowPlaying,
   showSlotPicker,
   syncFavRemovals,
+  syncSearchModeButtons,
   syncVolumeScopeOnZoneLive,
   toggleFav,
   toggleGroupMember,
@@ -1991,10 +1992,12 @@ function applyBoxList(list) {
         // the grid empty on a routine re-discovery. loadPresets refreshes them in
         // place (and now keeps them on a transient empty read).
         state.searchResults = [];
+        state.searchListOpen = false;
         state.nowLocation = '';
         state.nowPlayState = '';
         state.presetErrors = {};
         $('searchResults').innerHTML = '';
+        syncSearchModeButtons();
         loadPresets();
         refreshStatus();
         checkBoxUpdate();
