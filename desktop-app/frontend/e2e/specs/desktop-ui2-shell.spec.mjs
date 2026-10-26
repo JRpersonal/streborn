@@ -95,6 +95,11 @@ test.describe('UI 2.0 shell', () => {
         const shown = await page.locator('#ui2MainInner > [id^="view-"]').evaluateAll((els) => els
           .filter((e) => !e.classList.contains('hidden')).map((e) => e.id));
         expect(shown).toEqual([`view-${view}`]);
+        // The classic footer (donate, world map, links) stays out of the
+        // music views; the other views still end with it.
+        const music = ['box', 'library', 'recent', 'spotify'].includes(view);
+        if (music) await expect(page.locator('#appFooter'), `footer on ${view}`).toBeHidden();
+        else await expect(page.locator('#appFooter'), `footer on ${view}`).toBeVisible();
       }
     });
 
@@ -430,7 +435,10 @@ test.describe('UI 2.0 shell', () => {
         await expect(page.locator('#ui2GroupVolSlot #groupVolume')).toBeVisible();
         const levels = page.locator('#ui2LevelsBtn');
         await expect(levels).toBeVisible();
-        await expect(page.locator('#ui2LevelsText')).toHaveText(en('ui2.player.outputGroup', { name: LR.friendlyName, n: 1 }));
+        // Short on the button, so a long word for "more" never cuts the name;
+        // the whole sentence is its name and its tooltip.
+        await expect(page.locator('#ui2LevelsText')).toHaveText(`${LR.friendlyName} +1`);
+        await expect(levels).toHaveAccessibleName(`${en('ui2.player.levels')}: ${en('ui2.player.outputGroup', { name: LR.friendlyName, n: 1 })}`);
         await levels.click();
         await expect(levels).toHaveAttribute('aria-expanded', 'true');
         const pop = page.locator('#ui2LevelsPop');

@@ -77,7 +77,8 @@ test.describe('UI 2.0 Recently played', () => {
     await openRecent(page);
     const rock = card(page, 'Best Of Rock.FM');
     await expect(rock.locator('.rc-play')).toHaveAccessibleName(en('ui2.recent.playOn', { name: 'Best Of Rock.FM', speaker: LR.friendlyName }));
-    await expect(rock.locator('.rc-pick')).toHaveAccessibleName(en('ui2.recent.keyOn', { name: 'Best Of Rock.FM', speaker: LR.friendlyName }));
+    await expect(rock.locator('.rc-pick')).toHaveAccessibleName(en('ui2.radio.putOnKeyName', { name: 'Best Of Rock.FM', speaker: LR.friendlyName }));
+    await expect(rock.locator('.rc-pick')).toContainText(en('ui2.radio.putOnKey'));
     await expect(rock.locator('.rc-fav')).toHaveAccessibleName(en('ui2.recent.favAdd', { name: 'Best Of Rock.FM' }));
     await expect(rock.locator('.rc-del')).toHaveAccessibleName(en('ui2.recent.removeFrom', { name: 'Best Of Rock.FM', speakers: LR.friendlyName }));
     await page.addStyleTag({ content: KILL_ANIM });
@@ -158,7 +159,7 @@ test.describe('UI 2.0 Recently played', () => {
       const empty = page.locator('#recentList .rc-empty2');
       await expect(empty.locator('.rc-empty-title')).toHaveText(en('ui2.recent.emptyTitle'));
       await expect(empty.locator('.rc-empty-body')).toHaveText(en('ui2.recent.emptyOne', { speaker: LR.friendlyName }));
-      await page.locator('#recentBoxSelect').selectOption('__all__');
+      await page.locator('#recentScopeAll').click();
       await expect(page.locator('#recentList .rc-empty-body')).toHaveText(en('ui2.recent.emptyAll'));
     });
   });
@@ -170,7 +171,7 @@ test.describe('UI 2.0 Recently played', () => {
     await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR.host}"]`).click();
     await mock.expectCalled('RecentPlayed', { pred: onHost(BR.host) });
     await expect(card(page, 'Best Of Rock.FM').locator('.rc-pick'))
-      .toHaveAccessibleName(en('ui2.recent.keyOn', { name: 'Best Of Rock.FM', speaker: BR.friendlyName }));
+      .toHaveAccessibleName(en('ui2.radio.putOnKeyName', { name: 'Best Of Rock.FM', speaker: BR.friendlyName }));
     await expect(card(page, 'Best Of Rock.FM').locator('.rc-del'))
       .toHaveAccessibleName(en('ui2.recent.removeFrom', { name: 'Best Of Rock.FM', speakers: BR.friendlyName }));
   });
@@ -189,6 +190,29 @@ test.describe('UI 2.0 Recently played', () => {
       const c = document.activeElement && document.activeElement.closest('.recent-card');
       return c ? c.querySelector('.rc-name').textContent : (document.activeElement && document.activeElement.tagName);
     })).toBe('Evening Sessions');
+  });
+
+  test('16. the scope is a filter in the header: the sidebar speaker, or every speaker', async ({ app, mock }) => {
+    const { page } = app;
+    await openRecent(page);
+    const one = page.locator('#recentScopeOne');
+    const all = page.locator('#recentScopeAll');
+    await expect(page.locator('#recentBoxSelect')).toHaveCount(0);
+    await expect(page.locator('.rc-scope2')).toHaveAccessibleName(en('ui2.recent.scopeLabel'));
+    await expect(one).toHaveText(LR.friendlyName);
+    await expect(one).toHaveAttribute('aria-pressed', 'true');
+    await expect(all).toHaveText(en('recent.allBoxes'));
+    await expect(all).toHaveAttribute('aria-pressed', 'false');
+    await mock.resetCalls();
+    await all.click();
+    await expect(page.locator('#recentScopeAll')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#recentScopeAll')).toBeFocused();
+    await mock.expectCalled('RecentPlayed', { pred: onHost(BR.host) });
+    // Back to one speaker: the one picked in the sidebar.
+    await page.locator('#recentScopeOne').click();
+    await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR.host}"]`).click();
+    await expect(page.locator('#recentScopeOne')).toHaveText(BR.friendlyName);
+    await expect(page.locator('#recentScopeOne')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test.describe('a slow play that fails', () => {

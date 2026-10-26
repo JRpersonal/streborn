@@ -113,7 +113,15 @@ test.describe('UI 2.0 Library', () => {
     await expect(lib(page).locator('.lib2-target')).toContainText(LR.friendlyName);
     const play = track(page, BLUE).locator('.lib2-play');
     await expect(play).toHaveAccessibleName(en('ui2.library.playTrackOn', { title: BLUE.title, name: LR.friendlyName }));
-    await expect(track(page, BLUE).locator('.lib2-key')).toHaveAccessibleName(en('ui2.library.keyTrackOn', { title: BLUE.title, name: LR.friendlyName }));
+    // The preview's one "Put on key" control: its words, then what and where.
+    await expect(track(page, BLUE).locator('.lib2-key')).toHaveAccessibleName(en('ui2.radio.putOnKeyName', { name: BLUE.title, speaker: LR.friendlyName }));
+    await expect(track(page, BLUE).locator('.lib2-key')).toContainText(en('ui2.radio.putOnKey'));
+    // The count after the folder filter says what it counts.
+    const n = await lib(page).locator('.lib2-track').count();
+    await expect(lib(page).locator('#libCount')).toHaveText(`${en('ui2.library.entries')} ${n}`);
+    // Shuffle and repeat wrap together, never one of them alone.
+    await expect(lib(page).locator('.lib2-folder-modes .lib2-shuffle')).toHaveCount(1);
+    await expect(lib(page).locator('.lib2-folder-modes .lib2-repeat')).toHaveCount(1);
 
     await mock.resetCalls();
     await play.click();

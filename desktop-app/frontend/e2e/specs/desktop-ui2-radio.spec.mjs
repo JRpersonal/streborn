@@ -12,6 +12,7 @@ import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
 import { KILL_ANIM, WCAG_TAGS } from '../helpers/a11y.mjs';
+import { en } from '../helpers/i18n.mjs';
 import { ROSTER, STATIONS } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
@@ -114,6 +115,7 @@ test.describe('UI 2.0 Radio', () => {
       await expect(panel).toContainText(ROCK.url);
       await expect(panel).toContainText('Station was online at the last check');
       // A repaint (a filter change) keeps it open.
+      await page.locator('#ui2Filters > summary').click();
       await page.locator('#searchOnlyBose').uncheck();
       await expect(row(page, ROCK.name).locator('.ui2-st-details')).toBeVisible();
       await more.click();
@@ -291,6 +293,7 @@ test.describe('UI 2.0 Radio', () => {
       const { page } = app;
       const bbc = STATIONS.find((s) => s.bitrate < 192);
       await row(page, bbc.name).locator('[data-act="fav"]').click();
+      await page.locator('#ui2Filters > summary').click();
       await page.locator('#searchBitrate').selectOption('192');
       await expect(row(page, bbc.name)).toHaveCount(0);
       await tab(page, 'favorites').click();
@@ -319,6 +322,8 @@ test.describe('UI 2.0 Radio', () => {
   test.describe('nothing disappears', () => {
     test('14. stream source, filters, transfer, refresh and the player stay reachable', async ({ app }) => {
       const { page } = app;
+      // The filters sit in their disclosure, one click away.
+      await page.locator('#ui2Filters > summary').click();
       for (const sel of ['#streamSourceDetails', '#searchCountry', '#searchOnlyBose', '#genreChips', '#presetTransferBtn', '#refreshBtn', '#addStationBox', '#ui2Player #pauseBtn']) {
         await expect(page.locator(sel), sel).toBeVisible();
       }
@@ -366,6 +371,42 @@ test.describe('UI 2.0 Radio', () => {
       expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(mainBox.x + mainBox.width + 1);
     });
   });
+
+  test.describe('compact head', () => {
+    test('20. the filters fold into one disclosure whose line names the active ones', async ({ app }) => {
+      const { page } = app;
+      const box = page.locator('#ui2Filters');
+      const sum = page.locator('#ui2FiltersSum');
+      await expect(box).not.toHaveAttribute('open', /.*/);
+      await expect(page.locator('#searchCountry')).toBeHidden();
+      await expect(box.locator('> summary')).toContainText(en('ui2.radio.filters'));
+      // The two checkboxes start ticked: the line says so in their words (the
+      // language the app picks from its own may stand in front).
+      await expect(sum).toHaveText(new RegExp(`${en('search.onlyOK')} · ${en('search.onlyBose')}$`));
+      await box.locator('> summary').click();
+      await page.locator('#searchBitrate').selectOption('192');
+      await page.locator('#searchOnlyOK').uncheck();
+      await expect(sum).toHaveText(new RegExp(`≥ 192 kbit/s · ${en('search.onlyBose')}$`));
+      await expect(sum).not.toContainText(en('search.onlyOK'));
+      // Each select sits under its own words, without the classic colon.
+      const name = page.locator('.ui2-filter-field', { has: page.locator('#searchCountry') }).locator('.ui2-filter-name');
+      await expect(name).toHaveText(en('search.countryLabel'));
+      const nameBox = await name.boundingBox();
+      const selBox = await page.locator('#searchCountry').boundingBox();
+      expect(Math.abs(nameBox.x - selBox.x)).toBeLessThanOrEqual(1);
+      expect(nameBox.y).toBeLessThan(selBox.y);
+    });
+
+    test('21. the hold hint is said once, and the first station row shows without scrolling', async ({ app }) => {
+      const { page } = app;
+      await expect(rows(page)).toHaveCount(STATIONS.length);
+      await expect(page.locator('#ui2KeysHint')).toContainText(en('ui2.radio.keysHoldHint'));
+      await expect(page.locator('#presets .preset-hint:visible')).toHaveCount(0);
+      const main = await page.locator('#ui2Main').boundingBox();
+      const first = await rows(page).first().locator('.ui2-st-main').boundingBox();
+      expect(first.y + first.height).toBeLessThanOrEqual(main.y + main.height);
+    });
+  });
 });
 
 test.describe('current layout', () => {
@@ -373,7 +414,8 @@ test.describe('current layout', () => {
     const { page } = app;
     await expect(page.locator('html')).not.toHaveClass(/ui2/);
     await expect(page.locator('#boxSelect')).toBeVisible();
-    await expect(page.locator('.ui2-keys-head, .ui2-radio-tabs, .ui2-radio-title')).toHaveCount(0);
+    await expect(page.locator('.ui2-keys-head, .ui2-radio-tabs, .ui2-radio-title, #ui2Filters')).toHaveCount(0);
+    await expect(page.locator('#searchCountry')).toBeVisible();
     await expect(page.locator('#presets .preset').first()).not.toHaveAttribute('role', /.*/);
     await expect(page.locator('#presets .preset-body').first()).not.toHaveAttribute('tabindex', /.*/);
     await page.locator('#topBtn').click();
