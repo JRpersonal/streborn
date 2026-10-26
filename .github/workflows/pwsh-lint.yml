@@ -31,7 +31,20 @@ jobs:
 
       - name: Install PSScriptAnalyzer
         shell: pwsh
-        run: Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+        # The PowerShell Gallery drops a download now and then ("Package
+        # 'PSScriptAnalyzer' failed to download"), which failed unrelated PRs
+        # twice on 2026-10-26. Retry a few times before giving up.
+        run: |
+          for ($i = 1; $i -le 4; $i++) {
+            try {
+              Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
+              break
+            } catch {
+              if ($i -eq 4) { throw }
+              Write-Host "Install attempt $i failed: $($_.Exception.Message). Retrying in $(15 * $i) s."
+              Start-Sleep -Seconds (15 * $i)
+            }
+          }
 
       - name: Invoke-ScriptAnalyzer (Error severity)
         shell: pwsh
