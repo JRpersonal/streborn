@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -315,7 +317,9 @@ func TestUpdateNeverConfirmsOnAnotherSpeakersAnswer(t *testing.T) {
 }
 
 // A speaker whose agent says nothing about who it is (older than mdnsName)
-// keeps the old behaviour: no guard, no following, the address decides.
+// keeps the old behaviour: no guard, the address decides. It may be looked
+// for by its discovery id while it restarts, but an answer that does not
+// carry that id never moves the update.
 func TestUpdateWithoutIdentityKeepsTheAddressRule(t *testing.T) {
 	mf := newMovingFake()
 	mf.answer = func(host string, since time.Duration) (map[string]string, error) {
@@ -330,17 +334,251 @@ func TestUpdateWithoutIdentityKeepsTheAddressRule(t *testing.T) {
 		}
 		return newVersion("present"), nil
 	}
-	called := false
 	mf.locate = func(speakerIdentity, string, bool) (string, int, bool) {
-		called = true
 		return "", 0, false
 	}
 	out, _ := orchestrateSpeaker(mf.seams(), otaProductionPolicy, addrOld, 8888, idA, "Kitchen", nil)
 	if !out.Confirmed || out.Outcome != outcomeDone {
 		t.Fatalf("outcome = %+v, want done", out)
 	}
-	if called {
-		t.Error("locate ran for a speaker whose identity is unknown")
+	for _, h := range append(append([]string(nil), mf.pushes...), mf.engines...) {
+		if h != addrOld {
+			t.Errorf("pushed to %s, want only %s", h, addrOld)
+		}
+	}
+}
+
+func TestIdentityCompareHints(t *testing.T) {
+	// A speaker on an agent that reports only its name before the update,
+	// plus the id discovery holds for it.
+	ref := identityFrom(map[string]string{"mdnsName": nameA})
+	ref.hints = []string{idA}
+	const idA2, idB2 = "A2A2A2A2A2A2", "B2B2B2B2B2B2"
+	cases := []struct {
+		name             string
+		v                map[string]string
+		comparable, want bool
+	}{
+		// Another speaker whose network was not up when its agent started:
+		// no name for that whole boot, but both ids.
+		{"other speaker, both ids, no name", map[string]string{"deviceID": idB, "boxDeviceID": idB2}, true, false},
+		{"hint is the agent id", map[string]string{"deviceID": idA}, true, true},
+		{"hint is the firmware id", map[string]string{"deviceID": idA2, "boxDeviceID": idA}, true, true},
+		// One id that differs from the hint proves nothing: discovery may hold
+		// the firmware id while the agent reports its own.
+		{"lone other id", map[string]string{"deviceID": idA2}, false, false},
+		{"name agrees, ids do not", map[string]string{"mdnsName": nameA, "deviceID": idA2, "boxDeviceID": idB2}, true, true},
+	}
+	for _, c := range cases {
+		gotC, gotM := ref.compare(c.v)
+		if gotC != c.comparable || gotM != c.want {
+			t.Errorf("%s: compare = (%v, %v), want (%v, %v)", c.name, gotC, gotM, c.comparable, c.want)
+		}
+	}
+	// What matches by a hint is learned, so a later lone id is held to it.
+	ref.learn(map[string]string{"deviceID": idA})
+	if !ref.contradicts(map[string]string{"deviceID": idB}) {
+		t.Error("an id learned through a hint did not take")
+	}
+}
+
+// The lease swap with an answer that carries no name: speaker B, which took
+// A's address, started before its network was up and so answers without a
+// name for the whole boot. A's reference is name-only (its agent before the
+// update reported no id), so only the discovery id can tell them apart. B's
+// answer must not confirm A's update, and A's engine must not go to B.
+func TestUpdateLeaseSwapWithoutNames(t *testing.T) {
+	const idB2 = "B2B2B2B2B2B2"
+	mf := newMovingFake()
+	mf.answer = func(host string, since time.Duration) (map[string]string, error) {
+		switch host {
+		case addrOld:
+			if since < 0 {
+				return speakerAOld(), nil
+			}
+			if since < 30*time.Second {
+				return nil, errUnreachable
+			}
+			v := newVersion("present")
+			v["deviceID"] = idB
+			v["boxDeviceID"] = idB2
+			return v, nil
+		case addrNew:
+			if since >= 90*time.Second {
+				v := mf.speakerANew(host)
+				delete(v, "mdnsName")
+				return v, nil
+			}
+		}
+		return nil, errUnreachable
+	}
+	a := &App{discCache: map[string]discEntry{
+		addrNew: {box: BoxInfo{Host: addrNew, Port: 8888, Kind: "str", DeviceID: idA}},
+		addrOld: {box: BoxInfo{Host: addrOld, Port: 8888, Kind: "str", DeviceID: idB}},
+	}}
+	mf.locate = func(id speakerIdentity, exclude string, sweep bool) (string, int, bool) {
+		return a.locateSpeaker(id, exclude, sweep, mf.read)
+	}
+	out, err := orchestrateSpeaker(mf.seams(), otaProductionPolicy, addrOld, 8888, idA, "Kitchen", nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !out.Confirmed || out.Outcome != outcomeDone || out.Version["deviceID"] != idA {
+		t.Fatalf("outcome = %+v, want done and confirmed on speaker A's answer", out)
+	}
+	if len(mf.engines) == 0 {
+		t.Fatal("the engine A dropped for the update was never delivered back")
+	}
+	for _, h := range mf.engines {
+		if h != addrNew {
+			t.Fatalf("engine pushed to %s, want only %s: %v", h, addrNew, mf.engines)
+		}
+	}
+}
+
+// A retry runs after the speaker restarted. If another speaker holds its
+// address by then, at the top of the retry or after waiting at the upload
+// gate behind other speakers, the agent must not be pushed there.
+func TestRetryNeverPushesToAnotherSpeaker(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// flipOn is the phase at which B takes the address ("" = before).
+		flipOn string
+	}{
+		{"taken before the retry", ""},
+		{"taken while queued at the gate", phaseUploading},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := newMovingFake()
+			var flipped atomic.Bool
+			flipped.Store(tc.flipOn == "")
+			mf.answer = func(host string, _ time.Duration) (map[string]string, error) {
+				if host != addrOld {
+					return nil, errUnreachable
+				}
+				if flipped.Load() {
+					return speakerB(), nil
+				}
+				return mf.speakerANew(host), nil
+			}
+			s := mf.seams()
+			emit := s.emit
+			s.emit = func(p updatePhase) {
+				if tc.flipOn != "" && p.Phase == tc.flipOn {
+					flipped.Store(true)
+				}
+				emit(p)
+			}
+			ident := identityFrom(speakerAOld())
+			ident.hints = []string{idA}
+			// An older pre-update build, so the retry has an agent to push.
+			s.appBuild, s.appSha = "other-build", "other-sha"
+			u := &speakerUpdater{host: addrOld, port: 8888, deviceID: idA, name: "Kitchen",
+				seams: s, policy: otaProductionPolicy, gate: newUploadGate(1), ident: ident}
+			out := u.run(2)
+			if len(mf.pushes) != 0 {
+				t.Fatalf("agent pushed to %v while another speaker held the address", mf.pushes)
+			}
+			if len(mf.engines) != 0 {
+				t.Errorf("engine pushed to %v", mf.engines)
+			}
+			if out.Unmet != verdictAddressChanged || out.Outcome != outcomeTimeout {
+				t.Errorf("outcome = %+v, want a timeout with unmet %q", out, verdictAddressChanged)
+			}
+		})
+	}
+}
+
+// The engine can wait at the upload gate for minutes behind other speakers'
+// pushes. If another speaker takes the address meanwhile, the engine must
+// not go to it: the speaker is asked again right before the push.
+func TestEngineNotPushedWhenAddressTakenWhileQueued(t *testing.T) {
+	mf := newMovingFake()
+	var flipped atomic.Bool
+	mf.answer = func(host string, _ time.Duration) (map[string]string, error) {
+		if host != addrOld {
+			return nil, errUnreachable
+		}
+		if flipped.Load() {
+			return speakerB(), nil
+		}
+		return mf.speakerANew(host), nil
+	}
+	s := mf.seams()
+	emit := s.emit
+	s.emit = func(p updatePhase) {
+		if p.Phase == phaseEngineQueued {
+			flipped.Store(true)
+		}
+		emit(p)
+	}
+	ident := identityFrom(speakerAOld())
+	ident.hints = []string{idA}
+	u := &speakerUpdater{host: addrOld, port: 8888, deviceID: idA, name: "Kitchen",
+		seams: s, policy: otaProductionPolicy, gate: newUploadGate(1), ident: ident}
+	out := u.deliverEngine(UpdateOutcome{Host: addrOld, Attempts: 1}, mf.speakerANew(addrOld), testOldVer)
+	if len(mf.engines) != 0 {
+		t.Fatalf("engine pushed to %v after another speaker took the address in the queue", mf.engines)
+	}
+	if out.Outcome != outcomePartial {
+		t.Errorf("outcome = %q, want partial (engine still missing)", out.Outcome)
+	}
+}
+
+// The update record moves with the speaker, so the speaker that now holds the
+// old address is never judged against it.
+func TestUpdateIntentFollowsTheSpeaker(t *testing.T) {
+	mf := newMovingFake()
+	mf.leaseSwap(90 * time.Second)
+	a := &App{discCache: map[string]discEntry{
+		addrNew: {box: BoxInfo{Host: addrNew, Port: 8888, Kind: "str", DeviceID: idA}},
+		addrOld: {box: BoxInfo{Host: addrOld, Port: 8888, Kind: "str", DeviceID: idB}},
+	}}
+	mf.locate = func(id speakerIdentity, exclude string, sweep bool) (string, int, bool) {
+		return a.locateSpeaker(id, exclude, sweep, mf.read)
+	}
+	var mu sync.Mutex
+	intents := map[string]string{}
+	s := mf.seams()
+	s.recordIntent = func(host string, _ int, deviceID, _ string) {
+		mu.Lock()
+		defer mu.Unlock()
+		intents[host] = deviceID
+	}
+	s.clearIntent = func(host string, _ int) {
+		mu.Lock()
+		defer mu.Unlock()
+		delete(intents, host)
+	}
+	// Keep the record alive past the move: the engine never lands.
+	s.ensureEngine = func(string, int) (string, error) { return "", errors.New("connection reset by peer") }
+	out, _ := orchestrateSpeaker(s, otaProductionPolicy, addrOld, 8888, idA, "Kitchen", nil)
+	if out.Outcome != outcomePartial {
+		t.Fatalf("outcome = %q, want partial", out.Outcome)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if _, ok := intents[addrOld]; ok {
+		t.Errorf("update record left at the old address, which another speaker holds now: %v", intents)
+	}
+	if intents[addrNew] != idA {
+		t.Errorf("update record not moved to the speaker's new address: %v", intents)
+	}
+}
+
+func TestIntentForOtherSpeaker(t *testing.T) {
+	in := updateIntent{Host: addrOld, DeviceID: idA}
+	if !intentForOtherSpeaker(in, map[string]string{"deviceID": idB, "boxDeviceID": "B2B2B2B2B2B2"}) {
+		t.Error("a speaker reporting two other ids was judged against this record")
+	}
+	if intentForOtherSpeaker(in, map[string]string{"deviceID": idA}) {
+		t.Error("the record's own speaker was called another one")
+	}
+	if intentForOtherSpeaker(in, map[string]string{"deviceID": idB}) {
+		t.Error("a lone differing id proves nothing")
+	}
+	if intentForOtherSpeaker(updateIntent{Host: addrOld}, speakerB()) {
+		t.Error("a record without an id cannot tell")
 	}
 }
 
@@ -375,11 +613,19 @@ func TestLocateSpeaker(t *testing.T) {
 	if h, _, ok := a.locateSpeaker(ident, addrOld, true, probe); !ok || h != "192.0.2.31" {
 		t.Errorf("sweep = %q, %v; want 192.0.2.31", h, ok)
 	}
-	// A record carrying the id is accepted on an answer that cannot be
-	// compared, but never on one that names another speaker.
+	// A record carrying the id is no proof on its own: the address may hold
+	// another speaker by now, so an answer that cannot be compared is not
+	// accepted, and one that names another speaker never is.
 	a = mk(BoxInfo{Host: "192.0.2.32", Kind: "str", DeviceID: idA})
-	if h, _, ok := a.locateSpeaker(ident, addrOld, false, probe); !ok || h != "192.0.2.32" {
-		t.Errorf("by id = %q, %v; want 192.0.2.32", h, ok)
+	if _, _, ok := a.locateSpeaker(ident, addrOld, false, probe); ok {
+		t.Error("accepted an address on the discovery record's word alone")
+	}
+	// An answer that carries the id discovery holds for the speaker is a
+	// positive match, even without a name.
+	answers["192.0.2.33"] = map[string]string{"deviceID": idA, "version": "v1"}
+	a = mk(BoxInfo{Host: "192.0.2.33", Kind: "str", DeviceID: idA})
+	if h, _, ok := a.locateSpeaker(ident, addrOld, false, probe); !ok || h != "192.0.2.33" {
+		t.Errorf("by id = %q, %v; want 192.0.2.33", h, ok)
 	}
 	a = mk(BoxInfo{Host: "192.0.2.30", Kind: "str", DeviceID: idA})
 	if _, _, ok := a.locateSpeaker(ident, addrOld, true, probe); ok {
@@ -392,6 +638,6 @@ func TestLocateSpeaker(t *testing.T) {
 		t.Error("located the speaker at the excluded address or on a stock record without its id")
 	}
 	if _, _, ok := a.locateSpeaker(speakerIdentity{hints: []string{idA}}, "", true, probe); ok {
-		t.Error("an identity the speaker never reported cannot confirm any answer")
+		t.Error("located the speaker on answers that do not carry its id")
 	}
 }

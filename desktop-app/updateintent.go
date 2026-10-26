@@ -245,6 +245,15 @@ func (a *App) PendingUpdateIntent(host string, port int) map[string]string {
 	if verr != nil {
 		return map[string]string{"action": "", "reason": "speaker not reachable"}
 	}
+	// The record names the speaker it was written for. A router that hands out
+	// new addresses on every restart can give that address to another speaker;
+	// judging THAT speaker against this record would clear it because the other
+	// speaker is current, or flag the other speaker under this one's name and
+	// send it this one's engine. Left alone instead: the record is kept for
+	// its own speaker, and dropped once it goes stale.
+	if intentForOtherSpeaker(in, ver) {
+		return map[string]string{"action": "", "reason": "another speaker answers at this address"}
+	}
 	switch reconcileIntent(in, ver["version"], ver["goLibrespot"], time.Now()) {
 	case intentNothing:
 		a.ClearUpdateIntent(host, port)
@@ -256,6 +265,18 @@ func (a *App) PendingUpdateIntent(host string, port int) map[string]string {
 	default:
 		return map[string]string{"action": "flag", "target": in.TargetVersion, "name": in.Name}
 	}
+}
+
+// intentForOtherSpeaker reports whether the speaker answering at the record's
+// address is provably not the one the record was written for. Held to the
+// same rule as the update itself (speakerIdentity.compare): a record without
+// an id, or an answer that does not carry enough to tell, is never taken as
+// another speaker's.
+func intentForOtherSpeaker(in updateIntent, ver map[string]string) bool {
+	if in.DeviceID == "" {
+		return false
+	}
+	return speakerIdentity{hints: appendIDs(nil, in.DeviceID)}.contradicts(ver)
 }
 
 // otaRunning is set by the frontend for the whole duration of an install or

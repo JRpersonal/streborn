@@ -3951,8 +3951,19 @@ async function runSingleBoxUpdate(targetBox) {
       // This also overrides a discovery-stickiness cache entry that might
       // still carry the pre-OTA version for a box that just rebooted.
       if (confirmed) {
+        // Only onto the record of the speaker that answered. A speaker that
+        // got a new address while it restarted is confirmed at that new
+        // address, and its old one may belong to another speaker by now:
+        // patching that record would show the other speaker as up to date.
+        const ids = (o) => [o && o.deviceID, o && o.boxDeviceID]
+          .filter(Boolean).map((s) => String(s).toLowerCase());
+        const answered = ids(confirmedVer);
+        const sameSpeaker = (b) => {
+          const have = ids(b);
+          return !answered.length || !have.length || have.some((s) => answered.includes(s));
+        };
         const patchVer = (b) => {
-          if (b && b.host === targetBox.host) {
+          if (b && b.host === targetBox.host && sameSpeaker(b)) {
             if (confirmedVer.version) b.version = confirmedVer.version;
             if (confirmedVer.build) b.build = confirmedVer.build;
           }

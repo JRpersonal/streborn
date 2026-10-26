@@ -511,6 +511,12 @@ type speakerUpdater struct {
 	foreign, sawForeign bool
 	foreignNoted        map[string]bool
 	lastLocate          time.Time
+	// intentHost/intentPort are where the update record is kept once it was
+	// moved with the speaker (empty: at host). intentCleared is set once the
+	// record was cleared, so a later move does not write it again.
+	intentHost    string
+	intentPort    int
+	intentCleared bool
 }
 
 // addr is the address the speaker is on now.
@@ -606,9 +612,42 @@ func (u *speakerUpdater) record(verdict string) {
 }
 
 func (u *speakerUpdater) clearIntent() {
+	u.intentCleared = true
 	if u.seams.clearIntent != nil {
-		u.seams.clearIntent(u.host, u.port)
+		h, p := u.intentAt()
+		u.seams.clearIntent(h, p)
 	}
+}
+
+// intentAt is the address the update record is kept under: where the update
+// started, or where the speaker was followed to.
+func (u *speakerUpdater) intentAt() (string, int) {
+	if u.intentHost == "" {
+		return u.host, u.port
+	}
+	return u.intentHost, u.intentPort
+}
+
+// moveIntent keeps the update record with the speaker when it was followed to
+// a new address. Left at the old one, the record would be checked against the
+// speaker that now holds that address: either cleared because THAT speaker is
+// current (and this one's missing engine never flagged), or flagged under this
+// speaker's name for the other one.
+func (u *speakerUpdater) moveIntent(host string, port int) {
+	if u.intentCleared || u.seams.recordIntent == nil || u.seams.clearIntent == nil {
+		return
+	}
+	oh, op := u.intentAt()
+	if oh == host {
+		return
+	}
+	id := u.deviceID
+	if id == "" && len(u.ident.ids) > 0 {
+		id = u.ident.ids[0]
+	}
+	u.seams.clearIntent(oh, op)
+	u.seams.recordIntent(host, port, id, u.name)
+	u.intentHost, u.intentPort = host, port
 }
 
 // gatedPush serialises only the BYTE push, not the box's whole reboot.
@@ -632,6 +671,16 @@ func (u *speakerUpdater) gatedPush() error {
 		return u.seams.push(host, port)
 	}
 	u.gate.acquire()
+	// A retry can wait here behind the other speakers' pushes while this one
+	// is already back from its restart; its address may have gone to another
+	// speaker meanwhile. Ask again right before sending.
+	if u.attempts > 1 {
+		if _, err := u.read(); errors.Is(err, errOtherSpeaker) || u.foreign {
+			u.gate.release()
+			return errOtherSpeaker
+		}
+		host, port = u.addr()
+	}
 	released := make(chan struct{})
 	var once sync.Once
 	free := func() {
@@ -678,7 +727,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// the same guard, at the address the speaker was followed to.
 	var pv map[string]string
 	var perr error
-	if attempt == 1 && !u.ident.known() {
+	if attempt == 1 && !u.ident.reported() {
 		host, port := u.addr()
 		pv, perr = u.seams.readVersion(host, port)
 		if perr == nil && pv != nil {
@@ -688,6 +737,12 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		}
 	} else {
 		pv, perr = u.read()
+		// The retry runs after the speaker restarted, so another speaker may
+		// hold its address by now. Pushing there would put this update on
+		// that speaker and restart it.
+		if errors.Is(perr, errOtherSpeaker) || u.foreign {
+			return u.addressChanged(base, attempt, "agent upload of the retry not sent")
+		}
 	}
 	if perr == nil && pv != nil {
 		preBuild, preVersion = pv["build"], pv["version"]
@@ -712,6 +767,9 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	u.phase(updatePhase{Phase: phaseUploading, Attempt: attempt})
 	err := u.gatedPush()
 	u.agentPushSettled()
+	if errors.Is(err, errOtherSpeaker) {
+		return u.addressChanged(base, attempt, "agent upload of the retry not sent")
+	}
 	if err != nil {
 		if !lostReplyErr.MatchString(err.Error()) {
 			base.Outcome = outcomeFailed
@@ -785,17 +843,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		// is a router handing out new addresses. Say what happened; a later
 		// discovery sighting of this speaker corrects the journal.
 		if u.sawForeign {
-			live, _ := u.addr()
-			u.record("NOT CONFIRMED - another speaker now answers at " + live + ": this speaker got a new address while it restarted and was not found at the new one before the verify window ended; the update has most likely landed, a later discovery sighting adds a corrective line")
-			if u.seams.noteUnconfirmed != nil {
-				u.seams.noteUnconfirmed(u.host, verdictAddressChanged)
-			}
-			base.Verdict = verdictAddressChanged
-			base.Outcome = outcomeTimeout
-			base.Unmet = verdictAddressChanged
-			base = u.restoreEngineAfterIncompleteUpdate(base)
-			u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome, Unmet: base.Unmet})
-			return base
+			return u.addressChanged(base, attempt, "")
 		}
 		// Journal the real verdict and classify why (unreachable / not landed /
 		// landed-but-not-running), feeding the loop breaker so an update that
@@ -951,11 +999,27 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
 		var res string
 		var engErr error
-		eh, ep := u.addr()
+		sent := false
 		u.gate.run(func() {
+			eh, ep, ok := u.engineTarget()
+			if !ok {
+				return
+			}
+			sent = true
 			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
 			res, engErr = u.seams.ensureEngine(eh, ep)
 		})
+		if !sent {
+			if u.foreign {
+				u.record("engine re-delivery after the incomplete update stopped: another speaker answers at this speaker's address; the next update run delivers it")
+				return base
+			}
+			// Not answering at the moment the push was due: nothing was sent,
+			// counted as a failed attempt.
+			latchWaits = 0
+			attempt++
+			continue
+		}
 		if engErr == nil && res == EngineDeferredUpdateInFlight {
 			if latchBy.IsZero() {
 				latchBy = u.seams.now().Add(u.policy.engineWindow)
@@ -1081,11 +1145,23 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
 		var engRes string
 		var engErr error
-		eh, ep := u.addr()
+		sent := false
 		u.gate.run(func() {
+			eh, ep, ok := u.engineTarget()
+			if !ok {
+				return
+			}
+			sent = true
 			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
 			engRes, engErr = u.seams.ensureEngine(eh, ep)
 		})
+		if !sent {
+			// Not answering, or another speaker answers at the address, at
+			// the moment the push was due: nothing was sent. Wait and look
+			// again.
+			u.sleep(u.policy.engineBackoff(attempt))
+			continue
+		}
 		if engErr == nil {
 			fallback := live
 			if fallback == nil {

@@ -85,26 +85,45 @@ func normMDNSName(n string) string {
 	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(n), "."))
 }
 
+// reported reports whether the speaker itself has said who it is.
+func (id speakerIdentity) reported() bool { return len(id.ids) > 0 || id.mdnsName != "" }
+
 // known reports whether there is anything to compare an answer against.
-func (id speakerIdentity) known() bool { return len(id.ids) > 0 || id.mdnsName != "" }
+func (id speakerIdentity) known() bool { return id.reported() || len(id.hints) > 0 }
 
 // compare checks a version answer against the identity. comparable is false
 // when the answer and the identity share no field to compare (an older agent,
 // or a name responder not up yet); match is true when at least one shared
 // field agrees. A contradiction needs every shared field to disagree, so a
 // speaker that changed one of its ids is not mistaken for another.
+//
+// The discovery hints count too. A speaker on an agent that reports only its
+// name before the update leaves a name-only reference, and a speaker whose
+// network was not up when its agent started answers without a name for that
+// whole boot: without the hints, another speaker that took the address and
+// answered like that would share no field with the reference and be taken for
+// this one. A hint that equals one of the answer's ids is a match. A hint only
+// contradicts an answer that carries BOTH ids (the agent's own and the
+// firmware's): discovery may hold either one for a speaker, and the agent's
+// own id can be a guess from the other network interface, so a lone id that
+// differs from the hint proves nothing.
 func (id speakerIdentity) compare(v map[string]string) (comparable, match bool) {
 	if v == nil {
 		return false, false
 	}
 	theirs := appendIDs(nil, v["deviceID"], v["boxDeviceID"])
-	if len(id.ids) > 0 && len(theirs) > 0 {
-		comparable = true
-		for _, a := range id.ids {
-			for _, b := range theirs {
-				if strings.EqualFold(a, b) {
-					match = true
-				}
+	if len(theirs) > 0 {
+		if len(id.ids) > 0 {
+			comparable = true
+			if overlapIDs(id.ids, theirs) {
+				match = true
+			}
+		}
+		if len(id.hints) > 0 {
+			if overlapIDs(id.hints, theirs) {
+				comparable, match = true, true
+			} else if len(theirs) >= 2 {
+				comparable = true
 			}
 		}
 	}
@@ -115,6 +134,17 @@ func (id speakerIdentity) compare(v map[string]string) (comparable, match bool) 
 		}
 	}
 	return comparable, match
+}
+
+func overlapIDs(a, b []string) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if strings.EqualFold(x, y) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // contradicts reports whether v is provably another speaker's answer.
@@ -198,6 +228,47 @@ func (u *speakerUpdater) read() (map[string]string, error) {
 	return v, nil
 }
 
+// addressChanged ends the sequence for a speaker whose address another
+// speaker answers on, where this one was not found at a new address.
+// Classifying the address would judge the OTHER speaker (it may well be on the
+// new build, which reads as "confirmed"), and the unreachable advice blames a
+// firewall for what is a router handing out new addresses. Say what happened;
+// a later discovery sighting of this speaker corrects the journal. stopped,
+// when set, names what was not done because of it.
+func (u *speakerUpdater) addressChanged(base UpdateOutcome, attempt int, stopped string) UpdateOutcome {
+	live, _ := u.addr()
+	line := "NOT CONFIRMED - another speaker now answers at " + live + ": this speaker got a new address while it restarted and was not found at the new one"
+	if stopped != "" {
+		line += "; " + stopped + " so it cannot land on the other speaker"
+	} else {
+		line += " before the verify window ended"
+	}
+	u.record(line + "; the update has most likely landed, a later discovery sighting adds a corrective line")
+	if u.seams.noteUnconfirmed != nil {
+		u.seams.noteUnconfirmed(u.host, verdictAddressChanged)
+	}
+	base.Verdict = verdictAddressChanged
+	base.Outcome = outcomeTimeout
+	base.Unmet = verdictAddressChanged
+	base = u.restoreEngineAfterIncompleteUpdate(base)
+	u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome, Unmet: base.Unmet})
+	return base
+}
+
+// engineTarget asks the speaker who it is right before an engine push, and
+// returns the address to push to. It runs inside the upload gate: a push can
+// queue there for minutes behind other speakers' updates, long enough for a
+// speaker to restart once more and lose its address to another one, so the
+// read before the queue says nothing about where the push goes. ok is false
+// when the speaker does not answer or another speaker answers at its address.
+func (u *speakerUpdater) engineTarget() (host string, port int, ok bool) {
+	if _, err := u.read(); err != nil || u.foreign {
+		return "", 0, false
+	}
+	host, port = u.addr()
+	return host, port, true
+}
+
 // follow looks for the speaker at another address and moves the sequence
 // there when it finds it. sweep widens the search from the addresses
 // discovery ties to this speaker to every speaker discovery knows; it is used
@@ -224,6 +295,7 @@ func (u *speakerUpdater) follow(sweep bool) bool {
 	}
 	u.foreign = false
 	u.sawForeign = false
+	u.moveIntent(u.live, u.livePort)
 	u.record(fmt.Sprintf("speaker moved from %s to %s during the update (new address from the router); following it there", from, host))
 	u.log().Info("speaker update: the speaker got a new address during the update, following it",
 		"host", u.host, "from", from, "to", host, "port", u.livePort)
@@ -235,9 +307,11 @@ func (u *speakerUpdater) follow(sweep bool) bool {
 // address the speaker is NOT on (its old one).
 //
 // Addresses whose discovery record carries one of the speaker's ids are asked
-// first, and are accepted unless their answer names another speaker. With
-// sweep, every other speaker discovery knows as STR is asked too, and one of
-// those is accepted only on a positive match: the speaker must name itself.
+// first. With sweep, every other speaker discovery knows as STR is asked too.
+// Every candidate is accepted only on a positive match: the speaker must name
+// itself (its name, or an id the reference or discovery holds for it). A
+// discovery record alone is no proof, since the address it names may belong
+// to another speaker by now.
 func (a *App) locateSpeaker(id speakerIdentity, exclude string, sweep bool, probe func(host string, port int) (map[string]string, error)) (string, int, bool) {
 	if probe == nil || !id.known() {
 		return "", 0, false
@@ -318,8 +392,7 @@ func (a *App) locateSpeaker(id speakerIdentity, exclude string, sweep bool, prob
 		if v == nil {
 			continue
 		}
-		comparable, match := id.compare(v)
-		if match || (c.byID && !comparable) {
+		if _, match := id.compare(v); match {
 			return c.host, c.port, true
 		}
 	}
