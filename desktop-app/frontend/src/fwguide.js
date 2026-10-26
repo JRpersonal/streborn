@@ -24,6 +24,14 @@
 import { t } from './i18n/index.js';
 import { escapeHtml } from './utils.js';
 import { LATEST_BOSE_FIRMWARE, boseFwArticles, firmwareOlderThanLatest } from './firmware.js';
+import {
+  FIRMWARE_DOCS_URL,
+  firmwareLadderMount,
+  isBatteryModel,
+  ladderApplies,
+  noLadderYet,
+  wireFirmwareLadders,
+} from './fwladder.js';
 
 // The speaker's update page on its own setup network. Bose's articles disagree
 // on the address: some print 192.168.1.1 (SoundTouch 20, Portable, 30 Series
@@ -152,12 +160,23 @@ function autoHtml(plan) {
     + '</div>';
 }
 
+// noLadderHtml is the one line a speaker below 15.x gets when the firmware
+// ladder (fwladder.js) has no step-by-step path for its model yet: the single
+// jump to Bose's last file may not work from there.
+function noLadderHtml(ident) {
+  const id = ident || {};
+  if (!id.noLadder && !noLadderYet(id)) return '';
+  return `<div class="small fw-ladder-none">${escapeHtml(t('fwLadder.unsupported'))} `
+    + `<a href="#" class="link" data-fwopen="${escapeHtml(FIRMWARE_DOCS_URL)}">${escapeHtml(t('fwLadder.docs'))}</a></div>`;
+}
+
 // firmwareGuideHtml renders the guide body for a plan.
 export function firmwareGuideHtml(ident, guide) {
   const plan = fwGuidePlan(ident, guide);
   const articles = plan.articles.map(([series, url]) =>
     btn(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'), url, 'fw-guide-link')).join(' ');
   return `<b>${escapeHtml(t('fwGuide.title'))}</b>`
+    + noLadderHtml(ident)
     + `<div>${escapeHtml(t('fwGuide.versions', { current: plan.current, required: plan.required }))}</div>`
     + `<div class="muted small">${escapeHtml(t('fwGuide.why'))}</div>`
     + autoHtml(plan)
@@ -190,8 +209,16 @@ const flashes = new Map();
 
 // firmwareGuideMount is the placeholder a view puts into its HTML. It renders
 // the guide at once (download step "looking up") and wireFirmwareGuides fills in
-// Bose's link.
+// Bose's link. A speaker whose firmware is too old for the single jump gets the
+// step-by-step firmware ladder (fwladder.js) instead, which shows this same
+// guide again for its last step.
 export function firmwareGuideMount(ident) {
+  if (ladderApplies(ident)) return firmwareLadderMount(ident, plainGuideMount);
+  return plainGuideMount(ident);
+}
+
+// plainGuideMount is the single-step guide, never the ladder.
+export function plainGuideMount(ident) {
   const id = {
     model: (ident && ident.model) || '',
     moduleType: (ident && ident.moduleType) || '',
@@ -200,6 +227,7 @@ export function firmwareGuideMount(ident) {
     context: (ident && ident.context) || '',
     host: (ident && ident.host) || '',
   };
+  if (ident && ident.noLadder) id.noLadder = true;
   const cached = guideCache.get(identKey(id)) || null;
   return `<div class="fw-guide" data-fwguide="${escapeHtml(JSON.stringify(id))}">${firmwareGuideHtml(id, cached)}</div>`;
 }
@@ -210,8 +238,13 @@ export function firmwareGuideMount(ident) {
 //   deps.flash(host, force) -> Promise<FirmwareFlashResult>   (optional)
 //   deps.onProgress(cb) -> off()                               (optional)
 //   deps.confirm(title, html, opts) -> Promise<boolean>        (optional)
+//   deps.ladder: the firmware ladder's backend calls (fwladder.js) (optional)
 export function wireFirmwareGuides(root, deps) {
   if (!root || !root.querySelectorAll) return;
+  wireFirmwareLadders(root, deps, {
+    guideMount: plainGuideMount,
+    wireGuides: (el) => wireFirmwareGuides(el, { ...deps, ladder: null }),
+  });
   root.querySelectorAll('.fw-guide[data-fwguide]').forEach((el) => {
     if (el.dataset.fwWired) return;
     el.dataset.fwWired = '1';
@@ -271,10 +304,6 @@ function showFlashState(el, host) {
     line.classList.toggle('setup-err', st.phase === 'error');
   }
   if (b) b.disabled = st.phase !== 'error' && st.phase !== 'done';
-}
-
-function isBatteryModel(model) {
-  return String(model || '').trim().toLowerCase() === 'soundtouch portable';
 }
 
 async function startFlash(el, id, deps) {

@@ -199,9 +199,20 @@ func (p *phaseProgress) report(done int64) {
 	})
 }
 
+// errBoseFileMismatch marks a download from Bose that is not the file the
+// catalogue names (size or CRC-32).
+var errBoseFileMismatch = errors.New("does not match Bose's catalogue")
+
 // fetchBoseFile returns the local path of Bose's file, downloading it when the
 // cache does not already hold a copy that matches the catalogue.
 func (a *App) fetchBoseFile(ctx context.Context, host string, f bosefw.File) (string, error) {
+	return a.fetchBoseFileWith(ctx, host, f, nil)
+}
+
+// fetchBoseFileWith is fetchBoseFile with the download's byte count going to
+// onProgress instead of the "firmware:progress" event (the firmware ladder
+// reports on its own event).
+func (a *App) fetchBoseFileWith(ctx context.Context, host string, f bosefw.File, onProgress func(int64)) (string, error) {
 	if !strings.HasPrefix(f.URL, fwDownloadPrefix) || strings.ContainsAny(f.Name, `/\`) {
 		return "", fmt.Errorf("refusing a firmware link outside Bose's download host")
 	}
@@ -252,16 +263,18 @@ func (a *App) fetchBoseFile(ctx context.Context, host string, f bosefw.File) (st
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download from Bose: HTTP %d", resp.StatusCode)
 	}
-	prog := a.newPhaseProgress(host, fwPhaseDownload, f.Length)
+	if onProgress == nil {
+		onProgress = a.newPhaseProgress(host, fwPhaseDownload, f.Length).report
+	}
 	body, beat := beatingReader(io.LimitReader(resp.Body, f.Length+1))
 	go watchStall(dctx, cancel, beat, 60*time.Second)
 	crc := crc32.NewIEEE()
-	n, err := io.Copy(io.MultiWriter(out, crc), &countingReader{r: body, onProgress: prog.report})
+	n, err := io.Copy(io.MultiWriter(out, crc), &countingReader{r: body, onProgress: onProgress})
 	if err != nil {
 		return "", fmt.Errorf("download from Bose stopped after %d of %d bytes: %w", n, f.Length, err)
 	}
 	if n != f.Length || crc.Sum32() != f.CRC {
-		return "", fmt.Errorf("the downloaded file does not match Bose's catalogue (%d bytes, CRC %08x; expected %d bytes, CRC %08x)", n, crc.Sum32(), f.Length, f.CRC)
+		return "", fmt.Errorf("the downloaded file %w (%d bytes, CRC %08x; expected %d bytes, CRC %08x)", errBoseFileMismatch, n, crc.Sum32(), f.Length, f.CRC)
 	}
 	if err := out.Close(); err != nil {
 		return "", err
