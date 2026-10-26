@@ -102,6 +102,27 @@ type StickCheck struct {
 	// Detail carries the raw error of a failed write probe for the log and the
 	// failure report. Not localized, not shown as the primary message.
 	Detail string `json:"detail,omitempty"`
+	// FreeBytes is the space left on the volume. The firmware ladder needs room
+	// for an Update.stu of about 100 MB.
+	FreeBytes int64 `json:"freeBytes"`
+	// ClusterBytes is the FAT32 allocation unit, 0 when unknown.
+	ClusterBytes int64 `json:"clusterBytes"`
+	// TooLarge: over 32 GB. A warning only: such sticks often come with 64 KB
+	// clusters, which the speaker cannot read.
+	TooLarge bool `json:"tooLarge"`
+	// ClusterTooBig: a cluster of 64 KB or more. The speaker cannot read the
+	// files on it; the app's own Format picks a size it can. These two do not
+	// change OK or Reason, so the install wizard behaves as before; the
+	// firmware ladder blocks on ClusterTooBig.
+	ClusterTooBig bool `json:"clusterTooBig"`
+	// ExistingFirmwareBytes is the size of an Update.stu already on the stick
+	// (0 when none). Writing the next one replaces it, so the firmware ladder
+	// counts this space as free, on the screen and in FirmwareStickProblem.
+	ExistingFirmwareBytes int64 `json:"existingFirmwareBytes"`
+	// OtherFiles: the stick holds files besides Update.stu (see
+	// HasOtherFiles). A hint for the firmware ladder only: it changes neither
+	// OK nor Reason, and nothing is ever deleted.
+	OtherFiles bool `json:"otherFiles"`
 }
 
 // CheckStick evaluates the volume at path against the install requirements:
@@ -126,6 +147,14 @@ func CheckStick(path string) StickCheck {
 	c.TotalBytes = found.TotalBytes
 	c.IsFAT32 = strings.EqualFold(found.Filesystem, "FAT32")
 	c.BigEnough = found.TotalBytes >= MinStickBytes
+	c.FreeBytes = found.FreeBytes
+	c.TooLarge = found.TotalBytes > MaxRecommendedStickBytes
+	c.ExistingFirmwareBytes = ExistingFirmwareBytes(path)
+	c.OtherFiles = HasOtherFiles(path)
+	if c.IsFAT32 {
+		c.ClusterBytes = clusterBytes(path)
+		c.ClusterTooBig = c.ClusterBytes > MaxClusterBytes
+	}
 	var werr error
 	c.Writable, werr = stickWritable(path)
 	if werr != nil {

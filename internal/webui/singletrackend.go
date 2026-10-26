@@ -172,6 +172,9 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		sawPlay   bool
 		// retried: the one start retry this play gets has been used.
 		retried bool
+		// ranAhead: the position was once further than the box can have
+		// played since the push (positionRunsAhead); logged once per play.
+		ranAhead bool
 		// resume: recognises a resume the firmware froze (resumefile.go).
 		resume = fileResumeWatch{endEpsilon: qt.endEpsilon, freezeAfter: s.fileResumeTimes().freezeAfter}
 	)
@@ -199,7 +202,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// end nets measure from there too.
 		if s.fileRestarting() {
 			resume.restarted()
-			lastPos, lastPosAt = 0, time.Time{}
+			lastPos, lastPosAt, ranAhead = 0, time.Time{}, false
 			start = time.Now().Add(-s.pausePosition())
 			continue
 		}
@@ -226,6 +229,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		if tornDown && !sawPlay && !retried {
 			if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker dropped the track before it started"); ok {
 				gen, start, retried = next, time.Now(), true
+				lastPos, lastPosAt, ranAhead = 0, time.Time{}, false
 				s.noteActiveFile(tr, gen)
 				continue
 			}
@@ -299,6 +303,12 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			if pos > lastPos {
 				lastPos = pos
 				lastPosAt = time.Now()
+				if !ranAhead && qt.positionRunsAhead(pos, time.Since(start)) {
+					ranAhead = true
+					s.logger.Info("single track: position runs ahead of real time, not timing the end by it",
+						"title", title, "posSec", int(pos.Seconds()),
+						"elapsedSec", int(time.Since(start).Seconds()), "trackSec", int(end.Seconds()))
+				}
 			}
 			// Falls through to the nets below: a box frozen in PLAY_STATE at
 			// EOF is the whole reason this exists.
@@ -337,8 +347,9 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// rule that a box still climbing past a wrong server length is not cut
 		// off (#1065).
 		in := s.trackEndSnapshot(sawPlay, ps, start, tr.dur, obsTotal, lastPos, lastPosAt)
+		in.ranAhead = ranAhead
 		if net := trackEndNet(in); net != endNetNone {
-			s.learnSingleTrackLength(tr, net, lastPos)
+			s.learnSingleTrackLength(tr, net, lastPos, ranAhead)
 			return s.finishSingleTrack(title, net.why(), lastPos, end), gen
 		}
 	}

@@ -74,6 +74,10 @@ export function BrowseLibrary(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['BrowseLibrary'](arg1, arg2, arg3, arg4);
 }
 
+export function CancelFirmwareStick() {
+  return window['go']['main']['App']['CancelFirmwareStick']();
+}
+
 export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
 }
@@ -250,6 +254,14 @@ export function GetFirmwareGuide(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GetFirmwareGuide'](arg1, arg2, arg3, arg4);
 }
 
+export function GetFirmwareLadder(arg1) {
+  return window['go']['main']['App']['GetFirmwareLadder'](arg1);
+}
+
+export function GetFirmwareLadderManual(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GetFirmwareLadderManual'](arg1, arg2, arg3, arg4);
+}
+
 export function GetGroupKeys(arg1, arg2) {
   return window['go']['main']['App']['GetGroupKeys'](arg1, arg2);
 }
@@ -374,6 +386,10 @@ export function PhoneQR(arg1) {
   return window['go']['main']['App']['PhoneQR'](arg1);
 }
 
+export function PickFirmwareFile() {
+  return window['go']['main']['App']['PickFirmwareFile']();
+}
+
 export function PlayPandoraStation(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['PlayPandoraStation'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -384,6 +400,14 @@ export function PlaySlot(arg1, arg2, arg3) {
 
 export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
   return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
+}
+
+export function PrepareFirmwareStick(arg1, arg2) {
+  return window['go']['main']['App']['PrepareFirmwareStick'](arg1, arg2);
+}
+
+export function PrepareFirmwareStickFromFile(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PrepareFirmwareStickFromFile'](arg1, arg2, arg3);
 }
 
 export function Prev(arg1, arg2) {
@@ -464,6 +488,10 @@ export function RecallBoxPreset(arg1, arg2, arg3) {
 
 export function RecentPlayed(arg1, arg2) {
   return window['go']['main']['App']['RecentPlayed'](arg1, arg2);
+}
+
+export function RecheckFirmware(arg1) {
+  return window['go']['main']['App']['RecheckFirmware'](arg1);
 }
 
 export function RecordOTAOutcome(arg1, arg2) {

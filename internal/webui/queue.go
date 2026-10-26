@@ -210,6 +210,46 @@ func (q *playQueue) stepForwardLocked(wrap bool) (queueItem, bool) {
 	return q.currentLocked()
 }
 
+// peekNatural returns the track a natural end of the current one would play
+// next, without moving the queue. A wrap in shuffle mode reshuffles first, so
+// that next track is not known yet and nothing is returned.
+func (q *playQueue) peekNatural() (queueItem, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if !q.active || len(q.order) == 0 {
+		return queueItem{}, false
+	}
+	if q.repeat == repeatOne {
+		return q.currentLocked()
+	}
+	p := q.pos + 1
+	if p >= len(q.order) {
+		if q.repeat != repeatAll || q.shuffle {
+			return queueItem{}, false
+		}
+		p = 0
+	}
+	return q.items[q.order[p]], true
+}
+
+// setLength gives every track at url that has no length the length d, and
+// reports how many it changed. A track that already has one keeps it.
+func (q *playQueue) setLength(url string, d time.Duration) int {
+	if url == "" || d <= 0 {
+		return 0
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	n := 0
+	for i := range q.items {
+		if q.items[i].URL == url && q.items[i].Duration == 0 {
+			q.items[i].Duration = d
+			n++
+		}
+	}
+	return n
+}
+
 // prev is a manual skip backward. At the front it wraps to the end when
 // repeatAll is set, otherwise stays on the first track.
 func (q *playQueue) prev() (queueItem, bool) {

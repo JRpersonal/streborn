@@ -232,6 +232,31 @@ A speaker on 14.x or older needs several updates in a row. Each step is
 one USB stick update (Route C), and the version must be checked after
 every step before the next one.
 
+### Let the app do the stepping
+
+For the first generation SoundTouch 20, 30 and Portable, ST Reborn walks
+you through the ladder. When such a speaker reports a firmware older
+than 15, the firmware notice turns into a numbered list of updates. For
+each step the app:
+
+1. downloads that step's zip from the Internet Archive, on your
+   computer, only when you click **Prepare stick** (or takes a zip or
+   `Update.stu` you downloaded yourself);
+2. checks the zip against the size and sha1 the Internet Archive
+   publishes, and the `Update.stu` inside against its size and CRC-32
+   (a file that does not match is never written);
+3. copies only `Update.stu` to the root of the stick you picked, reads
+   it back, checks it again and ejects the stick;
+4. shows the button steps for your speaker and, after **Done, check
+   again**, reads the version and moves on to the next step.
+
+The last step is Bose's own 27.0.6, over the network or by stick. The
+app remembers the step per speaker, so it picks up again after a
+restart. Other models keep the single-step guide for now. The table the
+app uses lives in `desktop-app/bosefw/ladder_data.go`; every value in it
+comes from the Internet Archive's metadata or the zip itself, never
+from memory.
+
 ### Where the in-between files come from
 
 Bose still serves 26.0.1, 27.0.1, 27.0.2, 27.0.3 and 27.0.6. Its paths
