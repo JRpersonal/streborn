@@ -332,7 +332,7 @@ func (m *Manager) hasUsableCredential() bool {
 		return false
 	}
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".json") && usableCredentialFile(m, filepath.Join(m.credStore, e.Name())) {
+		if isCredentialCopy(e.Name()) && usableCredentialFile(m, filepath.Join(m.credStore, e.Name())) {
 			return true
 		}
 	}

@@ -79,7 +79,9 @@ func parseRetryAfter(v string) time.Duration {
 }
 
 // accountProduct returns the Spotify account product type ("premium"/"free"/
-// "open"), cached for a few minutes. Returns "" when unknown (the zeroconf token
+// "open"), cached for a few minutes. When Spotify cannot be asked or does not
+// answer, it returns the plan remembered for the logged-in account
+// (accountplans.go), and "" only when that is unknown too (the zeroconf token
 // may lack the user-read-private scope, in which case /v1/me omits product), so
 // callers fall back to the log signal. Best-effort.
 //
@@ -105,16 +107,22 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	}
 	quiet := m.productQuietUntil
 	m.mu.Unlock()
-	if time.Now().Before(quiet) {
-		return ""
-	}
 	// No engine, no question. The plan is read with a token the engine hands
 	// out, so a speaker whose engine is not there has nobody to ask, and asking
 	// anyway writes a log line every thirty seconds saying so: 31 of them on a
 	// speaker that had lost its engine for six hours (2026-09-27). The engine
 	// coming back re-arms this by itself.
 	if !m.Ready() {
-		return ""
+		return m.productPlan()
+	}
+	// Who the engine is logged in as, asked before anything that can fail: it
+	// is a call to the engine next door, not to Spotify, and it is what lets a
+	// rate-limited or unreachable Spotify fall back to the plan remembered for
+	// THIS account instead of to "unknown".
+	user := m.currentUsername(ctx)
+	m.noteEngineAccount(user)
+	if time.Now().Before(quiet) {
+		return m.productPlan()
 	}
 	data, err := m.spotifyWebGet(ctx, meURL)
 	if err != nil {
@@ -147,7 +155,7 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 			m.logger.Info("spotify: leaving the account plan alone for a while", "wait", wait)
 		}
 		m.logger.Info("spotify: could not read the account plan from Spotify", "err", err)
-		return ""
+		return m.productPlan()
 	}
 	var me struct {
 		Product string `json:"product"`
@@ -159,10 +167,18 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 	// Read the name before the plan is judged below: an answer that carries a
 	// name but no product (the missing-scope case) is still worth learning from,
 	// and the early return under it would otherwise throw the name away too.
-	if json.Unmarshal(data, &me) == nil && me.DisplayName != "" {
-		if user := m.currentUsername(ctx); user != "" {
-			m.rememberAccountName(user, me.DisplayName)
-		}
+	//
+	// The account is asked for again after the answer: the token belonged to
+	// whoever was logged in when it was handed out, and an account switch in
+	// between would otherwise file this answer under the previous account.
+	// Only an account that was the same on both sides gets the answer stored.
+	after := m.currentUsername(ctx)
+	owner := ""
+	if after != "" && after == user {
+		owner = after
+	}
+	if json.Unmarshal(data, &me) == nil && me.DisplayName != "" && owner != "" {
+		m.rememberAccountName(owner, me.DisplayName)
 	}
 	if err := json.Unmarshal(data, &me); err != nil || me.Product == "" {
 		// The silent third way to fail, and the one that cost an evening: the
@@ -180,12 +196,24 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 		}
 		m.logger.Info("spotify: the account answer carried no plan",
 			"err", err, "fieldsSeen", strings.Join(keys, ","), "bytes", len(data))
-		return ""
+		return m.productPlan()
 	}
+	m.noteEngineAccount(after)
 	m.mu.Lock()
 	m.productType, m.productCheckedAt = me.Product, time.Now()
 	m.productQuietFor = 0
+	firstFresh := !m.productFreshLogged
+	m.productFreshLogged = true
 	m.mu.Unlock()
+	if firstFresh {
+		// Once per engine process: the counterpart of the "remembered" line in
+		// accountplans.go, so a bundle shows which of the two the plan came from.
+		m.logger.Info("spotify: read the account plan from Spotify",
+			"plan", me.Product, "user", anonymise.MaskAccount(owner))
+	}
+	if owner != "" {
+		m.rememberAccountPlan(owner, me.Product)
+	}
 	return me.Product
 }
 
@@ -199,13 +227,18 @@ func (m *Manager) accountProductAt(ctx context.Context, meURL string) string {
 func (m *Manager) PremiumRequired() bool {
 	m.mu.Lock()
 	free := m.sawFreeAccountLog
-	p := m.productType
+	fresh := m.productType
 	tried := m.productTriedAt
 	m.mu.Unlock()
 	if free {
 		return true
 	}
-	if p == "" && time.Since(tried) > 30*time.Second {
+	// A plan remembered for the logged-in account counts like a fresh one (see
+	// accountplans.go for why a remembered "free" is still a positive signal),
+	// but it does not stop the background read below: that keys on the FRESH
+	// value, so the first answer Spotify gives replaces the remembered one.
+	p := m.productPlan()
+	if fresh == "" && time.Since(tried) > 30*time.Second {
 		m.mu.Lock()
 		m.productTriedAt = time.Now()
 		m.mu.Unlock()
@@ -277,12 +310,21 @@ func (m *Manager) LoggedIn() bool {
 	// active credential can be briefly absent during a SwitchAccount swap.
 	if entries, err := os.ReadDir(m.credStore); err == nil {
 		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), ".json") {
+			if isCredentialCopy(e.Name()) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// isCredentialCopy reports whether a file in the per-account store is a
+// credential copy. The store also holds what accounts are called (names.json)
+// and what plan they are on (plans.json); both are .json and both would
+// otherwise read as "a login is stored here", so a speaker whose credentials
+// were all gone would still claim it could play a Spotify key.
+func isCredentialCopy(name string) bool {
+	return strings.HasSuffix(name, ".json") && name != accountNamesFile && name != accountPlansFile
 }
 
 // stateHasCredential reports whether go-librespot's state.json at path holds a

@@ -395,8 +395,12 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	defer runCancel()
 	// Fresh process = re-detect the account product (an account switch relaunches
 	// go-librespot), so the #45 Premium warning reflects the current login.
+	// The account is forgotten with it: until the new process says who it is
+	// logged in as, no remembered plan applies (accountplans.go), so a switch
+	// can never hand one account's plan to the next.
 	m.mu.Lock()
 	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
+	m.productUser, m.productFreshLogged, m.productRememberedLogged = "", false, false
 	m.mu.Unlock()
 	m.resetCredRejectRun()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)

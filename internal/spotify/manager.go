@@ -91,6 +91,10 @@ type Manager struct {
 	// Premium check already fetches, kept on the NAND beside the credential
 	// copies, and read back at boot. nil until first use; see accountnames.go.
 	accountNames map[string]string
+	// accountPlans maps a Spotify account id to the last plan Spotify
+	// confirmed for it, so an engine restart does not forget a plan the
+	// speaker already knew; see accountplans.go. nil until first use.
+	accountPlans map[string]rememberedPlan
 	// credReject tracks Spotify refusing the saved login (BadCredentials) and
 	// what the supervisor did about it; see credreject.go. Guarded by mu.
 	credReject credRejectState
@@ -176,6 +180,13 @@ type Manager struct {
 	// grow it instead of asking again the moment the header expires.
 	productQuietFor   time.Duration
 	sawFreeAccountLog bool
+	// productUser is the account the engine was last seen logged in as, the
+	// key the remembered plan is looked up by when productType is empty.
+	// productFreshLogged / productRememberedLogged keep the two "where did the
+	// plan come from" log lines to one each per engine process.
+	productUser             string
+	productFreshLogged      bool
+	productRememberedLogged bool
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).
