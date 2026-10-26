@@ -30,8 +30,9 @@ export const FRONTEND = path.resolve(__dirname, '..');                // desktop
 export function shotScenario(view, locale) {
   const sc = defaultScenario();
   sc.seed = { locale, ui2: false, theme: null, scale: null, cachedBoxes: ['livingRoom'], extraStorage: { searchCountry: '' } };
-  if (view.startsWith('app-ui2')) {
-    sc.seed.ui2 = true;
+  if (view.startsWith('app-ui2') || view.startsWith('app-classic-')) {
+    // app-classic-*: the same network with the preview off, for comparison.
+    sc.seed.ui2 = view.startsWith('app-ui2');
     sc.seed.theme = view.endsWith('-light') ? 'light' : view.endsWith('-contrast') ? 'contrast' : 'dark';
     sc.seed.scale = view === 'app-ui2-xl' ? '3' : '1';
     sc.seed.cachedBoxes = true;
@@ -46,6 +47,30 @@ export function shotScenario(view, locale) {
     sc.bindings = { RefreshKnownBoxes: { value: null }, GetZoneState: { value: null } };
   }
   return resolveScenario(sc);
+}
+
+// shotDemo is the demo data one shot renders. The UI 2.0 and classic phase 2
+// shots move the played history to the shot's own clock, so Recently played
+// shows "Today", "Yesterday" and an older day whenever the shots are taken:
+// the latest station minutes ago, the next two cards a day earlier, the last
+// one three days back; the gaps between the entries stay as they are. (A shot
+// taken in the first hours after midnight can see "yesterday" slip a day.)
+// The published classic shots keep the fixed history.
+export function shotDemo(view, now = Date.now()) {
+  if (!view.startsWith('app-ui2') && !view.startsWith('app-classic-')) return DEMO;
+  const DAY = 86400000;
+  const recent = DEMO.recent;
+  const newest = Math.max(...recent.map((e) => Date.parse(e.ts)));
+  const cards = [...new Set(recent.map((e) => e.cardKey))];
+  const daysBack = (key) => {
+    const at = cards.indexOf(key);
+    return at <= 0 ? 0 : at <= 2 ? 1 : 3;
+  };
+  const moved = recent.map((e) => {
+    const ts = now - 3 * 60000 - (newest - Date.parse(e.ts)) - daysBack(e.cardKey) * DAY;
+    return { ...e, ts: new Date(ts).toISOString() };
+  });
+  return { ...DEMO, recent: moved };
 }
 
 // ---- build + vite preview server -------------------------------------------

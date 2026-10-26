@@ -16,7 +16,7 @@
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { DEMO, assertPortFree, FRONTEND, agentRoutes, buildFrontend, installDesktopMock, shotScenario, startServer, stopServer, waitForServer } from './demo.mjs';
+import { DEMO, assertPortFree, FRONTEND, agentRoutes, buildFrontend, installDesktopMock, shotDemo, shotScenario, startServer, stopServer, waitForServer } from './demo.mjs';
 
 // SHOOT_OUT sends a run elsewhere, e.g. review shots that are not published.
 const OUT = process.env.SHOOT_OUT ? path.resolve(process.env.SHOOT_OUT) : path.resolve(FRONTEND, '../../docs/screenshots');
@@ -41,9 +41,13 @@ const UI2_VIEWS = ['app-ui2-dark', 'app-ui2-light', 'app-ui2-contrast', 'app-ui2
 // The phase 2 views of the preview (#1286), each in the dark and the light
 // theme: SHOOT_VIEWS=ui2p2 shoots all ten.
 const UI2P2_VIEWS = ['radio', 'radiorows', 'library', 'recent', 'spotify'].flatMap((v) => [`app-ui2p2-${v}-dark`, `app-ui2p2-${v}-light`]);
+// The same four views in the classic layout (preview off), on the same
+// simulated network and window, to compare a phase 2 view with what it
+// replaces: SHOOT_VIEWS=classicp2.
+const CLASSICP2_VIEWS = ['radio', 'library', 'recent', 'spotify'].map((v) => `app-classic-${v}`);
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
   ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
-    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : [v]))
+    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : v === 'classicp2' ? CLASSICP2_VIEWS : [v]))
   : ALL_VIEWS;
 
 // ---- per-view driving ------------------------------------------------------
@@ -86,6 +90,8 @@ async function drive(page, view) {
       await click('#ui2MoreBtn');
       await page.waitForSelector('#ui2MorePop:not([hidden])', { timeout: 9000 });
     }
+  } else if (view.startsWith('app-classic-')) {
+    await driveClassicPhase2(page, view.slice('app-classic-'.length));
   } else if (view === 'app-search') {
     await page.waitForSelector('#topBtn', { timeout: 9000 });
     await click('#topBtn');
@@ -219,6 +225,28 @@ async function driveUi2Phase2(page, which) {
 }
 
 // ---- main ------------------------------------------------------------------
+// driveClassicPhase2 opens one of the four phase 2 views in the classic
+// layout, with the same content the preview shots show.
+async function driveClassicPhase2(page, which) {
+  const tab = (v) => page.click(`.tab-btn[data-view="${v}"]`);
+  await page.waitForSelector('#presets .preset-body, #presets .preset-hint', { timeout: 9000 });
+  if (which === 'radio') {
+    await page.waitForSelector('#topBtn', { timeout: 9000 });
+    await page.click('#topBtn');
+    await page.waitForSelector('#searchResults .result-row', { timeout: 9000 });
+  } else if (which === 'library') {
+    await tab('library');
+    await page.waitForSelector('#view-library:not(.hidden) .library-row-folder', { timeout: 9000 });
+  } else if (which === 'recent') {
+    await tab('recent');
+    await page.waitForSelector('#view-recent:not(.hidden) .recent-card', { timeout: 9000 });
+  } else if (which === 'spotify') {
+    await tab('spotify');
+    await page.waitForSelector('#view-spotify:not(.hidden) .spotify-page', { timeout: 9000 });
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+}
+
 await assertPortFree(BASE);
 await buildFrontend(PORT);
 const server = startServer(PORT);
@@ -237,9 +265,9 @@ try {
       if (process.env.SHOOT_DEBUG) page.on('console', (m) => console.log(`  [${lang}/${view}] console.${m.type()}:`, m.text()));
       // The UI 2.0 shots use the app's own default window (main.go, 1240 x 740),
       // the size the sidebar has to fit.
-      if (view.startsWith('app-ui2')) await page.setViewportSize({ width: 1240, height: 740 });
+      if (view.startsWith('app-ui2') || view.startsWith('app-classic-')) await page.setViewportSize({ width: 1240, height: 740 });
       const scenario = shotScenario(view, lang);
-      await page.addInitScript(installDesktopMock, { scenario, demo: DEMO });
+      await page.addInitScript(installDesktopMock, { scenario, demo: shotDemo(view) });
       await page.route('**/api/**', agentRoutes(scenario));
       try {
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
