@@ -26,6 +26,22 @@ func TestPairRole(t *testing.T) {
 	}
 }
 
+func TestStereoFollowerFrom(t *testing.T) {
+	if got := stereoFollowerFrom("", "", false, "112233445566", ""); got.Follower {
+		t.Error("no pair record: reported a follower")
+	}
+	if got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "", "192.0.2.10"); got.Follower {
+		t.Error("own id unknown: reported a follower instead of leaving the play alone")
+	}
+	if got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "aabbccddeeff", "192.0.2.10"); got.Follower {
+		t.Error("the master was told it follows its own pair")
+	}
+	got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "112233445566", "192.0.2.10")
+	if !got.Follower || got.MasterID != "AABBCCDDEEFF" || got.MasterIP != "192.0.2.10" || got.PairName != "Pair" {
+		t.Errorf("follower = %+v, want the master's id, address and the pair name", got)
+	}
+}
+
 func TestPresetWriteGroupFollowerNilIsStandalone(t *testing.T) {
 	old := groupFollowerFn.Load()
 	t.Cleanup(func() { groupFollowerFn.Store(old) })

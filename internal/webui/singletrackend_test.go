@@ -245,6 +245,64 @@ func TestATrackTheSpeakerNeverStartedIsHandedOverOnceMore(t *testing.T) {
 	}
 }
 
+// Mail, 2026-10-26: the following half of a stereo pair took the push and kept
+// reporting the pair's other audio in PLAY_STATE, its position frozen at 120 s.
+// The watch read that as our track, learned a 120 s length for a file that never
+// played, and stopped the speaker. PLAY_STATE for another location is not ours.
+func TestForeignAudioIsNeitherOurTrackNorItsLength(t *testing.T) {
+	t.Parallel()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	s.nowPlayingLocationFn = func() string { return "http://192.0.2.99:8085/other.mp3" }
+	const mine = "http://192.0.2.20:49000/still.mp3"
+	gen := s.setLastPlay(mine, "Still", "", "audio/mpeg")
+	np.set("PLAY_STATE", 120*time.Second, 0)
+	s.armSingleTrackEnd(singleTrack{boxURL: mine, title: "Still", mime: "audio/mpeg"}, gen)
+
+	// Past the frozen net and past the stall timeout plus its one retry.
+	time.Sleep(2*s.queueTiming.stallTimeout + 4*s.queueTiming.frozenTimeout)
+	if rec.has("Stop") {
+		t.Fatal("the watch stopped the speaker over audio it never started")
+	}
+	if got := s.trackLens.get(mine); got != 0 {
+		t.Fatalf("learned length %v from audio that was not this file", got)
+	}
+}
+
+// The same file under another host spelling is still ours, and still ended.
+func TestOwnFileUnderAnotherHostIsStillWatched(t *testing.T) {
+	t.Parallel()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	s.nowPlayingLocationFn = func() string { return "http://127.0.0.1:49000/a.flac" }
+	gen := s.setLastPlay("http://192.0.2.9:49000/a.flac", "First", "", "audio/x-flac")
+	np.set("PLAY_STATE", 2*qsec, 5*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9:49000/a.flac", title: "First", mime: "audio/x-flac", dur: 5 * qsec}, gen)
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", 5*qsec, 5*qsec)
+
+	waitForTrackEnd(t, "the box to be stopped at the end of the track", func() bool { return rec.has("Stop") })
+}
+
+func TestForeignFileLocation(t *testing.T) {
+	cases := []struct {
+		loc, want string
+		foreign   bool
+	}{
+		{"", "http://192.0.2.9/a.flac", false},
+		{"http://192.0.2.9/a.flac", "http://192.0.2.9/a.flac", false},
+		{"http://127.0.0.1/a.flac", "http://192.0.2.9/a.flac", false},
+		{"http://192.0.2.9/b.flac", "http://192.0.2.9/a.flac", true},
+		{"http://192.0.2.9/a.flac?x=2", "http://192.0.2.9/a.flac?x=1", true},
+		{"http://127.0.0.1:8085/stream/3", "http://192.0.2.9/a.flac", true},
+	}
+	for _, c := range cases {
+		if got := foreignFileLocation(c.loc, c.want); got != c.foreign {
+			t.Errorf("foreignFileLocation(%q, %q) = %v, want %v", c.loc, c.want, got, c.foreign)
+		}
+	}
+}
+
 // A key pressed on the speaker after the play began is the listener choosing
 // something else, and the retry must not overrule it.
 func TestNoStartRetryAfterAKeyPress(t *testing.T) {

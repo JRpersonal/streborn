@@ -470,3 +470,23 @@ func (s *Server) GroupPair() (masterDeviceID, name string, ok bool) {
 	}
 	return s.group.MasterDeviceID, s.group.Name, true
 }
+
+// GroupPairMasterIP is the LAN address the stored pair document names for its
+// master, from the master's own <groupRole> entry. Empty when no pair is
+// stored or the document carries no address for the master (a firmware post
+// leaves ipAddress out). The play path hands it to the phone page so the
+// following half can link to the half that actually plays.
+func (s *Server) GroupPairMasterIP() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !describesPair(s.group) {
+		return ""
+	}
+	master := strings.TrimSpace(s.group.MasterDeviceID)
+	for _, r := range s.group.Roles {
+		if strings.EqualFold(strings.TrimSpace(r.DeviceID), master) {
+			return strings.TrimSpace(r.IP)
+		}
+	}
+	return ""
+}

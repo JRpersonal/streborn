@@ -292,6 +292,16 @@ func WithPairPartnerRecheck(fn func() (ip, deviceID string)) Option {
 	return func(s *Server) { s.pairPartnerRecheck = fn }
 }
 
+// WithStereoFollower registers the stereo-pair role check the play paths ask
+// before they wake or push: whether this speaker is the FOLLOWING half of a
+// pair, and which speaker leads it. The agent answers it from the pair record
+// in marge and the speaker's own deviceID (the webui cannot: it reaches its
+// speaker over loopback and does not know which half it is). nil means "not a
+// follower", which keeps every play path exactly as it was.
+func WithStereoFollower(fn func() StereoFollower) Option {
+	return func(s *Server) { s.stereoFollowerFn = fn }
+}
+
 // WithNativeServices wires the firmware's own US services (Pandora,
 // iHeartRadio; #243) to /api/us-services, the account endpoints and the
 // diagnostic bundle. Nil leaves the endpoints answering 501.

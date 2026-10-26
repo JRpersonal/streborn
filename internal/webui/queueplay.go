@@ -1216,6 +1216,14 @@ func (qt *queueTiming) nearEnd(progress, end time.Duration) bool {
 // at all) are read off the root source attribute, so a track literally named
 // "STANDBY" cannot be mistaken for the box being off.
 func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby, tornDown bool, source string) {
+	status, pos, total, standby, tornDown, source, _ = s.pollNowPlayingAt()
+	return
+}
+
+// pollNowPlayingAt is pollNowPlaying plus the ContentItem location the speaker
+// reports, for the single-track end watch, which has to tell its own file from
+// whatever else the speaker reports playing. location is "" when unknown.
+func (s *Server) pollNowPlayingAt() (status string, pos, total time.Duration, standby, tornDown bool, source, location string) {
 	// Test seam, the same one boxPlayStateDetail has: the end detection is a
 	// state machine over what the box reports, and it is only testable if the
 	// reports can be scripted.
@@ -1228,13 +1236,16 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 		if s.nowPlayingSourceFn != nil {
 			source = s.nowPlayingSourceFn()
 		}
-		return st, p, t, sb, false, source
+		if s.nowPlayingLocationFn != nil {
+			location = s.nowPlayingLocationFn()
+		}
+		return st, p, t, sb, false, source, location
 	}
 	np, err := s.readBoxNowWithin(3 * time.Second)
 	if err != nil {
-		return "", 0, 0, false, false, ""
+		return "", 0, 0, false, false, "", ""
 	}
-	return np.Status(), np.Position, np.Total, np.IsStandby(), np.SourceTornDown(), np.Source
+	return np.Status(), np.Position, np.Total, np.IsStandby(), np.SourceTornDown(), np.Source, np.Location()
 }
 
 // --- HTTP handlers -------------------------------------------------------
@@ -1310,6 +1321,12 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		items := toQueueItems(req.Items)
 		if len(items) == 0 {
 			http.Error(w, "no playable items", http.StatusBadRequest)
+			return
+		}
+		// Half of a broken pair, or the following half of a healthy one: the
+		// first track's push could never be heard, so refuse before the wake.
+		if ref := s.pairPlayRefusal(); ref != nil {
+			writePlayRefusal(w, ref)
 			return
 		}
 		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art, source: req.Card.Source}

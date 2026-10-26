@@ -96,6 +96,21 @@ func TestSetCanonicalGroupStillRefusesTheSameShape(t *testing.T) {
 	}
 }
 
+// The following half of a pair points the phone page at the master, so the
+// master's address has to come out of the document's own role entry.
+func TestGroupPairMasterIPReadsTheMastersRole(t *testing.T) {
+	s := quietServer(t)
+	if ip := s.GroupPairMasterIP(); ip != "" {
+		t.Fatalf("no pair stored, got %q", ip)
+	}
+	if err := s.SetCanonicalGroup(realPairDoc); err != nil {
+		t.Fatalf("SetCanonicalGroup: %v", err)
+	}
+	if ip := s.GroupPairMasterIP(); ip != "192.0.2.10" {
+		t.Fatalf("GroupPairMasterIP = %q, want the master's role address", ip)
+	}
+}
+
 // unmarshalGroup parses a group document the way the server does, so the tests
 // exercise the real shape rather than a hand-built struct.
 func unmarshalGroup(t *testing.T, doc string, into *groupRecord) error {

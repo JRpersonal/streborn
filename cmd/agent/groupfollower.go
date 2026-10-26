@@ -8,6 +8,8 @@ package main
 import (
 	"strings"
 	"sync/atomic"
+
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // groupFollowerFn is wired in main (setGroupFollowerFn): the stereo-pair
@@ -33,6 +35,17 @@ func presetWriteGroupFollower() (bool, string) {
 		return false, ""
 	}
 	return (*fn)()
+}
+
+// stereoFollowerFrom builds the play paths' pair-role answer from the pair
+// record (master, name, ok), this speaker's own deviceID, and the master's
+// address from the record. Only a decided follower is reported; an undecided
+// role (no record, own id not known yet) plays as before.
+func stereoFollowerFrom(master, name string, pairOK bool, self, masterIP string) webui.StereoFollower {
+	if decided, follower := pairRole(master, self, pairOK); !decided || !follower {
+		return webui.StereoFollower{}
+	}
+	return webui.StereoFollower{Follower: true, MasterID: master, MasterIP: masterIP, PairName: name}
 }
 
 // pairRole reads the stereo-pair record: decided is false when it says

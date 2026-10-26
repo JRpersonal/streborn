@@ -2,6 +2,8 @@ package webui
 
 import (
 	"context"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/upnp"
@@ -207,7 +209,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			return false, gen
 		}
 
-		ps, pos, total, standby, tornDown, _ := s.pollNowPlaying()
+		ps, pos, total, standby, tornDown, _, loc := s.pollNowPlayingAt()
 		if standby {
 			// Powered off mid-track. Never a track end, and STR must not send
 			// anything to a sleeping box (#219).
@@ -234,6 +236,33 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// progress bar. There is no next track here, so end the watch.
 			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
 			return false, gen
+		}
+		// PLAY_STATE only counts when the speaker reports OUR file. A speaker
+		// that took the push and ignored it (the following half of a stereo
+		// pair did exactly that) reports the audio it already had, position
+		// and all: the watch read it as our track, learned a 120 s length from
+		// it, and stopped the speaker on that (mail, 2026-10-26).
+		if (ps == "PLAY_STATE" || ps == "BUFFERING_STATE") && foreignFileLocation(loc, tr.boxURL) {
+			if sawPlay {
+				// Ours played, and now something else does. Whatever took
+				// over is not ours to stop.
+				s.logger.Info("single track: the speaker now plays something else, ending the watch",
+					"title", title, "location", loc)
+				return false, gen
+			}
+			if time.Since(start) >= qt.stallTimeout {
+				if !retried {
+					if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker kept playing other audio"); ok {
+						gen, start, retried = next, time.Now(), true
+						s.noteActiveFile(tr, gen)
+						continue
+					}
+				}
+				s.logger.Info("single track: the speaker never played the track, it reports other audio; dropping the end watch",
+					"title", title, "location", loc)
+				return false, gen
+			}
+			continue
 		}
 		if total > obsTotal {
 			obsTotal = total
@@ -312,6 +341,25 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			return s.finishSingleTrack(title, net.why(), lastPos, end), gen
 		}
 	}
+}
+
+// foreignFileLocation reports whether the location the speaker reports is
+// known to be some other audio than the file at want. Forgiving on purpose: an
+// empty location (a model or a read that carries none) is unknown, never
+// foreign, so a speaker that does not echo the location keeps the end watch it
+// had. The host is ignored, because one file can be spelled with different
+// hosts on the way (loopback vs the LAN address); the path and query name it.
+func foreignFileLocation(loc, want string) bool {
+	loc = strings.TrimSpace(loc)
+	if loc == "" || want == "" || loc == want {
+		return false
+	}
+	lu, err1 := url.Parse(loc)
+	wu, err2 := url.Parse(want)
+	if err1 != nil || err2 != nil {
+		return true
+	}
+	return lu.Path != wu.Path || lu.RawQuery != wu.RawQuery
 }
 
 // finishSingleTrack handles a natural end the watch detected itself. With
