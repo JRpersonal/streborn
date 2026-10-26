@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // FirmwareFileName is the name the speaker looks for at the root of the stick.
@@ -170,4 +171,42 @@ func ExistingFirmwareBytes(stickPath string) int64 {
 		return st.Size()
 	}
 	return 0
+}
+
+// osStickEntries are created by the PC's operating system on a stick it mounts
+// and come back on their own after a delete, so they do not count as "other
+// files" (Windows: System Volume Information, the recycle bin; macOS:
+// Spotlight, the file-system event log, the trash, .DS_Store, and ._ files,
+// matched by prefix). The app's own write probe and a half-written
+// Update.stu.part are skipped too.
+var osStickEntries = map[string]bool{
+	"system volume information": true,
+	"$recycle.bin":              true,
+	".spotlight-v100":           true,
+	".fseventsd":                true,
+	".trashes":                  true,
+	".temporaryitems":           true,
+	".ds_store":                 true,
+	".str-write-test.tmp":       true,
+	"update.stu.part":           true,
+}
+
+// HasOtherFiles reports whether the root of the stick holds anything besides
+// Update.stu and the entries the PC's operating system creates by itself. The
+// Bose USB updater is most reliable on a stick that holds only Update.stu, so
+// the firmware ladder shows a gentle hint. Nothing is ever deleted. An
+// unreadable root reports false: the hint is advice, not a check.
+func HasOtherFiles(stickPath string) bool {
+	entries, err := os.ReadDir(stickPath)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := strings.ToLower(e.Name())
+		if name == strings.ToLower(FirmwareFileName) || osStickEntries[name] || strings.HasPrefix(name, "._") {
+			continue
+		}
+		return true
+	}
+	return false
 }

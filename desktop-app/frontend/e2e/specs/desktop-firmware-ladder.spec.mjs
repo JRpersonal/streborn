@@ -6,7 +6,7 @@
 //      ticked.
 //   2. Screen B checks the one stick, Prepare sends the right step and drive,
 //      screen C follows, and "Done, check again" with the new version moves on
-//      to the next step.
+//      to the next step. 2b: a stick with other files gets a hint, no block.
 //   3. An unchanged version shows the "bar stayed empty" help and, on 7.x, the
 //      smaller in-between steps. 3b: on a plan from a picked version, the plan
 //      is built again from what the speaker reports, so no downgrade is offered.
@@ -126,6 +126,16 @@ test.describe('the firmware ladder', () => {
     await expect(lad).toContainText(en('fwLadder.prepTitle'));
   });
 
+  test('2b. a stick with other files gets a hint, and Prepare stays on', async ({ app, mock }) => {
+    await mock.set('CheckStick', { value: { ...STICK_OK, otherFiles: true } });
+    const lad = await openLadder(app.page);
+    await startLadder(lad);
+    await expect(lad).toContainText(en('fwLadder.prepIntro'));
+    await expect(lad).toContainText(en('fwLadder.stickOk'));
+    await expect(lad.locator('[data-ladder-note="other-files"]')).toHaveText(en('fwLadder.otherFiles'));
+    await expect(lad.locator('[data-ladder="prepare"]')).toBeEnabled();
+  });
+
   test('4. a file that fails its fingerprint is not written and says so', async ({ app, mock }) => {
     await mock.set('PrepareFirmwareStick', { value: { ok: false, code: 'fingerprint', detail: 'sha1 mismatch' } });
     const lad = await openLadder(app.page);
@@ -243,6 +253,7 @@ for (const theme of ['light', 'dark']) {
       await shot(lad, `${theme}-A-plan`);
       await startLadder(lad);
       await expect(lad).toContainText(en('fwLadder.stickOk'));
+      await expect(lad.locator('[data-ladder-note="other-files"]')).toHaveCount(0);
       await shot(lad, `${theme}-B-stick`);
       await lad.locator('[data-ladder="prepare"]').click();
       await mock.expectCalled('PrepareFirmwareStick', { times: 1 });
@@ -251,6 +262,14 @@ for (const theme of ['light', 'dark']) {
       await shot(lad, `${theme}-B-progress`);
       await lad.locator('[data-ladder="cancel"]').click();
       await mock.expectCalled('CancelFirmwareStick', { times: 1 });
+    });
+
+    test(`B with other files on the stick (${theme})`, async ({ app, mock }) => {
+      await mock.set('CheckStick', { value: { ...STICK_OK, otherFiles: true } });
+      const lad = await openLadder(app.page);
+      await startLadder(lad);
+      await expect(lad.locator('[data-ladder-note="other-files"]')).toBeVisible();
+      await shot(lad, `${theme}-B-stick-other-files`);
     });
 
     test(`C and the stall help (${theme})`, async ({ app, mock }) => {

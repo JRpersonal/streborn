@@ -119,6 +119,10 @@ type StickCheck struct {
 	// (0 when none). Writing the next one replaces it, so the firmware ladder
 	// counts this space as free, on the screen and in FirmwareStickProblem.
 	ExistingFirmwareBytes int64 `json:"existingFirmwareBytes"`
+	// OtherFiles: the stick holds files besides Update.stu (see
+	// HasOtherFiles). A hint for the firmware ladder only: it changes neither
+	// OK nor Reason, and nothing is ever deleted.
+	OtherFiles bool `json:"otherFiles"`
 }
 
 // CheckStick evaluates the volume at path against the install requirements:
@@ -146,6 +150,7 @@ func CheckStick(path string) StickCheck {
 	c.FreeBytes = found.FreeBytes
 	c.TooLarge = found.TotalBytes > MaxRecommendedStickBytes
 	c.ExistingFirmwareBytes = ExistingFirmwareBytes(path)
+	c.OtherFiles = HasOtherFiles(path)
 	if c.IsFAT32 {
 		c.ClusterBytes = clusterBytes(path)
 		c.ClusterTooBig = c.ClusterBytes > MaxClusterBytes

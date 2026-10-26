@@ -12,6 +12,35 @@ import (
 	"testing"
 )
 
+func TestHasOtherFiles(t *testing.T) {
+	stick := t.TempDir()
+	if HasOtherFiles(stick) {
+		t.Error("an empty stick has no other files")
+	}
+	for _, n := range []string{FirmwareFileName, ".DS_Store", "._Update.stu", "Update.stu.part"} {
+		if err := os.WriteFile(filepath.Join(stick, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{"System Volume Information", ".Spotlight-V100", ".fseventsd"} {
+		if err := os.Mkdir(filepath.Join(stick, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if HasOtherFiles(stick) {
+		t.Error("Update.stu and the PC's own entries are not other files")
+	}
+	if err := os.Mkdir(filepath.Join(stick, ".hidden"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !HasOtherFiles(stick) {
+		t.Error("a hidden folder is another file")
+	}
+	if HasOtherFiles(filepath.Join(stick, "missing")) {
+		t.Error("an unreadable root reports false")
+	}
+}
+
 func fakeImage(n int) ([]byte, uint32) {
 	b := make([]byte, n)
 	for i := range b {

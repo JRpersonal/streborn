@@ -152,8 +152,23 @@ describe('click count, as in the design', () => {
 describe('screen B: the stick', () => {
   const ok = { ok: true, isFat32: true, freeBytes: 2e9, totalBytes: 8e9 };
   it('accepts a roomy FAT32 stick and warns, without blocking, over 32 GB', () => {
-    expect(stickVerdict(ok, 93e6)).toEqual({ ok: true, problem: '', warnLarge: false });
-    expect(stickVerdict({ ...ok, tooLarge: true }, 93e6)).toEqual({ ok: true, problem: '', warnLarge: true });
+    expect(stickVerdict(ok, 93e6)).toEqual({ ok: true, problem: '', warnLarge: false, warnOther: false });
+    expect(stickVerdict({ ...ok, tooLarge: true }, 93e6)).toEqual({ ok: true, problem: '', warnLarge: true, warnOther: false });
+  });
+  it('hints, without blocking, at other files on the stick', () => {
+    expect(stickVerdict({ ...ok, otherFiles: true }, 93e6)).toEqual({ ok: true, problem: '', warnLarge: false, warnOther: true });
+    const base = { started: true, drives: [{ path: 'E:\\', label: 'STICK', totalBytes: 8e9, filesystem: 'FAT32' }], drive: 'E:\\' };
+    const busy = ladderHtml(ident, plan5x, { ...base, check: { ...ok, otherFiles: true } });
+    expect(busy).toContain(esc(en['fwLadder.otherFiles']));
+    expect(busy).not.toMatch(/data-ladder="prepare" disabled/);
+    const empty = ladderHtml(ident, plan5x, { ...base, check: ok });
+    expect(empty).not.toContain(esc(en['fwLadder.otherFiles']));
+  });
+  it('asks for a stick that holds nothing else, never that other files stay', () => {
+    const html = ladderHtml(ident, plan5x, { started: true });
+    expect(html).toContain(esc(en['fwLadder.prepIntro']));
+    expect(en['fwLadder.prepIntro']).not.toMatch(/stay/i);
+    expect(en['fwLadder.prepIntroBose']).not.toMatch(/stay/i);
   });
   it('blocks a 64 KB cluster, a full stick, and passes on CheckStick reasons', () => {
     expect(stickVerdict({ ...ok, clusterTooBig: true }, 93e6).problem).toBe('cluster-too-big');

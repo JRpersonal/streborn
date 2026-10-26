@@ -217,11 +217,14 @@ export function ladderMinutes(plan) {
 export function stickVerdict(check, need) {
   const c = check || {};
   const warnLarge = !!c.tooLarge;
-  if (!c.ok) return { ok: false, problem: c.reason || 'not-writable', warnLarge };
-  if (c.clusterTooBig) return { ok: false, problem: 'cluster-too-big', warnLarge };
+  // warnOther: the stick holds files besides Update.stu. A hint only, never a
+  // block: the Bose updater is most reliable on an otherwise empty stick.
+  const warnOther = !!c.otherFiles;
+  if (!c.ok) return { ok: false, problem: c.reason || 'not-writable', warnLarge, warnOther };
+  if (c.clusterTooBig) return { ok: false, problem: 'cluster-too-big', warnLarge, warnOther };
   const free = (c.freeBytes || 0) + (c.existingFirmwareBytes || 0);
-  if (free < (need || 0) + 10 * 1000 * 1000) return { ok: false, problem: 'no-space', warnLarge };
-  return { ok: true, problem: '', warnLarge };
+  if (free < (need || 0) + 10 * 1000 * 1000) return { ok: false, problem: 'no-space', warnLarge, warnOther };
+  return { ok: true, problem: '', warnLarge, warnOther };
 }
 
 // formatBytes: "7.5 GB" / "512 MB".
@@ -408,6 +411,7 @@ function stickStatusHtml(st, step) {
   const v = stickVerdict(st.check, step.innerSize);
   let out = '';
   if (v.warnLarge) out += `<div class="fw-ladder-note small">${esc(t('fwLadder.w3Large'))}</div>`;
+  if (v.warnOther) out += `<div class="fw-ladder-note small" data-ladder-note="other-files">${esc(t('fwLadder.otherFiles'))}</div>`;
   if (v.ok) return out + `<div class="small fw-ladder-ok">${esc(t('fwLadder.stickOk'))}</div>`;
   out += `<div class="small setup-err">${esc(stickProblemText(v.problem))}</div>`;
   if (v.problem === 'not-fat32' || v.problem === 'cluster-too-big') {
