@@ -120,6 +120,22 @@ func TestScrubPII_HostNamesLeaveTheRestAlone(t *testing.T) {
 		`slots[3] empty`,
 		`SpGetVolume [returned value: 42]`,
 		`server=MinimServer[HOST#0123abcd.local]`,
+		// A firmware state trace, syslog tags, a header map and a preset list.
+		`BoseApp: StdOpOn > StdOp[Standby(ENTER), Standby(START)]`,
+		`wpa_supplicant[wlan0]: CTRL-EVENT-CONNECTED`,
+		`dhcpcd[eth0]: leased`,
+		`udhcpc[wlan0]: lease obtained`,
+		`Content-Type[text/xml]`,
+		`presets[Rock Antenne]`,
+		// A file, not a host, and a bare suffix.
+		`grep foo /etc/hosts.local`,
+		`suffix '.local and nothing in front`,
+		// A "name" that is the music on a queue line.
+		`msg="queue preset save: stored the playing folder on a key" slot=2 name="Alex's Mixtape" tracks=12`,
+		`msg="library key without a stored length: using the length learned from an earlier play" name="Abbey Road"`,
+		// A server name that is the product alone.
+		`msg="dlna: discovery matched early" server=MinimServer described=2`,
+		`msg="library search: bounded walk finished" server="FRITZ!Box 7590 Mediaserver" q=x`,
 	}
 	for _, in := range keep {
 		if out := ScrubPII(in); out != in {
@@ -136,6 +152,93 @@ func TestScrubPII_HostNamesLeaveTheRestAlone(t *testing.T) {
 // Running the scrub twice changes nothing the first run did not.
 func TestScrubPII_HostNamesIdempotent(t *testing.T) {
 	once := ScrubPII(missedServerLine + "\n" + `location=http://Alexs-MacBook-Pro.local:9790/`)
+	if twice := ScrubPII(once); twice != once {
+		t.Errorf("second pass changed the text:\n1: %s\n2: %s", once, twice)
+	}
+}
+
+// Media servers that do not use the MinimServer shape, on the lines that log
+// a server's friendly name under a key. The product stays, the machine (and
+// for Windows Media Player the account) goes.
+func TestScrubPII_MediaServerFriendlyNameShapes(t *testing.T) {
+	host := "HOST#" + hashShort("alexs-macbook-pro")
+	cases := []struct{ in, want, leak string }{
+		{`msg="library search: Search answered nothing, walking the library" server="Universal Media Server [Alexs-MacBook-Pro]" q=x`,
+			`server="Universal Media Server [` + host + `]"`, "Alex"},
+		{`msg="library browse: container could not be read" server="Serviio (Alexs-MacBook-Pro)" container=0`,
+			`server="Serviio (` + host + `)"`, "Alex"},
+		{`msg="dlna: discovery matched early" server="Plex Media Server: Alexs-MacBook-Pro" described=1`,
+			`server="Plex Media Server: ` + host + `"`, "Alex"},
+		{`msg="media server: enabled as a native music source" id=x name="Jellyfin - Alexs-MacBook-Pro"`,
+			`name="Jellyfin - ` + host + `"`, "Alex"},
+		{`msg="library: manual media server added" location=http://192.0.2.10:2869/ udn=x name="Alexs-PC: alex:"`,
+			`name="HOST#` + hashShort("alexs-pc") + `: ACCT#` + hashShort("alex") + `:"`, "alex"},
+		{`msg="dlna: ignoring device that advertises ContentDirectory but cannot be browsed" name=Alexs-NAS controlURL=/x`,
+			`name=HOST#` + hashShort("alexs-nas") + ` `, "Alex"},
+		{`msg="queue: folder card replay found the media server offline" host=192.0.2.1 server=Alexs-NAS`,
+			`server=HOST#` + hashShort("alexs-nas"), "Alex"},
+	}
+	for _, c := range cases {
+		out := ScrubPII(c.in)
+		if strings.Contains(out, c.leak) {
+			t.Errorf("%q survived:\n in: %s\nout: %s", c.leak, c.in, out)
+		}
+		if !strings.Contains(out, c.want) {
+			t.Errorf("want %s in\n%s", c.want, out)
+		}
+	}
+	// A list of the servers a round saw: each one on its own.
+	out := ScrubPII(`msg="library resolve: registered server absent and no unique name match among the live servers" registered="Serviio (Alexs-MacBook-Pro)" want=x seen="MinimServer[Alexs-MacBook-Pro], Alexs-NAS, MinimServer"`)
+	if strings.Contains(out, "Alex") || !strings.Contains(out, `seen="MinimServer[`+host+`], HOST#`) || !strings.HasSuffix(out, `, MinimServer"`) {
+		t.Errorf("seen list mangled: %s", out)
+	}
+}
+
+// A DNS-SD instance name is free text, spaces included; all of it is hashed
+// and the service type kept.
+func TestScrubPII_ServiceInstanceWithSpaces(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`instance="Alex's MacBook Pro._raop._tcp.local."`,
+			`instance="HOST#` + hashShort("alex's macbook pro") + `._raop._tcp.local."`},
+		{`instance=Alex\032MacBook._spotify-connect._tcp.local`,
+			`instance=HOST#` + hashShort(`alex\032macbook`) + `._spotify-connect._tcp.local`},
+		// Unquoted, a space ends the name: the words before it are the sentence.
+		{`browse hit Kitchen._soundtouch._tcp.local`,
+			`browse hit HOST#` + hashShort("kitchen") + `._soundtouch._tcp.local`},
+	}
+	for _, c := range cases {
+		if out := ScrubPII(c.in); out != c.want {
+			t.Errorf("\n in: %s\nout: %s\nwant %s", c.in, out, c.want)
+		}
+	}
+}
+
+// Raw JSON text: the part in front of a \u escape is part of the name.
+func TestScrubPII_LocalHostJSONEscapes(t *testing.T) {
+	for _, in := range []string{
+		`"url":"http://Alex's-iMac.local:9790/"`,
+		`"host":"Jöns-iMac.local"`,
+	} {
+		out := ScrubPII(in)
+		if strings.Contains(out, "Alex") || strings.Contains(out, `J\`) || !strings.Contains(out, "HOST#") {
+			t.Errorf("escape split the name:\n in: %s\nout: %s", in, out)
+		}
+	}
+}
+
+// A URL host at the end of a line is still a host, not a file.
+func TestScrubPII_LocalHostURLAtLineEnd(t *testing.T) {
+	if out := ScrubPII(`location=http://Alexs-MacBook-Pro.local`); strings.Contains(out, "Alex") {
+		t.Errorf("URL host kept: %s", out)
+	}
+}
+
+// The new passes stay idempotent.
+func TestScrubPII_MediaServerAttrsIdempotent(t *testing.T) {
+	in := `msg="library: manual media server added" name="Alexs-PC: alex:"` + "\n" +
+		`msg="library search: bounded walk finished" server="Serviio (Alexs-MacBook-Pro)"` + "\n" +
+		`instance="Alex's MacBook Pro._raop._tcp.local."`
+	once := ScrubPII(in)
 	if twice := ScrubPII(once); twice != once {
 		t.Errorf("second pass changed the text:\n1: %s\n2: %s", once, twice)
 	}
