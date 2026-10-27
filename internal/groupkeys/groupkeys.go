@@ -189,6 +189,74 @@ const (
 	OutcomeFailed    Outcome = "failed"
 )
 
+// Kinds of a failed press, a stable code next to the reason text so the app
+// can say what went wrong in the user's language instead of quoting Go error
+// text into a translated sentence.
+const (
+	// KindMasterUnresponsive: the main speaker (or the Bose web server on it)
+	// did not answer in time. Pressing again usually works.
+	KindMasterUnresponsive = "master-unresponsive"
+	// KindMemberUnresolved: a speaker of the template is not where the group
+	// remembers it (addresses changed); saving the group again fixes it.
+	KindMemberUnresolved = "member-unresolved"
+	// KindFormRefused: the main speaker refused to form the group.
+	KindFormRefused = "form-refused"
+	// KindDissolveFailed: the group could not be taken apart.
+	KindDissolveFailed = "dissolve-failed"
+	// KindOther: anything else.
+	KindOther = "other"
+)
+
+// errZoneRead prefixes a failed read of the main speaker's live zone.
+var errZoneRead = errors.New("read the main speaker's group")
+
+// kindError tags an error with its Kind without changing its text.
+type kindError struct {
+	kind string
+	err  error
+}
+
+func (e *kindError) Error() string { return e.err.Error() }
+func (e *kindError) Unwrap() error { return e.err }
+
+func withKind(kind string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &kindError{kind: kind, err: err}
+}
+
+// errorKind classifies a failed press for the app.
+func errorKind(err error) string {
+	if err == nil {
+		return ""
+	}
+	var ke *kindError
+	if errors.As(err, &ke) {
+		return ke.kind
+	}
+	msg := err.Error()
+	switch {
+	case errors.Is(err, errZoneRead),
+		strings.Contains(msg, "is not answering"),
+		strings.Contains(msg, "deadline exceeded"),
+		strings.Contains(msg, "Client.Timeout"):
+		return KindMasterUnresponsive
+	case strings.HasPrefix(msg, "dissolve:"):
+		return KindDissolveFailed
+	case strings.HasPrefix(msg, "form:"):
+		return KindFormRefused
+	}
+	return KindOther
+}
+
+// masterIsSelf reports whether the client reaches m over loopback, i.e. m is
+// this speaker. A client that cannot say counts as "not self".
+func masterIsSelf(c MasterClient, m Member) bool {
+	sc, ok := c.(interface{ IsSelf(Member) bool })
+	return ok && sc.IsSelf(m)
+}
+
 // toggleMinGap is the shortest distance between two presses of the same key
 // that both act. A form or dissolve takes seconds, and a double press is
 // almost always one intent.
@@ -205,6 +273,9 @@ type Action struct {
 	Template string    `json:"template,omitempty"`
 	Outcome  Outcome   `json:"outcome"`
 	Error    string    `json:"error,omitempty"`
+	// Kind classifies Error (one of the Kind* constants), so the app can
+	// explain a refused press in the user's language.
+	Kind string `json:"kind,omitempty"`
 }
 
 // Store is the NAND-persisted document plus the toggle state machine.
@@ -227,6 +298,9 @@ type Store struct {
 	// templatePartlyLive. Memory only: after an agent restart the first press
 	// on such a group forms again, the next one dissolves.
 	formedBy map[string]string
+	// ignoredLogged marks a key whose ignored press (busy or too soon) was
+	// already logged since its last acting press, so a burst logs one line.
+	ignoredLogged map[string]bool
 
 	lastAction Action
 	lastError  Action
@@ -244,6 +318,8 @@ func Load(path string, logger *slog.Logger) (*Store, error) {
 		lastAt:   map[string]time.Time{},
 		lastWarn: map[string]time.Time{},
 		formedBy: map[string]string{},
+
+		ignoredLogged: map[string]bool{},
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -394,17 +470,29 @@ func (s *Store) Toggle(ctx context.Context, key string) Outcome {
 	}
 	s.togMu.Lock()
 	if s.inFlight[key] {
+		logIt := !s.ignoredLogged[key]
+		s.ignoredLogged[key] = true
 		s.togMu.Unlock()
-		s.logger.Debug("group key: press ignored, the previous one is still running", "key", key, "template", name)
+		// INFO once per press episode: a bundle has to show what became of
+		// each press, and "pressed" with no outcome read as a lost press.
+		if logIt {
+			s.logger.Info("group key: press ignored, the previous one is still running", "key", key, "template", name)
+		}
 		return OutcomeBusy
 	}
 	if last, ok := s.lastAt[key]; ok && time.Since(last) < toggleMinGap {
+		logIt := !s.ignoredLogged[key]
+		s.ignoredLogged[key] = true
 		s.togMu.Unlock()
-		s.logger.Debug("group key: press ignored (rate limit)", "key", key, "template", name)
+		if logIt {
+			s.logger.Info("group key: press ignored, too soon after the previous one", "key", key, "template", name,
+				"min_gap", toggleMinGap.String())
+		}
 		return OutcomeRateLimit
 	}
 	s.lastAt[key] = time.Now()
 	s.inFlight[key] = true
+	s.ignoredLogged[key] = false
 	s.togMu.Unlock()
 	defer func() {
 		s.togMu.Lock()
@@ -426,10 +514,24 @@ func (s *Store) Toggle(ctx context.Context, key string) Outcome {
 // act runs the state machine for one press; see Toggle.
 func (s *Store) act(ctx context.Context, client MasterClient, key string, tpl Template) (Outcome, error) {
 	live, err := client.LiveZone(ctx, tpl.Master)
+	unknown := false
 	if err != nil {
-		return OutcomeFailed, fmt.Errorf("read the main speaker's group: %w", err)
+		if !masterIsSelf(client, tpl.Master) {
+			return OutcomeFailed, fmt.Errorf("%w: %w", errZoneRead, err)
+		}
+		// THIS speaker leads the template and its own firmware did not say
+		// what group it is in (the Bose web server stalls for seconds at a
+		// time, 2026-10-27). Refusing the press here made the key dead for as
+		// long as the stall lasted. The key's own last press is the best guess
+		// of what is live: it formed this template -> dissolve, otherwise ->
+		// form. The form keeps its own probe of the main speaker as the gate.
+		s.logger.Info("group key: could not read this speaker's own group, going by the key's last press",
+			"key", key, "template", tpl.Name, "err", err)
+		unknown = true
+		live = LiveZone{}
 	}
-	if templateLive(tpl, live) || (s.formedLast(key, tpl.Name) && templatePartlyLive(tpl, live)) {
+	formedLast := s.formedLast(key, tpl.Name)
+	if templateLive(tpl, live) || (formedLast && (unknown || templatePartlyLive(tpl, live))) {
 		if err := client.Dissolve(ctx, tpl.Master); err != nil {
 			return OutcomeFailed, fmt.Errorf("dissolve: %w", err)
 		}
@@ -525,6 +627,7 @@ func (s *Store) finish(key, name string, outcome Outcome, err error) Outcome {
 	a := Action{At: time.Now(), Key: key, Template: name, Outcome: outcome}
 	if err != nil {
 		a.Error = err.Error()
+		a.Kind = errorKind(err)
 	}
 	s.togMu.Lock()
 	s.lastAction = a
@@ -553,7 +656,9 @@ func (s *Store) finish(key, name string, outcome Outcome, err error) Outcome {
 	case warnNow:
 		s.logger.Warn("group key: press failed", "key", key, "template", name, "err", err)
 	default:
-		s.logger.Debug("group key: press failed (warned recently)", "key", key, "template", name, "err", err)
+		// INFO, not DEBUG: a diagnostic bundle has to show every press's
+		// outcome, and a repeat failure was invisible there (2026-10-27).
+		s.logger.Info("group key: press failed again", "key", key, "template", name, "err", err)
 	}
 	return outcome
 }

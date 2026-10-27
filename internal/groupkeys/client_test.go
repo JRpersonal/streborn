@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestOkOrError: the zone endpoints' JSON verdicts are honoured, and a body
@@ -88,5 +90,54 @@ func TestHTTPClientAgainstAgent(t *testing.T) {
 	}
 	if err := c.PlayLast(ctx, master); err != nil || !powered {
 		t.Fatalf("play last: err=%v powered=%v", err, powered)
+	}
+}
+
+// testClientFor points a client at srv as the main speaker.
+func testClientFor(t *testing.T, srv *httptest.Server) (MasterClient, Member) {
+	t.Helper()
+	portN, err := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewHTTPClient(HTTPOptions{PortHint: func(string) int { return portN }}), Member{DeviceID: "AAAA", IP: "127.0.0.1"}
+}
+
+// A zone read the agent answers with 502 (the Bose web server behind it timed
+// out) is tried once more before the press gives up.
+func TestLiveZoneRetriesAGatewayError(t *testing.T) {
+	old := liveZoneRetryDelay
+	liveZoneRetryDelay = time.Millisecond
+	t.Cleanup(func() { liveZoneRetryDelay = old })
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, `Get "http://127.0.0.1:8090/getZone": context deadline exceeded`, http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(`{"master":"","members":[]}`))
+	}))
+	defer srv.Close()
+	c, master := testClientFor(t, srv)
+	if _, err := c.LiveZone(context.Background(), master); err != nil {
+		t.Fatalf("retry did not recover: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d, want 2", calls.Load())
+	}
+}
+
+// A stale now-playing (served from cache while the firmware does not answer)
+// is unknown, not busy: the press must still bring the music back.
+func TestIdleTreatsAStaleStatusAsUnknown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-STR-Status-Stale", "1")
+		_, _ = w.Write([]byte(`<nowPlaying source="LOCAL_INTERNET_RADIO"><playStatus>PLAY_STATE</playStatus></nowPlaying>`))
+	}))
+	defer srv.Close()
+	c, master := testClientFor(t, srv)
+	idle, err := c.Idle(context.Background(), master)
+	if !idle || err == nil {
+		t.Fatalf("idle=%v err=%v, want idle with an error saying why", idle, err)
 	}
 }
