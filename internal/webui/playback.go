@@ -17,6 +17,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
+	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 )
@@ -149,9 +150,16 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A sleeping speaker resumes its own last station on the wake; it is kept
-	// silent until this play has taken over (#1557, newplaywake.go).
-	playSent := s.ensureBoxReadyForNewPlayRead(r.Context())
-	defer playSent()
+	// silent until this play has taken over (#1557, newplaywake.go). The
+	// speaker fetches this play through the proxy unless it is a plain-HTTP
+	// library file (playDirect below), which it fetches from the server.
+	var gateTarget streamproxy.NewPlayTarget
+	if req.Mime == "" || !isPlainHTTPURL(req.URL) {
+		gateTarget.URLs = []string{req.URL}
+	}
+	delivered := false
+	playSent := s.ensureBoxReadyForNewPlayRead(r.Context(), gateTarget)
+	defer func() { playSent(delivered) }()
 	// Detach the play from the request context (#252, same pattern as the
 	// preset recall): the standby wake above can outlast the app's HTTP
 	// timeout, and a caller that gave up must not cancel the playback it asked
@@ -211,6 +219,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			if err := s.selectNativeStation(playCtx, loc, req.Title); err == nil {
 				s.logger.Info("play request: started natively, the speaker fetches the stream itself",
 					"title", req.Title, "url", req.URL)
+				delivered = true
 				s.setLastPlayMeta(playURL, req.Title, req.Icon, mime, req.Homepage, req.Codec, req.Bitrate)
 				s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage, "")
 				writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
@@ -252,6 +261,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	delivered = true
 	playGen := s.setLastPlayMeta(playURL, req.Title, req.Icon, mime, req.Homepage, req.Codec, req.Bitrate)
 	// A library file is no radio stream: the song the stream proxy parsed out
 	// of the station before must not be served for it. Left to the proxy's
@@ -393,19 +403,20 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	recallDelivered := false
 	// The level comes back only after a failed recall has stopped the resumed
 	// station, so that station is never heard either way.
-	playSent := func() {}
+	playSent := func(bool) {}
 	defer func() {
 		if wokeFromStandby && !recallDelivered {
 			s.undoWakeAutoResume(slot)
 		}
-		playSent()
+		playSent(recallDelivered)
 	}()
 	if wokeFromStandby {
 		srcBefore = "STANDBY"
 	}
 	// Muted through the wake, so the station the speaker resumes on its own
 	// is not heard before the key's (#1557, newplaywake.go).
-	playSent = s.ensureBoxReadyForNewPlay(ctx, nowPlayingSnapshot{Source: srcBefore})
+	playSent = s.ensureBoxReadyForNewPlay(ctx, nowPlayingSnapshot{Source: srcBefore},
+		streamproxy.NewPlayTarget{Slot: slot, URLs: []string{p.StreamURL}})
 	// recallStart anchors the verify's stand-down decision: a deliberate user
 	// stop/pause/power-off that arrives AFTER this moment must end the verify
 	// retries (the rolling userStopWindow alone expires between the 5s ticks).

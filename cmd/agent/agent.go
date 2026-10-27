@@ -1247,6 +1247,8 @@ func (a *agent) buildBoxLink() error {
 		onSnoozeKey:    webuiSrv.AlarmSnoozePress,
 		onAuxSnoozeKey: webuiSrv.AlarmAuxKeyPress,
 		onAlarmSource:  webuiSrv.AlarmSourceChanged,
+		onBoxSource:    webuiSrv.NoteBoxSourceChanged,
+		onBoxVolume:    webuiSrv.NoteBoxVolumeLevel,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.

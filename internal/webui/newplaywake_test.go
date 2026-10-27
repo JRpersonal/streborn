@@ -8,7 +8,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/streamproxy"
 )
+
+var radioTarget = streamproxy.NewPlayTarget{URLs: []string{"https://radio.example/new.mp3"}}
 
 // fakeWakingBox scripts a speaker for the new-play wake: in standby until the
 // wake, then on the station it resumed by itself, until the play moves it on.
@@ -65,10 +70,10 @@ func newWakingServer(t *testing.T, box *fakeWakingBox) *Server {
 		box.mu.Unlock()
 		return nil
 	}
-	s.ownLevelGetFn = func(context.Context) (int, error) {
+	s.ownVolumeFn = func(context.Context) (boxapi.Volume, error) {
 		box.mu.Lock()
 		defer box.mu.Unlock()
-		return box.level, nil
+		return boxapi.Volume{Target: box.level, Actual: box.level}, nil
 	}
 	s.ownLevelSetFn = func(_ context.Context, v int) error {
 		box.mu.Lock()
@@ -105,7 +110,7 @@ func TestNewPlayWakeKeepsTheResumedStationSilent(t *testing.T) {
 	box := &fakeWakingBox{level: 28}
 	s := newWakingServer(t, box)
 
-	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"})
+	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"}, radioTarget)
 	if box.wakes != 1 {
 		t.Fatalf("woke %d times, want once", box.wakes)
 	}
@@ -117,7 +122,7 @@ func TestNewPlayWakeKeepsTheResumedStationSilent(t *testing.T) {
 	}
 	// The play takes over, then tells the wake it was sent.
 	box.play(nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", ItemName: "SWR3", Location: "new-loc", PlayStatus: "BUFFERING_STATE"})
-	playSent()
+	playSent(true)
 	waitForLevel(t, box, 28)
 	for _, w := range box.levelWrites() {
 		if w != 0 && w != 28 {
@@ -134,8 +139,8 @@ func TestNewPlayWakeWaitsForTheSpeakerToLeaveTheResumedStation(t *testing.T) {
 	s := newWakingServer(t, box)
 	s.newPlayRestoreT = &newPlayRestoreTiming{wait: 2 * time.Second, poll: 10 * time.Millisecond}
 
-	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"})
-	playSent()
+	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"}, radioTarget)
+	playSent(true)
 	time.Sleep(150 * time.Millisecond)
 	box.mu.Lock()
 	lvl := box.level
@@ -154,7 +159,7 @@ func TestNewPlayWakeRestoresAfterTheBoundedWait(t *testing.T) {
 	box := &fakeWakingBox{level: 22}
 	s := newWakingServer(t, box)
 	start := time.Now()
-	s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"})()
+	s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"}, radioTarget)(true)
 	waitForLevel(t, box, 22)
 	if el := time.Since(start); el < 500*time.Millisecond {
 		t.Fatalf("restored after %s, before the wait was up", el)
@@ -168,9 +173,9 @@ func TestNewPlayWakeLeavesALevelSetMeanwhile(t *testing.T) {
 	box := &fakeWakingBox{level: 25}
 	s := newWakingServer(t, box)
 	s.newPlayRestoreT = &newPlayRestoreTiming{wait: 50 * time.Millisecond, poll: 5 * time.Millisecond}
-	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"})
+	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"}, radioTarget)
 	box.setLevel(12)
-	playSent()
+	playSent(true)
 	time.Sleep(300 * time.Millisecond)
 	box.mu.Lock()
 	lvl := box.level
@@ -189,7 +194,7 @@ func TestNewPlayWakeLeavesAnAwakeSpeakerAlone(t *testing.T) {
 	reads := 0
 	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot { reads++; return box.state() }
 	start := time.Now()
-	s.ensureBoxReadyForNewPlay(context.Background(), oldStation)()
+	s.ensureBoxReadyForNewPlay(context.Background(), oldStation, radioTarget)(true)
 	if el := time.Since(start); el > 200*time.Millisecond {
 		t.Fatalf("took %s on an awake speaker", el)
 	}
@@ -203,8 +208,8 @@ func TestNewPlayWakeLeavesAnAwakeSpeakerAlone(t *testing.T) {
 func TestNewPlayWakeWithoutABox(t *testing.T) {
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	s.newPlayWakeFn = func(context.Context) error { t.Fatal("woke without a speaker"); return nil }
-	s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"})()
-	s.ensureBoxReadyForNewPlayRead(context.Background())()
+	s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"}, radioTarget)(true)
+	s.ensureBoxReadyForNewPlayRead(context.Background(), radioTarget)(true)
 }
 
 // A read taken the instant the speaker came up may carry the source but not

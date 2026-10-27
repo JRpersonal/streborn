@@ -470,13 +470,17 @@ type Server struct {
 	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	quietWakeStopFn       func(ctx context.Context, host string) error
 	wakeForPlayReadRetry  time.Duration
-	// New-play wake seams (newplaywake.go): the standby wake, the level read
-	// and the level write. nil = production (boxcli.WakeAndWait, boxapi).
-	// ownLevelSetFn is also what setVolumeOnFirstLife writes through.
+	// New-play wake seams (newplaywake.go): the standby wake, the level read,
+	// the level write and the stream proxy gate. nil = production
+	// (boxcli.WakeAndWait, boxapi, s.streamProxy). ownLevelSetFn is also what
+	// setVolumeOnFirstLife writes through.
 	newPlayWakeFn   func(ctx context.Context) error
-	ownLevelGetFn   func(ctx context.Context) (int, error)
+	ownVolumeFn     func(ctx context.Context) (boxapi.Volume, error)
 	ownLevelSetFn   func(ctx context.Context, vol int) error
+	newPlayGateFn   newPlayGater
 	newPlayRestoreT *newPlayRestoreTiming
+	// newPlayLevel follows the level around a muted wake for a new play.
+	newPlayLevel newPlayLevelState
 	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
 	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
 	holdSaveTestFn func(on bool, d time.Duration) time.Time
