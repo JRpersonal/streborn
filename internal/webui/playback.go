@@ -148,7 +148,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if s.refuseIfStereoFollower(w) {
 		return
 	}
-	s.ensureBoxReady(r.Context())
+	// A sleeping speaker resumes its own last station on the wake; it is kept
+	// silent until this play has taken over (#1557, newplaywake.go).
+	playSent := s.ensureBoxReadyForNewPlayRead(r.Context())
+	defer playSent()
 	// Detach the play from the request context (#252, same pattern as the
 	// preset recall): the standby wake above can outlast the app's HTTP
 	// timeout, and a caller that gave up must not cancel the playback it asked
@@ -385,14 +388,24 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	//
 	// Only STANDBY qualifies. On a speaker that was already playing, stopping
 	// after a failed recall would take away music the user put on deliberately.
-	wokeFromStandby := strings.EqualFold(strings.TrimSpace(s.boxSourceNow()), "STANDBY")
+	srcBefore := strings.TrimSpace(s.boxSourceNow())
+	wokeFromStandby := strings.EqualFold(srcBefore, "STANDBY")
 	recallDelivered := false
+	// The level comes back only after a failed recall has stopped the resumed
+	// station, so that station is never heard either way.
+	playSent := func() {}
 	defer func() {
 		if wokeFromStandby && !recallDelivered {
 			s.undoWakeAutoResume(slot)
 		}
+		playSent()
 	}()
-	s.ensureBoxReady(ctx)
+	if wokeFromStandby {
+		srcBefore = "STANDBY"
+	}
+	// Muted through the wake, so the station the speaker resumes on its own
+	// is not heard before the key's (#1557, newplaywake.go).
+	playSent = s.ensureBoxReadyForNewPlay(ctx, nowPlayingSnapshot{Source: srcBefore})
 	// recallStart anchors the verify's stand-down decision: a deliberate user
 	// stop/pause/power-off that arrives AFTER this moment must end the verify
 	// retries (the rolling userStopWindow alone expires between the 5s ticks).

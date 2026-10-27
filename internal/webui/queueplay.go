@@ -526,7 +526,10 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	if len(items) == 0 {
 		return errors.New("empty queue")
 	}
-	s.ensureBoxReady(ctx)
+	// A sleeping speaker is kept silent through its own resume until the
+	// first track has taken over (#1557, newplaywake.go).
+	playSent := s.ensureBoxReadyForNewPlayRead(ctx)
+	defer playSent()
 	s.queue.load(items, start, shuffle, rep)
 	s.queueMu.Lock()
 	s.queueFolder = card
