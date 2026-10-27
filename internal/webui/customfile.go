@@ -20,7 +20,8 @@ package webui
 //   - a station has neither, and nearly always sends icy-* headers.
 //
 // Anything short of positive evidence, including every error, keeps today's
-// proxy path. The verdict is cached per URL for the agent run, so a press costs
+// proxy path. So does a file whose length cannot be read from it
+// (filelength.go): the direct path is only worth taking with a length. The verdict is cached per URL for the agent run, so a press costs
 // at most one probe per URL and nothing is ever written to the speaker's flash.
 
 import (
@@ -151,10 +152,45 @@ func (s *Server) customFileMime(ctx context.Context, p presets.Preset) string {
 	if mime == "" {
 		return ""
 	}
-	if s.customFileProbe(ctx, p.StreamURL, mime).verdict != fileFinite {
+	fp := s.customFileProbe(ctx, p.StreamURL, mime)
+	if fp.verdict != fileFinite {
+		return ""
+	}
+	// The direct path exists so a paused file can continue (#830), and that
+	// needs its length. Without one the speaker gets an open-ended item it may
+	// only read front to back: an m4a played a few seconds that way, dropped
+	// and started over, again and again (ST10, FW 27.0.6), where the proxy
+	// had played it through. So a file whose length could not be read stays
+	// on the proxy, which is how every custom URL played up to v1.0.18.
+	if fp.length <= 0 {
+		s.logger.Info("custom preset URL is a file of unknown length, playing it through the stream proxy",
+			"slot", p.Slot, "url", p.StreamURL, "mime", mime)
 		return ""
 	}
 	return mime
+}
+
+// customFileEarlyDrop is how soon after its start a dropped custom file counts
+// as the speaker refusing the direct play rather than anything the listener
+// did.
+const customFileEarlyDrop = time.Minute
+
+// demoteCustomFile moves a custom URL file back to the stream proxy for the
+// rest of the agent run after the speaker dropped its direct play early: the
+// next press of the key plays it the way it played up to v1.0.18, instead of
+// failing the same way again. A library track (not in the probe cache) and a
+// URL that is not a probed file are left alone.
+func (s *Server) demoteCustomFile(url, why string, playedFor time.Duration) {
+	if url == "" || playedFor > customFileEarlyDrop {
+		return
+	}
+	fp, ok := s.fileProbes.get(url, time.Now())
+	if !ok || fp.verdict != fileFinite {
+		return
+	}
+	s.fileProbes.put(url, fileProbe{verdict: fileStream, at: time.Now()})
+	s.logger.Warn("custom preset file: the speaker dropped the direct play, the key plays it through the stream proxy from now on",
+		"url", url, "why", why, "playedSec", int(playedFor.Seconds()))
 }
 
 // customFileLength is the play length a probe estimated for url, 0 when none.
@@ -201,12 +237,11 @@ func probeCustomFile(ctx context.Context, cl *http.Client, url, mime string) fil
 		return fp
 	}
 	fp.size = size
-	if mime == "audio/mpeg" {
-		// An MP3 does not say how long it is unless the speaker is told, and
-		// without the length the firmware has no position to come back to.
-		// Other containers (m4a) carry it in their own header.
-		fp.length = estimateMP3Length(ctx, cl, url, size)
-	}
+	// The speaker is only told how long a file is when STR tells it, and
+	// without the length it has no position to come back to and treats the
+	// file as an open-ended stream. customFileMime keeps a file without one
+	// on the proxy (filelength.go).
+	fp.length = readFileLength(ctx, cl, url, mime, size)
 	return fp
 }
 

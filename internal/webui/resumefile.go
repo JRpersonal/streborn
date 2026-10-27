@@ -58,9 +58,16 @@ type fileResumeTiming struct {
 	restartQuiet time.Duration
 	// freezeAfter is how long the position may stand still in
 	// PLAY_STATE after a pause before the watch calls it the freeze. The watch
-	// polls every few seconds, so in practice this is two reads in a row on the
-	// same second.
+	// polls every four seconds, so this is three reads in a row on the paused
+	// second. Two reads (the 3 s it was) were not enough: on an ST10 the
+	// speaker's own resume played on audibly while STR still read the paused
+	// second, and STR restarted the file over it, a jump back of about ten
+	// seconds (#830). The real freeze lasts a minute and more, so waiting a
+	// little longer costs only seconds when it is real.
 	freezeAfter time.Duration
+	// confirmGap is the pause between the two position reads that confirm a
+	// freeze on the renderer's own clock before the watch acts on it.
+	confirmGap time.Duration
 }
 
 // productionFileResumeTiming is the file restart's clock on a real speaker.
@@ -68,8 +75,15 @@ var productionFileResumeTiming = fileResumeTiming{
 	seekDelay:    2 * time.Second,
 	seekRetry:    1500 * time.Millisecond,
 	restartQuiet: 4 * time.Second,
-	freezeAfter:  3 * time.Second,
+	freezeAfter:  7 * time.Second,
+	confirmGap:   1500 * time.Millisecond,
 }
+
+// pausedPointSlack is how far from the paused position a still position may
+// be and still be the freeze. The freeze holds the position on the paused
+// second; a position that went on past it and only then stood still is the
+// speaker having resumed, never this freeze.
+const pausedPointSlack = 2 * time.Second
 
 // fileResumeTimes is the file restart's clock: the production values unless
 // a test installed a faster one.
@@ -252,6 +266,15 @@ func (s *Server) restartFileAtLocked(ctx context.Context, tr singleTrack, at tim
 // re-checks under boxCmdMu that the file is still what plays and that nobody
 // stopped it meanwhile.
 func (s *Server) repairFrozenFileResume(tr singleTrack, gen uint64, at time.Duration) {
+	// now_playing is not the last word: it trails the speaker, and a resume
+	// the speaker did by itself must never be restarted over (#830: an ST10
+	// jumped back ten seconds after its own resume had already played on).
+	// The renderer's own clock decides. Read before boxCmdMu: it only reads.
+	if moved, why := s.speakerResumedByItself(at); moved {
+		s.logger.Info("resume of a file: the speaker continued by itself, no restart",
+			"title", tr.title, "pausedAt", at.String(), "evidence", why)
+		return
+	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
 	if s.RecallGeneration() != gen || (s.queue != nil && s.queue.isActive()) {
@@ -263,6 +286,41 @@ func (s *Server) repairFrozenFileResume(tr singleTrack, gen uint64, at time.Dura
 	s.logger.Warn("resume of a file froze on the speaker, restarting it at the paused position",
 		"title", tr.title, "at", at.String())
 	s.restartFileAtLocked(s.queueCtx(), tr, at, "frozen resume")
+}
+
+// speakerResumedByItself reads the renderer's position (UPnP GetPositionInfo,
+// the speaker's own clock, not the now_playing document) and reports whether
+// the file is moving: already past the paused position, or further on a
+// moment later. An unreadable position is no evidence either way and returns
+// false, which keeps the repair: the freeze it exists for is real and long.
+func (s *Server) speakerResumedByItself(at time.Duration) (bool, string) {
+	first, ok := s.readRelPosition()
+	if !ok {
+		return false, ""
+	}
+	if at > 0 && first > at+pausedPointSlack {
+		return true, "position " + first.String() + " is past the paused " + at.String()
+	}
+	time.Sleep(s.fileResumeTimes().confirmGap)
+	second, ok := s.readRelPosition()
+	if ok && second > first {
+		return true, "position moved from " + first.String() + " to " + second.String()
+	}
+	return false, ""
+}
+
+// readRelPosition is the renderer's current track position; ok=false when it
+// cannot be read (no renderer, no answer, a field the speaker leaves empty).
+func (s *Server) readRelPosition() (time.Duration, bool) {
+	if s.relPositionFn != nil {
+		return s.relPositionFn()
+	}
+	if s.renderer == nil {
+		return 0, false
+	}
+	ctx, cancel := context.WithTimeout(s.queueCtx(), 3*time.Second)
+	defer cancel()
+	return s.renderer.RelPosition(ctx)
 }
 
 // pauseHintSince reports whether something since t says the listener paused:
@@ -347,6 +405,12 @@ func (w *fileResumeWatch) observe(o fileResumeObs) fileResumeStep {
 		return fileResumeStep{}
 	}
 	if (!w.pausedSeen && !o.pauseHint) || w.repaired || o.pos <= 0 {
+		return fileResumeStep{}
+	}
+	// The freeze holds the paused second. A position standing still anywhere
+	// else is not it.
+	if w.pausedAt > 0 && (o.pos > w.pausedAt+pausedPointSlack || o.pos < w.pausedAt-pausedPointSlack) {
+		w.frozenSince = time.Time{}
 		return fileResumeStep{}
 	}
 	// Frozen at the end is the track having ended: the end nets own that.

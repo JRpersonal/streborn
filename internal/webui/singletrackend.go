@@ -240,6 +240,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// track's nominal length would just be silence with a ticking
 			// progress bar. There is no next track here, so end the watch.
 			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
+			s.demoteCustomFile(tr.boxURL, "the speaker dropped the source", time.Since(start))
 			return false, gen
 		}
 		// PLAY_STATE only counts when the speaker reports OUR file. A speaker
@@ -324,6 +325,11 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// dropped stream and start the track over.
 			s.logger.Info("single track: the box reported the track stopped", "title", title,
 				"posSec", int(lastPos.Seconds()), "trackSec", int(end.Seconds()))
+			if end > 0 && lastPos < end-qt.endEpsilon {
+				// Stopped by itself long before the end: the speaker did not
+				// take the file directly.
+				s.demoteCustomFile(tr.boxURL, "the speaker stopped long before the end", time.Since(start))
+			}
 			if s.singleTrackRepeatOne() {
 				return true, gen
 			}
