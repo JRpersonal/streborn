@@ -152,3 +152,28 @@ describe('button fills keep their label readable', () => {
     }
   }
 });
+
+// #1554: the orange caution button (Restart speaker, Copy presets, the conflict
+// clean-up) had white text on #d97a1d, 3.11:1 in every theme. Its fill and
+// label are theme tokens now; each pair must clear AA, hovered too, and the
+// rules must actually use them.
+describe('caution button (.btn-warning) label contrast', () => {
+  for (const [name, t] of Object.entries(THEMES)) {
+    it(`${name}: label on the fill and on the hover fill`, () => {
+      for (const k of ['c-warn-on', 'c-warn-bg', 'c-warn-bg-hover']) expect(t[k], `--${k}`).toMatch(/^#[0-9a-f]{6}$/);
+      expect(ratio(t['c-warn-on'], t['c-warn-bg'])).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(t['c-warn-on'], t['c-warn-bg-hover'])).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  it('the rules read the tokens, no hard-coded orange or white label', () => {
+    expect(css).toMatch(/\n\.btn-warning \{ background: var\(--c-warn-bg\); color: var\(--c-warn-on\);/);
+    expect(css).toMatch(/\n\.btn-warning:hover \{ background: var\(--c-warn-bg-hover\);/);
+    expect(css).not.toMatch(/#d97a1d;\s*color:\s*white/);
+  });
+
+  it('high contrast does not paint the hovered caution and danger buttons #333', () => {
+    expect(css).toMatch(/\nhtml\.a11y-contrast \.btn-warning:hover \{ background: var\(--c-warn-bg-hover\); \}/);
+    expect(css).toMatch(/\nhtml\.a11y-contrast \.btn-danger:hover \{ background: var\(--signal-red\); \}/);
+  });
+});
