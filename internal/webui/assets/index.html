@@ -1900,8 +1900,18 @@ async function refreshWedge() {
    shows (#1467: dropping them outright left those keys bare on the phone).
    to=browser keeps the proxy from swapping a bitmap .ico, which a browser
    draws fine, for STR's own logo the way it must for the speaker's display
-   (#1467 again: Exclusively Rush wore the STR symbol on the phone). */
-function presetArtCands(p) {
+   (#1467 again: Exclusively Rush wore the STR symbol on the phone).
+
+   The ORDER is the desktop app's (presettiles.js logoImgTag and the app's
+   ResolveStationLogo), so a key wears the same picture in both (#1467: the
+   app and the phone showed different covers on the same keys). A Spotify key
+   keeps its stored cover. Every other key tries: the first stored image the
+   app can draw (https, or a media server's http cover on the LAN); the
+   DuckDuckGo icon of each station host, derived from the key's homepage and
+   stream like the app derives them, not only the ones stored; the homepage's
+   own /favicon.ico; and only then the rest of the stored chain, which the app
+   cannot draw (an http favicon on the internet). */
+function presetOwnArt(p) {
   var art = (p && p.art) || '';
   if (!art && p && p.type === 'queue' && Array.isArray(p.items)) {
     for (var k = 0; k < p.items.length; k++) {
@@ -1909,7 +1919,64 @@ function presetArtCands(p) {
       if (it && typeof it.art === 'string' && it.art.trim()) { art = it.art.trim(); break; }
     }
   }
+  return art;
+}
+// lanArtHost: a media server's address, the http covers the app also draws.
+function lanArtHost(h) {
+  h = String(h || '').toLowerCase();
+  return /^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) || /\.local$/.test(h);
+}
+// publicLogoHost: a host worth an icon lookup. LAN names and addresses have
+// no public icon and are never handed to a third party.
+function publicLogoHost(h) {
+  return !!h && h.indexOf('.') > 0 && !/^[\d.]+$/.test(h) && h.indexOf(':') < 0 &&
+    !/\.(local|lan|home|internal|localdomain|home\.arpa|fritz\.box)$/.test(h);
+}
+// presetLogoHosts mirrors the app's logoHostsFor: each URL's host, its root
+// domain, and the www./apex twin DuckDuckGo sometimes knows instead.
+function presetLogoHosts(p) {
+  var hosts = [];
+  var push = function (h) { if (publicLogoHost(h) && hosts.indexOf(h) < 0) hosts.push(h); };
+  var root = function (h) { var parts = h.split('.'); return parts.length < 3 ? h : parts.slice(1).join('.'); };
+  [p.homepage, p.stream_url].forEach(function (raw) {
+    var h = '';
+    try { h = new URL(raw).hostname.toLowerCase(); } catch (e) { return; }
+    if (!publicLogoHost(h)) return;
+    push(h);
+    var r = root(h);
+    push(r);
+    if (h.indexOf('www.') === 0) push(h.slice(4));
+    else if (h.split('.').length === 2) push('www.' + h);
+    if (r.split('.').length === 2) push('www.' + r);
+  });
+  return hosts;
+}
+function ddgViaAgent(c) {
+  return '/art?u=' + btoa(c).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') + '&to=browser';
+}
+function presetArtCands(p) {
+  var stored = presetStoredArt(presetOwnArt(p));
+  if (!p || p.type === 'spotify') return stored.map(function (s) { return s.src; });
   var out = [];
+  var push = function (c) { if (c && out.indexOf(c) < 0) out.push(c); };
+  var direct = null;
+  for (var i = 0; i < stored.length; i++) {
+    if (!stored[i].ddg) { direct = stored[i]; break; }
+  }
+  if (direct && (direct.u.protocol === 'https:' || lanArtHost(direct.u.hostname))) push(direct.src);
+  stored.forEach(function (s) { if (s.ddg) push(s.src); });
+  var hosts = presetLogoHosts(p);
+  hosts.forEach(function (h) { push(ddgViaAgent('https://icons.duckduckgo.com/ip3/' + h + '.ico')); });
+  var brand = '';
+  try { brand = new URL(p.homepage).hostname.toLowerCase(); } catch (e) {}
+  if (publicLogoHost(brand)) push('https://' + brand + '/favicon.ico');
+  stored.forEach(function (s) { push(s.src); });
+  return out;
+}
+// presetStoredArt heals the stored chain into {src, u, ddg} candidates.
+function presetStoredArt(art) {
+  var out = [];
+  var seen = [];
   String(art).split('|').forEach(function (c) {
     c = c.trim();
     if (!c) return;
@@ -1926,10 +1993,11 @@ function presetArtCands(p) {
       return;
     }
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
-    if (u.hostname === 'icons.duckduckgo.com') {
+    var ddg = u.hostname === 'icons.duckduckgo.com';
+    if (ddg) {
       c = '/art?u=' + btoa(c).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') + '&to=browser';
     }
-    if (out.indexOf(c) < 0) out.push(c);
+    if (seen.indexOf(c) < 0) { seen.push(c); out.push({ src: c, u: u, ddg: ddg }); }
   });
   return out;
 }
@@ -1960,8 +2028,16 @@ function presetArtImg(cands) {
 // presetSig reduces the list to what a tile shows, so a re-read that returns
 // the same thing does not rebuild the grid underneath the user's finger. The
 // art is part of it: a Spotify key's cover is filled in by the agent at save.
+// It is the art the tile DRAWS (presetOwnArt, a folder key's first track
+// cover included) plus what its fallbacks derive from (stream, homepage, the
+// first track), the desktop app's presetSignature: with the stored art alone,
+// a library key whose covers the speaker moved to its music server's new
+// address (#1366) kept the dead cover on the phone while the app redrew.
 function presetSig(list) {
-  return (list || []).map(function (p) { return p.slot + ' ' + (p.name || '') + ' ' + (p.art || ''); }).join('');
+  return (list || []).map(function (p) {
+    var first = Array.isArray(p.items) && p.items[0] && typeof p.items[0].url === 'string' ? p.items[0].url : '';
+    return [p.slot, p.type || '', p.name || '', p.stream_url || '', p.homepage || '', presetOwnArt(p), first].join('\u001f');
+  }).join('\u001e');
 }
 var lastPresetSig = null;
 var lastPresetList = [];
