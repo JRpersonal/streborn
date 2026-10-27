@@ -1713,6 +1713,9 @@ function safeMountShell2() {
       // The Speakers area (shell2/speakers): opening one speaker's page picks
       // it the way the classic Settings dropdown does (lock-step).
       speakerPicked: speakerPickedInTab,
+      // Speakers > list: the classic single-speaker and update-all paths.
+      doBoxUpdate,
+      updateAllBoxes,
     });
     if (!ok) return;
     // The Aa menu's Layout switch was drawn before a late mount (storage not

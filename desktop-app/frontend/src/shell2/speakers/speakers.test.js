@@ -7,7 +7,6 @@ import {
   ROUTE_VIEW, SPEAKER_ROUTES, SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, SPEAKERS_AREA_VIEWS, SUBNAV,
   inSpeakersArea, normalizeTab, routeOfView, tabIndexFor,
 } from './routes.js';
-import { speakerListHTML, speakerListRows } from './list.js';
 import { speakerFrameHTML, speakerHead, tabsLabel } from './speaker.js';
 import { mountGroups } from './groups.js';
 import * as router from './index.js';
@@ -85,33 +84,7 @@ describe('the shell markup', () => {
   });
 });
 
-describe('the list skeleton', () => {
-  const boxes = [
-    { host: '192.0.2.1', port: 8888, friendlyName: 'Living <Room>', model: 'SoundTouch 20', kind: 'STR' },
-    { host: '192.0.2.2', port: 8090, friendlyName: 'Kitchen', model: 'SoundTouch 10', kind: 'stock' },
-    { host: '192.0.2.3', port: 8888, friendlyName: 'Office', kind: 'STR', offline: true },
-  ];
-
-  it('has one row per speaker, the current one marked', () => {
-    const rows = speakerListRows(boxes, { currentBox: boxes[0] });
-    expect(rows.map((r) => r.host)).toEqual(['192.0.2.1', '192.0.2.2', '192.0.2.3']);
-    expect(rows.map((r) => r.current)).toEqual([true, false, false]);
-    expect(rows[1].stock).toBe(true);
-    expect(rows[2].offline).toBe(true);
-  });
-
-  it('opens a speaker page, a Bose original the setup, and escapes names', () => {
-    const html = speakerListHTML(speakerListRows(boxes, { currentBox: boxes[0] }));
-    expect(html).toContain('data-host="192.0.2.1" data-route="speaker" aria-current="true"');
-    expect(html).toContain('Living &lt;Room&gt;');
-    expect(html).toContain('data-host="192.0.2.2" data-route="add" aria-label="Kitchen, Ready for STR. Opens the setup"');
-    expect(html).toContain('data-host="192.0.2.3" data-route="speaker"');
-  });
-
-  it('says so when there is no speaker', () => {
-    expect(speakerListHTML([])).toContain('No speakers found yet.');
-  });
-});
+// The list's cards, pills and actions: list.test.js.
 
 describe('one speaker skeleton', () => {
   it('names the speaker, its model and address', () => {
