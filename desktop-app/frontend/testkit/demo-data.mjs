@@ -440,6 +440,7 @@ const fwInfo = (short, extra = {}) => ({
   moduleType: 'scm', variant: 'spotty', latest: '27.0.6', outdated: !!short && short !== '27.0.6',
   deviceId: 'device-id-here', ...extra,
 });
+const LADDER_ARCHIVE = 'https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2013-2015_No_Bluetooth/Airplay-1_ST20-30-Portable/';
 export const SETUP_CHECK = {
   box: STOCK_BOX,
   current: fwInfo('27.0.6'),
@@ -456,4 +457,13 @@ export const SETUP_CHECK = {
     }],
   },
   guideNone: { model: 'SoundTouch 20', current: '15.0.4', required: '27.0.6', live: false, files: [] },
+  // GetFirmwareLadder for the 7.x first generation SoundTouch 20 (fwladder.js).
+  ladderPlan: {
+    status: 'ladder', family: 'st-scm', model: 'SoundTouch 20', moduleType: 'scm', current: '7.0.37', deviceId: 'device-id-here',
+    versionFrom: 'lan', oldStart: false, fallbacks: {},
+    steps: [
+      { id: 'st-scm-14.00.33', version: '14.00.33', family: 'st-scm', source: 'archive', url: `${LADDER_ARCHIVE}Airplay-1_ST20-30-Portable_14.00.33.zip`, fileName: 'Airplay-1_ST20-30-Portable_14.00.33.zip', innerSize: 93_114_711, liveVerified: true, networkOk: false, fallback: false },
+      { id: 'st-scm-27.0.6', version: '27.0.6', family: 'st-scm', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 105_879_988, liveVerified: false, networkOk: true, fallback: false },
+    ],
+  },
 };

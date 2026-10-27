@@ -7,20 +7,21 @@
 // Bose original Kitchen behave like a real one: no agent until the install
 // went through, then discovery lists it as STR and its agent answers.
 //
-// The Check step is the other part of phase 4 (check.js). passCheck goes
-// through it either way: with check.js the Bose original on 27.0.6 passes on
-// its own, without it the step's placeholder asks to go on.
+// The Check step (check.js) reads the Bose firmware; the mock's speakers are
+// on 27.0.6, so the check passes on its own and Install unlocks in the
+// footer. passCheck presses it.
 //
 //   E2E_PORT=4190 npx playwright test specs/desktop-ui2-setup.spec.mjs
 
 import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 import { en } from '../helpers/i18n.mjs';
-import { ROSTER, STOCK_BOX } from '../../testkit/demo-data.mjs';
+import { ROSTER, SETUP_CHECK, STOCK_BOX } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
 const KITCHEN = ROSTER.kitchen;
+const LADDER_PLAN = SETUP_CHECK.ladderPlan;
 // A second Bose original that is switched off.
 const ATTIC = { ...STOCK_BOX, name: 'Attic', friendlyName: 'Attic', host: '192.0.2.58', deviceID: 'A1A2A3A4A5A6', offline: true };
 
@@ -57,14 +58,15 @@ async function chooseKitchen(page) {
   await expect(foot(page, 'next')).not.toHaveAttribute('aria-disabled', 'true');
 }
 
-// passCheck goes through the Check step: on its own (check.js and a speaker
-// on 27.0.6), or through the placeholder's button in a build without it.
+// passCheck goes through the Check step: the speaker on 27.0.6 passes, the
+// step reads Done and Install unlocks in the footer.
 async function passCheck(page) {
-  const skip = page.locator('#w2CheckSkip');
-  const install = page.locator('#w2PanelInstall');
-  await expect(skip.or(install).first()).toBeVisible();
-  if (await skip.isVisible()) await skip.click();
-  await expect(install).toBeVisible();
+  const go = foot(page, 'install');
+  await expect(go).toHaveText(W('check.toInstall', { name: KITCHEN.friendlyName }));
+  await expect(go).not.toHaveAttribute('aria-disabled', 'true');
+  await stepState(page, 'check', 'done');
+  await go.click();
+  await expect(page.locator('#w2PanelInstall')).toBeVisible();
 }
 
 async function toInstall(page) {
@@ -308,6 +310,80 @@ test.describe('UI 2.0 setup wizard', () => {
     await expect(title(page)).toHaveText(W('title.find'));
     await expect(radio(page, KITCHEN.host)).toBeChecked();
     await stepState(page, 'check', 'waiting');
+  });
+
+  test.describe('the check in the wizard: 15.x, the one-click update', () => {
+    test.use({
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'kitchen'],
+        installFlow: true,
+        bindings: {
+          GetBoxFirmware: { sequence: [{ value: SETUP_CHECK.routeA }, { value: SETUP_CHECK.current }] },
+          GetFirmwareGuide: { value: SETUP_CHECK.guideOne },
+          FlashBoseFirmware: { value: { before: '15.0.4', after: '27.0.6', via: 'page' }, delayMs: 1500 },
+        },
+      },
+    });
+
+    test('12. Install stays locked until Kitchen reports 27.0.6, Back is held while it updates', async ({ app, mock }) => {
+      const { page } = app;
+      const name = KITCHEN.friendlyName;
+      await openWizard(page);
+      await chooseKitchen(page);
+      await foot(page, 'next').click();
+      const check = page.locator('#w2CheckBody .u-check');
+      await expect(check).toHaveAttribute('data-case', 'routeA');
+      await expect(foot(page, 'install')).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('#w2InstallHint')).toHaveText(W('check.lockedUpdate', { name }));
+      await expect(foot(page, 'stick')).toBeVisible();
+      await check.locator('[data-check="flash"]').click();
+      await page.locator('#warnConfirm').click();
+      await mock.expectCalled('FlashBoseFirmware', { pred: (c) => c.args[0] === KITCHEN.host, times: 1 });
+      // Updating: Back is held, no stick, leaving warns.
+      await expect(foot(page, 'back')).toHaveAttribute('aria-disabled', 'true');
+      await expect(foot(page, 'stick')).toHaveCount(0);
+      await expect(foot(page, 'install')).toHaveCount(0);
+      // Read back: done, Install unlocks.
+      await expect(check.locator('.u-check-callout')).toContainText(en('ui2.setup.check.updateDone', { name, version: '27.0.6' }));
+      await stepState(page, 'check', 'done');
+      await expect(foot(page, 'install')).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('#w2InstallHint')).toHaveCount(0);
+      await foot(page, 'install').click();
+      await expect(title(page)).toHaveText(W('title.install', { name }));
+      await stepState(page, 'check', 'done');
+    });
+  });
+
+  test.describe('the check in the wizard: 7.x, a first generation SoundTouch 20', () => {
+    test.use({
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'kitchen'],
+        installFlow: true,
+        bindings: {
+          GetBoxFirmware: { value: SETUP_CHECK.ladder },
+          GetFirmwareGuide: { value: SETUP_CHECK.guideOne },
+          GetFirmwareLadder: { value: LADDER_PLAN },
+        },
+      },
+    });
+
+    test('13. shows the stick ladder in the step; the USB stick is the way on without the update', async ({ app }) => {
+      const { page } = app;
+      const name = KITCHEN.friendlyName;
+      await openWizard(page);
+      await chooseKitchen(page);
+      await foot(page, 'next').click();
+      const check = page.locator('#w2CheckBody .u-check');
+      await expect(check).toHaveAttribute('data-case', 'ladder');
+      await expect(check.locator('.u-check-guide .fw-ladder')).toBeVisible();
+      await expect(check.locator('[data-check="skip"]')).toBeHidden();
+      await expect(foot(page, 'install')).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('#w2InstallHint')).toHaveText(W('check.lockedUpdate', { name }));
+      await foot(page, 'stick').click();
+      await expect(title(page)).toHaveText(W('title.install', { name }));
+      await stepState(page, 'check', 'skipped');
+      await expect(page.locator('#w2PanelInstall #setupStickDetails')).toHaveAttribute('open', '');
+    });
   });
 
   test('10. a Bose original from the speaker list opens Find with it chosen', async ({ app }) => {

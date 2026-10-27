@@ -78,14 +78,13 @@ async function expectStockChosen(page, box) {
   await expect(page.locator(`.setup-target-card[data-kind="stock"][data-host="${box.host}"]`)).toHaveAttribute('aria-checked', 'true');
 }
 
-// passCheck goes through the wizard's Check step (check.js, or its
-// placeholder in a build without it) to Install.
+// passCheck goes through the wizard's Check step to Install: the mock's
+// speaker is on 27.0.6, so the check passes and Install unlocks in the footer.
 async function passCheck(page) {
-  const skip = page.locator('#w2CheckSkip');
-  const install = page.locator('#w2PanelInstall');
-  await expect(skip.or(install).first()).toBeVisible();
-  if (await skip.isVisible()) await skip.click();
-  await expect(install).toBeVisible();
+  const go = page.locator('#w2Foot .w2-act[data-act="install"]');
+  await expect(go).not.toHaveAttribute('aria-disabled', 'true');
+  await go.click();
+  await expect(page.locator('#w2PanelInstall')).toBeVisible();
 }
 
 async function expectStockHero(page, box) {

@@ -33,7 +33,7 @@ export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FormZone',
-  'GetAirplayOpt', 'GetAppFlag', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
+  'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
   'GetZoneState', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
@@ -250,6 +250,18 @@ export function installDesktopMock({ scenario, demo }) {
     SetDisplayClock: () => undefined,
     GetClockFormat24: () => true,
     BoxInstallReachable: () => true,
+    // The Bose firmware (app_firmware.go FirmwareInfo), which the setup
+    // wizard's check step reads first: every speaker that answers is on
+    // 27.0.6, so the check passes on its own. The other firmware cases are
+    // binding overrides (demo-data.mjs SETUP_CHECK).
+    GetBoxFirmware: ([h]) => {
+      const b = boxByHost(h);
+      if (!b || b.offline) return { reachable: false, latest: '27.0.6' };
+      return {
+        reachable: true, model: b.model || '', firmware: '27.0.6.46330.5043500', short: '27.0.6',
+        moduleType: 'scm', variant: '', latest: '27.0.6', outdated: false, deviceId: 'device-id-here',
+      };
+    },
     CheckStereoBeforeInstall: () => ({ known: false, paired: false, status: '', partnerIP: '', partnerOnline: false, partnerHasSTR: false }),
     DissolvePairBeforeInstall: () => ({ allClear: true, results: {} }),
     InstallSTROnBox: ([, model]) => ({ step: 'done', code: '', ok: true, message: '', log: '', firmware: '27.0.6', model: model || '', moduleType: '', variant: '' }),

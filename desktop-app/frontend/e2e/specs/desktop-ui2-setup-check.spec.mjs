@@ -36,15 +36,7 @@ import { SETUP_CHECK } from '../../testkit/demo-data.mjs';
 
 const BOX = { host: SETUP_CHECK.box.host, name: SETUP_CHECK.box.name, model: SETUP_CHECK.box.model };
 const NAME = BOX.name;
-const ARCHIVE = 'https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2013-2015_No_Bluetooth/Airplay-1_ST20-30-Portable/';
-const LADDER_PLAN = {
-  status: 'ladder', family: 'st-scm', model: 'SoundTouch 20', moduleType: 'scm', current: '7.0.37', deviceId: 'device-id-here',
-  versionFrom: 'lan', oldStart: false, fallbacks: {},
-  steps: [
-    { id: 'st-scm-14.00.33', version: '14.00.33', family: 'st-scm', source: 'archive', url: `${ARCHIVE}Airplay-1_ST20-30-Portable_14.00.33.zip`, fileName: 'Airplay-1_ST20-30-Portable_14.00.33.zip', innerSize: 93_114_711, liveVerified: true, networkOk: false, fallback: false },
-    { id: 'st-scm-27.0.6', version: '27.0.6', family: 'st-scm', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 105_879_988, liveVerified: false, networkOk: true, fallback: false },
-  ],
-};
+const LADDER_PLAN = SETUP_CHECK.ladderPlan;
 
 const fwScenario = (fw, extra = {}) => ({
   bindings: {
