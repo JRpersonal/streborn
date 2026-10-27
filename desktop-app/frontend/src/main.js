@@ -13,6 +13,7 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
@@ -2474,10 +2475,15 @@ function checkBoxIssueBanner() {
     msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
   }
   if (keyErr.length) {
-    const names = keyErr.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
-      name: names, reason: keyErr[0].groupKeyError,
-    })));
+    // A refusal the user can act on reads as a sentence in their language,
+    // one per kind; the agent's raw reason (English, technical) is the line
+    // under it, visible and selectable for a support mail, not hover-only.
+    for (const line of groupKeyErrorBanners(keyErr, getBoxLabel)) {
+      const text = escapeHtml(t(line.key, { name: line.names, reason: line.reason }));
+      msgs.push(line.key === 'speaker.groupKeyErrorBanner'
+        ? text
+        : `${text}<br><small class="muted">${escapeHtml(line.reasons.join(' | '))}</small>`);
+    }
   }
   if (holdErr.length) {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');

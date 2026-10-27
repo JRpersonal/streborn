@@ -432,14 +432,29 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 	// (and anchor the standby-flip discriminator, #419), wake the box, then
 	// re-push the last station from under the lock.
 	s.NoteUserPlay()
-	s.ensureBoxReady(r.Context())
 	var boxURL, title, art, mime string
 	if lp, _, ok := s.play.rearmForResume(0); ok {
 		boxURL, title, art, mime = lp.boxURL, lp.title, lp.art, lp.mime
 	}
+	// This push is an explicit "play it again", so it counts as STR's play
+	// from the moment it starts, not only once it has landed. A group key on a
+	// sleeping speaker forms the group (which opens the group-wake episode) and
+	// then calls this endpoint; the late group-wake check fires four seconds
+	// after the form and took a push that was still waking the box or talking
+	// to :8091 for the firmware's own power-on resume, and stopped it.
+	undo := func() {}
+	if boxURL != "" {
+		undo = s.play.noteRepushed(boxURL)
+	}
+	s.ensureBoxReady(r.Context())
 	if boxURL != "" {
 		if err := s.renderer.PlayURLMime(r.Context(), boxURL, title, art, mime); err != nil {
 			s.logger.Warn("power on: resume of last station failed", "err", err)
+			undo()
+		} else {
+			// Mark again: the firmware's own resume during the wake may have
+			// replaced the record with a fromBox copy of the same stream.
+			s.play.noteRepushed(boxURL)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"on": true})

@@ -1948,5 +1948,12 @@
   "settingsView.webhookRemoteLegendBass": "低音",
   "multiroom.groupKeysKeyBass": "(低音)",
   "multiroom.groupKeysBassHint": "低音を変更するサムキーでグループを作成することはできません。設定のリモコンキー配置で変更してください。",
-  "settingsView.bassKeyNeedsUpdate": "低音のステップをキーに割り当てるには、このスピーカーを更新してください。"
+  "settingsView.bassKeyNeedsUpdate": "低音のステップをキーに割り当てるには、このスピーカーを更新してください。",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: リモコンのグループキーを押しましたが何も起きませんでした。グループを率いるスピーカーの応答が遅すぎたためです。もう一度キーを押してください。",
+  "speaker.groupKeyErrorMoved": "{{name}}: リモコンのグループキーを押しましたが何も起きませんでした。グループ内のスピーカーが保存されたアドレスにもういないためです。マルチルームタブでグループを保存し直してください。",
+  "multiroom.groupKeysWebhookWarnShared": "{{name}}には親指キー共通のWebhook（「{{entry}}」）もあります。このキーではグループが優先されますが、もう一方の親指キーではWebhookが引き続き作動します。不要な場合は、設定のリモコンのキー配置でオフにしてください。",
+  "multiroom.groupKeysWebhookWarnSharedUnused": "{{name}}には親指キー共通のWebhook（「{{entry}}」）もあります。どちらの親指キーでも作動しません。このキーではグループが優先され、もう一方のキーには独自のグループ、キー操作、またはWebhookがあります（または設定が不完全です）。不要なら、設定のリモコンのキーマップでオフにしてください。",
+  "multiroom.groupKeysDisplayNote": "グループは、作成したのと同じキーで解除します。親指キーを押すと、ファームウェアがそのキーを評価として扱うため、スピーカーの表示に「操作できません」と出ることがあります。これはグループキーが失敗したという意味ではありません。",
+  "settingsView.webhookThumbSharedNote": "この共通エントリは両方の親指キーで作動します。グループが割り当てられたキーではグループが優先されます。削除するにはオフにして保存してください。",
+  "settingsView.webhookMacInvalid": "このMACアドレスは無効です。AA:BB:CC:DD:EE:FFのように6組で入力してください。"
 }

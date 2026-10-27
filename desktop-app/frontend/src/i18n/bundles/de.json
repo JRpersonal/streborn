@@ -1849,7 +1849,7 @@
   "multiroom.pairNotGroupable": "Ein Stereopaar kann derzeit nicht Teil einer Gruppe sein, die Lautsprecher-Firmware startet die Ton-Verteilung dann nicht. Löse das Paar auf, gruppiere die Lautsprecher einzeln, und lege das Paar danach wieder an.",
   "multiroom.groupNotPairable": "Lautsprecher, die in einer Gruppe sind, auch in einer gespeicherten, können derzeit kein Stereopaar werden: Das Paar tritt an die Stelle der Gruppe, und übrig gebliebene Mitglieder verweigern dann Sender. Löse die Gruppe auf, lege das Paar an, und gruppiere die Lautsprecher danach wieder.",
   "multiroom.groupKeysHeading": "Gruppentasten",
-  "multiroom.groupKeysIntro": "Speichere eine Gruppe als Vorlage und lege sie auf eine Daumen-Taste der Fernbedienung eines Lautsprechers. Ein Druck auf die Taste bildet die Gruppe, ein zweiter Druck löst sie auf.",
+  "multiroom.groupKeysIntro": "Speichere eine Gruppe als Vorlage und lege sie auf eine Daumen-Taste der Fernbedienung eines Lautsprechers. Ein Druck auf die Taste bildet die Gruppe, ein zweiter Druck auf dieselbe Taste löst sie auf.",
   "multiroom.groupKeysRemoteOf": "Fernbedienung von",
   "multiroom.groupKeysRemoteHelp": "Der Lautsprecher, auf den deine Fernbedienung zeigt. Die Tasten werden auf diesem Lautsprecher gespeichert und funktionieren auch ohne die App.",
   "multiroom.groupKeysNone": "Auf diesem Lautsprecher gibt es noch keine Gruppenvorlagen.",
@@ -1867,7 +1867,7 @@
   "multiroom.groupKeysSaved": "Gruppentasten auf {{name}} gespeichert.",
   "multiroom.groupKeysLoadFailed": "Die Gruppentasten von {{name}} konnten nicht gelesen werden: {{err}}",
   "multiroom.groupKeysSaveFailed": "Die Gruppentasten konnten nicht gespeichert werden: {{err}}",
-  "multiroom.groupKeysHint": "Ein Druck auf die Taste bildet die Gruppe, ein zweiter Druck löst sie auf. Ist der Hauptlautsprecher gerade still, spielt er seinen letzten Sender. Noch kein Text auf dem Display: dass die Mitglieder dazukommen oder verstummen, ist die Bestätigung.",
+  "multiroom.groupKeysHint": "Ein Druck auf die Taste bildet die Gruppe, ein zweiter Druck auf dieselbe Taste löst sie auf. Ist der Hauptlautsprecher gerade still, spielt er seinen letzten Sender. Noch kein Text auf dem Display: dass die Mitglieder dazukommen oder verstummen, ist die Bestätigung.",
   "multiroom.groupKeysWebhookWarn": "Auf dieser Taste liegt bei {{name}} auch ein Webhook. Die Gruppe gewinnt; der Webhook feuert dafür nicht.",
   "multiroom.groupKeysOpenKeyMap": "Auf der Tastenkarte der Fernbedienung zeigen",
   "multiroom.groupKeysNeedsUpdate": "{{name}} läuft mit einer älteren STR-Version ohne Gruppentasten. Aktualisiere ihn zuerst.",
@@ -1948,5 +1948,12 @@
   "settingsView.webhookRemoteLegendBass": "Bass",
   "multiroom.groupKeysKeyBass": "(Bass)",
   "multiroom.groupKeysBassHint": "Eine Daumentaste, die den Bass ändert, kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung.",
-  "settingsView.bassKeyNeedsUpdate": "Aktualisiere diesen Lautsprecher, um eine Bass-Stufe auf eine Taste zu legen."
+  "settingsView.bassKeyNeedsUpdate": "Aktualisiere diesen Lautsprecher, um eine Bass-Stufe auf eine Taste zu legen.",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: Ein Druck auf eine Gruppen-Taste der Fernbedienung blieb ohne Wirkung, weil der Lautsprecher, der die Gruppe führt, zu langsam geantwortet hat. Bitte die Taste noch einmal drücken.",
+  "speaker.groupKeyErrorMoved": "{{name}}: Ein Druck auf eine Gruppen-Taste der Fernbedienung blieb ohne Wirkung, weil ein Lautsprecher der Gruppe nicht mehr unter seiner gespeicherten Adresse erreichbar ist. Bitte die Gruppe im Tab Multi-Room neu speichern.",
+  "multiroom.groupKeysWebhookWarnShared": "Auf dieser Taste liegt bei {{name}} auch der gemeinsame Daumen-Webhook („{{entry}}“). Hier gewinnt die Gruppe, auf der anderen Daumen-Taste feuert der Webhook aber weiter. Nicht gebraucht? In den Einstellungen auf der Tastenkarte der Fernbedienung ausschalten.",
+  "multiroom.groupKeysWebhookWarnSharedUnused": "Bei {{name}} liegt auch der gemeinsame Daumen-Webhook („{{entry}}“). Er feuert auf keiner der beiden Daumen-Tasten: Hier gewinnt die Gruppe, und die andere Taste hat eine eigene Gruppe, Tastenaktion oder einen eigenen Webhook (oder der Eintrag ist unvollständig). Nicht gebraucht? In den Einstellungen auf der Tastenkarte der Fernbedienung ausschalten.",
+  "multiroom.groupKeysDisplayNote": "Aufgelöst wird die Gruppe mit derselben Taste, die sie gebildet hat. Das Display des Lautsprechers zeigt bei einem Daumen-Druck eventuell „Aktion nicht verfügbar“, weil die Firmware die Taste als Bewertung versteht. Das heißt nicht, dass die Gruppen-Taste nicht funktioniert hat.",
+  "settingsView.webhookThumbSharedNote": "Dieser gemeinsame Eintrag feuert auf beiden Daumen-Tasten. Auf einer Taste mit Gruppe gewinnt die Gruppe. Zum Entfernen ausschalten und speichern.",
+  "settingsView.webhookMacInvalid": "Diese MAC-Adresse ist ungültig. Bitte sechs Paare angeben, zum Beispiel AA:BB:CC:DD:EE:FF."
 }

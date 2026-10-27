@@ -241,7 +241,7 @@ func (s *Server) noteGroupReadResult(err error) {
 	}
 	s.groupReadSkipUntil = time.Now().Add(5 * time.Minute)
 	s.groupReadFails = 0
-	s.logger.Info("zone: the firmware's /getGroup keeps hanging (known on scm/BCO chassis), pausing the stereo-pair read",
+	s.logger.Info("zone: the firmware's /getGroup keeps hanging (seen on several chassis, sm2 ST20 included), pausing the stereo-pair read",
 		"pauseMin", 5)
 }
 

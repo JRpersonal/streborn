@@ -203,6 +203,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.groupKeys != nil {
 		if a, ok := s.groupKeys.LastError(); ok && time.Since(a.At) < groupKeyErrorWindow {
 			out["groupKeyError"] = a.Error
+			// A stable code beside the raw text: the app explains the refusal
+			// in the user's language and keeps the text for the details.
+			if a.Kind != "" {
+				out["groupKeyErrorKind"] = a.Kind
+			}
 			out["groupKeyErrorKey"] = a.Key
 			out["groupKeyErrorAgeSec"] = strconv.FormatInt(int64(time.Since(a.At).Seconds()), 10)
 			if a.Template != "" {

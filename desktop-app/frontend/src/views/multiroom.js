@@ -12,7 +12,7 @@ import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, Dissol
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
-import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
+import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, groupKeyWebhookWarnKey } from '../groupkeys.js';
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
@@ -988,8 +988,13 @@ function renderGroupKeysSection(strBoxes) {
       const key = keyOf(doc, tp.name);
       const perm = tp.permanent
         ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>` : '';
-      const warn = key && webhookOnKey(gk.webhooks, key)
-        ? `<small class="gk-warn setup-warn small">${escapeHtml(t('multiroom.groupKeysWebhookWarn', { name: remoteName }))}</small>` : '';
+      // The other thumbs key's group or key action decides whether the shared
+      // thumbs webhook still fires there, so the warning gets both.
+      const warnKey = key ? groupKeyWebhookWarnKey(gk.webhooks, key, {
+        bindings: doc.bindings, keyActionOn: (k) => sleepKey(k) || snoozeKey(k) || bassKey(k),
+      }) : '';
+      const warn = warnKey
+        ? `<small class="gk-warn setup-warn small">${escapeHtml(t(warnKey, { name: remoteName, entry: t('settingsView.webhookKeyThumb') }))}</small>` : '';
       return `<div class="gk-row">` +
         `<span class="gk-row-name">${escapeHtml(tp.name)}${perm}</span>` +
         `<span class="gk-row-members muted small">${escapeHtml(describeTemplate(tp, strBoxes, zoneLabel))}</span>` +
@@ -1015,6 +1020,7 @@ function renderGroupKeysSection(strBoxes) {
        <div class="muted small">${escapeHtml(t('multiroom.groupKeysSaveHelp'))}</div>
        <div id="gkResult">${gk.msg || ''}</div>
        <div class="muted small" style="margin-top:8px">${escapeHtml(t('multiroom.groupKeysHint'))}</div>
+       <div class="muted small">${escapeHtml(t('multiroom.groupKeysDisplayNote'))}</div>
        <div class="zone-actions"><button id="gkKeyMap" class="btn btn-mini"${remote ? '' : ' disabled'}>${escapeHtml(t('multiroom.groupKeysOpenKeyMap'))}</button></div>
      </div>`;
 }

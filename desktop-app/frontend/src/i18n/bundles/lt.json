@@ -1948,5 +1948,12 @@
   "settingsView.webhookRemoteLegendBass": "žemi dažniai",
   "multiroom.groupKeysKeyBass": "(žemi dažniai)",
   "multiroom.groupKeysBassHint": "Nykščio mygtukas, kuris keičia žemus dažnius, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose.",
-  "settingsView.bassKeyNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti boso žingsnį mygtukui."
+  "settingsView.bassKeyNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti boso žingsnį mygtukui.",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: grupės klavišo paspaudimas pultelyje nieko nepadarė, nes grupei vadovaujantis garsiakalbis atsakė per lėtai. Paspauskite klavišą dar kartą.",
+  "speaker.groupKeyErrorMoved": "{{name}}: grupės klavišo paspaudimas pultelyje nieko nepadarė, nes vienas grupės garsiakalbis nebėra išsaugotu adresu. Išsaugokite grupę iš naujo skirtuke Multiroom.",
+  "multiroom.groupKeysWebhookWarnShared": "{{name}} turi ir bendrą nykščio klavišų webhook („{{entry}}“). Šiame klaviše laimi grupė, bet kitame nykščio klaviše webhook vis dar suveikia. Nereikia? Išjunkite jį pultelio mygtukų žemėlapyje, Nustatymuose.",
+  "multiroom.groupKeysWebhookWarnSharedUnused": "{{name}} turi ir bendrą nykščio klavišų webhook („{{entry}}“). Jis nesuveikia nė viename nykščio klaviše: šiame laimi grupė, o kitas klavišas turi savo grupę, veiksmą ar webhook (arba įrašas neužbaigtas). Nereikia? Išjunkite jį pulto klavišų žemėlapyje Nustatymuose.",
+  "multiroom.groupKeysDisplayNote": "Grupę panaikinkite tuo pačiu klavišu, kuriuo ją sukūrėte. Garsiakalbio ekrane paspaudus nykščio klavišą gali būti rodoma „Veiksmas negalimas“, nes programinė įranga klavišą laiko įvertinimu. Šis pranešimas nereiškia, kad grupės klavišas nesuveikė.",
+  "settingsView.webhookThumbSharedNote": "Šis bendras įrašas suveikia abiejuose nykščio klavišuose. Klaviše su grupe laimi grupė. Norėdami jį pašalinti, išjunkite ir išsaugokite.",
+  "settingsView.webhookMacInvalid": "Šis MAC adresas neteisingas. Nurodykite šešias poras, pavyzdžiui, AA:BB:CC:DD:EE:FF."
 }

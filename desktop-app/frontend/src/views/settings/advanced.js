@@ -12,7 +12,7 @@ import { t } from '../../i18n/index.js';
 import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } from '../../copyreport.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
-import { normalizeDoc } from '../../groupkeys.js';
+import { normalizeDoc, webhookPresent, keyMapTarget, validWolMac } from '../../groupkeys.js';
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../../keyactions.js';
 import {
   SetPreset,
@@ -549,7 +549,7 @@ export function wireAdvancedSections(ctx) {
       const modeNote = isModeTarget(tg)
         ? t('settingsView.webhookModePresetNote')
         : (traceKeyIds.has(tg) ? t('settingsView.webhookModeKeyNote')
-          : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote')));
+          : (tg === 'thumb' ? t('settingsView.webhookThumbSharedNote') : t('settingsView.webhookModeAuxPowerNote')));
       whModeNote.textContent = gkBindings[tg]
         ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote
         : (sleepOn(kaDoc, tg) ? t('settingsView.webhookSleepKeyNote') + ' ' + modeNote
@@ -624,11 +624,12 @@ export function wireAdvancedSections(ctx) {
       // repaint from what the speaker holds now (a refusal leaves it as it was)
       loadInto(tg);
     };
-    // paintRemote marks every key that carries an enabled, configured trigger
-    // and the key currently being edited. The legacy shared thumbs action
-    // lights both thumbs keys, since it fires for either.
-    const configured = (a) => !!a && a.enabled === true && (
-      a.type === 'wol' ? !!a.mac : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
+    // paintRemote marks every key that carries an enabled trigger and the key
+    // currently being edited. The legacy shared thumbs action lights both
+    // thumbs keys, since it fires for either. A broken entry (an address that
+    // does not parse) lights too: it is on the key, and the user has to be
+    // able to find it, open it and switch it off.
+    const configured = webhookPresent;
     const paintRemote = (selected) => {
       const thumbShared = configured(cfg.thumb);
       document.querySelectorAll('.rc-key[data-key]').forEach((el) => {
@@ -660,9 +661,11 @@ export function wireAdvancedSections(ctx) {
     };
     document.querySelectorAll('.rc-keyg[data-key]').forEach((g) => {
       g.addEventListener('click', () => {
-        const k = g.getAttribute('data-key');
         const rect = g.querySelector('.rc-key');
         if (!rect || rect.classList.contains('rc-off')) return;
+        // A thumbs key lit only by the shared thumbs entry opens that entry,
+        // so what lights the key is what the form shows and can switch off.
+        const k = keyMapTarget(cfg, g.getAttribute('data-key'));
         captureInto(prevTarget);
         whTarget.value = k;
         prevTarget = k;
@@ -725,6 +728,7 @@ export function wireAdvancedSections(ctx) {
       if (whEnabled) {
         if (ty === 'http' && !whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
         if (ty === 'wol' && !(whMac && whMac.value.trim())) { showError(t('settingsView.webhookMacRequired')); return; }
+        if (ty === 'wol' && !validWolMac(whMac.value)) { showError(t('settingsView.webhookMacInvalid')); return; }
         if (ty === 'udp' && (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0))) { showError(t('settingsView.webhookUdpRequired')); return; }
       }
       captureInto(tg);
@@ -740,6 +744,7 @@ export function wireAdvancedSections(ctx) {
       const a = { enabled: true, type: ty };
       if (ty === 'wol') {
         if (!(whMac && whMac.value.trim())) { showError(t('settingsView.webhookMacRequired')); return; }
+        if (!validWolMac(whMac.value)) { showError(t('settingsView.webhookMacInvalid')); return; }
         a.mac = whMac.value.trim();
       } else if (ty === 'udp') {
         if (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0)) { showError(t('settingsView.webhookUdpRequired')); return; }

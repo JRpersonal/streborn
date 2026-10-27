@@ -5,6 +5,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -76,7 +77,12 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.webhooks.Set(c); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			code := http.StatusInternalServerError
+			var inv *webhooks.InvalidError
+			if errors.As(err, &inv) {
+				code = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), code)
 			return
 		}
 		writeJSON(w, http.StatusOK, s.webhooks.Get())
