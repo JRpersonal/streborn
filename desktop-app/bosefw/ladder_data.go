@@ -17,10 +17,12 @@ package bosefw
 // user's cache folder. The final step always comes from Bose's own host.
 //
 // LiveVerified is flipped only after a field report with a diagnostic bundle:
-// so far one SoundTouch 20 Series I went 5.x -> 06.02.01 -> 07.00.37 by USB
-// stick. (A Portable went 27.0.3 -> 27.0.6 over the network, which says
-// nothing about the hop from 15.00.20.) Every other step is unverified on real
-// hardware.
+// so far one SoundTouch 20 Series I went 5.x -> 06.02.01 -> 07.00.37 ->
+// 14.00.33 by USB stick. The same speaker then stalled on 14.00.33 -> 15.00.20
+// by stick (empty bar, 2026-10-27); docs/FIRMWARE-UPDATE.md section 7 lists the
+// unverified ways on, which stay out of this table until one is confirmed. (A
+// Portable went 27.0.3 -> 27.0.6 over the network, which says nothing about the
+// hop from 15.00.20.) Every other step is unverified on real hardware.
 
 // ArchiveItemBase is the only Internet Archive address a ladder file is
 // fetched from.
@@ -59,7 +61,7 @@ var stScmLadder = []Step{
 	stScmArchive("07.00.37", "Airplay-1_ST20-30-Portable_07.00.37.zip", 65800764, "e2b2e7e0e23c7820e42f08e214c56a61c7ea20b4",
 		93032539, 0xa46e94d0, "0586eddfe502d324ac2836998b2271b89eb927fd", "high", true, false),
 	stScmArchive("14.00.33", "Airplay-1_ST20-30-Portable_14.00.33.zip", 67614484, "2d9898399328fab3bb79612a20bfdd42cac6dd60",
-		93114711, 0xd4dc260b, "b3b563a4de548632a066f768edf92a1b35bd2095", "medium", false, false),
+		93114711, 0xd4dc260b, "b3b563a4de548632a066f768edf92a1b35bd2095", "medium", true, false),
 	stScmArchive("15.00.20", "Airplay-1_ST20-30-Portable_Update_ti_15.00.20.37272.2363762.scm.stu.zip", 75030888, "da0adbc64ef2b3362d9f49e778c52a68c75a3d5b",
 		101642152, 0xf8648557, "7a03fa3b37210b96b2bb852ee5ca710143767839", "medium-high", false, false),
 	{

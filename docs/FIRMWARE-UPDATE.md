@@ -217,10 +217,15 @@ article for your model ([section 12](#12-every-source)).
 |---|---|---|
 | A hand symbol, then a bar that fills | The update runs. | Wait. Do not touch the power. |
 | The bar stands still for a few minutes | Normal. | Keep waiting, up to 45 minutes in total. |
-| The bar stays **empty** for 30 minutes or more | The speaker did not accept this file. Seen on one speaker given 27.0.6 directly, from 5.x and again from 06.02.01. | Unplug power, wait 10 seconds, pull the stick, plug power back in. Check the version. If it did not change, use a smaller step from [section 7](#7-very-old-firmware-the-step-by-step-ladder), or try another, smaller stick. |
+| The bar stays **empty** for 30 minutes or more | The speaker did not accept this file. Seen on one speaker given 27.0.6 directly, from 5.x and again from 06.02.01, and given 15.00.20 from 14.00.33. | Unplug power, wait 10 seconds, pull the stick, plug power back in. Check the version. If it did not change, use a smaller step from [section 7](#7-very-old-firmware-the-step-by-step-ladder), or try another, smaller stick. |
 | The bar fills, then the speaker restarts again and again | Seen once when 14.0.15 got 27.0.6 directly. | Pull the stick, unplug power, then try the ladder step for your version. Send us the details ([section 10](#10-if-you-are-stuck-send-us-this)). |
-| After the update: an **orange Wi-Fi symbol and a book icon** | **The update worked.** The speaker has forgotten its Wi-Fi and waits for setup. | Pull the stick. Set up Wi-Fi again with the Bose SoundTouch app (or ST Reborn's setup). Then check the version. |
+| After the update: an **orange Wi-Fi symbol and a book icon**, or an orange Wi-Fi symbol with "Download the SoundTouch controller app" (seen after 14.00.33, picture below) | **The update worked.** The speaker has forgotten its Wi-Fi and waits for setup. | Pull the stick. Set up Wi-Fi again with the Bose SoundTouch app (or ST Reborn's setup), or go straight on with the next stick step, which needs no Wi-Fi. Check the version before every step. |
 | Nothing at all after plugging power in | The speaker did not see the stick or the combination. | Check the stick rules above, the name `Update.stu`, the OTG adapter, and try the combination again. |
+
+<img src="images/firmware/st20-series1-after-14.00.33.jpg" width="240" alt="SoundTouch 20 Series I display after the 14.00.33 update: orange Wi-Fi symbol and the text Download the SoundTouch controller app">
+
+*A first generation SoundTouch 20 right after 14.00.33 went in by stick.
+Photo: a reader, shared with permission.*
 
 Models without a display (SoundTouch 10, SA-5, Wireless Link) show the
 update with their lights only. We do not have a confirmed description of
@@ -306,8 +311,8 @@ in the zip, the one file that goes onto the stick.
 |---|---|---|---|---|---|
 | 06.02.01 | `Airplay-1_ST20-30-Portable_06.02.01.zip` | 56 867 812 | `70c0cb5b436c1b33fb9e52371f53f7b2b32b9fdb` | 80 559 847 / `a70e1564` | **Live-verified**: 5.x to 06.02.01 on SoundTouch 20 Series I. A field report (not reproduced) says it also installed from 7.0.37 on a second SoundTouch 20. |
 | 07.00.37 | `Airplay-1_ST20-30-Portable_07.00.37.zip` | 65 800 764 | `e2b2e7e0e23c7820e42f08e214c56a61c7ea20b4` | 93 032 539 / `a46e94d0` | **Live-verified**: 06.02.01 to 07.00.37 on SoundTouch 20 Series I |
-| 14.00.33 | `Airplay-1_ST20-30-Portable_14.00.33.zip` | 67 614 484 | `2d9898399328fab3bb79612a20bfdd42cac6dd60` | 93 114 711 / `d4dc260b` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
-| 15.00.20 | `Airplay-1_ST20-30-Portable_Update_ti_15.00.20.37272.2363762.scm.stu.zip` | 75 030 888 | `da0adbc64ef2b3362d9f49e778c52a68c75a3d5b` | 101 642 152 / `f8648557` | Unverified |
+| 14.00.33 | `Airplay-1_ST20-30-Portable_14.00.33.zip` | 67 614 484 | `2d9898399328fab3bb79612a20bfdd42cac6dd60` | 93 114 711 / `d4dc260b` | **Live-verified**: 07.00.37 to 14.00.33 on SoundTouch 20 Series I. Matches Bose's archived 14.0.33 catalogue. |
+| 15.00.20 | `Airplay-1_ST20-30-Portable_Update_ti_15.00.20.37272.2363762.scm.stu.zip` | 75 030 888 | `da0adbc64ef2b3362d9f49e778c52a68c75a3d5b` | 101 642 152 / `f8648557` | **Stalled** by stick from 14.00.33 on the same SoundTouch 20 Series I (empty bar for 45 minutes). See below. |
 | 27.0.6 | **From Bose**: `https://downloads.bose.com/ced/soundtouch/downloads_stockholm/stu/s/Update.stu` (no zip) | | | 105 879 988 / `2d5a971e` | Unverified from 15.00.20. Live-verified by this project from 27.0.3. |
 
 Full sha1 of the inner `Update.stu`, if your tool shows it:
@@ -327,6 +332,42 @@ Both are unverified, and no Bose catalogue lists them to compare with.
 |---|---|---|---|---|---|
 | 09.00.41 | `Airplay-1_ST20-30-Portable_09.00.41.zip` | 67 402 612 | `8854dd251aec11630367b0cbc629b0bbbdc27c80` | 92 333 191 / `c4fd3a70` | Unverified fallback |
 | 12.00.09 | `Airplay-1_ST20-30-Portable_12.00.09.zip` | 67 590 860 | `c6e659517509c306a00d9774497d2b5d21742a7a` | 93 083 567 / `c4d62d01` | Unverified fallback |
+
+**If 14.00.33 to 15.00.20 leaves the bar empty** (seen once, October
+2026). What we know so far, from one speaker:
+
+- The file itself is very likely right for this speaker. From 15.00.20
+  on, the archive's `Update_ti_*.scm.stu` files are one line, and its
+  27.00.06 is byte for byte the same size as Bose's own 27.0.6 for this
+  model (105 879 988).
+- On that speaker every stick step with an `Update.stu` below 94 MB
+  went in (06.02.01, 07.00.37, 14.00.33), and every one above 100 MB
+  stalled on an empty bar (27.0.6 twice, 15.00.20 once). That is a
+  pattern, not a proven cause. A stick problem or a check in the old
+  stick updater would look the same.
+
+Two ways on, both unverified. Try them in this order:
+
+1. **Without the stick, over the speaker's own Wi-Fi (Route B).** Put
+   the speaker into setup mode (**2** and **Volume minus**), join its
+   Wi-Fi and open `http://192.168.1.1:17008/update.html`. If the page
+   opens, upload the 15.00.20 `Update.stu` there. If the page does not
+   open on 14.00.33, go to 2.
+2. **A smaller file by stick.** The steps after 15.00.20 are smaller
+   again, up to 20.00.06. 16.00.09 is the smallest (95 712 356 bytes
+   inside). If it goes in, 20.00.06 (98 225 732 bytes inside) is the
+   largest one below 100 MB. From there, take 27.0.6 over the network
+   (Route A or B), not by stick.
+
+| Step | File to download | Zip bytes | Zip sha1 | Inside: bytes | Status |
+|---|---|---|---|---|---|
+| 16.00.09 | `Airplay-1_ST20-30-Portable_Update_ti_16.00.09.37890.2412967.scm.stu.zip` | 70 289 971 | `e1366ffab91c785804bfc58e8318058be91c3e30` | 95 712 356 | Unverified fallback |
+| 20.00.06 | `Airplay-1_ST20-30-Portable_Update_ti_20.00.06.44144.3075410.scm.stu.zip` | 72 549 266 | `80a4c22cb800eb5c2056457337de3b99b5960f46` | 98 225 732 | Unverified fallback |
+
+Check the zip against the archive's own sha1 before you use it
+([section 8](#8-checking-a-download)). Please tell us how either way
+went ([section 10](#10-if-you-are-stuck-send-us-this)), so this
+becomes a checked route.
 
 **On 2.x?** Start with 06.02.01. If the speaker refuses it, use 05.00.23
 first, then continue with 06.02.01. Unverified.
@@ -491,8 +532,9 @@ address in a public discussion.
 
 - 5.x to 06.02.01 by USB stick.
 - 06.02.01 to 07.00.37 by USB stick.
+- 07.00.37 to 14.00.33 by USB stick.
 - 06.02.01 straight to 27.0.6 stalled on an empty bar.
-- 07.00.37 to the next step is not tried yet.
+- 14.00.33 to 15.00.20 by USB stick stalled on an empty bar.
 
 **Field reports, not reproduced:**
 
@@ -510,7 +552,7 @@ address in a public discussion.
 
 **Unverified:**
 
-- Every ladder step from 07.00.37 upward, the fallback steps, the 2.x
+- Every ladder step from 14.00.33 upward, the fallback steps, the 2.x
   route, and every model other than the first generation SoundTouch 20.
 - Whether Route A or B works on 15.x (the update page exists on 27.x;
   on 15.x it is expected but untested).
@@ -560,9 +602,9 @@ STR itself has never been tested below firmware 27.0.6.
 
 ## Pictures
 
-There are none yet, on purpose. Pictures of the USB port on each model,
-of the buttons held for a combination, and of the display during an
-update would help. Guessing them from memory is how wrong instructions
+One so far, in [section 6](#6-what-you-see-while-it-updates). Pictures
+of the USB port on each model, of the buttons held for a combination,
+and of the display during an update would help. Guessing them from memory is how wrong instructions
 get written. If you have a speaker in front of you and take those
 photos, please share them in a discussion or a pull request. They will
 be added here with credit.

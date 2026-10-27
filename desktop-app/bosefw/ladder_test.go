@@ -224,11 +224,12 @@ func TestLadderDataInvariants(t *testing.T) {
 			t.Errorf("%s: fallback steps are marked as such and untested", s.ID)
 		}
 	}
-	// Live evidence so far: only 06.02.01 and 07.00.37, by stick, on a
-	// SoundTouch 20 Series I. The network flash to 27.0.6 was seen from 27.0.3
-	// only, not from 15.00.20, so the ladder's last step is not "tested" yet.
+	// Live evidence so far: only 06.02.01, 07.00.37 and 14.00.33, by stick, on a
+	// SoundTouch 20 Series I (15.00.20 stalled after it). The network flash to
+	// 27.0.6 was seen from 27.0.3 only, not from 15.00.20, so the ladder's last
+	// step is not "tested" yet.
 	for _, s := range AllSteps() {
-		want := s.Version == "06.02.01" || s.Version == "07.00.37"
+		want := s.Version == "06.02.01" || s.Version == "07.00.37" || s.Version == "14.00.33"
 		if s.LiveVerified != want {
 			t.Errorf("%s: LiveVerified %v without a field report", s.ID, s.LiveVerified)
 		}
