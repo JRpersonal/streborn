@@ -68,15 +68,20 @@ test.describe('row switch', () => {
 });
 
 test.describe('empty row 2', () => {
-  test('explains the row, offers Find, and the New marker goes after one look', async ({ phone }) => {
+  test('shows six empty keys under one line with a Find link; the New marker goes after one look', async ({ phone }) => {
     const { page } = phone;
     await bootDone(page);
+    await expect(page.locator('#row2Hint')).toBeHidden();
     await expect(seg(page, 2).locator('.rdot.new')).toHaveCount(1);
     await seg(page, 2).click();
-    await expect(page.locator('#presets .grid-note.row2')).toContainText('Press a key on the speaker twice quickly');
-    await expect(page.locator('#presets .preset')).toHaveCount(0);
+    await expect(page.locator('#row2Hint')).toBeVisible();
+    await expect(page.locator('#row2Hint')).toContainText('Press a key twice quickly to play these.');
+    expect(await tileSlots(page)).toEqual([7, 8, 9, 10, 11, 12]);
+    await expect(page.locator('#presets .preset.empty')).toHaveCount(6);
+    await expect(page.locator('#presets .preset').first().locator('.num')).toContainText('2× 1');
     await seg(page, 1).click();
     await bootDone(page);
+    await expect(page.locator('#row2Hint')).toBeHidden();
     await expect(seg(page, 2).locator('.rdot')).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem('str.remote.row2Seen'))).toBe('1');
 
@@ -85,13 +90,36 @@ test.describe('empty row 2', () => {
     await expect(page.locator('#panelBrowse')).toBeVisible();
   });
 
-  test('keeps the page from jumping: the note holds the height of the keys', async ({ phone }) => {
+  test('a hold on an empty row-2 key saves what plays onto it', async ({ phone }) => {
     const { page } = phone;
     await bootDone(page);
-    const before = (await page.locator('#presets').boundingBox()).height;
     await seg(page, 2).click();
-    const after = (await page.locator('#presets').boundingBox()).height;
-    expect(Math.abs(after - before)).toBeLessThanOrEqual(2);
+    const tile = page.locator('#presets .preset[data-slot="9"]');
+    const box = await tile.boundingBox();
+    const save = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/box/save-playing');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(1300);
+    await page.mouse.up();
+    expect((await save).postDataJSON()).toEqual({ slot: 9 });
+    await expect(page.locator('#holdNote')).toHaveText('Saved to key 3 · 2×');
+  });
+
+  test.describe('German at 390x844', () => {
+    test.use({ phoneLang: 'de' });
+    test('the hint is one line and the keys still end above the tab bar', async ({ phone }) => {
+      const { page } = phone;
+      await bootDone(page);
+      await seg(page, 2).click();
+      await expect(page.locator('#row2Hint')).toContainText('Zweimal schnell drücken spielt diese Tasten.');
+      await expect(page.locator('#btnRow2Find')).toHaveText('Sender suchen');
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const hint = await page.locator('#row2Hint').boundingBox();
+      expect(hint.height).toBeLessThanOrEqual(20);
+      const gridBottom = await page.evaluate(() => document.getElementById('presets').getBoundingClientRect().bottom);
+      const barTop = await page.evaluate(() => document.querySelector('.tabbar').getBoundingClientRect().top);
+      expect(gridBottom).toBeLessThanOrEqual(barTop);
+    });
   });
 });
 
