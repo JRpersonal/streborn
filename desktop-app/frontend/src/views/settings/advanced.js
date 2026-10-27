@@ -10,6 +10,7 @@ import { t } from '../../i18n/index.js';
 // as one combined error; reconstructing "how many still copied" from that
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } from '../../copyreport.js';
+import { boxMaxSlot, boxPresetRows, copyRowsNote, keyLabel, keyNum, rowSlots } from '../../presetrows.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc } from '../../groupkeys.js';
@@ -255,6 +256,8 @@ export function renderAdvancedSections() {
       const src = state.settingsBox;
       const targets = (state.boxes || []).filter(b => b.kind !== 'stock' && src && b.host !== src.host);
       if (!targets.length) return '';
+      // A speaker with the second row of keys (#1110) copies both rows.
+      const twoRows = boxPresetRows(src) >= 2;
       const opts = targets.map(b => {
         const lbl = (b.friendlyName || b.name || b.host) + (b.model && b.model !== 'SoundTouch' ? ' (' + b.model + ')' : '');
         return `<option value="${escapeAttr(b.host)}|${b.port || 0}">${escapeHtml(lbl)}</option>`;
@@ -266,10 +269,10 @@ export function renderAdvancedSections() {
         : '';
       return `<details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
-      ${helpBlock(t('settingsView.copyPresetsHelp'))}
+      ${helpBlock(t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp'))}
       <div class="setting-row">
         <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
-        <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t('settingsView.copyPresetsBtn'))}</button>
+        <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t(twoRows ? 'settingsView.copyPresetsBtnAll' : 'settingsView.copyPresetsBtn'))}</button>
       </div>
       ${discussLink('copyPresets')}
     </details>`;
@@ -280,7 +283,7 @@ export function renderAdvancedSections() {
       ${helpBlock(t('settingsView.urlPresetHelp'))}
       <div class="setting-row">
         <select id="urlPresetSlot" style="flex:0 0 130px;">
-          ${[1, 2, 3, 4, 5, 6].map(n => `<option value="${n}">${escapeHtml(t('preset.key', { n }))}</option>`).join('')}
+          ${[...rowSlots(1), ...(boxPresetRows(state.settingsBox) >= 2 ? rowSlots(2) : [])].map(n => `<option value="${n}">${escapeHtml(keyLabel(n, t))}</option>`).join('')}
         </select>
         <input type="text" id="urlPresetName" autocomplete="off" placeholder="${escapeAttr(t('settingsView.urlPresetNamePlaceholder'))}" style="flex:1;" />
       </div>
@@ -780,15 +783,31 @@ export function wireAdvancedSections(ctx) {
       // Counted lazily (only when a rejection needs it) to keep the happy
       // path at one round trip.
       const sourceSlotCount = async () => {
-        try { return countValidPresetSlots(await GetPresets(box.host, box.port)); }
+        try { return countValidPresetSlots(await GetPresets(box.host, box.port), maxSlotFor(sel.value)); }
         catch { return null; }
       };
+      // The keys the copy can carry: a target without the second row of keys
+      // takes row 1 only, and the result says so (#1110).
+      const twoRows = boxPresetRows(box) >= 2;
+      const maxSlotFor = (val) => {
+        const tb = (state.boxes || []).find(b => b.host === String(val).split('|')[0]);
+        return twoRows ? boxMaxSlot(tb) : 6;
+      };
+      let sourcePresets = null;
+      const row2Note = async (tb) => {
+        if (!twoRows) return '';
+        if (sourcePresets === null) {
+          try { sourcePresets = await GetPresets(box.host, box.port) || []; } catch { sourcePresets = []; }
+        }
+        return copyRowsNote(sourcePresets, tb);
+      };
+      const confirmBodyKey = twoRows ? 'settingsView.copyPresetsConfirmBodyAll' : 'settingsView.copyPresetsConfirmBody';
       // "Apply to all": copy this box's 1-6 onto every other STR speaker.
       if (sel.value === '__ALL__') {
         const all = (state.boxes || []).filter(b => b.kind !== 'stock' && b.host !== box.host);
         const ok = await confirmWarn(
           t('settingsView.copyPresetsConfirmTitle'),
-          t('settingsView.copyPresetsConfirmBody', { target: t('settingsView.copyPresetsAllTargets') })
+          t(confirmBodyKey, { target: t('settingsView.copyPresetsAllTargets') })
         );
         if (!ok) return;
         copyBtn.disabled = true;
@@ -797,11 +816,13 @@ export function wireAdvancedSections(ctx) {
         const failed = [];
         const slotIssues = [];
         let totalSlots;
+        const row1Only = [];
         for (const tb of all) {
           const tbName = tb.friendlyName || tb.name || tb.host;
           try {
             await CopyPresetsAcrossBoxes(box.host, box.port, tb.host, tb.port || 0);
             done++;
+            if (await row2Note(tb) === 'row1Only') row1Only.push(tbName);
             if (state.currentBox && state.currentBox.host === tb.host) await deps.loadPresets();
           } catch (e) {
             if (totalSlots === undefined) totalSlots = await sourceSlotCount();
@@ -821,9 +842,10 @@ export function wireAdvancedSections(ctx) {
         const slotMsg = slotIssues.length
           ? t('settingsView.copyPresetsAllSlotIssues', { detail: slotIssues.join(' | ') })
           : '';
-        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }) + (slotMsg ? ' ' + slotMsg : ''));
-        else if (slotMsg) showError(slotMsg);
-        else showToast(t('settingsView.copyPresetsAllDone', { n: all.length }));
+        const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
+        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }) + (slotMsg ? ' ' + slotMsg : '') + rowMsg);
+        else if (slotMsg) showError(slotMsg + rowMsg);
+        else showToast(t('settingsView.copyPresetsAllDone', { n: all.length }) + rowMsg);
         return;
       }
       const [thost, tportRaw] = sel.value.split('|');
@@ -832,14 +854,17 @@ export function wireAdvancedSections(ctx) {
       const targetName = target ? (target.friendlyName || target.name || target.host) : thost;
       const ok = await confirmWarn(
         t('settingsView.copyPresetsConfirmTitle'),
-        t('settingsView.copyPresetsConfirmBody', { target: targetName })
+        t(confirmBodyKey, { target: targetName })
       );
       if (!ok) return;
       copyBtn.disabled = true;
       showToast(t('settingsView.copyPresetsProgress'), 0);
       try {
         const n = await CopyPresetsAcrossBoxes(box.host, box.port, thost, tport);
-        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }));
+        const rowMsg = await row2Note(target) === 'row1Only'
+          ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
+          : '';
+        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
         if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
       } catch (e) {
         // The target already holds one of the stations on a key this transfer
@@ -847,7 +872,7 @@ export function wireAdvancedSections(ctx) {
         // user used to get the agent's raw 409 JSON in an error dialog (#882).
         const conflict = presetCopyConflict(e);
         if (conflict) {
-          showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: conflict.slot }));
+          showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }));
           copyBtn.disabled = false;
           return;
         }
@@ -881,7 +906,7 @@ export function wireAdvancedSections(ctx) {
       urlPresetBtn.disabled = true;
       try {
         await SetPreset(box.host, box.port, slot, name, url, '', 0, '', '');
-        showToast(t('settingsView.urlPresetSaved', { n: slot }));
+        showToast(t('settingsView.urlPresetSaved', { n: keyNum(slot, t) }));
         if (state.currentBox && state.currentBox.host === box.host) await deps.loadPresets();
       } catch (e) { showError(e); }
       urlPresetBtn.disabled = false;

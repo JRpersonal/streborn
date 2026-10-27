@@ -15,6 +15,7 @@ import {
 } from '../../api.js';
 import { t } from '../../i18n/index.js';
 import { nativeServiceLabel, nativeServiceSaveable } from '../../nativeservice.js';
+import { ROW_SIZE, keyNum } from '../../presetrows.js';
 import { offerPresetMove, parsePresetConflict, presetConflictNote } from '../../presetmove.js';
 import { state } from '../../state.js';
 import {
@@ -51,7 +52,7 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 function showPresetSaveError(err, slot) {
   const conflict = parsePresetConflict(err);
   if (conflict) {
-    if (slot >= 1 && slot <= 6 && state.currentBox) {
+    if (slot >= 1 && slot <= 2 * ROW_SIZE && state.currentBox) {
       presetMoveOffer(conflict, slot);
     } else {
       showToast(presetConflictNote(conflict, t));
@@ -113,7 +114,7 @@ async function saveNativeToSlot(slot) {
   const nname = state.nowName || nativeServiceLabel(state.nowSource);
   try {
     await SaveNativePreset(state.currentBox.host, state.currentBox.port, slot, nname);
-    showToast(t('preset.savedToKey', { n: slot, name: nname }));
+    showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: nname }));
     await loadPresets();
   } catch (err) {
     showPresetSaveError(err, slot);
@@ -168,7 +169,7 @@ export async function saveCurrentToSlot(slot) {
   if (saveCase === 'queue') {
     try {
       const fname = await SaveQueuePreset(state.currentBox.host, state.currentBox.port, slot);
-      showToast(t('library.folderPresetSaved', { n: slot, name: fname || state.nowName || '' }));
+      showToast(t('library.folderPresetSaved', { n: keyNum(slot, t), name: fname || state.nowName || '' }));
       await loadPresets();
       return;
     } catch (err) {
@@ -257,7 +258,7 @@ export async function saveCurrentToSlot(slot) {
         state.currentBox.host, state.currentBox.port,
         slot, sname, ctxUri, acct
       );
-      showToast(t('preset.savedToKey', { n: slot, name: sname }));
+      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: sname }));
       // The speaker already knows this key will be refused when it is pressed:
       // both recall paths gate on the same question, and only the SAVE side had
       // no gate, so the app reported success for a key that cannot play (#976).
@@ -323,7 +324,7 @@ export async function saveCurrentToSlot(slot) {
         state.currentBox.host, state.currentBox.port,
         slot, lname, lib.url, lib.art || '', 0, lib.source || '', lib.durationSec || 0
       );
-      showToast(t('preset.savedToKey', { n: slot, name: lname }));
+      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: lname }));
       await loadPresets();
     } catch (err) {
       showPresetSaveError(err, slot);
@@ -358,7 +359,7 @@ export async function saveCurrentToSlot(slot) {
           state.currentBox.host, state.currentBox.port,
           slot, aname, app.url, app.icon || '', app.bitrate || 0, app.homepage || '', app.codec || ''
         );
-        showToast(t('preset.savedToKey', { n: slot, name: aname }));
+        showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: aname }));
         await loadPresets();
         if (app.uuid) {
           RadioVote(app.uuid).catch(() => {});
@@ -375,7 +376,7 @@ export async function saveCurrentToSlot(slot) {
           state.currentBox.host, state.currentBox.port,
           slot, src.name, src.stream_url, src.art || '', src.bitrate || 0, src.homepage || '', src.codec || ''
         );
-        showToast(t('preset.copiedToKey', { n: slot, name: src.name }));
+        showToast(t('preset.copiedToKey', { n: keyNum(slot, t), name: src.name }));
         await loadPresets();
         return;
       } catch (err) {
@@ -404,7 +405,7 @@ export async function saveCurrentToSlot(slot) {
     const shown = saved.name || state.nowName || t('preset.placeholderSender');
     // A key's own stream is a copy of that key, and is announced as one.
     const toast = saved.kind === 'copy' ? 'preset.copiedToKey' : 'preset.savedToKey';
-    showToast(t(toast, { n: slot, name: shown }));
+    showToast(t(toast, { n: keyNum(slot, t), name: shown }));
     await loadPresets();
     voteForWhatPlays();
     return;
@@ -452,7 +453,7 @@ export async function saveCurrentToSlot(slot) {
         slot, oname, decodeProxyUrl(orion.streamUrl), oart,
         state.nowBitrate || 0, '', ''
       );
-      showToast(t('preset.savedToKey', { n: slot, name: oname }));
+      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: oname }));
       await loadPresets();
     } catch (err) {
       showPresetSaveError(err, slot);
@@ -475,7 +476,7 @@ export async function saveCurrentToSlot(slot) {
       state.currentBox.host, state.currentBox.port,
       slot, name, decodeProxyUrl(state.nowLocation), appArtFromBoxArt(state.nowIcon), state.nowBitrate || 0, '', codec
     );
-    showToast(t('preset.savedToKey', { n: slot, name }));
+    showToast(t('preset.savedToKey', { n: keyNum(slot, t), name }));
     await loadPresets();
     voteForWhatPlays();
   } catch (err) {

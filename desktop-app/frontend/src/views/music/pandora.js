@@ -5,6 +5,7 @@ import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { agentErrorCode, agentErrorText, pandoraFindVisible, pandoraStationRows } from '../../usservices.js';
 import { $, escapeAttr, escapeHtml, showError, showToast, sleep } from '../../utils.js';
+import { keyNum } from '../../presetrows.js';
 import { showSlotPicker } from './picker.js';
 import { syncSearchModeButtons } from './search.js';
 import { refreshStatus } from './status.js';
@@ -162,7 +163,7 @@ export function openPandoraPick(s) {
       showToast(t('pandora.savePlayingFirst', { name: s.name }));
       await playPandoraAndWait(s);
       await SaveNativePreset(state.currentBox.host, state.currentBox.port, slot, s.name);
-      showToast(t('preset.savedToKey', { n: slot, name: s.name }));
+      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: s.name }));
     },
   });
 }

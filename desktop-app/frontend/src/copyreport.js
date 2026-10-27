@@ -49,10 +49,12 @@ export function presetCopyConflict(message) {
   return { name: m[1].replace(/\\(["\\])/g, '$1'), slot: parseInt(m[2], 10) };
 }
 
-// countValidPresetSlots mirrors the Go-side copy filter (slot 1..6 with a
-// non-empty name) so "total - failed" equals what the backend attempted.
-export function countValidPresetSlots(presets) {
+// countValidPresetSlots mirrors the Go-side copy filter (a named slot the
+// target can hold: 1..12 on a speaker with the second row of keys, #1110,
+// 1..6 on one without) so "total - failed" equals what the backend attempted.
+// maxSlot is the target's highest slot; it defaults to both rows.
+export function countValidPresetSlots(presets, maxSlot = 12) {
   return (presets || []).filter(
-    (p) => p && p.slot >= 1 && p.slot <= 6 && p.name,
+    (p) => p && p.slot >= 1 && p.slot <= maxSlot && p.name,
   ).length;
 }

@@ -235,6 +235,11 @@ var boxFieldPolicy = []fieldPolicy{
 	// cache fills it for a cycle in which only the announcement answered.
 	{"AgentBinarySha256", preferNonEmpty, preferVerified},
 	{"AgentRunningSha256", preferNonEmpty, preferVerified},
+	// The second row of keys is a property of the agent build, so it comes
+	// from the same record the version came from: an older agent's "no second
+	// row" is never papered over by a cached "2", and an mDNS-only cycle keeps
+	// the cached answer along with the cached version.
+	{"PresetRows", follows("Version"), follows("Version")},
 	// Per-cycle annotations: the caller sets them on the served copy, the
 	// merge never carries them from one record to the other.
 	{"Offline", keepBase, keepBase},
@@ -350,6 +355,7 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.Kind = "stock"
 	b.Version = ""
 	b.Build = ""
+	b.PresetRows = ""
 	b.Port = 8090
 	b.PortVerified = false
 	b.OTAPending = false

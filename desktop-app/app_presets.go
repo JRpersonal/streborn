@@ -331,11 +331,52 @@ func (a *App) LogSpotifySaveGate(host string, slot int, canRecall, premiumRequir
 		"canRecall", canRecall, "premiumRequired", premiumRequired, "notice", notice)
 }
 
-// CopyPresetsAcrossBoxes copies every preset (slots 1-6) from a source speaker
-// to a target speaker, preserving radio vs Spotify type and all fields, then
-// re-syncs the target's hardware keys so buttons 1-6 reflect the copy. Used by
-// the box-to-box preset copy in Speaker Settings so the user does not have to
-// re-enter stations on every speaker. Returns the number of presets copied.
+// presetRowSize is how many keys one row holds: the six hardware keys.
+const presetRowSize = 6
+
+// presetRowsFromVersion reads how many rows of keys an agent keeps from its
+// /api/agent/version answer: 2 when it reports presetRows "2" (slots 7 to 12
+// are the keys pressed twice, #1110), 1 for every agent that predates it.
+func presetRowsFromVersion(ver map[string]string) int {
+	if ver != nil && ver["presetRows"] == "2" {
+		return 2
+	}
+	return 1
+}
+
+// boxPresetMaxSlot is the highest slot the speaker's agent accepts. A speaker
+// that cannot be asked is treated as one row: a row-2 key written to an
+// agent without it is refused, so nothing is gained by guessing high.
+func (a *App) boxPresetMaxSlot(host string, port int) int {
+	ver, err := a.BoxAgentVersion(host, port)
+	if err != nil {
+		return presetRowSize
+	}
+	return presetRowSize * presetRowsFromVersion(ver)
+}
+
+// presetsUpTo keeps the named presets on slots 1..maxSlot, in their order. It
+// is the filter of every path that writes a whole set onto a speaker: the
+// copy to another speaker, the backup restore and the keys kept across a
+// reinstall.
+func presetsUpTo(presets []Preset, maxSlot int) []Preset {
+	var out []Preset
+	for _, p := range presets {
+		if p.Slot < 1 || p.Slot > maxSlot || p.Name == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// CopyPresetsAcrossBoxes copies every preset from a source speaker to a target
+// speaker, preserving radio vs Spotify type and all fields, then re-syncs the
+// target's hardware keys so buttons 1-6 reflect the copy. Both rows of keys
+// (slots 1-12, #1110) go across when the target's agent keeps the second
+// row; a target without it gets row 1 only and the app says so. Used by the
+// box-to-box preset copy so the user does not have to re-enter stations on
+// every speaker. Returns the number of presets copied.
 func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string, dstPort int) (int, error) {
 	if srcHost == "" || dstHost == "" {
 		return 0, fmt.Errorf("source and target host are required")
@@ -363,13 +404,13 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	if err := a.waitCopyTargetReady(dstHost, dstPort); err != nil {
 		return 0, err
 	}
-	// The set the transfer is about: the same filter the per-slot loop applies.
-	var set []Preset
-	for _, p := range presets {
-		if p.Slot < 1 || p.Slot > 6 || p.Name == "" {
-			continue
-		}
-		set = append(set, p)
+	// The set the transfer is about: the same filter the per-slot loop applies,
+	// up to the last slot the target keeps.
+	maxSlot := a.boxPresetMaxSlot(dstHost, dstPort)
+	set := presetsUpTo(presets, maxSlot)
+	if dropped := len(presetsUpTo(presets, 2*presetRowSize)) - len(set); dropped > 0 {
+		a.logger.Info("copy presets: the target keeps one row of keys, the keys pressed twice stay on the source",
+			"src", srcHost, "dst", dstHost, "notCopied", dropped)
 	}
 	copied := 0
 	var slotErrs []string
@@ -404,7 +445,8 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 			copied, slotErrs = a.copyPresetsPerSlot(dstHost, dstPort, set)
 		}
 	}
-	// Re-push the target's hardware keys so 1-6 on the speaker match the copy.
+	// Re-push the target's hardware keys so 1-6 on the speaker match the copy
+	// (the keys pressed twice live in the agent's store only).
 	if _, err := a.SyncBoxPresets(dstHost, dstPort); err != nil {
 		a.logger.Warn("copy presets: target hardware sync failed", "src", srcHost, "dst", dstHost, "err", err)
 	}

@@ -4,6 +4,7 @@
 import { GetQueue, Next, Pause, Prev, readBoxBalance, Resume, Stop, TrackPosition } from '../../api.js';
 import { balanceSourceBox, inStereoPair, stereoPairsOf } from '../../groups.js';
 import { t } from '../../i18n/index.js';
+import { nowKeyTag } from '../../presetrows.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
@@ -277,12 +278,17 @@ export function renderNowPlayingBar() {
   // by colour alone (accessibility): play arrow normally, pause bars when
   // paused, a stop square when stopped (#1526).
   const stateGlyph = nowStateGlyph(ps, srcU);
+  // The key that is playing, named the way the grid names it ("Key 2",
+  // "Key 1 · 2×", #1110). Only an STR key: activePresetSlot is set for a key
+  // of the store, never for a station started from a list or the box's own.
+  const keyText = nowKeyTag(state.activePresetSlot, t);
+  const keyTag = keyText ? ` <small class="now-key">${escapeHtml(keyText)}</small>` : '';
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
     // marquees inside .now. This bar is the full window wide, which is why it
     // is the one place that carries the running title (report 2026-08-23).
-    statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
+    statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${keyTag}${brLabel}`;
   } else if (stateLabel) {
     statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
   } else if (state.currentBox && state.currentBox.offline) {

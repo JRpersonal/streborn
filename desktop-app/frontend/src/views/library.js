@@ -17,6 +17,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying } from '../utils.js';
 import { t } from '../i18n/index.js';
+import { keyNum } from '../presetrows.js';
 import {
   ProbeTrackDelivery,
   ListMediaServers,
@@ -814,9 +815,9 @@ function librarySaveFolderAsPreset() {
       try {
         await SaveFolderPreset(state.currentBox.host, state.currentBox.port, i, JSON.stringify(payload));
         if (queueItems.length < totalItems) {
-          showToast(t('library.folderPresetSavedCapped', { n: i, name, kept: queueItems.length, total: totalItems }));
+          showToast(t('library.folderPresetSavedCapped', { n: keyNum(i, t), name, kept: queueItems.length, total: totalItems }));
         } else {
-          showToast(t('library.folderPresetSaved', { n: i, name }));
+          showToast(t('library.folderPresetSaved', { n: keyNum(i, t), name }));
         }
       } catch (e) {
         showError(`SaveFolderPreset: ${e}`);
@@ -852,7 +853,7 @@ function librarySaveAsPreset(item) {
       await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
         item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source,
         item.durationSec || 0);
-      showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
+      showToast(t('preset.savedToKey', { n: keyNum(i, t), name: item.title || '(track)' }));
     },
   });
 }
