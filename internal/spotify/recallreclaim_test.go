@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -99,6 +100,14 @@ func TestRecallTakesBackATransferredSession(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if plays, paused := e.snapshot(); plays == 2 && !paused {
+			// The repeat is a Play running on the resume check's goroutine, and
+			// it is still on its last steps when the engine starts playing:
+			// returning now let it read the confirm timing while this test's
+			// cleanup put the production values back (-race). Its closing log
+			// line comes after the last of those reads.
+			for time.Now().Before(deadline) && strings.Count(logBuf.String(), "spotify: recall play") < 2 {
+				time.Sleep(10 * time.Millisecond)
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

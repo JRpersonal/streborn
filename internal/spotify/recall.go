@@ -312,8 +312,11 @@ func (m *Manager) resumeRecall(ctx context.Context, uri string, opts PlayOptions
 		}
 	}
 	// In the background: the hardware path points the box at the stream once
-	// Play returns and must not wait for this.
-	go m.confirmRecallPlaying(uri, opts, seq, since, time.Now(), expectLoad, stagingGen)
+	// Play returns and must not wait for this. The timing is read here, not in
+	// the goroutine: the check outlives the call, and a check still running
+	// must not read the variables while a test shortens them for the next one.
+	timing := recallConfirmTiming{window: recallConfirmWindow, poll: recallConfirmPoll, settle: recallResumeSettle}
+	go m.confirmRecallPlaying(uri, opts, seq, since, time.Now(), expectLoad, stagingGen, timing)
 }
 
 // recallSlowLoadWait is the second wait for a track load that is still running
@@ -334,6 +337,11 @@ var (
 
 // recallResumeRetries caps the extra resumes one recall may send.
 const recallResumeRetries = 2
+
+// recallConfirmTiming is one resume check's copy of the three variables above.
+type recallConfirmTiming struct {
+	window, poll, settle time.Duration
+}
 
 // engineStatus is the part of go-librespot's /status a recall checks. The
 // pointer fields stay nil on an engine build that does not report them, and
@@ -374,10 +382,10 @@ func (m *Manager) readEngineStatus(ctx context.Context) (engineStatus, bool) {
 // preset's shuffle setting if the engine dropped it, and stands down when a
 // newer recall starts or the user stops. An engine whose /status does not
 // report buffering (an older build) only gets the original one-shot check.
-func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64, since, resumedAt time.Time, expectLoad bool, stagingGen uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), recallConfirmWindow+5*time.Second)
+func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64, since, resumedAt time.Time, expectLoad bool, stagingGen uint64, timing recallConfirmTiming) {
+	ctx, cancel := context.WithTimeout(context.Background(), timing.window+5*time.Second)
 	defer cancel()
-	deadline := time.Now().Add(recallConfirmWindow)
+	deadline := time.Now().Add(timing.window)
 	retries := 0
 	lastResume := resumedAt
 	shuffleFixed := false
@@ -386,7 +394,7 @@ func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64,
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(recallConfirmPoll):
+		case <-time.After(timing.poll):
 		}
 		m.mu.Lock()
 		superseded := m.recallSeq != seq || m.userStopAt.After(since)
@@ -434,7 +442,7 @@ func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64,
 		if confirmed && !newLoad {
 			return // paused after it played, by someone else: leave it
 		}
-		if !newLoad && time.Since(lastResume) < recallResumeSettle {
+		if !newLoad && time.Since(lastResume) < timing.settle {
 			continue
 		}
 		if retries >= recallResumeRetries {
