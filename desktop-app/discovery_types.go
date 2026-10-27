@@ -193,6 +193,11 @@ type BoxInfo struct {
 	// it was recent. Before this the refusal was invisible: the owner pressed
 	// the key, nothing happened, and only a diagnostic bundle explained why.
 	GroupKeyError string `json:"groupKeyError,omitempty"`
+	// GroupKeyErrorKind classifies GroupKeyError (master-unresponsive,
+	// member-unresolved, form-refused, dissolve-failed, other), so the app
+	// explains the refusal in the user's language and keeps the raw reason
+	// for the details. Empty from an agent that predates it.
+	GroupKeyErrorKind string `json:"groupKeyErrorKind,omitempty"`
 	// HoldRefusedSource is what the speaker was playing when a long press on a
 	// key could not be kept, empty when there was none. Typically SPOTIFY: STR
 	// has no preset form for it, so the firmware keeps the old station and the

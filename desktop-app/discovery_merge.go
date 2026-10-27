@@ -264,6 +264,7 @@ var boxFieldPolicy = []fieldPolicy{
 	{"ConflictingMod", keepBase, verifiedReading},
 	{"ForeignCloudURL", keepBase, verifiedReading},
 	{"GroupKeyError", keepBase, verifiedReading},
+	{"GroupKeyErrorKind", keepBase, follows("GroupKeyError")},
 	{"HoldRefusedSource", keepBase, verifiedReading},
 	{"HoldRefusedSlot", keepBase, follows("HoldRefusedSource")},
 	{"StaleFolderKeySlot", keepBase, verifiedReading},

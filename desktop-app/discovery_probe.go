@@ -166,6 +166,7 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 		ConflictingMod:     jsonStringField(s, "conflictingMod"),
 		ForeignCloudURL:    jsonStringField(s, "foreignCloudURL"),
 		GroupKeyError:      jsonStringField(s, "groupKeyError"),
+		GroupKeyErrorKind:  jsonStringField(s, "groupKeyErrorKind"),
 		HoldRefusedSource:  jsonStringField(s, "holdRefusedSource"),
 		HoldRefusedSlot:    jsonStringField(s, "holdRefusedSlot"),
 		StaleFolderKeySlot: jsonStringField(s, "staleFolderKeySlot"),
@@ -268,12 +269,31 @@ func jsonStringField(s, key string) string {
 	if len(rest) == 0 || rest[0] != '"' {
 		return ""
 	}
-	rest = rest[1:]
-	e := strings.IndexByte(rest, '"')
+	// Find the closing quote, stepping over escapes. Stopping at the first
+	// '"' cut every value that carried an escaped quote: a refused group-key
+	// press whose reason quotes a URL reached the user as "... Get \" and
+	// nothing after it (2026-10-27).
+	e := -1
+	for j := 1; j < len(rest); j++ {
+		if rest[j] == '\\' {
+			j++
+			continue
+		}
+		if rest[j] == '"' {
+			e = j
+			break
+		}
+	}
 	if e < 0 {
 		return ""
 	}
-	return rest[:e]
+	quoted := rest[:e+1]
+	// JSON escapes are Go escapes except "\/", which Go's encoder never
+	// writes but another encoder may.
+	if v, err := strconv.Unquote(strings.ReplaceAll(quoted, `\/`, `/`)); err == nil {
+		return v
+	}
+	return quoted[1 : len(quoted)-1]
 }
 
 // probeStock checks ip:8090/info for the Bose SoundTouch device XML.
