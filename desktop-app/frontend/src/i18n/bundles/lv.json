@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "basa solis",
   "multiroom.groupKeysKeyBass": "(basa solis)",
   "multiroom.groupKeysBassHint": "Īkšķa taustiņš, kas maina basu, nevar vienlaikus veidot grupu. Maini to pults taustiņu kartē Iestatījumos.",
-  "settingsView.bassKeyNeedsUpdate": "Atjaunini šo skaļruni, lai piešķirtu basa soli taustiņam."
+  "settingsView.bassKeyNeedsUpdate": "Atjaunini šo skaļruni, lai piešķirtu basa soli taustiņam.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Pašlaik skan: {{what}}",
+  "ui2.speakers.speaker.netMore": "Tīkla informācija",
+  "ui2.speakers.speaker.hwKeysHeading": "Skaļruņa pogas"
 }

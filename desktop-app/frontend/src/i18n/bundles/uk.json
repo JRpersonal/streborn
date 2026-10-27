@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "баси",
   "multiroom.groupKeysKeyBass": "(баси)",
   "multiroom.groupKeysBassHint": "Кнопка з пальцем, яка змінює баси, не може також формувати групу. Зміни це на карті кнопок пульта в Налаштуваннях.",
-  "settingsView.bassKeyNeedsUpdate": "Онови цей динамік, щоб призначити крок басів на кнопку."
+  "settingsView.bassKeyNeedsUpdate": "Онови цей динамік, щоб призначити крок басів на кнопку.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Зараз грає: {{what}}",
+  "ui2.speakers.speaker.netMore": "Подробиці мережі",
+  "ui2.speakers.speaker.hwKeysHeading": "Кнопки на колонці"
 }

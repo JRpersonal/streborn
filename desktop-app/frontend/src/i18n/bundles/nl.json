@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "bas",
   "multiroom.groupKeysKeyBass": "(bas)",
   "multiroom.groupKeysBassHint": "Een duimtoets die de bas regelt, kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen.",
-  "settingsView.bassKeyNeedsUpdate": "Werk deze speaker bij om een basstap op een toets te zetten."
+  "settingsView.bassKeyNeedsUpdate": "Werk deze speaker bij om een basstap op een toets te zetten.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Speelt nu: {{what}}",
+  "ui2.speakers.speaker.netMore": "Netwerkdetails",
+  "ui2.speakers.speaker.hwKeysHeading": "Toetsen op de speaker"
 }

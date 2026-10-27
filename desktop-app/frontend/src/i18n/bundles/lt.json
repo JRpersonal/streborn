@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "žemi dažniai",
   "multiroom.groupKeysKeyBass": "(žemi dažniai)",
   "multiroom.groupKeysBassHint": "Nykščio mygtukas, kuris keičia žemus dažnius, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose.",
-  "settingsView.bassKeyNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti boso žingsnį mygtukui."
+  "settingsView.bassKeyNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti boso žingsnį mygtukui.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Dabar groja: {{what}}",
+  "ui2.speakers.speaker.netMore": "Tinklo informacija",
+  "ui2.speakers.speaker.hwKeysHeading": "Garsiakalbio mygtukai"
 }

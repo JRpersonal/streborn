@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "basses",
   "multiroom.groupKeysKeyBass": "(basses)",
   "multiroom.groupKeysBassHint": "Une touche pouce qui règle les basses ne peut pas aussi former un groupe. Modifie-la sur le plan des touches de la télécommande dans les Réglages.",
-  "settingsView.bassKeyNeedsUpdate": "Mets à jour cette enceinte pour placer un réglage des basses sur une touche."
+  "settingsView.bassKeyNeedsUpdate": "Mets à jour cette enceinte pour placer un réglage des basses sur une touche.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}} : {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "En cours de lecture : {{what}}",
+  "ui2.speakers.speaker.netMore": "Détails du réseau",
+  "ui2.speakers.speaker.hwKeysHeading": "Touches de l'enceinte"
 }

@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "graves",
   "multiroom.groupKeysKeyBass": "(graves)",
   "multiroom.groupKeysBassHint": "Una tecla de pulgar que cambia los graves no puede formar también un grupo. Cámbiala en el mapa de teclas del mando en Ajustes.",
-  "settingsView.bassKeyNeedsUpdate": "Actualiza este altavoz para asignar un paso de graves a una tecla."
+  "settingsView.bassKeyNeedsUpdate": "Actualiza este altavoz para asignar un paso de graves a una tecla.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Sonando ahora: {{what}}",
+  "ui2.speakers.speaker.netMore": "Detalles de la red",
+  "ui2.speakers.speaker.hwKeysHeading": "Botones del altavoz"
 }

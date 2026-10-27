@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "bas",
   "multiroom.groupKeysKeyBass": "(bas)",
   "multiroom.groupKeysBassHint": "Przycisk kciuka, który zmienia bas, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach.",
-  "settingsView.bassKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać zmianę basu do przycisku."
+  "settingsView.bassKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać zmianę basu do przycisku.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Teraz gra: {{what}}",
+  "ui2.speakers.speaker.netMore": "Szczegóły sieci",
+  "ui2.speakers.speaker.hwKeysHeading": "Przyciski na głośniku"
 }

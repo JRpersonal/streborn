@@ -154,6 +154,9 @@ function paintRoute(route) {
       box: state.settingsBox || null,
       tab: tab || undefined,
       label,
+      // The head's state pill reads the sidebar's own checks.
+      needsUpdate: deps.boxNeedsUpdate,
+      cannotReachInternet: deps.boxCannotReachInternet,
     });
   } else if (route === 'groups') {
     mountGroups({ root: byId('view-multiroom'), open: openSpeakers, label });

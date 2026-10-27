@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "الجهير",
   "multiroom.groupKeysKeyBass": "(الجهير)",
   "multiroom.groupKeysBassHint": "زر الإبهام الذي يغيّر الجهير لا يمكنه تكوين مجموعة أيضًا. غيّر ذلك في خريطة أزرار جهاز التحكم في الإعدادات.",
-  "settingsView.bassKeyNeedsUpdate": "حدّث مكبر الصوت هذا لتعيين خطوة الجهير على زر."
+  "settingsView.bassKeyNeedsUpdate": "حدّث مكبر الصوت هذا لتعيين خطوة الجهير على زر.",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "قيد التشغيل الآن: {{what}}",
+  "ui2.speakers.speaker.netMore": "تفاصيل الشبكة",
+  "ui2.speakers.speaker.hwKeysHeading": "أزرار السمّاعة"
 }

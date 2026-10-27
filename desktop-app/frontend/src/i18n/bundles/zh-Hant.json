@@ -2109,5 +2109,9 @@
   "settingsView.webhookRemoteLegendBass": "低音",
   "multiroom.groupKeysKeyBass": "(低音)",
   "multiroom.groupKeysBassHint": "設定為調整低音的拇指鍵無法同時組成群組。請在設定中的遙控器按鍵配置變更。",
-  "settingsView.bassKeyNeedsUpdate": "請更新這台喇叭，才能將低音調整指派給按鍵。"
+  "settingsView.bassKeyNeedsUpdate": "請更新這台喇叭，才能將低音調整指派給按鍵。",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}：{{action}}",
+  "ui2.speakers.speaker.nowPlaying": "正在播放：{{what}}",
+  "ui2.speakers.speaker.netMore": "網路詳細資料",
+  "ui2.speakers.speaker.hwKeysHeading": "喇叭上的按鍵"
 }
