@@ -532,6 +532,7 @@
   "update.speakerRunningOld": "Der Lautsprecher läuft mit Version {{boxVersion}}, die App hat Version {{appVersion}}.",
   "update.refreshBtn": "Update installieren",
   "update.rebootNote": "Der Lautsprecher startet während des Updates neu, je nach Update ein- oder zweimal, und verbindet sich von selbst wieder.",
+  "update.groupNote": "Dieser Lautsprecher startet für das Update neu und verlässt dafür kurz seine Gruppe. Eine dauerhafte Gruppe nimmt ihn von selbst wieder auf, eine normale Gruppe bildest du danach neu.",
   "update.speakerUpdateAvailFor": "Update für '{{name}}' verfügbar",
   "update.versionLine": "installiert: {{installed}} → neu: {{next}}",
   "update.appBehindShort": "Lautsprecher neuer als die App, bitte die App aktualisieren (App: {{appVersion}})",

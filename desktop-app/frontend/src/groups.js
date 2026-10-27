@@ -499,6 +499,22 @@ export function inAnyStereoPair(box, zoneLive) {
   return stereoPairsOf(zoneLive || {}).some((p) => inStereoPair(box, p));
 }
 
+// inLiveGroup reports whether a box sits in a live multiroom group right now,
+// as master or follower: its own zoneLive self-report names a master, or a
+// master's member list names it (by deviceID or by IP, for the two-chip
+// chassis whose firmware id differs from the discovered one). Half of a stereo
+// pair does not count: a pair survives a restart, a group does not. The
+// single-speaker update says beforehand that a grouped speaker leaves its
+// group while it restarts (#1339).
+export function inLiveGroup(box, zoneLive) {
+  if (!box || inAnyStereoPair(box, zoneLive)) return false;
+  if (masterOf(box.deviceID, zoneLive)) return true;
+  const idUp = String(box.deviceID || '').toUpperCase();
+  return Object.values(zoneLive || {}).some((zl) => !!(zl && zl.master) &&
+    (zl.members || []).some((m) => m &&
+      ((idUp && String(m.deviceID || '').toUpperCase() === idUp) || (box.host && m.ip === box.host))));
+}
+
 // groupCandidates lists the speakers a group led by masterBox can offer to
 // take in or out: every STR speaker other than the master that is not half of
 // a live stereo pair (#792, a pair cannot join a group as a unit). In the
