@@ -40,8 +40,10 @@ html.ui2 #ui2SetupWizard .w2-title {
    aria-current="step" and a heavier edge. */
 html.ui2 .w2-steps {
   display: grid;
-  /* Four in a row; with larger text they wrap two by two, never mid-word. */
-  grid-template-columns: repeat(auto-fit, minmax(10em, 1fr));
+  /* Four in a row; once four no longer fit (narrow window, larger text) two
+     by two, never three and one: below 36em the column minimum jumps from a
+     quarter to a half of the row. */
+  grid-template-columns: repeat(auto-fit, minmax(clamp((100% - 24px) / 4, (36em - 100%) * 999, (100% - 8px) / 2), 1fr));
   gap: 8px;
   margin: 0 0 24px;
   padding: 0;
@@ -87,6 +89,13 @@ html.ui2 .w2-step.is-failed .w2-step-state { color: var(--u-danger); font-weight
 html.ui2 .w2-step.is-done .w2-step-state { color: var(--u-ok); }
 
 html.ui2 .w2-panel[hidden] { display: none; }
+/* An install refused because an update is still finishing, or STR already
+   runs, is not a failure: the step's calm note says so, and the classic
+   panel's explanation below it is shown as plain text, not in alarm red. */
+html.ui2 #ui2SetupWizard.is-calm #setupResult .setup-warn { color: var(--u-text); }
+/* The wizard's own title already says "Checking <name>": the check's heading
+   stays for its aria-labelledby only, so it is not read or shown twice. */
+html.ui2 .w2-check .u-check-title { display: none; }
 html.ui2 .w2-lead { margin: 0 0 16px; color: var(--u-text); font-size: 15px; line-height: 1.45; }
 html.ui2 .w2-muted { color: var(--u-muted); font-size: 14px; line-height: 1.45; }
 
@@ -142,8 +151,8 @@ html.ui2 .w2-onstr-sum {
   cursor: pointer;
 }
 /* A flex summary loses its marker: draw it, closed and open. */
-html.ui2 .w2-onstr-sum::before { content: 'B8'; }
-html.ui2 .w2-onstr[open] > .w2-onstr-sum::before { content: 'BE'; }
+html.ui2 .w2-onstr-sum::before { content: '\25B8' / ''; }
+html.ui2 .w2-onstr[open] > .w2-onstr-sum::before { content: '\25BE' / ''; }
 html.ui2 .w2-onstr > .w2-muted { margin: 0 0 8px; }
 
 /* The classic picker moves into Find for its onboarding part only: the cards

@@ -731,6 +731,8 @@ function paint() {
     setHTML('w2InstallNote', installNoteHTML(W.installKind, name));
   }
   W.root.classList.toggle('is-missing', missing);
+  // A refusal that is not a failure (setup.css tones the classic red down).
+  W.root.classList.toggle('is-calm', W.step === 'install' && ['update-finishing', 'str-running'].includes(W.installKind));
   if (W.step === 'confirm') {
     setHTML('w2ConfirmBody', confirmHTML({ status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '' }));
   }

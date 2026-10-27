@@ -106,7 +106,13 @@ html.ui2 .u-check-other-sum {
   font-weight: 600;
   cursor: pointer;
 }
+/* A flex summary loses its marker: draw it, closed and open. */
+html.ui2 .u-check-other-sum::before { content: '\25B8' / ''; margin-inline-end: 8px; }
+html.ui2 .u-check-other[open] > .u-check-other-sum::before { content: '\25BE' / ''; }
 html.ui2 .u-check-other-body { padding: 0 16px 16px; }
+/* The reused ladder and guide keep their classic look, but their controls
+   get the preview's 40px targets. */
+html.ui2 .u-check :is(.fw-ladder, .fw-guide) button { min-height: var(--u-target); }
 /* The step's own button does the one-click update; the guide's copy of it
    stays out, so a speaker never has two update buttons on one screen. */
 html.ui2 .u-check-other .fw-guide-auto { display: none; }
