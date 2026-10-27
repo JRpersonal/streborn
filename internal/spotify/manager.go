@@ -317,6 +317,12 @@ type Manager struct {
 	recallSeq            uint64
 	lastLoadCommitAt     time.Time
 	lastLoadCommitPaused bool
+	// recallCmdMu makes the resume check's last look and its extra resume
+	// one step against AbandonRecall's stand-down and pause (recall.go). Not
+	// mu: it is held across one engine call. beforeExtraResume is a test
+	// seam that runs between that look and the resume; nil in production.
+	recallCmdMu       sync.Mutex
+	beforeExtraResume func()
 	// recallRestartAt is when a cross-account SwitchAccount last restarted
 	// go-librespot. ServeOgg uses it to tell a cross-account recall (which leaves
 	// the engine paused in the restart gap and must be resumed on re-attach) apart
