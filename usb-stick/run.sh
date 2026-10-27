@@ -1998,10 +1998,30 @@ is_real_sta_addr() {
     # 192.168.1.0/24 wildcard, which broke any user whose home LAN
     # used the very common 192.168.1.0/24 default.
     case "$1" in
-        ""|0.0.0.0|192.168.1.1|192.0.2.1) return 1 ;;
+        192.168.1.1) setup_gateway_is_lan_addr ;;
+        ""|0.0.0.0|192.0.2.1) return 1 ;;
         169.254.*) return 1 ;;
         *) return 0 ;;
     esac
+}
+setup_gateway_is_lan_addr() {
+    # 192.168.1.1 is where the speaker hosts its own setup AP, so while that
+    # AP is up the address is never a lease. A home router can still hand it
+    # out: a wired ST20 sat on 192.168.1.1 from its router (2026-10-26), and
+    # treating that as the setup gateway left it with no REDIRECT, so the
+    # desktop app could not reach the agent, and with a rescue watchdog that
+    # thought the speaker had no network at all.
+    #
+    # So it counts as a real address once the firmware itself says it is not
+    # in setup. Positive evidence only: no answer from :8090 (early boot)
+    # keeps the old reading, because a speaker in setup looks the same then.
+    command -v wget >/dev/null 2>&1 || return 1
+    _sgl=$(wget -qO- -T 3 "http://127.0.0.1:8090/now_playing" 2>/dev/null \
+        | sed -n 's/.*source="\([^"]*\)".*/\1/p' | head -1)
+    case "$_sgl" in
+        ""|SETUP*) return 1 ;;
+    esac
+    return 0
 }
 current_sta_lease() {
     # Walks every wireless-candidate iface (wlan0, wlan1, eth0 on
@@ -2161,7 +2181,15 @@ box_in_setup() {
     # The setup-AP processes as the fallback, the same names M6 kills. Not
     # universal: taigan runs its AP without hostapd (see M6), which is why
     # this is second and not the only check.
-    if ps 2>/dev/null | grep -E 'hostapd|udhcpd|dnsmasq|nodogsplash' | grep -qv grep; then
+    #
+    # udhcpd only counts while the firmware gave no answer. A Series-I ST20
+    # (spotty) runs `udhcpd -S /etc/udhcpd.conf` for its usb0 service port
+    # the whole time it is up, so with udhcpd on the list that speaker read
+    # as being in setup forever and the rescue watchdog never ran (reported
+    # 2026-10-26 with source=STANDBY and /setup SETUP_INACTIVE).
+    _bis_ap='hostapd|dnsmasq|nodogsplash'
+    [ -z "${_bis:-}" ] && _bis_ap='hostapd|udhcpd|dnsmasq|nodogsplash'
+    if ps 2>/dev/null | grep -E "$_bis_ap" | grep -qv grep; then
         return 0
     fi
     return 1
@@ -4755,13 +4783,20 @@ redirect_lan_ip() {
         [ -d "/sys/class/net/$_rif" ] || continue
         _rip=$(ip -4 addr show "$_rif" 2>/dev/null | sed -n 's/.*inet \([0-9][0-9.]*\).*/\1/p' | head -1)
         case "$_rip" in
-            ""|0.0.0.0|127.0.0.1|192.168.1.1|192.0.2.1|169.254.*) ;;
+            192.168.1.1)
+                # The setup gateway, unless the firmware says it is not in
+                # setup: then a router handed it out (setup_gateway_is_lan_addr).
+                if setup_gateway_is_lan_addr; then printf '%s|%s' "$_rif" "$_rip"; return 0; fi ;;
+            ""|0.0.0.0|127.0.0.1|192.0.2.1|169.254.*) ;;
             *) printf '%s|%s' "$_rif" "$_rip"; return 0 ;;
         esac
     done
     _rip=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | sed -n 's/.*ipAddress="\([0-9][0-9.]*\)".*/\1/p' | head -1)
     case "$_rip" in
-        ""|0.0.0.0|127.0.0.1|192.168.1.1|192.0.2.1|169.254.*) return 1 ;;
+        192.168.1.1)
+            setup_gateway_is_lan_addr || return 1
+            printf 'eth0|%s' "$_rip"; return 0 ;;
+        ""|0.0.0.0|127.0.0.1|192.0.2.1|169.254.*) return 1 ;;
         *) printf 'eth0|%s' "$_rip"; return 0 ;;
     esac
 }
@@ -4868,7 +4903,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent box_in_setup iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip setup_gateway_is_lan_addr current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent box_in_setup iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done

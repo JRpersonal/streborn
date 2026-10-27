@@ -109,6 +109,34 @@ for p in udhcpd dnsmasq nodogsplash; do
     box_in_setup; check "$p running means setup" 0 $?
 done
 
+# A Series-I ST20 runs udhcpd for its usb0 service port all the time. While the
+# firmware answers with a normal source, that must not read as setup, or the
+# speaker is never rescued (2026-10-26). The AP daemons still count.
+USB_DHCP_PS="$NORMAL_PS
+  790 root     udhcpd -S /etc/udhcpd.conf"
+set_processes "$USB_DHCP_PS"
+set_now_playing '<nowPlaying deviceID="X" source="STANDBY"></nowPlaying>'
+box_in_setup; check "the usb0 udhcpd on a standby speaker is not setup" 1 $?
+set_now_playing ''
+box_in_setup; check "udhcpd with no firmware answer still means setup" 0 $?
+set_processes "$SETUP_PS"
+set_now_playing '<nowPlaying deviceID="X" source="STANDBY"></nowPlaying>'
+box_in_setup; check "hostapd counts even when the firmware answers" 0 $?
+
+# ---- 192.168.1.1: the setup gateway, or an address a router handed out ------
+
+eval "$(extract setup_gateway_is_lan_addr)"
+eval "$(extract is_real_sta_addr)"
+
+set_now_playing '<nowPlaying deviceID="X" source="STANDBY"></nowPlaying>'
+is_real_sta_addr 192.168.1.1; check "192.168.1.1 on a speaker out of setup is a lease" 0 $?
+set_now_playing '<nowPlaying deviceID="X" source="SETUP"></nowPlaying>'
+is_real_sta_addr 192.168.1.1; check "192.168.1.1 during setup is the AP gateway" 1 $?
+set_now_playing ''
+is_real_sta_addr 192.168.1.1; check "192.168.1.1 with no firmware answer stays the gateway" 1 $?
+is_real_sta_addr 192.168.1.20; check "another 192.168.1.x address is a lease" 0 $?
+is_real_sta_addr 169.254.3.4; check "a link-local address is no lease" 1 $?
+
 # grep -v grep: the grep that does the looking must not match itself, or every
 # speaker on earth reads as being in setup and nothing is ever rescued.
 set_processes "$NORMAL_PS"
