@@ -780,7 +780,8 @@ function paint() {
   }
   W.root.classList.toggle('is-missing', missing);
   // A refusal that is not a failure (setup.css tones the classic red down).
-  W.root.classList.toggle('is-calm', W.step === 'install' && ['update-finishing', 'str-running'].includes(W.installKind));
+  // The classic words travel along to Confirm and stay calm there too.
+  W.root.classList.toggle('is-calm', (W.step === 'install' || W.step === 'confirm') && ['update-finishing', 'str-running'].includes(W.installKind));
   if (W.step === 'confirm') {
     const cm = { status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '' };
     setHTML('w2ConfirmBody', confirmHTML(cm));

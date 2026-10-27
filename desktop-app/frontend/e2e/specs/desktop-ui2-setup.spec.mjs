@@ -570,6 +570,8 @@ test.describe('UI 2.0 setup wizard', () => {
       for (let i = 0; i < 12; i++) await page.clock.runFor(30_000);
       await expect(page.locator('#w2ConfirmBody [role="alert"]')).toContainText(W('confirm.failedHead', { name }));
       await stepState(page, 'confirm', 'failed');
+      // The classic "update still finishing" words below stay calm here too.
+      await expect(page.locator('#ui2SetupWizard')).toHaveClass(/\bis-calm\b/);
       await expect(page.getByRole('button', { name: W('confirm.recheckLabel', { name }) })).toBeVisible();
       await expect(page.getByRole('button', { name: W('confirm.another') })).toBeVisible();
       await page.getByRole('button', { name: W('confirm.backInstallLabel', { name }) }).click();
