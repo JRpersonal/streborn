@@ -624,7 +624,7 @@ func TestPhoneCardOnlyThisSpeakerIsUnambiguous(t *testing.T) {
 	for _, want := range []string{
 		"if (onlyThis && mode === 'plan') rows = rows.filter(function(sp){ return sp.self; });",
 		"fill(onlyThis && fleet() ? T.sfOneBtn : T.suInstall, st.latest)",
-		"else if (onlyThis && fleet() && st.available) show(T.sfOneNote);",
+		"else if (onlyThis && fleet() && st.available) show(T.sfOneNote + (suGroupNoteDue() ? ' ' + T.suGrpNote : ''));",
 		// Once this speaker is through, the card offers the rest again.
 		// A speaker that went quiet mid-update keeps the choice (#1502).
 		"if (onlyThis && st && !lostSince && st.state !== 'failed' &&",
