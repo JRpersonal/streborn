@@ -98,10 +98,11 @@ test.describe('empty row 2', () => {
     const box = await tile.boundingBox();
     const save = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/box/save-playing');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    // Held until the save goes out (about a second), then let go.
     await page.mouse.down();
-    await page.waitForTimeout(1300);
+    const req = await save;
     await page.mouse.up();
-    expect((await save).postDataJSON()).toEqual({ slot: 9 });
+    expect(req.postDataJSON()).toEqual({ slot: 9 });
     await expect(page.locator('#holdNote')).toHaveText('Saved to key 3 · 2×');
   });
 

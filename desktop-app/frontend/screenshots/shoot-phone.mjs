@@ -79,7 +79,7 @@ async function drive(page, view) {
     await page.evaluate(() => window.scrollTo(0, 0));
   } else if (view === 'phone-keys-row2-empty') {
     await page.click('#presetRowSw button[data-row="2"]');
-    await page.waitForSelector('#presets .grid-note.row2', { timeout: 9000 });
+    await page.waitForSelector('#row2Hint:not([hidden])', { timeout: 9000 });
     await page.evaluate(() => window.scrollTo(0, 0));
   } else if (view === 'phone-keys-row2-playing') {
     // Row 1 with the playing dot on 2x first, as a twin shot.
