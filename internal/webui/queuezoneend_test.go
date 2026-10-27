@@ -71,15 +71,21 @@ func TestQueueWatchInterval(t *testing.T) {
 // zoneMasterBox plays one track like a zone master: the position climbs one
 // box second (tick) per box second from start, freezes at total, and one box
 // second after the end of the file the box reports STANDBY (firmware
-// EVT_STANDBY).
+// EVT_STANDBY). Once it has been handed the next track (handedNext) it plays
+// that one instead, the way the real box does: the standby belongs to a file
+// nobody followed up.
 type zoneMasterBox struct {
-	mu    sync.Mutex
-	start time.Time
-	total time.Duration
-	tick  time.Duration
+	mu         sync.Mutex
+	start      time.Time
+	total      time.Duration
+	tick       time.Duration
+	handedNext func() bool
 }
 
 func (b *zoneMasterBox) poll() (string, time.Duration, time.Duration, bool) {
+	if b.handedNext != nil && b.handedNext() {
+		return "PLAY_STATE", 0, 5 * time.Minute, false
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	since := time.Since(b.start)
@@ -111,7 +117,7 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 	// Audio starts half a second after the push, as on a real box. The file ends
 	// at about 10.5 s and the standby lands at about 11.5 s: with the plain 4 s
 	// poll the watcher sees pos 7 at 8 s and then the standby at 12 s.
-	box := &zoneMasterBox{start: time.Now().Add(sec / 2), total: trackLen, tick: sec}
+	box := &zoneMasterBox{total: trackLen, tick: sec}
 	s, _ := newPlayTestServer(t)
 	s.queueTiming = scaleQueueTiming(scale)
 	s.queueInZoneFn = func() bool { return true }
@@ -122,6 +128,18 @@ func TestAZoneMasterAdvancesBeforeItsEndOfFileStandby(t *testing.T) {
 		{URL: "http://192.0.2.10:50002/2.m4a", Title: "02 Second", Mime: "audio/mp4", Duration: 5 * time.Minute},
 	}, 0, false, repeatOff)
 	s.setQueueTiming(trackLen)
+	// The box's clock starts at the push the watcher times the track from, not
+	// at a time.Now() taken before the server was built: the watcher judges the
+	// end by time since the push, so every millisecond of setup between the two
+	// moved the simulated standby that much closer to the end the watcher
+	// waits for, and a slow setup on a loaded machine lost the race on paper.
+	s.queueMu.Lock()
+	pushedAt := s.queueTrackStart
+	s.queueMu.Unlock()
+	box.mu.Lock()
+	box.start = pushedAt.Add(sec / 2)
+	box.mu.Unlock()
+	box.handedNext = func() bool { return s.queue.snapshot().Pos >= 1 }
 	s.ensureWatcher()
 	t.Cleanup(s.cancelWatcher)
 
