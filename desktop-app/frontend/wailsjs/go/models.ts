@@ -171,6 +171,7 @@ export namespace main {
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
 	    groupKeyError?: string;
+	    groupKeyErrorKind?: string;
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
 	    staleFolderKeySlot?: string;
@@ -212,6 +213,7 @@ export namespace main {
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.groupKeyError = source["groupKeyError"];
+	        this.groupKeyErrorKind = source["groupKeyErrorKind"];
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
 	        this.staleFolderKeySlot = source["staleFolderKeySlot"];
