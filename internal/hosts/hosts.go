@@ -80,10 +80,20 @@ func DefaultEntries() []Entry {
 	// compiled into IoT (amqmidtcohfms, same on ST10, ST30 and Portable on
 	// 27.0.6); the second one was reported from a speaker that registered
 	// before the shutdown.
-	return []Entry{
+	return append([]Entry{
 		{IP: "127.0.0.1", Host: "streaming.bose.com"},
 		{IP: "127.0.0.1", Host: "content.api.bose.io"},
 		{IP: "127.0.0.1", Host: "7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com"},
+	}, IoTEntries()...)
+}
+
+// IoTEntries are the Alexa client's hosts on their own. No STR listener has to
+// be up for them, so the agent applies them the moment it starts: IoT sends its
+// first registration about a minute after boot, a few seconds after the agent
+// starts and before marge is ready for the full block (seen on an ST10: agent
+// start +7 s, full block +7.6 s, registration +7 s).
+func IoTEntries() []Entry {
+	return []Entry{
 		{IP: "127.0.0.1", Host: "voice.api.bose.io"},
 		{IP: "127.0.0.1", Host: "amqmidtcohfms.iot.us-east-1.amazonaws.com"},
 		{IP: "127.0.0.1", Host: "a2bhvr9c4wn4ya.iot.us-east-1.amazonaws.com"},
