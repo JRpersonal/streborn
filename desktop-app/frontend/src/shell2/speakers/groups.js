@@ -301,6 +301,10 @@ function arrange(root) {
   // Playing together now: what plays, and Ungroup.
   put('current', root.querySelector('#zoneCurrent'));
   put('actions-now', btn(root.querySelector('#zoneUngroup'), 'secondary'));
+  // Ungroup only while a group plays: without one the classic button just
+  // answers "nothing to ungroup". It comes back with the next live group.
+  const ungroup = root.querySelector('#zoneUngroup');
+  if (ungroup) ungroup.classList.toggle('ui2-grp-off', !grp.querySelector('.ui2-grp-card[data-kind="zone"]'));
 
   // The stereo pair editor.
   if (stereoCtl) {

@@ -97,6 +97,8 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     // Nothing plays together in this network: the section says so, no card.
     await expect(sec(page, 'now').locator('.ui2-grp-card')).toHaveCount(0);
     await expect(page.locator('#zoneCurrent')).toHaveText('No group right now.');
+    // With no group playing there is nothing to ungroup (test 10 has the button back).
+    await expect(page.locator('#zoneUngroup')).toBeHidden();
     // The editors name what they would do.
     await expect(page.locator('#ui2GrpPairEditorTitle')).toHaveText('Change Terrace');
     await expect(page.locator('#stereoCreate')).toHaveText(`Pair ${TL.friendlyName} (left) and ${TR.friendlyName} (right)`);
