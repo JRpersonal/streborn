@@ -26,6 +26,27 @@ func TestPairRole(t *testing.T) {
 	}
 }
 
+func TestStereoFollowerFrom(t *testing.T) {
+	if got := stereoFollowerFrom("", "", false, "112233445566", false, ""); got.Follower {
+		t.Error("no pair record: reported a follower")
+	}
+	if got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "", false, "192.0.2.10"); got.Follower {
+		t.Error("own id unknown: reported a follower instead of leaving the play alone")
+	}
+	if got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "aabbccddeeff", true, "192.0.2.10"); got.Follower {
+		t.Error("the master was told it follows its own pair")
+	}
+	// The agent's id is still the MAC guess, which matches neither role: the
+	// master must not be refused as its own follower.
+	if got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "A0B1C2D3E4F5", false, "192.0.2.10"); got.Follower {
+		t.Error("an own id the pair does not list was taken as the follower")
+	}
+	got := stereoFollowerFrom("AABBCCDDEEFF", "Pair", true, "112233445566", true, "192.0.2.10")
+	if !got.Follower || got.MasterID != "AABBCCDDEEFF" || got.MasterIP != "192.0.2.10" || got.PairName != "Pair" || got.SelfID != "112233445566" {
+		t.Errorf("follower = %+v, want the master's id, address, the pair name and the own id", got)
+	}
+}
+
 func TestPresetWriteGroupFollowerNilIsStandalone(t *testing.T) {
 	old := groupFollowerFn.Load()
 	t.Cleanup(func() { groupFollowerFn.Store(old) })

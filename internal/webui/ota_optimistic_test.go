@@ -23,6 +23,7 @@ func TestWriteBinaryAtomicOptimisticDespitePessimisticStatfs(t *testing.T) {
 	orig := nandHasRoom
 	nandHasRoom = func(string, int64) bool { return false }
 	defer func() { nandHasRoom = orig }()
+	pinDeferredRoute(t)
 
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "streborn-armv7l")
@@ -111,6 +112,7 @@ func TestWriteBinaryAtomicCleansTruncatedTempOnFailure(t *testing.T) {
 	orig := nandHasRoom
 	nandHasRoom = func(string, int64) bool { return false }
 	defer func() { nandHasRoom = orig }()
+	pinDeferredRoute(t)
 
 	dir := t.TempDir()
 	// Make dst's parent read-only so the tmp write fails after the gate said

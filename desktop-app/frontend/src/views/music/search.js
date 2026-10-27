@@ -30,6 +30,9 @@ import {
   isStreamURL,
   normalizeDetailedSearch,
   relaxedHintVisible,
+  searchModePressed,
+  stationBitrateCell,
+  stationCheckDot,
   syntheticStationForURL,
 } from '../../searchflow.js';
 import { saveSearchCountry, state } from '../../state.js';
@@ -67,6 +70,18 @@ export function updateFilterIndicators() {
   if (lang) lang.classList.toggle('has-filter', !!lang.value);
 }
 
+// syncSearchModeButtons marks the Top / Favorites / Pandora button of the list
+// on screen as pressed (class plus aria-pressed, #1521) and releases the others.
+export function syncSearchModeButtons() {
+  const pressed = searchModePressed(state.searchLastMode, state.searchListOpen);
+  for (const [id, on] of Object.entries(pressed)) {
+    const b = $(id);
+    if (!b) continue;
+    b.classList.toggle('mode-pressed', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+
 // doRefilter re-runs the last action (Top or Search) with the new
 // filters but keeps the existing query string.
 export function doRefilter() {
@@ -87,6 +102,8 @@ async function doSearch() {
   const q = $('searchQ').value.trim();
   state.searchLastQuery = q;
   state.searchLastMode = q ? 'search' : 'top';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   state.searchOffset = 0;
   if (!q) { return doTop(); }
   // A pasted stream URL is not a name query: look it up in the directory
@@ -136,6 +153,8 @@ async function searchByStreamURL(url) {
 async function doTop() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   state.searchLastMode = 'top';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   state.searchOffset = 0;
   await fetchSearchPage(false);
 }
@@ -557,6 +576,7 @@ export function renderSearchResults() {
   syncUi2RadioTabs();
   // The Pandora list lives in the same panel but is not a directory result:
   // a filter change while it shows must not repaint radio stations over it.
+  syncSearchModeButtons();
   if (state.searchLastMode === 'pandora') { renderPandoraStations(); return; }
   const res = $('searchResults');
   // Optional client-side Bose compatibility filter: drop HTTPS
@@ -639,9 +659,8 @@ export function renderSearchResults() {
   }
   res.innerHTML = hintHtml + list.map((s, i) => {
     const flag = flagFromCC(s.countrycode);
-    const okClass = s.lastcheckok ? 'ok' : 'bad';
+    const dot = stationCheckDot(s);
     const webUrl = (typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) ? s.homepage : '';
-    const okTitle = s.lastcheckok ? t('search.checkOk') : t('search.checkBad');
     let trend = '';
     if (s.clicktrend > 0) trend = `<span class="result-trend" title="${escapeAttr(t('search.trendUp', { n: s.clicktrend }))}">&#9650;</span>`;
     else if (s.clicktrend < 0) trend = `<span class="result-trend up-down" title="${escapeAttr(t('search.trendDown', { n: s.clicktrend }))}">&#9660;</span>`;
@@ -656,16 +675,18 @@ export function renderSearchResults() {
       metaBits.push(escapeHtml(t('search.playUrlCard')));
     } else {
       if (countryDe) metaBits.push(escapeHtml(countryDe));
-      // Always show a bitrate cell. Many radio-browser stations report no
-      // bitrate (e.g. "Sunshine Live - Die 90er"); show "- kbit/s" rather
-      // than hiding the field so the column stays consistent.
-      metaBits.push(s.bitrate ? `${s.bitrate} kbit/s` : '- kbit/s');
+      // No known bitrate, no cell: a "- kbit/s" placeholder on every such row
+      // read as a broken stream (discussion #1521).
+      const br = stationBitrateCell(s);
+      if (br) metaBits.push(br);
       if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
     }
 
-    // The online dot reflects radio-browser's last check; a synthetic card
-    // was never checked, so it gets no dot rather than a false "broken" red.
-    const okDot = s.synthetic ? '' : `<span class="result-online-dot ${okClass}" title="${escapeAttr(okTitle)}"></span>`;
+    // The online dot reflects radio-browser's last check. Anything it never
+    // checked (the synthetic card, a library item or own station in Favorites)
+    // gets no dot rather than a false "not reachable" red (#1521).
+    const okTitle = dot === 'ok' ? t('search.checkOk') : t('search.checkBad');
+    const okDot = dot ? `<span class="result-online-dot ${dot}" title="${escapeAttr(okTitle)}"></span>` : '';
 
     const logo = `
       <div class="result-logo">
@@ -750,6 +771,7 @@ export function mountSearch() {
 
   $('searchBtn').onclick = () => doSearch();
   $('topBtn').onclick = () => doTop();
+  syncSearchModeButtons();
 
   // Pointer for the users who want a station that radio-browser.info does not
   // list yet: they can add it there and it shows up here after a while. The

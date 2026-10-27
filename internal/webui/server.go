@@ -131,7 +131,9 @@ type Server struct {
 	renderer           *upnp.Renderer
 	blockfall          blockfallMusic
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
-	sleep       sleepState
+	sleep sleepState
+	// bassKey runs the presses of a key bound to a bass step. See basskey.go.
+	bassKey     bassKeyState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -143,8 +145,8 @@ type Server struct {
 	// groupKeys holds the saved groups bound to the remote's thumbs keys
 	// (#863). nil when not wired; the endpoint then reports unavailable.
 	groupKeys *groupkeys.Store
-	// keyActions holds the built-in actions bound to the thumbs keys (the
-	// sleep timer). nil when not wired; the endpoint then reports
+	// keyActions holds the built-in actions bound to the thumbs keys and AUX
+	// (the sleep timer, snooze, the bass steps). nil when not wired; the endpoint then reports
 	// unavailable. See keyactions_http.go.
 	keyActions *keyactions.Store
 	// alarms holds the alarm clock document, and alarmState what has already
@@ -249,6 +251,12 @@ type Server struct {
 	// verdict afterwards (rate-limited, free when nothing is recorded). nil
 	// falls back to pairPartnerGone.
 	pairPartnerRecheck func() (ip, deviceID string)
+	// stereoFollowerFn reports whether this speaker follows a stereo pair and
+	// who leads it (see WithStereoFollower). nil: never a follower.
+	stereoFollowerFn func() StereoFollower
+	// cachedPeersFn lists the agent's known peers from its cache, without an
+	// mDNS browse (see WithCachedPeers). nil: no peer names on refusals.
+	cachedPeersFn func() []PeerLink
 	// stereoSeen is the pair document from the last /getGroup read that got an
 	// answer (nil when the speaker answered with no pair), and when it was read.
 	// The play path checks it instead of asking the firmware again: that read
@@ -495,6 +503,14 @@ type Server struct {
 	// a key saved or recalled without a stored length can still end on time
 	// (#978). See librarykey.go.
 	trackLens trackLengths
+	// lengthHints holds estimated lengths of upcoming queue tracks that were
+	// too uncertain to hand to the box as a length (an MP3 bitrate x size
+	// guess). The queue watcher only uses them to confirm an end sooner. See
+	// queueprearm.go.
+	lengthHints trackLengths
+	// prearmProbeFn overrides the MP3 length read of prearmNextLength for
+	// tests. nil means the real range reads against the media server.
+	prearmProbeFn func(ctx context.Context, url string) (d time.Duration, exact bool)
 	// fileProbes caches, per URL, whether a custom URL preset is a finite
 	// file the speaker can be handed directly (#830). See customfile.go.
 	fileProbes fileProbes
@@ -711,6 +727,10 @@ type Server struct {
 	// nowPlayingFn. nil means "", which the queue watcher reads as unknown,
 	// never as another source.
 	nowPlayingSourceFn func() string
+	// nowPlayingLocationFn scripts the now_playing ContentItem location next
+	// to nowPlayingFn. nil means "", which the single-track end watch reads as
+	// unknown, never as another file.
+	nowPlayingLocationFn func() string
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).
@@ -728,6 +748,12 @@ type Server struct {
 	sleepStandbyFn    func(ctx context.Context, host string) error
 	goSleepPushFn     func(f func())
 	sleepPushPeerFn   func(ctx context.Context, ip string, msg sleepPeerMsg) error
+	// The bass key seams (basskey.go): the speaker's bass read and write, and
+	// the panel notice. Same reason as above, the real calls reach the
+	// firmware on its fixed port. nil means production.
+	bassReadFn       func(ctx context.Context) (boxapi.Bass, error)
+	bassWriteFn      func(ctx context.Context, v int) error
+	showBassNoticeFn func(level, lo, hi int)
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
@@ -873,6 +899,18 @@ type Server struct {
 	// queueFolder.key, which Library and Recently-played match on (#1217).
 	// Guarded by queueMu.
 	queueSavedSlot int
+	// badURL is the evidence that the queue track pushed last cannot be
+	// fetched (the stream proxy's 404/410, the box's AUDIO_ERROR_BAD_URL), the
+	// addresses a media server just answered 404/410 for, and the last folder
+	// key found pointing at files the server no longer has (queuebadurl.go).
+	// It has its own lock, taken alone.
+	badURL queueBadURLState
+	// trackProbeFn replaces the one-shot HTTP probe of a track address in
+	// tests (queuebadurl.go). nil = a real GET.
+	trackProbeFn func(ctx context.Context, url string) (code int, err error)
+	// staleKeyNoticeFn replaces the speaker-display notice of a stale folder
+	// key in tests. nil = oled.Show.
+	staleKeyNoticeFn func(slot int)
 	// queueEp is the play-queue episode running right now and queueEpPast the
 	// last few that ended, with the reason each one ended (#960). queueLogMu
 	// guards both; it is taken alone, never while boxCmdMu or queueMu is held,
@@ -955,6 +993,12 @@ type lastPlayInfo struct {
 	// preset, which includes its power-on resume), not one STR started. See
 	// NoteNativeLastPlay and userPlayedSince.
 	fromBox bool
+	// homepage, codec and bitrate are what the app or the phone page knew of
+	// a radio station when it started it (setLastPlayMeta). A hold that saves
+	// what plays stores them with the station, so the key matches what the
+	// "+" button would have stored (#1467). Empty for every other play.
+	homepage, codec string
+	bitrate         int
 }
 
 // resumeMaxAge bounds how stale the last station may be and still come back on a

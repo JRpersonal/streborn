@@ -7,6 +7,7 @@ import { t } from '../../i18n/index.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
+import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
 import { titleSwapOffered } from '../../titleswap.js';
 import { applyPositionReading, resetProgress } from '../../trackprogress.js';
 import {
@@ -50,6 +51,12 @@ export async function queueAction(fn) {
   setTimeout(refreshStatus, 600);
 }
 
+// queueKeyFields joins the queue fields that pick the lit key besides the card,
+// so refreshQueue can tell when they changed.
+function queueKeyFields(q) {
+  return q ? [q.slot, q.card_slot, q.slot_checked].join('|') : '';
+}
+
 // refreshQueue pulls the box's current queue state and folds it into state.queue,
 // then repaints the transport controls. Called from the status poll so it shares
 // the existing cadence. Best-effort: a failed read just leaves the controls as is.
@@ -60,7 +67,7 @@ export async function refreshQueue() {
     const q = await GetQueue(box.host, box.port);
     if (state.currentBox !== box) return; // box switched mid-fetch
     const before = queueSlotCard(state.queue);
-    const beforeSlot = state.queue ? state.queue.slot : undefined;
+    const beforeKeys = queueKeyFields(state.queue);
     // A reply that does not name the key just clicked yet (sent before the
     // agent started the queue) must not wipe the optimistic card (#978).
     const pending = Date.now() < (state.optimisticUntil || 0) ? state.optimisticQueueSlot : null;
@@ -68,9 +75,11 @@ export async function refreshQueue() {
     // A library-album key lights up from the queue card, which arrives here and
     // not with the status poll: repaint the keys when it changes, or the
     // highlight waited for an unrelated status change (#1190). Same for the
-    // key a playing folder was just saved on (#1217).
-    const slotNow = state.queue ? state.queue.slot : undefined;
-    if ((queueSlotCard(state.queue) !== before || slotNow !== beforeSlot) && state.presets.length > 0) renderPresets();
+    // key a playing folder was just saved on (#1217), and for the agent's
+    // checked card key: when a key was given another folder only card_slot
+    // changes, card and slot stay as they were (#1525).
+    const keysChanged = queueKeyFields(state.queue) !== beforeKeys;
+    if ((queueSlotCard(state.queue) !== before || keysChanged) && state.presets.length > 0) renderPresets();
     // The agent's preset store was written (a save on this app, the phone, or
     // a hold on the speaker's own key): re-read the presets now instead of on
     // the slow recheck timer, which kept a held key unshown for up to 15 s
@@ -221,12 +230,11 @@ export function renderNowPlayingBar() {
   // AirPlay2, etc. depending on the speaker (#122).
   const srcU = src.toUpperCase();
   const isAirplay = srcU.includes('AIRPLAY');
-  let stateLabel, stateClass;
-  if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
-  else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
-  else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
-  else if (srcU === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
-  else { stateLabel = ''; stateClass = 'idle'; }
+  // An awake speaker on a selected station in STOP_STATE is "stopped", not a
+  // label-less line that read as paused (#1526, stoppedstate.js).
+  const label = nowStateLabel(ps, srcU);
+  let stateLabel = label.key ? t(label.key) : '';
+  let stateClass = label.cls;
   // LOCAL is what a Cinemate calls the very same analogue input, so it gets
   // the same line rather than falling through to the generic "some source is
   // active" case, which is why a speaker playing through it showed nothing
@@ -266,8 +274,9 @@ export function renderNowPlayingBar() {
   const brLabel = (isStreamSrc && measuredStream && state.nowBitrate > 0) ? ` <small class="now-bitrate">${state.nowBitrate} kbit/s</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
-  // by colour alone (accessibility): play arrow normally, pause bars when paused.
-  const stateGlyph = stoppedOrPaused(ps) ? '&#9208;' : '&#9205;';
+  // by colour alone (accessibility): play arrow normally, pause bars when
+  // paused, a stop square when stopped (#1526).
+  const stateGlyph = nowStateGlyph(ps, srcU);
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"

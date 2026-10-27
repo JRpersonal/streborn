@@ -41,6 +41,12 @@ func TestAccountProductReadsTheProductThroughTheToken(t *testing.T) {
 			_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
 			return
 		}
+		if r.URL.Path == "/status" {
+			// Who the token belongs to: an answer is only taken as this
+			// process's plan when the same account is logged in on both sides.
+			_, _ = w.Write([]byte(`{"username":"accountalpha0001"}`))
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer engine.Close()
@@ -131,6 +137,12 @@ func TestAccountProductStaysUnknownWhenAnythingGoesWrong(t *testing.T) {
 			}
 			// And "unknown" must never read as "not Premium": a Premium user
 			// must not be told their key cannot play because a call failed.
+			// Mark the plan as just asked for, so PremiumRequired does not start
+			// its background read: that read would still be writing to the
+			// test's temp dir while the test removes it.
+			m.mu.Lock()
+			m.productTriedAt = time.Now()
+			m.mu.Unlock()
 			if m.PremiumRequired() {
 				t.Error("an unknown product type was treated as a free account")
 			}

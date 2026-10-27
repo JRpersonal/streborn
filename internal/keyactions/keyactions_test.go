@@ -142,3 +142,56 @@ func TestNilStoreIsSafe(t *testing.T) {
 		t.Error("nil store should report nothing")
 	}
 }
+
+// The bass steps (discussion #1494) go on the thumbs keys, in any spelling
+// the app sends, and normalise to their canonical names.
+func TestValidateAcceptsBassOnThumbs(t *testing.T) {
+	d := Document{Keys: map[string]string{"thumbsUp": " BassUp ", "thumbsDown": "bassdown"}}
+	if err := d.Validate(nil); err != nil {
+		t.Fatalf("bass steps on the thumbs keys refused: %v", err)
+	}
+	if d.Keys["thumbsUp"] != ActionBassUp || d.Keys["thumbsDown"] != ActionBassDown {
+		t.Errorf("bass steps not normalised: %v", d.Keys)
+	}
+	for _, a := range []string{ActionBassUp, ActionBassDown} {
+		if !AllowedOn(a, KeyThumbsUp) || !AllowedOn(a, KeyThumbsDown) {
+			t.Errorf("%s not allowed on a thumbs key", a)
+		}
+		if !IsBass(a) {
+			t.Errorf("IsBass(%q) = false", a)
+		}
+	}
+	if IsBass(ActionSleep) || IsBass(ActionSnooze) {
+		t.Error("IsBass true for a non-bass action")
+	}
+}
+
+// AUX always switches the input, so a bass step there would switch away from
+// whatever plays; the transport keys keep their firmware reaction.
+func TestValidateRejectsBassOffThumbs(t *testing.T) {
+	for _, a := range []string{ActionBassUp, ActionBassDown} {
+		if AllowedOn(a, KeyAux) {
+			t.Errorf("AllowedOn lets %s onto AUX", a)
+		}
+		d := Document{Keys: map[string]string{"aux": a}}
+		err := d.Validate(nil)
+		if err == nil || !strings.Contains(err.Error(), "bass") {
+			t.Errorf("%s on AUX: err %v, want a refusal naming the bass step", a, err)
+		}
+		for _, key := range []string{"prev", "next", "playPause", "preset1"} {
+			d := Document{Keys: map[string]string{key: a}}
+			if err := d.Validate(nil); err == nil {
+				t.Errorf("%s on %q accepted", a, key)
+			}
+		}
+	}
+}
+
+// A bass step and a group exclude each other on one key, like the others.
+func TestValidateRejectsBassOnAGroupKey(t *testing.T) {
+	bound := func(k string) bool { return k == "thumbsUp" }
+	d := Document{Keys: map[string]string{"thumbsUp": ActionBassUp}}
+	if err := d.Validate(bound); err == nil || !strings.Contains(err.Error(), "group") {
+		t.Errorf("bass step on a group key: err %v, want a group conflict", err)
+	}
+}

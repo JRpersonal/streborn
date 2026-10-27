@@ -144,8 +144,17 @@ const (
 // Only the frozen-position net teaches: the wall-clock net needs a length to
 // fire, and a known one is not relearned. One store write covers every
 // matching key, and nothing is written when no key needs it.
-func (s *Server) learnSingleTrackLength(tr singleTrack, net endNet, lastPos time.Duration) {
+//
+// ranAhead says the box reported a position for this play further than it can
+// have played: that position is not the song's length (a FRITZ!Box MP3 froze
+// at 120 s sixteen seconds in), so nothing is learned from it.
+func (s *Server) learnSingleTrackLength(tr singleTrack, net endNet, lastPos time.Duration, ranAhead bool) {
 	if net != endNetFrozen || tr.dur > 0 || tr.boxURL == "" {
+		return
+	}
+	if ranAhead {
+		s.logger.Info("single track: not learning a length from where it froze, the position ran ahead of real time",
+			"title", tr.title, "posSec", int(lastPos.Seconds()))
 		return
 	}
 	if lastPos < learnedLengthMin || lastPos > learnedLengthMax {

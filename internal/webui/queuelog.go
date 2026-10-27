@@ -34,6 +34,10 @@ type queueEpisode struct {
 	Auto   int `json:"autoAdvances"`
 	Manual int `json:"manualSkips"`
 	Failed int `json:"failedPushes"`
+	// BadURL counts tracks ended at once because the media server answered
+	// 404/410 for them or the box reported AUDIO_ERROR_BAD_URL
+	// (queuebadurl.go).
+	BadURL int `json:"badUrlSkips,omitempty"`
 	// EndReason is empty while the episode is still running.
 	EndReason string `json:"endReason,omitempty"`
 	EndedAt   string `json:"endedAt,omitempty"`
@@ -105,6 +109,15 @@ func (s *Server) noteQueuePushFailed() {
 	s.queueLogMu.Unlock()
 }
 
+// noteQueueBadURLSkip counts a track the media server could not deliver.
+func (s *Server) noteQueueBadURLSkip() {
+	s.queueLogMu.Lock()
+	if ep := s.queueEp; ep != nil {
+		ep.BadURL++
+	}
+	s.queueLogMu.Unlock()
+}
+
 // noteQueueEnd closes the open episode and says why. Calling it with no episode
 // open is a no-op, which is the normal case: most of the stopQueue callers fire
 // on a plain radio play with no queue anywhere near it.
@@ -143,6 +156,8 @@ func (s *Server) closeEpisodeLocked(reason string) {
 // running right now (if any) and the last few that ended, with the reason each
 // one ended.
 func (s *Server) QueueForensics() any {
+	// Read before queueLogMu, which is taken alone.
+	sk := s.staleFolderKeyForensics()
 	s.queueLogMu.Lock()
 	defer s.queueLogMu.Unlock()
 	out := map[string]any{
@@ -152,6 +167,11 @@ func (s *Server) QueueForensics() any {
 		live := *ep
 		live.RanForSec = int(time.Since(ep.startedAt).Seconds())
 		out["current"] = live
+	}
+	// The last folder key found pointing at files the media server no longer
+	// has, so a bundle shows it next to the episode it ended.
+	if sk != nil {
+		out["staleFolderKey"] = sk
 	}
 	return out
 }

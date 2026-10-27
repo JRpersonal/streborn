@@ -8,6 +8,7 @@ import { sourceAccountFrom } from '../../nowsourceaccount.js';
 import { acceptSpotifyReply, recallSettled, snapshotFromReply } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
 import { statusTickScope } from '../../statusrefreshscope.js';
+import { keepsLiveTitle } from '../../stoppedstate.js';
 import { renderShellSpeakers } from '../../shell2/mount.js';
 import { nextStuckBuffering } from '../../stuckbuffering.js';
 import {
@@ -240,6 +241,14 @@ export async function refreshStatus() {
     // syncCurrentNowPlaying), because refreshStatus returns early on any non-box
     // view, so an "if (state.view === 'recent')" branch here was unreachable.
     state.nowPlayState = ps;
+    // A stopped speaker keeps no song title. The agent already answers "" once
+    // the stream has ended, but the poll that would fetch that only runs while
+    // something plays, so a title from a two-second resume after a quiet wake
+    // stayed on the line for as long as the group stayed up (#1526).
+    if (!keepsLiveTitle(ps) && (state.nowTitle || state.nowTitleSwapped)) {
+      state.nowTitle = '';
+      state.nowTitleSwapped = false;
+    }
     state.nowLocation = newLoc;
     state.nowName = newName;
     // Live Spotify track metadata for the now-playing line: poll the agent's

@@ -1,11 +1,49 @@
-// The key-action helpers (sleep timer, snooze), checked without a DOM, plus
-// the i18n parity of every string the key map and the group-keys section
-// show for them.
+// The key-action helpers (sleep timer, snooze, bass steps), checked without a
+// DOM, plus the i18n parity of every string the key map and the group-keys
+// section show for them.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  normalizeKeyActions, sleepOn, snoozeOn, actionOn, withSleep, withAction, actionAllowed, sleepBlockedBy,
+  normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withSleep, withAction, actionAllowed, sleepBlockedBy,
 } from './keyactions.js';
+
+describe('bass steps', () => {
+  it('go on the thumbs keys only, like the agent allows', () => {
+    for (const a of ['bassUp', 'bassDown']) {
+      expect(actionAllowed(a, 'thumbsUp')).toBe(true);
+      expect(actionAllowed(a, 'thumbsDown')).toBe(true);
+      expect(actionAllowed(a, 'aux')).toBe(false);
+      expect(actionAllowed(a, 'next')).toBe(false);
+    }
+  });
+  it('normalise to their canonical spelling, and never land on AUX', () => {
+    expect(normalizeKeyActions({ keys: { thumbsUp: 'bassup', thumbsDown: ' BassDown ', aux: 'bassUp' } }))
+      .toEqual({ keys: { thumbsUp: 'bassUp', thumbsDown: 'bassDown' } });
+  });
+  it('are told apart from the other actions', () => {
+    let d = withAction({ keys: {} }, 'thumbsUp', 'bassUp');
+    d = withAction(d, 'thumbsDown', 'bassDown');
+    expect(d).toEqual({ keys: { thumbsUp: 'bassUp', thumbsDown: 'bassDown' } });
+    expect(bassOn(d, 'thumbsUp')).toBe(true);
+    expect(actionOn(d, 'thumbsDown')).toBe('bassDown');
+    expect(sleepOn(d, 'thumbsUp') || snoozeOn(d, 'thumbsUp')).toBe(false);
+    expect(isBassAction('sleep')).toBe(false);
+    expect(withAction(d, 'aux', 'bassDown')).toEqual(d);
+  });
+});
+
+describe('key action select', () => {
+  // The settings view's "Built-in action" select offers every action the
+  // agent knows; the options are the view's own markup.
+  const src = readFileSync(new URL('./views/settings/advanced.js', import.meta.url), 'utf8');
+  it('offers the bass steps next to the sleep timer and snooze', () => {
+    for (const v of ['sleep', 'snooze', 'bassUp', 'bassDown']) {
+      expect(src, `option ${v}`).toContain(`<option value="${v}"`);
+    }
+    expect(src).toContain("t('settingsView.bassKeyUpLabel')");
+    expect(src).toContain("t('settingsView.bassKeyDownLabel')");
+  });
+});
 
 describe('normalizeKeyActions', () => {
   it('accepts nothing, an older agent, and a full document', () => {
@@ -84,9 +122,12 @@ describe('key action i18n', () => {
     || k === 'settingsView.webhookSleepKeyNote' || k === 'settingsView.webhookRemoteLegendSleep'
     || k === 'settingsView.webhookSnoozeKeyNote' || k === 'settingsView.webhookRemoteLegendSnooze'
     || k === 'multiroom.groupKeysKeySleep' || k === 'multiroom.groupKeysSleepHint'
-    || k === 'multiroom.groupKeysKeySnooze' || k === 'multiroom.groupKeysSnoozeHint');
+    || k === 'multiroom.groupKeysKeySnooze' || k === 'multiroom.groupKeysSnoozeHint'
+    || k.startsWith('settingsView.bassKey')
+    || k === 'settingsView.webhookBassKeyNote' || k === 'settingsView.webhookRemoteLegendBass'
+    || k === 'multiroom.groupKeysKeyBass' || k === 'multiroom.groupKeysBassHint');
   it('has the strings in English at all', () => {
-    expect(keys.length).toBe(21);
+    expect(keys.length).toBe(32);
   });
   it('is present and translated in every bundle, placeholders intact', () => {
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join('|');

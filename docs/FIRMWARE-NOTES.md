@@ -754,6 +754,13 @@ It does not ask STR; it talks to the cloud, which is marge:
    list up). A UPNP item is refused by the firmware itself before any
    request (`AddPreset - failed due to invalid SourceID`).
 
+The same refusal follows every UPnP-form `ws AddPreset` STR writes (a Spotify
+key, any slot without the native radio form): one `invalid SourceID` plus one
+`UpdatePresetFailureCB` per such slot, while the key itself is stored and stays
+listed. It is the account copy failing, not the key. The reconcile matches a
+sweep's refusals to its UPnP-form writes by count and only treats the rest as
+a real refusal (`cmd/agent/presetwriteverify.go`, field bundles 2026-10-26).
+
 The answer goes through the firmware's preset parser (`GetPresetsCB`), so
 it must be ONE `<preset id="N">` element in the dialect of the preset list.
 Anything else fails the gesture: the generic account document produced
@@ -926,3 +933,6 @@ agent's own PATH differs again, so a probe shell can never tell you what
   firmware STR runs on top of.
 - [`MODEL-VARIANTS.md`](./MODEL-VARIANTS.md) for the per-variant
   fingerprint table.
+- [`FIRMWARE-UPDATE.md`](./FIRMWARE-UPDATE.md) for bringing a speaker
+  to firmware 27.0.6, including the step-by-step route for very old
+  firmware.

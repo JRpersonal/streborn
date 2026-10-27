@@ -470,3 +470,47 @@ func (s *Server) GroupPair() (masterDeviceID, name string, ok bool) {
 	}
 	return s.group.MasterDeviceID, s.group.Name, true
 }
+
+// GroupPairHasMember reports whether the stored pair document names deviceID
+// in one of its two roles. The play path's follower check needs it because the
+// agent's own id can be a guess (derived from a network card's MAC until the
+// speaker's /info answers, and on an ST10 that guess is known to be wrong): a
+// master holding a wrong guess would read "master != self" and be refused as
+// its own follower. Only an id the pair actually lists may decide the role.
+func (s *Server) GroupPairHasMember(deviceID string) bool {
+	id := strings.TrimSpace(deviceID)
+	if id == "" {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !describesPair(s.group) {
+		return false
+	}
+	for _, r := range s.group.Roles {
+		if strings.EqualFold(strings.TrimSpace(r.DeviceID), id) {
+			return true
+		}
+	}
+	return false
+}
+
+// GroupPairMasterIP is the LAN address the stored pair document names for its
+// master, from the master's own <groupRole> entry. Empty when no pair is
+// stored or the document carries no address for the master (a firmware post
+// leaves ipAddress out). The play path hands it to the phone page so the
+// following half can link to the half that actually plays.
+func (s *Server) GroupPairMasterIP() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !describesPair(s.group) {
+		return ""
+	}
+	master := strings.TrimSpace(s.group.MasterDeviceID)
+	for _, r := range s.group.Roles {
+		if strings.EqualFold(strings.TrimSpace(r.DeviceID), master) {
+			return strings.TrimSpace(r.IP)
+		}
+	}
+	return ""
+}

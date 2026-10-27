@@ -241,9 +241,10 @@ export function installDesktopMock({ scenario, demo }) {
     TrackPosition: () => ({ positionSec: 0, durationSec: 0 }),
     SpotifyNowPlaying: () => ({ bitrate: 0, track: '', artist: '', cover: '', context: '', account: '', premiumRequired: false, audioKeyRefused: false, product: '' }),
     ConsumeWingetUpgradeFailure: () => ({ failed: false, exitCode: '', command: '' }),
-    // The remote key map in Speaker settings: AUX and thumbs down snooze a
-    // ringing alarm (#1415), so the app-snooze shot shows the Z markers.
-    GetKeyActions: () => ({ keys: { aux: 'snooze', thumbsDown: 'snooze' } }),
+    // The remote key map in Speaker settings: AUX snoozes a ringing alarm
+    // (#1415), so the app-snooze shot shows the Z marker, and the thumbs keys
+    // move the bass up and down (#1494), so app-basskey shows the B markers.
+    GetKeyActions: () => ({ keys: { aux: 'snooze', thumbsUp: 'bassUp', thumbsDown: 'bassDown' } }),
     GetClockDisplay: () => 'true',
     SetClockDisplay: () => undefined,
     SetDisplayClock: () => undefined,

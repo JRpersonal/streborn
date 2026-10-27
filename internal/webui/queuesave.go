@@ -85,7 +85,8 @@ func queuePresetFromLive(slot int, items []queueItem, shuffle bool, folder recen
 // A queue that was itself recalled from a folder key ("queue:slot:N") is that
 // key's preset, so it is copied whole onto slot: a re-save of a recalled
 // folder then recalls exactly like the original, whatever the original was
-// saved with.
+// saved with. Only while that key still holds the tracks that play, though: a
+// key given another folder meanwhile handed that folder on instead (#1525).
 func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	if s.queue == nil {
 		return presets.Preset{}, false
@@ -99,7 +100,7 @@ func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	s.queueMu.Unlock()
 	if rest, ok := strings.CutPrefix(folder.key, "queue:slot:"); ok && s.presets != nil {
 		if n, err := strconv.Atoi(rest); err == nil {
-			if src, have := s.presets.Get(n); have && src.Type == "queue" && len(src.Items) > 0 {
+			if src, have := s.presets.Get(n); have && presetHoldsQueueTracks(src, items) {
 				src.Slot = slot
 				return src, true
 			}
@@ -108,7 +109,26 @@ func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	if folder.source == "" {
 		folder.source = s.queueFolderServerName(folder.key)
 	}
-	return queuePresetFromLive(slot, items, shuffle, folder)
+	p, ok := queuePresetFromLive(slot, items, shuffle, folder)
+	if ok {
+		p.Folder = s.queueFolderRef(folder.key)
+	}
+	return p, ok
+}
+
+// queueFolderRef is the server and container a folder card key
+// ("queue:<udn>:<container>") names, stored with a folder key so a later heal
+// can browse the folder again by id (presets.FolderRef). nil for any other
+// card, a key's own "queue:slot:N" included.
+func (s *Server) queueFolderRef(key string) *presets.FolderRef {
+	if !strings.HasPrefix(key, queueCardKeyPrefix) || queueSlotCardRe.MatchString(key) {
+		return nil
+	}
+	udn, container, ok := s.splitQueueCardKey(key)
+	if !ok || udn == "" || container == "" {
+		return nil
+	}
+	return &presets.FolderRef{ServerUDN: udn, ContainerID: container}
 }
 
 // queueFolderServerName resolves the media-server name for a folder card key

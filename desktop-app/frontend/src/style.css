@@ -1445,6 +1445,8 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .status-bar.status-buf { border-left: 3px solid var(--signal-yellow); padding-left: 10px; }
 .status-bar.status-err { border-left: 3px solid var(--signal-red); padding-left: 10px; color: var(--signal-red); }
 .status-bar.status-idle { border-left: 3px solid var(--c-border); padding-left: 10px; }
+/* Stopped or paused is not "now playing": the line drops the green (#1526). */
+.status-bar.status-idle .now { color: var(--c-muted); }
 /* Per-station "artist and title are the wrong way round" switch, right under
    the now-playing line it corrects. Only shown while a radio title plays. */
 .title-swap-row { display: flex; align-items: center; gap: 6px; margin: -4px 0 10px 13px; font-size: 12px; color: var(--c-muted); cursor: pointer; }
@@ -1895,6 +1897,10 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }
+/* The Top list / Favorites / Pandora button of the list on screen looks pressed
+   (#1521), in the same brand tint as an active chip so it reads in every theme. */
+.btn.mode-pressed,
+.btn.mode-pressed:hover { background: var(--brand-bg); color: var(--brand-text); border-color: var(--brand); }
 /* "Add a missing station" (discussion #619): the guide used to be a whole
    paragraph at 0.7 opacity below the load-more button, and the users who needed
    it never saw it. Now one quiet line sits above the result list and unfolds
@@ -2715,6 +2721,9 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
   line-height: 1.5;
 }
 .fw-update-banner li { margin-bottom: 3px; }
+/* The FAQ tip under the guide is a line of its own: as an inline box right
+   after the guide its line box reached up over the guide's last link. */
+.fw-update-banner > small { display: block; margin-top: 6px; }
 .fw-update-howto { margin-top: 6px; }
 /* Firmware update guide (fwguide.js): the download buttons and the update page
    address sit on their own line under their step, and wrap on a narrow window. */
@@ -2723,6 +2732,39 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .fw-guide .fw-guide-addr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
 .fw-guide .fw-guide-addr code { user-select: all; word-break: break-all; background: rgba(0,0,0,0.25); padding: 1px 5px; border-radius: 3px; }
 .fw-guide .fw-guide-usb { margin-top: 6px; }
+/* The banner is a dark amber box in every theme; the light theme gets a light
+   amber one so the firmware guide and ladder stay readable on white. */
+html.a11y-light .fw-update-banner { background: #fbf4dc; border-color: #c9b26a; color: #3b3317; }
+html.a11y-light .fw-update-banner b { color: #6b4700; }
+/* Firmware ladder (fwladder.js): the step list with its source and tested
+   badges, the warnings, and the stick picker. */
+.fw-ladder .fw-ladder-steps { margin: 6px 0 4px 18px; padding: 0; }
+.fw-ladder .fw-ladder-steps li { margin-bottom: 4px; }
+.fw-ladder .fw-ladder-badge {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 6px;
+  margin-inline-start: 4px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+.fw-ladder .fw-ladder-tested { color: var(--signal-green); }
+.fw-ladder .fw-ladder-warn {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-inline-start: 3px solid #f8c66c;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+html.a11y-light .fw-ladder .fw-ladder-warn { background: rgba(255, 255, 255, 0.6); border-inline-start-color: #b07a00; }
+.fw-ladder .fw-ladder-note { margin: 4px 0; font-style: italic; }
+.fw-ladder .fw-ladder-ok { color: var(--signal-green); }
+.fw-ladder .fw-ladder-ack { display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; }
+.fw-ladder select { max-width: 100%; }
+.fw-ladder .fw-ladder-status { min-height: 1.4em; }
 .update-info { background: var(--brand-bg); border: 1px solid var(--brand-border); color: var(--brand-text); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; }
 .update-info small { color: var(--brand-text-mid); }
 /* The row holds a message, one or two buttons and a progress line. Without
@@ -3409,6 +3451,11 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .rc-key.rc-snooze { stroke: #4fc3c7; stroke-width: 2.5; stroke-dasharray: 2 3; }
 .rc-zmark { fill: #4fc3c7; font-size: 11px; font-weight: 700; pointer-events: none; }
 .rc-legend-snooze { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; border: 2px dotted #4fc3c7; }
+/* A thumbs key that moves the bass (#1494): rose dotted frame and a small
+   "B" in the corner. */
+.rc-key.rc-bass { stroke: #f28fb1; stroke-width: 2.5; stroke-dasharray: 2 3; }
+.rc-bmark { fill: #f28fb1; font-size: 11px; font-weight: 700; pointer-events: none; }
+.rc-legend-bass { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; border: 2px dotted #f28fb1; }
 .key-action-row { gap: 8px; align-items: center; }
 .key-action-row select { flex: 1; }
 

@@ -35,7 +35,8 @@ func scaleQueueTiming(scale int) *queueTiming {
 	for _, d := range []*time.Duration{
 		&qt.pollInterval, &qt.endEpsilon, &qt.timerMargin, &qt.stallTimeout,
 		&qt.frozenTimeout, &qt.overrunSlack, &qt.ownEndSlack,
-		&qt.zoneEndWindow, &qt.zoneEndPoll,
+		&qt.zoneEndWindow, &qt.zoneEndPoll, &qt.aheadSlack, &qt.hintSlack,
+		&qt.alignEpsilon, &qt.badURLSettle,
 	} {
 		*d /= time.Duration(scale)
 	}

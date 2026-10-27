@@ -92,3 +92,40 @@ export function addStationGuideFold(autoOpened, mode, fetchedCount) {
 export function relaxedHintVisible(relaxed, dismissed, mode) {
   return !!relaxed && !dismissed && (mode === 'search' || mode === 'top');
 }
+
+// stationBitrateCell is the bitrate cell of a station row's meta line, or ''
+// for no cell at all. Most radio-browser stations, and every library item or
+// own station in Favorites, report no bitrate; the "- kbit/s" placeholder that
+// used to stand in for it read as a broken stream on every such row
+// (discussion #1521), so an unknown rate now simply leaves the cell out.
+export function stationBitrateCell(s) {
+  const br = Number(s && s.bitrate);
+  return br > 0 ? `${br} kbit/s` : '';
+}
+
+// stationCheckDot is the reachability dot of a station row: 'ok' (green),
+// 'bad' (red) or '' for no dot. Only a radio-browser station carries a check
+// result (lastcheckok 0/1); a library playlist or album starred from Recently
+// played, an own station and the synthetic play-this-URL card were never
+// checked by anyone, and a red "not reachable" dot on them was a false alarm
+// (discussion #1521). A directory entry radio-browser has not checked yet
+// (lastchecktime empty or all zeros) has no result either.
+export function stationCheckDot(s) {
+  if (!s || s.synthetic || !s.stationuuid) return '';
+  const ok = s.lastcheckok;
+  if (typeof ok !== 'boolean' && ok !== 0 && ok !== 1) return '';
+  if (typeof s.lastchecktime === 'string') {
+    const t = s.lastchecktime.trim();
+    if (t === '' || t.startsWith('0000-00-00')) return '';
+  }
+  return ok ? 'ok' : 'bad';
+}
+
+// searchModePressed says which of the list buttons above the results looks
+// pressed: the one whose list is on screen, none while the panel is empty or
+// shows a search (discussion #1521: nothing said which list was open). The
+// plain Search button has no pressed state; the query box shows that one.
+export function searchModePressed(mode, listOpen) {
+  const on = (m) => !!listOpen && mode === m;
+  return { topBtn: on('top'), favModeBtn: on('favorites'), pandoraModeBtn: on('pandora') };
+}

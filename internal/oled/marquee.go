@@ -139,7 +139,9 @@ func (tc *trackCache) render(a trackAnim, step int, buf []byte) {
 	if len(tc.f.lines) == 0 {
 		return
 	}
-	canvas(buf).bars(1+tc.dx, tc.f.barsBottom+tc.dy, a)
+	if !tc.f.noBars {
+		canvas(buf).bars(1+tc.dx, tc.f.barsBottom+tc.dy, a)
+	}
 	for i, strip := range tc.strips {
 		tc.f.lines[i].blit(buf, strip, step, tc.dx, tc.dy)
 	}

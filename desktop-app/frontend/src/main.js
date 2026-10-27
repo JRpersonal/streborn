@@ -382,6 +382,7 @@ import {
   resetNowPlaying,
   showSlotPicker,
   syncFavRemovals,
+  syncSearchModeButtons,
   syncVolumeScopeOnZoneLive,
   toggleFav,
   toggleGroupMember,
@@ -1991,10 +1992,12 @@ function applyBoxList(list) {
         // the grid empty on a routine re-discovery. loadPresets refreshes them in
         // place (and now keeps them on a transient empty read).
         state.searchResults = [];
+        state.searchListOpen = false;
         state.nowLocation = '';
         state.nowPlayState = '';
         state.presetErrors = {};
         $('searchResults').innerHTML = '';
+        syncSearchModeButtons();
         loadPresets();
         refreshStatus();
         checkBoxUpdate();
@@ -2438,6 +2441,11 @@ function checkBoxIssueBanner() {
   // key error: it happened, it was refused, and nothing visible said so, so
   // the key appeared to snap back to the old station on its own.
   const holdErr = boxes.filter(b => b && b.holdRefusedSource);
+  // A folder key whose saved file addresses the media server no longer has
+  // (a USB stick swapped on a router's media server: the server answers,
+  // every old path is 404). The agent names the key until it is saved again,
+  // which is the only cure, so the banner says exactly that.
+  const staleKey = boxes.filter(b => b && b.staleFolderKeySlot);
   // A speaker that cannot reach the internet while the LAN works (the agent's
   // passive verdict, nointernet.js). Not dismissible: every station fails on
   // it, and the fix is on the router, which only a sentence can point at.
@@ -2475,6 +2483,12 @@ function checkBoxIssueBanner() {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t(holdRefusedBannerKey(holdErr[0].holdRefusedSource), {
       name: names, slot: holdErr[0].holdRefusedSlot || '?',
+    })));
+  }
+  if (staleKey.length) {
+    const names = staleKey.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.staleFolderKeyBanner', {
+      name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }
@@ -3491,6 +3505,9 @@ function otaStuck(box) {
 function noteOTAResult(box, result) {
   if (!result) return;
   if (result.confirmed) { clearOTAStuck(box); return; }
+  // The speaker changed its address mid-update: the update most likely
+  // worked, so this is no evidence of an update that cannot stick.
+  if (result.unmet === 'address-changed') return;
   if (result.outcome === 'timeout' || result.outcome === 'agentGone' || result.outcome === 'boxInSetup') {
     noteOTAFailure(box, result.verdict || '');
   }
@@ -3916,6 +3933,11 @@ async function runSingleBoxUpdate(targetBox) {
       // running on it. That has one exact fix and the user can do it in ten
       // seconds, so say it plainly instead of "took longer than expected".
       showToast(t('update.agentGoneToast', { name: getBoxLabel(targetBox) }));
+    } else if (result && result.unmet === 'address-changed') {
+      // Another speaker answers at this one's old address: the router gave
+      // this speaker a new one while it restarted. "Check power / network"
+      // would send the owner looking for a fault that is not there.
+      showToast(t('update.addressChangedToast', { name: getBoxLabel(targetBox) }));
     } else {
       // Timed out. The Go sequence has already journaled the verdict,
       // classified why, retried the one class of failure a retry actually
@@ -3945,8 +3967,19 @@ async function runSingleBoxUpdate(targetBox) {
       // This also overrides a discovery-stickiness cache entry that might
       // still carry the pre-OTA version for a box that just rebooted.
       if (confirmed) {
+        // Only onto the record of the speaker that answered. A speaker that
+        // got a new address while it restarted is confirmed at that new
+        // address, and its old one may belong to another speaker by now:
+        // patching that record would show the other speaker as up to date.
+        const ids = (o) => [o && o.deviceID, o && o.boxDeviceID]
+          .filter(Boolean).map((s) => String(s).toLowerCase());
+        const answered = ids(confirmedVer);
+        const sameSpeaker = (b) => {
+          const have = ids(b);
+          return !answered.length || !have.length || have.some((s) => answered.includes(s));
+        };
         const patchVer = (b) => {
-          if (b && b.host === targetBox.host) {
+          if (b && b.host === targetBox.host && sameSpeaker(b)) {
             if (confirmedVer.version) b.version = confirmedVer.version;
             if (confirmedVer.build) b.build = confirmedVer.build;
           }
@@ -4349,6 +4382,7 @@ async function runUpdateAllBoxes(onStart) {
     else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
     else if (outcome === 'agentGone') setRow(b.host, { phaseText: t('updateAll.phase.agentGone'), barClass: 'ua-failed' });
     else if (outcome === 'boxInSetup') setRow(b.host, { phaseText: t('updateAll.phase.boxInSetup'), pct: 100, barClass: 'ua-defer' });
+    else if (d.unmet === 'address-changed') setRow(b.host, { phaseText: t('updateAll.phase.addressChanged'), pct: 100, barClass: 'ua-defer' });
     else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     const r = rowState.get(b.host); if (r) r.outcome = outcome;
     renderSummary();

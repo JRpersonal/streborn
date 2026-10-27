@@ -159,6 +159,11 @@ type Server struct {
 	// stream whose title it had (no successor within titleEndGrace). Used to
 	// take the track off the speaker's panel.
 	onTitleEnd func()
+	// onUpstreamFailure, if set, is called with every terminal upstream
+	// failure: the upstream URL and its HTTP status (0 for a network-level
+	// failure). The play queue ends a track the media server answers 404/410
+	// for at once. Set once at wiring time.
+	onUpstreamFailure func(url string, code int)
 
 	// gapMu guards lastByteToBox, the wall-clock time the proxy last handed
 	// audio bytes to the box on the current stream. The reconnect loops read it

@@ -213,3 +213,58 @@ func TestSleepKeySkipsWebhook(t *testing.T) {
 		t.Fatalf("webhook target hit %d times, want exactly 1 (the other key)", got)
 	}
 }
+
+// A thumbs key bound to a bass step hands the press to the bass handler with
+// its action, and the key's webhook does not fire.
+func TestKeyEventBassKeyStepsBass(t *testing.T) {
+	var hits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	wh, err := webhooks.Load(filepath.Join(t.TempDir(), "webhooks.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wh.Set(webhooks.Config{Buttons: map[string]webhooks.Trigger{
+		webhooks.KeyThumbsUp:   {Action: webhooks.Action{Enabled: true, URL: target.URL + "/up"}},
+		webhooks.KeyThumbsDown: {Action: webhooks.Action{Enabled: true, URL: target.URL + "/down"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	ka, err := keyactions.Load(filepath.Join(t.TempDir(), "key-actions.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ka.Set(keyactions.Document{Keys: map[string]string{
+		keyactions.KeyThumbsUp:   keyactions.ActionBassUp,
+		keyactions.KeyThumbsDown: keyactions.ActionBassDown,
+	}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 4)
+	h := &presetWsHandler{logger: slog.Default(), webhooks: wh, keyActions: ka, onBassKey: func(a string) { got <- a }}
+	press := func(name string) {
+		h.OnKeyEvent(boxlog.KeyEvent{Key: boxlog.KeyNumber(name), Name: name, Producer: boxlog.ProducerIRRemote,
+			State: boxlog.StatePressed, Origin: boxlog.OriginTrace, At: time.Now()})
+	}
+	for _, tc := range []struct{ key, want string }{
+		{"THUMBS_UP", keyactions.ActionBassUp},
+		{"THUMBS_DOWN", keyactions.ActionBassDown},
+	} {
+		press(tc.key)
+		select {
+		case a := <-got:
+			if a != tc.want {
+				t.Errorf("%s ran %q, want %q", tc.key, a, tc.want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s never reached the bass handler", tc.key)
+		}
+	}
+	time.Sleep(150 * time.Millisecond)
+	if n := hits.Load(); n != 0 {
+		t.Errorf("webhook fired %d times on a key that carries a bass step", n)
+	}
+}

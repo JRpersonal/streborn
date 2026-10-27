@@ -260,8 +260,8 @@ func (s *Server) handleDisplaySleep(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleKeyActions serves the per-speaker key-action document: which key
-// carries the sleep timer (thumbs keys) or snooze (thumbs keys and AUX, see
-// alarmsnooze.go).
+// carries the sleep timer or a bass step (thumbs keys, basskey.go) or snooze
+// (thumbs keys and AUX, see alarmsnooze.go).
 //
 //	GET /api/keyactions -> {"keys":{"thumbsUp":"sleep","aux":"snooze"}}
 //	PUT /api/keyactions <- the whole document; validated, then persisted

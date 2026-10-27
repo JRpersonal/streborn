@@ -986,6 +986,10 @@ func (a *agent) buildWebui() error {
 	alarmStore, alarmState, zonesStore, mediaServerStore := a.alarmStore, a.alarmState, a.zonesStore, a.mediaServerStore
 	recentStore, regionRes, bootReason := a.recentStore, a.regionRes, a.bootReason
 
+	// An agent killed mid-update leaves its RAM stage in tmpfs, where it
+	// would hold ~18 MB of unswappable memory until the next update.
+	webui.CleanStaleRAMStages(logger.With("comp", "webui"))
+
 	webuiSrv := webui.New(a.flags.webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(a.flags.boxHost),
@@ -1002,9 +1006,18 @@ func (a *agent) buildWebui() error {
 		webui.WithSpotify(&spotifyEngine{m: spotifyMgr}),
 		webui.WithPairPartnerGone(margeSrv.PartnerUnreachable),
 		webui.WithPairPartnerRecheck(margeSrv.RecheckPartner),
+		// The following half of a healthy pair accepts a UPnP push and plays
+		// nothing, so the play paths ask the role before they wake the box.
+		// Same pair record and self id as the preset reconcile and Spotify.
+		webui.WithStereoFollower(func() webui.StereoFollower {
+			master, name, ok := margeSrv.GroupPair()
+			self := margeSrv.DeviceID()
+			return stereoFollowerFrom(master, name, ok, self, margeSrv.GroupPairHasMember(self), margeSrv.GroupPairMasterIP())
+		}),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
 		}),
+		webui.WithCachedPeers(cachedPeerLinks),
 		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
 			seedPeers(seeds, logger.With("comp", "peers"))
 		}),
@@ -1117,6 +1130,9 @@ func (a *agent) buildWebui() error {
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
 	// last-failure timestamps tell a wedged box apart from a failing station.
 	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)
+	// A queue track the media server answers 404/410 for ends at once, and
+	// the idle re-push leaves that address alone (webui queuebadurl.go).
+	streamProxySrv.SetOnUpstreamFailure(webuiSrv.NoteStreamUpstreamFailure)
 	webuiSrv.SetOnlineFn(streamProxySrv.BoxHasOutbound)
 	// The last message the speaker display showed, and the last decision
 	// taken, so a "my speaker said X" report can be matched.
@@ -1223,6 +1239,8 @@ func (a *agent) buildBoxLink() error {
 		// it wins over a webhook on the same key, like a group.
 		keyActions: keyActionsStore,
 		onSleepKey: webuiSrv.SleepKeyPress,
+		// A thumbs key that carries a bass step moves the bass up or down.
+		onBassKey: webuiSrv.BassKeyPress,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).
@@ -1311,6 +1329,9 @@ func (a *agent) buildBoxLink() error {
 		// loginErrorSinceFn tells whether a 1036 landed for this recall.
 		slotFetchLive:     streamProxySrv.SlotFetchLive,
 		loginErrorSinceFn: webuiSrv.LoginErrorSince,
+		// A folder key found stale for this press already showed its own
+		// "save the folder again" notice; no generic FAILED after it.
+		staleFolderKeySince: webuiSrv.StaleFolderKeySince,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -1444,6 +1465,7 @@ func (a *agent) buildBoxLink() error {
 		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist)
 	})
 	refreshTrackPanel = webuiSrv.RefreshTrackPanel
+	notePanelSource = webuiSrv.PanelSourceChanged
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", a.flags.boxHost),
@@ -1465,7 +1487,7 @@ func (a *agent) buildBoxLink() error {
 	a.boxLog.Store(keyTrace)
 	// The firmware refuses a preset write in its syslog only; the reconcile
 	// reads this to tell a refused rewrite from a landed one.
-	setPresetRefusalSource(keyTrace.LastPresetRefusal)
+	setPresetRefusalSource(keyTrace.PresetRefusalsSince)
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
 	// The ring is also the wake signal: the firmware logs every standby and
 	// wake transition there, so a speaker switched on at the box or by its
@@ -1660,6 +1682,9 @@ func (a *agent) buildBoxLink() error {
 	// STR self-heals instead of thrashing the box into a wedge (rate-limited in
 	// boxws).
 	wsClient.SetOnLoginError(webuiSrv.NoteBoxLoginError)
+	// AUDIO_ERROR_BAD_URL ends the queue track the box could not fetch at
+	// once instead of after the watcher's stall timeout (queuebadurl.go).
+	wsClient.SetOnBoxError(webuiSrv.NoteBoxError)
 	// The box registering a source is what decides whether presets can be stored
 	// natively, so re-probe the moment it says the list changed instead of waiting
 	// for the cached verdict to expire.
@@ -1904,6 +1929,20 @@ func (a *agent) wireLate() error {
 				return ann.Reannounce(r)
 			},
 		}, logger)
+	})
+	// Let the version endpoint say which speaker answers, so the desktop app
+	// can tell this speaker from another that got its address while both
+	// restarted. The startup id stands in until the announcer is up, so the
+	// very first answer after a boot already carries it.
+	webui.SetAgentIdentityFn(func() (string, string) {
+		a.mdnsMu.Lock()
+		ann := a.mdnsAnnouncer
+		a.mdnsMu.Unlock()
+		id := ann.DeviceID()
+		if id == "" {
+			id = deviceID
+		}
+		return id, ann.BoxDeviceID()
 	})
 	webuiSrv.SetBoxNameFn(func() (string, string) {
 		a.mdnsMu.Lock()

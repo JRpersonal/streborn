@@ -107,6 +107,9 @@ type FirmwareInfo struct {
 	Variant    string `json:"variant"`    // taigan / rhino / ...
 	Latest     string `json:"latest"`     // the latest Bose firmware (27.0.6)
 	Outdated   bool   `json:"outdated"`   // older than Latest
+	// DeviceID is the speaker's own ID from /info, used by the firmware
+	// ladder to resume per speaker. Empty when the speaker does not say.
+	DeviceID string `json:"deviceId"`
 }
 
 // GetBoxFirmware reads :8090/info from a speaker (the Bose REST API, bound on
@@ -131,6 +134,7 @@ func (a *App) GetBoxFirmware(host string) (FirmwareInfo, error) {
 		return fi, err
 	}
 	var info struct {
+		DeviceID   string `xml:"deviceID,attr"`
 		Type       string `xml:"type"`
 		ModuleType string `xml:"moduleType"`
 		Variant    string `xml:"variant"`
@@ -146,6 +150,7 @@ func (a *App) GetBoxFirmware(host string) (FirmwareInfo, error) {
 	fi.Model = strings.TrimSpace(info.Type)
 	fi.ModuleType = strings.TrimSpace(info.ModuleType)
 	fi.Variant = strings.TrimSpace(info.Variant)
+	fi.DeviceID = strings.TrimSpace(info.DeviceID)
 	// The SCM component carries the main firmware; fall back to the first
 	// component that reports a version.
 	ver := ""

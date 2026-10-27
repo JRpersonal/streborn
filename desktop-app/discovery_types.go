@@ -199,6 +199,11 @@ type BoxInfo struct {
 	// key looks as if it snapped back by itself.
 	HoldRefusedSource string `json:"holdRefusedSource,omitempty"`
 	HoldRefusedSlot   string `json:"holdRefusedSlot,omitempty"`
+	// StaleFolderKeySlot is the folder key whose saved file addresses the
+	// media server no longer has (the server answers, every path is 404,
+	// typically after a USB stick swap on a router's media server), empty
+	// when none. Only saving the folder on the key again cures it.
+	StaleFolderKeySlot string `json:"staleFolderKeySlot,omitempty"`
 	// Storm1036 is true while the box rejects essentially every preset recall
 	// (Bose error 1036, "not logged in"). Nothing the user presses will play
 	// until the state clears, and the remedy people reach for on their own,

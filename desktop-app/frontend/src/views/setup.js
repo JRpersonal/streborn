@@ -40,6 +40,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // reuse them rather than duplicating.
 import { langOptionsHtml, wireCombobox } from './settings.js';
 import { firmwareGuideMount, firmwareGuideNeeded, wireFirmwareGuides } from '../fwguide.js';
+import { firmwareLadderDeps } from '../fwladderdeps.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
@@ -733,6 +734,21 @@ async function renderSetupAPPushPanel() {
       const pass = ($('apPushPass') || {}).value || '';
       const name = ($('apPushName') || {}).value || '';
       if (!ssid) { showError(t('setupAPPush.ssidEmpty')); return; }
+      // An empty password is right only for an open network. Anywhere else the
+      // speaker cannot join, stays in setup mode and never shows up, which is
+      // what a field report did on its first try. Ask, do not refuse.
+      if (!pass) {
+        const sendAnyway = await confirmWarn(
+          t('setupAPPush.emptyPassTitle'),
+          `<p>${escapeHtml(t('setupAPPush.emptyPassBody', { ssid }))}</p>`,
+          { confirmLabel: t('setupAPPush.emptyPassSend'), confirmClass: 'btn btn-secondary' },
+        );
+        if (!sendAnyway) {
+          const inp = $('apPushPass');
+          if (inp) inp.focus();
+          return;
+        }
+      }
       goBtn.disabled = true;
       const out = $('apPushOutput');
       if (out) out.innerHTML = `<div class="muted small">${escapeHtml(t('setupAPPush.pushing'))}</div>`;
@@ -1951,6 +1967,11 @@ const INSTALL_HELP_STEPS = {
   // the install stopped before touching it. The firmware guide renders above
   // this list; the one step is "update first, retrying only restarts it".
   'firmware-too-old': ['firmwareFirst', 'logs'],
+  // The speaker restarted under the running network install (the SSH session
+  // ended without an exit status). It comes back by itself, and pressing
+  // Install again repeats the same restart (an ST20, twice, 2026-10-26), so
+  // the steps say wait and send the logs, never retry, and name no stick.
+  'repair-box-restarted': ['repairRestarted', 'netLogs'],
 };
 
 // INSTALL_HELP_STEPS_NET is the OTA/network-install counterpart of the map
@@ -1973,6 +1994,7 @@ const INSTALL_HELP_STEPS_NET = {
   'control-unresponsive': ['netRetry', 'netLogs'],
   'stick-copy-failed': ['netRetry', 'netLogs'],
   'firmware-too-old': ['firmwareFirst', 'netLogs'],
+  'repair-box-restarted': ['repairRestarted', 'netLogs'],
 };
 const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'];
 
@@ -2020,6 +2042,7 @@ function wireOutdatedFirmwareLinks() {
     flash: FlashBoseFirmware,
     onProgress: (cb) => EventsOn('firmware:progress', cb),
     confirm: confirmWarn,
+    ladder: firmwareLadderDeps(),
   });
 }
 

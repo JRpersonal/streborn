@@ -209,11 +209,20 @@ func TestRecallResumeRetriesAreBounded(t *testing.T) {
 	if err := m.Play(context.Background(), "spotify:playlist:abc", PlayOptions{}); err != nil {
 		t.Fatalf("Play: %v", err)
 	}
+	// Wait for the retries rather than a fixed time: on a loaded CI runner the
+	// confirm window can run long. Then give it a moment more, to catch a retry
+	// beyond the bound.
+	resumes := func() int {
+		stuck.mu.Lock()
+		defer stuck.mu.Unlock()
+		return stuck.resumes
+	}
+	deadline := time.Now().Add(10 * recallConfirmWindow)
+	for resumes() < 1+recallResumeRetries && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
 	time.Sleep(recallConfirmWindow + 500*time.Millisecond)
-	stuck.mu.Lock()
-	n := stuck.resumes
-	stuck.mu.Unlock()
-	if n != 1+recallResumeRetries {
+	if n := resumes(); n != 1+recallResumeRetries {
 		t.Fatalf("%d resumes, want %d", n, 1+recallResumeRetries)
 	}
 }

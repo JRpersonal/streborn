@@ -17,7 +17,10 @@ func TestPhoneRemoteLightsTheQueueKey(t *testing.T) {
 	}
 	fn := indexHTML[start:]
 	fn = fn[:strings.Index(fn, "\n}\n")]
-	for _, want := range []string{"q.active", `/^queue:slot:(\d+)$/`, "type === 'queue'"} {
+	// #1525: an agent that checks the card's key says so, and the page then
+	// trusts card_slot and slot over the card string, which keeps naming a key
+	// that was given another folder.
+	for _, want := range []string{"q.active", `/^queue:slot:(\d+)$/`, "type === 'queue'", "q.slot_checked === true", "q.card_slot"} {
 		if !strings.Contains(fn, want) {
 			t.Errorf("queueSlot lost %q: it must only name a folder key of a running queue", want)
 		}

@@ -94,11 +94,14 @@ type presetWsHandler struct {
 	// key's webhook. nil-safe.
 	groupKeys *groupkeys.Store
 	// keyActions holds the built-in actions bound to the thumbs keys and AUX
-	// (the sleep timer, snooze). A physical press of a bound key runs its
+	// (the sleep timer, snooze, the bass steps). A physical press of a bound key runs its
 	// action instead of firing the key's webhook. nil-safe.
 	keyActions *keyactions.Store
 	// onSleepKey steps the sleep timer (webui.SleepKeyPress). nil-safe.
 	onSleepKey func()
+	// onBassKey moves the bass one step (webui.BassKeyPress), for a thumbs
+	// key bound to bassUp or bassDown. nil-safe.
+	onBassKey func(action string)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.
@@ -288,6 +291,11 @@ type presetWsHandler struct {
 	// recall verify does not trust a now-closed short slot pull as success while
 	// a login error is in flight for this recall. nil-safe.
 	loginErrorSinceFn func(t time.Time) bool
+	// staleFolderKeySince reports whether the folder key on slot was found
+	// pointing at files the media server no longer has at or after t
+	// (webui.Server.StaleFolderKeySince). That press already put its own,
+	// specific notice on the display. nil-safe.
+	staleFolderKeySince func(slot int, t time.Time) bool
 }
 
 // slotPulledSince reports whether the box is credibly playing THIS slot's
@@ -573,7 +581,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// before the screen comes back with the new station.
 	if oled.TrackShowing() {
 		showNotice(oled.PresetPlaying(slot, title))
-		go h.notePresetOutcome(ctx, seq, slot, title)
+		go h.notePresetOutcome(ctx, seq, pressAt, slot, title)
 	}
 	// The press is the user explicitly asking for playback: clear any stale
 	// deliberate-stop latch BEFORE the recall so a preceding (or spontaneous,
@@ -644,15 +652,23 @@ func (h *presetWsHandler) noteNativeRecentOnStart(ctx context.Context, seq uint6
 
 // presetOutcomeAfter is how long a preset press gets to bring sound before the
 // panel says it failed: past the recall's own verify and a slow station's
-// first buffer.
-const presetOutcomeAfter = 15 * time.Second
+// first buffer. A var so the tests can shorten it.
+var presetOutcomeAfter = 15 * time.Second
 
 // notePresetOutcome looks once, presetOutcomeAfter after a press that showed
-// its preset notice, whether the speaker plays. If a newer press came since,
-// that one answers for itself. If it does not play, the panel says so, so a
+// its preset notice, whether the press brought sound. If a newer press came
+// since, that one answers for itself. If it did not, the panel says so, so a
 // station that never started is not shown as if it had.
-func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slot int, title string) {
-	if h.playingNow == nil {
+//
+// "Not playing now" alone is not "the press failed": a Portable bundle
+// (2026-10-26) had a station play for ten seconds, the remote switch the
+// speaker off, and FAILED drawn on the panel of the speaker in standby. So
+// the notice stands down when the user switched the speaker off after the
+// press, when the speaker is in standby, and when the box pulled the slot's
+// stream for real. A firmware recents POST is NOT used: the firmware sends one
+// on every source change, before any audio, so it would hide a dead stream.
+func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, pressAt time.Time, slot int, title string) {
+	if h.playingNow == nil && h.sourceAndPlaying == nil {
 		return
 	}
 	select {
@@ -660,7 +676,13 @@ func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slo
 		return
 	case <-time.After(presetOutcomeAfter):
 	}
-	if h.pressSeq.Load() != seq || h.playingNow(ctx) {
+	if h.pressSeq.Load() != seq {
+		return
+	}
+	if reason := h.presetOutcomeStandDown(ctx, pressAt, slot); reason != "" {
+		if reason != "playing" {
+			h.logger.Info("preset press outcome: no failure notice", "slot", slot, "reason", reason)
+		}
 		return
 	}
 	if p, ok := h.store.Get(slot); ok && p.Name != "" {
@@ -668,6 +690,40 @@ func (h *presetWsHandler) notePresetOutcome(ctx context.Context, seq uint64, slo
 	}
 	h.logger.Info("preset press did not start playing, saying so on the display", "slot", slot, "name", title)
 	showNotice(oled.PresetFailed(slot, title))
+}
+
+// presetOutcomeStandDown answers why a preset press must not be called failed,
+// or "" when it did fail. The checks that cost nothing come first; the one
+// now_playing read comes last.
+func (h *presetWsHandler) presetOutcomeStandDown(ctx context.Context, pressAt time.Time, slot int) string {
+	if h.poweredOffSince(pressAt) {
+		return "switched off after the press"
+	}
+	if h.slotPulledSince(slot, pressAt) {
+		return "the speaker played the station's stream"
+	}
+	if h.staleFolderKeySince != nil && h.staleFolderKeySince(slot, pressAt) {
+		return "the folder key's files are gone, the display already said so"
+	}
+	if h.sourceAndPlaying != nil {
+		src, playing, ok := h.sourceAndPlaying(ctx)
+		switch {
+		case !ok:
+			// No answer is no evidence of a failure: say nothing rather than
+			// draw FAILED over a station that may well be playing.
+			return "speaker state unknown"
+		case src == "STANDBY":
+			// Never draw on the panel of a speaker in standby.
+			return "speaker in standby"
+		case playing:
+			return "playing"
+		}
+		return ""
+	}
+	if h.playingNow(ctx) {
+		return "playing"
+	}
+	return ""
 }
 
 // recallPreset is the slow half of a hardware preset press: the queue-preset
@@ -1036,7 +1092,7 @@ func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 		h.logger.Info("a thumbs key carries a saved group, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so no group was formed or dissolved")
 	}
 	if h.keyActions.Bound(keyactions.KeyThumbsUp) || h.keyActions.Bound(keyactions.KeyThumbsDown) {
-		h.logger.Info("a thumbs key carries a key action (sleep timer or snooze), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
+		h.logger.Info("a thumbs key carries a key action (sleep timer, snooze or a bass step), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
 	}
 	go func() {
 		src, _, status := h.nowPlayingSummary()

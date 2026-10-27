@@ -94,6 +94,23 @@ type Preset struct {
 	// is. Optional/additive: nil on every other type, and a store written
 	// before it simply has none.
 	Native *NativeItem `json:"native,omitempty"`
+	// Folder names the media-server folder a queue preset was saved from:
+	// the server's UDN and the folder's container id. The track URLs are
+	// absolute and carry the server's file paths, which a server may change
+	// under the key (a USB stick swapped on a router's media server: same
+	// server, every path new). The folder's id lets a later heal browse the
+	// folder again instead of only moving the host. Optional/additive: nil on
+	// every other type and on folder keys saved before this.
+	Folder *FolderRef `json:"folder,omitempty"`
+}
+
+// FolderRef identifies a media-server folder independently of its file
+// paths (Preset.Folder).
+type FolderRef struct {
+	// ServerUDN is the media server's UPnP UDN ("uuid:...").
+	ServerUDN string `json:"server_udn,omitempty"`
+	// ContainerID is the folder's ContentDirectory object id on that server.
+	ContainerID string `json:"container_id,omitempty"`
 }
 
 // TypeNative is the preset type for a music-service station the speaker plays
@@ -257,6 +274,7 @@ type rawPreset struct {
 	Repeat    bool         `json:"repeat"`
 	Items     []PresetItem `json:"items"`
 	Native    *NativeItem  `json:"native"`
+	Folder    *FolderRef   `json:"folder"`
 }
 
 // rawWrapper supports the object format {"presets": [...]}.
@@ -384,6 +402,7 @@ func normalize(in []rawPreset) []Preset {
 			Repeat:      p.Repeat,
 			Items:       p.Items,
 			Native:      p.Native,
+			Folder:      p.Folder,
 		})
 	}
 	return out

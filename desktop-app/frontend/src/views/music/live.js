@@ -1,7 +1,9 @@
 // views/music/live.js: the live bitrate and live title polls that follow a play.
 
 import { SpotifyBitrate, StreamBitrate, StreamTitleInfo } from '../../api.js';
+import { sameBoxIdentity } from '../../groups.js';
 import { state } from '../../state.js';
+import { keepsLiveTitle } from '../../stoppedstate.js';
 import {
   activeSlotFromLocation,
   nativeSlotStale,
@@ -108,10 +110,20 @@ export function scheduleLiveTitle() {
   const box = state.currentBox;
   if (!box) return;
   liveTitleActive = true;
+  // The speaker is compared by identity (deviceID, else host and port), not by
+  // object: every rediscovery replaces state.currentBox with a fresh record for
+  // the same speaker, and the object check ended this loop silently on each of
+  // them, which froze the line on the last title it had (#1526).
   const tick = async () => {
-    if (state.currentBox !== box) { liveTitleActive = false; return; }   // speaker changed
+    if (!sameBoxIdentity(state.currentBox, box)) { liveTitleActive = false; return; }   // speaker changed
     const loc = state.nowLocation || '';
     if (loc === '') { liveTitleActive = false; return; }                 // playback stopped
+    // Stopped on a still-selected station: refreshStatus has dropped the title
+    // and restarts this loop on the next play.
+    if (!keepsLiveTitle(state.nowPlayState)) { liveTitleActive = false; return; }
+    // The current record, so a speaker that came back on a new address or port
+    // is asked there.
+    const cur = state.currentBox;
     // Anything the stream proxy is serving, which is where a live title comes
     // from. This used to ask for a preset SLOT instead, which is a narrower
     // question: a station started from Find stations has no slot, so the poll
@@ -124,11 +136,14 @@ export function scheduleLiveTitle() {
       let title = '';
       let swapped = false;
       try {
-        const info = await StreamTitleInfo(box.host, box.port);
+        const info = await StreamTitleInfo(cur.host, cur.port);
         title = (info && info.title) || '';
         swapped = !!(info && info.swapped);
       } catch {}
-      if (state.currentBox !== box) { liveTitleActive = false; return; }
+      if (!sameBoxIdentity(state.currentBox, box)) { liveTitleActive = false; return; }
+      // Stopped while the request was out: the title is already gone and a late
+      // reply must not bring it back.
+      if (!keepsLiveTitle(state.nowPlayState)) { liveTitleActive = false; return; }
       if (title !== state.nowTitle || swapped !== !!state.nowTitleSwapped) {
         state.nowTitle = title;
         state.nowTitleSwapped = swapped;

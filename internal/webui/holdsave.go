@@ -210,6 +210,12 @@ func (s *Server) liveLibraryFilePreset(slot int, loc string) (presets.Preset, bo
 	if lp == nil || lp.fromBox || lp.mime == "" || !isPlainHTTPURL(lp.boxURL) {
 		return presets.Preset{}, false
 	}
+	// A radio station pushed through the stream proxy carries a MIME too when
+	// its codec is AAC (#252), but it is no library file: the hold then stored
+	// the agent's own raw proxy as a song from "Music library" (#1467).
+	if isOwnProxyURL(lp.boxURL) {
+		return presets.Preset{}, false
+	}
 	if strings.TrimSpace(loc) != lp.boxURL {
 		return presets.Preset{}, false
 	}

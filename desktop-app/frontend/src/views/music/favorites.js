@@ -6,7 +6,7 @@ import { applyFavRemovals, parseFavRemovals } from '../../favremovals.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
-import { renderSearchResults } from './search.js';
+import { renderSearchResults, syncSearchModeButtons } from './search.js';
 import { ensureUi2Radio } from './ui2radio.js';
 
 // Radio favorites: a per-machine list of starred stations kept in
@@ -50,6 +50,9 @@ function favMinimal(s) {
     bitrate: s.bitrate || 0, country: s.country, countrycode: s.countrycode,
     codec: s.codec, hls: s.hls || 0, tags: s.tags, votes: s.votes || 0, homepage: s.homepage,
     favicon: s.favicon, lastcheckok: s.lastcheckok,
+    // Kept so a starred station radio-browser has not checked yet stays
+    // without a reachability dot (#1521); undefined (library items) is dropped.
+    lastchecktime: s.lastchecktime,
     // When it was starred (#1389). A removal on a phone page only takes a star
     // set BEFORE it, so starring a removed station again here sticks.
     starredAt: s.starredAt || 0,
@@ -189,6 +192,8 @@ export function updateFavModeBtn() {
 export function loadFavorites() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   state.searchLastMode = 'favorites';
+  state.searchListOpen = true;
+  syncSearchModeButtons();
   state.searchResults = loadFavStore();
   const lm = $('loadMoreRow');
   if (lm) lm.classList.add('hidden');

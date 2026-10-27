@@ -15,6 +15,7 @@ import {
   isFwOutdated,
 } from '../../firmware.js';
 import { firmwareGuideMount, wireFirmwareGuides } from '../../fwguide.js';
+import { firmwareLadderDeps } from '../../fwladderdeps.js';
 import {
   US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
   usServiceCanDisconnect, agentErrorText, usDisconnectError, usConnectError,
@@ -170,6 +171,7 @@ export function wireInfoSections(ctx) {
     flash: FlashBoseFirmware,
     onProgress: (cb) => EventsOn('firmware:progress', cb),
     confirm: confirmWarn,
+    ladder: firmwareLadderDeps(),
   });
   const faq = $('fwFaqLink');
   if (faq) faq.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(faq.dataset.url); } catch {} };

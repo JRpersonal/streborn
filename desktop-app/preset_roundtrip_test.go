@@ -23,6 +23,7 @@ func TestPresetRoundTripKeepsQueueFields(t *testing.T) {
 		"art": "http://192.0.2.9:8200/art/folder.jpg",
 		"source": "NAS Media",
 		"shuffle": true,
+		"folder": {"server_udn": "uuid:00000000-0000-0000-0000-000000000009", "container_id": "64$1"},
 		"items": [
 			{"url": "http://192.0.2.9:8200/a.flac", "title": "Track A", "mime": "audio/flac", "duration_sec": 241},
 			{"url": "http://192.0.2.9:8200/b.flac", "title": "Track B", "gapless": true}

@@ -64,6 +64,24 @@ func TestFetchBoseFileRejectsWrongCRC(t *testing.T) {
 	}
 }
 
+func TestFetchBoseFileWithReportsProgress(t *testing.T) {
+	payload := bytes.Repeat([]byte("bose"), 50000)
+	f, _ := fwTestFile(t, payload)
+	var last int64
+	if _, err := (&App{}).fetchBoseFileWith(context.Background(), "", f, func(n int64) { last = n }); err != nil {
+		t.Fatal(err)
+	}
+	if last != int64(len(payload)) {
+		t.Errorf("progress ended at %d of %d", last, len(payload))
+	}
+	dir, _ := fwCacheDir()
+	_ = os.RemoveAll(dir)
+	f.CRC ^= 1
+	if _, err := (&App{}).fetchBoseFileWith(context.Background(), "", f, nil); !errors.Is(err, errBoseFileMismatch) {
+		t.Errorf("want errBoseFileMismatch, got %v", err)
+	}
+}
+
 func TestFetchBoseFileRefusesForeignHost(t *testing.T) {
 	_, err := (&App{}).fetchBoseFile(context.Background(), "h", bosefw.File{Name: "x.stu", URL: "https://example.com/x.stu", Length: 1, CRC: 1})
 	if err == nil {

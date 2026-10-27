@@ -393,10 +393,10 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// re-apply a changed device_name) without tearing down the manager.
 	runCtx, runCancel := context.WithCancel(ctx)
 	defer runCancel()
-	// Fresh process = re-detect the account product (an account switch relaunches
-	// go-librespot), so the #45 Premium warning reflects the current login.
+	// Fresh process = re-detect the account product, so the #45 Premium warning
+	// reflects the current login (resetProductStateLocked, accountplans.go).
 	m.mu.Lock()
-	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
+	m.resetProductStateLocked()
 	m.mu.Unlock()
 	m.resetCredRejectRun()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)

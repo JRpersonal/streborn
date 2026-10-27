@@ -286,6 +286,7 @@ func TestNoticesRender(t *testing.T) {
 		PresetPlaying(3, "Radio Arabella Oberösterreich"),
 		PresetPlaying(1, ""),
 		PresetFailed(4, "Radio Arabella Oberösterreich"),
+		FolderMoved(1),
 	}
 	buf := make([]byte, FrameSize)
 	for _, n := range all {

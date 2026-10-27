@@ -575,8 +575,12 @@ type forensics struct {
 	// it had succeeded, so this line is the only evidence; see
 	// Reader.LastPresetRefusal.
 	lastPresetRefusal time.Time
-	dropped           uint64
-	classified        uint64
+	// presetRefusals keeps the newest refusals with their reason, so the
+	// reconcile can count the refused writes of one sweep and tell why they
+	// were refused (see PresetRefusal). Bounded at presetRefusalKeep.
+	presetRefusals []PresetRefusal
+	dropped        uint64
+	classified     uint64
 	// lastPower is the first line of the newest standby/wake transition; the
 	// other daemon's line about the same transition is folded into it (see
 	// power.go).
@@ -655,6 +659,14 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	}
 	if class == ClassMargeError && strings.Contains(l.Message, "UpdatePresetFailureCB") {
 		f.lastPresetRefusal = now
+		f.presetRefusals = append(f.presetRefusals, PresetRefusal{
+			At:              now,
+			Reason:          msg,
+			InvalidSourceID: strings.Contains(l.Message, "invalid SourceID"),
+		})
+		if n := len(f.presetRefusals); n > presetRefusalKeep {
+			f.presetRefusals = append(f.presetRefusals[:0], f.presetRefusals[n-presetRefusalKeep:]...)
+		}
 	}
 	if gap := class.logGap(); gap > 0 && !ringOnlyLine(class, msg) && now.Sub(f.lastLogged[class]) >= gap {
 		f.lastLogged[class] = now
@@ -672,6 +684,20 @@ func (f *forensics) lastPlaybackFailure(now time.Time, d time.Duration) (Event, 
 		return Event{}, false
 	}
 	return f.lastPlayErr, true
+}
+
+// presetRefusalsSince returns the recorded refusals stamped at or after since,
+// oldest first.
+func (f *forensics) presetRefusalsSince(since time.Time) []PresetRefusal {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []PresetRefusal
+	for _, r := range f.presetRefusals {
+		if !r.At.Before(since) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // presetRefusalAt returns when the firmware last refused a preset write, zero

@@ -146,27 +146,51 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 
 // queuePlaysSlot reports whether the active queue is the folder saved on slot:
 // the queue was started from that key, or saved onto it while it played.
+//
+// The card of a queue a key started names that key for the queue's whole life,
+// also after the key was given another folder (the Library's "Save folder as
+// preset" while the old one plays). The card alone made a press on the key skip
+// a track of the old folder instead of starting the new one (#1525), so it
+// counts only while the key still holds the tracks that play. A stale card
+// falls back to the keys that do hold them.
 func (s *Server) queuePlaysSlot(slot int) bool {
-	if !s.queue.isActive() {
+	if !s.queue.isActive() || slot <= 0 {
 		return false
 	}
 	s.queueMu.Lock()
 	folderKey := s.queueFolder.key
 	s.queueMu.Unlock()
-	if folderKey == fmt.Sprintf("queue:slot:%d", slot) {
-		return true
-	}
-	if slot <= 0 {
-		return false
-	}
-	if queueSlotCardRe.MatchString(folderKey) {
-		return s.queueSavedSlotHolds() == slot
+	if n, ok := queueSlotCardNum(folderKey); ok && s.cardSlotHolds(n) {
+		return slot == n || s.queueSavedSlotHolds() == slot
 	}
 	return s.queueKeySlot() == slot
 }
 
 // queueSlotCardRe matches the folder card of a queue that a key started.
 var queueSlotCardRe = regexp.MustCompile(`^queue:slot:\d+$`)
+
+// queueSlotCardNum returns the key a "queue:slot:<n>" card names.
+func queueSlotCardNum(card string) (int, bool) {
+	if !queueSlotCardRe.MatchString(card) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(card, "queue:slot:"))
+	return n, err == nil
+}
+
+// cardSlotHolds reports whether key n still holds the folder that plays: a
+// folder key with exactly the queue's tracks (#1525).
+func (s *Server) cardSlotHolds(n int) bool {
+	if n <= 0 || s.presets == nil || s.queue == nil {
+		return false
+	}
+	cur, ok := s.presets.Get(n)
+	if !ok || cur.Type != "queue" {
+		return false
+	}
+	items, _, active := s.queue.contents()
+	return active && presetHoldsQueueTracks(cur, items)
+}
 
 // NoteQueueSavedSlot records that the running queue was just saved on slot
 // (#1217). The queue keeps its folder card; the saved slot is extra.
@@ -200,8 +224,21 @@ func (s *Server) queueSavedSlotHolds() int {
 
 // presetHoldsQueueTracks reports whether a folder key holds exactly the tracks
 // of a queue, in order (capped the way the key itself is capped).
+//
+// Items without a URL are skipped on both sides: presetItemsToQueue drops them
+// when the key starts its queue, so a key holding one never matched its own
+// queue and stayed dark next to it (#1525).
 func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
-	if cur.Type != "queue" || len(cur.Items) == 0 {
+	if cur.Type != "queue" {
+		return false
+	}
+	want := make([]string, 0, len(cur.Items))
+	for _, it := range cur.Items {
+		if it.URL != "" {
+			want = append(want, it.URL)
+		}
+	}
+	if len(want) == 0 {
 		return false
 	}
 	n := 0
@@ -209,7 +246,7 @@ func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
 		if it.URL == "" {
 			continue
 		}
-		if n >= len(cur.Items) || cur.Items[n].URL != it.URL {
+		if n >= len(want) || want[n] != it.URL {
 			return false
 		}
 		n++
@@ -217,7 +254,7 @@ func presetHoldsQueueTracks(cur presets.Preset, items []queueItem) bool {
 			break
 		}
 	}
-	return n == len(cur.Items)
+	return n == len(want)
 }
 
 // queueKeySlot is the key the running folder belongs to, 0 when none: the key
@@ -308,6 +345,26 @@ type queueTiming struct {
 	// never polled faster for a whole track.
 	zoneEndWindow time.Duration
 	zoneEndPoll   time.Duration
+	// aheadSlack is how far the box's position may run ahead of the wall clock
+	// since the push before STR stops believing it. A box cannot play faster
+	// than real time; the slack covers whole-second rounding and the push
+	// timestamp being taken a moment before the box starts. Seen on a FRITZ!Box
+	// MP3: the box reported 120 s at most 16 s after the push and 180 s at the
+	// first poll, froze there, and the frozen-position net stopped a track that
+	// was still playing (and learned 120 s as its length).
+	aheadSlack time.Duration
+	// hintSlack is how close a frozen position must sit to an estimated
+	// length (a bare bitrate x size guess, never handed to the box) for that
+	// estimate to confirm the end after a single non-climbing poll.
+	hintSlack time.Duration
+	// alignEpsilon is how far past the computed end of a track the one
+	// re-timed poll lands (see alignToEnd).
+	alignEpsilon time.Duration
+	// badURLSettle is how long a 404 the stream proxy got for the current
+	// track waits for the box's own AUDIO_ERROR_BAD_URL before it ends the
+	// track by itself (queuebadurl.go). The box's error follows the proxy's
+	// 502 within a second; acting sooner would let it land on the next track.
+	badURLSettle time.Duration
 }
 
 // productionQueueTiming is the clock the watcher runs on on the speaker.
@@ -321,6 +378,10 @@ var productionQueueTiming = queueTiming{
 	ownEndSlack:   1 * time.Second,
 	zoneEndWindow: 5 * time.Second,
 	zoneEndPoll:   1 * time.Second,
+	aheadSlack:    3 * time.Second,
+	hintSlack:     3 * time.Second,
+	alignEpsilon:  300 * time.Millisecond,
+	badURLSettle:  1500 * time.Millisecond,
 }
 
 // queueTimes is the watcher's clock: the production values unless a test
@@ -360,6 +421,33 @@ func (qt *queueTiming) watchInterval(inZone, inEndStretch bool) time.Duration {
 	return qt.pollInterval
 }
 
+// positionRunsAhead reports whether a position the box reported elapsed after
+// the push is further into the track than it can have played. Such a position
+// cannot time the end of the track and must not be learned as its length.
+func (qt *queueTiming) positionRunsAhead(pos, elapsed time.Duration) bool {
+	return pos > elapsed+qt.aheadSlack
+}
+
+// alignToEnd is the one re-timed poll at the end of a track. The watcher polls
+// every pollInterval from the push, so the poll that sees a track's end lands
+// anywhere up to pollInterval after it, and that wait is silence between two
+// album tracks. When the next regular poll would land after the end, the
+// ticker is moved once so the next poll lands just past it instead; after that
+// poll the watcher goes back to the normal interval. This moves a poll, it
+// does not add a timer or poll the box faster. It reports false when the end
+// is not inside the coming interval.
+func (qt *queueTiming) alignToEnd(pos, end, interval time.Duration) (time.Duration, bool) {
+	remaining := end - pos
+	if pos <= 0 || end <= 0 || remaining <= 0 {
+		return 0, false
+	}
+	d := remaining + qt.alignEpsilon
+	if d >= interval {
+		return 0, false
+	}
+	return d, true
+}
+
 // queueBoxInZone is boxInZone behind the watcher's test seam.
 func (s *Server) queueBoxInZone() bool {
 	if s.queueInZoneFn != nil {
@@ -381,6 +469,10 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	// A folder started while the speaker plays a native station must stop
 	// that station first, or the firmware swallows the push (#1065).
 	err := s.pushOverNativeStation(ctx, title, func() error {
+		// What the box is handed now is what its next 404 or BAD_URL is
+		// about (queuebadurl.go); after the native stop, so a failing
+		// native station's own error cannot land on this track.
+		s.noteQueuePush(url)
 		if mime != "" {
 			// Tell the speaker what it is being handed. A direct library file has a
 			// length and a server that serves byte ranges, and saying so is what
@@ -440,6 +532,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	s.queueFolder = card
 	s.queueSavedSlot = 0 // a new folder is on no key until it is saved on one
 	s.queueMu.Unlock()
+	s.resetBadURLRun(card)
 	it, ok := s.queue.current()
 	if !ok {
 		return errors.New("empty queue")
@@ -474,6 +567,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	}
 	s.setQueueTiming(it.Duration)
 	s.ensureWatcher()
+	s.prearmNextLength()
 	// A folder started from the Library names its server and carries the
 	// address that server answers at now: put that server's keys on it (#1366).
 	s.healQueuePresetsFromLiveQueue(card, items)
@@ -624,6 +718,7 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 	}
 	s.noteQueueAdvance(natural, why, it.Title, it.Duration, endedTitle, ended)
 	s.setQueueTiming(it.Duration)
+	s.prearmNextLength()
 }
 
 // retryQueueTrackStart wakes the speaker and hands it the current track once
@@ -718,6 +813,7 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 	}
 	s.noteQueueAdvance(false, "next/previous pressed", it.Title, it.Duration, endedTitle, trackEndReport{net: "manual"})
 	s.setQueueTiming(it.Duration)
+	s.prearmNextLength()
 	return it, true, nil
 }
 
@@ -758,13 +854,40 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		sawQueueSource bool
 		// takeoverPolls counts polls in a row with another source playing.
 		takeoverPolls int
+		// ranAhead: this track's position was once further than the box can
+		// have played (positionRunsAhead); logged once per track.
+		ranAhead bool
+		// aligned: the one end-of-track re-timing (alignToEnd) was used for
+		// this track.
+		aligned bool
+		// retimed: the ticker runs on the one-off alignToEnd period. The tick
+		// after it puts the normal period back first thing, so a branch that
+		// continues before the interval check below cannot keep it.
+		retimed bool
+		// hint is the current track's estimated length when it has no real
+		// one (prearmNextLength), 0 when none.
+		hint time.Duration
+		// wake carries the stream proxy's and the box's reports that the
+		// track just pushed cannot be fetched (queuebadurl.go). woke: this
+		// round was such a report, not a tick, so it looks at the evidence
+		// and never polls the box.
+		wake = s.queueBadURLWake()
+		woke bool
 	)
 	for {
+		woke = false
 		select {
 		case <-ctx.Done():
 			s.logger.Debug("queue watcher: stopped")
 			return
 		case <-ticker.C:
+		case <-wake:
+			woke = true
+		}
+		if retimed && !woke {
+			retimed = false
+			interval = qt.pollInterval
+			ticker.Reset(interval)
 		}
 		if !s.queue.isActive() {
 			s.logger.Debug("queue watcher: the queue is no longer active, stopping")
@@ -778,6 +901,27 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		if curGen != gen {
 			gen, lastPos, lastPosAt, obsTotal, sawPlay, overrunWarned = curGen, 0, time.Time{}, 0, false, false
 			zoneChecked, inZone = false, false
+			ranAhead, aligned, hint = false, false, 0
+		}
+		// A track the media server no longer has, or the box could not
+		// fetch, ends now instead of after the stall timeout. Only before it
+		// was heard: a track that played and then failed is the teardown
+		// path's, below.
+		if lastPos == 0 {
+			if ev, ok := s.takeQueueBadURL(qt.badURLSettle); ok {
+				if s.queueFailFast(curGen, start, dur, ev, &deadInARow) {
+					return
+				}
+				continue
+			}
+		}
+		if woke {
+			continue
+		}
+		if dur == 0 && hint == 0 {
+			if it, ok := s.queue.current(); ok {
+				hint = s.lengthHints.get(it.URL)
+			}
 		}
 
 		ps, pos, total, standby, tornDown, src := s.pollNowPlaying()
@@ -870,6 +1014,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			ticker.Reset(interval)
 		}
 
+		climbedNow := false
 		switch ps {
 		case "PLAY_STATE", "BUFFERING_STATE":
 			sawPlay = true
@@ -878,6 +1023,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			if pos > 0 {
 				deadInARow = 0
 				startRetried = false
+				s.noteQueueHeard()
 			}
 			// Track the MAX position and when it last advanced: the box's position
 			// climbs each second while playing and then freezes at EOF, so a
@@ -886,6 +1032,13 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			if pos > lastPos {
 				lastPos = pos
 				lastPosAt = time.Now()
+				climbedNow = true
+				if !ranAhead && qt.positionRunsAhead(pos, time.Since(start)) {
+					ranAhead = true
+					s.logger.Info("queue watcher: position runs ahead of real time, not timing the end by it",
+						"title", s.queueCurrentTitle(), "posSec", int(pos.Seconds()),
+						"elapsedSec", int(time.Since(start).Seconds()), "trackSec", int(end.Seconds()))
+				}
 			}
 			// Do NOT continue: fall through to the wall-clock net. Some renderers
 			// (seen on the ST20 with direct-played NAS files) finish a finite file
@@ -941,7 +1094,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			}
 		}
 
-		if !overrunWarned && dur > 0 && lastPos > dur+qt.overrunSlack {
+		if !overrunWarned && !ranAhead && dur > 0 && lastPos > dur+qt.overrunSlack {
 			overrunWarned = true
 			s.logger.Warn("queue watcher: the server's track length is shorter than what the speaker plays",
 				"title", s.queueCurrentTitle(), "lengthSec", int(dur.Seconds()),
@@ -952,6 +1105,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// The wall-clock and frozen-position nets, reached on PLAY_STATE and on an
 		// unknown status. trackEndNet holds the rules.
 		in := s.trackEndSnapshot(sawPlay, ps, start, dur, obsTotal, lastPos, lastPosAt)
+		in.ranAhead, in.hint = ranAhead, hint
 		net := trackEndNet(in)
 		if stretch {
 			// Forensics for the last ticks of a track only (#1190): what the end
@@ -965,6 +1119,25 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		}
 		if net != endNetNone {
 			s.advanceAndPlayEnded(true, curGen, net.why(), in.report(net))
+			continue
+		}
+		// The end falls inside the coming interval: land the next poll just
+		// past it instead of up to a whole interval later. Once per track, only
+		// on a position that climbed in real time on this very poll, and not on
+		// a zone master, which already polls every second near the end.
+		if !aligned && !inZone && climbedNow && !ranAhead && ps == "PLAY_STATE" {
+			target := end
+			if target == 0 {
+				target = hint
+			}
+			if d, ok := qt.alignToEnd(lastPos, target, interval); ok {
+				aligned, retimed = true, true
+				interval = d
+				ticker.Reset(interval)
+				s.logger.Debug("queue watcher: timing the next poll to the end of the track",
+					"posSec", int(lastPos.Seconds()), "trackSec", int(target.Seconds()),
+					"nextPollMs", d.Milliseconds())
+			}
 		}
 	}
 }
@@ -1031,6 +1204,15 @@ type trackEndInput struct {
 	// sinceLastPos is how long ago lastPos last increased. Only meaningful when
 	// lastPos > 0.
 	sinceLastPos time.Duration
+	// ranAhead: the box reported a position for this track further than it
+	// can have played (positionRunsAhead). Such a position proves nothing
+	// about the end: it neither confirms the length nor counts as a freeze
+	// before the wall clock has caught up with it.
+	ranAhead bool
+	// hint is an estimated length that was too uncertain to hand to the box
+	// (a bitrate x size guess for an MP3 without a frame count), 0 when none.
+	// It only lets the frozen-position net confirm an end sooner.
+	hint time.Duration
 	// timing is the clock the nets judge the readings by: nil means the
 	// production clock, so a bare literal (the table tests) needs none.
 	timing *queueTiming
@@ -1112,12 +1294,31 @@ func trackEndNet(in trackEndInput) endNet {
 		end = 0
 	}
 	climbing, atOwnEnd := in.endSignals()
+	margin := qt.advanceMargin(in.lastPos, end)
+	if in.ranAhead {
+		// A position that ran ahead of real time cannot say "this is the end".
+		atOwnEnd = false
+		margin = qt.timerMargin
+	}
 
-	if end > 0 && in.elapsed >= end+qt.advanceMargin(in.lastPos, end) && (!climbing || atOwnEnd) {
+	if end > 0 && in.elapsed >= end+margin && (!climbing || atOwnEnd) {
 		return endNetWallClock
 	}
-	if in.playing && posKnown && in.sinceLastPos >= qt.frozenTimeout &&
+	// A box cannot play faster than real time, so a freeze only counts once
+	// the wall clock has caught up with the frozen position plus the freeze
+	// timeout. For a box whose position climbed in real time that is always
+	// already true when the position has been still for frozenTimeout; for a
+	// box that reported 120 s sixteen seconds after the push it holds the end
+	// back until the track can really have played that far.
+	caughtUp := in.elapsed+qt.aheadSlack >= in.lastPos+qt.frozenTimeout
+	if in.playing && posKnown && in.sinceLastPos >= qt.frozenTimeout && caughtUp &&
 		(end == 0 || in.elapsed >= end) {
+		return endNetFrozen
+	}
+	// An estimated length confirms a freeze sooner: the position stopped on the
+	// poll after it reached the estimate, and the wall clock agrees.
+	if end == 0 && in.hint > 0 && in.playing && posKnown && !in.ranAhead && !climbing &&
+		in.elapsed >= in.hint && absDur(in.lastPos-in.hint) <= qt.hintSlack {
 		return endNetFrozen
 	}
 	return endNetNone
@@ -1179,6 +1380,14 @@ func (qt *queueTiming) nearEnd(progress, end time.Duration) bool {
 // at all) are read off the root source attribute, so a track literally named
 // "STANDBY" cannot be mistaken for the box being off.
 func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby, tornDown bool, source string) {
+	status, pos, total, standby, tornDown, source, _ = s.pollNowPlayingAt()
+	return
+}
+
+// pollNowPlayingAt is pollNowPlaying plus the ContentItem location the speaker
+// reports, for the single-track end watch, which has to tell its own file from
+// whatever else the speaker reports playing. location is "" when unknown.
+func (s *Server) pollNowPlayingAt() (status string, pos, total time.Duration, standby, tornDown bool, source, location string) {
 	// Test seam, the same one boxPlayStateDetail has: the end detection is a
 	// state machine over what the box reports, and it is only testable if the
 	// reports can be scripted.
@@ -1191,13 +1400,16 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, stan
 		if s.nowPlayingSourceFn != nil {
 			source = s.nowPlayingSourceFn()
 		}
-		return st, p, t, sb, false, source
+		if s.nowPlayingLocationFn != nil {
+			location = s.nowPlayingLocationFn()
+		}
+		return st, p, t, sb, false, source, location
 	}
 	np, err := s.readBoxNowWithin(3 * time.Second)
 	if err != nil {
-		return "", 0, 0, false, false, ""
+		return "", 0, 0, false, false, "", ""
 	}
-	return np.Status(), np.Position, np.Total, np.IsStandby(), np.SourceTornDown(), np.Source
+	return np.Status(), np.Position, np.Total, np.IsStandby(), np.SourceTornDown(), np.Source, np.Location()
 }
 
 // --- HTTP handlers -------------------------------------------------------
@@ -1273,6 +1485,12 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		items := toQueueItems(req.Items)
 		if len(items) == 0 {
 			http.Error(w, "no playable items", http.StatusBadRequest)
+			return
+		}
+		// Half of a broken pair, or the following half of a healthy one: the
+		// first track's push could never be heard, so refuse before the wake.
+		if ref := s.pairPlayRefusal(); ref != nil {
+			writePlayRefusal(w, ref)
 			return
 		}
 		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art, source: req.Card.Source}
@@ -1874,11 +2092,16 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 		s.recentMu.Unlock()
 		// A queue started from a key already names it in its card; matching the
 		// tracks as well would light a second key that holds the same folder.
-		if queueSlotCardRe.MatchString(snap.Card) {
+		// The card counts only while its key still holds the tracks that play:
+		// a key given another folder stayed lit for the old one (#1525). The
+		// queue is then a folder like any other, lit on the key that holds it.
+		if n, ok := queueSlotCardNum(snap.Card); ok && s.cardSlotHolds(n) {
+			snap.CardSlot = n
 			snap.Slot = s.queueSavedSlotHolds()
 		} else {
 			snap.Slot = s.queueKeySlot()
 		}
+		snap.SlotChecked = true
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

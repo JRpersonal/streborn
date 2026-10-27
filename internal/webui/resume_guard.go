@@ -64,7 +64,7 @@ func (s *Server) autoResumeBlocked() bool {
 func (s *Server) noteAutoResumeAttempt() {
 	attempts, at, lp := s.play.noteAutoResumeAttempt()
 	if lp != nil {
-		s.persistLastPlay(lp.boxURL, lp.title, lp.art, lp.mime, lp.ts, attempts, at)
+		s.persistLastPlay(lp, attempts, at)
 	}
 	if attempts >= maxAutoResumeAttempts {
 		s.logger.Warn("auto-resume guard: this is the last automatic resume attempt; if the box reboots again the power-on resume stands down until a manual play",
@@ -84,7 +84,7 @@ func (s *Server) clearResumeAttemptsIfQuiet(at time.Time) {
 		return
 	}
 	if lp != nil {
-		s.persistLastPlay(lp.boxURL, lp.title, lp.art, lp.mime, lp.ts, 0, time.Time{})
+		s.persistLastPlay(lp, 0, time.Time{})
 	}
 	s.logger.Info("auto-resume guard: playback stayed up, resume attempt count cleared")
 }

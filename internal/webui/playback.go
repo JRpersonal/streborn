@@ -52,6 +52,10 @@ type playRequest struct {
 	// from Mime, which doubles as the "library file, play direct" marker
 	// (#139) and must not be set for radio.
 	Codec string `json:"codec"`
+	// Bitrate is the station bitrate in kbit/s as radio-browser reported it,
+	// 0 when unknown. Only recorded, so a hold that saves what plays keeps it
+	// like the "+" button does (#1467).
+	Bitrate int `json:"bitrate"`
 }
 
 // handleWebhooks gets (GET) or replaces (PUT) the webhook config. The config
@@ -139,6 +143,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if s.refuseIfIncompletePair(w) {
 		return
 	}
+	// The following half of a healthy pair takes the push and ignores it, so
+	// it is refused here, before the wake (stereofollower.go).
+	if s.refuseIfStereoFollower(w) {
+		return
+	}
 	s.ensureBoxReady(r.Context())
 	// Detach the play from the request context (#252, same pattern as the
 	// preset recall): the standby wake above can outlast the app's HTTP
@@ -199,7 +208,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			if err := s.selectNativeStation(playCtx, loc, req.Title); err == nil {
 				s.logger.Info("play request: started natively, the speaker fetches the stream itself",
 					"title", req.Title, "url", req.URL)
-				s.setLastPlay(playURL, req.Title, req.Icon, mime)
+				s.setLastPlayMeta(playURL, req.Title, req.Icon, mime, req.Homepage, req.Codec, req.Bitrate)
 				s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage, "")
 				writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
 				return
@@ -240,7 +249,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	playGen := s.setLastPlay(playURL, req.Title, req.Icon, mime)
+	playGen := s.setLastPlayMeta(playURL, req.Title, req.Icon, mime, req.Homepage, req.Codec, req.Bitrate)
 	// A library file is no radio stream: the song the stream proxy parsed out
 	// of the station before must not be served for it. Left to the proxy's
 	// own end-of-stream wipe it survived a few seconds, and the phone remote
@@ -354,6 +363,11 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// Half of an incomplete stereo pair cannot start anything; waking it and
 	// waiting is what used to run every recall into the app's timeout.
 	if ref := s.incompletePairRefusal(); ref != nil {
+		return playResult{}, ref
+	}
+	// Nor can the following half of a healthy one: its firmware accepts the
+	// push and plays nothing (stereofollower.go).
+	if ref := s.stereoFollowerRefusal(); ref != nil {
 		return playResult{}, ref
 	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the
@@ -649,20 +663,33 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 // again. It returns the new recall generation; a recall passes it to
 // verifyRecall so the verify stands down as soon as a later play bumps it.
 func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
-	now := time.Now()
+	return s.recordLastPlay(&lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime})
+}
+
+// setLastPlayMeta is setLastPlay for a station started from the app or the
+// phone page, which also knows the station's homepage, codec and bitrate. The
+// record keeps them so a later hold that saves what plays stores the same
+// station the "+" button would have (#1467).
+func (s *Server) setLastPlayMeta(boxURL, title, art, mime, homepage, codec string, bitrate int) uint64 {
+	return s.recordLastPlay(&lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime,
+		homepage: homepage, codec: codec, bitrate: bitrate})
+}
+
+func (s *Server) recordLastPlay(lp *lastPlayInfo) uint64 {
+	lp.ts = time.Now()
 	// record also re-arms the auto-resume crash-loop guard (#381): a fresh
 	// play is an explicit user "play this" and may well be a different stream.
-	gen, newStream := s.play.record(&lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now})
+	gen, newStream := s.play.record(lp)
 	// The track on the panel belonged to the previous stream: the new one's
 	// name replaces it until its first song is known. The same stream pushed
 	// again keeps it (its title is not reported again). Synchronous, so it
 	// cannot land after the new stream's first title.
 	if newStream {
-		s.panelNewStream(boxURL, title)
+		s.panelNewStream(lp.boxURL, lp.title)
 	}
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
-	s.persistLastPlay(boxURL, title, art, mime, now, 0, time.Time{})
+	s.persistLastPlay(lp, 0, time.Time{})
 	// If this speaker leads a mirror group, bring the others onto the new
 	// stream now rather than at the next 5-minute reconcile. See
 	// kickMirrorAfterPlay for why that wait reads to users as a lost group.
@@ -685,6 +712,12 @@ type persistedLastPlay struct {
 	// unmarshals to the zero values = guard disarmed.
 	ResumeAttempts int       `json:"resumeAttempts,omitempty"`
 	LastResumeAt   time.Time `json:"lastResumeAt,omitzero"`
+	// Homepage, Codec, Bitrate: the station facts of an app or phone play
+	// (setLastPlayMeta), so a hold after an agent restart still saves them
+	// (#1467). Absent in files from older agents.
+	Homepage string `json:"homepage,omitempty"`
+	Codec    string `json:"codec,omitempty"`
+	Bitrate  int    `json:"bitrate,omitempty"`
 }
 
 // persistLastPlay writes the resume target to NAND durably (fsync + rename), so
@@ -692,12 +725,13 @@ type persistedLastPlay struct {
 // write+rename left last-play.json at 0 bytes after an overnight standby
 // power-cut (the same loss that wiped presets.json, 2026-07-15). Best-effort,
 // no-op without a configured path.
-func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time, resumeAttempts int, lastResumeAt time.Time) {
-	if s.lastPlayPath == "" {
+func (s *Server) persistLastPlay(lp *lastPlayInfo, resumeAttempts int, lastResumeAt time.Time) {
+	if s.lastPlayPath == "" || lp == nil {
 		return
 	}
-	b, err := json.Marshal(persistedLastPlay{BoxURL: boxURL, Title: title, Art: art, Mime: mime, TS: ts,
-		ResumeAttempts: resumeAttempts, LastResumeAt: lastResumeAt})
+	b, err := json.Marshal(persistedLastPlay{BoxURL: lp.boxURL, Title: lp.title, Art: lp.art, Mime: lp.mime, TS: lp.ts,
+		ResumeAttempts: resumeAttempts, LastResumeAt: lastResumeAt,
+		Homepage: lp.homepage, Codec: lp.codec, Bitrate: lp.bitrate})
 	if err != nil {
 		return
 	}
@@ -727,7 +761,8 @@ func (s *Server) loadLastPlay() {
 	}
 	// The auto-resume guard count comes back with it (#381): after a
 	// crash-caused reboot this is what tells the automatic resume it is looping.
-	s.play.restore(&lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS}, p.ResumeAttempts, p.LastResumeAt)
+	s.play.restore(&lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS,
+		homepage: p.Homepage, codec: p.Codec, bitrate: p.Bitrate}, p.ResumeAttempts, p.LastResumeAt)
 	s.logger.Info("last-play restored from NAND for power-on resume", "title", p.Title, "ageMin", int(time.Since(p.TS).Minutes()), "resumeAttempts", p.ResumeAttempts)
 }
 

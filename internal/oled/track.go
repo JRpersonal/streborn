@@ -22,6 +22,11 @@ package oled
 // to the station; without one (the user chose the clock alone), large in the
 // middle. Then it is redrawn at every full minute and stands still between.
 //
+// On the speaker's own inputs, Bluetooth and AUX, the same large clock can
+// stand in for the firmware's connection picture (ShowSourceClock), with the
+// input's name small on top. STR does not know whether music runs there, so
+// that screen has no playing symbol and is drawn only at the minute.
+//
 // The panel is shared. The splash, the update screen, the games and the
 // notices all win it: acquirePanel and the notice queue call yieldTrack,
 // which ends the hold at once, and the track screen comes back by itself once
@@ -51,6 +56,12 @@ type TrackText struct {
 	Station, Artist, Title string
 	Clock, Hour12          bool
 
+	// still marks the clock on one of the speaker's own inputs
+	// (ShowSourceClock): no playing symbol, nothing moves. Set by
+	// ShowSourceClock only, so it is part of the cache key and of the
+	// comparison with what is shown.
+	still bool
+
 	// sleepMin is the sleep timer's countdown in whole minutes (0: none).
 	// Not the caller's to set: the screen's draw fills it from the deadline
 	// (SetSleepDeadline), so the layout and the cache key both carry it.
@@ -68,6 +79,7 @@ func (t TrackText) sanitized() TrackText {
 		Title:   sanitizeSmooth(t.Title, trackTextMax),
 		Clock:   t.Clock,
 		Hour12:  t.Hour12,
+		still:   t.still,
 	}
 }
 
@@ -127,7 +139,8 @@ type trackScreen struct {
 	// cache keeps the standing parts of the screen between marquee frames;
 	// used on the holding thread only (draw)
 	cache     trackCache
-	foreign   bool // the speaker is on a source that is not STR's
+	foreign   bool   // the speaker is on a source that is not STR's
+	source    string // the source the speaker last switched to
 	quit      chan struct{}
 	done      chan struct{}
 	stopWhy   string
@@ -175,10 +188,42 @@ func TrackSupported() bool { return tracks.supported() }
 // ShowTrack puts t on the panel, or updates what is there. Returns at once.
 func ShowTrack(t TrackText) { tracks.show(t) }
 
+// ShowSourceClock puts the large clock on the panel while the speaker plays
+// one of its own inputs (SourceClockLabel), with t.Station as the input's
+// name on top. source is the firmware's name of that input: the call does
+// nothing unless the speaker is still on it (SetTrackSource), so a late call
+// from before a switch never puts a stale screen up. Any source change ends
+// it. Returns at once.
+func ShowSourceClock(source string, t TrackText) { tracks.showSourceClock(source, t) }
+
+// SourceClockLabel reports whether the clock may stand in for the firmware's
+// picture on source, and the name shown on top of it. Only the speaker's
+// plain inputs qualify, the ones where the firmware shows nothing but a
+// connection picture: BLUETOOTH and AUX. Firmware services that draw their own
+// titles (TuneIn, native Spotify, Amazon, Pandora...), AirPlay, a TV or HDMI
+// input (PRODUCT), LOCAL (a soundbar's TV input on some models, not seen on a
+// speaker with a panel) and STANDBY keep the firmware's screen.
+func SourceClockLabel(source string) (label string, ok bool) {
+	switch source {
+	case "BLUETOOTH":
+		return "Bluetooth", true
+	case "AUX":
+		return "AUX", true
+	}
+	return "", false
+}
+
 // ClearTrack ends the track screen and hands the panel back to BoseApp.
 // Blocks (bounded) until the panel is let go, so a caller that exits next
 // leaves nothing held. reason goes to the log.
 func ClearTrack(reason string) { tracks.clear(reason) }
+
+// ClearSourceClock ends the input clock (ShowSourceClock) put up for source,
+// and nothing else: when the speaker has moved on since (another input, or
+// STR's own source with its track screen already back), the call is a no-op.
+// For a caller that decided on the panel from a source read a moment ago.
+// Blocks (bounded) like ClearTrack.
+func ClearSourceClock(source, reason string) { tracks.clearSourceClock(source, reason) }
 
 // PauseTrack hands the panel back to BoseApp for d (a volume change: its own
 // volume bar shows), then the track screen returns by itself.
@@ -216,7 +261,8 @@ func (s *trackScreen) setPlaying(playing bool) {
 		// play again: the marquee starts over with the start of each line
 		s.marqueeFrom = time.Time{}
 	}
-	holding := s.holding
+	// the input clock has no playing symbol: nothing to redraw
+	holding := s.holding && (s.want == nil || !s.want.still)
 	s.mu.Unlock()
 	if changed && holding {
 		select {
@@ -230,6 +276,8 @@ func (s *trackScreen) setPlaying(playing bool) {
 // to and whether it is one of STR's own. On any other source (standby, AUX,
 // Bluetooth, a firmware service such as TuneIn that shows its own titles) the
 // track leaves the panel and titles are ignored until STR's source is back.
+// Any switch at all ends the input clock (ShowSourceClock); the caller puts it
+// up again for the new input.
 // Does not block (it is called from the gabbo read loop): the flag and the
 // wanted text change at once, in order, and only letting go of the panel
 // runs in the background.
@@ -238,12 +286,14 @@ func SetTrackSource(name string, ours bool) { tracks.setSource(name, ours) }
 func (s *trackScreen) setSource(name string, ours bool) {
 	s.mu.Lock()
 	s.foreign = !ours
+	s.source = name
 	had := s.want != nil
-	if !ours {
+	inputClock := had && s.want.still
+	if !ours || inputClock {
 		s.want = nil
 	}
 	s.mu.Unlock()
-	if ours || !had {
+	if !had || (ours && !inputClock) {
 		return
 	}
 	reason := "source " + name
@@ -266,6 +316,24 @@ func (s *trackScreen) show(t TrackText) {
 		s.log().Debug("display track text ignored", "reason", "speaker is on another source", "title", t.Title)
 		return
 	}
+	s.setWant(t)
+}
+
+func (s *trackScreen) showSourceClock(source string, t TrackText) {
+	t = TrackText{Station: t.Station, Clock: true, Hour12: t.Hour12, still: true}.sanitized()
+	s.mu.Lock()
+	if !s.foreign || s.source != source {
+		now := s.source
+		s.mu.Unlock()
+		s.log().Debug("display input clock ignored", "reason", "speaker left the input", "input", source, "source", now)
+		return
+	}
+	s.setWant(t)
+}
+
+// setWant makes t the wanted screen and takes or redraws the panel. Called
+// with s.mu held; unlocks it.
+func (s *trackScreen) setWant(t TrackText) {
 	if s.want != nil && *s.want == t {
 		s.mu.Unlock()
 		return
@@ -275,7 +343,7 @@ func (s *trackScreen) show(t TrackText) {
 	s.marqueeFrom = time.Time{}
 	holding := s.holding
 	s.mu.Unlock()
-	s.log().Debug("display track text", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock)
+	s.log().Debug("display track text", "station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock, "input", t.still)
 	if holding {
 		select {
 		case s.redraw <- struct{}{}:
@@ -294,6 +362,22 @@ func (s *trackScreen) clear(reason string) {
 	s.returning = false
 	s.mu.Unlock()
 	if !s.stop(reason) && had {
+		s.log().Info("display track overlay off", "reason", reason, "held", false)
+	}
+}
+
+func (s *trackScreen) clearSourceClock(source, reason string) {
+	s.mu.Lock()
+	if s.want == nil || !s.want.still || s.source != source {
+		now := s.source
+		s.mu.Unlock()
+		s.log().Debug("display input clock clear ignored", "reason", reason, "input", source, "source", now)
+		return
+	}
+	s.want = nil
+	s.returning = false
+	s.mu.Unlock()
+	if !s.stop(reason) {
 		s.log().Info("display track overlay off", "reason", reason, "held", false)
 	}
 }
@@ -478,7 +562,7 @@ func (s *trackScreen) draw(buf []byte) {
 	if s.shiftEvery > 0 {
 		step = int(now.UnixNano() / int64(s.shiftEvery))
 	}
-	anim := trackAnim{playing: !s.paused, frame: int(now.UnixNano() / int64(barsFrame))}
+	anim := trackAnim{playing: !s.paused && (s.want == nil || !s.want.still), frame: int(now.UnixNano() / int64(barsFrame))}
 	if s.marqueeFrom.IsZero() {
 		s.marqueeFrom = now
 	}
@@ -489,7 +573,7 @@ func (s *trackScreen) draw(buf []byte) {
 	case back:
 		s.log().Debug("display track overlay back", append([]any{"station", t.Station, "title", t.Title}, holdAttrs("track")...)...)
 	case first && wanted:
-		s.log().Info("display track overlay on", append([]any{"station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock}, holdAttrs("track")...)...)
+		s.log().Info("display track overlay on", append([]any{"station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock, "input", t.still}, holdAttrs("track")...)...)
 	}
 	dx, dy := trackShift(step)
 	t0 := time.Now()
@@ -543,7 +627,7 @@ func (s *trackScreen) stats() map[string]any {
 func (s *trackScreen) nextDraw() time.Duration {
 	s.mu.Lock()
 	clock := s.want != nil && s.want.Clock
-	moving := s.want != nil && !s.paused
+	moving := s.want != nil && !s.paused && !s.want.still
 	marquee := s.marqueeNext
 	now := s.now()
 	toSleep := time.Duration(0)
@@ -798,6 +882,8 @@ type trackFrame struct {
 	// moon: the sleep countdown's moon at moonX, moonY (top left, unshifted)
 	moon         bool
 	moonX, moonY int
+	// noBars: no playing symbol (the clock on one of the speaker's inputs)
+	noBars bool
 }
 
 // steps is how many marquee steps the longest scrolling line needs; 0 when
@@ -822,7 +908,7 @@ const (
 // trackLayout lays out the track screen for t (already sanitised) at the time
 // now.
 func trackLayout(t TrackText, now time.Time) trackFrame {
-	f := trackFrame{ruleY: -1}
+	f := trackFrame{ruleY: -1, noBars: t.still}
 	if t.Artist == "" && t.Title == "" {
 		if t.Clock {
 			f.plainHeader(t)
@@ -963,7 +1049,9 @@ func (f trackFrame) render(a trackAnim, step, dx, dy int, buf []byte) {
 	if len(f.lines) == 0 {
 		return
 	}
-	c.bars(1+dx, f.barsBottom+dy, a)
+	if !f.noBars {
+		c.bars(1+dx, f.barsBottom+dy, a)
+	}
 	f.drawStanding(c, dx, dy)
 	for _, l := range f.lines {
 		l.draw(c, step, dx, dy)

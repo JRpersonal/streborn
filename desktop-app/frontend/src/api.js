@@ -239,6 +239,30 @@ export function SearchLibrary(query, field) {
 export function CheckFirewall(force) {
   return callOptionalBinding('CheckFirewall', [!!force]);
 }
+
+// The firmware ladder (fwladder.js): the step-by-step update for very old
+// speaker firmware. Optional bindings, per the note above.
+export function GetFirmwareLadder(host) {
+  return callOptionalBinding('GetFirmwareLadder', [host || '']);
+}
+export function GetFirmwareLadderManual(model, moduleType, version, bluetooth) {
+  return callOptionalBinding('GetFirmwareLadderManual', [model || '', moduleType || '', version || '', bluetooth || '']);
+}
+export function PrepareFirmwareStick(stepId, drivePath) {
+  return callOptionalBinding('PrepareFirmwareStick', [stepId, drivePath]);
+}
+export function PrepareFirmwareStickFromFile(stepId, drivePath, localPath) {
+  return callOptionalBinding('PrepareFirmwareStickFromFile', [stepId, drivePath, localPath]);
+}
+export function PickFirmwareFile() {
+  return callOptionalBinding('PickFirmwareFile', []);
+}
+export function CancelFirmwareStick() {
+  return callOptionalBinding('CancelFirmwareStick', []);
+}
+export function RecheckFirmware(host) {
+  return callOptionalBinding('RecheckFirmware', [host || '']);
+}
 export function AllowThroughFirewall(includePublic) {
   return callOptionalBinding('AllowThroughFirewall', [!!includePublic]);
 }
@@ -319,6 +343,14 @@ export function PlayPandoraStation(host, port, location, name, type) {
 // the note above.
 export function SaveQueuePreset(host, port, slot) {
   return callOptionalBinding('SaveQueuePreset', [host, port, slot]);
+}
+
+// SavePlayingPreset stores the station the speaker plays right now on a key;
+// the speaker agent decides it from its own record of the play, the same call
+// as the phone page's hold, and the promise resolves with {kind, name} of the
+// save (#1467). Optional binding, per the note above.
+export function SavePlayingPreset(host, port, slot) {
+  return callOptionalBinding('SavePlayingPreset', [host, port, slot]);
 }
 
 // PushFavorites stores the starred stations on one speaker, so the phone page

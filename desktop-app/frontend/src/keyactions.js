@@ -1,9 +1,11 @@
 // keyactions.js — pure helpers for the built-in actions a key of one
-// speaker's remote can carry (the agent's /api/keyactions). Two actions:
+// speaker's remote can carry (the agent's /api/keyactions):
 //   - 'sleep' steps the sleep timer 15 -> 30 -> 60 min -> off (thumbs keys);
 //   - 'snooze' snoozes a ringing alarm and does nothing otherwise (thumbs
 //     keys and AUX; AUX always switches the input too, which is the silence
-//     a ringing alarm needs, so the sleep timer cannot go there).
+//     a ringing alarm needs, so the sleep timer cannot go there);
+//   - 'bassUp' / 'bassDown' move the speaker's bass one step per press
+//     (discussion #1494; thumbs keys only, for the same reason as the timer).
 //
 // Document shape: { keys: { thumbsUp: 'sleep', thumbsDown: 'snooze', aux: 'snooze' } }
 //
@@ -18,11 +20,23 @@ export const SNOOZE_KEY_IDS = ['thumbsUp', 'thumbsDown', 'aux'];
 export const KEY_ACTION_KEY_IDS = SNOOZE_KEY_IDS;
 export const ACTION_SLEEP = 'sleep';
 export const ACTION_SNOOZE = 'snooze';
+export const ACTION_BASS_UP = 'bassUp';
+export const ACTION_BASS_DOWN = 'bassDown';
+// Every known action by its lower-cased name, to its canonical spelling (the
+// agent's keyactions normalises the same way).
+const CANONICAL = {
+  sleep: ACTION_SLEEP, snooze: ACTION_SNOOZE, bassup: ACTION_BASS_UP, bassdown: ACTION_BASS_DOWN,
+};
+
+// isBassAction reports whether a is one of the two bass steps.
+export function isBassAction(a) {
+  return a === ACTION_BASS_UP || a === ACTION_BASS_DOWN;
+}
 
 // actionAllowed reports whether action may go on key (the agent's
 // keyactions.AllowedOn).
 export function actionAllowed(action, key) {
-  if (action === ACTION_SLEEP) return SLEEP_KEY_IDS.includes(key);
+  if (action === ACTION_SLEEP || isBassAction(action)) return SLEEP_KEY_IDS.includes(key);
   if (action === ACTION_SNOOZE) return SNOOZE_KEY_IDS.includes(key);
   return false;
 }
@@ -33,7 +47,7 @@ export function normalizeKeyActions(raw) {
   const keys = (raw && raw.keys && typeof raw.keys === 'object') ? raw.keys : {};
   const out = { keys: {} };
   for (const k of KEY_ACTION_KEY_IDS) {
-    const a = String(keys[k] || '').trim().toLowerCase();
+    const a = CANONICAL[String(keys[k] || '').trim().toLowerCase()] || '';
     if (actionAllowed(a, k)) out.keys[k] = a;
   }
   return out;
@@ -42,7 +56,12 @@ export function normalizeKeyActions(raw) {
 // actionOn returns the action key carries, '' for none.
 export function actionOn(doc, key) {
   const a = doc && doc.keys && doc.keys[key];
-  return a === ACTION_SLEEP || a === ACTION_SNOOZE ? a : '';
+  return a === ACTION_SLEEP || a === ACTION_SNOOZE || isBassAction(a) ? a : '';
+}
+
+// bassOn reports whether key carries a bass step.
+export function bassOn(doc, key) {
+  return isBassAction(actionOn(doc, key));
 }
 
 // sleepOn reports whether key carries the sleep timer.

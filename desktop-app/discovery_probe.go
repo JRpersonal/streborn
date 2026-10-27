@@ -157,18 +157,19 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 		// labelled straight from this one verified probe, even when the
 		// :8090 /info enrichment below fails because the box is busy right
 		// after an OTA restart. Without this the box showed as "str-<ip>".
-		FriendlyName:      jsonStringField(s, "friendlyName"),
-		Model:             jsonStringField(s, "model"),
-		BoxHealth:         jsonStringField(s, "boxHealth"),
-		Internet:          jsonStringField(s, "internet"),
-		InternetReason:    jsonStringField(s, "internetReason"),
-		ArcadeAt:          jsonStringField(s, "arcadeAt"),
-		ConflictingMod:    jsonStringField(s, "conflictingMod"),
-		ForeignCloudURL:   jsonStringField(s, "foreignCloudURL"),
-		GroupKeyError:     jsonStringField(s, "groupKeyError"),
-		HoldRefusedSource: jsonStringField(s, "holdRefusedSource"),
-		HoldRefusedSlot:   jsonStringField(s, "holdRefusedSlot"),
-		Storm1036:         jsonStringField(s, "preset1036Storm") == "active",
+		FriendlyName:       jsonStringField(s, "friendlyName"),
+		Model:              jsonStringField(s, "model"),
+		BoxHealth:          jsonStringField(s, "boxHealth"),
+		Internet:           jsonStringField(s, "internet"),
+		InternetReason:     jsonStringField(s, "internetReason"),
+		ArcadeAt:           jsonStringField(s, "arcadeAt"),
+		ConflictingMod:     jsonStringField(s, "conflictingMod"),
+		ForeignCloudURL:    jsonStringField(s, "foreignCloudURL"),
+		GroupKeyError:      jsonStringField(s, "groupKeyError"),
+		HoldRefusedSource:  jsonStringField(s, "holdRefusedSource"),
+		HoldRefusedSlot:    jsonStringField(s, "holdRefusedSlot"),
+		StaleFolderKeySlot: jsonStringField(s, "staleFolderKeySlot"),
+		Storm1036:          jsonStringField(s, "preset1036Storm") == "active",
 		Storm1036SinceSec: func() int {
 			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))
 			return n
