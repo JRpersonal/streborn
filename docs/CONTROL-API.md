@@ -32,7 +32,7 @@ All request and response bodies are JSON.
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
 | `POST` | `/api/play` | `{"url":"https://...","title":"...","mime":"audio/mpeg"}` | Play any stream URL. `title`, `icon`, `mime` are optional. |
-| `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`6`. |
+| `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`12` (`7`-`12` is the second row, see Presets). |
 | `POST` | `/api/pause` | - | Pause. |
 | `POST` | `/api/resume` | - | Resume. |
 | `POST` | `/api/stop` | - | Stop. |
@@ -58,12 +58,14 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`  | `/api/presets` | - | The STR preset store (what the six slots point at). |
-| `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on key `N` to key `M` (1-6), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
-| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on key `N` (1-6): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
-| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename key `1`-`6`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
-| `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them. |
-| `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). |
+| `GET`  | `/api/presets` | - | The STR preset store (what the twelve slots point at). |
+| `PUT`  | `/api/presets` | `[{...},...]` | Write a whole set (at most 12, slots 1-12) in one go; slots the set does not name are left alone. |
+| `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`12`. |
+| `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-12, also between the rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
+| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-12): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
+| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`12`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
+| `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them (always 1-6). |
+| `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). This presses the speaker's own key, so the second row is not reachable here; use `/api/play/<slot>`. |
 
 `POST /api/play/<slot>` is usually what you want to start a preset from
 automation; `presets/recall` mirrors a physical button press.
@@ -72,7 +74,20 @@ A station lives on one key at a time. Saving one that is already on another
 key is refused with `409` and `{"code":"already-on-slot","slot":N,"name":"..."}`,
 because clearing that other key without being asked is how presets got lost.
 `POST /api/box/preset-move` is the explicit way to do it: it writes the new key
-and frees the old one in a single store write.
+and frees the old one in a single store write. The rule spans both rows, so the
+`slot` in that answer can be `7`-`12`.
+
+### The second row (slots 7-12)
+
+Slots `7`-`12` are a second row of six presets: slot `6+n` is preset key `n`
+pressed twice quickly. The agent stores them exactly like `1`-`6` and every
+preset endpoint above, the alarms and `/api/play/<slot>` accept them. They
+never reach the speaker's own preset list (its keys are 1 to 6), so
+`/api/box/presets` and `/api/box/presets/recall` stay at 1-6, and a row-2 slot
+plays the way `/api/play/<slot>` plays any slot (`/stream/7`-`/stream/12`,
+`/spotify/stream-7.ogg`-`stream-12.ogg`). An agent that has the second row
+reports `"presetRows":"2"` in `/api/agent/version`; an older one has no such
+key and answers `400` for slot 7 and up.
 
 ## Pandora stations
 
@@ -102,7 +117,7 @@ takes the item from what the speaker plays.
 
 An alarm is
 `{"id","enabled","name","hour","minute","days","slot","volume","autoOff","snooze"}`:
-`days` are weekdays with `0` = Sunday, `slot` is a preset 1-6, `volume` is
+`days` are weekdays with `0` = Sunday, `slot` is a preset 1-12, `volume` is
 1-100 or `0` to leave the speaker's own level alone, `autoOff` switches the
 speaker off that many minutes after the alarm starts (1-720, or `0` for never),
 and `snooze` is how many minutes a snoozed alarm stays quiet (`5`, `9`, `10` or
@@ -177,7 +192,7 @@ shows a green tick over a group that is still playing.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, and `"presetRows":"2"` on an agent with the second preset row (slots 7-12). The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
