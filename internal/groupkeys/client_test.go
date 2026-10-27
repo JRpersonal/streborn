@@ -128,16 +128,27 @@ func TestLiveZoneRetriesAGatewayError(t *testing.T) {
 }
 
 // A stale now-playing (served from cache while the firmware does not answer)
-// is unknown, not busy: the press must still bring the music back.
-func TestIdleTreatsAStaleStatusAsUnknown(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-STR-Status-Stale", "1")
-		_, _ = w.Write([]byte(`<nowPlaying source="LOCAL_INTERNET_RADIO"><playStatus>PLAY_STATE</playStatus></nowPlaying>`))
-	}))
-	defer srv.Close()
-	c, master := testClientFor(t, srv)
-	idle, err := c.Idle(context.Background(), master)
-	if !idle || err == nil {
-		t.Fatalf("idle=%v err=%v, want idle with an error saying why", idle, err)
+// that says the speaker plays is still trusted: read as idle, the press pushed
+// the last STR station over Bluetooth, AUX or Spotify. A stale body that does
+// not say it plays is unknown, which the caller treats as idle.
+func TestIdleOnAStaleStatus(t *testing.T) {
+	for _, tc := range []struct {
+		body     string
+		wantIdle bool
+		wantErr  bool
+	}{
+		{`<nowPlaying source="BLUETOOTH"><playStatus>PLAY_STATE</playStatus></nowPlaying>`, false, false},
+		{`<nowPlaying source="STANDBY"></nowPlaying>`, true, true},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-STR-Status-Stale", "1")
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		c, master := testClientFor(t, srv)
+		idle, err := c.Idle(context.Background(), master)
+		srv.Close()
+		if idle != tc.wantIdle || (err != nil) != tc.wantErr {
+			t.Errorf("%s: idle=%v err=%v, want idle=%v err=%v", tc.body, idle, err, tc.wantIdle, tc.wantErr)
+		}
 	}
 }

@@ -177,14 +177,16 @@ func idIn(ids []string, want string) bool {
 func (c *httpClient) bases(ctx context.Context, master Member) ([]string, error) {
 	master, err := c.resolve(ctx, master)
 	if err != nil {
-		return nil, err
+		// The stored address now belongs to another speaker (or none): a
+		// retry never helps, saving the group again does.
+		return nil, withKind(KindMemberUnresolved, err)
 	}
 	if c.isSelf(master) {
 		return []string{fmt.Sprintf("http://127.0.0.1:%d", c.opts.LocalPort)}, nil
 	}
 	ip := master.IP
 	if ip == "" {
-		return nil, errors.New("the main speaker has no address")
+		return nil, withKind(KindMemberUnresolved, errors.New("the main speaker has no address"))
 	}
 	ports := []string{"17008", "8888"}
 	if c.opts.PortHint != nil {
@@ -440,9 +442,11 @@ func (c *httpClient) Dissolve(ctx context.Context, master Member) error {
 // paused speaker counts as idle: the press is meant to end in music.
 //
 // While the firmware does not answer, the agent serves the last now-playing it
-// had and marks it X-STR-Status-Stale. That old PLAY_STATE says nothing about
-// now, so a stale answer counts as unknown, which the caller treats as idle:
-// read as busy, it skipped the resume and the press ended in silence.
+// had and marks it X-STR-Status-Stale. A stale body that says the speaker
+// plays is still the best estimate: read as idle, the press re-pushed the last
+// STR station over whatever the speaker was playing (Bluetooth, AUX, Spotify).
+// A stale body that does not say it plays proves nothing either way, so that
+// one counts as unknown, which the caller treats as idle.
 func (c *httpClient) Idle(ctx context.Context, master Member) (bool, error) {
 	code, b, hdr, err := c.doH(ctx, master, http.MethodGet, "/api/status", "", zoneReadTimeout)
 	if err != nil {
@@ -451,11 +455,11 @@ func (c *httpClient) Idle(ctx context.Context, master Member) (bool, error) {
 	if code != http.StatusOK {
 		return true, httpErr(code, b)
 	}
-	if hdr.Get("X-STR-Status-Stale") == "1" {
-		return true, errors.New("the speaker's now-playing is stale (its web server is not answering)")
-	}
 	s := string(b)
 	busy := strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+	if !busy && hdr.Get("X-STR-Status-Stale") == "1" {
+		return true, errors.New("the speaker's now-playing is stale (its web server is not answering)")
+	}
 	return !busy, nil
 }
 
