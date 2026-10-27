@@ -64,18 +64,43 @@ func TestNativeSelfResumeInsideTheEpisodeIsStillStopped(t *testing.T) {
 	}
 }
 
-// handleBoxPower must mark its successful re-push. The handler wakes a real
-// box first, so the order is checked in its source.
-func TestHandleBoxPowerMarksItsRepush(t *testing.T) {
+// A push that failed is not STR's play: undo puts the record back, so the
+// guard still treats a firmware self-resume of that stream as one.
+func TestNoteRepushedUndoRestoresTheRecord(t *testing.T) {
+	t.Parallel()
+	s, _ := selfResumeTestServer(t, nowPlayingSnapshot{})
+	gen := s.setLastPlay("http://192.0.2.5/s", "S", "", "")
+	s.play.markFromBoxIfGen(gen)
+	before, _ := s.play.snapshot()
+	undo := s.play.noteRepushed("http://192.0.2.5/s")
+	if mid, _ := s.play.snapshot(); mid.fromBox {
+		t.Fatal("the mark did not take")
+	}
+	undo()
+	after, _ := s.play.snapshot()
+	if !after.fromBox || !after.ts.Equal(before.ts) {
+		t.Fatal("undo did not restore the record")
+	}
+}
+
+// handleBoxPower must mark its re-push BEFORE it wakes the box and pushes:
+// the late group-wake check runs four seconds after the form, in parallel with
+// this call, and a wake plus a push on a stalling speaker takes longer than
+// that. The handler wakes a real box, so the order is checked in its source.
+func TestHandleBoxPowerMarksItsRepushBeforePushing(t *testing.T) {
 	t.Parallel()
 	src, err := os.ReadFile("boxsettings_http.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := funcBody(t, string(src), "handleBoxPower")
-	push := strings.Index(body, "s.renderer.PlayURLMime(")
 	mark := strings.Index(body, "s.play.noteRepushed(boxURL)")
-	if push < 0 || mark < 0 || mark < push {
-		t.Fatal("handleBoxPower must mark its re-push as STR's play after PlayURLMime succeeds")
+	wake := strings.Index(body, "s.ensureBoxReady(")
+	push := strings.Index(body, "s.renderer.PlayURLMime(")
+	if mark < 0 || wake < 0 || push < 0 || mark > wake || mark > push {
+		t.Fatal("handleBoxPower must mark its re-push as STR's play before it wakes the box and pushes")
+	}
+	if !strings.Contains(body, "undo()") {
+		t.Fatal("handleBoxPower must undo the mark when the push fails")
 	}
 }
