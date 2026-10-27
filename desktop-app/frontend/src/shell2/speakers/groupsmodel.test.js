@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   ACTIONS, ACTION_SELECTOR, CONFIRM_LATE_MS, DONE_SHOWN_MS, actionOf, expectationMet, focusKeyOf,
-  liveLeaderOf, noteVerdict, pairKeyOf, pendingPhase,
+  liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase,
 } from './groupsmodel.js';
 
 // A stand-in for an element: id, classes and attributes, nothing else.
@@ -150,6 +150,23 @@ describe('noteVerdict', () => {
     expect(noteVerdict('<div class="setup-ok">x</div>')).toBe('ok');
     expect(noteVerdict('<div class="muted">Loading...</div>')).toBe('');
     expect(noteVerdict('')).toBe('');
+  });
+});
+
+describe('pairUndoSplit', () => {
+  const name = (b) => b.name;
+  it('keeps an offline or unknown half apart from the ones an undo reaches', () => {
+    const a = { name: 'A', host: '192.0.2.1' };
+    const b = { name: 'B', host: '192.0.2.2', offline: true };
+    expect(pairUndoSplit([{ box: a, member: {} }, { box: b, member: {} }], name)).toEqual({ reachable: ['A'], offline: ['B'] });
+    expect(pairUndoSplit([{ box: a, member: {} }, { box: null, member: { ip: '192.0.2.9' } }], name)).toEqual({ reachable: ['A'], offline: ['192.0.2.9'] });
+    expect(pairUndoSplit([{ box: a, member: {} }, { box: { ...b, offline: false }, member: {} }], name)).toEqual({ reachable: ['A', 'B'], offline: [] });
+    expect(pairUndoSplit(null)).toEqual({ reachable: [], offline: [] });
+  });
+
+  it('is needed: an offline half drops out of the zone poll, so pairGone alone reads done', () => {
+    // Why groups.js does not trust pairGone for a pair with an offline half.
+    expect(expectationMet({ type: 'pairGone', key: 'A+B' }, { A: { master: '', members: [] } }, [])).toBe(true);
   });
 });
 

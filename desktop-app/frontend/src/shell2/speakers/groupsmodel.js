@@ -197,6 +197,22 @@ export function pairKeyOf(leftID, rightID) {
   return stereoPairKey({ members: [{ deviceID: leftID }, { deviceID: rightID }] });
 }
 
+// pairUndoSplit sorts the halves of a pair (pairMemberBoxes) into the ones an
+// undo reaches and the ones it does not: a half the app lists as offline, or
+// one it does not know at all, is not asked (multiroom.js
+// doDissolveStereoPair) and keeps its side of the pair. Names via nameOf.
+export function pairUndoSplit(halves, nameOf = (b) => (b && (b.name || b.host)) || '') {
+  const reachable = [];
+  const offline = [];
+  for (const h of halves || []) {
+    if (!h) continue;
+    const m = h.member || {};
+    if (h.box && !h.box.offline) reachable.push(nameOf(h.box));
+    else offline.push(h.box ? nameOf(h.box) : (m.ip || m.deviceID || ''));
+  }
+  return { reachable: reachable.filter(Boolean), offline: offline.filter(Boolean) };
+}
+
 // liveLeaderOf is the speaker that leads a group right now, the one the
 // classic Ungroup takes apart (the hand-picked main first when it leads).
 export function liveLeaderOf(boxes, zoneLive, pickedID = '') {

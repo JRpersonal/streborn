@@ -62,6 +62,9 @@ const PLACES = {
 const sec = (page, s) => page.locator(`#view-multiroom .ui2-grp-sec[data-sec="${s}"]`);
 const card = (page, kind, key) => page.locator(`#view-multiroom .ui2-grp-card[data-kind="${kind}"][data-key="${key}"]`);
 const dialog = (page) => page.locator('#ui2GrpConfirm');
+// The frame x of the pair and of the stored group, named for what they take apart.
+const undoBtn = (page) => card(page, 'pair', TL.deviceID).getByRole('button', { name: 'Undo Terrace' });
+const deleteBtn = (page) => card(page, 'stored', DINING.deviceID).getByRole('button', { name: `Delete the group ${DINING.friendlyName}` });
 
 async function openGroups(page) {
   await page.locator('#ui2Sidebar .ui2-nav-item[data-view="speakers"]').click();
@@ -85,7 +88,7 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     await expect(pair.locator('.ui2-grp-card-title')).toHaveText('Terrace');
     await expect(pair.locator('.ui2-grp-members li')).toHaveText([`Left: ${TL.friendlyName}`, `Right: ${TR.friendlyName}`]);
     await expect(pair.getByRole('button', { name: 'Change Terrace' })).toBeVisible();
-    await expect(pair.getByRole('button', { name: 'Undo this stereo pair' })).toBeVisible();
+    await expect(pair.getByRole('button', { name: 'Undo Terrace' })).toBeVisible();
     const fixed = card(page, 'stored', DINING.deviceID);
     await expect(fixed).toBeVisible();
     await expect(sec(page, 'fixed').locator('.ui2-grp-card')).toHaveCount(1);
@@ -93,7 +96,7 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     await expect(fixed.locator('.u-pill')).toHaveText(['Fixed group', 'Saved, not playing']);
     await expect(fixed.locator('.ui2-grp-members li')).toHaveCount(2);
     await expect(fixed.getByRole('button', { name: `Take ${HALL.friendlyName} out of this group` })).toBeVisible();
-    await expect(fixed.getByRole('button', { name: 'Delete this permanent group' })).toBeVisible();
+    await expect(fixed.getByRole('button', { name: `Delete the group ${DINING.friendlyName}` })).toBeVisible();
     // Nothing plays together in this network: the section says so, no card.
     await expect(sec(page, 'now').locator('.ui2-grp-card')).toHaveCount(0);
     await expect(page.locator('#zoneCurrent')).toHaveText('No group right now.');
@@ -104,6 +107,8 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     await expect(page.locator('#stereoCreate')).toHaveText(`Pair ${TL.friendlyName} (left) and ${TR.friendlyName} (right)`);
     await expect(page.locator('#ui2GrpFixedEditorTitle')).toHaveText('New fixed group');
     await expect(page.locator('#zonePermanent')).toBeChecked();
+    // The status region is there, empty, before the first action speaks into it.
+    await expect(page.locator('#ui2GrpLive[role="status"]')).toHaveText('');
     expect(await app.page.evaluate(() => window.__strMock.pageErrors)).toEqual([]);
   });
 
@@ -126,7 +131,7 @@ test.describe('UI 2.0 Speakers > Groups', () => {
   test('3. undoing a pair asks first, naming it; Cancel sends nothing; done only once the speakers report it', async ({ app, mock }) => {
     const { page } = app;
     await openGroups(page);
-    const undo = card(page, 'pair', TL.deviceID).getByRole('button', { name: 'Undo this stereo pair' });
+    const undo = undoBtn(page);
     await undo.click();
     await expect(dialog(page)).toBeVisible();
     await expect(dialog(page).locator('#ui2GrpConfirmTitle')).toHaveText('Undo the stereo pair Terrace?');
@@ -135,12 +140,12 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     await page.keyboard.press('Escape');
     await expect(dialog(page)).toBeHidden();
     await expect(undo).toBeFocused();
-    await page.getByRole('button', { name: 'Undo this stereo pair' }).click();
+    await undoBtn(page).click();
     await page.locator('#ui2GrpConfirmNo').click();
     expect(await mock.count('DissolveStereoPair')).toBe(0);
 
-    await page.getByRole('button', { name: 'Undo this stereo pair' }).click();
-    await page.getByRole('button', { name: 'Undo Terrace' }).click();
+    await undoBtn(page).click();
+    await dialog(page).getByRole('button', { name: 'Undo Terrace' }).click();
     await mock.expectCalled('DissolveStereoPair', { pred: onHost(TL.host) });
     await mock.expectCalled('DissolveStereoPair', { pred: onHost(TR.host) });
     const status = page.locator('#ui2GrpStatus-pairs');
@@ -159,8 +164,8 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     const { page } = app;
     await mock.set('DissolveStereoPair', { error: 'speaker busy' });
     await openGroups(page);
-    await page.getByRole('button', { name: 'Undo this stereo pair' }).click();
-    await page.getByRole('button', { name: 'Undo Terrace' }).click();
+    await undoBtn(page).click();
+    await dialog(page).getByRole('button', { name: 'Undo Terrace' }).click();
     const err = card(page, 'pair', TL.deviceID).locator('#stereoResult .setup-err');
     await expect(err).toHaveText('Could not change the group: speaker busy');
     await expect(page.locator('#ui2GrpStatus-pairs')).toBeHidden();
@@ -176,6 +181,24 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     await page.locator('#stereoLeft').selectOption(BR.deviceID);
     await expect(page.locator('#ui2GrpPairEditorTitle')).toHaveText('New stereo pair');
     await expect(page.locator('#stereoCreate')).toHaveText(`Pair ${BR.friendlyName} (left) and ${TR.friendlyName} (right)`);
+  });
+
+  test.describe('with one half of the pair offline', () => {
+    test.use({ scenario: mergeScenario(speakersScenario(), { boxPatches: { terraceRight: { offline: true } }, zones: { terraceRight: null } }) });
+
+    test('5b. undoing the pair says the offline half still holds its side, not a plain done', async ({ app, mock }) => {
+      const { page } = app;
+      await openGroups(page);
+      await undoBtn(page).click();
+      await dialog(page).getByRole('button', { name: 'Undo Terrace' }).click();
+      await mock.expectCalled('DissolveStereoPair', { pred: onHost(TL.host) });
+      expect(await mock.count('DissolveStereoPair', onHost(TR.host))).toBe(0);
+      const status = page.locator('#ui2GrpStatus-pairs');
+      await expect(status).toHaveText(`Sent. Waiting for ${TL.friendlyName} to confirm.`);
+      await setZone(page, TL.host, {});
+      await expect(status).toHaveText(`Terrace is undone on ${TL.friendlyName}. ${TR.friendlyName} is not reachable and still holds its side of the pair. Once it is back, this page offers to clear it.`, POLL);
+      await expect(status).toHaveClass(/\bis-warn\b/);
+    });
   });
 
   test.describe('without a pair', () => {
@@ -208,16 +231,36 @@ test.describe('UI 2.0 Speakers > Groups', () => {
     await page.locator('#ui2GrpConfirmNo').click();
     expect(await mock.count('RemoveGroupMember')).toBe(0);
 
-    await page.getByRole('button', { name: 'Delete this permanent group' }).click();
+    await deleteBtn(page).click();
     await expect(dialog(page).locator('#ui2GrpConfirmTitle')).toHaveText(`Delete the fixed group ${DINING.friendlyName}?`);
     await expect(dialog(page).locator('#ui2GrpConfirmBody')).toContainText(HALL.friendlyName);
-    await page.getByRole('button', { name: `Delete the group ${DINING.friendlyName}` }).click();
+    await dialog(page).getByRole('button', { name: `Delete the group ${DINING.friendlyName}` }).click();
     await mock.expectCalled('ForgetPermanentGroup', { pred: onHost(DINING.host), times: 1 });
     const status = page.locator('#ui2GrpStatus-fixed');
     await expect(status).toHaveText(`Sent. Waiting for ${DINING.friendlyName} to confirm.`);
+    // The keyboard waits on the section heading, not on a button about to go.
+    await expect(page.locator('#ui2GrpH-fixed')).toBeFocused();
     await setZone(page, DINING.host, {});
     await expect(status).toHaveText(`The fixed group ${DINING.friendlyName} is deleted. It no longer forms by itself.`, POLL);
     await expect(sec(page, 'fixed').locator('.ui2-grp-empty')).toHaveText('No fixed group yet.');
+    // The card is gone; the focus did not fall to the top of the document.
+    await expect(page.locator('#ui2GrpH-fixed')).toBeFocused();
+  });
+
+  test('7b. by keyboard alone: after a confirmed undo the focus stays on the section, never on <body>', async ({ app }) => {
+    const { page } = app;
+    await openGroups(page);
+    await undoBtn(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#ui2GrpConfirmNo')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#ui2GrpConfirmYes')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#ui2GrpH-pairs')).toBeFocused();
+    await setZone(page, TL.host, {});
+    await setZone(page, TR.host, {});
+    await expect(card(page, 'pair', TL.deviceID)).toHaveCount(0, POLL);
+    await expect(page.locator('#ui2GrpH-pairs')).toBeFocused();
   });
 
   test('8. a new fixed group names its speakers on the button and is done when the main speaker stores it', async ({ app, mock }) => {
@@ -262,8 +305,8 @@ test.describe('UI 2.0 Speakers > Groups', () => {
       await page.clock.runFor(3_000);
       await openGroups(page);
       await page.clock.runFor(1_000);
-      await page.getByRole('button', { name: 'Delete this permanent group' }).click();
-      await page.getByRole('button', { name: `Delete the group ${DINING.friendlyName}` }).click();
+      await deleteBtn(page).click();
+      await dialog(page).getByRole('button', { name: `Delete the group ${DINING.friendlyName}` }).click();
       await mock.expectCalled('ForgetPermanentGroup');
       await page.clock.runFor(1_000);
       await expect(page.locator('#ui2GrpStatus-fixed')).toHaveText(`Sent. Waiting for ${DINING.friendlyName} to confirm.`);
@@ -288,7 +331,7 @@ test.describe('UI 2.0 Speakers > Groups', () => {
       await page.locator('#zoneUngroup').click();
       await expect(dialog(page).locator('#ui2GrpConfirmTitle')).toHaveText(`Dissolve the group ${LR.friendlyName}?`);
       await expect(dialog(page).locator('#ui2GrpConfirmBody')).toHaveText(`${LR.friendlyName}, ${BR.friendlyName} stop playing together and play on their own again.`);
-      await page.getByRole('button', { name: `Dissolve the group ${LR.friendlyName}` }).click();
+      await dialog(page).getByRole('button', { name: `Dissolve the group ${LR.friendlyName}` }).click();
       await mock.expectCalled('DissolveZone', { pred: onHost(LR.host), times: 1 });
       await expect(page.locator('#ui2GrpStatus-now')).toHaveText(`Sent. Waiting for ${LR.friendlyName}, ${BR.friendlyName} to confirm.`);
       await setZone(page, LR.host, {});
@@ -337,7 +380,7 @@ test.describe('UI 2.0 Speakers > Groups', () => {
         await openGroups(page);
         await page.addStyleTag({ content: KILL_ANIM });
         await scan(page, `${theme}|ui2|groups`, BASELINE, { include: '#view-multiroom' });
-        await page.getByRole('button', { name: 'Undo this stereo pair' }).click();
+        await undoBtn(page).click();
         await expect(dialog(page)).toBeVisible();
         await scan(page, `${theme}|ui2|groups-confirm`, BASELINE, { include: '#ui2GrpConfirm' });
       });

@@ -57,7 +57,7 @@ import { groupMembersOf, masterBoxForKey, pairMemberBoxes, stereoPairKey, stereo
 import { pairDisplayName } from '../../stereoNames.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { renderMultiroom, setMultiroomRenderHooks } from '../../views/multiroom.js';
-import { ACTIONS, ACTION_SELECTOR, actionOf, expectationMet, focusKeyOf, liveLeaderOf, noteVerdict, pairKeyOf, pendingPhase } from './groupsmodel.js';
+import { ACTIONS, ACTION_SELECTOR, actionOf, expectationMet, focusKeyOf, liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase } from './groupsmodel.js';
 import './groups.css';
 
 let wiredRoot = null;
@@ -91,6 +91,7 @@ export function mountGroups(ctx = {}) {
   const root = ctx.root;
   if (!root) return;
   root.dataset.ui2Route = 'groups';
+  ensureLiveRegion();
   if (typeof ctx.label === 'function') labelFn = ctx.label;
   if (wiredRoot !== root) {
     wire(root);
@@ -119,6 +120,7 @@ function beforePaint(root) {
 function afterPaint(root, focusKey) {
   if (!isOn(root)) return;
   if (root.querySelector(':scope > .ui2-grp')) return;
+  const lastSec = pending ? pending.section : lastZoneSec;
   try {
     arrange(root);
   } catch (e) {
@@ -133,6 +135,12 @@ function afterPaint(root, focusKey) {
   if (key) {
     const el = root.querySelector(key);
     if (el && !el.disabled) el.focus({ preventScroll: !wantFocusScroll(key) });
+    else {
+      // The focused control is gone with its card: the heading of the
+      // section the last action was in, never <body>.
+      const h = root.querySelector(`#ui2GrpH-${lastSec}`);
+      if (h) h.focus({ preventScroll: true });
+    }
   }
 }
 
@@ -235,6 +243,9 @@ function arrange(root) {
     const mk = up(x.dataset.dissolve);
     let sec;
     let html;
+    // The frame x in words, naming what it takes apart: several cards must
+    // never give several identical buttons.
+    let xText = '';
     if (kind === 'pair') {
       const pair = pairs.find((p) => up(p.master) === mk || (p.members || []).some((m) => up(m && m.deviceID) === mk)) || null;
       const name = pairTitle(pair);
@@ -243,6 +254,7 @@ function arrange(root) {
       const members = `<li>${escapeHtml(t('ui2.speakers.groups.leftOf', { name: who(0) }))}</li>`
         + `<li>${escapeHtml(t('ui2.speakers.groups.rightOf', { name: who(1) }))}</li>`;
       sec = 'pairs';
+      xText = t('ui2.speakers.groups.confirmPairBtn', { name });
       html = cardHTML({ kind: 'pair', key: mk, pairKey: stereoPairKey(pair), title: name, pills: pillHTML('accent', 'ui2.speakers.groups.pillPair'), members });
     } else {
       const perm = kind === 'stored' || !!fr.querySelector('.box-group-perm');
@@ -253,6 +265,7 @@ function arrange(root) {
         + (kind === 'stored' ? pillHTML('muted', 'ui2.speakers.groups.pillSaved') : pillHTML('ok', 'ui2.speakers.groups.pillNow'));
       const note = fr.querySelector('.zone-frame-note');
       sec = perm ? 'fixed' : 'now';
+      xText = t(kind === 'stored' ? 'ui2.speakers.groups.confirmForgetBtn' : 'ui2.speakers.groups.confirmGroupBtn', { name });
       html = cardHTML({ kind: kind === 'stored' ? 'stored' : 'zone', key: mk, title: name, pills, members: '', note: note ? note.textContent : '' });
     }
     const holder = document.createElement('div');
@@ -284,7 +297,8 @@ function arrange(root) {
       acts.appendChild(edit);
     }
     btn(x, 'secondary').classList.add('ui2-grp-x');
-    x.textContent = x.getAttribute('aria-label') || '';
+    x.textContent = xText || x.getAttribute('aria-label') || '';
+    if (xText) x.setAttribute('aria-label', xText);
     x.removeAttribute('title');
     acts.appendChild(x);
     slot(`cards-${sec}`).appendChild(card);
@@ -444,7 +458,8 @@ function paintStatus(grp) {
   const el = grp.querySelector(`#ui2GrpStatus-${pending.section}`);
   let text = '';
   let cls = '';
-  if (phase === 'done') { text = pending.doneText(); cls = 'is-ok'; }
+  // Done on part of the speakers only (an offline pair half) is not all done.
+  if (phase === 'done') { text = pending.doneText(); cls = pending.partial ? 'is-warn' : 'is-ok'; }
   else if (phase === 'waiting') { text = t('ui2.speakers.groups.waiting', { names: joinNames(pending.names) }); }
   else if (phase === 'late') { text = t('ui2.speakers.groups.late', { names: joinNames(pending.names), refresh: t('common.refresh') }); cls = 'is-warn'; }
   else if (phase === 'failed') {
@@ -470,15 +485,25 @@ const textOf = (html) => {
 function say(text) {
   if (!text || text === lastSaid) return;
   lastSaid = text;
-  if (!liveRegion || !document.body.contains(liveRegion)) {
-    liveRegion = document.createElement('div');
-    liveRegion.id = 'ui2GrpLive';
-    liveRegion.className = 'u-sr-only';
-    liveRegion.setAttribute('role', 'status');
-    liveRegion.setAttribute('aria-live', 'polite');
-    document.body.appendChild(liveRegion);
-  }
-  liveRegion.textContent = text;
+  const fresh = !liveRegion || !document.body.contains(liveRegion);
+  const region = ensureLiveRegion();
+  // A region that only now joined the page is not registered with a screen
+  // reader yet: write into it a moment later, or the first status is lost.
+  if (fresh) setTimeout(() => { if (lastSaid === text) region.textContent = text; }, 50);
+  else region.textContent = text;
+}
+
+// ensureLiveRegion creates the region empty; mountGroups calls it on entry,
+// so it exists before the first action's status.
+function ensureLiveRegion() {
+  if (liveRegion && document.body.contains(liveRegion)) return liveRegion;
+  liveRegion = document.createElement('div');
+  liveRegion.id = 'ui2GrpLive';
+  liveRegion.className = 'u-sr-only';
+  liveRegion.setAttribute('role', 'status');
+  liveRegion.setAttribute('aria-live', 'polite');
+  document.body.appendChild(liveRegion);
+  return liveRegion;
 }
 
 // describe works out, for one action, what the speakers are, what to ask
@@ -493,8 +518,14 @@ function describe(act, el, root) {
     const [left, right] = pairHalves(pair);
     const name = pairName(pair);
     const key = stereoPairKey(pair);
+    // The undo goes to the reachable halves only (multiroom.js
+    // doDissolveStereoPair); an offline half keeps its side of the pair, so
+    // "done" names only the halves that took it and says so about the other.
+    const split = pairUndoSplit(pairMemberBoxes(pair, boxes), nameOf);
+    const partial = split.offline.length > 0 && split.reachable.length > 0;
     return {
-      names: [left, right],
+      names: partial ? split.reachable : [left, right],
+      partial,
       confirm: {
         title: t('ui2.speakers.groups.confirmPairTitle', { name }),
         body: t('ui2.speakers.groups.confirmPairBody', { left, right }),
@@ -502,7 +533,9 @@ function describe(act, el, root) {
       },
       expect: { type: 'pairGone', key },
       cardSel: key ? `.ui2-grp-card[data-pair-key="${key}"]` : '',
-      doneText: () => t('ui2.speakers.groups.donePairGone', { name, names: joinNames([left, right]) }),
+      doneText: () => (partial
+        ? t('ui2.speakers.groups.donePairPartial', { name, names: joinNames(split.reachable), offline: joinNames(split.offline) })
+        : t('ui2.speakers.groups.donePairGone', { name, names: joinNames([left, right]) })),
     };
   };
   const groupOf = (mk) => {
@@ -685,6 +718,7 @@ function start(act, info) {
     names: info.names || [],
     cardSel: info.cardSel || '',
     doneText: info.doneText,
+    partial: !!info.partial,
   };
   lastSaid = '';
 }
@@ -724,12 +758,14 @@ function wire(root) {
         }
         if (!again || again.disabled || !isOn(root)) return;
         start(act, info);
-        // The control may be gone with the card it sat on: the section
-        // heading keeps the keyboard where the outcome will show.
         bypass = true;
         try { again.click(); } finally { bypass = false; }
+        // The control goes away with what it took apart, once the speakers
+        // report it (a later repaint): the section heading keeps the keyboard
+        // where the outcome will show, rather than on a control about to go.
+        // The dialog's close already gave the focus back to that control.
         const h = root.querySelector(`#ui2GrpH-${sec}`);
-        if (h && !root.contains(document.activeElement)) h.focus();
+        if (h) h.focus();
       });
       return;
     }
