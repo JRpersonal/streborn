@@ -863,6 +863,19 @@ from the speaker's key the same way, once per resume
 (`internal/webui/resumefile.go`). A library folder (the queue) is not covered
 yet.
 
+**The freeze is not every resume.** A field report on an ST10 (FW 27.0.6,
+2026-10, a 192 kbit/s MP3 on nginx) had the speaker's own resume continue
+correctly after a reboot: the same `Range: bytes=<buffer end>-` re-open, but
+audio played on. The end watch still saw now_playing on the paused second for
+two polls and restarted the file over it, a jump back of about ten seconds.
+The reporter also found that pause and resume worked only after a reboot,
+which fits the stale-URL-id state above being something the speaker gets into
+rather than something every resume hits. So the watch now waits for three
+reads on the paused second (7 s), ignores a position standing still anywhere
+else, and before it restarts anything reads the renderer's own clock
+(`GetPositionInfo` RelTime) twice: a position past the paused one, or one that
+moves, means the speaker resumed by itself, and nothing is sent.
+
 ## NetManager owns wpa_supplicant, and the conf file holds no credential
 
 Measured on a SoundTouch 10 (rhino/sm2, FW 27.0.6) on 2026-09-30.

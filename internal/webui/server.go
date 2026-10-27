@@ -750,6 +750,10 @@ type Server struct {
 	// to nowPlayingFn. nil means "", which the single-track end watch reads as
 	// unknown, never as another file.
 	nowPlayingLocationFn func() string
+	// relPositionFn scripts the renderer's own position (GetPositionInfo
+	// RelTime) that confirms a frozen file resume before it is repaired
+	// (resumefile.go). nil reads the renderer.
+	relPositionFn func() (time.Duration, bool)
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).
