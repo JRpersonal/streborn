@@ -166,6 +166,10 @@ Each phase ships with screenshots, the vitest suite green and every string in
 all bundles. The preview is also checked in a browser against simulated
 speakers in CI (`desktop-app/frontend/screenshots/ui2-check.mjs`).
 
+Decided for later: the update banner gets its UI 2.0 styling in phase 5, and
+a setting that fails on a speaker's page then shows its error in its own
+section instead of a toast across the window.
+
 ## Mockups
 
 The Radio and Output mockups predate the sidebar decision on #1284: the
