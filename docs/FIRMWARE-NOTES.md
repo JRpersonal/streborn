@@ -795,6 +795,37 @@ writes, so STR can tell its own keys from a person's. Measured on an ST10
 (rhino, 27.0.6) on 2026-10-10 with keys sent over `/key`; a key sent that way
 produces no analytics line at all.
 
+### A key pressed twice: one selection frame per press, except in a group
+
+STR's second preset row (slots 7 to 12, #1110) is reached by pressing a key
+twice quickly (`cmd/agent/doublepress.go`). The firmware has no notion of a
+double press, so the detector works from what the gabbo bus already says.
+Measured with a `:8080` watcher on 2026-10-27 on a Portable (taigan), an ST30
+and an ST10 (sm2), all on 27.0.6:
+
+- On a speaker that is not grouped, every physical press of a preset key
+  emits exactly one `nowSelectionUpdated <preset id="N">`, about 0.13 s after
+  the release, also when the key pressed is the one already playing. A single
+  press never produced a second frame.
+- Double presses on the top keys arrived 151 to 322 ms apart. STR pairs two
+  frames of the same key within 700 ms; the hold-to-store gesture needs the key
+  down for about 1.5 s, so the two cannot be confused.
+- After each frame the speaker goes `BUFFERING` and reaches `PLAY` 2 to 3 s
+  later, so switching to the second row on the second frame happens before any
+  audio of the first row is heard.
+- On one ST30 the IR remote's second press of a double press produced no
+  second frame at all. Only the top keys were relied on.
+- Inside a group the frame is not one per press. On an ST10 that was a member
+  of a fixed group led by an ST30, every single press emitted
+  `nowSelectionUpdated preset=N` twice, about 350 ms apart, while the master
+  emitted `preset=0` frames. So inside a zone (master or member) two frames
+  prove nothing, and STR counts a second press only when the key trace
+  (`internal/boxlog`) shows two physical presses of that key. Without trace
+  evidence the double press is off while the speaker is grouped.
+
+Selections STR causes itself (its own `sys presetkey`, an item it hands to
+`/select`) are never counted as a press.
+
 ## Per-logical-stream retention in the Ogg/HTTP path
 
 **Symptom.** Spotify through STR (go-librespot raw Ogg Vorbis passthrough,

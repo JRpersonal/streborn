@@ -82,14 +82,14 @@ type Server struct {
 	// the box is demonstrably pulling audio this very moment, regardless of
 	// how long ago the connection was OPENED.
 	openFetches int
-	slotFetch   [7]time.Time // index 1..6: when the box last OPENED the slot
+	slotFetch   [presets.MaxSlot + 1]time.Time // index 1..12 (both rows): when the box last OPENED the slot
 	// slotFetchEnd / slotOpen make the per-slot signal liveness-aware: a
 	// 36ms-2.4s fetch that dies in the box's re-login source bounce used to
 	// satisfy "opened since the press" and certified a dead recall as healthy
 	// (field bundles 2026-07-22). A recall counts as pulled only while a
 	// connection is OPEN or after it served a sustained stretch.
-	slotFetchEnd [7]time.Time
-	slotOpen     [7]int
+	slotFetchEnd [presets.MaxSlot + 1]time.Time
+	slotOpen     [presets.MaxSlot + 1]int
 
 	// boxStateFn reports a speaker-side condition that makes every station
 	// fail ("wedged", "login-error"; "" = fine). Wired to webui.BoxStateHint;
@@ -575,7 +575,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	defer s.noteFetchOpen()()
 	slotStr := strings.TrimPrefix(r.URL.Path, "/stream/")
 	slot, err := strconv.Atoi(slotStr)
-	if err != nil || slot < 1 || slot > 6 {
+	if err != nil || !presets.ValidSlot(slot) {
 		http.Error(w, "invalid slot", http.StatusBadRequest)
 		return
 	}

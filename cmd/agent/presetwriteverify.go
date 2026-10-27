@@ -26,6 +26,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // splitWritesByWhatTheBoxKept reads the box's preset list back and reports which
@@ -190,11 +191,12 @@ func judgeSweepRefusals(written []boxcli.PresetSpec, kept []int, refusals []boxl
 }
 
 // sweptSpecs returns the specs boxcli.SyncAllPresets actually sends, in its
-// order: it skips a spec without a stream URL or with a slot outside 1 to 6.
+// order: it skips a spec without a stream URL or with a slot outside 1 to 6
+// (a row-2 slot is never sent, see boxcli.ErrNotBoxSlot).
 func sweptSpecs(specs []boxcli.PresetSpec) []boxcli.PresetSpec {
 	out := make([]boxcli.PresetSpec, 0, len(specs))
 	for _, spec := range specs {
-		if spec.StreamURL == "" || spec.Slot < 1 || spec.Slot > 6 {
+		if spec.StreamURL == "" || !presets.IsBoxSlot(spec.Slot) {
 			continue
 		}
 		out = append(out, spec)

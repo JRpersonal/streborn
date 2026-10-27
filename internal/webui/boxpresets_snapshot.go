@@ -45,6 +45,10 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	var specs []boxcli.PresetSpec
 	var nativeKeys []presets.Preset
 	for _, p := range s.presets.All() {
+		if !presets.IsBoxSlot(p.Slot) {
+			// Row 2 (7..12, #1110) is STR's own; the speaker has six keys.
+			continue
+		}
 		if p.IsNative() {
 			// A Pandora or iHeartRadio key goes back as the speaker's own
 			// item, never as a stream URL (nativeservice.go).
@@ -386,7 +390,8 @@ func (s *Server) handleBoxPresetRecall(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<10, &body) {
 		return
 	}
-	if body.Slot < 1 || body.Slot > 6 {
+	// This presses the speaker's own key, so only its keys 1..6 qualify.
+	if !presets.IsBoxSlot(body.Slot) {
 		http.Error(w, "slot must be 1..6", http.StatusBadRequest)
 		return
 	}

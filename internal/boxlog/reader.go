@@ -406,6 +406,24 @@ func (r *Reader) LastKeyEventWithin(d time.Duration) (KeyEvent, bool) {
 	return last, true
 }
 
+// PhysicalPressesSince counts the presses of the named key (e.g. "PRESET_1")
+// a person made on the speaker or its remote, read at or after since. The
+// double-press detector uses it inside a group, where the firmware announces
+// one physical press as two selections (#1110): only the trace can tell two
+// presses from one press and its echo. The history keeps the last historyLen
+// events, far more than the second or two the detector looks back.
+func (r *Reader) PhysicalPressesSince(name string, since time.Time) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, e := range r.history {
+		if e.Name == name && e.Pressed() && e.Producer.Physical() && !e.At.Before(since) {
+			n++
+		}
+	}
+	return n
+}
+
 // Snapshot is the diagnostic-bundle view: liveness, whether the DEBUG trace
 // was accepted, and the last few events so a "the key does nothing" report
 // shows what the speaker itself decoded.

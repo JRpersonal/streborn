@@ -6,6 +6,8 @@ package streamproxy
 
 import (
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // markByteDelivery stamps the moment audio last reached the box. Called from the
@@ -64,7 +66,7 @@ func (s *Server) noteFetchOpen() func() {
 // only after the slot validated and the store had a playable preset, so a 404
 // or a foreign fetch can never stamp it. Paired with noteSlotFetchDone.
 func (s *Server) noteSlotFetch(slot int) {
-	if slot < 1 || slot > 6 {
+	if !presets.ValidSlot(slot) {
 		return
 	}
 	s.fetchMu.Lock()
@@ -76,7 +78,7 @@ func (s *Server) noteSlotFetch(slot int) {
 // noteSlotFetchDone records that a slot connection closed, for the liveness
 // half of SlotPulledSince.
 func (s *Server) noteSlotFetchDone(slot int) {
-	if slot < 1 || slot > 6 {
+	if !presets.ValidSlot(slot) {
 		return
 	}
 	s.fetchMu.Lock()
@@ -95,7 +97,7 @@ func (s *Server) noteSlotFetchDone(slot int) {
 // low-level accessor its tests and future diagnostics read the raw stamp
 // through.
 func (s *Server) LastFetchForSlot(slot int) time.Time {
-	if slot < 1 || slot > 6 {
+	if !presets.ValidSlot(slot) {
 		return time.Time{}
 	}
 	s.fetchMu.Lock()
@@ -115,7 +117,7 @@ const minSustainedFetch = 3 * time.Second
 // This is the hardware recall verify's success signal; "opened once since t"
 // alone certified dead recalls as healthy (#252 field bundles).
 func (s *Server) SlotPulledSince(slot int, t time.Time) bool {
-	if slot < 1 || slot > 6 {
+	if !presets.ValidSlot(slot) {
 		return false
 	}
 	s.fetchMu.Lock()
@@ -136,7 +138,7 @@ func (s *Server) SlotPulledSince(slot int, t time.Time) bool {
 // signal the recall verify uses to distinguish a genuine playback from a login
 // error's brief source bounce (which opens the stream, serves ~3s and closes).
 func (s *Server) SlotFetchLive(slot int) bool {
-	if slot < 1 || slot > 6 {
+	if !presets.ValidSlot(slot) {
 		return false
 	}
 	s.fetchMu.Lock()

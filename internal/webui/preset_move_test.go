@@ -165,7 +165,7 @@ func TestPresetMoveRefusesWhatItCannotMove(t *testing.T) {
 	}{
 		{"empty source key", `{"from":5,"to":1}`, http.StatusNotFound},
 		{"same key", `{"from":2,"to":2}`, http.StatusBadRequest},
-		{"slot out of range", `{"from":2,"to":9}`, http.StatusBadRequest},
+		{"slot out of range", `{"from":2,"to":13}`, http.StatusBadRequest},
 		{"missing slots", `{}`, http.StatusBadRequest},
 	}
 	for _, c := range cases {
