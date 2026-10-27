@@ -178,3 +178,26 @@ func TestContainsOCTBlock(t *testing.T) {
 		t.Error("substring misdetected as marker line")
 	}
 }
+
+// The firmware's Alexa client must stay on the box: its registration host and
+// the AWS IoT broker names point at loopback (reported by mail, 2026-10-27).
+func TestDefaultEntriesKeepIoTLocal(t *testing.T) {
+	want := map[string]bool{
+		"voice.api.bose.io":                          false,
+		"amqmidtcohfms.iot.us-east-1.amazonaws.com":  false,
+		"a2bhvr9c4wn4ya.iot.us-east-1.amazonaws.com": false,
+	}
+	for _, e := range DefaultEntries() {
+		if _, ok := want[e.Host]; ok {
+			if e.IP != "127.0.0.1" {
+				t.Errorf("%s points at %s, want loopback", e.Host, e.IP)
+			}
+			want[e.Host] = true
+		}
+	}
+	for h, seen := range want {
+		if !seen {
+			t.Errorf("%s is not redirected", h)
+		}
+	}
+}

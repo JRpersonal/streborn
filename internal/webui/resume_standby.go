@@ -1008,6 +1008,7 @@ func (s *Server) NoteBoxZoneState(master string) {
 	if !ok || z.Stereo || z.Mirror() {
 		return
 	}
+	s.noteZoneDissolved()
 	s.noteZoneDocDoubt()
 	s.logger.Info("zone: the speaker reported its zone dissolved while a group document is still stored",
 		"master", z.Master, "slaves", len(z.Slaves))

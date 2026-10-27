@@ -1247,6 +1247,8 @@ func (a *agent) buildBoxLink() error {
 		onSnoozeKey:    webuiSrv.AlarmSnoozePress,
 		onAuxSnoozeKey: webuiSrv.AlarmAuxKeyPress,
 		onAlarmSource:  webuiSrv.AlarmSourceChanged,
+		onBoxSource:    webuiSrv.NoteBoxSourceChanged,
+		onBoxVolume:    webuiSrv.NoteBoxVolumeLevel,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.
@@ -2142,6 +2144,9 @@ func (a *agent) startDeferred() error {
 	// the marge endpoint actually accepts closes the window; on healthy boxes the
 	// redirect just lands a few seconds later, which is harmless.
 	if hostsMgr != nil {
+		if err := hostsMgr.Apply(hosts.IoTEntries()); err != nil {
+			logger.Warn("hosts file could not be modified", "err", err)
+		}
 		waitAddr := a.flags.margeAddr
 		if a.flags.tlsEnabled {
 			waitAddr = a.flags.margeTLSAddr

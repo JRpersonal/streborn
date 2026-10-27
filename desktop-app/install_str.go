@@ -92,6 +92,11 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	a.recordOTA(host, "install: started (model="+model+")")
 	res, err := a.installSTROnBox(host, model)
 	switch {
+	case err == nil && (res.Code == installCodeUpdateFinishing || res.Code == installCodeSTRRunning):
+		// Not a failure: the guard stopped the install before it touched the
+		// speaker (install_guard.go). Worded apart from FAILED so the failure
+		// report does not count it as a failed attempt.
+		a.recordOTA(host, "install: REFUSED code="+res.Code+" (nothing was changed on the speaker)")
 	case err != nil:
 		a.recordOTA(host, "install: FAILED step="+res.Step+" code="+res.Code+" err="+err.Error())
 	case !res.OK && res.Code == speakerNotBackCode:
@@ -155,6 +160,15 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	}
 	defer release()
 	a.logger.Info("install_str: starting", "host", host, "model", model)
+	// The guard, before ANYTHING below touches the speaker (the firmware read
+	// already writes its language and clock, the preflight may unlock and
+	// restart it) and before the unfinished-update memo is cleared: an update
+	// from this app still finishing on the speaker, or an STR agent already
+	// answering there, ends the install here (install_guard.go, field case
+	// 2026-10-21).
+	if a.installRefusedSTRRunning(r, "start") || a.installHeldByOTA(r) {
+		return r.res, r.err
+	}
 	// A speaker STR was removed from earlier in this session is being set up
 	// again: lift the "being removed" mark so the post-install engine delivery
 	// is not skipped (see App.uninstalling).
@@ -193,6 +207,13 @@ func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	// but still finishing boot" instead of a frozen screen.
 	r.res.Step = "settle"
 	a.waitForBoxLoad(host, model)
+	// Asked again right before install.sh writes the boot scripts: the stick
+	// probe and the load settle can take minutes, and an agent that was still
+	// starting when the install began (the field case's came up 27 seconds in)
+	// answers by now. Two writers on the boot path is what this prevents.
+	if a.installRefusedSTRRunning(r, "before install.sh") {
+		return r.res, r.err
+	}
 	if a.installRunScript(r) {
 		return r.res, r.err
 	}
@@ -575,6 +596,11 @@ func (a *App) installProbeStick(r *installRun) bool {
 			// onto NAND over SSH and install from there. Only on a release build with
 			// a real embedded agent.
 			if len(agentbin.Bytes()) > 0 {
+				// Same guard as before install.sh: the network install writes
+				// the same boot scripts and restarts the speaker.
+				if a.installRefusedSTRRunning(r, "before the network install") {
+					return true
+				}
 				a.logger.Info("install_str: no stick mounted but SSH is open; installing STR over SSH (no stick needed)", "host", host)
 				res.Step = "repair-ssh"
 				// RepairInstallViaSSH reboots and returns before the agent is up. The

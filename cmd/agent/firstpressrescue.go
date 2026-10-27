@@ -247,6 +247,9 @@ func (h *presetWsHandler) OnSourceChanged(_ context.Context, from, to string) {
 	if h.onAlarmSource != nil {
 		h.onAlarmSource(from, to)
 	}
+	if h.onBoxSource != nil {
+		h.onBoxSource(from, to)
+	}
 	var seen time.Time
 	if h.stationActivity != nil {
 		seen = h.stationActivity()

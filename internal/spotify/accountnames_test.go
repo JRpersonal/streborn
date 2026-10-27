@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,9 +12,15 @@ import (
 
 func namesManager(t *testing.T) *Manager {
 	t.Helper()
+	// io.Discard, never os.NewFile(0, os.DevNull): that does not open
+	// /dev/null, it wraps file descriptor 0, and the *os.File's finalizer
+	// closes fd 0 whenever the GC collects it. By then fd 0 belongs to
+	// whatever the process opened next, here a test server's socket or a
+	// temp dir being removed, and the next test in the package fails out of
+	// nowhere (CI 2026-10-26 and 2026-10-27).
 	return &Manager{
 		credStore: t.TempDir(),
-		logger:    slog.New(slog.NewTextHandler(os.NewFile(0, os.DevNull), nil)),
+		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
 

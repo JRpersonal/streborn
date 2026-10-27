@@ -315,7 +315,10 @@ func TestSavePlayingUsesTheRecordOfANativePlay(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	p, _ := s.presets.Get(1)
-	if p.StreamURL != savePlayingStation || p.Art != chain || p.Homepage != "https://jazz.example/" ||
+	// The record's chain, completed with the homepage's icon the way the
+	// desktop app builds it (stationart.go).
+	wantArt := chain + "|" + ddgIconPrefix + "jazz.example.ico"
+	if p.StreamURL != savePlayingStation || p.Art != wantArt || p.Homepage != "https://jazz.example/" ||
 		p.Codec != "MP3" || p.Bitrate != 128 {
 		t.Fatalf("stored %+v", p)
 	}
@@ -331,7 +334,7 @@ func TestSavePlayingUsesTheRecordOfAUPnPPlay(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	p, _ := s.presets.Get(4)
-	if p.Name != "Radio One" || p.Art != "https://img.example/r1.png" ||
+	if p.Name != "Radio One" || p.Art != "https://img.example/r1.png|"+ddgIconPrefix+"radio-one.example.ico" ||
 		p.Homepage != "https://radio-one.example/" || p.Codec != "AAC" {
 		t.Fatalf("stored %+v", p)
 	}

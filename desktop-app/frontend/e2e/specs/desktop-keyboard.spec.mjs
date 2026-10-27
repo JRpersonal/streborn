@@ -8,6 +8,7 @@
 // repaint of the list keeps the keyboard on the same speaker. The player's
 // volume and the group volume answer the arrow keys with one write in flight
 // and the final level sent. The Aa menu closes on Escape in both layouts.
+// The classic layout's "Assign to a key" picker is a keyboard dialog too.
 
 import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
@@ -313,3 +314,28 @@ for (const ui2 of [false, true]) {
     });
   });
 }
+
+test.describe('classic layout key picker', () => {
+  test.use({ ui2: false });
+
+  test('"Assign to a key" is a dialog for the keyboard: focus inside, Tab stays, Escape returns focus', async ({ app, mock }) => {
+    const { page } = app;
+    await mock.resetCalls();
+    await page.locator('#topBtn').click();
+    const open = page.locator('#searchResults .result-row').first().locator('.pick');
+    await open.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Assign station to a key' })).toBeVisible();
+    const slots = page.locator('#pickGrid .pick-slot');
+    await expect(slots.first()).toBeFocused();
+    // Tab stays inside: six keys and Cancel, then back to key 1.
+    for (let i = 0; i < 7; i++) await page.keyboard.press('Tab');
+    await expect(slots.first()).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.locator('#pickCancel')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#pickModal')).toBeHidden();
+    await expect(open).toBeFocused();
+    await mock.expectCalled('SetPreset', { times: 0 });
+  });
+});

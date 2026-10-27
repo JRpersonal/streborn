@@ -113,6 +113,12 @@ type presetWsHandler struct {
 	// (webui.AlarmSourceChanged): STANDBY ends a ringing alarm, and the switch
 	// to AUX is the AUX key, which snoozes when it carries snooze. nil-safe.
 	onAlarmSource func(from, to string)
+	// onBoxSource and onBoxVolume hand the source edges and the volume
+	// frames to the webui's muted wake for a new play
+	// (webui.NoteBoxSourceChanged / NoteBoxVolumeLevel, #1557). Must not
+	// block. nil-safe.
+	onBoxSource func(from, to string)
+	onBoxVolume func(level int)
 	// keyTrace follows the speaker's own key trace (internal/boxlog). When it
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.

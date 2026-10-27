@@ -872,7 +872,7 @@ nothing in this subsystem ever wakes or writes to a speaker.
 | Upstream radio CDNs | Speaker (proxied through the streamproxy) | Yes for actual audio. STR does not host or buffer the stream beyond the in-flight bytes. |
 | Spotify access points | go-librespot on the speaker | Only for Spotify Connect playback. Needs a Spotify account that has tapped the device once (Premium, per Spotify Connect). No STR account or token plane; credentials stay on the speaker. |
 | `st-reborn.de` update-check | Desktop app, once ~8 s after startup | Optional. Sends only version, build, OS, arch, UI locale; opt-out with `STR_NO_UPDATE_CHECK`. See flow 7 above and the privacy section below. |
-| Favicon service (`icons.duckduckgo.com`) | Desktop app webview, only when a station tile has no usable logo of its own | Optional, cosmetic. The browser requests a `<domain>.ico` URL to fetch a station's logo. Only the radio station's own public domain is sent, never user data. When DuckDuckGo also has nothing, the fallback is a locally generated letter monogram (a `data:` URI, no network). Google's favicon service is deliberately not used (data mining). See the logo cascade in `desktop-app/frontend/src/logos.js`. |
+| Favicon service (`icons.duckduckgo.com`) | Desktop app webview, and the phone remote through the speaker agent's `/art` proxy, only when a station tile has no usable logo of its own | Optional, cosmetic. The browser requests a `<domain>.ico` URL to fetch a station's logo. Only the radio station's own public domain is sent, never user data. When DuckDuckGo also has nothing, the fallback is a locally generated letter monogram (a `data:` URI, no network). Google's favicon service is deliberately not used (data mining). The phone remote (the page the speaker serves) asks the same hosts in the same order as the desktop app (#1467), but its DuckDuckGo lookups go through the agent's `/art` proxy, so the request leaves from the SPEAKER: still only the station's public domain, and never a LAN host (IP addresses, single-label and `.local` names are never looked up; `internal/webui/stationart.go`, `presetLogoHosts` in `internal/webui/assets/index.html`). The station's own logo and its homepage `/favicon.ico` are fetched by the phone's browser directly. See the logo cascade in `desktop-app/frontend/src/logos.js`. |
 
 Bose's own cloud endpoints (`streaming.bose.com`, `*.api.bose.io`,
 TuneIn partner URL) are **redirected to localhost** by `/etc/hosts`
@@ -885,9 +885,10 @@ the app. The complete picture of what talks to what:
 
 | Component | Talks to | What is sent |
 |---|---|---|
-| Speaker (agent + firmware) | **Never** the Bose cloud | STR redirects the Bose cloud hostnames to localhost and answers them itself (marge). The speaker reaches the LAN, the upstream radio CDN (audio, proxied), and, only when the user enables them, Spotify access points (go-librespot) and the user's own configured webhook URLs. Radio search/metadata is no longer fetched by the speaker; the desktop app queries radio-browser.info directly (app-first). |
+| Speaker (agent + firmware) | **Never** the Bose cloud | STR redirects the Bose cloud hostnames to localhost and answers them itself (marge). The speaker reaches the LAN, the upstream radio CDN (audio, proxied), station logo hosts and `icons.duckduckgo.com` through its `/art` proxy (the logo on its own display and the phone remote's key logos; a station's public domain only, never a LAN host), and, only when the user enables them, Spotify access points (go-librespot) and the user's own configured webhook URLs. Radio search/metadata is no longer fetched by the speaker; the desktop app queries radio-browser.info directly (app-first). |
 | Desktop app | `st-reborn.de` update-check, once at startup | Running version, build stamp, OS, CPU arch, UI locale. No account, no device ID, no personal data. Opt-out: `STR_NO_UPDATE_CHECK=1`. The Wishes tab downloads `st-reborn.de/ideas.json` (titles already translated at the website build); nothing is sent with it. Radio search runs in the app (direct to radio-browser.info); only the audio CDN stream flows through the speaker agent. |
 | Desktop app webview | `icons.duckduckgo.com` | Only a radio station's own domain, to fetch its logo when the station ships no usable artwork. No user data, no account, no identifier. When DuckDuckGo also has nothing, a local letter monogram is drawn with no network call. Google's favicon service was deliberately not used. |
+| Phone remote, via the speaker agent | `icons.duckduckgo.com` (through the speaker's `/art` proxy); the station's own logo host and homepage `/favicon.ico` (from the phone's browser) | Only a radio station's own public domain, to show the same key logo the desktop app shows. The DuckDuckGo request is made by the speaker, which turns DuckDuckGo's grey "no icon" answer into a miss. LAN hosts are never looked up: IP addresses, single-label names and `.local`/home-network names stay off the request. No user data, no account, no identifier. |
 | Website (`st-reborn.de`) | GoatCounter | Privacy-friendly, cookieless page analytics: no cookies, no cross-site tracking, the visitor IP is not stored. |
 
 Bose's own telemetry endpoint (`events.api.bosecm.com`) and software
@@ -899,6 +900,14 @@ connectivity probe read as a broken link and reacted to by re-associating
 Wi-Fi (fatal on the ethernet-only path, which persists no Wi-Fi profile).
 Left at real DNS they simply fail the benign way the post-cloud box already
 tolerates.
+
+The firmware's Alexa client (`/opt/Bose/IoT`) is redirected to loopback:
+`voice.api.bose.io` (Bose's gateway still answers its registration with a
+404) and the AWS IoT broker it connects to about once a minute when it holds
+a certificate from before the shutdown. Alexa on SoundTouch is gone, so this
+only stops the speaker's identity from leaving the house; the client fails
+locally and backs off. NetManager's connectivity probe does not use these
+hosts.
 
 ## Storage layout on the speaker
 
