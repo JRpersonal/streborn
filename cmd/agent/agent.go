@@ -1239,6 +1239,8 @@ func (a *agent) buildBoxLink() error {
 		// it wins over a webhook on the same key, like a group.
 		keyActions: keyActionsStore,
 		onSleepKey: webuiSrv.SleepKeyPress,
+		// A thumbs key that carries a bass step moves the bass up or down.
+		onBassKey: webuiSrv.BassKeyPress,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).

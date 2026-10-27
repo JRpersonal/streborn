@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "erteleme",
   "settingsView.keyActionGroupConflict": "Bu tuş \"{{name}}\" grubunu oluşturuyor. Bir tuş ya bir grup ya da yerleşik bir eylem taşır: önce Çoklu oda sekmesinde grubu bu tuştan kaldır.",
   "multiroom.groupKeysKeySnooze": "(erteleme)",
-  "multiroom.groupKeysSnoozeHint": "Alarmları erteleyen bir başparmak tuşu aynı zamanda grup oluşturamaz. Bunu Ayarlar'daki kumanda tuş haritasında değiştir."
+  "multiroom.groupKeysSnoozeHint": "Alarmları erteleyen bir başparmak tuşu aynı zamanda grup oluşturamaz. Bunu Ayarlar'daki kumanda tuş haritasında değiştir.",
+  "settingsView.bassKeyUpLabel": "Bas artır (her basışta bir adım)",
+  "settingsView.bassKeyDownLabel": "Bas azalt (her basışta bir adım)",
+  "settingsView.bassKeyHelp": "Her basış hoparlörün basını, hoparlörün izin verdiği ölçüde bir adım değiştirir. Ekranlı hoparlörler yeni seviyeyi gösterir. Bası kumandadan ayarlamak için \"Bas artır\"ı bir başparmak tuşuna, \"Bas azalt\"ı diğerine koy.",
+  "settingsView.bassKeyOnToast": "Bu tuş artık bası değiştiriyor.",
+  "settingsView.bassKeyOffToast": "Bu tuş artık bası değiştirmiyor.",
+  "settingsView.bassKeyUnavailable": "Bu hoparlörün bası ayarlanamıyor, bu yüzden bir bas eylemi burada hiçbir şey yapmaz.",
+  "settingsView.webhookBassKeyNote": "Bu tuş bası değiştirir. Bas önceliklidir: webhook tetiklenmez.",
+  "settingsView.webhookRemoteLegendBass": "bas ayarı",
+  "multiroom.groupKeysKeyBass": "(bas ayarı)",
+  "multiroom.groupKeysBassHint": "Bası değiştiren bir başparmak tuşu aynı zamanda grup oluşturamaz. Bunu Ayarlar'daki kumanda tuş haritasında değiştir.",
+  "settingsView.bassKeyNeedsUpdate": "Bir tuşa bas ayarı atamak için bu hoparlörü güncelle."
 }

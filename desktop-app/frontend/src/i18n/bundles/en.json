@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "snooze",
   "settingsView.keyActionGroupConflict": "This key forms the group \"{{name}}\". A key carries either a group or a built-in action: take the group off this key on the Multi-room tab first.",
   "multiroom.groupKeysKeySnooze": "(snooze)",
-  "multiroom.groupKeysSnoozeHint": "A thumbs key that snoozes alarms cannot form a group as well. Change it on the remote key map in Settings."
+  "multiroom.groupKeysSnoozeHint": "A thumbs key that snoozes alarms cannot form a group as well. Change it on the remote key map in Settings.",
+  "settingsView.bassKeyUpLabel": "Bass up (one step per press)",
+  "settingsView.bassKeyDownLabel": "Bass down (one step per press)",
+  "settingsView.bassKeyHelp": "Every press moves the speaker's bass one step, as far as the speaker allows. Speakers with a display show the new level. Put \"Bass up\" on one thumbs key and \"Bass down\" on the other to control the bass from the remote.",
+  "settingsView.bassKeyOnToast": "This key now changes the bass.",
+  "settingsView.bassKeyOffToast": "This key no longer changes the bass.",
+  "settingsView.bassKeyUnavailable": "This speaker has no adjustable bass, so a bass action does nothing here.",
+  "settingsView.webhookBassKeyNote": "This key changes the bass. The bass step wins: the webhook does not fire.",
+  "settingsView.webhookRemoteLegendBass": "bass",
+  "multiroom.groupKeysKeyBass": "(bass)",
+  "multiroom.groupKeysBassHint": "A thumbs key that changes the bass cannot form a group as well. Change it on the remote key map in Settings.",
+  "settingsView.bassKeyNeedsUpdate": "Update this speaker to put a bass step on a key."
 }

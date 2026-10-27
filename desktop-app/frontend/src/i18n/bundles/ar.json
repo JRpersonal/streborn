@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "غفوة",
   "settingsView.keyActionGroupConflict": "هذا الزر يكوّن المجموعة \"{{name}}\". يحمل الزر إما مجموعة أو إجراءً مدمجًا: أزل المجموعة من هذا الزر أولًا في تبويب الغرف المتعددة.",
   "multiroom.groupKeysKeySnooze": "(غفوة)",
-  "multiroom.groupKeysSnoozeHint": "لا يمكن لزر الإبهام الذي يؤجل المنبهات أن يكوّن مجموعة أيضًا. غيّر ذلك في خريطة أزرار جهاز التحكم في الإعدادات."
+  "multiroom.groupKeysSnoozeHint": "لا يمكن لزر الإبهام الذي يؤجل المنبهات أن يكوّن مجموعة أيضًا. غيّر ذلك في خريطة أزرار جهاز التحكم في الإعدادات.",
+  "settingsView.bassKeyUpLabel": "زيادة الجهير (خطوة لكل ضغطة)",
+  "settingsView.bassKeyDownLabel": "خفض الجهير (خطوة لكل ضغطة)",
+  "settingsView.bassKeyHelp": "كل ضغطة تغيّر جهير مكبر الصوت خطوة واحدة، بالقدر الذي يسمح به مكبر الصوت. مكبرات الصوت المزودة بشاشة تعرض المستوى الجديد. ضع \"زيادة الجهير\" على أحد زرَّي الإبهام و\"خفض الجهير\" على الآخر للتحكم في الجهير من جهاز التحكم.",
+  "settingsView.bassKeyOnToast": "هذا الزر يغيّر الجهير الآن.",
+  "settingsView.bassKeyOffToast": "هذا الزر لم يعد يغيّر الجهير.",
+  "settingsView.bassKeyUnavailable": "لا يمكن ضبط الجهير في مكبر الصوت هذا، لذا لا يفعل إجراء الجهير شيئًا هنا.",
+  "settingsView.webhookBassKeyNote": "هذا الزر يغيّر الجهير. للجهير الأولوية: لا يُطلق الـ webhook.",
+  "settingsView.webhookRemoteLegendBass": "الجهير",
+  "multiroom.groupKeysKeyBass": "(الجهير)",
+  "multiroom.groupKeysBassHint": "زر الإبهام الذي يغيّر الجهير لا يمكنه تكوين مجموعة أيضًا. غيّر ذلك في خريطة أزرار جهاز التحكم في الإعدادات.",
+  "settingsView.bassKeyNeedsUpdate": "حدّث مكبر الصوت هذا لتعيين خطوة الجهير على زر."
 }

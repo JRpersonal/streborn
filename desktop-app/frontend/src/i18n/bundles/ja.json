@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "スヌーズ",
   "settingsView.keyActionGroupConflict": "このキーはグループ「{{name}}」を作成します。キーにはグループか組み込みアクションのどちらか一つだけを割り当てられます。先にマルチルームタブでこのキーからグループを外してください。",
   "multiroom.groupKeysKeySnooze": "(スヌーズ)",
-  "multiroom.groupKeysSnoozeHint": "アラームをスヌーズするサムキーでは、グループを作成することはできません。設定のリモコンキー配置で変更してください。"
+  "multiroom.groupKeysSnoozeHint": "アラームをスヌーズするサムキーでは、グループを作成することはできません。設定のリモコンキー配置で変更してください。",
+  "settingsView.bassKeyUpLabel": "低音を上げる(1回押すごとに1段階)",
+  "settingsView.bassKeyDownLabel": "低音を下げる(1回押すごとに1段階)",
+  "settingsView.bassKeyHelp": "押すたびにスピーカーの低音が、スピーカーが許す範囲で1段階変わります。ディスプレイ付きのスピーカーには新しいレベルが表示されます。一方のサムキーに「低音を上げる」、もう一方に「低音を下げる」を割り当てると、リモコンで低音を調整できます。",
+  "settingsView.bassKeyOnToast": "このキーで低音を変更できるようになりました。",
+  "settingsView.bassKeyOffToast": "このキーでは低音を変更しなくなりました。",
+  "settingsView.bassKeyUnavailable": "このスピーカーは低音を調整できないため、低音アクションはここでは何もしません。",
+  "settingsView.webhookBassKeyNote": "このキーは低音を変更します。低音が優先されるため、Webhookは実行されません。",
+  "settingsView.webhookRemoteLegendBass": "低音",
+  "multiroom.groupKeysKeyBass": "(低音)",
+  "multiroom.groupKeysBassHint": "低音を変更するサムキーでグループを作成することはできません。設定のリモコンキー配置で変更してください。",
+  "settingsView.bassKeyNeedsUpdate": "低音のステップをキーに割り当てるには、このスピーカーを更新してください。"
 }

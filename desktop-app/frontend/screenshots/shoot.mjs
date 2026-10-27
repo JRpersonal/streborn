@@ -32,7 +32,7 @@ const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
 // app-logs is a cropped shot of the settings tail with the "Save diagnostic
 // logs" footer link highlighted; the website FAQ uses it to show where the
 // log lives. Override with SHOOT_VIEWS=app-logs to re-shoot a subset.
-const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app-settings1', 'app-settings2', 'app-settings3', 'app-install', 'app-stick-step1', 'app-stick-step2', 'app-logs', 'app-snooze'];
+const ALL_VIEWS = ['app-library', 'app-listen', 'app-search', 'app-recent', 'app-settings1', 'app-settings2', 'app-settings3', 'app-install', 'app-stick-step1', 'app-stick-step2', 'app-logs', 'app-snooze', 'app-basskey'];
 // The UI 2.0 preview (#1285), switched on through its localStorage key: one
 // shot per theme and one at the largest text size. Not part of a full run,
 // since the preview is opt-in; SHOOT_VIEWS=ui2 shoots all four.
@@ -116,9 +116,11 @@ async function drive(page, view) {
       await page.waitForTimeout(250);
       await scrollY(100000);
     }
-  } else if (view === 'app-snooze') {
+  } else if (view === 'app-snooze' || view === 'app-basskey') {
     // The remote key map with AUX selected and its built-in action set to
-    // snooze. The section lives in a collapsed group, so open them all.
+    // snooze (app-snooze), or thumbs up selected with "Bass up" on it
+    // (app-basskey). The section lives in a collapsed group, so open them all.
+    const keyId = view === 'app-snooze' ? 'aux' : 'thumbsUp';
     await click('.tab-btn[data-view="settings"]');
     await page.waitForSelector('#view-settings:not(.hidden) #webhookSection', { state: 'attached', timeout: 9000 });
     await page.evaluate(() => {
@@ -126,7 +128,7 @@ async function drive(page, view) {
       document.getElementById('webhookSection').open = true;
     });
     await page.waitForTimeout(800);
-    await page.evaluate(() => { const t = document.getElementById('webhookTarget'); t.value = 'aux'; t.dispatchEvent(new Event('change')); });
+    await page.evaluate((k) => { const t = document.getElementById('webhookTarget'); t.value = k; t.dispatchEvent(new Event('change')); }, keyId);
     await page.waitForTimeout(400);
     await scrollIntoView('#webhookSection');
     await page.waitForTimeout(300);

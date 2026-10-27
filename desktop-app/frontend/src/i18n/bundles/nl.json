@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "sluimeren",
   "settingsView.keyActionGroupConflict": "Deze toets vormt de groep \"{{name}}\". Een toets draagt een groep of een ingebouwde actie: haal de groep eerst van deze toets op het tabblad Multiroom.",
   "multiroom.groupKeysKeySnooze": "(sluimeren)",
-  "multiroom.groupKeysSnoozeHint": "Een duimtoets die wekkers laat sluimeren kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen."
+  "multiroom.groupKeysSnoozeHint": "Een duimtoets die wekkers laat sluimeren kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen.",
+  "settingsView.bassKeyUpLabel": "Meer bas (één stap per druk)",
+  "settingsView.bassKeyDownLabel": "Minder bas (één stap per druk)",
+  "settingsView.bassKeyHelp": "Elke druk verzet de bas van de speaker één stap, zo ver als de speaker toelaat. Speakers met een display tonen het nieuwe niveau. Zet \"Meer bas\" op de ene duimtoets en \"Minder bas\" op de andere om de bas met de afstandsbediening te regelen.",
+  "settingsView.bassKeyOnToast": "Deze toets regelt nu de bas.",
+  "settingsView.bassKeyOffToast": "Deze toets regelt de bas niet meer.",
+  "settingsView.bassKeyUnavailable": "Deze speaker heeft geen instelbare bas, dus een bas-actie doet hier niets.",
+  "settingsView.webhookBassKeyNote": "Deze toets regelt de bas. De bas gaat voor: de webhook wordt niet uitgevoerd.",
+  "settingsView.webhookRemoteLegendBass": "bas",
+  "multiroom.groupKeysKeyBass": "(bas)",
+  "multiroom.groupKeysBassHint": "Een duimtoets die de bas regelt, kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen.",
+  "settingsView.bassKeyNeedsUpdate": "Werk deze speaker bij om een basstap op een toets te zetten."
 }

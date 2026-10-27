@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -202,39 +203,8 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	}
 
 	// Bass + Capabilities
-	{
-		var bass struct {
-			Target int `xml:"targetbass"`
-			Actual int `xml:"actualbass"`
-		}
-		bassRead := get("/bass", &bass) == nil
-		if bassRead {
-			s.Bass.Target = bass.Target
-			s.Bass.Actual = bass.Actual
-		}
-		var caps struct {
-			Available string `xml:"bassAvailable"`
-			Min       int    `xml:"bassMin"`
-			Max       int    `xml:"bassMax"`
-			Default   int    `xml:"bassDefault"`
-		}
-		if err := get("/bassCapabilities", &caps); err == nil {
-			s.Bass.Min = caps.Min
-			s.Bass.Max = caps.Max
-			s.Bass.Default = caps.Default
-			s.Bass.Avail = strings.EqualFold(caps.Available, "true")
-		}
-		// Home-theater systems keep their adjustable bass behind the
-		// /capabilities gate instead: a Lifestyle 650 answers
-		// bassAvailable=false and its slider sat greyed at 0..0 (support mail
-		// with photo, 2026-08-22) while the documented tone-controls route was
-		// never asked. Probe that route only when the classic one reported
-		// nothing, so the one-piece boxes never pay the extra request.
-		if !s.Bass.Avail || !bassRead {
-			if tc, ok := c.toneControlsBass(ctx); ok {
-				s.Bass = tc
-			}
-		}
+	if b, err := c.GetBass(ctx); err == nil {
+		s.Bass = b
 	}
 
 	// Network
@@ -735,6 +705,57 @@ func (c *Client) GetVolume(ctx context.Context) (Volume, error) {
 		Actual: raw.Actual,
 		Muted:  strings.EqualFold(raw.Mute, "true"),
 	}, nil
+}
+
+// errNoBass is GetBass's answer when neither bass route could be read.
+var errNoBass = errors.New("bass: neither /bass nor the tone controls could be read")
+
+// GetBass reads the box's bass state and range: the classic /bass and
+// /bassCapabilities routes, and the capability-gated tone controls of a
+// home-theater system when the classic route reports nothing adjustable. It
+// is the bass block of LoadSettings on its own, for a caller that needs the
+// level fresh (a remote key stepping it) without the rest of the settings.
+// The error is set only when nothing at all could be read; a box without
+// adjustable bass answers Avail=false and no error.
+func (c *Client) GetBass(ctx context.Context) (Bass, error) {
+	var out Bass
+	var bass struct {
+		Target int `xml:"targetbass"`
+		Actual int `xml:"actualbass"`
+	}
+	bassRead := c.getXML(ctx, "/bass", &bass) == nil
+	if bassRead {
+		out.Target = bass.Target
+		out.Actual = bass.Actual
+	}
+	var caps struct {
+		Available string `xml:"bassAvailable"`
+		Min       int    `xml:"bassMin"`
+		Max       int    `xml:"bassMax"`
+		Default   int    `xml:"bassDefault"`
+	}
+	capsRead := c.getXML(ctx, "/bassCapabilities", &caps) == nil
+	if capsRead {
+		out.Min = caps.Min
+		out.Max = caps.Max
+		out.Default = caps.Default
+		out.Avail = strings.EqualFold(caps.Available, "true")
+	}
+	// Home-theater systems keep their adjustable bass behind the
+	// /capabilities gate instead: a Lifestyle 650 answers
+	// bassAvailable=false and its slider sat greyed at 0..0 (support mail
+	// with photo, 2026-08-22) while the documented tone-controls route was
+	// never asked. Probe that route only when the classic one reported
+	// nothing, so the one-piece boxes never pay the extra request.
+	if !out.Avail || !bassRead {
+		if tc, ok := c.toneControlsBass(ctx); ok {
+			return tc, nil
+		}
+	}
+	if !bassRead && !capsRead {
+		return Bass{}, errNoBass
+	}
+	return out, nil
 }
 
 // toneControlsHosts remembers, per box host, the verdict of the

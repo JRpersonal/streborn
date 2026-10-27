@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "répétition",
   "settingsView.keyActionGroupConflict": "Cette touche forme le groupe \"{{name}}\". Une touche porte soit un groupe, soit une action intégrée : retire d'abord le groupe de cette touche dans l'onglet Multiroom.",
   "multiroom.groupKeysKeySnooze": "(répétition)",
-  "multiroom.groupKeysSnoozeHint": "Une touche pouce qui répète les réveils ne peut pas aussi former un groupe. Modifie-la sur le plan des touches de la télécommande dans les Réglages."
+  "multiroom.groupKeysSnoozeHint": "Une touche pouce qui répète les réveils ne peut pas aussi former un groupe. Modifie-la sur le plan des touches de la télécommande dans les Réglages.",
+  "settingsView.bassKeyUpLabel": "Plus de basses (un cran par appui)",
+  "settingsView.bassKeyDownLabel": "Moins de basses (un cran par appui)",
+  "settingsView.bassKeyHelp": "Chaque appui règle les basses de l'enceinte d'un cran, dans la limite permise par l'enceinte. Les enceintes avec écran affichent le nouveau niveau. Mets « Plus de basses » sur une touche pouce et « Moins de basses » sur l'autre pour régler les basses depuis la télécommande.",
+  "settingsView.bassKeyOnToast": "Cette touche règle maintenant les basses.",
+  "settingsView.bassKeyOffToast": "Cette touche ne règle plus les basses.",
+  "settingsView.bassKeyUnavailable": "Les basses de cette enceinte ne sont pas réglables, une action basses n'a donc aucun effet ici.",
+  "settingsView.webhookBassKeyNote": "Cette touche règle les basses. Les basses ont la priorité : le webhook ne se déclenche pas.",
+  "settingsView.webhookRemoteLegendBass": "basses",
+  "multiroom.groupKeysKeyBass": "(basses)",
+  "multiroom.groupKeysBassHint": "Une touche pouce qui règle les basses ne peut pas aussi former un groupe. Modifie-la sur le plan des touches de la télécommande dans les Réglages.",
+  "settingsView.bassKeyNeedsUpdate": "Mets à jour cette enceinte pour placer un réglage des basses sur une touche."
 }

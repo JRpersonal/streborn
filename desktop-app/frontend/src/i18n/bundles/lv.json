@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "atlikšana",
   "settingsView.keyActionGroupConflict": "Šis taustiņš veido grupu \"{{name}}\". Taustiņam ir vai nu grupa, vai iebūvēta darbība: vispirms noņem grupu no šī taustiņa cilnē Multiroom.",
   "multiroom.groupKeysKeySnooze": "(atlikšana)",
-  "multiroom.groupKeysSnoozeHint": "Īkšķa taustiņš, kas atliek modinātājus, nevar vienlaikus veidot grupu. Maini to pults taustiņu kartē Iestatījumos."
+  "multiroom.groupKeysSnoozeHint": "Īkšķa taustiņš, kas atliek modinātājus, nevar vienlaikus veidot grupu. Maini to pults taustiņu kartē Iestatījumos.",
+  "settingsView.bassKeyUpLabel": "Vairāk basa (viens solis uz nospiedienu)",
+  "settingsView.bassKeyDownLabel": "Mazāk basa (viens solis uz nospiedienu)",
+  "settingsView.bassKeyHelp": "Katrs nospiediens maina skaļruņa basu par vienu soli, cik skaļrunis atļauj. Skaļruņi ar displeju rāda jauno līmeni. Piešķir “Vairāk basa” vienam īkšķa taustiņam un “Mazāk basa” otram, lai vadītu basu ar pulti.",
+  "settingsView.bassKeyOnToast": "Šis taustiņš tagad maina basu.",
+  "settingsView.bassKeyOffToast": "Šis taustiņš vairs nemaina basu.",
+  "settingsView.bassKeyUnavailable": "Šim skaļrunim bass nav regulējams, tāpēc basa darbība šeit neko nedara.",
+  "settingsView.webhookBassKeyNote": "Šis taustiņš maina basu. Basam ir prioritāte: webhook netiek palaists.",
+  "settingsView.webhookRemoteLegendBass": "basa solis",
+  "multiroom.groupKeysKeyBass": "(basa solis)",
+  "multiroom.groupKeysBassHint": "Īkšķa taustiņš, kas maina basu, nevar vienlaikus veidot grupu. Maini to pults taustiņu kartē Iestatījumos.",
+  "settingsView.bassKeyNeedsUpdate": "Atjaunini šo skaļruni, lai piešķirtu basa soli taustiņam."
 }

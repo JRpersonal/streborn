@@ -1,20 +1,24 @@
 // Package keyactions holds the built-in actions a remote key can carry
-// instead of a webhook or a saved group. There are two:
+// instead of a webhook or a saved group:
 //
 //   - "sleep" steps the sleep timer on each press, 15 -> 30 -> 60 minutes ->
 //     off (the stepping itself lives with the timer, internal/webui
 //     sleepkey.go).
 //   - "snooze" snoozes a ringing alarm (discussion #1415, internal/webui
 //     alarmsnooze.go). Outside a ringing alarm it does nothing.
+//   - "bassUp" and "bassDown" move the speaker's bass one step up or down on
+//     each press (discussion #1494, internal/webui basskey.go), within the
+//     range the speaker reports. On a speaker without adjustable bass they do
+//     nothing.
 //
 // Which key may carry which action follows from what the firmware does with
-// the key on its own. The thumbs keys do nothing by themselves, so both
-// actions may go there. On back, forward and play/pause the firmware's own
+// the key on its own. The thumbs keys do nothing by themselves, so every
+// action may go there. On back, forward and play/pause the firmware's own
 // reaction always runs too, so no action goes there. AUX is the one key in
 // between: the firmware always switches to the AUX input, and STR only sees
 // the press as that source change. That is exactly what silences a ringing
-// alarm, so snooze may go on AUX; the sleep timer may not, because stepping
-// it would switch the input away from whatever plays.
+// alarm, so snooze may go on AUX; the sleep timer and the bass steps may not,
+// because each press would also switch the input away from whatever plays.
 //
 // A key carries ONE thing: a saved group (internal/groupkeys, thumbs keys
 // only), a key action from here, or a webhook. Group and key action exclude
@@ -52,7 +56,20 @@ const (
 	ActionSleep = "sleep"
 	// ActionSnooze snoozes a ringing alarm and does nothing otherwise.
 	ActionSnooze = "snooze"
+	// ActionBassUp raises the speaker's bass one step on every press.
+	ActionBassUp = "bassUp"
+	// ActionBassDown lowers the speaker's bass one step on every press.
+	ActionBassDown = "bassDown"
 )
+
+// actions maps the lower-cased name of every known action to its canonical
+// spelling, so a save in any case normalises to the constants above.
+var actions = map[string]string{
+	"sleep":    ActionSleep,
+	"snooze":   ActionSnooze,
+	"bassup":   ActionBassUp,
+	"bassdown": ActionBassDown,
+}
 
 func thumbs(id string) bool { return id == KeyThumbsUp || id == KeyThumbsDown }
 
@@ -60,13 +77,28 @@ func thumbs(id string) bool { return id == KeyThumbsUp || id == KeyThumbsDown }
 func BindableKey(id string) bool { return thumbs(id) || id == KeyAux }
 
 // knownAction reports whether a is an action this agent can run.
-func knownAction(a string) bool { return a == ActionSleep || a == ActionSnooze }
+func knownAction(a string) bool { _, ok := actions[strings.ToLower(a)]; return ok }
+
+// IsBass reports whether a is one of the two bass steps.
+func IsBass(a string) bool { return a == ActionBassUp || a == ActionBassDown }
+
+// describe names an action in an error the user reads.
+func describe(a string) string {
+	switch a {
+	case ActionSleep:
+		return "the sleep timer"
+	case ActionBassUp, ActionBassDown:
+		return "the bass step"
+	}
+	return a
+}
 
 // AllowedOn reports whether action may be bound to key. See the package
-// comment for why AUX takes snooze but not the sleep timer.
+// comment for why AUX takes snooze but neither the sleep timer nor the bass
+// steps.
 func AllowedOn(action, key string) bool {
 	switch action {
-	case ActionSleep:
+	case ActionSleep, ActionBassUp, ActionBassDown:
 		return thumbs(key)
 	case ActionSnooze:
 		return thumbs(key) || key == KeyAux
@@ -80,13 +112,13 @@ type Document struct {
 }
 
 // Validate checks the document the app saved and normalises it (trimmed,
-// lower-cased action names, empty entries dropped). groupBound reports
+// action names in their canonical spelling, empty entries dropped). groupBound reports
 // whether a key already carries a saved group on this speaker; nil means no
 // key does. The error is shown to the user verbatim.
 func (d *Document) Validate(groupBound func(key string) bool) error {
 	out := map[string]string{}
 	for key, action := range d.Keys {
-		action = strings.ToLower(strings.TrimSpace(action))
+		action = strings.TrimSpace(action)
 		if action == "" {
 			continue
 		}
@@ -96,8 +128,9 @@ func (d *Document) Validate(groupBound func(key string) bool) error {
 		if !knownAction(action) {
 			return fmt.Errorf("unknown key action %q", action)
 		}
+		action = actions[strings.ToLower(action)]
 		if !AllowedOn(action, key) {
-			return fmt.Errorf("the sleep timer can only go on a thumbs key: AUX always switches the input as well")
+			return fmt.Errorf("%s can only go on a thumbs key: AUX always switches the input as well", describe(action))
 		}
 		if groupBound != nil && groupBound(key) {
 			return fmt.Errorf("key %q already carries a saved group; a key carries either a group or a key action, remove the group first", key)

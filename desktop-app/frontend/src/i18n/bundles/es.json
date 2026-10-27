@@ -1931,5 +1931,16 @@
   "settingsView.webhookRemoteLegendSnooze": "posponer",
   "settingsView.keyActionGroupConflict": "Esta tecla forma el grupo \"{{name}}\". Una tecla lleva un grupo o una acción integrada: quita primero el grupo de esta tecla en la pestaña Multiroom.",
   "multiroom.groupKeysKeySnooze": "(posponer)",
-  "multiroom.groupKeysSnoozeHint": "Una tecla de pulgar que pospone alarmas no puede formar también un grupo. Cámbiala en el mapa de teclas del mando en Ajustes."
+  "multiroom.groupKeysSnoozeHint": "Una tecla de pulgar que pospone alarmas no puede formar también un grupo. Cámbiala en el mapa de teclas del mando en Ajustes.",
+  "settingsView.bassKeyUpLabel": "Más graves (un paso por pulsación)",
+  "settingsView.bassKeyDownLabel": "Menos graves (un paso por pulsación)",
+  "settingsView.bassKeyHelp": "Cada pulsación mueve los graves del altavoz un paso, hasta donde el altavoz lo permite. Los altavoces con pantalla muestran el nuevo nivel. Pon «Más graves» en una tecla de pulgar y «Menos graves» en la otra para controlar los graves desde el mando.",
+  "settingsView.bassKeyOnToast": "Esta tecla ahora cambia los graves.",
+  "settingsView.bassKeyOffToast": "Esta tecla ya no cambia los graves.",
+  "settingsView.bassKeyUnavailable": "Este altavoz no tiene graves ajustables, así que una acción de graves no hace nada aquí.",
+  "settingsView.webhookBassKeyNote": "Esta tecla cambia los graves. Los graves tienen prioridad: el webhook no se dispara.",
+  "settingsView.webhookRemoteLegendBass": "graves",
+  "multiroom.groupKeysKeyBass": "(graves)",
+  "multiroom.groupKeysBassHint": "Una tecla de pulgar que cambia los graves no puede formar también un grupo. Cámbiala en el mapa de teclas del mando en Ajustes.",
+  "settingsView.bassKeyNeedsUpdate": "Actualiza este altavoz para asignar un paso de graves a una tecla."
 }
